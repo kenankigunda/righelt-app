@@ -813,7 +813,14 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
   }
   await page.goto("/");
   const sibling = await page.context().newPage();
-  let creates = 0;
+  const logoutRequests = [], failedLogouts = [];
+  const observeLogout = request => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/auth/logout") logoutRequests.push(request);
+  };
+  const observeFailedLogout = request => { if (logoutRequests.includes(request)) failedLogouts.push(request); };
+  page.context().on("request", observeLogout);
+  page.context().on("requestfailed", observeFailedLogout);
+  let creates = 0, signingOut;
   page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates++; });
   try {
     await sibling.goto("/");
@@ -826,7 +833,32 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
     await expect.poll(() => page.evaluate(() => window.__heldAccountLists.length)).toBeGreaterThan(0);
     await expect(sibling.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
     await account(sibling);
-    await signOutAndOpenSignIn(sibling);
+    await sibling.evaluate(() => {
+      const fetch = window.fetch.bind(window);
+      window.__heldLogoutBodies = [];
+      window.fetch = async (...args) => {
+        const response = await fetch(...args);
+        if (new URL(args[0], location.href).pathname === "/api/auth/logout") {
+          const json = response.json.bind(response);
+          response.json = async () => {
+            const result = await json();
+            await new Promise(resolve => window.__heldLogoutBodies.push(resolve));
+            return result;
+          };
+        }
+        return response;
+      };
+    });
+    signingOut = signOutAndOpenSignIn(sibling);
+    signingOut.catch(() => {}); // Cleanup below also drains this owned helper on assertion failure.
+    await expect.poll(() => sibling.evaluate(() => window.__heldLogoutBodies.length)).toBe(1);
+    await expect(page.getByTestId("account-open")).toHaveAttribute("data-authenticated", "false");
+    await expect.poll(() => page.evaluate(async () =>
+      (await navigator.locks.query()).pending.filter(lock => lock.name === "righelt.session-cookie.v1").length,
+    )).toBeGreaterThan(0);
+    expect(logoutRequests).toHaveLength(1);
+    await sibling.evaluate(() => window.__heldLogoutBodies.splice(0).forEach(resolve => resolve()));
+    await signingOut;
     await enterUsername(sibling, second);
     await dialog(sibling).getByLabel("Password", { exact: true }).fill(password);
     await dialog(sibling).getByRole("button", { name: "Sign in", exact: true }).click();
@@ -846,9 +878,15 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     });
     expect(creates).toBe(0);
+    expect(logoutRequests).toHaveLength(1);
+    expect(failedLogouts).toHaveLength(0);
     expect(new URL(page.url()).hash).not.toContain("game/");
   } finally {
     if (!page.isClosed()) await page.evaluate(() => window.__heldAccountLists.splice(0).forEach(resolve => resolve()));
+    if (!sibling.isClosed()) await sibling.evaluate(() => window.__heldLogoutBodies?.splice(0).forEach(resolve => resolve()));
+    await signingOut?.catch(() => {});
+    page.context().off("request", observeLogout);
+    page.context().off("requestfailed", observeFailedLogout);
     await sibling.close();
   }
 });

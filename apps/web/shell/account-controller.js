@@ -110,6 +110,7 @@ export const createAccountController = ({
     return promise;
   };
   let pendingLogout = null,
+    ownsLogout = false,
     logoutFlight = null,
     logoutRetryTimer = null,
     logoutRetryDelay = 1000,
@@ -150,7 +151,7 @@ export const createAccountController = ({
     session = next;
     if (broadcast) {
       write(AUTH_CHANGE_KEY, `${now()}:${Math.random()}`);
-      announce({ type: "changed", pendingLogout: Boolean(readPending()) });
+      announce({ type: "changed", pendingLogout: Boolean(readPending()), logoutContext: readPending() });
     }
     publish();
   };
@@ -214,7 +215,7 @@ export const createAccountController = ({
   const request = async (
     path,
     body,
-    { context = session.contextId, epoch = generation, signal, readOnly = false } = {},
+    { context = session.contextId, epoch = generation, signal, readOnly = false, cookieLocked = false } = {},
   ) => {
     const controller = new AbortController();
     controllers.add(controller);
@@ -222,7 +223,7 @@ export const createAccountController = ({
     if (signal?.aborted) controller.abort();
     try {
       const response = await (readOnly ? (promise) => promise : track)(
-        (body === undefined || readOnly ? (work) => work() : cookieRequest)(() => {
+        (body === undefined || readOnly || cookieLocked ? (work) => work() : cookieRequest)(() => {
           if (epoch !== generation || controller.signal.aborted)
             throw failure("session_changed");
           return fetcher(path, {
@@ -271,6 +272,12 @@ export const createAccountController = ({
   const finishLogout = () => {
     if (logoutFlight) return logoutFlight;
     if (!readPending()) return Promise.resolve();
+    const pending = readPending(), owner = ownsLogout, epoch = generation;
+    const sharedPending = () => {
+      try { return storage?.getItem(LOGOUT_PENDING_KEY) ?? null; }
+      catch { return undefined; }
+    };
+    const storedAtStart = sharedPending();
     const controller = new AbortController();
     let timer;
     const deadline = new Promise((_, reject) => {
@@ -280,20 +287,44 @@ export const createAccountController = ({
       }, AUTH_LOGOUT_ATTEMPT_TIMEOUT_MS);
       timer?.unref?.();
     });
-    const attempt = (async () => {
+    const attempt = cookieRequest(async () => {
+      if (destroyed || controller.signal.aborted || epoch !== generation)
+        throw failure("session_changed");
+      if (!readPending()) return;
+      const storedNow = sharedPending();
+      if (storedAtStart && storedNow === null) {
+        // Another tab completed this intent while we waited for the cookie
+        // lock. Its notification may still be queued in this tab.
+        pendingLogout = null;
+        ownsLogout = false;
+        clearLogoutRetry();
+        retire();
+        return;
+      }
+      if (storedNow && storedNow !== pending) throw failure("session_changed");
       // Resolve the actual cookie before revocation, including a credential
-      // response whose headers arrived without its body.
+      // response whose headers arrived without its body. Keep the lock through
+      // body consumption and completion, so a peer cannot start a second POST
+      // in the gap before our completion notification retires its requests.
       const current = await request("/api/auth/session", undefined, { signal: controller.signal });
-      await request("/api/auth/logout", {}, { context: current.contextId, signal: controller.signal });
+      if (typeof current.authenticated !== "boolean") throw failure("temporarily_unavailable");
+      // A peer can recover only the correlated old logout intent. In particular,
+      // unavailable storage must not let a delayed peer revoke a new account.
+      // The explicit owner still revokes the actual cookie after partial login.
+      if (!owner && current.authenticated && current.contextId !== pending)
+        throw failure("session_changed");
+      if (current.authenticated)
+        await request("/api/auth/logout", {}, { context: current.contextId, signal: controller.signal, cookieLocked: true });
       pendingLogout = null;
+      ownsLogout = false;
       clearLogoutRetry();
       logoutRetryDelay = 1000;
       write(LOGOUT_PENDING_KEY, null);
-      announce({ type: "logout-complete" });
+      announce({ type: "logout-complete", logoutContext: pending });
       // Rebuild the anonymous transport without retiring a newer anonymous form
       // opened in this exact pending-logout generation.
       retire({ authenticated: false }, true, null, generation);
-    })();
+    });
     // Reconnect can leave a browser request pending without a network error.
     // Release the attempt for the existing retry loop, preserving denied local
     // authority until a later, confirmed server revocation succeeds.
@@ -456,6 +487,7 @@ export const createAccountController = ({
   };
   const logout = async () => {
     pendingLogout = session.contextId || "anonymous";
+    ownsLogout = true;
     write(LOGOUT_PENDING_KEY, pendingLogout);
     retire({ authenticated: false }, true);
     try {
@@ -572,12 +604,16 @@ export const createAccountController = ({
     channel.onmessage = (event) => {
       const message = event.data;
       if (message?.type === "hello") {
-        if (readPending()) announce({ type: "changed", pendingLogout: true });
+        if (readPending()) announce({ type: "changed", pendingLogout: true, logoutContext: readPending() });
         return;
       }
-      if (message?.type === "logout-complete") pendingLogout = null;
+      if (message?.type === "logout-complete") {
+        if (!readPending() || message.logoutContext !== readPending()) return;
+        pendingLogout = null;
+        ownsLogout = false;
+      }
       else if (message?.type === "changed") {
-        if (message.pendingLogout) pendingLogout ||= "another-tab";
+        if (message.pendingLogout) pendingLogout ||= typeof message.logoutContext === "string" ? message.logoutContext : "another-tab";
       } else return;
       external();
     };
