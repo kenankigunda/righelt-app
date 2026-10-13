@@ -95,3 +95,66 @@ test('completed private analysis is scoped to the game and cleared on account su
     assert.equal(f.saved[0].kind, 'analysis'); f.session.destroy();
   }
 });
+
+test('undo resume waits for an acquisition already started by another tick', async () => {
+  for (const viaTick of [true, false]) {
+    const f = fixture();
+    f.game().computer.paused = true;
+    f.game().computer.generation = 3;
+    let serverControl = structuredClone(f.game().computer);
+    const requests = [];
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    f.transport.computerControl = async (id, request) => {
+      requests.push({ action: request.action, generation: request.generation });
+      serverControl = changeComputerControl(serverControl, { ...request, ownerId: 'owner', authContextId: 'session', now: 100, turnIndex: 0 });
+      if (request.action === 'acquire') await held;
+      Object.assign(f.game().computer, structuredClone(serverControl));
+    };
+    const acquisition = f.session.tick();
+    const resumed = (async () => {
+      if (viaTick) await f.session.tick();
+      await f.session.action('resume');
+    })();
+    // Observe the pending outcome without producing an unhandled rejection.
+    let result;
+    const settled = resumed.then(() => { result = 'passed'; }, error => { result = error.message; });
+    await Promise.resolve(); await Promise.resolve();
+    const beforeRelease = [...requests];
+    release(); await acquisition; await settled;
+    assert.deepEqual(beforeRelease, [{ action: 'acquire', generation: 3 }]);
+    assert.equal(result, 'passed');
+    assert.deepEqual(requests, [{ action: 'acquire', generation: 3 }, { action: 'resume', generation: 4 }]);
+    assert.equal(f.game().computer.paused, false);
+    assert.equal(f.game().computer.generation, 5);
+    assert.equal(f.session.snapshot().phase, 'idle');
+    f.session.destroy();
+  }
+});
+
+test('a control waiting for acquisition never resumes a changed account or game', async () => {
+  for (const change of ['logout', 'switchGame']) {
+    const f = fixture(), requests = [];
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    f.transport.computerControl = async (_, request) => { requests.push(request.action); await held; };
+    const acquisition = f.session.tick();
+    const resume = f.session.action('resume');
+    await Promise.resolve(); f[change](); release();
+    await acquisition; await resume;
+    assert.deepEqual(requests, ['acquire']);
+    f.session.destroy();
+  }
+});
+
+test('a rejected acquisition does not send or retry resume', async () => {
+  const f = fixture(), requests = [];
+  f.transport.computerControl = async (_, request) => { requests.push(request.action); throw Error('computer_device_busy'); };
+  const acquisition = f.session.tick();
+  const resume = f.session.action('resume');
+  await acquisition;
+  await assert.rejects(resume, /computer_control_changed/);
+  assert.deepEqual(requests, ['acquire']);
+  assert.equal(f.session.snapshot().phase, 'recovery');
+  f.session.destroy();
+});

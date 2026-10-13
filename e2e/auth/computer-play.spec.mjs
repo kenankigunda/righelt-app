@@ -47,6 +47,8 @@ test('ordinary computer play records real worker evidence, preserves private not
     await testInfo.attach('computer-failure-state', { contentType: 'application/json', body: JSON.stringify({ computer: game.computer, revision: game.gameplayRevision, state: game.board.state, currentTurn: game.currentTurn, moves: game.moves, status: await page.locator('[data-computer-status]').innerText(), errors }) });
     throw error;
   }
+  const navigation = page.getByRole('button', { name: 'Open navigation menu', exact: true });
+  if (await navigation.isVisible()) await navigation.click();
   await page.getByRole('button', { name: 'Debug', exact: true }).click();
   const debug = page.locator('[data-flyout="debug"]');
   await debug.locator('[data-debug-section="position"] > summary').click();
@@ -87,12 +89,15 @@ test('ordinary computer play records real worker evidence, preserves private not
   const afterAnalysis = await projected(page, created.id);
   expect(afterAnalysis.gameplayRevision).toBe(beforeAnalysis.gameplayRevision);
   expect(afterAnalysis.board.state).toEqual(beforeAnalysis.board.state);
+  await analysis.getByText('cancelled', { exact: true }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath('computer-analysis-cancelled.png') });
   const beforeBranch = await projected(page, created.id), chosen = beforeBranch.moves.at(-1);
   const branchResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/history/branch');
   await decision.getByRole('button', { name: 'Create a new game before this decision' }).click();
   const chooser = page.getByRole('dialog', { name: 'Create a new game here' });
+  await expect(chooser.locator('[data-rematch-friend-help]')).toBeHidden();
   await chooser.getByLabel('Opponent').selectOption('friend');
+  await expect(chooser.locator('[data-rematch-friend-help]')).toBeVisible();
   await chooser.getByRole('radio', { name: 'Player 2 · Blue' }).check();
   await chooser.evaluate(async element => {
     await Promise.all(element.getAnimations({ subtree: true }).filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime)).map(animation => animation.finished.catch(() => {})));
@@ -109,6 +114,47 @@ test('ordinary computer play records real worker evidence, preserves private not
     expect((await projected(page, created.id)).gameplayRevision).toBe(beforeBranch.gameplayRevision);
   } finally { await popup.close(); }
   expect(errors).toEqual([]);
+});
+
+test('ordinary computer undo restores the human turn and resumes computer control', async ({ page }, info) => {
+  await registerComputerTester(page);
+  await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
+  const creation = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Play Babs', exact: true }).click();
+  const response = await creation;
+  expect(response.ok()).toBe(true);
+  const initial = (await response.json()).game;
+  await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
+  await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase', 'idle');
+  await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
+  await expect.poll(async () => (await projected(page, initial.id)).moves.length).toBeGreaterThan(0);
+  if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();
+  await waitForComputerDecision(page, initial.id, 'babs');
+  const controls = [];
+  const observe = response => {
+    if (new URL(response.url()).pathname === `/api/shell/games/${initial.id}/computer-control`)
+      controls.push({ action: response.request().postDataJSON().action, status: response.status() });
+  };
+  page.on('response', observe);
+  try {
+    const history = page.locator('[data-action="switch-game-panel"][data-panel="history"]');
+    if (await history.isVisible()) await history.click();
+    await page.locator('[data-action="undo-last-move"]').click();
+    await expect.poll(async () => {
+      const game = await projected(page, initial.id);
+      return { activeMoves: game.moves.filter(move => !move.undone).length, paused: game.computer.paused, state: game.board.state };
+    }).toEqual({ activeMoves: 0, paused: false, state: initial.board.state });
+    const board = page.locator('[data-action="switch-game-panel"][data-panel="board"]');
+    if (await board.isVisible()) await board.click();
+    await expect(page.locator('[data-computer-status]')).toBeHidden();
+    expect(controls.filter(control => control.action === 'resume')).toEqual([{ action: 'resume', status: 200 }]);
+    expect(controls.every(control => control.status === 200)).toBe(true);
+    await page.evaluate(async () => {
+      await Promise.all(document.getAnimations().filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime)).map(animation => animation.finished.catch(() => {})));
+    });
+    await page.screenshot({ path: info.outputPath('computer-undo-resumed.png') });
+    await info.attach('undo-controls', { contentType: 'application/json', body: JSON.stringify(controls) });
+  } finally { page.off('response', observe); }
 });
 
 

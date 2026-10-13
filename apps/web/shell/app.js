@@ -4849,10 +4849,13 @@ appEl.addEventListener("click", async (event) => {
     if (!gameId || !moveId) {
       return;
     }
+    const undoTransport = transport, undoAccountGeneration = account.snapshot().generation;
+    const undoScopeIsCurrent = () => transport === undoTransport && account.snapshot().generation === undoAccountGeneration && getCurrentViewedGameId() === gameId;
     const game = transport.getGameViewModel(gameId);
     let targetMoveId = moveId;
     if (game?.computer && game.canControlComputer) {
       await computerSession.action('pause');
+      if (!undoScopeIsCurrent()) return;
       if (action === 'undo-last-move' && !game.computer.manual) {
         const entries = [];
         let cursor = null;
@@ -4862,8 +4865,15 @@ appEl.addEventListener("click", async (event) => {
         targetMoveId = human.moveId;
       }
     }
+    if (!undoScopeIsCurrent()) return;
     const handle = transport.requestRevertToMove({ gameId, targetMoveId });
-    if (game?.computer && game.canControlComputer) { await handle.committed; await computerSession.tick(); await computerSession.action('resume'); }
+    if (game?.computer && game.canControlComputer) {
+      await handle.committed;
+      if (!undoScopeIsCurrent()) return;
+      await computerSession.tick();
+      if (!undoScopeIsCurrent()) return;
+      await computerSession.action('resume');
+    }
     return;
   }
 

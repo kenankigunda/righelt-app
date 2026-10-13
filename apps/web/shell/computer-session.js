@@ -3,7 +3,7 @@ import { deterministicStateHash } from '../generated/packages/game-engine/src/ha
 import { ComputerRuntime } from './computer-runtime.js';
 
 export function createComputerSession({ getContext, onChange = () => {}, runtime = new ComputerRuntime(), analysisRuntime = new ComputerRuntime(), clock = () => Date.now(), timers = globalThis, deviceId = crypto.randomUUID() }) {
-  let status = { phase: 'idle' }, epoch = 0, active = null, busy = false, leaseBusy = false, renewedAt = 0, recovery = null, pendingSubmission = null;
+  let status = { phase: 'idle' }, epoch = 0, active = null, busy = false, leaseWork = null, renewedAt = 0, recovery = null, pendingSubmission = null;
   let analysis = null, analysisContext = null, analysisEpoch = 0, lastPositionRevision = null;
   const repetitions = new Map();
   const publish = (next) => { status = { ...status, ...next }; onChange(); };
@@ -12,18 +12,32 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   const cancelWork = (reason) => { epoch++; runtime.cancel(reason); };
   const ownLease = (game) => game?.computer?.lease?.deviceId === deviceId && game.computer.lease.expiresAt > clock();
   const control = async (context, action) => context.transport.computerControl(context.game.id, { action, deviceId, generation: context.game.computer.generation });
+  const startLeaseWork = work => {
+    const pending = Promise.resolve().then(work);
+    leaseWork = pending;
+    const clear = () => { if (leaseWork === pending) leaseWork = null; };
+    void pending.then(clear, clear);
+    return pending;
+  };
   const fence = async (action) => {
     cancelWork(action);
     let context = current();
     if (!context.game?.computer) return;
     const gameId = context.game.id;
+    const owner = context.transport, accountGeneration = context.accountGeneration;
     publish({ phase: 'saving', message: 'Confirming the last move…' });
     // Accepted commands remain accepted. Never drop an uncertain submission to enable takeover.
     const submissionToReconcile = pendingSubmission;
     if (submissionToReconcile) { await context.transport.reconcileGame(context.game.id); await submissionToReconcile.catch(() => {}); }
+    // Undo drops the lease. Another tick may already be restoring it, so wait
+    // for that acknowledged generation before issuing this control once.
+    if (leaseWork) await leaseWork;
     context = current();
-    if (!context.game?.computer || context.game.id !== gameId) return;
-    try { await control(context, action); }
+    if (!context.game?.computer || context.game.id !== gameId || context.transport !== owner || context.accountGeneration !== accountGeneration || !context.authenticated) return;
+    try {
+      if (!ownLease(context.game)) throw new Error('computer_control_changed');
+      await control(context, action);
+    }
     catch (error) { await context.transport.loadGame(gameId).catch(() => {}); publish({ phase: 'recovery', message: error.message }); throw error; }
     recovery = null; lastPositionRevision = null; repetitions.clear();
     publish({ phase: action === 'pause' ? 'paused' : 'idle', message: null });
@@ -49,24 +63,22 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     if (!ownLease(game)) {
       cancelWork('other-device');
       if (game.computer.lease?.expiresAt > clock()) { if (status.phase !== 'other-device') publish({ phase: 'other-device' }); return; }
-      if (!leaseBusy) {
-        leaseBusy = true;
+      if (!leaseWork) startLeaseWork(async () => {
         try { await control(context, 'acquire'); renewedAt = clock(); }
         catch { await context.transport.loadGame(game.id).catch(() => {}); }
-        finally { leaseBusy = false; }
-      }
+      });
+      await leaseWork;
       return;
     }
-    if (!leaseBusy && clock() - renewedAt >= COMPUTER_TIMING.renewAfterMs) {
-      leaseBusy = true;
-      void control(context, 'renew').then(() => { renewedAt = clock(); }).catch(() => { cancelWork('lease-lost'); return context.transport.loadGame(game.id); }).catch(() => {}).finally(() => { leaseBusy = false; });
+    if (!leaseWork && clock() - renewedAt >= COMPUTER_TIMING.renewAfterMs) {
+      void startLeaseWork(() => control(context, 'renew').then(() => { renewedAt = clock(); }).catch(() => { cancelWork('lease-lost'); return context.transport.loadGame(game.id); }).catch(() => {}));
     }
     const profile = computerProfileFor(game.computer, game.board.state.sideToMove, game.currentTurn?.index ?? game.board.state.turnIndex ?? 0);
     if (game.computer.paused || !profile || game.board.state.outcome?.status !== 'ongoing') {
       if (!busy && status.phase !== (game.computer.paused ? 'paused' : 'idle')) publish({ phase: game.computer.paused ? 'paused' : 'idle', message: null });
       return;
     }
-    if (busy || leaseBusy || pendingSubmission || context.transport.getGameViewModel(game.id)?.pendingCommandCount > 0 || recovery === context.key) return;
+    if (busy || leaseWork || pendingSubmission || context.transport.getGameViewModel(game.id)?.pendingCommandCount > 0 || recovery === context.key) return;
     if (game.computer.seats.p1 && game.computer.seats.p2 && lastPositionRevision !== game.gameplayRevision) {
       lastPositionRevision = game.gameplayRevision;
       const position = structuredClone(game.board.state); position.turnIndex = 0;
