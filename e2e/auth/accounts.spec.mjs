@@ -765,9 +765,11 @@ test("keyboard board activation opens sign in without losing the board", async (
 });
 
 test("a delayed play continuation is discarded after a cross-tab account switch", async ({ page, request, baseURL }) => {
-  await page.addInitScript(() => {
+  await page.context().addInitScript(() => {
     const original = window.fetch.bind(window);
     window.__heldAccountLists = [];
+    window.__heldLogoutBodies = [];
+    window.__holdLogoutBodies = true;
     window.__accountSessionReads = { pending: 0, username: null };
     window.fetch = async (...args) => {
       const sessionRead = new URL(args[0], location.href).pathname === "/api/auth/session";
@@ -785,6 +787,16 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
         response.json = async () => {
           const body = await json();
           await new Promise(resolve => window.__heldAccountLists.push(resolve));
+          return body;
+        };
+      }
+      // Controllers capture fetch during bootstrap. Install this response-body
+      // hold before either tab starts, including the peer that may win the lock.
+      if (new URL(args[0], location.href).pathname === "/api/auth/logout") {
+        const json = response.json.bind(response);
+        response.json = async () => {
+          const body = await json();
+          if (window.__holdLogoutBodies) await new Promise(resolve => window.__heldLogoutBodies.push(resolve));
           return body;
         };
       }
@@ -833,31 +845,20 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
     await expect.poll(() => page.evaluate(() => window.__heldAccountLists.length)).toBeGreaterThan(0);
     await expect(sibling.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
     await account(sibling);
-    await sibling.evaluate(() => {
-      const fetch = window.fetch.bind(window);
-      window.__heldLogoutBodies = [];
-      window.fetch = async (...args) => {
-        const response = await fetch(...args);
-        if (new URL(args[0], location.href).pathname === "/api/auth/logout") {
-          const json = response.json.bind(response);
-          response.json = async () => {
-            const result = await json();
-            await new Promise(resolve => window.__heldLogoutBodies.push(resolve));
-            return result;
-          };
-        }
-        return response;
-      };
-    });
     signingOut = signOutAndOpenSignIn(sibling);
     signingOut.catch(() => {}); // Cleanup below also drains this owned helper on assertion failure.
-    await expect.poll(() => sibling.evaluate(() => window.__heldLogoutBodies.length)).toBe(1);
+    await expect.poll(async () => (await Promise.all([page, sibling].map(tab =>
+      tab.evaluate(() => window.__heldLogoutBodies.length),
+    ))).reduce((total, count) => total + count, 0)).toBe(1);
     await expect(page.getByTestId("account-open")).toHaveAttribute("data-authenticated", "false");
     await expect.poll(() => page.evaluate(async () =>
       (await navigator.locks.query()).pending.filter(lock => lock.name === "righelt.session-cookie.v1").length,
     )).toBeGreaterThan(0);
     expect(logoutRequests).toHaveLength(1);
-    await sibling.evaluate(() => window.__heldLogoutBodies.splice(0).forEach(resolve => resolve()));
+    await Promise.all([page, sibling].map(tab => tab.evaluate(() => {
+      window.__holdLogoutBodies = false;
+      window.__heldLogoutBodies.splice(0).forEach(resolve => resolve());
+    })));
     await signingOut;
     await enterUsername(sibling, second);
     await dialog(sibling).getByLabel("Password", { exact: true }).fill(password);
@@ -883,7 +884,10 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
     expect(new URL(page.url()).hash).not.toContain("game/");
   } finally {
     if (!page.isClosed()) await page.evaluate(() => window.__heldAccountLists.splice(0).forEach(resolve => resolve()));
-    if (!sibling.isClosed()) await sibling.evaluate(() => window.__heldLogoutBodies?.splice(0).forEach(resolve => resolve()));
+    await Promise.all([page, sibling].filter(tab => !tab.isClosed()).map(tab => tab.evaluate(() => {
+      window.__holdLogoutBodies = false;
+      window.__heldLogoutBodies?.splice(0).forEach(resolve => resolve());
+    })));
     await signingOut?.catch(() => {});
     page.context().off("request", observeLogout);
     page.context().off("requestfailed", observeFailedLogout);
