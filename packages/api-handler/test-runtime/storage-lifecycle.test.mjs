@@ -183,7 +183,7 @@ for(const activated of [false,true])test(`retained migration preserves cutover a
   const h=await harness({},15);
   try{
     // The old room requires the new schema, so seed only the retained SQL row.
-    await h.db.prepare("INSERT INTO live_games(game_id,created_at,updated_at,latest_activity_at,state_json,ownership_mode) VALUES('g','2026-01-01','2026-01-02','2026-01-03','{}',?1)").bind(activated?"account_v1":"legacy_guest").run();
+    await h.db.prepare("INSERT INTO live_games(game_id,created_at,updated_at,latest_activity_at,state_json,ownership_mode,event_seq,commit_base_event_seq) VALUES('g','2026-01-01','2026-01-02','2026-01-03','{}',?1,1,0)").bind(activated?"account_v1":"legacy_guest").run();
     if(activated){
       await h.db.prepare("INSERT INTO accounts(account_id,username,username_canonical,display_name,created_at,password_hash) VALUES('canary-account-1234','canary','canary','Canary',0,'test-only')").run();
       await h.db.prepare("UPDATE account_cutover SET activated_at=1,canary_account_id='canary-account-1234' WHERE singleton=1").run();

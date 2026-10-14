@@ -50,6 +50,15 @@ ALTER TABLE live_games ADD COLUMN next_actor_identity_id TEXT;
 ALTER TABLE live_games ADD COLUMN move_count INTEGER NOT NULL DEFAULT 0;
 -- During backfill, the original authority trigger still protects every existing
 -- column. Only the newly added derived columns may change without a game permit.
+DROP TRIGGER live_games_revision_guard;
+CREATE TRIGGER live_games_revision_guard BEFORE UPDATE OF event_seq,gameplay_revision,commit_base_event_seq ON live_games
+WHEN NEW.commit_base_event_seq IS NOT NULL AND (
+  NEW.commit_base_event_seq != OLD.event_seq OR NEW.event_seq <= OLD.event_seq OR
+  NEW.gameplay_revision < OLD.gameplay_revision
+)
+BEGIN
+  SELECT RAISE(ABORT, 'stale_game_revision');
+END;
 DROP TRIGGER account_game_update_cutover;
 CREATE TRIGGER account_game_update_cutover BEFORE UPDATE OF game_id,created_at,updated_at,latest_activity_at,state_json,event_seq,player1_identity_id,player2_identity_id,has_smoke_identity,gameplay_revision,commit_base_event_seq,ownership_mode ON live_games
 WHEN ((SELECT activated_at FROM account_cutover WHERE singleton=1) IS NOT NULL OR (SELECT maintenance FROM account_cutover WHERE singleton=1)=1) AND (
@@ -77,6 +86,15 @@ WHEN ((SELECT activated_at FROM account_cutover WHERE singleton=1) IS NOT NULL O
  EXISTS(SELECT 1 FROM account_game_write_permits WHERE game_id=NEW.game_id AND actor_id=NEW.player1_identity_id)),0))
 )
 BEGIN SELECT RAISE(ABORT,'account_cutover_write_denied'); END;
+DROP TRIGGER live_games_revision_guard;
+CREATE TRIGGER live_games_revision_guard BEFORE UPDATE ON live_games
+WHEN NEW.commit_base_event_seq IS NOT NULL AND (
+  NEW.commit_base_event_seq != OLD.event_seq OR NEW.event_seq <= OLD.event_seq OR
+  NEW.gameplay_revision < OLD.gameplay_revision
+)
+BEGIN
+  SELECT RAISE(ABORT, 'stale_game_revision');
+END;
 CREATE INDEX live_games_retention ON live_games(retention_activity_at,game_id);
 CREATE INDEX game_archives_status ON game_archives(status,updated_at,game_id);
 CREATE TABLE storage_growth_guards (

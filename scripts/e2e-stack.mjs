@@ -3,6 +3,7 @@ import { cliPath, supervise } from './resources/supervisor.mjs';
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { mkdtemp, rm, mkdir, readFile, writeFile } from "node:fs/promises";
+import { e2eControlPort } from "./e2e-control.mjs";
 import { randomUUID } from "node:crypto";
 import { storageFixtureSource } from "./storage-e2e-fixture.mjs";
 import os from "node:os";
@@ -187,7 +188,7 @@ const run = async () => {
       apiConfig,
       "--port",
       apiPort,
-      ...(generation ? ["--var",`STORAGE_GENERATION:${generation}`] : []),
+      "--var",`STORAGE_GENERATION:${generation}`,
       "--persist-to",
       apiPersistPath,
     ],
@@ -222,7 +223,7 @@ const run = async () => {
       await waitForHttp(apiHealthUrl, "restarted local API");
       response.writeHead(200).end("restarted");
     } catch (error) { response.writeHead(500).end(String(error)); } finally { restartActive=false; }
-  }).listen(Number(webPort) + 100, "127.0.0.1");
+  }).listen(e2eControlPort(webPort), "127.0.0.1");
   await waitForHttp(apiHealthUrl, "local API");
 
   spawnLogged("pages", "pnpm", ["exec", "wrangler", "pages", "dev", ".", "--port", webPort], {

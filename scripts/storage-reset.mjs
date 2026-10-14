@@ -18,9 +18,12 @@ export function parseResetArgs(argv){
   if(action!=="report"&&action!=="verify"&&!args.includes("--apply"))throw Error("Mutating reset actions require --apply");
   return {action,oldName,newName,receipt:path.resolve(receipt),origin,apply:args.includes("--apply")};
 }
-export function bindingConfig(source,name,id){
+export function bindingConfig(source,name,id,generation){
   if(!/^[a-f0-9-]{36}$/.test(id))throw Error("Invalid new database ID");
-  return source.replace(/database_name = "[^"]+"/,`database_name = "${name}"`).replace(/database_id = "[^"]+"/,`database_id = "${id}"`);
+  const binding=source.replace(/database_name = "[^"]+"/,`database_name = "${name}"`).replace(/database_id = "[^"]+"/,`database_id = "${id}"`);
+  if(!generation)return binding;
+  if(!/^[A-Za-z0-9_-]{1,96}$/.test(generation)||!binding.includes("[vars]"))throw Error("Missing or invalid storage generation configuration");
+  return /^STORAGE_GENERATION\s*=/m.test(binding)?binding.replace(/^STORAGE_GENERATION\s*=\s*"[^"]*"/m,`STORAGE_GENERATION = "${generation}"`):binding.replace("[vars]",`[vars]\nSTORAGE_GENERATION = "${generation}"`);
 }
 export async function recoverySocketSnapshot({origin,gameId,identityId,generation,socketFactory=url=>new WebSocket(url),timeoutMs=15000}){
   const url=new URL(`/api/shell/games/${gameId}/ws`,origin);url.protocol="wss:";
@@ -81,7 +84,7 @@ export async function runStorageReset(options,{run,fetcher=fetch,socketFactory,r
   }
   if(options.action==="bind"){
     // Binding preparation does not deploy or reopen production.
-    const source=bindingConfig(read(config,"utf8"),options.newName,receipt.newId);
+    const source=bindingConfig(read(config,"utf8"),options.newName,receipt.newId,receipt.generation);
     write(config,source);receipt.bindingPrepared=true;save(receipt);return {database:receipt.newName,generation:receipt.generation};
   }
   if(!options.origin)throw Error("Provide --origin for deployed verification");

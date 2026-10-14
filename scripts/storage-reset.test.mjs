@@ -59,3 +59,12 @@ test("production reconnect canary validates snapshot generation and closes its s
  assert.equal(requested.protocol,"wss:");assert.equal(requested.searchParams.get("storageGeneration"),"new");assert.equal(closed,1);
  await assert.rejects(recoverySocketSnapshot({origin:"https://test",gameId:"g",identityId:"actor",generation:"old",socketFactory}),/generation/);assert.equal(closed,2);
 });
+
+test("binding preparation fences direct deployment paths as well as the workflow",()=>{
+ const source='[vars]\ndatabase_name = "old"\ndatabase_id = "11111111-1111-1111-1111-111111111111"';
+ const bound=bindingConfig(source,"new","22222222-2222-2222-2222-222222222222","reset-test");
+ assert.match(bound,/STORAGE_GENERATION = "reset-test"/);
+ assert.match(bound,/database_name = "new"/);
+ const rebound=bindingConfig(bound,"new","22222222-2222-2222-2222-222222222222","reset-other");
+ assert.match(rebound,/STORAGE_GENERATION = "reset-other"/);assert.equal((rebound.match(/STORAGE_GENERATION/g)||[]).length,1);
+});

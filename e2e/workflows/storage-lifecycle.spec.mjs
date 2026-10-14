@@ -1,9 +1,10 @@
+import {e2eControlPort} from '../../scripts/e2e-control.mjs';
 import {test,expect} from '@playwright/test';
 import {createGameFromHome,makeAnyLegalMove,getHistoryMoveCount,openHistoryMode,returnToLive} from '../support/app.mjs';
 
 test.skip(process.env.RIGHELT_E2E_STORAGE_ARCHIVES!=='1','Requires the disposable local archive fixture');
 const control=async(request,baseURL,route,body)=>{
- const url=new URL(baseURL);url.port=String(Number(url.port)+100);url.pathname=route;
+ const url=new URL(baseURL);url.port=String(e2eControlPort(url.port));url.pathname=route;
  const result=await request.post(url.href,{data:body});expect(result.ok()).toBe(true);return route==='/storage'?result.json():null;
 };
 
@@ -29,16 +30,16 @@ test('archive preserves browser history, direct links and exactly-once resumed p
  await expect(page.getByTestId('history-return-live')).toBeVisible();
  await returnToLive(page);
  expect((await control(request,baseURL,'/storage',{action:'status',gameId})).archive?.status).toBe('archived');
- await info.attach('archived-history',{body:await page.screenshot(),contentType:'image/png'});
+ await page.screenshot({path:info.outputPath('archived-history.png')});
  await makeAnyLegalMove(page,'p2');
  await expect.poll(()=>getHistoryMoveCount(page)).toBe(count+1);
  expect((await control(request,baseURL,'/storage',{action:'status',gameId})).archive).toBeNull();
  await page.goto('/');await page.goto(gameHash);
  await expect.poll(()=>getHistoryMoveCount(page)).toBe(count+1);
- await info.attach('restored-game',{body:await page.screenshot(),contentType:'image/png'});
+ await page.screenshot({path:info.outputPath('restored-game.png')});
 });
 
-test('reset fences a stale tab and creates a fresh game in the new generation',async({page,request,baseURL})=>{
+test('reset fences a stale tab and creates a fresh game in the new generation',async({page,request,baseURL},info)=>{
  test.setTimeout(120000);
  const {gameId}=await createGameFromHome(page);
  const before=await (await request.get('/api/shell/bootstrap')).json();
@@ -49,6 +50,7 @@ test('reset fences a stale tab and creates a fresh game in the new generation',a
  expect(rejected.status()).toBe(409);expect((await rejected.json()).error).toBe('storage_reset');
  await expect(page).toHaveURL(/#\/$/);
  await expect(page.getByRole('status').filter({hasText:'The saved data was reset'})).toBeVisible();
+ await page.screenshot({path:info.outputPath('storage-reset.png')});
  const fresh=await createGameFromHome(page);expect(fresh.gameId).not.toBe(gameId);
  const removed=await request.get(`/api/shell/games/${gameId}?identityId=stale`);expect(removed.status()).toBe(404);
 });

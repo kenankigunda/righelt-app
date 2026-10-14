@@ -312,6 +312,7 @@ export const createFakeD1 = () => {
     setNextGameReadOverride(gameId, state) {
       nextGameReadOverrideById.set(gameId, structuredClone(state));
     },
+    getGameRow(gameId) { return structuredClone(shellGames.get(gameId) ?? null); },
     getGameState(gameId) {
       const row = shellGames.get(gameId);
       if (!row || typeof row.state_json !== "string") {

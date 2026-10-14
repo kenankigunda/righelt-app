@@ -4,6 +4,8 @@ The approved recovery deletes all existing games and accounts. Historical games 
 
 ## Current preparation
 
+The operator also writes the public generation into the branch configuration, so direct deployment commands carry the same fence. Deployment preflight rejects an environment generation that differs from this configuration. Local fixtures override the production generation.
+
 The candidate binds `DB` to `righelt-db-prod` (`4ce7cf1e-627e-427d-99c8-438f34d51aeb`). That empty replacement is prepared in maintenance mode. The currently deployed `righelt-db-dev` has not been fenced, switched or deleted. The private reset receipt lives at `test-results/storage-reset/receipt.json` in the implementation checkout. Keep it outside Git; it contains the generation and recovery bookmark.
 
 Production R2 is not enabled. Archive, quota enforcement and exclusive-use attestation stay disabled in the committed recovery configuration. The deployment workflow defaults compression writes to false; readers understand both representations. This deliberately makes recovery, compression activation and archive activation separate observable steps.

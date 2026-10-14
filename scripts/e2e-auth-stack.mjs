@@ -90,6 +90,7 @@ try {
     .replace('main = "index.js"', `main = ${JSON.stringify(path.join(root, "apps/api/index.js"))}`)
     .replace('migrations_dir = "../../db/migrations"', `migrations_dir = ${JSON.stringify(path.join(root, "db/migrations"))}`)
     .replace(/database_id = "[^"]+"/, 'database_id = "local-auth-e2e"');
+  api = api.replace(/^STORAGE_GENERATION\s*=\s*"[^"]*"/m, 'STORAGE_GENERATION = ""');
   api = api.replace('AUTH_ENABLED = "false"', 'AUTH_ENABLED = "true"')
     .replace('service = "righelt-auth"', 'service = "righelt-auth-e2e-admission"');
   // Append vars to the existing table, rather than introducing duplicate bindings.

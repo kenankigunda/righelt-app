@@ -8,6 +8,7 @@ preview_urls = false
 binding = "CF_VERSION_METADATA"
 
 [vars]
+STORAGE_GENERATION = "reset-986736d3-c72e-4539-9edc-6597847f64e7"
 AUTH_ENABLED = "false"
 STORAGE_COMPRESSION = "true"
 STORAGE_ARCHIVES_ENABLED = "false"

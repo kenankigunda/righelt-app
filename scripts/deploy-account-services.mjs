@@ -53,6 +53,8 @@ export function validateStorageDeployment(env,source) {
   if(env.CLOUDFLARE_D1_DB_NAME && ![name,"DB"].includes(env.CLOUDFLARE_D1_DB_NAME))throw Error("Migration target differs from deployed database binding");
   if(name.startsWith("righelt-db-prod") && !env.RIGHELT_STORAGE_GENERATION)throw Error("Prepared production database requires RIGHELT_STORAGE_GENERATION");
   if(env.RIGHELT_STORAGE_GENERATION && !/^[A-Za-z0-9_-]{1,96}$/.test(env.RIGHELT_STORAGE_GENERATION))throw Error("Invalid storage generation");
+  const configured=/^STORAGE_GENERATION\s*=\s*"([^"]*)"/m.exec(source)?.[1];
+  if(configured && env.RIGHELT_STORAGE_GENERATION!==configured)throw Error("Storage generation differs from prepared binding");
   if(!["true","false"].includes(env.RIGHELT_STORAGE_COMPRESSION||"false"))throw Error("Storage compression must be true or false");
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
