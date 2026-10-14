@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import {tailDecoder,exceptionSummary,diagnosticTarget,startupSummary} from './production-viewer-diagnostic.mjs';
 test('startup failures expose fixed classifications and numeric codes only',()=>{
  const summary=startupSummary('Authentication failed [code: 10000] token=private-secret https://private.example',1);
- assert.deepEqual(summary,{category:'authentication',providerCodes:[10000],exitCode:1});
+ assert.deepEqual(summary,{category:'authentication',providerCodes:[10000],runtimeCodes:[],exitCode:1});
  assert.equal(JSON.stringify(summary).includes('private'),false);
  assert.equal(startupSummary('Unknown arguments: private',1).category,'arguments');
  assert.equal(startupSummary('forbidden [code: 10001]',1).category,'permission');
+ assert.deepEqual(startupSummary('ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL Command wrangler not found private-token',1),{category:'installation',providerCodes:[],runtimeCodes:['ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL'],exitCode:1});
 });
 test('the incident ID is accepted while URL and argument injection are rejected',()=>{
  const env={DIAGNOSTIC_GAME_ID:'game-a06f27bd21cf74b01a82750e57b71b50dcb5',RIGHELT_SITE_ORIGIN:'https://righelt.pages.dev',CLOUDFLARE_PAGES_PROJECT:'righelt'};
