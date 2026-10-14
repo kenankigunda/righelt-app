@@ -55,7 +55,9 @@ async function diagnose(env=process.env) {
  const header=`X-Righelt-Request-Id:${requestId}`;
  const start=(name,args)=>{
   let stderr='';
-  const child=spawn('pnpm',['exec','wrangler',...args,'--format','json','--header',header,'--sampling-rate','1'],{stdio:['ignore','pipe','pipe'],env});
+  // Wrangler rejects an explicit sampling rate of 1. Its default captures all
+  // matching requests, so preserve the header filter without a sampling option.
+  const child=spawn('pnpm',['exec','wrangler',...args,'--format','json','--header',header],{stdio:['ignore','pipe','pipe'],env});
   children.push(child);
   const decode=tailDecoder(event=>{if(ownsTailEvent(event,requestId))connected.add(name);const summary=exceptionSummary(event,requestId);if(summary)console.log(JSON.stringify({tail:name,...summary}));});
   child.stdout.on('data',chunk=>{stderr=(stderr+String(chunk)).slice(-32000);try{decode(chunk);}catch{failures++;console.log(JSON.stringify({tail:name,phase:'decoder_failed'}));child.kill('SIGTERM');}});
