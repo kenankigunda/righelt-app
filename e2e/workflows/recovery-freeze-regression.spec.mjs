@@ -148,19 +148,22 @@ for(const reduced of [false,true])test(`routine reconnect stays quiet four secon
  hold=true;await page.evaluate(()=>{dispatchEvent(new Event("pagehide"));dispatchEvent(new PageTransitionEvent("pageshow",{persisted:true}));});
  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toBeVisible();
  await waiting;
- await expect(page.locator('.board-wrap > .loading-pieces')).toBeHidden();
- await page.clock.runFor(199);await expect(page.locator('.board-wrap > .loading-pieces')).toBeHidden();
- await page.clock.runFor(2);await expect(page.locator('.board-wrap > .loading-pieces')).toBeVisible();
+ await expect(page.locator('.reconnect-background')).toBeHidden();
+ await page.clock.runFor(199);await expect(page.locator('.reconnect-background')).toBeHidden();
+ await page.clock.runFor(2);await expect(page.locator('.reconnect-background')).toBeVisible();
  await page.clock.runFor(3798);await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  await page.clock.runFor(2);
  await expect(page.getByTestId("sync-recovery-banner")).toBeVisible();
  await expect(page.getByTestId("sync-recovery-banner")).toContainText("Reconnecting. We’ll be right back!");
  expect(await board.boundingBox()).toEqual(before);expect(await board.innerHTML()).toBe(contents);
- if(reduced)expect(await page.locator(".reconnect-background").evaluate(el=>getComputedStyle(el).animationName)).toBe("none");
- // Deadline assertions are complete; let the alert entrance finish for pixels.
- await page.clock.runFor(300);
+ if(reduced)expect(await page.locator(".reconnect-background").evaluate(el=>getComputedStyle(el,"::before").animationName)).toBe("none");
+ // Deadline assertions are complete. CSS transitions use the browser's
+ // animation clock, so resume it before measuring the settled fade.
+ await page.clock.resume();
+ await expect.poll(()=>board.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(.2);
  await page.screenshot({path:info.outputPath(reduced?"reconnect-static.png":"reconnect-sweep.png")});
  hold=false;release();await page.clock.resume();await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0,{timeout:10000});
+ await expect.poll(()=>board.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(1);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  } finally {
   hold=false;release();await page.clock.resume();

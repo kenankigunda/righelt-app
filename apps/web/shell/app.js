@@ -20,7 +20,8 @@ import { icon, soundToggle, headerActionContent } from './ui.js';
 import { createGameSound } from './sound.js';
 import { createModal } from './modal.js';
 import { createOpponentStoryDialog, OPPONENT_STORIES } from './opponent-stories.js';
-import { recoveryMessage, sharedMutationActions } from "./recovery-view.js";
+import { recoveryMessage, sharedMutationActions, isBoardRecoveryPending } from "./recovery-view.js";
+import { renderGameAlertCard } from "./game-alert.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEngineBoardAdapter, createInitialBoardSnapshot } from "../board-adapters/engine-board-adapter.js";
 import { createMiniBoardPreview, syncMiniBoardPreviews } from "../board/mini-board-preview.js";
@@ -1578,18 +1579,6 @@ const getFailedOperationsKey = (gameId) =>
   (transport.getFailedOperations?.(gameId) ?? [])
     .map((operation) => `${operation.id}:${operation.status}`)
     .join("|");
-
-const renderGameAlertCard = ({ tone = "", body = "", action = "", testId = "", incidentId = null } = {}) => {
-  const toneClass = tone ? ` ${tone}` : "";
-  const testIdAttr = testId ? ` data-testid="${escapeHtml(testId)}"` : "";
-  return `<div class="alert${toneClass} shell-game-alert${tone === "danger" ? " sync-failure-banner" : ""}"${testIdAttr}>
-      <div class="shell-game-alert-copy${tone === "danger" ? " sync-failure-copy" : ""}">
-        ${body}
-      </div>
-      ${action}
-      ${renderDiagnosticDisclosure(incidentId)}
-    </div>`;
-};
 
 const getGameAlertItems = (game) => {
   const failedOperations = transport.getFailedOperations?.(game.id) ?? [];
@@ -3404,10 +3393,17 @@ const getHistoryRecordedActionStartPiece = (game) => {
 let reconnectPresentationTimer;
 const updateReconnectPresentation = game => {
   const wrap = document.querySelector('[data-testid="game-board-wrap"]');
-  const recovering = Boolean(game?.recovering && game.recoveryStartedAt);
-  if (wrap) { wrap.dataset.reconnecting = String(recovering); wrap.dataset.loadingState = recovering ? "pending" : "idle"; wrap.dataset.loadingKey = `recovery:${game.recoveryEpisodeId}`; wrap.dataset.loadingContext = "external"; }
+  const recovering = isBoardRecoveryPending(game);
+  if (wrap) {
+    wrap.dataset.reconnecting = String(recovering);
+    wrap.dataset.loadingState = recovering ? "pending" : "idle";
+    // A retry or socket generation change does not restart an uninterrupted cue.
+    wrap.dataset.loadingKey = `recovery:${game.id}`;
+    wrap.dataset.loadingContext = "external";
+    wrap.setAttribute("aria-busy", String(recovering));
+  }
   clearTimeout(reconnectPresentationTimer);
-  if (recovering) {
+  if (recovering && game.recoveryStartedAt) {
     const elapsed = Date.now() - game.recoveryStartedAt;
     const remaining = elapsed < LOADING_CUE_DELAY_MS ? LOADING_CUE_DELAY_MS - elapsed : elapsed < SYNC_TIMING.reconnectAlertMs ? SYNC_TIMING.reconnectAlertMs - elapsed : null;
     if (remaining !== null) reconnectPresentationTimer = setTimeout(() => { const next = transport.getGameViewModel(game.id); updateReconnectPresentation(next); updateMountedHeader(); }, remaining + 1);
