@@ -33,12 +33,16 @@ export function exceptionSummary(event,requestId) {
  }))};
 }
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function diagnose(env=process.env) {
+export function diagnosticTarget(env) {
  const gameId=env.DIAGNOSTIC_GAME_ID;
- if(!/^game-[a-f0-9]{32}$/.test(gameId??''))throw Error('Provide one valid diagnostic game ID');
+ if(!/^game-[a-f0-9]{32,64}$/.test(gameId??''))throw Error('Provide one valid diagnostic game ID');
  const origin=new URL(env.RIGHELT_SITE_ORIGIN);
  if(origin.protocol!=='https:'||origin.pathname!=='/'||origin.search||origin.hash)throw Error('Invalid diagnostic origin');
  if(!/^[a-z0-9-]+$/.test(env.CLOUDFLARE_PAGES_PROJECT??''))throw Error('Invalid Pages project');
+ return {gameId,origin};
+}
+async function diagnose(env=process.env) {
+ const {gameId,origin}=diagnosticTarget(env);
  const requestId=randomUUID(),identityId=`diagnostic-${randomUUID()}`;
  const children=[],connected=new Set();let failures=0;
  const header=`X-Righelt-Request-Id:${requestId}`;
