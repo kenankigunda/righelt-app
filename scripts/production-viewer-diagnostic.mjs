@@ -50,6 +50,16 @@ export function diagnosticTarget(env) {
 }
 async function diagnose(env=process.env) {
  const {gameId,origin}=diagnosticTarget(env);
+ const databaseUrl=`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/d1/database/22435cc4-6655-4bdf-a05d-d100cd8e6cc9`;
+ const databaseHeaders={Authorization:`Bearer ${env.CLOUDFLARE_API_TOKEN}`,'content-type':'application/json'};
+ const databaseResponse=await fetch(databaseUrl,{headers:databaseHeaders,signal:AbortSignal.timeout(15000),redirect:'error'});
+ if(!databaseResponse.ok)throw Error('Database metadata lookup failed');
+ const database=await databaseResponse.json();
+ console.log(JSON.stringify({phase:'database_capacity',fileSize:Number(database.result?.file_size??0)}));
+ const sizeResponse=await fetch(`${databaseUrl}/query`,{method:'POST',headers:databaseHeaders,signal:AbortSignal.timeout(30000),redirect:'error',body:JSON.stringify({sql:'SELECT (SELECT COUNT(*) FROM live_games) AS game_count, (SELECT SUM(LENGTH(state_json)) FROM live_games) AS projection_bytes, (SELECT COUNT(*) FROM live_events) AS event_count, (SELECT SUM(LENGTH(payload_json)) FROM live_events) AS event_bytes, (SELECT COUNT(*) FROM live_command_receipts) AS receipt_count;'})});
+ if(!sizeResponse.ok)throw Error('Database aggregate lookup failed');
+ const sizes=await sizeResponse.json(),row=sizes.result?.[0]?.results?.[0];
+ if(row)console.log(JSON.stringify({phase:'database_aggregates',...Object.fromEntries(['game_count','projection_bytes','event_count','event_bytes','receipt_count'].map(key=>[key,Number(row[key]??0)]))}));
  // Non-interactive Pages tails require an explicit immutable deployment ID.
  const deploymentResponse=await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/pages/projects/${env.CLOUDFLARE_PAGES_PROJECT}/deployments?env=production`,{headers:{Authorization:`Bearer ${env.CLOUDFLARE_API_TOKEN}`},signal:AbortSignal.timeout(15000),redirect:'error'});
  if(!deploymentResponse.ok)throw Error('Deployment lookup failed');
