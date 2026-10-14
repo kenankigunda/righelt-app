@@ -59,7 +59,7 @@ The suite catalog, focused selection and rollout rules are documented in `docs/a
 - Follow `docs/ai/RESOURCE_MANAGEMENT.md` for temporary servers, watchers, builds, browser tests and task-created preview tabs.
 - Use supervised repo entrypoints or `pnpm resources:run --kind heavy|preview|idle -- COMMAND ARGS`. Track exact run/tab/session ownership. Never stop another task's resources.
 - Inspect owned resources before heavy phases and at handoff. Clean temporary runs on completion, failure or cancellation. Close owned disposable previews through supported tools, reporting any tool limitation.
-- Defer heavy launches under memory pressure. Exit code 75 is interrupted, retryable validation, never a pass. Preserve evidence and explicitly retry after recovery.
+- Defer heavy launches under critical memory pressure; warning pressure is advisory. Exit code 75 is interrupted, retryable validation, never a pass. Preserve evidence and explicitly retry after recovery.
 - Keep Codex open. Do not archive chats, kill processes by name, or delete worktrees to reduce memory use.
 
 ## 5) Git Safety and Change Hygiene
