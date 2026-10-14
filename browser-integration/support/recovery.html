@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Recovery alerts</title>
+<link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/loading.css">
+<style>body{margin:0}#app{padding:0}.shell-header{min-height:110px;width:100%;box-sizing:border-box}.fixture-board{margin:100px auto 100px;width:min(80vw,560px);aspect-ratio:1}.fixture-board>.board{width:100%;height:100%;grid-template-columns:repeat(5,minmax(0,1fr))}.fixture-board .cell{min-width:0}.fixture-board>.overlay-lines{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}footer{position:fixed;bottom:0;left:0;right:0;height:var(--shell-mobile-tabbar-height);background:var(--surface-raised);display:flex;align-items:center;justify-content:center}</style>
+</head><body><div id="app" data-shell-route="game"><header class="shell-header"><h1>Recovery alert</h1><div class="shell-header-status" data-shell-alert-zone="active"><div id="shell-game-alerts"></div></div></header>
+<main><div class="board-wrap fixture-board" data-testid="game-board-wrap"><div class="board" data-testid="game-board"></div><div class="reconnect-background" aria-hidden="true"></div><svg class="overlay-lines" aria-hidden="true"><path d="M0 0L560 560" stroke="red"/></svg></div></main><footer>Players · Board · History</footer></div>
+<script type="module">
+import {renderGameAlertCard} from "/apps/web/shell/game-alert.js";
+import {issueDiagnostics} from "/apps/web/shell/issue-diagnostics.js";
+import {handleDiagnosticAction,renderDiagnosticDisclosure,closeDiagnostic} from "/apps/web/shell/diagnostic-disclosure.js";
+import {recoveryMessage,isBoardRecoveryPending} from "/apps/web/shell/recovery-view.js";
+import {mountLoadingFeedback} from "/apps/web/shell/loading.js";
+const wrap=document.querySelector('.board-wrap');
+wrap.querySelector('.board').innerHTML=Array.from({length:25},(_,i)=>`<button class="cell" aria-label="Square ${i+1}">●</button>`).join('');
+const incident=issueDiagnostics.capture("recovery:fixture",{operation:"move_recovery",stage:"command_confirmation",gameId:"fixture",action:{type:"rush",actorId:"U2-1"}});
+const button=(label,action)=>`<button class="secondary mini-button" data-action="${action}">${label}</button>`;
+const modes={
+ recording:{game:{recovering:true,pendingCommandCount:1},action:button("Reload now","reconnect-safely")},
+ overdue:{game:{recovering:true,pendingCommandCount:3,confirmationOverdue:true},action:button("Reload now","reconnect-safely")},
+ reconnect:{game:{recovering:true,recoveryStartedAt:Date.now()-5000},action:button("Reload now","reconnect-safely")},
+ storage:{game:{storageBlocked:true,unsavedCommand:true},action:button("Retry saving","retry-saving")+button("Dismiss","dismiss-recovery-notice")},
+ paused:{game:{storageBlocked:true},body:"Saving is paused.",action:button("Retry saving","retry-saving")},
+ upgrade:{game:{upgradeRequired:true},action:button("Refresh","refresh-game")},
+ signin:{game:{recovering:true,recoveryIssue:"invalid_credentials"},action:button("Sign in","account-open")},
+ failure:{tone:"danger",body:"Board changed before your move was recorded. Check it and try again.",action:button("Dismiss","dismiss-failed-operation")},
+ resolved:{tone:"",body:"Resolved",action:button("Dismiss","dismiss-diagnostic")},
+ information:{tone:"",body:"History changed. Showing the closest available move.",diagnostics:false},
+};
+window.renderMode=(name,options={})=>{
+ closeDiagnostic(incident);
+ const mode=modes[name];
+ const html=renderGameAlertCard({tone:mode.tone??"warn",body:options.longMessage?"The response is taking longer than expected. Your moves are saved on this device while Righelt checks their receipts. Please keep this game open until recording finishes.":mode.body??recoveryMessage(mode.game),action:mode.action??"",incidentId:options.diagnostics===false||mode.diagnostics===false?null:incident,testId:"fixture-alert"});
+ document.querySelector('#shell-game-alerts').innerHTML=`<div class="shell-game-alert-stack-card is-active">${html}</div>`+(options.stacked?`<div class="shell-game-alert-stack-card" data-stack-index="1" aria-hidden="true">${renderGameAlertCard({body:"Another notification"})}</div>`:"");
+};
+window.setRecovery=game=>{
+ const pending=isBoardRecoveryPending(game);
+ wrap.dataset.reconnecting=String(pending);wrap.dataset.loadingState=pending?"pending":"idle";wrap.dataset.loadingKey=`recovery:${game?.id??"fixture"}`;wrap.dataset.loadingContext="external";wrap.setAttribute("aria-busy",String(pending));
+};
+document.addEventListener('click',async event=>{
+ const target=event.target.closest('[data-action]');if(!target)return;
+ if(!["toggle-diagnostic","copy-diagnostic"].includes(target.dataset.action))return;
+ const disclosure=target.closest('.issue-diagnostic');await handleDiagnosticAction(target);
+ disclosure.outerHTML=renderDiagnosticDisclosure(incident);document.querySelector(`[data-action="${target.dataset.action}"]`)?.focus({preventScroll:true});
+});
+mountLoadingFeedback(document);window.renderMode("overdue");window.setRecovery({id:"fixture",sharedMutationsBlocked:false});window.fixtureReady=true;
+</script></body></html>

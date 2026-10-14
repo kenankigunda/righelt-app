@@ -270,7 +270,9 @@ body {
   width: min(100%, 32rem);
   max-width: calc(100% - 2rem);
   min-height: var(--shell-alert-stack-height, 5.6rem);
-  height: var(--shell-alert-stack-height, 5.6rem);
+  height: auto;
+  max-height: calc(100dvh - 1.8rem);
+  container: game-alert / inline-size;
   display: flex;
   align-items: flex-start;
   transform: translateX(-50%);
@@ -757,7 +759,8 @@ button.secondary:disabled {
 #shell-game-alerts {
   position: relative;
   width: 100%;
-  height: 100%;
+  height: auto;
+  max-height: inherit;
   min-width: 0;
   pointer-events: auto;
 }
@@ -770,7 +773,8 @@ button.secondary:disabled {
 .shell-game-alert {
   margin: 0;
   width: 100%;
-  height: 100%;
+  height: auto;
+  max-height: inherit;
   min-width: 0;
   border-left-width: 0;
   border-radius: 14px;
@@ -778,11 +782,12 @@ button.secondary:disabled {
   border: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
   box-sizing: border-box;
   animation: shell-game-alert-reveal 180ms ease;
-  overflow: hidden;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.85rem;
+  overflow: visible;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  grid-template-areas: "copy disclosure" "actions actions" "details details";
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px 8px;
 }
 
 .shell-game-alert-stack-card {
@@ -796,6 +801,9 @@ button.secondary:disabled {
 }
 
 .shell-game-alert-stack-card.is-active {
+  position: relative;
+  min-width: 0;
+  max-height: inherit;
   z-index: 3;
 }
 
@@ -836,11 +844,55 @@ button.secondary:disabled {
 }
 
 .shell-game-alert-copy {
+  grid-area: copy;
   min-width: 0;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
+  align-self: center;
+  overflow-wrap: anywhere;
+}
+
+.shell-game-alert-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.shell-game-alert-actions > button {
+  min-height: 44px;
+  min-width: 44px;
+  margin: 0;
+}
+
+.shell-game-alert:not(:has(.issue-diagnostic)) {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "copy" "actions";
+  grid-template-rows: auto auto;
+}
+
+.shell-game-alert:not(:has(.shell-game-alert-actions)) {
+  grid-template-areas: "copy disclosure" "details details";
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.shell-game-alert:not(:has(.issue-diagnostic, .shell-game-alert-actions)) {
+  grid-template-areas: "copy";
+  grid-template-rows: auto;
+}
+
+@container game-alert (min-width: 480px) {
+  .shell-game-alert:has(.shell-game-alert-actions) {
+    grid-template-columns: minmax(0, 1fr) auto 44px;
+    grid-template-areas: "copy actions disclosure" "details details details";
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .shell-game-alert:has(.shell-game-alert-actions):not(:has(.issue-diagnostic)) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "copy actions";
+    grid-template-rows: auto;
+  }
+  .shell-game-alert-actions { max-width: 13rem; align-self: center; justify-content: flex-end; }
 }
 
 @keyframes shell-game-alert-reveal {
@@ -869,7 +921,7 @@ button.secondary:disabled {
   border-color: color-mix(in srgb, var(--danger) 38%, var(--line));
 }
 
-.sync-failure-banner {
+.sync-failure-banner:not(.shell-game-alert) {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1947,15 +1999,16 @@ textarea:focus-visible {
 
   .shell-header-status {
     position: fixed;
-    left: 1rem;
-    right: 1rem;
-    top: 1rem;
+    left: 0;
+    right: 0;
+    top: 0;
     width: auto;
     max-width: none;
     transform: none;
     z-index: 20;
-    min-height: var(--shell-alert-stack-height-narrow, 6.2rem);
-    height: var(--shell-alert-stack-height-narrow, 6.2rem);
+    min-height: 0;
+    height: auto;
+    max-height: calc(100dvh - var(--shell-mobile-tabbar-height) - 1rem);
   }
 
   .shell-header {
@@ -2083,24 +2136,28 @@ textarea:focus-visible {
 .account-autosave[data-state="saving"] {  }
 @media (prefers-reduced-motion: reduce) { .account-autosave[data-state="saving"] { animation: none; background-image: none; } }
 
-/* Reconnect treatment stays behind the board and never captures input. */
+/* Recovery preserves board geometry and leaves input ownership to the guards. */
 .board-wrap { position: relative; isolation: isolate; }
-.reconnect-background { display: none; position: absolute; inset: -8px; z-index: -1; pointer-events: none; border-radius: 14px; overflow: hidden; }
-.board-wrap[data-reconnecting="true"] .reconnect-background { display: block; background: linear-gradient(105deg, transparent 30%, rgb(49 94 139 / 7%) 50%, transparent 70%); background-size: 240% 100%; animation: reconnect-sweep 3s ease-in-out infinite; }
-@keyframes reconnect-sweep { from { background-position: 140% 0; } to { background-position: -40% 0; } }
+.board-wrap > .board, .board-wrap > .overlay-lines { transition: opacity 180ms ease; }
+.reconnect-background { display: none; position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; }
+.board-wrap[data-reconnecting="true"]:is([data-loading-phase="visible"], [data-loading-phase="slow"]) > :is(.board, .overlay-lines) { opacity: .2; }
+.board-wrap[data-reconnecting="true"]:is([data-loading-phase="visible"], [data-loading-phase="slow"]) .reconnect-background { display: block; }
+.reconnect-background::before { content: ""; position: absolute; top: 0; bottom: 0; left: -35%; width: 35%; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--player-p1) 18%, transparent) 32%, color-mix(in srgb, var(--player-p2) 22%, transparent) 68%, transparent); clip-path: polygon(25% 0, 100% 0, 75% 100%, 0 100%); animation: reconnect-sweep 2.4s ease-in-out infinite; }
+@keyframes reconnect-sweep { from { transform: translateX(0); } to { transform: translateX(400%); } }
+[data-loading-hidden] .reconnect-background::before { animation-play-state: paused; }
 .issue-diagnostic > button.issue-caret { background: transparent; color: var(--muted); box-shadow: none; border: 0; min-width: 44px; min-height: 44px; padding: 0; opacity: .6; font-size: 20px; }
 .issue-details { font-size: 13px; line-height: 1.4; }
 .issue-details pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; user-select: text; }
-.shell-game-alert:has(.issue-diagnostic) { flex-wrap: wrap; }
-.shell-game-alert .issue-diagnostic { flex: 0 0 44px; }
-.shell-game-alert .issue-diagnostic:has(.issue-details) { flex-basis: 100%; }
+.shell-game-alert .issue-diagnostic { display: contents; }
+.shell-game-alert .issue-caret { grid-area: disclosure; align-self: start; width: 44px; height: 44px; }
+.shell-game-alert .issue-details { grid-area: details; min-width: 0; min-height: 0; overflow: auto; border-top: 1px solid var(--divider, var(--line)); padding-top: 12px; }
+.shell-game-alert .issue-details > p { margin: 0 0 8px; }
+.shell-game-alert .issue-details > button { min-height: 44px; margin: 0 8px 8px 0; }
+.shell-game-alert .issue-details pre { margin: 0; }
 .shell-header-status:has(.issue-details) { height: auto; }
-.shell-game-alerts:has(.issue-details) { height: auto; min-height: var(--shell-game-alert-height, 100px); }
-.shell-game-alert-stack-card.is-active:has(.issue-details) { position: relative; }
-.shell-game-alert:has(.issue-details) { height: auto; overflow: visible; }
-.shell-game-alert:has(.issue-details) .shell-game-alert-copy { -webkit-line-clamp: unset; }
 @media (prefers-reduced-motion: reduce) {
-  .board-wrap[data-reconnecting="true"] .reconnect-background { animation: none; background: rgb(49 94 139 / 4%); }
+  .board-wrap > .board, .board-wrap > .overlay-lines { transition: none; }
+  .reconnect-background::before { animation: none; left: 32.5%; }
 }
 
-.board-wrap > .loading-pieces { position: absolute; right: 8px; bottom: -22px; opacity: .35; color: var(--muted); z-index: -1; }
+.board-wrap > .loading-pieces { display: none; }
