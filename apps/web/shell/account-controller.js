@@ -1,3 +1,4 @@
+import { STORAGE_GENERATION_HEADER } from "../generated/packages/shared-types/src/storage-policy.js";
 import { withRequestEvidence } from "./request-evidence.js";
 import { parseRouteFromHash } from "./routes.js";
 import {
@@ -68,6 +69,7 @@ export const createAccountController = ({
     available = true,
     maintenance = false,
     ready = false,
+    storageGeneration = null,
     session = { authenticated: false },
     generation = 0,
     busy = false,
@@ -131,6 +133,7 @@ export const createAccountController = ({
     maintenance,
     ready,
     siteKey,
+    ...(storageGeneration ? { storageGeneration } : {}),
     session: structuredClone(session),
     generation,
     pendingLogout: Boolean(readPending()),
@@ -230,6 +233,7 @@ export const createAccountController = ({
             signal: controller.signal,
             headers: {
               "Content-Type": "application/json",
+              ...(storageGeneration ? { [STORAGE_GENERATION_HEADER]: storageGeneration } : {}),
               [AUTH_REQUEST_HEADER]: "1",
               [AUTH_PROTOCOL_HEADER]: String(AUTH_PROTOCOL_VERSION),
               ...(context ? { [SESSION_CONTEXT_HEADER]: context } : {}),
@@ -325,6 +329,7 @@ export const createAccountController = ({
         typeof result.accountsRequired !== "boolean"
       )
         throw failure("upgrade_required");
+      storageGeneration = typeof result.storageGeneration === "string" ? result.storageGeneration : null;
       enabled = result.accountsRequired;
       available = result.accountsAvailable !== false;
       maintenance = result.maintenance === true;
@@ -479,6 +484,7 @@ export const createAccountController = ({
             signal: controller.signal,
             headers: {
               ...init.headers,
+              ...(storageGeneration ? { [STORAGE_GENERATION_HEADER]: storageGeneration } : {}),
               ...(enabled
                 ? {
                     [AUTH_REQUEST_HEADER]: "1",
@@ -491,6 +497,14 @@ export const createAccountController = ({
         }),
       );
       check();
+      const observedGeneration = response.headers?.get?.(STORAGE_GENERATION_HEADER);
+      if (observedGeneration && observedGeneration !== storageGeneration) {
+        storageGeneration = observedGeneration;
+        ready = false;
+        retire();
+        void start().catch(() => publish());
+        throw failure("storage_reset");
+      }
       const json = response.json.bind(response);
       response.json = async () => {
         const body = await json();

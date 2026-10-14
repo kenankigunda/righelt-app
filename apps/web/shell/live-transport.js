@@ -1,3 +1,4 @@
+import { STORAGE_GENERATION_HEADER } from "../generated/packages/shared-types/src/storage-policy.js";
 import { issueDiagnostics } from "./issue-diagnostics.js";
 import { equivalentGameStates, listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
 import { loadIdentity, saveIdentity } from "./persistence.js";
@@ -90,7 +91,7 @@ export const createLiveTransportStore = ({
   let active = true;
   const assertActive = () => { if (!active) throw Object.assign(new Error("session_changed"), { code: "session_changed" }); };
   commandJournal ??= createCommandJournal({
-    ...(auth?.enabled ? { databaseName: `righelt.online-commands.account-v1.${auth.session.contextId || "anonymous"}` } : {}),
+    ...(auth?.storageGeneration ? { databaseName: `righelt.online-commands.storage.${auth.storageGeneration}.${auth?.enabled ? auth.session.contextId || "anonymous" : "guest"}` } : auth?.enabled ? { databaseName: `righelt.online-commands.account-v1.${auth.session.contextId || "anonymous"}` } : {}),
     isCurrent: () => active,
   });
   const rawFetcher = fetcher;
@@ -101,7 +102,7 @@ export const createLiveTransportStore = ({
     const routeKind = /\/games\/[^/?]+\/([^/?]+)/.exec(url)?.[1];
     Object.assign(evidence, { requestId, status: null, durationMs: 0, serverBuild: "unavailable", requestPhase: "headers",
       requestKind: ["apply", "end-turn", "reconcile"].includes(routeKind) ? routeKind : "read" });
-    init = { ...init, headers: { ...init.headers, "X-Righelt-Request-Id": requestId } };
+    init = { ...init, headers: { ...init.headers, "X-Righelt-Request-Id": requestId, ...(auth?.storageGeneration ? { [STORAGE_GENERATION_HEADER]: auth.storageGeneration } : {}) } };
     let response;
     try { response = await rawFetcher(url, init); }
     catch(error) {
@@ -122,6 +123,8 @@ export const createLiveTransportStore = ({
       if (optimistic.incidentId) issueDiagnostics.capture(`recovery:${gameId}`, data);
     }
     assertActive();
+    const responseGeneration = response.headers?.get?.(STORAGE_GENERATION_HEADER);
+    if (auth?.storageGeneration && responseGeneration !== auth.storageGeneration) throw Object.assign(new Error("storage_reset"), { code: "storage_reset" });
     const json = response.json.bind(response);
     response.json = async () => { const body = await json(); assertActive(); return body; };
     return response;

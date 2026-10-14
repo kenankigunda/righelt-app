@@ -12,10 +12,10 @@ const { build } = wranglerRequire("esbuild");
 const root = path.resolve(import.meta.dirname, "../../..");
 import { fixture } from "./fixture.mjs";
 
-test("R-01/R-02 actual Workers/D1 rollback, ordering, receipt restart and migration", { timeout: 120000 }, async () => {
+for (const compression of [false,true]) test(`format=${compression ? "gzip" : "JSON"}: R-01/R-02 actual Workers/D1 rollback, ordering, receipt restart and migration`, { timeout: 120000 }, async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "righelt-t114-runtime-"));
   const bundle = await build({ stdin: { contents: fixture, resolveDir: root, sourcefile: "t114-runtime-fixture.ts" }, bundle: true, format: "esm", platform: "browser", write: false });
-  const options = { modules: true, script: bundle.outputFiles[0].text, compatibilityDate: "2026-03-12", d1Databases: ["DB"], durableObjects: { GAME_ROOMS: { className: "GameRoomDO", useSQLite: true } }, d1Persist: path.join(directory, "d1"), durableObjectsPersist: path.join(directory, "do") };
+  const options = { modules: true, bindings:{STORAGE_COMPRESSION:compression?"true":"false"}, script: bundle.outputFiles[0].text, compatibilityDate: "2026-03-12", d1Databases: ["DB"], durableObjects: { GAME_ROOMS: { className: "GameRoomDO", useSQLite: true } }, d1Persist: path.join(directory, "d1"), durableObjectsPersist: path.join(directory, "do") };
   let runtime = new Miniflare(options);
   try {
     let db = await runtime.getD1Database("DB");
@@ -36,7 +36,7 @@ test("R-01/R-02 actual Workers/D1 rollback, ordering, receipt restart and migrat
     ];
     for (let index = 0; index < 4; index++) {
       const statements = mutations();
-      statements.splice(index, 0, db.prepare("INSERT INTO live_events VALUES (?,?,?)").bind("runtime-game", seq, "duplicate"));
+      statements.splice(index, 0, db.prepare("SELECT * FROM harness_missing_table"));
       await assert.rejects(db.batch(statements));
       assert.equal((await db.prepare("SELECT event_seq FROM live_games WHERE game_id=?").bind("runtime-game").first()).event_seq, seq);
       assert.equal(await db.prepare("SELECT * FROM live_command_receipts WHERE client_command_id='v2:atomic'").first(), null);
@@ -57,7 +57,7 @@ test("R-01/R-02 actual Workers/D1 rollback, ordering, receipt restart and migrat
     assert.equal(after.gameplay_revision, 0);
     assert.equal(JSON.parse(after.state_json).viewers.length, 12);
     const eventRows = (await db.prepare("SELECT event_seq FROM live_events WHERE game_id=? ORDER BY event_seq").bind("runtime-game").all()).results;
-    assert.deepEqual(eventRows.map((row) => row.event_seq), Array.from({ length: after.event_seq }, (_, index) => index + 1));
+    assert.equal(eventRows.length, 0);
     const initialState = JSON.parse(after.state_json);
     const command = { protocolVersion: 2, gameId: "runtime-game", identityId: "actor", clientCommandId: "v2:runtime-move", kind: "move", payload: {}, expectedState: initialState.board.state, expectedGameplayRevision: 0 };
     command.fingerprint = await commandFingerprint(command);
@@ -80,6 +80,8 @@ test("R-01/R-02 actual Workers/D1 rollback, ordering, receipt restart and migrat
     assert.equal(restarted.game.viewers.length, 12);
     assert.equal((await db.prepare("SELECT event_seq FROM live_games WHERE game_id=?").bind("runtime-game").first()).event_seq, restarted.eventSeq);
     // Reconstruct only complete event evidence, retaining legacy IDs as non-terminal markers.
+    const legacyReceipt = await db.prepare("SELECT * FROM live_command_receipts WHERE client_command_id=?").bind(command.clientCommandId).first();
+    await db.prepare("INSERT INTO live_events VALUES (?,?,?)").bind("runtime-game", legacyReceipt.event_seq, JSON.stringify({commandOutcome: {gameId:"runtime-game",clientCommandId:command.clientCommandId,identityId:"actor",fingerprint:command.fingerprint,outcome:"accepted",reason:null,eventSeq:legacyReceipt.event_seq,gameplayRevision:legacyReceipt.gameplay_revision}})).run();
     await db.prepare("DELETE FROM live_command_receipts WHERE client_command_id=?").bind(command.clientCommandId).run();
     await db.prepare("INSERT INTO live_events VALUES ('runtime-game',999,?)").bind(JSON.stringify({ clientCommandId: "legacy-trimmed" })).run();
     await db.prepare("INSERT INTO live_events VALUES ('runtime-game',1000,'{')").run();

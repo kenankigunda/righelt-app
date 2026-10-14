@@ -35,7 +35,7 @@ export default defineConfig({
     },
     ...["firefox", "webkit"].map(name => ({
       name,
-      testMatch: /(sync-recovery-(pressure|ux)|recovery-freeze-regression|browser-move-input|home-create-refresh)\.spec\.mjs/,
+      testMatch: /(sync-recovery-(pressure|ux)|recovery-freeze-regression|browser-move-input|home-create-refresh|storage-lifecycle)\.spec\.mjs/,
       use: { ...devices[name === "firefox" ? "Desktop Firefox" : "Desktop Safari"],
         launchOptions: browserLaunchOptions(name) },
     })),

@@ -5,6 +5,7 @@ import {
   SESSION_CONTEXT_HEADER,
   SESSION_COOKIE,
 } from "../packages/shared-types/src/auth-policy.js";
+import { STORAGE_GENERATION_HEADER } from "../packages/shared-types/src/storage-policy.js";
 import { fileURLToPath } from "node:url";
 export function requireLegacyGameId(legacyGameId) {
   if (typeof legacyGameId !== "string" || !legacyGameId.trim())
@@ -31,6 +32,7 @@ export async function accountSmoke({
   if (!username || !password)
     throw Error("Acknowledged smoke account credentials required");
   const browsers = [];
+  let generation = "";
   const browser = () => {
     const cookies = new Map();
     let context = "";
@@ -42,6 +44,7 @@ export async function accountSmoke({
           signal: AbortSignal.timeout(15000),
           headers: {
             Origin: base.origin,
+            ...(generation ? {[STORAGE_GENERATION_HEADER]:generation} : {}),
             "Content-Type": "application/json",
             [AUTH_REQUEST_HEADER]: "1",
             [AUTH_PROTOCOL_HEADER]: String(AUTH_PROTOCOL_VERSION),
@@ -87,6 +90,7 @@ export async function accountSmoke({
       await a.call("/api/shell/bootstrap"),
       "Bootstrap",
     );
+    generation=bootstrap.storageGeneration??"";
     if (!bootstrap.accountsRequired || !bootstrap.accountsAvailable)
       throw Error("Accounts are not available and required");
     for (const client of browsers) {

@@ -10,6 +10,7 @@ export type AuthErrorCode =
   | "username_unavailable"
   | "stale_operation"
   | "session_changed"
+  | "storage_reset"
   | "identity_mismatch"
   | "upgrade_required"
   | "legacy_read_only"

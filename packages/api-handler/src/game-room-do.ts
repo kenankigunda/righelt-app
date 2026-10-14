@@ -1,4 +1,8 @@
+import { STORAGE_POLICY, STORAGE_GENERATION_HEADER } from "../../shared-types/src/storage-policy";
+import { storageRoomName } from "./storage-generation";
+import { archiveRow, beginArchive, captureArchiveStep, pruneArchivedEvidence, restoreArchiveStep, saveArchivedView } from "./storage-archive";
 import { withCutoverPolicy, maintenanceAllowed, cutoverWritePermit } from './account-cutover';
+import { assertStorageGeneration } from './storage-generation';
 import { enrichAccountNames } from './account-profiles';
 import type { AuthDatabase } from './auth-db';
 import { AUTH_PROTOCOL_VERSION } from '../../shared-types/src/auth-policy.js';
@@ -180,6 +184,8 @@ export class GameRoomDO {
   private env: LiveGameEnv;
   private game: LiveGame | null = null;
   private requestId: string | null = null;
+  private requestOperation = "";
+  private requestIdentity = "";
   private requestAuthority: GameAuthority | null = null;
   private requestedGameId: string | null = null;
   private eventSeq = 0;
@@ -243,6 +249,23 @@ export class GameRoomDO {
         this.requestAuthority = null;
         this.requestId = request.headers.get("X-Righelt-Request-Id");
         try {
+          if(new URL(request.url).pathname==="/_storage/tick") {
+            assertStorageGeneration(request,this.env);
+            this.requestedGameId=request.headers.get("x-game-id");
+            if(!this.requestedGameId)return json({ok:false,error:"invalid_game"},400);
+            this.game=null;
+            let row=await archiveRow(this.env,this.requestedGameId);
+            if(row?.status==="restoring"){const ready=await restoreArchiveStep(this.env,row);this.game=null;if(!ready)this.scheduleRestoreStep(row.game_id,Number(request.headers.get("x-storage-restore-steps")??0));return json({ok:true,ready});}
+            if(this.env.STORAGE_ARCHIVES_ENABLED!=="true")return json({ok:true,disabled:true});
+            if(row?.status==="archived"){await pruneArchivedEvidence(this.env,row);return json({ok:true,archived:true});}
+            const game=await this.ensureLoaded();
+            if(!game)return json({ok:true,missing:true});
+            if(!row){if(!await beginArchive(this.env,game,this.eventSeq))return json({ok:true,eligible:false});row=await archiveRow(this.env,game.id);}
+            await this.deliveryTail;
+            const archived=row?await captureArchiveStep(this.env,row,game):false;
+            if(archived){this.game=null;}
+            return json({ok:true,archived});
+          }
           if (authActive(this.env) && new URL(request.url).pathname === "/auth-recheck") {
             await this.recheckSockets();
             return json({ ok: true });
@@ -276,8 +299,11 @@ export class GameRoomDO {
   }
 
   private async fetchQueued(request: Request): Promise<Response> {
+    assertStorageGeneration(request, this.env);
     const url = new URL(request.url);
     const path = url.pathname;
+    this.requestOperation = path;
+    this.requestIdentity = asIdentity(url.searchParams.get("identityId")) ?? "";
     const headerGameId = asIdentity(request.headers.get("x-game-id"));
     if (headerGameId) {
       if (authActive(this.env) && this.getLoadedGameId() && this.getLoadedGameId() !== headerGameId) throw new AuthProblem("invalid_input", 400);
@@ -295,6 +321,7 @@ export class GameRoomDO {
     if (request.method === "POST" && path === "/create") {
       const body = await parseBody(request);
       const identityId = asIdentity(body.identityId);
+      this.requestIdentity=identityId??"";
       const gameId = asIdentity(body.gameId);
       if (!identityId || !gameId) {
         return json({ ok: false, error: "invalid_identity" }, 400);
@@ -314,6 +341,7 @@ export class GameRoomDO {
     if (request.method === "POST" && path === "/create-from-scenario") {
       const body = await parseBody(request);
       const identityId = asIdentity(body.identityId);
+      this.requestIdentity=identityId??"";
       const gameId = asIdentity(body.gameId);
       const scenario = asScenarioRecord(body.scenario);
       const hasInitialSelectionAction = typeof body.initialSelectionAction !== "undefined" && body.initialSelectionAction !== null;
@@ -364,6 +392,7 @@ export class GameRoomDO {
 
     const body = ["/moves", "/apply", "/end-turn", "/reconcile"].includes(path) ? await readSyncBody(request) : await parseBody(request);
     const identityId = asIdentity(body.identityId);
+      this.requestIdentity=identityId??"";
     if (!identityId) {
       return json({ ok: false, error: "invalid_identity" }, 400);
     }
@@ -977,6 +1006,7 @@ export class GameRoomDO {
   private async setPresenceFromSessions(identityId: string, excludedSocket?: WebSocket) {
     this.env = await withCutoverPolicy(this.env);
     if (authActive(this.env) && (this.env.AUTH_ENABLED !== "true" || this.env.ACCOUNT_POLICY?.maintenance)) return;
+    if (this.getLoadedGameId() && await archiveRow(this.env,this.getLoadedGameId()!)) return;
     const loaded = await this.ensureLoaded();
     const game = loaded ? clone(loaded) : null;
     if (!game) {
@@ -1136,12 +1166,42 @@ export class GameRoomDO {
     return accepted;
   }
 
+  private scheduleRestoreStep(gameId:string,remaining:number) {
+    if(!Number.isSafeInteger(remaining) || remaining<=0)return;
+    const rooms=(this.env as LiveGameEnv & {GAME_ROOMS?:{idFromName:(name:string)=>unknown;get:(id:unknown)=>{fetch:(request:Request)=>Promise<Response>}}}).GAME_ROOMS;
+    if(!rooms || !this.state.waitUntil)return;
+    // One separate invocation per chunk avoids both queue deadlock and the
+    // free-plan query limit. A stalled chain resumes from its durable cursor.
+    this.state.waitUntil(rooms.get(rooms.idFromName(storageRoomName(this.env,gameId))).fetch(new Request("https://game-room/_storage/tick",{method:"POST",headers:{"x-game-id":gameId,"x-storage-restore-steps":String(remaining-1),...(this.env.STORAGE_GENERATION?{[STORAGE_GENERATION_HEADER]:this.env.STORAGE_GENERATION}:{})}})).then(async response=>{await response.body?.cancel();}).catch(()=>{console.warn(JSON.stringify({event:"storage_restore_deferred"}));}));
+  }
+
   private async persistCandidate(game: LiveGame, event: (ServerEvent & { eventSeq: number }) | null, receipt?: CommandReceipt, systemPresence = false) {
     this.env = await withCutoverPolicy(this.env);
     if (authActive(this.env) && (this.env.AUTH_ENABLED !== "true" || !maintenanceAllowed(this.env,this.requestAuthority?.accountId))) throw new AuthProblem("temporarily_unavailable",503);
     const permit = cutoverWritePermit(this.env,game.id,this.requestAuthority,systemPresence);
     if (!authActive(this.env) && game.ownershipMode === "account_v1") throw new AuthProblem("temporarily_unavailable", 503);
     if (authActive(this.env) && !this.requestAuthority && !systemPresence) throw new AuthProblem("invalid_credentials", 401);
+    const archived=await archiveRow(this.env,game.id);
+    if(archived && archived.status!=="archiving" && ["/history","/live"].includes(this.requestOperation)) {
+      const actor=this.requestAuthority?.accountId ?? this.requestIdentity;
+      if(actor){
+        try {
+          this.eventSeq=await saveArchivedView(this.env,archived,game,actor,{before:[...permit.before as D1Statement[],...(this.requestAuthority && authActive(this.env)?gameGuardStatements(this.env,this.requestAuthority) as D1Statement[]:[])],after:permit.after as D1Statement[]});
+          this.game=clone(game);return;
+        } catch(error) {
+          this.needsDurableReload=true;
+          if(String(error).includes("storage_capacity"))throw new AuthProblem("storage_capacity",503);
+          throw error;
+        }
+      }
+    }
+    if(archived){
+      if(!await restoreArchiveStep(this.env,archived)){this.scheduleRestoreStep(game.id,STORAGE_POLICY.restoreDrainSteps);throw new AuthProblem("storage_restoring",503);}
+      this.needsDurableReload=true;
+      const projection=await loadGameProjection(this.env,game.id);
+      if(projection?.kind!=="ok")throw new AuthProblem("archive_unavailable",503);
+      this.game=projection.game;this.eventSeq=projection.eventSeq;this.needsDurableReload=false;
+    }
     const started = Date.now();
     const base = this.eventSeq;
     const gameplay = (value: LiveGame | null) => value ? JSON.stringify([value.board, value.moves, value.turns]) : null;
@@ -1153,7 +1213,7 @@ export class GameRoomDO {
       Object.assign(event, { commandOutcome: receipt });
     }
     try {
-      await persistGameState(this.env, game, base + 1, event, { baseEventSeq: base, before: permit.before as D1Statement[], after: permit.after as D1Statement[], statements: [...(this.requestAuthority && authActive(this.env) ? gameGuardStatements(this.env, this.requestAuthority) as D1Statement[] : []), ...(receipt ? [commandReceiptStatement(this.env, receipt)] : [])] });
+      await persistGameState(this.env, game, base + 1, event, { baseEventSeq: base, invitesChanged: !this.game || JSON.stringify(this.game.inviteTokens) !== JSON.stringify(game.inviteTokens), activityChanged: !systemPresence && (!this.game || game.gameplayRevision !== this.game.gameplayRevision || Boolean(event && ["join_request_created", "join_request_resolved"].includes(event.type)) || Boolean(event && "reason" in event && /revert|seat|play_as|player_joined/.test(event.reason))), before: permit.before as D1Statement[], after: permit.after as D1Statement[], statements: [...(this.requestAuthority && authActive(this.env) ? gameGuardStatements(this.env, this.requestAuthority) as D1Statement[] : []), ...(receipt ? [commandReceiptStatement(this.env, receipt)] : [])] });
     } catch (error) {
       // A rejected batch response may follow a durable commit. Force a durable read
       // before any next mutation; never retain or acknowledge the speculative candidate.
@@ -1162,6 +1222,7 @@ export class GameRoomDO {
       this.eventSeq = 0;
       try { await this.ensureLoaded(); this.needsDurableReload = false; } catch { /* Retry durable read before the next mutation. */ }
       this.env = await withCutoverPolicy(this.env);
+      if (String(error).includes("storage_capacity")) throw new AuthProblem("storage_capacity",503);
       if (authActive(this.env) && !this.requestAuthority && !systemPresence) throw new AuthProblem("upgrade_required", 426);
       if (authActive(this.env) && this.requestAuthority && !await currentGameAuthority(this.env, this.requestAuthority)) throw new AuthProblem("session_changed", 409);
       throw error;
@@ -1201,7 +1262,7 @@ export class GameRoomDO {
       payload = sanitizeGameResponse(payload as unknown as Record<string, unknown>, session.authority ?? null, !maintenanceAllowed(env,session.authority?.accountId)) as unknown as ServerEvent;
     }
     try {
-      socket.send(JSON.stringify({ ...payload, ...(authActive(env) ? { authProtocolVersion: AUTH_PROTOCOL_VERSION } : {}), protocolVersion: 2, gameId: this.getLoadedGameId() }));
+      socket.send(JSON.stringify({ ...payload, ...(env.STORAGE_GENERATION ? { storageGeneration: env.STORAGE_GENERATION } : {}), ...(authActive(env) ? { authProtocolVersion: AUTH_PROTOCOL_VERSION } : {}), protocolVersion: 2, gameId: this.getLoadedGameId() }));
     } catch {
       const session = this.sessions.get(socket);
       this.sessions.delete(socket);

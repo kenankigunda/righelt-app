@@ -9,6 +9,10 @@ binding = "CF_VERSION_METADATA"
 
 [vars]
 AUTH_ENABLED = "false"
+STORAGE_COMPRESSION = "true"
+STORAGE_ARCHIVES_ENABLED = "false"
+STORAGE_BUDGET_ENABLED = "false"
+STORAGE_EXCLUSIVE_R2 = "false"
 
 [[services]]
 binding = "HASH_SERVICE"
@@ -24,8 +28,8 @@ enabled = false
 
 [[d1_databases]]
 binding = "DB"
-database_name = "righelt-db-dev"
-database_id = "22435cc4-6655-4bdf-a05d-d100cd8e6cc9"
+database_name = "righelt-db-prod"
+database_id = "4ce7cf1e-627e-427d-99c8-438f34d51aeb"
 migrations_dir = "../../db/migrations"
 
 [[durable_objects.bindings]]

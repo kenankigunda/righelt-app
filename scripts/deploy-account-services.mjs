@@ -3,6 +3,7 @@ import { requireDeploymentOrigin } from "./deployment-origin.mjs";
 import { requireLegacyGameId } from "./account-smoke.mjs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 const run = (args, input) => {
   const result = spawnSync("pnpm", ["exec", "wrangler", ...args], {
     env: wranglerEnvironment(process.env),
@@ -46,9 +47,18 @@ export function validateDeployment(env) {
     requireLegacyGameId(env.ACCOUNT_SMOKE_LEGACY_GAME_ID);
   return { enabled, origin };
 }
+export function validateStorageDeployment(env,source) {
+  const name=/database_name\s*=\s*"([^"]+)"/.exec(source)?.[1];
+  if(!name)throw Error("Missing database binding");
+  if(env.CLOUDFLARE_D1_DB_NAME && ![name,"DB"].includes(env.CLOUDFLARE_D1_DB_NAME))throw Error("Migration target differs from deployed database binding");
+  if(name.startsWith("righelt-db-prod") && !env.RIGHELT_STORAGE_GENERATION)throw Error("Prepared production database requires RIGHELT_STORAGE_GENERATION");
+  if(env.RIGHELT_STORAGE_GENERATION && !/^[A-Za-z0-9_-]{1,96}$/.test(env.RIGHELT_STORAGE_GENERATION))throw Error("Invalid storage generation");
+  if(!["true","false"].includes(env.RIGHELT_STORAGE_COMPRESSION||"false"))throw Error("Storage compression must be true or false");
+}
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     const { enabled, origin } = validateDeployment(process.env);
+    validateStorageDeployment(process.env,readFileSync(new URL("../apps/api/wrangler.toml",import.meta.url),"utf8"));
     if (!process.argv.includes("--check-only")) {
       run(["deploy", "--config", "apps/auth-hash/wrangler.toml"]);
       run(["deploy", "--config", "apps/auth/wrangler.toml"]);
@@ -58,6 +68,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         "apps/api/wrangler.toml",
         "--var",
         `AUTH_ENABLED:${enabled}`,
+        "--var",
+        `STORAGE_GENERATION:${process.env.RIGHELT_STORAGE_GENERATION || ""}`,
+        "--var",
+        `STORAGE_COMPRESSION:${process.env.RIGHELT_STORAGE_COMPRESSION || "false"}`,
         "--var",
         `AUTH_ALLOWED_ORIGINS:${origin}`,
         "--var",
