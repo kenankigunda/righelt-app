@@ -13,19 +13,23 @@ on:
         description: "Deploy during closed maintenance for first canary registration; do not reopen play"
         type: boolean
         default: false
+      diagnose_game:
+        description: "Capture filtered exceptions for one viewer-entry request; skip deployment"
+        type: string
+        default: ""
   workflow_run:
     workflows: ["CI"]
     types:
       - completed
 
 concurrency:
-  group: deploy-main
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnose_game != '' && 'production-diagnostic' || 'deploy-main' }}
   cancel-in-progress: true
 
 jobs:
   deploy:
     if: >
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && inputs.diagnose_game == '') ||
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main')
@@ -154,3 +158,28 @@ jobs:
         env:
           CLOUDFLARE_API_BASE_URL: ${{ vars.CLOUDFLARE_API_BASE_URL }}
         run: node scripts/deploy-boundary-smoke.mjs --preparation
+
+  diagnose:
+    if: github.event_name == 'workflow_dispatch' && inputs.diagnose_game != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    environment: Dev
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pnpm install --frozen-lockfile
+      - name: Capture only the controlled request's exceptions
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+          RIGHELT_SITE_ORIGIN: ${{ vars.RIGHELT_SITE_ORIGIN || format('https://{0}.pages.dev', vars.CLOUDFLARE_PAGES_PROJECT) }}
+          DIAGNOSTIC_GAME_ID: ${{ inputs.diagnose_game }}
+        run: node scripts/production-viewer-diagnostic.mjs
