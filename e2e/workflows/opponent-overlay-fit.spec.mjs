@@ -1,9 +1,12 @@
 import { waitForOverlayEntry } from "../support/overlay-motion.mjs";
+import { waitForAccountStartup } from "../auth/helpers.mjs";
 import {test,expect} from '@playwright/test';
 
 for (const viewport of [{width:1366,height:768},{width:1024,height:640},{width:390,height:844},{width:375,height:667}]) {
  test(`opponent introductions expose their play action at ${viewport.width}x${viewport.height}`,async({page})=>{
   await page.setViewportSize(viewport);await page.goto('/');
+  // Measure settled layouts; a failed startup cancels pending play actions.
+  await waitForAccountStartup(page);
   for (const opponent of ['babs','tau','horus','friend']) {
    const trigger=opponent==='friend'?page.getByTestId('home-create-game'):page.locator(`[data-opponent="${opponent}"]`);
    await trigger.click();
