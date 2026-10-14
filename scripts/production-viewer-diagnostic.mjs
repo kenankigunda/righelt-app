@@ -50,6 +50,12 @@ export function diagnosticTarget(env) {
 }
 async function diagnose(env=process.env) {
  const {gameId,origin}=diagnosticTarget(env);
+ // Non-interactive Pages tails require an explicit immutable deployment ID.
+ const deploymentResponse=await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/pages/projects/${env.CLOUDFLARE_PAGES_PROJECT}/deployments?env=production`,{headers:{Authorization:`Bearer ${env.CLOUDFLARE_API_TOKEN}`},signal:AbortSignal.timeout(15000),redirect:'error'});
+ if(!deploymentResponse.ok)throw Error('Deployment lookup failed');
+ const deployments=await deploymentResponse.json();
+ const deployment=deployments.result?.filter(item=>item.environment==='production'&&item.latest_stage?.name==='deploy'&&item.latest_stage?.status==='success').sort((a,b)=>Date.parse(b.created_on)-Date.parse(a.created_on))[0];
+ if(!/^[a-f0-9-]{36}$/.test(deployment?.id??''))throw Error('No successful deployment');
  const requestId=randomUUID(),identityId=`diagnostic-${randomUUID()}`;
  const children=[],connected=new Set();let failures=0;
  const header=`X-Righelt-Request-Id:${requestId}`;
@@ -67,7 +73,7 @@ async function diagnose(env=process.env) {
  };
  try {
   start('api',['tail','righelt-api']);
-  start('pages',['pages','deployment','tail','--project-name',env.CLOUDFLARE_PAGES_PROJECT,'--environment','production']);
+  start('pages',['pages','deployment','tail',deployment.id,'--project-name',env.CLOUDFLARE_PAGES_PROJECT,'--environment','production']);
   // JSON tails emit no readiness banner. Observe our harmless health request
   // in both filtered streams before submitting the viewer-only reproduction.
   for(let attempt=0;attempt<25&&connected.size<2&&!failures;attempt++) {
