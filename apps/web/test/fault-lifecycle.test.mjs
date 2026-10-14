@@ -60,3 +60,20 @@ test('cleanup awaits owned context closure and drains helpers when unroute fails
  await Promise.resolve();await Promise.resolve();assert.equal(closeFinished,false);release();
  await assert.rejects(cleanup,/Recovery test cleanup failed/);assert.equal(closeFinished,true);assert.equal(timers.size,0);
 });
+
+test('nested cleanup reports transport causes while preserving failures and omitting request details',async()=>{
+ const {lifecycle}=fixture();
+ const failure=Error('route.fetch: read ECONNRESET\nCall log:\n  authorization: private-test-value');
+ await lifecycle.run(async()=>{throw failure;});
+ let closed=false;
+ const context={unrouteAll:async()=>{},close:async()=>{closed=true;}};
+ const resources={faults:new Map([[context,[lifecycle]]]),contexts:new Set([context])};
+ await assert.rejects(disposeFaultContexts(resources,[context]),error=>{
+  assert.match(error.message,/Recovery test cleanup failed: Fault cleanup failed: Fault helper asynchronous work failed: route.fetch: read ECONNRESET/);
+  assert.doesNotMatch(error.message,/private-test-value|authorization|Call log/);
+  assert.equal(error.errors[0].errors[0].errors[0],failure);
+  return true;
+ });
+ assert.equal(closed,true);
+ assert.equal(resources.faults.size,0);assert.equal(resources.contexts.size,0);
+});
