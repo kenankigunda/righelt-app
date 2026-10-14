@@ -260,11 +260,28 @@ export class GameRoomDO {
             if(row?.status==="archived"){await pruneArchivedEvidence(this.env,row);return json({ok:true,archived:true});}
             const game=await this.ensureLoaded();
             if(!game)return json({ok:true,missing:true});
-            if(!row){if(!await beginArchive(this.env,game,this.eventSeq))return json({ok:true,eligible:false});row=await archiveRow(this.env,game.id);}
-            await this.deliveryTail;
-            const archived=row?await captureArchiveStep(this.env,row,game):false;
-            if(archived){this.game=null;}
-            return json({ok:true,archived});
+            try {
+              if(!row){if(!await beginArchive(this.env,game,this.eventSeq))return json({ok:true,eligible:false});row=await archiveRow(this.env,game.id);}
+              await this.deliveryTail;
+              const storageGame=clone(game);
+              const changedIdentity=this.applyCurrentPresence(storageGame);
+              const archived=row?await captureArchiveStep(this.env,row,game,storageGame):false;
+              if(archived && row){
+                // Publication atomically advances the cursor with the fresh card.
+                // A lost response is still discoverable through reconciliation.
+                this.eventSeq=row.event_seq+1;
+                if(changedIdentity){
+                  const roles=getRolesForIdentity(storageGame,changedIdentity);
+                  const event:PresenceChangedEvent={type:"presence_changed",eventSeq:this.eventSeq,identityId:changedIdentity,role:roles[0]??"Viewer",roles,connected:this.getSessionCount(changedIdentity)>0,game:clone(storageGame)};
+                  this.scheduleBroadcast(event);
+                }
+              }
+              return json({ok:true,archived});
+            } finally {
+              // Publication may commit before its response is lost. Never let an
+              // old room cache overwrite the corrected archived representation.
+              this.game=null;
+            }
           }
           if (authActive(this.env) && new URL(request.url).pathname === "/auth-recheck") {
             await this.recheckSockets();
@@ -1003,10 +1020,22 @@ export class GameRoomDO {
     return count;
   }
 
+  private applyCurrentPresence(game:LiveGame):string|null {
+    let changedIdentity:string|null=null;
+    for(const participant of [game.player1,game.player2,...game.viewers])if(participant){
+      const count=this.getSessionCount(participant.identityId),connected=count>0;
+      if(participant.connected!==connected || participant.sessionCount!==count){
+        changedIdentity??=participant.identityId;
+        participant.connected=connected;participant.sessionCount=count;participant.lastHeartbeatAt=now();
+      }
+    }
+    return changedIdentity;
+  }
+
   private async setPresenceFromSessions(identityId: string, excludedSocket?: WebSocket) {
     this.env = await withCutoverPolicy(this.env);
     if (authActive(this.env) && (this.env.AUTH_ENABLED !== "true" || this.env.ACCOUNT_POLICY?.maintenance)) return;
-    if (this.getLoadedGameId() && await archiveRow(this.env,this.getLoadedGameId()!)) return;
+    if (this.getLoadedGameId() && (await archiveRow(this.env,this.getLoadedGameId()!))?.status === "archiving") return;
     const loaded = await this.ensureLoaded();
     const game = loaded ? clone(loaded) : null;
     if (!game) {
@@ -1042,7 +1071,7 @@ export class GameRoomDO {
       connected,
       game: clone(game),
     };
-    await this.persistCandidate(game, presenceEvent, undefined, true);
+    await this.persistCandidate(game, presenceEvent, undefined, true, identityId);
     this.scheduleBroadcast(presenceEvent, excludedSocket);
   }
 
@@ -1175,15 +1204,15 @@ export class GameRoomDO {
     this.state.waitUntil(rooms.get(rooms.idFromName(storageRoomName(this.env,gameId))).fetch(new Request("https://game-room/_storage/tick",{method:"POST",headers:{"x-game-id":gameId,"x-storage-restore-steps":String(remaining-1),...(this.env.STORAGE_GENERATION?{[STORAGE_GENERATION_HEADER]:this.env.STORAGE_GENERATION}:{})}})).then(async response=>{await response.body?.cancel();}).catch(()=>{console.warn(JSON.stringify({event:"storage_restore_deferred"}));}));
   }
 
-  private async persistCandidate(game: LiveGame, event: (ServerEvent & { eventSeq: number }) | null, receipt?: CommandReceipt, systemPresence = false) {
+  private async persistCandidate(game: LiveGame, event: (ServerEvent & { eventSeq: number }) | null, receipt?: CommandReceipt, systemPresence = false, presenceIdentity?:string) {
     this.env = await withCutoverPolicy(this.env);
     if (authActive(this.env) && (this.env.AUTH_ENABLED !== "true" || !maintenanceAllowed(this.env,this.requestAuthority?.accountId))) throw new AuthProblem("temporarily_unavailable",503);
     const permit = cutoverWritePermit(this.env,game.id,this.requestAuthority,systemPresence);
     if (!authActive(this.env) && game.ownershipMode === "account_v1") throw new AuthProblem("temporarily_unavailable", 503);
     if (authActive(this.env) && !this.requestAuthority && !systemPresence) throw new AuthProblem("invalid_credentials", 401);
     const archived=await archiveRow(this.env,game.id);
-    if(archived && archived.status!=="archiving" && ["/history","/live"].includes(this.requestOperation)) {
-      const actor=this.requestAuthority?.accountId ?? this.requestIdentity;
+    if(archived && archived.status!=="archiving" && (systemPresence || ["/history","/live"].includes(this.requestOperation))) {
+      const actor=presenceIdentity ?? this.requestAuthority?.accountId ?? this.requestIdentity;
       if(actor){
         try {
           this.eventSeq=await saveArchivedView(this.env,archived,game,actor,{before:[...permit.before as D1Statement[],...(this.requestAuthority && authActive(this.env)?gameGuardStatements(this.env,this.requestAuthority) as D1Statement[]:[])],after:permit.after as D1Statement[]});
@@ -1196,6 +1225,7 @@ export class GameRoomDO {
       }
     }
     if(archived){
+      if(archived.status==="archiving")this.applyCurrentPresence(game);
       if(!await restoreArchiveStep(this.env,archived)){this.scheduleRestoreStep(game.id,STORAGE_POLICY.restoreDrainSteps);throw new AuthProblem("storage_restoring",503);}
       this.needsDurableReload=true;
       const projection=await loadGameProjection(this.env,game.id);

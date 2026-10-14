@@ -23,6 +23,7 @@ export async function runStorageMaintenance(env:MaintenanceEnv):Promise<void> {
   }
   const now="CAST(unixepoch('subsec')*1000 AS INTEGER)";
   await env.DB.batch([
+    env.DB.prepare("DELETE FROM storage_operation_days WHERE day<date('now',?1)").bind(`-${STORAGE_POLICY.archiveWindowDays+1} days`),
     env.DB.prepare(`DELETE FROM account_sessions WHERE token_hash IN (SELECT token_hash FROM account_sessions WHERE expires_at<=${now} LIMIT ?1)`).bind(STORAGE_POLICY.cleanupRows),
     env.DB.prepare(`DELETE FROM account_rate_limits WHERE bucket_key IN (SELECT bucket_key FROM account_rate_limits WHERE expires_at<=${now} LIMIT ?1)`).bind(STORAGE_POLICY.cleanupRows),
     env.DB.prepare(`DELETE FROM account_revocation_outbox WHERE notification_id IN (SELECT notification_id FROM account_revocation_outbox WHERE delivered_at<=${now}-?1 OR (delivered_at IS NULL AND NOT EXISTS(SELECT 1 FROM account_sessions s WHERE s.token_hash=account_revocation_outbox.session_hash AND s.expires_at>${now})) LIMIT ?2)`).bind(STORAGE_POLICY.coldDays*86400000,STORAGE_POLICY.cleanupRows),

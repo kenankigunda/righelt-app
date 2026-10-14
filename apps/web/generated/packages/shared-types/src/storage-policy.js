@@ -13,6 +13,7 @@ export const STORAGE_POLICY = Object.freeze({
   warnFraction: 0.7,
   stopFraction: 0.8,
   d1Bytes: 500_000_000,
+  archiveWindowDays: 31,
   archiveBytes: 8_000_000_000,
   archiveClassA: 800_000,
   archiveClassB: 8_000_000,

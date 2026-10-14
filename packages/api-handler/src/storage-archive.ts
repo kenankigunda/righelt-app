@@ -57,7 +57,15 @@ export async function readArchivedGame(env:ArchiveEnv,row:ArchiveRow):Promise<Li
   if(game?.id!==row.game_id || game.gameplayRevision!==row.gameplay_revision)throw new Error("invalid_archive_state");
   const views=await env.DB.prepare("SELECT identity_id,history_index FROM game_archive_views WHERE game_id=?1").bind(row.game_id).all<{identity_id:string;history_index:number|null}>();
   for(const view of views.results??[]){if(view.history_index===null)delete game.historyIndexByIdentity[view.identity_id];else game.historyIndexByIdentity[view.identity_id]=view.history_index;}
-  for(const participant of [game.player1,game.player2,...game.viewers])if(participant){participant.connected=false;participant.sessionCount=0;}
+  const catalog=await env.DB.prepare("SELECT state_json FROM live_games WHERE game_id=?1").bind(row.game_id).first<{state_json:string}>();
+  const card=catalog?JSON.parse(catalog.state_json):null;
+  const presence=[card?.player1,card?.player2,...(card?.viewers??[])];
+  for(const participant of [game.player1,game.player2,...game.viewers])if(participant){
+    const current=presence.find(p=>p?.identityId===participant.identityId);
+    participant.connected=current?.connected===true;
+    participant.sessionCount=Number.isSafeInteger(current?.sessionCount)&&current.sessionCount>=0?current.sessionCount:0;
+    if(typeof current?.lastHeartbeatAt==="string")participant.lastHeartbeatAt=current.lastHeartbeatAt;
+  }
   return game;
 }
 export async function readArchivedEvidence(env:ArchiveEnv,row:ArchiveRow,kind:"receipt"|"tombstone",commandId:string):Promise<Evidence|null> {
@@ -109,7 +117,7 @@ async function recordPart(env:ArchiveEnv,row:ArchiveRow,part:Part,cursor:string)
     env.DB.prepare("UPDATE game_archives SET next_chunk=next_chunk+1,cursor=?2,archive_bytes=archive_bytes+?3,updated_at=datetime('now') WHERE game_id=?1 AND status='archiving'").bind(row.game_id,cursor,part.bytes),
   ]);
 }
-export async function captureArchiveStep(env:ArchiveEnv,row:ArchiveRow,game:LiveGame):Promise<boolean> {
+export async function captureArchiveStep(env:ArchiveEnv,row:ArchiveRow,game:LiveGame,cardGame:LiveGame=game):Promise<boolean> {
   if(row.status!=="archiving")return false;
   if(row.next_chunk===0){
     const key=rootKey(row)+"state.gz",stored=await writeObject(env,key,game,STORAGE_POLICY.maximumStateBytes);
@@ -130,8 +138,9 @@ export async function captureArchiveStep(env:ArchiveEnv,row:ArchiveRow,game:Live
   await env.DB.batch([
     env.DB.prepare("UPDATE game_archives SET status='archived',manifest_sha256=?2,next_chunk=0,cursor='',updated_at=datetime('now') WHERE game_id=?1 AND status='archiving'").bind(row.game_id,stored.checksum),
     permit(env,row,"archive"),
-    env.DB.prepare("UPDATE live_games SET state_json=?2,commit_base_event_seq=NULL WHERE game_id=?1 AND event_seq=?3").bind(row.game_id,cardJson(game),row.event_seq),
+    env.DB.prepare("UPDATE live_games SET state_json=?2,event_seq=event_seq+1,commit_base_event_seq=event_seq WHERE game_id=?1 AND event_seq=?3").bind(row.game_id,cardJson(cardGame),row.event_seq),
     env.DB.prepare("DELETE FROM game_payloads WHERE game_id=?1").bind(row.game_id),
+    env.DB.prepare("UPDATE game_archives SET event_seq=event_seq+1 WHERE game_id=?1").bind(row.game_id),
     clearPermit(env,row),
   ]);
   return true;
@@ -154,7 +163,7 @@ export async function saveArchivedView(env:ArchiveEnv,row:ArchiveRow,game:LiveGa
     permit(env,row,"view"),
     guard(env.DB,id,"SELECT 1 FROM live_games WHERE game_id=?2 AND event_seq=?3",row.game_id,row.event_seq),
     env.DB.prepare("INSERT INTO game_archive_views(game_id,identity_id,history_index) VALUES(?1,?2,?3) ON CONFLICT(game_id,identity_id) DO UPDATE SET history_index=excluded.history_index").bind(row.game_id,identityId,game.historyIndexByIdentity[identityId]??null),
-    env.DB.prepare("UPDATE live_games SET event_seq=event_seq+1,commit_base_event_seq=event_seq WHERE game_id=?1").bind(row.game_id),
+    env.DB.prepare("UPDATE live_games SET state_json=?2,event_seq=event_seq+1,commit_base_event_seq=event_seq WHERE game_id=?1").bind(row.game_id,cardJson(game)),
     env.DB.prepare("UPDATE game_archives SET event_seq=event_seq+1 WHERE game_id=?1").bind(row.game_id),
     clearGuard(env.DB,id),clearPermit(env,row),...authority.after,...budget.after,
   ]);

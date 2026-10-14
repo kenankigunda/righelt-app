@@ -26,10 +26,12 @@ test('archive preserves browser history, direct links and exactly-once resumed p
  await page.reload();
  await expect(page.getByTestId('game-role')).toContainText('both players');
  await expect.poll(()=>getHistoryMoveCount(page)).toBe(count);
+ await expect(page.getByRole('img',{name:'Connected',exact:true})).toHaveCount(2);
  await openHistoryMode(page,0);
  await expect(page.getByTestId('history-return-live')).toBeVisible();
  await returnToLive(page);
  expect((await control(request,baseURL,'/storage',{action:'status',gameId})).archive?.status).toBe('archived');
+ await expect(page.getByRole('img',{name:'Connected',exact:true})).toHaveCount(2);
  await page.screenshot({path:info.outputPath('archived-history.png')});
  await makeAnyLegalMove(page,'p2');
  await expect.poll(()=>getHistoryMoveCount(page)).toBe(count+1);

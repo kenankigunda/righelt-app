@@ -112,26 +112,32 @@ for(const fault of ["put","put_lost","missing","corrupt"])test(`archive ${fault}
   }finally{await h.close();}
 });
 
-test("lost archive publication response recovers from committed state",{timeout:120000},async()=>{
-  const h=await harness();
+test("lost archive publication response recovers accurate presence before restart",{timeout:120000},async()=>{
+  const h=await harness();let socket;
   try{
     await h.call("create",{gameId:"g",selfPlayMode:true});
+    const opened=await h.runtime.dispatchFetch("https://test/ws?identityId=actor&sessionId=lost&lastEventSeq=0",{headers:{upgrade:"websocket","x-game-id":"g"}});
+    assert.equal(opened.status,101);socket=opened.webSocket;socket.accept();
     await h.db.prepare("UPDATE live_games SET retention_activity_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-8 days') WHERE game_id='g'").run();
+    const before=(await h.current()).row.event_seq;
     await h.call("_storage/tick",{}, {"x-harness-lose-on":"SET status='archived'"});
+    assert.equal((await h.call("presence",{sessionId:"lost",status:"disconnecting",lastEventSeq:before})).status,200);socket.close();
     let lost=false;
     for(let i=0;i<8;i++){const result=await h.call("_storage/tick");if(result.status>=400){lost=true;break;}}
     assert.equal(lost,true);
     assert.equal((await h.db.prepare("SELECT status FROM game_archives WHERE game_id='g'").first()).status,"archived");
     assert.equal(await h.db.prepare("SELECT * FROM game_payloads WHERE game_id='g'").first(),null);
+    const immediate=await h.call("live");assert.equal(immediate.status,200);assert.equal(immediate.body.game.player1.connected,false);
+    assert.ok((await h.current()).row.event_seq>before,"committed publication advances the reconciliation cursor");
     await h.restart();
-    assert.equal((await h.call("live")).status,200);
-  }finally{await h.close();}
+    const recovered=await h.call("live");assert.equal(recovered.status,200);assert.equal(recovered.body.game.player1.connected,false);
+  }finally{try{socket?.close();}catch{}await h.close();}
 });
 
 test("concurrent quota reservations cannot exceed the free-operation budget",{timeout:120000},async()=>{
   const h=await harness();
   try{
-    await h.db.prepare("UPDATE storage_budget SET class_a=799999 WHERE singleton=1").run();
+    await h.db.prepare("UPDATE storage_operation_days SET class_a=799999 WHERE day=date('now')").run();
     const results=await Promise.allSettled(Array.from({length:6},(_,i)=>reserveArchiveOperation({DB:h.db},"a",`reserved-${i}`,1)));
     assert.equal(results.filter(r=>r.status==="fulfilled").length,1);
     assert.equal((await h.db.prepare("SELECT class_a FROM storage_budget").first()).class_a,800000);
@@ -254,5 +260,62 @@ test("maintenance retains archive readers and cleanup when new archives are paus
   assert.equal((await h.db.prepare("SELECT status FROM game_archives WHERE game_id='g'").first()).status,"archived");
   await maintain(false);
   assert.equal((await h.call("live")).status,200);
+ }finally{await h.close();}
+});
+
+test("archived socket presence stays accurate without restoring or renewing retention",{timeout:120000},async()=>{
+ const h=await harness(),sockets=[];
+ const eventually=async(check)=>{for(let i=0;i<100;i++){if(await check())return;await new Promise(r=>setTimeout(r,10));}assert.fail("presence deadline");};
+ try{
+  await h.call("create",{gameId:"g",selfPlayMode:true});await h.call("join",{identityId:"observer",mode:"viewer"});
+  await h.db.prepare("UPDATE live_games SET retention_activity_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-8 days') WHERE game_id='g'").run();
+  for(let i=0;i<12;i++){await h.call("_storage/tick");if((await h.db.prepare("SELECT status FROM game_archives WHERE game_id='g'").first())?.status==="archived")break;}
+  const retention=(await h.current()).row.retention_activity_at;
+  const connect=async(identity)=>{
+    const response=await h.runtime.dispatchFetch(`https://test/ws?identityId=${identity}&sessionId=${identity}&lastEventSeq=0`,{headers:{upgrade:"websocket","x-game-id":"g"}});
+    assert.equal(response.status,101);const socket=response.webSocket,messages=[];
+    socket.addEventListener("message",event=>messages.push(JSON.parse(event.data)));socket.accept();sockets.push(socket);await eventually(()=>messages.some(m=>m.game));return {socket,messages};
+  };
+  const actor=await connect("actor");assert.equal(actor.messages[0].game.player1.connected,true);
+  const observer=await connect("observer");
+  await eventually(()=>actor.messages.some(m=>m.type==="presence_changed"&&m.game?.viewers.some(v=>v.identityId==="observer"&&v.connected)));
+  assert.equal((await h.call("live")).body.game.player1.connected,true);
+  observer.socket.close();
+  await eventually(()=>actor.messages.some(m=>m.type==="presence_changed"&&m.game?.viewers.some(v=>v.identityId==="observer"&&!v.connected)));
+  assert.equal((await h.current()).row.retention_activity_at,retention);
+  assert.equal(await h.db.prepare("SELECT * FROM game_payloads WHERE game_id='g'").first(),null);
+  assert.equal((await h.db.prepare("SELECT status FROM game_archives WHERE game_id='g'").first()).status,"archived");
+ }finally{for(const s of sockets)try{s.close();}catch{}await h.close();}
+});
+
+test("disconnect during capture publishes accurate offline presence",{timeout:120000},async()=>{
+ const h=await harness();let socket;
+ try{
+  await h.call("create",{gameId:"g",selfPlayMode:true});
+  const response=await h.runtime.dispatchFetch("https://test/ws?identityId=actor&sessionId=capture&lastEventSeq=0",{headers:{upgrade:"websocket","x-game-id":"g"}});
+  assert.equal(response.status,101);socket=response.webSocket;socket.accept();
+  await h.db.prepare("UPDATE live_games SET retention_activity_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-8 days') WHERE game_id='g'").run();
+  const retention=(await h.current()).row.retention_activity_at;
+  await h.call("_storage/tick");assert.equal((await h.db.prepare("SELECT status FROM game_archives WHERE game_id='g'").first()).status,"archiving");
+  assert.equal((await h.call("presence",{sessionId:"capture",status:"disconnecting",lastEventSeq:(await h.current()).row.event_seq})).status,200);
+  socket.close();
+  for(let i=0;i<12;i++){await h.call("_storage/tick");if((await h.db.prepare("SELECT status FROM game_archives WHERE game_id='g'").first())?.status==="archived")break;}
+  await h.restart();
+  const live=await h.call("live");assert.equal(live.status,200);assert.equal(live.body.game.player1.connected,false);assert.equal(live.body.game.player2.connected,false);
+  assert.equal((await h.current()).row.retention_activity_at,retention);assert.equal(await h.db.prepare("SELECT * FROM game_payloads WHERE game_id='g'").first(),null);
+ }finally{try{socket?.close();}catch{}await h.close();}
+});
+
+test("operation caps survive calendar rollover and expire only outside the rolling window",{timeout:120000},async()=>{
+ const h=await harness();
+ try{
+  await h.db.prepare("UPDATE storage_operation_days SET class_a=799999 WHERE day=date('now')").run();
+  await h.db.prepare("INSERT INTO storage_operation_days(day,class_a,class_b) VALUES(date('now','-1 day'),1,0)").run();
+  await h.db.prepare("UPDATE storage_budget SET period='2000-01',class_a=0 WHERE singleton=1").run();
+  await assert.rejects(reserveArchiveOperation({DB:h.db},"a","rollover-key",1),/storage_capacity/);
+  await h.db.prepare("DELETE FROM storage_operation_days").run();
+  await h.db.prepare("INSERT INTO storage_operation_days(day,class_a,class_b) VALUES(date('now','-32 days'),800000,8000000)").run();
+  await reserveArchiveOperation({DB:h.db},"a","rollover-key",1);
+  assert.equal((await h.db.prepare("SELECT class_a FROM storage_budget").first()).class_a,1);
  }finally{await h.close();}
 });

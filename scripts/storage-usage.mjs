@@ -3,7 +3,7 @@ import {pathToFileURL} from "node:url";
 import {STORAGE_POLICY} from "../packages/shared-types/src/storage-policy.js";
 import {INVESTIGATION_WRANGLER} from "./storage-reset.mjs";
 
-export function storageUsageSql(){return "SELECT (SELECT COUNT(*) FROM live_games) games,(SELECT COUNT(*) FROM game_archives WHERE status='archived') archived,(SELECT COUNT(*) FROM game_archives WHERE status!='archived') pending,period,class_a,class_b,archive_bytes,d1_bytes,observed_at,healthy FROM storage_budget WHERE singleton=1;";}
+export function storageUsageSql(){return "SELECT (SELECT COUNT(*) FROM live_games) games,(SELECT COUNT(*) FROM game_archives WHERE status='archived') archived,(SELECT COUNT(*) FROM game_archives WHERE status!='archived') pending,'rolling-31d' period,(SELECT COALESCE(SUM(class_a),0) FROM storage_operation_days WHERE day>=date('now','-31 days')) class_a,(SELECT COALESCE(SUM(class_b),0) FROM storage_operation_days WHERE day>=date('now','-31 days')) class_b,archive_bytes,d1_bytes,observed_at,healthy FROM storage_budget WHERE singleton=1;";}
 export async function inspectStorageUsage({database="DB",apply=false,exclusive=false}={},run=args=>execFileSync("pnpm",["dlx",INVESTIGATION_WRANGLER,...args],{encoding:"utf8",env:{...process.env,CI:"true"},stdio:["ignore","pipe","pipe"]})){
   const query=sql=>JSON.parse(run(["d1","execute",database,"--config","apps/api/wrangler.toml","--remote","--json","--command",sql]));
   const result=query(storageUsageSql()),size=result[0].meta?.size_after;

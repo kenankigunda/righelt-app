@@ -12,6 +12,7 @@ export const STORAGE_POLICY: Readonly<{
   warnFraction:number;
   stopFraction:number;
   d1Bytes:number;
+  archiveWindowDays: number;
   archiveBytes:number;
   archiveClassA:number;
   archiveClassB:number;
