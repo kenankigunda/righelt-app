@@ -33,6 +33,12 @@ export function exceptionSummary(event,requestId) {
  }))};
 }
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+// Emit only fixed categories and numeric provider codes, never raw CLI output.
+export function startupSummary(stderr,exitCode) {
+ const codes=[...String(stderr).matchAll(/\[code:\s*(\d{1,8})\]/g)].map(match=>Number(match[1]));
+ const category=/permission|not authorized|forbidden/i.test(stderr)?'permission':/authentication|authenticate|token/i.test(stderr)?'authentication':/unknown argument|unknown command|invalid argument/i.test(stderr)?'arguments':/fetch failed|ENOTFOUND|ECONN|network/i.test(stderr)?'network':'unclassified';
+ return {category,providerCodes:[...new Set(codes)],exitCode:Number.isInteger(exitCode)?exitCode:null};
+}
 export function diagnosticTarget(env) {
  const gameId=env.DIAGNOSTIC_GAME_ID;
  if(!/^game-[a-f0-9]{32,64}$/.test(gameId??''))throw Error('Provide one valid diagnostic game ID');
@@ -47,13 +53,14 @@ async function diagnose(env=process.env) {
  const children=[],connected=new Set();let failures=0;
  const header=`X-Righelt-Request-Id:${requestId}`;
  const start=(name,args)=>{
+  let stderr='';
   const child=spawn('pnpm',['exec','wrangler',...args,'--format','json','--header',header,'--sampling-rate','1'],{stdio:['ignore','pipe','pipe'],env});
   children.push(child);
   const decode=tailDecoder(event=>{if(ownsTailEvent(event,requestId))connected.add(name);const summary=exceptionSummary(event,requestId);if(summary)console.log(JSON.stringify({tail:name,...summary}));});
-  child.stdout.on('data',chunk=>{try{decode(chunk);}catch{failures++;child.kill('SIGTERM');}});
-  child.stderr.on('data',()=>{});
-  child.on('error',()=>{failures++;});
-  child.on('close',code=>{if(code&&code!==null)failures++;});
+  child.stdout.on('data',chunk=>{try{decode(chunk);}catch{failures++;console.log(JSON.stringify({tail:name,phase:'decoder_failed'}));child.kill('SIGTERM');}});
+  child.stderr.on('data',chunk=>{stderr=(stderr+String(chunk)).slice(-32000);});
+  child.on('error',()=>{failures++;console.log(JSON.stringify({tail:name,phase:'spawn_failed'}));});
+  child.on('close',code=>{if(code&&code!==null){failures++;console.log(JSON.stringify({tail:name,phase:'startup_failed',...startupSummary(stderr,code)}));}});
  };
  try {
   start('api',['tail','righelt-api']);
