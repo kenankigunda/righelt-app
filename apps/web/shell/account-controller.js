@@ -212,6 +212,15 @@ export const createAccountController = ({
       next = { ...next, account: session.account };
     accept(next);
   };
+  const checkStorageGenerationResponse = (response, path) => {
+    if(path === "/api/shell/bootstrap")return;
+    const observed=response.headers?.get?.(STORAGE_GENERATION_HEADER);
+    if(observed && observed !== storageGeneration){
+      storageGeneration=observed;ready=false;retire();
+      void start().catch(()=>publish());
+      throw failure("storage_reset");
+    }
+  };
   const request = async (
     path,
     body,
@@ -242,6 +251,7 @@ export const createAccountController = ({
           });
         }),
       );
+      checkStorageGenerationResponse(response,path);
       const result = await response.json();
       if (epoch !== generation || destroyed || controller.signal.aborted)
         throw failure("session_changed");
@@ -497,14 +507,7 @@ export const createAccountController = ({
         }),
       );
       check();
-      const observedGeneration = response.headers?.get?.(STORAGE_GENERATION_HEADER);
-      if (observedGeneration && observedGeneration !== storageGeneration) {
-        storageGeneration = observedGeneration;
-        ready = false;
-        retire();
-        void start().catch(() => publish());
-        throw failure("storage_reset");
-      }
+      checkStorageGenerationResponse(response);
       const json = response.json.bind(response);
       response.json = async () => {
         const body = await json();

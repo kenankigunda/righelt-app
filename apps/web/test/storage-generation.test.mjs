@@ -30,3 +30,13 @@ test("transport rejects an old response without applying a game",async()=>{
   await assert.rejects(transport.loadGame("g"),/storage_reset/);
   assert.equal(transport.getGameViewModel("g"),null);
 });
+
+test("account actions observe a reset while the user is outside a game",async()=>{
+ let serverGeneration="first";
+ const client=createAccountController({storage:null,eventTarget:null,document:null,channelFactory:null,fetcher:async(path)=>Response.json(path==="/api/shell/bootstrap"?{ok:true,authProtocolVersion:2,accountsRequired:true,accountsAvailable:true,storageGeneration:serverGeneration}:path==="/api/auth/session"?{ok:true,authenticated:false}:{ok:false,error:"storage_reset"},{status:path==="/api/auth/login"?409:200,headers:{[STORAGE_GENERATION_HEADER]:serverGeneration}})});
+ try{
+  await client.start();serverGeneration="second";
+  await assert.rejects(client.act("login",{username:"actor",password:"synthetic"}),/storage_reset/);
+  assert.equal(client.snapshot().storageGeneration,"second");
+ }finally{client.destroy();}
+});
