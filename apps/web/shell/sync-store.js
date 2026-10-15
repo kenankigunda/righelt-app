@@ -1,3 +1,5 @@
+import { IDENTITY_KEY } from "./persistence.js";
+import { STORAGE_GENERATION_HEADER, STORAGE_GENERATION_QUERY } from "../generated/packages/shared-types/src/storage-policy.js";
 import { AUTH_PROTOCOL_VERSION, AUTH_PROTOCOL_HEADER, AUTH_REQUEST_HEADER, SESSION_CONTEXT_HEADER } from '../generated/packages/shared-types/src/auth-policy.js';
 import { createInitialState, listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
 import { buildLocalApiWsHost, isLocalDevHost } from "../local-dev-ports.js";
@@ -76,6 +78,7 @@ const createWsUrl = ({ identityId, gameId, sessionId, lastEventSeq, auth }) => {
     lastEventSeq: String(lastEventSeq ?? 0),
     protocolVersion: "2",
   });
+  if (auth?.storageGeneration) params.set(STORAGE_GENERATION_QUERY, auth.storageGeneration);
   if (auth?.enabled) { params.set("authProtocolVersion", String(AUTH_PROTOCOL_VERSION)); params.set("sessionContext", auth.session.contextId || ""); }
   const host = window.location.protocol !== "https:" && isLocalDevHost(window.location.hostname) ? buildLocalApiWsHost(window.location.port) : window.location.host;
   return `${protocol}://${host}/api/shell/games/${encodeURIComponent(gameId)}/ws?${params.toString()}`;
@@ -194,7 +197,7 @@ export const createLiveSyncClient = ({
     if (typeof presenceFetcher === "function") {
       void presenceFetcher(createPresenceUrl(gameId), {
         method: "POST",
-        headers: { "content-type": "application/json", ...(auth?.enabled ? {[AUTH_REQUEST_HEADER]:"1",[AUTH_PROTOCOL_HEADER]:String(AUTH_PROTOCOL_VERSION),[SESSION_CONTEXT_HEADER]:auth.session.contextId || ""} : {}) },
+        headers: { "content-type": "application/json", ...(auth?.storageGeneration ? { [STORAGE_GENERATION_HEADER]: auth.storageGeneration } : {}), ...(auth?.enabled ? {[AUTH_REQUEST_HEADER]:"1",[AUTH_PROTOCOL_HEADER]:String(AUTH_PROTOCOL_VERSION),[SESSION_CONTEXT_HEADER]:auth.session.contextId || ""} : {}) },
         body: payload,
         keepalive: true,
       }).catch(() => {});
@@ -443,6 +446,7 @@ export const createLiveSyncClient = ({
       if (!current()) return;
       try {
         const payload = JSON.parse(typeof event.data === "string" ? event.data : "{}");
+        if (auth?.storageGeneration && payload.storageGeneration !== auth.storageGeneration) throw new Error("storage_reset");
         if (auth?.enabled && payload.authProtocolVersion !== AUTH_PROTOCOL_VERSION) throw new Error("upgrade_required");
         if (payload.protocolVersion !== 2 || payload.gameId !== gameId || !isSyncRevision(payload.eventSeq)) throw new Error("invalid_socket_event");
         if (payload.type === "heartbeat_ack") {
@@ -928,11 +932,12 @@ export const createSyncStore = ({
   createSyncClient = createLiveSyncClient,
 } = {}) => {
   let active = true;
-  if (auth?.enabled) {
-    const base = storage, prefix = `righelt.account.${auth.session.contextId || "anonymous"}.`;
-    storage = { getItem: key => active ? base?.getItem(prefix + key) : null,
-      setItem: (key,value) => { if (active) base?.setItem(prefix + key,value); },
-      removeItem: key => { if (active) base?.removeItem(prefix + key); } };
+  if (auth?.enabled || auth?.storageGeneration) {
+    const base = storage, prefix = `${auth?.storageGeneration ? `righelt.storage.${auth.storageGeneration}.` : ""}${auth?.enabled ? `righelt.account.${auth.session.contextId || "anonymous"}.` : ""}`;
+    const scopedKey=key=>!auth?.enabled && key===IDENTITY_KEY ? key : prefix+key;
+    storage = { getItem: key => active ? base?.getItem(scopedKey(key)) : null,
+      setItem: (key,value) => { if (active) base?.setItem(scopedKey(key),value); },
+      removeItem: key => { if (active) base?.removeItem(scopedKey(key)); } };
   }
   const operationManager = createOperationManager();
   let pendingLocalGames = readPendingLocalGames(storage);

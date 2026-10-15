@@ -1,3 +1,4 @@
+import {e2eControlPort} from '../../scripts/e2e-control.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {test as base, expect} from '@playwright/test';
 import {createFaultLifecycle, fetchFaultResponse, disposeFaultContexts as cleanup} from '../support/fault-lifecycle.mjs';
@@ -204,7 +205,7 @@ for(const phase of ['before','after'])test(`E03 actual Worker restart ${phase} c
   p.faults[0].receive=true;p.faults[0].loseReply=true;
   await move(p.pages[0],p.gameId);
   await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Recording your move');
-  const response=await request.post(`http://127.0.0.1:${Number(new URL(baseURL).port)+100}/restart`);expect(response.ok()).toBe(true);
+  const response=await request.post(`http://127.0.0.1:${e2eControlPort(new URL(baseURL).port)}/restart`);expect(response.ok()).toBe(true);
   p.faults[0].receive=false;p.faults[0].loseReply=false;p.faults[0].holdApply=false;const start=Date.now();
   await converged(p.pages);expect((await digest(p.pages[0])).history).toHaveLength(1);await evidence(info,`worker-restart-${phase}-commit`,start,p.faults);
  }finally{await cleanupParty(p);}

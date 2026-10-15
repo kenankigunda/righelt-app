@@ -7,8 +7,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boundarySmoke } from "../../../scripts/deploy-boundary-smoke.mjs";
 import { cutoverSql } from "../../../scripts/account-cutover.mjs";
-import { validateDeployment, wranglerEnvironment } from "../../../scripts/deploy-account-services.mjs";
+import { validateDeployment, validateStorageDeployment, wranglerEnvironment } from "../../../scripts/deploy-account-services.mjs";
 import { accountSmoke } from "../../../scripts/account-smoke.mjs";
+const preparedStorageGeneration=/^STORAGE_GENERATION\s*=\s*"([^"]*)"/m.exec(readFileSync(new URL("../../../apps/api/wrangler.toml",import.meta.url),"utf8"))?.[1]||"reset-test";
 const origin = "https://site.test",
   privateOrigin = "https://api.test";
 test("Wrangler receives credentials without the application origin override or parent mutation", () => {
@@ -31,7 +32,7 @@ for (const enabled of ["false", "true"]) test(`deployment CLI isolates Wrangler'
     `, { mode: 0o755 });
     const env = {
       PATH: directory, TEST_DEPLOY_RECEIPT: receipt,
-      RIGHELT_SITE_ORIGIN: origin, CLOUDFLARE_API_BASE_URL: privateOrigin,
+      RIGHELT_SITE_ORIGIN: origin, CLOUDFLARE_API_BASE_URL: privateOrigin, RIGHELT_STORAGE_GENERATION:preparedStorageGeneration,
       CLOUDFLARE_API_TOKEN: "synthetic-token", CLOUDFLARE_ACCOUNT_ID: "synthetic-account",
       RIGHELT_AUTH_ENABLED: enabled, AUTH_HMAC_SECRET: "a".repeat(64),
       TURNSTILE_SECRET: "synthetic-challenge", AUTH_TURNSTILE_SITE_KEY: "public-key",
@@ -124,6 +125,7 @@ function smokeFixture({
   revoke = true,
   wrongContext = 409,
   legacyWritable = false,
+  storageGeneration = "",
 } = {}) {
   let sequence = 0;
   const sessions = new Map(),
@@ -138,7 +140,7 @@ function smokeFixture({
       data = { ok: true },
       cookie;
     if (route === "/api/shell/bootstrap")
-      data = { accountsRequired: true, accountsAvailable: true };
+      data = { accountsRequired: true, accountsAvailable: true, storageGeneration };
     else if (route === "/api/auth/login" || route === "/api/auth/password") {
       if (route.endsWith("/password") && revoke) sessions.clear();
       const next = String(++sequence),
@@ -317,7 +319,7 @@ test("deployment shares the explicit origin or canonical Pages fallback across p
   // two resulting origins against real preflight and public/private smoke logic.
   for (const selectedOrigin of ["https://righelt-dev.pages.dev", "https://play.custom.test"]) {
     assert.deepEqual(validateDeployment({ RIGHELT_SITE_ORIGIN: selectedOrigin, CLOUDFLARE_API_BASE_URL: privateOrigin }), { enabled: "false", origin: selectedOrigin });
-    const cli = spawnSync(process.execPath, [fileURLToPath(new URL("../../../scripts/deploy-account-services.mjs", import.meta.url)), "--check-only"], { env: { PATH: "", RIGHELT_SITE_ORIGIN: selectedOrigin, CLOUDFLARE_API_BASE_URL: privateOrigin }, encoding: "utf8" });
+    const cli = spawnSync(process.execPath, [fileURLToPath(new URL("../../../scripts/deploy-account-services.mjs", import.meta.url)), "--check-only"], { env: { PATH: "", RIGHELT_SITE_ORIGIN: selectedOrigin, CLOUDFLARE_API_BASE_URL: privateOrigin, RIGHELT_STORAGE_GENERATION:preparedStorageGeneration }, encoding: "utf8" });
     assert.equal(cli.status, 0, cli.stderr);
     const calls = [];
     assert.deepEqual(await boundarySmoke({ origin: selectedOrigin, privateOrigin, fetcher: async url => {
@@ -356,4 +358,18 @@ test('workflow passes the private origin to both preflight and deployment valida
   const step=workflow.split(`- name: ${name}\n`)[1]?.split('\n      - name:')[0];
   assert.match(step,/CLOUDFLARE_API_BASE_URL: \$\{\{ vars\.CLOUDFLARE_API_BASE_URL \}\}/);
  }
+});
+
+test("authenticated deployment canary propagates generation to both browser jars",async()=>{
+ const fixture=smokeFixture({storageGeneration:"reset-test"});
+ await accountSmoke({origin,username:"canary",password:"synthetic password",legacyGameId:"legacy",fetcher:fixture.fetcher});
+ for(const call of fixture.calls.filter(c=>c.route!=="/api/shell/bootstrap"))assert.equal(call.headers["X-Righelt-Storage-Generation"],"reset-test");
+});
+test("storage deployment requires matching migration target and reset generation",()=>{
+ const config='database_name = "righelt-db-prod"';
+ assert.throws(()=>validateStorageDeployment({},config),/generation/i);
+ assert.throws(()=>validateStorageDeployment({RIGHELT_STORAGE_GENERATION:"reset",CLOUDFLARE_D1_DB_NAME:"righelt-db-dev"},config),/differs/);
+ assert.throws(()=>validateStorageDeployment({RIGHELT_STORAGE_GENERATION:"reset",RIGHELT_STORAGE_COMPRESSION:"yes"},config),/compression/);
+ validateStorageDeployment({RIGHELT_STORAGE_GENERATION:"reset",CLOUDFLARE_D1_DB_NAME:"DB"},config);
+ assert.throws(()=>validateStorageDeployment({RIGHELT_STORAGE_GENERATION:"different"},config+'\nSTORAGE_GENERATION = "reset"'),/differs/);
 });

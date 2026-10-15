@@ -13,9 +13,12 @@ import { GameRoomDO } from "./game-room-do";
 import { handleLiveGameRequest, handleLiveGameWebSocketUpgrade } from "./shell-live";
 
 import type { D1DatabaseLike } from "./shell-live-db";
+import { assertStorageGeneration } from "./storage-generation";
+import { STORAGE_GENERATION_HEADER } from "../../shared-types/src/storage-policy";
 export type { D1DatabaseLike } from "./shell-live-db";
 
 export type ApiEnv = {
+  STORAGE_GENERATION?: string;
   AUTH_ENABLED?: string;
   AUTH_ALLOWED_ORIGINS?: string;
   DB: D1DatabaseLike;
@@ -49,6 +52,7 @@ const parseJsonBody = async (request: Request): Promise<Record<string, unknown>>
 };
 
 const handleApiRequestInternal = async (request: Request, env: ApiEnv): Promise<Response> => {
+  assertStorageGeneration(request, env);
   env = await withCutoverPolicy(env);
   const url = new URL(request.url);
   const authResponse = await handleAuthRequest(request, env as unknown as AuthEnv);
@@ -120,6 +124,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
   if (response.status !== 101) {
     const headers = new Headers(response.headers);
     headers.set("X-Righelt-Request-Id", requestId);
+    if (env.STORAGE_GENERATION) headers.set(STORAGE_GENERATION_HEADER, env.STORAGE_GENERATION);
     headers.set("X-Righelt-Server-Build", String((env as ApiEnv & { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? "unavailable"));
     response = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   }
@@ -127,3 +132,4 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
   return response;
 };
 export { GameRoomDO };
+export { runStorageMaintenance } from "./storage-maintenance";

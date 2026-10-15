@@ -63,15 +63,15 @@ test("root package scripts keep suffixed local dev entrypoints in sync", () => {
 test("root package scripts expose only db-prefixed local migration commands", () => {
   assert.equal(
     scripts["db:local:a"],
-    "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-a",
+    "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-DB} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-a",
   );
   assert.equal(
     scripts["db:local:b"],
-    "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-b",
+    "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-DB} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-b",
   );
   assert.equal(
     scripts["db:local:c"],
-    "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-c",
+    "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-DB} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-c",
   );
   assert.equal("d1:migrate:dev" in scripts, false);
   assert.equal("d1:migrate:dev:a" in scripts, false);

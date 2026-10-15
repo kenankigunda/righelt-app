@@ -1,3 +1,4 @@
+import { STORAGE_GENERATION_HEADER } from "../generated/packages/shared-types/src/storage-policy.js";
 import { withRequestEvidence } from "./request-evidence.js";
 import { parseRouteFromHash } from "./routes.js";
 import {
@@ -68,6 +69,7 @@ export const createAccountController = ({
     available = true,
     maintenance = false,
     ready = false,
+    storageGeneration = null,
     session = { authenticated: false },
     generation = 0,
     busy = false,
@@ -125,12 +127,16 @@ export const createAccountController = ({
       value === null ? storage?.removeItem(key) : storage?.setItem(key, value);
     } catch {}
   };
+  // A bootstrap may discover storage before session hydration succeeds. Keep
+  // its last published transport basis separate so retries still refresh it.
+  let lastTransitionStorageGeneration = storageGeneration;
   const snapshot = () => ({
     enabled,
     available,
     maintenance,
     ready,
     siteKey,
+    ...(storageGeneration ? { storageGeneration } : {}),
     session: structuredClone(session),
     generation,
     pendingLogout: Boolean(readPending()),
@@ -140,6 +146,7 @@ export const createAccountController = ({
     if (!destroyed) onChange(snapshot());
   };
   const retire = (next = { authenticated: false }, broadcast = false, owner = null, completedLogoutGeneration = null) => {
+    lastTransitionStorageGeneration = storageGeneration;
     generation++;
     clearTimeout(expiryTimer);
     for (const controller of controllers) controller.abort();
@@ -168,6 +175,7 @@ export const createAccountController = ({
     )
       next.expiresAt = Math.max(next.expiresAt, session.expiresAt);
     if (
+      storageGeneration !== lastTransitionStorageGeneration ||
       session.contextId !== next.contextId ||
       session.authenticated !== next.authenticated
     )
@@ -209,6 +217,15 @@ export const createAccountController = ({
       next = { ...next, account: session.account };
     accept(next);
   };
+  const checkStorageGenerationResponse = (response, path) => {
+    if(path === "/api/shell/bootstrap")return;
+    const observed=response.headers?.get?.(STORAGE_GENERATION_HEADER);
+    if(observed && observed !== storageGeneration){
+      storageGeneration=observed;ready=false;retire();
+      void start().catch(()=>publish());
+      throw failure("storage_reset");
+    }
+  };
   const request = async (
     path,
     body,
@@ -230,6 +247,7 @@ export const createAccountController = ({
             signal: controller.signal,
             headers: {
               "Content-Type": "application/json",
+              ...(storageGeneration ? { [STORAGE_GENERATION_HEADER]: storageGeneration } : {}),
               [AUTH_REQUEST_HEADER]: "1",
               [AUTH_PROTOCOL_HEADER]: String(AUTH_PROTOCOL_VERSION),
               ...(context ? { [SESSION_CONTEXT_HEADER]: context } : {}),
@@ -238,6 +256,7 @@ export const createAccountController = ({
           });
         }),
       );
+      checkStorageGenerationResponse(response,path);
       const result = await response.json();
       if (epoch !== generation || destroyed || controller.signal.aborted)
         throw failure("session_changed");
@@ -325,6 +344,7 @@ export const createAccountController = ({
         typeof result.accountsRequired !== "boolean"
       )
         throw failure("upgrade_required");
+      storageGeneration = typeof result.storageGeneration === "string" ? result.storageGeneration : null;
       enabled = result.accountsRequired;
       available = result.accountsAvailable !== false;
       maintenance = result.maintenance === true;
@@ -479,6 +499,7 @@ export const createAccountController = ({
             signal: controller.signal,
             headers: {
               ...init.headers,
+              ...(storageGeneration ? { [STORAGE_GENERATION_HEADER]: storageGeneration } : {}),
               ...(enabled
                 ? {
                     [AUTH_REQUEST_HEADER]: "1",
@@ -491,6 +512,7 @@ export const createAccountController = ({
         }),
       );
       check();
+      checkStorageGenerationResponse(response);
       const json = response.json.bind(response);
       response.json = async () => {
         const body = await json();
