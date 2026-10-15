@@ -40,3 +40,44 @@ test("account actions observe a reset while the user is outside a game",async()=
   assert.equal(client.snapshot().storageGeneration,"second");
  }finally{client.destroy();}
 });
+
+for (const authenticated of [false,true]) test(`initial account bootstrap publishes its storage basis (${authenticated ? "returning account" : "signed out"})`,async()=>{
+ const transitions=[];
+ const session=authenticated?{authenticated:true,account:{id:"actor",username:"actor"},contextId:"context",expiresAt:Date.now()+60000}:{authenticated:false};
+ const client=createAccountController({storage:null,eventTarget:null,document:null,channelFactory:null,onTransition:next=>transitions.push(next),fetcher:async path=>Response.json(path==="/api/shell/bootstrap"?{ok:true,authProtocolVersion:2,accountsRequired:true,accountsAvailable:true,storageGeneration:"current-storage"}:{ok:true,...session},{headers:{[STORAGE_GENERATION_HEADER]:"current-storage"}})});
+ try{
+  await client.start();
+  assert.equal(client.snapshot().ready,true);
+  assert.equal(transitions.length,1,"a transport must receive the discovered storage generation exactly once");
+  assert.equal(transitions[0].storageGeneration,"current-storage");
+  assert.equal(transitions[0].session.authenticated,authenticated);
+  await client.start();
+  assert.equal(transitions.length,1,"unchanged bootstrap must not retire the current transport");
+ }finally{client.destroy();}
+});
+
+test("failed session hydration still publishes the discovered storage basis on retry",async()=>{
+ let failSession=true;const transitions=[];
+ const client=createAccountController({storage:null,eventTarget:null,document:null,channelFactory:null,onTransition:next=>transitions.push(next),fetcher:async path=>{
+  if(path==="/api/auth/session" && failSession)throw Error("offline");
+  return Response.json(path==="/api/shell/bootstrap"?{ok:true,authProtocolVersion:2,accountsRequired:true,storageGeneration:"discovered"}:{ok:true,authenticated:false},{headers:{[STORAGE_GENERATION_HEADER]:"discovered"}});
+ }});
+ try{
+  await assert.rejects(client.start(),/offline/);assert.equal(transitions.length,0);
+  failSession=false;await client.start();
+  assert.equal(client.snapshot().ready,true);assert.equal(transitions.length,1);assert.equal(transitions[0].storageGeneration,"discovered");
+ }finally{client.destroy();}
+});
+
+test("refreshing storage within the same authenticated context preserves expiry reconciliation",async()=>{
+ let basis="first",expired=false;
+ const session={authenticated:true,account:{id:"actor",username:"actor"},contextId:"same-context",expiresAt:Date.now()+50};
+ const transitions=[];
+ const client=createAccountController({storage:null,eventTarget:null,document:null,channelFactory:null,onTransition:next=>transitions.push(next),fetcher:async path=>Response.json(path==="/api/shell/bootstrap"?{ok:true,authProtocolVersion:2,accountsRequired:true,storageGeneration:basis}:{ok:true,...(expired?{authenticated:false}:session)},{headers:{[STORAGE_GENERATION_HEADER]:basis}})});
+ try{
+  await client.start();basis="second";await client.start();
+  assert.equal(transitions.length,2);assert.equal(transitions[1].session.contextId,"same-context");
+  expired=true;await new Promise(resolve=>setTimeout(resolve,1100));
+  assert.equal(client.snapshot().session.authenticated,false,"expiry must still recheck and retire the authenticated context");
+ }finally{client.destroy();}
+});

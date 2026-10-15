@@ -127,6 +127,9 @@ export const createAccountController = ({
       value === null ? storage?.removeItem(key) : storage?.setItem(key, value);
     } catch {}
   };
+  // A bootstrap may discover storage before session hydration succeeds. Keep
+  // its last published transport basis separate so retries still refresh it.
+  let lastTransitionStorageGeneration = storageGeneration;
   const snapshot = () => ({
     enabled,
     available,
@@ -143,6 +146,7 @@ export const createAccountController = ({
     if (!destroyed) onChange(snapshot());
   };
   const retire = (next = { authenticated: false }, broadcast = false, owner = null, completedLogoutGeneration = null) => {
+    lastTransitionStorageGeneration = storageGeneration;
     generation++;
     clearTimeout(expiryTimer);
     for (const controller of controllers) controller.abort();
@@ -171,6 +175,7 @@ export const createAccountController = ({
     )
       next.expiresAt = Math.max(next.expiresAt, session.expiresAt);
     if (
+      storageGeneration !== lastTransitionStorageGeneration ||
       session.contextId !== next.contextId ||
       session.authenticated !== next.authenticated
     )
