@@ -1221,6 +1221,7 @@ const normalizeRouteFlyoutState = (route, { preferredFlyoutKey = null } = {}) =>
   };
 };
 currentRoute = normalizeRouteFlyoutState(currentRoute);
+syncFlyoutRenderOrder(currentRoute);
 const getShellLayoutMode = (viewportWidth = window.innerWidth) => getShellLayoutModeForRoute(currentRoute, viewportWidth);
 const getHomeSectionWidthPx = (sectionKey) => {
   const carouselEl = appEl?.querySelector?.(`[data-home-carousel="${sectionKey}"]`);
