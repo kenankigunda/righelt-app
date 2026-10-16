@@ -20,7 +20,7 @@ test('initial load, reconnect, history exit, rollback and another game never rep
  const t=createDestructionTransitions();
  assert.equal(t.update(game([record('A')])).effects.length,0);
  assert.equal(t.update(game([record('A'),record('B')]),{reset:true}).effects.length,0);
- assert.equal(t.update({...game([record('A'),record('B')]),inHistoryMode:true}).clear,true);
+ assert.equal(t.update({...game([record('A'),record('B')]),inHistoryMode:true}).clear,false);
  assert.equal(t.update({...game([record('A'),record('B')]),inHistoryMode:true}).clear,false,'benign notifications preserve an active history replay');
  assert.equal(t.update(game([record('A'),record('B')])).effects.length,0);
  assert.equal(t.update(game()).clear,true);
@@ -71,4 +71,13 @@ test('history retention eviction does not cancel the newest live destruction',()
  t.update({id:'g',moves:[{clientCommandId:'old-move',destroyedPieces:[record('old')]}]});
  const next=t.update({id:'g',moves:[{clientCommandId:'new-move',destroyedPieces:[record('new')]}]});
  assert.equal(next.clear,false);assert.equal(next.effects.length,1);
+});
+
+test('a reconnect baseline in history leaves replay completion to the board snapshot lifecycle',()=>{
+ const t=createDestructionTransitions();
+ const history={...game([record('A')]),inHistoryMode:true};
+ t.update(history);
+ assert.equal(t.update({...history,recovering:true},{reset:true}).clear,false);
+ assert.equal(t.update(history,{reset:true}).clear,false);
+ assert.deepEqual(t.update(history).effects,[]);
 });

@@ -21,7 +21,8 @@ export const createDestructionTransitions = () => {
         ...record,
         message: `Piece at (${record.position.row}, ${record.position.col}) destroyed ${record.reason === 'no_retreat' ? 'because it could not retreat' : 'due to loss of supply'}`,
       }));
-      const clear = reset || cancelled || Boolean(game?.inHistoryMode && !previous?.history) || Boolean(game?.recovering && !previous?.recovering);
+      // History loadSnapshot owns replay cancellation and marker settlement.
+      const clear = !game?.inHistoryMode && (reset || cancelled || Boolean(game?.recovering && !previous?.recovering));
       previous = { id: game?.id, ids, records, history: Boolean(game?.inHistoryMode), recovering: Boolean(game?.recovering) };
       return { effects, clear };
     },
