@@ -77,6 +77,9 @@ export const createShellBoardHost = ({ transport, gameId, canInteract }) => ({
         state: snapshot,
         legalActions,
         outcome: snapshot?.outcome ?? null,
+        removedPieces: result?.removedPieces ?? [],
+        destroyedPieces: result?.destroyedPieces ?? [],
+        clientCommandId: result?.clientCommandId,
         boardMessage: { type: "turn_ended" },
       };
     } catch (error) {

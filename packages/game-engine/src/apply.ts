@@ -1,3 +1,4 @@
+import { reportRemoval, type RemovalCollector } from "./removals";
 import type { Action, ApplyResult, GameState } from "./types";
 import { getRushChainMembers } from "./continuation";
 import { BOARD_SIZE, normalizeState } from "./deterministic";
@@ -64,7 +65,7 @@ function captureFrozenPieceStates(state: GameState, owner: "P1" | "P2") {
   );
 }
 
-export function applyAction(state: GameState, action: Action): ApplyResult {
+export function applyAction(state: GameState, action: Action, options?: { onRemoval?: RemovalCollector }): ApplyResult {
   const validation = validateAction(state, action);
   if (!validation.ok) {
     throw new Error(`Cannot apply invalid action: ${validation.code}`);
@@ -169,6 +170,7 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
       }).ok,
     );
     if (retreatSquares.length === 0) {
+      reportRemoval(defender, "no_retreat", options?.onRemoval);
       next.pieces = next.pieces.filter((piece) => piece.id !== defender.id);
       next.continuation = {
         ...next.continuation,

@@ -1183,7 +1183,7 @@ export class GameRoomDO {
     if (!ownerSeat || getSeatIdentity(game, ownerSeat) !== command.identityId) return reject("not_your_turn");
     const payload = command.payload;
     let result;
-    if (command.kind === "end_turn") result = endServerTurn(game);
+    if (command.kind === "end_turn") result = endServerTurn(game, command.clientCommandId);
     else if (command.kind === "move") result = applyServerMove(game, typeof payload.notation === "string" ? payload.notation : undefined, command.clientCommandId);
     else {
       const action = asAction(payload.action);

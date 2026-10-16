@@ -4,6 +4,7 @@ import { cliPath } from './resources/supervisor.mjs';
 // Isolated local account stack. No remote resources or production auth flags are changed.
 import { localHttpsEnvironment } from "./local-https.mjs";
 import { spawn } from "node:child_process";
+import { authFixtureWorkerSource } from './auth-fixture-worker.mjs';
 import { createAuthFixtureControl } from "./auth-fixture-control.mjs";
 import { createServer } from "node:http";
 import { get } from "node:https";
@@ -86,9 +87,12 @@ try {
   }
   await mkdir(persist, { recursive: true });
   const apiConfig = path.join(temporary, "api.toml");
+  const fixtureToken = randomBytes(32).toString("hex");
+  const fixtureWorker = path.join(temporary, "fixture-api.mjs");
+  await writeFile(fixtureWorker, authFixtureWorkerSource(path.join(root, "apps/api/index.js"), fixtureToken), {mode:0o600});
   let api = storageFixtureConfig(await readFile(path.join(root, "apps/api/wrangler.toml"), "utf8"));
   api = api.replace('name = "righelt-api"', 'name = "righelt-auth-e2e-api"')
-    .replace('main = "index.js"', `main = ${JSON.stringify(path.join(root, "apps/api/index.js"))}`)
+    .replace('main = "index.js"', `main = ${JSON.stringify(fixtureWorker)}`)
     .replace('migrations_dir = "../../db/migrations"', `migrations_dir = ${JSON.stringify(path.join(root, "db/migrations"))}`)
     .replace(/database_id = "[^"]+"/, 'database_id = "local-auth-e2e"');
   api = api.replace(/^STORAGE_GENERATION\s*=\s*"[^"]*"/m, 'STORAGE_GENERATION = ""');
@@ -123,10 +127,12 @@ try {
   await ready(`http://127.0.0.1:${apiPort}/api/health`);
   // Test-runner-only loopback control; never exposed through Pages or application routes.
   // Fixed SQL operations only, rejecting browser-origin requests. This is not an auth bypass.
-  control = createServer(createAuthFixtureControl(sql =>
-    run([...d1, "execute", "DB", "--config", apiConfig, "--local", "--persist-to", persist, "--command", sql],
-      { captureStderr: true })
-  )).listen(Number(webPort) + 100, "127.0.0.1");
+  control = createServer(createAuthFixtureControl(async sql => {
+    const result = await fetch(`http://127.0.0.1:${apiPort}/__righelt_fixture`, {
+      method: "POST", headers: {"x-righelt-fixture": fixtureToken}, body: sql,
+    });
+    if (!result.ok) throw new Error(`Local fixture operation failed: ${result.status}`);
+  })).listen(Number(webPort) + 100, "127.0.0.1");
   run(["exec", "wrangler", "pages", "dev", ".", "--port", webPort, "--local-protocol", "https", "--inspector-port", String(Number(webPort)+10)],
     { cwd: path.join(root, "apps/web"), service: true });
   await ready(origin);
