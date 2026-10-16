@@ -1188,6 +1188,7 @@ export const createSyncStore = ({
           eventSeq: payload.eventSeq,
           clientCommandId: payload.clientCommandId ?? null,
           commandOutcome: payload.commandOutcome ?? null,
+          ...(payload.type === "state_sync" ? { baseline: true } : {}),
         });
         if (applied === null) return false;
       }

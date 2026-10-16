@@ -1,3 +1,4 @@
+import { createDestructionTransitions } from "./destruction-transitions.js";
 import { isPassivePageClick } from "./passive-click.js";
 import { mountLoadingFeedback, loadingAttributes, LOADING_CUE_DELAY_MS } from "./loading.js";
 import { SYNC_TIMING } from "../generated/packages/shared-types/src/sync-protocol.js";
@@ -4280,6 +4281,7 @@ const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: oppon
   onPresentation: () => { const root=document.createElement('div');root.className='story-presentation-board';root.setAttribute('aria-hidden','true');document.body.append(root);const preview=createMiniBoardPreview({rootEl:root,preview:{snapshot:createInitialBoardSnapshot(),previewKey:'intro'},createAdapter:createEngineBoardAdapter});return ()=>{preview.destroy();root.remove();}; },
 });
 
+const destructionTransitions = createDestructionTransitions();
 const subscribeToTransport = () => transport.subscribe((change) => {
   gameSound.local(change, transport.getGameViewModel(change?.gameId), {silent:currentRoute.name!=='game' || currentRoute.gameId!==change?.gameId || Boolean(transport.getGameViewModel(change?.gameId)?.inHistoryMode)});
   if (change?.type === "upgrade_required") {
@@ -4292,10 +4294,15 @@ const subscribeToTransport = () => transport.subscribe((change) => {
       }
     } catch { /* Keep the visible update notice if session storage cannot guard a reload. */ }
   }
+  const visibleGameId = getCurrentViewedGameId();
+  const game = transport.getGameViewModel(visibleGameId);
+  const transition = destructionTransitions.update(game, { reset: change?.baseline === true || change?.type === "optimistic_rollback" || change?.type === "history_mode_changed" });
+  if (transition.clear) boardRuntime?.clearRemovalEffects();
   render({
     animatePanels: false,
     includeBoard: change?.type !== "optimistic_enqueue",
   });
+  if (mountedBoardGameId === visibleGameId && !game?.inHistoryMode) boardRuntime?.showRemovalEffects(transition.effects, null);
 });
 
 subscribeToTransport();

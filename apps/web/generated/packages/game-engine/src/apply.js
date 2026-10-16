@@ -1,3 +1,4 @@
+import { reportRemoval } from "./removals.js";
 import { getRushChainMembers } from "./continuation.js";
 import { BOARD_SIZE, normalizeState } from "./deterministic.js";
 import { localGroupMembers, validateAction } from "./legal.js";
@@ -51,7 +52,7 @@ function captureFrozenPieceStates(state, owner) {
         },
     ]));
 }
-export function applyAction(state, action) {
+export function applyAction(state, action, options) {
     const validation = validateAction(state, action);
     if (!validation.ok) {
         throw new Error(`Cannot apply invalid action: ${validation.code}`);
@@ -149,6 +150,7 @@ export function applyAction(state, action) {
             to,
         }).ok);
         if (retreatSquares.length === 0) {
+            reportRemoval(defender, "no_retreat", options?.onRemoval);
             next.pieces = next.pieces.filter((piece) => piece.id !== defender.id);
             next.continuation = {
                 ...next.continuation,

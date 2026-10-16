@@ -410,7 +410,7 @@ export const createLiveTransportStore = ({
     if (notifications) notifications.push(notification); else emitChange(notification);
     return true;
   };
-  const applyLiveGameUpdate = ({ game, eventSeq = null, commandOutcome = null }) => {
+  const applyLiveGameUpdate = ({ game, eventSeq = null, commandOutcome = null, baseline = false }) => {
     if (eventSeq !== null || commandOutcome) {
       if (!validSyncSnapshot(game, game?.id) || !isSyncRevision(eventSeq)
         || (commandOutcome && (!isSyncRevision(commandOutcome.eventSeq) || !isSyncRevision(commandOutcome.gameplayRevision)
@@ -432,7 +432,7 @@ export const createLiveTransportStore = ({
     }
     const result = upsertGameSnapshot({ game, eventSeq, changeType: "authoritative_update", publish: false });
     for (const notification of notifications) emitChange(notification);
-    if (game) { emitChange({ type: "authoritative_update", gameId: game.id }); void sendNextPendingCommand(game.id); }
+    if (game) { emitChange({ type: "authoritative_update", gameId: game.id, baseline }); void sendNextPendingCommand(game.id); }
     return result;
   };
 

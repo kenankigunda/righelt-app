@@ -1121,7 +1121,7 @@ test("history destruction overlays render as dedicated struck-through board toke
 });
 
 test("removal-piece animation timing stays aligned with the runtime settle window", () => {
-  assert.match(styleSource, /\.piece-token\.removal-piece\s*\{[\s\S]*animation:\s*removal-piece-flash 0\.48s ease-in-out 5 alternate;/s);
+  assert.match(styleSource, /\.piece-token\.removal-piece\s*\{[\s\S]*animation:\s*removal-piece-flash var\(--removal-flash-duration\) ease-in-out var\(--removal-flash-count\) alternate;/s);
 });
 
 test("rush blocker chip styling matches the dedicated board-square treatment", () => {

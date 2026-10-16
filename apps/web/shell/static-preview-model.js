@@ -1,3 +1,4 @@
+import { destructionRecords } from "../generated/packages/game-engine/src/removals.js";
 import {
   applyAction,
   listLegalActions,
@@ -5,7 +6,6 @@ import {
 } from "../generated/packages/game-engine/src/index.js";
 import { pickBestActionTypeForTarget } from "../interaction.js";
 import { buildDestroyedPieceOverlays, findRecordedActionStartPiece } from "./history-preview.js";
-import { collectDestroyedPieceRecords } from "./optimistic-live.js";
 
 const clone = (value) => (value == null ? value : structuredClone(value));
 const DEFAULT_ACTION_TYPE = "pass";
@@ -111,9 +111,11 @@ export const buildScenarioStaticPreviewModel = (scenario) => {
     return fallback;
   }
 
-  const applied = applyAction(baseSnapshot, resolvedAction);
-  const settledSnapshot = resolveToStability(clone(applied.state), { artifactMode: "full" });
-  const destroyedPieceRecords = collectDestroyedPieceRecords(baseSnapshot, applied.state, settledSnapshot, resolvedAction);
+  const events = [];
+  const onRemoval = (event) => events.push(event);
+  const applied = applyAction(baseSnapshot, resolvedAction, { onRemoval });
+  const settledSnapshot = resolveToStability(clone(applied.state), { artifactMode: "full", onRemoval });
+  const destroyedPieceRecords = destructionRecords(events);
   const overlay = {
     mode: "recorded-action",
     recordedAction: clone(resolvedAction),

@@ -1,3 +1,4 @@
+import type { RemovalCollector } from "../../game-engine/src/removals";
 import type { GameState } from "../../game-engine/src/types";
 
 export type PlayerSeat = "Player 1" | "Player 2";
@@ -28,7 +29,8 @@ export function finalizeResolvedTurn(args: {
   state: GameState;
   activeTurn: TurnLike;
   endedAt: string;
-  resolveToStability: (state: GameState, options: { artifactMode: "full" }) => GameState;
+  onRemoval?: RemovalCollector;
+  resolveToStability: (state: GameState, options: { artifactMode: "full"; onRemoval?: RemovalCollector }) => GameState;
 }): {
   nextState: GameState;
   nextTurn: TurnLike;

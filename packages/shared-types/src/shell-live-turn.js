@@ -47,7 +47,7 @@ export const buildNextTurn = (activeTurn, endedAt) => {
   };
 };
 
-export const finalizeResolvedTurn = ({ state, activeTurn, endedAt, resolveToStability }) => {
+export const finalizeResolvedTurn = ({ state, activeTurn, endedAt, resolveToStability, onRemoval }) => {
   const nextTurn = buildNextTurn(activeTurn, endedAt);
   const nextState = resolveToStability(
     {
@@ -57,7 +57,7 @@ export const finalizeResolvedTurn = ({ state, activeTurn, endedAt, resolveToStab
       continuation: null,
       pieces: clearTransientTurnFlags(state?.pieces),
     },
-    { artifactMode: "full" },
+    { artifactMode: "full", onRemoval },
   );
   return { nextState, nextTurn };
 };

@@ -1,0 +1,201 @@
+{
+  "initialState": {
+    "boardSize": 10,
+    "sideToMove": "P1",
+    "turnIndex": 0,
+    "continuation": null,
+    "outcome": {
+      "status": "ongoing"
+    },
+    "pieces": [
+      {
+        "id": "C1",
+        "owner": "P1",
+        "kind": "commander",
+        "position": {
+          "row": 6,
+          "col": 5
+        },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "C2",
+        "owner": "P2",
+        "kind": "commander",
+        "position": {
+          "row": 8,
+          "col": 2
+        },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U1-1",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 3,
+          "col": 4
+        },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U1-2",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 6,
+          "col": 4
+        },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U1-3",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 7,
+          "col": 2
+        },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U1-4",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 7,
+          "col": 3
+        },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U1-5",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 7,
+          "col": 4
+        },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U1-6",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 8,
+          "col": 4
+        },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U1-7",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 9,
+          "col": 4
+        },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U2-1",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 8,
+          "col": 1
+        },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U2-2",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 9,
+          "col": 3
+        },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U2-3",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 8,
+          "col": 5
+        },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U2-4",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 7,
+          "col": 5
+        },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U2-5",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 6,
+          "col": 6
+        },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U2-6",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 6,
+          "col": 1
+        },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U2-7",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 6,
+          "col": 3
+        },
+        "supplied": true,
+        "commanded": true
+      }
+    ]
+  },
+  "action": {
+    "type": "project",
+    "actorId": "U1-3",
+    "from": {
+      "row": 7,
+      "col": 2
+    },
+    "to": {
+      "row": 7,
+      "col": 0
+    }
+  }
+}
