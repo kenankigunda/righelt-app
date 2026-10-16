@@ -33,3 +33,25 @@ test('preference fixture does not mutate after a failed session read', async () 
     assert.equal(calls, 1);
   } finally { globalThis.fetch = original; }
 });
+
+// The results/rematch proof also sends raw authenticated mutations.
+test('results fixture forwards the generation for creation and import', async () => {
+  const { request } = await import('../results-proof.mjs');
+  const original = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({url, init});
+    return url === '/api/auth/session'
+      ? Response.json({contextId:'current',account:{id:'account'}},{headers:{[STORAGE_GENERATION_HEADER]:'current-generation'}})
+      : Response.json({game:{id:'created'}});
+  };
+  try {
+    for (const route of ['/api/shell/games','/api/shell/scenarios/import']) {
+      const result = await request({evaluate:(fn,arg)=>fn(arg)},route,{fixture:true},2);
+      assert.equal(result.status,200);
+      assert.equal(result.accountId,'account');
+      assert.equal(requests.at(-1).init.headers[STORAGE_GENERATION_HEADER],'current-generation');
+      assert.equal(requests.at(-1).init.headers['X-Righelt-Auth-Version'],'2');
+    }
+  } finally { globalThis.fetch = original; }
+});
