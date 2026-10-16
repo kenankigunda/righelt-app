@@ -1,3 +1,4 @@
+import {storageFixtureConfig} from "./storage-fixture-config.mjs";
 import { recordUnexpectedExit } from './testing/stack-status.mjs';
 import { cliPath, supervise } from './resources/supervisor.mjs';
 import { createServer } from "node:http";
@@ -131,15 +132,14 @@ const run = async () => {
   let generation=process.env.RIGHELT_E2E_STORAGE_GENERATION||(storageProfile?"e2e-storage-v1":"");
   const fixtureSecret=randomUUID();
   let apiConfig="wrangler.toml";
-  if(storageProfile){
+  {
     const entry=path.join(persistRoot,"storage-worker.mjs");
-    await writeFile(entry,storageFixtureSource(path.join(repoRoot,"apps/api/index.js")));
-    let config=await readFile(path.join(repoRoot,"apps/api/wrangler.toml"),"utf8");
-    config=config.replace('main = "index.js"',`main = ${JSON.stringify(entry)}`)
+    if(storageProfile)await writeFile(entry,storageFixtureSource(path.join(repoRoot,"apps/api/index.js")));
+    let config=storageFixtureConfig(await readFile(path.join(repoRoot,"apps/api/wrangler.toml"),"utf8"),{archives:storageProfile});
+    config=config.replace('main = "index.js"',`main = ${JSON.stringify(storageProfile?entry:path.join(repoRoot,"apps/api/index.js"))}`)
       .replace('migrations_dir = "../../db/migrations"',`migrations_dir = ${JSON.stringify(path.join(repoRoot,"db/migrations"))}`)
-      .replace('STORAGE_ARCHIVES_ENABLED = "false"','STORAGE_ARCHIVES_ENABLED = "true"')
       .replace('[vars]',`[vars]\nSTORAGE_FIXTURE_SECRET = ${JSON.stringify(fixtureSecret)}`);
-    config+='\n[[r2_buckets]]\nbinding = "ARCHIVES"\nbucket_name = "local-storage-e2e"\n';
+    config=config.replace(/database_id = "[^"]+"/,'database_id = "local-guest-e2e"');
     apiConfig=path.join(persistRoot,"storage-api.toml");await writeFile(apiConfig,config);
   }
   await mkdir(apiPersistPath, { recursive: true });

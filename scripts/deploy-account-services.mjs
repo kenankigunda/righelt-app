@@ -3,7 +3,8 @@ import { requireDeploymentOrigin } from "./deployment-origin.mjs";
 import { requireLegacyGameId } from "./account-smoke.mjs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { readFileSync } from "node:fs";
+import { readFileSync,writeFileSync,unlinkSync } from "node:fs";
+import { archiveDeploymentConfig } from "./storage-archive-config.mjs";
 const run = (args, input) => {
   const result = spawnSync("pnpm", ["exec", "wrangler", ...args], {
     env: wranglerEnvironment(process.env),
@@ -48,6 +49,7 @@ export function validateDeployment(env) {
   return { enabled, origin };
 }
 export function validateStorageDeployment(env,source) {
+  if(!/^[a-f0-9]{40}$/.test(env.DEPLOY_SHA||""))throw Error("Missing deployment revision");
   const name=/database_name\s*=\s*"([^"]+)"/.exec(source)?.[1];
   if(!name)throw Error("Missing database binding");
   if(env.CLOUDFLARE_D1_DB_NAME && ![name,"DB"].includes(env.CLOUDFLARE_D1_DB_NAME))throw Error("Migration target differs from deployed database binding");
@@ -60,14 +62,19 @@ export function validateStorageDeployment(env,source) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     const { enabled, origin } = validateDeployment(process.env);
-    validateStorageDeployment(process.env,readFileSync(new URL("../apps/api/wrangler.toml",import.meta.url),"utf8"));
+    const source=readFileSync(new URL("../apps/api/wrangler.toml",import.meta.url),"utf8");
+    validateStorageDeployment(process.env,source);
+    const archiveSource=archiveDeploymentConfig(process.env,source);
     if (!process.argv.includes("--check-only")) {
       run(["deploy", "--config", "apps/auth-hash/wrangler.toml"]);
       run(["deploy", "--config", "apps/auth/wrangler.toml"]);
-      run([
+      const archivePath=`apps/api/.archive-deploy-${process.pid}.toml`;
+      writeFileSync(archivePath,archiveSource,{mode:0o600});
+      try { run([
         "deploy",
         "--config",
-        "apps/api/wrangler.toml",
+        archivePath,
+        "--tag",process.env.DEPLOY_SHA,
         "--var",
         `AUTH_ENABLED:${enabled}`,
         "--var",
@@ -78,7 +85,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         `AUTH_ALLOWED_ORIGINS:${origin}`,
         "--var",
         `AUTH_TURNSTILE_SITE_KEY:${process.env.AUTH_TURNSTILE_SITE_KEY || ""}`,
-      ]);
+      ]); } finally { unlinkSync(archivePath); }
       if (enabled === "true")
         run(
           ["secret", "bulk", "--config", "apps/api/wrangler.toml"],

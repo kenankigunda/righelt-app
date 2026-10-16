@@ -256,8 +256,14 @@ export class GameRoomDO {
             this.game=null;
             let row=await archiveRow(this.env,this.requestedGameId);
             if(row?.status==="restoring"){const ready=await restoreArchiveStep(this.env,row);this.game=null;if(!ready)this.scheduleRestoreStep(row.game_id,Number(request.headers.get("x-storage-restore-steps")??0));return json({ok:true,ready});}
+            if(this.env.STORAGE_ARCHIVE_MODE==="canary" && this.requestedGameId!==this.env.STORAGE_ARCHIVE_CANARY_GAME_ID)return json({ok:false,error:"archive_canary_only"},403);
             if(this.env.STORAGE_ARCHIVES_ENABLED!=="true")return json({ok:true,disabled:true});
-            if(row?.status==="archived"){await pruneArchivedEvidence(this.env,row);return json({ok:true,archived:true});}
+            if(row?.status==="archived"){
+              await pruneArchivedEvidence(this.env,row);
+              const left=await this.env.DB.prepare("SELECT EXISTS(SELECT 1 FROM live_command_receipts WHERE game_id=?1) OR EXISTS(SELECT 1 FROM live_legacy_command_tombstones WHERE game_id=?1) OR EXISTS(SELECT 1 FROM live_events WHERE game_id=?1) AS remaining").bind(row.game_id).first<{remaining:number}>();
+              if(left?.remaining)this.scheduleStorageStep(row.game_id,Number(request.headers.get("x-storage-archive-steps")??0),"archive");
+              return json({ok:true,archived:true});
+            }
             const game=await this.ensureLoaded();
             if(!game)return json({ok:true,missing:true});
             try {
@@ -276,6 +282,7 @@ export class GameRoomDO {
                   this.scheduleBroadcast(event);
                 }
               }
+              if(row)this.scheduleStorageStep(row.game_id,Number(request.headers.get("x-storage-archive-steps")??0),"archive");
               return json({ok:true,archived});
             } finally {
               // Publication may commit before its response is lost. Never let an
@@ -1196,12 +1203,17 @@ export class GameRoomDO {
   }
 
   private scheduleRestoreStep(gameId:string,remaining:number) {
-    if(!Number.isSafeInteger(remaining) || remaining<=0)return;
+    this.scheduleStorageStep(gameId,remaining,"restore");
+  }
+
+  private scheduleStorageStep(gameId:string,remaining:number,kind:"restore"|"archive") {
+    const limit=kind==="restore"?STORAGE_POLICY.restoreDrainSteps:STORAGE_POLICY.archiveDrainSteps;
+    if(!Number.isSafeInteger(remaining) || remaining<=0 || remaining>limit)return;
     const rooms=(this.env as LiveGameEnv & {GAME_ROOMS?:{idFromName:(name:string)=>unknown;get:(id:unknown)=>{fetch:(request:Request)=>Promise<Response>}}}).GAME_ROOMS;
     if(!rooms || !this.state.waitUntil)return;
-    // One separate invocation per chunk avoids both queue deadlock and the
-    // free-plan query limit. A stalled chain resumes from its durable cursor.
-    this.state.waitUntil(rooms.get(rooms.idFromName(storageRoomName(this.env,gameId))).fetch(new Request("https://game-room/_storage/tick",{method:"POST",headers:{"x-game-id":gameId,"x-storage-restore-steps":String(remaining-1),...(this.env.STORAGE_GENERATION?{[STORAGE_GENERATION_HEADER]:this.env.STORAGE_GENERATION}:{})}})).then(async response=>{await response.body?.cancel();}).catch(()=>{console.warn(JSON.stringify({event:"storage_restore_deferred"}));}));
+    // Separate serialized invocations keep each chunk inside provider limits.
+    // Errors stop this chain; the next sweep resumes its durable cursor.
+    this.state.waitUntil(rooms.get(rooms.idFromName(storageRoomName(this.env,gameId))).fetch(new Request("https://game-room/_storage/tick",{method:"POST",headers:{"x-game-id":gameId,[`x-storage-${kind}-steps`]:String(remaining-1),...(this.env.STORAGE_GENERATION?{[STORAGE_GENERATION_HEADER]:this.env.STORAGE_GENERATION}:{})}})).then(async response=>{if(!response.ok)console.warn(JSON.stringify({event:"storage_continuation_deferred",kind,status:response.status}));await response.body?.cancel();}).catch(()=>{console.warn(JSON.stringify({event:"storage_continuation_deferred",kind}));}));
   }
 
   private async persistCandidate(game: LiveGame, event: (ServerEvent & { eventSeq: number }) | null, receipt?: CommandReceipt, systemPresence = false, presenceIdentity?:string) {

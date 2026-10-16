@@ -1,3 +1,4 @@
+import {storageFixtureConfig} from "./storage-fixture-config.mjs";
 import { recordUnexpectedExit } from './testing/stack-status.mjs';
 import { cliPath } from './resources/supervisor.mjs';
 // Isolated local account stack. No remote resources or production auth flags are changed.
@@ -85,7 +86,7 @@ try {
   }
   await mkdir(persist, { recursive: true });
   const apiConfig = path.join(temporary, "api.toml");
-  let api = await readFile(path.join(root, "apps/api/wrangler.toml"), "utf8");
+  let api = storageFixtureConfig(await readFile(path.join(root, "apps/api/wrangler.toml"), "utf8"));
   api = api.replace('name = "righelt-api"', 'name = "righelt-auth-e2e-api"')
     .replace('main = "index.js"', `main = ${JSON.stringify(path.join(root, "apps/api/index.js"))}`)
     .replace('migrations_dir = "../../db/migrations"', `migrations_dir = ${JSON.stringify(path.join(root, "db/migrations"))}`)

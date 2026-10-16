@@ -8,6 +8,8 @@ preview_urls = false
 binding = "CF_VERSION_METADATA"
 
 [vars]
+STORAGE_ARCHIVE_CANARY_GAME_ID = ""
+STORAGE_ARCHIVE_MODE = "disabled"
 STORAGE_GENERATION = "reset-986736d3-c72e-4539-9edc-6597847f64e7"
 AUTH_ENABLED = "false"
 STORAGE_COMPRESSION = "true"
@@ -40,3 +42,10 @@ class_name = "GameRoomDO"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["GameRoomDO"]
+
+[[r2_buckets]]
+binding = "ARCHIVES"
+bucket_name = "righelt-archives"
+
+[triggers]
+crons = []
