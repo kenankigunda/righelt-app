@@ -123,7 +123,12 @@ test('board has four turn-colored corners, neutral surroundings and a light hove
 
 test('modal size animation ends at its natural height without a final snap',async({page})=>{
  await page.setViewportSize({width:1440,height:1300});
- await page.goto('/');await page.locator('button[data-opponent="babs"]').click();
+ await page.goto('/');
+ // The initial home response replaces the opponent buttons. Finish that
+ // refresh before clicking so a detached pointer target cannot lose the click.
+ await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+ await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
+ await page.locator('button[data-opponent="babs"]').click();
  const modal=page.getByRole('dialog',{name:'Babs',exact:true});await expect(modal).toBeVisible();
  await page.evaluate(()=>document.fonts.ready);
  await page.waitForFunction(()=>document.querySelector('dialog[open]').getAnimations().length===0);
