@@ -42,11 +42,16 @@ test("archive, read-only history, receipt recovery and staged restore preserve p
     }
     const before=await h.current(),invite=before.game.inviteTokens.viewer;
     await h.db.prepare("UPDATE live_games SET retention_activity_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-8 days') WHERE game_id='g'").run();
-    for(let tick=0;tick<80;tick++){
-      const result=await h.call("_storage/tick");assert.equal(result.status,200,JSON.stringify(result));
-      const job=await h.db.prepare("SELECT status FROM game_archives WHERE game_id='g'").first();if(job?.status==="archived")break;
-      if(tick===4)await h.restart();
-    }
+    // A deliberately small continuation allowance stops with a durable cursor.
+    assert.equal((await h.call("_storage/tick",{}, {"x-storage-archive-steps":"1"})).status,200);
+    await new Promise(resolve=>setTimeout(resolve,100));
+    const stopped=await h.db.prepare("SELECT next_chunk FROM game_archives WHERE game_id='g'").first();
+    assert.equal(stopped.next_chunk,2);
+    await h.restart();
+    // One discovery sweep drains >200 receipts without a second scheduled run.
+    assert.equal((await h.call("_maintenance")).status,200);
+    const deadline=Date.now()+10000;
+    while((await h.db.prepare("SELECT status FROM game_archives WHERE game_id='g'").first())?.status!=="archived" && Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));
     assert.equal((await h.db.prepare("SELECT status FROM game_archives WHERE game_id='g'").first()).status,"archived");
     assert.equal(await h.db.prepare("SELECT * FROM game_payloads WHERE game_id='g'").first(),null);
     assert.equal((await h.db.prepare("SELECT game_id FROM live_invites WHERE token=?").bind(invite).first()).game_id,"g");
@@ -317,5 +322,22 @@ test("operation caps survive calendar rollover and expire only outside the rolli
   await h.db.prepare("INSERT INTO storage_operation_days(day,class_a,class_b) VALUES(date('now','-32 days'),800000,8000000)").run();
   await reserveArchiveOperation({DB:h.db},"a","rollover-key",1);
   assert.equal((await h.db.prepare("SELECT class_a FROM storage_budget").first()).class_a,1);
+ }finally{await h.close();}
+});
+
+test("canary sweep isolates its game and skips unrelated cleanup",{timeout:120000},async()=>{
+ const id='game-'+'a'.repeat(32),other='game-'+'b'.repeat(32);
+ const h=await harness({STORAGE_ARCHIVE_MODE:'canary',STORAGE_ARCHIVE_CANARY_GAME_ID:id,STORAGE_BUDGET_ENABLED:'true',STORAGE_EXCLUSIVE_R2:'true'});
+ try{
+  for(const gameId of [id,other])assert.equal((await h.call('create',{gameId,selfPlayMode:true},{'x-game-id':gameId})).status,200);
+  await h.db.prepare("UPDATE live_games SET retention_activity_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-8 days')").run();
+  await h.db.prepare("INSERT INTO account_rate_limits(bucket_key,attempts,expires_at) VALUES('keep-canary-cleanup',1,0)").run();
+  assert.equal((await h.call('_maintenance')).status,200);
+  const deadline=Date.now()+10000;
+  while((await h.db.prepare('SELECT status FROM game_archives WHERE game_id=?').bind(id).first())?.status!=='archived'&&Date.now()<deadline)await new Promise(r=>setTimeout(r,10));
+  assert.equal((await h.db.prepare('SELECT status FROM game_archives WHERE game_id=?').bind(id).first())?.status,'archived');
+  assert.equal(await h.db.prepare('SELECT * FROM game_archives WHERE game_id=?').bind(other).first(),null);
+  assert.ok(await h.db.prepare("SELECT * FROM account_rate_limits WHERE bucket_key='keep-canary-cleanup'").first());
+  assert.equal((await h.call('_storage/tick',{}, {'x-game-id':other,'x-storage-archive-steps':'64'})).status,403);
  }finally{await h.close();}
 });

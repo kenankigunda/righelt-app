@@ -4,6 +4,9 @@ export const STORAGE_POLICY: Readonly<{
   coldDays:number;
   sweepGames:number;
   restoreDrainSteps:number;
+  archiveDrainSteps:number;
+  archiveCron:string;
+  archiveCanaryCron:string;
   cleanupRows:number;
   maintenanceObjects:number;
   chunkRows:number;

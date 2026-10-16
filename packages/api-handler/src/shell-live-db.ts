@@ -55,6 +55,8 @@ export type LiveGameEnv = {
   STORAGE_GENERATION?: string;
   STORAGE_COMPRESSION?: string;
   STORAGE_ARCHIVES_ENABLED?: string;
+  STORAGE_ARCHIVE_MODE?: string;
+  STORAGE_ARCHIVE_CANARY_GAME_ID?: string;
   STORAGE_BUDGET_ENABLED?: string;
   STORAGE_EXCLUSIVE_R2?: string;
   ARCHIVES?: import("./storage-archive").ArchiveBucket;
