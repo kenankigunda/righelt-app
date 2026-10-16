@@ -65,3 +65,10 @@ test('recovery establishes a silent baseline and preserves no live effects',()=>
  assert.deepEqual(t.update(game([record('A')])).effects,[]);
  assert.equal(t.update(game([record('A'),record('B')])).effects.length,1);
 });
+
+test('history retention eviction does not cancel the newest live destruction',()=>{
+ const t=createDestructionTransitions();
+ t.update({id:'g',moves:[{clientCommandId:'old-move',destroyedPieces:[record('old')]}]});
+ const next=t.update({id:'g',moves:[{clientCommandId:'new-move',destroyedPieces:[record('new')]}]});
+ assert.equal(next.clear,false);assert.equal(next.effects.length,1);
+});
