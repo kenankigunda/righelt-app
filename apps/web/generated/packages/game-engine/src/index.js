@@ -11,3 +11,4 @@ export * from "./resolve.js";
 export * from "./continuation.js";
 export * from "./computation-guard.js";
 export * from "./decision-cache.js";
+export * from "./removals.js";

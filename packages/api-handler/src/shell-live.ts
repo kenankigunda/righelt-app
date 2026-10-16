@@ -1,5 +1,6 @@
 import { deterministicStateHash } from '../../game-engine/src/hash';
 import { readDecision } from './decision-archive';
+import { storageRoomName } from "./storage-generation";
 import { AUTH_PROTOCOL_VERSION } from '../../shared-types/src/auth-policy.js';
 import { authorizeGameRequest, authActive, sanitizeGameResponse, type GameAuthority } from './auth-game';
 import { AuthProblem } from './auth-controls';
@@ -37,6 +38,7 @@ type DurableObjectNamespaceLike = {
 };
 
 export type LiveGameRequestEnv = {
+  STORAGE_GENERATION?: string;
   AUTH_ENABLED?: string;
   AUTH_REQUIRED?: string;
   ACCOUNT_POLICY?: import("./account-cutover").CutoverPolicy;
@@ -84,7 +86,7 @@ const parseBody = async (request: Request): Promise<Record<string, unknown>> => 
   }
 };
 
-const roomStubForGame = (env: LiveGameRequestEnv, gameId: string) => env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(gameId));
+const roomStubForGame = (env: LiveGameRequestEnv, gameId: string) => env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(storageRoomName(env, gameId)));
 
 const forwardRequestToGameRoom = (
   env: LiveGameRequestEnv,
@@ -174,6 +176,7 @@ export const handleLiveGameRequest = async (
         ok: true,
         app: "righelt-web-shell",
         specVersion: 1,
+        ...(env.STORAGE_GENERATION ? { storageGeneration: env.STORAGE_GENERATION } : {}),
         authProtocolVersion: AUTH_PROTOCOL_VERSION, accountsRequired: authActive(env), accountsAvailable: env.AUTH_ENABLED === "true", maintenance: Boolean(env.ACCOUNT_POLICY?.maintenance),
         ...(authActive(env) && env.AUTH_TURNSTILE_SITE_KEY
           ? { turnstileSiteKey: env.AUTH_TURNSTILE_SITE_KEY } : {}),

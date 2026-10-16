@@ -1,3 +1,4 @@
+import { reportRemoval, type RemovalCollector } from "./removals";
 import type { ArtifactContractV1, ArtifactMode, GameState, ResolveArtifacts } from "./types";
 import { canCloseContinuationNow } from "./continuation";
 import { SUPPLY_POINTS } from "./deterministic";
@@ -693,7 +694,7 @@ function applyGroupPhase(state: GameState, mode: ArtifactMode): boolean {
   return false;
 }
 
-function applyContinuationPhase(state: GameState): boolean {
+function applyContinuationPhase(state: GameState, onRemoval?: RemovalCollector): boolean {
   if (!state.continuation) {
     return false;
   }
@@ -739,6 +740,7 @@ function applyContinuationPhase(state: GameState): boolean {
       );
 
       if (retreatCandidates.length === 0) {
+        reportRemoval(pushedPiece, "no_retreat", onRemoval);
         state.pieces = state.pieces.filter((piece) => piece.id !== pushedPiece.id);
         state.continuation.phase = "follow";
         state.continuation.owner = attackerOwner;
@@ -916,18 +918,16 @@ function applySupplyPhase(state: GameState, mode: ArtifactMode): boolean {
   return changed;
 }
 
-function applyForcedEffectsPhase(state: GameState): boolean {
+function applyForcedEffectsPhase(state: GameState, onRemoval?: RemovalCollector): boolean {
   if (state.continuation) {
     return false;
   }
   const beforeCount = state.pieces.length;
-  state.pieces = state.pieces.filter(
-    (piece) =>
-      piece.pushed ||
-      piece.kind === "commander" ||
-      piece.supplied ||
-      isFrozenPieceDuringContinuation(state, piece.id, piece.owner),
-  );
+  state.pieces = state.pieces.filter((piece) => {
+    const keep = piece.pushed || piece.kind === "commander" || piece.supplied || isFrozenPieceDuringContinuation(state, piece.id, piece.owner);
+    if (!keep) reportRemoval(piece, "loss_of_supply", onRemoval);
+    return keep;
+  });
   return state.pieces.length !== beforeCount;
 }
 
@@ -959,7 +959,7 @@ function evaluateTerminalPhase(state: GameState): boolean {
   return true;
 }
 
-function runResolvePass(state: GameState, mode: ArtifactMode): boolean {
+function runResolvePass(state: GameState, mode: ArtifactMode, onRemoval?: RemovalCollector): boolean {
   let changed = false;
 
   // Phase 1: connectivity + artifact baseline.
@@ -991,13 +991,13 @@ function runResolvePass(state: GameState, mode: ArtifactMode): boolean {
   if (applyGroupPhase(state, mode)) {
     changed = true;
   }
-  if (applyContinuationPhase(state)) {
+  if (applyContinuationPhase(state, onRemoval)) {
     changed = true;
   }
   // Action-family legality integration lands after Track A merge sync.
 
   // Phase 5: forced effects.
-  if (applyForcedEffectsPhase(state)) {
+  if (applyForcedEffectsPhase(state, onRemoval)) {
     changed = true;
   }
 
@@ -1009,6 +1009,7 @@ export function resolveToStability(
   options?: {
     artifactMode?: ArtifactMode;
     maxPasses?: number;
+    onRemoval?: RemovalCollector;
   },
 ): GameState {
   const mode = options?.artifactMode ?? "minimal";
@@ -1016,7 +1017,7 @@ export function resolveToStability(
 
   let pass = 0;
   while (pass < maxPasses) {
-    const changed = runResolvePass(state, mode);
+    const changed = runResolvePass(state, mode, options?.onRemoval);
     if (!changed) {
       if (!state.continuation) {
         evaluateTerminalPhase(state);

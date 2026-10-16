@@ -51,10 +51,10 @@
     "test:e2e": "node scripts/resources/cli.mjs run --kind heavy -- playwright test",
     "test:e2e:headed": "node scripts/resources/cli.mjs run --kind heavy -- playwright test --headed",
     "cf:set-db": "node scripts/set-d1-binding.mjs",
-    "db:local": "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev",
-    "db:local:a": "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-a",
-    "db:local:b": "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-b",
-    "db:local:c": "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-c",
+    "db:local": "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-DB} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev",
+    "db:local:a": "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-DB} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-a",
+    "db:local:b": "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-DB} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-b",
+    "db:local:c": "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-DB} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-c",
     "db:cleanup:local": "node scripts/db-retention-cleanup-local.mjs",
     "deploy:api": "pnpm --dir apps/api exec wrangler deploy --config wrangler.toml",
     "deploy:web": "pnpm --dir apps/web exec wrangler pages deploy . --project-name ${CLOUDFLARE_PAGES_PROJECT:-righelt}",
@@ -98,7 +98,8 @@
     "test:tooling": "node scripts/testing/tooling.mjs",
     "test:report-viewer": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/validation/test/report-browser.mjs",
     "test:e2e:auth:journeys": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/run-auth-e2e.mjs --config playwright.auth.config.mjs",
-    "test:e2e:auth:controls": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/run-auth-e2e.mjs --config playwright.auth-controls.config.mjs"
+    "test:e2e:auth:controls": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/run-auth-e2e.mjs --config playwright.auth-controls.config.mjs",
+    "test:e2e:storage": "RIGHELT_E2E_STORAGE_ARCHIVES=1 node scripts/resources/cli.mjs run --kind heavy -- playwright test e2e/workflows/storage-lifecycle.spec.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.1",

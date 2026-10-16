@@ -44,7 +44,7 @@ async function serverSchedule(seed, random, trace) {
   const deliver = async (command, fault = "healthy") => {
     const expected = predict(command), existing = ledger.has(command.clientCommandId);
     if (fault === "drop") return;
-    if (fault === "fail" && !existing && expected !== "unknown") actual.DB.failNextBatchAt(5);
+    if (fault === "fail" && !existing && expected !== "unknown") actual.DB.failNextBatchAt(0);
     if (fault === "lost" && !existing && expected !== "unknown") actual.DB.loseNextBatchResponse();
     let response;
     try { response = await actual.call("moves", command); }
@@ -67,9 +67,9 @@ async function serverSchedule(seed, random, trace) {
     assert.equal(actual.game().gameplayRevision, revision);
     assert.deepEqual(actual.game().board.state, oracle.game().board.state, "faulted execution differs from clean intent execution");
     const events = actual.DB.getEvents("g");
-    const seq = events.at(-1).event_seq;
+    const seq = actual.DB.getGameRow("g").event_seq;
     assert.ok(seq >= previousSeq); previousSeq = seq;
-    assert.deepEqual(events.map((event) => event.event_seq), Array.from({ length: seq }, (_, i) => i + 1));
+    assert.equal(events.length,0,"recovery persists canonical state and receipts without full-state event copies");
     for (const [id, outcome] of ledger) assert.equal(actual.DB.getReceipt("g", id)?.outcome, outcome, `durable receipt ${id}`);
     const ids = actual.game().moves.map((move) => move.clientCommandId);
     assert.equal(new Set(ids).size, ids.length, "duplicate gameplay effect");
@@ -164,7 +164,7 @@ async function clientSchedule(seed, random, trace) {
       requests++; captured.push(command); fault = "healthy";
       assert.ok((await baseJournal.list("actor", command.gameId)).some((saved) => saved.clientCommandId === command.clientCommandId), "every submission must already be durably admitted");
 
-      if (mode === "fail") env.DB.failNextBatchAt(5);
+      if (mode === "fail") env.DB.failNextBatchAt(0);
       if (mode === "lost") env.DB.loseNextBatchResponse();
     }
     let response, error;

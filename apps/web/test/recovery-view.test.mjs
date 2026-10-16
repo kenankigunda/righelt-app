@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { recoveryMessage } from "../shell/recovery-view.js";
+import { recoveryMessage, isBoardRecoveryPending } from "../shell/recovery-view.js";
 import { createLiveTransportStore } from "../shell/live-transport.js";
 
 const snapshot = (n) => ({ pieces: [], sideToMove: "P1", turnIndex: n });
@@ -8,6 +8,17 @@ const fixture = () => ({ id: "history", createdAt: "2026-01-01", updatedAt: "202
  board: { state: snapshot(9) }, currentSnapshot: snapshot(9), turns: [], canRecordMove: true, canEndTurn: true,
  moves: [0,1,2,3].map((index) => ({ index, moveId: `m${index}`, snapshot: snapshot(index), selectionSnapshot: snapshot(20+index) })) });
 const store = () => createLiveTransportStore({ storage: {getItem:()=>"actor",setItem(){}}, fetcher: () => { throw Error("No network needed for history"); } });
+
+test("live board loading follows blocked recovery without requiring a reconnect timestamp", () => {
+ const pending = {sharedMutationsBlocked:true,syncStatus:"confirming",pendingCommandCount:3,recoveryStartedAt:null};
+ assert.equal(isBoardRecoveryPending(pending),true);
+ assert.equal(isBoardRecoveryPending({...pending,recovering:true,syncStatus:"ready"}),true);
+ assert.equal(isBoardRecoveryPending({...pending,sharedMutationsBlocked:false}),false);
+ assert.equal(isBoardRecoveryPending({...pending,syncStatus:"ready"}),false);
+ for (const flags of [{inHistoryMode:true},{storageBlocked:true},{upgradeRequired:true},{recoveryIssue:"session_changed"},{recoveryIssue:"invalid_credentials"}])
+  assert.equal(isBoardRecoveryPending({...pending,...flags}),false);
+ assert.equal(isBoardRecoveryPending(null),false);
+});
 
 test("history keeps the selected position after trimming and ignores same-identity tab selection", () => {
  const t = store(); t.applyLiveGameUpdate({game:fixture()});

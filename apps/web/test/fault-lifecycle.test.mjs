@@ -1,11 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createFaultLifecycle,disposeFaultContexts} from '../../../e2e/support/fault-lifecycle.mjs';
+import {createFaultLifecycle,fetchFaultResponse,disposeFaultContexts} from '../../../e2e/support/fault-lifecycle.mjs';
 function fixture() {
  const timers=new Map();let next=0;
  const lifecycle=createFaultLifecycle({setTimer: callback=>{const id=++next;timers.set(id,callback);return id;},clearTimer:id=>timers.delete(id)});
  return {lifecycle,timers};
 }
+test('relay resets reach the browser without retrying, while unrelated relay errors still fail',async()=>{
+ const calls=[];let resets=0;
+ const route={fetch:async options=>{calls.push(options);throw Error('route.fetch: read ECONNRESET');},abort:async code=>calls.push(code)};
+ assert.equal(await fetchFaultResponse(route,{timeout:100},()=>resets++),null);
+ assert.equal(resets,1);assert.deepEqual(calls,[{timeout:100},'connectionreset']);
+ const response={ok:true};assert.equal(await fetchFaultResponse({fetch:async()=>response,abort:()=>assert.fail('no abort')},{}),response);
+ await assert.rejects(fetchFaultResponse({fetch:async()=>{throw Error('bad response parsing');},abort:()=>assert.fail('no abort')},{}),/bad response parsing/);
+});
 test('disposal cancels delayed sends, including a callback already queued by the timer',async()=>{
  const {lifecycle,timers}=fixture();let sends=0;
  lifecycle.schedule(()=>sends++,100);const callback=[...timers.values()][0];
@@ -59,4 +67,21 @@ test('cleanup awaits owned context closure and drains helpers when unroute fails
  const cleanup=disposeFaultContexts(resources,[context]);
  await Promise.resolve();await Promise.resolve();assert.equal(closeFinished,false);release();
  await assert.rejects(cleanup,/Recovery test cleanup failed/);assert.equal(closeFinished,true);assert.equal(timers.size,0);
+});
+
+test('nested cleanup reports transport causes while preserving failures and omitting request details',async()=>{
+ const {lifecycle}=fixture();
+ const failure=Error('route.fetch: read ECONNRESET\nCall log:\n  authorization: private-test-value');
+ await lifecycle.run(async()=>{throw failure;});
+ let closed=false;
+ const context={unrouteAll:async()=>{},close:async()=>{closed=true;}};
+ const resources={faults:new Map([[context,[lifecycle]]]),contexts:new Set([context])};
+ await assert.rejects(disposeFaultContexts(resources,[context]),error=>{
+  assert.match(error.message,/Recovery test cleanup failed: Fault cleanup failed: Fault helper asynchronous work failed: route.fetch: read ECONNRESET/);
+  assert.doesNotMatch(error.message,/private-test-value|authorization|Call log/);
+  assert.equal(error.errors[0].errors[0].errors[0],failure);
+  return true;
+ });
+ assert.equal(closed,true);
+ assert.equal(resources.faults.size,0);assert.equal(resources.contexts.size,0);
 });

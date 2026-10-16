@@ -3,7 +3,7 @@ import { canonicalCommandJson, encodedSyncBytes } from '../../shared-types/src/s
 import type { LiveGame, MoveEntry } from './shell-live-core';
 import type { LiveGameEnv, D1Statement } from './shell-live-db';
 
-export type ArchivedDecision = { id: string; kind: 'decision' | 'restoration' | 'turn' | 'initial'; revision: number; eventSeq: number; ordinal: number; at: string; move?: MoveEntry; restoredIds?: string[]; targetDecisionId?: string; state?: LiveGame['board']['state']; partial?: boolean };
+export type ArchivedDecision = { id: string; kind: 'decision' | 'restoration' | 'turn' | 'initial' | 'finalization'; revision: number; eventSeq: number; ordinal: number; at: string; move?: MoveEntry; finalizedMove?: MoveEntry; restoredIds?: string[]; targetDecisionId?: string; state?: LiveGame['board']['state']; partial?: boolean };
 const insert = (env: LiveGameEnv, gameId: string, entry: ArchivedDecision) => env.DB.prepare('INSERT INTO live_decision_archive (game_id, decision_id, event_seq, event_ordinal, gameplay_revision, payload_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6)').bind(gameId, entry.id, entry.eventSeq, entry.ordinal, entry.revision, JSON.stringify(entry));
 
 /** These statements join the same D1 batch as the projection and command receipt. */
@@ -21,6 +21,12 @@ export function archiveStatements(env: LiveGameEnv, before: LiveGame | null, gam
   const oldIds = new Set(before?.moves.map((move) => move.moveId) ?? []);
   const added = game.moves.filter((move) => !oldIds.has(move.moveId));
   for (const move of added) append({ id: move.moveId, kind: 'decision', revision, eventSeq, at: move.at, move });
+  for (const move of game.moves) {
+    const old = before?.moves.find(candidate => candidate.moveId === move.moveId);
+    if (old && !move.undone && (JSON.stringify(old.snapshot) !== JSON.stringify(move.snapshot) || JSON.stringify(old.destroyedPieces) !== JSON.stringify(move.destroyedPieces))) {
+      append({ id: `finalize-${eventSeq}-${move.moveId}`, kind: 'finalization', revision, eventSeq, at: game.updatedAt, targetDecisionId: move.moveId, finalizedMove: move });
+    }
+  }
   const restoredIds = game.moves.filter((move) => move.undone && before?.moves.some((old) => old.moveId === move.moveId && !old.undone)).map((move) => move.moveId);
   if (restoredIds.length || game.lastRestoration?.at !== before?.lastRestoration?.at) append({ id: `restore-${eventSeq}`, kind: 'restoration', revision, eventSeq, at: game.updatedAt, restoredIds, targetDecisionId: game.lastRestoration?.decisionId, state: game.board.state });
   else if (before && revision !== before.gameplayRevision && !added.length) append({ id: `turn-${eventSeq}`, kind: 'turn', revision, eventSeq, at: game.updatedAt, state: game.board.state });
@@ -31,13 +37,28 @@ export function archiveStatements(env: LiveGameEnv, before: LiveGame | null, gam
 }
 export async function readDecision(env: LiveGameEnv, gameId: string, decisionId: string): Promise<ArchivedDecision | null> {
   const row = await env.DB.prepare('SELECT payload_json FROM live_decision_archive WHERE game_id = ?1 AND decision_id = ?2').bind(gameId, decisionId).first<{ payload_json: string }>();
-  return row ? JSON.parse(row.payload_json) : null;
+  if (!row) return null;
+  const entry: ArchivedDecision = JSON.parse(row.payload_json);
+  if (entry.kind !== 'decision') return entry;
+  const amendment = await env.DB.prepare("SELECT payload_json FROM live_decision_archive WHERE game_id = ?1 AND json_extract(payload_json, '$.kind') = 'finalization' AND json_extract(payload_json, '$.targetDecisionId') = ?2 ORDER BY event_seq DESC, event_ordinal DESC LIMIT 1").bind(gameId, decisionId).first<{ payload_json: string }>();
+  return amendment ? { ...entry, move: JSON.parse(amendment.payload_json).finalizedMove } : entry;
 }
 export async function readDecisionPage(env: LiveGameEnv, gameId: string, cursor: unknown) {
   const parsed = cursor && typeof cursor === 'object' ? cursor as { eventSeq?: unknown; ordinal?: unknown } : { eventSeq: 0, ordinal: -1 };
   if (!Number.isSafeInteger(parsed.eventSeq) || Number(parsed.eventSeq) < 0 || !Number.isSafeInteger(parsed.ordinal) || Number(parsed.ordinal) < -1) throw new Error('invalid_history_cursor');
-  const rows = await env.DB.prepare('SELECT payload_json FROM live_decision_archive WHERE game_id = ?1 AND (event_seq > ?2 OR (event_seq = ?2 AND event_ordinal > ?3)) ORDER BY event_seq, event_ordinal LIMIT ?4').bind(gameId, parsed.eventSeq, parsed.ordinal, COMPUTER_LIMITS.historyPage + 1).all<{ payload_json: string }>();
-  const entries: ArchivedDecision[] = (rows.results ?? []).map((row) => JSON.parse(row.payload_json));
+  const rows = await env.DB.prepare(`SELECT original.payload_json,
+    (SELECT amendment.payload_json FROM live_decision_archive AS amendment
+      WHERE amendment.game_id = original.game_id
+      AND json_extract(amendment.payload_json, '$.kind') = 'finalization'
+      AND json_extract(amendment.payload_json, '$.targetDecisionId') = original.decision_id
+      ORDER BY amendment.event_seq DESC, amendment.event_ordinal DESC LIMIT 1) AS finalized_payload_json
+    FROM live_decision_archive AS original WHERE original.game_id = ?1
+    AND (original.event_seq > ?2 OR (original.event_seq = ?2 AND original.event_ordinal > ?3))
+    ORDER BY original.event_seq, original.event_ordinal LIMIT ?4`).bind(gameId, parsed.eventSeq, parsed.ordinal, COMPUTER_LIMITS.historyPage + 1).all<{ payload_json: string; finalized_payload_json?: string | null }>();
+  const entries: ArchivedDecision[] = (rows.results ?? []).map(row => {
+    const entry: ArchivedDecision = JSON.parse(row.payload_json);
+    return entry.kind === 'decision' && row.finalized_payload_json ? { ...entry, move: JSON.parse(row.finalized_payload_json).finalizedMove } : entry;
+  });
   const items = entries.slice(0, COMPUTER_LIMITS.historyPage);
   const last = items.at(-1);
   return { items, nextCursor: entries.length > items.length && last ? { eventSeq: last.eventSeq, ordinal: last.ordinal } : null };

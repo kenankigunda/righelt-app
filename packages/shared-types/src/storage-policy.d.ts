@@ -1,0 +1,22 @@
+export const STORAGE_GENERATION_HEADER: string;
+export const STORAGE_GENERATION_QUERY: string;
+export const STORAGE_POLICY: Readonly<{
+  coldDays:number;
+  sweepGames:number;
+  restoreDrainSteps:number;
+  archiveDrainSteps:number;
+  archiveCron:string;
+  archiveCanaryCron:string;
+  cleanupRows:number;
+  maintenanceObjects:number;
+  chunkRows:number;
+  maximumStateBytes:number;
+  maximumChunkBytes:number;
+  warnFraction:number;
+  stopFraction:number;
+  d1Bytes:number;
+  archiveWindowDays: number;
+  archiveBytes:number;
+  archiveClassA:number;
+  archiveClassB:number;
+}>;

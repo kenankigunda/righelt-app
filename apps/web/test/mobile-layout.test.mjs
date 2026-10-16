@@ -23,7 +23,7 @@ test("shell header wraps long mobile status and identity tokens instead of widen
 test("shell header stacks cleanly on narrow screens", () => {
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-status\s*\{[\s\S]*position:\s*fixed;[\s\S]*top:\s*1rem;[\s\S]*z-index:\s*20;/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-status\s*\{[\s\S]*position:\s*fixed;[\s\S]*left:\s*0;[\s\S]*right:\s*0;[\s\S]*top:\s*0;[\s\S]*z-index:\s*20;/s,
   );
   assert.match(
     shellStylesSource,
@@ -62,7 +62,7 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-status\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*0\.9rem;[\s\S]*left:\s*50%;[\s\S]*width:\s*min\(100%,\s*32rem\);[\s\S]*max-width:\s*calc\(100% - 2rem\);[\s\S]*min-height:\s*var\(--shell-alert-stack-height,\s*5\.6rem\);[\s\S]*height:\s*var\(--shell-alert-stack-height,\s*5\.6rem\);[\s\S]*display:\s*flex;[\s\S]*align-items:\s*flex-start;[\s\S]*transform:\s*translateX\(-50%\);/s,
+    /\.shell-header-status\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*0\.9rem;[\s\S]*left:\s*50%;[\s\S]*width:\s*min\(100%,\s*32rem\);[\s\S]*max-width:\s*calc\(100% - 2rem\);[\s\S]*min-height:\s*var\(--shell-alert-stack-height,\s*5\.6rem\);[\s\S]*height:\s*auto;[\s\S]*display:\s*flex;[\s\S]*align-items:\s*flex-start;[\s\S]*transform:\s*translateX\(-50%\);/s,
   );
   assert.match(
     shellStylesSource,
@@ -125,7 +125,7 @@ test("shell main layout transitions width when docked flyouts open or close", ()
   );
   assert.match(
     shellStylesSource,
-    /\.shell-game-alert\s*\{[\s\S]*height:\s*100%;[\s\S]*animation:\s*shell-game-alert-reveal 180ms ease;[\s\S]*overflow:\s*hidden;/s,
+    /\.shell-game-alert\s*\{[\s\S]*height:\s*auto;[\s\S]*animation:\s*shell-game-alert-reveal 180ms ease;[\s\S]*display:\s*grid;/s,
   );
   assert.match(
     shellStylesSource,
@@ -133,7 +133,7 @@ test("shell main layout transitions width when docked flyouts open or close", ()
   );
   assert.match(
     shellStylesSource,
-    /\.shell-game-alert-copy\s*\{[\s\S]*-webkit-line-clamp:\s*2;[\s\S]*overflow:\s*hidden;/s,
+    /\.shell-game-alert-copy\s*\{[\s\S]*grid-area:\s*copy;[\s\S]*overflow-wrap:\s*anywhere;/s,
   );
   assert.match(
     shellStylesSource,

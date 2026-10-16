@@ -8,6 +8,48 @@ const piece=(id,owner,kind,row,col)=>({id,owner,kind,position:{row,col},supplied
 const scenario={formatVersion:2,id:"6288b956-a647-4e40-9c89-e45c5ea4cf22",title:"Recovery continuation regression",description:"Disposable push retreat follow fixture",incorrect:false,initialState:{boardSize:10,sideToMove:"P1",turnIndex:0,continuation:null,outcome:{status:"ongoing"},pieces:[piece("C1","P1","commander",3,1),piece("C2","P2","commander",4,4),piece("A1","P1","unit",4,1),piece("D1","P2","unit",4,2)]},moves:[],expectedFinalStateHash:"hash-placeholder",expectedOutcome:"ongoing",savedSelection:null};
 scenario.resultingState=structuredClone(scenario.initialState);
 
+test("lost move response recovers through identical submission while reconciliation stays stalled", async ({page}, info) => {
+ let dropInbound = false, first = true, release;
+ const commands = [];
+ const gate = new Promise(resolve => release = resolve);
+ await page.routeWebSocket(/\/api\/shell\/games\//, socket => {
+  const server = socket.connectToServer();
+  server.onMessage(message => { if (!dropInbound) socket.send(message); });
+ });
+ const {gameId} = await createGameFromHome(page);
+ await page.route(`**/api/shell/games/${gameId}/reconcile`, async route => {
+  await gate;
+  await route.abort();
+ });
+ await page.route(`**/api/shell/games/${gameId}/apply`, async route => {
+  commands.push(route.request().postDataJSON());
+  if (first) {
+   first = false; dropInbound = true;
+   await route.fetch();
+   await route.abort();
+  } else await route.continue();
+ });
+ try {
+  const game = await currentGame(page, gameId);
+  const action = game.legalActions.find(entry => entry.type === "move") ?? game.legalActions[0];
+  await submitPlayableAction(page, action);
+  await expect.poll(() => commands.length, {timeout:20000}).toBe(2);
+  expect(commands[1]).toEqual(commands[0]);
+  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0, {timeout:10000});
+  const recovered = await currentGame(page, gameId);
+  expect(recovered.moves).toHaveLength(1);
+  expect(recovered.moves[0].clientCommandId).toBe(commands[0].clientCommandId);
+  await page.screenshot({path:info.outputPath("submission-recovered.png")});
+  dropInbound = false;
+  await page.reload();
+  await expect(page.getByTestId("game-board")).toBeVisible();
+  expect((await currentGame(page, gameId)).moves).toHaveLength(1);
+ } finally {
+  dropInbound = false; release();
+  await page.unrouteAll({behavior:"wait"});
+ }
+});
+
 test("guest play-both push retreat follow recovers with healthy HTTP and unavailable sockets",async({page,baseURL},info)=>{
  let socketsUnavailable=false,losePush=true;const commands=[], sockets=[];
  let holdConfirmation=false,releaseConfirmation,confirmationRequested=false;
@@ -106,19 +148,22 @@ for(const reduced of [false,true])test(`routine reconnect stays quiet four secon
  hold=true;await page.evaluate(()=>{dispatchEvent(new Event("pagehide"));dispatchEvent(new PageTransitionEvent("pageshow",{persisted:true}));});
  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toBeVisible();
  await waiting;
- await expect(page.locator('.board-wrap > .loading-pieces')).toBeHidden();
- await page.clock.runFor(199);await expect(page.locator('.board-wrap > .loading-pieces')).toBeHidden();
- await page.clock.runFor(2);await expect(page.locator('.board-wrap > .loading-pieces')).toBeVisible();
+ await expect(page.locator('.reconnect-background')).toBeHidden();
+ await page.clock.runFor(199);await expect(page.locator('.reconnect-background')).toBeHidden();
+ await page.clock.runFor(2);await expect(page.locator('.reconnect-background')).toBeVisible();
  await page.clock.runFor(3798);await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  await page.clock.runFor(2);
  await expect(page.getByTestId("sync-recovery-banner")).toBeVisible();
  await expect(page.getByTestId("sync-recovery-banner")).toContainText("Reconnecting. We’ll be right back!");
  expect(await board.boundingBox()).toEqual(before);expect(await board.innerHTML()).toBe(contents);
- if(reduced)expect(await page.locator(".reconnect-background").evaluate(el=>getComputedStyle(el).animationName)).toBe("none");
- // Deadline assertions are complete; let the alert entrance finish for pixels.
- await page.clock.runFor(300);
+ if(reduced)expect(await page.locator(".reconnect-background").evaluate(el=>getComputedStyle(el,"::before").animationName)).toBe("none");
+ // Deadline assertions are complete. CSS transitions use the browser's
+ // animation clock, so resume it before measuring the settled fade.
+ await page.clock.resume();
+ await expect.poll(()=>board.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(.2);
  await page.screenshot({path:info.outputPath(reduced?"reconnect-static.png":"reconnect-sweep.png")});
  hold=false;release();await page.clock.resume();await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0,{timeout:10000});
+ await expect.poll(()=>board.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(1);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  } finally {
   hold=false;release();await page.clock.resume();

@@ -1,6 +1,7 @@
+import {e2eControlPort} from '../../scripts/e2e-control.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {test as base, expect} from '@playwright/test';
-import {createFaultLifecycle, disposeFaultContexts as cleanup} from '../support/fault-lifecycle.mjs';
+import {createFaultLifecycle, fetchFaultResponse, disposeFaultContexts as cleanup} from '../support/fault-lifecycle.mjs';
 const owned = new WeakMap();
 const test = base.extend({
  faultCleanup: [async ({context}, use, info) => {
@@ -22,7 +23,7 @@ async function wire(page) {
  const resources = owned.get(test.info());
  const faults = resources.faults.get(page.context()) || [];
  resources.faults.set(page.context(), [...faults, lifecycle]);
- const fault={receive:false,http:false,loseReply:false, requests:0,snapshots:0,bytes:0,commands:[],outcomes:[],latency:100,lastInbound:0};
+ const fault={receive:false,http:false,loseReply:false, requests:0,snapshots:0,bytes:0,networkResets:0,commands:[],outcomes:[],latency:100,lastInbound:0};
  await page.routeWebSocket(/\/api\/shell\/games\//, socket=>{
   const server=socket.connectToServer();
   server.onMessage(message=>{
@@ -43,7 +44,8 @@ async function wire(page) {
   if(mutation&&fault.loseAtApply){fault.loseAtApply=false;fault.receive=true;fault.loseReply=true;}
   if(mutation)fault.commands.push(route.request().postDataJSON());
   if(mutation&&fault.holdApply){await route.abort();return;}
-  const response=await route.fetch({timeout:5000});
+  const response=await fetchFaultResponse(route,{timeout:5000},()=>fault.networkResets++);
+  if(!response)return;
   if(lifecycle.disposed){await route.abort();return;}
   let body=await response.body();
   if(lifecycle.disposed){await route.abort();return;}
@@ -115,7 +117,7 @@ async function converged(pages) {
 }
 async function evidence(info, name, start, faults, extra={}) {
  const result={fault:name,restoredAt:new Date(start).toISOString(),convergenceMs:Date.now()-start,
-  requests:faults.reduce((a,f)=>a+f.requests,0),snapshots:faults.reduce((a,f)=>a+f.snapshots,0),applicationPayloadBytes:faults.reduce((a,f)=>a+f.bytes,0),...extra};
+  requests:faults.reduce((a,f)=>a+f.requests,0),snapshots:faults.reduce((a,f)=>a+f.snapshots,0),applicationPayloadBytes:faults.reduce((a,f)=>a+f.bytes,0),networkResets:faults.reduce((a,f)=>a+f.networkResets,0),...extra};
  expect(result.convergenceMs).toBeLessThanOrEqual(25000);
  await mkdir("test-results/sync-recovery",{recursive:true});
  await writeFile(`test-results/sync-recovery/${info.project.name}-${name}.json`,JSON.stringify(result,null,2));
@@ -203,7 +205,7 @@ for(const phase of ['before','after'])test(`E03 actual Worker restart ${phase} c
   p.faults[0].receive=true;p.faults[0].loseReply=true;
   await move(p.pages[0],p.gameId);
   await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Recording your move');
-  const response=await request.post(`http://127.0.0.1:${Number(new URL(baseURL).port)+100}/restart`);expect(response.ok()).toBe(true);
+  const response=await request.post(`http://127.0.0.1:${e2eControlPort(new URL(baseURL).port)}/restart`);expect(response.ok()).toBe(true);
   p.faults[0].receive=false;p.faults[0].loseReply=false;p.faults[0].holdApply=false;const start=Date.now();
   await converged(p.pages);expect((await digest(p.pages[0])).history).toHaveLength(1);await evidence(info,`worker-restart-${phase}-commit`,start,p.faults);
  }finally{await cleanupParty(p);}

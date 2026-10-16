@@ -3242,6 +3242,9 @@ test("U-10: loadSnapshot starts a history destruction transition before exposing
 test("U-11: history destruction transition settles into overlay state and clears on the next load", async () => {
   const renderCalls = [];
   const scheduledTimers = [];
+  const originalNow = Date.now;
+  let now = 5000;
+  Date.now = () => now;
   const originalSetTimeout = globalThis.setTimeout;
   const originalClearTimeout = globalThis.clearTimeout;
 
@@ -3302,6 +3305,7 @@ test("U-11: history destruction transition settles into overlay state and clears
 
     assert.deepEqual(runtime.getOverlay().destroyedPieces, []);
     assert.equal(scheduledTimers.length, 1);
+    now += scheduledTimers[0].delay;
     scheduledTimers[0].fn();
 
     assert.deepEqual(runtime.getOverlay().destroyedPieces, [destroyedRecord]);
@@ -3316,6 +3320,7 @@ test("U-11: history destruction transition settles into overlay state and clears
 
     assert.deepEqual(runtime.getOverlay().destroyedPieces, []);
   } finally {
+    Date.now = originalNow;
     globalThis.setTimeout = originalSetTimeout;
     globalThis.clearTimeout = originalClearTimeout;
   }

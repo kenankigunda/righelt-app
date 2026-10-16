@@ -1,3 +1,4 @@
+import { REMOVAL_EFFECT_DURATION_MS, REMOVAL_FLASH_COUNT } from "../board/removal-timing.js";
 import { renderPieceSymbol } from '../piece-symbols.js';
 export { createInitialState as createInitialBoardSnapshot, listLegalActions as listBoardLegalActions } from '../generated/packages/game-engine/src/index.js';
 import { BOARD_SIZE, SUPPLY_POINTS } from "../generated/packages/game-engine/src/deterministic.js";
@@ -11,7 +12,6 @@ import {
 } from "../interaction.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-const REMOVAL_FLASH_DURATION_MS = 1800;
 const PREVIEW_STROKE_BY_OWNER = {
   P1: "var(--player-p1)",
   P2: "var(--player-p2)",
@@ -35,7 +35,7 @@ export const getRemovalAnimationDelayMs = (effect, now = Date.now()) => {
   if (!effect || typeof effect.startedAt !== "number") {
     return 0;
   }
-  return Math.max(0, Math.min(now - effect.startedAt, REMOVAL_FLASH_DURATION_MS));
+  return Math.max(0, Math.min(now - effect.startedAt, REMOVAL_EFFECT_DURATION_MS));
 };
 
 const previewOrientation = (a, b, c) => (b.col - a.col) * (c.row - a.row) - (b.row - a.row) * (c.col - a.col);
@@ -1317,9 +1317,11 @@ export function createEngineBoardAdapter() {
             cell.appendChild(marker);
           }
 
-          if (removalEffect?.piece) {
+          for (const removalEffect of (Array.isArray(removalEffects) ? removalEffects : []).filter((effect) => effect.piece && coordKey(effect.position) === `${row},${col}`)) {
             const removalPiece = buildPieceToken(removalEffect.piece);
             removalPiece.classList.add("removal-piece");
+            removalPiece.style.setProperty?.("--removal-flash-duration", `${REMOVAL_EFFECT_DURATION_MS / REMOVAL_FLASH_COUNT}ms`);
+            removalPiece.style.setProperty?.("--removal-flash-count", String(REMOVAL_FLASH_COUNT));
             const animationDelayMs = getRemovalAnimationDelayMs(removalEffect);
             if (animationDelayMs > 0) {
               removalPiece.style.animationDelay = `-${animationDelayMs}ms`;

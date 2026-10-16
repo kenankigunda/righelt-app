@@ -5,7 +5,7 @@ export function advancePressure(previous, sample, now, policy = POLICY) {
   const level = sample.level;
   const state = { ...previous, level, recovered: false, releaseIdle: false, cancel: false };
   if (level === 'unknown') { state.normalSamples = 0; state.since = null; return state; }
-  if (level === 'normal') {
+  if (level === 'normal' || level === 'warning') {
     state.since = null;
     state.normalSamples++;
     if (state.normalSamples >= policy.recoverySamples) { state.recovered = previous.blocked; state.blocked = false; }

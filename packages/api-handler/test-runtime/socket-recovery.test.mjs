@@ -16,10 +16,10 @@ const eventually = async (predicate) => {
   assert.fail("runtime socket event deadline");
 };
 
-test("R-01–03 production batch faults, real sockets, silent receive loss and restart", { timeout: 120000 }, async (t) => {
+for (const compression of [false,true]) test(`format=${compression ? "gzip" : "JSON"}: R-01–03 production batch faults, real sockets, silent receive loss and restart`, { timeout: 120000 }, async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), "righelt-t114-sockets-"));
   const bundle = await build({ stdin: { contents: fixture, resolveDir: root, sourcefile: "runtime-fixture.ts" }, bundle: true, format: "esm", platform: "browser", write: false });
-  const options = { modules: true, script: bundle.outputFiles[0].text, compatibilityDate: "2026-03-12", d1Databases: ["DB"], durableObjects: { GAME_ROOMS: { className: "GameRoomDO", useSQLite: true } }, d1Persist: path.join(directory, "d1"), durableObjectsPersist: path.join(directory, "do") };
+  const options = { modules: true, bindings:{STORAGE_COMPRESSION:compression?"true":"false"}, script: bundle.outputFiles[0].text, compatibilityDate: "2026-03-12", d1Databases: ["DB"], durableObjects: { GAME_ROOMS: { className: "GameRoomDO", useSQLite: true } }, d1Persist: path.join(directory, "d1"), durableObjectsPersist: path.join(directory, "do") };
   let runtime = new Miniflare(options), sockets = [];
   try {
     let db = await runtime.getD1Database("DB");
@@ -28,13 +28,14 @@ test("R-01–03 production batch faults, real sockets, silent receive loss and r
     }
     const call = async (route, body = {}, headers = {}) => {
       const response = await runtime.dispatchFetch(`https://test/${route}`, { method: "POST", headers: { "content-type": "application/json", "x-game-id": "g", ...headers }, body: JSON.stringify({ protocolVersion: 2, identityId: "actor", ...body }) });
-      return { status: response.status, text: await response.text() };
+      return { status: response.status, text: await response.text(),batchSize:Number(response.headers.get("x-harness-batch-size")) };
     };
     const json = async (...args) => JSON.parse((await call(...args)).text);
     await json("create", { gameId: "g", selfPlayMode: true });
     const state = async () => db.prepare("SELECT * FROM live_games WHERE game_id='g'").first();
     const durable = async () => ({
       game: await state(),
+      payloads: (await db.prepare("SELECT * FROM game_payloads WHERE game_id='g'").all()).results,
       events: (await db.prepare("SELECT * FROM live_events WHERE game_id='g' ORDER BY event_seq").all()).results,
       receipts: (await db.prepare("SELECT * FROM live_command_receipts WHERE game_id='g' ORDER BY client_command_id").all()).results,
       invites: (await db.prepare("SELECT * FROM live_invites WHERE game_id='g' ORDER BY token").all()).results,
@@ -57,11 +58,15 @@ test("R-01–03 production batch faults, real sockets, silent receive loss and r
     const player = await connect("actor");
     assert.equal(player.messages.filter((m) => m.game).length, 1, "one initial snapshot, no presence double-send");
     const before = await durable();
-    // The real production move batch contains projection, three invite upserts, event, receipt.
+    // The real production move batch contains projection, three invite upserts and receipt.
     // Replace each statement with invalid SQL inside actual D1, never fake rollback or a debug endpoint.
     const command = await makeCommand("faulted");
-    for (let stage = 0; stage < 6; stage++) {
+    // First injected failure observes the real batch without committing it.
+    let batchSize = Infinity;
+    for (let stage = 0; stage < batchSize; stage++) {
       const response = await call("moves", command, { "x-harness-fail-at": String(stage) });
+      if(stage===0) {batchSize=response.batchSize;assert.ok(batchSize>0);}
+      assert.equal(response.batchSize,batchSize);
       assert.equal(response.status, 500, `stage ${stage}: ${response.text}`);
       assert.ok(!response.text.includes("harness_stage_out_of_range"));
       assert.deepEqual(await durable(), before, `stage ${stage} must roll back all production writes`);
@@ -118,7 +123,8 @@ test("R-01–03 production batch faults, real sockets, silent receive loss and r
     const finalRow = await state();
     assert.equal(finalRow.gameplay_revision, base.gameplay_revision + 1);
     const finalEvents = (await db.prepare("SELECT event_seq FROM live_events WHERE game_id='g' ORDER BY event_seq").all()).results;
-    assert.deepEqual(finalEvents.map((row) => row.event_seq), Array.from({ length: finalRow.event_seq }, (_, index) => index + 1));
+    assert.equal(finalEvents.length, 0);
+    assert.ok(finalRow.event_seq > base.event_seq);
     for (const command of racing) {
       const receipt = await db.prepare("SELECT * FROM live_command_receipts WHERE game_id='g' AND client_command_id=?").bind(command.clientCommandId).first();
       assert.ok(receipt); assert.ok(receipt.event_seq <= finalRow.event_seq);

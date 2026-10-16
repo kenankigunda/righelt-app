@@ -1,4 +1,20 @@
+// A relay reset is a network failure the browser must recover from, rather than
+// an exception hidden until fixture teardown. Other relay errors still fail.
+export async function fetchFaultResponse(route, options, onReset = () => {}) {
+ try { return await route.fetch(options); }
+ catch (error) {
+  if (!/\bECONNRESET\b/.test(String(error?.message))) throw error;
+  onReset();
+  await route.abort("connectionreset");
+  return null;
+ }
+}
+
 // Own asynchronous fault work so it cannot escape into the next test.
+// Reporters may omit AggregateError.errors. Keep the cause's first line visible
+// without copying request headers or bodies from multiline browser errors.
+const failureSummary = (errors, label) => new AggregateError(errors,
+  `${label}: ${errors.map(error => String(error?.message ?? error).split(/\r?\n/)[0]).join('; ')}`);
 export function createFaultLifecycle({setTimer = setTimeout, clearTimer = clearTimeout} = {}) {
   let disposed = false;
   const timers = new Map(), pending = new Set(), errors = [];
@@ -36,7 +52,7 @@ export function createFaultLifecycle({setTimer = setTimeout, clearTimer = clearT
     async dispose() {
       lifecycle.stop();
       await Promise.allSettled([...pending]);
-      if (errors.length) throw new AggregateError(errors, "Fault helper asynchronous work failed");
+      if (errors.length) throw failureSummary(errors, "Fault helper asynchronous work failed");
     },
   };
   return lifecycle;
@@ -50,12 +66,12 @@ export async function disposeFaultContexts(resources, contexts) {
    const unroute = await Promise.allSettled([context.unrouteAll({behavior: "wait"})]);
    const results = await Promise.allSettled(faults.map(f => f.dispose()));
    const errors = [...unroute, ...results].filter(r => r.status === 'rejected').map(r => r.reason);
-   if(errors.length) throw new AggregateError(errors, 'Fault cleanup failed');
+   if(errors.length) throw failureSummary(errors, 'Fault cleanup failed');
   } finally {
    resources.faults.delete(context);
    if(resources.contexts.delete(context)) await context.close();
   }
  }));
  const errors = results.filter(r => r.status === 'rejected').map(r => r.reason);
- if(errors.length) throw new AggregateError(errors, 'Recovery test cleanup failed');
+ if(errors.length) throw failureSummary(errors, 'Recovery test cleanup failed');
 }

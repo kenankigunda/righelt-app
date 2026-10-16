@@ -58,6 +58,11 @@ export const applyHistoryIntent = (game, intent, identityId) => {
   return game;
 };
 
+export const isBoardRecoveryPending = game => Boolean(game?.sharedMutationsBlocked
+  && !game.inHistoryMode && !game.storageBlocked && !game.upgradeRequired
+  && !["session_changed", "invalid_credentials"].includes(game.recoveryIssue)
+  && (game.recovering || game.syncStatus === "confirming"));
+
 export const recoveryMessage = (game, now = Date.now()) => {
   if (game.upgradeRequired) return "Righelt has an update. Refresh to keep playing.";
   if (game.storageBlocked) return game.storageLimitReached

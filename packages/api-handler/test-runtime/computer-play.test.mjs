@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { readDecision, readDecisionPage } from '../src/decision-archive.ts';
 import { commandFingerprint } from '../../../apps/web/generated/packages/shared-types/src/sync-protocol.js';
 import { deterministicStateHash } from '../../../apps/web/generated/packages/game-engine/src/hash.js';
 const require = createRequire(import.meta.url), wrangler = createRequire(require.resolve('wrangler/package.json'));
@@ -28,6 +29,17 @@ test('native rooms fence computer devices and atomically retain accepted decisio
     };
     const created = await call('games',a,{ gameId:'computer-game',computer:{p1:'babs',p2:null} });
     assert.equal(created.status,200,JSON.stringify(created.body)); let game = created.body.game;
+    // Exercise the SQLite expression lookup and append-only finalization schema.
+    const probeDecision = { id: 'native-finalization-probe', kind: 'decision', eventSeq: 900, ordinal: 0, revision: 0, at: game.createdAt, move: { moveId: 'native-finalization-probe', snapshot: game.board.state } };
+    const finalizedMove = { ...probeDecision.move, destroyedPieces: [{ eventId: 'turn-end:probe' }] };
+    for (const entry of [probeDecision, { id: 'native-finalization-amendment', kind: 'finalization', targetDecisionId: probeDecision.id, finalizedMove, eventSeq: 901, ordinal: 0, revision: 1, at: game.createdAt }]) {
+      await db.prepare('INSERT INTO live_decision_archive VALUES (?, ?, ?, ?, ?, ?)').bind(game.id, entry.id, entry.eventSeq, entry.ordinal, entry.revision, JSON.stringify(entry)).run();
+    }
+    assert.deepEqual((await readDecision({ DB: db }, game.id, probeDecision.id)).move, finalizedMove);
+    assert.deepEqual((await readDecisionPage({ DB: db }, game.id, { eventSeq: 899, ordinal: -1 })).items.find(entry => entry.id === probeDecision.id).move, finalizedMove);
+    const originalRow = await db.prepare('SELECT payload_json FROM live_decision_archive WHERE game_id = ? AND decision_id = ?').bind(game.id, probeDecision.id).first();
+    assert.deepEqual(JSON.parse(originalRow.payload_json), probeDecision);
+    await db.prepare('DELETE FROM live_decision_archive WHERE game_id = ? AND event_seq >= 900').bind(game.id).run();
     const route = endpoint => `games/${game.id}/${endpoint}`;
     const acquired = await call(route('computer-control'),a,{action:'acquire',deviceId:'device-a',generation:0});
     assert.equal(acquired.status,200,JSON.stringify(acquired.body)); game=acquired.body.game;

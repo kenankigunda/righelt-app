@@ -16,6 +16,7 @@ const patchToolHtml = (element, html) => {
   const next = element.cloneNode(false); next.innerHTML = html;
   patchSectionContent(element, next);
 };
+import { createDestructionTransitions } from "./destruction-transitions.js";
 import { isPassivePageClick } from "./passive-click.js";
 import { mountLoadingFeedback, loadingAttributes, LOADING_CUE_DELAY_MS } from "./loading.js";
 import { SYNC_TIMING } from "../generated/packages/shared-types/src/sync-protocol.js";
@@ -38,7 +39,8 @@ import { icon, soundToggle, headerActionContent } from './ui.js';
 import { createGameSound } from './sound.js';
 import { createModal } from './modal.js';
 import { createOpponentStoryDialog, OPPONENT_STORIES } from './opponent-stories.js';
-import { recoveryMessage, sharedMutationActions } from "./recovery-view.js";
+import { recoveryMessage, sharedMutationActions, isBoardRecoveryPending } from "./recovery-view.js";
+import { renderGameAlertCard } from "./game-alert.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEngineBoardAdapter, createInitialBoardSnapshot, listBoardLegalActions } from "../board-adapters/engine-board-adapter.js";
 import { createMiniBoardPreview, syncMiniBoardPreviews } from "../board/mini-board-preview.js";
@@ -168,13 +170,15 @@ const storage = (() => { try { return window.localStorage || createMemoryStorage
 const inlineProfiles = createInlineProfiles();
 let accountInitialized = false;
 let accountStartupError = "";
+let storageResetPending = false;
+let storageResetNotice = false;
 let accountContinuation = null;
 let accountContinuationError = false;
 let accountContinuationIncidentId = null;
 const hydrateRoute = createRouteHydration();
 const account = createAccountController({ storage,
   onTransition: (next, source) => { if (accountInitialized) { accountDialog.onTransition(source); resetAccountTransport(next); } },
-  onChange: () => { document.documentElement.dataset.viewPreference = account.snapshot().session.account?.preferences?.view || "focused"; if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) { accountDialog.refreshSession(); render({ animatePanels: false, includeBoard: false }); } },
+  onChange: () => { document.documentElement.dataset.viewPreference = account.snapshot().session.account?.preferences?.view || "focused"; if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) { accountDialog.refreshSession(); render({ animatePanels: false, includeBoard: false }); if(storageResetPending && account.snapshot().ready){storageResetPending=false;queueMicrotask(()=>{navigateTo("#/");startRouteSync();});} } },
 });
 const accountDialog = createAccountDialog({ controller: account, onSound:kind=>gameSound.play(kind), onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
   onComplete: intent => { void completeAccountContinuation(intent); },
@@ -1614,18 +1618,6 @@ const getFailedOperationsKey = (gameId) =>
     .map((operation) => `${operation.id}:${operation.status}`)
     .join("|");
 
-const renderGameAlertCard = ({ tone = "", body = "", action = "", testId = "", incidentId = null } = {}) => {
-  const toneClass = tone ? ` ${tone}` : "";
-  const testIdAttr = testId ? ` data-testid="${escapeHtml(testId)}"` : "";
-  return `<div class="alert${toneClass} shell-game-alert${tone === "danger" ? " sync-failure-banner" : ""}"${testIdAttr}>
-      <div class="shell-game-alert-copy${tone === "danger" ? " sync-failure-copy" : ""}">
-        ${body}
-      </div>
-      ${action}
-      ${renderDiagnosticDisclosure(incidentId)}
-    </div>`;
-};
-
 const getGameAlertItems = (game) => {
   const failedOperations = transport.getFailedOperations?.(game.id) ?? [];
   maybeUpdateUndoRequestOutcomeFeedback(game);
@@ -2414,7 +2406,7 @@ const scrollHomeSectionToTop = (sectionKey) => {
 };
 
 const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Computer players are experimental. Try a game.</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
-const renderHome = () => `<section class="stack home-refresh">${renderHomeGameSection('my')}${renderStartChoices()}${getVisibleHomeSectionKeys().filter(key=>key!=='my').map(renderHomeGameSection).join('')}</section>`;
+const renderHome = () => `<section class="stack home-refresh">${storageResetNotice ? '<p class="small" role="status">The saved data was reset. You can start a new game.</p>' : ""}${renderHomeGameSection('my')}${renderStartChoices()}${getVisibleHomeSectionKeys().filter(key=>key!=='my').map(renderHomeGameSection).join('')}</section>`;
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
   isBuildingGameAlerts = true;
@@ -3409,10 +3401,17 @@ const getHistoryRecordedActionStartPiece = (game) => {
 let reconnectPresentationTimer;
 const updateReconnectPresentation = game => {
   const wrap = document.querySelector('[data-testid="game-board-wrap"]');
-  const recovering = Boolean(game?.recovering && game.recoveryStartedAt);
-  if (wrap) { wrap.dataset.reconnecting = String(recovering); wrap.dataset.loadingState = recovering ? "pending" : "idle"; wrap.dataset.loadingKey = `recovery:${game.recoveryEpisodeId}`; wrap.dataset.loadingContext = "external"; }
+  const recovering = isBoardRecoveryPending(game);
+  if (wrap) {
+    wrap.dataset.reconnecting = String(recovering);
+    wrap.dataset.loadingState = recovering ? "pending" : "idle";
+    // A retry or socket generation change does not restart an uninterrupted cue.
+    wrap.dataset.loadingKey = `recovery:${game.id}`;
+    wrap.dataset.loadingContext = "external";
+    wrap.setAttribute("aria-busy", String(recovering));
+  }
   clearTimeout(reconnectPresentationTimer);
-  if (recovering) {
+  if (recovering && game.recoveryStartedAt) {
     const elapsed = Date.now() - game.recoveryStartedAt;
     const remaining = elapsed < LOADING_CUE_DELAY_MS ? LOADING_CUE_DELAY_MS - elapsed : elapsed < SYNC_TIMING.reconnectAlertMs ? SYNC_TIMING.reconnectAlertMs - elapsed : null;
     if (remaining !== null) reconnectPresentationTimer = setTimeout(() => { const next = transport.getGameViewModel(game.id); updateReconnectPresentation(next); updateMountedHeader(); }, remaining + 1);
@@ -4229,6 +4228,7 @@ const makeAccountSyncStore = auth => createSyncStore({
     }
   },
 });
+let activeStorageGeneration = account.snapshot().storageGeneration;
 let syncStore = makeAccountSyncStore(account.snapshot());
 let transport = syncStore;
 const updateComputerUi = () => {
@@ -4382,6 +4382,7 @@ const loadDebugHistory = async (gameId, more = false) => {
   state.loaded = true; state.cursor = page.nextCursor; state.partial = page.partial; applyDecisionNotes(state, personal.notes); updateComputerUi();
 };
 
+const destructionTransitions = createDestructionTransitions();
 const subscribeToTransport = () => transport.subscribe((change) => {
   if (currentRoute.debug && currentRoute.gameId && !getDecisionDebugState(currentRoute.gameId).loaded && !getDecisionDebugState(currentRoute.gameId).loading) {
     const state = getDecisionDebugState(currentRoute.gameId); state.loading = true;
@@ -4399,10 +4400,16 @@ const subscribeToTransport = () => transport.subscribe((change) => {
       }
     } catch { /* Keep the visible update notice if session storage cannot guard a reload. */ }
   }
+  const visibleGameId = getCurrentViewedGameId();
+  const game = transport.getGameViewModel(visibleGameId);
+  const frozenCapture = Boolean(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === visibleGameId);
+  const transition = destructionTransitions.update(game, { frozen: frozenCapture, reset: change?.baseline === true || change?.type === "optimistic_rollback" || change?.type === "history_mode_changed" });
+  if (transition.clear) boardRuntime?.clearRemovalEffects();
   render({
     animatePanels: false,
     includeBoard: change?.type !== "optimistic_enqueue",
   });
+  if (mountedBoardGameId === visibleGameId && !game?.inHistoryMode && !frozenCapture) boardRuntime?.showRemovalEffects(transition.effects, null);
 });
 
 subscribeToTransport();
@@ -4411,12 +4418,15 @@ function resetAccountTransport(next) {
   utilityMemory.clear();
   preparation.cancel();
   computerSession?.suspend(); scenarioCapture = null; scenarioMetadataDrafts.clear(); decisionDebugStates.clear();
+  const storageChanged=Boolean(activeStorageGeneration && next.storageGeneration!==activeStorageGeneration);
+  activeStorageGeneration=next.storageGeneration;
+  if(storageChanged){storageResetPending=true;storageResetNotice=true;resolvedInvite=null;}
   clearAccountContinuation();
   resultTransitions.clear();activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();branchDialog.close();pendingBranch=null;
   hostInvite=null;inviteVisit++;inviteFeedback="";inviteFallback=null;preparedPlayerInvitations.clear();
   gameSound.leaveGame();storyDialog.close();inlineProfiles.close();
   const gameId = getCurrentViewedGameId();
-  const visible = gameId ? transport.getAuthoritativeGame?.(gameId) : null;
+  const visible = gameId && !storageChanged ? transport.getAuthoritativeGame?.(gameId) : null;
   routeSyncRequestId++;
   pendingButtonKeys.clear();pendingHomeSectionKeys.clear();inviteChoiceCommittedByGameId.clear();ignoredApprovalRequests.clear();ignoredRevertRequests.clear();
   consumedInitialSelectionActionKeyByGameId.clear();
@@ -5213,6 +5223,8 @@ appEl.addEventListener("click", async (event) => {
   if (action === 'begin-scenario-capture' || action === 'end-scenario-capture') {
     if (!canAuthorScenariosLocally()) return;
     const game = getActiveScenarioGame(), historyContext = resolveHistoryScenarioExportContext(game);
+    boardRuntime?.clearRemovalEffects();
+    destructionTransitions.update(game, { reset: true });
     scenarioCapture = action === 'begin-scenario-capture' ? beginScenarioCapture(game, transport.getIdentityId(), historyContext) : null;
     if (scenarioCapture && !historyContext) {
       boardRuntime?.syncInteractionCapabilities?.();

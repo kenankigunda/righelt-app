@@ -8,7 +8,14 @@ preview_urls = false
 binding = "CF_VERSION_METADATA"
 
 [vars]
+STORAGE_ARCHIVE_CANARY_GAME_ID = ""
+STORAGE_ARCHIVE_MODE = "disabled"
+STORAGE_GENERATION = "reset-986736d3-c72e-4539-9edc-6597847f64e7"
 AUTH_ENABLED = "false"
+STORAGE_COMPRESSION = "true"
+STORAGE_ARCHIVES_ENABLED = "false"
+STORAGE_BUDGET_ENABLED = "false"
+STORAGE_EXCLUSIVE_R2 = "false"
 
 [[services]]
 binding = "HASH_SERVICE"
@@ -24,8 +31,8 @@ enabled = false
 
 [[d1_databases]]
 binding = "DB"
-database_name = "righelt-db-dev"
-database_id = "22435cc4-6655-4bdf-a05d-d100cd8e6cc9"
+database_name = "righelt-db-prod"
+database_id = "4ce7cf1e-627e-427d-99c8-438f34d51aeb"
 migrations_dir = "../../db/migrations"
 
 [[durable_objects.bindings]]
@@ -35,3 +42,10 @@ class_name = "GameRoomDO"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["GameRoomDO"]
+
+[[r2_buckets]]
+binding = "ARCHIVES"
+bucket_name = "righelt-archives"
+
+[triggers]
+crons = []

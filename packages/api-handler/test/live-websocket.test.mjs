@@ -146,11 +146,11 @@ test("/api/shell/games/:id/ws syncs both seats for a dual-seat identity", async 
     let state = env.DB.getGameState(gameId);
     assert.equal(state.player1.connected, true);
     assert.equal(state.player2.connected, true);
-    let lastEvent = env.DB.getEvents(gameId).at(-1);
-    let payload = JSON.parse(lastEvent.payload_json);
-    assert.equal(payload.type, "presence_changed");
-    assert.equal(payload.role, "Player 1");
-    assert.deepEqual(payload.roles, ["Player 1", "Player 2"]);
+    const initialPayload = JSON.parse(client.peer.sent.at(-1));
+    assert.equal(initialPayload.game.player1.connected, true);
+    assert.equal(initialPayload.game.player2.connected, true);
+    const connectedSeq = initialPayload.eventSeq;
+    assert.equal(env.DB.getEvents(gameId).length, 0);
 
     client.send(JSON.stringify({ type: "heartbeat", identityId: "id-a", sessionId: "session-dual", lastEventSeq: 0 }));
     await flushAsync();
@@ -167,11 +167,9 @@ test("/api/shell/games/:id/ws syncs both seats for a dual-seat identity", async 
     assert.equal(state.player2.connected, false);
     assert.equal(state.player1.sessionCount, 0);
     assert.equal(state.player2.sessionCount, 0);
-    lastEvent = env.DB.getEvents(gameId).at(-1);
-    payload = JSON.parse(lastEvent.payload_json);
-    assert.equal(payload.type, "presence_changed");
-    assert.deepEqual(payload.roles, ["Player 1", "Player 2"]);
-    assert.equal(payload.connected, false);
+    assert.equal(env.DB.getEvents(gameId).length, 0);
+    const projectionWrites = env.DB.getWrites().filter(entry => entry.query.includes("INSERT INTO live_games") && entry.params[0] === gameId);
+    assert.ok(projectionWrites.at(-1).params[8] > connectedSeq);
   } finally {
     globalThis.WebSocketPair = realWebSocketPair;
     globalThis.Response = RealResponse;
@@ -509,7 +507,8 @@ test("I-10: 205 moves and 30 duplicate submissions recover with one current snap
     assert.equal(followup.length, 1); assert.equal(followup[0].type, "heartbeat_ack"); assert.equal(followup[0].game, undefined);
     const snapshotBytes = Buffer.byteLength(JSON.stringify(frames[0]));
     const oldReplayBytes = Buffer.byteLength(JSON.stringify(local.DB.getEvents(gameId)));
-    assert.ok(oldReplayBytes > snapshotBytes * 20);
+    assert.equal(local.DB.getEvents(gameId).length, 0, "no historical full-state copies are stored");
+    assert.ok(snapshotBytes > metadataBytes);
     console.info(JSON.stringify({ test: "I-10", moves: 205, duplicateSubmissions: 30, snapshots: 1, snapshotBytes, metadataBytes, unchangedReopenBytes: Buffer.byteLength(JSON.stringify(followup[0])), historicalReplayBytesAvoided: oldReplayBytes }));
   } finally { globalThis.WebSocketPair = originalPair; globalThis.Response = OriginalResponse; }
 });

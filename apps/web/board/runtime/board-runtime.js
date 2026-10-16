@@ -1,3 +1,4 @@
+import { REMOVAL_EFFECT_DURATION_MS } from "../removal-timing.js";
 import {
   getBlockedPreviewLabel,
   buildActionPayload,
@@ -42,7 +43,6 @@ const OVERLAY_MODE = {
   NONE: "none",
   RECORDED_ACTION: "recorded-action",
 };
-const REMOVAL_EFFECT_DURATION_MS = 2400;
 
 const shouldUseCompactBoardPreviewCta = () =>
   globalThis.window?.matchMedia?.(MOBILE_BOARD_PREVIEW_BREAKPOINT_QUERY)?.matches === true;
@@ -65,6 +65,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let selectedPieceMovePreviews = [];
   let selectedPieceMovesLoading = false;
   let removalEffects = [];
+  const playedRemovalEvents = new Set();
   let selectedPieceId = null;
   let selectedSource = null;
   let selectedTarget = null;
@@ -753,32 +754,41 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
   };
 
-  const showRemovalEffects = (effects, previousState, { onComplete = null } = {}) => {
-    clearRemovalEffects();
-    const startedAt = Date.now();
-    removalEffects = Array.isArray(effects)
-      ? effects.map((effect) => ({
-          ...effect,
-          startedAt,
-          piece: effect?.piece ?? previousState?.pieces?.find((piece) => piece.id === effect.pieceId) ?? null,
-        }))
-      : [];
-    if (removalEffects.length === 0) {
-      if (typeof onComplete === "function") {
-        onComplete();
-      }
-      return;
-    }
-    removalEffectsOnComplete = typeof onComplete === "function" ? onComplete : null;
-    renderBoard();
-    removalEffectsTimer = setTimeout(() => {
-      removalEffects = [];
-      removalEffectsTimer = null;
+  const expireRemovalEffects = () => {
+    const now = Date.now();
+    removalEffects = removalEffects.filter((effect) => now - effect.startedAt < REMOVAL_EFFECT_DURATION_MS);
+    removalEffectsTimer = null;
+    if (removalEffects.length) {
+      removalEffectsTimer = setTimeout(expireRemovalEffects, Math.max(1, Math.min(...removalEffects.map((effect) => effect.startedAt + REMOVAL_EFFECT_DURATION_MS - now))));
+    } else {
       const completion = removalEffectsOnComplete;
       removalEffectsOnComplete = null;
       completion?.();
-      renderBoard();
-    }, REMOVAL_EFFECT_DURATION_MS);
+    }
+    renderBoard();
+  };
+
+  const showRemovalEffects = (effects, previousState, { onComplete = null } = {}) => {
+    const startedAt = Date.now();
+    const incoming = (Array.isArray(effects) ? effects : []).filter((effect) => {
+      if (!effect.eventId) return true;
+      if (playedRemovalEvents.has(effect.eventId)) return false;
+      playedRemovalEvents.add(effect.eventId);
+      return true;
+    }).map((effect) => ({
+      ...effect, startedAt,
+      piece: effect.piece ?? previousState?.pieces?.find((piece) => piece.id === effect.pieceId) ?? null,
+    }));
+    removalEffects = [...removalEffects.filter((effect) => startedAt - effect.startedAt < REMOVAL_EFFECT_DURATION_MS), ...incoming];
+    if (onComplete) removalEffectsOnComplete = onComplete;
+    if (removalEffectsTimer) clearTimeout(removalEffectsTimer);
+    if (removalEffects.length) {
+      removalEffectsTimer = setTimeout(expireRemovalEffects, Math.max(1, Math.min(...removalEffects.map((effect) => effect.startedAt + REMOVAL_EFFECT_DURATION_MS - startedAt))));
+    } else {
+      removalEffectsOnComplete = null;
+      onComplete?.();
+    }
+    renderBoard();
   };
 
   const buildHistoryRemovalEffects = (records) =>
@@ -818,6 +828,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       pendingHistoryDestroyedPieces = [];
       return;
     }
+    clearRemovalEffects();
     destroyedPieces = [];
     showRemovalEffects(buildHistoryRemovalEffects(nextDestroyedPieces), null, {
       onComplete: () => {
@@ -1360,6 +1371,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     reloadSelectedPieceMoves,
     clearSelection,
     loadSnapshot,
+    showRemovalEffects,
+    clearRemovalEffects,
     setSelectionFromAction,
     getState: () => state,
     getLegalActions: () => legalActions,

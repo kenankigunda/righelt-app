@@ -1292,7 +1292,8 @@ test("live transport: apply echoes clientCommandId and auto-settles ordinary tur
   assert.equal(applyBody.game.currentSnapshot.sideToMove, "P2");
 
   const events = env.DB.getEvents(gameId).map((row) => JSON.parse(row.payload_json));
-  assert.equal(events.some((event) => event.type === "event_appended" && event.clientCommandId === "v2:cmd-apply-1"), true);
+  assert.equal(events.length, 0);
+  assert.equal(env.DB.getReceipt(gameId, "v2:cmd-apply-1").outcome, "accepted");
 });
 
 test("live transport: duplicate clientCommandId retries are idempotent for apply after auto-settlement", async () => {
@@ -1331,7 +1332,9 @@ test("live transport: duplicate clientCommandId retries are idempotent for apply
     .getEvents(gameId)
     .map((row) => JSON.parse(row.payload_json))
     .filter((event) => event.type === "event_appended");
-  assert.equal(events.filter((event) => event.clientCommandId === "v2:cmd-apply-dup").length, 1);
+  assert.equal(events.length, 0);
+  assert.equal(env.DB.getReceipt(gameId, "v2:cmd-apply-dup").outcome, "accepted");
+  assert.equal(env.DB.getGameState(gameId).moves.length, 1);
 });
 
 test("live transport: stale apply state is rejected with authoritative recovery payload", async () => {

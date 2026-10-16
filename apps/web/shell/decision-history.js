@@ -3,7 +3,11 @@ export function activeDecisionLineage(entries) {
   let head = null;
   const before = new Map();
   for (const entry of entries) {
-    if (entry.move) {
+    if (entry.kind === 'finalization') {
+      for (let item = head; item; item = item.previous) {
+        if (item.move.moveId === entry.targetDecisionId) { item.move = entry.finalizedMove; break; }
+      }
+    } else if (entry.move) {
       before.set(entry.id, head);
       if (!entry.move.undone) head = { move: entry.move, previous: head };
     } else if (entry.kind === 'restoration') {

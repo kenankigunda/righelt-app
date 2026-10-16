@@ -1,3 +1,4 @@
+import { reportRemoval } from "./removals.js";
 import { canCloseContinuationNow } from "./continuation.js";
 import { SUPPLY_POINTS } from "./deterministic.js";
 import { validateAction } from "./legal.js";
@@ -554,7 +555,7 @@ function applyGroupPhase(state, mode) {
     }
     return false;
 }
-function applyContinuationPhase(state) {
+function applyContinuationPhase(state, onRemoval) {
     if (!state.continuation) {
         return false;
     }
@@ -592,6 +593,7 @@ function applyContinuationPhase(state) {
                 to,
             }).ok);
             if (retreatCandidates.length === 0) {
+                reportRemoval(pushedPiece, "no_retreat", onRemoval);
                 state.pieces = state.pieces.filter((piece) => piece.id !== pushedPiece.id);
                 state.continuation.phase = "follow";
                 state.continuation.owner = attackerOwner;
@@ -752,15 +754,17 @@ function applySupplyPhase(state, mode) {
     }
     return changed;
 }
-function applyForcedEffectsPhase(state) {
+function applyForcedEffectsPhase(state, onRemoval) {
     if (state.continuation) {
         return false;
     }
     const beforeCount = state.pieces.length;
-    state.pieces = state.pieces.filter((piece) => piece.pushed ||
-        piece.kind === "commander" ||
-        piece.supplied ||
-        isFrozenPieceDuringContinuation(state, piece.id, piece.owner));
+    state.pieces = state.pieces.filter((piece) => {
+        const keep = piece.pushed || piece.kind === "commander" || piece.supplied || isFrozenPieceDuringContinuation(state, piece.id, piece.owner);
+        if (!keep)
+            reportRemoval(piece, "loss_of_supply", onRemoval);
+        return keep;
+    });
     return state.pieces.length !== beforeCount;
 }
 function evaluateTerminalPhase(state) {
@@ -787,7 +791,7 @@ function evaluateTerminalPhase(state) {
     }
     return true;
 }
-function runResolvePass(state, mode) {
+function runResolvePass(state, mode, onRemoval) {
     let changed = false;
     // Phase 1: connectivity + artifact baseline.
     const nextArtifacts = computeBaselineArtifacts(state, mode);
@@ -816,12 +820,12 @@ function runResolvePass(state, mode) {
     if (applyGroupPhase(state, mode)) {
         changed = true;
     }
-    if (applyContinuationPhase(state)) {
+    if (applyContinuationPhase(state, onRemoval)) {
         changed = true;
     }
     // Action-family legality integration lands after Track A merge sync.
     // Phase 5: forced effects.
-    if (applyForcedEffectsPhase(state)) {
+    if (applyForcedEffectsPhase(state, onRemoval)) {
         changed = true;
     }
     return changed;
@@ -831,7 +835,7 @@ export function resolveToStability(state, options) {
     const maxPasses = options?.maxPasses ?? MAX_RESOLVE_PASSES;
     let pass = 0;
     while (pass < maxPasses) {
-        const changed = runResolvePass(state, mode);
+        const changed = runResolvePass(state, mode, options?.onRemoval);
         if (!changed) {
             if (!state.continuation) {
                 evaluateTerminalPhase(state);

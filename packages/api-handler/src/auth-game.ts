@@ -1,3 +1,5 @@
+import { storageRoomName } from "./storage-generation";
+import { STORAGE_GENERATION_HEADER } from "../../shared-types/src/storage-policy";
 import { maintenanceAllowed, type CutoverPolicy } from './account-cutover';
 import {
   AUTH_PROTOCOL_VERSION,
@@ -25,6 +27,7 @@ export type GameAuthority = {
   renew: boolean;
 };
 export type GameAuthEnv = {
+  STORAGE_GENERATION?: string;
   AUTH_ENABLED?: string;
   AUTH_REQUIRED?: string;
   ACCOUNT_POLICY?: CutoverPolicy;
@@ -213,11 +216,11 @@ export async function deliverRevocations(
   )) {
     try {
       const response = await env.GAME_ROOMS.get(
-        env.GAME_ROOMS.idFromName(roomId),
+        env.GAME_ROOMS.idFromName(storageRoomName(env, roomId)),
       ).fetch(
         new Request("https://game-room/auth-recheck", {
           method: "POST",
-          headers: { "x-game-id": roomId },
+          headers: { "x-game-id": roomId, ...(env.STORAGE_GENERATION ? { [STORAGE_GENERATION_HEADER]: env.STORAGE_GENERATION } : {}) },
         }),
       );
       if (response.ok)
