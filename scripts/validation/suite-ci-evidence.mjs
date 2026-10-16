@@ -8,7 +8,7 @@ const groups = {
   Typecheck: ["typecheck"],
   "Generated runtime": ["generated"],
   Generated: ["generated"],
-  Unit: ["engine-unit", "web-unit"],
+  Unit: ["engine-unit", "web-unit", "computer-unit"],
   Integration: [
     "engine-integration",
     "api-handler",
@@ -16,6 +16,7 @@ const groups = {
     "web-integration",
     "sync-stress",
     "sync-runtime",
+    "computer-integration",
   ],
   E2E: ["e2e"],
   "Auth E2E": ["auth-e2e", "auth-controls"],

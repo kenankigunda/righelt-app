@@ -561,7 +561,7 @@ export const createLiveTransportStore = ({
     }
   };
 
-  const internalCommand = (envelope) => ({ envelope, kind: envelope.kind === "action" ? "apply" : "end-turn", clientCommandId: envelope.clientCommandId, state: clone(envelope.expectedState), action: envelope.payload.action, notation: envelope.payload.notation, queuedAt: Number.isFinite(envelope.submittedAt) ? new Date(envelope.submittedAt).toISOString() : new Date().toISOString() });
+  const internalCommand = (envelope) => ({ envelope, kind: envelope.kind === "action" ? "apply" : "end-turn", clientCommandId: envelope.clientCommandId, state: clone(envelope.expectedState), action: envelope.payload.action, notation: envelope.payload.notation, computer: envelope.payload.computer, queuedAt: Number.isFinite(envelope.submittedAt) ? new Date(envelope.submittedAt).toISOString() : new Date().toISOString() });
   const hydrateJournal = async (gameId, isCurrent = () => true) => {
     assertActive();
     if (auth?.enabled && (!auth.session.authenticated || gameById.get(gameId)?.ownershipMode !== "account_v1")) return;
@@ -606,7 +606,7 @@ export const createLiveTransportStore = ({
       const predecessor = optimistic.pendingCommands.at(-1)?.envelope;
       const envelope = { protocolVersion: 2, gameId, identityId, clientCommandId: command.clientCommandId, submittedAt: Date.parse(command.queuedAt) || Date.now(),
         ...(auth?.enabled ? { authContextId: auth.session.contextId } : {}),
-        kind: command.kind === "apply" ? "action" : "end_turn", payload: command.kind === "apply" ? { action: command.action, notation: command.notation } : {},
+        kind: command.kind === "apply" ? "action" : "end_turn", payload: command.kind === "apply" ? { action: command.action, notation: command.notation, ...(command.computer ? { computer: command.computer } : {}) } : {},
         expectedState: clone(command.state ?? current.board.state), expectedGameplayRevision: predecessor ? predecessor.expectedGameplayRevision + 1 : (gameById.get(gameId)?.gameplayRevision ?? 0),
         ...(command.kind === "end-turn" ? { expectedTurnIndex: current.board.state.turnIndex } : {}),
         ...(predecessor ? { predecessor: { clientCommandId: predecessor.clientCommandId, fingerprint: predecessor.fingerprint } } : {}),
@@ -802,11 +802,19 @@ export const createLiveTransportStore = ({
     return getGameViewModel(gameId);
   };
 
-  const createGame = async ({ selfPlayMode = false, gameId = null, creatorSide = "p1" } = {}) => {
+  const decisionRequest = async (gameId, endpoint, values = {}) => {
+    const body = await boundedRequest(`/api/shell/games/${encodeURIComponent(gameId)}/${endpoint}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ identityId, ...values }),
+    });
+    if (body.game) upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    return body;
+  };
+
+  const createGame = async ({ selfPlayMode = false, gameId = null, creatorSide = "p1", computer } = {}) => {
     const response = await fetcher("/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, selfPlayMode, gameId, creatorSide }),
+      body: JSON.stringify({ identityId, selfPlayMode, gameId, creatorSide, computer }),
     });
     const body = await mustOk(response);
     return upsertGame(body.game);
@@ -829,6 +837,10 @@ export const createLiveTransportStore = ({
     gameId = null,
     sourceGameId,
     sourceMoveIndex,
+    sourceDecisionId = null,
+    sourceGameplayRevision = null,
+    creatorSide = "p1",
+    computer,
     scenario,
     initialSelectionAction,
     participantCopyMode,
@@ -842,6 +854,7 @@ export const createLiveTransportStore = ({
         gameId,
         sourceGameId,
         sourceMoveIndex,
+        sourceDecisionId, sourceGameplayRevision, creatorSide, computer,
         scenario,
         initialSelectionAction,
         participantCopyMode,
@@ -942,11 +955,12 @@ export const createLiveTransportStore = ({
     return body;
   };
 
-  const applyGameAction = async ({ gameId, state, action, notation }) => {
+  const applyGameAction = async ({ gameId, state, action, notation, computer }) => {
     const command = {
       kind: "apply",
       clientCommandId: createClientCommandId({ gameId, identityId, random }),
       action: clone(action),
+      ...(computer ? { computer: clone(computer) } : {}),
       state: clone(state),
       notation: notation ?? defaultNotationForAction(action),
       queuedAt: new Date().toISOString(),
@@ -999,7 +1013,7 @@ export const createLiveTransportStore = ({
     const moves = [...(game?.moves ?? []), ...(game?.pendingMoves ?? [])];
     const selected = moves.find((move) => move.index === moveIndex);
     if (!selected) throw new Error("move_not_found");
-    historyIntentByGameId.set(gameId, { moveId: historyMoveKey(selected), clientCommandId: selected.clientCommandId, order: moves.map(historyMoveKey), position: moves.indexOf(selected) });
+    historyIntentByGameId.set(gameId, { moveId: historyMoveKey(selected), clientCommandId: selected.clientCommandId, order: moves.map(historyMoveKey), position: moves.indexOf(selected), frozen: clone(selected), revision: game.gameplayRevision });
     recalculateOptimisticGame(gameId);
     emitChange({ type: "history_mode_changed", gameId });
     return getGameViewModel(gameId);
@@ -1150,6 +1164,11 @@ export const createLiveTransportStore = ({
     loadGame,
     resolveInvite,
     createGame,
+    computerControl: (gameId, values) => decisionRequest(gameId, 'computer-control', values),
+    decisionHistory: (gameId, cursor) => decisionRequest(gameId, 'decision-history', { cursor }),
+    decisionNotes: (gameId, values) => decisionRequest(gameId, 'decision-notes', values),
+    decisionAttempt: (gameId, values) => decisionRequest(gameId, 'decision-attempt', values),
+    decisionAttempts: (gameId, kind, cursor) => decisionRequest(gameId, 'decision-attempts', { kind, cursor }),
     importScenario,
     launchHistoryBranch,
     joinGame,
@@ -1180,6 +1199,13 @@ export const createLiveTransportStore = ({
     getCommandOutcome: (gameId, commandId) => getOptimisticState(gameId).outcomes.get(commandId) ?? null,
     applyGameAction,
     endTurn,
+    inspectDecision: ({ gameId, entry }) => {
+      const game = getGameViewModel(gameId);
+      const frozen = clone(entry.move ?? { moveId: entry.id, snapshot: entry.state, selectionSnapshot: entry.state });
+      historyIntentByGameId.set(gameId, { moveId: frozen.moveId, frozen, revision: game.gameplayRevision });
+      recalculateOptimisticGame(gameId); emitChange({ type: 'history_mode_changed', gameId });
+      return getGameViewModel(gameId);
+    },
     selectHistoryMove,
     returnToLive,
     requestRevertToMove,

@@ -99,3 +99,30 @@ test('no-retreat events identify the defender without classifying nearby supply 
  resolveToStability(next,{onRemoval:e=>events.push(e)});
  assert.equal(events.length,1);assert.equal(events[0].reason,'no_retreat');assert.equal(events[0].piece.id,'D2');assert.deepEqual(events[0].piece.position,{row:9,col:9});
 });
+
+
+test('explicit end-turn evidence survives projection eviction without rewriting the original decision', async () => {
+  const { archiveStatements, readDecision, readDecisionPage } = await import('../src/decision-archive.ts');
+  const { createFakeD1 } = await import('./support/fake-d1.mjs');
+  const { activeDecisionLineage } = await import('../../../apps/web/shell/decision-history.js');
+  const env = { DB: createFakeD1() }, game = setup();
+  await env.DB.batch(archiveStatements(env, null, game, 1));
+  let before = structuredClone(game);
+  assert.equal(applyServerAction(game, fixture.action, undefined, 'rush').ok, true);
+  game.gameplayRevision++;
+  await env.DB.batch(archiveStatements(env, before, game, 2));
+  const original = structuredClone(game.moves[0]);
+  before = structuredClone(game);
+  assert.equal(endServerTurn(game, 'end').ok, true);
+  game.gameplayRevision++;
+  await env.DB.batch(archiveStatements(env, before, game, 3));
+  const finalized = structuredClone(game.moves[0]);
+  game.moves = [];
+  const stored = env.DB.getWrites().find(write => write.query.startsWith('INSERT INTO live_decision_archive') && write.params[1] === original.moveId);
+  assert.deepEqual(JSON.parse(stored.params[5]).move, original);
+  assert.deepEqual((await readDecision(env, game.id, original.moveId)).move, finalized);
+  const page = await readDecisionPage(env, game.id, null);
+  assert.deepEqual(page.items.find(entry => entry.kind === 'finalization').finalizedMove, finalized);
+  assert.deepEqual(activeDecisionLineage(page.items), [finalized]);
+  assert.deepEqual(activeDecisionLineage([{id: original.moveId, move: original}, ...page.items.filter(entry => entry.kind === 'finalization')]), [finalized]);
+});

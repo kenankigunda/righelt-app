@@ -1,0 +1,20 @@
+<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Computer preparation</title><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"></head><body><main><button id="open">Play again</button></main><script type="module">
+import { createModal } from '/apps/web/shell/modal.js';
+import { createRematchDialog } from '/apps/web/shell/game-result.js';
+import { createComputerPreparation } from '/apps/web/shell/computer-preparation.js';
+import { mountLoadingFeedback } from '/apps/web/shell/loading.js';
+window.requests = []; window.created = []; window.cancelled = 0;
+const preparation = createComputerPreparation({ runtime: {
+  prepare: (modelId, progress) => new Promise((resolve, reject) => window.requests.push({ modelId, progress, resolve, reject })),
+  cancel: () => window.cancelled++,
+}, onChange: () => dialog.refresh() });
+const prepare = opponent => opponent === 'friend' || opponent === 'self' ? preparation.cancel('rematch') : preparation.start('rematch');
+const dialog = createRematchDialog({ createModal,
+  getReadiness: opponent => opponent === 'friend' || opponent === 'self' ? { state: 'ready', message: 'Ready' } : preparation.snapshot('rematch'),
+  onOpponentChange: prepare, onRetry: prepare, onClose: () => preparation.cancel('rematch'),
+  onStart: intent => window.created.push(intent),
+});
+document.querySelector('#open').onclick = () => dialog.open({ opponent: 'babs', rematchSide: 'p1' });
+mountLoadingFeedback(document);
+window.fixtureReady = true;
+</script></body></html>

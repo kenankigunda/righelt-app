@@ -35,8 +35,47 @@ test("cancelled rematch gate cannot create or close a reopened dialog", async ()
   const gate = new Promise(resolve => { release = resolve; });
   const dialog = createRematchDialog({ createModal, onStart: async (_intent, { isCurrent }) => { await gate; if (isCurrent()) created++; } });
   dialog.open({ opponent: "self", rematchSide: "p2" });
-  const pending = click({ target: { closest: () => true } });
+  const pending = click({ target: { closest: selector => selector === '[data-rematch-start]' } });
   dialog.close(); dialog.open({ opponent: "friend", rematchSide: "p1" });
   release(); await pending;
   assert.equal(created, 0); assert.equal(element.open, true);
+});
+
+test('spectators of computer games see a neutral winner', () => {
+  const played = { ...game('p1_win'), computer: { seats: { p1: null, p2: 'horus' }, manual: false } };
+  assert.equal(getGameResult(played, 'red').title, 'Win');
+  assert.equal(getGameResult(played, 'spectator').title, 'Player 1 wins');
+  assert.equal(getGameResult(played, null).side, null);
+});
+
+
+test('rematch and branch entry require readiness, expose retry and keep manual choices usable', async () => {
+  for (const title of ['Play again', 'Create a new game here']) {
+    const handlers = {}, changes = [], starts = [];
+    let readiness = { state: 'preparing', message: 'Preparing' }, closes = 0;
+    const controls = [{}, {}];
+    const nodes = { '[name=rematch-opponent]': { value: 'babs' }, '[name=rematch-side]:checked': { value: 'p2' }, '[data-rematch-start]': { dataset: {}, setAttribute() {} }, '[role=status]': { dataset: {} }, '[data-rematch-retry]': {}, '[data-rematch-friend-help]': {} };
+    const element = { open: false, dataset: {}, querySelector: selector => nodes[selector], querySelectorAll: () => controls, addEventListener: (event, fn) => { handlers[event] = fn; } };
+    const createModal = ({ onClose }) => ({ element, open() { element.open = true; }, close() { element.open = false; onClose(); } });
+    const dialog = createRematchDialog({ title, createModal, getReadiness: opponent => opponent === 'friend' ? { state: 'ready' } : readiness, onOpponentChange: opponent => changes.push(opponent), onRetry: () => { readiness = { state: 'preparing' }; }, onClose: () => { closes++; }, onStart: intent => starts.push(intent) });
+    const click = selector => handlers.click({ target: { closest: match => match === selector } });
+    dialog.open({ opponent: 'babs', rematchSide: 'p2' });
+    assert.equal(nodes['[data-rematch-friend-help]'].hidden, true);
+    assert.deepEqual(changes, ['babs']); assert.equal(nodes['[data-rematch-start]'].disabled, true);
+    await click('[data-rematch-start]'); assert.equal(starts.length, 0);
+    readiness = { state: 'error', message: 'Try again' }; dialog.refresh();
+    assert.equal(nodes['[data-rematch-retry]'].hidden, false);
+    await click('[data-rematch-retry]'); assert.equal(nodes['[data-rematch-start]'].disabled, true);
+    readiness = { state: 'ready', message: 'Ready' }; dialog.refresh();
+    assert.equal(nodes['[data-rematch-start]'].disabled, false);
+    // Readiness can be revoked between paint and activation.
+    readiness = { state: 'preparing' }; await click('[data-rematch-start]'); assert.equal(starts.length, 0);
+    nodes['[name=rematch-opponent]'].value = 'friend'; handlers.change({ target: { name: 'rematch-opponent' } });
+    assert.equal(nodes['[data-rematch-friend-help]'].hidden, false);
+    nodes['[name=rematch-opponent]'].value = 'self'; handlers.change({ target: { name: 'rematch-opponent' } });
+    assert.equal(nodes['[data-rematch-friend-help]'].hidden, true);
+    nodes['[name=rematch-opponent]'].value = 'friend'; handlers.change({ target: { name: 'rematch-opponent' } });
+    assert.equal(nodes['[data-rematch-start]'].disabled, false);
+    await click('[data-rematch-start]'); assert.deepEqual(starts, [{ opponent: 'friend', side: 'p2' }]); assert.equal(closes, 1);
+  }
 });

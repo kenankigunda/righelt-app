@@ -48,7 +48,7 @@ test("runtime scenario catalog preserves the commander push no-retreat scenario"
 test("shell debug UI uses scenario terminology", () => {
   assert.match(shellAppSource, /Scenarios/);
   assert.match(shellAppSource, /Load a scenario/);
-  assert.match(shellAppSource, /Create a scenario/);
-  assert.match(shellAppSource, /Save current board as new scenario/);
+  assert.match(shellAppSource, /Capture a position/);
+  assert.match(shellAppSource, /Save capture as new scenario/);
   assert.doesNotMatch(shellAppSource, />Load Fixture</);
 });

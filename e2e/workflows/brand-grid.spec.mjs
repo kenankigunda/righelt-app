@@ -39,6 +39,18 @@ test('grid keeps its paint inputs stable across unrelated app updates and realig
 test('grid stays static across activity and motion preferences without moving geometry',async({page})=>{
   await page.goto('/');
   await expect(page.getByTestId('home-create-game')).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+  await expect(async () => {
+    const alignment = await page.evaluate(() => {
+      const wordmark = document.querySelector('[data-brand-wordmark]').getBoundingClientRect();
+      const style = getComputedStyle(document.querySelector('.brand-grid'));
+      return { x: parseFloat(style.getPropertyValue('--grid-origin-x')), y: parseFloat(style.getPropertyValue('--grid-origin-y')),
+        expectedX: wordmark.left + wordmark.width * .72, expectedY: Math.max(0, wordmark.top + wordmark.height * .5) };
+    });
+    expect(alignment.x).toBeCloseTo(alignment.expectedX, 3);
+    expect(alignment.y).toBeCloseTo(alignment.expectedY, 3);
+  }).toPass();
   const read=()=>page.locator('.brand-grid').evaluate(grid=>{
     const style=getComputedStyle(grid);
     return {animations:grid.getAnimations().length,opacity:style.opacity,willChange:style.willChange,mask:style.maskImage,geometry:grid.getBoundingClientRect().toJSON()};

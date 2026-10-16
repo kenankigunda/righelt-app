@@ -263,6 +263,8 @@ export function sanitizeGameView(
   )
     projected.inviteToken = value.inviteToken;
   delete projected.inviteTokens;
+  const computer = projected.computer as { lease?: Record<string, unknown> | null } | undefined;
+  if (computer?.lease) delete computer.lease.authContextId;
   const player =
     projected.myRole === "Player 1" || projected.myRole === "Player 2";
   const requests = Array.isArray(projected.pendingJoinRequests)
@@ -284,6 +286,7 @@ export function sanitizeGameView(
       "canEndTurn",
       "canPlayAsBothPlayers",
       "canUndoLastMove",
+      "canControlComputer",
     ])
       projected[key] = false;
     projected.inviteToken = null;

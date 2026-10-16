@@ -1,0 +1,57 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createComputerControl, changeComputerControl, computerCommandError, computerProfileFor, parseComputerControl } from '../../shared-types/src/computer-play.ts';
+import { createInitialGame, withViewModel } from '../src/shell-live-core.ts';
+
+const initial = () => createComputerControl('owner', { p1: 'babs', p2: null });
+const change = (control, action, overrides = {}) => changeComputerControl(control, { ownerId: 'owner', authContextId: 'session', deviceId: 'device-a', generation: control.generation, action, turnIndex: 4, now: 100, ...overrides });
+const proof = (control) => ({ deviceId: 'device-a', generation: control.generation, modelId: 'initial-1554', profile: 'babs', profileVersion: 'experimental-v1', seed: 107, attemptId: 'attempt-one' });
+const error = (control, overrides = {}) => computerCommandError(control, { ownerId: 'owner', authContextId: 'session', side: 'P1', turnIndex: 4, proof: proof(control), now: 101, ...overrides });
+
+test('lease ownership fences devices and expired or retired sessions', () => {
+  const first = change(initial(), 'acquire');
+  assert.equal(error(first), null);
+  assert.throws(() => change(first, 'acquire', { deviceId: 'device-b' }), /device_busy/);
+  const next = change(first, 'switch', { deviceId: 'device-b' });
+  assert.equal(error(next, { proof: proof(first) }), 'computer_control_changed');
+  assert.equal(error(first, { now: 15100 }), 'computer_control_changed');
+  assert.equal(error(first, { authContextId: 'new-session' }), 'computer_control_changed');
+  assert.throws(() => change(next, 'pause', { generation: first.generation }), /control_changed/);
+  assert.equal(change(first, 'acquire', { deviceId: 'device-b', now: 15100 }).lease.deviceId, 'device-b');
+  assert.equal(change(first, 'renew').generation, first.generation);
+});
+test('computer decisions fail closed without bound provenance, even for the owner', () => {
+  const control = change(initial(), 'acquire');
+  assert.equal(error(control, { proof: undefined }), 'computer_control_changed');
+  for (const values of [{ modelId: 'unknown' }, { profile: 'horus' }, { profileVersion: 'later' }, { seed: NaN }, { attemptId: '../escape' }]) {
+    assert.equal(error(control, { proof: { ...proof(control), ...values } }), 'invalid_computer_proof');
+  }
+  assert.equal(error(control, { ownerId: 'other' }), 'computer_owner_required');
+  assert.equal(error(change(control, 'pause')), 'computer_control_changed');
+});
+test('temporary takeover follows the nominal turn through changing controllers', () => {
+  const control = change(change(initial(), 'acquire'), 'takeover');
+  const reloaded = parseComputerControl(JSON.parse(JSON.stringify(control)));
+  assert.equal(computerProfileFor(reloaded, 'P1', 4), null);
+  assert.equal(computerProfileFor(reloaded, 'P2', 4), null);
+  assert.equal(computerProfileFor(reloaded, 'P1', 5), 'babs');
+  assert.equal(error(reloaded, { proof: undefined }), null);
+  assert.equal(error(reloaded), 'computer_control_changed');
+  const manual = change(control, 'manual');
+  assert.equal(computerProfileFor(manual, 'P1', 400), null);
+});
+test('malformed durable computer control never downgrades into human control', () => {
+  for (const value of [null, {}, { ...initial(), generation: -1 }, { ...initial(), seats: { p1: 'unknown', p2: null } }, { ...initial(), lease: {} }]) assert.throws(() => parseComputerControl(value), /invalid_computer_control/);
+});
+test('main game projection keeps computer turns read only until explicit takeover', () => {
+  const game = createInitialGame({ gameId: 'g', identityId: 'owner', selfPlayMode: true });
+  game.computer = initial();
+  const view = withViewModel(game, 'owner');
+  assert.equal(view.computerTurn, 'babs');
+  assert.equal(view.canRecordMove, false);
+  assert.equal(view.canEndTurn, false);
+  assert.equal(view.canControlComputer, true);
+  assert.equal(withViewModel(game, 'viewer').canControlComputer, false);
+  game.computer.takeoverTurn = game.board.state.turnIndex;
+  assert.equal(withViewModel(game, 'owner').canRecordMove, true);
+});

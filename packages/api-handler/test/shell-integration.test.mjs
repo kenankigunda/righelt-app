@@ -113,7 +113,6 @@ test("shell integration: push retreat hands control to the defending player", as
   const guest = harness.createClient("id-guest-shell-int-retreat-1");
 
   const created = await owner.store.createGame({ selfPlayMode: false });
-  await harness.acceptInviteAsPlayer(guest, harness.buildPlayerInviteHash(created));
 
   const base = createInitialState();
   const retreatScenario = {
@@ -152,6 +151,7 @@ test("shell integration: push retreat hands control to the defending player", as
   };
 
   await owner.store.importScenario({ scenario: retreatScenario, targetGameId: created.id });
+  await harness.acceptInviteAsPlayer(guest, harness.buildPlayerInviteHash(created));
 
   const pushed = await owner.store.applyGameAction({
     gameId: created.id,

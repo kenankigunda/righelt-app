@@ -3,7 +3,7 @@ import { recordUnexpectedExit } from './testing/stack-status.mjs';
 import { cliPath } from './resources/supervisor.mjs';
 // Isolated local account stack. No remote resources or production auth flags are changed.
 import { localHttpsEnvironment } from "./local-https.mjs";
-import { spawn } from "node:child_process";
+import { spawnAuthStackCommand, stopAuthStackCommand } from "./auth-stack-process.mjs";
 import { authFixtureWorkerSource } from './auth-fixture-worker.mjs';
 import { createAuthFixtureControl } from "./auth-fixture-control.mjs";
 import { createServer } from "node:http";
@@ -13,7 +13,9 @@ import { randomBytes } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { LOCAL_DEV_PORT_VARIANTS, resolveLocalApiPort } from "../apps/web/local-dev-ports.js";
-import { installProxyDiagnostics } from "./auth-proxy-diagnostics.mjs";
+import { installProxyRepair } from "./auth-proxy-diagnostics.mjs";
+import { observeAuthService } from "./auth-stack-diagnostics.mjs";
+import { createProxyFailureJournal, completeProxyFailureJournal } from "./auth-proxy-failures.mjs";
 
 const root = process.cwd();
 const webPort = String(LOCAL_DEV_PORT_VARIANTS.find(variant => variant.suffix === "auth-e2e").webPort);
@@ -22,15 +24,34 @@ const origin = `https://127.0.0.1:${webPort}`;
 const temporary = await mkdtemp(path.join(os.tmpdir(), "righelt-auth-e2e-"));
 const persist = path.join(temporary, "state");
 const children = new Set();
+const serviceReceipts = [];
+const runId = path.basename(temporary);
+const privateLogs = path.join(root, "test-results/auth-stack-private", runId);
+const diagnostics = path.join(root, "test-results/auth-stack-diagnostics", runId);
+let diagnosticsFailed = false;
 let stopping = false;
 let control;
 let proxyDiagnosticsInstallation;
+const failureDirectory = process.env.RIGHELT_AUTH_FAILURE_DIRECTORY;
+const failureRunId = process.env.RIGHELT_AUTH_FAILURE_RUN_ID;
+let failureJournalReady = false;
 
-function run(args, { cwd = root, service = false, captureStderr = false } = {}) {
-  const child = spawn(service ? process.execPath : "pnpm", service ? [cliPath,"run","--kind","preview","--","pnpm",...args] : args, { cwd, env: args.includes("https") ? localHttpsEnvironment({ cwd }) : process.env, stdio: captureStderr ? ["inherit", "inherit", "pipe"] : "inherit", detached: service });
+function run(args, { cwd = root, service = null, captureStderr = false } = {}) {
+  if (stopping) throw new Error("Account stack is stopping");
+  const env = args.includes("https") ? localHttpsEnvironment({ cwd }) : { ...process.env };
+  const logDirectory = path.join(privateLogs, service || "setup");
+  const child = spawnAuthStackCommand(args, { cwd, env: { ...env, WRANGLER_LOG_PATH: logDirectory,
+    RIGHELT_AUTH_FAILURE_SERVICE: service || "setup",
+    RIGHELT_AUTH_FRESH_CONNECTIONS: service ? "1" : "0" }, service: Boolean(service), captureStderr });
+  children.add(child);
+  child.on("close", () => children.delete(child));
   if (service) {
-    children.add(child);
-    child.on("exit", code => { children.delete(child); if (!stopping) { recordUnexpectedExit(args.join(" "),code,null); void shutdown(code || 1); } });
+    serviceReceipts.push(observeAuthService(child, { service, logDirectory,
+      requireProxyReceiptLogs: true, failureDirectory, failureRunId,
+      outputFile: path.join(diagnostics, `${service}.json`), isStopping: () => stopping,
+      onUnexpectedExit: code => { recordUnexpectedExit(service, code, null); void shutdown(code); },
+      onDiagnosticError: () => { diagnosticsFailed = true; console.error("[auth-e2e] Could not record service exit diagnostics"); },
+    }));
     return child;
   }
   return new Promise((resolve, reject) => {
@@ -49,15 +70,16 @@ async function shutdown(code = 0) {
   if (stopping) return;
   stopping = true;
   control?.close();
-  await Promise.all([...children].map(child => new Promise(resolve => {
-    const kill = signal => { try { process.kill(-child.pid, signal); } catch {} };
-    child.once("exit", resolve);
-    kill("SIGTERM");
-    // Leave time for the supervisor's grace period and ownership verification.
-    setTimeout(() => { kill("SIGKILL"); resolve(); }, 9000).unref();
-  })));
+  const cleaned = await Promise.all([...children].map(stopAuthStackCommand));
+  const receipts = await Promise.all(serviceReceipts);
+  // A concurrent external shutdown must not hide an initiating service exit
+  // while its diagnostic file is still being read.
+  if (cleaned.some(ok => !ok) || diagnosticsFailed || receipts.some(receipt => !receipt.expected)) code = 1;
   try { const restore = await proxyDiagnosticsInstallation; await restore?.(); }
   catch (error) { console.error(error); code = 1; }
+  try {
+    if (!failureJournalReady || await completeProxyFailureJournal(failureDirectory, failureRunId, code === 0)) code = 1;
+  } catch { console.error("[auth-e2e] Failure accounting did not complete"); code = 1; }
   await rm(temporary, { recursive: true, force: true });
   process.exit(code);
 }
@@ -81,10 +103,14 @@ async function ready(url) {
   throw new Error(`Local account stack not ready: ${url}`);
 }
 try {
-  if (process.env.RIGHELT_AUTH_PROXY_DIAGNOSTICS === "1") {
-    proxyDiagnosticsInstallation = installProxyDiagnostics();
-    await proxyDiagnosticsInstallation;
-  }
+  await createProxyFailureJournal(failureDirectory, failureRunId);
+  failureJournalReady = true;
+  // Test-only backport of the reviewed worker-identity fix. No request retries.
+  proxyDiagnosticsInstallation = installProxyRepair();
+  await proxyDiagnosticsInstallation;
+  // A clean checkout has no ignored runtime bundles. Build them before serving
+  // the real app so preparation cannot receive the SPA fallback for a manifest.
+  await run(["exec", "node", "scripts/build-computer-player.mjs"]);
   await mkdir(persist, { recursive: true });
   const apiConfig = path.join(temporary, "api.toml");
   const fixtureToken = randomBytes(32).toString("hex");
@@ -123,7 +149,7 @@ try {
   await writeFile(fixtureFile,seedSql);
   await run([...d1,"execute","DB","--config",apiConfig,"--local","--persist-to",persist,"--file",fixtureFile]);
   run(["exec", "wrangler", "dev", ...configs.flatMap(file => ["--config", file]), "--local", "--port", apiPort,
-    "--inspector-port", String(Number(apiPort)+10), "--persist-to", persist], { service: true });
+    "--inspector-port", String(Number(apiPort)+10), "--persist-to", persist], { service: "api" });
   await ready(`http://127.0.0.1:${apiPort}/api/health`);
   // Test-runner-only loopback control; never exposed through Pages or application routes.
   // Fixed SQL operations only, rejecting browser-origin requests. This is not an auth bypass.
@@ -134,7 +160,7 @@ try {
     if (!result.ok) throw new Error(`Local fixture operation failed: ${result.status}`);
   })).listen(Number(webPort) + 100, "127.0.0.1");
   run(["exec", "wrangler", "pages", "dev", ".", "--port", webPort, "--local-protocol", "https", "--inspector-port", String(Number(webPort)+10)],
-    { cwd: path.join(root, "apps/web"), service: true });
+    { cwd: path.join(root, "apps/web"), service: "web" });
   await ready(origin);
   console.log(`[auth-e2e] Ready at ${origin}`);
 } catch (error) {

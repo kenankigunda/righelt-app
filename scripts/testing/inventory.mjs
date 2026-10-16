@@ -19,6 +19,12 @@ const roots = {
   "sync-runtime": "packages/api-handler/test-runtime",
 };
 export function nodeInventory(id, cwd = process.cwd()) {
+  if (id === "computer-unit" || id === "computer-integration") {
+    const names = id === "computer-unit"
+      ? ["representation", "search", "search-fallback", "tactics", "exploration"]
+      : ["transition", "partial-legality", "cache-pilot", "exploration.integration"];
+    return names.map(name => path.join(cwd, "packages/computer-player/tests", `${name}.test.mjs`));
+  }
   if (roots[id]) return walk(path.join(cwd, roots[id]));
   if (["web-unit", "web-integration"].includes(id))
     return walk(path.join(cwd, "apps/web/test")).filter(

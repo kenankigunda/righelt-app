@@ -18,9 +18,10 @@ for(const size of viewports)test.describe(`scenario draft / ${size.name}`,()=>{
   // Change the underlying panel without deliberately moving keyboard focus away from the draft.
   await page.evaluate(()=>{const [route,query='']=location.hash.split('?');const params=new URLSearchParams(query);params.set('panel','history');location.hash=`${route}?${params}`;});
   await expect(page).toHaveURL(/panel=history/);
-  await expect.poll(()=>originalInput.evaluate(e=>e.isConnected)).toBe(false);
+  await expect.poll(()=>originalInput.evaluate(e=>e.isConnected)).toBe(true);
   await expect(page.locator('.shell-flyout')).toHaveCount(1);
   await expect(input).toBeFocused();
+  expect(await input.evaluate(e=>[e.selectionStart,e.selectionEnd])).toEqual([0,8]);
   await page.keyboard.insertText('Updated');
   await expect(input).toHaveValue('Updated draft');
   // The flyout scrolls independently on mobile; capture its visible form row.
@@ -28,7 +29,7 @@ for(const size of viewports)test.describe(`scenario draft / ${size.name}`,()=>{
   const images=await proof(page,{project:{name:size.name,use:size},attach:info.attach.bind(info)},`scenario-${field}-focus`,input.locator('..'));
   if(images&&process.env.RIGHELT_EVIDENCE_JSON){
    const file=process.env.RIGHELT_EVIDENCE_JSON+'.adjacent';const items=await readJSON(file,[]);
-   const assertions=['Draft focus and selection survive panel reconstruction; continued typing replaces selected text without losing the draft.'];
+   const assertions=['The draft node, focus and selection survive a panel change; continued typing replaces selected text without losing the draft.'];
    items.push({id:`scenario-${size.name}-${field}`,title:`Scenario ${field} focus and draft preservation`,viewport:size.name,status:'passed',assertions,images,revision:hash({assertions,images})});await saveJSON(file,items);
   }
  });
@@ -50,12 +51,15 @@ for(const size of viewports)test.describe(`scenario live draft / ${size.name}`,(
    const input=page.locator(`[data-scenario-save-field="${field}"]`);
    await input.fill('Original draft');await input.evaluate(e=>e.setSelectionRange(0,8));
    const original=await input.elementHandle();
+   const moveCount=await page.getByTestId('history-move-item').count();
    await makeAnyLegalMove(other);
-   await expect.poll(()=>original.evaluate(e=>e.isConnected)).toBe(false);
-   await expect(input).toBeFocused();await page.keyboard.insertText('Updated');await expect(input).toHaveValue('Updated draft');
+   await expect.poll(()=>page.getByTestId('history-move-item').count()).toBeGreaterThan(moveCount);
+   await expect.poll(()=>original.evaluate(e=>e.isConnected)).toBe(true);
+   await expect(input).toBeFocused();
+  expect(await input.evaluate(e=>[e.selectionStart,e.selectionEnd])).toEqual([0,8]);await page.keyboard.insertText('Updated');await expect(input).toHaveValue('Updated draft');
    await input.locator('..').scrollIntoViewIfNeeded();
    const images=await proof(page,{project:{name:size.name,use:size},attach:info.attach.bind(info)},`scenario-live-${field}`,input.locator('..'));
-   if(images&&process.env.RIGHELT_EVIDENCE_JSON){const file=process.env.RIGHELT_EVIDENCE_JSON+'.adjacent';const items=await readJSON(file,[]);const assertions=['A real second client move rebuilds the flyout; active draft focus, selection and continued typing survive the live update.'];items.push({id:`scenario-live-${size.name}-${field}`,title:`Live update preserves scenario ${field}`,viewport:size.name,status:'passed',assertions,images,revision:hash({assertions,images})});await saveJSON(file,items);}
+   if(images&&process.env.RIGHELT_EVIDENCE_JSON){const file=process.env.RIGHELT_EVIDENCE_JSON+'.adjacent';const items=await readJSON(file,[]);const assertions=['A real second client move preserves the draft node, focus, selection and continued typing.'];items.push({id:`scenario-live-${size.name}-${field}`,title:`Live update preserves scenario ${field}`,viewport:size.name,status:'passed',assertions,images,revision:hash({assertions,images})});await saveJSON(file,items);}
   }finally{await other.close();}
  });
 });

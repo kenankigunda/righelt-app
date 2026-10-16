@@ -43,6 +43,8 @@ export const SUITES = Object.freeze([
     ["apps/web/", "packages/"],
     ["client-state"],
   ),
+  suite("computer-unit", "test:computer-player:unit", ["packages/computer-player/", "packages/game-engine/", "packages/shared-types/"], ["computer-search", "computer-representation"]),
+  suite("computer-integration", "test:computer-player:integration", ["packages/computer-player/", "packages/game-engine/", "packages/shared-types/"], ["computer-legality", "computer-transitions"]),
   suite(
     "engine-integration",
     "test:engine:integration",

@@ -3,8 +3,8 @@ export class SyncBodyError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }
 }
 /** Bound actual bytes, including chunked requests, before parsing or mutating. */
-export async function readSyncBody(request: Request): Promise<Record<string, unknown>> {
-  if (Number(request.headers.get("content-length")) > SYNC_LIMITS.bodyBytes) throw new SyncBodyError(413, "sync_body_too_large");
+export async function readSyncBody(request: Request, maxBytes = SYNC_LIMITS.bodyBytes): Promise<Record<string, unknown>> {
+  if (Number(request.headers.get("content-length")) > maxBytes) throw new SyncBodyError(413, "sync_body_too_large");
   const reader = request.body?.getReader();
   if (!reader) throw new SyncBodyError(400, "invalid_sync_request");
   const chunks: Uint8Array[] = [];
@@ -18,7 +18,7 @@ export async function readSyncBody(request: Request): Promise<Record<string, unk
       const item = await Promise.race([reader.read(), timeout]);
       if (item.done) break;
       bytes += item.value.byteLength;
-      if (bytes > SYNC_LIMITS.bodyBytes) { void reader.cancel().catch(() => undefined); throw new SyncBodyError(413, "sync_body_too_large"); }
+      if (bytes > maxBytes) { void reader.cancel().catch(() => undefined); throw new SyncBodyError(413, "sync_body_too_large"); }
       chunks.push(item.value);
     }
     const buffer = new Uint8Array(bytes);

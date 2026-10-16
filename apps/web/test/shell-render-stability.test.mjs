@@ -60,7 +60,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /tabindex="\$\{headerMenuOpen \? "0" : "-1"\}"/);
   assert.doesNotMatch(source, /renderHeaderHomeAction/);
   assert.doesNotMatch(source.slice(source.indexOf("const renderHeader ="), source.indexOf("const renderHome =")), />Home<\/(?:a|span)>/);
-  assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Live Sync<\/h2>[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
+  assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*return renderDecisionDebug/s);
   assert.match(source, /const getDocumentTitle = \(\) => \{\s*const gameId = getCurrentViewedGameId\(\);\s*if \(gameId\) \{\s*return `\$\{formatDisplayGameId\(gameId\)\} \| Righelt`;\s*\}\s*return "Righelt";\s*\};/s);
   assert.match(source, /const failedOperations = transport\.getFailedOperations\?\.\(game\.id\) \?\? \[\];/);
   assert.match(source, /const getFailedOperationsKey = \(gameId\) =>/);
@@ -325,18 +325,18 @@ test("scenario selector labels use titles without visible ids", () => {
   assert.match(source, /data-scenario-save-field="title"/);
   assert.match(source, /data-scenario-save-field="description"/);
   assert.match(source, /Load a scenario/);
-  assert.match(source, /Create a scenario/);
-  assert.match(source, /Update to match current board/);
-  assert.match(source, /Save current board as new scenario/);
+  assert.match(source, /Capture a position/);
+  assert.match(source, /Replace position with capture/);
+  assert.match(source, /Save capture as new scenario/);
   assert.match(source, /canAuthorScenariosLocally\(\)/);
-  assert.match(source, /const canSaveScenario = canAuthorScenarios && Boolean\(saveDraft\.title && saveDraft\.description\);/);
+  assert.match(source, /const canSaveScenario = canAuthorScenarios && capturing && Boolean\(saveDraft\.title && saveDraft\.description\);/);
   assert.match(source, /const title = getScenarioEditableFieldText\("title"\);/);
   assert.match(source, /const description = getScenarioEditableFieldText\("description"\);/);
-  assert.match(source, /appEl\.addEventListener\("focusout", \(event\) => \{/);
+  assert.doesNotMatch(source, /appEl\.addEventListener\("focusout"/);
   assert.match(source, /target\.hasAttribute\("data-scenario-editable"\)/);
-  assert.match(source, /window\.setTimeout\(async \(\) => \{/);
+  assert.match(source, /action === 'save-scenario-details'/);
   assert.match(source, /includeCurrentBoard:\s*false,/);
-  assert.match(source, /Scenario \$\{scenario\.id\} details saved\./);
+  assert.match(source, /feedbackMessage: \(\) => 'Details saved.'/);
   assert.doesNotMatch(source, /downloadScenarioCatalog/);
 });
 
@@ -353,11 +353,12 @@ test("debug flyout persists locally while scenario-created games close the scena
 });
 
 test("history branch launch keeps the source tab stable while opening a new tab", () => {
-  assert.match(source, /if \(action === "launch-history-branch"\) \{[\s\S]*buildHistoryBranchSeedFromGame\(activeGame, moveIndex\);[\s\S]*transport\.launchHistoryBranch\(/s);
+  assert.match(source, /branchDialog\.open/);
+  assert.match(source, /sourceDecisionId: decisionId \?\? selected\?\.moveId/);
   assert.match(source, /const handle = transport\.launchHistoryBranch\(/);
-  assert.match(source, /window\.open\(`\$\{window\.location\.pathname\}\$\{window\.location\.search\}\$\{nextHash\}`,\s*"_blank",\s*"noopener"\);/);
+  assert.match(source, /window\.open\(`\$\{window\.location\.pathname\}\$\{window\.location\.search\}\$\{nextHash\}`,\s*["']_blank["'],\s*["']noopener["']\);/);
   assert.match(source, /const initialSelectionHydration = resolveInitialSelectionHydration\(/);
-  assert.match(source, /const hydratedSelectionAction = scenarioSelectionHydration\.selectionAction \?\? initialSelectionHydration\.selectionAction;/);
+  assert.match(source, /const hydratedSelectionAction = frozenCapture \? null : scenarioSelectionHydration\.selectionAction \?\? initialSelectionHydration\.selectionAction;/);
   assert.match(source, /selectionAction: hydratedSelectionAction,/);
 });
 
@@ -478,10 +479,10 @@ test("app uses route skeleton sync and localized loading instead of a global bus
   assert.match(source, /const setInviteFeedback = \(message\) => \{\s*inviteFeedback = message;\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
 });
 
-test("scenario flyout alone forces click target selection on hover-capable boards", () => {
-  assert.match(source, /const forceClickTargetSelection = currentRoute\.scenarios;/);
-  assert.match(source, /selectionState: scenarioSelectionHydration\.selectionState,[\s\S]*forceClickTargetSelection,[\s\S]*\}\);/s);
-  assert.match(source, /getForceClickTargetSelection: \(\) => Boolean\(currentRoute\.scenarios\),/);
+test("only an explicit scenario capture forces click target selection", () => {
+  assert.match(source, /const forceClickTargetSelection = Boolean\(capturing\);/);
+  assert.match(source, /selectionState: hydratedSelectionState,[\s\S]*forceClickTargetSelection,[\s\S]*\}\);/s);
+  assert.match(source, /getForceClickTargetSelection: \(\) => Boolean\(currentRoute\.scenarios && scenarioCapture\?\.gameId === game\.id\),/);
   assert.match(
     source,
     /if \(shouldPatchFlyoutsOnly\) \{[\s\S]*if \(includeBoard\) \{[\s\S]*if \(currentRoute\.name === "game"\) \{[\s\S]*mountBoardForGame\(transport\.getGameViewModel\(currentRoute\.gameId\)\);[\s\S]*\} else if \(currentRoute\.name === "invite" && resolvedInvite\?\.gameId\) \{[\s\S]*mountBoardForGame\(transport\.getGameViewModel\(resolvedInvite\.gameId\)\);[\s\S]*\}[\s\S]*\}[\s\S]*return;/s,

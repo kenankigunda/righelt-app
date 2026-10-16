@@ -1,5 +1,45 @@
 import { test, expect } from '@playwright/test';
 
+test('early opponent introduction survives initial guest session adoption', async ({ page }) => {
+  let release, entered;
+  const held = new Promise(resolve => { release = resolve; });
+  const intercepted = new Promise(resolve => { entered = resolve; });
+  const creates = [];
+  page.on('request', request => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/shell/games') creates.push(request);
+  });
+  await page.route('**/api/shell/bootstrap', async route => {
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    expect((await response.json()).accountsRequired).toBe(false);
+    entered();
+    await held;
+    await route.fulfill({ response });
+  });
+  try {
+    await page.goto('/');
+    await intercepted;
+    const trigger = page.locator('button[data-opponent="babs"]');
+    await trigger.click();
+    const dialog = page.getByRole('dialog', { name: 'Babs', exact: true });
+    await expect(dialog).not.toBeVisible();
+    expect(creates).toHaveLength(0);
+    release();
+    await expect(dialog).toBeVisible();
+    await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('[data-story-play]')).toBeDisabled();
+    await expect(page.getByTestId('account-dialog')).not.toBeVisible();
+    expect(creates).toHaveLength(0);
+    await page.keyboard.press('Escape');
+    await expect(dialog).not.toBeVisible();
+    await expect(trigger).toBeFocused();
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
 test('early create waits for guest bootstrap without opening account sign-in', async ({ page }) => {
   let release, entered;
   const held = new Promise(resolve => { release = resolve; });

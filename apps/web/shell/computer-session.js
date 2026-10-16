@@ -1,0 +1,153 @@
+import { COMPUTER_TIMING, COMPUTER_PROFILES, CURRENT_COMPUTER_MODEL, computerProfileFor } from '../generated/packages/shared-types/src/computer-play.js';
+import { deterministicStateHash } from '../generated/packages/game-engine/src/hash.js';
+import { ComputerRuntime } from './computer-runtime.js';
+
+export function createComputerSession({ getContext, onChange = () => {}, runtime = new ComputerRuntime(), analysisRuntime = new ComputerRuntime(), clock = () => Date.now(), timers = globalThis, deviceId = crypto.randomUUID() }) {
+  let status = { phase: 'idle' }, epoch = 0, active = null, busy = false, leaseWork = null, renewedAt = 0, recovery = null, pendingSubmission = null;
+  let analysis = null, analysisContext = null, analysisEpoch = 0, lastPositionRevision = null;
+  const repetitions = new Map();
+  const publish = (next) => { status = { ...status, ...next }; onChange(); };
+  const keyFor = ({ game, accountGeneration }) => game ? `${accountGeneration}:${game.id}:${game.gameplayRevision}:${game.computer?.generation}:${game.computer?.modelId}` : null;
+  const current = () => { const context = getContext(); return { ...context, key: keyFor(context) }; };
+  const cancelWork = (reason) => { epoch++; runtime.cancel(reason); };
+  const ownLease = (game) => game?.computer?.lease?.deviceId === deviceId && game.computer.lease.expiresAt > clock();
+  const control = async (context, action) => context.transport.computerControl(context.game.id, { action, deviceId, generation: context.game.computer.generation });
+  const startLeaseWork = work => {
+    const pending = Promise.resolve().then(work);
+    leaseWork = pending;
+    const clear = () => { if (leaseWork === pending) leaseWork = null; };
+    void pending.then(clear, clear);
+    return pending;
+  };
+  const fence = async (action) => {
+    cancelWork(action);
+    let context = current();
+    if (!context.game?.computer) return;
+    const gameId = context.game.id;
+    const owner = context.transport, accountGeneration = context.accountGeneration;
+    publish({ phase: 'saving', message: 'Confirming the last move…' });
+    // Accepted commands remain accepted. Never drop an uncertain submission to enable takeover.
+    const submissionToReconcile = pendingSubmission;
+    if (submissionToReconcile) { await context.transport.reconcileGame(context.game.id); await submissionToReconcile.catch(() => {}); }
+    // Undo drops the lease. Another tick may already be restoring it, so wait
+    // for that acknowledged generation before issuing this control once.
+    if (leaseWork) await leaseWork;
+    context = current();
+    if (!context.game?.computer || context.game.id !== gameId || context.transport !== owner || context.accountGeneration !== accountGeneration || !context.authenticated) return;
+    try {
+      if (!ownLease(context.game)) throw new Error('computer_control_changed');
+      await control(context, action);
+    }
+    catch (error) { await context.transport.loadGame(gameId).catch(() => {}); publish({ phase: 'recovery', message: error.message }); throw error; }
+    recovery = null; lastPositionRevision = null; repetitions.clear();
+    publish({ phase: action === 'pause' ? 'paused' : 'idle', message: null });
+  };
+  async function tick() {
+    const context = current(), game = context.game;
+    if (analysis && (analysis.gameId !== game?.id || analysisContext?.accountGeneration !== context.accountGeneration || analysisContext?.transport !== context.transport || !context.authenticated)) {
+      cancelAnalysis(); analysis = null; analysisContext = null;
+    }
+    if (!context.visible || !context.authenticated || !game?.computer || game.computer.ownerId !== context.transport.getIdentityId()) {
+      if (active) {
+        const previous = active; active = null; cancelWork('left-game');
+        if (ownLease(previous.game) && previous.accountGeneration === context.accountGeneration) void control(previous, 'release').catch(() => {});
+        publish({ phase: 'idle' });
+      }
+      if (!context.visible && analysis?.phase === 'computing') cancelAnalysis();
+      return;
+    }
+    if (active && context.key !== active.key) cancelWork('position-or-control-changed');
+    active = context;
+    if (analysis?.phase === 'computing' && clock() - analysis.startedAt >= COMPUTER_TIMING.detailAfterMs) onChange();
+    if (busy && status.startedAt && clock() - status.startedAt >= COMPUTER_TIMING.detailAfterMs) onChange();
+    if (!ownLease(game)) {
+      cancelWork('other-device');
+      if (game.computer.lease?.expiresAt > clock()) { if (status.phase !== 'other-device') publish({ phase: 'other-device' }); return; }
+      if (!leaseWork) startLeaseWork(async () => {
+        try { await control(context, 'acquire'); renewedAt = clock(); }
+        catch { await context.transport.loadGame(game.id).catch(() => {}); }
+      });
+      await leaseWork;
+      return;
+    }
+    if (!leaseWork && clock() - renewedAt >= COMPUTER_TIMING.renewAfterMs) {
+      void startLeaseWork(() => control(context, 'renew').then(() => { renewedAt = clock(); }).catch(() => { cancelWork('lease-lost'); return context.transport.loadGame(game.id); }).catch(() => {}));
+    }
+    const profile = computerProfileFor(game.computer, game.board.state.sideToMove, game.currentTurn?.index ?? game.board.state.turnIndex ?? 0);
+    if (game.computer.paused || !profile || game.board.state.outcome?.status !== 'ongoing') {
+      if (!busy && status.phase !== (game.computer.paused ? 'paused' : 'idle')) publish({ phase: game.computer.paused ? 'paused' : 'idle', message: null });
+      return;
+    }
+    if (busy || leaseWork || pendingSubmission || context.transport.getGameViewModel(game.id)?.pendingCommandCount > 0 || recovery === context.key) return;
+    if (game.computer.seats.p1 && game.computer.seats.p2 && lastPositionRevision !== game.gameplayRevision) {
+      lastPositionRevision = game.gameplayRevision;
+      const position = structuredClone(game.board.state); position.turnIndex = 0;
+      const repeated = deterministicStateHash(position), count = (repetitions.get(repeated) ?? 0) + 1;
+      repetitions.set(repeated, count);
+      if (count >= 3) { await fence('pause'); publish({ phase: 'paused', message: 'This position has repeated three times. Continue, inspect it, or stop.' }); return; }
+    }
+    busy = true;
+    const run = ++epoch, attemptId = crypto.randomUUID(), seed = crypto.getRandomValues(new Uint32Array(1))[0], startedAt = clock();
+    const proof = { deviceId, generation: game.computer.generation, modelId: game.computer.modelId, profile, profileVersion: COMPUTER_PROFILES[profile].version, seed, attemptId };
+    const base = { proof, gameId: game.id, gameplayRevision: game.gameplayRevision, fingerprint: deterministicStateHash(game.board.state), startedAt, state: structuredClone(game.board.state) };
+    let saved = false;
+    publish({ phase: 'preparing', startedAt, profile, attemptId, progress: null, message: null });
+    try {
+      const response = await runtime.compute({ gameId: game.id, gameplayRevision: game.gameplayRevision, state: game.board.state, modelId: game.computer.modelId, profile, seed, controlGeneration: game.computer.generation }, progress => { if (run === epoch) publish({ phase: progress.phase, progress }); });
+      if (run !== epoch || current().key !== context.key) return;
+      const attempt = { ...base, completedAt: clock(), outcome: response.result.status, result: response.result, cacheAvailable: runtime.cacheAvailable, evidenceSource: 'client-reported' };
+      await context.transport.decisionAttempt(game.id, { operation: 'write', kind: 'computer', attemptId, attempt }); saved = true;
+      if (run !== epoch || current().key !== context.key) return;
+      if (response.result.status !== 'ready') throw new Error(response.result.reason);
+      publish({ phase: 'saving', progress: null });
+      const handle = await context.transport.applyGameAction({ gameId: game.id, state: game.board.state, action: response.result.action, computer: proof });
+      if (!handle?.committed) throw new Error(handle?.validation?.code ?? 'move-not-submitted');
+      pendingSubmission = handle.committed;
+      await pendingSubmission;
+      publish({ phase: 'idle' });
+    } catch (error) {
+      if (!saved) void context.transport.decisionAttempt(game.id, { operation: 'write', kind: 'computer', attemptId, attempt: { ...base, stoppedAt: clock(), outcome: 'unfinished', reason: error.message, progress: status.progress ?? null } }).catch(() => {});
+      if (run === epoch) { recovery = context.key; publish({ phase: 'recovery', message: error.message }); }
+    } finally { busy = false; pendingSubmission = null; }
+  }
+  function cancelAnalysis() {
+    analysisEpoch++; analysisRuntime.cancel('analysis-cancelled');
+    if (analysis?.phase === 'computing') {
+      analysis = { ...analysis, phase: 'cancelled', stoppedAt: clock(), outcome: 'unfinished' };
+      void analysisContext?.transport.decisionAttempt(analysis.gameId, { operation: 'write', kind: 'analysis', attemptId: analysis.attemptId, attempt: analysis }).catch(() => {});
+    }
+    onChange();
+  }
+  async function analyze(state, decisionId = null) {
+    cancelAnalysis();
+    let context = current();
+    if (!context.authenticated || !context.game) throw new Error('Sign in to analyze this position.');
+    const requestEpoch = analysisEpoch, requestContext = context;
+    const frozen = structuredClone(state), gameId = context.game.id, revision = context.game.gameplayRevision;
+    if (context.game.computer?.ownerId === context.transport.getIdentityId() && ownLease(context.game)) await fence('pause');
+    context = current();
+    if (requestEpoch !== analysisEpoch || context.transport !== requestContext.transport || context.accountGeneration !== requestContext.accountGeneration || context.game?.id !== gameId || !context.authenticated || !context.visible) return;
+    analysisContext = context;
+    const run = ++analysisEpoch, attemptId = crypto.randomUUID();
+    analysis = { phase: 'computing', state: frozen, decisionId, gameId, attemptId, startedAt: clock(), modelId: CURRENT_COMPUTER_MODEL.id }; onChange();
+    try {
+      const result = await analysisRuntime.compute({ gameId, gameplayRevision: revision, state: frozen, modelId: CURRENT_COMPUTER_MODEL.id, profile: 'horus', seed: 107, analysis: true }, progress => { if (run === analysisEpoch) { analysis.progress = progress; onChange(); } });
+      if (run !== analysisEpoch) return;
+      analysis = { ...analysis, phase: 'complete', completedAt: clock(), result: result.result, evidenceSource: 'client-reported', valuePerspective: 'P1/red' };
+      await context.transport.decisionAttempt(gameId, { operation: 'write', kind: 'analysis', attemptId, attempt: analysis });
+    } catch (error) { if (run === analysisEpoch) { analysis = { ...analysis, phase: 'recovery', stoppedAt: clock(), outcome: 'unfinished', message: error.message }; await context.transport.decisionAttempt(gameId, { operation: 'write', kind: 'analysis', attemptId, attempt: analysis }).catch(() => {}); } }
+    onChange();
+  }
+  const timer = timers.setInterval(() => { void tick().catch(error => publish({ phase: 'recovery', message: error.message })); }, 1000);
+  return {
+    tick, analyze, cancelAnalysis,
+    snapshot: () => {
+      const context = current();
+      const scopedAnalysis = context.authenticated && analysis?.gameId === context.game?.id && analysisContext?.accountGeneration === context.accountGeneration && analysisContext?.transport === context.transport ? analysis : null;
+      return { ...status, elapsedMs: status.startedAt ? clock() - status.startedAt : 0, detailed: Boolean(status.startedAt && clock() - status.startedAt >= COMPUTER_TIMING.detailAfterMs), analysis: scopedAnalysis, deviceId };
+    },
+    action: async action => { if (action === 'switch') { cancelWork('switch'); const context = current(); await control(context, 'switch'); } else await fence(action === 'retry' ? 'resume' : action); },
+    suspend: () => { const previous = active; cancelWork('session-changed'); cancelAnalysis(); analysis = null; analysisContext = null; active = null; recovery = null; status = { phase: 'idle' }; if (previous && ownLease(previous.game)) void control(previous, 'release').catch(() => {}); onChange(); },
+    destroy: () => { timers.clearInterval(timer); cancelWork('destroyed'); cancelAnalysis(); active = null; },
+  };
+}

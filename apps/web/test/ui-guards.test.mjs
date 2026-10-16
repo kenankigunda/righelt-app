@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
 const source = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
@@ -16,6 +17,27 @@ const extractSourceSegment = (startMarker, endMarker) => {
   assert.notEqual(end, -1, `expected end marker: ${endMarker}`);
   return source.slice(start, end);
 };
+
+test("opponent introduction waits for session readiness and respects a cancelled continuation", async () => {
+  const handler = extractSourceSegment("  if (action === 'opponent-story')", '  if (action === "create-game" ||');
+  for (const allowed of [true, false]) {
+    let release;
+    const ready = new Promise(resolve => { release = resolve; });
+    const events = [];
+    const context = { waitForAccountGate: () => ready,
+      gameSound: { play: cue => events.push(cue) },
+      storyDialog: { open: opponent => events.push(opponent) },
+      prepareOpponent: (mode, opponent) => events.push(`${mode}:${opponent}`),
+      actionEl: { dataset: { opponent: 'babs' } } };
+    runInNewContext(`globalThis.open = async () => { const action = 'opponent-story'; ${handler} };`, context);
+    const opening = context.open();
+    await Promise.resolve();
+    assert.deepEqual(events, [], "no sound, dialog or preparation before readiness");
+    release(allowed);
+    await opening;
+    assert.deepEqual(events, allowed ? ['intro', 'babs', 'intro:babs'] : []);
+  }
+});
 
 test("game controls do not render standalone record-move or end-turn buttons", () => {
   assert.doesNotMatch(source, /data-action="record-move"/);
@@ -56,7 +78,7 @@ test("game, join/invite, and history use shared section spacing structure", () =
   assert.match(source, /class="section-stack"/);
   assert.match(
     source,
-    /<div class="section-followup">\s*\$\{historyBanner\}\s*<ol class="history-list"[^>]*>\$\{historyRows\}<\/ol>/s,
+    /<div class="section-followup">\s*\$\{historyBanner\}.*?<ol class="history-list"[^>]*>\$\{historyRows\}<\/ol>/s,
   );
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
 });
@@ -108,7 +130,7 @@ test("optimistic game creation and history branch actions bypass the blocking bu
   assert.match(source, /if \(action === "create-game" \|\| action === 'create-self-play'\) \{[\s\S]*storyDialog\.open\('friend'[\s\S]*const handle = transport\.createGame\(\{ selfPlayMode: action === 'create-self-play' \}\);/s);
   assert.match(source, /startGameEntryRouteTransition\(handle\.result\.id, "home"\);/);
   assert.match(source, /navigateTo\(buildGameHash\(handle\.result\.id, null, getCurrentFlyoutState\(\)\)\);/);
-  assert.match(source, /if \(action === "launch-history-branch"\) \{[\s\S]*const handle = transport\.launchHistoryBranch\(/s);
+  assert.match(source, /const branchDialog = createRematchDialog\([\s\S]*const handle = transport\.launchHistoryBranch\(/s);
   assert.match(source, /const nextHash = buildGameHash\(handle\.result\.game\.id, null, \{/s);
   assert.doesNotMatch(source, /if \(action === "create-game"\) \{[\s\S]*await transport\.createGame/s);
 });
@@ -124,7 +146,7 @@ test("revert actions bypass the blocking busy wrapper and use optimistic sync-st
   assert.match(source, /if \(action === "accept-revert-request"\) \{[\s\S]*transport\.approveRevertRequest\(\{ gameId, requestId \}\);/s);
   assert.match(source, /if \(action === "reject-revert-request"\) \{[\s\S]*transport\.rejectRevertRequest\(\{ gameId, requestId \}\);/s);
   assert.match(source, /if \(action === "rescind-revert-request"\) \{[\s\S]*transport\.rescindRevertRequest\(\{ gameId, requestId \}\);/s);
-  assert.match(source, /if \(action === "revert-to-move" \|\| action === "undo-last-move"\) \{[\s\S]*transport\.requestRevertToMove\(\{ gameId, targetMoveId: moveId \}\);/s);
+  assert.match(source, /if \(action === "revert-to-move" \|\| action === "undo-last-move"\) \{[\s\S]*transport\.requestRevertToMove\(\{ gameId, targetMoveId \}\);/s);
   assert.doesNotMatch(source, /if \(action === "accept-revert-request"\) \{[\s\S]*await transport\.approveRevertRequest/s);
   assert.doesNotMatch(source, /if \(action === "revert-to-move" \|\| action === "undo-last-move"\) \{[\s\S]*await transport\.requestRevertToMove/s);
 });

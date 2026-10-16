@@ -357,12 +357,15 @@ test('pending player approval keeps the invitation surface blocking until approv
 });
 
 test('home section headings stay mounted while nested loading resolves',async({page})=>{
+ const responses=[];
  let release;const gate=new Promise(resolve=>release=resolve);
- await page.route('**/api/shell/games?**',async route=>{const response=await route.fetch();await gate;await route.fulfill({response});});
+ await page.route('**/api/shell/games?**',async route=>{const response=await route.fetch();responses.push({url:route.request().url(),status:response.status(),body:response.ok()?null:await response.text()});await gate;await route.fulfill({response});});
  try {
   await page.goto('/');await expect(page.locator('[data-home-section-root="other"] h2')).toBeVisible();
   await page.locator('[data-home-section-root="other"] h2').evaluate(el=>window.retainedSectionHeading=el);
   release();await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+  expect(responses.filter(response=>response.status!==200), 'Home reads must succeed before checking successful hydration identity').toEqual([]);
+  await expect(page.locator('[data-home-section-root="other"] h2')).toBeVisible();
   expect(await page.locator('[data-home-section-root="other"] h2').evaluate(el=>el===window.retainedSectionHeading)).toBe(true);
  }finally{release();await page.unrouteAll({behavior:'ignoreErrors'});}
 });
