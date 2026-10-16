@@ -1,3 +1,4 @@
+import {patchAccountPreferences} from "../scripts/validation/account-preferences.mjs";
 import {test,expect} from '@playwright/test';
 import {closeHostInvitation,continueFriendIntroduction} from '../e2e/support/app.mjs';
 import AxeBuilder from '@axe-core/playwright';
@@ -254,11 +255,7 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
     if(capabilities.separateAccountForms){
       // Preferences remain an account contract even when their controls leave
       // Account. Exercise the real authenticated API, then retain its values.
-      const saved=await page.evaluate(async()=>{
-        const current=await(await fetch('/api/auth/session',{cache:'no-store'})).json();
-        const response=await fetch('/api/account',{method:'PATCH',headers:{'Content-Type':'application/json','X-Righelt-Auth':'1','X-Righelt-Session':current.contextId},body:JSON.stringify({preferences:{view:'explanatory',tutorial:'completed'}})});
-        return {status:response.status,body:await response.json()};
-      });
+      const saved=await patchAccountPreferences(page,{view:'explanatory',tutorial:'completed'});
       expect(saved.status).toBe(200);expect(saved.body.account.preferences.view).toBe('explanatory');expect(saved.body.account.preferences.tutorial).toBe('completed');
     }
   }
