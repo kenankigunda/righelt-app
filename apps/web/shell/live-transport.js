@@ -1,3 +1,4 @@
+import { STORAGE_GENERATION_HEADER } from "../generated/packages/shared-types/src/storage-policy.js";
 import { issueDiagnostics } from "./issue-diagnostics.js";
 import { equivalentGameStates, listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
 import { loadIdentity, saveIdentity } from "./persistence.js";
@@ -90,34 +91,40 @@ export const createLiveTransportStore = ({
   let active = true;
   const assertActive = () => { if (!active) throw Object.assign(new Error("session_changed"), { code: "session_changed" }); };
   commandJournal ??= createCommandJournal({
-    ...(auth?.enabled ? { databaseName: `righelt.online-commands.account-v1.${auth.session.contextId || "anonymous"}` } : {}),
+    ...(auth?.storageGeneration ? { databaseName: `righelt.online-commands.storage.${auth.storageGeneration}.${auth?.enabled ? auth.session.contextId || "anonymous" : "guest"}` } : auth?.enabled ? { databaseName: `righelt.online-commands.account-v1.${auth.session.contextId || "anonymous"}` } : {}),
     isCurrent: () => active,
   });
   const rawFetcher = fetcher;
-  fetcher = async (url, init = {}) => {
+  fetcher = async (url, init = {}, evidence = {}) => {
     assertActive();
     if (init.method === "POST" && typeof init.body === "string") init = { ...init, body: JSON.stringify({ ...JSON.parse(init.body), protocolVersion: SYNC_PROTOCOL_VERSION }) };
     const requestId = crypto.randomUUID(), started = Date.now();
-    init = { ...init, headers: { ...init.headers, "X-Righelt-Request-Id": requestId } };
+    const routeKind = /\/games\/[^/?]+\/([^/?]+)/.exec(url)?.[1];
+    Object.assign(evidence, { requestId, status: null, durationMs: 0, serverBuild: "unavailable", requestPhase: "headers",
+      requestKind: ["apply", "end-turn", "reconcile"].includes(routeKind) ? routeKind : "read" });
+    init = { ...init, headers: { ...init.headers, "X-Righelt-Request-Id": requestId, ...(auth?.storageGeneration ? { [STORAGE_GENERATION_HEADER]: auth.storageGeneration } : {}) } };
     let response;
     try { response = await rawFetcher(url, init); }
     catch(error) {
-      const data = { requestId, durationMs: Date.now() - started, status: null, stage: "request_failed", serverBuild: "unavailable" };
+      const data = { ...evidence, durationMs: Date.now() - started, status: null, stage: "request_failed", serverBuild: "unavailable" };
       if (error && typeof error === "object") error.diagnosticEvidence = data;
       const gameId = /\/games\/([^/?]+)/.exec(url)?.[1];
-      if (gameId) getOptimisticState(gameId).requestEvidence = data;
+      if (gameId && !init.signal?.aborted) getOptimisticState(gameId).requestEvidence = data;
       throw error;
     }
-    const data = { requestId, status: response.status, durationMs: Date.now() - started, serverBuild: response.headers?.get?.("X-Righelt-Server-Build") ?? "unavailable", stage: "response_received" };
+    Object.assign(evidence, { status: response.status, durationMs: Date.now() - started, serverBuild: response.headers?.get?.("X-Righelt-Server-Build") ?? "unavailable", requestPhase: "body" });
+    const data = { ...evidence, stage: "response_received" };
     response.righeltDiagnosticEvidence = data;
     const gameId = /\/games\/([^/?]+)/.exec(url)?.[1];
-    if (gameId) {
+    if (gameId && !init.signal?.aborted) {
       const optimistic = getOptimisticState(gameId);
       data.gameId = gameId;
       optimistic.requestEvidence = data;
       if (optimistic.incidentId) issueDiagnostics.capture(`recovery:${gameId}`, data);
     }
     assertActive();
+    const responseGeneration = response.headers?.get?.(STORAGE_GENERATION_HEADER);
+    if (auth?.storageGeneration && responseGeneration !== auth.storageGeneration) throw Object.assign(new Error("storage_reset"), { code: "storage_reset" });
     const json = response.json.bind(response);
     response.json = async () => { const body = await json(); assertActive(); return body; };
     return response;
@@ -359,7 +366,7 @@ export const createLiveTransportStore = ({
     const authoritative = gameById.get(gameId);
     const command = commandHint ?? optimistic.pendingCommands[0] ?? optimistic.unsavedCommand;
     optimistic.incidentId = issueDiagnostics.capture(`recovery:${gameId}`, {
-      ...optimistic.requestEvidence, gameId, gameLink: `${globalThis.location?.origin ?? ""}/#/game/${gameId}`,
+      ...(error ? error.diagnosticEvidence : optimistic.requestEvidence), gameId, gameLink: `${globalThis.location?.origin ?? ""}/#/game/${gameId}`,
       operation: "move_recovery", stage, code: error?.code ?? (error ? "unavailable" : "overdue"),
       commandId: command?.clientCommandId, fingerprint: command?.envelope?.fingerprint,
       receipt: command ? optimistic.outcomes.get(command.clientCommandId) ?? "unavailable" : "unavailable",
@@ -371,7 +378,7 @@ export const createLiveTransportStore = ({
       elapsedMs: Math.max(0, Date.now() - (optimistic.recoveryStartedAt ?? (Date.parse(optimistic.pendingCommands[0]?.queuedAt) || Date.now()))),
       ...optimistic.connectionEvidence,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, mode: authoritative?.selfPlayMode ? "play_both" : "multiplayer",
-      deadlineMs: stage.startsWith("journal") ? SYNC_TIMING.requestTimeoutMs : timing.confirmationBudgetMs,
+      deadlineMs: error?.code === "request_timeout" ? timing.requestTimeoutMs : stage.startsWith("journal") ? SYNC_TIMING.requestTimeoutMs : timing.confirmationBudgetMs,
     });
   };
   const blockStorage = (gameId, error, settledCommand = null) => {
@@ -403,7 +410,7 @@ export const createLiveTransportStore = ({
     if (notifications) notifications.push(notification); else emitChange(notification);
     return true;
   };
-  const applyLiveGameUpdate = ({ game, eventSeq = null, commandOutcome = null }) => {
+  const applyLiveGameUpdate = ({ game, eventSeq = null, commandOutcome = null, baseline = false }) => {
     if (eventSeq !== null || commandOutcome) {
       if (!validSyncSnapshot(game, game?.id) || !isSyncRevision(eventSeq)
         || (commandOutcome && (!isSyncRevision(commandOutcome.eventSeq) || !isSyncRevision(commandOutcome.gameplayRevision)
@@ -425,21 +432,26 @@ export const createLiveTransportStore = ({
     }
     const result = upsertGameSnapshot({ game, eventSeq, changeType: "authoritative_update", publish: false });
     for (const notification of notifications) emitChange(notification);
-    if (game) { emitChange({ type: "authoritative_update", gameId: game.id }); void sendNextPendingCommand(game.id); }
+    if (game) { emitChange({ type: "authoritative_update", gameId: game.id, baseline }); void sendNextPendingCommand(game.id); }
     return result;
   };
 
   const boundedRequest = async (url, init, controller = new AbortController()) => {
     let timer;
+    const evidence = {}, started = Date.now();
     try {
       return await Promise.race([
-        Promise.resolve().then(() => fetcher(url, { ...init, signal: controller.signal })).then(mustOk),
-        new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(Object.assign(new Error("request_timeout"), { code: "request_timeout" })); }, timing.requestTimeoutMs); }),
+        Promise.resolve().then(() => fetcher(url, { ...init, signal: controller.signal }, evidence)).then(mustOk),
+        new Promise((_, reject) => { timer = setTimeout(() => {
+          const diagnosticEvidence = { ...evidence, durationMs: Date.now() - started };
+          controller.abort();
+          reject(Object.assign(new Error("request_timeout"), { code: "request_timeout", diagnosticEvidence }));
+        }, timing.requestTimeoutMs); }),
       ]);
     } finally { clearTimeout(timer); }
   };
 
-  const scheduleRetry = (gameId, retryAttempt) => {
+  const scheduleRetry = (gameId, retryAttempt, reconcileFirst = true) => {
     if (!active) return;
     const optimistic = getOptimisticState(gameId);
     if (optimistic.retryTimer) clearTimeout(optimistic.retryTimer);
@@ -447,7 +459,7 @@ export const createLiveTransportStore = ({
     const delay = Math.min(5000, delays[Math.min(retryAttempt, delays.length - 1)] * (1 - timing.retryJitter + random() * timing.retryJitter * 2));
     optimistic.retryTimer = setTimeout(() => {
       optimistic.retryTimer = null;
-      void sendNextPendingCommand(gameId, { retryAttempt: retryAttempt + 1, reconcileFirst: true });
+      void sendNextPendingCommand(gameId, { retryAttempt: retryAttempt + 1, reconcileFirst });
     }, delay);
     optimistic.retryTimer.unref?.();
   };
@@ -498,7 +510,9 @@ export const createLiveTransportStore = ({
     optimistic.attempt = attempt;
     optimistic.inflightCommandId = command.clientCommandId;
     optimistic.retryAttempt = retryAttempt;
-    optimistic.syncStatus = reconcileFirst ? "confirming" : "applying-update";
+    // An idempotent replay is still confirmation of an unknown command. Keep
+    // shared changes locked until its receipt and queued descendants settle.
+    optimistic.syncStatus = reconcileFirst || retryAttempt > 0 || optimistic.syncStatus === "confirming" ? "confirming" : "applying-update";
     if (!optimistic.budgetTimer) {
       optimistic.budgetCommandId = command.clientCommandId;
       optimistic.confirmDeadlineAt = (Date.parse(command.queuedAt) || Date.now()) + timing.confirmationBudgetMs;
@@ -535,7 +549,11 @@ export const createLiveTransportStore = ({
       incrementSyncMetric("httpConfirmFailed", gameId);
       recalculateOptimisticGame(gameId);
       emitChange({ type: "optimistic_confirming", gameId, clientCommandId: command.clientCommandId });
-      if (!optimistic.upgradeRequired && error.code !== "session_changed" && error.code !== "invalid_credentials") scheduleRetry(gameId, retryAttempt);
+      // A stalled receipt read must not permanently gate an idempotent submission.
+      // Replay only the unchanged durable envelope. The server resolves an existing
+      // receipt first, then enforces authority, dependencies and expected state.
+      const replayAfterReadTimeout = reconcileFirst && error.code === "request_timeout" && error.diagnosticEvidence?.requestKind === "reconcile";
+      if (!optimistic.upgradeRequired && error.code !== "session_changed" && error.code !== "invalid_credentials") scheduleRetry(gameId, retryAttempt, !replayAfterReadTimeout);
     } finally {
       attempt.finish();
       if (optimistic.attempt === attempt) { optimistic.attempt = null; optimistic.inflightCommandId = null; }

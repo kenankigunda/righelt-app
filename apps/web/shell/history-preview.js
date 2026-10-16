@@ -21,7 +21,7 @@ export const buildDestroyedPieceOverlays = ({ destroyedPieceRecords, preActionSn
   const preActionPieces = Array.isArray(preActionSnapshot?.pieces) ? preActionSnapshot.pieces : [];
   return records.map((record) => {
     const preActionPiece =
-      preActionPieces.find((piece) => sameCoordinate(piece?.position, record.position)) ?? null;
+      record.piece ?? preActionPieces.find((piece) => record.pieceId ? piece.id === record.pieceId : sameCoordinate(piece?.position, record.position)) ?? null;
     return {
       row: record.position.row,
       col: record.position.col,
@@ -29,7 +29,7 @@ export const buildDestroyedPieceOverlays = ({ destroyedPieceRecords, preActionSn
         record.ownerSeat ??
         (preActionPiece?.owner === "P1" ? "p1" : preActionPiece?.owner === "P2" ? "p2" : null),
       kind:
-        preActionPiece?.kind ??
+        record.kind ?? preActionPiece?.kind ??
         (record.reason === "commander_unsupplied" ? "commander" : "unit"),
       supplied: preActionPiece ? preActionPiece.supplied !== false : record.supplied ?? true,
       commanded: preActionPiece ? preActionPiece.commanded !== false : record.commanded ?? true,
@@ -39,8 +39,8 @@ export const buildDestroyedPieceOverlays = ({ destroyedPieceRecords, preActionSn
             owner: preActionPiece.owner,
             kind: preActionPiece.kind,
             position: {
-              row: preActionPiece.position.row,
-              col: preActionPiece.position.col,
+              row: record.position.row,
+              col: record.position.col,
             },
             supplied: preActionPiece.supplied !== false,
             commanded: preActionPiece.commanded !== false,

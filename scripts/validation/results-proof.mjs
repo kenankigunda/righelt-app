@@ -4,6 +4,7 @@ import path from 'node:path';
 import { expect } from '@playwright/test';
 import {candidateCapabilities} from './capabilities.mjs';
 import { proof } from './proof.mjs';
+import { STORAGE_GENERATION_HEADER } from '../../packages/shared-types/src/storage-policy.js';
 import {closeHostInvitation} from '../../e2e/support/app.mjs';
 
 export function selectTerminalScenario(catalog) {
@@ -19,12 +20,15 @@ export function assertFriendRematch(game, previousId, accountId) {
   assert.equal(game.player2, null, 'A friend rematch must leave the peer seat empty');
   assert.equal(game.board?.state?.outcome?.status, 'ongoing');
 }
-async function request(page, route, body, authProtocol) {
-  return page.evaluate(async ({ route, body, authProtocol }) => {
-    const session = await (await fetch('/api/auth/session')).json();
-    const response = await fetch(route, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', 'X-Righelt-Auth': '1', 'X-Righelt-Auth-Version': String(authProtocol), 'X-Righelt-Session': session.contextId }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+export async function request(page, route, body, authProtocol) {
+  return page.evaluate(async ({ route, body, authProtocol, generationHeader }) => {
+    const sessionResponse = await fetch('/api/auth/session', { cache: 'no-store' });
+    if (!sessionResponse.ok) throw new Error(`Session read failed: ${sessionResponse.status}`);
+    const session = await sessionResponse.json();
+    const generation = sessionResponse.headers.get(generationHeader);
+    const response = await fetch(route, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', 'X-Righelt-Auth': '1', 'X-Righelt-Auth-Version': String(authProtocol), 'X-Righelt-Session': session.contextId, ...(generation ? { [generationHeader]: generation } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: response.status, body: await response.json(), accountId: session.account?.id };
-  }, { route, body, authProtocol });
+  }, { route, body, authProtocol, generationHeader: STORAGE_GENERATION_HEADER });
 }
 async function settled(page) {
   const transition = page.locator('.shell-route-transition-layer');

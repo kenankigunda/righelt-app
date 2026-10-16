@@ -17,7 +17,10 @@ const harness = async () => {
   };
   return { DB, room, call, move, state };
 };
-for (let stage = 0; stage < 5; stage++) test(`I-01/I-02 failed candidate statement ${stage} never publishes or falsely deduplicates`, async () => {
+const probe = await harness();
+await probe.call("apply",probe.move());
+const mutationStages = probe.DB.getLastBatchSize();
+for (let stage = 0; stage < mutationStages; stage++) test(`I-01/I-02 failed candidate statement ${stage} never publishes or falsely deduplicates`, async () => {
   const { DB, room, call, move } = await harness();
   const before = DB.getGameState("g");
   const messages = [];
@@ -28,7 +31,7 @@ for (let stage = 0; stage < 5; stage++) test(`I-01/I-02 failed candidate stateme
   await assert.rejects(call("apply", command), /Injected/);
   assert.deepEqual(DB.getGameState("g"), before);
   assert.equal(messages.length, 0);
-  assert.equal(DB.getEvents("g").length, 1);
+  assert.equal(DB.getEvents("g").length, 0);
   const retried = await (await call("apply", command)).json();
   assert.equal(retried.accepted, true);
   assert.notEqual(retried.duplicate, true);
@@ -46,7 +49,7 @@ test("I-02 lost commit response reloads durable state before retry and restart",
   const restarted = new GameRoomDO(state, { DB });
   const response = await restarted.fetch(await upgradeTestRequest(new Request("https://test/apply", { method: "POST", headers: { "x-game-id": "g" }, body: JSON.stringify({ identityId: "actor", ...command }) }), { DB }));
   assert.equal((await response.json()).duplicate, true);
-  assert.equal(DB.getEvents("g").length, 2);
+  assert.equal(DB.getEvents("g").length, 0);
 });
 test("I-03 overlapping requests serialize and do not expose a candidate before persistence", async () => {
   const { DB, call, room } = await harness();
@@ -67,7 +70,8 @@ test("I-03 overlapping requests serialize and do not expose a candidate before p
   release();
   await Promise.all([first, second, alarm, id]);
   assert.deepEqual(DB.getGameState("g").viewers.map((viewer) => viewer.identityId), ["viewer-a", "viewer-b"]);
-  assert.deepEqual(DB.getEvents("g").map((event) => event.event_seq), [1, 2, 3]);
+  assert.equal(room.eventSeq, 3);
+  assert.equal(DB.getEvents("g").length, 0);
 });
 test("I-03 presence, history and send-failure cleanup use ordered revisions without changing gameplay", async () => {
   const { DB, call, room, move } = await harness();
@@ -86,10 +90,12 @@ test("I-03 presence, history and send-failure cleanup use ordered revisions with
   assert.equal(final.gameplayRevision, revision);
   assert.equal(final.player1.connected, false);
   const events = DB.getEvents("g");
-  assert.deepEqual(events.map((event) => event.event_seq), Array.from({ length: events.length }, (_, index) => index + 1));
+  assert.equal(events.length, 0);
+  assert.ok(room.eventSeq >= second);
 });
 test("I-01 creation rollback leaves neither projection nor invites", async () => {
-  for (let stage = 0; stage < 5; stage++) {
+  const probe = await harness();
+  for (let stage = 0; stage < probe.DB.getLastBatchSize(); stage++) {
     const DB = createFakeD1(); const room = new GameRoomDO({ id: { name: "g" } }, { DB });
     DB.failNextBatchAt(stage);
     await assert.rejects(room.fetch(new Request("https://test/create", { method: "POST", body: JSON.stringify({ gameId: "g", identityId: "actor" }) })));

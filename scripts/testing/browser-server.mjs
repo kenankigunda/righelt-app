@@ -33,13 +33,14 @@ export function createBrowserServer() {
         res.writeHead(403).end();
         return;
       }
+      const body = await readFile(file);
       res
         .writeHead(200, {
           "Content-Type":
             types[path.extname(file)] ?? "application/octet-stream",
           "Cache-Control": "no-store",
         })
-        .end(await readFile(file));
+        .end(body);
     } catch {
       res.writeHead(404).end();
     }

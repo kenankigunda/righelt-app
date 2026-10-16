@@ -64,6 +64,12 @@ export function workflow() {
           },
           run: "node scripts/testing/ci-run.mjs",
         },
+        ...(name === "e2e" ? [{
+          name: "Validate storage lifecycle and reset",
+          if: "matrix.shard == 1",
+          env: { PROJECT: expression("matrix.project"), PLAYWRIGHT_JUNIT_OUTPUT_FILE: "test-results/storage-lifecycle/results.xml", PLAYWRIGHT_OUTPUT_DIR: "test-results/storage-lifecycle/artifacts" },
+          run: 'pnpm test:e2e:storage --project="$PROJECT"',
+        }] : []),
         {
           name: "Preserve evidence",
           if: "always()",

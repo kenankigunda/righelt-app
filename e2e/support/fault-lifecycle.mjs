@@ -1,3 +1,15 @@
+// A relay reset is a network failure the browser must recover from, rather than
+// an exception hidden until fixture teardown. Other relay errors still fail.
+export async function fetchFaultResponse(route, options, onReset = () => {}) {
+ try { return await route.fetch(options); }
+ catch (error) {
+  if (!/\bECONNRESET\b/.test(String(error?.message))) throw error;
+  onReset();
+  await route.abort("connectionreset");
+  return null;
+ }
+}
+
 // Own asynchronous fault work so it cannot escape into the next test.
 // Reporters may omit AggregateError.errors. Keep the cause's first line visible
 // without copying request headers or bodies from multiline browser errors.

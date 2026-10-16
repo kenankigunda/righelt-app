@@ -3,6 +3,17 @@ import assert from "node:assert/strict";
 import { createIssueDiagnostics, sanitizeDiagnostic } from "../shell/issue-diagnostics.js";
 import { recoveryMessage } from "../shell/recovery-view.js";
 const memory = () => { const map = new Map(); return { getItem: k => map.get(k), setItem: (k,v) => map.set(k,v), removeItem: k => map.delete(k) }; };
+test("request phase and route kind survive sanitized persisted diagnostics", () => {
+ const storage = memory(), jobs = [];
+ const d = createIssueDiagnostics({storage,schedule:job=>{jobs.push(job);return 1;}});
+ const id = d.capture("recovery:g", {requestKind:"reconcile",requestPhase:"body",status:200,requestId:"request",headers:{authorization:"secret"}});
+ jobs.shift()();
+ const restored = createIssueDiagnostics({storage}).get(id);
+ assert.equal(restored.initial.requestKind,"reconcile");
+ assert.equal(restored.initial.requestPhase,"body");
+ assert.equal(restored.initial.status,200);
+ assert.equal(JSON.stringify(restored).includes("secret"),false);
+});
 test("every issue captures guarded environment evidence without replacing initial context", () => {
  let browser = "initial browser";
  const d = createIssueDiagnostics({environment:()=>({browser,clientBuild:"build",timezone:"UTC",online:true,visibility:"visible",identityId:"secret"})});

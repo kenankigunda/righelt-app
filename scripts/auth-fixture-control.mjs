@@ -6,6 +6,7 @@ const operations = new Map([
   ["/reset-limits", "DELETE FROM account_rate_limits"],
   ["/expire-sessions", "UPDATE account_sessions SET expires_at = created_at + 1, last_activity_at = created_at"],
 ]);
+export const authFixtureSql = () => [...operations.values()];
 const retryableOperations = new Set(["/reset-limits", "/maintenance-on", "/maintenance-off"]);
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 

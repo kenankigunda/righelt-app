@@ -123,13 +123,14 @@ test("I-05 receipts remain effective after 205 moves trim the visible history", 
   assert.deepEqual(h.DB.getGameState("g"), before);
 });
 
-test("I-01 receipt statement failure rolls back the move and its event", async () => {
+test("I-01 receipt statement failure rolls back the move and revision", async () => {
   const h = await harness(); const a = await h.command(); const before = h.DB.getGameState("g");
-  h.DB.failNextBatchAt(5);
+  const probe=await harness(); await probe.call("moves",await probe.command());
+  h.DB.failNextBatchAt(probe.DB.getLastBatchSize()-1);
   await assert.rejects(h.call("moves", a), /Injected/);
   assert.deepEqual(h.DB.getGameState("g"), before);
   assert.equal(h.DB.getReceipt("g", a.clientCommandId), null);
-  assert.equal(h.DB.getEvents("g").length, 1);
+  assert.equal(h.DB.getEvents("g").length, 0);
   assert.equal((await h.call("moves", a)).commandOutcomes[0].outcome, "accepted");
 });
 

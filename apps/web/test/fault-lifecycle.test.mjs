@@ -1,11 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createFaultLifecycle,disposeFaultContexts} from '../../../e2e/support/fault-lifecycle.mjs';
+import {createFaultLifecycle,fetchFaultResponse,disposeFaultContexts} from '../../../e2e/support/fault-lifecycle.mjs';
 function fixture() {
  const timers=new Map();let next=0;
  const lifecycle=createFaultLifecycle({setTimer: callback=>{const id=++next;timers.set(id,callback);return id;},clearTimer:id=>timers.delete(id)});
  return {lifecycle,timers};
 }
+test('relay resets reach the browser without retrying, while unrelated relay errors still fail',async()=>{
+ const calls=[];let resets=0;
+ const route={fetch:async options=>{calls.push(options);throw Error('route.fetch: read ECONNRESET');},abort:async code=>calls.push(code)};
+ assert.equal(await fetchFaultResponse(route,{timeout:100},()=>resets++),null);
+ assert.equal(resets,1);assert.deepEqual(calls,[{timeout:100},'connectionreset']);
+ const response={ok:true};assert.equal(await fetchFaultResponse({fetch:async()=>response,abort:()=>assert.fail('no abort')},{}),response);
+ await assert.rejects(fetchFaultResponse({fetch:async()=>{throw Error('bad response parsing');},abort:()=>assert.fail('no abort')},{}),/bad response parsing/);
+});
 test('disposal cancels delayed sends, including a callback already queued by the timer',async()=>{
  const {lifecycle,timers}=fixture();let sends=0;
  lifecycle.schedule(()=>sends++,100);const callback=[...timers.values()][0];

@@ -358,6 +358,16 @@
           "run": "node scripts/testing/ci-run.mjs"
         },
         {
+          "name": "Validate storage lifecycle and reset",
+          "if": "matrix.shard == 1",
+          "env": {
+            "PROJECT": "${{ matrix.project }}",
+            "PLAYWRIGHT_JUNIT_OUTPUT_FILE": "test-results/storage-lifecycle/results.xml",
+            "PLAYWRIGHT_OUTPUT_DIR": "test-results/storage-lifecycle/artifacts"
+          },
+          "run": "pnpm test:e2e:storage --project=\"$PROJECT\""
+        },
+        {
           "name": "Preserve evidence",
           "if": "always()",
           "uses": "actions/upload-artifact@v6",

@@ -1,3 +1,5 @@
+import { destructionRecords, removalNotices } from "../generated/packages/game-engine/src/removals.js";
+export { collectDestroyedPieceRecords } from "../generated/packages/game-engine/src/removals.js";
 import {
   applyAction,
   listLegalActions,
@@ -24,97 +26,8 @@ export const defaultNotationForAction = (action) => {
   return `${String(action?.type || "move").toUpperCase()} ${formatCoordinate(action?.from)} -> ${formatCoordinate(action?.to)}`;
 };
 
-const collectRemovedPieceNotices = (before, afterApply, afterStability, action) => {
-  const afterApplyIds = new Set(afterApply.pieces.map((piece) => piece.id));
-  const afterStableIds = new Set(afterStability.pieces.map((piece) => piece.id));
-  const notices = [];
-
-  for (const piece of before.pieces) {
-    if (!afterApplyIds.has(piece.id)) {
-      const reason = piece.pushed || action.type === "push" || action.type === "retreat" ? "no_retreat" : "loss_of_supply";
-      notices.push({
-        pieceId: piece.id,
-        position: { ...piece.position },
-        reason,
-        message:
-          reason === "no_retreat"
-            ? `Piece at (${piece.position.row}, ${piece.position.col}) destroyed because it could not retreat`
-            : `Piece at (${piece.position.row}, ${piece.position.col}) destroyed due to loss of supply`,
-      });
-    }
-  }
-
-  for (const piece of afterApply.pieces) {
-    if (!afterStableIds.has(piece.id)) {
-      notices.push({
-        pieceId: piece.id,
-        position: { ...piece.position },
-        reason: "loss_of_supply",
-        message: `Piece at (${piece.position.row}, ${piece.position.col}) destroyed due to loss of supply`,
-      });
-    }
-  }
-
-  return notices;
-};
-
-/**
- * Collect DestroyedPieceRecord entries for a single move resolution.
- *
- * Invariant: A Commander removal always produces a terminal outcome (p1_win,
- * p2_win, or draw). When piece.kind === "commander" the reason is classified
- * as "commander_unsupplied" rather than "loss_of_supply". A move with
- * outcome.status === "ongoing" will never produce a Commander record here.
- *
- * TypeScript reference: packages/api-handler/src/shell-live-core.ts
- * (`collectDestroyedPieceRecords`). Keep both in sync; U-17 is the parity guard.
- *
- * @param {object} before - Board state before the action was applied.
- * @param {object} afterApply - Board state immediately after applying the action.
- * @param {object} afterStability - Board state after full stability resolution.
- * @param {object} action - The action that was applied.
- * @returns {Array<{position: {row: number, col: number}, ownerSeat: "p1"|"p2", supplied: boolean, commanded: boolean, reason: "no_retreat"|"loss_of_supply"|"commander_unsupplied"}>}
- */
-export const collectDestroyedPieceRecords = (before, afterApply, afterStability, action) => {
-  const afterApplyIds = new Set(afterApply.pieces.map((piece) => piece.id));
-  const afterStableIds = new Set(afterStability.pieces.map((piece) => piece.id));
-  const records = [];
-
-  for (const piece of before.pieces) {
-    if (!afterApplyIds.has(piece.id)) {
-      const reason =
-        piece.kind === "commander"
-          ? "commander_unsupplied"
-          : piece.pushed || action.type === "push" || action.type === "retreat"
-            ? "no_retreat"
-            : "loss_of_supply";
-      records.push({
-        position: { ...piece.position },
-        ownerSeat: piece.owner === "P1" ? "p1" : "p2",
-        supplied: piece.supplied !== false,
-        commanded: piece.commanded !== false,
-        reason,
-      });
-    }
-  }
-
-  for (const piece of afterApply.pieces) {
-    if (!afterStableIds.has(piece.id)) {
-      const reason = piece.kind === "commander" ? "commander_unsupplied" : "loss_of_supply";
-      records.push({
-        position: { ...piece.position },
-        ownerSeat: piece.owner === "P1" ? "p1" : "p2",
-        supplied: piece.supplied !== false,
-        commanded: piece.commanded !== false,
-        reason,
-      });
-    }
-  }
-
-  return records;
-};
-
-const completeTurn = (game, queuedAt) => {
+const completeTurn = (game, queuedAt, pendingMoves, operationId) => {
+  const events = [];
   const activeTurn = getActiveTurn(game);
   if (!activeTurn) {
     return { ok: false, error: "turn_not_initialized" };
@@ -131,11 +44,17 @@ const completeTurn = (game, queuedAt) => {
     activeTurn,
     endedAt,
     resolveToStability,
+    onRemoval: (event) => events.push(event),
   });
+  const lastMove = [...game.moves, ...pendingMoves].reverse().find((move) => !move.undone && move.turnIndex === activeTurn.index);
+  if (lastMove) {
+    lastMove.snapshot = clone(nextState);
+    lastMove.destroyedPieces = [...(lastMove.destroyedPieces ?? []), ...destructionRecords(events, operationId)];
+  }
   game.turns.push(nextTurn);
   game.board.state = nextState;
   game.updatedAt = endedAt;
-  return { ok: true, nextTurn };
+  return { ok: true, nextTurn, events };
 };
 
 const buildPendingMoveEntry = ({ command, selectionSnapshot, snapshot, activeTurn, index }) => ({
@@ -209,10 +128,10 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
         };
       }
 
-      const applied = applyAction(stable, command.action);
-      const nextStable = resolveToStability(applied.state, { artifactMode: "full" });
-      const removedPieces = collectRemovedPieceNotices(stable, applied.state, nextStable, command.action);
-      const destroyedPieces = collectDestroyedPieceRecords(stable, applied.state, nextStable, command.action);
+      const events = [];
+      const onRemoval = (event) => events.push(event);
+      const applied = applyAction(stable, command.action, { onRemoval });
+      const nextStable = resolveToStability(applied.state, { artifactMode: "full", onRemoval });
       const turnSettled = nextStable.continuation == null;
       const finalizedTurn = turnSettled
         ? finalizeResolvedTurn({
@@ -220,6 +139,7 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
             activeTurn,
             endedAt: command.queuedAt,
             resolveToStability,
+            onRemoval,
           })
         : null;
       const settledState = finalizedTurn?.nextState ?? nextStable;
@@ -246,24 +166,27 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
         activeTurn,
         index: workingGame.moves.length + pendingMoves.length,
       });
+      pendingMove.destroyedPieces = destructionRecords(events, command.clientCommandId);
       pendingMoves.push(pendingMove);
       commandResults.set(command.clientCommandId, {
         accepted: true,
         state: clone(settledState),
         legalActions: listLegalActions(settledState),
-        removedPieces,
-        destroyedPieces,
+        removedPieces: removalNotices(events, command.clientCommandId),
+        destroyedPieces: destructionRecords(events, command.clientCommandId),
         outcome: settledState.outcome ?? null,
       });
       continue;
     }
 
-    const ended = completeTurn(workingGame, command.queuedAt);
+    const ended = completeTurn(workingGame, command.queuedAt, pendingMoves, command.clientCommandId);
     if (!ended.ok) {
       return { ok: false, error: ended.error, clientCommandId: command.clientCommandId };
     }
     commandResults.set(command.clientCommandId, {
       accepted: true,
+      removedPieces: removalNotices(ended.events, command.clientCommandId),
+      destroyedPieces: destructionRecords(ended.events, command.clientCommandId),
       state: clone(workingGame.board.state),
       legalActions: listLegalActions(workingGame.board.state),
       outcome: workingGame.board.state.outcome ?? null,

@@ -5,6 +5,8 @@ export const createFakeD1 = () => {
   const shellInvites = new Map();
   const shellEvents = new Map();
   const receipts = new Map();
+  const payloads = new Map();
+  let lastBatchSize = 0;
   const tombstones = new Map();
   const executors = new WeakMap();
   let batchFailureIndex = null;
@@ -49,7 +51,7 @@ export const createFakeD1 = () => {
     if (normalized.includes("WHERE has_smoke_identity = 1")) {
       return rows.filter((row) => row.has_smoke_identity === 1);
     }
-    if (normalized.includes("WHERE (COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)")) {
+    if (normalized.includes("WHERE (COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)") || normalized.includes("WHERE (player1_identity_id = ?1 OR player2_identity_id = ?1)")) {
       const identityId = params[0];
       return rows.filter(
         (row) =>
@@ -58,7 +60,7 @@ export const createFakeD1 = () => {
           (JSON.parse(row.state_json).board?.state?.outcome?.status ?? "ongoing") === "ongoing",
       );
     }
-    if (normalized.includes("WHERE (NOT (COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)")) {
+    if (normalized.includes("WHERE (NOT (COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)") || normalized.includes("player1_identity_id IS NOT ?1")) {
       const identityId = params[0];
       return rows.filter(
         (row) =>
@@ -146,12 +148,17 @@ export const createFakeD1 = () => {
           return { success: true };
         }
 
+        if (normalized.startsWith("INSERT INTO game_payloads")) {payloads.set(params[0],{format_version:1,state_blob:structuredClone(params[1]),state_sha256:params[2]});return {success:true};}
+        if (normalized.startsWith("DELETE FROM game_payloads")) {payloads.delete(params[0]);return {success:true};}
+        if (normalized.startsWith("UPDATE live_games SET commit_base_event_seq=NULL,retention_activity_at=")) {const row=shellGames.get(params[0]);if(row)Object.assign(row,{retention_activity_at:params[1]?params[2]:row.retention_activity_at??row.created_at,outcome_status:params[3],next_actor_identity_id:params[4],move_count:params[5],commit_base_event_seq:null});return {success:true};}
         throw new Error(`Unsupported run query: ${normalized}`);
       },
       async run() { return statement.executeRun(); },
       async first() {
         if (normalized.startsWith("SELECT activated_at,maintenance,canary_account_id FROM account_cutover")) return {activated_at:null,maintenance:0,canary_account_id:null};
         reads.push({ query: normalized, params: [...params] });
+        if (normalized.includes("FROM game_archives")) return null;
+        if (normalized.includes("FROM game_payloads")) return structuredClone(payloads.get(params[0]) ?? null);
         if (normalized.includes("FROM live_command_receipts")) return structuredClone(receipts.get(JSON.stringify(params.slice(0, 2))) ?? null);
         if (normalized.includes("FROM live_legacy_command_tombstones")) return structuredClone(tombstones.get(JSON.stringify(params.slice(0, 2))) ?? null);
 
@@ -244,8 +251,9 @@ export const createFakeD1 = () => {
   return {
     prepare,
     async batch(statements) {
+      lastBatchSize = statements.length;
       // Execute synchronously so reads cannot observe intermediate statements.
-      const tables = [shellGames, shellInvites, shellEvents, receipts, tombstones];
+      const tables = [shellGames, shellInvites, shellEvents, receipts, tombstones, payloads];
       const snapshots = tables.map((table) => structuredClone(table));
       const failAt = batchFailureIndex;
       batchFailureIndex = null;
@@ -264,6 +272,7 @@ export const createFakeD1 = () => {
       if (loseBatchResponse) { loseBatchResponse = false; throw new Error("Lost batch response after commit"); }
       return results;
     },
+    getLastBatchSize() { return lastBatchSize; },
     failNextBatchAt(index) { batchFailureIndex = index; },
     loseNextBatchResponse() { loseBatchResponse = true; },
     getReceipt(gameId, commandId) { return structuredClone(receipts.get(JSON.stringify([gameId, commandId])) ?? null); },
@@ -274,6 +283,7 @@ export const createFakeD1 = () => {
       shellInvites.clear();
       shellEvents.clear();
       receipts.clear();
+      payloads.clear();
       tombstones.clear();
       batchFailureIndex = null;
       loseBatchResponse = false;
@@ -302,6 +312,7 @@ export const createFakeD1 = () => {
     setNextGameReadOverride(gameId, state) {
       nextGameReadOverrideById.set(gameId, structuredClone(state));
     },
+    getGameRow(gameId) { return structuredClone(shellGames.get(gameId) ?? null); },
     getGameState(gameId) {
       const row = shellGames.get(gameId);
       if (!row || typeof row.state_json !== "string") {

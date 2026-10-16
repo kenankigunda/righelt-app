@@ -1,3 +1,6 @@
+import { archiveRow, readArchivedGame } from "./storage-archive";
+import { growthGuard } from "./storage-budget";
+import { encodeStorage, decodeStorage } from "./storage-codec";
 import type { CutoverPolicy } from './account-cutover';
 import type { ServerEvent } from "../../shared-types/src/events";
 import {
@@ -6,6 +9,9 @@ import {
   createInviteToken,
   nextMoveId,
   now,
+  getActiveTurn,
+  getControlSeatForTurn,
+  getSeatIdentity,
   type DestroyedPieceRecord,
   type JoinRequest,
   type LiveGame,
@@ -24,11 +30,13 @@ export type D1RunResult = {
   success: boolean;
   meta?: {
     last_row_id?: number;
+    size_after?: number;
   };
 };
 
 type D1Result<T> = {
   results?: T[];
+  meta?: { size_after?: number; rows_read?: number; rows_written?: number };
 };
 
 export type D1Statement = {
@@ -44,6 +52,14 @@ export type D1DatabaseLike = {
 };
 
 export type LiveGameEnv = {
+  STORAGE_GENERATION?: string;
+  STORAGE_COMPRESSION?: string;
+  STORAGE_ARCHIVES_ENABLED?: string;
+  STORAGE_ARCHIVE_MODE?: string;
+  STORAGE_ARCHIVE_CANARY_GAME_ID?: string;
+  STORAGE_BUDGET_ENABLED?: string;
+  STORAGE_EXCLUSIVE_R2?: string;
+  ARCHIVES?: import("./storage-archive").ArchiveBucket;
   CF_VERSION_METADATA?: { id?: string; tag?: string; timestamp?: string };
   AUTH_ENABLED?: string;
   AUTH_REQUIRED?: string;
@@ -702,7 +718,7 @@ const normalizePersistedStaticGameCard = (
       viewers: normalizeViewerList(parsed.viewers, mismatches),
       pendingJoinRequests: normalizeJoinRequests(parsed.pendingJoinRequests, mismatches),
       pendingScenarioSelection: normalizeScenarioSavedSelection(parsed.pendingScenarioSelection, mismatches),
-      moveCount: moves.length,
+      moveCount: typeof parsed.moveCount === "number" ? parsed.moveCount : moves.length,
       previewSnapshot: boardState,
     },
     identityId,
@@ -733,6 +749,14 @@ export const loadGameProjection = async (env: LiveGameEnv, gameId: string): Prom
   if (!row?.state_json) {
     return null;
   }
+  const payload = await env.DB.prepare("SELECT format_version,state_blob,state_sha256 FROM game_payloads WHERE game_id=?1").bind(gameId).first<{format_version:number;state_blob:number[];state_sha256:string}>();
+  if (payload) {
+    if (payload.format_version !== 1) throw new Error("unsupported_storage_format");
+    row.state_json = JSON.stringify(await decodeStorage(payload.state_blob, payload.state_sha256));
+  } else {
+    const archived = await archiveRow(env,gameId);
+    if(archived && archived.status !== "archiving") row.state_json=JSON.stringify(await readArchivedGame(env,archived));
+  }
   const projection = normalizePersistedGame(row, "single");
   if (projection.kind === "ok" && row.ownership_mode !== undefined) projection.game.ownershipMode = row.ownership_mode ?? "legacy_guest";
   return projection;
@@ -746,10 +770,11 @@ const getHomeSectionWhereClause = ({ identityId, section, debug }: Omit<HomeSect
     };
   }
 
-  const playerMatchSql = "(COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)";
-  const unfinished = "COALESCE(json_extract(CASE WHEN json_valid(state_json) THEN state_json ELSE '{}' END, '$.board.state.outcome.status'), 'ongoing') = 'ongoing'";
+  const playerMatchSql = "(player1_identity_id = ?1 OR player2_identity_id = ?1)";
+  const unfinished = "outcome_status = 'ongoing'";
   const ownedGameSql = accountMode ? `(${playerMatchSql} AND ownership_mode = 'account_v1')` : playerMatchSql;
-  const sectionSql = section === "my" ? `${ownedGameSql} AND (${unfinished})` : `(NOT ${ownedGameSql} OR NOT (${unfinished}))`;
+  const notOwned = accountMode ? "((player1_identity_id IS NOT ?1 AND player2_identity_id IS NOT ?1) OR ownership_mode != 'account_v1')" : "(player1_identity_id IS NOT ?1 AND player2_identity_id IS NOT ?1)";
+  const sectionSql = section === "my" ? `${ownedGameSql} AND (${unfinished})` : `(${notOwned} OR NOT (${unfinished}))`;
   const smokeSql = debug ? "AND has_smoke_identity = 0" : "AND has_smoke_identity = 0";
   return {
     sql: `WHERE ${sectionSql} ${smokeSql}`,
@@ -758,12 +783,10 @@ const getHomeSectionWhereClause = ({ identityId, section, debug }: Omit<HomeSect
 };
 
 // Order before pagination. Push retreat is the opposing player's decision.
-const homeOrderSql = (section: string) => section === 'my' ? `
- CASE WHEN (CASE WHEN
- ((json_extract(CASE WHEN json_valid(state_json) THEN state_json ELSE '{}' END, '$.turns[#-1].playerSeat') = 'Player 2') !=
- (COALESCE(json_extract(CASE WHEN json_valid(state_json) THEN state_json ELSE '{}' END, '$.board.state.continuation.type'), '') = 'push' AND COALESCE(json_extract(CASE WHEN json_valid(state_json) THEN state_json ELSE '{}' END, '$.board.state.continuation.phase'), '') = 'retreat'))
- THEN player2_identity_id ELSE player1_identity_id END) = ?1 THEN 0 ELSE 1 END,
- latest_activity_at DESC, game_id ASC` : 'latest_activity_at DESC, created_at DESC, game_id ASC';
+const homeOrderSql = (section:string) => section === "my"
+  ? "CASE WHEN next_actor_identity_id = ?1 THEN 0 ELSE 1 END,latest_activity_at DESC,game_id ASC"
+  : "latest_activity_at DESC,created_at DESC,game_id ASC";
+
 
 export const countHomeSectionGames = async (
   env: LiveGameEnv,
@@ -797,10 +820,8 @@ export const listHomeSectionGameProjectionPage = async (
   )
     .bind(...where.params, pageSize, offset)
     .all<PersistedGameRow>();
-  return (result.results ?? []).flatMap((row) => {
-    const projection = normalizePersistedGame(row, "list");
-    return projection.kind === "ok" ? [projection.game] : [];
-  });
+  const projections=await Promise.all((result.results??[]).map(row=>loadGameProjection(env,row.game_id)));
+  return projections.flatMap(projection=>projection?.kind==="ok"?[projection.game]:[]);
 };
 
 export const listHomeSectionStaticGameCardPage = async (
@@ -846,6 +867,7 @@ const projectionStatement = (
   game: LiveGame,
   eventSeq: number,
   baseEventSeq: number,
+  storedState = JSON.stringify(game),
 ) => {
   return env.DB.prepare(
     `INSERT INTO ${LIVE_GAMES_TABLE} (
@@ -879,7 +901,7 @@ const projectionStatement = (
       game.player1?.identityId ?? null,
       game.player2?.identityId ?? null,
       (hasSmokeIdentity(game) || (env.ACCOUNT_POLICY?.canary_account_id && game.selfPlayMode && game.player1?.identityId === env.ACCOUNT_POLICY.canary_account_id && game.player2?.identityId === env.ACCOUNT_POLICY.canary_account_id)) ? 1 : 0,
-      JSON.stringify(game),
+      storedState,
       eventSeq,
       game.gameplayRevision ?? 0,
       baseEventSeq,
@@ -913,19 +935,6 @@ export const resolveInvite = async (
   };
 };
 
-const eventStatement = (env: LiveGameEnv, gameId: string, event: ServerEvent & { eventSeq: number }) => {
-  return env.DB.prepare(
-    `INSERT INTO ${LIVE_EVENTS_TABLE}
-       (game_id, event_seq, payload_json)
-     VALUES (?1, ?2, ?3)`,
-  )
-    .bind(
-      gameId,
-      event.eventSeq,
-      JSON.stringify(event),
-    );
-};
-
 export const loadEventsAfter = async (env: LiveGameEnv, gameId: string, lastEventSeq: number): Promise<ServerEvent[]> => {
   const result = await env.DB.prepare(
     `SELECT payload_json FROM ${LIVE_EVENTS_TABLE}
@@ -942,14 +951,35 @@ export const persistGameState = async (
   game: LiveGame,
   eventSeq: number,
   event?: (ServerEvent & { eventSeq: number }) | null,
-  options: { baseEventSeq?: number; statements?: D1Statement[]; before?: D1Statement[]; after?: D1Statement[] } = {},
+  options: { invitesChanged?: boolean; activityChanged?: boolean; baseEventSeq?: number; statements?: D1Statement[]; before?: D1Statement[]; after?: D1Statement[] } = {},
 ) => {
   const base = options.baseEventSeq ?? eventSeq - 1;
   if (!Number.isSafeInteger(base) || base < 0 || !Number.isSafeInteger(eventSeq) || eventSeq <= base) throw new Error("invalid_commit_revision");
   if (event && event.eventSeq !== eventSeq) throw new Error("event_revision_mismatch");
-  const statements = [...(options.before ?? []), projectionStatement(env, game, eventSeq, base), ...inviteStatements(env, game)];
-  if (event) statements.push(eventStatement(env, game.id, event));
-  statements.push(...(options.statements ?? []), ...(options.after ?? []));
+  const budget = growthGuard(env);
+  const compact = env.STORAGE_COMPRESSION === "true";
+  const stored = compact ? await encodeStorage(game) : null;
+  const card = compact ? JSON.stringify({...game,moves:[],turns:game.turns.slice(-1),moveCount:game.moves.length}) : JSON.stringify(game);
+  const statements = [...budget.before, ...(options.before ?? []), projectionStatement(env, game, eventSeq, base, card), ...(options.invitesChanged === false ? [] : inviteStatements(env, game))];
+  if (stored) {
+    statements.push(env.DB.prepare("INSERT INTO game_payloads(game_id,format_version,state_blob,state_sha256) VALUES(?1,1,?2,?3) ON CONFLICT(game_id) DO UPDATE SET format_version=excluded.format_version,state_blob=excluded.state_blob,state_sha256=excluded.state_sha256").bind(game.id,stored.blob,stored.checksum));
+  } else {
+    // Readers always understand compact data. Disabling compression writes must
+    // remove its stale authoritative copy atomically with the new JSON state.
+    statements.push(env.DB.prepare("DELETE FROM game_payloads WHERE game_id=?1").bind(game.id));
+  }
+  const turn = getActiveTurn(game);
+  const control = turn ? getControlSeatForTurn(game.board.state,turn.playerSeat) : game.board.state.sideToMove === "P1" ? "Player 1" : "Player 2";
+  statements.push(env.DB.prepare("UPDATE live_games SET commit_base_event_seq=NULL,retention_activity_at=CASE WHEN ?2 THEN ?3 ELSE COALESCE(retention_activity_at,created_at) END,outcome_status=?4,next_actor_identity_id=?5,move_count=?6 WHERE game_id=?1").bind(game.id,options.activityChanged === false ? 0 : 1,new Date().toISOString(),game.board.state.outcome.status,getSeatIdentity(game,control),game.moves.length));
+  // Socket events are transient delivery. The projection and durable command
+  // receipts are the recovery authority; retaining events repeats all history.
+  statements.push(...(options.statements ?? []), ...(options.after ?? []), ...budget.after);
   const results = await env.DB.batch(statements);
   if (results.length !== statements.length || results.some((result) => !result.success)) throw new Error("uncertain_commit_result");
+  const size=results.at(-1)?.meta?.size_after;
+  if(env.STORAGE_BUDGET_ENABLED==="true" && Number.isSafeInteger(size)) {
+    // Metrics failure after commit must never convert success into a rejection.
+    try { await env.DB.prepare("UPDATE storage_budget SET d1_bytes=?1 WHERE singleton=1").bind(size).run(); }
+    catch { console.warn(JSON.stringify({event:"storage_size_observation_deferred"})); }
+  }
 };

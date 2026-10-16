@@ -1,8 +1,12 @@
+import {storageFixtureConfig} from "./storage-fixture-config.mjs";
 import { recordUnexpectedExit } from './testing/stack-status.mjs';
 import { cliPath, supervise } from './resources/supervisor.mjs';
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, readFile, writeFile } from "node:fs/promises";
+import { e2eControlPort } from "./e2e-control.mjs";
+import { randomUUID } from "node:crypto";
+import { storageFixtureSource } from "./storage-e2e-fixture.mjs";
 import os from "node:os";
 import path from "node:path";
 
@@ -10,7 +14,7 @@ import { buildLocalApiOrigin, resolveLocalApiPort } from "../apps/web/local-dev-
 
 export const DEFAULT_E2E_WEB_PORT = "9888";
 export const DEFAULT_E2E_READY_TIMEOUT_MS = 120_000;
-const DEFAULT_DB_NAME = process.env.CLOUDFLARE_D1_DB_NAME || "righelt-db-dev";
+const DEFAULT_DB_NAME = process.env.CLOUDFLARE_D1_DB_NAME || "DB";
 
 const repoRoot = process.cwd();
 const webPort = process.env.RIGHELT_E2E_WEB_PORT || DEFAULT_E2E_WEB_PORT;
@@ -123,7 +127,21 @@ const shutdown = async (exitCode = 0) => {
 
 const run = async () => {
   const persistRoot = await createE2ePersistRoot();
-  const apiPersistPath = path.join(persistRoot, "api-state");
+  let apiPersistPath = path.join(persistRoot, "api-state");
+  const storageProfile=process.env.RIGHELT_E2E_STORAGE_ARCHIVES==="1";
+  let generation=process.env.RIGHELT_E2E_STORAGE_GENERATION||(storageProfile?"e2e-storage-v1":"");
+  const fixtureSecret=randomUUID();
+  let apiConfig="wrangler.toml";
+  {
+    const entry=path.join(persistRoot,"storage-worker.mjs");
+    if(storageProfile)await writeFile(entry,storageFixtureSource(path.join(repoRoot,"apps/api/index.js")));
+    let config=storageFixtureConfig(await readFile(path.join(repoRoot,"apps/api/wrangler.toml"),"utf8"),{archives:storageProfile});
+    config=config.replace('main = "index.js"',`main = ${JSON.stringify(storageProfile?entry:path.join(repoRoot,"apps/api/index.js"))}`)
+      .replace('migrations_dir = "../../db/migrations"',`migrations_dir = ${JSON.stringify(path.join(repoRoot,"db/migrations"))}`)
+      .replace('[vars]',`[vars]\nSTORAGE_FIXTURE_SECRET = ${JSON.stringify(fixtureSecret)}`);
+    config=config.replace(/database_id = "[^"]+"/,'database_id = "local-guest-e2e"');
+    apiConfig=path.join(persistRoot,"storage-api.toml");await writeFile(apiConfig,config);
+  }
   await mkdir(apiPersistPath, { recursive: true });
 
   process.on("SIGINT", () => {
@@ -133,7 +151,7 @@ const run = async () => {
     void shutdown(0);
   });
 
-  await runBlocking(
+  const migrate=async()=>{await runBlocking(
     "local D1 migrations",
     "pnpm",
     [
@@ -146,13 +164,16 @@ const run = async () => {
       "apply",
       DEFAULT_DB_NAME,
       "--config",
-      "wrangler.toml",
+      apiConfig,
       "--local",
       "--persist-to",
       apiPersistPath,
     ],
     { cwd: repoRoot },
   );
+  if(storageProfile)await runBlocking("local archive budget","pnpm",["--dir","apps/api","exec","wrangler","d1","execute","DB","--config",apiConfig,"--local","--persist-to",apiPersistPath,"--command","UPDATE storage_budget SET healthy=1,observed_at=datetime('now') WHERE singleton=1"],{cwd:repoRoot});
+  };
+  await migrate();
 
   const startApi = () => spawnLogged(
     "api",
@@ -164,9 +185,10 @@ const run = async () => {
       "wrangler",
       "dev",
       "--config",
-      "wrangler.toml",
+      apiConfig,
       "--port",
       apiPort,
+      "--var",`STORAGE_GENERATION:${generation}`,
       "--persist-to",
       apiPersistPath,
     ],
@@ -175,7 +197,16 @@ const run = async () => {
   let apiChild = startApi();
   // Test-runner-only loopback control: not served by Pages or the application Worker.
   controlServer = createServer(async (request, response) => {
-    if (request.method !== "POST" || request.url !== "/restart") { response.writeHead(404).end(); return; }
+    // Cross-origin websites cannot invoke local runner controls.
+    if(request.headers.origin){response.writeHead(403).end();return;}
+    if(storageProfile && request.method==="POST" && request.url==="/storage"){
+      try{let body="";for await(const chunk of request){body+=chunk;if(body.length>2048)throw Error("too_large");}
+        const result=await fetch(`${apiOrigin}/__storage_fixture`,{method:"POST",headers:{"content-type":"application/json","x-fixture-secret":fixtureSecret},body});
+        response.writeHead(result.status,{"content-type":"application/json"}).end(await result.text());
+      }catch{response.writeHead(500).end();}return;
+    }
+    const reset=storageProfile && request.url==="/reset-storage";
+    if (request.method !== "POST" || (!reset && request.url !== "/restart")) { response.writeHead(404).end(); return; }
     if (restartActive) { response.writeHead(409).end(); return; }
     restartActive=true;
     try {
@@ -187,11 +218,12 @@ const run = async () => {
         await new Promise(resolve=>setTimeout(resolve,100));
       }
       if (!down || shuttingDown) throw new Error("API did not stop or stack is shutting down");
+      if(reset){generation=`e2e-storage-${randomUUID()}`;apiPersistPath=path.join(persistRoot,generation);await mkdir(apiPersistPath,{recursive:true});await migrate();}
       apiChild = startApi();
       await waitForHttp(apiHealthUrl, "restarted local API");
       response.writeHead(200).end("restarted");
     } catch (error) { response.writeHead(500).end(String(error)); } finally { restartActive=false; }
-  }).listen(Number(webPort) + 100, "127.0.0.1");
+  }).listen(e2eControlPort(webPort), "127.0.0.1");
   await waitForHttp(apiHealthUrl, "local API");
 
   spawnLogged("pages", "pnpm", ["exec", "wrangler", "pages", "dev", ".", "--port", webPort], {
