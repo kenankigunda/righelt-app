@@ -55,3 +55,33 @@ test('results fixture forwards the generation for creation and import', async ()
     }
   } finally { globalThis.fetch = original; }
 });
+
+
+for (const generation of ['reset-current', null]) test(`computer fixture preserves protocol and current generation: ${generation}`, async () => {
+  const { request } = await import('../computer-proof.mjs');
+  const original = globalThis.fetch, requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({url, init});
+    return url === '/api/auth/session'
+      ? Response.json({contextId:'current'},{headers:generation ? {[STORAGE_GENERATION_HEADER]:generation} : {}})
+      : Response.json({game:{id:'created'}});
+  };
+  try {
+    await request({evaluate:(fn,arg)=>fn(arg)},'/api/shell/games',{computer:{p1:'babs'}});
+    const sent = requests.at(-1).init;
+    assert.equal(sent.headers[STORAGE_GENERATION_HEADER] ?? null,generation);
+    assert.equal(sent.headers['X-Righelt-Auth-Version'],'2');
+    assert.deepEqual(JSON.parse(sent.body),{computer:{p1:'babs'},protocolVersion:2});
+    assert.equal(requests.length,2);
+  } finally {globalThis.fetch=original;}
+});
+
+test('computer fixture preserves reset denial without replaying mutation', async () => {
+  const { request } = await import('../computer-proof.mjs');
+  const original = globalThis.fetch; let calls=0;
+  globalThis.fetch=async url=>{calls++;return url==='/api/auth/session'?Response.json({contextId:'current'}):Response.json({error:'storage_reset'},{status:409});};
+  try {
+    await assert.rejects(request({evaluate:(fn,arg)=>fn(arg)},'/api/shell/games',{}),/409/);
+    assert.equal(calls,2);
+  } finally {globalThis.fetch=original;}
+});
