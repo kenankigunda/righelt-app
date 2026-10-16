@@ -36,6 +36,9 @@ export async function supervise(argv, { kind = 'heavy', keep = false, timeoutMs 
       notify(current.level === 'unknown' ? `Memory monitoring unavailable: ${current.reason}` : `Memory pressure: ${current.level}${state.blocked ? '. New heavy jobs are deferred.' : ''}`);
       lastLevel = current.level;
     }
+    if (state.recovered) {
+      notify('Memory pressure recovered. Deferred jobs may resume.');
+    }
     record.swapBytes = current.swapBytes ?? null;
     record.swapDeltaBytes = current.swapBytes != null && lastSwap != null ? current.swapBytes - lastSwap : null;
     if (current.swapBytes != null) lastSwap = current.swapBytes;
@@ -104,8 +107,8 @@ export async function supervise(argv, { kind = 'heavy', keep = false, timeoutMs 
       }
     }
     await checkMemory(); await persist();
-    // Existing normal jobs start immediately. After a pressure event four normal samples are required.
-    while (kind === 'heavy' && state.blocked && !stopping) {
+    // Normal/warning jobs start immediately; critical recovery requires four non-critical samples.
+    while ((kind === 'heavy' || !keep) && state.blocked && !stopping) {
       await new Promise(resolve => {
         const timeout = setTimeout(() => { wakeWait = undefined; resolve(); }, policy.sampleMs);
         wakeWait = () => { clearTimeout(timeout); wakeWait = undefined; resolve(); };
@@ -135,7 +138,7 @@ export async function supervise(argv, { kind = 'heavy', keep = false, timeoutMs 
         if (Date.now() - lastMemory >= policy.sampleMs) {
           await checkMemory(); await persist();
           if (state.cancel && kind === 'heavy') { notify('Critical pressure persisted for 60 seconds. Cancelling this heavy job as incomplete.'); await stop('memory-pressure'); }
-          else if (state.releaseIdle && !keep && kind !== 'heavy') { notify('Sustained pressure. Releasing this disposable service.'); await stop('memory-pressure'); }
+          else if (state.releaseIdle && !keep && kind !== 'heavy') { notify('Critical pressure persisted for 60 seconds. Releasing this disposable service.'); await stop('memory-pressure'); }
         }
       } catch (error) { notify(error.message); await stop('monitor-error'); }
       finally { polling = false; }

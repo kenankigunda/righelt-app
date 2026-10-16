@@ -57,10 +57,10 @@ test('nested detached guardian is cleaned before outer run reports completion',{
  const p=spawn(process.execPath,[cli,'run','--',process.execPath,nested],{env:{...process.env,RIGHELT_RESOURCE_RUN:"",RIGHELT_RESOURCE_KEEP:"",RIGHELT_RESOURCE_REGISTRY:path.join(f.dir,'registry')},stdio:'ignore'});
  const done=new Promise(r=>p.on('close',r));const ids=await pids(f);assert.equal(await done,0);assert(!(await processTable()).some(r=>ids.includes(r.pid)&&live(r)));
 });
-for (const keep of [false,true]) test(`sustained warning ${keep?'preserves requested':'releases disposable'} preview`,{skip:process.platform==='win32',timeout:15_000},async t=>{
+for (const keep of [false,true]) test(`sustained warning preserves ${keep?'requested':'disposable'} preview`,{skip:process.platform==='win32',timeout:15_000},async t=>{
  const f=await fixture(t),driver=path.join(f.dir,'warning.mjs');
  await writeFile(driver,`import {supervise} from ${JSON.stringify('file://'+supervisorModule)};const r=await supervise(${JSON.stringify([process.execPath,f.script])},{kind:'preview',keep:${keep},policy:${JSON.stringify({...POLICY,sampleMs:30,sustainedMs:90,ownershipSampleMs:20,graceMs:100})},sample:async()=>({level:'warning'})});process.exitCode=r.code;`);
- const p=spawn(process.execPath,[driver],{env:{...process.env,RIGHELT_RESOURCE_RUN:"",RIGHELT_RESOURCE_KEEP:"",COMPLETE:'1',RIGHELT_RESOURCE_REGISTRY:path.join(f.dir,'registry')},stdio:['ignore','pipe','pipe']});let output='';p.stdout.on('data',c=>output+=c);p.stderr.on('data',c=>output+=c);const done=new Promise(r=>p.on('close',r));const ids=await pids(f);assert.equal(await done,keep?0:75,output);await assertGone(ids);
+ const p=spawn(process.execPath,[driver],{env:{...process.env,RIGHELT_RESOURCE_RUN:"",RIGHELT_RESOURCE_KEEP:"",COMPLETE:'1',RIGHELT_RESOURCE_REGISTRY:path.join(f.dir,'registry')},stdio:['ignore','pipe','pipe']});let output='';p.stdout.on('data',c=>output+=c);p.stderr.on('data',c=>output+=c);const done=new Promise(r=>p.on('close',r));const ids=await pids(f);assert.equal(await done,0,output);await assertGone(ids);
 });
 test('Windows fallback runs direct commands without Unix process inspection',{timeout:15_000},async t=>{
  const f=await fixture(t),driver=path.join(f.dir,'windows.mjs');
@@ -72,4 +72,22 @@ test('deferred heavy job can be cancelled without launching its command',{skip:p
  const f=await fixture(t),driver=path.join(f.dir,'deferred.mjs');
  await writeFile(driver,`import {supervise} from ${JSON.stringify('file://'+supervisorModule)};const r=await supervise(${JSON.stringify([process.execPath,f.script])},{sample:async()=>({level:'critical'}),policy:${JSON.stringify({...POLICY,sampleMs:60_000})}});process.exitCode=r.code;`);
  const p=spawn(process.execPath,[driver],{env:{...process.env,RIGHELT_RESOURCE_RUN:"",RIGHELT_RESOURCE_KEEP:"",RIGHELT_RESOURCE_REGISTRY:path.join(f.dir,'registry')},stdio:'ignore'});const done=new Promise(r=>p.on('close',r));await waitFor(async()=>{try{return(await readdir(path.join(f.dir,'registry'))).some(n=>n.endsWith('.json'));}catch{return false;}});const started=Date.now();p.kill('SIGTERM');assert.equal(await done,130);assert(Date.now()-started<2000);await assert.rejects(readFile(f.pidFile),{code:'ENOENT'});
+});
+
+for (const kind of ['heavy','preview','idle']) test(`${kind} waits through critical then resumes after four warning samples`,{skip:process.platform==='win32',timeout:15_000},async t=>{
+ const f=await fixture(t),driver=path.join(f.dir,'recovery.mjs');
+ await writeFile(driver,`import {supervise} from ${JSON.stringify('file://'+supervisorModule)};import {existsSync} from 'node:fs';let calls=0;const result=await supervise(${JSON.stringify([process.execPath,f.script])},{kind:${JSON.stringify(kind)},policy:${JSON.stringify({...POLICY,sampleMs:40,ownershipSampleMs:20,graceMs:100})},sample:async()=>{if(calls<5&&existsSync(${JSON.stringify(f.pidFile)}))throw Error('Premature launch');return {level:calls++===0?'critical':'warning'};}});if(calls<5)throw Error('Missing recovery samples');process.exitCode=result.code;`);
+ const p=spawn(process.execPath,[driver],{env:{...process.env,RIGHELT_RESOURCE_RUN:'',RIGHELT_RESOURCE_KEEP:'',COMPLETE:'1',RIGHELT_RESOURCE_REGISTRY:path.join(f.dir,'registry')},stdio:'pipe'});
+ let output='';p.stderr.on('data',d=>output+=d);const done=new Promise(r=>p.on('close',r));const ids=await pids(f);assert.equal(await done,0,output);await assertGone(ids);assert.match(output,/Deferred jobs may resume/);
+});
+for (const kind of ['preview','idle']) test(`critical stops active disposable ${kind}`,{skip:process.platform==='win32',timeout:15_000},async t=>{
+ const f=await fixture(t),driver=path.join(f.dir,'critical-service.mjs');
+ await writeFile(driver,`import {supervise} from ${JSON.stringify('file://'+supervisorModule)};let calls=0;const result=await supervise(${JSON.stringify([process.execPath,f.script])},{kind:${JSON.stringify(kind)},policy:${JSON.stringify({...POLICY,sampleMs:50,sustainedMs:100,ownershipSampleMs:25,graceMs:100})},sample:async()=>({level:calls++?'critical':'warning'})});process.exitCode=result.code;`);
+ const p=spawn(process.execPath,[driver],{env:{...process.env,RIGHELT_RESOURCE_RUN:'',RIGHELT_RESOURCE_KEEP:'',RIGHELT_RESOURCE_REGISTRY:path.join(f.dir,'registry')},stdio:'ignore'});const done=new Promise(r=>p.on('close',r));const ids=await pids(f);assert.equal(await done,75);await assertGone(ids);
+});
+
+for (const kind of ['preview','idle']) test(`kept standalone ${kind} survives critical pressure`,{skip:process.platform==='win32',timeout:15_000},async t=>{
+ const f=await fixture(t),driver=path.join(f.dir,'kept.mjs');
+ await writeFile(driver,`import {supervise} from ${JSON.stringify('file://'+supervisorModule)};const result=await supervise(${JSON.stringify([process.execPath,f.script])},{kind:${JSON.stringify(kind)},keep:true,policy:${JSON.stringify({...POLICY,sampleMs:30,sustainedMs:90,ownershipSampleMs:20,graceMs:100})},sample:async()=>({level:'critical'})});process.exitCode=result.code;`);
+ const p=spawn(process.execPath,[driver],{env:{...process.env,RIGHELT_RESOURCE_RUN:'',RIGHELT_RESOURCE_KEEP:'',COMPLETE:'1',RIGHELT_RESOURCE_REGISTRY:path.join(f.dir,'registry')},stdio:'ignore'});const done=new Promise(r=>p.on('close',r));const ids=await pids(f);assert.equal(await done,0);await assertGone(ids);
 });
