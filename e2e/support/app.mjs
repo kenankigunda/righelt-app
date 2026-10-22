@@ -1,3 +1,4 @@
+import {readPlayableAction} from "./read-playable-action.mjs";
 import { expect, test } from "@playwright/test";
 
 const historyMoveItems = (page) => page.locator('[data-testid="history-move-item"]');
@@ -237,20 +238,7 @@ export const expectHistoryMoveCountToEqualOrExceed = async (page, expectedCount)
     .toBeGreaterThanOrEqual(expectedCount);
 };
 
-const getFirstPlayableAction = async (page) =>
-  page.evaluate(async () => {
-    const identityId = window.localStorage.getItem("righelt.identity.id.v1");
-    const match = new URL(window.location.href).hash.match(/^#\/game\/([^?]+)/);
-    if (!identityId || !match) {
-      return null;
-    }
-
-    const gameId = decodeURIComponent(match[1]);
-    const response = await fetch(`/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}`);
-    const body = await response.json();
-    const legalActions = Array.isArray(body?.game?.legalActions) ? body.game.legalActions : [];
-    return legalActions.find((action) => action?.from && action?.to) ?? null;
-  });
+const getFirstPlayableAction = async (page) => page.evaluate(readPlayableAction);
 
 export const selectPlayableAction = async (page, action) => {
   const cell = position => page.locator(`[data-testid="game-board"] .cell[data-row="${position.row}"][data-col="${position.col}"]`);
