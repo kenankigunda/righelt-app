@@ -74,6 +74,7 @@ const waitForHttp = async (url, label, timeoutMs = DEFAULT_E2E_READY_TIMEOUT_MS)
 };
 
 const spawnLogged = (label, command, args, options) => {
+  if (shuttingDown) throw new Error("E2E stack is shutting down; refusing a late service launch");
   const service = label === 'pages' ? 'web' : label;
   const instance = `${service}-${++serviceSequence}`;
   const logDirectory = path.join(privateLogs, instance);
@@ -133,11 +134,13 @@ const shutdown = async (exitCode = 0) => {
   }
   shuttingDown = true;
   controlServer?.close();
+  // No services can launch once shutdown starts. Restore shared source before
+  // waiting for nested guardians, whose grace period may outlast our parent.
+  try { const restore = await proxyDiagnosticsInstallation; await restore?.(); }
+  catch (error) { console.error(error); exitCode = 1; }
   await Promise.allSettled([...managedChildren].map(stopChild));
   const receipts = await Promise.all(serviceReceipts);
   if (diagnosticsFailed || receipts.some(receipt => !receipt.expected)) exitCode = 1;
-  try { const restore = await proxyDiagnosticsInstallation; await restore?.(); }
-  catch (error) { console.error(error); exitCode = 1; }
 
   if (tempRoot) {
     await rm(tempRoot, { recursive: true, force: true });

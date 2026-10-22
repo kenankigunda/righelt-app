@@ -84,6 +84,9 @@ test(`general service exit preserves the observed guardian stop state: ${guardia
     assert.equal(guardianReads, 1);
     guardianStopping = !guardianStops;
     run.beginCleanup();
+    // A pending startup/reset may resume after its asynchronous migration.
+    assert.throws(() => run.spawnLogged('api', 'pnpm', [], {cwd: root}), /refusing a late service launch/);
+    assert.equal(run.serviceReceipts.length, 1);
     child.emit('close', code, null);
     const [result] = await Promise.all(run.serviceReceipts);
     assert.deepEqual(result, { expected: guardianStops, diagnosticsFailed: false });
@@ -98,3 +101,24 @@ test(`general service exit preserves the observed guardian stop state: ${guardia
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 }
+
+
+test('shutdown restores diagnostic source before waiting for service cleanup', async () => {
+  const shutdown = source.slice(source.indexOf('const shutdown ='), source.indexOf('const run ='));
+  let release;
+  const stopped = new Promise(resolve => { release = resolve; });
+  const order = [];
+  const run = new Function('dependencies', `
+    const {stopChild, proxyDiagnosticsInstallation, process} = dependencies;
+    let shuttingDown = false, controlServer, diagnosticsFailed = false, tempRoot = '';
+    const managedChildren = new Set([{}]), serviceReceipts = [];
+    ${shutdown}
+    return shutdown;
+  `)({stopChild: () => stopped, proxyDiagnosticsInstallation: Promise.resolve(async () => order.push('restored')),
+    process: {exit: code => order.push('exit:' + code)}});
+  const pending = run();
+  await new Promise(resolve => setImmediate(resolve));
+  try { assert.deepEqual(order, ['restored']); }
+  finally { release(); await pending; }
+  assert.deepEqual(order, ['restored', 'exit:0']);
+});
