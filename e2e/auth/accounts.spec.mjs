@@ -674,16 +674,20 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
 });
 
 test("a stalled startup read recovers without granting guest play", async ({ page }) => {
-  let requests = 0, release;
+  let requests = 0, release, resumed;
   const held = new Promise(resolve => { release = resolve; });
+  const recoveryStarted = new Promise(resolve => { resumed = resolve; });
   await page.route("**/api/shell/bootstrap", async route => {
     if (++requests === 1) {
       await held;
       await route.abort().catch(() => {});
-    } else await route.continue();
+    } else { resumed(); await route.continue(); }
   });
   try {
     await page.goto("/");
+    // The deliberate initial stall consumes the production bootstrap deadline.
+    // Start the unchanged UI-ready assertion once automatic recovery begins.
+    await recoveryStarted;
     await waitForAccountStartup(page);
     expect(requests).toBeGreaterThanOrEqual(2);
     await page.getByTestId("home-create-game").click();
