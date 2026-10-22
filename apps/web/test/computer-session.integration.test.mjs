@@ -5,7 +5,7 @@ import { renderComputerProgress } from '../shell/computer-view.js';
 import { createComputerControl, changeComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
 import { createInitialState } from '../generated/packages/game-engine/src/state.js';
 
-function fixture() {
+function fixture({canAnalyze = true} = {}) {
   let now = 100, visible = true, authenticated = true, generation = 1, cancelCount = 0, submitted = 0, pending;
   let game = { id: 'g', gameplayRevision: 0, computer: createComputerControl('owner', { p1: 'babs', p2: null }), board: { state: createInitialState() } };
   const saved = [];
@@ -15,7 +15,7 @@ function fixture() {
     applyGameAction: async () => { submitted++; return { committed: Promise.resolve() }; },
   };
   const runtime = { compute: async () => new Promise((resolve, reject) => { pending = { resolve, reject }; }), cancel: () => { cancelCount++; pending?.reject(Error('cancelled')); pending = null; } };
-  const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: runtime, clock: () => now, timers: { setInterval() { return 1; }, clearInterval() {} }, getContext: () => ({ game, transport, accountGeneration: generation, authenticated, visible }) });
+  const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: runtime, clock: () => now, timers: { setInterval() { return 1; }, clearInterval() {} }, getContext: () => ({ game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
   return { session, transport, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { game = { ...game, id: 'other-game' }; }, game: () => game, saved, setTime: value => { now = value; }, hide: () => { visible = false; }, pending: () => pending, submissions: () => submitted, cancellations: () => cancelCount };
 }
 test('detailed disclosure begins at five seconds without cancelling progressing work', async () => {
@@ -157,4 +157,11 @@ test('a rejected acquisition does not send or retry resume', async () => {
   assert.deepEqual(requests, ['acquire']);
   assert.equal(f.session.snapshot().phase, 'recovery');
   f.session.destroy();
+});
+
+test('guest play permission does not grant private analysis',async()=>{
+ const f=fixture({canAnalyze:false});
+ await assert.rejects(f.session.analyze(f.game().board.state),/Sign in/);
+ assert.equal(f.pending(),null);assert.deepEqual(f.saved,[]);
+ f.session.destroy();
 });

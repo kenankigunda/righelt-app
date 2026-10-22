@@ -10,13 +10,14 @@ import { deterministicStateHash } from '../../../apps/web/generated/packages/gam
 const require = createRequire(import.meta.url), wrangler = createRequire(require.resolve('wrangler/package.json'));
 const { Miniflare } = wrangler('miniflare'), { build } = wrangler('esbuild');
 const root = path.resolve(import.meta.dirname, '../../..');
-test('native rooms fence computer devices and atomically retain accepted decisions, private notes and safe branches', { timeout: 120000 }, async () => {
+for (const accounts of [true, false]) test(`native ${accounts ? 'account' : 'guest'} rooms fence computer devices and atomically retain accepted decisions and safe branches`, { timeout: 120000 }, async () => {
   const bundle = await build({ stdin: { contents: `export { GameRoomDO } from './packages/api-handler/src/game-room-do.ts'; import { handleApiRequest } from './packages/api-handler/src/index.ts'; export default { fetch: handleApiRequest };`, resolveDir: root }, bundle: true, format: 'esm', platform: 'browser', write: false });
-  const runtime = new Miniflare({ modules: true, script: bundle.outputFiles[0].text, compatibilityDate: '2026-03-12', d1Databases: ['DB'], durableObjects: { GAME_ROOMS: { className: 'GameRoomDO', useSQLite: true } }, bindings: { AUTH_ENABLED: 'true', AUTH_ALLOWED_ORIGINS: 'https://test' } });
+  const runtime = new Miniflare({ modules: true, script: bundle.outputFiles[0].text, compatibilityDate: '2026-03-12', d1Databases: ['DB'], durableObjects: { GAME_ROOMS: { className: 'GameRoomDO', useSQLite: true } }, bindings: { AUTH_ENABLED: String(accounts), AUTH_ALLOWED_ORIGINS: 'https://test' } });
   try {
     const db = await runtime.getD1Database('DB');
     for (const file of (await readdir(path.join(root, 'db/migrations'))).filter(file => file.endsWith('.sql')).sort()) await db.exec((await readFile(path.join(root, 'db/migrations', file), 'utf8')).replace(/--[^\n]*/g, '').replace(/\s+/g, ' '));
     const seed = async (id, n) => {
+      if (!accounts) return { id, token: '', context: undefined };
       const token = String(n).repeat(64), context = String(n + 4).repeat(64), now = Date.now();
       await db.prepare('INSERT OR IGNORE INTO accounts(account_id,username,username_canonical,display_name,created_at,password_hash) VALUES(?,?,?,?,?,?)').bind(id,id,id,id,now,'synthetic').run();
       await db.prepare('INSERT INTO account_sessions VALUES(?,?,1,?,?,?,?,NULL)').bind(createHash('sha256').update(token).digest('hex'),id,context,now,now,now+86400000).run();
@@ -24,7 +25,7 @@ test('native rooms fence computer devices and atomically retain accepted decisio
     };
     const a = await seed('owner',1), a2 = await seed('owner',2), b = await seed('viewer',3);
     const call = async (route, actor, body) => {
-      const response = await runtime.dispatchFetch(`https://test/api/shell/${route}`, { method: body === undefined ? 'GET' : 'POST', headers: { Origin: 'https://test', 'Content-Type': 'application/json', 'X-Righelt-Auth': '1', 'X-Righelt-Auth-Version': '2', Cookie: `__Host-righelt_session=${actor.token}`, 'X-Righelt-Session': actor.context }, ...(body === undefined ? {} : { body: JSON.stringify({ protocolVersion: 2, ...body }) }) });
+      const response = await runtime.dispatchFetch(`https://test/api/shell/${route}`, { method: body === undefined ? 'GET' : 'POST', headers: { Origin: 'https://test', 'Content-Type': 'application/json', 'X-Righelt-Auth': '1', 'X-Righelt-Auth-Version': '2', Cookie: `__Host-righelt_session=${actor.token}`, 'X-Righelt-Session': actor.context }, ...(body === undefined ? {} : { body: JSON.stringify({ protocolVersion: 2, identityId: actor.id, ...body }) }) });
       return { status: response.status, body: await response.json() };
     };
     const created = await call('games',a,{ gameId:'computer-game',computer:{p1:'babs',p2:null} });
@@ -43,7 +44,7 @@ test('native rooms fence computer devices and atomically retain accepted decisio
     const route = endpoint => `games/${game.id}/${endpoint}`;
     const acquired = await call(route('computer-control'),a,{action:'acquire',deviceId:'device-a',generation:0});
     assert.equal(acquired.status,200,JSON.stringify(acquired.body)); game=acquired.body.game;
-    assert.equal(game.computer.lease.authContextId,undefined); assert.equal(game.canRecordMove,false);
+    if (accounts) assert.equal(game.computer.lease.authContextId,undefined); assert.equal(game.canRecordMove,false);
     assert.equal((await call(route('computer-control'),a2,{action:'acquire',deviceId:'device-b',generation:game.computer.generation})).status,409);
     assert.equal((await call(route('computer-control'),b,{action:'switch',deviceId:'device-b',generation:game.computer.generation})).status,409);
     const action = game.legalActions.find(action => action.from && action.to);
@@ -70,6 +71,7 @@ test('native rooms fence computer devices and atomically retain accepted decisio
     assert.equal(history.body.items.filter(entry=>entry.move).length,1);
     const decision = history.body.items.find(entry=>entry.move);
     assert.deepEqual(decision.move.computerProof,p);
+    if (accounts) {
     assert.equal((await call(route('decision-notes'),a,{operation:'write',decisionId:decision.id,note:{text:'Private observation',flagged:true}})).status,200);
     assert.deepEqual((await call(route('decision-notes'),b,{})).body.notes,[]);
     assert.equal((await call(route('decision-attempt'),a,{operation:'write',kind:'analysis',attemptId:'private-analysis',attempt:{private:'only owner'}})).status,200);
@@ -111,6 +113,13 @@ test('native rooms fence computer devices and atomically retain accepted decisio
     const firstCheckpoint = await db.prepare('SELECT state_json FROM live_position_checkpoints WHERE game_id=? AND gameplay_revision=?').bind(oldGame.id,oldRow.gameplay_revision).first();
     assert.ok(firstCheckpoint, 'First retained annotation must also persist its initial checkpoint');
     assert.deepEqual(JSON.parse(firstCheckpoint.state_json),oldGame.board.state);
+
+    } else {
+      assert.equal((await call(route('decision-notes'),a,{})).status,401);
+      assert.equal((await call(route('decision-attempt'),a,{operation:'write',kind:'analysis',attemptId:'private-analysis',attempt:{private:true}})).status,401);
+      assert.equal((await call(route('decision-attempt'),b,{operation:'write',kind:'computer',attemptId:'forged',attempt})).status,403);
+      assert.equal((await call(route('decision-attempt'),b,{kind:'computer',attemptId:p.attemptId})).body.attempt.proof.attemptId,p.attemptId);
+    }
 
     const undo = await call(route('revert-request'),a2,{targetMoveId:decision.id});
     assert.equal(undo.status,200,JSON.stringify(undo.body));

@@ -22,7 +22,7 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  await page.reload();await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeVisible();
  await page.locator('button[data-opponent="babs"]').click();
  const dialog=page.getByRole('dialog',{name:'Babs',exact:true});await expect(dialog).toBeVisible();
- await expect(dialog.getByRole('button',{name:'Play Babs'})).toBeDisabled();
+ await expect(dialog.getByRole('button',{name:'Play Babs'})).toBeEnabled();
  await expect(page.locator('.story-presentation-board')).toBeAttached();
  await expect(dialog.locator('[data-story-position], [data-story-pause]')).toHaveCount(0);
  await dialog.getByRole('button',{name:'Next story image'}).click();

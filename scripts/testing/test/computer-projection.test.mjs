@@ -76,3 +76,11 @@ test('recovery stops an unfinished observation without retrying the computer', a
   await assert.rejects(readProjectedGame({ id: 'game-1', expectedComputer, wait: true }), /Computer entered recovery/);
   assert.equal(requests.length, 2);
 });
+
+test('guest projection uses the persisted guest identity without an account request',async t=>{
+ const saved=globalThis.window;globalThis.window={localStorage:{getItem:key=>{assert.equal(key,'righelt.identity.id.v1');return 'guest id';}}};
+ t.after(()=>{if(saved===undefined)delete globalThis.window;else globalThis.window=saved;});
+ const {requests,game}=fixture(t);
+ assert.deepEqual(await readProjectedGame({id:'game-1',guest:true}),game);
+ assert.deepEqual(requests,[{url:'/api/shell/games/game-1?identityId=guest%20id',options:{headers:{}}}]);
+});

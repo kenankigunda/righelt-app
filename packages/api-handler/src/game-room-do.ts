@@ -362,7 +362,7 @@ export class GameRoomDO {
       });
       if (body.computer !== undefined) {
         const seats = parseComputerSeats(body.computer);
-        if (!authActive(this.env) || !this.requestAuthority) throw new AuthProblem("invalid_credentials", 401);
+        if (authActive(this.env) && !this.requestAuthority) throw new AuthProblem("invalid_credentials", 401);
         if (!seats) return json({ ok: false, error: "invalid_computer_seats" }, 400);
         candidate.computer = createComputerControl(identityId, seats);
         candidate.selfPlayMode = true;
@@ -406,7 +406,7 @@ export class GameRoomDO {
       assignIdentityToScenarioSeat(candidate, identityId, creatorSeat);
       if (body.computer !== undefined) {
         const seats = parseComputerSeats(body.computer);
-        if (!authActive(this.env) || !this.requestAuthority) throw new AuthProblem("invalid_credentials", 401);
+        if (authActive(this.env) && !this.requestAuthority) throw new AuthProblem("invalid_credentials", 401);
         if (!seats) return json({ ok: false, error: "invalid_computer_seats" }, 400);
         candidate.computer = createComputerControl(identityId, seats);
         candidate.selfPlayMode = true;
@@ -459,7 +459,7 @@ export class GameRoomDO {
       catch (error) { if ((error as Error).message === 'invalid_history_cursor') return json({ ok: false, error: 'invalid_history_cursor' }, 400); throw error; }
     }
     if (request.method === 'POST' && path === '/decision-attempts') {
-      if (!this.requestAuthority) throw new AuthProblem('invalid_credentials', 401);
+      if (!this.requestAuthority && (authActive(this.env) || body.kind !== 'computer')) throw new AuthProblem('invalid_credentials', 401);
       if (!['computer', 'analysis'].includes(String(body.kind))) return json({ ok: false, error: 'invalid_attempt' }, 400);
       const owner = body.kind === 'computer' ? game.computer?.ownerId : identityId;
       if (!owner) return json({ ok: true, items: [], nextCursor: null });
@@ -467,7 +467,7 @@ export class GameRoomDO {
       catch (error) { if ((error as Error).message === 'invalid_attempt_cursor') return json({ ok: false, error: 'invalid_attempt_cursor' }, 400); throw error; }
     }
     if (request.method === 'POST' && path === '/decision-attempt') {
-      if (!this.requestAuthority) throw new AuthProblem('invalid_credentials', 401);
+      if (!this.requestAuthority && (authActive(this.env) || body.kind !== 'computer')) throw new AuthProblem('invalid_credentials', 401);
       if (typeof body.attemptId !== 'string' || !['computer', 'analysis'].includes(String(body.kind))) return json({ ok: false, error: 'invalid_attempt' }, 400);
       const attemptOwner = body.kind === 'computer' ? game.computer?.ownerId : identityId;
       if (!attemptOwner) return json({ ok: false, error: 'invalid_attempt' }, 400);

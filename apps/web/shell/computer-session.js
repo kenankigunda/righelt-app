@@ -121,7 +121,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   async function analyze(state, decisionId = null) {
     cancelAnalysis();
     let context = current();
-    if (!context.authenticated || !context.game) throw new Error('Sign in to analyze this position.');
+    if (!context.authenticated || context.canAnalyze === false || !context.game) throw new Error('Sign in to analyze this position.');
     const requestEpoch = analysisEpoch, requestContext = context;
     const frozen = structuredClone(state), gameId = context.game.id, revision = context.game.gameplayRevision;
     if (context.game.computer?.ownerId === context.transport.getIdentityId() && ownLease(context.game)) await fence('pause');

@@ -16,3 +16,10 @@ test('client-reported search diagnostics cannot inject markup or break date rend
  assert.doesNotThrow(() => renderDecisionDebug({ game: null, status: {}, state, signedIn: true }));
  assert.match(renderDecisionDebug({ game: null, status: {}, state, signedIn: true }), /Unavailable/);
 });
+
+test('guest debug offers public computer searches without private account tools', () => {
+ const state={drafts:new Map(),notes:[],attempts:new Map(),open:new Set(),items:[]};
+ const html=renderDecisionDebug({game:null,status:{},state,signedIn:false});
+ assert.match(html,/data-kind="computer"/);
+ assert.doesNotMatch(html,/data-kind="analysis"|data-action="debug-save-note"|data-action="debug-analyze"/);
+});

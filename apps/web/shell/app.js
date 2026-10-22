@@ -2076,7 +2076,7 @@ const renderDebugContent = () => {
   return renderDecisionDebug({ game, selection: boardRuntime?.getSelection?.() ?? null,
     legalActions: state.open.has('position') ? inspectedLegal.actions : null, status,
     diagnostics: { connection: wsStatus, lastEvent: wsLastEvent, sync: transport.getSyncMetrics(), pendingCommands: game?.pendingCommandCount, revision: game?.gameplayRevision, computer: game?.computer, runtime: { ...status, analysis: undefined } },
-    state: getDecisionDebugState(gameId), signedIn: account.canPlay() }) + issuesHtml;
+    state: getDecisionDebugState(gameId), signedIn: account.snapshot().session.authenticated }) + issuesHtml;
 };
 
 const renderFlyout = ({ title, variant, closeAction, body }) => `
@@ -4240,7 +4240,7 @@ const updateComputerUi = () => {
 };
 computerSession = createComputerSession({ getContext: () => {
   const state = account.snapshot(), gameId = currentRoute.name === 'game' ? currentRoute.gameId : null;
-  return { transport, game: gameId ? transport.getAuthoritativeGame(gameId) : null, accountGeneration: state.generation, authenticated: account.canPlay(), visible: !document.hidden && Boolean(gameId) };
+  return { transport, game: gameId ? transport.getAuthoritativeGame(gameId) : null, accountGeneration: state.generation, authenticated: account.canPlay(), canAnalyze: state.session.authenticated, visible: !document.hidden && Boolean(gameId) };
 }, onChange: updateComputerUi });
 document.addEventListener('visibilitychange', () => { void computerSession.tick(); });
 window.addEventListener('pagehide', () => { computerSession.suspend(); });
@@ -4289,9 +4289,7 @@ const openFriendInvite = gameId => {
   });
 };
 const preparation = createComputerPreparation({ onChange: () => { storyDialog.refresh(); rematchDialog.refresh(); branchDialog.refresh(); } });
-const getComputerReadiness = (owner = 'intro') => !account.snapshot().enabled
-  ? { state: 'unavailable', message: 'Computer play needs accounts to be enabled.' }
-  : typeof Worker !== 'function' || typeof WebAssembly !== 'object'
+const getComputerReadiness = (owner = 'intro') => typeof Worker !== 'function' || typeof WebAssembly !== 'object'
     ? { state: 'unavailable', message: 'Computer play needs a browser with WebAssembly and workers.' }
     : preparation.snapshot(owner);
 const prepareOpponent = (owner, opponent) => {
@@ -4376,7 +4374,7 @@ document.addEventListener('change', event => {
 });
 const loadDebugHistory = async (gameId, more = false) => {
   const owner = transport, generation = account.snapshot().generation, state = getDecisionDebugState(gameId);
-  const [page, personal] = await Promise.all([owner.decisionHistory(gameId, more ? state.cursor : null), account.canPlay() ? owner.decisionNotes(gameId) : { notes: [] }]);
+  const [page, personal] = await Promise.all([owner.decisionHistory(gameId, more ? state.cursor : null), account.snapshot().session.authenticated ? owner.decisionNotes(gameId) : { notes: [] }]);
   if (owner !== transport || generation !== account.snapshot().generation) return;
   state.items = more ? [...state.items, ...page.items] : page.items;
   state.loaded = true; state.cursor = page.nextCursor; state.partial = page.partial; applyDecisionNotes(state, personal.notes); updateComputerUi();
@@ -4769,10 +4767,10 @@ appEl.addEventListener("click", async (event) => {
         const analysis = currentAnalysis?.gameId === gameId ? structuredClone(currentAnalysis) : null;
         let cursor = null, entries = [];
         do { const page = await owner.decisionHistory(gameId, cursor); entries.push(...page.items); cursor = page.nextCursor; } while (cursor);
-        const personal = account.canPlay() ? await owner.decisionNotes(gameId) : { notes: [] };
+        const personal = account.snapshot().session.authenticated ? await owner.decisionNotes(gameId) : { notes: [] };
         if (owner !== transport || generation !== account.snapshot().generation) return;
         const attempts = [], analyses = [];
-        if (account.canPlay()) for (const kind of ['computer', 'analysis']) {
+        if (account.canPlay()) for (const kind of (account.snapshot().session.authenticated ? ['computer', 'analysis'] : ['computer'])) {
           let after = null;
           do {
             const page = await owner.decisionAttempts(gameId, kind, after);
