@@ -1,3 +1,4 @@
+import { waitForOverlayEntry } from "../support/overlay-motion.mjs";
 import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { test, expect } from "@playwright/test";
 import { enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
@@ -14,6 +15,7 @@ test("correctable creation errors preserve the username and allow correction wit
   const username = `Form_${Date.now().toString(36)}`;
   await enterUsername(page, username);
   await dialog(page).getByLabel("Password", { exact: true }).fill("password");
+  await waitForOverlayEntry(dialog(page));
   const width = (await dialog(page).boundingBox()).width;
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page).locator("[data-account-status]")).not.toHaveText("");

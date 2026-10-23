@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { STORAGE_GENERATION_HEADER } from '../../packages/shared-types/src/storage-policy.js';
 import {assertHistoryPreserved} from './history-continuity.mjs';
 
 export const LEGACY_IDENTITY_KEY = 'righelt.identity.id.v1';
@@ -23,9 +24,10 @@ export async function proveLegacyMutationDenied({ browser, legacy, baseURL = 'ht
   const url = `/api/shell/games/${encodeURIComponent(gameId)}`;
   try {
     assert.deepEqual(await context.cookies(), [], 'Legacy proof must not carry account cookies');
+    let generation = null;
     const read = async () => {
       const response = await context.request.get(`${url}?identityId=${encodeURIComponent(body.identityId)}`);
-      assert.equal(response.status(), 200); return response.json();
+      assert.equal(response.status(), 200); generation = response.headers()[STORAGE_GENERATION_HEADER.toLowerCase()] ?? null; return response.json();
     };
     assert.equal(legacy.version, 2, 'Regenerate pre-upgrade guest evidence');
     const original = await read();
@@ -36,7 +38,7 @@ export async function proveLegacyMutationDenied({ browser, legacy, baseURL = 'ht
       [{}, 426, 'upgrade_required'],
       [{ 'X-Righelt-Auth': '1', 'X-Righelt-Auth-Version': String(authProtocol) }, 401, 'invalid_credentials'],
     ]) {
-      const response = await context.request.post(`${url}/join`, { headers: { Origin: baseURL, 'Content-Type': 'application/json', ...headers }, data: body });
+      const response = await context.request.post(`${url}/join`, { headers: { Origin: baseURL, 'Content-Type': 'application/json', ...(generation ? { [STORAGE_GENERATION_HEADER]: generation } : {}), ...headers }, data: body });
       assert.equal(response.status(), status, 'Old guest mutation must fail at the expected authority gate');
       assert.equal((await response.json()).error, error);
       assert.deepEqual(durableProjection(await read()), before, 'Denied guest mutation changed authoritative game or history');

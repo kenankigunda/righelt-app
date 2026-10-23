@@ -3,15 +3,12 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
 import { proof } from './proof.mjs';
-import { selectTerminalScenario } from './results-proof.mjs';
+import { request as accountRequest, selectTerminalScenario } from './results-proof.mjs';
 
-async function request(page, route, body) {
-  return page.evaluate(async ({ route, body }) => {
-    const session = await (await fetch('/api/auth/session')).json();
-    const response = await fetch(route, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', 'X-Righelt-Auth': '1', 'X-Righelt-Auth-Version': '2', 'X-Righelt-Session': session.contextId }, ...(body === undefined ? {} : { body: JSON.stringify({ ...body, protocolVersion: 2 }) }) });
-    if (!response.ok) throw Error(`Computer proof request failed: ${response.status} ${route}`);
-    return response.json();
-  }, { route, body });
+export async function request(page, route, body) {
+  const response = await accountRequest(page, route, body === undefined ? undefined : { ...body, protocolVersion: 2 }, 2);
+  if (response.status < 200 || response.status >= 300) throw Error(`Computer proof request failed: ${response.status} ${route}`);
+  return response.body;
 }
 const gameAt = async (page, id) => (await request(page, `/api/shell/games/${encodeURIComponent(id)}`)).game;
 const creation = page => page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST');

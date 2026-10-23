@@ -24,7 +24,9 @@ export function classifyProxyRejection(error, request, oldUrl, newUrl) {
   };
   let pathname = "other";
   try {
-    pathname = allowed(new URL(request.url).pathname, [
+    const route = new URL(request.url).pathname;
+    pathname = /^\/api\/shell\/games\/[^/]+\/play-as-both$/.test(route)
+      ? "/api/shell/games/:game/play-as-both" : allowed(route, [
       "/api/auth/register", "/api/auth/login", "/api/auth/logout",
       "/api/auth/session", "/api/auth/activity", "/api/auth/password",
       "/api/auth/username",

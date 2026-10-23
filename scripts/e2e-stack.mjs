@@ -1,3 +1,4 @@
+import { installProxyDiagnostics } from "./auth-proxy-diagnostics.mjs";
 import {storageFixtureConfig} from "./storage-fixture-config.mjs";
 import { recordUnexpectedExit } from './testing/stack-status.mjs';
 import { cliPath, supervise } from './resources/supervisor.mjs';
@@ -29,6 +30,7 @@ let shuttingDown = false;
 const intentionalStops = new Set();
 let controlServer;
 let restartActive = false;
+let proxyDiagnosticsInstallation;
 const stopChild = async child => {
  intentionalStops.add(child);
  const signal = value => { try { child.kill(value); } catch {} };
@@ -67,6 +69,7 @@ const waitForHttp = async (url, label, timeoutMs = DEFAULT_E2E_READY_TIMEOUT_MS)
 };
 
 const spawnLogged = (label, command, args, options) => {
+  if (shuttingDown) throw new Error("Cannot start a service during stack shutdown");
   const child = spawn(process.execPath, [cliPath, "run", "--kind", "preview", "--", command, ...args], {
     ...options,
     // Playwright signals the stack's process group at teardown. Keep service
@@ -117,6 +120,8 @@ const shutdown = async (exitCode = 0) => {
   }
   shuttingDown = true;
   controlServer?.close();
+  try { const restore = await proxyDiagnosticsInstallation; await restore?.(); }
+  catch (error) { console.error(error); exitCode = 1; }
   await Promise.allSettled([...managedChildren].map(stopChild));
 
   if (tempRoot) {
@@ -126,6 +131,11 @@ const shutdown = async (exitCode = 0) => {
 };
 
 const run = async () => {
+  process.on("SIGINT", () => { void shutdown(0); });
+  process.on("SIGTERM", () => { void shutdown(0); });
+  proxyDiagnosticsInstallation = installProxyDiagnostics();
+  await proxyDiagnosticsInstallation;
+  if (shuttingDown) return;
   const persistRoot = await createE2ePersistRoot();
   let apiPersistPath = path.join(persistRoot, "api-state");
   const storageProfile=process.env.RIGHELT_E2E_STORAGE_ARCHIVES==="1";
@@ -144,12 +154,7 @@ const run = async () => {
   }
   await mkdir(apiPersistPath, { recursive: true });
 
-  process.on("SIGINT", () => {
-    void shutdown(0);
-  });
-  process.on("SIGTERM", () => {
-    void shutdown(0);
-  });
+  if (shuttingDown) return;
 
   const migrate=async()=>{await runBlocking(
     "local D1 migrations",

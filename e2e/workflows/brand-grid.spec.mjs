@@ -39,6 +39,12 @@ test('grid keeps its paint inputs stable across unrelated app updates and realig
 test('grid stays static across activity and motion preferences without moving geometry',async({page})=>{
   await page.goto('/');
   await expect(page.getByTestId('home-create-game')).toBeVisible();
+  await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+  // Capture the static baseline after startup layout and its scheduled grid paint.
+  await page.evaluate(async()=>{
+    await document.fonts.ready;
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  });
   const read=()=>page.locator('.brand-grid').evaluate(grid=>{
     const style=getComputedStyle(grid);
     return {animations:grid.getAnimations().length,opacity:style.opacity,willChange:style.willChange,mask:style.maskImage,geometry:grid.getBoundingClientRect().toJSON()};

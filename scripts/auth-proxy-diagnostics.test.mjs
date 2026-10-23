@@ -76,3 +76,13 @@ test("installation restores exact dependency bytes, and refuses to overwrite ext
     assert.equal(await readFile(file, "utf8"), "external change");
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test('guest ownership proxy classification redacts identity and query values', () => {
+  const detail = classifyProxyRejection({ message: 'Network connection lost', name: 'Error' },
+    { method: 'POST', url: 'http://localhost/api/shell/games/private-id/play-as-both?identityId=private-owner' },
+    'http://127.0.0.1:1234/request', 'http://127.0.0.1:1234/');
+  assert.equal(detail.path, '/api/shell/games/:game/play-as-both');
+  assert.equal(detail.message, 'network_connection_lost');
+  assert.equal(detail.oldOrigin, detail.newOrigin);
+  assert.equal(JSON.stringify(detail).includes('private-'), false);
+});

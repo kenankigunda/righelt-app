@@ -5,6 +5,7 @@ import { cliPath } from './resources/supervisor.mjs';
 import { localHttpsEnvironment } from "./local-https.mjs";
 import { spawn } from "node:child_process";
 import { authFixtureWorkerSource } from './auth-fixture-worker.mjs';
+import { executeFixtureRequest } from "./auth-fixture-request.mjs";
 import { createAuthFixtureControl } from "./auth-fixture-control.mjs";
 import { createServer } from "node:http";
 import { get } from "node:https";
@@ -127,12 +128,9 @@ try {
   await ready(`http://127.0.0.1:${apiPort}/api/health`);
   // Test-runner-only loopback control; never exposed through Pages or application routes.
   // Fixed SQL operations only, rejecting browser-origin requests. This is not an auth bypass.
-  control = createServer(createAuthFixtureControl(async sql => {
-    const result = await fetch(`http://127.0.0.1:${apiPort}/__righelt_fixture`, {
-      method: "POST", headers: {"x-righelt-fixture": fixtureToken}, body: sql,
-    });
-    if (!result.ok) throw new Error(`Local fixture operation failed: ${result.status}`);
-  })).listen(Number(webPort) + 100, "127.0.0.1");
+  control = createServer(createAuthFixtureControl((sql, operation) => executeFixtureRequest({
+    url: `http://127.0.0.1:${apiPort}/__righelt_fixture`, token: fixtureToken, sql, operation,
+  }))).listen(Number(webPort) + 100, "127.0.0.1");
   run(["exec", "wrangler", "pages", "dev", ".", "--port", webPort, "--local-protocol", "https", "--inspector-port", String(Number(webPort)+10)],
     { cwd: path.join(root, "apps/web"), service: true });
   await ready(origin);

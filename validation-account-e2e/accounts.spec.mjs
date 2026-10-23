@@ -7,7 +7,7 @@ import {candidateCapabilities} from '../scripts/validation/capabilities.mjs';
 import {proof} from '../scripts/validation/proof.mjs';
 import {historySnapshot,assertHistoryPreserved} from '../scripts/validation/history-continuity.mjs';
 import {proveLegacyMutationDenied} from '../scripts/validation/legacy-account-proof.mjs';
-import {proveResultsRematch} from '../scripts/validation/results-proof.mjs';
+import {request as accountRequest,proveResultsRematch} from '../scripts/validation/results-proof.mjs';
 import {proveComputerPlay} from '../scripts/validation/computer-proof.mjs';
 import {FRESH_ACCOUNT_WORKFLOW,RETAINED_ACCOUNT_WORKFLOW,COMPUTER_ACCOUNT_WORKFLOW} from '../scripts/validation/account-evidence.mjs';
 
@@ -313,12 +313,7 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
     const oldGame=await gamePayload(page);
     assertHistoryPreserved(oldGame,legacy.history);
     expect(oldGame.ownershipMode).toBe('legacy_guest');expect(oldGame.myRoles).toEqual([]);expect(oldGame.canRecordMove).toBe(false);
-    const denied=await page.evaluate(async(protocol)=>{
-      const s=await(await fetch('/api/auth/session')).json();
-      const id=decodeURIComponent(location.hash.match(/^#\/game\/([^?]+)/)[1]);
-      const r=await fetch(`/api/shell/games/${encodeURIComponent(id)}/join`,{method:'POST',headers:{'Content-Type':'application/json','X-Righelt-Auth':'1','X-Righelt-Auth-Version':protocol,'X-Righelt-Session':s.contextId},body:JSON.stringify({mode:'player'})});
-      return {status:r.status,body:await r.json()};
-    },capabilities.simplifiedAccounts?'2':'1');
+    const denied=await accountRequest(page, `/api/shell/games/${encodeURIComponent(oldGame.id)}/join`, {mode:'player'}, capabilities.simplifiedAccounts?'2':'1');
     expect(denied.status).toBeGreaterThanOrEqual(400);expect(denied.body.error).toBe('legacy_read_only');
     await proveLegacyMutationDenied({browser,legacy,oldGame,authProtocol:capabilities.simplifiedAccounts?2:1});
     expect(await count(page)).toBe(legacy.count);
@@ -343,11 +338,9 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   }
   if(process.env.RIGHELT_CONTINUITY_FILE){
     // A real self-play game keeps the retained account authorized on either turn.
-    const retainedGame=await page.evaluate(async(protocol)=>{
-      const s=await(await fetch('/api/auth/session')).json();
-      const r=await fetch('/api/shell/games',{method:'POST',headers:{'Content-Type':'application/json','X-Righelt-Auth':'1','X-Righelt-Auth-Version':protocol,'X-Righelt-Session':s.contextId},body:JSON.stringify({selfPlayMode:true})});
-      if(!r.ok)throw Error(`Retained fixture creation: ${r.status}`);return (await r.json()).game;
-    },capabilities.simplifiedAccounts?'2':'1');
+    const retained=await accountRequest(page, '/api/shell/games', {selfPlayMode:true}, capabilities.simplifiedAccounts?'2':'1');
+    expect(retained.status, 'Retained fixture creation').toBe(200);
+    const retainedGame=retained.body.game;
     expect(retainedGame.myRoles.slice().sort()).toEqual(['Player 1','Player 2']);
     await page.goto(`/#/game/${encodeURIComponent(retainedGame.id)}`);await expect(page.getByTestId('game-board')).toBeVisible();
     const action=(await gamePayload(page)).legalActions.find(x=>x.from&&x.to);expect(action).toBeTruthy();await submitPlayableAction(page,action,info);
