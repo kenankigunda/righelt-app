@@ -165,3 +165,33 @@ test('guest play permission does not grant private analysis',async()=>{
  assert.equal(f.pending(),null);assert.deepEqual(f.saved,[]);
  f.session.destroy();
 });
+
+test('undo reacquires control after an obsolete in-flight renewal settles', async () => {
+  const f = fixture();
+  f.game().computer.paused = true;
+  await f.session.tick();
+  const originalControl = f.transport.computerControl;
+  const requests = [];
+  let rejectRenewal, renewalStarted;
+  const started = new Promise(resolve => { renewalStarted = resolve; });
+  f.transport.computerControl = async (id, request) => {
+    requests.push(request.action);
+    if (request.action === 'renew') {
+      renewalStarted();
+      return new Promise((_, reject) => { rejectRenewal = reject; });
+    }
+    return originalControl(id, request);
+  };
+  f.setTime(6100);
+  await f.session.tick(); await started;
+  // The committed undo advances the control generation and removes its lease.
+  f.game().computer.generation++;
+  f.game().computer.lease = null;
+  const restored = f.session.tick();
+  rejectRenewal(Error('computer_control_changed'));
+  await restored;
+  await f.session.action('resume');
+  assert.deepEqual(requests, ['renew', 'acquire', 'resume']);
+  assert.equal(f.game().computer.paused, false);
+  f.session.destroy();
+});

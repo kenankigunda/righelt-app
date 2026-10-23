@@ -3,7 +3,7 @@ import { deterministicStateHash } from '../generated/packages/game-engine/src/ha
 import { ComputerRuntime } from './computer-runtime.js';
 
 export function createComputerSession({ getContext, onChange = () => {}, runtime = new ComputerRuntime(), analysisRuntime = new ComputerRuntime(), clock = () => Date.now(), timers = globalThis, deviceId = crypto.randomUUID() }) {
-  let status = { phase: 'idle' }, epoch = 0, active = null, busy = false, leaseWork = null, renewedAt = 0, recovery = null, pendingSubmission = null;
+  let status = { phase: 'idle' }, epoch = 0, active = null, busy = false, leaseWork = null, leaseWorkAction = null, renewedAt = 0, recovery = null, pendingSubmission = null;
   let analysis = null, analysisContext = null, analysisEpoch = 0, lastPositionRevision = null;
   const repetitions = new Map();
   const publish = (next) => { status = { ...status, ...next }; onChange(); };
@@ -12,10 +12,11 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   const cancelWork = (reason) => { epoch++; runtime.cancel(reason); };
   const ownLease = (game) => game?.computer?.lease?.deviceId === deviceId && game.computer.lease.expiresAt > clock();
   const control = async (context, action) => context.transport.computerControl(context.game.id, { action, deviceId, generation: context.game.computer.generation });
-  const startLeaseWork = work => {
+  const startLeaseWork = (work, action = 'acquire') => {
     const pending = Promise.resolve().then(work);
     leaseWork = pending;
-    const clear = () => { if (leaseWork === pending) leaseWork = null; };
+    leaseWorkAction = action;
+    const clear = () => { if (leaseWork === pending) { leaseWork = null; leaseWorkAction = null; } };
     void pending.then(clear, clear);
     return pending;
   };
@@ -63,7 +64,17 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     if (!ownLease(game)) {
       cancelWork('other-device');
       if (game.computer.lease?.expiresAt > clock()) { if (status.phase !== 'other-device') publish({ phase: 'other-device' }); return; }
-      if (!leaseWork) startLeaseWork(async () => {
+      if (leaseWork) {
+        const wasRenewal = leaseWorkAction === 'renew';
+        await leaseWork;
+        // Undo can invalidate a renewal already in flight. Re-evaluate the new
+        // generation before returning to its explicit resume operation. Do not
+        // repeat a failed acquisition or follow work into another owner scope.
+        const latest = current();
+        if (wasRenewal && latest.game?.id === game.id && latest.transport === context.transport && latest.accountGeneration === context.accountGeneration) return tick();
+        return;
+      }
+      startLeaseWork(async () => {
         try { await control(context, 'acquire'); renewedAt = clock(); }
         catch { await context.transport.loadGame(game.id).catch(() => {}); }
       });
@@ -71,7 +82,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       return;
     }
     if (!leaseWork && clock() - renewedAt >= COMPUTER_TIMING.renewAfterMs) {
-      void startLeaseWork(() => control(context, 'renew').then(() => { renewedAt = clock(); }).catch(() => { cancelWork('lease-lost'); return context.transport.loadGame(game.id); }).catch(() => {}));
+      void startLeaseWork(() => control(context, 'renew').then(() => { renewedAt = clock(); }).catch(() => { cancelWork('lease-lost'); return context.transport.loadGame(game.id); }).catch(() => {}), 'renew');
     }
     const profile = computerProfileFor(game.computer, game.board.state.sideToMove, game.currentTurn?.index ?? game.board.state.turnIndex ?? 0);
     if (game.computer.paused || !profile || game.board.state.outcome?.status !== 'ongoing') {

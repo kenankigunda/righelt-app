@@ -20,7 +20,12 @@ async function registerComputerTester(page, { home = true } = {}) {
 
 test('ordinary computer play records real worker evidence, preserves private notes, and branches from the displayed decision', async ({ page }, testInfo) => {
   test.setTimeout(180000);
-  const errors = []; page.on('pageerror', error => { errors.push(error.message); console.error('computer-play browser error:', error.message); });
+  const errors = [], errorDetails = []; let journeyPhase = 'play';
+  page.on('pageerror', error => {
+    errors.push(error.message);
+    errorDetails.push({ phase: journeyPhase, name: error.name, timestamp: new Date().toISOString() });
+    console.error('computer-play browser error:', error.message);
+  });
   await registerComputerTester(page);
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
   const create = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST');
@@ -62,7 +67,9 @@ test('ordinary computer play records real worker evidence, preserves private not
   const savedNote = page.waitForResponse(response => response.url().endsWith('/decision-notes') && response.request().postDataJSON()?.operation === 'write');
   await debug.getByRole('button', { name: 'Save note', exact: true }).click();
   expect((await savedNote).ok()).toBe(true);
+  journeyPhase = 'reload';
   await page.reload();
+  journeyPhase = 'restored';
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
   try { await expect(debug).toBeVisible(); }
   catch (error) {
@@ -113,6 +120,7 @@ test('ordinary computer play records real worker evidence, preserves private not
     await expect(popup.getByTestId('game-shell')).toHaveAttribute('data-game-id', branched.id);
     expect((await projected(page, created.id)).gameplayRevision).toBe(beforeBranch.gameplayRevision);
   } finally { await popup.close(); }
+  if (errorDetails.length) await testInfo.attach('browser-error-phases', { contentType: 'application/json', body: JSON.stringify(errorDetails) });
   expect(errors).toEqual([]);
 });
 

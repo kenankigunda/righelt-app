@@ -189,9 +189,19 @@ test('storybook turn animates artwork while story copy stays fixed',async({page}
  const modal=page.getByRole('dialog',{name:'Babs',exact:true});await expect(modal).toBeVisible();
  await waitForOverlayEntry(modal);
  const copy=modal.locator('.opponent-story-copy');const before=await copy.boundingBox();
+ // Record the real animation when it starts: CI may deliver the next
+ // browser command after the 520ms animation has already finished.
+ await modal.locator('.story-turn-shade').evaluate(el => {
+   const animate = el.animate.bind(el);
+   el.animate = (...args) => {
+     const animation = animate(...args);
+     el.dataset.observedAnimations = String(el.getAnimations().length);
+     return animation;
+   };
+ });
  await modal.getByRole('button',{name:'Next story image'}).click();
  await expect(modal.locator('[data-story-image]').nth(1)).toHaveAttribute('data-active','true');
- expect(await modal.locator('.story-turn-shade').evaluate(el=>el.getAnimations().length)).toBeGreaterThan(0);
+ expect(Number(await modal.locator('.story-turn-shade').getAttribute('data-observed-animations'))).toBeGreaterThan(0);
  expect((await copy.boundingBox()).y).toBeCloseTo(before.y,0);
 });
 
