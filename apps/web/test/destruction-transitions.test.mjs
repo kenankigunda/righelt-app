@@ -81,3 +81,14 @@ test('a reconnect baseline in history leaves replay completion to the board snap
  assert.equal(t.update(history,{reset:true}).clear,false);
  assert.deepEqual(t.update(history).effects,[]);
 });
+
+
+test('frozen capture clears live overlays and silently baselines arrivals and exit', () => {
+ const t=createDestructionTransitions();t.update(game());
+ assert.equal(t.update(game([record('A')])).effects.length,1);
+ const frozen=t.update(game([record('A')]),{frozen:true});
+ assert.equal(frozen.clear,true);assert.deepEqual(frozen.effects,[]);
+ assert.deepEqual(t.update(game([record('A'),record('B')]),{frozen:true}).effects,[]);
+ assert.deepEqual(t.update(game([record('A'),record('B')])).effects,[]);
+ assert.equal(t.update(game([record('A'),record('B'),record('C')])).effects.length,1);
+});

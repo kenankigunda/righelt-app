@@ -3,6 +3,7 @@ import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
 test('guest home, tactile toggle, Babs modal and original board remain usable',async({page})=>{
+ await page.clock.install({time:new Date('2026-01-01T00:00:00Z')});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(()=>{
    window.entryPanelAnimations=[];
@@ -20,12 +21,16 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  await sound.locator('svg').click();
  await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeFocused();
  await page.reload();await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeVisible();
+ // Model preparation may exceed the carousel interval. Hold autoplay while
+ // checking the manual caret, then restore normal time once that click stops it.
+ await page.clock.pauseAt(new Date('2026-01-01T01:00:00Z'));
  await page.locator('button[data-opponent="babs"]').click();
  const dialog=page.getByRole('dialog',{name:'Babs',exact:true});await expect(dialog).toBeVisible();
- await expect(dialog.getByRole('button',{name:'Play Babs'})).toBeDisabled();
+ await expect(dialog.getByRole('button',{name:'Play Babs'})).toBeEnabled();
  await expect(page.locator('.story-presentation-board')).toBeAttached();
  await expect(dialog.locator('[data-story-position], [data-story-pause]')).toHaveCount(0);
  await dialog.getByRole('button',{name:'Next story image'}).click();
+ await page.clock.resume();
  await expect(dialog.locator('[data-story-image]').nth(1)).toHaveAttribute('data-active','true');
  await expect.poll(()=>dialog.locator('.story-art').evaluate(el=>el.getAnimations({subtree:true}).filter(a=>a.playState==='running').length)).toBe(0);
  await page.screenshot({path:test.info().outputPath('babs-desktop.png')});
@@ -101,7 +106,10 @@ test('top invitation preserves the selected role through pending copy and failur
 });
 
 test('carousel keeps cycling under hover and focus but stops after a caret',async({page})=>{
- await page.clock.install();await page.goto('/');await page.locator('button[data-opponent="babs"]').click();
+ await page.clock.install({time:new Date('2026-01-01T00:00:00Z')});await page.goto('/');
+ await expect(page.locator('button[data-opponent="babs"]')).toBeVisible();
+ await page.clock.pauseAt(new Date('2026-01-01T01:00:00Z'));
+ await page.locator('button[data-opponent="babs"]').click();
  const modal=page.getByRole('dialog',{name:'Babs',exact:true});await expect(modal).toBeVisible();
  await modal.locator('.story-art').hover();await modal.getByRole('button',{name:'Next story image'}).focus();
  await page.clock.fastForward(3100);await expect(modal.locator('[data-story-image]').nth(1)).toHaveAttribute('data-active','true');
@@ -189,9 +197,19 @@ test('storybook turn animates artwork while story copy stays fixed',async({page}
  const modal=page.getByRole('dialog',{name:'Babs',exact:true});await expect(modal).toBeVisible();
  await waitForOverlayEntry(modal);
  const copy=modal.locator('.opponent-story-copy');const before=await copy.boundingBox();
+ // Record the real animation when it starts: CI may deliver the next
+ // browser command after the 520ms animation has already finished.
+ await modal.locator('.story-turn-shade').evaluate(el => {
+   const animate = el.animate.bind(el);
+   el.animate = (...args) => {
+     const animation = animate(...args);
+     el.dataset.observedAnimations = String(el.getAnimations().length);
+     return animation;
+   };
+ });
  await modal.getByRole('button',{name:'Next story image'}).click();
  await expect(modal.locator('[data-story-image]').nth(1)).toHaveAttribute('data-active','true');
- expect(await modal.locator('.story-turn-shade').evaluate(el=>el.getAnimations().length)).toBeGreaterThan(0);
+ expect(Number(await modal.locator('.story-turn-shade').getAttribute('data-observed-animations'))).toBeGreaterThan(0);
  expect((await copy.boundingBox()).y).toBeCloseTo(before.y,0);
 });
 
@@ -357,12 +375,15 @@ test('pending player approval keeps the invitation surface blocking until approv
 });
 
 test('home section headings stay mounted while nested loading resolves',async({page})=>{
+ const responses=[];
  let release;const gate=new Promise(resolve=>release=resolve);
- await page.route('**/api/shell/games?**',async route=>{const response=await route.fetch();await gate;await route.fulfill({response});});
+ await page.route('**/api/shell/games?**',async route=>{const response=await route.fetch();responses.push({url:route.request().url(),status:response.status(),body:response.ok()?null:await response.text()});await gate;await route.fulfill({response});});
  try {
   await page.goto('/');await expect(page.locator('[data-home-section-root="other"] h2')).toBeVisible();
   await page.locator('[data-home-section-root="other"] h2').evaluate(el=>window.retainedSectionHeading=el);
   release();await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+  expect(responses.filter(response=>response.status!==200), 'Home reads must succeed before checking successful hydration identity').toEqual([]);
+  await expect(page.locator('[data-home-section-root="other"] h2')).toBeVisible();
   expect(await page.locator('[data-home-section-root="other"] h2').evaluate(el=>el===window.retainedSectionHeading)).toBe(true);
  }finally{release();await page.unrouteAll({behavior:'ignoreErrors'});}
 });

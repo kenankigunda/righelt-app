@@ -20,7 +20,7 @@ test("live board loading follows blocked recovery without requiring a reconnect 
  assert.equal(isBoardRecoveryPending(null),false);
 });
 
-test("history uses stable IDs across trimming and ignores same-identity tab selection; nearest fallback prefers earlier tie", () => {
+test("history keeps the selected position after trimming and ignores same-identity tab selection", () => {
  const t = store(); t.applyLiveGameUpdate({game:fixture()});
  t.setConnectionRecovering("history",true);
  t.selectHistoryMove({gameId:"history",moveIndex:2});
@@ -30,11 +30,12 @@ test("history uses stable IDs across trimming and ignores same-identity tab sele
  assert.equal(t.getGameViewModel("history").historyIndex,1);
  next.moves=next.moves.filter(m=>m.moveId!=="m2").map((m,index)=>({...m,index}));
  t.applyLiveGameUpdate({game:next});
- assert.deepEqual(t.getGameViewModel("history").currentSnapshot,snapshot(1));
- assert.equal(t.getGameViewModel("history").historyNotice,"History changed. Showing the closest available move.");
+ assert.deepEqual(t.getGameViewModel("history").currentSnapshot,snapshot(2));
+ assert.equal(t.getGameViewModel("history").inspectedDecision.moveId,"m2");
+ assert.equal(t.getGameViewModel("history").historyIndex,null);
  t.applyLiveGameUpdate({game:{...next,moves:[]}});
- assert.equal(t.getGameViewModel("history").inHistoryMode,false);
- assert.equal(t.getGameViewModel("history").historyNotice,"History changed. You’re back at the current board.");
+ assert.equal(t.getGameViewModel("history").inHistoryMode,true);
+ assert.deepEqual(t.getGameViewModel("history").currentSnapshot,snapshot(2));
  assert.equal(t.getGameViewModel("history").sharedMutationsBlocked,true);
 });
 test("return live is immediate offline and remains live across later server history selections", () => {
@@ -162,4 +163,14 @@ test("initial socket fallback shares reconciliation and does not start a competi
  }});
  const loaded=await Promise.all([t.loadGame('history'),t.reconcileGame('history')]);
  assert.equal(loaded[0].id,'history');assert.equal(reads,1);
+});
+
+test('trimmed historical turns derive nominal ownership from the archived continuation', () => {
+ const t=store(), game=fixture();
+ game.currentTurn={index:9,playerSeat:'Player 1',moveIndexes:[]};
+ game.moves[0].snapshot={...snapshot(2),sideToMove:'P1',continuation:{type:'push',phase:'retreat',owner:'P2'}};
+ t.applyLiveGameUpdate({game}); t.selectHistoryMove({gameId:'history',moveIndex:0});
+ const view=t.getGameViewModel('history');
+ assert.equal(view.currentTurn.index,2); assert.equal(view.turnOwnerSeat,'Player 2');
+ assert.equal(view.controlSeat,'Player 1'); assert.equal(view.canRecordMove,false);
 });

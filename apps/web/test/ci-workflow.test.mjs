@@ -18,3 +18,11 @@ test('full gate always runs and depends on every lane, installs are frozen and p
  }
  assert.ok(actual.on.pull_request.types.includes('ready_for_review'));assert.ok(actual.on.workflow_dispatch);assert.equal(actual.on.pull_request.paths,undefined);
 });
+
+test('model CI installs pinned pnpm before Node cache discovery and uses the frozen lock',()=>{
+ const source=readFileSync(new URL('../../../.github/workflows/trained-play.yml',import.meta.url),'utf8');
+ assert.ok(source.indexOf('pnpm/action-setup@v4') < source.indexOf('actions/setup-node@v5'));
+ assert.match(source,/version: '9\.15\.9'/);
+ assert.match(source,/pnpm install --frozen-lockfile\n/);
+ assert.doesNotMatch(source,/corepack prepare|frozen-lockfile=false/);
+});

@@ -1,3 +1,4 @@
+import {readPlayableAction} from "./read-playable-action.mjs";
 import { expect, test } from "@playwright/test";
 
 const historyMoveItems = (page) => page.locator('[data-testid="history-move-item"]');
@@ -75,8 +76,9 @@ export const createGameFromHome = async (page, capabilities = {friendIntroductio
   });
   await page.getByTestId("home-create-game").click();
   await continueFriendIntroduction(page, capabilities);
-  await expect(page.getByRole("dialog", { name: "Invite a friend" })).toBeVisible();
   const createResponse = await createResponsePromise;
+  expect(createResponse.status(), `Game creation failed (request ${createResponse.headers()['x-righelt-request-id'] || 'unavailable'})`).toBe(200);
+  await expect(page.getByRole("dialog", { name: "Invite a friend" })).toBeVisible();
   await expect(page.getByTestId("game-shell")).toBeVisible();
   await closeHostInvitation(page);
   await expect(page.getByTestId("game-role")).toContainText("Player 1");
@@ -236,20 +238,7 @@ export const expectHistoryMoveCountToEqualOrExceed = async (page, expectedCount)
     .toBeGreaterThanOrEqual(expectedCount);
 };
 
-const getFirstPlayableAction = async (page) =>
-  page.evaluate(async () => {
-    const identityId = window.localStorage.getItem("righelt.identity.id.v1");
-    const match = new URL(window.location.href).hash.match(/^#\/game\/([^?]+)/);
-    if (!identityId || !match) {
-      return null;
-    }
-
-    const gameId = decodeURIComponent(match[1]);
-    const response = await fetch(`/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}`);
-    const body = await response.json();
-    const legalActions = Array.isArray(body?.game?.legalActions) ? body.game.legalActions : [];
-    return legalActions.find((action) => action?.from && action?.to) ?? null;
-  });
+const getFirstPlayableAction = async (page) => page.evaluate(readPlayableAction);
 
 export const selectPlayableAction = async (page, action) => {
   const cell = position => page.locator(`[data-testid="game-board"] .cell[data-row="${position.row}"][data-col="${position.col}"]`);
@@ -340,7 +329,8 @@ export const launchHistoryBranchFromMove = async (page, moveIndex = 0) => {
     return response.request().method() === "POST" && url.pathname === "/api/shell/history/branch";
   });
   const popupPromise = page.waitForEvent("popup");
-  await page.locator('[data-action="launch-history-branch"]').click();
+  await historyMoveItems(page).nth(moveIndex).locator('[data-action="launch-history-branch"]').click();
+  await page.getByRole('dialog', { name: 'Create a new game here' }).getByRole('button', { name: 'Start game' }).click();
   const [popup, branchResponse] = await Promise.all([popupPromise, branchResponsePromise]);
   await popup.waitForLoadState("domcontentloaded");
   const branchBody = await branchResponse.json();
@@ -354,7 +344,8 @@ export const launchHistoryBranchFromMove = async (page, moveIndex = 0) => {
 export const openPendingHistoryBranchFromMove = async (page, moveIndex = 0) => {
   await openHistoryMode(page, moveIndex);
   const popupPromise = page.waitForEvent("popup");
-  await page.locator('[data-action="launch-history-branch"]').click();
+  await historyMoveItems(page).nth(moveIndex).locator('[data-action="launch-history-branch"]').click();
+  await page.getByRole('dialog', { name: 'Create a new game here' }).getByRole('button', { name: 'Start game' }).click();
   const popup = await popupPromise;
   await popup.waitForLoadState("domcontentloaded");
   return {

@@ -1,3 +1,4 @@
+import { createComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
 import { IDENTITY_KEY } from "./persistence.js";
 import { STORAGE_GENERATION_HEADER, STORAGE_GENERATION_QUERY } from "../generated/packages/shared-types/src/storage-policy.js";
 import { AUTH_PROTOCOL_VERSION, AUTH_PROTOCOL_HEADER, AUTH_REQUEST_HEADER, SESSION_CONTEXT_HEADER } from '../generated/packages/shared-types/src/auth-policy.js';
@@ -1301,7 +1302,7 @@ export const createSyncStore = ({
         throw error;
       }
     },
-    createGame: ({ selfPlayMode = false, creatorSide = "p1" } = {}) => {
+    createGame: ({ selfPlayMode = false, creatorSide = "p1", computer } = {}) => {
       const gameId = createGameId();
       const createdAt = new Date().toISOString();
       const identityId = transport.getIdentityId();
@@ -1319,6 +1320,7 @@ export const createSyncStore = ({
         myRole: creatorSide === "p2" && !selfPlayMode ? "Player 2" : "Player 1",
         notifications: ["Game creation pending sync"],
       });
+      if (computer) { stubGame.computer = createComputerControl(identityId, computer); stubGame.awaitingCreation = true; stubGame.canRecordMove = false; stubGame.canEndTurn = false; }
       transport.applyLiveGameUpdate({ game: stubGame });
       savePendingLocalGame(stubGame);
 
@@ -1329,7 +1331,7 @@ export const createSyncStore = ({
       });
 
       void transport
-        .createGame({ selfPlayMode, gameId, creatorSide })
+        .createGame({ selfPlayMode, gameId, creatorSide, computer })
         .then((game) => {
           if (game?.id !== gameId) {
             const mismatchError = createGameIdMismatchError("Game creation", gameId, game?.id ?? "unknown");
@@ -1358,8 +1360,8 @@ export const createSyncStore = ({
 
       return handle;
     },
-    applyGameAction: async ({ gameId, state, action }) => {
-      const response = await transport.applyGameAction({ gameId, state, action });
+    applyGameAction: async ({ gameId, state, action, computer }) => {
+      const response = await transport.applyGameAction({ gameId, state, action, computer });
       if (!response?.accepted || typeof response?.clientCommandId !== "string") {
         return response;
       }
@@ -1391,6 +1393,7 @@ export const createSyncStore = ({
     launchHistoryBranch: ({
       sourceGameId,
       sourceMoveIndex,
+      sourceDecisionId = null, sourceGameplayRevision = null, creatorSide = "p1", computer,
       scenario,
       initialSelectionAction,
       participantCopyMode,
@@ -1407,16 +1410,10 @@ export const createSyncStore = ({
       let viewers = [];
       let myRole = sideToMoveSeat;
 
-      if (participantCopyMode === "copy_source_participants" && sourceGame) {
-        player1 = clone(sourceGame.player1 ?? null);
-        player2 = clone(sourceGame.player2 ?? null);
-        viewers = clone(Array.isArray(sourceGame.viewers) ? sourceGame.viewers : []);
-        myRole = sourceGame.myRole ?? myRole;
-      } else if (sideToMoveSeat === "Player 1") {
-        player1 = createParticipant(identityId, createdAt);
-      } else {
-        player2 = createParticipant(identityId, createdAt);
-      }
+      myRole = creatorSide === 'p2' ? 'Player 2' : 'Player 1';
+      if (creatorSide === 'p2') player2 = createParticipant(identityId, createdAt);
+      else player1 = createParticipant(identityId, createdAt);
+      if (selfPlayMode || computer) { player1 = createParticipant(identityId, createdAt); player2 = clone(player1); }
 
       const stubGame = buildLocalGameView({
         gameId,
@@ -1431,6 +1428,8 @@ export const createSyncStore = ({
         notifications: ["History branch pending sync"],
         initialSelectionAction,
       });
+      // The server derives the branch position. Do not queue moves against a client preview.
+      stubGame.awaitingCreation = true; stubGame.canRecordMove = false; stubGame.canEndTurn = false;
       transport.applyLiveGameUpdate({ game: stubGame });
       savePendingLocalGame(stubGame);
 
@@ -1445,6 +1444,7 @@ export const createSyncStore = ({
           gameId,
           sourceGameId,
           sourceMoveIndex,
+          sourceDecisionId, sourceGameplayRevision, creatorSide, computer,
           scenario,
           initialSelectionAction,
           participantCopyMode,
@@ -1496,17 +1496,16 @@ export const createSyncStore = ({
       }
       const requesterIdentityId = transport.getIdentityId();
       const targetMove = Array.isArray(currentGame.moves) ? currentGame.moves.find((move) => move?.moveId === targetMoveId) ?? null : null;
-      if (!targetMove) {
-        throw createOperationError("The target move could not be found for the undo request.", "move_not_found");
-      }
-      const requesterSeat = isPlayerRole(currentGame.myRole) ? currentGame.myRole : getSeatForSide(targetMove.actorSide);
+      // An evicted decision is resolved from the immutable server archive. Do not
+      // fabricate an optimistic board from a different retained move.
+      const requesterSeat = isPlayerRole(currentGame.myRole) ? currentGame.myRole : getSeatForSide(targetMove?.actorSide ?? currentGame.board.state.sideToMove);
       const approverIdentityId = getSeatIdentity(currentGame, getNextSeat(requesterSeat));
       const requestId = createLocalRequestId("revert");
       return runOptimisticGameOperation({
         id: `revert-request:${requestId}`,
         gameId,
         buildOptimisticGame: (game) =>
-          approverIdentityId
+          !targetMove ? game : approverIdentityId
             ? buildOptimisticRevertRequestGame({ game, requestId, requesterIdentityId, targetMoveId })
             : buildOptimisticApprovedRevertGame({
                 game,

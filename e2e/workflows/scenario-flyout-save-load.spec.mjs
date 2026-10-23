@@ -211,6 +211,7 @@ test("scenario flyout can save the current board and load that scenario into a n
 
     await page.getByRole("button", { name: "Scenarios" }).click();
     await expect(page.locator("#scenario-select")).toBeVisible();
+    await page.locator('[data-action="begin-scenario-capture"]').click();
 
     await page.locator('[data-scenario-save-field="title"]').fill(scenarioTitle);
     await page.locator('[data-scenario-save-field="description"]').fill(scenarioDescription);
@@ -225,7 +226,7 @@ test("scenario flyout can save the current board and load that scenario into a n
     await page.getByRole("button", { name: "Close invite", exact: true }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
 
-    const initialHistoryCount = await getHistoryMoveCount(page);
+    expect(await getHistoryMoveCount(page)).toBe(0);
     await page.getByRole("button", { name: "Scenarios" }).click();
     await expect(page.locator('[data-scenario-editable="title"]')).toContainText(scenarioTitle);
     await expect(page.locator('[data-action="load-scenario"]')).toHaveText("Load into This Game");
@@ -234,9 +235,14 @@ test("scenario flyout can save the current board and load that scenario into a n
 
     await expect
       .poll(async () => getHistoryMoveCount(page), {
-        message: "Expected loading the saved scenario to replace the empty game with the saved scenario history",
+        message: "Expected the capture to start a new history at the saved position",
       })
-      .toBeGreaterThan(initialHistoryCount);
+      .toBe(0);
+    await expect.poll(() => page.evaluate(async () => {
+      const id = decodeURIComponent(location.hash.match(/^#\/game\/([^?]+)/)[1]);
+      const identity = localStorage.getItem('righelt.identity.id.v1');
+      return (await (await fetch(`/api/shell/games/${id}?identityId=${identity}`)).json()).game.board.state;
+    })).toEqual(savedScenario.resultingState);
     await expect(page.locator('[data-testid="scenario-load-skeleton"]')).toHaveCount(0);
     await expect(page.locator('[data-scenario-editable="title"]')).toHaveCount(0);
   } finally {
@@ -324,6 +330,7 @@ test("scenario flyout round-trips a settled post-rush board state after ending t
 
     await page.getByRole("button", { name: "Scenarios" }).click();
     await expect(page.locator("#scenario-select")).toBeVisible();
+    await page.locator('[data-action="begin-scenario-capture"]').click();
 
     await sourceCell.click();
     await expect(page.locator("#scenario-select")).toBeVisible();
@@ -428,6 +435,7 @@ test("scenario flyout saves history-authored scenarios from the selected pre-mov
 
     await page.getByRole("button", { name: "Scenarios" }).click();
     await expect(page.locator("#scenario-select")).toBeVisible();
+    await page.locator('[data-action="begin-scenario-capture"]').click();
     await page.locator('[data-scenario-save-field="title"]').fill(scenarioTitle);
     await page.locator('[data-scenario-save-field="description"]').fill(scenarioDescription);
     await page.locator('[data-action="save-scenario"]').click();
@@ -437,7 +445,8 @@ test("scenario flyout saves history-authored scenarios from the selected pre-mov
         message: "Expected the history-authored scenario save to capture the selected pre-move snapshot",
       })
       .not.toBeNull();
-    expect(savedScenario.moves).toHaveLength(4);
+    expect(savedScenario.moves).toHaveLength(0);
+    expect(savedScenario.initialState).toEqual(savedScenario.resultingState);
     expect(savedScenario.resultingState.sideToMove).toBe("P1");
     expect(savedScenario.resultingState.turnIndex).toBe(4);
     expect(savedScenario.savedSelection).toEqual({
@@ -462,7 +471,7 @@ test("scenario flyout saves history-authored scenarios from the selected pre-mov
     await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 5,4");
     await expect
       .poll(async () => getHistoryMoveCount(page), {
-        message: "Expected loading the history-authored scenario to replay only the moves before the selected history action",
+        message: "Expected loading the capture to start a new history at the saved pre-move position",
       })
       .toBe(savedScenario.moves.length);
     await expect
@@ -530,6 +539,7 @@ test("scenario flyout updates an existing scenario from the selected history pre
 
     await page.getByRole("button", { name: "Scenarios" }).click();
     await expect(page.locator("#scenario-select")).toBeVisible();
+    await page.locator('[data-action="begin-scenario-capture"]').click();
     await expect(page.locator('[data-scenario-editable="title"]')).toContainText("History scenario to update");
     await page.locator('[data-action="update-scenario"]').click();
 
@@ -539,7 +549,8 @@ test("scenario flyout updates an existing scenario from the selected history pre
       })
       .not.toBeNull();
     expect(savedScenario.id).toBe(scenarioId);
-    expect(savedScenario.moves).toHaveLength(4);
+    expect(savedScenario.moves).toHaveLength(0);
+    expect(savedScenario.initialState).toEqual(savedScenario.resultingState);
     expect(savedScenario.resultingState.sideToMove).toBe("P1");
     expect(savedScenario.resultingState.turnIndex).toBe(4);
     expect(savedScenario.savedSelection).toEqual({
@@ -564,7 +575,7 @@ test("scenario flyout updates an existing scenario from the selected history pre
     await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 5,4");
     await expect
       .poll(async () => getHistoryMoveCount(page), {
-        message: "Expected loading the updated scenario to replay only the moves before the selected history action",
+        message: "Expected loading the updated capture to start a new history at the saved pre-move position",
       })
       .toBe(savedScenario.moves.length);
     await expect
@@ -633,6 +644,7 @@ test("scenario authoring surfaces local writer failures for save and update with
 
     await page.getByRole("button", { name: "Scenarios" }).click();
     await expect(page.locator("#scenario-select")).toBeVisible();
+    await page.locator('[data-action="begin-scenario-capture"]').click();
 
     await page.locator('[data-scenario-save-field="title"]').fill("Save failure scenario");
     await page.locator('[data-scenario-save-field="description"]').fill("Should stay editable after a failed local save.");
@@ -698,6 +710,7 @@ test("scenario load surfaces import failures without leaving the flyout stuck pe
 
     await page.getByRole("button", { name: "Scenarios" }).click();
     await expect(page.locator("#scenario-select")).toBeVisible();
+    await page.locator('[data-action="begin-scenario-capture"]').click();
     await expect(page.locator('[data-scenario-editable="title"]')).toContainText(RUSH_CAN_END_SCENARIO.title);
 
     await page.locator('[data-action="load-scenario"]').click();
@@ -711,6 +724,8 @@ test("scenario load surfaces import failures without leaving the flyout stuck pe
     await expect(page.locator(".scenario-panel-load .debug-pre")).toContainText("Failed to load scenario.");
     await expect(page.locator('[data-action="load-scenario"]')).toBeEnabled();
     await expect(page.locator("#scenario-select")).toBeVisible();
+    await expect(page.getByRole('button', { name: 'End capture', exact: true })).toBeEnabled();
+    await expect(page.locator('[data-scenario-editable="title"]')).toContainText(RUSH_CAN_END_SCENARIO.title);
   } finally {
     await closeContextQuietly(context);
   }

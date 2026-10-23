@@ -44,8 +44,8 @@ test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.ok(scripts.test.endsWith("node scripts/testing/cli.mjs full"));
   assert.equal(scripts["test:ci-report-selection"], "node --test scripts/select-junit-artifacts.test.mjs");
   assert.equal(scripts["test:auth-fixture"], "node --test scripts/auth-fixture-control.test.mjs");
-  assert.equal(scripts["test:unit"], "pnpm test:engine:unit && pnpm test:web:unit");
-  assert.equal(scripts["test:integration"], "pnpm test:engine:integration && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web:integration && pnpm test:sync-stress && pnpm test:sync-runtime");
+  assert.equal(scripts["test:unit"], "pnpm test:engine:unit && pnpm test:web:unit && pnpm test:computer-player:unit");
+  assert.equal(scripts["test:integration"], "pnpm test:engine:integration && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web:integration && pnpm test:sync-stress && pnpm test:sync-runtime && pnpm test:computer-player:integration");
   assert.equal(scripts["test:engine"], "node scripts/run-node-tests.mjs packages/game-engine/test");
   assert.equal(scripts["test:engine:unit"], "node scripts/run-node-tests.mjs packages/game-engine/test/unit");
   assert.equal(scripts["test:engine:integration"], "node scripts/run-node-tests.mjs packages/game-engine/test/integration");
@@ -188,4 +188,9 @@ test("web test runner forwards optional reporter settings into node --test", () 
   assert.match(webTestRunnerSource, /mkdirSync\(path\.dirname\(path\.resolve\(reporterDestination\)\), \{ recursive: true \}\);/);
   assert.match(webTestRunnerSource, /args\.push\("--test-reporter", reporter\);/);
   assert.match(webTestRunnerSource, /args\.push\("--test-reporter-destination", reporterDestination\);/);
+});
+
+test("local preview builds computer assets before starting Pages", () => {
+  const source = readFileSync(new URL("../../../scripts/dev-web-auto.mjs", import.meta.url), "utf8");
+  assert.match(source, /await import\("\.\/build-computer-player\.mjs"\);[\s\S]*startPagesWrangler\(\);/);
 });

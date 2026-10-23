@@ -597,7 +597,7 @@ test("live transport: loading a scenario into an empty game preserves the saved 
   assert.equal(body.game.moves.length, 6);
 });
 
-test("live transport: create-from-scenario preserves copied player seats when the importer is already a player", async () => {
+test("live transport: create-from-scenario assigns only the importer and leaves the other seat open", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", selfPlayMode: false }),
     env,
@@ -656,12 +656,12 @@ test("live transport: create-from-scenario preserves copied player seats when th
   );
   const imported = await scenarioImport.json();
   assert.equal(scenarioImport.status, 200);
-  assert.equal(imported.game.player1?.identityId, "id-a");
-  assert.equal(imported.game.player2?.identityId, "id-b");
-  assert.equal(imported.game.myRole, "Player 1");
+  assert.equal(imported.game.player1, null);
+  assert.equal(imported.game.player2?.identityId, "id-a");
+  assert.equal(imported.game.myRole, "Player 2");
 });
 
-test("live transport: scenario launch from an existing game applies shared participant copy policy", async () => {
+test("live transport: scenario launch never copies another person into the new game", async () => {
   const created = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", selfPlayMode: false }),
     env,
@@ -730,9 +730,9 @@ test("live transport: scenario launch from an existing game applies shared parti
   );
   const playerLaunchBody = await playerLaunch.json();
   assert.equal(playerLaunch.status, 200);
-  assert.equal(playerLaunchBody.game.player1.identityId, "id-owner");
-  assert.equal(playerLaunchBody.game.player2.identityId, "id-player2");
-  assert.equal(playerLaunchBody.game.viewers.some((viewer) => viewer.identityId === "id-viewer"), true);
+  assert.equal(playerLaunchBody.game.player1, null);
+  assert.equal(playerLaunchBody.game.player2.identityId, "id-owner");
+  assert.deepEqual(playerLaunchBody.game.viewers, []);
 
   const viewerLaunch = await handleApiRequest(
     req("/api/shell/scenarios/import", "POST", {
@@ -750,7 +750,7 @@ test("live transport: scenario launch from an existing game applies shared parti
   assert.deepEqual(viewerLaunchBody.game.viewers, []);
 });
 
-test("live transport: history branch launch replays prior history and preserves next-action preselection with viewer-only participant override", async () => {
+test("live transport: history branch derives its position and next selection from the source decision with explicit seats", async () => {
   const created = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", selfPlayMode: false }),
     env,
@@ -789,7 +789,8 @@ test("live transport: history branch launch replays prior history and preserves 
     req("/api/shell/history/branch", "POST", {
       identityId: "id-viewer",
       sourceGameId: gameId,
-      sourceMoveIndex: 1,
+      sourceDecisionId: secondMoveEntry.moveId,
+      creatorSide: "p2",
       scenario: {
         formatVersion: 2,
         id: "7c7140bf-ec49-485e-a272-560e46cb19dc",
@@ -806,7 +807,7 @@ test("live transport: history branch launch replays prior history and preserves 
             action: moveEntry.action,
           },
         ],
-        resultingState: secondMoveEntry.selectionSnapshot,
+        resultingState: moveEntry.selectionSnapshot, // A forged client position is ignored.
         expectedFinalStateHash: "",
         expectedOutcome: secondMoveEntry.selectionSnapshot.outcome?.status ?? "ongoing",
       },
@@ -823,9 +824,8 @@ test("live transport: history branch launch replays prior history and preserves 
   assert.equal(branchBody.game.inHistoryMode, false);
   assert.deepEqual(branchBody.game.initialSelectionAction, secondMoveEntry.action);
   assert.deepEqual(branchBody.game.currentSnapshot, secondMoveEntry.selectionSnapshot);
-  assert.equal(branchBody.game.moves.length, 1);
-  assert.equal(branchBody.game.moves[0].notation, moveEntry.notation);
-  assert.equal(branchBody.game.moves[0].turnIndex, moveEntry.turnIndex);
+  assert.equal(branchBody.game.moves.length, 0);
+  assert.equal(branchBody.game.selfPlayMode, false);
 });
 
 test("live transport: scenario import rejects non-UUID scenario ids", async () => {

@@ -292,3 +292,20 @@ test("I-19c: mixed legacy and modern moves — both handled correctly in same ga
   assert.deepEqual(projection.game.moves[0].destroyedPieces, [], "legacy move defaults to []");
   assert.deepEqual(projection.game.moves[1].destroyedPieces, destroyedPieces, "modern move is preserved");
 });
+
+test('home listing round-trips mixed human and experimental computer games', async () => {
+  const { listHomeSectionStaticGameCardPage } = await import('../src/shell-live-db.ts');
+  const { createComputerControl } = await import('../../shared-types/src/computer-play.ts');
+  const env = makeEnv();
+  const human = createInitialGame({ gameId: 'human-list', identityId: 'owner', selfPlayMode: true });
+  const computer = createInitialGame({ gameId: 'computer-list', identityId: 'owner', selfPlayMode: true });
+  computer.computer = createComputerControl('owner', { p1: null, p2: 'babs' });
+  await persistGameState(env, human, 1); await persistGameState(env, computer, 1);
+  const result = await listHomeSectionStaticGameCardPage(env, { identityId: 'owner', section: 'my', page: 0, pageSize: 10, debug: false });
+  const cards = result.games;
+  assert.equal(cards.length, 2);
+  assert.equal(cards.find(card => card.id === 'human-list').player2.computerProfile, undefined);
+  const botCard = cards.find(card => card.id === 'computer-list');
+  assert.equal(botCard.player2.computerProfile, 'babs');
+  assert.equal('computer' in botCard, false, 'Home cards do not expose private lease state');
+});

@@ -102,7 +102,12 @@ test("explicit CI artifact credit verifies full inventory, primary logs and cano
       await rm(outDir, { recursive: true });
       const good = await importCatalogCI(options);
       assert.ok(good.receipts.Unit);
-      assert.equal(good.receipts.Unit.evidence.length, 2);
+      assert.equal(good.receipts.Unit.evidence.length, 3);
+      assert.ok(good.receipts.Unit.evidence.some(e => e.lane.startsWith("computer-unit:")));
+      const computerLane = artifacts.findIndex((_, i) => receipts[i].suite === "computer-integration");
+      const omitted = artifacts.splice(computerLane, 1)[0];
+      await assert.rejects(importCatalogCI(options), /Full current-attempt CI inventory unavailable/);
+      artifacts.splice(computerLane, 0, omitted);
       const wrong = await importCatalogCI({
         ...options,
         expected: { Unit: { ...expected.Unit, argv: ["pnpm", "other"] } },

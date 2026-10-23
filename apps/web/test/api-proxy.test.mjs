@@ -99,17 +99,33 @@ test("Pages proxy maps suffixed local dev pages ports to matching API worker por
 
 test("Pages proxy returns a stable 503 when the local API worker is unavailable", async () => {
   const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  const diagnostics = [];
+  let calls = 0;
+  const id = crypto.randomUUID();
+  console.error = (...args) => diagnostics.push(args);
   globalThis.fetch = async () => {
+    calls++;
     throw new TypeError("Network connection lost.");
   };
 
   try {
     const response = await onRequest({
-      request: new Request("http://localhost:8788/api/health"),
+      request: new Request("http://localhost:8788/api/shell/games", {
+        method: 'POST', headers: { 'X-Righelt-Request-Id': id }, body: 'private-body',
+      }),
       env: {},
     });
 
     assert.equal(response.status, 503);
+    assert.equal(calls, 1);
+    assert.equal(response.headers.get('X-Righelt-Request-Id'), id);
+    assert.equal(diagnostics.length, 1);
+    assert.equal(diagnostics[0][0], '[local-api-forwarding-failure]');
+    assert.deepEqual(JSON.parse(diagnostics[0][1]), {
+      stage: 'fetch', requestId: id, method: 'POST', name: 'TypeError', code: 'other',
+      causeCode: 'other', message: 'network_connection_lost',
+    });
     assert.equal(response.headers.get("cache-control"), "no-store");
     assert.deepEqual(await response.json(), {
       ok: false,
@@ -117,6 +133,7 @@ test("Pages proxy returns a stable 503 when the local API worker is unavailable"
     });
   } finally {
     globalThis.fetch = originalFetch;
+    console.error = originalError;
   }
 });
 

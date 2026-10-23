@@ -1,5 +1,10 @@
 export const WEB_UNIT_TEST_FILES = Object.freeze([
   "account-controller.test.mjs",
+  "computer-runtime.test.mjs",
+  "computer-preparation.test.mjs",
+  "decision-notes.test.mjs",
+  "computer-view.test.mjs",
+  "scenario-capture.test.mjs",
   "dom-patch.test.mjs",
   "brand-grid.test.mjs",
   "auth-startup-helper.test.mjs",
@@ -22,6 +27,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "passive-click.test.mjs",
   "loading.test.mjs",
   "local-dev-ports.test.mjs",
+  "local-api-diagnostics.test.mjs",
   "local-dev-scripts.test.mjs",
   "mobile-layout.test.mjs",
   "operation-manager.test.mjs",

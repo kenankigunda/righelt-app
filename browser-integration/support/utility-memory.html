@@ -1,0 +1,7 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Utility state</title><style>.shell-flyout-scroll{height:160px;overflow:auto}textarea{display:block}.space{height:500px}</style><button id="other">Other utility</button><main id="root"></main><script type="module">
+import { createUtilityMemory } from '/apps/web/shell/utility-memory.js';
+const root=document.querySelector('#root');let scope='account1:game1',decision='initial';
+const memory=createUtilityMemory({root,getScope:()=>scope});
+const draw=open=>{memory.capture();root.innerHTML=open?`<aside data-flyout="debug"><div class="shell-flyout-scroll"><details data-key="position"><summary>Position</summary><details data-key="raw"><summary>Raw position</summary><p>Preserved disclosure</p></details></details><div class="space"></div><textarea data-debug-note="text" data-decision-id="${decision}">draft</textarea></div></aside>`:'';memory.restore();};
+window.fixture={draw,reset:()=>memory.clear(),scope:value=>scope=value,decision:value=>decision=value};draw(true);window.fixtureReady=true;
+</script></html>

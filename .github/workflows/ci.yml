@@ -64,46 +64,60 @@
               "artifact": "node-3"
             },
             {
-              "suite": "engine-integration",
+              "suite": "computer-unit",
               "project": "",
               "shard": 1,
               "shards": 1,
               "artifact": "node-4"
             },
             {
-              "suite": "api-handler",
+              "suite": "computer-integration",
               "project": "",
               "shard": 1,
               "shards": 1,
               "artifact": "node-5"
             },
             {
-              "suite": "api-worker",
+              "suite": "engine-integration",
               "project": "",
               "shard": 1,
               "shards": 1,
               "artifact": "node-6"
             },
             {
-              "suite": "web-integration",
+              "suite": "api-handler",
               "project": "",
               "shard": 1,
               "shards": 1,
               "artifact": "node-7"
             },
             {
-              "suite": "sync-stress",
+              "suite": "api-worker",
               "project": "",
               "shard": 1,
               "shards": 1,
               "artifact": "node-8"
             },
             {
-              "suite": "sync-runtime",
+              "suite": "web-integration",
               "project": "",
               "shard": 1,
               "shards": 1,
               "artifact": "node-9"
+            },
+            {
+              "suite": "sync-stress",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "node-10"
+            },
+            {
+              "suite": "sync-runtime",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "node-11"
             }
           ]
         }

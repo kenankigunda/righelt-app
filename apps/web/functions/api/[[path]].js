@@ -1,5 +1,6 @@
 import { CACHE_NO_STORE } from "../../generated/packages/shared-types/src/http.js";
 import { buildLocalApiOrigin, isLocalDevHost } from "../../local-dev-ports.js";
+import { localApiFailure } from "../../local-api-diagnostics.js";
 const API_SERVICE_BINDING_ERROR = "server_misconfigured_api_service_binding";
 const LOCAL_API_UNAVAILABLE_ERROR = "local_api_unavailable";
 
@@ -27,9 +28,13 @@ const buildLocalUpstreamRequest = (request) => {
 
 const forwardRequest = async (context) => {
   if (isLocalDevRequest(context.request)) {
+    let stage = 'request';
     try {
-      return await fetch(buildLocalUpstreamRequest(context.request));
-    } catch {
+      const upstream = buildLocalUpstreamRequest(context.request);
+      stage = 'fetch';
+      return await fetch(upstream);
+    } catch (error) {
+      console.error('[local-api-forwarding-failure]', JSON.stringify(localApiFailure(error, context.request, stage)));
       return json({ ok: false, error: LOCAL_API_UNAVAILABLE_ERROR }, 503);
     }
   }

@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "phase": "eight-hour-followup",
+  "seed": 107,
+  "stage": "initial",
+  "budgetSeconds": 28800,
+  "reserveSeconds": 7200,
+  "cleanupSeconds": 300,
+  "workload": "followup-exploratory-8-v1",
+  "pairs": 4,
+  "gameSeconds": 1800,
+  "pairVerificationSeconds": 60,
+  "profileVersion": "learning-comparison-64-greedy-v1",
+  "profile": {"simulations": 64, "temperature": 0, "maxValueGap": 0}
+}

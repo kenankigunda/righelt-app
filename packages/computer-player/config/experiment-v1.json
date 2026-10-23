@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "encodingVersion": "absolute-v1",
+  "boardSize": 10,
+  "inputPlanes": 46,
+  "planes": [
+    "P1.commander",
+    "P1.unit",
+    "P1.supplied",
+    "P1.commanded",
+    "P1.pushed",
+    "P1.shifted",
+    "P1.frozenPresent",
+    "P1.frozenSupplied",
+    "P1.frozenCommanded",
+    "P1.followGroup",
+    "P1.rushed",
+    "P1.rushChain",
+    "P1.pushedPiece",
+    "P2.commander",
+    "P2.unit",
+    "P2.supplied",
+    "P2.commanded",
+    "P2.pushed",
+    "P2.shifted",
+    "P2.frozenPresent",
+    "P2.frozenSupplied",
+    "P2.frozenCommanded",
+    "P2.followGroup",
+    "P2.rushed",
+    "P2.rushChain",
+    "P2.pushedPiece",
+    "followPoint",
+    "supply.P1",
+    "supply.P2",
+    "controller.P1",
+    "controller.P2",
+    "phase.none",
+    "phase.rush",
+    "phase.retreat",
+    "phase.follow",
+    "owner.none",
+    "owner.P1",
+    "owner.P2",
+    "attackerOwner.none",
+    "attackerOwner.P1",
+    "attackerOwner.P2",
+    "frozenOwner.none",
+    "frozenOwner.P1",
+    "frozenOwner.P2",
+    "chainLength",
+    "turnIndex"
+  ],
+  "counterLogBase": 1025,
+  "actionCount": 2801,
+  "passIndex": 2800,
+  "directions": {
+    "orthogonal": [
+      [
+        0,
+        -1
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        -1,
+        0
+      ]
+    ],
+    "rush": [
+      [
+        0,
+        -1
+      ],
+      [
+        1,
+        -1
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        -1,
+        1
+      ],
+      [
+        -1,
+        0
+      ],
+      [
+        -1,
+        -1
+      ]
+    ]
+  },
+  "actionChannels": {
+    "move": 0,
+    "project": 4,
+    "rush": 8,
+    "push": 16,
+    "follow": 20,
+    "retreat": 24
+  },
+  "model": {
+    "channels": 32,
+    "residualBlocks": 4,
+    "valueChannels": 2,
+    "valueHidden": 64
+  },
+  "search": {
+    "cPuct": 1.5,
+    "selfPlaySimulations": 64,
+    "maxNodes": 2048,
+    "tacticalDepth": 4
+  },
+  "training": {
+    "learningRate": 0.001,
+    "weightDecay": 0.0001,
+    "batchSize": 128,
+    "gradientClip": 1,
+    "roundGames": 32,
+    "generationSeconds": 600,
+    "maxMinibatches": 256,
+    "replayCapacity": 100000,
+    "maxDecisions": 512,
+    "repetitionLimit": 3,
+    "curriculum": [
+      0.6,
+      0.25,
+      0.15
+    ],
+    "fallbackCurriculum": [
+      0.2,
+      0.5,
+      0.3
+    ]
+  },
+  "resources": {
+    "minWorkers": 2,
+    "maxWorkers": 8,
+    "minMemoryGiB": 16,
+    "maxMemoryGiB": 32,
+    "artifactGiB": 100,
+    "initialSeconds": 21600,
+    "overnightSeconds": 43200,
+    "sampleSeconds": 15,
+    "quietSeconds": 120,
+    "activityFreshSeconds": 60,
+    "rampSeconds": 60,
+    "externalCpuBusyPercent": 150,
+    "externalCpuQuietPercent": 50,
+    "freeDiskFloorGiB": 20
+  },
+  "coordinateOrder": "col,row"
+}

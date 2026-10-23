@@ -28,6 +28,8 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
     const play = modal.element.querySelector("[data-story-play]");
     if (play) { play.disabled = busy || readiness.state !== "ready"; play.dataset.loadingState = busy ? "pending" : "idle"; play.setAttribute("aria-busy",String(busy)); }
     const status = modal.element.querySelector("[data-story-readiness]");
+    status.dataset.loadingKey = `opponent-preparation:${session}`;
+    status.dataset.loadingContext = 'external';
     status.dataset.loadingMessage = "Preparing your opponent is taking a little longer than usual.";
     status.dataset.loadingState = readiness.state === "preparing" ? "pending" : "idle";
     modal.element.querySelector("[data-story-readiness]").textContent = readiness.message || (readiness.state === "ready" ? "Ready to play" : "Preparing opponent…");
@@ -97,6 +99,7 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
     destroy() { document.removeEventListener("visibilitychange", onVisibility); modal.destroy(); },
     isOpen: () => modal.element.open,
     gameId: () => gameId,
+    opponent: () => mode === "intro" ? opponent : null,
     refresh,
     setMatchStatus(text, finished = false) { if (!modal.element.open || mode !== "revisit") return; modal.element.querySelector("[data-story-readiness]").textContent = text; const result = modal.element.querySelector("[data-story-result]"); if (result) result.hidden = !finished; },
     open(id, options = {}) {

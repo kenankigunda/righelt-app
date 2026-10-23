@@ -130,6 +130,7 @@ test("scenario update only marks the clicked scenario button while the local wri
     await expect(page.getByTestId("game-shell")).toBeVisible();
 
     await page.getByRole("button", { name: "Scenarios" }).click();
+    await page.locator('[data-action="begin-scenario-capture"]').click();
     const updateButton = page.locator('[data-action="update-scenario"]').first();
     const saveButton = page.locator('[data-action="save-scenario"]').first();
     await expect(updateButton).toBeVisible();
@@ -148,7 +149,7 @@ test("scenario update only marks the clicked scenario button while the local wri
 
     await expect(updateButton).toHaveAttribute("data-pending", "true");
     await expect(updateButton).toHaveAttribute("aria-busy", "true");
-    await expect(updateButton).toHaveText("Update to match current board");
+    await expect(updateButton).toHaveText("Replace position with capture");
     await expect(saveButton).not.toHaveAttribute("data-pending", "true");
 
     releaseUpdate?.();

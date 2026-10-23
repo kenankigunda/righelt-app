@@ -1,6 +1,6 @@
 import { REMOVAL_EFFECT_DURATION_MS, REMOVAL_FLASH_COUNT } from "../board/removal-timing.js";
 import { renderPieceSymbol } from '../piece-symbols.js';
-export { createInitialState as createInitialBoardSnapshot } from '../generated/packages/game-engine/src/index.js';
+export { createInitialState as createInitialBoardSnapshot, listLegalActions as listBoardLegalActions } from '../generated/packages/game-engine/src/index.js';
 import { BOARD_SIZE, SUPPLY_POINTS } from "../generated/packages/game-engine/src/deterministic.js";
 import { getRushContinuationBlockingPiece } from "../generated/packages/game-engine/src/continuation.js";
 import {

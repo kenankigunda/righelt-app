@@ -195,10 +195,10 @@ const toSavedSelectionFromAction = (action, actorSide, turnIndex) => {
 };
 
 export const resolveHistoryScenarioExportContext = (game) => {
-  if (!game?.inHistoryMode || !Number.isInteger(game?.historyIndex)) {
+  if (!game?.inHistoryMode) {
     return null;
   }
-  const move = Array.isArray(game?.moves) ? game.moves[game.historyIndex] : null;
+  const move = game.inspectedDecision ?? (Array.isArray(game?.moves) ? game.moves[game.historyIndex] : null);
   if (!move?.selectionSnapshot || !move?.action) {
     return null;
   }

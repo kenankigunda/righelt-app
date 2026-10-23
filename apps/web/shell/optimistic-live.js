@@ -1,3 +1,4 @@
+import { computerProfileFor } from '../generated/packages/shared-types/src/computer-play.js';
 import { destructionRecords, removalNotices } from "../generated/packages/game-engine/src/removals.js";
 export { collectDestroyedPieceRecords } from "../generated/packages/game-engine/src/removals.js";
 import {
@@ -90,9 +91,11 @@ const finalizeProjectedView = ({ authoritativeGame, workingGame, identityId, que
   next.pendingCommandCount = queue.length;
   next.liveCurrentSnapshot = clone(next.board.state);
   next.currentSnapshot = next.inHistoryMode ? authoritativeGame.currentSnapshot : clone(next.board.state);
-  next.canRecordMove = isPlayer && !next.inHistoryMode && controlIdentity === identityId && liveLegalActions.length > 0;
+  if (next.awaitingCreation) { next.sharedMutationsBlocked = true; }
+  next.computerTurn = computerProfileFor(next.computer, getSideForSeat(controlSeat), activeTurn?.index ?? next.board.state.turnIndex ?? 0);
+  next.canRecordMove = !next.awaitingCreation && !next.computerTurn && isPlayer && !next.inHistoryMode && controlIdentity === identityId && liveLegalActions.length > 0;
   next.canEndTurn =
-    isPlayer &&
+    !next.computerTurn && isPlayer &&
     !next.inHistoryMode &&
     controlSeat === turnOwnerSeat &&
     turnOwnerIdentity === identityId &&
