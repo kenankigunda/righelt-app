@@ -195,3 +195,48 @@ test('undo reacquires control after an obsolete in-flight renewal settles', asyn
   assert.equal(f.game().computer.paused, false);
   f.session.destroy();
 });
+
+for (const action of ['pause', 'resume', 'switch']) test(`automatic renewal waits for ${action} acknowledgement`, async () => {
+  const f = fixture();
+  f.game().computer.seats = { p1: null, p2: 'babs' };
+  f.game().computer.paused = action === 'resume';
+  await f.session.tick();
+  let server = structuredClone(f.game().computer), acknowledge, started;
+  const held = new Promise(resolve => { acknowledge = resolve; });
+  const sent = new Promise(resolve => { started = resolve; });
+  const requests = [], failures = [];
+  f.transport.computerControl = async (_, request) => {
+    requests.push({ action: request.action, generation: request.generation });
+    try {
+      server = changeComputerControl(server, { ...request, ownerId: 'owner', authContextId: 'session', now: 6100, turnIndex: 0 });
+      if (request.action === action) { started(); await held; }
+      Object.assign(f.game().computer, structuredClone(server));
+    } catch (error) { failures.push(error.message); throw error; }
+  };
+  const command = f.session.action(action); await sent;
+  f.setTime(6100);
+  const tick = f.session.tick();
+  await Promise.resolve(); await Promise.resolve();
+  const beforeAcknowledgement = [...requests];
+  acknowledge(); await command; await tick;
+  assert.deepEqual(beforeAcknowledgement, [{ action, generation: 1 }]);
+  assert.deepEqual(failures, []);
+  await f.session.tick(); await Promise.resolve();
+  assert.equal(requests.at(-1).action, 'renew');
+  assert.equal(requests.at(-1).generation, 2);
+  f.session.destroy();
+});
+
+test('a rejected control releases the automatic-work guard without replaying it', async () => {
+  const f = fixture(); f.game().computer.paused = true; await f.session.tick();
+  const original = f.transport.computerControl, requests = [];
+  f.transport.computerControl = async (id, request) => {
+    requests.push(request.action);
+    if (request.action === 'pause') throw Error('control-request-failed');
+    return original(id, request);
+  };
+  await assert.rejects(f.session.action('pause'), /control-request-failed/);
+  f.setTime(6100); await f.session.tick(); await Promise.resolve();
+  assert.deepEqual(requests, ['pause', 'renew']);
+  f.session.destroy();
+});

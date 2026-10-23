@@ -3,7 +3,7 @@ import { deterministicStateHash } from '../generated/packages/game-engine/src/ha
 import { ComputerRuntime } from './computer-runtime.js';
 
 export function createComputerSession({ getContext, onChange = () => {}, runtime = new ComputerRuntime(), analysisRuntime = new ComputerRuntime(), clock = () => Date.now(), timers = globalThis, deviceId = crypto.randomUUID() }) {
-  let status = { phase: 'idle' }, epoch = 0, active = null, busy = false, leaseWork = null, leaseWorkAction = null, renewedAt = 0, recovery = null, pendingSubmission = null;
+  let status = { phase: 'idle' }, epoch = 0, active = null, busy = false, leaseWork = null, leaseWorkAction = null, controlWork = 0, renewedAt = 0, recovery = null, pendingSubmission = null;
   let analysis = null, analysisContext = null, analysisEpoch = 0, lastPositionRevision = null;
   const repetitions = new Map();
   const publish = (next) => { status = { ...status, ...next }; onChange(); };
@@ -20,7 +20,12 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     void pending.then(clear, clear);
     return pending;
   };
-  const fence = async (action) => {
+  const withControlWork = async work => {
+    controlWork++;
+    try { return await work(); }
+    finally { controlWork--; }
+  };
+  const fence = action => withControlWork(async () => {
     cancelWork(action);
     let context = current();
     if (!context.game?.computer) return;
@@ -42,7 +47,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     catch (error) { await context.transport.loadGame(gameId).catch(() => {}); publish({ phase: 'recovery', message: error.message }); throw error; }
     recovery = null; lastPositionRevision = null; repetitions.clear();
     publish({ phase: action === 'pause' ? 'paused' : 'idle', message: null });
-  };
+  });
   async function tick() {
     const context = current(), game = context.game;
     if (analysis && (analysis.gameId !== game?.id || analysisContext?.accountGeneration !== context.accountGeneration || analysisContext?.transport !== context.transport || !context.authenticated)) {
@@ -59,6 +64,9 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     }
     if (active && context.key !== active.key) cancelWork('position-or-control-changed');
     active = context;
+    // A control can advance the server generation before its response is applied.
+    // Do not renew or start computation with the previous client generation.
+    if (controlWork) return;
     if (analysis?.phase === 'computing' && clock() - analysis.startedAt >= COMPUTER_TIMING.detailAfterMs) onChange();
     if (busy && status.startedAt && clock() - status.startedAt >= COMPUTER_TIMING.detailAfterMs) onChange();
     if (!ownLease(game)) {
@@ -157,7 +165,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       const scopedAnalysis = context.authenticated && analysis?.gameId === context.game?.id && analysisContext?.accountGeneration === context.accountGeneration && analysisContext?.transport === context.transport ? analysis : null;
       return { ...status, elapsedMs: status.startedAt ? clock() - status.startedAt : 0, detailed: Boolean(status.startedAt && clock() - status.startedAt >= COMPUTER_TIMING.detailAfterMs), analysis: scopedAnalysis, deviceId };
     },
-    action: async action => { if (action === 'switch') { cancelWork('switch'); const context = current(); await control(context, 'switch'); } else await fence(action === 'retry' ? 'resume' : action); },
+    action: async action => { if (action === 'switch') await withControlWork(async () => { cancelWork('switch'); const context = current(); await control(context, 'switch'); }); else await fence(action === 'retry' ? 'resume' : action); },
     suspend: () => { const previous = active; cancelWork('session-changed'); cancelAnalysis(); analysis = null; analysisContext = null; active = null; recovery = null; status = { phase: 'idle' }; if (previous && ownLease(previous.game)) void control(previous, 'release').catch(() => {}); onChange(); },
     destroy: () => { timers.clearInterval(timer); cancelWork('destroyed'); cancelAnalysis(); active = null; },
   };

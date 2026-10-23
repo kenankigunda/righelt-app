@@ -28,7 +28,7 @@ test('ordinary computer play records real worker evidence, preserves private not
   });
   await registerComputerTester(page);
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
-  const create = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST');
+  const create = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST' && response.request().postDataJSON()?.computer?.p2 === 'babs');
   await page.getByRole('button', { name: 'Play Babs', exact: true }).click();
   const createResponse = await create;
   expect(createResponse.status(), `Computer game creation failed (request ${createResponse.headers()['x-righelt-request-id'] || 'unavailable'})`).toBe(200);
@@ -127,11 +127,12 @@ test('ordinary computer play records real worker evidence, preserves private not
 test('ordinary computer undo restores the human turn and resumes computer control', async ({ page }, info) => {
   await registerComputerTester(page);
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
-  const creation = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST');
+  const creation = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST' && response.request().postDataJSON()?.computer?.p2 === 'babs');
   await page.getByRole('button', { name: 'Play Babs', exact: true }).click();
   const response = await creation;
   expect(response.ok()).toBe(true);
   const initial = (await response.json()).game;
+  expect(initial.computer.seats).toEqual({ p1: null, p2: 'babs' });
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
   await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase', 'idle');
   await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
@@ -174,7 +175,7 @@ test(`${profile} prepares and plays as Player 2 with the production model`, asyn
   // Preparation is an operation within the test budget, not a ten-second text transition.
   await story.locator('[data-story-play]').click({ trial: true });
   await expect(story.locator('[data-story-readiness]')).toContainText('Ready to play');
-  const create = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST');
+  const create = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST' && response.request().postDataJSON()?.computer?.p2 === profile);
   await story.locator('[data-story-play]').click();
   const createResponse = await create;
   expect(createResponse.status(), `Computer game creation failed (request ${createResponse.headers()['x-righelt-request-id'] || 'unavailable'})`).toBe(200);
