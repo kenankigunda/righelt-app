@@ -146,9 +146,9 @@ test("revert actions bypass the blocking busy wrapper and use optimistic sync-st
   assert.match(source, /if \(action === "accept-revert-request"\) \{[\s\S]*transport\.approveRevertRequest\(\{ gameId, requestId \}\);/s);
   assert.match(source, /if \(action === "reject-revert-request"\) \{[\s\S]*transport\.rejectRevertRequest\(\{ gameId, requestId \}\);/s);
   assert.match(source, /if \(action === "rescind-revert-request"\) \{[\s\S]*transport\.rescindRevertRequest\(\{ gameId, requestId \}\);/s);
-  assert.match(source, /if \(action === "revert-to-move" \|\| action === "undo-last-move"\) \{[\s\S]*transport\.requestRevertToMove\(\{ gameId, targetMoveId \}\);/s);
+  assert.match(source, /if \(action === "revert-to-move" \|\| action === "undo-last-move"\) \{[\s\S]*undoTransport\.requestRevertToMove\(\{ gameId, targetMoveId \}\);/s);
   assert.doesNotMatch(source, /if \(action === "accept-revert-request"\) \{[\s\S]*await transport\.approveRevertRequest/s);
-  assert.doesNotMatch(source, /if \(action === "revert-to-move" \|\| action === "undo-last-move"\) \{[\s\S]*await transport\.requestRevertToMove/s);
+  assert.doesNotMatch(source, /if \(action === "revert-to-move" \|\| action === "undo-last-move"\) \{[\s\S]*await undoTransport\.requestRevertToMove/s);
 });
 
 test("join, approval, and pending invite copy use localized button pending instead of the global busy gate", () => {
