@@ -160,6 +160,11 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   const timer = timers.setInterval(() => { void tick().catch(error => publish({ phase: 'recovery', message: error.message })); }, 1000);
   return {
     tick, analyze, cancelAnalysis,
+    withMutation: work => withControlWork(async () => {
+      cancelWork('history-mutation');
+      if (leaseWork) await leaseWork;
+      return work();
+    }),
     snapshot: () => {
       const context = current();
       const scopedAnalysis = context.authenticated && analysis?.gameId === context.game?.id && analysisContext?.accountGeneration === context.accountGeneration && analysisContext?.transport === context.transport ? analysis : null;

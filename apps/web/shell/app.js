@@ -4860,23 +4860,31 @@ appEl.addEventListener("click", async (event) => {
     const undoTransport = transport, undoAccountGeneration = account.snapshot().generation;
     const undoScopeIsCurrent = () => transport === undoTransport && account.snapshot().generation === undoAccountGeneration && getCurrentViewedGameId() === gameId;
     const game = transport.getGameViewModel(gameId);
-    let targetMoveId = moveId;
-    if (game?.computer && game.canControlComputer) {
-      await computerSession.action('pause');
-      if (!undoScopeIsCurrent()) return;
-      if (action === 'undo-last-move' && !game.computer.manual) {
-        const entries = [];
-        let cursor = null;
-        do { const page = await transport.decisionHistory(gameId, cursor); entries.push(...page.items); cursor = page.nextCursor; } while (cursor);
-        const human = activeDecisionLineage(entries).filter(move => !move.computerProof).at(-1);
-        if (!human) return;
-        targetMoveId = human.moveId;
+    const computerUndo = Boolean(game?.computer && game.canControlComputer);
+    const revert = async () => {
+      if (!undoScopeIsCurrent()) return false;
+      let targetMoveId = moveId;
+      if (computerUndo) {
+        await computerSession.action('pause');
+        if (!undoScopeIsCurrent()) return false;
+        if (action === 'undo-last-move' && !game.computer.manual) {
+          const entries = [];
+          let cursor = null;
+          do { const page = await undoTransport.decisionHistory(gameId, cursor); entries.push(...page.items); cursor = page.nextCursor; } while (cursor);
+          const human = activeDecisionLineage(entries).filter(move => !move.computerProof).at(-1);
+          if (!human) return false;
+          targetMoveId = human.moveId;
+        }
       }
-    }
-    if (!undoScopeIsCurrent()) return;
-    const handle = transport.requestRevertToMove({ gameId, targetMoveId });
-    if (game?.computer && game.canControlComputer) {
-      await handle.committed;
+      if (!undoScopeIsCurrent()) return false;
+      const handle = undoTransport.requestRevertToMove({ gameId, targetMoveId });
+      if (computerUndo) await handle.committed;
+      return true;
+    };
+    // Keep automatic control work fenced until the undo response is applied;
+    // the server drops its lease before that acknowledgement reaches us.
+    const reverted = computerUndo ? await computerSession.withMutation(revert) : await revert();
+    if (computerUndo && reverted) {
       if (!undoScopeIsCurrent()) return;
       await computerSession.tick();
       if (!undoScopeIsCurrent()) return;

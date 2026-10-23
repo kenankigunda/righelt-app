@@ -240,3 +240,28 @@ test('a rejected control releases the automatic-work guard without replaying it'
   assert.deepEqual(requests, ['pause', 'renew']);
   f.session.destroy();
 });
+
+for (const rejected of [false, true]) test(`history mutation fences automatic renewal until settlement (rejected=${rejected})`, async () => {
+  const f = fixture();
+  f.game().computer.seats = { p1: null, p2: 'babs' };
+  await f.session.tick(); await f.session.action('pause');
+  const original = f.transport.computerControl, requests = [];
+  f.transport.computerControl = async (id, request) => { requests.push(request.action); return original(id, request); };
+  let settle, started;
+  const held = new Promise(resolve => { settle = resolve; });
+  const sent = new Promise(resolve => { started = resolve; });
+  const mutation = f.session.withMutation(async () => {
+    started(); await held;
+    if (rejected) throw Error('undo-rejected');
+    f.game().computer.generation++; f.game().computer.lease = null;
+  });
+  const outcome = mutation.catch(error => error.message);
+  await sent; f.setTime(6100); await f.session.tick();
+  const beforeAcknowledgement = [...requests];
+  settle(); const result = await outcome;
+  assert.deepEqual(beforeAcknowledgement, []);
+  assert.equal(result, rejected ? 'undo-rejected' : undefined);
+  await f.session.tick(); await Promise.resolve();
+  assert.deepEqual(requests, [rejected ? 'renew' : 'acquire']);
+  f.session.destroy();
+});

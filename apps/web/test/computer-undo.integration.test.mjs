@@ -10,7 +10,7 @@ assert.ok(start > 0 && end > start);
 const undo = new vm.Script(`(async () => {${source.slice(start, end)}})()`);
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 
-for (const boundary of ['pause', 'committed', 'acquire']) {
+for (const boundary of ['mutation', 'pause', 'committed', 'acquire']) {
   test(`undo never continues in a different game or account after ${boundary}`, async () => {
     for (const change of ['game', 'account', 'transport', 'none']) {
       const held = deferred(), reached = deferred(), calls = [];
@@ -21,7 +21,7 @@ for (const boundary of ['pause', 'committed', 'acquire']) {
         action: 'undo-last-move', actionEl: { getAttribute: name => name === 'data-game-id' ? 'original' : 'move' },
         transport, account: { snapshot: () => ({ generation: context.generation }) }, generation: 1,
         viewedGame: 'original', getCurrentViewedGameId: () => context.viewedGame,
-        computerSession: { action: async action => { calls.push(action); await wait(action); }, tick: async () => { calls.push('tick'); await wait('acquire'); } },
+        computerSession: { withMutation: async work => { await wait('mutation'); return work(); }, action: async action => { calls.push(action); await wait(action); }, tick: async () => { calls.push('tick'); await wait('acquire'); } },
       });
       const result = undo.runInContext(context);
       await reached.promise;
@@ -31,6 +31,7 @@ for (const boundary of ['pause', 'committed', 'acquire']) {
       held.resolve(); await result;
       assert.equal(calls.includes('resume'), change === 'none');
       if (change === 'none') assert.deepEqual(calls, ['pause', 'revert', 'tick', 'resume']);
+      else if (boundary === 'mutation') assert.deepEqual(calls, []);
       else if (boundary === 'pause') assert.deepEqual(calls, ['pause']);
       else if (boundary === 'committed') assert.deepEqual(calls, ['pause', 'revert']);
       else assert.deepEqual(calls, ['pause', 'revert', 'tick']);
