@@ -20,7 +20,7 @@ test('cancellation waits for an in-flight diagnostic installation and restores b
   const order = [];
   events.exit = code => { order.push(`exit:${code}`); stopped(); };
   const run = new Function('dependencies', `
-    const { process, path, os, mkdtemp, installProxyDiagnostics, createE2ePersistRoot } = dependencies;
+    const { process, path, os, mkdtemp, installProxyConnectionIsolation, createE2ePersistRoot } = dependencies;
     let shuttingDown = false, privateLogs, proxyDiagnosticsInstallation, controlServer, diagnosticsFailed = false, tempRoot = '';
     const managedChildren = new Set(), serviceReceipts = [];
     const stopChild = () => { throw Error('No service should have launched'); };
@@ -33,7 +33,7 @@ test('cancellation waits for an in-flight diagnostic installation and restores b
       assert.equal(events.listenerCount('SIGINT'), 1);
       return '/private/test-only';
     },
-    installProxyDiagnostics: () => { installed(); return installation; },
+    installProxyConnectionIsolation: () => { installed(); return installation; },
     createE2ePersistRoot: () => { throw Error('Startup continued after cancellation'); },
   });
   const pendingRun = run();
@@ -73,6 +73,7 @@ test(`general service exit preserves the observed guardian stop state: ${guardia
       shutdown: code => { shutdownCode = code; },
     });
     run.spawnLogged('pages', 'pnpm', [], { cwd: root });
+    assert.equal(launchOptions.env.RIGHELT_AUTH_FRESH_CONNECTIONS, '1');
     assert.equal(launchOptions.env.WRANGLER_LOG_PATH, path.join(privateLogs, 'web-1'));
     await mkdir(launchOptions.env.WRANGLER_LOG_PATH, { recursive: true });
     await writeFile(path.join(launchOptions.env.WRANGLER_LOG_PATH, 'wrangler-2026-10-12_09-01-40_000.log'),

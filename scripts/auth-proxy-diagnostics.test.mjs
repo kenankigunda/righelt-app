@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
-import { classifyProxyRejection, prepareProxySource, prepareProxyDiagnosticSource, prepareRuntimeSource, installProxyRepair, installProxyDiagnostics } from "./auth-proxy-diagnostics.mjs";
+import { classifyProxyRejection, prepareProxySource, prepareProxyDiagnosticSource, prepareRuntimeSource, installProxyRepair, installProxyDiagnostics, installProxyConnectionIsolation, prepareConnectionRuntimeSource } from "./auth-proxy-diagnostics.mjs";
 
 const packageFile = createRequire(import.meta.url).resolve("wrangler/package.json");
 const source = await readFile(path.join(path.dirname(packageFile), "wrangler-dist/ProxyWorker.js"), "utf8");
@@ -102,4 +102,26 @@ test('guest ownership proxy classification redacts identity and query values', (
   assert.equal(detail.message, 'network_connection_lost');
   assert.equal(detail.oldOrigin, detail.newOrigin);
   assert.equal(JSON.stringify(detail).includes('private-'), false);
+});
+
+test('general connection isolation preserves proxy failure policy and restores both files', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'general-proxy-connections-test-'));
+  try {
+    await mkdir(path.join(directory, 'wrangler-dist'));
+    const metadata = path.join(directory, 'package.json');
+    const file = path.join(directory, 'wrangler-dist/ProxyWorker.js');
+    const runtimeFile = path.join(directory, 'wrangler-dist/cli.js');
+    await writeFile(metadata, JSON.stringify({version: '4.67.0'}));
+    await writeFile(file, source); await writeFile(runtimeFile, runtime);
+    const restore = await installProxyConnectionIsolation(metadata);
+    assert.equal(await readFile(file, 'utf8'), prepareProxyDiagnosticSource(source, '4.67.0'));
+    const patched = await readFile(runtimeFile, 'utf8');
+    assert.equal(patched, prepareConnectionRuntimeSource(runtime, '4.67.0'));
+    assert.equal(patched.split('.workerConnectionOrigin(this,').length, 3);
+    assert.equal(patched.split('.closeWorkerConnections(this)').length, 3);
+    assert.equal(patched.includes('righelt-request-failure'), runtime.includes('righelt-request-failure'));
+    await restore();
+    assert.equal(await readFile(file, 'utf8'), source);
+    assert.equal(await readFile(runtimeFile, 'utf8'), runtime);
+  } finally { await rm(directory, {recursive: true, force: true}); }
 });

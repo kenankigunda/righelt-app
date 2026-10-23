@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import { once } from "node:events";
-import { prepareProxySource } from "./auth-proxy-diagnostics.mjs";
+import { prepareProxySource, prepareProxyDiagnosticSource } from "./auth-proxy-diagnostics.mjs";
 import { createWorkerConnectionOrigin } from "./auth-worker-connections.mjs";
 
 const packageFile = createRequire(import.meta.url).resolve("wrangler/package.json");
@@ -15,7 +15,7 @@ async function closeAll(...closers) {
   const errors = results.filter(result => result.status === "rejected").map(result => result.reason);
   if (errors.length) throw new AggregateError(errors, "Runtime fixture cleanup failed");
 }
-async function proxyFor(target) {
+async function proxyFor(target, proxySource = source) {
   let adapter, proxy;
   const close = () => closeAll(() => proxy?.dispose(), () => adapter?.close());
   const errors = [];
@@ -24,7 +24,7 @@ async function proxyFor(target) {
   try {
     adapter = await createWorkerConnectionOrigin(target);
     proxy = new Miniflare({
-      modules: [{ type: "ESModule", path: "proxy.js", contents: source }],
+      modules: [{ type: "ESModule", path: "proxy.js", contents: proxySource }],
       compatibilityDate: "2023-12-18", compatibilityFlags: ["nodejs_compat"],
       durableObjects: { DURABLE_OBJECT: { className: "ProxyWorker", unsafePreventEviction: true } },
       unsafeEphemeralDurableObjects: true, stripCfConnectingIp: false, cache: false,
@@ -99,4 +99,19 @@ test("actual pinned ProxyWorker and Worker keep the WebSocket tunnel usable", { 
   } finally {
     await closeAll(() => { if (socket?.readyState === 1) socket.close(1000); }, () => fixture?.close(), () => worker.dispose());
   }
+});
+
+test('general diagnostic proxy keeps a disconnected mutation failed without replay', {timeout: 15000}, async () => {
+  let mutations = 0;
+  const backend = await backendFor(req => { req.resume(); req.on('end', () => { mutations++; req.socket.destroy(); }); });
+  let fixture;
+  try {
+    const original = await readFile(new URL('./wrangler-dist/ProxyWorker.js', `file://${packageFile}`), 'utf8');
+    fixture = await proxyFor(backend.url, prepareProxyDiagnosticSource(original, '4.67.0'));
+    const response = await fixture.proxy.dispatchFetch('http://fixture/api/shell/games', {method: 'POST', body: 'commit-once'});
+    assert.equal(response.status, 503);
+    assert.match(await response.text(), /Only GET or HEAD requests are retried automatically/);
+    assert.equal(mutations, 1);
+    assert.deepEqual(fixture.errors, []);
+  } finally { await closeAll(() => fixture?.close(), () => backend.close()); }
 });

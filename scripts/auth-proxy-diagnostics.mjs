@@ -105,17 +105,21 @@ export function prepareProxySource(source, version) {
           void sendMessageToProxyController(this.env, {`);
 }
 
-export function prepareRuntimeSource(source, version) {
+export function prepareConnectionRuntimeSource(source, version) {
   const ready = "const userWorkerUrl = await this.#mf.ready;";
   const dispose = "await this.#mf?.dispose();";
   if (version !== VERSION || hash(source) !== RUNTIME_HASH
     || source.split(ready).length !== 3 || source.split(dispose).length !== 3)
     throw new Error("Account worker connections require the exact reviewed Wrangler 4.67.0 runtime");
   const helper = `await import(${JSON.stringify(new URL("./auth-worker-connections.mjs", import.meta.url).href)})`;
-  const receipts = `await import(${JSON.stringify(new URL("./auth-proxy-failures.mjs", import.meta.url).href)})`;
   return source.replaceAll(ready,
     `const userWorkerUrl = await (${helper}).workerConnectionOrigin(this, await this.#mf.ready, () => id === this.#currentBundleId);`)
-    .replaceAll(dispose, `await (${helper}).closeWorkerConnections(this);\n        ${dispose}`)
+    .replaceAll(dispose, `await (${helper}).closeWorkerConnections(this);\n        ${dispose}`);
+}
+
+export function prepareRuntimeSource(source, version) {
+  const receipts = `await import(${JSON.stringify(new URL("./auth-proxy-failures.mjs", import.meta.url).href)})`;
+  return prepareConnectionRuntimeSource(source, version)
     .replace('                  this.onProxyWorkerMessage(message);', `                  if (message.type === "righelt-request-failure") {
                     try {
                       const receipt = await (${receipts}).recordProxyFailure(message);
@@ -137,6 +141,12 @@ export async function installProxyRepair(packageFile = createRequire(import.meta
 // identities before choosing a repair for a failure whose cause is still unknown.
 export async function installProxyDiagnostics(packageFile = createRequire(import.meta.url).resolve("wrangler/package.json")) {
   return installProxyFiles(packageFile, [["ProxyWorker.js", prepareProxyDiagnosticSource]]);
+}
+
+// General E2E isolates connection lifetime while retaining its original proxy
+// failure policy. This never replays a request or turns a failed mutation green.
+export async function installProxyConnectionIsolation(packageFile = createRequire(import.meta.url).resolve("wrangler/package.json")) {
+  return installProxyFiles(packageFile, [["ProxyWorker.js", prepareProxyDiagnosticSource], ["cli.js", prepareConnectionRuntimeSource]]);
 }
 
 async function installProxyFiles(packageFile, transforms) {

@@ -1,5 +1,5 @@
 import { isStackStopping, recordUnexpectedExit } from './testing/stack-status.mjs';
-import { installProxyDiagnostics } from './auth-proxy-diagnostics.mjs';
+import { installProxyConnectionIsolation } from './auth-proxy-diagnostics.mjs';
 import { observeAuthService } from './auth-stack-diagnostics.mjs';
 import {storageFixtureConfig} from "./storage-fixture-config.mjs";
 import { cliPath, supervise } from './resources/supervisor.mjs';
@@ -80,7 +80,7 @@ const spawnLogged = (label, command, args, options) => {
   const logDirectory = path.join(privateLogs, instance);
   const child = spawn(process.execPath, [cliPath, "run", "--kind", "preview", "--", command, ...args], {
     ...options,
-    env: { ...process.env, ...options?.env, WRANGLER_LOG_PATH: logDirectory },
+    env: { ...process.env, ...options?.env, WRANGLER_LOG_PATH: logDirectory, RIGHELT_AUTH_FRESH_CONNECTIONS: "1" },
     // Playwright signals the stack's process group at teardown. Keep service
     // supervisors outside it so the stack records shutdown before stopping them.
     detached: process.platform !== "win32",
@@ -155,7 +155,7 @@ const run = async () => {
   // outside uploaded artifacts, and publish only the sanitized exit summaries.
   privateLogs = await mkdtemp(path.join(os.tmpdir(), 'righelt-e2e-service-logs-'));
   if (shuttingDown) return;
-  proxyDiagnosticsInstallation = installProxyDiagnostics();
+  proxyDiagnosticsInstallation = installProxyConnectionIsolation();
   await proxyDiagnosticsInstallation;
   if (shuttingDown) return;
   const persistRoot = await createE2ePersistRoot();
