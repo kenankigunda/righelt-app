@@ -9,17 +9,18 @@ test('legacy identity comes from retained storage and ambiguous or absent identi
   const ambiguous = structuredClone(legacy); ambiguous.storage.origins[0].localStorage.push({ name: LEGACY_IDENTITY_KEY, value: 'another-owner' });
   assert.throws(() => legacyMutationContract(ambiguous), /one original/);
 });
-function fixture({ mutate = false, wrongDenial = false } = {}) {
+function fixture({ mutate = false, wrongDenial = false, generation = null } = {}) {
   let posts = 0, closed = false;
   const original = { eventSeq: 7, game: { ...structuredClone(persistedGame), ownershipMode: 'legacy_guest', player1: { identityId: 'old-owner' }, player2: null } };
   const browser = { async newContext(options) {
     assert.deepEqual(options.storageState, { cookies: [], origins: [] });
     return { cookies: async () => [], close: async () => { closed = true; }, request: {
-      get: async url => { assert.match(url, /identityId=old-owner/); return { status: () => 200, json: async () => ({ ...original, eventSeq: mutate && posts ? 8 : 7 }) }; },
+      get: async url => { assert.match(url, /identityId=old-owner/); return { status: () => 200, headers: () => generation ? {'x-righelt-storage-generation': generation} : {}, json: async () => ({ ...original, eventSeq: mutate && posts ? 8 : 7 }) }; },
       post: async (url, options) => {
         posts++; assert.equal(url, '/api/shell/games/old%20game/join');
         assert.equal(options.data.identityId, 'old-owner'); assert.equal(options.data.protocolVersion, 2);
         assert.equal(options.headers.Origin, 'https://127.0.0.1:9988');
+        assert.equal(options.headers['X-Righelt-Storage-Generation'] ?? null, generation);
         assert.equal(options.headers.Cookie, undefined); assert.equal(options.headers['X-Righelt-Session'], undefined);
         return { status: () => wrongDenial ? 400 : posts === 1 ? 426 : 401, json: async () => ({ error: posts === 1 ? 'upgrade_required' : 'invalid_credentials' }) };
       },
@@ -44,4 +45,11 @@ test('same-length legacy history corruption across upgrade fails before mutation
  const f=fixture(),prior=structuredClone(legacy);prior.history.moves[0].action.type='DIFFERENT';
  await assert.rejects(proveLegacyMutationDenied({browser:f.browser,legacy:prior}),/changed across upgrade/);
  assert.equal(f.closed,true);
+});
+
+test('legacy denial reaches the authority gate with the public generation and no account credentials', async () => {
+  const f = fixture({ generation: 'reset-current' });
+  const result = await proveLegacyMutationDenied({ browser: f.browser, legacy });
+  assert.deepEqual(result.denied, ['upgrade_required', 'invalid_credentials']);
+  assert.equal(f.closed, true);
 });

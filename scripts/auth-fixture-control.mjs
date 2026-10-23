@@ -21,7 +21,7 @@ export function createAuthFixtureControl(execute, { sleep = delay } = {}) {
     busy = true;
     try {
       for (let attempt = 0; ; attempt++) {
-        try { await execute(sql); break; }
+        try { await execute(sql, request.url); break; }
         catch (error) {
           // Inspect captured subprocess diagnostics, never generic HTTP failures.
           if (!retryableOperations.has(request.url) || attempt >= 3 ||

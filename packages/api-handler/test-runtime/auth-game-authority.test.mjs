@@ -76,17 +76,19 @@ export default {
             return {
               bind(...args) {
                 const bound = statement.bind(...args);
+                const readThenRevoke = async method => {
+                  const result = await bound[method]();
+                  await original
+                    .prepare("UPDATE account_sessions SET revoked_at=1 WHERE token_hash=?")
+                    .bind(request.headers.get("x-test-revoke-after-read"))
+                    .run();
+                  return result;
+                };
+                // Ownership can be read singly or as a bounded card batch.
+                // Both must revoke after the read and before protected output.
                 return {
-                  async first() {
-                    const result = await bound.first();
-                    await original
-                      .prepare(
-                        "UPDATE account_sessions SET revoked_at=1 WHERE token_hash=?",
-                      )
-                      .bind(request.headers.get("x-test-revoke-after-read"))
-                      .run();
-                    return result;
-                  },
+                  first: () => readThenRevoke("first"),
+                  all: () => readThenRevoke("all"),
                 };
               },
             };
