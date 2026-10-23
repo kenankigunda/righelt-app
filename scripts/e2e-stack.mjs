@@ -200,6 +200,10 @@ const run = async () => {
   if(storageProfile)await runBlocking("local archive budget","pnpm",["--dir","apps/api","exec","wrangler","d1","execute","DB","--config",apiConfig,"--local","--persist-to",apiPersistPath,"--command","UPDATE storage_budget SET healthy=1,observed_at=datetime('now') WHERE singleton=1"],{cwd:repoRoot});
   };
   await migrate();
+  if (shuttingDown) return;
+  // A clean checkout has no generated computer runtime. Build it before Pages
+  // starts so guest journeys exercise the same assets as deployment.
+  await runBlocking("computer runtime", process.execPath, ["scripts/build-computer-player.mjs"], { cwd: repoRoot });
 
   const startApi = () => spawnLogged(
     "api",

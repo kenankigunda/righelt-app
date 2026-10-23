@@ -122,3 +122,11 @@ test('shutdown restores diagnostic source before waiting for service cleanup', a
   finally { release(); await pending; }
   assert.deepEqual(order, ['restored', 'exit:0']);
 });
+
+for (const stopping of [false, true]) test(`runtime preparation respects migration cancellation: ${stopping}`, async () => {
+  const boundary = source.slice(source.indexOf('  await migrate();'), source.indexOf('  const startApi ='));
+  const calls = [];
+  const run = new Function('migrate', 'runBlocking', 'process', 'repoRoot', 'shuttingDown', `return async () => {${boundary}}`);
+  await run(async () => calls.push('migrated'), async (label, command, args) => calls.push([label, command, args]), { execPath: 'node22' }, '/candidate', stopping)();
+  assert.deepEqual(calls, stopping ? ['migrated'] : ['migrated', ['computer runtime', 'node22', ['scripts/build-computer-player.mjs']]]);
+});
