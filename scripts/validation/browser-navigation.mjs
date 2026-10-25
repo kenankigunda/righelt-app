@@ -41,7 +41,11 @@ export async function revealAccountControl(page,control=page.getByRole('button',
   // An opacity-zero menu can still have geometric visibility. Role queries
   // honor aria-hidden and prove the entry is actually exposed to the user.
   const accessible=page.getByRole('button',{name:'Account',exact:true});
-  if(!await accessible.isVisible())await page.getByRole('button',{name:'Open navigation menu',exact:true}).click();
+  const menu=page.getByRole('button',{name:'Open navigation menu',exact:true});
+  // A cold document can expose neither entry yet. Choose from the mounted
+  // accessible toolbar, rather than guessing its layout before it exists.
+  await expect.poll(async()=>await accessible.isVisible() || await menu.isVisible(),{message:'Account or Open navigation menu must be visible before account entry'}).toBe(true);
+  if(!await accessible.isVisible())await menu.click();
   await expect(accessible).toBeVisible();
   await expect(control).toBeVisible();
   await expect(control).toBeEnabled();
