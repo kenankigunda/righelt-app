@@ -46,3 +46,18 @@ test('accepted undo of an archived decision uses authoritative restoration ident
  assert.equal(intent.observeUndo('g',{gameplayRevision:6,moves:[],lastRestoration:{decisionId:'different'}},'a'),false);
  assert.equal(intent.observeUndo('g',{gameplayRevision:6,moves:[],lastRestoration:{decisionId:'archived'}},'a'),true);
 });
+
+test('cancellation belongs to its undo token while explicit navigation can clear the current intent', () => {
+  const intent=createViewingIntent();
+  const stale=intent.beginUndo('g',{targetMoveId:'old',revision:1,scope:'old-account'});
+  const current=intent.beginUndo('g',{targetMoveId:'new',revision:2,scope:'new-account'});
+  intent.cancelUndo('g',stale);
+  intent.commitUndo('g',current);
+  assert.equal(intent.observeUndo('g',{gameplayRevision:3,moves:[{moveId:'new',undone:true}]},'new-account'),true);
+  const canceled=intent.beginUndo('g',{targetMoveId:'later',revision:3,scope:'new-account'});
+  intent.cancelUndo('g',canceled);intent.commitUndo('g',canceled);
+  assert.equal(intent.observeUndo('g',{gameplayRevision:4,moves:[{moveId:'later',undone:true}]},'new-account'),false);
+  const navigated=intent.beginUndo('g',{targetMoveId:'last',revision:4,scope:'new-account'});
+  intent.cancelUndo('g');intent.commitUndo('g',navigated);
+  assert.equal(intent.observeUndo('g',{gameplayRevision:5,moves:[{moveId:'last',undone:true}]},'new-account'),false);
+});

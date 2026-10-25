@@ -29,7 +29,7 @@ export function createViewingIntent() {
       if (!token.committed || pending || !(game?.gameplayRevision > token.revision) || !(target?.undone || game?.lastRestoration?.decisionId === token.targetMoveId)) return false;
       undos.delete(id); return true;
     },
-    cancelUndo(id) { undos.delete(id); },
+    cancelUndo(id, token) { if (token === undefined || undos.get(id) === token) undos.delete(id); },
     saveScroll(id, panel, top) { scroll.set(`${id}:${panel}`, Math.max(0, top)); },
     scrollTop(id, panel) { return scroll.get(`${id}:${panel}`) ?? 0; },
     clear() { generations.clear(); undos.clear(); scroll.clear(); },

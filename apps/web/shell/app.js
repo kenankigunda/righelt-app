@@ -4911,7 +4911,7 @@ appEl.addEventListener("click", async (event) => {
       if (!undoScopeIsCurrent()) return false;
       undoToken.targetMoveId = targetMoveId;
       const handle = undoTransport.requestRevertToMove({ gameId, targetMoveId });
-      void handle.committed.then(() => { viewingIntent.commitUndo(gameId, undoToken); maybeReturnAfterUndo(gameId); }, () => viewingIntent.cancelUndo(gameId));
+      void handle.committed.then(() => { viewingIntent.commitUndo(gameId, undoToken); maybeReturnAfterUndo(gameId); }, () => viewingIntent.cancelUndo(gameId, undoToken));
       if (computerUndo) await handle.committed;
       return true;
     };
@@ -4920,7 +4920,7 @@ appEl.addEventListener("click", async (event) => {
     let reverted;
     try { reverted = computerUndo ? await computerSession.withMutation(revert) : await revert(); }
     catch {
-      viewingIntent.cancelUndo(gameId);
+      viewingIntent.cancelUndo(gameId, undoToken);
       if (undoScopeIsCurrent()) setUndoRequestFeedback(gameId, "Undo could not finish");
       return;
     }
