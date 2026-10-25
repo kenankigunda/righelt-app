@@ -6,6 +6,7 @@ import { createInitialGame } from "../src/shell-live-core.ts";
 import { loadGameProjection, persistGameState } from "../src/shell-live-db.ts";
 import { handleLiveGameRequest } from "../src/shell-live.ts";
 import { getGameResult } from "../../../apps/web/shell/game-result.js";
+import { createFakeGameRooms } from "./support/fake-game-rooms.mjs";
 import { createFakeD1 } from "./support/fake-d1.mjs";
 
 for (const side of ["p1", "p2", undefined, null, "P2", "invalid", 2]) {
@@ -50,13 +51,17 @@ test("SQLite persistence and the game HTTP projection retain blue self-play resu
     const projection = await loadGameProjection(env, game.id);
     assert.equal(projection.kind, "ok");
     assert.equal(projection.game.selfPlayStartSide, "p2", "normalization must retain the selected side");
+    env.GAME_ROOMS = createFakeGameRooms(() => env);
     for (const revision of [1, 2]) {
+      env.GAME_ROOMS.restart(game.id);
       const response = await handleLiveGameRequest(new Request(`https://example.test/api/shell/games/${game.id}?identityId=me`), env);
-      assert.equal(response.status, 200);
-      assert.equal(response.body.eventSeq, revision);
-      assert.equal(response.body.game.selfPlayStartSide, "p2");
-      const result = getGameResult(response.body.game, "me");
+      const roomBody = await response.response.json();
+      assert.equal(response.response.status, 200);
+      assert.equal(roomBody.eventSeq, revision);
+      assert.equal(roomBody.game.selfPlayStartSide, "p2");
+      const result = getGameResult(roomBody.game, "me");
       assert.equal(result.title, "Your opponent won");
+
       assert.equal(result.rematchSide, "p1");
       if (revision === 1) await persistGameState(env, projection.game, 2);
     }

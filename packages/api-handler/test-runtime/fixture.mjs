@@ -1,4 +1,5 @@
-export const fixture = `import {runStorageMaintenance} from './packages/api-handler/src/storage-maintenance.ts';
+export const fixture = `import {handleApiRequest} from './packages/api-handler/src/index.ts';
+import {runStorageMaintenance} from './packages/api-handler/src/storage-maintenance.ts';
 import { GameRoomDO as ActualGameRoom } from './packages/api-handler/src/game-room-do.ts';
 export class GameRoomDO extends ActualGameRoom {
  constructor(state, env) {
@@ -27,6 +28,11 @@ export class GameRoomDO extends ActualGameRoom {
  async fetch(request) { if(request.headers.get("x-harness-r2-fault"))this.objectFault(request.headers.get("x-harness-r2-fault")); if(request.headers.get("x-harness-fail-on"))this.failMatching(request.headers.get("x-harness-fail-on")); if(request.headers.get("x-harness-lose-on"))this.loseMatching(request.headers.get("x-harness-lose-on")); if (request.headers.get('x-harness-lose-response')) this.lose(); if (request.headers.has('x-harness-fail-at')) this.fail(Number(request.headers.get('x-harness-fail-at'))); let response; try { response = await super.fetch(request); } catch(error) { response = Response.json({error:String(error)}, {status:500}); } if(response.status!==101)response.headers.set("x-harness-batch-size",String(this.batchSize())); return response; }
 }
 export default { async fetch(request, env) {
+ if(new URL(request.url).pathname.startsWith('/api/')) {
+  const DB={prepare(sql){if(/FROM (live_games|game_payloads)/i.test(sql))throw Error('outer_projection_load');return env.DB.prepare(sql);},batch:env.DB.batch.bind(env.DB)};
+  return handleApiRequest(request,{...env,DB});
+ }
+
  if(new URL(request.url).pathname==='/_maintenance'){await runStorageMaintenance({...env,STORAGE_ARCHIVES_ENABLED:request.headers.get('x-harness-archive-flag')??env.STORAGE_ARCHIVES_ENABLED});return Response.json({ok:true});}
  const gameId = request.headers.get('x-game-id');
  return env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(gameId)).fetch(request);

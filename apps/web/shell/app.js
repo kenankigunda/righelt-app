@@ -1691,10 +1691,6 @@ const getGameAlertItems = (game) => {
       }),
     });
   }
-  if (game.historyLoading || game.historyLoadError) items.push({key:`history-load:${game.id}`,html:renderGameAlertCard({
-    body:game.historyLoading ? "Loading this move" : "This move couldn’t load. Your current view is still available.",
-    action:game.historyLoadError ? `<button class="secondary mini-button" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${game.historyLoadIndex}">Retry</button>` : "",
-  })});
   if (game.historyNotice) items.push({ key: `history-change:${game.id}`, html: renderGameAlertCard({ body: escapeHtml(game.historyNotice) }) });
 
   const computerNotice=renderComputerProgress(game,computerSession?.snapshot());
@@ -2655,6 +2651,7 @@ const renderHistoryPanel = (game) => {
     ${currentNames ? `<p class="small" data-testid="history-player-names">${currentNames}</p>` : ""}
     ${getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button>` : ""}
     <div class="section-followup">
+
       <ol class="history-list" data-testid="history-list">${historyRows}</ol>
       ${renderAdditionalHistory(game)}
     </div>
