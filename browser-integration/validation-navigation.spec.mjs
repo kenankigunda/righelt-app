@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import assert from 'node:assert/strict';
-import {assertOpponentChoice,selectGamePanel,revealAccountControl,assertAccountEntry,waitForPlayableBoard} from '../scripts/validation/browser-navigation.mjs';
+import {assertRematchSide,assertOpponentChoice,selectGamePanel,revealAccountControl,assertAccountEntry,waitForPlayableBoard} from '../scripts/validation/browser-navigation.mjs';
 import {assertMovePreview} from '../scripts/validation/browser-move.mjs';
 
 const navigation=({collapsed=false,wide=false}={})=>`<style>.game-shell-track-wrap{width:300px;height:100px;overflow:hidden}.game-shell-track{display:flex;width:900px;transition:transform 180ms linear}.panel{width:300px;flex:none;height:100px}[data-mobile-nav-controls][inert]{visibility:hidden}</style>
@@ -130,7 +130,7 @@ for(const cards of [false,true])test(`opponent proof asserts the exact ${cards?'
  if(cards)await dialog.getByRole('radio',{name:'Friend',exact:true}).check();else await dialog.getByRole('combobox',{name:'Opponent',exact:true}).selectOption('friend');
  await assertOpponentChoice(dialog,'friend');
  // A visible wrong known choice must fail the proof in both UI contracts.
- await assert.rejects(()=>assertOpponentChoice(dialog,'babs'));
+ await assert.rejects(()=>assertOpponentChoice(dialog,'babs',{assertionOptions:{timeout:100}}));
  await assert.rejects(()=>assertOpponentChoice(dialog,'unknown'),/Unknown opponent/);
 });
 
@@ -155,4 +155,29 @@ for(const narrow of [false,true])test(`account entry waits for a cold ${narrow?'
 test('missing toolbar affordances fail with a bounded readiness explanation',async({page})=>{
  await page.setContent('<p role="status">Starting</p>');
  await assert.rejects(()=>revealAccountControl(page),/Account or Open navigation menu must be visible before account entry/);
+});
+
+
+for(const contract of ['legacy','colors-v1'])test(`rematch ${contract} requires semantic side identity and exact accessible copy`,async({page})=>{
+ const label=contract==='legacy'?'Player 1 · Red':'Red';
+ const self=contract==='legacy'?'Self-play':'Play both sides';
+ const render=async(sideLabel=label,extra='')=>page.setContent(`<dialog open aria-label="Play again"><fieldset><legend>Your side</legend><label><input type="radio" name="rematch-side" value="p1" checked>${sideLabel}</label><label><input type="radio" name="rematch-side" value="p2">${contract==='legacy'?'Player 2 · Blue':'Blue'}</label>${extra}</fieldset><fieldset><legend>Opponent</legend><label><input type="radio" name="rematch-opponent" value="self" checked>${self}</label></fieldset></dialog>`);
+ await render();const dialog=page.getByRole('dialog',{name:'Play again',exact:true});
+ await assertRematchSide(dialog,'p1',{contract});await assertOpponentChoice(dialog,'self',{contract});
+ await dialog.locator('[name="rematch-side"][value="p2"]').check();await assertRematchSide(dialog,'p2',{contract});
+ await assert.rejects(()=>assertRematchSide(dialog,'p1',{contract,assertionOptions:{timeout:100}}));
+ await render(contract==='legacy'?'Red':'Player 1 · Red');await assert.rejects(()=>assertRematchSide(dialog,'p1',{contract,assertionOptions:{timeout:100}}));
+ await render(label,`<label><input type="radio" name="rematch-side" value="p1">${label}</label>`);await assert.rejects(()=>assertRematchSide(dialog,'p1',{contract,assertionOptions:{timeout:100}}));
+ await render();await dialog.locator('[name="rematch-opponent"]').evaluate(input=>input.parentElement.lastChild.textContent='Wrong opponent');await assert.rejects(()=>assertOpponentChoice(dialog,'self',{contract,assertionOptions:{timeout:100}}));
+ await render();await dialog.locator('[name="rematch-opponent"]').evaluate(input=>input.value='friend');await assert.rejects(()=>assertOpponentChoice(dialog,'self',{contract,assertionOptions:{timeout:100}}));
+ await assert.rejects(()=>assertRematchSide(dialog,'p1',{contract:'future'}),/Unsupported/);
+});
+
+
+test('color-choice contract rejects wrong-name native controls and legacy dropdowns',async({page})=>{
+ const dialog=page.getByRole('dialog',{name:'Play again',exact:true});
+ await page.setContent('<dialog open aria-label="Play again"><fieldset><legend>Opponent</legend><label><input type="radio" name="unrelated-choice" value="self" checked>Play both sides</label></fieldset></dialog>');
+ await assert.rejects(()=>assertOpponentChoice(dialog,'self',{contract:'colors-v1',assertionOptions:{timeout:100}}));
+ await page.setContent('<dialog open aria-label="Play again"><label>Opponent<select><option value="self">Play both sides</option></select></label></dialog>');
+ await assert.rejects(()=>assertOpponentChoice(dialog,'self',{contract:'colors-v1'}),/requires native opponent radios/);
 });

@@ -75,14 +75,35 @@ export async function assertAccountEntry(page,{authenticated=false}={}) {
 // Rematch and branch choices may use the older select or native mini cards.
 // Assert the selected opponent in either public contract; preparation checks
 // stay with the caller and must still reach actual readiness before Start.
-export async function assertOpponentChoice(dialog, opponent) {
-  const labels={babs:'Babs',tau:'Tau',horus:'Horus',friend:'Friend',self:'Self-play'};
+export async function assertOpponentChoice(dialog, opponent, {contract='legacy',assertionOptions}={}) {
+  if(!['legacy','colors-v1'].includes(contract))throw Error('Unsupported rematch choices contract');
+  const labels={babs:'Babs',tau:'Tau',horus:'Horus',friend:'Friend',self:contract==='colors-v1'?'Play both sides':'Self-play'};
   if(!Object.hasOwn(labels,opponent))throw Error(`Unknown opponent: ${opponent}`);
   const legacy=dialog.getByRole('combobox',{name:'Opponent',exact:true});
-  if(await legacy.count())await expect(legacy).toHaveValue(opponent);
+  if(await legacy.count()){
+    if(contract==='colors-v1')throw Error('Color-choice contract requires native opponent radios');
+    await expect(legacy).toHaveValue(opponent,assertionOptions);
+    await expect(legacy.locator('option:checked')).toHaveText(labels[opponent],assertionOptions);
+  }
   else {
     const group=dialog.getByRole('group',{name:'Opponent',exact:true});
-    await expect(group.getByRole('radio',{name:labels[opponent],exact:true})).toBeChecked();
-    await expect(group.locator('input[type="radio"]:checked')).toHaveCount(1);
+    const name=contract==='colors-v1'?'[name="rematch-opponent"]':'';
+    const selected=group.locator(`input[type="radio"]${name}[value="${opponent}"]`);
+    await expect(selected).toHaveCount(1,assertionOptions);
+    await expect(selected).toHaveAccessibleName(labels[opponent],assertionOptions);
+    await expect(selected).toBeChecked(assertionOptions);
+    await expect(group.locator('input[type="radio"]:checked')).toHaveCount(1,assertionOptions);
   }
+}
+
+// Identity and accessible copy must both match the source-selected contract.
+export async function assertRematchSide(dialog, side, {contract='legacy',assertionOptions}={}) {
+  if(!['legacy','colors-v1'].includes(contract))throw Error('Unsupported rematch choices contract');
+  if(!['p1','p2'].includes(side))throw Error('Unknown rematch side');
+  const color=side==='p1'?'Red':'Blue';
+  const selected=dialog.locator(`input[type="radio"][name="rematch-side"][value="${side}"]`);
+  await expect(selected).toHaveCount(1,assertionOptions);
+  await expect(selected).toHaveAccessibleName(contract==='colors-v1'?color:`Player ${side==='p1'?'1':'2'} · ${color}`,assertionOptions);
+  await expect(selected).toBeChecked(assertionOptions);
+  await expect(dialog.locator('input[type="radio"][name="rematch-side"]:checked')).toHaveCount(1,assertionOptions);
 }

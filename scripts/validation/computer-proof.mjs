@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {assertOpponentChoice,selectGamePanel,waitForPlayableBoard} from './browser-navigation.mjs';
+import {assertRematchSide,assertOpponentChoice,selectGamePanel,waitForPlayableBoard} from './browser-navigation.mjs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
@@ -41,14 +41,15 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     await story.getByRole('button', { name: 'Play Babs', exact: true }).click();
     const response = await createdResponse; assert.equal(response.status(), 200);
     const initial = (await response.json()).game;
-    assert.equal(creates, 1); assert.equal(initial.computer.modelId, 'initial-1554');
+    assert.equal(creates, 1); assert.equal(initial.computer.modelId, capabilities.currentComputerModel.id);
     assert.deepEqual(initial.computer.seats, { p1: null, p2: 'babs' });
     await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
     await waitForPlayableBoard(page);
     await submitPlayableAction(initial.legalActions.find(action => action.from && action.to));
     if ((await gameAt(page, initial.id)).canEndTurn) await page.locator('[data-action="end-turn"], [data-board-preview-action="end-turn"]').filter({visible:true}).click();
-    await expect.poll(async () => (await gameAt(page, initial.id)).moves.some(move => move.computerProof?.modelId === 'initial-1554'), { message: 'A real model decision must be accepted' }).toBe(true);
+    await expect.poll(async () => (await gameAt(page, initial.id)).moves.some(move => move.computerProof?.modelId === initial.computer.modelId), { message: 'A real model decision must be accepted' }).toBe(true);
     const accepted = await gameAt(page, initial.id), decision = accepted.moves.find(move => move.computerProof);
+    assert.equal(decision.computerProof.modelId, initial.computer.modelId);
     const evidence = await request(page, `/api/shell/games/${initial.id}/decision-attempt`, { attemptId: decision.computerProof.attemptId, kind: 'computer' });
     assert.equal(evidence.attempt.result.status, 'ready');
     assert.deepEqual(evidence.attempt.result.action, decision.action);
@@ -74,13 +75,14 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     const source = (await request(page, '/api/shell/scenarios/import', { scenario, protocolVersion: 2 })).game;
     const finalDecision = source.moves.at(-1);
     assert.ok(finalDecision?.moveId);
-    const branched = (await request(page, '/api/shell/history/branch', { sourceGameId: source.id, sourceDecisionId: finalDecision.moveId, creatorSide: 'p2', computer: { p1: 'babs', p2: null } })).game;
+    const branched = (await request(page, '/api/shell/history/branch', { sourceGameId: source.id, sourceDecisionId: finalDecision.moveId, creatorSide: 'p2', computer: { p1: 'babs', p2: null }, computerModelId: capabilities.currentComputerModel.id })).game;
+    assert.equal(branched.computer.modelId, capabilities.currentComputerModel.id);
     assert.equal(branched.board.state.outcome.status, 'ongoing');
     assert.deepEqual(branched.board.state, finalDecision.selectionSnapshot);
     await page.goto(`/#/game/${encodeURIComponent(branched.id)}`);
     await expect.poll(async () => (await gameAt(page, branched.id)).board.state.outcome.status).toBe('p1_win');
     const finished = await gameAt(page, branched.id);
-    assert.equal(finished.moves.at(-1).computerProof?.modelId, 'initial-1554');
+    assert.equal(finished.moves.at(-1).computerProof?.modelId, branched.computer.modelId);
     const result = page.getByTestId('game-result');
     // This page owns the worker and observes an ongoing-to-terminal transition.
     // Await delivery of that transition instead of branching on a transient frame.
@@ -89,8 +91,8 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     await proof(page, info, 'computer-game-result', result);
     await result.getByRole('button', { name: 'Play again', exact: true }).click();
     const chooser = page.getByRole('dialog', { name: 'Play again', exact: true });
-    await assertOpponentChoice(chooser,'babs');
-    await expect(chooser.getByRole('radio', { name: 'Player 1 · Red', exact: true })).toBeChecked();
+    await assertOpponentChoice(chooser,'babs',{contract:capabilities.rematchChoicesContract});
+    await assertRematchSide(chooser,'p1',{contract:capabilities.rematchChoicesContract});
     await expect(chooser.getByRole('button', { name: 'Start game', exact: true })).toBeEnabled();
     await expect(chooser.locator('[role=status]')).toContainText('Ready to play');
     await proof(page, info, 'computer-rematch-choice', chooser);
@@ -98,7 +100,7 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     await chooser.getByRole('button', { name: 'Start game', exact: true }).click();
     const freshResponse = await rematchResponse; assert.equal(freshResponse.status(), 200);
     const fresh = (await freshResponse.json()).game;
-    assert.notEqual(fresh.id, branched.id); assert.equal(fresh.computer.modelId, 'initial-1554');
+    assert.notEqual(fresh.id, branched.id); assert.equal(fresh.computer.modelId, capabilities.currentComputerModel.id);
     assert.deepEqual(fresh.computer.seats, { p1: null, p2: 'babs' });
     assert.equal(fresh.board.state.outcome.status, 'ongoing');
     await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', fresh.id);

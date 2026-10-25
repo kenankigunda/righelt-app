@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {assertOpponentChoice,selectGamePanel} from './browser-navigation.mjs';
+import {assertRematchSide,assertOpponentChoice,selectGamePanel} from './browser-navigation.mjs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
@@ -68,8 +68,8 @@ export async function proveResultsRematch({ page, info, root }) {
   await page.getByRole('button', { name: 'View result', exact: true }).click();
   await page.getByRole('button', { name: 'Play again', exact: true }).click();
   const rematch = page.getByRole('dialog', { name: 'Play again', exact: true });
-  await assertOpponentChoice(rematch,'friend');
-  await expect(rematch.getByRole('radio', { name: 'Player 1 · Red', exact: true })).toBeChecked();
+  await assertOpponentChoice(rematch,'friend',{contract:capabilities.rematchChoicesContract});
+  await assertRematchSide(rematch,'p1',{contract:capabilities.rematchChoicesContract});
   await expect(rematch.getByRole('group',{name:'Your side',exact:true}).getByRole('radio')).toHaveCount(2);
   // Measure controls after deliberate source-scale entry, not an intermediate frame.
   // Do not suppress animation or wait for unrelated perpetual decorative motion.

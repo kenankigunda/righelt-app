@@ -38,6 +38,8 @@ test('trained play is selected before execution by an explicit source contract',
   assert.equal((await candidateCapabilities(root)).trainedComputerPlay,false);
   await writeFile(file,'// export const TRAINED_COMPUTER_PLAY = "enabled";');
   assert.equal((await candidateCapabilities(root)).trainedComputerPlay,false);
+  await mkdir(path.join(root,'packages/shared-types/src'),{recursive:true});
+  await writeFile(path.join(root,'packages/shared-types/src/computer-play.ts'), `export const CURRENT_COMPUTER_MODEL=Object.freeze({id:'initial-1554',sha256:'${'a'.repeat(64)}',bytes:411327,checkpoint:'${'b'.repeat(64)}',url:'/computer/models/initial-1554.onnx',experimental:true});`);
   await writeFile(file,'export const TRAINED_COMPUTER_PLAY = "enabled";\nthrow Error("Never execute candidate source");');
   assert.equal((await candidateCapabilities(root)).trainedComputerPlay,true);
   await writeFile(file,'export const TRAINED_COMPUTER_PLAY = "disabled";');
@@ -102,5 +104,38 @@ test('always-visible Account header is an explicit independent capability',async
   await writeFile(file,'export const ACCOUNT_HEADER_ENTRY = "always";\nexport const ACCOUNT_ENTRY_POINTS = "play";\nthrow Error("Never execute candidate source");');
   const result=await candidateCapabilities(root);
   assert.equal(result.alwaysVisibleAccount,true);assert.equal(result.playAccountEntry,true);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+
+test('named heading and color-choice contracts are independent, source-only and fail closed',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'named-result-capability-'));
+ try {
+  const directory=path.join(root,'apps/web/shell');await mkdir(directory,{recursive:true});
+  const file=path.join(directory,'game-result.js');
+  assert.equal((await candidateCapabilities(root)).rematchChoicesContract,'legacy');
+  await writeFile(file,'export const RESULT_HEADING_CONTRACT="perspective-v2";\nexport const REMATCH_CHOICES_CONTRACT="colors-v1";\nthrow Error("Never execute candidate source");');
+  const selected=await candidateCapabilities(root);
+  assert.equal(selected.resultHeadingContract,'perspective-v2');assert.equal(selected.rematchChoicesContract,'colors-v1');
+  await writeFile(file,'export const REMATCH_CHOICES_CONTRACT="colors-v1";');
+  assert.equal((await candidateCapabilities(root)).resultHeadingContract,'legacy');
+  for(const invalid of ['export const REMATCH_CHOICES_CONTRACT="future";','export let REMATCH_CHOICES_CONTRACT="colors-v1";','export const REMATCH_CHOICES_CONTRACT=choose();','export const REMATCH_CHOICES_CONTRACT="colors-v1";\nexport const REMATCH_CHOICES_CONTRACT="colors-v1";']) {
+   await writeFile(file,invalid);await assert.rejects(()=>candidateCapabilities(root),/Unsupported rematch choices contract/);
+  }
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+
+test('trained-enabled candidate requires an explicit valid authoritative model contract',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'required-model-capability-'));
+ try {
+  await mkdir(path.join(root,'apps/web/shell'),{recursive:true});
+  await writeFile(path.join(root,'apps/web/shell/computer-runtime.js'),'export const TRAINED_COMPUTER_PLAY="enabled";');
+  await assert.rejects(()=>candidateCapabilities(root),{code:'ENOENT'});
+  const directory=path.join(root,'packages/shared-types/src');await mkdir(directory,{recursive:true});
+  for(const source of ['', 'export const CURRENT_COMPUTER_MODEL=choose();', 'export const CURRENT_COMPUTER_MODEL=Object.freeze({id:"promoted"});']) {
+   await writeFile(path.join(directory,'computer-play.ts'),source);
+   await assert.rejects(()=>candidateCapabilities(root),/Unsupported current computer model contract/);
+  }
  }finally{await rm(root,{recursive:true,force:true});}
 });
