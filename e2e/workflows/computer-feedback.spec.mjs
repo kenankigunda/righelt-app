@@ -32,16 +32,19 @@ test('computer save failures take priority while the delayed saving notice stays
     await expect(notice(page)).toHaveCount(0);
     await expect(page.locator('#shell-board-preview-label')).not.toContainText('Select a piece');
     await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toHaveCount(0);
-    await expect(page.getByTestId('sync-recovery-banner')).toContainText('We couldn’t record your move. Please reconnect.',{timeout:3000});
+    await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
     await expect(page.getByRole('button',{name:'Interrupt',exact:true})).toHaveCount(0);
     await expect(page.getByText('Recording move',{exact:false})).toHaveCount(0);
     const delayed=notice(page).getByText('Saving the move is taking longer than usual',{exact:true});
     await expect(delayed).toHaveCount(1,{timeout:13000});
     if(await delayed.evaluate(el=>Boolean(el.closest('[hidden],[inert],[aria-hidden="true"]'))))await page.locator('[data-action="cycle-game-alert-stack"][tabindex="0"]').press('Enter');
     await expect(delayed).toBeVisible();
+    await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
+    await expect(page.getByTestId('sync-recovery-banner')).toContainText('Still checking your move. You can retry or view details.',{timeout:10000});
+    await expect(page.getByTestId('sync-recovery-banner').getByRole('button',{name:'Reload game',exact:true})).toBeVisible();
     await expect(page.locator('[data-alert-stack-card][inert] .shell-game-alert-copy').first()).toBeHidden();
     await expect(page.locator('[data-alert-stack-card][inert] button').first()).toBeHidden();
-    expect(await delayed.evaluate(el=>!el.closest('[hidden],[inert],[aria-hidden="true"]'))).toBe(true);
+    expect(await page.getByTestId('sync-recovery-banner').evaluate(el=>!el.closest('[hidden],[inert],[aria-hidden="true"]'))).toBe(true);
     await expect(page.getByRole('button',{name:'Interrupt',exact:true})).toHaveCount(0);
     expect(await geometry(page)).toEqual(before);
     await settleNotice(page);
@@ -55,7 +58,7 @@ test('computer save failures take priority while the delayed saving notice stays
   }finally{holdGameplay=false;await context.unrouteAll({behavior:'wait'});}
 });
 
-test('a failed computer proof save exposes usable recovery immediately and Retry completes the real move',async({page,context},info)=>{
+test('a failed computer proof save exposes usable recovery immediately and Resume here completes the real move',async({page,context},info)=>{
   const game=await createBabs(page);let failed=false;
   await context.route('**/decision-attempt',async route=>{
     if(!failed&&readyAttempt(route)){failed=true;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'temporarily_unavailable'})});return;}
@@ -64,7 +67,7 @@ test('a failed computer proof save exposes usable recovery immediately and Retry
   const before=await geometry(page);
   await page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true}).tap();
   await expect.poll(()=>failed,{timeout:30000}).toBe(true);
-  const retry=notice(page).getByRole('button',{name:'Retry',exact:true});
+  const retry=notice(page).getByRole('button',{name:'Resume here',exact:true});
   await expect(retry).toBeVisible({timeout:3000});
   expect(await retry.evaluate(el=>!el.closest('[hidden],[inert],[aria-hidden="true"]'))).toBe(true);
   await expect(retry).toBeEnabled();

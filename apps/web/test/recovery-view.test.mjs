@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { recoveryMessage, isBoardRecoveryPending } from "../shell/recovery-view.js";
+import { recoveryMessage, needsRecoveryAction, isBoardRecoveryPending } from "../shell/recovery-view.js";
 import { createLiveTransportStore } from "../shell/live-transport.js";
 
 const snapshot = (n) => ({ pieces: [], sideToMove: "P1", turnIndex: n });
@@ -251,4 +251,16 @@ test("computer saves remain quiet until slow and never hide failures", () => {
  assert.match(recoveryMessage({...saving,storageBlocked:true},1001),/trouble saving/);
  assert.match(recoveryMessage({...saving,recoveryIssue:"invalid_response"},1001),/reconnect/);
  assert.match(recoveryMessage({...saving,upgradeRequired:true},1001),/Refresh/);
+});
+
+test('an active uncertain computer save becomes actionable by the earliest fifteen-second deadline',()=>{
+ const game={recovering:true,pendingCommandCount:1,pendingComputerSaveStartedAt:0,recoveryStartedAt:5000};
+ assert.equal(recoveryMessage(game,9999,{computerSaveActive:true}),'');
+ assert.equal(needsRecoveryAction(game,14999),false);
+ assert.equal(recoveryMessage(game,14999,{computerSaveActive:true}),'');
+ assert.equal(needsRecoveryAction(game,15000),true);
+ assert.match(recoveryMessage(game,15000,{computerSaveActive:true}),/retry or view details/);
+ assert.equal(needsRecoveryAction({...game,recoveryStartedAt:14000},15000),true);
+ assert.match(recoveryMessage({...game,confirmationOverdue:true},100,{computerSaveActive:true}),/retry or view details/);
+ for(const recoveryIssue of ['session_changed','invalid_credentials','invalid_response'])assert.equal(needsRecoveryAction({...game,recoveryIssue},1),true);
 });

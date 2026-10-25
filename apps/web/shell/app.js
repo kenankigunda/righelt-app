@@ -56,7 +56,7 @@ import { icon, soundToggle, headerActionContent } from './ui.js';
 import { createGameSound } from './sound.js';
 import { createModal } from './modal.js';
 import { createOpponentStoryDialog, OPPONENT_STORIES } from './opponent-stories.js';
-import { recoveryMessage, sharedMutationActions, isBoardRecoveryPending } from "./recovery-view.js";
+import { recoveryMessage, needsRecoveryAction, sharedMutationActions, isBoardRecoveryPending } from "./recovery-view.js";
 import { renderGameAlertCard } from "./game-alert.js";
 import { createNotificationStack, recoveryActivity } from "./notification-state.js";
 import { patchNotificationTree, patchNotificationHtml, replaceMainPreservingHeader } from "./notification-dom.js";
@@ -1673,7 +1673,7 @@ const getGameAlertItems = (game) => {
   }));
 
   const message = presentedRecoveryMessage(game);
-  const recoveryNeedsAction = game.storageBlocked || game.upgradeRequired || ["session_changed", "invalid_credentials"].includes(game.recoveryIssue) || game.confirmationOverdue || (game.recoveryStartedAt && Date.now() - game.recoveryStartedAt >= SYNC_TIMING.confirmationBudgetMs);
+  const recoveryNeedsAction = needsRecoveryAction(game);
   for (const report of issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.key.startsWith("operation:"))) if (!failedOperations.some(op => `operation:${op.id}` === report.key)) issueDiagnostics.resolve(report.key);
   const retained = issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.resolvedAt && isDiagnosticOpen(r.id));
   for (const report of retained) items.push({ key: `resolved:${report.id}`, html: renderGameAlertCard({ body: "Resolved", incidentId: report.id, action: `<button class="secondary mini-button" data-action="dismiss-diagnostic" data-incident-id="${report.id}">${icon('close')}Dismiss</button>` }) });
