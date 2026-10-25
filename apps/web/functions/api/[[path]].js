@@ -51,7 +51,9 @@ export const onRequest = async context => {
   const incoming = context.request.headers.get("X-Righelt-Request-Id") ?? "";
   const requestId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(incoming) ? incoming : crypto.randomUUID();
   const headers = new Headers(context.request.headers); headers.set("X-Righelt-Request-Id", requestId);
-  const response = await forwardRequest({ ...context, request: new Request(context.request, { headers }) });
+  let response;
+  try { response = await forwardRequest({ ...context, request: new Request(context.request, { headers }) }); }
+  catch { response = json({ ok: false, error: "upstream_unavailable" }, 503); }
   if (response.status === 101) return response;
   const responseHeaders = new Headers(response.headers); responseHeaders.set("X-Righelt-Request-Id", requestId);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: responseHeaders });

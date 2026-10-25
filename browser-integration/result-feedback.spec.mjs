@@ -17,11 +17,27 @@ for(const width of [320,390,1440])test(`result perspectives remain readable and 
  }
 });
 test('animation timeline survives repaint and history, hydration, spectator and reduced motion stay quiet',async({page},info)=>{
- await open(page);await page.getByRole('button',{name:'Finish live game',exact:true}).click();
- const motion=await page.locator('.result-mark').evaluate(el=>{const animation=el.getAnimations()[0];animation.pause();animation.currentTime=300;return{duration:animation.effect.getTiming().duration,count:document.querySelectorAll('[data-result-fragment]').length};});expect(motion).toEqual({duration:1000,count:4});
+ await open(page);
+ // Observe continuity before capture: pausing WAAPI does not pause the live
+ // episode's wall clock, and a screenshot may legitimately outlast that episode.
+ const motion=await page.evaluate(()=>new Promise((resolve,reject)=>{
+  document.querySelector('#finish').click();
+  const observe=()=>{
+   const mark=document.querySelector('.result-mark'),animation=mark.getAnimations()[0];
+   if(!animation)return reject(new Error('Expected the live finite result animation'));
+   if(!(animation.currentTime>0))return requestAnimationFrame(observe);
+   const before=animation.currentTime,duration=animation.effect.getTiming().duration,count=mark.querySelectorAll('[data-result-fragment]').length;
+   window.resultFixture.repaint();
+   const after=document.querySelector('.result-mark').getAnimations()[0]?.currentTime;
+   resolve({before,after,duration,count});
+  };
+  requestAnimationFrame(observe);
+ }));
+ expect(motion.duration).toBe(1000);expect(motion.count).toBe(4);
+ expect(motion.before).toBeGreaterThan(0);expect(motion.before).toBeLessThan(motion.duration);
+ expect(motion.after).toBeGreaterThan(0);expect(motion.after).toBeGreaterThanOrEqual(motion.before-2);expect(motion.after).toBeLessThan(motion.before+50);
  await page.locator('.game-result').evaluate(el=>el.getAnimations({subtree:true}).forEach(animation=>{animation.pause();animation.currentTime=300;}));
  await page.locator('.game-result').screenshot({path:info.outputPath('result-victory-midpoint.png')});
- await page.evaluate(()=>window.resultFixture.repaint());const current=await page.locator('.result-mark').evaluate(el=>el.getAnimations()[0]?.currentTime);expect(current).toBeGreaterThan(0);
  for(const [side,status,history]of[['red','p1_win',false],['red','ongoing',true],['viewer','ongoing',false]]){
   await page.evaluate(([side,status,history])=>{window.resultFixture.setup(side,status,history);if(status==='ongoing')window.resultFixture.finish(history);},[side,status,history]);
   expect(await page.locator('.game-result').evaluate(el=>el.getAnimations({subtree:true}).length)).toBe(0);

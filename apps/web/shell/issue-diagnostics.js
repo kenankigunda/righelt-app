@@ -42,7 +42,13 @@ export function createIssueDiagnostics({ storage, now = Date.now, schedule = set
       data = { ...context, ...data };
       trim(); let report = reports.find(r => r.key === key && !r.resolvedAt);
       if (!report) { report = { schemaVersion: 1, id: crypto.randomUUID(), key, startedAt: now(), initial: sanitizeDiagnostic(data), events: [] }; reports.push(report); }
-      report.events.push({ at: now(), ...sanitizeDiagnostic(data) }); if (report.events.length > DIAGNOSTIC_LIMITS.events) { report.events = report.events.slice(-DIAGNOSTIC_LIMITS.events); report.truncated = true; } persist(); return report.id;
+      const event=sanitizeDiagnostic(data);
+      // Keep the incident boards once. Retry events remain a compact timeline.
+      for(const key of ["authoritativeState","tentativeState"]){
+        if(event[key] && typeof event[key] === "object" && (!report.initial[key] || typeof report.initial[key] !== "object"))report.initial[key]=event[key];
+        delete event[key];
+      }
+      report.events.push({ at: now(), ...event }); if (report.events.length > DIAGNOSTIC_LIMITS.events) { report.events = report.events.slice(-DIAGNOSTIC_LIMITS.events); report.truncated = true; } persist(); return report.id;
     },
     resolve(key) { for (const r of reports) if (r.key === key && !r.resolvedAt) r.resolvedAt = now(); persist(); },
     list() { trim(); return structuredClone(reports); },

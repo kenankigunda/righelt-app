@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {readFile,writeFile} from 'node:fs/promises';
 import {candidateCapabilities} from '../scripts/validation/capabilities.mjs';
+import {selectGamePanel} from '../scripts/validation/browser-navigation.mjs';
 import {makeValidationMove} from '../scripts/validation/browser-move.mjs';
 import {proof} from '../scripts/validation/proof.mjs';
 import {historySnapshot,assertHistoryPreserved} from '../scripts/validation/history-continuity.mjs';
@@ -21,10 +22,10 @@ test('create, move, viewer live update, reload and reconnect',async({page,contex
  const options=info.project.use;const viewerContext=await browser.newContext({baseURL,viewport:options.viewport,isMobile:options.isMobile,hasTouch:options.hasTouch});const viewer=await viewerContext.newPage();
  try{
   const {gameHash}=await createGameFromHome(page,capabilities);
-  const players=page.locator('[data-action="switch-game-panel"][data-panel="players"]');if(await players.isVisible())await players.click();
-  await page.getByRole('button',{name:'Play as both players',exact:true}).click();
-  await expect(page.getByRole('button',{name:'Play as both players',exact:true})).toHaveCount(0);
-  const board=page.locator('[data-action="switch-game-panel"][data-panel="board"]');if(await board.isVisible())await board.click();
+  await selectGamePanel(page,'players');
+  await page.locator('[data-action="play-as-both-players"]').click();
+  await expect(page.locator('[data-action="play-as-both-players"]')).toHaveCount(0);
+  await selectGamePanel(page,'board');
   await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
   await geometry(page);await proof(page,info,'created',page.getByTestId('game-board'));
   if(info.project.use.hasTouch)expect(await page.evaluate(()=>navigator.maxTouchPoints>0&&!matchMedia('(any-hover: hover)').matches)).toBe(true);

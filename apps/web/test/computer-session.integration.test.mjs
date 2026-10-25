@@ -15,7 +15,7 @@ function fixture({canAnalyze = true} = {}) {
     decisionAttempt: async (_, value) => { saved.push(value); },
     applyGameAction: async () => { submitted++; return { committed: Promise.resolve() }; },
   };
-  const runtime = { compute: async (_, onProgress) => new Promise((resolve, reject) => { computed++; progress = onProgress; pending = { resolve, reject }; }), cancel: () => { cancelCount++; pending?.reject(Error('cancelled')); pending = null; } };
+  const runtime = { compute: async (_, onProgress) => { computed++; return new Promise((resolve, reject) => { progress = onProgress; pending = { resolve, reject }; }); }, cancel: () => { cancelCount++; pending?.reject(Error('cancelled')); pending = null; } };
   const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: runtime, clock: () => now, timers: { setInterval() { return 1; }, clearInterval() {} }, getContext: () => ({ game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
   return { session, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { game = { ...game, id: 'other-game' }; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelCount };
 }
@@ -342,6 +342,23 @@ for (const rejected of [false, true]) test(`history mutation fences automatic re
   f.session.destroy();
 });
 
+test('a routine lease renewal retains a completed calculation until its receipt settles',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ const control=f.transport.computerControl;let release;
+ f.transport.computerControl=async(...args)=>{
+  if(args[1].action==='renew'){f.setBlocked(true);await new Promise(resolve=>{release=resolve;});}
+  await control(...args);f.setBlocked(false);
+ };
+ const work=f.session.tick();assert.equal(f.computations(),1);
+ f.setTime(5200);await f.session.tick();
+ while(!release)await Promise.resolve();
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});
+ for(let i=0;i<10;i++)await Promise.resolve();
+ assert.equal(f.submissions(),0);assert.equal(f.computations(),1);
+ release();await work;
+ assert.equal(f.submissions(),1);assert.equal(f.computations(),1);
+});
+
 
 test('phase clocks include proof saving, survive same-phase ticks and accept zero-based clocks', async () => {
   const f=fixture(); f.setTime(0); await f.session.tick(); const computation=f.session.tick();
@@ -472,4 +489,21 @@ test('a repeated-position pause cannot relabel its old warning into another game
   release();await pause;
   assert.equal(f.session.snapshot().phase,'idle');assert.equal(f.session.snapshot().message,undefined);
   f.session.destroy();
+});
+
+
+for(const change of ['switchGame','changeAccount','changeTransport'])test(`completed calculation waiting for renewal cannot follow ${change}`,async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ const control=f.transport.computerControl;let release;
+ f.transport.computerControl=async(...args)=>{
+  if(args[1].action==='renew'){f.setBlocked(true);await new Promise(resolve=>{release=resolve;});}
+  await control(...args);f.setBlocked(false);
+ };
+ const work=f.session.tick();f.setTime(5200);await f.session.tick();
+ while(!release)await Promise.resolve();
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});
+ for(let i=0;i<10;i++)await Promise.resolve();
+ f[change]();release();await work;
+ assert.equal(f.submissions(),0);assert.equal(f.computations(),1);
+ assert.equal(f.session.snapshot().phase,'idle');
 });

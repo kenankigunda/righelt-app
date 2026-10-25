@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import {assertOpponentChoice,selectGamePanel} from './browser-navigation.mjs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
 import {candidateCapabilities} from './capabilities.mjs';
+import {assertResultHeading} from './result-heading.mjs';
 import { proof } from './proof.mjs';
 import { STORAGE_GENERATION_HEADER } from '../../packages/shared-types/src/storage-policy.js';
 import {closeHostInvitation} from '../../e2e/support/app.mjs';
@@ -37,7 +39,8 @@ async function settled(page) {
 // Uses real creation/import handlers and the candidate's own catalog. The
 // terminal outcome is delivered through the live channel, never DOM injection.
 export async function proveResultsRematch({ page, info, root }) {
-  const authProtocol = (await candidateCapabilities(root)).simplifiedAccounts ? 2 : 1;
+  const capabilities = await candidateCapabilities(root);
+  const authProtocol = capabilities.simplifiedAccounts ? 2 : 1;
   const scenario = selectTerminalScenario(JSON.parse(await readFile(path.join(root, 'apps/web/scenarios/catalog.json'), 'utf8')));
   const created = await request(page, '/api/shell/games', { selfPlayMode: false, creatorSide: 'p2' }, authProtocol);
   assert.equal(created.status, 200);
@@ -48,14 +51,14 @@ export async function proveResultsRematch({ page, info, root }) {
   await settled(page);
   const imported = await request(page, '/api/shell/scenarios/import', { scenario, targetGameId: id, protocolVersion: 2 }, authProtocol);
   assert.equal(imported.status, 200);
+  assert.equal(imported.body.game.board.state.outcome.status, 'p1_win');
   const result = page.getByTestId('game-result');
   await expect(result).toBeVisible();
-  await expect(result.getByRole('heading', { name: 'Loss', exact: true })).toBeVisible();
+  await assertResultHeading(result, {contract: capabilities.resultHeadingContract, outcome: imported.body.game.board.state.outcome.status, viewerSide: 'p2'});
   await proof(page, info, 'friend-game-result', result);
   await page.reload();
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', id);
-  const historyTab=page.locator('[data-action="switch-game-panel"][data-panel="history"]');
-  if(await historyTab.isVisible())await historyTab.click();
+  await selectGamePanel(page,'history');
   await expect(page.getByRole('button', { name: 'View result', exact: true })).toBeVisible();
   await expect(result).toHaveCount(0);
   await page.getByRole('button', { name: 'View result', exact: true }).click();
@@ -65,9 +68,9 @@ export async function proveResultsRematch({ page, info, root }) {
   await page.getByRole('button', { name: 'View result', exact: true }).click();
   await page.getByRole('button', { name: 'Play again', exact: true }).click();
   const rematch = page.getByRole('dialog', { name: 'Play again', exact: true });
-  await expect(rematch.getByRole('combobox', { name: 'Opponent', exact: true })).toHaveValue('friend');
+  await assertOpponentChoice(rematch,'friend');
   await expect(rematch.getByRole('radio', { name: 'Player 1 · Red', exact: true })).toBeChecked();
-  await expect(rematch.getByRole('radio')).toHaveCount(2);
+  await expect(rematch.getByRole('group',{name:'Your side',exact:true}).getByRole('radio')).toHaveCount(2);
   // Measure controls after deliberate source-scale entry, not an intermediate frame.
   // Do not suppress animation or wait for unrelated perpetual decorative motion.
   await rematch.evaluate(async element=>{

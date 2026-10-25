@@ -1,9 +1,11 @@
 import {assertReplayIntegrity} from '../support/replay-write-contract.mjs';
 import {readFile} from 'node:fs/promises';
+import {isOperationRequest,operationValues} from "../support/shared-request.mjs";
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {test,expect} from '@playwright/test';
 import {submitPlayableAction,switchGamePanel} from '../support/app.mjs';
 import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
+import {waitForPlayableBoard} from '../../scripts/validation/browser-navigation.mjs';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
 
 test('guest computer finishes a catalog position and prepares a fresh rematch',async({page},info)=>{
@@ -56,7 +58,7 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
   expect(response.ok()).toBe(true);
   const initial = (await response.json()).game;
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
-  await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase', 'idle');
+  await waitForPlayableBoard(page);
   await page.evaluate(() => {
     window.boardStatusGeometry={running:true,samples:[]};
     const sample=()=>{const record=window.boardStatusGeometry;if(!record.running)return;const board=document.querySelector('#shell-board');if(board){const rect=board.getBoundingClientRect();record.samples.push({y:rect.top+scrollY,height:rect.height,message:document.querySelector('#shell-board-preview-label')?.textContent});}requestAnimationFrame(sample);};sample();
@@ -100,15 +102,15 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
   await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
   const continueHere=page.getByRole('button',{name:'Continue on this device',exact:true});
   if(await continueHere.isVisible()) {
-    const switched=page.waitForResponse(r=>new URL(r.url()).pathname.endsWith('/computer-control') && r.request().postDataJSON()?.action==='switch');
-    await continueHere.click();expect((await switched).status()).toBe(200);
+    const switched=page.waitForRequest(r=>isOperationRequest(r,'computer-control') && operationValues(r)?.action==='switch');
+    await continueHere.click();const request=await switched;
+    await expect.poll(async()=> (await projected(page,initial.id)).computer.lease?.deviceId).toBe(operationValues(request).deviceId);
   }
   const controls = [];
-  const observe = response => {
-    if (new URL(response.url()).pathname === `/api/shell/games/${initial.id}/computer-control`)
-      controls.push({ action: response.request().postDataJSON().action, status: response.status() });
+  const observe = request => {
+    if (isOperationRequest(request,'computer-control')) controls.push({action:operationValues(request).action,envelope:request.postDataJSON()});
   };
-  page.on('response', observe);
+  page.on('request', observe);
   try {
     await switchGamePanel(page, "history");
     await page.locator('[data-action="undo-last-move"]').click();
@@ -118,8 +120,12 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
     }).toEqual({ activeMoves: 0, paused: false, state: initial.board.state });
     await switchGamePanel(page, "board");
     await expect(page.locator('[data-computer-status]')).toBeHidden();
-    expect(controls.filter(control => control.action === 'resume')).toEqual([{ action: 'resume', status: 200 }]);
-    expect(controls.every(control => control.status === 200)).toBe(true);
+    const resumes=controls.filter(control=>control.action==='resume');
+    expect(new Set(resumes.map(control=>control.envelope.clientCommandId)).size).toBe(1);
+    const envelope=resumes[0].envelope;
+    expect(envelope.kind).toBe('shared');
+    const receipt=await (await page.request.post(`/api/shell/games/${initial.id}/reconcile`,{data:{protocolVersion:2,identityId:envelope.identityId,knownSnapshotEventSeq:0,commands:[envelope]}})).json();
+    expect(receipt.commandOutcomes[0]).toMatchObject({outcome:'accepted',clientCommandId:envelope.clientCommandId,fingerprint:envelope.fingerprint});
     await page.evaluate(async () => {
       await Promise.all(document.getAnimations().filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime)).map(animation => animation.finished.catch(() => {})));
     });
@@ -134,5 +140,5 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
     const exported=JSON.parse(await readFile(await (await downloaded).path(),'utf8'));
     expect(exported.notes).toEqual([]);expect(exported.analyses).toEqual([]);expect(exported.attempts.length).toBeGreaterThan(0);
     await info.attach('undo-controls', { contentType: 'application/json', body: JSON.stringify(controls) });
-  } finally { page.off('response', observe); }
+  } finally { page.off('request', observe); }
 });

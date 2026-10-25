@@ -1,3 +1,4 @@
+import {selectGamePanel} from '../../scripts/validation/browser-navigation.mjs';
 import {readPlayableAction} from "./read-playable-action.mjs";
 import { expect, test } from "@playwright/test";
 
@@ -319,7 +320,6 @@ export const openHistoryAndReturnLive = async (page) => {
 };
 
 export const openHistoryMode = async (page, moveIndex = 0) => {
-  const tab = page.locator('[data-action="switch-game-panel"][data-panel="history"]');
   // Deliberately reveal the panel instead of scrolling a transformed offscreen pane.
   await expect(page.locator("#app")).toHaveAttribute("data-shell-layout-mode", /^(narrow|wide)$/);
   if (await page.locator("#app").getAttribute("data-shell-layout-mode") === "narrow") {
