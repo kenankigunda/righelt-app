@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createComputerSession } from '../shell/computer-session.js';
 import { renderComputerProgress } from '../shell/computer-view.js';
-import { createComputerControl, changeComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
+import { COMPUTER_CAPABILITIES, createComputerControl, changeComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
 import { createInitialState } from '../generated/packages/game-engine/src/state.js';
 
 function fixture({canAnalyze = true} = {}) {
@@ -17,7 +17,7 @@ function fixture({canAnalyze = true} = {}) {
   };
   const runtime = { compute: async (_, onProgress) => new Promise((resolve, reject) => { computed++; progress = onProgress; pending = { resolve, reject }; }), cancel: () => { cancelCount++; pending?.reject(Error('cancelled')); pending = null; } };
   const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: runtime, clock: () => now, timers: { setInterval() { return 1; }, clearInterval() {} }, getContext: () => ({ game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
-  return { session, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { game = { ...game, id: 'other-game' }; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelCount };
+  return { session, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { game = { ...game, id: 'other-game' }; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, show: () => {visible = true;}, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelCount };
 }
 
 test('connection recovery defers computer work before calculation without saving or submitting', async t => {
@@ -488,4 +488,76 @@ test('a repeated-position pause cannot relabel its old warning into another game
   release();await pause;
   assert.equal(f.session.snapshot().phase,'idle');assert.equal(f.session.snapshot().message,undefined);
   f.session.destroy();
+});
+
+test('failed automatic acquisition records its error and retries with bounded delay without resetting the notice clock',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());let requests=0;
+ f.transport.computerControl=async()=>{requests++;throw Object.assign(Error('request_timeout'),{code:'request_timeout'});};
+ await f.session.tick();assert.equal(requests,1);
+ assert.equal(f.session.snapshot().activity.lastAcquisitionFailure.code,'request_timeout');
+ f.setTime(599);await f.session.tick();assert.equal(requests,1);
+ f.setTime(600);await f.session.tick();assert.equal(requests,2);
+ f.setTime(30099);assert.equal(f.session.snapshot().activity.showRecoveryNotice,false);
+ f.setTime(30100);assert.equal(f.session.snapshot().activity.showRecoveryNotice,true);
+ await f.session.tick();assert.equal(f.session.snapshot().activity.waitingMs,30000);
+ f.game().gameplayRevision++;assert.equal(f.session.snapshot().activity.waitingMs,0);
+ f.setTime(50000);f.hide();assert.equal(f.session.snapshot().activity.waitingMs,0);
+ f.show();assert.equal(f.session.snapshot().activity.waitingMs,0);
+});
+
+test('actual computation progress resets waiting but repeated progress labels and counts do not',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();const work=f.session.tick();
+ f.setTime(1000);f.progress({phase:'looking-ahead',work:1});assert.equal(f.session.snapshot().activity.waitingMs,0);
+ f.setTime(2000);f.progress({phase:'looking-ahead',work:1});assert.equal(f.session.snapshot().activity.waitingMs,1000);
+ f.setTime(3000);f.progress({phase:'looking-ahead'});assert.equal(f.session.snapshot().activity.waitingMs,2000);
+ f.setTime(4000);f.progress({phase:'looking-ahead',work:2});assert.equal(f.session.snapshot().activity.waitingMs,0);
+ f.session.suspend();await work;
+});
+
+function enableResume(f) {
+ f.game().sharedReceipts=true;f.game().computerCapabilities=COMPUTER_CAPABILITIES;
+ f.transport.reconcileGame=async()=>{};
+}
+
+test('explicit resume here transfers control and restores paused manual play with one concurrent request',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());enableResume(f);
+ Object.assign(f.game().computer,{paused:true,manual:true,singleStep:true,takeoverTurn:0,lease:{deviceId:'elsewhere',authContextId:'session',expiresAt:10000}});
+ const control=f.transport.computerControl;let release,requests=0;
+ const gate=new Promise(resolve=>{release=resolve;});
+ f.transport.computerControl=async(...args)=>{requests++;assert.equal(args[1].action,'resume-here');await gate;return control(...args);};
+ const first=f.session.action('resume-here'),second=f.session.action('resume-here');
+ for(let i=0;i<20&&!requests;i++)await Promise.resolve();
+ assert.equal(requests,1);assert.equal(f.session.snapshot().activity.label,'Resuming');
+ assert.ok(f.session.snapshot().activity.disabledReason);
+ release();await Promise.all([first,second]);
+ const c=f.game().computer;
+ assert.equal(c.lease.deviceId,'device');assert.deepEqual([c.paused,c.manual,c.singleStep,c.takeoverTurn],[false,false,false,null]);
+ assert.equal(f.session.snapshot().activity.activeHere,true);
+});
+
+test('resume here settles authority first and refuses a new control request while the original delivery remains uncertain',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());enableResume(f);let requests=0,reconciled=0;
+ f.setBlocked(true);f.transport.reconcileGame=async()=>{reconciled++;};f.transport.computerControl=async()=>{requests++;};
+ await assert.rejects(f.session.action('resume-here'),/sync_recovering/);
+ assert.equal(reconciled,1);assert.equal(requests,0);
+});
+
+test('resume here requires advertised durable support and cannot follow account or game changes',async t=>{
+ for(const change of ['switchGame','changeAccount','changeTransport']) {
+  const f=fixture();t.after(()=>f.session.destroy());enableResume(f);let release,requests=0;
+  f.transport.reconcileGame=async()=>new Promise(resolve=>{release=resolve;});
+  f.transport.computerControl=async()=>{requests++;};
+  const work=f.session.action('resume-here');while(!release)await Promise.resolve();
+  f[change]();release();await work;assert.equal(requests,0);
+ }
+ const f=fixture();t.after(()=>f.session.destroy());
+ await assert.rejects(f.session.action('resume-here'),/upgrade_required/);
+});
+
+test('acquisition failure from a previous game never contaminates current activity',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());let reject;
+ f.transport.computerControl=async()=>new Promise((_,r)=>{reject=r;});
+ const work=f.session.tick();while(!reject)await Promise.resolve();f.switchGame();reject(Error('old-request-failed'));await work;
+ assert.equal(f.session.snapshot().activity.lastAcquisitionFailure,null);
+ assert.equal(f.session.snapshot().activity.waitingMs,0);
 });

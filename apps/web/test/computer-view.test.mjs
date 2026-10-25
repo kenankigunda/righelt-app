@@ -36,7 +36,9 @@ test('computer recovery controls wait for their own phase thresholds', () => {
  assert.match(slowSave,/Saving the move is taking longer/);assert.doesNotMatch(slowSave,/Interrupt/);
  assert.match(renderComputerProgress(game,{phase:'recovery',elapsedMs:0}),/Retry/);
  assert.equal(renderComputerProgress(game,{phase:'other-device',phaseElapsedMs:29999}), '');
- assert.match(renderComputerProgress(game,{phase:'other-device',phaseElapsedMs:30000}), /Continue on this device/);
+ assert.equal(renderComputerProgress(game,{phase:'other-device',phaseElapsedMs:30000}), '');
+ assert.match(renderComputerProgress(game,{phase:'idle',activity:{showRecoveryNotice:true}}), /Tau hasn’t resumed/);
+ assert.match(renderComputerProgress(game,{phase:'idle',activity:{showRecoveryNotice:true}}), /Resume here/);
  assert.equal(renderComputerProgress({...game,computerTurn:null},{phase:'other-device',phaseElapsedMs:30000}), '');
 });
 

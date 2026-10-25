@@ -8,7 +8,7 @@ const displayValue = value => {
   try { return JSON.stringify(value) ?? 'Unavailable'; } catch { return 'Unavailable'; }
 };
 export const escapeDebug = value => displayValue(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const controlIcons={retry:'rematch',takeover:'play',manual:'players',switch:'right',pause:'pause',resume:'play',step:'right',upgrade:'check','decline-upgrade':'close'};
+const controlIcons={retry:'rematch',takeover:'play',manual:'players',switch:'right',pause:'pause',resume:'play','resume-here':'play',step:'right',upgrade:'check','decline-upgrade':'close'};
 const button = (action, label) => `<button class="secondary" data-action="computer-control" data-control="${action}">${icon(controlIcons[action])}${label}</button>`;
 export function renderComputerProgress(game, status = {}) {
   if (!game?.computer) return '';
@@ -20,8 +20,9 @@ export function renderComputerProgress(game, status = {}) {
   const phase = { preparing: 'Preparing the computer', 'initializing-verified-runtime': 'Preparing the computer', checking: 'Checking options', 'looking-ahead': 'Looking ahead', saving: 'Saving the move' }[status.phase] ?? 'Thinking';
   let body = '';
   if (!owner) { if(game.computerTurn) body = '<p>Computer play runs on the owner’s device.</p>'; }
-  else if (status.phase === 'other-device') { if(game.computerTurn && status.phaseElapsedMs >= COMPUTER_TIMING.stalledAfterMs) body = `<p>Computer play is on another device.</p>${button('switch', 'Continue on this device')}`; }
-  else if (status.phase === 'recovery') body = `<p>The computer needs a hand.</p><div class="computer-actions">${button('retry', 'Retry')}${button('takeover', 'Play this turn')}${button('manual', 'Play both sides')}<button class="secondary" data-action="computer-branch">${icon('board')}Create new game here</button><a class="button-link secondary" href="#/">${icon('exit')}Exit</a></div>`;
+  else if (status.activity?.showRecoveryNotice) body = `<p>${escapeDebug(name)} hasn’t resumed</p>${button('resume-here', 'Resume here')}`;
+  else if (status.phase === 'other-device') { /* Deliberate handoff remains available in the player card. */ }
+  else if (status.phase === 'recovery') body = `<p>The computer needs a hand.</p><div class="computer-actions">${status.activity && !status.activity.disabledReason ? button('resume-here', 'Resume here') : button('retry', 'Retry')}${button('takeover', 'Play this turn')}${button('manual', 'Play both sides')}<button class="secondary" data-action="computer-branch">${icon('board')}Create new game here</button><a class="button-link secondary" href="#/">${icon('exit')}Exit</a></div>`;
   else if (working) {
     const progress = status.progress;
     const completed = progress?.completed ?? progress?.received, total = progress?.total;
