@@ -372,12 +372,12 @@ test("history navigation stays local-first without the removed global busy wrapp
 
 test("shell renders durable browser E2E selectors for core workflow surfaces", () => {
   assert.match(source, /data-testid="home-create-game"/);
-  assert.match(source, /data-testid="game-role"/);
+  assert.match(readFileSync(join(testDir,"..","shell","panel-loading.js"),"utf8"), /data-testid="game-role"/);
   assert.match(source, /data-testid="copy-invite"/);
   assert.match(source, /renderPlayersPanel\(game,/);
   assert.match(readFileSync(join(testDir,"..","shell","players-panel.js"),"utf8"), /data-testid="participants-list"/);
   assert.match(source, /data-testid="game-board"/);
-  assert.match(source, /data-testid="history-list"/);
+  assert.match(readFileSync(join(testDir,"..","shell","panel-loading.js"),"utf8"), /data-testid="history-list"/);
   assert.match(source, /data-testid="history-move-item"/);
   assert.match(source, /data-testid="history-pending-move-item"/);
   assert.match(source, /data-testid="history-destruction-item"/);

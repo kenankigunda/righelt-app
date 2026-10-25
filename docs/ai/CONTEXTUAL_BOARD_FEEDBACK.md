@@ -1,6 +1,6 @@
 # Contextual board feedback
 
-This follow-on builds on the opponent, invitation and history work in PR156. Its release must preserve the deployed game records and model provenance. It does not delay the training handoff after the shared150/154 contracts are deployed and verified.
+This follow-on builds on the opponent, invitation and history work in PR156. Its release must preserve the deployed game records and model provenance. Training may proceed from the reviewed immutable154 source and a frozen data cut before UI deployment, subject to an explicit resource window. Model promotion remains separate.
 
 ## Confirmed decisions
 
@@ -37,25 +37,26 @@ Hold an actual authenticated game creation before server admission to verify bot
 
 ## Recovery investigation coordination
 
-The recovery investigation is implementing separately. Its user-authorized merge and deployment remain coordinated behind150 and154; larger-storage writer activation is not authorized. It owns storage codec/archive compatibility, API and proxy error boundaries, durable delivery and recovery scheduling, compact projection/history contracts and eventual recovery severity. This stream owns board geometry and activity presentation, narration/replay, contextual explanations, home identity/presence and undo viewing intent. Integrate shared files through committed source and actual merged bases. Never copy another stream's uncommitted edits.
+The recovery investigation is implementing separately. Its user-authorized merge and deployment follow actual150, ahead of154; larger-storage writer activation is not authorized. It owns storage codec/archive compatibility, API and proxy error boundaries, durable delivery and recovery scheduling, compact projection/history contracts and eventual recovery severity. This stream owns board geometry and activity presentation, narration/replay, contextual explanations, home identity/presence and undo viewing intent. Integrate shared files through committed source and actual merged bases. Never copy another stream's uncommitted edits.
 
 Current release ledger,2026-10-25:
 
-| PR | Candidate source | State |
+| PR | Candidate or actual source | State |
 | --- | --- | --- |
-|153|74a0c30b8c16afb66fa54e063e4d8fd768ca4364|Merged, main CI and deployment successful, tools installed at this clean revision; combined155/153 production proof passed |
-|157|ce0dd6e0ed1928215f1ec14b3519c361fe90c511|Actual squash merged; fresh review CI passed35checks; main CI35/35 and deployment succeeded; installed tools verified clean atce0dd6e with installer/setup/template byte parity |
-|150|544b624da49b614a5d4f461a18c1e1331a2bbf78|Actual157 base integrated; fresh trained-play and strict CI35/35 passed. Released157 installed; official validation has the next browser slot |
-|154|e47baec52740640e335af1f984bb598ad99aabce|Local integration prework, refresh actual150 base before final gates |
-|149|6beac7ea7cf1ebbd7e7fdaa894a2795ebea59ff9|Local reviewed prework, refresh actual prerequisites before release |
-|151|366b7d2ab5b2a0c2ebe4a31f9eb032942ca67061|Compatibility cleanup staged; preserve its removal of unsupported fallbacks |
-|152|eac034563379dc1f61e8dfc71a3019436b5be7fc|Local lead head; remote0b9bbf7 CI green; final actual prerequisite integration remains |
-|156|c21a69ea2593f8fb06e341a5b03a97ae59c49fcd|Draft PR, local proof complete, refresh actual152/154 base before final gates |
-|159|83a540c|Draft on156;1050web checks passed. Edge component6/6 and selected-message9/9 browser checks passed; actual cold matrix11/12 exposed Firefox200percent font shift, scoped repair under validation |
-|158|6a777c2|Receipt/CPU recovery:828web,331API/runtime and8browser checks passed; actual150/154 refresh and released validation pending |
-|160|Independent recovery stream|Real computer-tab activity and Resume here; actual presentation/recovery prerequisites must be integrated before deployment |
+|153|74a0c30b8c16afb66fa54e063e4d8fd768ca4364|Merged and deployed; combined155/153 production proof passed |
+|157|ce0dd6e0ed1928215f1ec14b3519c361fe90c511|Merged, deployed and installed clean; main CI35/35 and installer/template parity passed |
+|150|b7661ce9616283445a50c919324b1cc24092f91e|Actual squash merged and deployed; main CI35/35, trained play and natural End Turn/Pass production proof passed; every smoke game retained |
+|158|bba259a plus source-owned capability discovery repair|Actual150 base; current CI and mixed-client recovery proof in progress; next release |
+|161|a5881d1|Result-proof compatibility tooling draft; local10unit/9browser checks passed, current CI pending; refresh actual158 before release/install |
+|154|d7f84a8bf6c34302c815a053f2ccdff9097b2556|Actual150 base, strict CI35/35 and trained play passed; refresh actual158/161 before final release proof |
+|149|6beac7ea7cf1ebbd7e7fdaa894a2795ebea59ff9|Local reviewed prework; refresh actual prerequisites |
+|151|366b7d2ab5b2a0c2ebe4a31f9eb032942ca67061|Compatibility cleanup staged; preserve supported readers and durable journals |
+|152|eac034563379dc1f61e8dfc71a3019436b5be7fc|Local lead head; earlier remote CI green; actual prerequisite integration pending |
+|156|c21a69ea2593f8fb06e341a5b03a97ae59c49fcd|Draft with local proof; refresh actual presentation prerequisites |
+|159|22a4ee0 plus shared loading/recovery follow-on|Draft; combined1061web checks and current type check passed;12actual side-card/Home checks passed in all three browsers; final integration/released/production proof pending |
+|160|fb8d0cf plus source-owned repairs|Real computer activity and Resume here; actual presentation/recovery integration and remaining browser proof pending |
 
-Authorized release order is153,157 tooling,150,154,158 critical receipt/CPU recovery,149,151,152,156,159 and160 with actual prerequisites integrated. The engine stream owns150 deployment, then the board stream154, with root coordinating one deployment at a time. Merge/deployment authority for the recovery streams was verified directly from their user instructions. This does not authorize storage/model writer activation. No production resets, account/storage generation changes, retention cleanup or game deletion are authorized. Every synthetic smoke game is also retained.
+Authorized remaining release order is158 critical recovery,161 tooling release/install,154,149,151,152,156,159 and160 with actual prerequisites integrated. Root coordinates one deployment at a time. Merge/deployment authority for the recovery streams was verified directly from their user instructions. This does not authorize storage/model writer activation. No production resets, account/storage generation changes, retention cleanup or game deletion are authorized. Every synthetic smoke game is retained.
 
 This UX sequence introduces no new large-storage representation. Before any larger-payload writer is activated, the storage stream must record the merged reader capability and rollback compatibility. Any remaining candidate here must refresh from that actual merged source and retain it, so a later UX deployment cannot restore an older incompatible reader. Add source SHA and representation/read capability to each release receipt once such a capability exists.
 
@@ -65,11 +66,15 @@ Ordinary saving text must never conceal an actionable recovery error. Accepted u
 
 Combined future proof must cover retained Pass/End Turn boundaries and original durable envelopes, lost replies, undo intent, lazy/evicted history, human/computer replay, mobile suspension, two tabs and quiet actual desktop/mobile presentation. Use pinned tools, keep publication paused and preserve all production records. Earlier timeout reports do not prove one universal historical server cause.
 
-Migration0022 is reserved to the recovery stream for history metadata representation. Its browser8791/8794 lane waits for the current bounded8790/8793 geometry matrix to release the heavy browser window. Do not reuse another stream's processes or start concurrent heavy matrices.
+Migration0022 is reserved to the recovery stream for history metadata representation. Both new writers remain off. The158-capable client/server pair is the rollback floor for shared journals unless a verified drain permits an older pair. Do not reuse another stream's processes or start concurrent heavy matrices. Training generation/model workers do not overlap queued or running heavy/browser validation; admission and resumption require an explicit resource handoff.
 
 The separately user-authorized computer-tab recovery stream supersedes semantic-only presence in the Players card. It owns real session status and expandable Resume here, while home dots remain semantic. Consume committed recovery PR158 and this follow-on's committed Players module5e16db4, followed by the complete83a540c app integration. Do not copy dirty source. Keep the small Computer badge, neutral names, colored emblems and focus/expansion stability. Its automatic notice remains delayed30seconds and explicit card recovery is immediately available subject to permission and pending-state rules. Its independently verified user deployment authority remains subject to actual prerequisite integration, current gates and coordinated release.
 
 The board swipe study is a separate design decision, with Current wash, Stronger pigment, Stone ribbons, Solid planes and Edge cut. It compares held pulse and sweep motion without changing production animation. The current24percent transparent pigment multiplied by55–100percent pulse opacity explains the visible13–24percent color strength. The user selected Edge cut. Evolve it along the outer stone silhouette/bevel, outside the card face, with additional clearance masks for headings, message labels, axes, board and controls. Keep full-strength Red/Blue motion while loading is held, no translucent content wash, no added padding or layout size. Validate320/390/768/944/1440 and enlarged text, including motion, scroll, resize, quiet/idle removal and reduced motion.
+
+### Earlier validation checkpoints
+
+The following paragraphs preserve the investigation sequence. Their pending checks are superseded by the final local checkpoint below.
 
 Edge-cut acceptance checkpoint: component checks passed in all three browsers across320/390/768/944/1440 width and enlarged-text combinations. The actual12-case card/grid pass completed11/12 at83a540c. Firefox200percent text exposed a1.5px message-line expansion during Manrope loading. Inline tokens now align to the explicit line box rather than the font x-height; the isolated held-font measurement is144px before and after. Final actual ready-state screenshots and the complete repaired matrix remain pending. The strengthened test originally expected a Pass affordance on an open-seat friend game, where Waiting for the game is correct. Preserve that failed fixture attempt separately and establish a genuine self-play ready state before reloading.
 
@@ -78,3 +83,9 @@ Final integration copy audit must retain the perspective rule in result spectato
 The corrected self-play Firefox case passed after both repairs. Its local read-only diagnostic proved that control, legal Pass and account admission were ready while the DOM still said Waiting for the game. Both unchanged-snapshot paths now refresh status without replacing canonical state, selection or ongoing cue identity. Two runtime integration regressions pass, and the actual cold reload test covers the caller. Normal and200percent coordinate/Pass originals were inspected. Allbrowser resources were released to150 official proof; the final12-case matrix is still pending. An enlarged desktop header logo/control layout oddity is recorded for a bounded follow-up before final visual acceptance.
 
 Additional coherent repairs: wide headers now use two real tracks for logo and utility controls, removing the unused32rem notification track that collapsed the logo at200percent text. Existing desktop acceptance checks cover1440/944 widths, usable logo size, one row,44px targets and overflow. Browser proof remains queued. Configured computer identity now survives manual control in static Home API cards and full-game-to-card normalization, independently of effective move permissions. Explicit human configuration clears stale computer markers; cards expose no lease/owner/control data. Failing-first API projection and actual HTTP list regressions reproduced the issue, then12 focused API checks passed. The complete relevant web suite passed1054/1054 and current type checking passed. Root reviewed the API repair; shell independently reviewed frontend identity with no findings.
+
+### Final local checkpoint
+
+Final local checkpoint: the held-font cold cases passed9/9 in all three browsers. The three desktop/header cases passed after correcting test comparisons to button centers and a subpixel floating-point threshold. Subsequent shared side-card proof passed12/12, including9cold cases with0px differences in Game, Players and History card edges, plus three actual Home manual-computer identity cases. Row positions/heights are asserted within1px; heading rectangles are retained as evidence but are not separately asserted. The shared preview uses real typography and renderer slots, including quiet feedback/footer boxes; it does not invent interactive controls or cache private identities. Arbitrary unknown history/viewer/notification content may legitimately change height.
+
+The canonical overdue-save presentation repair from387b0ea/4d854a3 is ported without API, transport or envelope changes. Initial saving stays quiet, delayed notices remain separate, and15-second or immediate deterministic/auth/storage errors expose recovery actions even while computer saving is active. Thirty-three focused checks and the combined1061web checks passed. Browser recovery execution on this exact follow-on remains pending. Source and UI-guard integration received bounded review with no blocking findings. Earlier failures and their source provenance remain in private evidence.

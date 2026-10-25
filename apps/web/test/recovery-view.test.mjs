@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { recoveryMessage, isBoardRecoveryPending } from "../shell/recovery-view.js";
+import { recoveryMessage, needsRecoveryAction, isBoardRecoveryPending } from "../shell/recovery-view.js";
 import { createLiveTransportStore } from "../shell/live-transport.js";
 
 const snapshot = (n) => ({ pieces: [], sideToMove: "P1", turnIndex: n });
@@ -46,11 +46,11 @@ test("return live is immediate offline and remains live across later server hist
  assert.deepEqual(t.getGameViewModel("history").currentSnapshot,snapshot(9));
 });
 test("recovery copy distinguishes pending, overdue, storage admission, cleanup and limits", () => {
- assert.equal(recoveryMessage({recovering:true,pendingCommandCount:1}),"Recording your move");
- assert.equal(recoveryMessage({recovering:true,pendingCommandCount:2}),"Recording your move");
- assert.equal(recoveryMessage({recovering:true,pendingCommandCount:2,confirmationOverdue:true}),"It’s taking a while to record your move. Hang tight!");
- assert.equal(recoveryMessage({recovering:true,pendingCommandCount:1,confirmationOverdue:true}),"It’s taking a while to record your move. Hang tight!");
- assert.equal(recoveryMessage({recovering:true}),"Reconnecting. We’ll be right back!");
+ assert.equal(recoveryMessage({recovering:true,pendingCommandCount:1}),"");
+ assert.equal(recoveryMessage({recovering:true,pendingCommandCount:2}),"");
+ assert.equal(recoveryMessage({recovering:true,pendingCommandCount:2,confirmationOverdue:true}),"Still checking your move. You can retry or view details.");
+ assert.equal(recoveryMessage({recovering:true,pendingCommandCount:1,confirmationOverdue:true}),"Still checking your move. You can retry or view details.");
+ assert.equal(recoveryMessage({recovering:true}),"");
  assert.equal(recoveryMessage({storageBlocked:true,unsavedCommand:true}),"We couldn’t save your move. Please try again.");
  assert.doesNotMatch(recoveryMessage({storageBlocked:true}),/wasn't sent/);
  assert.match(recoveryMessage({storageBlocked:true,storageLimitReached:true}),/earlier moves/);
@@ -207,4 +207,33 @@ test("computer saves remain quiet until slow and never hide failures", () => {
  assert.match(recoveryMessage({...saving,storageBlocked:true},1001),/trouble saving/);
  assert.match(recoveryMessage({...saving,recoveryIssue:"invalid_response"},1001),/reconnect/);
  assert.match(recoveryMessage({...saving,upgradeRequired:true},1001),/Refresh/);
+});
+
+test('an active uncertain computer save becomes actionable by the earliest fifteen-second deadline',()=>{
+ const game={recovering:true,pendingCommandCount:1,pendingComputerSaveStartedAt:0,recoveryStartedAt:5000};
+ assert.equal(recoveryMessage(game,9999,{computerSaveActive:true}),'');
+ assert.equal(needsRecoveryAction(game,14999),false);
+ assert.equal(recoveryMessage(game,14999,{computerSaveActive:true}),'');
+ assert.equal(needsRecoveryAction(game,15000),true);
+ assert.match(recoveryMessage(game,15000,{computerSaveActive:true}),/retry or view details/);
+ assert.equal(needsRecoveryAction({...game,recoveryStartedAt:14000},15000),true);
+ assert.match(recoveryMessage({...game,confirmationOverdue:true},100,{computerSaveActive:true}),/retry or view details/);
+ for(const recoveryIssue of ['session_changed','invalid_credentials','invalid_response'])assert.equal(needsRecoveryAction({...game,recoveryIssue},1),true);
+});
+
+test('recovery uses finite earliest clocks and never postpones explicit failures',()=>{
+ const game={recovering:true,pendingCommandCount:1,pendingComputerSaveStartedAt:5000,recoveryStartedAt:0};
+ assert.equal(recoveryMessage(game,9999),'');
+ assert.match(recoveryMessage(game,10000),/computer’s move/);
+ assert.equal(needsRecoveryAction(game,14999),false);
+ assert.equal(needsRecoveryAction(game,15000),true);
+ for(const starts of [{recoveryStartedAt:null,pendingComputerSaveStartedAt:0},{recoveryStartedAt:NaN,pendingComputerSaveStartedAt:0},{recoveryStartedAt:0,pendingComputerSaveStartedAt:Infinity}])assert.equal(needsRecoveryAction({...game,...starts},15000),true);
+ assert.equal(needsRecoveryAction({recovering:true,recoveryStartedAt:NaN,pendingComputerSaveStartedAt:null},999999),false);
+ for(const issue of [{storageBlocked:true},{upgradeRequired:true},{recoveryIssue:'session_changed'},{recoveryIssue:'invalid_credentials'},{recoveryIssue:'invalid_response'}]){
+  const pending={...game,...issue,recovering:false,syncStatus:'ready'};
+  assert.equal(needsRecoveryAction(pending,1),true);assert.notEqual(recoveryMessage(pending,1,{computerSaveActive:true}),'');
+ }
+ assert.equal(needsRecoveryAction({...game,confirmationOverdue:true},1),true);
+ assert.match(recoveryMessage({...game,confirmationOverdue:true},1,{computerSaveActive:true}),/retry or view details/);
+ assert.equal(recoveryMessage({...game,recoveryIssue:'unavailable'},9999,{computerSaveActive:true}),'');
 });

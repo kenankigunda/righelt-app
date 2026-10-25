@@ -1,4 +1,5 @@
 @import "./loading.css";
+@import "./panel-loading.css";
 @import "./notification-motion.css";
 :root {
   --bg: #f4f1e8;

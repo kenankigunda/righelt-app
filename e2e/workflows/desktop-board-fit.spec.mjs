@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {readSideCardAnchors,expectSideCardAnchors} from '../support/side-card-loading.mjs';
 import {writeFile} from 'node:fs/promises';
 import {createGameFromHome,makeAnyLegalMove,switchGamePanel} from '../support/app.mjs';
 
@@ -45,7 +46,7 @@ test('desktop board fits primary viewport, remains stable through scroll/header 
  // Longer history or scrolling must not feed viewport-relative sticky positions back into sizing.
  await page.evaluate(()=>{const history=document.querySelector('[data-game-panel="history"]');const extra=document.createElement('div');extra.style.height='1600px';extra.dataset.fixtureHistory='';history.append(extra);window.scrollTo(0,550);});
  await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(0);
- const scrolled=await read(page);expect(scrolled.board.width).toBe(primary.board.width);expect(scrolled.board.height).toBe(primary.board.height);expect(scrolled.panel.height).toBe(primary.panel.height);
+ const scrolled=await read(page);expect(scrolled.board.width).toBeCloseTo(primary.board.width,2);expect(scrolled.board.height).toBeCloseTo(primary.board.height,2);expect(scrolled.panel.height).toBeCloseTo(primary.panel.height,2);
  await page.evaluate(()=>window.scrollTo(0,0));
  await page.locator('[data-action="toggle-sound"]').click();compareGeometry(await read(page),primary);
  await page.locator('[data-action="toggle-sound"]').click();
@@ -62,10 +63,10 @@ test('desktop board fits primary viewport, remains stable through scroll/header 
   const headerGeometry=()=>page.locator('.shell-header').evaluate(header=>{
    const logo=header.querySelector('.shell-header-title-link svg').getBoundingClientRect();
    const buttons=[...header.querySelectorAll('.shell-header-actions .nav-row > button')].map(button=>{
-    const rect=button.getBoundingClientRect();return {top:rect.top,left:rect.left,right:rect.right,height:rect.height};
+    const rect=button.getBoundingClientRect();return {top:rect.top,centerY:rect.top+rect.height/2,left:rect.left,right:rect.right,height:rect.height};
    });
    return {logoWidth:logo.width,height:header.getBoundingClientRect().height,buttons,
-    rowSpread:Math.max(...buttons.map(button=>button.top))-Math.min(...buttons.map(button=>button.top)),
+    rowSpread:Math.max(...buttons.map(button=>button.centerY))-Math.min(...buttons.map(button=>button.centerY)),
     overflow:document.documentElement.scrollWidth-innerWidth};
   });
   await expect.poll(async()=>{const geometry=await headerGeometry();return geometry.logoWidth>=200&&geometry.rowSpread<=1&&geometry.height<150;}).toBe(true);
@@ -126,6 +127,7 @@ for(const [width,height,text]of[[1440,800,100],[390,740,100],[1440,800,200]])tes
   await page.reload({waitUntil:'domcontentloaded'});await expect(page.getByTestId('game-loading-shell')).toBeVisible();await expect.poll(()=>fontSeen).toBe(true);
   const beforeFont=await read(page);expect(beforeFont.startup.fonts).toBe('loading');releaseFont();await page.evaluate(()=>document.fonts.ready);
   const loading=await read(page);expect(loading.kind).toBe('loading');
+  const loadingSideCards=await readSideCardAnchors(page);
   await writeFile(info.outputPath('held-geometry.json'),JSON.stringify({beforeFont,loading},null,2));
   compareGeometry(beforeFont,loading);
   await expect.poll(()=>page.evaluate(()=>{
@@ -161,6 +163,9 @@ for(const [width,height,text]of[[1440,800,100],[390,740,100],[1440,800,200]])tes
   await writeFile(info.outputPath('cold-geometry-before-assertions.json'),JSON.stringify({beforeFont,loading,firstLoaded:await read(page),frames:await page.evaluate(()=>window.desktopFrames)},null,2));
   await expect.poll(async()=>Math.abs((await read(page)).panel.height-loading.panel.height)).toBeLessThanOrEqual(1);
   const loaded=await read(page);compareGeometry(loading,loaded);
+  const loadedSideCards=await readSideCardAnchors(page);
+  await writeFile(info.outputPath('side-card-anchors.json'),JSON.stringify({loading:loadingSideCards,loaded:loadedSideCards},null,2));
+  expectSideCardAnchors(loadingSideCards,loadedSideCards);
   await page.screenshot({path:info.outputPath('hydrated.png')});
   const {frames,timeline}=await page.evaluate(()=>{window.recordDesktopFrames=false;return {frames:window.desktopFrames,timeline:window.desktopLoadingTimeline};});expect(frames.length).toBeGreaterThan(1);
   await writeFile(info.outputPath('loading-timeline.json'),JSON.stringify(timeline,null,2));

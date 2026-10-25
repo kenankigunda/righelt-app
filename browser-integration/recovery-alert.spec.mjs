@@ -124,3 +124,13 @@ for(const width of [320,390])test(`normal recovery keeps Home beside Reload game
  await containedControls(page);const a=await reload.boundingBox(),b=await home.boundingBox();expect(b.x).toBeGreaterThanOrEqual(a.x+a.width);expect(b.y).toBeCloseTo(a.y,1);
  await page.screenshot({path:info.outputPath('recovery-actions-normal.png')});
 });
+
+test('recovery fixture follows the actual quiet and actionable timing contract',async({page})=>{
+ await openFixture(page);await page.clock.install();const started=await page.evaluate(()=>Date.now());
+ const game={recovering:true,recoveryStartedAt:started};
+ for(const [elapsed,visible,actionable] of [[3999,false,false],[4000,true,false],[14999,true,false],[15000,true,true]]){
+  await page.clock.setFixedTime(started+elapsed);await page.evaluate(game=>window.renderMode('quiet',{game,diagnostics:false}),game);
+  await expect(page.getByTestId('fixture-alert')).toHaveCount(visible?1:0);
+  await expect(page.getByRole('button',{name:'Reload game',exact:true})).toHaveCount(actionable?1:0);
+ }
+});

@@ -1,4 +1,5 @@
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName} from './perspective-labels.js';
+import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
 import { buildTurnReplay, createComputerReplay } from './computer-replay.js';
 import { deriveBoardView, createViewingIntent } from './viewing-state.js';
@@ -59,7 +60,7 @@ import { icon, soundToggle, headerActionContent } from './ui.js';
 import { createGameSound } from './sound.js';
 import { createModal } from './modal.js';
 import { createOpponentStoryDialog, OPPONENT_STORIES } from './opponent-stories.js';
-import { recoveryMessage, sharedMutationActions, isBoardRecoveryPending } from "./recovery-view.js";
+import { recoveryMessage, needsRecoveryAction, sharedMutationActions, isBoardRecoveryPending } from "./recovery-view.js";
 import { renderGameAlertCard } from "./game-alert.js";
 import { createNotificationStack, recoveryActivity } from "./notification-state.js";
 import { patchNotificationTree, patchNotificationHtml, replaceMainPreservingHeader } from "./notification-dom.js";
@@ -1610,6 +1611,7 @@ const getGameAlertItems = (game) => {
   }));
 
   const message = presentedRecoveryMessage(game);
+  const recoveryNeedsAction = needsRecoveryAction(game);
   for (const report of issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.key.startsWith("operation:"))) if (!failedOperations.some(op => `operation:${op.id}` === report.key)) issueDiagnostics.resolve(report.key);
   const retained = issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.resolvedAt && isDiagnosticOpen(r.id));
   for (const report of retained) items.push({ key: `resolved:${report.id}`, html: renderGameAlertCard({ body: "Resolved", incidentId: report.id, action: `<button class="secondary mini-button" data-action="dismiss-diagnostic" data-incident-id="${report.id}">${icon('close')}Dismiss</button>` }) });
@@ -1617,9 +1619,9 @@ const getGameAlertItems = (game) => {
   const dismissed = dismissedRecoveryNotices.get(game.id) === message;
   if (message && (!dismissed || game.storageBlocked)) {
     items.unshift({
-      key: `live-sync:${game.id}:${game.recoveryEpisodeId ?? "current"}`, priority: game.storageBlocked || game.upgradeRequired || game.recoveryIssue ? "urgent" : "normal",
-      html: renderGameAlertCard({ tone: "warn", activity: recoveryActivity(game), actorSide: activityActorSide(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: game.incidentId,
-        action: game.storageBlocked
+      key: `live-sync:${game.id}:${game.recoveryEpisodeId ?? "current"}`, priority: recoveryNeedsAction ? "urgent" : "normal",
+      html: renderGameAlertCard({ tone: recoveryNeedsAction ? "warn" : "neutral", activity: recoveryActivity(game), actorSide: activityActorSide(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: recoveryNeedsAction ? game.incidentId : null,
+        action: !recoveryNeedsAction ? "" : game.storageBlocked
           ? `<button class="secondary mini-button" data-action="retry-saving" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Retry saving</button>${dismissed ? "" : `<button class="secondary mini-button" data-action="dismiss-recovery-notice" data-game-id="${escapeHtml(game.id)}">${icon('close')}Dismiss</button>`}`
           : game.upgradeRequired ? `<button class="secondary mini-button" data-action="refresh-game">${icon('rematch')}Refresh</button>`
           : ["session_changed", "invalid_credentials"].includes(game.recoveryIssue) ? `<button class="secondary mini-button" data-action="account-open">${icon('account')}Sign in</button>`
@@ -2436,13 +2438,7 @@ const renderGameViewSkeleton = () => `<div data-testid="game-view-skeleton">${re
 const renderInvitePageSkeleton = () => `
   <section class="invite-gate" data-testid="invite-view-skeleton">
     <section class="panel invite-gate-modal skeleton-panel loading-region" ${loadingAttributes("invite", "Your invitation is taking a little longer to load.")}>
-      <div class="skeleton-pulse skeleton-line skeleton-line-kicker"></div>
-      <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
-      <div class="skeleton-pulse skeleton-line"></div>
-      <div class="invite-choice-list">
-        <div class="skeleton-pulse skeleton-button"></div>
-        <div class="skeleton-pulse skeleton-button"></div>
-      </div>
+      ${renderInvitationLoading({actions:currentRoute.inviteAs==='viewer'?2:3})}
     </section>
     <div class="invite-gate-content" aria-hidden="true" inert>
       ${renderGameViewSkeleton()}
@@ -2453,23 +2449,16 @@ const renderInvitePageSkeleton = () => `
 const renderGameSummaryPanel = (game) => {
   const rawNote = game.notifications[0] || "Ready";
   const latestNote = ({ "Player request approved": "Join request approved", "Play as both players enabled": "You’re now playing both sides", "Undo applied": "Move undone" })[rawNote] ?? (/accepted the undo request$/.test(rawNote) ? "Undo request accepted" : /rejected the undo request$/.test(rawNote) ? "Undo request declined. Play can continue." : /rescinded the undo request$/.test(rawNote) ? "Undo request cancelled. Play can continue." : rawNote);
-  return `
-    <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
-    <div class="section-stack">
-      <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
-      <p class="small" data-testid="game-role">Role: ${renderRoleLabel(game.myRole, game)}</p>
-      <div class="section-followup">
-        <p class="small" data-testid="active-turn-label">Active turn: ${
+  return renderSummarySlots({title:`Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span>`,
+      started:`Started ${escapeHtml(formatClientDateTime(game.createdAt))}`,
+      role:`Role: ${renderRoleLabel(game.myRole, game)}`,
+      turn:`Active turn: ${
           game.currentTurn
             ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${renderSeatLabel(game.currentTurn.playerSeat)} · ${escapeHtml(
                 String(game.currentTurn.moveIndexes.length),
               )} move(s)`
             : "n/a"
-        }</p>
-        <p class="small">Latest: ${colorizePlayerReferences(latestNote)}</p>
-      </div>
-    </div>
-  `;
+        }`,latest:`Latest: ${colorizePlayerReferences(latestNote)}`});
 };
 
 const renderJoinInvitePanel = (game, inviteLink) => {
@@ -2560,14 +2549,8 @@ const renderAdditionalHistory = game => {
 
 const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
-  return `
-    <h2>History</h2>
-    <div class="section-followup">
-      <ol class="history-list" data-testid="history-list">${historyRows}</ol>
-      ${renderAdditionalHistory(game)}
-    </div>
-    ${getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button>` : ""}
-  `;
+  return renderHistorySlots({rows:historyRows,extra:renderAdditionalHistory(game),
+    after:getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button>` : ""});
 };
 
 const renderBoardPanel = (game) => `
@@ -2614,8 +2597,8 @@ const renderGameShellFrame = (game, { loading = false } = {}) => `
     <div class="game-shell-track-wrap">
       <section class="layout-grid game-shell-track" data-game-shell-track>
         <div class="stack game-shell-mobile-panel" data-mobile-panel="players" data-shell-sticky-target="left" data-sticky-enabled="false">
-          <section class="panel" data-game-panel="summary">${loading ? '<h2>Game</h2><div class="skeleton-pulse skeleton-line"></div>' : ""}</section>
-          <section class="panel" data-game-panel="join">${loading ? '<h2>Players</h2><div class="skeleton-pulse skeleton-line"></div>' : ""}</section>
+          <section class="panel" data-game-panel="summary">${loading ? renderSummaryLoading(`Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span>`) : ""}</section>
+          <section class="panel" data-game-panel="join">${loading ? renderPlayersLoading() : ""}</section>
 
         </div>
 
@@ -2626,7 +2609,7 @@ const renderGameShellFrame = (game, { loading = false } = {}) => `
         </div>
 
         <div class="stack game-shell-mobile-panel" data-mobile-panel="history">
-          <section class="panel" data-game-panel="history">${loading ? '<h2>History</h2><div class="skeleton-pulse skeleton-line"></div>' : ""}</section>
+          <section class="panel" data-game-panel="history">${loading ? renderHistoryLoading() : ""}</section>
         </div>
       </section>
     </div>

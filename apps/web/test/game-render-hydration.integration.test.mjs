@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {icon} from '../shell/ui.js';
+import {needsRecoveryAction,recoveryMessage} from '../shell/recovery-view.js';
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const start=source.indexOf('const renderGame ='),end=source.indexOf('const renderInviteLanding =',start);
 assert.ok(start>0&&end>start);
@@ -32,11 +33,12 @@ test('known snapshots preserve result, host and approval gates before hydration 
 });
 
 test('recovery action templates keep semantic navigation, visible labels and decorative brand icons',()=>{
- const start=source.indexOf('action: game.storageBlocked',source.indexOf('const getGameAlertItems'))+'action: '.length;
+ const start=source.indexOf('action: !recoveryNeedsAction',source.indexOf('const getGameAlertItems'))+'action: '.length;
  const end=source.indexOf(',\n      }),',start);
  assert.ok(start>20&&end>start);
- const render=new Function('game','dismissed','escapeHtml','icon',`return (${source.slice(start,end)});`);
- const html=render({id:'game<1'},false,value=>String(value).replaceAll('<','&lt;'),icon);
+ const actualActions=new Function('game','dismissed','escapeHtml','icon','recoveryNeedsAction',`return (${source.slice(start,end)});`);
+ const render=(game,dismissed,escapeHtml,icons,now=15000)=>actualActions(game,dismissed,escapeHtml,icons,needsRecoveryAction(game,now));
+ const html=render({id:'game<1',recovering:true,recoveryStartedAt:0},false,value=>String(value).replaceAll('<','&lt;'),icon);
  assert.match(html,/data-action="reconnect-safely" data-game-id="game&lt;1"/);
  assert.match(html,/>Reload game<\/button>/);assert.doesNotMatch(html,/Reload now/);
  assert.match(html,/<a[^>]+href="#\/">[\s\S]*?Home<\/a>/);
@@ -47,4 +49,20 @@ test('recovery action templates keep semantic navigation, visible labels and dec
   assert.match(markup,new RegExp(`data-action="${action}"`));
   assert.match(markup,new RegExp(`</svg>${label}</button>`));
  }
+});
+
+// Execute the actual app action expression against the same exported timing
+// helper used by getGameAlertItems, rather than forcing a recovery button.
+test('actual recovery actions stay absent while quiet/recording and appear at the original overdue deadline',()=>{
+ const start=source.indexOf('action: !recoveryNeedsAction',source.indexOf('const getGameAlertItems'))+'action: '.length;
+ const end=source.indexOf(',\n      }),',start);assert.ok(start>20&&end>start);
+ const actions=new Function('game','dismissed','escapeHtml','icon','recoveryNeedsAction',`return (${source.slice(start,end)});`);
+ const game={id:'g',recovering:true,pendingCommandCount:1,pendingComputerSaveStartedAt:0,recoveryStartedAt:5000};
+ for(const [now,message,actionable] of [[9999,'',false],[10000,'Saving the computer’s move is taking longer than usual',false],[14999,'Saving the computer’s move is taking longer than usual',false],[15000,'Still checking your move. You can retry or view details.',true]]){
+  assert.equal(recoveryMessage(game,now),message);
+  const html=actions(game,false,String,icon,needsRecoveryAction(game,now));
+  if(actionable){assert.match(html,/data-action="reconnect-safely"/);assert.match(html,/href="#\/"/);}else assert.equal(html,'');
+ }
+ const immediate=[{storageBlocked:true},{upgradeRequired:true},{recoveryIssue:'session_changed'},{recoveryIssue:'invalid_credentials'},{recoveryIssue:'invalid_response'}];
+ for(const issue of immediate){const value={...game,...issue};assert.ok(recoveryMessage(value,1));assert.notEqual(actions(value,false,String,icon,needsRecoveryAction(value,1)),'');}
 });

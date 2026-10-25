@@ -35,7 +35,7 @@ export default defineConfig({
     },
     ...["firefox", "webkit"].map(name => ({
       name,
-      testMatch: /(desktop-board-fit|opponent-invite-polish|destruction-sound|human-opponent-replay|computer-feedback|mobile-board-history|sync-recovery-(pressure|ux)|recovery-freeze-regression|browser-move-input|home-create-refresh|guest-computer-play|storage-lifecycle|destruction-lifecycle)\.spec\.mjs/,
+      testMatch: /(desktop-board-fit|home-opponent-identity|opponent-invite-polish|destruction-sound|human-opponent-replay|computer-feedback|mobile-board-history|sync-recovery-(pressure|ux)|recovery-freeze-regression|browser-move-input|home-create-refresh|guest-computer-play|storage-lifecycle|destruction-lifecycle)\.spec\.mjs/,
       use: { ...devices[name === "firefox" ? "Desktop Firefox" : "Desktop Safari"],
         launchOptions: browserLaunchOptions(name) },
     })),

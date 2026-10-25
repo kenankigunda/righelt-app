@@ -47,9 +47,9 @@ test("failed diagnostic persistence never escapes and report/event limits hold",
 });
 test("reconnect presentation waits four seconds, but actionable failures bypass it", () => {
  const g={recovering:true,pendingCommandCount:0,recoveryStartedAt:1000};
- assert.equal(recoveryMessage(g,4999),"");assert.equal(recoveryMessage(g,5000),"Reconnecting. We’ll be right back!");
- assert.equal(recoveryMessage({...g,recoveryIssue:"unavailable"},1001),"We couldn’t record your move. Please reconnect.");
- assert.match(recoveryMessage({...g,pendingCommandCount:1,confirmationOverdue:true},1001),/Hang tight!/);
+ assert.equal(recoveryMessage(g,4999),"");assert.equal(recoveryMessage(g,5000),"Reconnecting");
+ assert.equal(recoveryMessage({...g,recoveryIssue:"unavailable"},1001),"");
+ assert.match(recoveryMessage({...g,pendingCommandCount:1,confirmationOverdue:true},1001),/retry or view details/);
 });
 
 test("push continuation diagnostics retain frozen flags and action intent without identities", () => {
