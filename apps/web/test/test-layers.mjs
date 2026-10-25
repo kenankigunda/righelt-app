@@ -32,7 +32,6 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "computer-replay.test.mjs",
   "opponent-narration.test.mjs",
   "additional-history.test.mjs",
-  "additional-history-access.integration.test.mjs",
   "join-feedback.test.mjs",
   "destruction-sound.test.mjs",
   "bootstrap.test.mjs",
