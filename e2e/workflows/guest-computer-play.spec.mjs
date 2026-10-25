@@ -85,12 +85,12 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
     // natural completion; the manual replay below exercises explicit Stop.
     await expect(page.locator('.computer-replay')).toHaveCount(0);
     await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
-    assertReplayIntegrity({writes,before:beforeReplay,after:await projected(page,initial.id)});
+    await assertReplayIntegrity({writes,before:beforeReplay,after:await projected(page,initial.id)});
     await page.emulateMedia({reducedMotion:'reduce'});
     await page.getByRole('button',{name:'Show me again',exact:true}).click();
     await expect(page.getByRole('button',{name:'Next',exact:true})).toBeVisible();
     await page.getByRole('button',{name:'Stop replay',exact:true}).click();
-    assertReplayIntegrity({writes,before:beforeReplay,after:await projected(page,initial.id)});
+    await assertReplayIntegrity({writes,before:beforeReplay,after:await projected(page,initial.id)});
     await page.emulateMedia({reducedMotion:'no-preference'});
   } finally {page.off('request',observeReplay);}
   const saved = (await projected(page, initial.id)).moves.find(move=>move.computerProof);
