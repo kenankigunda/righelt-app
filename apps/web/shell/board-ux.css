@@ -12,6 +12,7 @@ body {display:flow-root;}
 .board-heading-slot {display:grid;}
 .board-heading-slot > .board-heading {grid-area:1 / 1;min-width:0;}
 .board-heading-slot + .board-message-slot {margin-block-start:0;}
+#app[data-shell-layout-mode="narrow"] [data-shell-panel="board"] .board {grid-template-columns:repeat(10,minmax(0,1fr));}
 /* Expand the tap surface inside the reserved message space, without moving
    the board or turning the inline action into a heavy toolbar. */
 .board-preview-label .board-preview-inline-button {position:relative;min-width:44px;}
