@@ -3,6 +3,121 @@ import test from "node:test";
 
 import { onRequest } from "../functions/api/[[path]].js";
 
+const projectionUrl = "http://localhost:8788/api/shell/games/game-test?identityId=private-identity";
+const connectionLoss = () => new Error("Network connection lost.");
+async function withForwarder(fetcher, inspect) {
+  const original = { fetch: globalThis.fetch, error: console.error, info: console.info };
+  const calls = [], diagnostics = [];
+  globalThis.fetch = async request => { calls.push(request); return fetcher(request, calls.length); };
+  console.error = console.info = (...args) => diagnostics.push(args);
+  try { await inspect(calls, diagnostics); }
+  finally { globalThis.fetch = original.fetch; console.error = original.error; console.info = original.info; }
+}
+
+test("local projection connection loss repeats one fresh read with the same authority and correlation", async () => {
+  const id = crypto.randomUUID(), controller = new AbortController();
+  await withForwarder((_request, attempt) => {
+    if (attempt === 1) throw connectionLoss();
+    return new Response("projection", { headers: { "X-Righelt-Server-Build": "same-build" } });
+  }, async (calls, diagnostics) => {
+    const request = new Request(projectionUrl, { signal: controller.signal, headers: {
+      "X-Righelt-Request-Id": id, "X-Righelt-Session": "private-session", Cookie: "private-cookie",
+    } });
+    const response = await onRequest({ request, env: {} });
+    assert.equal(await response.text(), "projection"); assert.equal(calls.length, 2);
+    assert.notEqual(calls[0], calls[1]);
+    for (const forwarded of calls) {
+      assert.equal(forwarded.url, projectionUrl.replace("localhost:8788", "127.0.0.1:8787"));
+      assert.equal(forwarded.headers.get("X-Righelt-Session"), "private-session");
+      assert.equal(forwarded.headers.get("Cookie"), "private-cookie");
+      assert.equal(forwarded.headers.get("X-Righelt-Request-Id"), id);
+      assert.equal(forwarded.body, null);
+    }
+    controller.abort(); assert.ok(calls.every(call => call.signal.aborted));
+    assert.equal(response.headers.get("X-Righelt-Local-Forward-Attempts"), "2");
+    assert.equal(response.headers.get("X-Righelt-Server-Build"), "same-build");
+    assert.equal(response.headers.get("X-Righelt-Request-Id"), id);
+    assert.equal(diagnostics[0][0], "[local-api-forwarding-failure]");
+    assert.deepEqual(JSON.parse(diagnostics[1][1]), { requestId: id, attempts: 2, outcome: "recovered" });
+    assert.ok(!JSON.stringify(diagnostics).includes("private-"));
+  });
+});
+
+test("repeated local projection failure stops after two attempts and preserves safe503", async () => {
+  await withForwarder(() => { throw connectionLoss(); }, async (calls, diagnostics) => {
+    const response = await onRequest({ request: new Request(projectionUrl), env: {} });
+    assert.equal(response.status, 503); assert.equal(calls.length, 2);
+    assert.deepEqual(await response.json(), { ok: false, error: "local_api_unavailable" });
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("X-Righelt-Local-Forward-Attempts"), "2");
+    assert.equal(diagnostics.filter(item => item[0] === "[local-api-forwarding-failure]").length, 2);
+    assert.equal(JSON.parse(diagnostics.at(-1)[1]).outcome, "failed");
+  });
+});
+
+test("received HTTP errors are never retried, including after a connection-loss retry", async () => {
+  for (const status of [401, 404, 500, 503]) for (const loseFirst of [false, true]) {
+    await withForwarder((_request, attempt) => {
+      if (loseFirst && attempt === 1) throw connectionLoss();
+      return new Response("original-error", { status });
+    }, async calls => {
+      const response = await onRequest({ request: new Request(projectionUrl), env: {} });
+      assert.equal(response.status, status); assert.equal(await response.text(), "original-error");
+      assert.equal(calls.length, loseFirst ? 2 : 1);
+    });
+  }
+});
+
+test("local retry excludes mutations, viewer joins, other routes, upgrades and unknown queries", async () => {
+  const cases = [
+    ...["POST", "PATCH", "PUT", "DELETE", "HEAD"].map(method => [projectionUrl, { method }]),
+    [projectionUrl + "&openAsViewer=1", {}], [projectionUrl + "&futureOption=1", {}],
+    ["http://localhost:8788/api/auth/session", {}], [projectionUrl.replace("?", "/live?"), {}],
+    [projectionUrl, { headers: { Upgrade: "websocket" } }],
+    [projectionUrl, { headers: { Connection: "keep-alive, Upgrade" } }],
+  ];
+  for (const [url, init] of cases) await withForwarder(() => { throw connectionLoss(); }, async calls => {
+    const response = await onRequest({ request: new Request(url, init), env: {} });
+    assert.equal(response.status, 503); assert.equal(calls.length, 1);
+    assert.equal(response.headers.has("X-Righelt-Local-Forward-Attempts"), false);
+  });
+});
+
+test("other exception types, near messages and hostile exception getters are never retried", async () => {
+  const hostile = new Proxy({}, { get() { throw Error("private"); } });
+  for (const error of [new TypeError("Network connection lost."), new DOMException("Network connection lost.", "AbortError"),
+    Error("Network connection lost"), Error("Network connection lost. private-details"), Error("different"), hostile]) {
+    await withForwarder(() => { throw error; }, async calls => {
+      const response = await onRequest({ request: new Request(projectionUrl), env: {} });
+      assert.equal(response.status, 503); assert.equal(calls.length, 1);
+    });
+  }
+});
+
+test("cancellation before a read or during its failed attempt prevents retry", async () => {
+  for (const initiallyAborted of [false, true]) {
+    const controller = new AbortController(); if (initiallyAborted) controller.abort();
+    await withForwarder(() => { controller.abort(); throw connectionLoss(); }, async calls => {
+      const response = await onRequest({ request: new Request(projectionUrl, { signal: controller.signal }), env: {} });
+      assert.equal(response.status, 503); assert.equal(calls.length, initiallyAborted ? 0 : 1);
+    });
+  }
+});
+
+test("hosted service failures and response-body failures never trigger a local read retry", async () => {
+  await withForwarder(() => { throw Error("unexpected local fetch"); }, async calls => {
+    let hostedCalls = 0;
+    const response = await onRequest({ request: new Request("https://righelt.pages.dev/api/shell/games/game-test"),
+      env: { API_SERVICE: { fetch() { hostedCalls++; throw connectionLoss(); } } } });
+    assert.equal(hostedCalls, 1); assert.equal(calls.length, 0); assert.equal(response.status, 503);
+    assert.equal(response.headers.has("X-Righelt-Local-Forward-Attempts"), false);
+  });
+  await withForwarder(() => new Response(new ReadableStream({ start(controller) { controller.error(connectionLoss()); } })), async calls => {
+    const response = await onRequest({ request: new Request(projectionUrl), env: {} });
+    await assert.rejects(response.text(), /Network connection lost/); assert.equal(calls.length, 1);
+  });
+});
+
 test("upstream exceptions keep correlation and return a safe retryable error",async()=>{
   const requestId=crypto.randomUUID();
   const response=await onRequest({request:new Request("https://righelt.pages.dev/api/health",{headers:{"X-Righelt-Request-Id":requestId}}),env:{API_SERVICE:{fetch(){throw Error("private infrastructure details");}}}});
