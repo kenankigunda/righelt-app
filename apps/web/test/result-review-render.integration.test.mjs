@@ -137,3 +137,13 @@ test("retained historical turns keep an exit even after undo removes the live tu
     assert.doesNotMatch(context.history({...game,inHistoryMode:false}), /data-testid="history-return-live"/);
   }
 });
+
+test('actual result renderer affiliates victory with the authoritative winning side',()=>{
+ for(const [winner,identity]of[['p1','red'],['p2','blue']]){
+  const game={id:'g',player1:{identityId:'red'},player2:{identityId:'blue'},currentTurn:{playerSeat:winner==='p1'?'Player 2':'Player 1'},board:{state:{sideToMove:winner==='p1'?'P2':'P1',pieces:[{id:winner==='p1'?'C1':'C2',supplied:true}],outcome:{status:`${winner}_win`,reason:winner==='p1'?'p2_commander_destroyed':'p1_commander_destroyed'}}}};
+  const context={game,renderResultMark,getGameResult,transport:{getIdentityId:()=>identity,getAuthoritativeGame:()=>game},escapeHtml:String,formatDisplayGameId:String,icon,participantName,participantDisplayName};
+  runInNewContext(`${extract('const renderResult =','const renderGame =')};globalThis.output=renderResult(game);`,context);
+  assert.match(context.output,new RegExp(`data-result-tone="victory" data-winner="${winner}"`));
+  assert.match(context.output,/>You won<\/h1>/);assert.match(context.output,/Your opponent’s commander was destroyed/);
+ }
+});

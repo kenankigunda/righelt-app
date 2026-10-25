@@ -48,3 +48,20 @@ for(const width of [320,390])test(`200% result text enlarges its heading and kee
   await result.screenshot({path:info.outputPath(`result-enlarged-${side}-${width}.png`)});
  }
 });
+
+test('red and blue winners keep their actual side color throughout the victory animation',async({page},info)=>{
+ await page.setViewportSize({width:390,height:844});await open(page);await page.emulateMedia({reducedMotion:'no-preference'});
+ for(const [identity,winner]of[['red','p1'],['blue','p2']]){
+  await page.evaluate(([identity,winner])=>{window.resultFixture.setup(identity);window.resultFixture.finish(false,`${winner}_win`);},[identity,winner]);
+  const result=page.locator('.game-result');await expect(result).toHaveAttribute('data-result-tone','victory');await expect(result).toHaveAttribute('data-winner',winner);
+  await expect(result.getByRole('heading',{name:'You won',exact:true})).toBeVisible();
+  const colors=await result.evaluate((el,winner)=>{
+   const probe=document.createElement('i');probe.style.color=`var(--player-${winner})`;el.append(probe);const expected=getComputedStyle(probe).color;probe.remove();
+   const mark=el.querySelector('.result-mark'),animations=mark.getAnimations({subtree:true});animations.forEach(animation=>animation.pause());
+   const samples=[0,300,900].map(time=>{animations.forEach(animation=>animation.currentTime=time);return{color:getComputedStyle(mark).color,stone:getComputedStyle(mark.querySelector('.result-stone')).fill,fragments:[...mark.querySelectorAll('.result-fragment')].map(fragment=>getComputedStyle(fragment).fill)};});
+   animations.forEach(animation=>animation.currentTime=300);return{expected,samples,count:animations.length};
+  },winner);
+  expect(colors.count).toBeGreaterThan(0);for(const sample of colors.samples){expect(sample.color).toBe(colors.expected);expect(sample.stone).toBe(colors.expected);expect(sample.fragments).toHaveLength(4);expect(sample.fragments.every(color=>color===colors.expected)).toBe(true);}
+  await result.screenshot({path:info.outputPath(`victory-${identity}-midpoint.png`)});
+ }
+});
