@@ -1,5 +1,6 @@
 import { canonicalCommandJson } from '../../shared-types/src/sync-protocol';
 import { archiveStatements, readDecision, readDecisionPage, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
+import { StorageWriteLimitError } from './storage-codec';
 import { COMPUTER_LIMITS, changeComputerControl, computerCommandError, createComputerControl, parseComputerSeats, type ComputerProof } from '../../shared-types/src/computer-play';
 import { STORAGE_POLICY, STORAGE_GENERATION_HEADER } from "../../shared-types/src/storage-policy";
 import { storageRoomName } from "./storage-generation";
@@ -14,7 +15,7 @@ import { AuthProblem } from './auth-controls';
 import { equivalentGameStates, deterministicStateHash } from "../../game-engine/src/hash";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import { readSyncBody, SyncBodyError } from "./sync-body";
-import { commandFingerprint, isReconcileRequest, isSyncCommand, type SyncCommand, type CommandOutcome, type CommandReceipt } from "../../shared-types/src/sync-protocol";
+import { LIVE_HISTORY, SHARED_OPERATIONS, commandFingerprint, isReconcileRequest, isSyncCommand, type SyncCommand, type CommandOutcome, type CommandReceipt } from "../../shared-types/src/sync-protocol";
 import { commandReceiptStatement, loadCommandReceipt, hasLegacyCommandEvidence } from "./sync-receipts";
 import type {
   ClientSocketMessage,
@@ -94,6 +95,7 @@ type DurableObjectStateLike = {
 type SessionStatus = "active" | "inactive" | "disconnecting";
 
 type SessionAttachment = {
+  compactHistory?: boolean;
   authVersion?: number;
   authority?: GameAuthority | null;
   gameId: string;
@@ -105,6 +107,7 @@ type SessionAttachment = {
 };
 
 type SessionRecord = {
+  compactHistory?: boolean;
   authVersion?: number;
   authority?: GameAuthority | null;
   socket: WebSocket;
@@ -172,13 +175,25 @@ const isVerboseServerLoggingEnabled = () => {
   return value === "1" || value === "true" || value === "yes" || value === "on" || value === "verbose";
 };
 
+// Capability negotiated per request/socket; durable state and old clients keep full snapshots.
+export const compactHistoryResponse = (body: Record<string, unknown>): Record<string, unknown> => {
+  const game = body.game as Record<string, unknown> | undefined;
+  if (!game || !Array.isArray(game.moves)) return body;
+  const last = game.moves.length - 1;
+  return { ...body, game: { ...game, historyProjection: LIVE_HISTORY.snapshotValue, sharedReceipts: true, moves: game.moves.map((move, index) => {
+    if (index === last) return move;
+    const { snapshot: _snapshot, selectionSnapshot: _selection, ...summary } = move;
+    return index === 0 ? {...summary,selectionSnapshot:_selection} : summary;
+  }) } };
+};
+
 const eventForSession = (event: ServerEvent, identityId: string) => {
   if (!("game" in event)) {
     return event;
   }
   return {
     ...event,
-    game: withViewModel(event.game as LiveGame, identityId),
+    game: { ...withViewModel(event.game as LiveGame, identityId), sharedReceipts: true },
   };
 };
 
@@ -186,6 +201,8 @@ export class GameRoomDO {
   private readonly state: DurableObjectStateLike;
   private env: LiveGameEnv;
   private game: LiveGame | null = null;
+  private sharedCommand: SyncCommand | null = null;
+  private sharedReceipt: CommandReceipt | null = null;
   private requestId: string | null = null;
   private requestOperation = "";
   private requestIdentity = "";
@@ -304,16 +321,18 @@ export class GameRoomDO {
           );
           this.requestAuthority = authorized.authority;
           const response = await this.fetchQueued(authorized.request);
-          if (!authActive(this.env) || response.status === 101 || !response.headers.get("content-type")?.includes("application/json")) {
+          if (response.status === 101 || !response.headers.get("content-type")?.includes("application/json")) {
             return response;
           }
-          const body = await enrichAccountNames(await response.json() as Record<string, unknown>, this.env.DB as unknown as AuthDatabase);
+          const original = await response.json() as Record<string, unknown>;
+          const body = authActive(this.env) ? await enrichAccountNames(original, this.env.DB as unknown as AuthDatabase) : original;
           // Recheck after enrichment before personalized output, including existing receipts.
           if (this.requestAuthority && !await currentGameAuthority(this.env, this.requestAuthority)) {
             throw new AuthProblem("session_changed", 409);
           }
           this.env = await withCutoverPolicy(this.env);
-          return json(sanitizeGameResponse(body, this.requestAuthority, !maintenanceAllowed(this.env,this.requestAuthority?.accountId)), response.status);
+          const safe = authActive(this.env) ? sanitizeGameResponse(body, this.requestAuthority, !maintenanceAllowed(this.env,this.requestAuthority?.accountId)) : body;
+          return json(request.headers.get(LIVE_HISTORY.requestHeader) === LIVE_HISTORY.requestValue ? compactHistoryResponse(safe) : safe, response.status);
         } finally {
           this.requestAuthority = null;
         }
@@ -422,7 +441,7 @@ export class GameRoomDO {
       return json({ ok: true, game: withViewModel(candidate, identityId), eventSeq: this.eventSeq });
     }
 
-    const body = path === '/decision-attempt' ? await readSyncBody(request, COMPUTER_LIMITS.attemptBytes) : ["/moves", "/apply", "/end-turn", "/reconcile", '/decision-history', '/decision-attempts', '/decision-notes'].includes(path) ? await readSyncBody(request) : await parseBody(request);
+    const body = path === '/decision-attempt' ? await readSyncBody(request, COMPUTER_LIMITS.attemptBytes) : ["/moves", "/apply", "/end-turn", "/reconcile", '/decision-history', '/decision-snapshot', '/decision-attempts', '/decision-notes'].includes(path) ? await readSyncBody(request) : await parseBody(request);
     const identityId = asIdentity(body.identityId);
       this.requestIdentity=identityId??"";
     if (!identityId) {
@@ -435,12 +454,19 @@ export class GameRoomDO {
     }
     const game = loaded;
     if (!authActive(this.env) && game.ownershipMode === "account_v1") throw new AuthProblem("temporarily_unavailable", 503);
-    if (authActive(this.env) && game.ownershipMode !== "account_v1" && !["/legal", "/piece-moves", "/piece-actions", '/decision-history', '/decision-attempts', '/decision-attempt', '/decision-notes'].includes(path)) throw new AuthProblem("legacy_read_only", 403);
-    if (["/moves", "/apply", "/end-turn", "/reconcile"].includes(path)) {
+    if (authActive(this.env) && game.ownershipMode !== "account_v1" && !["/legal", "/piece-moves", "/piece-actions", '/decision-history', '/decision-snapshot', '/decision-attempts', '/decision-attempt', '/decision-notes'].includes(path)) throw new AuthProblem("legacy_read_only", 403);
+    if (["/moves", "/apply", "/end-turn", "/shared", "/reconcile"].includes(path)) {
       return this.handleSyncCommand(path, body, game);
     }
     if (!["/history", "/live", "/presence", "/legal", "/piece-actions", "/piece-moves"].includes(path) && body.protocolVersion !== 2) {
       return json({ ok: false, error: "upgrade_required", protocolVersion: 2 }, 426);
+    }
+
+    if (request.method === 'POST' && path === '/decision-snapshot') {
+      if (typeof body.decisionId !== "string" || body.gameplayRevision !== game.gameplayRevision) return json({ok:false,error:"history_changed"},409);
+      const move = game.moves.find(move => move.moveId === body.decisionId) ?? (await readDecision(this.env,game.id,body.decisionId))?.move;
+      if (!move) return json({ok:false,error:"decision_not_found"},404);
+      return json({ok:true,gameId:game.id,gameplayRevision:game.gameplayRevision,move});
     }
 
     if (request.method === 'POST' && path === '/decision-history') {
@@ -920,6 +946,7 @@ export class GameRoomDO {
 
     const session: SessionRecord = {
       ...(authActive(this.env) ? { authVersion: AUTH_PROTOCOL_VERSION, authority: this.requestAuthority ? { ...this.requestAuthority, renew: false } : null } : {}),
+      compactHistory: url.searchParams.get(LIVE_HISTORY.socketQuery) === LIVE_HISTORY.snapshotValue,
       socket: server,
       gameId: game.id,
       sessionId,
@@ -1197,7 +1224,7 @@ export class GameRoomDO {
     for (const command of commands) {
       if (authActive(this.env) && !reconcile && command.authContextId !== this.requestAuthority?.contextId) throw new AuthProblem("session_changed", 409);
       if (command.gameId !== game.id || command.identityId !== body.identityId || await commandFingerprint(command) !== command.fingerprint) return json({ ok: false, error: "invalid_command_fingerprint" }, 400);
-      const routeKind = path === "/moves" ? "move" : path === "/apply" ? "action" : "end_turn";
+      const routeKind = path === "/moves" ? "move" : path === "/apply" ? "action" : path === "/shared" ? "shared" : "end_turn";
       if (!reconcile && command.kind !== routeKind) return json({ ok: false, error: "invalid_command_kind" }, 400);
     }
     const existing = !reconcile ? await loadCommandReceipt(this.env, game.id, commands[0].clientCommandId) : null;
@@ -1233,7 +1260,7 @@ export class GameRoomDO {
     if (authActive(this.env) && command.authContextId !== this.requestAuthority?.contextId) return outcome("unknown", "retired_session");
     if (await hasLegacyCommandEvidence(this.env, game.id, command.clientCommandId)) return outcome("unknown", "legacy_evidence");
     const reject = async (reason: string) => {
-      const rejected = outcome("rejected", reason, this.eventSeq + 1) as CommandReceipt;
+      const rejected = outcome("rejected", reason, this.eventSeq + 1, this.game!.gameplayRevision) as CommandReceipt;
       await this.persistCandidate(clone(this.game!), null, rejected);
       return rejected;
     };
@@ -1245,10 +1272,28 @@ export class GameRoomDO {
     } else if (command.expectedGameplayRevision > game.gameplayRevision) return reject("invalid_dependency");
     const expectedState = asGameState(command.expectedState);
     const sameBoard = expectedState && equivalentGameStates(expectedState, game.board.state);
-    if (command.expectedGameplayRevision !== game.gameplayRevision || !sameBoard || (command.kind === "end_turn" && command.expectedTurnIndex !== game.board.state.turnIndex)) return reject("stale_state");
+    // Shared operations carry stable request/decision IDs or lease generations.
+    // Their handlers enforce those guards even if unrelated gameplay advanced.
+    if (command.kind !== "shared" && (command.expectedGameplayRevision !== game.gameplayRevision || !sameBoard || (command.kind === "end_turn" && command.expectedTurnIndex !== game.board.state.turnIndex))) return reject("stale_state");
     if (!execute) return outcome("unknown", "not_recorded");
     const role = findRoleForIdentity(game, command.identityId);
     if (role !== "Player 1" && role !== "Player 2") return reject("role_not_allowed");
+    if (command.kind === "shared") {
+      const operation = command.payload.operation;
+      const values = command.payload.values;
+      if (!SHARED_OPERATIONS.includes(operation as typeof SHARED_OPERATIONS[number]) || !values || typeof values !== "object" || Array.isArray(values)) return reject("invalid_shared_operation");
+      this.sharedCommand=command;this.sharedReceipt=null;
+      try {
+        const response=await this.fetchQueued(new Request(`https://game-room/${operation}`,{method:"POST",headers:{"x-game-id":game.id,...(this.env.STORAGE_GENERATION?{[STORAGE_GENERATION_HEADER]:this.env.STORAGE_GENERATION}:{})},body:JSON.stringify({...values,protocolVersion:2,identityId:command.identityId})}));
+        const body=await response.json() as Record<string,unknown>;
+        if(!response.ok || body.ok===false) return await reject(String(body.error??"operation_rejected"));
+        if(!this.sharedReceipt) await this.persistCandidate(clone(this.game!),null);
+        return this.sharedReceipt!;
+      } catch(error) {
+        if(error instanceof StorageWriteLimitError)return await reject("state_capacity_exceeded");
+        throw error;
+      } finally {this.sharedCommand=null;this.sharedReceipt=null;}
+    }
     const ownerSeat = command.kind === "end_turn" ? getActiveTurn(game)?.playerSeat : getSideToMoveSeat(game);
     if (!ownerSeat || getSeatIdentity(game, ownerSeat) !== command.identityId) return reject("not_your_turn");
     const payload = command.payload;
@@ -1282,7 +1327,13 @@ export class GameRoomDO {
       ...("destroyedPieces" in result ? { destroyedPieces: result.destroyedPieces } : {}),
     } } as CommandReceipt;
     const event: EventAppendedEvent = { type: "event_appended", reason: command.kind === "end_turn" ? "turn_ended" : "move_recorded", eventSeq: this.eventSeq + 1, clientCommandId: command.clientCommandId, game: clone(game) };
-    await this.persistCandidate(game, event, accepted);
+    try { await this.persistCandidate(game, event, accepted); }
+    catch(error) {
+      // Encoding limits are checked before DB.batch. The unchanged authoritative
+      // game can record a durable rejection. Unknown writes never take this path.
+      if(error instanceof StorageWriteLimitError)return reject("state_capacity_exceeded");
+      throw error;
+    }
     this.scheduleBroadcast(event);
     return accepted;
   }
@@ -1332,8 +1383,17 @@ export class GameRoomDO {
     const started = Date.now();
     const base = this.eventSeq;
     const gameplay = (value: LiveGame | null) => value ? JSON.stringify([value.board, value.moves, value.turns]) : null;
-    game.gameplayRevision = (this.game?.gameplayRevision ?? 0) + (this.game && gameplay(this.game) !== gameplay(game) ? 1 : 0);
-    const archive = archiveStatements(this.env, this.game, game, base + 1);
+    const gameplayChanged = Boolean(this.game && gameplay(this.game) !== gameplay(game));
+    game.gameplayRevision = (this.game?.gameplayRevision ?? 0) + (gameplayChanged ? 1 : 0);
+    // A rejection records evidence only. Preserve the already durable payload,
+    // including saves written before a capacity setting was rolled back.
+    const metadataOnly = Boolean(this.game && !gameplayChanged);
+    const preservePayload = receipt?.outcome === "rejected" && JSON.stringify(game) === JSON.stringify(this.game);
+    if (!receipt && this.sharedCommand) {
+      const command=this.sharedCommand;
+      receipt={gameId:game.id,identityId:command.identityId,clientCommandId:command.clientCommandId,fingerprint:command.fingerprint,outcome:"accepted",reason:null,eventSeq:base+1,gameplayRevision:game.gameplayRevision};
+    }
+    const archive = preservePayload || (metadataOnly && game.archiveStartRevision !== undefined) ? [] : archiveStatements(this.env, this.game, game, base + 1);
     event ??= { type: "state_sync", eventSeq: base + 1, reason: "projection_updated", game: clone(game) };
     if ("game" in event) event.game = clone(game);
     if (receipt) {
@@ -1341,7 +1401,7 @@ export class GameRoomDO {
       Object.assign(event, { commandOutcome: receipt });
     }
     try {
-      await persistGameState(this.env, game, base + 1, event, { baseEventSeq: base, invitesChanged: !this.game || JSON.stringify(this.game.inviteTokens) !== JSON.stringify(game.inviteTokens), activityChanged: !systemPresence && (!this.game || game.gameplayRevision !== this.game.gameplayRevision || Boolean(event && ["join_request_created", "join_request_resolved"].includes(event.type)) || Boolean(event && "reason" in event && /revert|seat|play_as|player_joined/.test(event.reason))), before: permit.before as D1Statement[], after: permit.after as D1Statement[], statements: [...archive, ...additionalStatements, ...(this.requestAuthority && authActive(this.env) ? gameGuardStatements(this.env, this.requestAuthority) as D1Statement[] : []), ...(receipt ? [commandReceiptStatement(this.env, receipt)] : [])] });
+      await persistGameState(this.env, game, base + 1, event, { metadataOnly, preservePayload, baseEventSeq: base, invitesChanged: !this.game || JSON.stringify(this.game.inviteTokens) !== JSON.stringify(game.inviteTokens), activityChanged: !systemPresence && (!this.game || game.gameplayRevision !== this.game.gameplayRevision || Boolean(event && ["join_request_created", "join_request_resolved"].includes(event.type)) || Boolean(event && "reason" in event && /revert|seat|play_as|player_joined/.test(event.reason))), before: permit.before as D1Statement[], after: permit.after as D1Statement[], statements: [...archive, ...additionalStatements, ...(this.requestAuthority && authActive(this.env) ? gameGuardStatements(this.env, this.requestAuthority) as D1Statement[] : []), ...(receipt ? [commandReceiptStatement(this.env, receipt)] : [])] });
     } catch (error) {
       // A rejected batch response may follow a durable commit. Force a durable read
       // before any next mutation; never retain or acknowledge the speculative candidate.
@@ -1357,6 +1417,7 @@ export class GameRoomDO {
     }
     this.game = clone(game);
     this.eventSeq = base + 1;
+    if (this.sharedCommand && receipt) this.sharedReceipt=receipt;
     this.logDiagnostic("info", "live_server_commit_completed", { commandId: receipt?.clientCommandId ?? null, databaseMs: Date.now() - started, gameplayRevision: game.gameplayRevision });
   }
 
@@ -1390,7 +1451,8 @@ export class GameRoomDO {
       payload = sanitizeGameResponse(payload as unknown as Record<string, unknown>, session.authority ?? null, !maintenanceAllowed(env,session.authority?.accountId)) as unknown as ServerEvent;
     }
     try {
-      socket.send(JSON.stringify({ ...payload, ...(env.STORAGE_GENERATION ? { storageGeneration: env.STORAGE_GENERATION } : {}), ...(authActive(env) ? { authProtocolVersion: AUTH_PROTOCOL_VERSION } : {}), protocolVersion: 2, gameId: this.getLoadedGameId() }));
+      const projected = session?.compactHistory ? compactHistoryResponse(payload as unknown as Record<string,unknown>) : payload;
+      socket.send(JSON.stringify({ ...projected, ...(env.STORAGE_GENERATION ? { storageGeneration: env.STORAGE_GENERATION } : {}), ...(authActive(env) ? { authProtocolVersion: AUTH_PROTOCOL_VERSION } : {}), protocolVersion: 2, gameId: this.getLoadedGameId() }));
     } catch {
       const session = this.sessions.get(socket);
       this.sessions.delete(socket);
@@ -1483,6 +1545,7 @@ export class GameRoomDO {
     }
     return {
       socket,
+      compactHistory: candidate.compactHistory === true,
       authVersion: candidate.authVersion,
       authority: candidate.authority,
       gameId: candidate.gameId,
@@ -1497,6 +1560,7 @@ export class GameRoomDO {
   private persistSessionAttachment(socket: HibernationWebSocket, session: SessionRecord) {
     socket.serializeAttachment?.({
       ...(session.authVersion ? { authVersion: session.authVersion, authority: session.authority ?? null } : {}),
+      compactHistory: session.compactHistory === true,
       gameId: session.gameId,
       sessionId: session.sessionId,
       identityId: session.identityId,

@@ -6,7 +6,8 @@ import {tmpdir} from "node:os";
 import path from "node:path";
 import {fixture} from "./fixture.mjs";
 import {commandFingerprint} from "../../../packages/shared-types/src/sync-protocol.ts";
-import {decodeStorage} from "../src/storage-codec.ts";
+import {decodeStorage,encodeStorage} from "../src/storage-codec.ts";
+import {applyServerAction} from "../src/shell-live-core.ts";
 import {reserveArchiveOperation,reserveRestore} from "../src/storage-budget.ts";
 
 const require=createRequire(import.meta.url),wranglerRequire=createRequire(require.resolve("wrangler/package.json"));
@@ -20,12 +21,59 @@ async function harness(bindings={},migrationLimit=Infinity){
   for(const name of (await readdir(path.join(root,"db/migrations"))).filter(n=>n.endsWith(".sql")&&Number(n.slice(0,4))<=migrationLimit).sort())await db.exec((await readFile(path.join(root,"db/migrations",name),"utf8")).replace(/--[^\n]*/g,"").replace(/\s+/g," "));
   if(migrationLimit>=16)await db.prepare("UPDATE storage_budget SET healthy=1,observed_at=datetime('now') WHERE singleton=1").run();
   const call=async(route,body={},headers={})=>{
-    const response=await runtime.dispatchFetch(`https://test/${route}`,{method:"POST",headers:{"content-type":"application/json","x-game-id":"g",...headers},body:JSON.stringify({identityId:"actor",protocolVersion:2,...body})});
+    const response=await runtime.dispatchFetch(`https://test/${route}`,{method:"POST",headers:{"content-type":"application/json","x-game-id":"g",...(options.bindings.STORAGE_GENERATION?{"X-Righelt-Storage-Generation":options.bindings.STORAGE_GENERATION}:{}),...headers},body:JSON.stringify({identityId:"actor",protocolVersion:2,...body})});
     return {status:response.status,body:await response.json()};
   };
   const current=async()=>{const row=await db.prepare("SELECT * FROM live_games WHERE game_id='g'").first();const payload=await db.prepare("SELECT * FROM game_payloads WHERE game_id='g'").first();return {row,game:payload?await decodeStorage(payload.state_blob,payload.state_sha256):JSON.parse(row.state_json)};};
-  return {call,current,get db(){return db;},get runtime(){return runtime;},async restart(){await runtime.dispose();runtime=new Miniflare(options);db=await runtime.getD1Database("DB");},async close(){await runtime.dispose();await rm(directory,{recursive:true,force:true});}};
+  return {call,current,get db(){return db;},get runtime(){return runtime;},async restart(bindings={}){await runtime.dispose();Object.assign(options.bindings,bindings);runtime=new Miniflare(options);db=await runtime.getD1Database("DB");},async close(){await runtime.dispose();await rm(directory,{recursive:true,force:true});}};
 }
+
+test("expanded history survives an accepted move, lost reply, restart, archive and restore",{timeout:120000},async()=>{
+  const h=await harness({STORAGE_LARGE_STATES_ENABLED:"true"});
+  try{
+    await h.call("create",{gameId:"g",selfPlayMode:true});
+    const {game,row}=await h.current();
+    for(let i=0;i<100;i++){
+      assert.equal(applyServerAction(game,{type:"pass"}).ok,true);
+      game.moves.at(-1).notation="Recorded decision ".repeat(1100);
+    }
+    game.archiveStartRevision=0;
+    const encoded=await encodeStorage(game);
+    assert.ok(encoded.rawBytes>2_000_000);
+    await h.db.prepare("UPDATE game_payloads SET state_blob=?1,state_sha256=?2 WHERE game_id='g'").bind(encoded.blob,encoded.checksum).run();
+    await h.restart();
+    const command={protocolVersion:2,gameId:"g",identityId:"actor",clientCommandId:"v2:large-history",kind:"action",payload:{action:{type:"pass"}},expectedState:game.board.state,expectedGameplayRevision:row.gameplay_revision};
+    command.fingerprint=await commandFingerprint(command);
+    const lost=await h.call("apply",command,{"x-harness-lose-response":"1"});
+    assert.equal(lost.status,500);
+    await h.restart();
+    const duplicate=await h.call("apply",command);
+    assert.equal(duplicate.body.accepted,true,JSON.stringify(duplicate));
+    assert.equal(duplicate.body.duplicate,true);
+    assert.equal(duplicate.body.game.moves.length,101);
+    const before=await h.current();
+    await h.db.prepare("UPDATE live_games SET retention_activity_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-8 days') WHERE game_id='g'").run();
+    for(let i=0;i<12;i++){
+      const result=await h.call("_storage/tick");assert.equal(result.status,200,JSON.stringify(result));
+      if((await h.db.prepare("SELECT status FROM game_archives WHERE game_id='g'").first())?.status==="archived")break;
+    }
+    assert.equal((await h.db.prepare("SELECT status FROM game_archives WHERE game_id='g'").first()).status,"archived");
+    await h.restart({STORAGE_LARGE_STATES_ENABLED:"false"});
+    const historical=await h.call("history",{moveIndex:0});
+    assert.equal(historical.status,200,JSON.stringify(historical));
+    assert.deepEqual(historical.body.game.moves,before.game.moves);
+    // Begin the bounded restore, then drain its remaining receipt chunks. The
+    // disabled writer must not prevent restoring an already durable payload.
+    const restoring=await h.call("join",{identityId:"viewer",mode:"viewer"});
+    assert.equal(restoring.body.error,"storage_restoring",JSON.stringify(restoring));
+    for(let i=0;i<12;i++){
+      if(!await h.db.prepare("SELECT * FROM game_archives WHERE game_id='g'").first())break;
+      assert.equal((await h.call("_storage/tick")).status,200);
+    }
+    assert.equal(await h.db.prepare("SELECT * FROM game_archives WHERE game_id='g'").first(),null);
+    assert.deepEqual((await h.current()).game.moves,before.game.moves);
+  }finally{await h.close();}
+});
 
 test("archive, read-only history, receipt recovery and staged restore preserve play across restarts",{timeout:120000},async()=>{
   const h=await harness();
@@ -339,5 +387,54 @@ test("canary sweep isolates its game and skips unrelated cleanup",{timeout:12000
   assert.equal(await h.db.prepare('SELECT * FROM game_archives WHERE game_id=?').bind(other).first(),null);
   assert.ok(await h.db.prepare("SELECT * FROM account_rate_limits WHERE bucket_key='keep-canary-cleanup'").first());
   assert.equal((await h.call('_storage/tick',{}, {'x-game-id':other,'x-storage-archive-steps':'64'})).status,403);
+ }finally{await h.close();}
+});
+
+test("metadata format migration preserves saves and commits presence without rewriting history",{timeout:120000},async()=>{
+ const h=await harness({STORAGE_METADATA_WRITES_ENABLED:"true"},21);
+ try{
+  await h.call("create",{gameId:"g",selfPlayMode:true});
+  const before=await h.db.prepare("SELECT * FROM game_payloads WHERE game_id='g'").first();
+  const migration=await readFile(path.join(root,"db/migrations/0022_history_metadata_representation.sql"),"utf8");
+  await h.db.exec(migration.replace(/--[^\n]*/g,"").replace(/\s+/g," "));
+  assert.deepEqual(await h.db.prepare("SELECT * FROM game_payloads WHERE game_id='g'").first(),before);
+  const joined=await h.call("join",{identityId:"viewer",mode:"viewer"});
+  assert.equal(joined.status,200,JSON.stringify(joined));
+  const after=await h.db.prepare("SELECT * FROM game_payloads WHERE game_id='g'").first();
+  assert.equal(after.format_version,2);
+  assert.equal(after.state_sha256,before.state_sha256);
+  assert.deepEqual(after.state_blob,before.state_blob);
+  await h.restart({STORAGE_METADATA_WRITES_ENABLED:"false"});
+  const loaded=await h.call("reconcile",{knownSnapshotEventSeq:0,commands:[]});
+  assert.equal(loaded.status,200,JSON.stringify(loaded));
+  assert.equal(loaded.body.game.viewers.some(viewer=>viewer.identityId==="viewer"),true);
+  await h.db.prepare("UPDATE account_cutover SET maintenance=1 WHERE singleton=1").run();
+  await assert.rejects(h.db.prepare("UPDATE game_payloads SET format_version=1 WHERE game_id='g'").run(),/account_cutover_write_denied/);
+ }finally{await h.close();}
+});
+
+for(const operation of ["revert-request","computer-control"])test(`shared ${operation} receipt is atomic across a lost commit response and restart`,{timeout:120000},async()=>{
+ const h=await harness({STORAGE_METADATA_WRITES_ENABLED:"true",STORAGE_GENERATION:"retained-generation"});
+ try{
+  await h.call("create",{gameId:"g",selfPlayMode:true,...(operation==="computer-control"?{computer:{p1:"babs",p2:null}}:{})});
+  if(operation==="revert-request"){
+   const {game,row}=await h.current();
+   const move={protocolVersion:2,gameId:"g",identityId:"actor",clientCommandId:"v2:before-undo",kind:"action",payload:{action:{type:"pass"}},expectedState:game.board.state,expectedGameplayRevision:row.gameplay_revision};
+   move.fingerprint=await commandFingerprint(move);assert.equal((await h.call("apply",move)).body.accepted,true);
+  }
+  const {game,row}=await h.current();
+  const values=operation==="revert-request"?{targetMoveId:game.moves.at(-1).moveId,requestId:"immutable-undo"}:{deviceId:"test-device",generation:game.computer.generation,action:"acquire"};
+  const command={protocolVersion:2,gameId:"g",identityId:"actor",clientCommandId:`v2:shared-${operation}`,kind:"shared",payload:{operation,values},expectedState:game.board.state,expectedGameplayRevision:row.gameplay_revision};
+  command.fingerprint=await commandFingerprint(command);
+  assert.equal((await h.call("shared",command,{"x-harness-lose-response":"1"})).status,500);
+  const committed=await h.current();
+  await h.restart();
+  const duplicate=await h.call("shared",command);
+  assert.equal(duplicate.body.accepted,true,JSON.stringify(duplicate));assert.equal(duplicate.body.duplicate,true);
+  assert.deepEqual(await h.current(),committed);
+  const reconciled=await h.call("reconcile",{knownSnapshotEventSeq:0,commands:[command]});
+  assert.equal(reconciled.body.commandOutcomes[0].outcome,"accepted");
+  const conflicting=structuredClone(command);conflicting.payload.values={...values,action:"switch"};conflicting.fingerprint=await commandFingerprint(conflicting);
+  assert.equal((await h.call("shared",conflicting)).body.commandOutcomes[0].reason,"command_id_conflict");
  }finally{await h.close();}
 });

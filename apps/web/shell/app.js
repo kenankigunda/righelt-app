@@ -1637,6 +1637,7 @@ const getGameAlertItems = (game) => {
   }));
 
   const message = recoveryMessage(game);
+  const recoveryNeedsAction = game.storageBlocked || game.upgradeRequired || ["session_changed", "invalid_credentials"].includes(game.recoveryIssue) || game.confirmationOverdue || (game.recoveryStartedAt && Date.now() - game.recoveryStartedAt >= SYNC_TIMING.confirmationBudgetMs);
   for (const report of issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.key.startsWith("operation:"))) if (!failedOperations.some(op => `operation:${op.id}` === report.key)) issueDiagnostics.resolve(report.key);
   const retained = issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.resolvedAt && isDiagnosticOpen(r.id));
   for (const report of retained) items.push({ key: `resolved:${report.id}`, html: renderGameAlertCard({ body: "Resolved", incidentId: report.id, action: `<button class="secondary mini-button" data-action="dismiss-diagnostic" data-incident-id="${report.id}">Dismiss</button>` }) });
@@ -1644,16 +1645,20 @@ const getGameAlertItems = (game) => {
   const dismissed = dismissedRecoveryNotices.get(game.id) === message;
   if (message && (!dismissed || game.storageBlocked)) {
     items.unshift({
-      key: `live-sync:${game.id}:${game.recoveryEpisodeId ?? "current"}`, priority: game.storageBlocked || game.upgradeRequired || game.recoveryIssue ? "urgent" : "normal",
-      html: renderGameAlertCard({ tone: "warn", activity: recoveryActivity(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: game.incidentId,
-        action: game.storageBlocked
+      key: `live-sync:${game.id}:${game.recoveryEpisodeId ?? "current"}`, priority: recoveryNeedsAction ? "urgent" : "normal",
+      html: renderGameAlertCard({ tone: recoveryNeedsAction ? "warn" : "neutral", activity: recoveryActivity(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: recoveryNeedsAction ? game.incidentId : null,
+        action: !recoveryNeedsAction ? "" : game.storageBlocked
           ? `<button class="secondary mini-button" data-action="retry-saving" data-game-id="${escapeHtml(game.id)}">Retry saving</button>${dismissed ? "" : `<button class="secondary mini-button" data-action="dismiss-recovery-notice" data-game-id="${escapeHtml(game.id)}">Dismiss</button>`}`
           : game.upgradeRequired ? `<button class="secondary mini-button" data-action="refresh-game">Refresh</button>`
           : ["session_changed", "invalid_credentials"].includes(game.recoveryIssue) ? `<button class="secondary mini-button" data-action="account-open">Sign in</button>`
-          : `<button class="secondary mini-button" data-action="reconnect-safely" data-game-id="${escapeHtml(game.id)}">Reload now</button>`,
+          : `<button class="secondary mini-button" data-action="reconnect-safely" data-game-id="${escapeHtml(game.id)}">Retry</button>`,
       }),
     });
   }
+  if (game.historyLoading || game.historyLoadError) items.push({key:`history-load:${game.id}`,html:renderGameAlertCard({
+    body:game.historyLoading ? "Loading this move" : "This move couldn’t load. Your current view is still available.",
+    action:game.historyLoadError ? `<button class="secondary mini-button" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${game.historyLoadIndex}">Retry</button>` : "",
+  })});
   if (game.historyNotice) items.push({ key: `history-change:${game.id}`, html: renderGameAlertCard({ body: escapeHtml(game.historyNotice) }) });
 
   if (undoRequestFeedback && undoRequestFeedbackGameId === game.id) {
@@ -3371,7 +3376,7 @@ const getHistoryDestroyedPieceOverlays = (game) => {
   if (!game?.inHistoryMode || typeof game.historyIndex !== "number") {
     return [];
   }
-  const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
+  const move = game.inspectedDecision ?? (Array.isArray(game.moves) ? game.moves[game.historyIndex] : null);
   return buildDestroyedPieceOverlays({
     destroyedPieceRecords: move?.destroyedPieces ?? [],
     preActionSnapshot: move?.selectionSnapshot ?? null,
@@ -3382,7 +3387,7 @@ const getHistoryRecordedActionStartPiece = (game) => {
   if (!game?.inHistoryMode || typeof game.historyIndex !== "number") {
     return null;
   }
-  const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
+  const move = game.inspectedDecision ?? (Array.isArray(game.moves) ? game.moves[game.historyIndex] : null);
   if (!move?.selectionSnapshot || !move?.action) {
     return null;
   }
@@ -3404,7 +3409,7 @@ const updateReconnectPresentation = game => {
   clearTimeout(reconnectPresentationTimer);
   if (recovering && game.recoveryStartedAt) {
     const elapsed = Date.now() - game.recoveryStartedAt;
-    const remaining = elapsed < LOADING_CUE_DELAY_MS ? LOADING_CUE_DELAY_MS - elapsed : elapsed < SYNC_TIMING.reconnectAlertMs ? SYNC_TIMING.reconnectAlertMs - elapsed : null;
+    const remaining = elapsed < LOADING_CUE_DELAY_MS ? LOADING_CUE_DELAY_MS - elapsed : elapsed < SYNC_TIMING.reconnectAlertMs ? SYNC_TIMING.reconnectAlertMs - elapsed : elapsed < SYNC_TIMING.confirmationBudgetMs ? SYNC_TIMING.confirmationBudgetMs - elapsed : null;
     if (remaining !== null) reconnectPresentationTimer = setTimeout(() => { const next = transport.getGameViewModel(game.id); updateReconnectPresentation(next); updateMountedHeader(); }, remaining + 1);
   }
 };

@@ -340,3 +340,20 @@ for (const rejected of [false, true]) test(`history mutation fences automatic re
   assert.deepEqual(requests, [rejected ? 'renew' : 'acquire']);
   f.session.destroy();
 });
+
+test('a routine lease renewal retains a completed calculation until its receipt settles',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ const control=f.transport.computerControl;let release;
+ f.transport.computerControl=async(...args)=>{
+  if(args[1].action==='renew'){f.setBlocked(true);await new Promise(resolve=>{release=resolve;});}
+  await control(...args);f.setBlocked(false);
+ };
+ const work=f.session.tick();assert.equal(f.computations(),1);
+ f.setTime(5200);await f.session.tick();
+ while(!release)await Promise.resolve();
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});
+ for(let i=0;i<10;i++)await Promise.resolve();
+ assert.equal(f.submissions(),0);assert.equal(f.computations(),1);
+ release();await work;
+ assert.equal(f.submissions(),1);assert.equal(f.computations(),1);
+});

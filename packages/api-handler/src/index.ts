@@ -8,8 +8,9 @@ import { authCookie, readAuthCookie } from './auth-security';
 import { AuthProblem } from './auth-controls';
 import { handleAuthRequest, type AuthEnv } from './auth-handler';
 import type { ClientCommand, ServerEvent } from "../../shared-types/src";
+import { LIVE_HISTORY } from "../../shared-types/src/sync-protocol";
 import { CACHE_NO_STORE } from "../../shared-types/src/http";
-import { GameRoomDO } from "./game-room-do";
+import { GameRoomDO, compactHistoryResponse } from "./game-room-do";
 import { handleLiveGameRequest, handleLiveGameWebSocketUpgrade } from "./shell-live";
 
 import type { D1DatabaseLike } from "./shell-live-db";
@@ -74,7 +75,7 @@ const handleApiRequestInternal = async (request: Request, env: ApiEnv): Promise<
     const accountGame = (liveResponse.body.game as { ownershipMode?: string } | undefined)?.ownershipMode === "account_v1";
     const body = authActive(env) || accountGame ? sanitizeGameResponse(liveResponse.body, authority, !maintenanceAllowed(env,authority?.accountId)) : liveResponse.body;
     if (authActive(env)) body.authProtocolVersion = AUTH_PROTOCOL_VERSION;
-    const response = json(body, liveResponse.status, liveResponse.cacheControl);
+    const response = json(request.headers.get(LIVE_HISTORY.requestHeader) === LIVE_HISTORY.requestValue ? compactHistoryResponse(body) : body, liveResponse.status, liveResponse.cacheControl);
     if (authActive(env) && request.method === 'POST' && response.status < 400) {
       const actor = await authenticatedActor(request, env as unknown as AuthEnv), token = readAuthCookie(request);
       if (actor && token) response.headers.append('Set-Cookie', authCookie(token, Math.max(0, Math.floor((actor.expires_at - actor.read_at) / 1000))));
@@ -119,7 +120,11 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
   const started = Date.now();
   let response: Response;
   try { response = await handleApiRequestInternal(request, env); }
-  catch (error) { if (authActive(env) || error instanceof AuthProblem) response = authErrorResponse(error); else throw error; }
+  catch (error) {
+    // Keep correlation and generation headers on every application-controlled
+    // failure. A platform-generated 500 cannot carry our recovery evidence.
+    response = authErrorResponse(error);
+  }
   // WebSocket upgrade responses must retain their platform-specific socket.
   if (response.status !== 101) {
     const headers = new Headers(response.headers);

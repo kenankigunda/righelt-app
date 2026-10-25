@@ -60,7 +60,7 @@ test("accepting undo preserves each selected retained entry until explicit retur
     await requestUndoForFirstMoveViaApi(owner.page);
     await expect(guest.page.locator('[data-action="accept-revert-request"]')).toBeVisible();
 
-    const approvalResponse = guest.page.waitForResponse(response => response.url().endsWith("/revert-approve") && response.request().method() === "POST");
+    const approvalResponse = guest.page.waitForResponse(response => (response.url().endsWith("/revert-approve") || (response.url().endsWith("/shared") && response.request().postDataJSON()?.payload?.operation === "revert-approve")) && response.request().method() === "POST");
     await guest.page.locator('[data-action="accept-revert-request"]').click();
     const response = await approvalResponse;
     expect(response.ok()).toBe(true);

@@ -1,7 +1,9 @@
 /** Shared online command contract. Unknown is never a terminal outcome. */
+export const LIVE_HISTORY = Object.freeze({ requestHeader: "X-Righelt-Projection", requestValue: "history-v1", socketQuery: "historyProjection", snapshotValue: "summary-v1" });
+export const SHARED_OPERATIONS = Object.freeze(["revert-request", "revert-approve", "revert-reject", "revert-rescind", "computer-control"]);
 export const SYNC_PROTOCOL_VERSION = 2;
-export const SYNC_LIMITS = Object.freeze({ commandsPerRequest: 16, outstandingPerGame: 16, outstandingPerIdentity: 128, commandIdCharacters: 128, envelopeBytes: 64 * 1024, bodyBytes: 1024 * 1024 });
-export const SYNC_TIMING = Object.freeze({ requestTimeoutMs: 5_000, recoveryPassMs: 10_000, reconnectAlertMs: 4_000, confirmationBudgetMs: 15_000, heartbeatIntervalMs: 5_000, inboundTimeoutMs: 15_000, retryDelaysMs: Object.freeze([500, 1_000, 2_000, 4_000, 5_000]), retryJitter: 0.2 });
+export const SYNC_LIMITS = Object.freeze({ commandsPerRequest: 16, outstandingPerGame: 16, outstandingPerIdentity: 128, commandIdCharacters: 128, historyCacheEntries: 64, envelopeBytes: 64 * 1024, bodyBytes: 1024 * 1024 });
+export const SYNC_TIMING = Object.freeze({ requestTimeoutMs: 5_000, recoveryPassMs: 10_000, reconnectAlertMs: 4_000, confirmationBudgetMs: 15_000, degradedPollMs: 5_000, degradedSlowPollMs: 30_000, degradedSlowAfterMs: 60_000, heartbeatIntervalMs: 5_000, inboundTimeoutMs: 15_000, retryDelaysMs: Object.freeze([500, 1_000, 2_000, 4_000, 5_000]), retryJitter: 0.2 });
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 export const isSyncRevision = (value) => Number.isSafeInteger(value) && Number(value) >= 0;
 const nonempty = (value) => typeof value === "string" && value.trim().length > 0;
@@ -35,7 +37,7 @@ export function isSyncCommand(value) {
         return false;
     if (value.authContextId !== undefined && (typeof value.authContextId !== "string" || !/^[a-f0-9]{64}$/.test(value.authContextId)))
         return false;
-    if (!["move", "action", "end_turn"].includes(String(value.kind)) || !record(value.payload) || !record(value.expectedState) || !isSyncRevision(value.expectedGameplayRevision))
+    if (!["move", "action", "end_turn", "shared"].includes(String(value.kind)) || !record(value.payload) || !record(value.expectedState) || !isSyncRevision(value.expectedGameplayRevision))
         return false;
     if ((value.kind === "end_turn" || value.expectedTurnIndex !== undefined) && !isSyncRevision(value.expectedTurnIndex))
         return false;
@@ -84,7 +86,7 @@ export function isCommandOutcome(value, command) {
     return record(value) && value.gameId === command.gameId && value.identityId === command.identityId && value.clientCommandId === command.clientCommandId && value.fingerprint === command.fingerprint
         && ["accepted", "rejected", "unknown"].includes(String(value.outcome)) && (value.reason === null || nonempty(value.reason))
         && (value.outcome !== "rejected" || nonempty(value.reason)) && isSyncRevision(value.eventSeq) && isSyncRevision(value.gameplayRevision)
-        && (value.outcome !== "accepted" || (value.gameplayRevision === command.expectedGameplayRevision + 1 && value.eventSeq > 0));
+        && (value.outcome !== "accepted" || ((value.gameplayRevision === command.expectedGameplayRevision + 1 || (command.kind === "shared" && Number(value.gameplayRevision) >= command.expectedGameplayRevision)) && value.eventSeq > 0));
 }
 /** Validates metadata only. Consumers must validate optional game with the authoritative game parser before applying it. */
 export function isReconcileResponse(value, gameId, commands) {

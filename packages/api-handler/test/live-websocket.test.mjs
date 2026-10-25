@@ -512,3 +512,26 @@ test("I-10: 205 moves and 30 duplicate submissions recover with one current snap
     console.info(JSON.stringify({ test: "I-10", moves: 205, duplicateSubmissions: 30, snapshots: 1, snapshotBytes, metadataBytes, unchangedReopenBytes: Buffer.byteLength(JSON.stringify(followup[0])), historicalReplayBytesAvoided: oldReplayBytes }));
   } finally { globalThis.WebSocketPair = originalPair; globalThis.Response = OriginalResponse; }
 });
+
+test('history projection negotiation survives socket hibernation beside full clients',async()=>{
+ const originalPair=globalThis.WebSocketPair,OriginalResponse=globalThis.Response;
+ globalThis.WebSocketPair=FakeWebSocketPair;
+ globalThis.Response=function(body,init={}){return init.status===101?{status:101,headers:new Headers(init.headers??{}),webSocket:init.webSocket}:new OriginalResponse(body,init);};
+ const call=(url,body)=>handleApiRequest(new Request(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),env);
+ try{
+  const created=await (await call('https://example.test/api/shell/games',{identityId:'history-owner',selfPlayMode:true})).json();
+  const gameId=created.game.id;
+  const move=()=>call(`https://example.test/api/shell/games/${gameId}/apply`,{identityId:'history-owner',action:{type:'pass'}});
+  await move();await move();
+  const compact=(await handleApiRequest(new Request(wsUrl(gameId,'history-owner','compact')+'&historyProjection=summary-v1'),env)).webSocket;
+  const full=(await handleApiRequest(new Request(wsUrl(gameId,'history-owner','full')),env)).webSocket;
+  assert.equal(compact.peer.attachment.compactHistory,true);assert.equal(full.peer.attachment.compactHistory,false);
+  env.GAME_ROOMS.restart(gameId);await flushAsync();
+  await move();await flushAsync();
+  const latest=socket=>socket.peer.sent.map(value=>JSON.parse(value)).filter(value=>value.game).at(-1).game;
+  assert.equal(latest(compact).moves[0].snapshot,undefined);
+  assert.ok(latest(full).moves[0].snapshot);
+  assert.deepEqual(latest(compact).moves.at(-1),latest(full).moves.at(-1));
+  compact.close();full.close();await flushAsync();
+ }finally{globalThis.WebSocketPair=originalPair;globalThis.Response=OriginalResponse;}
+});

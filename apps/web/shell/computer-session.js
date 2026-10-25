@@ -119,6 +119,12 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       await context.transport.decisionAttempt(game.id, { operation: 'write', kind: 'computer', attemptId, attempt }); saved = true;
       if (run !== epoch || current().key !== context.key) return;
       if (response.result.status !== 'ready') throw new Error(response.result.reason);
+      // A routine renewal keeps the same control generation. Preserve completed
+      // calculation while its durable receipt settles instead of calculating again.
+      if (leaseWork && leaseWorkAction === 'renew') {
+        await leaseWork;
+        if (run !== epoch || current().key !== context.key) return;
+      }
       // Recovery can begin during calculation or evidence persistence. Keep the
       // completed evidence, then calculate again from settled authority later.
       if (context.transport.getGameViewModel(game.id)?.sharedMutationsBlocked) {

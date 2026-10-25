@@ -442,7 +442,7 @@ export const handleLiveGameRequest = async (
 
   if (route.length >= 2 && route[0] === "games") {
     const gameId = route[1];
-    if (request.method === "POST" && route.length === 3 && ["moves", "apply", "end-turn", "reconcile"].includes(route[2])) {
+    if (request.method === "POST" && route.length === 3 && ["moves", "apply", "end-turn", "shared", "reconcile"].includes(route[2])) {
       let syncBody;
       try { syncBody = await readSyncBody(request); }
       catch (error) {
@@ -529,6 +529,7 @@ export const handleLiveGameRequest = async (
       [
         "computer-control",
         "decision-history",
+        "decision-snapshot",
         "decision-notes",
         "decision-attempt",
         "decision-attempts",

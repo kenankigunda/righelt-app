@@ -45,11 +45,11 @@ test("return live is immediate offline and remains live across later server hist
  assert.deepEqual(t.getGameViewModel("history").currentSnapshot,snapshot(9));
 });
 test("recovery copy distinguishes pending, overdue, storage admission, cleanup and limits", () => {
- assert.equal(recoveryMessage({recovering:true,pendingCommandCount:1}),"Recording your move");
- assert.equal(recoveryMessage({recovering:true,pendingCommandCount:2}),"Recording your move");
- assert.equal(recoveryMessage({recovering:true,pendingCommandCount:2,confirmationOverdue:true}),"It’s taking a while to record your move. Hang tight!");
- assert.equal(recoveryMessage({recovering:true,pendingCommandCount:1,confirmationOverdue:true}),"It’s taking a while to record your move. Hang tight!");
- assert.equal(recoveryMessage({recovering:true}),"Reconnecting. We’ll be right back!");
+ assert.equal(recoveryMessage({recovering:true,pendingCommandCount:1}),"");
+ assert.equal(recoveryMessage({recovering:true,pendingCommandCount:2}),"");
+ assert.equal(recoveryMessage({recovering:true,pendingCommandCount:2,confirmationOverdue:true}),"Still checking your move. You can retry or view details.");
+ assert.equal(recoveryMessage({recovering:true,pendingCommandCount:1,confirmationOverdue:true}),"Still checking your move. You can retry or view details.");
+ assert.equal(recoveryMessage({recovering:true}),"");
  assert.equal(recoveryMessage({storageBlocked:true,unsavedCommand:true}),"We couldn’t save your move. Please try again.");
  assert.doesNotMatch(recoveryMessage({storageBlocked:true}),/wasn't sent/);
  assert.match(recoveryMessage({storageBlocked:true,storageLimitReached:true}),/earlier moves/);
@@ -173,4 +173,49 @@ test('trimmed historical turns derive nominal ownership from the archived contin
  const view=t.getGameViewModel('history');
  assert.equal(view.currentTurn.index,2); assert.equal(view.turnOwnerSeat,'Player 2');
  assert.equal(view.controlSeat,'Player 1'); assert.equal(view.canRecordMove,false);
+});
+
+test("ordinary retry errors stay quiet until the stable episode reaches four seconds",()=>{
+ const game={recovering:true,recoveryStartedAt:1000,recoveryIssue:"request_timeout"};
+ assert.equal(recoveryMessage(game,4999),"");
+ assert.equal(recoveryMessage(game,5000),"Reconnecting");
+ assert.match(recoveryMessage({...game,recoveryIssue:"HTTP_503"},16000),/retry or view details/);
+ assert.match(recoveryMessage({...game,recoveryIssue:"invalid_credentials"},1001),/sign in/);
+});
+
+test("uncached history preserves the old selection through failure and cached history works offline",async()=>{
+ let offline=false,fail=true,reads=0;
+ const game=fixture();const complete=structuredClone(game.moves[0]);
+ const t=createLiveTransportStore({storage:{getItem:()=>"actor",setItem(){}},fetcher:async(url,init)=>{
+   if(offline)throw Error("offline");reads++;
+   if(fail)throw Error("unavailable");
+   const request=JSON.parse(init.body);
+   return Response.json({ok:true,gameId:game.id,gameplayRevision:game.gameplayRevision,move:{...complete,moveId:request.decisionId}});
+ }});
+ const summary=structuredClone(game);delete summary.moves[0].snapshot;delete summary.moves[0].selectionSnapshot;
+ t.applyLiveGameUpdate({game:summary,eventSeq:5});
+ t.selectHistoryMove({gameId:game.id,moveIndex:0});
+ assert.equal(Boolean(t.getGameViewModel(game.id).inHistoryMode),false);
+ assert.equal(t.getGameViewModel(game.id).historyLoading,true);
+ await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(Boolean(t.getGameViewModel(game.id).inHistoryMode),false);
+ assert.equal(t.getGameViewModel(game.id).historyLoadError,"unavailable");
+ fail=false;t.selectHistoryMove({gameId:game.id,moveIndex:0});
+ await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(t.getGameViewModel(game.id).inHistoryMode,true);
+ assert.deepEqual(t.getGameViewModel(game.id).currentSnapshot,complete.snapshot);
+ t.returnToLive({gameId:game.id});offline=true;const before=reads;
+ t.selectHistoryMove({gameId:game.id,moveIndex:0});
+ assert.equal(t.getGameViewModel(game.id).inHistoryMode,true);assert.equal(reads,before);
+ t.retire();
+});
+
+test("accepting two commands preserves the first inspected pending board when it becomes a summary",()=>{
+ const t=store(),game=fixture();
+ game.pendingMoves=[{index:4,clientCommandId:"first",snapshot:snapshot(44),selectionSnapshot:snapshot(43)},{index:5,clientCommandId:"second",snapshot:snapshot(45),selectionSnapshot:snapshot(44)}];
+ t.applyLiveGameUpdate({game});t.selectHistoryMove({gameId:game.id,moveIndex:4});
+ t.applyLiveGameUpdate({game:{...game,pendingMoves:[],moves:[...game.moves,{index:4,clientCommandId:"first",moveId:"accepted-first"},{...game.pendingMoves[1],moveId:"accepted-second"}]}});
+ assert.equal(t.getGameViewModel(game.id).inspectedDecision.moveId,"accepted-first");
+ assert.deepEqual(t.getGameViewModel(game.id).currentSnapshot,snapshot(44));
+ t.retire();
 });

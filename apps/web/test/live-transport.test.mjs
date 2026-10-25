@@ -1754,3 +1754,24 @@ for(const lateCommit of [false,true])test(`uncertain admission ${lateCommit?"com
  await store.retrySaving(game.id);await tick();assert.equal(applies,1);assert.equal(admissions,lateCommit?1:2);
  assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);assert.equal(store.getGameViewModel(game.id).storageBlocked,false);assert.deepEqual(saved,[]);store.retire();
 });
+
+test('Retry-After delays command and lifecycle reconciliation through the same recovery owner',async t=>{
+ t.mock.timers.enable({apis:['setTimeout','Date'],now:Date.parse('2026-10-25T00:00:00Z')});
+ const game=buildLiveGame(),storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
+ const action=game.legalActions[0],acknowledged=buildAcknowledgedGame(game,action);const requests=[];
+ const store=createLiveTransportStore({storage,commandJournal:{list:async()=>[],admit:async()=>{},remove:async()=>{}},
+ timing:{requestTimeoutMs:5000,recoveryPassMs:10000,confirmationBudgetMs:15000,retryDelaysMs:[10],retryJitter:0},fetcher:async()=>{
+   requests.push(Date.now());
+   if(requests.length===1)return Response.json({ok:false,error:'temporarily_unavailable'},{status:503,headers:{'Retry-After':'2'}});
+   return commandResponse({ok:true,game:acknowledged,eventSeq:2});
+ }});
+ t.after(()=>{store.retire();t.mock.timers.reset();});
+ store.applyLiveGameUpdate({game,eventSeq:1});await store.applyGameAction({gameId:game.id,state:game.board.state,action});
+ for(let i=0;i<30;i++)await Promise.resolve();
+ await assert.rejects(store.reconcileGame(game.id),/retry_delayed/);
+ assert.equal(requests.length,1);
+ t.mock.timers.tick(1999);for(let i=0;i<20;i++)await Promise.resolve();assert.equal(requests.length,1);
+ t.mock.timers.tick(1);for(let i=0;i<50;i++)await Promise.resolve();
+ assert.equal(requests.length,2);assert.ok(requests[1]-requests[0]>=2000);
+ assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);
+});

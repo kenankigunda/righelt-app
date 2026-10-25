@@ -433,7 +433,7 @@ test("live sync does not send websocket ack frames after receiving events", asyn
   }
 });
 
-test("live sync sends beacon-backed disconnect hints on offline and reconnects on online", async () => {
+test("offline hints preserve a healthy socket and online triggers an authoritative refresh", async () => {
   const originalWs = globalThis.WebSocket;
   const originalWindow = globalThis.window;
   const originalDocument = globalThis.document;
@@ -474,8 +474,8 @@ test("live sync sends beacon-backed disconnect hints on offline and reconnects o
     windowMock.dispatchEvent("offline");
     await flushAsync(0);
 
-    assert.equal(beacons.length, 1);
-    assert.equal(String(beacons[0].url), "http://localhost:8789/api/shell/games/g-online/presence");
+    assert.equal(beacons.length, 0);
+    assert.equal(MockSocket.instances[0].readyState,1);
     assert.equal(fetchCalls.length, 0);
 
     globalThis.navigator.onLine = true;
@@ -749,4 +749,22 @@ test("new cursor evidence supersedes a held background HTTP repair", async t => 
   release();
   await flushAsync(5);
   assert.equal(repairs, 3, "late superseded work cannot replace the fresh recovery owner");
+});
+
+test("a false offline hint permits connection attempts",async(t)=>{
+ const client=controlledClient(t);
+ globalThis.navigator.onLine=false;
+ client.connectGame("g");
+ assert.equal(MockSocket.instances.length,1);
+});
+
+test("blocked sockets keep polling HTTP without reopening recovery and stop on disconnect",async(t)=>{
+ let reads=0;const recoveries=[];
+ const client=controlledClient(t,{initialSnapshotTimeoutMs:8,reconnectBaseMs:2,reconnectMaxMs:3,degradedPollMs:10,degradedSlowAfterMs:25,degradedSlowPollMs:30,
+ onReconcile:async()=>{reads++;},onRecovery:e=>recoveries.push(e)});
+ client.connectGame("g");
+ await until(()=>reads>=3);
+ assert.equal(recoveries.filter(e=>!e.background).length,1);
+ client.disconnectGame("g");const before=reads;
+ await flushAsync(45);assert.equal(reads,before);
 });

@@ -1,7 +1,7 @@
 import { STORAGE_POLICY } from "../../shared-types/src/storage-policy";
 import type { D1DatabaseLike,D1Statement,LiveGameEnv } from "./shell-live-db";
 import type { LiveGame } from "./shell-live-core";
-import { encodeStorage,decodeStorage,sha256,collectBounded } from "./storage-codec";
+import { encodeStorage,decodeStorage,sha256,collectBounded,stateReadLimits,type StorageLimits } from "./storage-codec";
 import { reserveArchiveOperation,growthGuard,reserveRestore,observeRestore } from "./storage-budget";
 import { AuthProblem } from "./auth-controls";
 
@@ -24,15 +24,15 @@ const clearGuard=(db:D1DatabaseLike,id:string)=>db.prepare("DELETE FROM account_
 const permit=(env:ArchiveEnv,row:ArchiveRow,operation:"archive"|"restore"|"view")=>env.DB.prepare("INSERT INTO storage_lifecycle_permits(game_id,operation,event_seq,valid) VALUES(?1,?2,?3,COALESCE((SELECT 1 FROM live_games g JOIN game_archives a USING(game_id) WHERE g.game_id=?1 AND g.event_seq=?3 AND a.event_seq=?3 AND a.manifest_sha256 IS NOT NULL AND (SELECT maintenance FROM account_cutover WHERE singleton=1)=0),0))").bind(row.game_id,operation,row.event_seq);
 const clearPermit=(env:ArchiveEnv,row:ArchiveRow)=>env.DB.prepare("DELETE FROM storage_lifecycle_permits WHERE game_id=?1").bind(row.game_id);
 
-async function readObject(env:ArchiveEnv,key:string,checksum:string,maximum:number=STORAGE_POLICY.maximumChunkBytes):Promise<unknown> {
+async function readObject(env:ArchiveEnv,key:string,checksum:string,maximum:number|StorageLimits=STORAGE_POLICY.maximumChunkBytes):Promise<unknown> {
   if(!env.ARCHIVES)throw new AuthProblem("archive_unavailable",503);
   await reserveArchiveOperation(env,"b");
   const object=await env.ARCHIVES.get(key);
   if(!object)throw new AuthProblem("archive_unavailable",503);
-  const bytes=await collectBounded(object.body,maximum);
+  const bytes=await collectBounded(object.body,typeof maximum==="number"?maximum:maximum.storedBytes);
   return decodeStorage(bytes,checksum,maximum);
 }
-async function writeObject(env:ArchiveEnv,key:string,value:unknown,maximum:number=STORAGE_POLICY.maximumChunkBytes) {
+async function writeObject(env:ArchiveEnv,key:string,value:unknown,maximum:number|StorageLimits=STORAGE_POLICY.maximumChunkBytes) {
   if(!env.ARCHIVES)throw new AuthProblem("archive_unavailable",503);
   const encoded=await encodeStorage(value,maximum);
   await reserveArchiveOperation(env,"a",key,encoded.blob.byteLength);
@@ -53,7 +53,7 @@ async function manifestFor(env:ArchiveEnv,row:ArchiveRow):Promise<Manifest> {
 }
 export async function readArchivedGame(env:ArchiveEnv,row:ArchiveRow):Promise<LiveGame> {
   const manifest=await manifestFor(env,row),part=manifest.parts.find(p=>p.kind==="state")!;
-  const game=await readObject(env,part.object_key,part.sha256,STORAGE_POLICY.maximumStateBytes) as LiveGame;
+  const game=await readObject(env,part.object_key,part.sha256,stateReadLimits) as LiveGame;
   if(game?.id!==row.game_id || game.gameplayRevision!==row.gameplay_revision)throw new Error("invalid_archive_state");
   const views=await env.DB.prepare("SELECT identity_id,history_index FROM game_archive_views WHERE game_id=?1").bind(row.game_id).all<{identity_id:string;history_index:number|null}>();
   for(const view of views.results??[]){if(view.history_index===null)delete game.historyIndexByIdentity[view.identity_id];else game.historyIndexByIdentity[view.identity_id]=view.history_index;}
@@ -120,7 +120,7 @@ async function recordPart(env:ArchiveEnv,row:ArchiveRow,part:Part,cursor:string)
 export async function captureArchiveStep(env:ArchiveEnv,row:ArchiveRow,game:LiveGame,cardGame:LiveGame=game):Promise<boolean> {
   if(row.status!=="archiving")return false;
   if(row.next_chunk===0){
-    const key=rootKey(row)+"state.gz",stored=await writeObject(env,key,game,STORAGE_POLICY.maximumStateBytes);
+    const key=rootKey(row)+"state.gz",stored=await writeObject(env,key,game,stateReadLimits);
     await recordPart(env,row,{chunk_index:0,object_key:key,sha256:stored.checksum,bytes:stored.bytes,raw_bytes:stored.raw_bytes,kind:"state",first_id:null,last_id:null,row_count:1},JSON.stringify({kind:"receipt",last:""}));return false;
   }
   const cursor=JSON.parse(row.cursor) as {kind:"receipt"|"tombstone";last:string};
@@ -203,7 +203,7 @@ export async function restoreArchiveStep(env:ArchiveEnv,row:ArchiveRow):Promise<
       clearGuard(env.DB,id),clearPermit(env,row),...budget.after,
     ]);return false;
   }
-  const game=await readArchivedGame(env,row),encoded=await encodeStorage(game);
+  const game=await readArchivedGame(env,row),encoded=await encodeStorage(game,stateReadLimits);
   const results=await env.DB.batch([...budget.before,permit(env,row,"restore"),
     env.DB.prepare("INSERT INTO game_payloads(game_id,format_version,state_blob,state_sha256) VALUES(?1,1,?2,?3) ON CONFLICT(game_id) DO UPDATE SET state_blob=excluded.state_blob,state_sha256=excluded.state_sha256").bind(row.game_id,encoded.blob,encoded.checksum),
     env.DB.prepare("UPDATE live_games SET state_json=?2,commit_base_event_seq=NULL WHERE game_id=?1").bind(row.game_id,cardJson(game)),
