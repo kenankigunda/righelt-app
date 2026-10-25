@@ -25,10 +25,10 @@ for(const phase of ['plan','canary','global'])test(`writer proof verifies actual
  const wrong=structuredClone(version);wrong.resources.bindings.find(value=>value.name==='STORAGE_WRITER_CANARY_GAME_ID').text='wrong';assert.throws(()=>verifyWriterDeployment(wrong,receipt,{phase}),/scope/);
 });
 
-test('promotion requires fresh exact-worker proof of both writers, isolation, receipts and delivery',()=>{
- const now=Date.now(),receipt={revision,workerBuild:'worker',verified:true,verifiedAt:new Date(now).toISOString(),largeRawBytes:2_100_000,metadataPreserved:true,unrelatedLegacy:true,duplicate:true,socket:true};
+test('promotion requires fresh exact-worker proof of both writers, isolation, receipts and a socket snapshot',()=>{
+ const now=Date.now(),receipt={revision,workerBuild:'worker',verified:true,verifiedAt:new Date(now).toISOString(),largeRawBytes:2_100_000,metadataPreserved:true,unrelatedLegacy:true,duplicate:true,socketSnapshot:true};
  requireWriterProof(receipt,{revision,workerBuild:'worker',now});
- for(const key of ['verified','metadataPreserved','unrelatedLegacy','duplicate','socket'])assert.throws(()=>requireWriterProof({...receipt,[key]:false},{revision,workerBuild:'worker',now}));
+ for(const key of ['verified','metadataPreserved','unrelatedLegacy','duplicate','socketSnapshot'])assert.throws(()=>requireWriterProof({...receipt,[key]:false},{revision,workerBuild:'worker',now}));
  assert.throws(()=>requireWriterProof(receipt,{revision,workerBuild:'another',now}));
  assert.throws(()=>requireWriterProof(receipt,{revision,workerBuild:'worker',now:now+3600000}),/expired/);
  assert.throws(()=>requireWriterProof({...receipt,largeRawBytes:2_000_000},{revision,workerBuild:'worker',now}));
@@ -86,7 +86,7 @@ for(const checkpoint of ['lost reply','settled receipt'])test(`global verificati
  const state=resolveToStability(createInitialState(),{artifactMode:'full'});
  const storePayload=game=>{const bytes=gzipSync(JSON.stringify(game));payloads.set(game.id,{format_version:1,state_sha256:createHash('sha256').update(bytes).digest('hex'),blob_hex:bytes.toString('hex')});};
  for(const gameId of [id,control]){const game={id:gameId,gameplayRevision:0,player1:{identityId},player2:{identityId},viewers:[],moves:[],board:{state:structuredClone(state)},legalActions:listLegalActions(state)};games.set(gameId,game);storePayload(game);}
- const receipt={...scope,version:1,origin,controlGameId:control,identityId,created:'created',controlCreated:'created',commands:[],verified:true,verifiedAt:new Date().toISOString(),workerBuild:'canary-worker',largeRawBytes:2_100_000,metadataPreserved:true,unrelatedLegacy:true,duplicate:true,socket:true};
+ const receipt={...scope,version:1,origin,controlGameId:control,identityId,created:'created',controlCreated:'created',commands:[],verified:true,verifiedAt:new Date().toISOString(),workerBuild:'canary-worker',largeRawBytes:2_100_000,metadataPreserved:true,unrelatedLegacy:true,duplicate:true,socketSnapshot:true};
  receipt.retainedBindings=verifyWriterDeployment(version,receipt,{phase:'global'});writeFileSync(receiptPath,JSON.stringify(receipt));
  const response=(value,status=200)=>Response.json(value,{status,headers:{[STORAGE_GENERATION_HEADER]:'generation','X-Righelt-Server-Build':'global-worker'}});
  const fetcher=async(url,init={})=>{

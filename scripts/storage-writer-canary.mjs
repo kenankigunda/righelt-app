@@ -34,7 +34,7 @@ export function verifyWriterDeployment(version,receipt,{phase}) {
 export function requireWriterProof(receipt,{revision,workerBuild,now=Date.now()}) {
   assert.equal(receipt.revision,revision);assert.equal(receipt.workerBuild,workerBuild,'Worker changed after canary');
   assert.equal(receipt.verified,true);assert.ok(receipt.largeRawBytes>STORAGE_POLICY.maximumLegacyStateBytes);
-  assert.equal(receipt.metadataPreserved,true);assert.equal(receipt.unrelatedLegacy,true);assert.equal(receipt.duplicate,true);assert.equal(receipt.socket,true);
+  assert.equal(receipt.metadataPreserved,true);assert.equal(receipt.unrelatedLegacy,true);assert.equal(receipt.duplicate,true);assert.equal(receipt.socketSnapshot,true);
   const age=now-Date.parse(receipt.verifiedAt);assert.ok(Number.isFinite(age)&&age>=0&&age<3600000,'Writer proof expired');
 }
 
@@ -150,10 +150,11 @@ export async function runWriterCanary({action,receiptPath,origin,revision,apply=
   const latest=receipt.commands.at(-1).envelope;
   const duplicate=await request(route(receipt.gameId)+(latest.kind==='end_turn'?'/end-turn':'/apply'),latest);assert.equal(duplicate.duplicate,true);
   assert.equal(duplicate.game.gameplayRevision,game.gameplayRevision);assert.equal(duplicate.game.moves.length,game.moves.length);
+  // A fresh socket proves reconnect snapshot continuity, not live broadcast delivery.
   const frame=await socket({origin,gameId:receipt.gameId,identityId:receipt.identityId,generation:receipt.generation});
   assert.equal(frame.game.gameplayRevision,game.gameplayRevision);assert.deepEqual(frame.game.board.state,game.board.state);
   const reloaded=(await load(receipt.gameId)).game;assert.deepEqual(reloaded.board.state,game.board.state);assert.equal(reloaded.moves.length,game.moves.length);
-  receipt.metadataPreserved=true;receipt.duplicate=true;receipt.socket=true;receipt.workerBuild=workerBuild;
+  receipt.metadataPreserved=true;receipt.duplicate=true;receipt.socketSnapshot=true;receipt.workerBuild=workerBuild;
   if(action==='play'){receipt.unrelatedLegacy=true;receipt.verified=true;receipt.verifiedAt=new Date().toISOString();}
   else {receipt.globallyVerified=true;receipt.globallyVerifiedAt=new Date().toISOString();}
   save(receipt);return {verified:true,phase,revision,commands:receipt.commands.length,rawBytes:receipt.largeRawBytes};
