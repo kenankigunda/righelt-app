@@ -1,6 +1,7 @@
 export const WEB_UNIT_TEST_FILES = Object.freeze([
   "computer-activity.test.mjs",
   "account-controller.test.mjs",
+  "audio-observations.test.mjs",
   "computer-runtime.test.mjs",
   "computer-preparation.test.mjs",
   "decision-notes.test.mjs",

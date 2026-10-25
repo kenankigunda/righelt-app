@@ -67,6 +67,34 @@ for(const route of ['home','game','invite'])test(`held ${route} Edge cuts keep m
 });
 
 
+test('held Home slow context uses one external notice without moving cards or restarting its source cue',async({page},info)=>{
+ await page.evaluate(()=>window.holdSweep('home'));
+ const source=page.locator('.home-games-section[data-home-section-root="my"]');
+ await expect(source).toHaveAttribute('data-loading-state','pending');
+ await expect(source).not.toHaveAttribute('data-loading-phase','slow');
+ await expect(source).toHaveAttribute('data-loading-phase','visible');
+ const baseline=await source.evaluate(node=>{const cue=node.querySelector(':scope > .loading-pieces');window.heldSourceCue=cue;window.heldSourceAnimation=cue.querySelector('i').getAnimations()[0];return {rect:node.getBoundingClientRect().toJSON(),time:window.heldSourceAnimation.currentTime};});
+ await expect(source).toHaveAttribute('data-loading-phase','slow');
+ const notice=page.getByTestId('slow-loading-notice');await expect(notice).toBeVisible();
+ await expect(page.locator('.shell-header-status [role="status"]')).toHaveCount(1);
+ await expect(page.locator('.shell-header-status [role="status"]')).toHaveText('Your games are taking a little longer to load.');
+ await expect(source.locator('.loading-context')).toHaveCount(0);
+ const slow=await source.evaluate(node=>({rect:node.getBoundingClientRect().toJSON(),elapsed:performance.now()-window.heldOperationStartedAt,same:node.querySelector(':scope > .loading-pieces')===window.heldSourceCue&&window.heldSourceCue.querySelector('i').getAnimations()[0]===window.heldSourceAnimation,time:window.heldSourceAnimation.currentTime}));
+ const receiptPath=info.outputPath('held-home-slow-context.json');await writeFile(receiptPath,JSON.stringify({baseline,slow},null,2));await info.attach('held-home-slow-context',{path:receiptPath,contentType:'application/json'});
+ expect(slow.elapsed).toBeGreaterThanOrEqual(5000);expect(slow.rect).toEqual(baseline.rect);expect(slow.same).toBe(true);expect(slow.time).toBeGreaterThan(baseline.time);
+ await notice.evaluate(node=>window.heldSlowNotice=node);
+ await page.evaluate(()=>window.holdUrgentLoadingNotice(true));await expect(page.locator('.shell-game-alert-stack-card.is-active [data-testid="urgent-loading-test"]')).toBeVisible();
+ const slowCard=page.locator('.shell-game-alert-stack-card').filter({has:notice});
+ await expect(slowCard).not.toHaveClass(/is-active/);await expect(slowCard).toHaveAttribute('aria-hidden','true');await expect(slowCard).toHaveAttribute('inert','');
+ await expect(page.getByRole('status')).toHaveCount(0);
+ expect(await notice.evaluate(node=>node===window.heldSlowNotice)).toBe(true);
+ await page.evaluate(()=>window.holdUrgentLoadingNotice(false));await expect(notice).toBeVisible();expect(await notice.evaluate(node=>node===window.heldSlowNotice)).toBe(true);
+ expect(await source.evaluate(node=>node.getBoundingClientRect().toJSON())).toEqual(baseline.rect);
+ await page.screenshot({path:info.outputPath('held-home-slow-context.png'),fullPage:true});
+ await page.evaluate(()=>window.finishSweep());await expect(notice).toHaveCount(0);await expect(source).not.toHaveAttribute('data-loading-phase',/./);
+ await expect(source.locator('.loading-pieces,.loading-context')).toHaveCount(0);
+});
+
 test('invitation choices reflect available actions without exposing rule metadata',async({page},info)=>{
  await page.setViewportSize({width:320,height:844});await page.emulateMedia({reducedMotion:'reduce'});
  await page.evaluate(()=>{document.documentElement.style.fontSize='200%';window.renderInvite('blue',{selfPlayMode:true,canJoinAsPlayer:false,joinAsPlayerDisabledReason:'Self-play mode does not accept remote player joins.'});});

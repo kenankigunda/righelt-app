@@ -124,3 +124,39 @@ for (const input of ['pointer', 'keyboard']) test(`home refresh preserves ${inpu
     await expect(page.getByTestId('game-role')).toContainText('Player 1');
   } finally { release(); await page.mouse.up(); await page.keyboard.up("Space"); await page.unrouteAll({ behavior: 'ignoreErrors' }); }
 });
+
+// The real Home read has a five-second request bound. Keep that bound intact;
+// the renderer fixture separately exercises naturally prolonged slow notices.
+test('bounded Home loading retires without growing its pending card',async({page},info)=>{
+ await page.setViewportSize({width:390,height:800});
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));
+ let release,entered=false;const held=new Promise(resolve=>{release=resolve;});
+ await page.route('**/api/shell/games?**',async route=>{
+  const url=new URL(route.request().url());
+  if(url.searchParams.get('section')!=='my')return route.continue();
+  const response=await route.fetch();expect(response.ok()).toBe(true);entered=true;
+  await held;await route.fulfill({response});
+ });
+ try{
+  await page.goto('/');await expect.poll(()=>entered).toBe(true);
+  const card=page.locator('[data-testid="home-section-skeleton"][data-home-section-root="my"]');
+  await expect(card).toBeVisible();await page.evaluate(()=>document.fonts.ready);
+  await expect(card).toHaveAttribute('data-loading-phase','visible');
+  const before=await card.evaluate(node=>{
+   const cue=node.querySelector(':scope > .loading-pieces'),clock=cue.querySelector('i').getAnimations()[0];
+   const rect=node.getBoundingClientRect().toJSON();window.boundedHomeFrames=[];
+   const sample=()=>{if(!node.isConnected)return;window.boundedHomeFrames.push({rect:node.getBoundingClientRect().toJSON(),same:node.querySelector(':scope > .loading-pieces')===cue&&cue.querySelector('i').getAnimations()[0]===clock,time:clock.currentTime,inlineContext:Boolean(node.querySelector('.loading-context'))});requestAnimationFrame(sample);};sample();
+   return {rect,time:clock.currentTime,at:performance.now()};
+  });
+  // Native request timeout retires the pending card. No test clock, widened
+  // network timeout, fabricated response or loading-policy override is used.
+  await expect(card).toHaveCount(0);
+  const frames=await page.evaluate(()=>window.boundedHomeFrames);
+  expect(frames.length).toBeGreaterThan(2);
+  for(const frame of frames){expect(frame.rect).toEqual(before.rect);expect(frame.same).toBe(true);expect(frame.inlineContext).toBe(false);}
+  expect(frames.at(-1).time).toBeGreaterThan(before.time);
+  await expect(page.getByTestId('slow-loading-notice')).toHaveCount(0);
+  await info.attach('mounted-home-bounded-layout',{body:JSON.stringify({before,frames}),contentType:'application/json'});
+  expect(errors).toEqual([]);
+ }finally{release();await page.unrouteAll({behavior:'wait'});}
+});
