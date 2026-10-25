@@ -5,6 +5,7 @@ import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage
 import {test,expect} from '@playwright/test';
 import {submitPlayableAction,switchGamePanel,waitForLegacyIdentity} from '../support/app.mjs';
 import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
+import {waitForPlayableBoard} from '../../scripts/validation/browser-navigation.mjs';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
 
 test('guest computer finishes a catalog position and prepares a fresh rematch',async({page},info)=>{
@@ -63,6 +64,7 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
     window.boardStatusGeometry={running:true,samples:[]};
     const sample=()=>{const record=window.boardStatusGeometry;if(!record.running)return;const board=document.querySelector('#shell-board');if(board){const rect=board.getBoundingClientRect();record.samples.push({y:rect.top+scrollY,height:rect.height,message:document.querySelector('#shell-board-preview-label')?.textContent});}requestAnimationFrame(sample);};sample();
   });
+  await waitForPlayableBoard(page);
   await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
   await expect.poll(async () => (await projected(page, initial.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-board-preview-action="end-turn"]').click();

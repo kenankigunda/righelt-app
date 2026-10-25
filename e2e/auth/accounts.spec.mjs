@@ -312,7 +312,7 @@ test("account forms support autofill, keyboard focus, narrow layouts and cancell
   expect(new URL(page.url()).hash).not.toContain("game/");
 });
 
-test("password change and browser logout revoke the correct sessions across tabs", async ({ page, browser }) => {
+test("password change revokes old sessions while retaining the current browser", async ({ page, browser }) => {
   const username = uniqueName();
   await register(page, username, { gate: true });
   const gameUrl = page.url();
@@ -337,12 +337,34 @@ test("password change and browser logout revoke the correct sessions across tabs
     await other.reload();
     await expect(other.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
     await signIn(other, username, replacement);
+    await expect(other.getByTestId("game-role")).toContainText("Player 1");
+    await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
+    await expect(sibling.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
+  } finally { await sibling.close(); await separate.close(); }
+});
+
+test("browser logout revokes shared tabs but retains an independent session", async ({ page, browser }) => {
+  const username = uniqueName();
+  await register(page, username, { gate: true });
+  const gameUrl = page.url();
+  const sibling = await page.context().newPage();
+  const separate = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    await sibling.goto(gameUrl);
+    await expect(sibling.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
+    const other = await separate.newPage();
+    await other.goto(gameUrl);
+    await signIn(other, username);
+    await expect(other.getByTestId("game-role")).toContainText("Player 1");
+    await expect(other.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
     await account(page);
     await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
     await expect(sibling.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
     await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
     await expect(page.getByTestId("game-board")).toBeVisible();
+    await expect(sibling.getByTestId("game-board")).toBeVisible();
     await other.reload();
+    await expect(other.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
     await expect(other.getByTestId("game-role")).toContainText("Player 1");
   } finally { await sibling.close(); await separate.close(); }
 });
