@@ -1,3 +1,4 @@
+import {writeFile} from 'node:fs/promises';
 import {test,expect} from '@playwright/test';
 test.beforeEach(async({page})=>{await page.goto('/browser-integration/support/invite-history-polish.html');await page.waitForFunction(()=>window.fixtureReady);});
 for(const width of [320,390])test(`invitation controls use explicit seats and icons at ${width}px`,async({page},info)=>{
@@ -46,7 +47,9 @@ test('short games with no additional records never show an archive CTA',async({p
 });
 
 for(const route of ['home','game','invite'])test(`held ${route} Edge cuts keep moving without moving the surface`,async({page},info)=>{
- await page.evaluate(route=>window.holdSweep(route),route);
+ const fonts=await page.evaluate(route=>window.holdSweep(route),route);
+ const fontPath=info.outputPath(`held-${route}-font-readiness.json`);await writeFile(fontPath,JSON.stringify(fonts,null,2));await info.attach('held-surface-font-readiness',{path:fontPath,contentType:'application/json'});
+ expect(fonts.after.status).toBe('loaded');expect(fonts.after.runs.every(run=>run.ready)).toBe(true);
  const frame=page.locator('.loading-edge-frame');await expect(frame).toHaveCount(1);
  const paths=frame.locator('g polygon');await expect(paths).toHaveCount(2);
  const geometry=()=>page.locator('.shell-main-content section.panel').first().evaluate(e=>e.getBoundingClientRect().toJSON());

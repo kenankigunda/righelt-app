@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { submitPlayableAction } from '../support/app.mjs';
+import { submitPlayableAction, switchGamePanel } from '../support/app.mjs';
 import { AUTH_CONTROL_ORIGIN } from './fixture.mjs';
 import { readProjectedGame, waitForComputerDecision } from '../support/computer-projection.mjs';
 
@@ -146,15 +146,17 @@ test('ordinary computer undo restores the human turn and resumes computer contro
   };
   page.on('response', observe);
   try {
-    const history = page.locator('[data-action="switch-game-panel"][data-panel="history"]');
-    if (await history.isVisible()) await history.click();
-    await page.locator('[data-action="undo-last-move"]').click();
+    await switchGamePanel(page,'history');
+    const firstMove=(await projected(page,initial.id)).moves.find(move=>!move.undone);
+    expect(firstMove?.moveId).toBeTruthy();
+    const row=page.locator(`[data-testid="history-move-item"][data-move-id="${firstMove.moveId}"]`);
+    await row.locator('.history-item-info').click();
+    await row.getByRole('button',{name:'Undo before this move',exact:true}).click();
     await expect.poll(async () => {
       const game = await projected(page, initial.id);
       return { activeMoves: game.moves.filter(move => !move.undone).length, paused: game.computer.paused, state: game.board.state };
     }).toEqual({ activeMoves: 0, paused: false, state: initial.board.state });
-    const board = page.locator('[data-action="switch-game-panel"][data-panel="board"]');
-    if (await board.isVisible()) await board.click();
+    await switchGamePanel(page,'board');
     await expect(page.locator('[data-computer-status]')).toBeHidden();
     expect(controls.filter(control => control.action === 'resume')).toEqual([{ action: 'resume', status: 200 }]);
     expect(controls.every(control => control.status === 200)).toBe(true);

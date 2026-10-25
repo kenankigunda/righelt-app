@@ -111,7 +111,11 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
   page.on('response', observe);
   try {
     await switchGamePanel(page, "history");
-    await page.locator('[data-action="undo-last-move"]').click();
+    const firstMove=(await projected(page,initial.id)).moves.find(move=>!move.undone);
+    expect(firstMove?.moveId).toBeTruthy();
+    const row=page.locator(`[data-testid="history-move-item"][data-move-id="${firstMove.moveId}"]`);
+    await row.locator('.history-item-info').click();
+    await row.getByRole('button',{name:'Undo before this move',exact:true}).click();
     await expect.poll(async () => {
       const game = await projected(page, initial.id);
       return { activeMoves: game.moves.filter(move => !move.undone).length, paused: game.computer.paused, state: game.board.state };

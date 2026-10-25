@@ -96,29 +96,49 @@ async function move(page,gameId) {
  await submitPlayableAction(page,current.action);
 }
 async function digest(page) {
- return page.evaluate(()=>({
-  board:[...document.querySelectorAll('[data-testid="game-board"] .cell')].map(e=>({r:e.dataset.row,c:e.dataset.col,p:[...e.querySelectorAll('.piece-token')].map(p=>({class:p.className,text:p.textContent}))})),
-  history:[...document.querySelectorAll('[data-testid="history-move-item"]')].map(e=>({id:e.dataset.moveId,text:e.querySelector('.history-move-line')?.textContent,undone:e.classList.contains('is-undone')})),
-  active:document.querySelector('[data-testid="active-turn-label"]')?.textContent,
- }));
+ return page.evaluate(()=>{
+  const indicator=document.querySelector('#shell-board-turn-indicator');
+  const history=[...document.querySelectorAll('[data-testid="history-move-item"]')].map(e=>{
+   const line=e.querySelector('.history-move-line'),copy=line?.cloneNode(true);copy?.querySelector('.history-actor')?.remove();
+   return {id:e.dataset.moveId,notation:copy?.textContent,undone:e.classList.contains('is-undone')};
+  });
+  return {
+   board:[...document.querySelectorAll('[data-testid="game-board"] .cell')].map(e=>({r:e.dataset.row,c:e.dataset.col,p:[...e.querySelectorAll('.piece-token:not(.ghost)')].map(p=>({id:p.dataset.pieceId,owner:p.classList.contains('p1')?'P1':'P2',kind:p.classList.contains('commander')?'commander':'unit',inactive:p.classList.contains('inactive'),pushed:p.classList.contains('pushed-piece')}))})),
+   history,
+   presentation:{active:document.querySelector('[data-testid="active-turn-label"]')?.textContent,
+    heading:indicator?.textContent,actor:indicator?.classList.contains('player-tone-p1')?'P1':indicator?.classList.contains('player-tone-p2')?'P2':null,
+    live:document.querySelector('.history-item-waiting .history-move-line')?.textContent,
+    actors:[...document.querySelectorAll('[data-testid="history-move-item"]')].map(e=>({side:e.classList.contains('player-tone-p1')?'P1':'P2',text:e.querySelector('.history-actor')?.textContent}))},
+  };
+ });
+}
+const semanticDigest=value=>({board:value.board,history:value.history,activeTurn:value.presentation.active,actor:value.presentation.actor});
+function expectPerspective(value,index) {
+ const own=index===0?'P1':index===1?'P2':null;
+ const label=side=>own?(side===own?'You':'Opponent'):`Guest ${side==='P1'?1:2}`;
+ const actor=label(value.presentation.actor);
+ expect(value.presentation.heading).toBe(actor==='You'?'Your turn to play':`${actor} to play`);
+ if(value.presentation.live)expect(value.presentation.live).toBe(`Live · Waiting on ${actor==='You'?'you':actor==='Opponent'?'opponent':actor} to move`);
+ for(const entry of value.presentation.actors)expect(entry.text).toBe(label(entry.side));
 }
 async function converged(pages) {
  for(const page of pages)await expect(page.getByTestId("game-board")).toBeVisible();
- // A reserved loading board can be visible before the public summary hydrates.
- // Return readiness from the poll: throwing an assertion here skips its retries.
+ // Canonical tokens/decision IDs converge across identities. Their visible
+ // You/Opponent/Guest labels intentionally differ and are checked separately.
  await expect.poll(async()=>{
   const values=await Promise.all(pages.map(digest));
   return {
    boardsComplete:values.every(v=>v.board.length===100),
    boardsPopulated:values.every(v=>v.board.some(c=>c.p.length)),
-   activeLabelsReady:values.every(v=>typeof v.active==='string'&&v.active.trim().length>0),
+   pieceIdsReady:values.every(v=>v.board.every(c=>c.p.every(piece=>typeof piece.id==='string'&&piece.id.length>0))),
+   activeLabelsReady:values.every(v=>typeof v.presentation.active==='string'&&v.presentation.active.trim().length>0&&Boolean(v.presentation.actor)),
    historyIdsReady:values.every(v=>v.history.every(m=>typeof m.id==='string'&&m.id.length>0)),
-   snapshotsEqual:values.every(v=>JSON.stringify(v)===JSON.stringify(values[0])),
+   snapshotsEqual:values.every(v=>JSON.stringify(semanticDigest(v))===JSON.stringify(semanticDigest(values[0]))),
   };
- },{timeout:25000}).toEqual({boardsComplete:true,boardsPopulated:true,activeLabelsReady:true,historyIdsReady:true,snapshotsEqual:true});
+ },{timeout:25000}).toEqual({boardsComplete:true,boardsPopulated:true,pieceIdsReady:true,activeLabelsReady:true,historyIdsReady:true,snapshotsEqual:true});
  const values=await Promise.all(pages.map(digest));
- values.forEach(v=>{expect(v.board).toHaveLength(100);expect(v.board.some(c=>c.p.length)).toBe(true);expect(v.active?.trim()).toBeTruthy();v.history.forEach(m=>expect(m.id).toBeTruthy());});
- values.forEach(v=>expect(v).toEqual(values[0]));
+ values.forEach((v,index)=>{expect(v.board).toHaveLength(100);expect(v.board.some(c=>c.p.length)).toBe(true);v.history.forEach(m=>expect(m.id).toBeTruthy());v.board.forEach(cell=>cell.p.forEach(piece=>expect(piece.id).toBeTruthy()));expectPerspective(v,index);});
+ values.forEach(v=>expect(semanticDigest(v)).toEqual(semanticDigest(values[0])));
  for(let i=0;i<pages.length;i++){
   await expect(pages[i].getByTestId('game-role')).toContainText(['Player 1','Player 2','Viewer'][i]);
   await expect(pages[i].getByTestId('sync-recovery-banner')).toHaveCount(0,{timeout:25000});
@@ -134,11 +154,12 @@ async function evidence(info, name, start, faults, extra={}) {
  await info.attach(`recovery-${name}`,{body:JSON.stringify(result,null,2),contentType:'application/json'});
 }
 
-// An aborted HTTP response is a known transport failure, even when the
-// admitted command remains durable and its server outcome is still unknown.
+// Aborted HTTP remains a static transport incident. Its retained command
+// still follows the quiet initial interval and delayed recovery action budget.
 async function unavailableNotice(page) {
  const notice=page.getByTestId('sync-recovery-banner');
- await expect(notice).toContainText('We couldn’t record your move. Please reconnect.');
+ await expect(notice).toHaveText('Recording your move');
+ await expect(notice.getByRole('button',{name:'Reload game',exact:true})).toHaveCount(0);
  await expect(notice).toHaveAttribute('data-notification-activity','static');
 }
 
@@ -160,11 +181,13 @@ test('E02 silent online receive loss triggers watchdog and survives interrupted 
   expect(await p.pages[1].evaluate(()=>navigator.onLine)).toBe(true);
   await p.pages[1].evaluate(()=>{
    window.recoveryDetectedAt=null;
-   const observer=new MutationObserver(()=>{if(document.querySelector('[data-testid="sync-recovery-banner"]')?.textContent.includes('Please reconnect')){window.recoveryDetectedAt=Date.now();observer.disconnect();}});
-   observer.observe(document.body,{subtree:true,childList:true,characterData:true});
+   const detect=()=>{if(document.querySelector('.board-wrap[data-reconnecting="true"]')){window.recoveryDetectedAt=Date.now();observer.disconnect();}};
+   const observer=new MutationObserver(detect);
+   observer.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:["data-reconnecting"]});
+   detect();
   });
   await move(p.pages[0],p.gameId);
-  await expect(p.pages[1].getByTestId('sync-recovery-banner')).toContainText('We couldn’t record your move. Please reconnect.',{timeout:17000});
+  await expect(p.pages[1].locator('.board-wrap[data-reconnecting="true"]')).toBeVisible({timeout:17000});
   const detectedAt=await p.pages[1].evaluate(()=>window.recoveryDetectedAt);
   expect(Number.isFinite(detectedAt)).toBe(true);expect(detectedAt).toBeGreaterThan(0);
   const detectionMs=detectedAt-p.faults[1].lastInbound;expect(detectionMs).toBeGreaterThanOrEqual(0);expect(detectionMs).toBeLessThanOrEqual(16000);
@@ -305,6 +328,10 @@ test('E07 old protocol keeps a stable notice until the player refreshes their sa
  await page.reload();
  const refresh=page.locator('[data-action="refresh-game"]');
  await expect(page.getByTestId('sync-recovery-banner')).toBeVisible();
+ await expect(refresh).toHaveAccessibleName('Reload game');
+ await expect(refresh.locator('svg')).toHaveAttribute('aria-hidden','true');
+ const home=page.getByTestId('sync-recovery-banner').getByRole('link',{name:'Home',exact:true});
+ await expect(home).toHaveAttribute('href','#/');await expect(home.locator('svg')).toHaveAttribute('aria-hidden','true');
  await refresh.focus();
  await expect(refresh).toBeFocused();
  expect(navigation).toBe(1);
@@ -330,6 +357,10 @@ test('E07 cold invitation keeps upgrade recovery tied to its resolved game', asy
  await page.goto(`${origin}/#/invite/${encodeURIComponent(token)}`);
  const refresh=page.locator('[data-action="refresh-game"]');
  await expect(page.getByTestId('sync-recovery-banner')).toBeVisible();
+ await expect(refresh).toHaveAccessibleName('Reload game');
+ await expect(refresh.locator('svg')).toHaveAttribute('aria-hidden','true');
+ const home=page.getByTestId('sync-recovery-banner').getByRole('link',{name:'Home',exact:true});
+ await expect(home).toHaveAttribute('href','#/');await expect(home.locator('svg')).toHaveAttribute('aria-hidden','true');
  await expect(page.getByTestId('game-board')).toHaveCount(0);
  await refresh.focus();await expect(refresh).toBeFocused();
  expect(fault.commands).toHaveLength(0);
