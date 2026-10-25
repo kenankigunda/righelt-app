@@ -11,6 +11,7 @@ import { participantName, participantDisplayName } from "../shell/public-profile
 import { createRenderGestureGate } from "../shell/render-gesture.js";
 import { renderResultMark, createResultPresentation } from '../shell/result-presentation.js';
 import { icon } from '../shell/ui.js';
+import { createLiveTransportStore } from '../shell/live-transport.js';
 
 const source = readFileSync(new URL("../shell/app.js", import.meta.url), "utf8");
 const extract = (start, end) => {
@@ -25,16 +26,19 @@ const reviewAction = extract('  if (action === "analysis")', '  if (action === "
 
 function harness({ resultMounted = true, activeResult = null } = {}) {
   class Element {}
+  let mountedPanel = "board";
   const appEl = new Element();
   appEl.querySelector = selector => selector === ".game-result" ? (resultMounted ? new Element() : null) : new Element();
   const context = {
     resultPresentation:createResultPresentation(),
     HTMLElement: Element, appEl, currentRoute: { name: "game", gameId: "g", panel: "board" },
     activeResultGameId: activeResult,
-    lastRenderedRouteKey: "g|board", lastRenderedBaseRouteKey: "g", lastRenderedTransitionPhaseKey: "idle",
+    lastRenderedRouteKey: "g|board|debug:false", lastRenderedBaseRouteKey: "g", lastRenderedTransitionPhaseKey: "idle",
+    getGamePanel: () => context.currentRoute.panel,
+    getMountedGameShellRoot: () => ({querySelector:()=>({getAttribute:()=>mountedPanel})}),
     getRouteTransitionPhaseKey: () => "idle", getMountedShellPageEl: () => new Element(),
     getBaseRouteRenderKey: () => context.currentRoute.gameId,
-    getRouteRenderKey: () => `${context.currentRoute.gameId}|${context.currentRoute.panel}`,
+    getRouteRenderKey: () => `${context.currentRoute.gameId}|${context.currentRoute.panel}|debug:${Boolean(context.currentRoute.debug)}`,
   };
   runInNewContext(`${patchHelper}
     globalThis.decide = () => {
@@ -53,6 +57,7 @@ function harness({ resultMounted = true, activeResult = null } = {}) {
     // A flyout-only patch keeps main content; a full render mounts the game.
     if (!patch && context.activeResultGameId === null) resultMounted = false;
     context.lastRenderedRouteKey = context.getRouteRenderKey();
+    mountedPanel = context.currentRoute.panel;
   };
   const gate = createRenderGestureGate({ render: renderContent, schedule: fn => { jobs.set(++id, fn); return id; }, cancel: key => jobs.delete(key) });
   context.render = () => { if (!gate.defer({ includeBoard: true })) renderContent(); };
@@ -76,10 +81,13 @@ test("terminal result review replaces main content when hashchange precedes gest
   h.gate.destroy();
 });
 
-test("ordinary game panel/flyout changes retain patching; an active result never patches game content", () => {
+test("only true flyout changes retain flyout-only patching; panel changes refresh game content", () => {
+  const flyout = harness({ resultMounted: false });
+  flyout.context.currentRoute.debug = true;
+  assert.equal(flyout.context.decide(), true);
   const game = harness({ resultMounted: false });
   game.context.currentRoute.panel = "history";
-  assert.equal(game.context.decide(), true);
+  assert.equal(game.context.decide(), false);
   const result = harness({ activeResult: "g" });
   result.context.currentRoute.panel = "history";
   assert.equal(result.context.decide(), false);
@@ -156,4 +164,95 @@ test('actual result renderer affiliates victory with the authoritative winning s
   assert.equal(actions.length,2);for(const action of actions)assert.doesNotMatch(action[1],/secondary/);
   assert.equal(getGameResult(game,identity).rematchSide,winner==='p1'?'p2':'p1');
  }
+});
+
+function historyRouteHarness(t) {
+  class Element { constructor() { this.innerHTML=''; } }
+  const history=new Element(),shell=new Element(),main=new Element(),tab=new Element();
+  let mountedPanel='history',historyPatches=0,flyoutPatches=0;
+  tab.getAttribute=()=>mountedPanel;
+  shell.getAttribute=()=> 'g';
+  shell.querySelector=selector=>selector==='[data-game-panel="history"]'?history:selector.includes('aria-pressed="true"')?tab:null;
+  const appEl=new Element();appEl.querySelector=()=>main;
+  const snapshot=index=>({pieces:[],sideToMove:'P1',turnIndex:index});
+  const transport=createLiveTransportStore({storage:{getItem:()=> 'actor',setItem(){}},fetcher:()=>{throw Error('History is cached; no request is needed');}});
+  transport.applyLiveGameUpdate({game:{id:'g',createdAt:'2026-01-01',updatedAt:'2026-01-01',gameplayRevision:1,
+    board:{state:snapshot(2)},currentSnapshot:snapshot(2),turns:[{index:2,playerSeat:'Player 1',moveIndexes:[]}],
+    moves:[0,1].map(index=>({index,moveId:`m${index}`,snapshot:snapshot(index),selectionSnapshot:snapshot(index),notation:'MOVE',at:'2026-01-01'}))}});
+  transport.selectHistoryMove({gameId:'g',moveIndex:0});
+  const noop=()=>{};
+  const context={HTMLElement:Element,appEl,transport,currentRoute:{name:'game',gameId:'g',panel:'history'},
+    lastRenderedRouteKey:'g|history|debug:false',lastRenderedBaseRouteKey:'g',lastRenderedTransitionPhaseKey:'idle',
+    activeResultGameId:null,mountedBoardGameId:null,FLYOUT_KEYS:[],
+    getGamePanel:route=>(route??context.currentRoute).panel,
+    getRouteRenderKey:()=>`g|${context.currentRoute.panel}|debug:${Boolean(context.currentRoute.debug)}`,
+    getBaseRouteRenderKey:()=> 'g',getRouteTransitionPhaseKey:()=> 'idle',
+    getMountedGameShellRoot:()=>shell,getMountedShellPageEl:()=>main,shouldUseIncrementalGameShell:()=>true,
+    window:{location:{origin:'https://local.test',pathname:'/'},scrollY:0,requestAnimationFrame:noop},
+    document:{getElementById:()=>null,querySelector:()=>main},
+    getCurrentFlyoutState:()=>({}),buildInviteHash:()=>'',
+    escapeHtml:String,formatClientDateTime:String,toStableKey:JSON.stringify,
+    getControlSeatForTurn:(_state,seat)=>seat,playerToneClassForSide:()=>'',playerToneClassForSeat:()=>'',
+    getShellLayoutMode:()=> 'narrow',getShellLayoutModeForRoute:()=> 'narrow',
+    expandedUndoneGroups:new Set(),getDecisionDebugState:()=>({items:[],cursor:null}),getGameResult:()=>null,
+    renderMiniBoardPreviewRoot:()=>'<div class="mini-board-preview"></div>',
+    patchToolHtml:(element,html)=>{element.innerHTML=html;historyPatches++;},
+    syncMountedGameShellPanelUi:()=>{mountedPanel=context.currentRoute.panel;},
+    updateMountedHeader:noop,updateMountedFlyouts:()=>{flyoutPatches++;},syncFlyoutAwareLinks:noop,syncCopyInviteLinks:noop,
+    updateHeaderFields:noop,reconcileMiniBoardPreviews:noop,animateHomeSectionTransitions:noop,syncScenarioAuthoringControls:noop,
+    scheduleGameShellStickyLayout:noop,syncShellLayoutMode:noop,applySharedMutationGates:noop,mountBoardForGame:noop,
+    syncRenderedMarkupSnapshot:()=>{context.lastRenderedRouteKey=context.getRouteRenderKey();},
+    viewingIntent:{saveScroll:noop,cancelUndo:noop,scrollTop:()=>0},replayRequests:{cancel:noop},replayController:null,mobileNavigation:null,
+  };
+  runInNewContext(`
+    ${patchHelper}
+    ${extract('const preparePanelTransition =','const getCurrentFlyoutState =')}
+    ${extract('const renderTurnHistory =','const renderHeader =')}
+    ${extract('const renderHistoryPanel =','const renderBoardPanel =')}
+    ${extract('const updateMountedGameShell =','const doesMountedFlyoutStateMatchRoute =')}
+    globalThis.paintHistory = () => updateMountedGameShell({game:transport.getGameViewModel('g'),includeBoard:false});
+    globalThis.prepare = preparePanelTransition;
+    globalThis.paint = () => {
+      const hadResultView=false,routeKey=getRouteRenderKey(),baseRouteKey=getBaseRouteRenderKey();
+      const animatePanels=false,includeBoard=false,restoreScenarioDraftFocus=null;
+      ${extract('  const shouldPatchFlyoutsOnly =','  let body = "";')}
+      throw Error('The existing game must update incrementally, without replacing its shell');
+    };
+  `,context);
+  const jobs=new Map();let id=0;
+  const gate=createRenderGestureGate({render:()=>context.paint(),schedule:fn=>{jobs.set(++id,fn);return id;},cancel:key=>jobs.delete(key)});
+  const render=()=>{if(!gate.defer({includeBoard:false}))context.paint();};
+  const unsubscribe=transport.subscribe(render);context.paintHistory();
+  t.after(()=>{unsubscribe();gate.destroy();transport.retire();});
+  return {transport,history,gate,context,
+    previews:()=>(history.innerHTML.match(/data-testid="history-inline-preview"/g)||[]).length,
+    patches:()=>({history:historyPatches,flyout:flyoutPatches}),
+    transition(panel) {const next={...context.currentRoute,panel};context.prepare(context.currentRoute,next);context.currentRoute=next;render();},
+    flush(){for(const fn of jobs.values())fn();jobs.clear();},render};
+}
+
+test('coalesced live-return and Board hashchange clear retained History markup before it is reopened',t=>{
+  const h=historyRouteHarness(t);
+  assert.equal(h.transport.getGameViewModel('g').inHistoryMode,true);assert.equal(h.previews(),1);
+  h.gate.begin();h.gate.end();
+  h.transition('board');
+  assert.equal(h.transport.getGameViewModel('g').inHistoryMode,false,'Return-to-live clears the actual transport cursor synchronously');
+  assert.equal(h.previews(),1,'The gesture still retains the old markup until its release task');
+  h.flush();
+  assert.equal(h.previews(),0,'The panel change must refresh hidden History, not only its tab/inert state');
+  assert.doesNotMatch(h.history.innerHTML,/class="[^"]*\bis-selected\b/);
+  assert.equal(h.context.lastRenderedRouteKey,h.context.getRouteRenderKey(),'The incremental render records the panel it actually rendered');
+  h.transition('history');
+  assert.equal(h.transport.getGameViewModel('g').inHistoryMode,false);assert.equal(h.previews(),0);
+  assert.doesNotMatch(h.history.innerHTML,/class="[^"]*\bis-selected\b/);
+});
+
+test('Players and History retain personal selection while genuine flyout changes keep their narrow patch path',t=>{
+  const h=historyRouteHarness(t);
+  h.transition('players');h.transition('history');
+  assert.equal(h.transport.getGameViewModel('g').inHistoryMode,true);assert.equal(h.transport.getGameViewModel('g').historyIndex,0);
+  assert.equal(h.previews(),1);
+  const before=h.patches();h.context.currentRoute.debug=true;h.render();
+  assert.equal(h.patches().history,before.history,'Opening a flyout must not repatch the history panel');
+  assert.equal(h.patches().flyout,before.flyout+1);assert.equal(h.previews(),1);
 });
