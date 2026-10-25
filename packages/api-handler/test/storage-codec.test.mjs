@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { encodeStorage,decodeStorage,sha256 } from "../src/storage-codec.ts";
+import { encodeStorage,decodeStorage,sha256,stateWriteLimits,storageWriterEnabled } from "../src/storage-codec.ts";
 import { createInitialGame,applyServerAction,applyRevertToMove,applyScenarioToGame } from "../src/shell-live-core.ts";
 import {readFileSync} from "node:fs";
 import {listLegalActions} from "../../game-engine/src/legal.ts";
@@ -142,4 +142,37 @@ test("negotiated live history omits old snapshots and snapshot reads preserve du
   assert.deepEqual(selected.body.move,game.moves[0]);
   assert.equal((await loadGameProjection(env,game.id)).eventSeq,1,"personal reads never commit shared state");
   assert.equal((await call("decision-snapshot",{decisionId:game.moves[0].moveId,gameplayRevision:99})).status,409);
+});
+
+
+test("writer canaries isolate new writes while every game retains upgraded readers",async()=>{
+  const env={DB:createFakeD1(),STORAGE_COMPRESSION:"true",STORAGE_LARGE_STATES_ENABLED:"true",STORAGE_METADATA_WRITES_ENABLED:"true",STORAGE_WRITER_CANARY_GAME_ID:"game-"+"a".repeat(32)};
+  for(const id of [env.STORAGE_WRITER_CANARY_GAME_ID,"game-"+"b".repeat(32)]){
+    const game=createInitialGame({gameId:id,identityId:"actor",selfPlayMode:true});game.initialSelectionAction=null;
+    await persistGameState(env,game,1);
+    const payload=()=>env.DB.prepare("SELECT format_version,state_blob,state_sha256 FROM game_payloads WHERE game_id=?1").bind(id).first();
+    const before=await payload();game.notifications.push("Metadata changed");
+    await persistGameState(env,game,2,null,{metadataOnly:true});
+    const after=await payload(),selected=id===env.STORAGE_WRITER_CANARY_GAME_ID;
+    assert.equal(after.format_version,selected?2:1);
+    assert.equal(after.state_sha256===before.state_sha256,selected);
+    assert.deepEqual((await loadGameProjection({DB:env.DB},id)).game,game);
+    assert.equal(applyServerAction(game,{type:"pass"}).ok,true);
+    game.moves.at(-1).notation="x".repeat(2_100_000);
+    if(selected){
+      await persistGameState(env,game,3);
+      assert.deepEqual((await loadGameProjection({DB:env.DB},id)).game,game);
+      await assert.rejects(persistGameState({...env,STORAGE_LARGE_STATES_ENABLED:"false"},game,4),/storage_payload_too_large/);
+      assert.deepEqual((await loadGameProjection({DB:env.DB},id)).game,game,"rollback retains the prior large save");
+    }else await assert.rejects(persistGameState(env,game,3),/storage_payload_too_large/);
+  }
+});
+
+test("writer promotion, rollback and omitted game scope fail safely",()=>{
+ const scoped={STORAGE_LARGE_STATES_ENABLED:"true",STORAGE_WRITER_CANARY_GAME_ID:"game-"+"a".repeat(32)};
+ assert.equal(stateWriteLimits(scoped).rawBytes,2_000_000);
+ assert.equal(stateWriteLimits(scoped,scoped.STORAGE_WRITER_CANARY_GAME_ID).rawBytes,16*1024*1024);
+ assert.equal(storageWriterEnabled(scoped,"false",scoped.STORAGE_WRITER_CANARY_GAME_ID),false);
+ assert.equal(storageWriterEnabled(scoped,"invalid",scoped.STORAGE_WRITER_CANARY_GAME_ID),false);
+ assert.equal(stateWriteLimits({...scoped,STORAGE_WRITER_CANARY_GAME_ID:""},"another-game").rawBytes,16*1024*1024);
 });
