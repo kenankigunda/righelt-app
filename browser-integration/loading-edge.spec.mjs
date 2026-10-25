@@ -64,18 +64,24 @@ for(const productionSwipe of [false,true])test(`a reconnecting narrow track keep
  expect(nativeFrames.prepaintHidden).toBe(true);
  expect(new Set(nativeFrames.frames.map(frame=>frame.transform).filter(value=>value!==undefined)).size).toBeGreaterThan(1);
  const observations=[];
- await page.evaluate(()=>{window.edgeSnapshot=()=>{
+ await page.evaluate(()=>{window.edgeSnapshot=(full=true)=>{
+  const measurementStartedAt=performance.now();
   const panel=document.querySelector('[data-shell-panel="board"]'),svg=document.querySelector('.loading-edge-frame'),viewport=document.querySelector('.game-shell-track-wrap');
   const p=panel.getBoundingClientRect(),s=svg.getBoundingClientRect(),v=viewport.getBoundingClientRect();
   const values=getComputedStyle(svg).clipPath.match(/-?[\d.]+px/g)?.map(parseFloat)??[];
   const inset=values.length===1?[values[0],values[0],values[0],values[0]]:values.length===2?[values[0],values[1],values[0],values[1]]:values.length===3?[values[0],values[1],values[2],values[1]]:values;
-  const cuts=[...svg.querySelectorAll('mask rect')].slice(1).map(node=>Object.fromEntries(['x','y','width','height'].map(key=>[key,Number(node.getAttribute(key))])));
-  const protectedNodes=[...panel.querySelectorAll('h2,p,button,.board,.axis-label,.overlay-key')].filter(node=>!node.closest('[inert]')&&(!node.closest('.board')||node.matches('.board,.axis-label'))&&node.getClientRects().length);
-  const failingTargets=protectedNodes.filter(node=>{const b=node.getBoundingClientRect();return !cuts.some(c=>c.x<=b.left-s.left-1.9&&c.y<=b.top-s.top-1.9&&c.x+c.width>=b.right-s.left+1.9&&c.y+c.height>=b.bottom-s.top+1.9);}).map(node=>({tag:node.tagName,className:node.className,text:node.textContent.slice(0,100),rect:node.getBoundingClientRect().toJSON()}));
-  return {time:window.trackMotion.currentTime,duration:window.trackMotion.effect.getComputedTiming().duration,state:window.trackMotion.playState,navigation:window.edgeTrack.dataset.transitionState,visible:getComputedStyle(svg).visibility!=='hidden',moving:svg.hasAttribute('data-edge-moving'),strokeTime:window.edgeClock?.currentTime,inset,panel:p.toJSON(),frame:s.toJSON(),viewport:v.toJSON(),failingTargets,alignment:Math.max(Math.abs(s.left-(p.left-2)),Math.abs(s.top-(p.top-2))),
+  let failingTargets=null;
+  if(full){
+   const cuts=[...svg.querySelectorAll('mask rect')].slice(1).map(node=>Object.fromEntries(['x','y','width','height'].map(key=>[key,Number(node.getAttribute(key))])));
+   const protectedNodes=[...panel.querySelectorAll('h2,p,button,.board,.axis-label,.overlay-key')].filter(node=>!node.closest('[inert]')&&(!node.closest('.board')||node.matches('.board,.axis-label'))&&node.getClientRects().length);
+   failingTargets=protectedNodes.filter(node=>{const b=node.getBoundingClientRect();return !cuts.some(c=>c.x<=b.left-s.left-1.9&&c.y<=b.top-s.top-1.9&&c.x+c.width>=b.right-s.left+1.9&&c.y+c.height>=b.bottom-s.top+1.9);}).map(node=>({tag:node.tagName,className:node.className,text:node.textContent.slice(0,100),rect:node.getBoundingClientRect().toJSON()}));
+  }
+  const sample={full,time:window.trackMotion.currentTime,duration:window.trackMotion.effect.getComputedTiming().duration,state:window.trackMotion.playState,navigation:window.edgeTrack.dataset.transitionState,visible:getComputedStyle(svg).visibility!=='hidden',moving:svg.hasAttribute('data-edge-moving'),strokeTime:window.edgeClock?.currentTime,inset,panel:full?p.toJSON():{left:p.left},frame:full?s.toJSON():null,viewport:full?v.toJSON():null,failingTargets,alignment:Math.max(Math.abs(s.left-(p.left-2)),Math.abs(s.top-(p.top-2))),
    clipped:inset.length===4&&s.left+inset[3]>=v.left-.1&&s.right-inset[1]<=v.right+.1&&s.top+inset[0]>=v.top-.1&&s.bottom-inset[2]<=v.bottom+.1,
-   clear:failingTargets.length===0,
+   clear:full?failingTargets.length===0:null,
    same:window.edgePath===svg.querySelector('.loading-edge-p1')&&window.edgeClock===window.edgePath.getAnimations()[0]};
+  const measurementCompletedAt=performance.now();
+  return {...sample,measurementStartedAt,measurementCompletedAt,measurementCostMs:measurementCompletedAt-measurementStartedAt};
  };});
  const sample=async()=>{const result=await page.evaluate(()=>window.edgeSnapshot());observations.push(result);return result;};
  try{
@@ -94,21 +100,29 @@ for(const productionSwipe of [false,true])test(`a reconnecting narrow track keep
   const samples=[],accepted=[];let previousTime=window.trackMotion.currentTime,previousLeft=Infinity;
   const duration=window.trackDuration,deadline=duration-Math.min(100,duration*.1),step=Math.min(80,duration*.15);
   const tick=()=>{
-   const sample=window.edgeSnapshot();samples.push(sample);
+   let sample=window.edgeSnapshot(false);samples.push(sample);
    if(sample.state!=='running'||sample.time>=deadline){resolve({ok:false,samples,accepted,deadline,reason:'No three valid checkpoints before native end'});return;}
    if(sample.visible){resolve({ok:false,samples,accepted,deadline,reason:'Decorative stroke became visible during navigation'});return;}
    if(sample.time>previousTime+step&&sample.clipped&&sample.same&&!sample.visible){
-    if(sample.panel.left>=previousLeft){resolve({ok:false,samples,accepted,deadline,reason:'Panel failed to progress in swipe direction'});return;}
-    accepted.push(sample);previousLeft=sample.panel.left;previousTime=sample.time;
-    if(accepted.length===1)window.edgeTrack.dataset.transitionState='';
-    if(accepted.length===3){resolve({ok:true,samples,accepted,deadline});return;}
+    // Full geometry is freshly measured only at eligible checkpoints. The
+    // transition can advance during that work, so recheck every gate against
+    // this new full sample rather than accepting the earlier light sample.
+    sample=window.edgeSnapshot();samples.push(sample);
+    if(sample.state!=='running'||sample.time>=deadline){resolve({ok:false,samples,accepted,deadline,reason:'No three valid checkpoints before native end'});return;}
+    if(sample.visible){resolve({ok:false,samples,accepted,deadline,reason:'Decorative stroke became visible during navigation'});return;}
+    if(sample.time>previousTime+step&&sample.clipped&&sample.same&&!sample.visible){
+     if(sample.panel.left>=previousLeft){resolve({ok:false,samples,accepted,deadline,reason:'Panel failed to progress in swipe direction'});return;}
+     accepted.push(sample);previousLeft=sample.panel.left;previousTime=sample.time;
+     if(accepted.length===1)window.edgeTrack.dataset.transitionState='';
+     if(accepted.length===3){resolve({ok:true,samples,accepted,deadline});return;}
+    }
    }
    requestAnimationFrame(tick);
   };
   requestAnimationFrame(()=>{window.trackMotion.play();window.dispatchEvent(new Event('resize'));requestAnimationFrame(tick);});
  }));
  observations.push(...active.samples);
- expect(active.ok,JSON.stringify(active)).toBe(true);expect(active.accepted).toHaveLength(3);
+ expect(active.ok,JSON.stringify(active)).toBe(true);expect(active.accepted).toHaveLength(3);expect(active.accepted.every(sample=>sample.full)).toBe(true);
  expect(active.accepted[2].navigation).toBe('');
  expect(active.accepted[2].strokeTime).toBeGreaterThan(active.accepted[0].strokeTime);
  // The UI flag may clear before the native transition. Actual geometric
