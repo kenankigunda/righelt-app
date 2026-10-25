@@ -29,7 +29,7 @@ async function wire(page) {
   server.onMessage(message=>{
    if(lifecycle.disposed) return;
    fault.bytes+=Buffer.byteLength(message);
-   let data;try{data=JSON.parse(message);if(fault.legacy){delete data.protocolVersion;message=JSON.stringify(data);}}catch{}
+   let data;try{data=JSON.parse(message);if(fault.legacy){data.protocolVersion=1;message=JSON.stringify(data);}}catch{}
    if(data?.game)fault.snapshots++;
    if(!fault.receive){lifecycle.schedule(()=>{fault.lastInbound=Date.now();socket.send(message);},fault.latency);}
   });
@@ -49,7 +49,7 @@ async function wire(page) {
   if(lifecycle.disposed){await route.abort();return;}
   let body=await response.body();
   if(lifecycle.disposed){await route.abort();return;}
-  if(fault.legacy){try{const parsed=JSON.parse(body);if(parsed.game){delete parsed.protocolVersion;body=Buffer.from(JSON.stringify(parsed));}}catch{}}
+  if(fault.legacy){try{const parsed=JSON.parse(body);if(parsed.game){parsed.protocolVersion=1;body=Buffer.from(JSON.stringify(parsed));}}catch{}}
   fault.bytes+=body.length;
   try{const parsed=JSON.parse(body);if(parsed.game)fault.snapshots++;if(mutation)fault.outcomes.push(...(parsed.commandOutcomes??[]));}catch{}
   if(fault.interruptNextRecovery && /\/reconcile$/.test(new URL(route.request().url()).pathname)){
@@ -142,14 +142,14 @@ test('E02 silent online receive loss triggers watchdog and survives interrupted 
   expect(await p.pages[1].evaluate(()=>navigator.onLine)).toBe(true);
   await p.pages[1].evaluate(()=>{
    window.recoveryDetectedAt=null;
-   const observer=new MutationObserver(()=>{if(document.querySelector('[data-testid="sync-recovery-banner"]')?.textContent.includes('Please reconnect')){window.recoveryDetectedAt=Date.now();observer.disconnect();}});
+   const observer=new MutationObserver(()=>{if(document.querySelector('[data-testid="sync-recovery-banner"]')?.textContent.includes('Reconnecting')){window.recoveryDetectedAt=Date.now();observer.disconnect();}});
    observer.observe(document.body,{subtree:true,childList:true,characterData:true});
   });
   await move(p.pages[0],p.gameId);
-  await expect(p.pages[1].getByTestId('sync-recovery-banner')).toContainText('We couldn’t record your move. Please reconnect.',{timeout:17000});
+  await expect(p.pages[1].getByTestId('sync-recovery-banner')).toContainText('Reconnecting',{timeout:22000});
   const detectedAt=await p.pages[1].evaluate(()=>window.recoveryDetectedAt);
   expect(Number.isFinite(detectedAt)).toBe(true);expect(detectedAt).toBeGreaterThan(0);
-  const detectionMs=detectedAt-p.faults[1].lastInbound;expect(detectionMs).toBeGreaterThanOrEqual(0);expect(detectionMs).toBeLessThanOrEqual(16000);
+  const detectionMs=detectedAt-p.faults[1].lastInbound;expect(detectionMs).toBeGreaterThanOrEqual(0);expect(detectionMs).toBeLessThanOrEqual(21000);
   p.faults[1].interruptNextRecovery=true;p.faults[1].http=false;
   await expect.poll(()=>p.faults[1].interruptedRecoveries||0,{timeout:10000}).toBe(1);
   await p.pages[1].waitForTimeout(1000);
@@ -281,21 +281,44 @@ test(`E05 intentional ${frozenRole} history survives disconnection and home navi
 });
 }
 
-test('E07 new client rejects old protocol and one refresh preserves saved game',async({page},info)=>{
+test('E07 old protocol keeps a stable notice until the player refreshes their saved game',async({page},info)=>{
  const {gameId}=await createGameFromHome(page);await makeAnyLegalMove(page);const before=await digest(page);
  const fault=await wire(page);fault.legacy=true;let navigation=0;page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigation++;});
  await page.reload();
- // The expected automatic reload destroys the first document's context.
- // Observe its navigation before evaluating storage in the settled document.
- await expect.poll(()=>navigation,{timeout:15000}).toBe(2);
- await page.waitForLoadState('domcontentloaded');
- expect(await page.evaluate(()=>sessionStorage.getItem('righelt.sync-v2-refresh'))).toBe('1');
+ const refresh=page.locator('[data-action="refresh-game"]');
+ await expect(page.getByTestId('sync-recovery-banner')).toBeVisible();
+ await refresh.focus();
+ await expect(refresh).toBeFocused();
+ expect(navigation).toBe(1);
+ expect(await page.evaluate(()=>sessionStorage.getItem('righelt.sync-v2-refresh'))).toBeNull();
  expect(fault.commands).toHaveLength(0);
- expect(navigation).toBeLessThanOrEqual(2);
- const start=Date.now();fault.legacy=false;await page.reload();
+ const start=Date.now();fault.legacy=false;await refresh.click();
+ await expect.poll(()=>navigation).toBe(2);
  await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
  await expect.poll(async()=>JSON.stringify(await digest(page))).toBe(JSON.stringify(before));
  await evidence(info,'upgrade-refresh',start,[fault],{automaticReloads:navigation-2});
+});
+
+test('E07 cold invitation keeps upgrade recovery tied to its resolved game', async ({page}, info) => {
+ const {gameId}=await createGameFromHome(page);await makeAnyLegalMove(page);const before=await digest(page);
+ const token=await page.evaluate(async id=>{
+  const identityId=localStorage.getItem('righelt.identity.id.v1');
+  const body=await(await fetch(`/api/shell/games/${encodeURIComponent(id)}?identityId=${encodeURIComponent(identityId)}`)).json();
+  return body.game.inviteToken;
+ },gameId);
+ expect(typeof token).toBe('string');expect(token.length).toBeGreaterThan(0);
+ const origin=new URL(page.url()).origin, fault=await wire(page);fault.legacy=true;
+ await page.goto('about:blank');
+ await page.goto(`${origin}/#/invite/${encodeURIComponent(token)}`);
+ const refresh=page.locator('[data-action="refresh-game"]');
+ await expect(page.getByTestId('sync-recovery-banner')).toBeVisible();
+ await expect(page.getByTestId('game-board')).toHaveCount(0);
+ await refresh.focus();await expect(refresh).toBeFocused();
+ expect(fault.commands).toHaveLength(0);
+ const start=Date.now();fault.legacy=false;await refresh.click();
+ await expect(page.getByTestId('game-board')).toBeVisible();
+ await expect.poll(async()=>JSON.stringify(await digest(page))).toBe(JSON.stringify(before));
+ await evidence(info,'invite-upgrade-refresh',start,[fault]);
 });
 
 test('I10 browser reconnect transfers one current snapshot after205 moves and30 duplicate submissions',async({page},info)=>{

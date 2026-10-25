@@ -85,3 +85,17 @@ test('nested cleanup reports transport causes while preserving failures and omit
  assert.equal(closed,true);
  assert.equal(resources.faults.size,0);assert.equal(resources.contexts.size,0);
 });
+
+for(const error of [Object.assign(Error('relay failed'),{code:'ECONNRESET'}),Error('socket hang up'),Error('route.fetch: socket hang up\nCall log:\nrequest details')])test(`relay reset spelling settles exactly once: ${error.message.split('\n')[0]}`,async()=>{
+ let aborted=0,resets=0,fetched=0;
+ assert.equal(await fetchFaultResponse({fetch:async()=>{fetched++;throw error;},abort:async code=>{assert.equal(code,'connectionreset');aborted++;}},{},()=>resets++),null);
+ assert.equal(fetched,1);assert.equal(aborted,1);assert.equal(resets,1);
+});
+test('relay refusal, timeout and unrelated socket descriptions remain observable',async()=>{
+ for(const message of ['route.fetch: ECONNREFUSED','route.fetch: Timeout 30000ms exceeded','parsing socket hang up response']){
+  const error=Error(message);await assert.rejects(fetchFaultResponse({fetch:async()=>{throw error;},abort:()=>assert.fail('must not swallow')},{}),caught=>caught===error);
+ }
+});
+test('reset abort failure remains observable',async()=>{
+ const error=Error('abort failed');await assert.rejects(fetchFaultResponse({fetch:async()=>{throw Error('socket hang up');},abort:async()=>{throw error;}},{}),caught=>caught===error);
+});

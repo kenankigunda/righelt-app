@@ -7,7 +7,7 @@ import { buildLocalApiWsHost, isLocalDevHost } from "../local-dev-ports.js";
 import { createLiveTransportStore, validSyncSnapshot } from "./live-transport.js";
 import { createOperationManager } from "./operation-manager.js";
 
-import { SYNC_TIMING, isSyncRevision } from "../generated/packages/shared-types/src/sync-protocol.js";
+import { LIVE_HISTORY, SYNC_TIMING, isSyncRevision } from "../generated/packages/shared-types/src/sync-protocol.js";
 
 const PENDING_LOCAL_GAMES_KEY = "righelt.pendingLocalGames";
 const WS_RECONNECT_BASE_MS = SYNC_TIMING.retryDelaysMs[0];
@@ -78,6 +78,7 @@ const createWsUrl = ({ identityId, gameId, sessionId, lastEventSeq, auth }) => {
     sessionId,
     lastEventSeq: String(lastEventSeq ?? 0),
     protocolVersion: "2",
+    [LIVE_HISTORY.socketQuery]: LIVE_HISTORY.snapshotValue,
   });
   if (auth?.storageGeneration) params.set(STORAGE_GENERATION_QUERY, auth.storageGeneration);
   if (auth?.enabled) { params.set("authProtocolVersion", String(AUTH_PROTOCOL_VERSION)); params.set("sessionContext", auth.session.contextId || ""); }
@@ -108,6 +109,9 @@ export const createLiveSyncClient = ({
   onRecovery = () => {},
   onReconcile = async () => {},
   onReady = async () => {},
+  degradedPollMs = SYNC_TIMING.degradedPollMs,
+  degradedSlowPollMs = SYNC_TIMING.degradedSlowPollMs,
+  degradedSlowAfterMs = SYNC_TIMING.degradedSlowAfterMs,
   visibilitySuspendGraceMs = VISIBILITY_SUSPEND_GRACE_MS,
 }) => {
   let retired = false;
@@ -123,6 +127,8 @@ export const createLiveSyncClient = ({
   const connectionState = new Map();
   const repairOwners = new Map();
   const httpRecoveredGames = new Set();
+  const pollTimers = new Map();
+  const degradedStartedAt = new Map();
   const reconnectGates = new Map();
   const advertisedEventSeqByGameId = new Map();
   let visibilitySuspendTimer = null;
@@ -141,9 +147,8 @@ export const createLiveSyncClient = ({
   const isDocumentHidden = () =>
     typeof document !== "undefined" && (document.hidden === true || document.visibilityState === "hidden");
 
-  const isOnline = () => typeof navigator === "undefined" || navigator.onLine !== false;
-
-  const shouldKeepConnectionsActive = () => !retired && !isDocumentHidden() && isOnline();
+  // Reachability comes from requests; navigator.onLine is only a hint.
+  const shouldKeepConnectionsActive = () => !retired && !isDocumentHidden();
 
   const clearReconnect = (gameId) => {
     const timer = reconnectTimers.get(gameId) ?? null;
@@ -260,6 +265,19 @@ export const createLiveSyncClient = ({
     }
   };
 
+  const clearPoll = (gameId) => { clearTimeout(pollTimers.get(gameId)); pollTimers.delete(gameId); };
+  const schedulePoll = (gameId) => {
+    if (pollTimers.has(gameId)) return;
+    if (!desiredGameIds.has(gameId) || !shouldKeepConnectionsActive() || connectionState.get(gameId)?.initialDone) return;
+    if (!degradedStartedAt.has(gameId)) degradedStartedAt.set(gameId, Date.now());
+    const delay = Date.now() - degradedStartedAt.get(gameId) >= degradedSlowAfterMs ? degradedSlowPollMs : degradedPollMs;
+    const timer = setTimeout(() => {
+      pollTimers.delete(gameId);
+      if (shouldKeepConnectionsActive() && desiredGameIds.has(gameId)) void repair(gameId, "http_poll");
+    }, delay);
+    timer.unref?.(); pollTimers.set(gameId, timer);
+  };
+
   const resumeDesiredConnections = (reason) => {
     if (!shouldKeepConnectionsActive()) {
       return;
@@ -275,6 +293,7 @@ export const createLiveSyncClient = ({
       return;
     }
     suspendedForInvisibility = true;
+    for (const gameId of pollTimers.keys()) clearPoll(gameId);
     for (const gameId of [...sockets.keys()]) {
       cleanupSocket(gameId, { closeReason: `intentional_suspend:${reason}` });
     }
@@ -344,26 +363,30 @@ export const createLiveSyncClient = ({
     // state to invalidate. Keep repairing it without interrupting board input.
     const background = httpRecoveredGames.has(gameId)
       && evidence.initialDone !== true && connectionState.get(gameId)?.initialDone !== true
-      && ["socket_closed", "socket_error", "initial_snapshot_timeout"].includes(reason)
+      && ["socket_closed", "socket_error", "initial_snapshot_timeout", "websocket_unavailable", "http_poll"].includes(reason)
       && (advertisedEventSeqByGameId.get(gameId) ?? 0) <= Math.max(lastEventSeqByGameId.get(gameId) ?? 0, Number(getLastEventSeq(gameId) || 0));
     const previous = repairOwners.get(gameId);
     const superseded = Boolean(previous && previous.background && !background);
     if (previous && !superseded && reason !== "manual_reconnect") return previous.promise;
     const owner = { background };
+    if (!background || reason === "http_poll") clearPoll(gameId);
     repairOwners.set(gameId, owner);
     if (!background) httpRecoveredGames.delete(gameId);
     onRecovery({ gameId, reason, ...evidence, background, superseded });
     recordMetric("recovery_started", { gameId, reason });
-    clearReconnect(gameId);
-    cleanupSocket(gameId, { closeReason: `recovery:${reason}` });
-    if (shouldKeepConnectionsActive()) {
+    if (reason !== "http_poll") {
+      clearReconnect(gameId);
+      cleanupSocket(gameId, { closeReason: `recovery:${reason}` });
+    }
+    if (reason !== "http_poll" && shouldKeepConnectionsActive()) {
       if (["manual_reconnect", "pageshow", "visibility_resumed", "network_online"].includes(reason)) connect(gameId);
       else scheduleReconnect(gameId);
     }
-    owner.promise = Promise.resolve().then(() => onReconcile({ gameId, reason })).then(() => {
+    owner.promise = Promise.resolve().then(() => background && reason !== "http_poll" ? undefined : onReconcile({ gameId, reason })).then(() => {
       if (repairOwners.get(gameId) !== owner || !desiredGameIds.has(gameId)) return;
       httpRecoveredGames.add(gameId);
       recordMetric("recovery_reconciled", { gameId, reason });
+      schedulePoll(gameId);
       // HTTP has restored authoritative state. A failed background socket must
       // not immediately reopen and re-block that evidence in this same pass.
       if (shouldKeepConnectionsActive() && !sockets.has(gameId) && !reconnectTimers.has(gameId)) scheduleReconnect(gameId);
@@ -395,6 +418,7 @@ export const createLiveSyncClient = ({
 
     if (typeof WebSocket === "undefined") {
       onError(new Error("websocket_unavailable"));
+      void repair(gameId,"websocket_unavailable");
       return;
     }
 
@@ -428,6 +452,7 @@ export const createLiveSyncClient = ({
     const finishInitial = () => {
       if (connection.initialDone) return;
       connection.initialDone = true;
+      clearPoll(gameId); degradedStartedAt.delete(gameId);
       httpRecoveredGames.delete(gameId);
       reconnectAttemptsByGameId.set(gameId, 0);
       clearTimeout(connection.initialTimer);
@@ -516,6 +541,7 @@ export const createLiveSyncClient = ({
       return;
     }
     desiredGameIds.delete(gameId);
+    clearPoll(gameId); degradedStartedAt.delete(gameId);
     httpRecoveredGames.delete(gameId);
     repairOwners.delete(gameId);
     reconnectGates.get(gameId)?.resolve(); reconnectGates.delete(gameId);
@@ -528,6 +554,8 @@ export const createLiveSyncClient = ({
     suspendedForInvisibility = false;
     const gameIds = new Set([...desiredGameIds, ...sockets.keys()]);
     desiredGameIds.clear();
+    for (const gameId of pollTimers.keys()) clearPoll(gameId);
+    degradedStartedAt.clear();
     repairOwners.clear();
     httpRecoveredGames.clear();
     for (const gate of reconnectGates.values()) gate.resolve();
@@ -566,12 +594,13 @@ export const createLiveSyncClient = ({
     });
 
     listen(window, "offline", () => {
-      for (const gameId of [...sockets.keys()]) {
-        cleanupSocket(gameId, { closeReason: "network_offline" });
-      }
+      recordMetric("network_hint", { online: false });
+      // Keep a healthy socket and permit bounded probes even when this hint is wrong.
+      for (const gameId of desiredGameIds) if (!sockets.has(gameId)) void repair(gameId, "network_hint");
     });
 
     listen(window, "pagehide", () => {
+      for (const gameId of pollTimers.keys()) clearPoll(gameId);
       for (const gameId of [...sockets.keys()]) {
         cleanupSocket(gameId, { closeReason: "pagehide" });
       }
@@ -806,6 +835,7 @@ const buildOptimisticApprovedRevertGame = ({
         ? game.moves.findIndex((move) => move?.moveId === targetMoveId)
         : -1;
   const targetMove = targetMoveIndex >= 0 ? game.moves[targetMoveIndex] ?? null : null;
+  if (targetMoveId && !targetMove?.selectionSnapshot && game.historyProjection === LIVE_HISTORY.snapshotValue) return game;
   if (!targetMoveId || !targetMove?.selectionSnapshot) {
     throw createOperationError("The undo target could not be resolved for local prediction.", "move_not_found");
   }
@@ -1111,7 +1141,8 @@ export const createSyncStore = ({
     const operationSequence = transport.getLastEventSeq(gameId);
     optimisticOperationOwner.set(gameId, id);
     const optimisticGame = buildOptimisticGame(previousGame);
-    transport.applyLiveGameUpdate({ game: optimisticGame });
+    if(transport.applyGamePreview)transport.applyGamePreview(gameId,optimisticGame);
+    else transport.applyLiveGameUpdate({ game: optimisticGame });
 
     const handle = operationManager.enqueue({
       id,
@@ -1126,7 +1157,7 @@ export const createSyncStore = ({
         operationManager.confirm(id, transport.getGameViewModel(gameId) ?? game ?? optimisticGame);
       })
       .catch((error) => {
-        if (error.code !== "delivery_unknown" && optimisticOperationOwner.get(gameId) === id && transport.getLastEventSeq(gameId) === operationSequence) transport.applyLiveGameUpdate({ game: previousGame });
+        if (error.code !== "delivery_unknown" && optimisticOperationOwner.get(gameId) === id && transport.getLastEventSeq(gameId) === operationSequence) {if(transport.applyGamePreview)transport.applyGamePreview(gameId,null);else transport.applyLiveGameUpdate({ game: previousGame });}
         operationManager.fail(id, error);
       });
 
@@ -1143,6 +1174,11 @@ export const createSyncStore = ({
     }
     if (change?.type === "optimistic_enqueue" && gameId) {
       dismissRollbackFailure(gameId);
+    }
+    if (change?.type === "shared_request_rejected" && clientCommandId) {
+      // The caller owns operation-specific feedback. A lease/control rejection
+      // is not evidence that a human move was lost or rolled back.
+      failOperation(clientCommandId, createOperationError("This request could not be completed.", change.reason ?? "shared_request_rejected"));
     }
     if (change?.type === "optimistic_rollback" && clientCommandId) {
       failOperation(
@@ -1190,6 +1226,7 @@ export const createSyncStore = ({
           clientCommandId: payload.clientCommandId ?? null,
           commandOutcome: payload.commandOutcome ?? null,
           ...(payload.type === "state_sync" ? { baseline: true } : {}),
+          ...(payload.actionContractVersion !== undefined ? { actionContractVersion: payload.actionContractVersion } : {}),
         });
         if (applied === null) return false;
       }

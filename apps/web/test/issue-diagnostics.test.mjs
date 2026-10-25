@@ -47,9 +47,9 @@ test("failed diagnostic persistence never escapes and report/event limits hold",
 });
 test("reconnect presentation waits four seconds, but actionable failures bypass it", () => {
  const g={recovering:true,pendingCommandCount:0,recoveryStartedAt:1000};
- assert.equal(recoveryMessage(g,4999),"");assert.equal(recoveryMessage(g,5000),"Reconnecting. We’ll be right back!");
- assert.equal(recoveryMessage({...g,recoveryIssue:"unavailable"},1001),"We couldn’t record your move. Please reconnect.");
- assert.match(recoveryMessage({...g,pendingCommandCount:1,confirmationOverdue:true},1001),/Hang tight!/);
+ assert.equal(recoveryMessage(g,4999),"");assert.equal(recoveryMessage(g,5000),"Reconnecting");
+ assert.equal(recoveryMessage({...g,recoveryIssue:"unavailable"},1001),"");
+ assert.match(recoveryMessage({...g,pendingCommandCount:1,confirmationOverdue:true},1001),/retry or view details/);
 });
 
 test("push continuation diagnostics retain frozen flags and action intent without identities", () => {
@@ -73,5 +73,5 @@ test("diagnostic total event and byte budgets retain initial evidence and mark t
  for(let i=0;i<20;i++){last=d.capture(`budget:${i}`,{operation:"initial",stage:"failed"});for(let j=0;j<20;j++)d.capture(`budget:${i}`,{stage:"retry",retry:j});}
  assert.ok(d.list().reduce((sum,r)=>sum+r.events.length,0)<=200);assert.equal(d.get(last).initial.operation,"initial");assert.ok(d.list().some(r=>r.truncated));
  for(let i=0;i<200;i++)d.capture("large",{browser:"x".repeat(2048),authoritativeState:{pieces:Array.from({length:100},(_,id)=>({id:String(id),owner:"P1",position:{row:0,col:0},kind:"unit"}))}});
- assert.ok(new TextEncoder().encode(JSON.stringify(d.list())).length<=1048576);assert.ok(d.list().at(-1).initial);assert.equal(d.list().at(-1).truncated,true);
+ assert.ok(new TextEncoder().encode(JSON.stringify(d.list())).length<=1048576);assert.ok(d.list().at(-1).initial);assert.ok(d.list().at(-1).events.every(event=>event.authoritativeState===undefined));
 });

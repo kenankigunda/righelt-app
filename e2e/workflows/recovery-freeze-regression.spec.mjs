@@ -154,7 +154,7 @@ for(const reduced of [false,true])test(`routine reconnect stays quiet four secon
  await page.clock.runFor(3798);await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  await page.clock.runFor(2);
  await expect(page.getByTestId("sync-recovery-banner")).toBeVisible();
- await expect(page.getByTestId("sync-recovery-banner")).toContainText("Reconnecting. We’ll be right back!");
+ await expect(page.getByTestId("sync-recovery-banner")).toContainText("Reconnecting");
  expect(await board.boundingBox()).toEqual(before);expect(await board.innerHTML()).toBe(contents);
  if(reduced)expect(await page.locator(".reconnect-background").evaluate(el=>getComputedStyle(el,"::before").animationName)).toBe("none");
  // Deadline assertions are complete. CSS transitions use the browser's

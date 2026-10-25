@@ -1637,6 +1637,7 @@ const getGameAlertItems = (game) => {
   }));
 
   const message = recoveryMessage(game);
+  const recoveryNeedsAction = game.storageBlocked || game.upgradeRequired || ["session_changed", "invalid_credentials"].includes(game.recoveryIssue) || game.confirmationOverdue || (game.recoveryStartedAt && Date.now() - game.recoveryStartedAt >= SYNC_TIMING.confirmationBudgetMs);
   for (const report of issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.key.startsWith("operation:"))) if (!failedOperations.some(op => `operation:${op.id}` === report.key)) issueDiagnostics.resolve(report.key);
   const retained = issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.resolvedAt && isDiagnosticOpen(r.id));
   for (const report of retained) items.push({ key: `resolved:${report.id}`, html: renderGameAlertCard({ body: "Resolved", incidentId: report.id, action: `<button class="secondary mini-button" data-action="dismiss-diagnostic" data-incident-id="${report.id}">Dismiss</button>` }) });
@@ -1644,13 +1645,13 @@ const getGameAlertItems = (game) => {
   const dismissed = dismissedRecoveryNotices.get(game.id) === message;
   if (message && (!dismissed || game.storageBlocked)) {
     items.unshift({
-      key: `live-sync:${game.id}:${game.recoveryEpisodeId ?? "current"}`, priority: game.storageBlocked || game.upgradeRequired || game.recoveryIssue ? "urgent" : "normal",
-      html: renderGameAlertCard({ tone: "warn", activity: recoveryActivity(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: game.incidentId,
-        action: game.storageBlocked
+      key: `live-sync:${game.id}:${game.recoveryEpisodeId ?? "current"}`, priority: recoveryNeedsAction ? "urgent" : "normal",
+      html: renderGameAlertCard({ tone: recoveryNeedsAction ? "warn" : "neutral", activity: recoveryActivity(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: recoveryNeedsAction ? game.incidentId : null,
+        action: !recoveryNeedsAction ? "" : game.storageBlocked
           ? `<button class="secondary mini-button" data-action="retry-saving" data-game-id="${escapeHtml(game.id)}">Retry saving</button>${dismissed ? "" : `<button class="secondary mini-button" data-action="dismiss-recovery-notice" data-game-id="${escapeHtml(game.id)}">Dismiss</button>`}`
           : game.upgradeRequired ? `<button class="secondary mini-button" data-action="refresh-game">Refresh</button>`
           : ["session_changed", "invalid_credentials"].includes(game.recoveryIssue) ? `<button class="secondary mini-button" data-action="account-open">Sign in</button>`
-          : `<button class="secondary mini-button" data-action="reconnect-safely" data-game-id="${escapeHtml(game.id)}">Reload now</button>`,
+          : `<button class="secondary mini-button" data-action="reconnect-safely" data-game-id="${escapeHtml(game.id)}">Retry</button>`,
       }),
     });
   }
@@ -2025,8 +2026,8 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
       canAuthorScenarios
         ? `<section class="panel debug-panel scenario-panel scenario-panel-create">
             <h2>Capture a position</h2>
-            <p>${capturing ? scenarioCapture.mode === 'live' ? 'Following this manual game until you save. History inspection does not change the capture.' : 'Position frozen when capture began. Live play may continue separately.' : 'Start a capture to choose a piece and target, then save explicitly.'}</p>
-            <button class="secondary" data-action="${capturing ? 'end-scenario-capture' : 'begin-scenario-capture'}">${capturing ? 'End capture' : 'Capture this position'}</button>
+            <p>${!capturing && game?.historyLoading ? 'Loading the selected position before capture.' : capturing ? scenarioCapture.mode === 'live' ? 'Following this manual game until you save. History inspection does not change the capture.' : 'Position frozen when capture began. Live play may continue separately.' : 'Start a capture to choose a piece and target, then save explicitly.'}</p>
+            <button class="secondary" data-action="${capturing ? 'end-scenario-capture' : 'begin-scenario-capture'}"${!capturing && game?.historyLoading ? ' disabled aria-disabled="true"' : ''}>${capturing ? 'End capture' : 'Capture this position'}</button>
             <div class="form-row">
               <label for="save-scenario-title">Title</label>
               <input id="save-scenario-title" data-scenario-save-field="title" value="${escapeHtml(saveDraft.title)}" />
@@ -2613,6 +2614,7 @@ const renderHistoryPanel = (game) => {
     ${getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button>` : ""}
     <div class="section-followup">
       ${historyBanner}
+      ${game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? "Loading this move" : "This move couldn’t load. Your current view is still available."}</p>${game.historyLoadError ? `<button class="secondary mini-button" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${game.historyLoadIndex}">Retry</button>` : ""}</div>` : ""}
       ${game.inHistoryMode && selectedMove?.moveId ? `<div class="history-item-actions"><button class="secondary" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}">Create a new game before this decision</button>${game.myRoles?.some(role => role === 'Player 1' || role === 'Player 2') ? `<button class="secondary" data-action="revert-to-move" data-game-id="${escapeHtml(game.id)}" data-move-id="${escapeHtml(selectedMove.moveId)}">Undo before this decision</button>` : ''}</div>` : ''}
       <ol class="history-list" data-testid="history-list">${historyRows}</ol>
       <button class="secondary" data-action="debug-load-history">${getDecisionDebugState(game.id).cursor ? 'Load older archive page' : 'Browse full decision archive'}</button>
@@ -3097,6 +3099,9 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
 
 const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
   const game = transport.getGameViewModel(gameId);
+  if (!game && transport.isUpgradeRequired?.(gameId)) {
+    return `<section class="panel" data-testid="sync-recovery-banner" role="status"><p>Righelt has an update. Refresh to keep playing.</p><button class="secondary" data-action="refresh-game">Refresh</button></section>`;
+  }
   if (!routeHydrated && !game) {
     return renderGameViewSkeleton();
   }
@@ -3371,7 +3376,7 @@ const getHistoryDestroyedPieceOverlays = (game) => {
   if (!game?.inHistoryMode || typeof game.historyIndex !== "number") {
     return [];
   }
-  const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
+  const move = game.inspectedDecision ?? (Array.isArray(game.moves) ? game.moves[game.historyIndex] : null);
   return buildDestroyedPieceOverlays({
     destroyedPieceRecords: move?.destroyedPieces ?? [],
     preActionSnapshot: move?.selectionSnapshot ?? null,
@@ -3382,7 +3387,7 @@ const getHistoryRecordedActionStartPiece = (game) => {
   if (!game?.inHistoryMode || typeof game.historyIndex !== "number") {
     return null;
   }
-  const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
+  const move = game.inspectedDecision ?? (Array.isArray(game.moves) ? game.moves[game.historyIndex] : null);
   if (!move?.selectionSnapshot || !move?.action) {
     return null;
   }
@@ -3404,7 +3409,7 @@ const updateReconnectPresentation = game => {
   clearTimeout(reconnectPresentationTimer);
   if (recovering && game.recoveryStartedAt) {
     const elapsed = Date.now() - game.recoveryStartedAt;
-    const remaining = elapsed < LOADING_CUE_DELAY_MS ? LOADING_CUE_DELAY_MS - elapsed : elapsed < SYNC_TIMING.reconnectAlertMs ? SYNC_TIMING.reconnectAlertMs - elapsed : null;
+    const remaining = elapsed < LOADING_CUE_DELAY_MS ? LOADING_CUE_DELAY_MS - elapsed : elapsed < SYNC_TIMING.reconnectAlertMs ? SYNC_TIMING.reconnectAlertMs - elapsed : elapsed < SYNC_TIMING.confirmationBudgetMs ? SYNC_TIMING.confirmationBudgetMs - elapsed : null;
     if (remaining !== null) reconnectPresentationTimer = setTimeout(() => { const next = transport.getGameViewModel(game.id); updateReconnectPresentation(next); updateMountedHeader(); }, remaining + 1);
   }
 };
@@ -4071,9 +4076,11 @@ const syncRouteDataAndLiveChannels = () => {
     if (read.route.name === "invite") {
       const invite = await read.owner.resolveInvite(read.route.inviteToken);
       assertCurrentRouteRead(read);
+      // Keep validated invitation routing metadata even if its board requires an
+      // upgrade. It identifies the recovery fence without trusting a snapshot.
+      resolvedInvite = invite;
       await read.owner.loadGame(invite.gameId, { openAsViewer: false });
       assertCurrentRouteRead(read);
-      resolvedInvite = invite;
     }
     assertCurrentRouteRead(read);
     syncLiveChannels();
@@ -4385,16 +4392,6 @@ const subscribeToTransport = () => transport.subscribe((change) => {
   }
   queueMicrotask(() => { void computerSession?.tick(); });
   gameSound.local(change, transport.getGameViewModel(change?.gameId), {silent:currentRoute.name!=='game' || currentRoute.gameId!==change?.gameId || Boolean(transport.getGameViewModel(change?.gameId)?.inHistoryMode)});
-  if (change?.type === "upgrade_required") {
-    try {
-      const key = "righelt.sync-v2-refresh";
-      if (!window.sessionStorage.getItem(key)) {
-        window.sessionStorage.setItem(key, "1");
-        window.location.reload();
-        return;
-      }
-    } catch { /* Keep the visible update notice if session storage cannot guard a reload. */ }
-  }
   const visibleGameId = getCurrentViewedGameId();
   const game = transport.getGameViewModel(visibleGameId);
   const frozenCapture = Boolean(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === visibleGameId);
@@ -4880,12 +4877,19 @@ appEl.addEventListener("click", async (event) => {
     };
     // Keep automatic control work fenced until the undo response is applied;
     // the server drops its lease before that acknowledgement reaches us.
-    const reverted = computerUndo ? await computerSession.withMutation(revert) : await revert();
+    let reverted;
+    try { reverted = computerUndo ? await computerSession.withMutation(revert) : await revert(); }
+    catch {
+      if (undoScopeIsCurrent()) setUndoRequestFeedback(gameId, "Undo could not finish");
+      return;
+    }
     if (computerUndo && reverted) {
       if (!undoScopeIsCurrent()) return;
-      await computerSession.tick();
-      if (!undoScopeIsCurrent()) return;
-      await computerSession.action('resume');
+      try {
+        await computerSession.tick();
+        if (!undoScopeIsCurrent()) return;
+        await computerSession.action('resume');
+      } catch { /* The undo is accepted. Computer recovery explains an uncertain resume. */ }
     }
     return;
   }
@@ -5225,7 +5229,9 @@ appEl.addEventListener("click", async (event) => {
 
   if (action === 'begin-scenario-capture' || action === 'end-scenario-capture') {
     if (!canAuthorScenariosLocally()) return;
-    const game = getActiveScenarioGame(), historyContext = resolveHistoryScenarioExportContext(game);
+    const game = getActiveScenarioGame();
+    if (action === 'begin-scenario-capture' && game?.historyLoading) return;
+    const historyContext = resolveHistoryScenarioExportContext(game);
     boardRuntime?.clearRemovalEffects();
     destructionTransitions.update(game, { reset: true });
     scenarioCapture = action === 'begin-scenario-capture' ? beginScenarioCapture(game, transport.getIdentityId(), historyContext) : null;
