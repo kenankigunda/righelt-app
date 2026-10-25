@@ -1,5 +1,5 @@
 .game-result {--result-color:var(--player-p1);}
-.game-result h1 {font-size:clamp(32px,4.5vw,48px);line-height:1.15;letter-spacing:-.04em;}
+.game-result h1 {line-height:1.15;letter-spacing:-.04em;overflow-wrap:normal;}
 .game-result[data-winner="p2"] {--result-color:var(--player-p2);}
 .result-mark {width:160px;margin:0 auto 20px;text-align:center;color:var(--result-color);}
 .result-mark svg {display:block;width:160px;height:110px;overflow:visible;}

@@ -336,7 +336,7 @@ html[data-page-active="false"] .shell-header button.ui-icon-button {transition:n
 
 /* Results and rematches share the layered surface and clear action hierarchy. */
 .game-result { max-width:660px; margin:32px auto 48px; padding:32px; --corner-start:var(--player-p1);--corner-end:var(--player-p2); }
-.game-result h1 {font-size:clamp(36px,7vw,56px);margin:12px 0;}
+.game-result h1 {font-size:clamp(1.75rem,7vw,3.5rem);margin:12px 0;}
 .game-result .story-modal-actions {margin-top:24px;}
 .game-result .button-link {display:flex;align-items:center;justify-content:center;min-height:48px;text-decoration:none;}
 .rematch-modal label {display:grid;gap:8px;}

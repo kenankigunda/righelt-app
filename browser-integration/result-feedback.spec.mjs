@@ -27,3 +27,24 @@ test('animation timeline survives repaint and history, hydration, spectator and 
  await page.locator('.game-result').screenshot({path:info.outputPath('result-reduced-motion.png')});
  await expect(page.locator('.result-mark svg')).toHaveAttribute('aria-hidden','true');await expect(page.getByRole('heading',{name:'You won',exact:true})).toBeVisible();
 });
+
+for(const width of [320,390])test(`200% result text enlarges its heading and keeps all actions reachable at ${width}px`,async({page},info)=>{
+ await page.setViewportSize({width,height:844});await open(page);
+ await page.evaluate(()=>document.documentElement.style.fontSize='200%');
+ for(const side of ['red','blue','viewer']){
+  await page.evaluate(side=>window.resultFixture.setup(side,'p1_win'),side);
+  const result=page.locator('.game-result'),heading=result.getByRole('heading');
+  await expect(heading).toHaveText(side==='red'?'You won':side==='blue'?'Your opponent won':'Player 1 wins');
+  expect(await heading.evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(56);
+  if(side==='blue')expect(await heading.evaluate(el=>{const start=el.firstChild.textContent.indexOf('opponent'),range=document.createRange();range.setStart(el.firstChild,start);range.setEnd(el.firstChild,start+8);return range.getClientRects().length;})).toBe(1);
+  expect(await result.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+  for(const action of await result.locator('button,a').all()){
+   await action.scrollIntoViewIfNeeded();
+   // Scroll positions round to physical pixels. Check all four edges with the
+   // same one-pixel geometry allowance as the board, rather than an exact IO ratio.
+   await expect.poll(()=>action.evaluate(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.top>=-1&&r.left>=-1&&r.right<=innerWidth+1&&r.bottom<=innerHeight+1;})).toBe(true);
+   expect(await action.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})).toBe(true);
+  }
+  await result.screenshot({path:info.outputPath(`result-enlarged-${side}-${width}.png`)});
+ }
+});
