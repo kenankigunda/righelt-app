@@ -290,7 +290,7 @@ export const createAccountDialog = ({
     if (!discard && isSettings() && dialog.open && !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
       const closingFlow = flow;
       dialog.classList.add('is-closing');
-      await new Promise(resolve => setTimeout(resolve, 180));
+      await new Promise(resolve => timers.setTimeout(resolve, 180));
       if (flow !== closingFlow) return false;
     }
     dialog.classList.remove('is-closing');
@@ -310,12 +310,16 @@ export const createAccountDialog = ({
     const resolveSource = () => trigger?.isConnected ? trigger : action ? document.querySelector(`[data-action="${CSS.escape(action)}"]`) : document.querySelector('[data-action="account-open"]');
     releaseScroll?.();releaseScroll = null;
     if (!discard && !isSettings()) animateOverlayExit(dialog, resolveSource());
+    // A nonmodal flyout can be left while its exit finishes. Native close
+    // may restore its old trigger, so retain the user's newer outside focus.
+    const active = document.activeElement;
+    const outsideFocus = active?.isConnected && active !== document.body && active !== document.documentElement && !dialog.contains(active) ? active : null;
     dialog.close();
     releaseScroll?.();releaseScroll = null;
     if (document.documentElement?.dataset) document.documentElement.dataset.accountFlyout = "false";
     onLayoutChange();
     dialog.replaceChildren();
-    resolveSource()?.focus?.({preventScroll:true});
+    (outsideFocus?.isConnected && !outsideFocus.disabled ? outsideFocus : resolveSource())?.focus?.({preventScroll:true});
     return true;
   };
   const open = (next = "login", intent = null, source = null) => {
