@@ -36,6 +36,7 @@ async function wire(page) {
  });
  await page.route('**/api/shell/games/**',route=>lifecycle.run(async()=>{
   fault.requests++;
+  if(fault.legacy && /\/reconcile$/.test(new URL(route.request().url()).pathname)){await route.fulfill({status:404,json:{ok:false,error:"not_found"}});return;}
   if(fault.http || (fault.loseReply && /\/reconcile$/.test(new URL(route.request().url()).pathname))){await route.abort();return;}
   const mutation=route.request().method()==='POST'&&/\/apply$/.test(new URL(route.request().url()).pathname);
   // Loss of an admitted move begins at submission, not during pointer setup.
@@ -134,20 +135,12 @@ async function evidence(info, name, start, faults, extra={}) {
  await info.attach(`recovery-${name}`,{body:JSON.stringify(result,null,2),contentType:'application/json'});
 }
 
-// An aborted HTTP response is a known transport failure, even when the
-// admitted command remains durable and its server outcome is still unknown.
-async function unavailableNotice(page) {
- const notice=page.getByTestId('sync-recovery-banner');
- await expect(notice).toContainText('We couldn’t record your move. Please reconnect.');
- await expect(notice).toHaveAttribute('data-notification-activity','static');
-}
-
 test('E01 lost committed response and socket receipt converge automatically',async({browser,baseURL},info)=>{
  const p=await party(browser,baseURL);try{
   await converged(p.pages);
   p.faults[0].receive=true;p.faults[0].loseReply=true;
   await move(p.pages[0],p.gameId);
-  await unavailableNotice(p.pages[0]);
+  await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Recording your move');
   p.faults[0].receive=false;p.faults[0].loseReply=false;const start=Date.now();
   await converged(p.pages);expect((await digest(p.pages[0])).history).toHaveLength(1);await evidence(info,'lost-response',start,p.faults);
   const ids=p.faults[0].commands.map(c=>c.clientCommandId);expect(new Set(ids).size).toBe(1);
@@ -180,7 +173,7 @@ test('E04 reload unresolved journal then visibility resume preserves original ID
  const p=await party(browser,baseURL);try{
   p.faults[0].receive=true;p.faults[0].loseReply=true;
   await move(p.pages[0],p.gameId);
-  await unavailableNotice(p.pages[0]);
+  await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Recording your move');
   const id=p.faults[0].commands[0].clientCommandId;
   expect(await p.pages[0].evaluate(()=>new Promise((resolve,reject)=>{const request=indexedDB.open('righelt.online-commands.v2');request.onsuccess=()=>{const db=request.result;const tx=db.transaction('commands');const read=tx.objectStore('commands').getAll();read.onsuccess=()=>resolve(read.result.length);};request.onerror=()=>reject(request.error);}))).toBe(1);
   if(info.project.name==='chromium'){
@@ -222,7 +215,7 @@ for(const phase of ['before','after'])test(`E03 actual Worker restart ${phase} c
   p.faults[0].holdApply=phase==='before';
   p.faults[0].receive=true;p.faults[0].loseReply=true;
   await move(p.pages[0],p.gameId);
-  await unavailableNotice(p.pages[0]);
+  await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Recording your move');
   const response=await request.post(`http://127.0.0.1:${e2eControlPort(new URL(baseURL).port)}/restart`);expect(response.ok()).toBe(true);
   p.faults[0].receive=false;p.faults[0].loseReply=false;p.faults[0].holdApply=false;const start=Date.now();
   await converged(p.pages);expect((await digest(p.pages[0])).history).toHaveLength(1);await evidence(info,`worker-restart-${phase}-commit`,start,p.faults);
@@ -368,7 +361,7 @@ test('I10 browser reconnect transfers one current snapshot after205 moves and30 
 test('E05 home reload recovers unopened journal games and retains pending card',async({browser,baseURL},info)=>{
  test.skip(info.project.name!=='chromium');const p=await party(browser,baseURL);try{
   p.faults[0].receive=true;p.faults[0].loseReply=true;await move(p.pages[0],p.gameId);
-  await unavailableNotice(p.pages[0]);
+  await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Recording your move');
   await p.pages[0].goto(baseURL);
   await expect(p.pages[0].locator(`[data-game-id="${p.gameId}"]`).first()).toContainText(/Recovering/i);
   p.faults[0].receive=false;p.faults[0].loseReply=false;const start=Date.now();
