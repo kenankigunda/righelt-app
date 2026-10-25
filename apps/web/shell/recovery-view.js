@@ -53,7 +53,7 @@ export const applyHistoryIntent = (game, intent, identityId) => {
     const seatIdentity = (seat) => (seat === "Player 1" ? game.player1 : game.player2)?.identityId;
     game.computerTurn = computerProfileFor(game.computer, game.board.state.sideToMove, game.board.state.turnIndex ?? 0);
     game.canRecordMove = !game.computerTurn && seatIdentity(game.controlSeat) === identityId && game.legalActions?.length > 0;
-    game.canEndTurn = !game.computerTurn && game.control === "turn-owner" && seatIdentity(game.turnOwnerSeat) === identityId && Boolean(game.currentTurn?.moveIndexes?.length);
+    game.canEndTurn = !game.computerTurn && game.control === "turn-owner" && seatIdentity(game.turnOwnerSeat) === identityId && game.legalActions?.some(action => action.type === "end_turn") === true;
   }
   return game;
 };
