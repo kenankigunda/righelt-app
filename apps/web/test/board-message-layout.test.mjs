@@ -41,7 +41,8 @@ test('cold and live headings share reserved turn captions and one accessible hea
  assert.equal((live.match(/id="shell-board-turn-indicator"/g)??[]).length,1);
  assert(!loading.includes('id='));
  for(const html of [live,loading]){
-  assert.equal((html.match(/aria-hidden="true" inert role="presentation"/g)??[]).length,4);
+  assert.equal((html.match(/aria-hidden="true" inert role="presentation"/g)??[]).length,8);
+  for(const font of ['primary','fallback'])for(let index=0;index<4;index++)assert(html.includes(`data-heading-sizing-font="${font}" data-heading-sizing-caption="${index}"`));
   for(const caption of ['Your turn to play','Opponent to play','Guest 1 to play','Guest 2 to play'])assert(html.includes(caption));
  }
  const app=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');

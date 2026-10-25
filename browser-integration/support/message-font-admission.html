@@ -14,13 +14,21 @@ const frame=Function('escapeHtml','formatDisplayGameId','renderSummaryLoading','
 app.querySelector('.shell-main-content').innerHTML=frame({id:'font-admission'},{loading:true});
 const layout=()=>{const narrow=innerWidth<933;app.dataset.shellLayoutMode=narrow?'narrow':'wide';app.style.setProperty('--shell-game-panel-index','1');app.querySelectorAll('[data-mobile-panel]').forEach(node=>node.toggleAttribute('inert',narrow&&node.dataset.mobilePanel!=='board'));};
 layout();window.addEventListener('resize',layout);
-window.fontAnchors=()=>{const rect=selector=>document.querySelector(selector).getBoundingClientRect().toJSON();const panel=document.querySelector('[data-shell-panel="board"]'),style=getComputedStyle(panel);return {availableInlineSize:panel.getBoundingClientRect().width-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight)-parseFloat(style.borderLeftWidth)-parseFloat(style.borderRightWidth),slot:rect('.board-message-slot'),board:rect('#font-board'),panel:rect('[data-shell-panel="board"]'),fontStatus:document.fonts.status,fallback:getComputedStyle(document.querySelector('[data-sizing-font="fallback"]')).fontFamily,primary:getComputedStyle(document.querySelector('[data-sizing-font="primary"]')).fontFamily};};
-window.fontEnvelope=width=>{
- const slot=document.querySelector('.board-message-slot'),probe=document.createElement('div');probe.className='board-message-slot';
- probe.setAttribute('aria-hidden','true');probe.setAttribute('inert','');probe.style.cssText=`position:absolute;left:-10000px;top:0;inline-size:${width??slot.getBoundingClientRect().width}px;visibility:hidden;pointer-events:none`;
- document.body.append(probe);
- const rows=[...slot.querySelectorAll('.board-message-sizing')].map(node=>{const copy=node.cloneNode(true);copy.style.cssText='display:block;height:auto;align-self:start;margin:0';probe.append(copy);return {font:node.dataset.sizingFont,variant:node.dataset.sizingVariant,text:node.textContent,height:copy.getBoundingClientRect().height,lineHeight:parseFloat(getComputedStyle(copy).lineHeight),minHeight:parseFloat(getComputedStyle(copy).minHeight)};});
- probe.remove();return {width:width??slot.getBoundingClientRect().width,primary:Math.max(...rows.filter(row=>row.font==='primary').map(row=>row.height)),fallback:Math.max(...rows.filter(row=>row.font==='fallback').map(row=>row.height)),rows};
+window.fontAnchors=()=>{const rect=selector=>document.querySelector(selector).getBoundingClientRect().toJSON();const panel=document.querySelector('[data-shell-panel="board"]'),style=getComputedStyle(panel);return {availableInlineSize:panel.getBoundingClientRect().width-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight)-parseFloat(style.borderLeftWidth)-parseFloat(style.borderRightWidth),slot:rect('.board-message-slot'),board:rect('#font-board'),panel:rect('[data-shell-panel="board"]'),heading:rect('.board-heading-slot'),headingCaptions:[...document.querySelectorAll('.board-heading-slot > .board-heading')].map(node=>{const style=getComputedStyle(node);return {font:node.dataset.headingSizingFont??'live',caption:node.dataset.headingSizingCaption??null,text:node.textContent,rect:node.getBoundingClientRect().toJSON(),fontFamily:style.fontFamily,fontSize:style.fontSize,lineHeight:style.lineHeight,flexBasis:getComputedStyle(node.lastElementChild??node).flexBasis};}),fontStatus:document.fonts.status,fallback:getComputedStyle(document.querySelector('[data-sizing-font="fallback"]')).fontFamily,primary:getComputedStyle(document.querySelector('[data-sizing-font="primary"]')).fontFamily};};
+// These two canonical replica probes persist only in this fixture. The fixed,
+// zero-size clipped wrapper cannot contribute to page flow or scroll bounds.
+const measurementWrapper=document.createElement('div');measurementWrapper.setAttribute('data-font-measurement-wrapper','');measurementWrapper.setAttribute('aria-hidden','true');measurementWrapper.setAttribute('inert','');measurementWrapper.style.cssText='position:fixed;left:0;top:0;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none';document.body.append(measurementWrapper);
+const measurementProbes=new Map([false,true].map(intrinsic=>{
+ const probe=document.createElement('div');probe.className='board-message-slot';probe.style.cssText='position:absolute;left:0;top:0';
+ const copies=[...document.querySelector('.board-message-slot').querySelectorAll('.board-message-sizing')].map(node=>{const copy=node.cloneNode(true);copy.style.cssText=`display:block;height:auto;align-self:start;margin:0${intrinsic?';min-height:0':''}`;probe.append(copy);return copy;});
+ measurementWrapper.append(probe);return [intrinsic,{probe,copies}];
+}));
+window.fontEnvelope=(width,{intrinsic=false}={})=>{
+ const size=width??document.querySelector('.board-message-slot').getBoundingClientRect().width,{probe,copies}=measurementProbes.get(intrinsic);probe.style.inlineSize=`${size}px`;
+ // Read fresh metrics after each width/font-stage change: container-query
+ // minimum heights and font-dependent line boxes must never be cached.
+ const rows=copies.map(copy=>{const style=getComputedStyle(copy);return {font:copy.dataset.sizingFont,variant:copy.dataset.sizingVariant,text:copy.textContent,height:copy.getBoundingClientRect().height,lineHeight:parseFloat(style.lineHeight),minHeight:parseFloat(style.minHeight)};});
+ return {width:size,primary:Math.max(...rows.filter(row=>row.font==='primary').map(row=>row.height)),fallback:Math.max(...rows.filter(row=>row.font==='fallback').map(row=>row.height)),rows};
 };
 window.admitMessagePhases=()=>{
  const slot=document.querySelector('.board-message-slot'),live=slot.querySelector('#font-message'),before=window.fontAnchors(),failures=[];

@@ -43,7 +43,8 @@ export function renderBoardMessageSlot({id, loading = false, loadingKey} = {}) {
 
 export function renderBoardHeadingSlot({loading = false} = {}) {
   const caption = turn => `Board <span class="board-heading-separator">-</span> <span>${turn}</span>`;
-  return `<div class="board-heading-slot"><h2 class="board-heading">${loading ? 'Board' : 'Board <span class="board-heading-separator">-</span> <span id="shell-board-turn-indicator">-</span>'}</h2>${BOARD_TURN_CAPTIONS.map(turn => `<h2 class="board-heading board-heading-sizing" aria-hidden="true" inert role="presentation">${caption(turn)}</h2>`).join('')}</div>`;
+  const sizing = fallback => BOARD_TURN_CAPTIONS.map((turn,index) => `<h2 class="board-heading board-heading-sizing${fallback ? ' board-heading-fallback-sizing' : ''}" data-heading-sizing-font="${fallback ? 'fallback' : 'primary'}" data-heading-sizing-caption="${index}" aria-hidden="true" inert role="presentation">${caption(turn)}</h2>`).join('');
+  return `<div class="board-heading-slot"><h2 class="board-heading">${loading ? 'Board' : 'Board <span class="board-heading-separator">-</span> <span id="shell-board-turn-indicator">-</span>'}</h2>${sizing(false)}${sizing(true)}</div>`;
 }
 
 const activeMessages = new WeakMap();

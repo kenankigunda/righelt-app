@@ -34,6 +34,8 @@ body {display:flow-root;}
 }
 .board-heading-slot {display:grid;grid-template-columns:minmax(0,1fr);min-width:0;}
 .board-heading-slot > .board-heading {grid-area:1 / 1;min-width:0;}
+.board-heading-slot > .board-heading {font-family:var(--font-family);}
+.board-heading-slot > .board-heading-fallback-sizing {font-family:var(--font-family-fallback);}
 .board-heading-slot + .board-message-slot {margin-block-start:0;}
 #app[data-shell-layout-mode="narrow"] [data-shell-panel="board"] .board {grid-template-columns:repeat(10,minmax(0,1fr));}
 /* Expand the tap surface inside the reserved message space, without moving
