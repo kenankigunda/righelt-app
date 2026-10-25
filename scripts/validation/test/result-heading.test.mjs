@@ -24,3 +24,18 @@ test('unknown contracts, nonterminal states and invalid sides fail instead of we
     assert.throws(() => expectedResultHeading(options));
   }
 });
+
+
+test('named observer results require the captured name and retain exact seated and both-side perspective', () => {
+  for(const [outcome,side] of [['p1_win','p1'],['p2_win','p2']]) {
+    for(const winnerName of ['Guest 1','Guest 2','Horus','名字 <&> שלום']) {
+      assert.equal(expectedResultHeading({contract:'perspective-v2',outcome,winnerName}),`${winnerName} won`);
+    }
+    assert.equal(expectedResultHeading({contract:'perspective-v2',outcome,viewerSide:side}),'You won');
+    assert.equal(expectedResultHeading({contract:'perspective-v2',outcome,viewerSide:side==='p1'?'p2':'p1'}),'Your opponent won');
+    assert.equal(expectedResultHeading({contract:'perspective-v2',outcome,controlsBothSides:true}),'You won');
+    for(const winnerName of [undefined,null,'','  '])assert.throws(()=>expectedResultHeading({contract:'perspective-v2',outcome,winnerName}));
+  }
+  assert.equal(expectedResultHeading({contract:'perspective-v2',outcome:'draw'}),'Draw');
+  assert.throws(()=>expectedResultHeading({contract:'perspective-v1',outcome:'p1_win',controlsBothSides:true}));
+});
