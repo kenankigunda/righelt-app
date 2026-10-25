@@ -64,6 +64,7 @@ test("B-006 unsupplied commander is terminal and commander remains on board", ()
   assert.ok(c1);
   assert.equal(c1.supplied, false);
   assert.equal(resolved.outcome.status, "p2_win");
+  assert.equal(resolved.outcome.reason, "p1_commander_unsupplied");
 });
 
 test("unsupplied non-commander is removed during forced effects", () => {

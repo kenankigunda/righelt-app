@@ -30,7 +30,8 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   expect(loaded.status, JSON.stringify(loaded.body)).toBe(200);
   expect(loaded.body.game.id).toBe(gameId);
   await expect(page.getByTestId("game-result")).toBeVisible();
-  await expect(page.getByTestId("game-result").getByRole("heading", { name: "Win" })).toBeVisible();
+  await expect(page.getByTestId("game-result").getByRole("heading", { name: "You won" })).toBeVisible();
+  await expect(page.getByTestId("game-result")).toHaveAttribute('data-result-tone','victory');
   const review = page.getByRole("button", { name: "Review game" });
   await review.focus();
   await page.evaluate(() => window.dispatchEvent(new Event("offline")));
@@ -69,12 +70,20 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   await expect(page.getByTestId("game-result")).toHaveCount(0);
   await page.getByRole("button", { name: "History", exact: true }).click();
   await page.getByRole("button", { name: "View result" }).click();
+  expect(await page.getByTestId('game-result').evaluate(element=>element.getAnimations({subtree:true}).filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime)).length)).toBe(0);
   for (let cycle = 0; cycle < 2; cycle++) {
     await page.getByRole("button", { name: "Review game" }).focus();
     await page.keyboard.press("Enter");
     await expect(page.locator('[data-game-panel="history"] h2')).toBeFocused();
     await expect(page.getByTestId("game-shell")).toBeVisible();
     await expect(page.getByTestId("game-result")).toHaveCount(0);
+    // Selecting a saved after-state must keep the History board/mini preview,
+    // never open a result overlay or replay a celebration.
+    // Click the move text. A selected row contains an Undo action, so its
+    // geometric center is not a reliable target for selecting that same move.
+    const lastMove=page.locator('[data-testid="history-move-item"] .history-move-line').last();
+    await lastMove.click();
+    await expect(page.getByTestId('game-result')).toHaveCount(0);
     // Read the real authenticated HTTP projection, not the optimistic creation
     // object or a warm socket snapshot. Repeating catches persistence regressions.
     const projected = await page.evaluate(async gameId => {
@@ -92,7 +101,8 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
       await page.getByRole("button", { name: "History", exact: true }).click();
     }
     await page.getByRole("button", { name: "View result" }).click();
-    await expect(page.getByTestId("game-result").getByRole("heading", { name: "Win" })).toBeVisible();
+    await expect(page.getByTestId("game-result").getByRole("heading", { name: "You won" })).toBeVisible();
+    expect(await page.getByTestId('game-result').evaluate(element=>element.getAnimations({subtree:true}).filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime)).length)).toBe(0);
   }
   await page.getByRole("button", { name: "Play again" }).click();
   const rematch = page.getByRole("dialog", { name: "Play again" });
@@ -116,4 +126,28 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   await expect(page.getByTestId("game-shell")).toHaveAttribute("data-game-id", fresh.id);
   if (opponent === "friend") await expect(page.locator("#app")).toHaveAttribute("data-action-affiliation", "blue");
   else expect(fresh.selfPlayStartSide).toBe("p2");
+});
+
+test('a retained legacy commander destruction explains the actual cause without rewriting its stored reason',async({page},info)=>{
+ await page.setViewportSize({width:390,height:844});
+ let headers;
+ page.on('request',request=>{if(request.method()==='POST'&&new URL(request.url()).pathname==='/api/shell/games')headers=request.headers();});
+ await page.goto('/');await page.getByRole('button',{name:'Play both sides',exact:true}).click();
+ const account=page.getByTestId('account-dialog');await account.getByRole('button',{name:'Create account',exact:true}).click();
+ await account.getByLabel('Username',{exact:true}).fill(`Legacy_${Date.now().toString(36)}`);await account.getByLabel('Password',{exact:true}).fill('A retained result password 482');
+ await account.getByRole('button',{name:'Create account & continue',exact:true}).click();
+ await expect(page.getByTestId('game-shell')).toBeVisible();const gameId=await page.getByTestId('game-shell').getAttribute('data-game-id');
+ const terminal=structuredClone(scenario.resultingState);terminal.pieces=terminal.pieces.filter(piece=>piece.id!=='C2');terminal.outcome={status:'p1_win',reason:'p2_commander_unsupplied'};
+ const imported=await page.evaluate(async({gameId,scenario,terminal,headers})=>{
+  const response=await fetch('/api/shell/scenarios/import',{method:'POST',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({targetGameId:gameId,protocolVersion:2,scenario:{...scenario,initialState:terminal,resultingState:terminal,moves:[],expectedOutcome:'p1_win'}})});
+  return{status:response.status,body:await response.json()};
+ },{gameId,scenario,terminal,headers});
+ expect(imported.status,JSON.stringify(imported.body)).toBe(200);expect(imported.body.game.board.state.outcome.reason).toBe('p2_commander_unsupplied');expect(imported.body.game.moves).toHaveLength(0);
+ const result=page.getByTestId('game-result');await expect(result.getByRole('heading',{name:'You won',exact:true})).toBeVisible();await expect(result).toContainText('Your opponent’s commander was destroyed.');await expect(result).not.toContainText('lost its supply');
+ await page.reload();await expect(page.getByTestId('game-shell')).toBeVisible();await expect(result).toHaveCount(0);
+ await page.goto(`/#/game/${gameId}?panel=history`);await page.getByRole('button',{name:'View result',exact:true}).click();
+ await expect(result.getByRole('heading',{name:'You won',exact:true})).toBeVisible();expect(await result.locator('[data-result-mark]').evaluate(el=>el.getAnimations({subtree:true}).length)).toBe(0);
+ const retained=await page.evaluate(async({gameId,headers})=>(await(await fetch(`/api/shell/games/${gameId}`,{headers})).json()).game,{gameId,headers});
+ expect(retained.board.state.outcome.reason).toBe('p2_commander_unsupplied');expect(retained.moves).toHaveLength(0);
+ await page.screenshot({path:info.outputPath('legacy-commander-result.png')});
 });
