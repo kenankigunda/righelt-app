@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createSyncStore } from "../shell/sync-store.js";
+import { listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
 
 const clone = (value) => structuredClone(value);
 
@@ -1333,4 +1334,32 @@ test('archived undo reaches the server without fabricating an optimistic restore
   assert.deepEqual(handle.result.board, game.board);
   await handle.committed;
   assert.equal(payload.targetMoveId, 'evicted-1');
+});
+
+for (const forced of [false,true]) test(`optimistic undo ${forced?'retains a legal rush continuation':'never flashes the undone ordinary target'} before acknowledgement`,async()=>{
+  const pieces=[
+    {id:'C1',owner:'P1',kind:'commander',position:{row:3,col:6},supplied:true,commanded:true},
+    {id:'C2',owner:'P2',kind:'commander',position:{row:6,col:3},supplied:true,commanded:true},
+    {id:'U1a',owner:'P1',kind:'unit',position:{row:4,col:4},supplied:true,commanded:true},
+    {id:'U2a',owner:'P2',kind:'unit',position:{row:4,col:6},supplied:true,commanded:true},
+  ];
+  const restored=resolveToStability({boardSize:10,sideToMove:'P1',turnIndex:0,pieces,
+    continuation:forced?{type:'rush',owner:'P1',chainLength:1}:null,outcome:{status:'ongoing'}},{artifactMode:'full'});
+  assert.equal(restored.continuation?.type??null,forced?'rush':null);
+  const action=listLegalActions(restored).find(action=>action.type===(forced?'rush':'move'));
+  assert.ok(action,'The restored preview action must actually be legal');
+  const game=createRevertReadyGame();game.player2=null;
+  game.moves[0].selectionSnapshot=restored;game.moves[0].action=action;game.moves[0].actorSide='P1';
+  const {transport,games}=createTransportHarness();games.set(game.id,game);
+  let accept;const committed=new Promise(resolve=>{accept=resolve;});
+  const store=createSyncStore({storage:createMemoryStorage(),createTransportStore:()=>({...transport,requestRevertToMove:()=>committed}),
+    createSyncClient:()=>({connectGame(){},disconnectGame(){},disconnectAll(){},getDesiredGameIds:()=>[]})});
+  const handle=store.requestRevertToMove({gameId:game.id,targetMoveId:'move-1'});
+  const pending=store.getGameViewModel(game.id);
+  assert.equal(handle.status,'pending');assert.equal(pending.moves[0].undone,true);
+  assert.equal(pending.pendingScenarioSelection,null);
+  assert.deepEqual(pending.initialSelectionAction,forced?action:null);
+  assert.deepEqual(game.moves[0].action,action,'The retained record is never rewritten');
+  assert.equal(game.moves[0].undone,undefined);
+  accept(clone(pending));await handle.committed;
 });
