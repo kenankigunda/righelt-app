@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test';
-test.use({viewport:{width:390,height:740},isMobile:true,hasTouch:true});
+test.use({viewport:{width:390,height:740},hasTouch:true});
 const geometry=page=>page.locator('#board').evaluate(el=>{const rect=el.getBoundingClientRect();return{x:rect.x,y:rect.y,width:rect.width,height:rect.height};});
 
 test('compact Pass accepts actual touches at both ends of its 44px hit area without moving the board',async({page},info)=>{
