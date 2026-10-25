@@ -854,8 +854,8 @@ export const createLiveTransportStore = ({
           if (!recovered) throw new Error("invalid_snapshot");
           return recovered;
         } catch (error) {
-          // The legacy server has no reconciliation route. A bounded read can establish
-          // its protocol version without submitting or inventing any command outcome.
+          // Retain bounded protocol discovery until terminal-protocol recovery
+          // supplies its replacement. A read never decides a command outcome.
           if (error.status !== 404 && error.status !== 405) throw error;
         }
       }

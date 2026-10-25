@@ -102,13 +102,14 @@ For Codex local approval persistence, prefer saving a stable wrapper prefix for 
 
 ## Prelaunch compatibility
 
-Before launch, prefer resetting explicitly scoped disposable development data over adding adapters for retired formats. Read `docs/ai/PRELAUNCH_COMPATIBILITY.md` before removing compatibility code or planning a reset.
+For explicitly disposable local development fixtures, prefer a scoped reset over adding adapters for retired formats. Production games and training evidence are retained data, regardless of launch status. Read `docs/ai/PRELAUNCH_COMPATIBILITY.md` before removing compatibility code or planning a reset.
 
 - Identify current consumers and retained data first. Remove obsolete interpretation paths only with regression proof or an explicit reset prerequisite.
 - Preserve accounts, trained model assets, checkpoint identity, historical evidence and provenance unless the user explicitly authorizes their disposal.
 - Keep active authorization, idempotency receipts/tombstones, uncertain-save recovery, archive integrity, ownership boundaries and resource safeguards. Their age or naming is not a reason to remove them.
+- Preserve every production game, including synthetic smoke games, as training data together with its move history, receipts and model provenance. The current improvement program authorizes no production game deletion, retention cleanup or destructive migration.
 - Never run a hosted reset by inference from implementation, merge or deployment authorization. Document its exact scope, fencing, rollback and verification first.
-- Revisit this default once real customer data creates preservation obligations.
+- Preserve retained replay interpreters and the deployed reader/journal rollback floor; a writer flag being disabled does not remove those obligations.
 
 ## 5.1) Shared Constants Policy
 
