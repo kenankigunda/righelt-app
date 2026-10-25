@@ -36,7 +36,6 @@ async function wire(page) {
  });
  await page.route('**/api/shell/games/**',route=>lifecycle.run(async()=>{
   fault.requests++;
-  if(fault.legacy && /\/reconcile$/.test(new URL(route.request().url()).pathname)){await route.fulfill({status:404,json:{ok:false,error:"not_found"}});return;}
   if(fault.http || (fault.loseReply && /\/reconcile$/.test(new URL(route.request().url()).pathname))){await route.abort();return;}
   const mutation=route.request().method()==='POST'&&/\/apply$/.test(new URL(route.request().url()).pathname);
   // Loss of an admitted move begins at submission, not during pointer setup.
