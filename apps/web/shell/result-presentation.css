@@ -1,5 +1,6 @@
 .game-result {--result-color:var(--player-p1);}
 .game-result h1 {line-height:1.15;letter-spacing:-.04em;overflow-wrap:normal;}
+.game-result bdi {overflow-wrap:anywhere;}
 .game-result[data-winner="p2"] {--result-color:var(--player-p2);}
 .game-result[data-result-tone="victory"] {--action-color:var(--result-color);--action-hover:var(--player-red-hover);--action-pressed:var(--player-red-pressed);--accent:var(--action-color);}
 .game-result[data-result-tone="victory"][data-winner="p2"] {--action-hover:var(--player-blue-hover);--action-pressed:var(--player-blue-pressed);}

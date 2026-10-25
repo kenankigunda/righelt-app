@@ -105,10 +105,10 @@ test('ordinary computer play records real worker evidence, preserves private not
   const branchResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/history/branch');
   await decision.getByRole('button', { name: 'Create a new game before this decision' }).click();
   const chooser = page.getByRole('dialog', { name: 'Create a new game here' });
-  await expect(chooser.locator('[data-rematch-friend-help]')).toBeHidden();
+  await expect(chooser.locator('[data-rematch-friend-help]')).toHaveCount(0);
   await chooser.getByRole('group', { name: 'Opponent', exact: true }).getByRole('radio', { name: 'Friend', exact: true }).check();
-  await expect(chooser.locator('[data-rematch-friend-help]')).toBeVisible();
-  await chooser.getByRole('radio', { name: 'Player 2 · Blue' }).check();
+  await expect(chooser.locator('[data-rematch-friend-help]')).toHaveCount(0);
+  await chooser.getByRole('radio', { name: 'Blue', exact: true }).check();
   await chooser.evaluate(async element => {
     await Promise.all(element.getAnimations({ subtree: true }).filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime)).map(animation => animation.finished.catch(() => {})));
   });
@@ -220,7 +220,7 @@ test(`${profile} branches from a human decision and plays as Player 1 with the p
   await historyRow.locator('[data-action="launch-history-branch"]').click();
   const chooser = page.getByRole('dialog', { name: 'Create a new game here', exact: true });
   await chooser.getByRole('group', { name: 'Opponent', exact: true }).locator(`input[value="${profile}"]`).check();
-  await chooser.getByRole('radio', { name: 'Player 2 · Blue', exact: true }).check();
+  await chooser.getByRole('radio', { name: 'Blue', exact: true }).check();
   await expect(chooser.getByRole('button', { name: 'Start game', exact: true })).toBeEnabled();
   const branchResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/history/branch');
   const popupPromise = page.waitForEvent('popup');

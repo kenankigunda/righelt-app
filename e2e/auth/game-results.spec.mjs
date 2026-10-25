@@ -109,7 +109,7 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   await page.getByRole("button", { name: "Play again" }).click();
   const rematch = page.getByRole("dialog", { name: "Play again" });
   await expect(rematch.getByRole("group",{name:"Opponent",exact:true}).locator(`input[value="${opponent}"]`)).toBeChecked();
-  await expect(rematch.getByRole("radio", { name: "Player 2 · Blue" })).toBeChecked();
+  await expect(rematch.getByRole("radio", { name: "Blue", exact: true })).toBeChecked();
   for (const width of [375, 1100, 1600]) {
     await page.setViewportSize({ width, height: 900 });
     await expectRematchRadioGeometry(rematch);

@@ -1,18 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getGameResult, createResultTransitions, createRematchDialog, RESULT_HEADING_CONTRACT } from "../shell/game-result.js";
+import { getGameResult, createResultTransitions, createRematchDialog, RESULT_HEADING_CONTRACT, REMATCH_CHOICES_CONTRACT } from "../shell/game-result.js";
 const game = (status = "ongoing") => ({ id: "g", player1: { identityId: "red" }, player2: { identityId: "blue" }, board: { state: { outcome: { status, reason: "p2_commander_unsupplied" } } } });
-test("results use authoritative outcome and selected self-play side, with swapped rematch side", () => {
-  assert.equal(RESULT_HEADING_CONTRACT, 'perspective-v1');
+test("results use authoritative ownership and selected self-play start for the rematch", () => {
+  assert.equal(RESULT_HEADING_CONTRACT, 'perspective-v2');
   assert.equal(getGameResult(game(), "red"), null);
   assert.equal(getGameResult(game("p1_win"), "red").title, "You won");
   assert.equal(getGameResult(game("p1_win"), "blue").title, "Your opponent won");
-  assert.equal(getGameResult(game("p1_win"), "viewer").title, "Player 1 wins");
+  assert.equal(getGameResult(game("p1_win"), "viewer").title, "Guest 1 won");
   assert.equal(getGameResult(game("draw"), "blue").title, "Draw");
-  const self = { ...game("p1_win"), selfPlayMode: true, selfPlayStartSide: "p2", currentSnapshot: { outcome: { status: "ongoing" } } };
-  assert.equal(getGameResult(self, "viewer").title, "Player 1 wins");
+  const self = { ...game("p1_win"), player2:{identityId:"red"}, selfPlayMode: true, selfPlayStartSide: "p2", currentSnapshot: { outcome: { status: "ongoing" } } };
+  assert.equal(getGameResult(self, "viewer").title, "Guest 1 won");
   assert.equal(getGameResult(self, "viewer").side, null);
-  assert.deepEqual(getGameResult(self, "red"), { title: "Your opponent won", side: "p2", winner: "p1", tone: "defeat", reason: "Your commander lost its supply.", opponent: "self", rematchSide: "p1" });
+  assert.deepEqual(getGameResult(self, "red"), { title: "You won", side: "p2", winner: "p1", tone: "victory", controlsBothSides: true, reason: "Your Blue commander lost its supply.", opponent: "self", rematchSide: "p1" });
 });
 test("result automatic entry happens once on an observed live finish, never hydration/history/hidden/story", () => {
   const tracker = createResultTransitions();
@@ -56,7 +56,7 @@ test("cancelled rematch gate cannot create or close a reopened dialog", async ()
 test('spectators of computer games see a neutral winner', () => {
   const played = { ...game('p1_win'), computer: { seats: { p1: null, p2: 'horus' }, manual: false } };
   assert.equal(getGameResult(played, 'red').title, 'You won');
-  assert.equal(getGameResult(played, 'spectator').title, 'Player 1 wins');
+  assert.equal(getGameResult(played, 'spectator').title, 'Guest won');
   assert.equal(getGameResult(played, null).side, null);
 });
 
@@ -72,7 +72,6 @@ test('rematch and branch entry require readiness, expose retry and keep manual c
     const dialog = createRematchDialog({ title, createModal, getReadiness: opponent => opponent === 'friend' ? { state: 'ready' } : readiness, onOpponentChange: opponent => changes.push(opponent), onRetry: () => { readiness = { state: 'preparing' }; }, onClose: () => { closes++; }, onStart: intent => starts.push(intent) });
     const click = selector => handlers.click({ target: { closest: match => match === selector } });
     dialog.open({ opponent: 'babs', rematchSide: 'p2' });
-    assert.equal(nodes['[data-rematch-friend-help]'].hidden, true);
     assert.deepEqual(changes, ['babs']); assert.equal(nodes['[data-rematch-start]'].disabled, true);
     await click('[data-rematch-start]'); assert.equal(starts.length, 0);
     readiness = { state: 'error', message: 'Try again' }; dialog.refresh();
@@ -83,9 +82,7 @@ test('rematch and branch entry require readiness, expose retry and keep manual c
     // Readiness can be revoked between paint and activation.
     readiness = { state: 'preparing' }; await click('[data-rematch-start]'); assert.equal(starts.length, 0);
     nodes['[name=rematch-opponent]:checked'].value = 'friend'; handlers.change({ target: { name: 'rematch-opponent' } });
-    assert.equal(nodes['[data-rematch-friend-help]'].hidden, false);
     nodes['[name=rematch-opponent]:checked'].value = 'self'; handlers.change({ target: { name: 'rematch-opponent' } });
-    assert.equal(nodes['[data-rematch-friend-help]'].hidden, true);
     nodes['[name=rematch-opponent]:checked'].value = 'friend'; handlers.change({ target: { name: 'rematch-opponent' } });
     assert.equal(nodes['[data-rematch-start]'].disabled, false);
     await click('[data-rematch-start]'); assert.deepEqual(starts, [{ opponent: 'friend', side: 'p2' }]); assert.equal(closes, 1);
