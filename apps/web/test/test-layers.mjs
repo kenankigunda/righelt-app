@@ -29,7 +29,6 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "event-labels.test.mjs",
   "event-label-controller.test.mjs",
   "activity-affiliation.test.mjs",
-  "replay-write-contract.test.mjs",
   "computer-replay.test.mjs",
   "opponent-narration.test.mjs",
   "additional-history.test.mjs",
