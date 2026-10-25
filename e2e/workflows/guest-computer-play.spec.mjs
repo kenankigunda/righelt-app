@@ -120,6 +120,8 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
     }).toEqual({ activeMoves: 0, paused: false, state: initial.board.state });
     await switchGamePanel(page, "board");
     await expect(page.locator('[data-computer-status]')).toBeHidden();
+    await expect(page.locator('#shell-board-preview-label')).toContainText('Select a piece');
+    await expect(page.locator('#shell-board .move-ghost')).toHaveCount(0);
     const resumes=controls.filter(control=>control.action==='resume');
     expect(new Set(resumes.map(control=>control.envelope.clientCommandId)).size).toBe(1);
     const envelope=resumes[0].envelope;
