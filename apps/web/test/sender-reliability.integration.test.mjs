@@ -585,3 +585,28 @@ for(const committed of [false,true])test(`resume here preserves one durable cont
  assert.equal((await f.journal.list(f.store.getIdentityId(),id)).length,0);
  assert.equal(f.store.getGameViewModel(id).pendingCommandCount,0);
 });
+
+test("a rejected computer control does not report a failed human move",async(t)=>{
+ const f=await setup();t.after(()=>f.store.retire());
+ await assert.rejects(f.store.computerControl(f.gameId,{action:"acquire",deviceId:"device",tabId:"tab"}),error=>error.code==="not_computer_game");
+ assert.equal(f.store.getFailedOperations(f.gameId).length,0);
+ assert.equal(f.store.getGameViewModel(f.gameId).recovering,false);
+ const next=await f.move();await next.committed;
+ assert.equal(f.store.getGameViewModel(f.gameId).moves.length,1);
+});
+
+
+test("restored rejected shared control settles its own handle without a gameplay rollback notice",async(t)=>{
+ const f=await setup();const identityId=f.store.getIdentityId(),game=f.store.getAuthoritativeGame(f.gameId);
+ const envelope={protocolVersion:2,gameId:f.gameId,identityId,clientCommandId:"v2:restored-rejected-control",kind:"shared",payload:{operation:"computer-control",values:{action:"acquire",deviceId:"device",tabId:"tab"}},expectedState:game.board.state,expectedGameplayRevision:game.gameplayRevision};
+ envelope.fingerprint=await commandFingerprint(envelope);await f.journal.admit(envelope);f.store.retire();
+ const restored=f.create();t.after(()=>restored.retire());await restored.loadGame(f.gameId);
+ await until(()=>restored.getFailedOperations(f.gameId).length===1);
+ const failure=restored.getFailedOperations(f.gameId)[0];
+ assert.equal(failure.id,envelope.clientCommandId);
+ assert.equal(failure.error.code,"not_computer_game");
+ assert.doesNotMatch(failure.error.message,/move|board changed/i);
+ assert.equal(restored.getGameViewModel(f.gameId).pendingCommandCount,0);
+ await until(async()=>(await f.journal.list(identityId,f.gameId)).length===0);
+ const next=await f.move(restored);await next.committed;
+});

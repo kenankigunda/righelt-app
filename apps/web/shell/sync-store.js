@@ -1175,6 +1175,11 @@ export const createSyncStore = ({
     if (change?.type === "optimistic_enqueue" && gameId) {
       dismissRollbackFailure(gameId);
     }
+    if (change?.type === "shared_request_rejected" && clientCommandId) {
+      // The caller owns operation-specific feedback. A lease/control rejection
+      // is not evidence that a human move was lost or rolled back.
+      failOperation(clientCommandId, createOperationError("This request could not be completed.", change.reason ?? "shared_request_rejected"));
+    }
     if (change?.type === "optimistic_rollback" && clientCommandId) {
       failOperation(
         clientCommandId,
