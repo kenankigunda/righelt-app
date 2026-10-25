@@ -1,7 +1,7 @@
 """Pure resource policy. Task observations and load must both permit escalation."""
 from dataclasses import dataclass, asdict
 import math
-from .resource_policy import LIMITS
+from .resource_policy import LIMITS, POLICY_ID
 GIB = 1024 ** 3
 
 @dataclass(frozen=True)
@@ -38,6 +38,7 @@ class AdaptivePolicy:
         self.recovery_since = None
         self.last_sample = None
         self.last_swap_used = None
+        self.memory_ceiling = LIMITS['minMemoryGiB']
 
     def decide(self, sample: Sample) -> Allocation:
         nums = [sample.now, sample.external_cpu_percent, sample.experiment_bytes,
@@ -48,6 +49,8 @@ class AdaptivePolicy:
             return Allocation(0, LIMITS['minMemoryGiB'], True, True, 'artifact-cap')
         if sample.disk_free_bytes < LIMITS['freeDiskFloorGiB'] * GIB:
             return Allocation(0, LIMITS['minMemoryGiB'], True, True, 'disk-reserve')
+        if POLICY_ID == 'production-headroom-v3' and sample.memory_pressure == 'critical':
+            return Allocation(0, LIMITS['minMemoryGiB'], True, True, 'memory-pressure')
         # A gap or clock jump does not establish sustained healthy observations.
         if self.last_sample is not None and not 0 <= sample.now - self.last_sample <= 2 * LIMITS['sampleSeconds']:
             self.quiet_since = self.recovery_since = None
@@ -60,6 +63,11 @@ class AdaptivePolicy:
                  and math.isfinite(sample.activity_observed_at)
                  and 0 <= sample.now - sample.activity_observed_at <= LIMITS['activityFreshSeconds'])
         dev_busy = not fresh or sample.development_active is not False
+        if POLICY_ID == 'production-headroom-v3' and dev_busy:
+            self.workers = LIMITS['minWorkers']
+            self.quiet_since = None
+            return Allocation(0, LIMITS['minMemoryGiB'], True, False,
+                              'development-active' if fresh else 'activity-unknown')
         pressured = (sample.memory_pressure != 'normal' or sample.available_bytes < LIMITS['pauseAvailableGiB'] * GIB
                      or not swap_known or swap_growth)
         busy = dev_busy or sample.external_cpu_percent >= LIMITS['externalCpuBusyPercent']
@@ -68,6 +76,11 @@ class AdaptivePolicy:
         # runner cannot escape pressure by qualifying for a larger allocation.
         ceiling = (LIMITS['maxMemoryGiB'] if self.workers > LIMITS['minWorkers']
                    and not busy and not pressured and headroom else LIMITS['minMemoryGiB'])
+        if POLICY_ID == 'production-headroom-v3':
+            # A worker downshift does not instantly free allocator caches. Keep
+            # the already-granted cap while shrinking, rather than mislabeling
+            # an allocation below that cap as a new memory violation.
+            ceiling = self.memory_ceiling
         if pressured or sample.experiment_bytes > ceiling * GIB:
             self.workers = LIMITS['minWorkers']
             self.quiet_since = None
@@ -94,7 +107,8 @@ class AdaptivePolicy:
             reason = 'development-active' if fresh and sample.development_active else 'activity-unknown' if dev_busy else 'external-load'
             return Allocation(self.workers, ceiling, False, False, reason)
         if not headroom:
-            self.workers = LIMITS['minWorkers']
+            self.workers = (max(LIMITS['minWorkers'],self.workers-1)
+                            if POLICY_ID == 'production-headroom-v3' else LIMITS['minWorkers'])
             self.quiet_since = None
             return Allocation(self.workers, ceiling, False, False, 'headroom-conservative')
         if sample.external_cpu_percent > LIMITS['externalCpuQuietPercent']:
@@ -106,4 +120,5 @@ class AdaptivePolicy:
             self.workers = min(LIMITS['maxWorkers'], self.workers + 1)
             self.last_ramp = sample.now
             ceiling = LIMITS['maxMemoryGiB']
+            self.memory_ceiling = ceiling
         return Allocation(self.workers, ceiling, False, False, 'quiet-ramp')

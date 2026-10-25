@@ -6,10 +6,13 @@ Changing this record requires a reviewed source amendment, never a new budget.
 """
 import hashlib
 import json
+import os
 from types import MappingProxyType
 
-POLICY_ID = 'adaptive-headroom-v2'
-LIMITS = MappingProxyType({
+POLICY_ID = os.environ.get('RIGHELT_RESOURCE_POLICY', 'adaptive-headroom-v2')
+if POLICY_ID not in ('adaptive-headroom-v2', 'production-headroom-v3'):
+    raise ValueError('unknown operational resource policy')
+_limits = {
     'minWorkers': 2,
     'maxWorkers': 4,
     'minMemoryGiB': 16,
@@ -26,7 +29,11 @@ LIMITS = MappingProxyType({
     'externalCpuQuietPercent': 50,
     'artifactGiB': 100,
     'freeDiskFloorGiB': 20,
-})
+}
+if POLICY_ID == 'production-headroom-v3':
+    _limits.update(maxWorkers=8, maxMemoryGiB=36, pauseAvailableGiB=6,
+                   resumeAvailableGiB=10)
+LIMITS = MappingProxyType(_limits)
 POLICY_SHA256 = hashlib.sha256(json.dumps(
     {'id': POLICY_ID, 'limits': dict(LIMITS)}, sort_keys=True, allow_nan=False,
 ).encode()).hexdigest()

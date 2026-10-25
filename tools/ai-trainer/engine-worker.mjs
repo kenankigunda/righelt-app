@@ -245,6 +245,7 @@ async function main() {
   }
   send({ type: 'game', game: { schema: 1, id: job.id, familyId: job.familyId, partition: job.partition, kind: job.kind,
     seed: job.seed, modelVersion: job.modelVersion, rootState, warmupActions, initialState, decisions, ...adoptionFields,
+    ...(job.productionSource ? {productionSource:job.productionSource} : {}),
     ...(arena ? { modelVersions: job.modelVersions, profileVersions: job.profileVersions } : {}),
     termination, truncationReason, outcome: state.outcome, finalHash: deterministicStateHash(state) } });
 }
