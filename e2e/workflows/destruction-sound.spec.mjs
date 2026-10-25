@@ -27,7 +27,7 @@ test('real audio destruction batches deduplicate local receipts and remote final
  await ownerContext.addInitScript(instrument);await viewerContext.addInitScript(instrument);
  const owner=await ownerContext.newPage(),viewer=await viewerContext.newPage();
  const observations={owner:[],viewer:[]};
- const retain=async(label,page,phase)=>{observations[label].push({phase,...await page.evaluate(()=>({timeline:window.passiveAudioObservations,probe:window.destructionAudioProbe})).catch(error=>({readError:String(error)}))});};
+ const retain=async(label,page,phase)=>{observations[label].push({phase,...await page.evaluate(()=>({timeline:window.passiveAudioObservations,probe:window.destructionAudioProbe,ui:window.passiveAudioUiState?.()})).catch(error=>({readError:String(error)}))});};
  try{
   const first=await importScenarioGame(owner,scenario,baseURL);await switchGamePanel(owner,'board');
   await openDirectGameLink(viewer,baseURL,first.gameHash);await joinAsViewer(viewer);await switchGamePanel(viewer,'board');
@@ -37,6 +37,7 @@ test('real audio destruction batches deduplicate local receipts and remote final
   // the real gate and record it; do not invent a background-silence result.
   await submitPlayableAction(owner,fixture.action);await expect(owner.getByTestId('history-move-item')).toHaveCount(1);
   expect(await crackStarts(owner)).toHaveLength(0);
+  await retain('owner',owner,'before-first-end-turn');await retain('viewer',viewer,'before-first-end-turn');
   const endRequest=owner.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/end-turn'));
   await owner.locator('[data-board-preview-action="end-turn"]').click();const request=await endRequest;
   await expect.poll(async()=>(await projected(owner,first.gameId)).moves[0].destroyedPieces.length).toBe(2);
