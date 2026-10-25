@@ -4917,12 +4917,19 @@ appEl.addEventListener("click", async (event) => {
     };
     // Keep automatic control work fenced until the undo response is applied;
     // the server drops its lease before that acknowledgement reaches us.
-    const reverted = computerUndo ? await computerSession.withMutation(revert) : await revert();
+    let reverted;
+    try { reverted = computerUndo ? await computerSession.withMutation(revert) : await revert(); }
+    catch {
+      if (undoScopeIsCurrent()) setUndoRequestFeedback(gameId, "Undo could not finish");
+      return;
+    }
     if (computerUndo && reverted) {
       if (!undoScopeIsCurrent()) return;
-      await computerSession.tick();
-      if (!undoScopeIsCurrent()) return;
-      await computerSession.action('resume');
+      try {
+        await computerSession.tick();
+        if (!undoScopeIsCurrent()) return;
+        await computerSession.action('resume');
+      } catch { /* The undo is accepted. Computer recovery explains an uncertain resume. */ }
     }
     return;
   }
