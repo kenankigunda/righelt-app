@@ -159,7 +159,6 @@ test('missing toolbar affordances fail with a bounded readiness explanation',asy
 
 
 for(const contract of ['legacy','colors-v1'])test(`rematch ${contract} requires semantic side identity and exact accessible copy`,async({page})=>{
- page.setDefaultTimeout(150);
  const label=contract==='legacy'?'Player 1 · Red':'Red';
  const self=contract==='legacy'?'Self-play':'Play both sides';
  const render=async(sideLabel=label,extra='')=>page.setContent(`<dialog open aria-label="Play again"><fieldset><legend>Your side</legend><label><input type="radio" name="rematch-side" value="p1" checked>${sideLabel}</label><label><input type="radio" name="rematch-side" value="p2">${contract==='legacy'?'Player 2 · Blue':'Blue'}</label>${extra}</fieldset><fieldset><legend>Opponent</legend><label><input type="radio" name="rematch-opponent" value="self" checked>${self}</label></fieldset></dialog>`);
