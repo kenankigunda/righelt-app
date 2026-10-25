@@ -218,7 +218,8 @@ test(`${profile} branches from a human decision and plays as Player 1 with the p
   const chooser = page.getByRole('dialog', { name: 'Create a new game here', exact: true });
   await chooser.getByRole('combobox', { name: 'Opponent', exact: true }).selectOption(profile);
   await chooser.getByRole('radio', { name: 'Player 2 · Blue', exact: true }).check();
-  await expect(chooser.getByRole('button', { name: 'Start game', exact: true })).toBeEnabled();
+  // Real model preparation uses the remaining test budget, as story entry does.
+  await chooser.getByRole('button', { name: 'Start game', exact: true }).click({ trial: true });
   const branchResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/history/branch');
   const popupPromise = page.waitForEvent('popup');
   await chooser.getByRole('button', { name: 'Start game', exact: true }).click();
