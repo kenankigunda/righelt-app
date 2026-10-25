@@ -13,3 +13,45 @@ for(const change of [{generation:2},{owner:{}},{visit:1},{route:'#/' }])test(`la
 test('route away and back retires the earlier request even with identical final URL',()=>{
  const {feedback}=fixture();const old=feedback.begin('g');feedback.clear();const next=feedback.begin('g');assert.equal(feedback.fail(old),false);assert.equal(feedback.isCurrent(next),true);feedback.fail(next);assert.equal(feedback.message('other'),null);feedback.clear();assert.equal(feedback.message('g'),null);
 });
+
+const focusFixture=()=>{
+ const {feedback,change}=fixture();
+ const body={},document={body,activeElement:body,hidden:false,hasFocus:()=>true};
+ const control={disabled:false,closest(){return this;},getAttribute:name=>name==='data-action'?'accept-invite-player':name==='data-game-id'?'g':null,
+  focus(options){assert.deepEqual(options,{preventScroll:true});document.activeElement=this;feedback.noteFocus(this);}};
+ const root={querySelectorAll:()=>[control]};
+ return {feedback,change,body,document,control,root};
+};
+test('failed join focus belongs to its enabled logical action and survives later replacements',()=>{
+ const f=focusFixture(),token=f.feedback.begin('g',{focusAction:'accept-invite-player'});
+ f.feedback.fail(token);
+ for(let i=0;i<2;i++){
+  f.document.activeElement=f.body;
+  assert.equal(f.feedback.restoreFocus({...f,previousActive:i?f.control:f.body}),true);
+  assert.equal(f.document.activeElement,f.control);
+ }
+});
+test('deliberate focus and pointer movement retire failed-join focus intent',()=>{
+ for(const target of [{},null]){
+  const f=focusFixture(),token=f.feedback.begin('g',{focusAction:'accept-invite-player'});f.feedback.fail(token);
+  f.feedback.noteFocus(target);
+  assert.equal(f.feedback.restoreFocus({...f,previousActive:f.body}),false);
+  assert.equal(f.document.activeElement,f.body);
+ }
+});
+test('focus restoration rejects unavailable controls, unrelated focus and stale scopes',()=>{
+ for(const mode of ['disabled','hidden','background','previous-other','current-other','stale','unarmed','success']){
+  const f=focusFixture(),token=f.feedback.begin('g',mode==='unarmed'?{}:{focusAction:'accept-invite-player'});f.feedback.fail(token);
+  let previousActive=f.body;
+  if(mode==='disabled')f.control.disabled=true;
+  if(mode==='hidden')f.document.hidden=true;
+  if(mode==='background')f.document.hasFocus=()=>false;
+  if(mode==='previous-other')previousActive={};
+  if(mode==='current-other')f.document.activeElement={};
+  if(mode==='stale')f.change({visit:1});
+  if(mode==='success')f.feedback.complete(token);
+  const before=f.document.activeElement;
+  assert.equal(f.feedback.restoreFocus({...f,previousActive}),false,mode);
+  assert.equal(f.document.activeElement,before,mode);
+ }
+});
