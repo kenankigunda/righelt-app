@@ -8,43 +8,40 @@ from .config import CONFIG,CONFIG_SHA256,ROOT
 from .checkpoint import atomic_json
 from .resource_policy import manifest_fields
 from .training_recipe import recipe_binding, validate_recipe, record_recipe
+from .architecture import BASELINE, validate_architecture, record_architecture
+from .manifest_envelope import active_envelope
 
 
-def build_manifest(seed,stage,*,training_recipe=None):
+def build_manifest(seed,stage,*,training_recipe=None,model_architecture=None):
     if stage not in ('initial','overnight') or not isinstance(seed,int) or not 0<=seed<2**32:
         raise ValueError('invalid stage or seed')
     dirty=subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True)
     if dirty.strip():raise ValueError('commit experiment source before launch')
     revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     recipe=recipe_binding() if training_recipe is None else validate_recipe(training_recipe)
-    return {'schema':1,'sourceRevision':revision,'configSha256':CONFIG_SHA256,'config':CONFIG,'trainingRecipe':recipe,
+    result={'schema':1,'sourceRevision':revision,'configSha256':CONFIG_SHA256,'config':CONFIG,'trainingRecipe':recipe,
             'python':platform.python_version(),'platform':platform.platform(),'seed':seed,'stage':stage,
             **manifest_fields(),'seconds':CONFIG['resources']['initialSeconds' if stage=='initial' else 'overnightSeconds'],
             'dependencies':subprocess.check_output([sys.executable,'-m','pip','freeze'],text=True).splitlines(),
             'lockHashes':{p:hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in ['pnpm-lock.yaml','tools/ai-trainer/requirements.lock']}}
+    if model_architecture is not None:
+        architecture=validate_architecture(model_architecture)
+        if architecture['id']!=BASELINE:result['modelArchitecture']=architecture
+    return result
 
 
 def write_manifest(path,data):
     record_recipe(data)
+    record_architecture(data)
     digest=hashlib.sha256(json.dumps(data,sort_keys=True,allow_nan=False).encode()).hexdigest()
     atomic_json(path,{'manifest':data,'sha256':digest})
     return digest
 
 
 def active_manifest(directory):
-    directory=Path(directory)
-    pointer=directory/'active-manifest.json'
-    from .allocation import rows
-    amendments=rows(directory/'source-amendments.jsonl')
-    if not amendments:
-        record=json.loads((directory/'manifest.json').read_text())
-        record_recipe(record['manifest'])
-        return record
-    digest=amendments[-1]['newManifest']
-    record=json.loads((directory/'manifests'/f'{digest}.json').read_text())
-    if record['sha256']!=digest or hashlib.sha256(json.dumps(record['manifest'],sort_keys=True,allow_nan=False).encode()).hexdigest()!=digest:
-        raise ValueError('active manifest checksum mismatch')
+    record=active_envelope(directory)
     record_recipe(record['manifest'])
+    record_architecture(record['manifest'])
     return record
 
 
@@ -65,6 +62,8 @@ def amend_manifest(directory,manifest,repair):
     directory=Path(directory);prior=active_manifest(directory)
     if record_recipe(prior['manifest']) != record_recipe(manifest):
         raise ValueError('repair changes training recipe')
+    if record_architecture(prior['manifest']) != record_architecture(manifest):
+        raise ValueError('Repair changes model architecture')
     if prior['manifest'].get('explorationAdoption') != manifest.get('explorationAdoption'):
         raise ValueError('repair changes recipe adoption')
     if prior['manifest']==manifest:return prior

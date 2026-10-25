@@ -15,7 +15,7 @@ from .resume import validate_reset_checkpoint
 from .checkpoint import atomic_json,load_checkpoint
 from .config import CONFIG,CONFIG_SHA256
 from .export import export_onnx,numeric_parity
-from .model import PolicyValueNet
+from .model import model_from_record
 from .manifest import active_manifest,manifest_hashes
 from .parity import verify_corpus
 
@@ -55,7 +55,7 @@ def evaluate(directory,checkpoint,corpus,deadline,*,clock=time.monotonic,checker
         validate_parity_checkpoint(directory,checkpoint,runtime,meta,checkpoint_hash,gate_report)
         rows=verify_corpus(json.loads(corpus.read_text()))
         if not torch.backends.mps.is_available():raise RuntimeError('MPS unavailable for trained parity')
-        model=PolicyValueNet();load_checkpoint(checkpoint,model,manifest_sha256=meta['manifestSha256'],require_recovery=True)
+        model=model_from_record(meta);load_checkpoint(checkpoint,model,manifest_sha256=meta['manifestSha256'],require_recovery=True)
         asset=directory/'trained-export'/f'{checkpoint_hash}.onnx'
         metadata=export_onnx(model,asset)
         errors=[0.,0.]

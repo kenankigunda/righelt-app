@@ -26,6 +26,7 @@ from .resume import validate_reset_checkpoint
 from .recovery_inspection import inspect_owned
 from .coexistence import from_environment as coexistence_guard
 from .coexistence import UnsafeResources
+from .architecture import DEFINITIONS,BASELINE,architecture_binding
 
 
 def begin_phase(allocation,phase,directory,manifest_digest):
@@ -357,6 +358,7 @@ def main():
     parser.add_argument('--gate-report',type=Path,required=True)
     parser.add_argument('--stage',choices=('initial','overnight'),required=True)
     parser.add_argument('--seed',type=int,required=True)
+    parser.add_argument('--model-architecture',choices=tuple(DEFINITIONS),default=BASELINE)
     parser.add_argument('--resume',type=Path)
     parser.add_argument('--continuation',type=Path)
     parser.add_argument('--diagnostic',action='store_true')
@@ -387,7 +389,8 @@ def main():
     continuation=json.loads(args.continuation.read_text()) if args.continuation else None
     from .followup_policy import validate_launch
     validate_launch(continuation,args.seed,args.stage)
-    manifest=build_manifest(args.seed,args.stage)
+    selected_architecture=architecture_binding(args.model_architecture)
+    manifest=build_manifest(args.seed,args.stage,model_architecture=selected_architecture)
     if continuation:
         from .continuation_policy import stage_for_phase
         if args.stage!=stage_for_phase(continuation['phase']):
@@ -450,6 +453,7 @@ def main():
         runtime.update(schema=2,startedMonotonic=started,deadlineMonotonic=interval['monotonic']+remaining,startedWall=interval['wall']-charged,
                        deadlineWall=interval['wall']+remaining,manifestSha256=digest,stage=args.stage,seed=args.seed,
                        bootTime=psutil.boot_time(),elapsedBefore=charged,allocationInterval=interval['id'],allocationId=allocation.accounting()[0]['id'])
+        runtime['modelArchitecture']=selected_architecture
         if continuation:
             runtime['reserveSeconds']=continuation['reserveSeconds']
             runtime['continuationPhase']=continuation['phase']

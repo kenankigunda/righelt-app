@@ -7,6 +7,7 @@ import uuid
 import torch
 from .config import CONFIG_SHA256
 from .training_recipe import recipe_binding, validate_recipe, record_recipe
+from .architecture import BASELINE, model_architecture, record_architecture
 
 
 def weights_sha256(state):
@@ -36,12 +37,16 @@ def save_checkpoint(path, model, optimizer, *, round_index, updates, replay_ids,
           'optimizer':optimizer.state_dict(),'round':round_index,'updates':updates,
           'replayIds':replay_ids,'pythonRng':random.getstate(),'torchRng':torch.get_rng_state()}
     binding = {}
+    architecture = model_architecture(model)
+    if architecture['id'] != BASELINE:
+        binding['modelArchitecture'] = architecture
+        data['modelArchitecture'] = architecture
     if exploration_adoption is not None:
         from .exploration_adoption import read_binding
         if read_binding(exploration_adoption)['trainingRecipe'] != recipe:
             raise ValueError('checkpoint differs from selected recipe')
-        binding = {'explorationAdoption': exploration_adoption}
-        data.update(binding)
+        binding['explorationAdoption'] = exploration_adoption
+        data['explorationAdoption'] = exploration_adoption
     if recovery_state is not None:
         state=json.loads(json.dumps(recovery_state,sort_keys=True,allow_nan=False))
         archives={name:hashlib.sha256((path.parent.parent/name).read_bytes()).hexdigest() for name in state['archives']}
@@ -69,6 +74,9 @@ def inspect_checkpoint(path, *, manifest_sha256, require_recovery=False, trainin
     path=Path(path);meta=json.loads(path.with_suffix('.json').read_text())
     if hashlib.sha256(path.read_bytes()).hexdigest()!=meta['sha256']: raise ValueError('checkpoint checksum mismatch')
     data=torch.load(path,map_location='cpu',weights_only=True)
+    if (record_architecture(data) != record_architecture(meta)
+            or ('modelArchitecture' in data) != ('modelArchitecture' in meta)):
+        raise ValueError('Checkpoint architecture metadata mismatch')
     if data['configSha256']!=CONFIG_SHA256 or data['manifestSha256']!=manifest_sha256:
         raise ValueError('checkpoint incompatible with run manifest')
     recipe = record_recipe(data)
@@ -102,6 +110,8 @@ def inspect_checkpoint(path, *, manifest_sha256, require_recovery=False, trainin
 
 def load_checkpoint(path, model, optimizer=None, *, manifest_sha256, require_recovery=False, training_recipe=None, validate_state=None):
     data=inspect_checkpoint(path,manifest_sha256=manifest_sha256,require_recovery=require_recovery,training_recipe=training_recipe)
+    if model_architecture(model) != record_architecture(data):
+        raise ValueError('Checkpoint differs from requested model architecture')
     if validate_state is not None: validate_state(data)
     model.load_state_dict(data['model'])
     if optimizer is not None: optimizer.load_state_dict(data['optimizer'])

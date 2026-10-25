@@ -15,7 +15,7 @@ from .checkpoint import inspect_checkpoint, weights_sha256
 from .config import CONFIG, ROOT
 from .development_probe import checked_ref, reference
 from .exploration_plan import LIMITS, PROFILE
-from .model import PolicyValueNet
+from .model import model_from_record
 from .processes import register_owned
 from .resume import validate_continuation_checkpoint
 from .runner_monitor import RunnerMonitor
@@ -70,7 +70,7 @@ def run(launch_path, session):
             payload = inspect_checkpoint(checkpoint, manifest_sha256=meta['manifestSha256'], require_recovery=True)
             # Load only weights in this isolated process; training RNG and
             # optimizer remain in their original immutable checkpoint bundle.
-            model = PolicyValueNet().eval(); model.load_state_dict(payload['model'])
+            model = model_from_record(meta).eval(); model.load_state_dict(payload['model'])
             weights = weights_sha256(model.state_dict()); model = model.to('mps').eval()
             references = [reference(checkpoint.with_suffix('.json')), reference(checkpoint.with_suffix('.runner.json'))]
             references.extend(reference(checkpoint.parent.parent / name) for name in payload['recovery']['archives'])

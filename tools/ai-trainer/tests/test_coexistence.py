@@ -98,10 +98,12 @@ class LeaseTest(unittest.TestCase):
         self.state = {'followupTraining':{'executionStartedAt':iso(900),
                       'deadline':iso(900+86400), 'currentResourceGrant':self.grant}}
         self.write_state()
-        (self.root/'manifest.json').write_text(json.dumps({'sourceRevision':'a'*40}))
-        self.runtime = {'manifestSha256':'b'*64, 'deadlineWall':900+86400,
+        manifest={'sourceRevision':'a'*40}
+        self.manifest_sha=hashlib.sha256(json.dumps(manifest,sort_keys=True,allow_nan=False).encode()).hexdigest()
+        (self.root/'manifest.json').write_text(json.dumps({'manifest':manifest,'sha256':self.manifest_sha}))
+        self.runtime = {'manifestSha256':self.manifest_sha, 'deadlineWall':900+86400,
                         'parentCheckpoint':str(self.checkpoint)}
-        self.binding = {'runDirectory':str(self.root), 'manifestSha256':'b'*64,
+        self.binding = {'runDirectory':str(self.root), 'manifestSha256':self.manifest_sha,
                         'sourceRevision':'a'*40, 'checkpoint':{'path':str(self.checkpoint),
                         'sha256':self.sha(self.checkpoint)}, 'statePath':str(self.state_path),
                         'permitPath':str(self.permit_path), 'permitSha256':self.sha(self.permit_path),
@@ -164,7 +166,7 @@ class LeaseTest(unittest.TestCase):
         self.state['followupTraining']['deadline']=iso(900+86400)
         self.write_state()
         self.checkpoint.write_bytes(b'opaque mocked recovery bundle')
-        self.runtime['manifestSha256']='b'*64
+        self.runtime['manifestSha256']=self.manifest_sha
         self.binding['sourceRevision']='a'*40
 
     def test_actual_reader_receipt_binding_is_required(self):
@@ -180,6 +182,12 @@ class LeaseTest(unittest.TestCase):
 
     def test_naive_dates_fail_closed(self):
         with self.assertRaises(ValueError):timestamp('2026-10-25T12:00:00')
+
+    def test_real_manifest_envelope_is_bound_to_runtime_checksum(self):
+        record=json.loads((self.root/'manifest.json').read_text())
+        record['manifest']['sourceRevision']='f'*40
+        (self.root/'manifest.json').write_text(json.dumps(record))
+        with self.assertRaisesRegex(ValueError,'[Mm]anifest file checksum'):self.guard()
 
     def test_outstanding_manual_handoff_is_preserved(self):
         prior={'schema':1,'id':'manual-review','reason':'reporting',

@@ -22,7 +22,8 @@ from .checkpoint import atomic_json, save_checkpoint, load_checkpoint
 from .config import CONFIG, ROOT
 from .resource_policy import LIMITS
 from .curriculum import Curriculum
-from .model import PolicyValueNet
+from .model import model_from_record
+from .architecture import record_architecture
 from .replay import ReplayBuffer, save_game
 from .trainer import make_optimizer, train_round
 from . import fresh_health
@@ -110,12 +111,14 @@ class Runner:
         if self.deadline <= self.started or self.deadline <= time.monotonic():
             raise ValueError('expired experiment')
         self.device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
+        if record_architecture(self.runtime)!=record_architecture(self.manifest['manifest']):
+            raise ValueError('Runner architecture differs from supervised manifest')
         # Runtime fallback is prohibited for experiments; CPU remains available to unit tests.
         if self.device.type != 'mps':
             raise RuntimeError('MPS unavailable; run preflight with Metal access')
         torch.set_num_threads(2)
         torch.manual_seed(seed)
-        self.model = PolicyValueNet().to(self.device)
+        self.model = model_from_record(self.manifest['manifest']).to(self.device)
         self.optimizer = make_optimizer(self.model)
         corpus_binding=self.manifest['manifest'].get('productionCorpus')
         if corpus_binding:

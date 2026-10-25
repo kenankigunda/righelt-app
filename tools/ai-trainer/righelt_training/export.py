@@ -9,6 +9,7 @@ import onnx
 import onnxruntime as ort
 from .checkpoint import atomic_json
 from .config import CONFIG,CONFIG_SHA256
+from .architecture import BASELINE, model_architecture
 
 
 def export_onnx(model, path):
@@ -19,8 +20,11 @@ def export_onnx(model, path):
                       dynamic_axes={'state':{0:'batch'},'policy':{0:'batch'},'value':{0:'batch'}},
                       opset_version=17,dynamo=False)
     onnx.checker.check_model(str(path))
-    return {'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'bytes':path.stat().st_size,
+    metadata={'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'bytes':path.stat().st_size,
             'configSha256':CONFIG_SHA256,'opset':17,'dtype':'float32'}
+    architecture=model_architecture(model)
+    if architecture['id']!=BASELINE:metadata['modelArchitecture']=architecture
+    return metadata
 
 
 def numeric_parity(model, path, states, reference_device="cpu"):

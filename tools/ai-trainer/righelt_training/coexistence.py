@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import time
 from datetime import datetime
+from .manifest_envelope import active_envelope
 
 
 def timestamp(value):
@@ -48,7 +49,11 @@ class LeaseGuard:
             raise ValueError('Coexistence run directory mismatch')
         if binding['manifestSha256'] != runtime['manifestSha256']:
             raise ValueError('Coexistence manifest mismatch')
-        manifest = json.loads((self.directory / 'manifest.json').read_text())
+        record = active_envelope(self.directory)
+        manifest = record['manifest']
+        calculated = hashlib.sha256(json.dumps(manifest, sort_keys=True, allow_nan=False).encode()).hexdigest()
+        if record['sha256'] != calculated or calculated != runtime['manifestSha256']:
+            raise ValueError('Coexistence manifest file checksum mismatch')
         if manifest['sourceRevision'] != binding['sourceRevision']:
             raise ValueError('Coexistence source mismatch')
         checkpoint = binding['checkpoint']

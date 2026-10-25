@@ -17,7 +17,7 @@ from . import fresh_health
 from .manifest import active_manifest,manifest_hashes
 from .repair import resolved_failures
 from .config import ROOT,CONFIG_SHA256
-from .model import PolicyValueNet
+from .model import model_from_record
 from . import exploration_adoption
 from .training_recipe import record_recipe
 from .replay import partition_for_family
@@ -143,7 +143,7 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
             if clock()>=deadline-2:raise TimeoutError('checkpoint recovery audit unfinished within stage budget')
             if not checkpoint.resolve().is_relative_to(directory):raise ValueError('retained checkpoint outside allocation')
             meta=json.loads(checkpoint.with_suffix('.json').read_text())
-            model=PolicyValueNet();optimizer=torch.optim.AdamW(model.parameters())
+            model=model_from_record(meta);optimizer=torch.optim.AdamW(model.parameters())
             if meta['manifestSha256'] not in allowed:raise ValueError('checkpoint source lineage not authorized')
             data=load_checkpoint(checkpoint,model,optimizer,manifest_sha256=meta['manifestSha256'],require_recovery=True)
             exploration_adoption.checkpoint_recipe(checkpoint,data,recipe=recipe,binding=binding,continuation=continuation)

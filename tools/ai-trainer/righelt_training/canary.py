@@ -19,7 +19,8 @@ from .config import ROOT,CONFIG
 from .curriculum import family_for_root
 from .export import export_onnx,numeric_parity
 from .manifest import active_manifest
-from .model import PolicyValueNet
+from .model import PolicyValueNet,create_model,model_from_record
+from .architecture import model_architecture,record_architecture
 from .parity import verify_corpus
 from .replay import partition_for_family,ReplayBuffer,save_game
 from .runner import stop_worker,verify_game,default_state
@@ -96,7 +97,7 @@ def train_and_recover(directory,model,positions,archives,manifest_hash,device,de
                                manifest_sha256=manifest_hash,recovery_state=state)
         python_next=random.random();torch_next=torch.rand(4)
         mps_next=torch.rand(4,device='mps') if str(device)=='mps' else None
-        restored=PolicyValueNet().to(device);restored_optimizer=make_optimizer(restored)
+        restored=create_model(model_architecture(model)).to(device);restored_optimizer=make_optimizer(restored)
         data=load_checkpoint(checkpoint,restored,restored_optimizer,manifest_sha256=manifest_hash,require_recovery=True)
         if random.random()!=python_next or not torch.equal(torch.rand(4),torch_next):raise ValueError('canary RNG restoration mismatch')
         if mps_next is not None and not torch.equal(torch.rand(4,device='mps'),mps_next):raise ValueError('canary MPS RNG mismatch')
@@ -135,11 +136,14 @@ def run(directory,corpus,*,device='mps',generator=selfplay,checker=numeric_parit
                         and allocation.get('reason')!='initial-conservative'):return
                     time.sleep(.1)
             ready();manifest=active_manifest(directory)
+            if record_architecture(runtime)!=record_architecture(manifest['manifest']):
+                raise ValueError('Canary architecture differs from supervised manifest')
+            report['modelArchitecture']=record_architecture(manifest['manifest'])
             with monitor.operation('canary-initialization',60):
                 corpus_hash=hashlib.sha256(Path(corpus).read_bytes()).hexdigest()
                 if corpus_hash!=runtime['parityCorpusSha256']:raise ValueError('canary corpus identity changed')
                 rows=verify_corpus(json.loads(Path(corpus).read_text()))
-                torch.manual_seed(107);random.seed(107);model=PolicyValueNet().to(device).eval();buffer=ReplayBuffer();archives=[]
+                torch.manual_seed(107);random.seed(107);model=model_from_record(manifest['manifest']).to(device).eval();buffer=ReplayBuffer();archives=[]
             for i,(state,family) in enumerate(canary_roots()):
                 if i>=2:break
                 ready();job={'command':'generate','id':f'canary-{attempt.name}-{i}','familyId':family,'seed':107+i,
