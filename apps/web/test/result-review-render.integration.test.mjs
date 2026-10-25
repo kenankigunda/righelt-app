@@ -184,7 +184,7 @@ function historyRouteHarness(t) {
     window:{location:{origin:'https://local.test',pathname:'/'},scrollY:0,requestAnimationFrame:noop},
     document:{getElementById:()=>null,querySelector:()=>main},
     getCurrentFlyoutState:()=>({}),buildInviteHash:()=>'',
-    escapeHtml:String,formatClientDateTime:String,toStableKey:JSON.stringify,
+    icon,escapeHtml:String,formatClientDateTime:String,toStableKey:JSON.stringify,
     getControlSeatForTurn:(_state,seat)=>seat,playerToneClassForSide:()=>'',playerToneClassForSeat:()=>'',
     getShellLayoutMode:()=> 'narrow',getShellLayoutModeForRoute:()=> 'narrow',
     expandedUndoneGroups:new Set(),getDecisionDebugState:()=>({items:[],cursor:null}),getGameResult:()=>null,
