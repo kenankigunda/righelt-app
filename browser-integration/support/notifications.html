@@ -1,0 +1,13 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Notification stability</title><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"></head><body>
+<div class="shell-main-content"><header class="shell-header"><h1>Righelt</h1><div class="shell-header-status" data-shell-alert-zone="active"><div id="shell-game-alerts"></div></div><div class="shell-header-actions"><button>Account</button></div></header><main><div class="board-wrap" style="width:320px;height:320px;margin-top:130px"><div class="reconnect-background" style="display:block"></div></div></main></div>
+<script type="module">
+import {patchNotificationTree,replaceMainPreservingHeader} from '/apps/web/shell/notification-dom.js';
+import {renderGameAlertCard} from '/apps/web/shell/game-alert.js';
+import {createNotificationStack} from '/apps/web/shell/notification-state.js';
+const stack=createNotificationStack();
+const html=(items,label='Righelt')=>`<header class="shell-header"><h1>${label}</h1><div class="shell-header-status" data-shell-alert-zone="active"><div id="shell-game-alerts">${stack.order('fixture',items).map((item,index)=>`<div class="shell-game-alert-stack-card ${index===0?'is-active':''}" data-key="${item.key}" data-stack-index="${index}">${renderGameAlertCard({body:item.body??'Recording move',activity:item.activity??'processing',action:'<button data-action="retry">Retry</button><details open><summary>Details</summary>Stable diagnostic details</details>'})}</div>`).join('')}</div></div><div class="shell-header-actions"><button>Account</button></div></header>`;
+window.update=(items,label)=>{const template=document.createElement('template');template.innerHTML=html(items,label);patchNotificationTree(document.querySelector('.shell-header'),template.content.firstElementChild);};
+window.replaceMain=items=>{const next=document.createElement('div');next.className='shell-main-content';next.innerHTML=html(items)+'<main>Changed gate content</main>';return replaceMainPreservingHeader(document.querySelector('.shell-main-content'),next);};
+window.cycle=items=>{stack.advance('fixture',items);window.update(items);};
+window.update([{key:'processing'}]);window.fixtureReady=true;
+</script></body></html>
