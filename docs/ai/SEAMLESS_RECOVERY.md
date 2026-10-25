@@ -21,6 +21,8 @@ A shared receipt can arrive over a ready socket before HTTP completes. Either re
 
 The real-runtime large-history test prohibits projection loads in the outer API while exercising legacy full reads, compact reads, controls, invites, source imports and branches with both new writers disabled. This proves the bounded outer work structure. Local wall-clock timing does not prove the production CPU budget. Provider verification after the coordinated deployment remains required.
 
+Rollback must preserve shared-command journal and receipt support in both the browser and server. These commands use the existing IndexedDB journal. Earlier clients reject saved `kind: "shared"` records and earlier servers reject their reconciliation before checking receipts. Disabling the storage writers does not remove this protocol requirement. Keep this release's compatible handling in rollback candidates, or verify that every outstanding shared intent, including delayed journal cleanup, has drained before deploying older handling. Refresh every later feature against actual main so it retains this support.
+
 ## Reader before writer
 
 Both writer settings default to false. No production activation is authorized by this change.
