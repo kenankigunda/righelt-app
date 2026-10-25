@@ -59,7 +59,7 @@ export type GameState = {
   artifacts?: ResolveArtifacts;
 };
 
-export type ActionType = "pass" | "move" | "project" | "rush" | "push" | "follow" | "retreat";
+export type ActionType = "pass" | "end_turn" | "move" | "project" | "rush" | "push" | "follow" | "retreat";
 
 export type Action = {
   type: ActionType;

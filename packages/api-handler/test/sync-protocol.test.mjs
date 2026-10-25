@@ -17,7 +17,7 @@ test("v2 public timing and admission contract", () => {
 test("fingerprints canonicalize order, preserve prerequisites and exclude attempts", async () => {
   const command = await makeCommand({ payload: { b: 1, a: 2 } });
   assert.equal(await commandFingerprint({ ...command, payload: { a: 2, b: 1 }, attempt: 100 }), command.fingerprint);
-  for (const patch of [{ expectedGameplayRevision: 1 }, { expectedState: {} }, { identityId: "other" }, { predecessor: { clientCommandId: "v2:parent", fingerprint: "a".repeat(64) } }]) {
+  for (const patch of [{ actionContractVersion: 2 }, { expectedGameplayRevision: 1 }, { expectedState: {} }, { identityId: "other" }, { predecessor: { clientCommandId: "v2:parent", fingerprint: "a".repeat(64) } }]) {
     assert.notEqual(await commandFingerprint({ ...command, ...patch }), command.fingerprint);
   }
   await assert.rejects(commandFingerprint({ ...command, payload: { invalid: undefined } }));
@@ -25,7 +25,7 @@ test("fingerprints canonicalize order, preserve prerequisites and exclude attemp
 test("U-03 rejects malformed and oversized command/request boundaries", async () => {
   const command = await makeCommand();
   assert.ok(isSyncCommand(command));
-  for (const patch of [{ protocolVersion: 1 }, { clientCommandId: "a".repeat(129) }, { expectedGameplayRevision: -1 }, { expectedGameplayRevision: 0.1 }, { kind: "end_turn" }, { fingerprint: "bad" }, { predecessor: { clientCommandId: command.clientCommandId, fingerprint: command.fingerprint } }, { payload: { text: "🌍".repeat(17000) } }]) assert.equal(isSyncCommand({ ...command, ...patch }), false);
+  for (const patch of [{ actionContractVersion: -1 }, { actionContractVersion: "2" }, { protocolVersion: 1 }, { clientCommandId: "a".repeat(129) }, { expectedGameplayRevision: -1 }, { expectedGameplayRevision: 0.1 }, { kind: "end_turn" }, { fingerprint: "bad" }, { predecessor: { clientCommandId: command.clientCommandId, fingerprint: command.fingerprint } }, { payload: { text: "🌍".repeat(17000) } }]) assert.equal(isSyncCommand({ ...command, ...patch }), false);
   const request = { protocolVersion: 2, identityId: "actor", knownSnapshotEventSeq: 0, commands: [command] };
   assert.ok(isReconcileRequest(request, "game"));
   for (const patch of [{ identityId: "other" }, { commands: [command, command] }, { commands: Array(17).fill(command) }, { knownSnapshotEventSeq: NaN }]) assert.equal(isReconcileRequest({ ...request, ...patch }, "game"), false);

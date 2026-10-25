@@ -284,11 +284,11 @@ function validateContinuation(state, action) {
         return null;
     }
     if (state.continuation.type === "rush") {
-        if (action.type !== "rush" && action.type !== "pass") {
+        if (action.type !== "rush" && action.type !== "end_turn") {
             return {
                 ok: false,
                 code: "CONTINUATION_REQUIRED",
-                message: "Rush continuation requires rush or pass",
+                message: "Rush continuation requires Rush or End Turn",
             };
         }
     }
@@ -326,6 +326,8 @@ export function* legalActionCandidates(state) {
                 }
             }
         }
+        if (continuation.phase !== "retreat")
+            yield { type: "end_turn" };
         return;
     }
     if (!continuation)
@@ -345,7 +347,7 @@ export function* legalActionCandidates(state) {
         }
     }
     if (continuation?.type === "rush")
-        yield { type: "pass" };
+        yield { type: "end_turn" };
 }
 function candidateEvidence(state, action, validate) {
     const observed = isEngineComputationObserved();
@@ -411,27 +413,24 @@ export function validateAction(state, action) {
             message: "No piece exists at action source coordinate",
         };
     }
+    // Control actions are semantic engine actions, not aliases at submission time.
+    // In particular, End Turn can never bypass supply or mandatory responses.
+    if (action.type === "pass" || action.type === "end_turn") {
+        if (action.actorId || action.from || action.to || action.targetId) {
+            return { ok: false, code: "INVALID_SHAPE", message: "Turn controls cannot identify a piece or destination" };
+        }
+        if (action.type === "pass") {
+            return state.continuation
+                ? { ok: false, code: "CONTINUATION_REQUIRED", message: "Use End Turn to close a sequence" }
+                : { ok: true };
+        }
+        return state.continuation && canCloseContinuationNow(state)
+            ? { ok: true }
+            : { ok: false, code: "CONTINUATION_REQUIRED", message: "The sequence cannot end yet" };
+    }
     const continuationValidation = validateContinuation(state, action);
-    if (continuationValidation) {
+    if (continuationValidation)
         return continuationValidation;
-    }
-    if (action.type === "pass") {
-        if (state.continuation && state.continuation.type !== "rush") {
-            return {
-                ok: false,
-                code: "CONTINUATION_REQUIRED",
-                message: "Pass is not legal while continuation is active",
-            };
-        }
-        if (state.continuation?.type === "rush" && !canCloseContinuationNow(state)) {
-            return {
-                ok: false,
-                code: "CONTINUATION_REQUIRED",
-                message: "Rush continuation must continue until the rush chain is resupplied",
-            };
-        }
-        return { ok: true };
-    }
     const actor = resolveActor(state, action);
     if (!actor) {
         return {

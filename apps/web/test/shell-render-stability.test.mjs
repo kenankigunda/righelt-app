@@ -239,7 +239,7 @@ test("shell render patches same-route game updates without replacing the board p
 test("live sync applies authoritative pushed game payloads before render", () => {
   assert.match(syncStoreSource, /payload\?\.type === "state_sync"/);
   assert.match(syncStoreSource, /payload\?\.type === "event_appended"/);
-  assert.match(syncStoreSource, /transport\.applyLiveGameUpdate\(\{\s*game: payload\.game,\s*eventSeq: payload\.eventSeq,\s*clientCommandId: payload\.clientCommandId \?\? null,\s*commandOutcome: payload\.commandOutcome \?\? null,\s*\.\.\.\(payload\.type === "state_sync" \? \{ baseline: true \} : \{\}\),\s*\}\);/s);
+  assert.match(syncStoreSource, /transport\.applyLiveGameUpdate\(\{\s*game: payload\.game,\s*eventSeq: payload\.eventSeq,\s*clientCommandId: payload\.clientCommandId \?\? null,\s*commandOutcome: payload\.commandOutcome \?\? null,\s*\.\.\.\(payload\.type === "state_sync" \? \{ baseline: true \} : \{\}\),\s*\.\.\.\(payload\.actionContractVersion !== undefined \? \{ actionContractVersion: payload\.actionContractVersion \} : \{\}\),\s*\}\);/s);
   assert.match(source, /if \(document\.getElementById\("shell-debug-last-event"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
 });
 
@@ -308,7 +308,7 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /return !game\.pendingPlayerRequestSeat && activeResultGameId !== game\.id && hostInvite\?\.gameId !== game\.id && !getActiveApprovalRequest\(game\) && !getActiveRevertRequest\(game\) && !getActivePendingRevertRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
   assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),[\s\S]*includeBoard,\s*animatePanels,\s*\}\);/s);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*(?:if \()?updateMountedGameShell\(\{/s);
-  assert.match(source, /const game = transport\.getGameViewModel\(gameId\);\s*if \(!routeHydrated && !game\) \{/s);
+  assert.match(source, /if \(!routeHydrated && !game\) \{\s*return renderGameViewSkeleton\(\);/s);
   assert.match(source, /if \(canHydrateRouteFromLocalState\(currentRoute\)\) \{\s*routeHydrated = true;\s*syncLiveChannels\(\);\s*render\(\);\s*maybeRevealRouteTransition\(\);\s*return;\s*\}/s);
 });
 
@@ -507,4 +507,11 @@ test("history navigation uses pointer-down press state with a single mouseup rel
   assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*clearControlPress\(\);[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
   assert.match(source, /if \(action === "return-live"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);/s);
   assert.doesNotMatch(source, /jump-destruction/);
+});
+
+test("upgrade fencing keeps a static recovery notice without discarding viewing context", () => {
+  const subscriber = source.slice(source.indexOf('const subscribeToTransport'), source.indexOf('subscribeToTransport();'));
+  assert.doesNotMatch(subscriber, /location\.reload|sync-v2-refresh/);
+  assert.match(source, /game\.upgradeRequired \? `<button class="secondary(?: mini-button)?" data-action="refresh-game"/);
+  assert.match(source, /if \(!game && transport\.isUpgradeRequired\?\.\(gameId\)\) \{\s*return `<section[^`]+data-action="refresh-game"/);
 });

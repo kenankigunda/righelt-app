@@ -1,7 +1,7 @@
 import { SYNC_TIMING } from './sync-protocol';
 
 /** Browser, server and diagnostics share these public behavior contracts. */
-export const COMPUTER_TIMING = Object.freeze({ detailAfterMs: 5_000, stalledAfterMs: 30_000, renewAfterMs: SYNC_TIMING.heartbeatIntervalMs, leaseMs: SYNC_TIMING.inboundTimeoutMs });
+export const COMPUTER_TIMING = Object.freeze({ detailAfterMs: 5_000, saveNoticeAfterMs: 10_000, stalledAfterMs: 30_000, renewAfterMs: SYNC_TIMING.heartbeatIntervalMs, leaseMs: SYNC_TIMING.inboundTimeoutMs });
 export const COMPUTER_LIMITS = Object.freeze({ cachedModels: 2, historyPage: 100, attemptPage: 20, checkpointEvery: 50, noteCharacters: 2000, attemptBytes: 256 * 1024 });
 export const COMPUTER_PROFILES = Object.freeze({
   babs: Object.freeze({ name: 'Babs', version: 'experimental-v1', simulations: 8, temperature: 1, maxValueGap: 0.1 }),

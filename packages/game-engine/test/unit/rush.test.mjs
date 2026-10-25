@@ -141,7 +141,7 @@ test("F-007 a piece can only rush once per rush continuation", () => {
   assert.equal(result.ok, false);
 });
 
-test("F-008 rush continuation can be ended by pass", () => {
+test("F-008 rush continuation can be ended by End Turn", () => {
   const state = makeState({
     continuation: {
       type: "rush",
@@ -152,10 +152,10 @@ test("F-008 rush continuation can be ended by pass", () => {
     pieces: [commander("C1", "P1", 3, 6), commander("C2", "P2", 6, 3), unit("U1-1", "P1", 4, 4)],
   });
 
-  const validation = validateAction(state, { type: "pass" });
+  const validation = validateAction(state, { type: "end_turn" });
   assert.equal(validation.ok, true);
 
-  const next = applyAction(state, { type: "pass" }).state;
+  const next = applyAction(state, { type: "end_turn" }).state;
   assert.equal(next.continuation, null);
   assert.equal(next.sideToMove, "P2");
   assert.equal(next.turnIndex, 1);
@@ -190,7 +190,7 @@ test("F-009 rush continuation rejects non-rush actions", () => {
   }
 });
 
-test("F-010 listLegalActions includes pass and omits already-rushed pieces", () => {
+test("F-010 listLegalActions includes End Turn and omits already-rushed pieces", () => {
   const state = makeState({
     continuation: {
       type: "rush",
@@ -208,8 +208,8 @@ test("F-010 listLegalActions includes pass and omits already-rushed pieces", () 
   });
 
   const legal = listLegalActions(state);
-  const passCount = legal.filter((action) => action.type === "pass").length;
-  assert.equal(passCount, 1);
+  const endTurnCount = legal.filter((action) => action.type === "end_turn").length;
+  assert.equal(endTurnCount, 1);
   assert.equal(
     legal.some((action) => action.type === "rush" && action.actorId === "U1-1"),
     false,
@@ -256,7 +256,7 @@ test("F-011 distinct pieces can chain rushes in one continuation", () => {
   assert.equal(afterSecond.sideToMove, "P1");
 });
 
-test("F-012 pass ends rush continuation even when more rushes are available", () => {
+test("F-012 End Turn ends rush continuation even when more rushes are available", () => {
   const state = makeState({
     continuation: {
       type: "rush",
@@ -279,7 +279,7 @@ test("F-012 pass ends rush continuation even when more rushes are available", ()
     true,
   );
 
-  const next = applyAction(state, { type: "pass" }).state;
+  const next = applyAction(state, { type: "end_turn" }).state;
   assert.equal(next.continuation, null);
   assert.equal(next.sideToMove, "P2");
   assert.equal(next.turnIndex, 1);
@@ -338,7 +338,7 @@ test("rush may enter a temporarily unsupplied state when a later rush can resupp
   assert.deepEqual(successor.continuation?.rushChainPieceIds, ["A"]);
 });
 
-test("rush pass is illegal while the rush chain remains unsupplied", () => {
+test("rush End Turn is illegal while the rush chain remains unsupplied", () => {
   const state = makeState({
     continuation: {
       type: "rush",
@@ -358,7 +358,7 @@ test("rush pass is illegal while the rush chain remains unsupplied", () => {
     ],
   });
 
-  const result = validateAction(state, { type: "pass" });
+  const result = validateAction(state, { type: "end_turn" });
   assert.equal(result.ok, false);
   assert.equal(canCloseContinuationNow(state), false);
 });
