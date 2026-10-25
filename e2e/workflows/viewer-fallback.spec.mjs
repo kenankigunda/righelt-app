@@ -9,6 +9,7 @@ import {
   joinAsViewer,
   openDirectGameLink,
   requestPlayerJoin,
+  switchGamePanel,
 } from "../support/app.mjs";
 
 test("third browser falls back to viewer-only join when both player seats are already occupied", async ({ browser, baseURL }) => {
@@ -28,7 +29,17 @@ test("third browser falls back to viewer-only join when both player seats are al
     await joinAsViewer(viewerPage);
 
     await expect(viewerPage.getByTestId("game-role")).toContainText("Viewer");
+    await switchGamePanel(creatorPage,'players');
+    const viewers=creatorPage.locator('[data-action="toggle-viewers"]');
+    await expect(viewers).toHaveAccessibleName(/^Viewers: /);
+    await expect(viewers).toHaveAttribute('aria-expanded','false');
+    await viewers.click();await expect(viewers).toHaveAttribute('aria-expanded','true');
+    await expect(creatorPage.getByTestId("participant-viewer")).toHaveCount(1);
     await expect(creatorPage.getByTestId("participant-viewer")).toBeVisible();
+    await expect(creatorPage.getByTestId("participant-viewer").locator('[data-action="guest-profile"]')).toBeVisible();
+    const viewerIdentity=await viewerPage.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'));
+    expect(viewerIdentity).toBeTruthy();
+    await expect(creatorPage.getByTestId("participant-viewer").locator('[data-action="guest-profile"]')).toHaveAttribute('data-identity-id',viewerIdentity);
   } finally {
     await closeContextQuietly(creatorContext);
     await closeContextQuietly(playerContext);
