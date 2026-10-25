@@ -1451,7 +1451,6 @@ const renderHeaderAlertZone = () => {
   return `
     <div class="shell-header-status" data-shell-alert-zone="${gameAlerts ? "active" : "idle"}">
       <div id="shell-game-alerts">${gameAlerts}</div>
-      <div data-computer-status>${renderComputerProgress(viewedGame, computerSession?.snapshot())}</div>
     </div>
   `;
 };
@@ -1686,6 +1685,8 @@ const getGameAlertItems = (game) => {
   }
   if (game.historyNotice) items.push({ key: `history-change:${game.id}`, html: renderGameAlertCard({ body: escapeHtml(game.historyNotice) }) });
 
+  const computerNotice=renderComputerProgress(game,computerSession?.snapshot());
+  if(computerNotice) items.push({key:`computer:${game.id}`,priority:computerSession?.snapshot().phase==='recovery'?'urgent':'normal',html:computerNotice});
   const approval = getActiveRevertRequest(game), waiting = getActivePendingRevertRequest(game);
   const request = approval ?? waiting;
   if (request) {
@@ -3035,8 +3036,6 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
     getCurrentFlyoutState(),
   )}`;
 
-  const computerStatusEl = shellRoot.querySelector('[data-computer-status]');
-  if (computerStatusEl) patchToolHtml(computerStatusEl, renderComputerProgress(game, computerSession?.snapshot()));
   if (alertsEl instanceof HTMLElement) {
     const html = renderGameAlertsHtml(game, inviteFromRole);
     if (alertsEl.innerHTML !== html) patchNotificationHtml(alertsEl, html);
@@ -3121,6 +3120,7 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
   if (!game) {
     return false;
   }
+  if (!appEl.querySelector('[data-game-shell-root][data-testid="game-shell"]') || getInviteContextForGame(game, "game")) return false;
   return !game.pendingPlayerRequestSeat && activeResultGameId !== game.id && hostInvite?.gameId !== game.id && !getActiveApprovalRequest(game) && doesMountedFlyoutStateMatchRoute();
 };
 
@@ -4236,8 +4236,12 @@ const startComputerReplay = async () => {
 const updateComputerUi = () => {
   boardRuntime?.refreshStatus?.();
   const gameId = getCurrentViewedGameId(), game = gameId ? transport.getGameViewModel(gameId) : null;
-  const status = appEl.querySelector('[data-computer-status]');
-  if (status) patchToolHtml(status, renderComputerProgress(game, computerSession?.snapshot()));
+  const alerts=appEl.querySelector('#shell-game-alerts');
+  if(alerts && game) {
+    const html=renderGameAlertsHtml(game);
+    patchNotificationHtml(alerts,html);
+    alerts.closest('[data-shell-alert-zone]')?.setAttribute('data-shell-alert-zone',html?'active':'idle');
+  }
   const debug = appEl.querySelector('[data-flyout="debug"] .shell-flyout-scroll');
   if (debug) patchToolHtml(debug, renderDebugContent());
 };

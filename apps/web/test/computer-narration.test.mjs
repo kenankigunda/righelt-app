@@ -17,3 +17,9 @@ test('thinking overrides human selection and historical boards do not show live 
   g.inHistoryMode=true;assert.equal(computerBoardMessage(g,{phase:'looking-ahead'}),null);
   assert.equal(describeComputerMove({...move,action:{type:'pass'}}),'Tau passed');
 });
+
+test('optimistic computer completion never exposes a human prompt before confirmation', () => {
+ const g=game();g.pendingComputerSaveStartedAt=0;g.pendingComputerProfile='tau';
+ assert.equal(computerBoardMessage(g,{phase:'saving'},{selectedPieceId:'p'}),'Tau is finishing the turn');
+ g.inHistoryMode=true;assert.equal(computerBoardMessage(g,{phase:'saving'}),null);
+});

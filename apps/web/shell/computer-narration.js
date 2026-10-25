@@ -23,8 +23,9 @@ export function describeComputerMove(move) {
 
 export function computerBoardMessage(game, status, { selectedPieceId } = {}) {
   if (!game?.computer || game.inHistoryMode) return null;
-  const name = COMPUTER_PROFILES[status?.profile ?? game.computerTurn]?.name ?? 'Computer';
-  if (game.computerTurn) {
+  const name = COMPUTER_PROFILES[status?.profile ?? game.pendingComputerProfile ?? game.computerTurn]?.name ?? 'Computer';
+  if (game.computerTurn || game.pendingComputerSaveStartedAt != null) {
+    if (game.pendingComputerSaveStartedAt != null) return `${name} is finishing the turn`;
     if (game.computer.paused) return `${name} is paused`;
     if (status?.phase === 'recovery') return `${name} needs a hand`;
     if (status?.phase === 'other-device') return `${name} is playing on another device`;

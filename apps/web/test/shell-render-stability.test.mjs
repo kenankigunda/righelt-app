@@ -511,3 +511,10 @@ test("upgrade fencing keeps a static recovery notice without discarding viewing 
  assert.doesNotMatch(subscriber,/location\.reload|sync-v2-refresh/);
  assert.match(source,/game\.upgradeRequired \? `<button class="secondary[^"\n]*" data-action="refresh-game"/);
 });
+
+test("loading frames and guest invitation surfaces never enter the loaded-shell patch path", () => {
+ const gate=source.slice(source.indexOf('const shouldUseIncrementalGameShell'),source.indexOf('const renderGameContent'));
+ assert.match(gate,/\[data-game-shell-root\]\[data-testid="game-shell"\]/);
+ assert.match(gate,/getInviteContextForGame\(game, "game"\)\) return false/);
+ assert.doesNotMatch(gate,/game-loading-shell/);
+});

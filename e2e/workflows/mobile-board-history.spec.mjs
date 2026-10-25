@@ -10,6 +10,7 @@ const switchPanel = async(page,key)=>{
   await tab(page,key).click();
   await expect(tab(page,key)).toHaveAttribute('aria-pressed','true');
   await expect(panel(page,key)).not.toHaveAttribute('inert','');
+  await expect.poll(()=>panel(page,key).evaluate(el=>el.closest('.game-shell-track').getAnimations().some(animation=>animation.playState==='running'||animation.pending)),{message:'Panel transition must be finished'}).toBe(false);
   await expect.poll(()=>panel(page,key).evaluate(el=>Math.abs(el.getBoundingClientRect().left-el.closest('.game-shell-track-wrap').getBoundingClientRect().left)),{message:'Panel must finish its horizontal transition before interacting or measuring'}).toBeLessThanOrEqual(1);
 };
 const readGame = async(page,id)=>page.evaluate(async id=>{
@@ -125,7 +126,7 @@ test.describe('narrow board and history',()=>{
     const live=await readGame(page,gameId);await expect.poll(()=>renderedPieces(board(page))).toEqual(expectedPieces(live.board.state));
   });
 
-  test('friend undo preserves deliberate history navigation away and back while approval is pending',async({page,browser,baseURL})=>{
+  test('friend undo preserves a deliberately selected surviving move while approval is pending',async({page,browser,baseURL})=>{
     const {gameId,gameHash}=await createGameFromHome(page);
     const guestContext=await browser.newContext({baseURL,viewport:{width:390,height:640},isMobile:true,hasTouch:true});
     const guest=await guestContext.newPage();
@@ -134,18 +135,18 @@ test.describe('narrow board and history',()=>{
     try{
       await openDirectGameLink(guest,baseURL,gameHash);await requestPlayerJoin(guest);await acceptPendingRequest(page);
       await expect(guest.getByTestId('game-role')).toContainText('Player 2');
-      await makeAnyLegalMove(page);await makeAnyLegalMove(guest,'p2');
-      const game=await readGame(page,gameId),first=game.moves[0],second=game.moves[1];
-      expect(second).toBeTruthy();
+      await makeAnyLegalMove(page);await makeAnyLegalMove(guest,'p2');await makeAnyLegalMove(page);
+      const game=await readGame(page,gameId),first=game.moves[0],second=game.moves[1],third=game.moves[2];
+      expect(third).toBeTruthy();
       await switchPanel(page,'history');
       const firstRow=page.locator(`[data-testid="history-move-item"][data-move-id="${first.moveId}"]`);
-      await firstRow.click();await expect(firstRow.getByTestId('history-inline-preview')).toBeVisible();
+      const secondRow=page.locator(`[data-testid="history-move-item"][data-move-id="${second.moveId}"]`);
+      const thirdRow=page.locator(`[data-testid="history-move-item"][data-move-id="${third.moveId}"]`);
+      await thirdRow.click();await expect(thirdRow.getByTestId('history-inline-preview')).toBeVisible();
       await page.getByRole('button',{name:'Undo before this move',exact:true}).tap();
       await expect(page.getByTestId('undo-waiting-notice')).toBeVisible();
       await expect(guest.getByTestId('undo-approval-notice')).toBeVisible();
-      await page.locator(`[data-testid="history-move-item"][data-move-id="${second.moveId}"]`).click();
-      await expect(page.locator(`[data-move-id="${second.moveId}"].is-selected`)).toBeVisible();
-      await firstRow.click();await expect(firstRow).toHaveClass(/is-selected/);
+      await firstRow.click();await secondRow.click();await firstRow.click();await expect(firstRow).toHaveClass(/is-selected/);
       await guestContext.route('**/revert-approve',async route=>{approvalSeen=true;await held;await route.continue();});
       await guest.getByTestId('undo-approval-notice').getByRole('button',{name:'Accept',exact:true}).click();
       await expect.poll(()=>approvalSeen).toBe(true);release();
@@ -153,13 +154,30 @@ test.describe('narrow board and history',()=>{
       await expect(tab(page,'history')).toHaveAttribute('aria-pressed','true');
       await expect(firstRow).toHaveClass(/is-selected/);
       await expect(firstRow.getByTestId('history-inline-preview')).toBeVisible();
+      await expect.poll(()=>renderedPieces(firstRow.getByTestId('history-inline-preview'))).toEqual(expectedPieces(first.snapshot));
       await page.getByTestId('history-return-live').tap();
       await expect(tab(page,'board')).toHaveAttribute('aria-pressed','true');
       const live=await readGame(page,gameId);await expect.poll(()=>renderedPieces(board(page))).toEqual(expectedPieces(live.board.state));
     }finally{release?.();await guestContext.unrouteAll({behavior:'wait'});await guestContext.close();}
   });
 
-  test('cold game loading reserves the settled board geometry',async({page,context},info)=>{
+  test('responsive boundaries and large text keep one scroller without horizontal overflow',async({page})=>{
+    await selfPlay(page);
+    for(const viewport of [{width:320,height:740},{width:430,height:740},{width:844,height:390},{width:930,height:740},{width:932,height:740}]){
+      await page.setViewportSize(viewport);
+      await expectNoHorizontalOverflow(page);
+      await expect(board(page)).toBeVisible();
+      expect(await page.evaluate(()=>[...document.querySelectorAll('[data-mobile-panel],.game-shell-track-wrap,.game-shell-frame')].filter(el=>['scroll','auto'].includes(getComputedStyle(el).overflowY)&&el.scrollHeight>el.clientHeight+1).length)).toBe(0);
+    }
+    await page.setViewportSize({width:390,height:740});
+    await page.evaluate(()=>document.documentElement.style.fontSize='200%');
+    await expectNoHorizontalOverflow(page);
+    await expect(board(page)).toBeVisible();
+    expect(await page.locator('.shell-header').evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+  });
+
+  for(const width of [390,1440])test(`cold game loading reserves the settled board geometry at ${width}px`,async({page,context},info)=>{
+    await page.setViewportSize({width,height:740});
     const {gameId}=await selfPlay(page);
     let release;const held=new Promise(resolve=>{release=resolve;});
     await context.route(`**/api/shell/games/${gameId}?*`,async route=>{if(route.request().method()==='GET')await held;await route.continue();});

@@ -16,8 +16,8 @@ export function renderComputerProgress(game, status = {}) {
   const working = ['preparing', 'checking', 'looking-ahead', 'initializing-verified-runtime', 'saving'].includes(status.phase);
   const phase = { preparing: 'Preparing the computer', 'initializing-verified-runtime': 'Preparing the computer', checking: 'Checking options', 'looking-ahead': 'Looking ahead', saving: 'Saving the move' }[status.phase] ?? 'Thinking';
   let body = '';
-  if (!owner) body = '<p>Computer play runs on the owner’s device.</p>';
-  else if (status.phase === 'other-device') body = `<p>Computer play is on another device.</p>${button('switch', 'Continue on this device')}`;
+  if (!owner) { if(game.computerTurn) body = '<p>Computer play runs on the owner’s device.</p>'; }
+  else if (status.phase === 'other-device') { if(game.computerTurn && status.phaseElapsedMs >= COMPUTER_TIMING.stalledAfterMs) body = `<p>Computer play is on another device.</p>${button('switch', 'Continue on this device')}`; }
   else if (status.phase === 'recovery') body = `<p>The computer needs a hand.</p><div class="computer-actions">${button('retry', 'Retry')}${button('takeover', 'Play this turn')}${button('manual', 'Play both sides')}<button class="secondary" data-action="computer-branch">Create new game here</button><a class="button secondary" href="#/">Exit</a></div>`;
   else if (working) {
     const progress = status.progress;
@@ -26,11 +26,11 @@ export function renderComputerProgress(game, status = {}) {
     const slowThink = status.phase !== 'saving' && status.elapsedMs >= COMPUTER_TIMING.stalledAfterMs;
     if (slowSave || slowThink) body = `<div class="computer-status-line"><span>${escapeDebug(slowSave ? 'Saving the move is taking longer than usual' : `${name} is still thinking`)}</span>${slowThink ? button('pause', 'Interrupt') : ''}</div>${slowThink ? `<div class="computer-progress"><progress aria-label="${escapeDebug(phase)}" ${Number.isFinite(completed) && total > 0 ? `max="${total}" value="${Math.min(completed, total)}"` : ''}></progress><span>${Math.floor(status.elapsedMs / 1000)}s</span></div>` : ''}`;
   } else if (control.paused) body = `<p>${escapeDebug(status.message || 'Computer play paused.')}</p><div class="computer-actions">${button('resume', 'Resume')}${watch ? button('step', 'Single step') : ''}${button('takeover', 'Play this turn')}${button('manual', 'Play both sides')}</div>`;
-  else if (control.manual) body = '<p>You are playing both sides.</p>';
-  else if (control.takeoverTurn !== null) body = '<p>You are playing the rest of this turn.</p>';
+  else if (control.manual) body = '';
+  else if (control.takeoverTurn !== null) body = '';
   else if (watch) body = `<div class="computer-status-line"><span>Watching computer play</span>${button('pause', 'Pause')}</div>`;
   if (owner && control.modelId !== CURRENT_COMPUTER_MODEL.id && control.declinedModelId !== CURRENT_COMPUTER_MODEL.id) body += `<p>A new computer model is available.</p><div class="computer-actions">${button('upgrade', 'Use new model')}${button('decline-upgrade', 'Keep this model')}</div>`;
-  return body ? `<section class="computer-play" aria-label="Computer play" data-key="computer-notice:${escapeDebug(game.id)}">${renderGameAlertCard({body, activity:working?'processing':'static',tone:status.phase==='recovery'?'warn':''})}</section>` : '';
+  return body ? `<section class="computer-play" aria-label="Computer play" data-computer-status data-key="computer-notice:${escapeDebug(game.id)}">${renderGameAlertCard({body, activity:working?'processing':'static',tone:status.phase==='recovery'?'warn':''})}</section>` : '';
 }
 
 const json = value => `<pre class="debug-pre">${escapeDebug(JSON.stringify(value, null, 2))}</pre>`;

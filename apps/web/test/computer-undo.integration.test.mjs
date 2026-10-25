@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import {createViewingIntent} from '../shell/viewing-state.js';
 
 const source = readFileSync(new URL('../shell/app.js', import.meta.url), 'utf8');
 const start = source.indexOf('  if (action === "revert-to-move" || action === "undo-last-move")');
@@ -21,6 +22,7 @@ for (const boundary of ['mutation', 'pause', 'committed', 'acquire']) {
         action: 'undo-last-move', actionEl: { getAttribute: name => name === 'data-game-id' ? 'original' : 'move' },
         transport, account: { snapshot: () => ({ generation: context.generation }) }, generation: 1,
         viewedGame: 'original', getCurrentViewedGameId: () => context.viewedGame,
+        viewingIntent:createViewingIntent(),viewingScope:()=>String(context.generation),maybeReturnAfterUndo:()=>{},
         computerSession: { withMutation: async work => { await wait('mutation'); return work(); }, action: async action => { calls.push(action); await wait(action); }, tick: async () => { calls.push('tick'); await wait('acquire'); } },
       });
       const result = undo.runInContext(context);

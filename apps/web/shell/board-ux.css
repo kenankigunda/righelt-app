@@ -2,6 +2,10 @@ body {display:flow-root;}
 /* Loading, normal status and inspection share geometry at each text size. */
 .board-heading { min-height: 1.5em; }
 .board-preview-label { min-height: max(3.1em, 44px); font-size: 1rem; line-height: 1.5; margin-block: .25rem .65rem; }
+/* Expand the tap surface inside the reserved message space, without moving
+   the board or turning the inline action into a heavy toolbar. */
+.board-preview-label .board-preview-inline-button {position:relative;min-width:44px;}
+.board-preview-label .board-preview-inline-button::before {content:"";position:absolute;left:0;right:0;top:50%;height:44px;transform:translateY(-50%);}
 .legend-inspection { display:inline-flex;align-items:center;gap:5px;min-height:44px;padding:4px 8px;border:0;background:transparent;color:var(--ink);font:inherit; }
 .legend-inspection[aria-pressed="true"] { background:var(--surface-hover-quiet);box-shadow:inset 0 -2px var(--ink); }
 .history-inline-preview { width:min(100%, 360px); margin:8px auto; pointer-events:none; }
@@ -46,6 +50,5 @@ body {display:flow-root;}
 
 .loading-board-silhouette.board {aspect-ratio:auto;border:0;border-radius:0;background:none;}
 
-.overlay-key {grid-template-columns:max-content max-content minmax(0,1fr);}
+.overlay-key {display:flex;flex-wrap:wrap;gap:10px 12px;}
 .overlay-key .legend-inspection {white-space:nowrap;}
-.overlay-key [data-legend-entry="group"] {grid-column:1 / -1;grid-row:3;}

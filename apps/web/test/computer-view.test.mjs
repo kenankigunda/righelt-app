@@ -32,6 +32,9 @@ test('computer recovery controls wait for their own phase thresholds', () => {
  const slowSave=renderComputerProgress(game,{phase:'saving',elapsedMs:60000,phaseElapsedMs:10000});
  assert.match(slowSave,/Saving the move is taking longer/);assert.doesNotMatch(slowSave,/Interrupt/);
  assert.match(renderComputerProgress(game,{phase:'recovery',elapsedMs:0}),/Retry/);
+ assert.equal(renderComputerProgress(game,{phase:'other-device',phaseElapsedMs:29999}), '');
+ assert.match(renderComputerProgress(game,{phase:'other-device',phaseElapsedMs:30000}), /Continue on this device/);
+ assert.equal(renderComputerProgress({...game,computerTurn:null},{phase:'other-device',phaseElapsedMs:30000}), '');
 });
 
 test('human-readable profile versions omit the qualifier while raw evidence stays unchanged', () => {
