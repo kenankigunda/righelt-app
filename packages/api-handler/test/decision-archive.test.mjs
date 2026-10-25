@@ -69,3 +69,16 @@ test('restoring and branching into a retreat preserves the nominal turn owner', 
     assert.equal(game.turns.at(-1).playerSeat, 'Player 1');
   }
 });
+
+test('legacy commander destruction snapshots retain exact stored outcome reasons through archive and projection',async()=>{
+ const env={DB:createFakeD1()},game=createInitialGame({gameId:'legacy-commander',identityId:'owner',selfPlayMode:true});
+ game.board.state.pieces=game.board.state.pieces.filter(piece=>piece.id!=='C2');
+ game.board.state.outcome={status:'p1_win',reason:'p2_commander_unsupplied'};
+ game.moves=[{moveId:'legacy-push',index:0,at:game.createdAt,selectionSnapshot:structuredClone(game.board.state),snapshot:structuredClone(game.board.state),action:{type:'push'},destroyedPieces:[{pieceId:'C2',reason:'no_retreat'}]}];
+ const original=structuredClone(game);
+ await env.DB.batch(archiveStatements(env,null,game,1));
+ const decision=await readDecision(env,game.id,'legacy-push');assert.deepEqual(decision.move,original.moves[0]);
+ const page=await readDecisionPage(env,game.id,null);assert.deepEqual(page.items.find(entry=>entry.id==='legacy-push').move.snapshot.outcome,original.board.state.outcome);
+ assert.deepEqual(withViewModel(game,'owner').board.state.outcome,original.board.state.outcome);
+ assert.deepEqual(game.moves,original.moves);
+});

@@ -91,3 +91,19 @@ test('result sound requires confirmation even when the optimistic move finishes 
  sound.observe(event(3,terminal,'accepted'));sound.observe(event(3,terminal,'accepted'));sound.observe(event(4,terminal,'accepted','turn_ended'));
  assert.equal(frequencies.filter(x=>x===560).length,1);
 });
+
+test('confirmed result cues reflect player perspective and stay silent on hydration, history, repeated events and mute',()=>{
+ for(const [identity,status,expected] of [['red','p1_win',[560,700,840]],['blue','p1_win',[420,360]],['viewer','p1_win',[560]],['red','draw',[520,520]]]){
+  const notes=[];
+  const node=()=>({connect(){},disconnect(){},frequency:{value:0},Q:{},gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},start(){},stop(){}});
+  const audio={state:'running',currentTime:0,sampleRate:8000,createBuffer:(_,n)=>({getChannelData:()=>new Float32Array(n)}),createBufferSource:node,createBiquadFilter:node,createGain:node,createOscillator:()=>{const n=node();n.start=()=>notes.push(n.frequency.value);return n;},suspend:()=>Promise.resolve()};
+  const sound=createGameSound({createAudio:()=>audio,getIdentityId:()=>identity});sound.gesture();
+  const event=(seq,status)=>({game:{id:'g',player1:{identityId:'red'},player2:{identityId:'blue'},board:{state:{outcome:{status}}}},eventSeq:seq,type:'event_appended',reason:'move_recorded'});
+  assert.equal(sound.observe(event(1,status)),false);assert.deepEqual(notes,[]);
+  sound.observe(event(2,'ongoing'),{silent:true});sound.observe(event(3,status),{silent:true});assert.deepEqual(notes,[]);
+  sound.observe(event(4,status));assert.deepEqual(notes,[]);
+  sound.observe(event(5,'ongoing'),{silent:true});assert.equal(sound.observe(event(6,status)),true);assert.deepEqual(notes,expected);
+  sound.observe(event(6,status));sound.observe(event(7,status));assert.deepEqual(notes,expected);
+  sound.toggle();assert.equal(sound.play('result-victory'),false);assert.deepEqual(notes,expected);
+ }
+});

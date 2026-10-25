@@ -4,7 +4,7 @@ import { writeFileSync, renameSync } from 'node:fs';
 import { createEngineOperationBudget, EngineExpansionLimit } from './engine-operation-budget.mjs';
 import { searchRecovery } from './search-recovery.mjs';
 import { decisionProvenance } from './decision-provenance.mjs';
-import { replayDecision } from './decision-replay.mjs';
+import { replayDecision, legacyCommanderReplayState } from './decision-replay.mjs';
 import { transitionArchivedAction } from './archived-action.mjs';
 import { trainingExplorationOptions } from './exploration-provenance.mjs';
 import { explorationRecord } from './exploration-record.mjs';
@@ -122,7 +122,12 @@ async function main() {
     const snapshots = [];
     let state = job.game.rootState ?? job.game.initialState;
     for (const action of job.game.warmupActions ?? []) { check(); state = transitionArchivedAction(state, action, bounded); }
-    if (deterministicStateHash(state) !== deterministicStateHash(job.game.initialState)) throw new Error('Replay warmup mismatch');
+    const initialHash = deterministicStateHash(job.game.initialState);
+    if (deterministicStateHash(state) !== initialHash) {
+      const retained = legacyCommanderReplayState(state, initialHash);
+      if (!retained) throw new Error('Replay warmup mismatch');
+      state = retained;
+    }
     const repetitions = new Map([[ruleFingerprint(state), 1]]);
     for (const [index, record] of job.game.decisions.entries()) {
       check();

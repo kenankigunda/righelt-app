@@ -1,4 +1,5 @@
 import { reportRemoval, type RemovalCollector } from "./removals";
+import { commanderOutcome } from "../../shared-types/src/commander-outcome.js";
 import type { ArtifactContractV1, ArtifactMode, GameState, ResolveArtifacts } from "./types";
 import { canCloseContinuationNow } from "./continuation";
 import { SUPPLY_POINTS } from "./deterministic";
@@ -936,25 +937,9 @@ function evaluateTerminalPhase(state: GameState): boolean {
     return false;
   }
 
-  const commanderByOwner = {
-    P1: state.pieces.find((piece) => piece.id === "C1"),
-    P2: state.pieces.find((piece) => piece.id === "C2"),
-  } as const;
-
-  const p1Supplied = Boolean(commanderByOwner.P1?.supplied);
-  const p2Supplied = Boolean(commanderByOwner.P2?.supplied);
-
-  if (p1Supplied && p2Supplied) {
-    return false;
-  }
-
-  if (!p1Supplied && !p2Supplied) {
-    state.outcome = { status: "draw", reason: "both_commanders_unsupplied" };
-  } else if (!p1Supplied) {
-    state.outcome = { status: "p2_win", reason: "p1_commander_unsupplied" };
-  } else {
-    state.outcome = { status: "p1_win", reason: "p2_commander_unsupplied" };
-  }
+  const outcome = commanderOutcome(state.pieces);
+  if (outcome.status === "ongoing") return false;
+  state.outcome = outcome;
 
   return true;
 }
