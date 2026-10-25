@@ -423,8 +423,8 @@ export const createLiveTransportStore = ({
     optimistic.syncStatus = optimistic.pendingCommands.length ? optimistic.syncStatus : "ready";
     void commandJournal.remove(command.envelope).catch((error) => blockStorage(gameId, error, command));
     recalculateOptimisticGame(gameId);
-    const notification = { type: outcome.outcome === "accepted" ? "authoritative_update" : "optimistic_rollback", gameId, clientCommandId: command.clientCommandId,
-      failureNotice: outcome.outcome === "rejected" ? outcome.reason === "state_capacity_exceeded" ? "This game couldn’t save another move. Your earlier moves are safe. Please view details." : "Board changed before your move was recorded. Check it and try again." : "" };
+    const notification = { type: outcome.outcome === "accepted" ? "authoritative_update" : command.kind === "shared" ? "shared_request_rejected" : "optimistic_rollback", gameId, clientCommandId: command.clientCommandId, reason:outcome.reason,
+      failureNotice: outcome.outcome === "rejected" && command.kind !== "shared" ? outcome.reason === "state_capacity_exceeded" ? "This game couldn’t save another move. Your earlier moves are safe. Please view details." : "Board changed before your move was recorded. Check it and try again." : "" };
     if (notifications) notifications.push(notification); else emitChange(notification);
     return true;
   };
