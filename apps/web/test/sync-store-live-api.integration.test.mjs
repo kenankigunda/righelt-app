@@ -565,7 +565,7 @@ test("integration sync store keeps optimistic revert request ids aligned through
         method: init.method || "GET",
         body: parsedBody,
       });
-      if (String(url).includes("/revert-request") && (init.method || "GET") === "POST") {
+      if ((String(url).includes("/revert-request") || parsedBody?.payload?.operation === "revert-request") && (init.method || "GET") === "POST") {
         await revertRequestReleased;
       }
       return apiWorker.fetch(
@@ -607,8 +607,8 @@ test("integration sync store keeps optimistic revert request ids aligned through
 
   releaseRevertRequest();
   const committedGame = await revertHandle.committed;
-  const request = requests.find((entry) => entry.url.endsWith("/revert-request") && entry.method === "POST");
-  assert.equal(request?.body?.requestId, optimisticRequestId);
+  const request = requests.find((entry) => (entry.url.endsWith("/revert-request") || entry.body?.payload?.operation === "revert-request") && entry.method === "POST");
+  assert.equal((request?.body?.payload?.values ?? request?.body)?.requestId, optimisticRequestId);
   assert.equal(committedGame.pendingRevertRequest, null);
   assert.equal(committedGame.moves.at(-1)?.undone, true);
   assert.equal(store.getGameViewModel(createdGame.id).pendingRevertRequest, null);
@@ -636,7 +636,7 @@ test("integration sync store keeps optimistic revert request ids aligned when ap
           body: parsedBody,
           identityId: storage.getItem("righelt.identity.id.v1"),
         });
-        if (String(url).includes("/revert-request") && (init.method || "GET") === "POST") {
+        if ((String(url).includes("/revert-request") || parsedBody?.payload?.operation === "revert-request") && (init.method || "GET") === "POST") {
           await revertRequestReleased;
         }
         return apiWorker.fetch(
@@ -693,11 +693,11 @@ test("integration sync store keeps optimistic revert request ids aligned when ap
   const committedGame = await revertHandle.committed;
   const request = requests.find(
     (entry) =>
-      entry.url.endsWith(`/games/${createdGame.id}/revert-request`) &&
+      (entry.url.endsWith(`/games/${createdGame.id}/revert-request`) || entry.body?.payload?.operation === "revert-request") &&
       entry.method === "POST" &&
       entry.identityId === ownerStore.getIdentityId(),
   );
-  assert.equal(request?.body?.requestId, optimisticRequestId);
+  assert.equal((request?.body?.payload?.values ?? request?.body)?.requestId, optimisticRequestId);
   assert.equal(committedGame.pendingRevertRequest?.requestId, optimisticRequestId);
   assert.equal(committedGame.myPendingRevertRequest?.requestId, optimisticRequestId);
   assert.equal(committedGame.moves.at(-1)?.undone, undefined);

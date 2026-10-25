@@ -11,7 +11,10 @@ export const STORAGE_POLICY = Object.freeze({
   cleanupRows: 100,
   maintenanceObjects: 2,
   chunkRows: 5,
-  maximumStateBytes: 2_000_000,
+  // Expanded JSON is not the D1 row. Keep decompression bounded separately.
+  maximumStateBytes: 16 * 1024 * 1024,
+  maximumLegacyStateBytes: 2_000_000,
+  maximumStoredStateBytes: 1_900_000,
   maximumChunkBytes: 1_000_000,
   warnFraction: 0.7,
   stopFraction: 0.8,

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import {isOperationRequest,operationValues} from "../support/shared-request.mjs";
 
 import {
   acceptPendingRequest,
@@ -14,30 +15,28 @@ test("undo-last-move applies optimistically before the revert request response r
   const { context, page } = await createIsolatedPage(browser);
 
   try {
-    await page.route("**/api/shell/games/*/revert-request", async (route) => {
-      if (route.request().method() !== "POST") {
+    let delivered,release;const delivery=new Promise(resolve=>{delivered=resolve;});
+    const blocked=new Promise(resolve=>{release=resolve;});
+    await page.route(/\/api\/shell\/games\/[^/]+\/(shared|revert-request)$/, async (route) => {
+      if (!isOperationRequest(route.request(),"revert-request")) {
         await route.fallback();
         return;
       }
-      await page.waitForTimeout(1_500);
-      const response = await route.fetch();
-      await route.fulfill({ response });
+      await blocked;
+      try {await route.continue();}finally{delivered();}
     });
 
-    await createGameFromHome(page);
+    const {gameId}=await createGameFromHome(page);
     await makeAnyLegalMove(page);
-
-    const revertResponsePromise = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return response.request().method() === "POST" && url.pathname.endsWith("/revert-request");
-    });
 
     await expect(page.locator('[data-action="undo-last-move"]')).toBeVisible();
     await page.locator('[data-action="undo-last-move"]').click();
 
     await expect(page.getByText("Latest: Move undone")).toBeVisible({ timeout: 700 });
 
-    await revertResponsePromise;
+    release();await delivery;
+    await expect.poll(()=>page.evaluate(async gameId=>{const identity=localStorage.getItem("righelt.identity.id.v1");const body=await(await fetch(`/api/shell/games/${gameId}?identityId=${identity}`)).json();return body.game.moves.every(move=>move.undone);},gameId)).toBe(true);
+    await expect(page.getByTestId("game-board-wrap")).toHaveAttribute("data-reconnecting","false");
     await expect(page.getByText(/Latest: (Move undone|Undo request accepted)/)).toBeVisible();
     await expect(page.locator('[data-action="undo-last-move"]')).toHaveCount(0);
   } finally {
@@ -58,23 +57,23 @@ test("undo-last-move keeps the optimistic revert request id aligned when approva
 
     await makeAnyLegalMove(owner.page);
 
+    let delivered;const delivery=new Promise(resolve=>{delivered=resolve;});
     let releaseRevertResponse = null;
     const revertResponseBlocked = new Promise((resolve) => {
       releaseRevertResponse = resolve;
     });
-    await owner.page.route("**/api/shell/games/*/revert-request", async (route) => {
-      if (route.request().method() !== "POST") {
+    await owner.page.route(/\/api\/shell\/games\/[^/]+\/(shared|revert-request)$/, async (route) => {
+      if (!isOperationRequest(route.request(),"revert-request")) {
         await route.fallback();
         return;
       }
       await revertResponseBlocked;
-      const response = await route.fetch();
-      await route.fulfill({ response });
+      try {await route.continue();}finally{delivered();}
     });
 
     const revertRequestPromise = owner.page.waitForRequest((request) => {
       const url = new URL(request.url());
-      return request.method() === "POST" && url.pathname.endsWith("/revert-request");
+      return isOperationRequest(request,"revert-request");
     });
 
     await expect(owner.page.locator('[data-action="undo-last-move"]')).toBeVisible();
@@ -85,11 +84,12 @@ test("undo-last-move keeps the optimistic revert request id aligned when approva
     await expect(owner.page.getByText("Latest: Undo request pending approval")).toBeVisible({ timeout: 700 });
 
     const revertRequest = await revertRequestPromise;
-    const requestId = revertRequest.postDataJSON()?.requestId;
+    const requestId = operationValues(revertRequest)?.requestId;
     expect(requestId).toMatch(/^revert-/);
     await expect.poll(async () => rescindButton.getAttribute("data-request-id")).toBe(requestId);
 
-    releaseRevertResponse?.();
+    releaseRevertResponse?.();await delivery;
+    await expect.poll(()=>owner.page.evaluate(async gameId=>{const identity=localStorage.getItem("righelt.identity.id.v1");const body=await(await fetch(`/api/shell/games/${gameId}?identityId=${identity}`)).json();return body.game.pendingRevertRequest?.requestId;},created.gameId)).toBe(requestId);
 
     await expect(owner.page.getByText("Latest: Undo request pending approval")).toBeVisible();
     await expect(rescindButton).toHaveAttribute("data-request-id", requestId);

@@ -515,6 +515,8 @@ for (const variant of ["no-undos", "tail-undos", "divergent-history"]) {
       branchMoveIndex = sourceView.moves.findLastIndex((move) => move.undone !== true);
     }
 
+    await owner.store.selectHistoryMove({gameId:created.id,moveIndex:branchMoveIndex});
+    sourceView=await harness.waitForGame(owner,created.id,game=>game.inHistoryMode && game.historyIndex===branchMoveIndex && game.moves[branchMoveIndex]?.selectionSnapshot);
     const branchSeed = buildHistoryBranchSeedFromGame(sourceView, branchMoveIndex);
     const branch = await owner.store.launchHistoryBranch({
       sourceGameId: created.id,

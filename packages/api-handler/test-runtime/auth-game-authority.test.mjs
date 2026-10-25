@@ -67,8 +67,19 @@ export default {
   fetch(request, env) {
     if (request.headers.has("x-test-revoke-after-read")) {
       const original = env.DB;
+      const rooms = env.GAME_ROOMS;
       env = {
         ...env,
+        GAME_ROOMS: {
+          idFromName: name => rooms.idFromName(name),
+          get(id) { const stub=rooms.get(id);return {async fetch(roomRequest) {
+            const response=await stub.fetch(roomRequest);
+            // Game reads now execute in the room. Revoke after its protected
+            // read but before the outer API releases any response bytes.
+            await original.prepare("UPDATE account_sessions SET revoked_at=1 WHERE token_hash=?").bind(request.headers.get("x-test-revoke-after-read")).run();
+            return response;
+          }};},
+        },
         DB: {
           prepare(sql) {
             const statement = original.prepare(sql);

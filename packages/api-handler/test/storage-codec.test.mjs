@@ -6,6 +6,57 @@ import {readFileSync} from "node:fs";
 import {listLegalActions} from "../../game-engine/src/legal.ts";
 import { persistGameState,loadGameProjection } from "../src/shell-live-db.ts";
 import { createFakeD1 } from "./support/fake-d1.mjs";
+import { GameRoomDO } from "../src/game-room-do.ts";
+import { commandFingerprint } from "../../shared-types/src/sync-protocol.ts";
+
+test("expanded history can exceed the database row limit while its compressed payload stays bounded",async()=>{
+  const value={history:"recorded board and continuation\n".repeat(100000)};
+  const encoded=await encodeStorage(value);
+  assert.ok(encoded.rawBytes>2_000_000);
+  assert.ok(encoded.blob.byteLength<1_900_000);
+  assert.deepEqual(await decodeStorage(encoded.blob,encoded.checksum),value);
+  await assert.rejects(encodeStorage(value,{rawBytes:4_000_000,storedBytes:20}),/storage_payload_too_large/);
+  await assert.rejects(decodeStorage(encoded.blob,encoded.checksum,{rawBytes:100,storedBytes:1_900_000}),/storage_payload_too_large/);
+});
+
+test("larger writes require explicit activation while upgraded readers preserve saved games",async()=>{
+  const game=createInitialGame({gameId:"long-history",identityId:"actor",selfPlayMode:true});
+  for(let i=0;i<150;i++){
+    assert.equal(applyServerAction(game,{type:"pass"}).ok,true);
+    game.moves.at(-1).notation="Retained decision ".repeat(800);
+  }
+  const DB=createFakeD1();
+  await assert.rejects(persistGameState({DB,STORAGE_COMPRESSION:"true"},game,1),/storage_payload_too_large/);
+  assert.equal(DB.getGameState(game.id),null);
+  await persistGameState({DB,STORAGE_COMPRESSION:"true",STORAGE_LARGE_STATES_ENABLED:"true"},game,1);
+  const loaded=await loadGameProjection({DB},game.id);
+  assert.equal(loaded.kind,"ok");
+  assert.deepEqual(loaded.game,game);
+});
+
+for(const rollback of [false,true])test(`an uncommitted size failure durably rejects without rewriting the ${rollback?"activated large":"legacy"} save`,async()=>{
+  const game=createInitialGame({gameId:"capacity",identityId:"actor",selfPlayMode:true});
+  for(let i=0;i<5;i++)assert.equal(applyServerAction(game,{type:"pass"}).ok,true);
+  game.archiveStartRevision=0;
+  const move=game.moves.at(-1);move.notation="";
+  move.notation="x".repeat((rollback?2_100_000:1_999_900)-new TextEncoder().encode(JSON.stringify(game)).length);
+  const DB=createFakeD1(),env={DB,STORAGE_COMPRESSION:"true"};
+  await persistGameState({...env,STORAGE_LARGE_STATES_ENABLED:rollback?"true":"false"},game,1);
+  const room=new GameRoomDO({id:{name:game.id}},env);
+  const command={protocolVersion:2,gameId:game.id,identityId:"actor",clientCommandId:"v2:capacity",kind:"action",payload:{action:{type:"pass"}},expectedState:game.board.state,expectedGameplayRevision:game.gameplayRevision};
+  command.fingerprint=await commandFingerprint(command);
+  const call=async()=>{
+    const response=await room.fetch(new Request("https://test/apply",{method:"POST",headers:{"x-game-id":game.id},body:JSON.stringify(command)}));
+    assert.equal(response.status,200);return response.json();
+  };
+  const result=await call();
+  assert.equal(result.commandOutcomes[0].outcome,"rejected");
+  assert.equal(result.commandOutcomes[0].reason,"state_capacity_exceeded");
+  assert.deepEqual(result.game.board,game.board);
+  assert.equal(result.game.moves.length,5);
+  const retry=await call();
+  assert.deepEqual(retry.commandOutcomes,result.commandOutcomes);
+});
 
 test("lossless gzip preserves snapshots, undo lineage and history beyond the rolling window",async()=>{
   const game=createInitialGame({gameId:"codec",identityId:"actor",selfPlayMode:true});
@@ -47,4 +98,48 @@ for(const title of ["Retreat after push","Follow after push + retreat","Rush con
   assert.deepEqual(loaded,game);
   if(title!=="Push vs. project strategy endgame")assert.deepEqual(listLegalActions(loaded.board.state),listLegalActions(game.board.state));
   assert.deepEqual(loaded.moves.map(move=>[move.selectionSnapshot,move.snapshot]),game.moves.map(move=>[move.selectionSnapshot,move.snapshot]));
+});
+
+test("metadata commits preserve history bytes, survive restart and return to full writes on rollback",async()=>{
+  const DB=createFakeD1(),env={DB,STORAGE_COMPRESSION:"true",STORAGE_METADATA_WRITES_ENABLED:"true"};
+  const game=createInitialGame({gameId:"metadata",identityId:"actor",selfPlayMode:true});
+  for(let i=0;i<10;i++)assert.equal(applyServerAction(game,{type:"pass"}).ok,true);
+  await persistGameState(env,game,1);
+  const payload=()=>DB.prepare("SELECT format_version,state_blob,state_sha256 FROM game_payloads WHERE game_id=?1").bind(game.id).first();
+  const before=await payload();
+  game.notifications.push("Metadata is current");
+  await persistGameState(env,game,2,null,{metadataOnly:true});
+  const after=await payload();
+  assert.equal(after.format_version,2);
+  assert.deepEqual(after.state_blob,before.state_blob);
+  assert.equal(after.state_sha256,before.state_sha256);
+  assert.deepEqual((await loadGameProjection({DB},game.id)).game,game);
+  await persistGameState({DB,STORAGE_COMPRESSION:"true"},game,3);
+  assert.equal((await payload()).format_version,1);
+  assert.deepEqual((await loadGameProjection({DB},game.id)).game,game);
+});
+
+test("negotiated live history omits old snapshots and snapshot reads preserve durable state",async()=>{
+  const game=createInitialGame({gameId:"history-projection",identityId:"actor",selfPlayMode:true});
+  for(let i=0;i<97;i++)assert.equal(applyServerAction(game,{type:"pass"}).ok,true);
+  const DB=createFakeD1(),env={DB,STORAGE_COMPRESSION:"true"};
+  await persistGameState(env,game,1);
+  const room=new GameRoomDO({id:{name:game.id}},env);
+  const call=async(path,body,headers={})=>{
+    const response=await room.fetch(new Request(`https://test/${path}`,{method:"POST",headers:{"x-game-id":game.id,...headers},body:JSON.stringify({protocolVersion:2,identityId:"actor",...body})}));
+    return {status:response.status,body:await response.json()};
+  };
+  const request={knownSnapshotEventSeq:0,commands:[]};
+  const full=await call("reconcile",request);
+  const compact=await call("reconcile",request,{"X-Righelt-Projection":"history-v1"});
+  assert.equal(full.status,200);assert.equal(compact.status,200);
+  assert.equal(compact.body.game.historyProjection,"summary-v1");
+  assert.equal(compact.body.game.moves.length,full.body.game.moves.length);
+  assert.equal(compact.body.game.moves[0].snapshot,undefined);
+  assert.deepEqual(compact.body.game.moves.at(-1),full.body.game.moves.at(-1));
+  assert.ok(JSON.stringify(compact.body).length<JSON.stringify(full.body).length*0.2,`projection ratio ${JSON.stringify(compact.body).length/JSON.stringify(full.body).length}`);
+  const selected=await call("decision-snapshot",{decisionId:game.moves[0].moveId,gameplayRevision:game.gameplayRevision});
+  assert.deepEqual(selected.body.move,game.moves[0]);
+  assert.equal((await loadGameProjection(env,game.id)).eventSeq,1,"personal reads never commit shared state");
+  assert.equal((await call("decision-snapshot",{decisionId:game.moves[0].moveId,gameplayRevision:99})).status,409);
 });
