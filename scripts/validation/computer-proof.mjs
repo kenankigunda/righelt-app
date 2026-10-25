@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {selectGamePanel} from './browser-navigation.mjs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
@@ -41,7 +42,7 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     assert.deepEqual(initial.computer.seats, { p1: null, p2: 'babs' });
     await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
     await submitPlayableAction(initial.legalActions.find(action => action.from && action.to));
-    if ((await gameAt(page, initial.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();
+    if ((await gameAt(page, initial.id)).canEndTurn) await page.locator('[data-action="end-turn"], [data-board-preview-action="end-turn"]').filter({visible:true}).click();
     await expect.poll(async () => (await gameAt(page, initial.id)).moves.some(move => move.computerProof?.modelId === 'initial-1554'), { message: 'A real model decision must be accepted' }).toBe(true);
     const accepted = await gameAt(page, initial.id), decision = accepted.moves.find(move => move.computerProof);
     const evidence = await request(page, `/api/shell/games/${initial.id}/decision-attempt`, { attemptId: decision.computerProof.attemptId, kind: 'computer' });
@@ -50,18 +51,13 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     const archive = await request(page, `/api/shell/games/${initial.id}/decision-history`, {});
     assert.ok(archive.items.some(item => item.id === decision.moveId), 'Accepted model decision must be durable');
     await proof(page, info, 'computer-accepted-play', page.getByTestId('game-board'));
-    const history = page.locator('[data-action="switch-game-panel"][data-panel="history"]');
-    if (await history.isVisible()) await history.click();
+    await selectGamePanel(page,'history');
     await page.locator('[data-action="undo-last-move"]').click();
     await expect.poll(async () => (await gameAt(page, initial.id)).moves.filter(move => !move.undone).length).toBe(0);
     assert.deepEqual((await gameAt(page, initial.id)).board.state, initial.board.state);
     const retained = await request(page, `/api/shell/games/${initial.id}/decision-history`, {});
     assert.ok(retained.items.some(item => item.id === decision.moveId), 'Undo must retain accepted evidence');
-    const boardTab = page.locator('[data-action="switch-game-panel"][data-panel="board"]');
-    if (await boardTab.isVisible()) {
-      await boardTab.click();
-      await expect(boardTab).toHaveAttribute('aria-pressed', 'true');
-    }
+    await selectGamePanel(page,'board');
     await page.getByTestId('game-board').scrollIntoViewIfNeeded();
     await page.evaluate(async () => {
       await Promise.all(document.getAnimations().filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime)).map(animation => animation.finished.catch(() => {})));

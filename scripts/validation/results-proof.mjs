@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {selectGamePanel} from './browser-navigation.mjs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
@@ -54,8 +55,7 @@ export async function proveResultsRematch({ page, info, root }) {
   await proof(page, info, 'friend-game-result', result);
   await page.reload();
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', id);
-  const historyTab=page.locator('[data-action="switch-game-panel"][data-panel="history"]');
-  if(await historyTab.isVisible())await historyTab.click();
+  await selectGamePanel(page,'history');
   await expect(page.getByRole('button', { name: 'View result', exact: true })).toBeVisible();
   await expect(result).toHaveCount(0);
   await page.getByRole('button', { name: 'View result', exact: true }).click();
