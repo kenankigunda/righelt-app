@@ -1,3 +1,4 @@
+import {switchGamePanel} from '../support/app.mjs';
 import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
@@ -69,7 +70,7 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   await page.reload();
   await expect(page.getByTestId("game-shell")).toBeVisible();
   await expect(page.getByTestId("game-result")).toHaveCount(0);
-  await page.getByRole("button", { name: "History", exact: true }).click();
+  await switchGamePanel(page,'history');
   await page.getByRole("button", { name: "View result" }).click();
   expect(await page.getByTestId('game-result').evaluate(element=>element.getAnimations({subtree:true}).filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime)).length)).toBe(0);
   for (let cycle = 0; cycle < 2; cycle++) {
@@ -97,9 +98,9 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
     expect(projected.status).toBe(200);
     if (opponent === "self") expect(projected.body.game.selfPlayStartSide).toBe("p1");
     if (cycle === 0) {
-      await page.getByRole("button", { name: "Board", exact: true }).click();
+      await switchGamePanel(page,'board');
       await expect(page).not.toHaveURL(/panel=history/);
-      await page.getByRole("button", { name: "History", exact: true }).click();
+      await switchGamePanel(page,'history');
     }
     await page.getByRole("button", { name: "View result" }).click();
     await expect(page.getByTestId("game-result").getByRole("heading", { name: "You won" })).toBeVisible();

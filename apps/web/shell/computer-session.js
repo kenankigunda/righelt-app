@@ -17,7 +17,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     phaseDeadline = null;
   };
   const phaseLabelIdentity = context => {
-    if (destroyed || !context.visible || !context.authenticated || context.game?.computer?.paused || !sameOwnerScope(statusScope, context)) return null;
+    if (destroyed || !context.visible || !context.authenticated || !context.game || context.game.computer?.paused || !sameOwnerScope(statusScope, context)) return null;
     const projection = context.transport.getGameViewModel?.(context.game.id);
     const pendingAt = projection?.pendingComputerSaveStartedAt;
     const phase = pendingAt != null && !['recovery', 'other-device', 'paused'].includes(status.phase) ? 'saving' : status.phase;

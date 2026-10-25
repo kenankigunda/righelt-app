@@ -866,12 +866,20 @@ export const createLiveTransportStore = ({
         return getGameViewModel(gameId);
       }
       if (socketOwned) {
-        await reconcileGame(gameId);
-        const recovered = getGameViewModel(gameId);
-        if (!recovered) throw new Error("invalid_snapshot");
-        return recovered;
+        try {
+          await reconcileGame(gameId);
+          const recovered = getGameViewModel(gameId);
+          if (!recovered) throw new Error("invalid_snapshot");
+          return recovered;
+        } catch (error) {
+          // The legacy server has no reconciliation route. A bounded read can establish
+          // its protocol version without submitting or inventing any command outcome.
+          if (error.status !== 404 && error.status !== 405) throw error;
+        }
       }
     }
+    // A current socket can discover incompatibility while legacy discovery is awaiting reconciliation.
+    if (getOptimisticState(gameId).upgradeRequired) throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
     const body = await boundedRequest(
       `/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}${
         openAsViewer ? "&openAsViewer=1" : ""

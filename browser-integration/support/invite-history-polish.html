@@ -36,12 +36,24 @@ root.addEventListener('click',event=>{const action=event.target.closest('[data-a
 window.renderHistory=drawHistory;window.archiveSnapshot=createInitialBoardSnapshot();window.returnArchiveLive=()=>{inspectedDecision=null;drawHistory();};window.nextHistoryRevision=()=>{revision++;drawHistory();};
 const makeLayer=Function(`${extract('const ensureRouteTransitionLayer =','\nensureShellStylesheet();')};return ensureRouteTransitionLayer;`)();
 const renderHomeLoading=Function('loadingAttributes','escapeHtml','getHomeSectionColumnCount','renderHomeStartButton',`${extract('const renderHomeCardSkeleton =','const renderBoardLoadingPreview =')};return renderHomeSectionSkeleton;`)(loadingAttributes,escapeHtml,()=>1,()=> '');
-window.holdSweep=route=>{
+window.heldFontSnapshot=()=>{
+ const nodes=[...root.querySelectorAll('h1,h2,h3,p,span,button,a')].filter(node=>node.getClientRects().length);
+ const runs=nodes.map(node=>{const style=getComputedStyle(node),font=`${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`,text=node.textContent.trim();return {tag:node.tagName,font,family:style.fontFamily,weight:style.fontWeight,size:style.fontSize,text,ready:document.fonts.check(font,text||' ')};});
+ return {status:document.fonts.status,faces:[...document.fonts].map(face=>({family:face.family,weight:face.weight,status:face.status})),runs,cards:[...root.querySelectorAll('section.panel')].map(node=>node.getBoundingClientRect().toJSON())};
+};
+window.holdSweep=async route=>{
  root.dataset.shellRoute=route;root.dataset.shellTransitionActive='true';root.dataset.shellTransition='game-entry';root.dataset.shellTransitionPhase='covered';
  if(route==='invite')window.renderInvite('blue');
  else root.innerHTML=route==='home'?`<div class="home-refresh">${renderHomeLoading('Continue playing')}</div>`:`<div class="game-shell-frame"><section class="panel">${renderSummaryLoading('Game g')}</section></div>`;
  const main=document.createElement('div');main.className='shell-main-content';main.append(...root.childNodes);root.append(main);
- const layer=makeLayer();layer.dataset.active='true';layer.dataset.transition='game-entry';layer.dataset.phase='covered';return layer;
+ const layer=makeLayer();layer.dataset.active='true';layer.dataset.transition='game-entry';layer.dataset.phase='covered';
+ // Newly inserted home typography initiates font requests only now. Settling
+ // the empty fixture's earlier fonts.ready cannot establish this baseline.
+ const before=window.heldFontSnapshot();
+ const requests=new Map(before.runs.map(run=>[run.font,run.text||' ']));
+ await Promise.all([...requests].map(([font,text])=>document.fonts.load(font,text)));
+ await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+ return {before,after:window.heldFontSnapshot()};
 };
 window.finishSweep=()=>{document.querySelector('#shell-route-transition-layer').dataset.phase='idle';document.querySelector('#shell-route-transition-layer').dataset.active='false';root.dataset.shellTransitionActive='false';root.dataset.shellTransitionPhase='idle';root.querySelectorAll('[data-loading-state="pending"]').forEach(node=>node.dataset.loadingState='idle');};
 mountLoadingEdges(document);

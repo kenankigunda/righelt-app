@@ -1805,17 +1805,32 @@ test('Retry-After delays command and lifecycle reconciliation through the same r
  assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);
 });
 
-for(const status of [404,405]) test(`missing reconciliation endpoint ${status} never falls back to an obsolete server read`,async(t)=>{
+for(const status of [404,405]) test(`missing reconciliation endpoint ${status} establishes legacy version with one bounded read`,async(t)=>{
  const baseGame=buildLiveGame();let reads=0,reconciles=0;
  const store=createLiveTransportStore({storage:createMemoryStorage(),commandJournal:{list:async()=>[]},beforeReconcile:async()=>true,
-   fetcher:async(url)=>{
+   fetcher:async(url,init)=>{
     if(url.endsWith('/reconcile')){reconciles++;return Response.json({error:'not_found'},{status});}
-    reads++;return Response.json({protocolVersion:2,ok:true,game:baseGame,eventSeq:1});
+    reads++;assert.equal(init.method,'GET');return Response.json({protocolVersion:1,ok:true,game:baseGame,eventSeq:1});
    }});
  t.after(()=>store.retire());
- await assert.rejects(store.loadGame(baseGame.id));
- assert.equal(reconciles,1);assert.equal(reads,0);
- assert.equal(store.getGameViewModel(baseGame.id),null);
+ await assert.rejects(store.loadGame(baseGame.id),error=>error.code==='upgrade_required');
+ assert.equal(reconciles,1);assert.equal(reads,1);
+ assert.equal(store.isUpgradeRequired(baseGame.id),true);
+ assert.equal(store.getGameViewModel(baseGame.id),null,'unsupported snapshots cannot populate the board');
+});
+
+for(const status of [404,405]) test(`known incompatibility during reconciliation ${status} stops the legacy discovery read`,async t=>{
+ const game=buildLiveGame();let finish,reads=0,reconciles=0;
+ const store=createLiveTransportStore({storage:createMemoryStorage(),commandJournal:{list:async()=>[]},beforeReconcile:async()=>true,
+  fetcher:async(url,init)=>{
+   if(url.endsWith('/reconcile')){reconciles++;return new Promise(resolve=>{finish=resolve;});}
+   reads++;assert.equal(init.method,'GET');return Response.json({protocolVersion:2,ok:true,game,eventSeq:1});
+  }});
+ t.after(()=>store.retire());const loading=store.loadGame(game.id);
+ while(!finish)await Promise.resolve();
+ store.markUpgradeRequired(game.id);finish(Response.json({error:'not_found'},{status}));
+ await assert.rejects(loading,error=>error.code==='upgrade_required');
+ assert.equal(reconciles,1);assert.equal(reads,0);assert.equal(store.getGameViewModel(game.id),null);
 });
 
 for (const accepted of [true,false]) test(`validated unknown receipts stay pending through the original budget and settle ${accepted?'accepted':'rejected'} once`,async t=>{

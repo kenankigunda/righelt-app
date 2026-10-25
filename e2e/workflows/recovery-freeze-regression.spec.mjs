@@ -1,3 +1,4 @@
+import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
 import {test,expect} from "@playwright/test";
 import {createGameFromHome,importScenarioGame,submitPlayableAction} from "../support/app.mjs";
 
@@ -17,11 +18,9 @@ test("lost move response recovers through identical submission while reconciliat
   server.onMessage(message => { if (!dropInbound) socket.send(message); });
  });
  const {gameId} = await createGameFromHome(page);
- await page.route(`**/api/shell/games/${gameId}/reconcile`, async route => {
-  await gate;
-  await route.abort();
- });
- await page.route(`**/api/shell/games/${gameId}/apply`, async route => {
+ await page.route(`**/api/shell/games/${gameId}/**`, async route => {
+  if(isOperationRequest(route.request(),'reconcile')){await gate;await route.abort();return;}
+  if(!isOperationRequest(route.request(),'apply')){await route.continue();return;}
   commands.push(route.request().postDataJSON());
   if (first) {
    first = false; dropInbound = true;
@@ -51,7 +50,8 @@ test("lost move response recovers through identical submission while reconciliat
 });
 
 test("guest play-both push retreat follow recovers with healthy HTTP and unavailable sockets",async({page,baseURL},info)=>{
- let socketsUnavailable=false,losePush=true;const commands=[], sockets=[];
+ let socketsUnavailable=false,losePush=true;const commands=[], sockets=[],pushProofs=[];
+ const actionFor=command=>(command.kind==='shared'?command.payload.values:command).payload?.action;
  let holdConfirmation=false,releaseConfirmation,confirmationRequested=false;
  const confirmationGate=new Promise(resolve=>releaseConfirmation=resolve);
  page.on("close",()=>releaseConfirmation());
@@ -63,15 +63,27 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  const players=page.getByRole("button",{name:"Players",exact:true});if(await players.isVisible())await players.click();
  await page.getByRole("button",{name:"Play both sides",exact:true}).click();
  const boardTab=page.getByRole("button",{name:"Board",exact:true});if(await boardTab.isVisible())await boardTab.click();
- await page.route(`**/api/shell/games/${gameId}/reconcile`,async route=>{
-  const response=await route.fetch();
-  if(holdConfirmation){confirmationRequested=true;await confirmationGate;}
-  await route.fulfill({response});
- });
- await page.route(`**/api/shell/games/${gameId}/apply`,async route=>{
-  const envelope=route.request().postDataJSON();commands.push(envelope);
-  if(envelope.payload?.action?.type==="push"&&losePush){holdConfirmation=true;socketsUnavailable=true;losePush=false;sockets.forEach(socket=>socket.close({code:1012,reason:"Test deployment transition"}));await route.fetch();await route.abort();return;}
-  await route.continue();
+ await page.route(`**/api/shell/games/${gameId}/**`,async route=>{
+  const request=route.request();
+  if(isOperationRequest(request,'reconcile')){
+   const response=await route.fetch();
+   if(holdConfirmation){confirmationRequested=true;await confirmationGate;}
+   await route.fulfill({response});return;
+  }
+  if(!isOperationRequest(request,'apply')){await route.continue();return;}
+  const envelope=request.postDataJSON(),values=operationValues(request);commands.push(envelope);
+  if(values.payload?.action?.type!=='push'){await route.continue();return;}
+  const first=losePush;
+  if(first){holdConfirmation=true;socketsUnavailable=true;losePush=false;sockets.forEach(socket=>socket.close({code:1012,reason:"Test deployment transition"}));}
+  const response=await route.fetch(),body=await response.json();
+  const accepted=body.commandOutcomes?.find(outcome=>outcome.clientCommandId===envelope.clientCommandId&&outcome.fingerprint===envelope.fingerprint&&outcome.outcome==='accepted');
+  expect(accepted,'The healthy HTTP server must retain the accepted original push receipt').toBeTruthy();
+  const proof={envelope,accepted,receivedAt:Date.now(),deliveredAt:null,lost:first};pushProofs.push(proof);
+  if(first){await route.abort();return;}
+  // A same-ID retry is also a valid confirmation authority. Holding only
+  // reconcile lets its accepted reply legitimately unblock the next action.
+  if(holdConfirmation)await confirmationGate;
+  await route.fulfill({response});proof.deliveredAt=Date.now();
  });
  let game=await currentGame(page,gameId);const push=game.legalActions.find(a=>a.type==="push");expect(push).toBeTruthy();
  try {
@@ -89,8 +101,15 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  const retreat=game.legalActions.find(a=>a.type==="retreat");expect(retreat).toBeTruthy();
  const retreatTarget=page.locator(`[data-testid="game-board"] .cell[data-row="${retreat.to.row}"][data-col="${retreat.to.col}"]`);
 
- await retreatTarget.click();await retreatTarget.click();
- expect(commands.filter(c=>c.payload?.action?.type==="retreat")).toHaveLength(0);
+ await expect.poll(()=>pushProofs.length,{timeout:10000}).toBeGreaterThanOrEqual(2);
+ const original=pushProofs[0].envelope;
+ for(const proof of pushProofs){expect(proof.envelope).toEqual(original);expect(proof.deliveredAt).toBeNull();}
+ for(let attempt=0;attempt<2;attempt++){
+  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toBeVisible();
+  expect(pushProofs.every(proof=>proof.deliveredAt===null)).toBe(true);
+  await retreatTarget.click();
+ }
+ expect(commands.filter(command=>actionFor(command)?.type==="retreat")).toHaveLength(0);
 
  holdConfirmation=false;releaseConfirmation();
  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0,{timeout:10000});
@@ -105,12 +124,13 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  await expect.poll(async()=> (await currentGame(page,gameId)).moves.length).toBe(3);
  game=await currentGame(page,gameId);expect(game.board.state.continuation).toBeNull();
  expect(new Set(game.moves.map(m=>m.clientCommandId)).size).toBe(3);
- expect(new Set(commands.filter(c=>c.payload?.action?.type==="push").map(c=>c.clientCommandId)).size).toBe(1);
+ expect(new Set(commands.filter(c=>actionFor(c)?.type==="push").map(c=>c.clientCommandId)).size).toBe(1);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  } finally {
   holdConfirmation=false;releaseConfirmation();
   // Drain intercepted requests before the browser fixture closes.
   await page.unrouteAll({behavior:"wait"});
+  await info.attach("held-push-confirmations",{body:JSON.stringify(pushProofs,null,2),contentType:"application/json"});
  }
 });
 
@@ -120,7 +140,10 @@ for(const reduced of [false,true])test(`routine reconnect stays quiet four secon
  let hold=false,release,held;const gate=new Promise(r=>release=r);const waiting=new Promise(r=>held=r);
  await page.routeWebSocket(/\/api\/shell\/games\//,socket=>{const server=socket.connectToServer();server.onMessage(message=>{if(!hold)socket.send(message);});});
  const {gameId}=await createGameFromHome(page);await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
- await page.route(`**/api/shell/games/${gameId}/reconcile`,async route=>{const response=await route.fetch();if(hold){held();await gate;}await route.fulfill({response});});
+ await page.route(`**/api/shell/games/${gameId}/**`,async route=>{
+  if(!isOperationRequest(route.request(),'reconcile')){await route.continue();return;}
+  const response=await route.fetch();if(hold){held();await gate;}await route.fulfill({response});
+ });
  try {
  const boardTab=page.getByRole("button",{name:"Board",exact:true});
  if(await boardTab.isVisible()){
@@ -149,18 +172,23 @@ for(const reduced of [false,true])test(`routine reconnect stays quiet four secon
  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toBeVisible();
  await waiting;
  await expect(page.locator('.reconnect-background')).toBeHidden();
- await page.clock.runFor(199);await expect(page.locator('.reconnect-background')).toBeHidden();
- await page.clock.runFor(2);await expect(page.locator('.reconnect-background')).toBeVisible();
+ await page.clock.runFor(199);await expect(page.locator('.board-wrap')).toHaveAttribute('data-loading-phase','quiet');
+ await page.clock.runFor(2);await expect(page.locator('.board-wrap')).toHaveAttribute('data-loading-phase','visible');
+ await expect(page.locator('.reconnect-background')).toBeHidden();
+ await expect(page.locator('.loading-edge-p1')).toBeVisible();
+ await page.evaluate(()=>{window.heldRecoveryEdge=document.querySelector('.loading-edge-p1');});
  await page.clock.runFor(3798);await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  await page.clock.runFor(2);
  await expect(page.getByTestId("sync-recovery-banner")).toBeVisible();
- await expect(page.getByTestId("sync-recovery-banner")).toContainText("Reconnecting");
+ await expect(page.getByTestId("sync-recovery-banner")).toHaveText("Reconnecting");
  expect(await board.boundingBox()).toEqual(before);expect(await board.innerHTML()).toBe(contents);
- if(reduced)expect(await page.locator(".reconnect-background").evaluate(el=>getComputedStyle(el,"::before").animationName)).toBe("none");
+ await expect(page.getByRole('button',{name:'Reload game',exact:true})).toHaveCount(0);
+ expect(await page.locator('.loading-edge-p1').evaluate(el=>el===window.heldRecoveryEdge)).toBe(true);
+ if(reduced)expect(await page.locator('.loading-edge-p1').evaluate(el=>getComputedStyle(el).animationName)).toBe('none');
  // Deadline assertions are complete. CSS transitions use the browser's
- // animation clock, so resume it before measuring the settled fade.
+ // animation clock, so resume it before measuring the unchanged stone face.
  await page.clock.resume();
- await expect.poll(()=>board.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(.2);
+ await expect.poll(()=>board.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(1);
  await page.screenshot({path:info.outputPath(reduced?"reconnect-static.png":"reconnect-sweep.png")});
  hold=false;release();await page.clock.resume();await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0,{timeout:10000});
  await expect.poll(()=>board.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(1);
@@ -181,7 +209,8 @@ test('branch chooser waits for this page recovery before creating exactly one or
  });
  const {gameId}=await createGameFromHome(page);
  let applied;
- await page.route(`**/api/shell/games/${gameId}/apply`,async route=>{
+ await page.route(`**/api/shell/games/${gameId}/**`,async route=>{
+  if(!isOperationRequest(route.request(),'apply')){await route.continue();return;}
   const response=await route.fetch();applied=await response.json();await route.fulfill({response});
  });
  const {makeAnyLegalMove}=await import('../support/app.mjs');
@@ -195,7 +224,8 @@ test('branch chooser waits for this page recovery before creating exactly one or
  const chooser=page.getByRole('dialog',{name:'Create a new game here',exact:true});
  const start=chooser.getByRole('button',{name:'Start game',exact:true});
  await expect(start).toBeEnabled();
- await page.route(`**/api/shell/games/${gameId}/reconcile`,async route=>{
+ await page.route(`**/api/shell/games/${gameId}/**`,async route=>{
+  if(!isOperationRequest(route.request(),'reconcile')){await route.fallback();return;}
   const response=await route.fetch();if(hold){seen();await gate;}await route.fulfill({response});
  });
  await page.context().route('**/api/shell/history/branch',async route=>{branches.push(route.request().postDataJSON());await route.continue();});

@@ -1,4 +1,3 @@
-import {selectGamePanel} from '../../scripts/validation/browser-navigation.mjs';
 import {readPlayableAction} from "./read-playable-action.mjs";
 import { expect, test } from "@playwright/test";
 

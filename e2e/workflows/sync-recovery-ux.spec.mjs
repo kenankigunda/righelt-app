@@ -2,6 +2,7 @@ import {mkdir,writeFile} from "node:fs/promises";
 import { test, expect } from "@playwright/test";
 import { runScopedAxeScan } from "../support/ux.mjs";
 import { createGameFromHome, makeAnyLegalMove, submitPlayableAction, selectPlayableAction } from "../support/app.mjs";
+import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
 
 for (const width of [933, 932, 901, 900, 899, 390]) test(`recovery overlay and storage gate at ${width}px`, async ({page},info) => {
  const metrics={requests:0,snapshots:0,applicationPayloadBytes:0};
@@ -95,10 +96,11 @@ test("pending feedback reaches overdue once, then clears or explains definitive 
  let mode="hold", unknownResponses=0;
  // A transport failure must show its error immediately. To exercise genuinely
  // pending work instead, return valid unknown receipts without applying it.
- await page.route(new RegExp(`/api/shell/games/${gameId}/(?:apply|reconcile)(?:\\?.*)?$`),async route=>{
+ await page.route(`**/api/shell/games/${gameId}/**`,async route=>{
+  if(!isOperationRequest(route.request(),'apply')&&!isOperationRequest(route.request(),'reconcile')){await route.continue();return;}
   if(mode==="accept"){await route.continue();return;}
   const payload=route.request().postDataJSON();
-  const commands=payload.commands??[payload];
+  const commands=operationValues(route.request()).commands??[payload];
   const response=await page.request.get(`/api/shell/games/${gameId}?identityId=${payload.identityId}`);
   const current=await response.json();
   if(mode==="hold")unknownResponses++;
@@ -113,7 +115,9 @@ test("pending feedback reaches overdue once, then clears or explains definitive 
  },gameId);
  await submitPlayableAction(page,action);
  await expect(page.getByTestId("sync-recovery-banner")).toContainText("Recording your move");
+ await expect(page.getByTestId("sync-recovery-banner").getByRole("button",{name:"Reload game",exact:true})).toHaveCount(0);
  await expect(page.getByTestId("sync-recovery-banner")).toContainText("Still checking your move. You can retry or view details.",{timeout:20000});
+ await expect(page.getByTestId("sync-recovery-banner").getByRole("button",{name:"Reload game",exact:true})).toBeVisible();
  expect(unknownResponses).toBeGreaterThan(0);
  const board=await page.getByTestId("game-board").innerHTML();
  mode="reject";
@@ -138,7 +142,8 @@ test('healthy optimistic confirmation adds no recovery announcement',async({page
  let completed,failed;
  const applied=new Promise((resolve,reject)=>{completed=resolve;failed=reject;});
  void applied.catch(()=>{});
- await page.route(`**/api/shell/games/${gameId}/apply`,async route=>{
+ await page.route(`**/api/shell/games/${gameId}/**`,async route=>{
+  if(!isOperationRequest(route.request(),'apply')){await route.continue();return;}
   try {
    const response=await route.fetch();await new Promise(resolve=>setTimeout(resolve,500));await route.fulfill({response});
    completed();
