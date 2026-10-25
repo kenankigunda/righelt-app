@@ -104,3 +104,21 @@ test('always-visible Account header is an explicit independent capability',async
   assert.equal(result.alwaysVisibleAccount,true);assert.equal(result.playAccountEntry,true);
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+
+test('named heading and color-choice contracts are independent, source-only and fail closed',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'named-result-capability-'));
+ try {
+  const directory=path.join(root,'apps/web/shell');await mkdir(directory,{recursive:true});
+  const file=path.join(directory,'game-result.js');
+  assert.equal((await candidateCapabilities(root)).rematchChoicesContract,'legacy');
+  await writeFile(file,'export const RESULT_HEADING_CONTRACT="perspective-v2";\nexport const REMATCH_CHOICES_CONTRACT="colors-v1";\nthrow Error("Never execute candidate source");');
+  const selected=await candidateCapabilities(root);
+  assert.equal(selected.resultHeadingContract,'perspective-v2');assert.equal(selected.rematchChoicesContract,'colors-v1');
+  await writeFile(file,'export const REMATCH_CHOICES_CONTRACT="colors-v1";');
+  assert.equal((await candidateCapabilities(root)).resultHeadingContract,'legacy');
+  for(const invalid of ['export const REMATCH_CHOICES_CONTRACT="future";','export let REMATCH_CHOICES_CONTRACT="colors-v1";','export const REMATCH_CHOICES_CONTRACT=choose();','export const REMATCH_CHOICES_CONTRACT="colors-v1";\nexport const REMATCH_CHOICES_CONTRACT="colors-v1";']) {
+   await writeFile(file,invalid);await assert.rejects(()=>candidateCapabilities(root),/Unsupported rematch choices contract/);
+  }
+ }finally{await rm(root,{recursive:true,force:true});}
+});

@@ -74,6 +74,14 @@ test('held Home slow context uses one external notice without moving cards or re
  await expect(source).not.toHaveAttribute('data-loading-phase','slow');
  await expect(source).toHaveAttribute('data-loading-phase','visible');
  const baseline=await source.evaluate(node=>{const cue=node.querySelector(':scope > .loading-pieces');window.heldSourceCue=cue;window.heldSourceAnimation=cue.querySelector('i').getAnimations()[0];return {rect:node.getBoundingClientRect().toJSON(),time:window.heldSourceAnimation.currentTime};});
+ // Observe the actual threshold transition. The assertion's polling schedule can
+ // otherwise take its last sample before 5s and time out after the phase changes.
+ await source.evaluate(node=>new Promise((resolve,reject)=>{
+  const observer=new MutationObserver(check);
+  const timer=setTimeout(()=>{observer.disconnect();reject(new Error(`Expected slow loading phase within 5000ms, received ${node.dataset.loadingPhase}`));},5000);
+  function check(){if(node.dataset.loadingPhase==='slow'){observer.disconnect();clearTimeout(timer);resolve();}}
+  observer.observe(node,{attributes:true,attributeFilter:['data-loading-phase']});check();
+ }));
  await expect(source).toHaveAttribute('data-loading-phase','slow');
  const notice=page.getByTestId('slow-loading-notice');await expect(notice).toBeVisible();
  await expect(page.locator('.shell-header-status [role="status"]')).toHaveCount(1);
