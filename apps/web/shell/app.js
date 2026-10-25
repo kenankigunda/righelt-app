@@ -2939,6 +2939,7 @@ const shouldPatchMountedFlyouts = (routeKey = getRouteRenderKey(), baseRouteKey 
   routeKey !== lastRenderedRouteKey &&
   getRouteTransitionPhaseKey() === lastRenderedTransitionPhaseKey &&
   baseRouteKey === lastRenderedBaseRouteKey &&
+  (currentRoute.name !== "game" || getMountedGameShellRoot()?.querySelector('[data-action="switch-game-panel"][aria-pressed="true"]')?.getAttribute("data-panel") === getGamePanel()) &&
   appEl instanceof HTMLElement &&
   appEl.querySelector(".shell-main-content") instanceof HTMLElement &&
   getMountedShellPageEl() instanceof HTMLElement;
@@ -3921,6 +3922,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
       animatePanels,
     });
     restoreScenarioDraftFocus?.();
+    syncRenderedMarkupSnapshot();
     return;
   }
 
