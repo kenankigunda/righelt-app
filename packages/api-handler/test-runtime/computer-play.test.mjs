@@ -26,13 +26,14 @@ for (const accounts of [true, false]) test(`native ${accounts ? 'account' : 'gue
     };
     const a = await seed('owner',1), a2 = await seed('owner',2), b = await seed('viewer',3);
     const call = async (route, actor, body) => {
-      const response = await runtime.dispatchFetch(`https://test/api/shell/${route}`, { method: body === undefined ? 'GET' : 'POST', headers: { Origin: 'https://test', 'Content-Type': 'application/json', 'X-Righelt-Auth': '1', 'X-Righelt-Auth-Version': '2', Cookie: `__Host-righelt_session=${actor.token}`, 'X-Righelt-Session': actor.context }, ...(body === undefined ? {} : { body: JSON.stringify({ protocolVersion: 2, identityId: actor.id, ...body }) }) });
+      const query = !accounts && body === undefined ? `?identityId=${encodeURIComponent(actor.id)}` : '';
+      const response = await runtime.dispatchFetch(`https://test/api/shell/${route}${query}`, { method: body === undefined ? 'GET' : 'POST', headers: { Origin: 'https://test', 'Content-Type': 'application/json', 'X-Righelt-Auth': '1', 'X-Righelt-Auth-Version': '2', Cookie: `__Host-righelt_session=${actor.token}`, 'X-Righelt-Session': actor.context }, ...(body === undefined ? {} : { body: JSON.stringify({ protocolVersion: 2, identityId: actor.id, ...body }) }) });
       return { status: response.status, body: await response.json() };
     };
     for(const [name,modelId]of [['cached',undefined],['current',CURRENT_COMPUTER_MODEL.id],['retained','initial-1554']]){
       const value=await call('games',a,{gameId:'pin-'+name,computer:{p1:'babs',p2:null},...(modelId===undefined?{}:{computerModelId:modelId})});
       assert.equal(value.status,200,JSON.stringify(value.body));assert.equal(value.body.game.computer.modelId,modelId??'initial-1554');
-      assert.equal((await call('games/pin-'+name,a)).body.game.computer.modelId,modelId??'initial-1554');
+      const reloaded = await call('games/pin-'+name,a);assert.equal(reloaded.status,200,JSON.stringify(reloaded.body));assert.equal(reloaded.body.game.computer.modelId,modelId??'initial-1554');
     }
     for(const modelId of ['',null,{},'unknown'])assert.equal((await call('games',a,{gameId:'invalid-'+String(modelId),computer:{p1:'babs',p2:null},computerModelId:modelId})).status,400);
     const created = await call('games',a,{ gameId:'computer-game',computer:{p1:'babs',p2:null} });
