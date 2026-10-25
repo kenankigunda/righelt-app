@@ -56,7 +56,7 @@ test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.equal(scripts["test:web:integration"], "node apps/web/test/run-web-tests.mjs --layer integration");
   assert.equal(scripts["e2e:install"], "playwright install chromium firefox webkit");
   assert.equal("test:e2e:smoke" in scripts, false);
-  assert.equal(scripts["test:e2e"], "node scripts/resources/cli.mjs run --kind heavy -- playwright test");
+  assert.equal(scripts["test:e2e"], "node scripts/resources/cli.mjs run --kind heavy -- node scripts/playwright-e2e.mjs");
   assert.equal(scripts["test:e2e:headed"], "node scripts/resources/cli.mjs run --kind heavy -- playwright test --headed");
 });
 

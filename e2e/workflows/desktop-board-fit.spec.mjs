@@ -81,13 +81,18 @@ test('desktop board fits primary viewport, remains stable through scroll/header 
  await expect(page.locator('#app')).toHaveAttribute('data-shell-layout-mode','narrow');expect(await page.locator('[data-testid="game-board-wrap"]').evaluate(el=>el.style.getPropertyValue('--desktop-board-side'))).toBe('');
  await switchGamePanel(page,'board');await makeAnyLegalMove(page);await switchGamePanel(page,'history');
  const move=page.getByTestId('history-move-item').first();await move.click();
+ const selectedMoveId=await move.getAttribute('data-move-id');expect(selectedMoveId).toBeTruthy();
  for(const viewport of [{width:390,height:740},{width:1440,height:800}]){
   await page.setViewportSize(viewport);const history=page.locator('[data-game-panel="history"]');
   await expect(history.getByTestId('history-return-live')).toHaveCount(1);
-  for(const action of ['revert-to-move','launch-history-branch']){
-   const buttons=history.locator(`[data-action="${action}"]`);await expect(buttons).toHaveCount(1);
-   expect(await buttons.evaluate(element=>Boolean(element.closest('[data-testid="history-move-item"]')))).toBe(true);
-  }
+  // Resizing replaces the narrow/desktop controls. Read membership and count
+  // together from the live document, rather than a handle detached mid-query.
+  await expect.poll(()=>page.evaluate(()=>{
+   const history=document.querySelector('[data-game-panel="history"]');
+   return ['revert-to-move','launch-history-branch'].map(action=>({action,
+    rows:[...history.querySelectorAll(`[data-action="${action}"]`)].map(button=>button.closest('[data-testid="history-move-item"]')?.dataset.moveId??null),
+   }));
+  })).toEqual(['revert-to-move','launch-history-branch'].map(action=>({action,rows:[selectedMoveId]})));
   await expect(history.locator('[data-action="undo-last-move"]')).toHaveCount(0);
  }
 
