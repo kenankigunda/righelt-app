@@ -1,5 +1,18 @@
 import {test,expect} from '@playwright/test';
+import {writeFile} from 'node:fs/promises';
+import {isOperationRequest} from '../support/shared-request.mjs';
 import {createGameFromHome,makeAnyLegalMove,openDirectGameLink,requestPlayerJoin,acceptPendingRequest} from '../support/app.mjs';
+
+const expectAcceptedShared = async(page,gameId,request)=>{
+  const envelope=request.postDataJSON();expect(envelope.kind).toBe('shared');
+  const headers=Object.fromEntries(Object.entries(request.headers()).filter(([name])=>name.startsWith('x-righelt-')));
+  await expect.poll(()=>page.evaluate(async({gameId,envelope,headers})=>{
+    const response=await fetch(`/api/shell/games/${gameId}/reconcile`,{method:'POST',headers:{...headers,'content-type':'application/json'},
+      body:JSON.stringify({protocolVersion:2,identityId:envelope.identityId,knownSnapshotEventSeq:0,commands:[envelope]})});
+    if(!response.ok)throw Error(`Receipt lookup failed HTTP ${response.status}`);
+    return (await response.json()).commandOutcomes?.find(outcome=>outcome.clientCommandId===envelope.clientCommandId);
+  },{gameId,envelope,headers})).toMatchObject({outcome:'accepted',clientCommandId:envelope.clientCommandId,fingerprint:envelope.fingerprint});
+};
 
 const board = page => page.getByTestId('game-board');
 const tab = (page,key) => page.locator(`[data-action="switch-game-panel"][data-panel="${key}"]`);
@@ -21,6 +34,25 @@ const readGame = async(page,id)=>page.evaluate(async id=>{
 const expectedPieces = snapshot => snapshot.pieces.map(piece=>({row:piece.position.row,col:piece.position.col,owner:piece.owner,kind:piece.kind})).sort((a,b)=>a.row-b.row||a.col-b.col||a.owner.localeCompare(b.owner)||a.kind.localeCompare(b.kind));
 const renderedPieces = locator => locator.locator('.cell').evaluateAll(cells=>cells.flatMap(cell=>[...cell.querySelectorAll('.piece-token:not(.move-ghost):not(.removal-piece):not(.history-destruction-piece)')].map(piece=>({row:Number(cell.dataset.row),col:Number(cell.dataset.col),owner:piece.classList.contains('p1')?'P1':'P2',kind:piece.classList.contains('commander')?'commander':'unit'}))).sort((a,b)=>a.row-b.row||a.col-b.col||a.owner.localeCompare(b.owner)||a.kind.localeCompare(b.kind)));
 const documentGeometry = locator=>locator.evaluate(el=>{const r=el.getBoundingClientRect();return{x:r.x+scrollX,y:r.y+scrollY,width:r.width,height:r.height};});
+// Passive observations only: these reads do not alter layout, fonts or gates.
+const coldBoardLayoutReceipt=page=>page.evaluate(()=>{
+ const inspect=node=>{
+  if(!node)return null;const style=getComputedStyle(node),r=node.getBoundingClientRect();
+  return {tag:node.tagName,className:node.className,id:node.id,rect:r.toJSON(),documentRect:{x:r.x+scrollX,y:r.y+scrollY,width:r.width,height:r.height},clientWidth:node.clientWidth,scrollWidth:node.scrollWidth,clientHeight:node.clientHeight,scrollHeight:node.scrollHeight,
+   style:Object.fromEntries(['display','position','boxSizing','width','minWidth','maxWidth','height','paddingLeft','paddingRight','marginLeft','marginRight','overflow','overflowX','overflowY','gridTemplateColumns','gridTemplateRows','gap','alignItems','justifyItems','transform','fontFamily','fontSize','fontWeight','lineHeight'].map(key=>[key,style[key]])),
+   variables:Object.fromEntries(['--desktop-board-side','--shell-game-panel-index','--shell-mobile-panel-transition','--board-cell-size','--board-gap','--stone-outline'].map(key=>[key,style.getPropertyValue(key)])),
+  };
+ };
+ const one=selector=>inspect(document.querySelector(selector));
+ const panel=document.querySelector('[data-shell-panel="board"]'),board=panel?.querySelector('.board');
+ return {at:performance.now(),route:location.hash,layoutMode:document.querySelector('#app')?.dataset.shellLayoutMode,
+  viewport:{width:innerWidth,height:innerHeight,scrollX,scrollY,visual:visualViewport?{width:visualViewport.width,height:visualViewport.height,offsetLeft:visualViewport.offsetLeft,offsetTop:visualViewport.offsetTop,scale:visualViewport.scale}:null},
+  document:inspect(document.documentElement),body:inspect(document.body),app:one('#app'),track:one('.game-shell-track'),trackWrap:one('.game-shell-track-wrap'),mobilePanel:inspect(panel?.closest('[data-mobile-panel]')),
+  panel:inspect(panel),board:inspect(board),wrap:inspect(board?.closest('.board-wrap')),headingSlot:one('[data-shell-panel="board"] .board-heading-slot'),heading:one('[data-shell-panel="board"] .board-heading:not([aria-hidden])'),messageSlot:one('[data-shell-panel="board"] .board-message-slot'),message:one('#shell-board-preview-label'),legend:one('[data-shell-panel="board"] .overlay-key'),
+  axes:[...panel?.querySelectorAll('.axis-label')??[]].slice(0,24).map(inspect),legendItems:[...panel?.querySelectorAll('.overlay-key > *')??[]].slice(0,8).map(inspect),cells:board?[inspect(board.querySelector('.cell')),inspect(board.querySelector('.cell:last-child'))]:[],
+  fonts:{status:document.fonts.status,faces:[...document.fonts].map(font=>({family:font.family,status:font.status,weight:font.weight,style:font.style}))},
+ };
+});
 const expectNoHorizontalOverflow=page=>expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBeLessThanOrEqual(1);
 const selfPlay=async(page)=>{
   const game=await createGameFromHome(page);
@@ -66,7 +98,7 @@ test.describe('narrow board and history',()=>{
   test('Pass, inline after-state history, and returning to Board preserve live truth',async({page},info)=>{
     const {gameId}=await selfPlay(page);
     const before=await documentGeometry(board(page));
-    const passRequest=page.waitForRequest(request=>new URL(request.url()).pathname.endsWith('/apply')&&request.method()==='POST');
+    const passRequest=page.waitForRequest(request=>isOperationRequest(request,'apply'));
     await page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true}).tap();
     const pass=await passRequest;expect(pass.postDataJSON().payload.action.type).toBe('pass');
     await expect(page.getByTestId('history-move-item')).toHaveCount(1);
@@ -118,9 +150,9 @@ test.describe('narrow board and history',()=>{
     const game=await readGame(page,gameId),first=game.moves[0];
     await switchPanel(page,'history');await page.locator(`[data-move-id="${first.moveId}"][data-testid="history-move-item"]`).click();
     await expect(page.getByTestId('history-inline-preview')).toBeVisible();
-    const response=page.waitForResponse(r=>new URL(r.url()).pathname.endsWith('/revert-request')&&r.request().method()==='POST');
+    const request=page.waitForRequest(r=>isOperationRequest(r,'revert-request'));
     await page.getByRole('button',{name:'Undo before this move',exact:true}).tap();
-    expect((await response).ok()).toBe(true);
+    await expectAcceptedShared(page,gameId,await request);
     await expect(tab(page,'board')).toHaveAttribute('aria-pressed','true');
     await expect(page.getByTestId('history-inline-preview')).toHaveCount(0);
     const live=await readGame(page,gameId);await expect.poll(()=>renderedPieces(board(page))).toEqual(expectedPieces(live.board.state));
@@ -147,9 +179,16 @@ test.describe('narrow board and history',()=>{
       await expect(page.getByTestId('undo-waiting-notice')).toBeVisible();
       await expect(guest.getByTestId('undo-approval-notice')).toBeVisible();
       await firstRow.click();await secondRow.click();await firstRow.click();await expect(firstRow).toHaveClass(/is-selected/);
-      await guestContext.route('**/revert-approve',async route=>{approvalSeen=true;await held;await route.continue();});
+      await guestContext.route(/\/(shared|revert-approve)$/,async route=>{
+        if(!isOperationRequest(route.request(),'revert-approve'))return route.continue();
+        approvalSeen=true;await held;await route.continue();
+      });
+      const approval=guest.waitForRequest(request=>isOperationRequest(request,'revert-approve'));
       await guest.getByTestId('undo-approval-notice').getByRole('button',{name:'Accept',exact:true}).click();
-      await expect.poll(()=>approvalSeen).toBe(true);release();
+      await expect.poll(()=>approvalSeen).toBe(true);
+      await expect(firstRow).toHaveClass(/is-selected/);
+      expect((await readGame(page,gameId)).pendingRevertRequest).toBeTruthy();
+      release();await expectAcceptedShared(guest,gameId,await approval);
       await expect(page.getByTestId('undo-waiting-notice')).toHaveCount(0);
       await expect(tab(page,'history')).toHaveAttribute('aria-pressed','true');
       await expect(firstRow).toHaveClass(/is-selected/);
@@ -201,6 +240,10 @@ test.describe('narrow board and history',()=>{
       await page.evaluate(()=>document.fonts.ready);
       const loading=await documentGeometry(silhouette);
       const loadingHeading=await documentGeometry(page.locator('[data-shell-panel="board"] .board-heading:not([aria-hidden])'));
+      const loadingReceipt=await coldBoardLayoutReceipt(page);
+      const loadingReceiptPath=info.outputPath('cold-board-loading-layout.json');
+      await writeFile(loadingReceiptPath,JSON.stringify({width,textScale,loading,loadingHeading,layout:loadingReceipt},null,2));
+      await info.attach('cold-board-loading-layout',{path:loadingReceiptPath,contentType:'application/json'});
       await page.screenshot({path:info.outputPath('mobile-board-loading.png')});
       release();
       await expect(board(page).locator('.cell')).toHaveCount(100);
@@ -213,6 +256,10 @@ test.describe('narrow board and history',()=>{
         window.recordColdBoard=false;
         return{loaded:geometry(shell.querySelector('[data-testid="game-board"]')),loadedHeading:geometry(shell.querySelector('.board-heading:not([aria-hidden])')),frames:window.coldBoardFrames};
       });
+      const loadedReceipt=await coldBoardLayoutReceipt(page);
+      const loadedReceiptPath=info.outputPath('cold-board-loaded-layout.json');
+      await writeFile(loadedReceiptPath,JSON.stringify({width,textScale,loading,loaded,loadingHeading,loadedHeading,frames,loadingLayout:loadingReceipt,loadedLayout:loadedReceipt},null,2));
+      await info.attach('cold-board-loaded-layout',{path:loadedReceiptPath,contentType:'application/json'});
       expect(frames.length).toBeGreaterThan(1);
       expect(frames.every(frame=>frame.canonical),'Every painted loading/live board uses the canonical shell').toBe(true);
       console.log('[cold-board-geometry]',JSON.stringify({width,textScale,loading,loaded,loadingHeading,loadedHeading}));
