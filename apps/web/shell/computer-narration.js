@@ -12,8 +12,11 @@ export function latestComputerTurn(game) {
 }
 
 export function describeComputerMove(move) {
+  return describeMove(move, COMPUTER_PROFILES[move?.computerProof?.profile]?.name ?? 'Computer');
+}
+
+export function describeMove(move, name) {
   if (!move) return null;
-  const name = COMPUTER_PROFILES[move.computerProof?.profile]?.name ?? 'Computer';
   const coordinate = point => `(${point.row}, ${point.col})`;
   const action = move.action;
   if (action?.type === 'pass') return `${name} passed`;

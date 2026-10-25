@@ -65,9 +65,10 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
   if(scale==='100%')expect(initial.slot.height).toBeCloseTo(49.6,0);
   await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(0);
-  for(const phase of ['thinking','completed','selection','loading','human']){
+  for(const phase of ['thinking','completed','completed-pass','selection','loading','human']){
     await page.evaluate(async phase=>{
       const {computerBoardMessage}=await import('/apps/web/shell/computer-narration.js');
+      const {opponentBoardMessage}=await import('/apps/web/shell/opponent-narration.js');
       const {renderBoardMessageSlot}=await import('/apps/web/shell/board-message-layout.js');
       const game={computer:{seats:{p1:null,p2:'horus'}},board:{state:{turnIndex:1}},turns:[{index:0,status:'complete'}],moves:[{turnIndex:0,computerProof:{profile:'horus'},action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]};
       if(phase==='thinking')game.computerTurn='horus';
@@ -77,16 +78,17 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
       if(phase==='selection'){preview.textContent='Piece at (9, 9) – Select a move';return;}
       if(phase==='human'){preview.innerHTML='Select a piece <button type="button" class="board-preview-inline-button" data-board-preview-action="pass">Pass</button>';return;}
       if(phase==='thinking')game.computerTurn='horus';
-      const message=computerBoardMessage(game,{});
+      const message=phase==='completed-pass'?opponentBoardMessage({...game,myRoles:['Player 2'],legalActions:[{type:'pass'}],computer:null,turns:[{index:0,status:'complete',playerSeat:'Player 1'}],moves:[{turnIndex:0,actorSide:'P1',action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]},{},{},{canInteract:true}):computerBoardMessage(game,{});
       preview.textContent=typeof message==='string'?message:message.text;
-      if(message.action){const button=document.createElement('button');button.type='button';button.className='board-preview-inline-button';button.dataset.boardMessageAction=message.action.id;button.textContent=message.action.label;preview.append(' ',button);}
+      for(const action of message.actions??(message.action?[message.action]:[])){const button=document.createElement('button');button.type='button';button.className='board-preview-inline-button';button.dataset.boardMessageAction=action.id;button.textContent=action.label;preview.append(' ',button);}
     },phase);
     expect(await measure(),`${phase} must preserve board and card geometry`).toEqual(initial);
-    if(phase==='completed'){
+    if(phase==='completed'||phase==='completed-pass'){
       await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(1);
+      if(phase==='completed-pass')await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
       const typography=await page.evaluate(()=>{const properties=['fontFamily','fontSize','fontWeight','lineHeight','height','padding','borderWidth'];const style=selector=>{const computed=getComputedStyle(document.querySelector(selector));return Object.fromEntries(properties.map(key=>[key,computed[key]]));};return{live:style('#preview button'),replica:style('.board-message-sizing button')};});
       expect(typography.live).toEqual(typography.replica);
-      await page.screenshot({path:info.outputPath(`stable-${width}-${scale}.png`)});
+      await page.screenshot({path:info.outputPath(`stable-${phase}-${width}-${scale}.png`)});
     }
   }
   const replicas=page.locator('.board-message-sizing');
@@ -102,6 +104,7 @@ test('computer loading pieces remain continuous, plain and motion-aware beside t
  for(const profile of profiles){
   await page.evaluate(async profile=>{
    const {computerBoardMessage}=await import('/apps/web/shell/computer-narration.js');
+      const {opponentBoardMessage}=await import('/apps/web/shell/opponent-narration.js');
    window.cueGame={id:`cue-${profile}`,computer:{paused:false},computerTurn:profile};
    window.cueProfile=profile;
    document.querySelector('#preview').textContent=computerBoardMessage(window.cueGame,{profile,phase:'preparing'});
@@ -114,6 +117,7 @@ test('computer loading pieces remain continuous, plain and motion-aware beside t
   for(const phase of ['checking','looking-ahead','saving']){
    await page.evaluate(async phase=>{
     const {computerBoardMessage}=await import('/apps/web/shell/computer-narration.js');
+      const {opponentBoardMessage}=await import('/apps/web/shell/opponent-narration.js');
     if(phase==='saving'){window.cueGame.pendingComputerSaveStartedAt=0;window.cueGame.computerTurn=null;}
     // Match runtime prompt writes: the sibling animation host remains untouched.
     document.querySelector('#preview').innerHTML=computerBoardMessage(window.cueGame,{profile:window.cueProfile,phase});

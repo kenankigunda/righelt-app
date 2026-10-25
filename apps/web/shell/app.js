@@ -1,13 +1,15 @@
-import { buildComputerTurnReplay, createComputerReplay } from './computer-replay.js';
+import { buildTurnReplay, createComputerReplay } from './computer-replay.js';
 import { deriveBoardView, createViewingIntent } from './viewing-state.js';
 import { mountMobileNavigation } from './mobile-navigation.js';
-import { computerBoardMessage, latestComputerTurn } from './computer-narration.js';
+import { opponentBoardMessage, latestOpponentTurn } from './opponent-narration.js';
 import { renderBoardHeadingSlot, renderBoardMessageSlot, updateComputerBoardLoading } from './board-message-layout.js';
 import { activityActorSide, setActivityActor, undoApprovalActorSide } from './activity-affiliation.js';
 import { applyDecisionNotes } from './decision-notes.js';
 import { createUtilityMemory } from './utility-memory.js';
 import { createReplayRequest } from './replay-request.js';
 import { activeDecisionLineage } from './decision-history.js';
+import { createAdditionalHistory } from './additional-history.js';
+import { createJoinFeedback } from './join-feedback.js';
 import { beginScenarioCapture, scenarioCapturePosition, canLoadScenarioInPlace } from './scenario-capture.js';
 import { createComputerPreparation } from './computer-preparation.js';
 import { createComputerSession } from './computer-session.js';
@@ -46,7 +48,7 @@ import { participantButton, participantName, participantDisplayName, createInlin
 import { createAccountController, safeAccountIntent } from './account-controller.js';
 import { createAccountDialog } from './account-dialog.js';
 import { renderPieceSymbol } from '../piece-symbols.js';
-import { invitationOptions, renderInvitationSurface } from './invitations.js';
+import { invitationOptions, renderInvitationSurface, createHostInvitation, hostInvitationSettled } from './invitations.js';
 import { createIntroductionPreferences, createOpponentSession } from './opponent-session.js';
 import { renderWordmark, createBrandController, createBrandGrid, resolveActionAffiliation } from './brand.js';
 import { icon, soundToggle, headerActionContent } from './ui.js';
@@ -2573,7 +2575,7 @@ const renderJoinInvitePanel = (game, inviteLink) => {
       ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="join-viewer"${renderButtonStateAttributes({
           className: "secondary",
           pendingKey: joinViewerButtonKey,
-        })}>Join as viewer</button>`
+        })}>${icon("players")}Join as viewer</button>`
       : "",
     game.canJoinAsPlayer && game.showJoinActions
       ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" data-testid="join-player"${renderButtonStateAttributes({
@@ -2594,6 +2596,7 @@ const renderJoinInvitePanel = (game, inviteLink) => {
     ${renderParticipantsPanel(game)}
     ${pendingSeatNotice}
     ${joinInviteActions}
+    ${joinFeedback.message(game.id)?`<p class="alert error" role="status" data-testid="join-failure">${escapeHtml(joinFeedback.message(game.id))}</p>`:""}
     ${renderInviteFeedback()}
     ${inviteFallback?.gameId === game.id ? `<input class="invite-link-field" aria-label="Invitation link" value="${escapeHtml(inviteFallback.link)}" readonly>` : ""}
     ${pendingRows ? `<div class="section-followup"><ul class="participant-list">${pendingRows}</ul></div>` : ""}
@@ -2631,6 +2634,26 @@ const renderParticipantsPanel = (game) => {
   `;
 };
 
+const joinFeedback=createJoinFeedback({getScope:gameId=>({gameId,owner:transport,generation:account.snapshot().generation,visit:inviteVisit,route:window.location.hash})});
+const additionalHistory=createAdditionalHistory({
+  getScope:gameId=>({gameId,owner:transport,generation:account.snapshot().generation,revision:transport.getAuthoritativeGame(gameId)?.gameplayRevision}),
+  load:(scope,values)=>scope.owner.additionalHistory(scope.gameId,values),
+  onChange:gameId=>{if(getCurrentViewedGameId()===gameId)render({animatePanels:false,includeBoard:false});},
+});
+const renderAdditionalHistory = game => {
+  const state=additionalHistory.snapshot(game.id);
+  if(!state)return "";
+  if(!state.metadata&&!state.loading&&!state.error)queueMicrotask(()=>void additionalHistory.ensure(game.id));
+  const rows=state.items.map(entry=>{
+    const selected=Boolean(game.inHistoryMode&&game.inspectedDecision?.moveId===entry.id);
+    const preview=selected&&getShellLayoutMode()==='narrow'?`<div class="history-inline-preview" data-testid="history-inline-preview">${entry.move.snapshot?renderMiniBoardPreviewRoot({previewId:`archive:${game.id}:${entry.id}`,snapshot:entry.move.snapshot,previewKey:toStableKey(entry.move.snapshot)}):'<p role="status">Preview unavailable</p>'}</div>`:"";
+    return `<li class="history-item${selected?' is-selected':''}${entry.move.undone?' is-undone':''}" data-key="archive:${escapeHtml(entry.id)}" data-archive-move-id="${escapeHtml(entry.id)}"><button class="history-item-info history-archive-select" data-action="inspect-history-archive" data-game-id="${escapeHtml(game.id)}" data-decision-id="${escapeHtml(entry.id)}" aria-current="${selected?'true':'false'}"><span class="history-move-line">${escapeHtml(entry.move.notation)}${entry.move.undone?' · Undone':entry.historyStatus==='unknown'?' · Status unavailable':''}</span><span class="history-move-at small">${escapeHtml(formatClientDateTime(entry.at))}</span></button>${preview}</li>`;
+  }).join('');
+  const action=state.error?`<p role="status">We couldn’t load more history</p><button class="secondary" data-action="retry-history-archive" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Retry</button>`
+    : state.available&&(!state.loaded||state.cursor)?`<button class="secondary" data-action="load-history-archive" data-game-id="${escapeHtml(game.id)}" ${state.loading?'disabled aria-busy="true"':''}>${icon('history')}${state.loaded?'Load more history':'More game history'}</button>`:"";
+  return `<div data-testid="additional-history"><ol class="history-list" aria-label="Additional game history">${rows}</ol>${action}${state.loaded&&state.partial?'<p class="small">Some earlier history is unavailable</p>':''}</div>`;
+};
+
 const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
   const currentNames = [...new Map([game.player1,game.player2].filter(person => person?.profile || person?.computerProfile).map((person, index) => [person.computerProfile ? `computer-${index}` : person.profile.username,person])).values()].map(person => `<span class="history-player-name">${participantName(person)}</span>`).join("");
@@ -2640,8 +2663,7 @@ const renderHistoryPanel = (game) => {
     ${getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button>` : ""}
     <div class="section-followup">
       <ol class="history-list" data-testid="history-list">${historyRows}</ol>
-      <button class="secondary" data-action="debug-load-history">${getDecisionDebugState(game.id).cursor ? 'Load older archive page' : 'Browse full decision archive'}</button>
-      <ol class="debug-history">${getDecisionDebugState(game.id).items.filter(entry => entry.move && !game.moves.some(move => move.moveId === entry.id)).map(entry => `<li data-key="${escapeHtml(entry.id)}"><button class="secondary" data-action="debug-inspect-decision" data-decision-id="${escapeHtml(entry.id)}">${escapeHtml(entry.move.notation)} · ${escapeHtml(formatClientDateTime(entry.at))}</button></li>`).join('')}</ol>
+      ${renderAdditionalHistory(game)}
     </div>
   `;
 };
@@ -3179,7 +3201,7 @@ const renderApprovalGate = (game, request) => {
               data-game-id="${escapeHtml(game.id)}"
               data-requester-id="${escapeHtml(request.identityId)}"
               data-testid="accept-request"
-            >Accept</button>
+            >${icon('check')}Accept</button>
             <span class="small invite-choice-note">Approve the request and promote this participant into the requested player seat.</span>
           </div>
           <div class="invite-choice-row">
@@ -3189,7 +3211,7 @@ const renderApprovalGate = (game, request) => {
               data-game-id="${escapeHtml(game.id)}"
               data-requester-id="${escapeHtml(request.identityId)}"
               data-testid="ignore-request"
-            >Ignore</button>
+            >${icon('close')}Ignore</button>
             <span class="small invite-choice-note">Dismiss this prompt for now. The request remains visible in Join / Invite.</span>
           </div>
         </div>
@@ -3216,11 +3238,11 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
     return renderGameContent(gameId, inviteFromRole, inviteToken);
   }
   if (activeResultGameId === gameId && getGameResult(transport.getAuthoritativeGame(game.id), transport.getIdentityId())) return renderResult(game);
-  if(hostInvite?.gameId === gameId)return renderHostInvite(game);
   const approvalRequest = getActiveApprovalRequest(game);
   if (approvalRequest) {
     return renderApprovalGate(game, approvalRequest);
   }
+  if(hostInvite?.gameId === gameId)return renderHostInvite(game);
   if (currentRoute.name === "game") {
     return renderGameShellFrame(game);
   }
@@ -3242,10 +3264,11 @@ const renderInviteLanding = (inviteContext) => {
     <p class="small invite-gate-kicker">Invitation</p><h2 id="invite-surface-title">Waiting for approval</h2>
     <p role="status" data-testid="pending-player-request-notice">Your request to play as ${renderSeatLabel(game.pendingPlayerRequestSeat)} is awaiting approval.</p>
     <p class="small">Your game will open here once approved.</p>
-    <div class="invite-choice-list"><a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Back home</a></div>`});
-  const canJoinPlayer = game.canJoinAsPlayer && game.showJoinActions;
+    <div class="invite-choice-list"><a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">${icon("home")}Back home</a></div>`});
+  const intendedTaken=Boolean(inviteContext.intendedRole==='red'?game.player1:inviteContext.intendedRole==='blue'?game.player2:false);
+  const canJoinPlayer = game.canJoinAsPlayer && game.showJoinActions && !intendedTaken;
   const canJoinViewer = account.snapshot().enabled || game.canJoinAsViewer;
-  const playerActionLabel = inviteContext.intendedRole && inviteContext.intendedRole !== 'viewer' ? `Play as ${inviteContext.intendedRole}` : inviteContext.inviteType === "player" ? "Join as player" : "Request to join as player";
+  const playerActionLabel = inviteContext.intendedRole && inviteContext.intendedRole !== 'viewer' ? `Play as ${inviteContext.intendedRole === "blue" ? "Blue" : "Red"}` : inviteContext.inviteType === "player" ? "Join as player" : "Request to join as player";
   const inviteMessage =
     inviteContext.inviteType === "player"
       ? "You’re invited to play."
@@ -3256,7 +3279,7 @@ const renderInviteLanding = (inviteContext) => {
     ? inviteContext.inviteType === "player"
       ? ""
       : "Ask a player to approve your seat."
-    : game.joinAsPlayerDisabledReason || "Player joining is unavailable.";
+    : intendedTaken ? "That seat is taken" : game.joinAsPlayerDisabledReason || "Player joining is unavailable.";
   const viewerExplainer = canJoinViewer
     ? ""
     : game.joinAsViewerDisabledReason || "Viewer joining is unavailable.";
@@ -3276,7 +3299,8 @@ const renderInviteLanding = (inviteContext) => {
             <button data-action="accept-invite-player" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-player"${renderButtonStateAttributes({
               pendingKey: joinPlayerButtonKey,
               disabled: !canJoinPlayer,
-            })}>${escapeHtml(playerActionLabel)}</button>
+              className: `invite-action invite-${inviteContext.intendedRole === "blue" ? "blue" : inviteContext.intendedRole === "red" ? "red" : !game.player1 ? "red" : "blue"}`,
+            })}>${icon("play")}${escapeHtml(playerActionLabel)}</button>
             <span class="small invite-choice-note">${escapeHtml(playerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
@@ -3284,13 +3308,14 @@ const renderInviteLanding = (inviteContext) => {
               className: "secondary",
               pendingKey: joinViewerButtonKey,
               disabled: !canJoinViewer,
-            })}>Join as viewer</button>
+            })}>${icon("players")}Join as viewer</button>
             <span class="small invite-choice-note">${escapeHtml(viewerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
-            <a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Back home</a>
+            <a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">${icon("home")}Back home</a>
           </div>
         </div>
+        ${joinFeedback.message(game.id)?`<p class="alert error" role="status" data-testid="join-failure">${escapeHtml(joinFeedback.message(game.id))}</p>`:""}
         <p class="small">
           ${
             canJoinPlayer || canJoinViewer
@@ -3465,7 +3490,7 @@ const mountBoardForGame = (game) => {
             ? {text:"Preparing replay",action:{id:"replay-cancel",label:"Cancel replay"}}
             : {text:"Replay unavailable",actions:[{id:"replay-computer",label:"Try again"},{id:"replay-dismiss",label:"Dismiss"}]};
           if (replay?.playing) return { text:`Replay · ${Math.max(1,replay.step)} of ${replay.total}`, actions:[...(replay.manual ? [{id:'replay-next',label:'Next'}] : []),{id:'replay-stop',label:'Stop replay'}] };
-          return computerBoardMessage(view, status, selection);
+          return opponentBoardMessage(view,status,selection,{canInteract:!(currentRoute.scenarios && scenarioCapture?.mode === "frozen" && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && canControlLiveBoard(view),identityId:transport.getIdentityId()});
         },
         onBoardMessageAction: id => {
           if (id === 'replay-computer') void startComputerReplay();
@@ -4173,7 +4198,7 @@ const makeAccountSyncStore = auth => createSyncStore({
   fetcher: account.fetch,
   onAuthLost: () => account.authorityLost(),
   onEvent: (payload, context = {}) => {
-    gameSound.observe(payload,{silent:context.initial || currentRoute.name!=='game' || payload?.game?.id!==currentRoute.gameId || Boolean(transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode)});
+    gameSound.observe(payload,{silent:context.initial || currentRoute.name!=='game' || payload?.game?.id!==currentRoute.gameId || Boolean(transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode) || Boolean(replayController?.snapshot()?.playing || replayRequests.snapshot())});
     wsLastEvent = payload?.type
       ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
       : "unknown";
@@ -4223,12 +4248,12 @@ const currentReplayContext = () => {
 };
 const startComputerReplay = async () => {
   const context=currentReplayContext(),{gameId,owner,revision,lineageHead}=context;
-  const game=owner.getAuthoritativeGame(gameId),completed=latestComputerTurn(game);
+  const game=owner.getAuthoritativeGame(gameId),completed=latestOpponentTurn(game,{identityId:owner.getIdentityId()});
   if (!completed || replayController?.snapshot().playing) return;
   const token=replayRequests.begin(context);
   const stillCurrent=()=>replayRequests.current(token,currentReplayContext());
   let moves=game.moves;
-  let payload=buildComputerTurnReplay({moves,completedTurnIndex:completed.turn.index,gameId,revision,lineageHead});
+  let payload=buildTurnReplay({moves,completedTurnIndex:completed.turn.index,gameId,revision,lineageHead});
   if (!payload) {
     let entries=[],cursor=null;
     try {
@@ -4238,7 +4263,7 @@ const startComputerReplay = async () => {
         entries.push(...page.items);cursor=page.nextCursor;
       } while(cursor);
       moves=activeDecisionLineage(entries);
-      payload=buildComputerTurnReplay({moves,completedTurnIndex:completed.turn.index,gameId,revision,lineageHead});
+      payload=buildTurnReplay({moves,completedTurnIndex:completed.turn.index,gameId,revision,lineageHead});
     } catch {replayRequests.fail(token,currentReplayContext());return;}
   }
   if (!stillCurrent()) {replayRequests.reconcile(currentReplayContext());return;}
@@ -4300,12 +4325,12 @@ const renderHostInvite = game => renderInvitationSurface({host:true,background:r
   <button class="ui-icon-button invite-close" data-action="close-invite" aria-label="Close invite">${icon('close')}</button>
   <p class="small invite-gate-kicker">Your game is ready</p><h2 id="invite-surface-title">Invite a friend</h2>
   <p>Copy a link and send it their way.</p>
-  <div class="invite-choice-list">${invitationOptions(game).map(option=>`<button data-action="share-invite" data-invite-role="${option.role}" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:getCopyInviteButtonKey(game.id)})}>${icon('copy')}${option.label}</button>`).join('')}</div>
+  <div class="invite-choice-list">${invitationOptions(game).filter(option=>option.role!=="viewer").map(option=>`<button data-action="share-invite" data-invite-role="${option.role}" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:getCopyInviteButtonKey(game.id)})}>${icon('copy')}${option.label}</button>`).join('')}</div>
   ${renderInviteFeedback("invite-modal")}
   ${inviteFallback?.gameId===game.id?`<input class="invite-link-field" aria-label="Invitation link" value="${escapeHtml(inviteFallback.link)}" readonly>`:''}
 `});
 const openFriendInvite = gameId => {
-  hostInvite={gameId};inviteVisit++;inviteFeedback='';inviteFallback=null;
+  hostInvite={...createHostInvitation(transport.getGameViewModel(gameId),account.snapshot().generation),gameId};inviteVisit++;inviteFeedback='';inviteFallback=null;
   // A render while hash navigation is pending still sees Home and cancels
   // the game-entry transition. Let the destination render own its invitation.
   if(currentRoute.name === 'game' && currentRoute.gameId === gameId) render({animatePanels:false});
@@ -4439,6 +4464,11 @@ const subscribeToTransport = () => transport.subscribe((change) => {
   gameSound.local(change, transport.getGameViewModel(change?.gameId), {silent:currentRoute.name!=='game' || currentRoute.gameId!==change?.gameId || Boolean(transport.getGameViewModel(change?.gameId)?.inHistoryMode)});
   const visibleGameId = getCurrentViewedGameId();
   const game = transport.getGameViewModel(visibleGameId);
+  let releaseInvitationFocus = false;
+  if (hostInvitationSettled(hostInvite,transport.getAuthoritativeGame(visibleGameId),account.snapshot().generation)) {
+    releaseInvitationFocus = Boolean(document.activeElement?.closest('[data-host-invite]') || document.activeElement === document.body);
+    hostInvite=null;inviteVisit++;inviteFeedback="";inviteFallback=null;
+  }
   const frozenCapture = Boolean(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === visibleGameId);
   const transition = destructionTransitions.update(game, { frozen: frozenCapture, reset: change?.baseline === true || change?.type === "optimistic_rollback" || change?.type === "history_mode_changed" });
   if (transition.clear) boardRuntime?.clearRemovalEffects();
@@ -4447,11 +4477,20 @@ const subscribeToTransport = () => transport.subscribe((change) => {
     includeBoard: change?.type !== "optimistic_enqueue",
   });
   if (mountedBoardGameId === visibleGameId && !game?.inHistoryMode && !frozenCapture) boardRuntime?.showRemovalEffects(transition.effects, null);
+  if (releaseInvitationFocus) {
+    const generation=account.snapshot().generation;
+    window.requestAnimationFrame(()=>{
+      if(generation===account.snapshot().generation && getCurrentViewedGameId()===visibleGameId && !hostInvite)
+        document.querySelector('#shell-board .cell')?.focus({preventScroll:true});
+    });
+  }
 });
 
 subscribeToTransport();
 accountInitialized = true;
 function resetAccountTransport(next) {
+  joinFeedback.clear();
+  additionalHistory.clear();
   utilityMemory.clear();
   viewingIntent.clear();
   replayController?.stop("account-changed");
@@ -4525,6 +4564,7 @@ const navigateTo = (hash) => {
 };
 
 window.addEventListener("hashchange", () => {
+  joinFeedback.clear();
   clearAccountContinuation();
   const previousRoute = currentRoute;
   closeHeaderMenu();
@@ -4784,6 +4824,17 @@ appEl.addEventListener("click", async (event) => {
     }, 0);
   };
 
+  if(['load-history-archive','retry-history-archive','inspect-history-archive'].includes(action)) {
+    const gameId=actionEl.dataset.gameId;
+    if(action==='inspect-history-archive'){
+      const entry=additionalHistory.snapshot(gameId)?.items.find(item=>item.id===actionEl.dataset.decisionId);
+      if(entry){viewingIntent.navigate(gameId);transport.inspectDecision({gameId,entry});}
+    } else {
+      const work=action==='retry-history-archive'?additionalHistory.retry(gameId):additionalHistory.more(gameId);
+      render({animatePanels:false,includeBoard:false});await work;
+    }
+    return;
+  }
   if (action === 'computer-control') { await withPendingButton(`computer:${actionEl.dataset.control}`, () => computerSession.action(actionEl.dataset.control)); return; }
   if (action === 'computer-watch') {
     const handle = transport.createGame({ selfPlayMode: true, computer: { p1: 'babs', p2: 'horus' } });
@@ -4966,19 +5017,27 @@ appEl.addEventListener("click", async (event) => {
     }
     const gameId = actionEl.getAttribute("data-game-id");
     if (!gameId) return;
+    const restoreJoinFocus=document.activeElement===actionEl;
+    const joinAttempt=joinFeedback.begin(gameId);
     void withPendingButton(getJoinButtonKey("viewer", gameId), async () => {
-      await transport.joinGame({
+      try {
+      await joinAttempt.scope.owner.joinGame({
         gameId,
         mode: "viewer",
         inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
         inviteToken: resolvedInvite?.inviteToken || null,
       });
+      if(!joinFeedback.complete(joinAttempt))return;
       markInviteChoiceCommitted(gameId);
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
         navigateTo(buildGameHash(gameId, null, getCurrentGameHashState(currentRoute.name === "game" ? getGamePanel() : DEFAULT_GAME_PANEL)));
         return;
       }
       await syncRouteDataAndLiveChannels();
+      } catch(error) { joinFeedback.fail(joinAttempt);throw error; }
+    }).finally(()=>{
+      if(restoreJoinFocus&&joinFeedback.isCurrent(joinAttempt)&&joinFeedback.message(gameId)&&document.activeElement===document.body)
+        document.querySelector(`[data-action="${action}"][data-game-id="${CSS.escape(gameId)}"]`)?.focus({preventScroll:true});
     });
     return;
   }
@@ -4986,13 +5045,17 @@ appEl.addEventListener("click", async (event) => {
   if (action === "join-player" || action === "accept-invite-player") {
     const gameId = actionEl.getAttribute("data-game-id");
     if (!gameId) return;
+    const restoreJoinFocus=document.activeElement===actionEl;
+    const joinAttempt=joinFeedback.begin(gameId);
     void withPendingButton(getJoinButtonKey("player", gameId), async () => {
-      const result = await transport.joinGame({
+      try {
+      const result = await joinAttempt.scope.owner.joinGame({
         gameId,
         mode: "player",
         inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
         inviteToken: resolvedInvite?.inviteToken || null,
       });
+      if(!joinFeedback.complete(joinAttempt))return;
       markInviteChoiceCommitted(gameId);
       if (result.pendingApproval) {
         setInviteFeedback("");
@@ -5002,6 +5065,10 @@ appEl.addEventListener("click", async (event) => {
         return;
       }
       await syncRouteDataAndLiveChannels();
+      } catch(error) { joinFeedback.fail(joinAttempt);throw error; }
+    }).finally(()=>{
+      if(restoreJoinFocus&&joinFeedback.isCurrent(joinAttempt)&&joinFeedback.message(gameId)&&document.activeElement===document.body)
+        document.querySelector(`[data-action="${action}"][data-game-id="${CSS.escape(gameId)}"]`)?.focus({preventScroll:true});
     });
     return;
   }

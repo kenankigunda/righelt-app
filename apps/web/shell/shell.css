@@ -141,6 +141,14 @@ body {
   transform: translateX(10%) skewX(-12deg);
 }
 
+.shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-swipe::before,
+.shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-swipe::after {
+  animation: shell-held-facet-pulse 2.4s ease-in-out infinite;
+}
+@keyframes shell-held-facet-pulse { 0%,100% { opacity:.55; } 50% { opacity:1; } }
+[data-loading-hidden] .shell-route-transition-layer-swipe::before,
+[data-loading-hidden] .shell-route-transition-layer-swipe::after { animation-play-state:paused!important; }
+
 .shell-route-transition-layer[data-phase="revealing"] .shell-route-transition-layer-swipe {
   animation: shell-game-entry-swipe-out var(--shell-game-entry-reveal-ms, 200ms) var(--shell-game-entry-easing) forwards;
 }
@@ -1931,6 +1939,8 @@ textarea:focus-visible {
   .shell-route-transition-layer {
     display: none;
   }
+  .shell-route-transition-layer-swipe::before,
+  .shell-route-transition-layer-swipe::after { animation:none!important; }
 }
 
 .invite-gate {
@@ -2179,3 +2189,9 @@ textarea:focus-visible {
 }
 
 .board-wrap > .loading-pieces { display: none; }
+
+/* Archived rows retain native button access without gaining action-button chrome. */
+[data-testid="additional-history"] .history-archive-select {
+  min-height:44px; padding:0; border:0; border-radius:0; background:none;
+  color:inherit; font:inherit; text-align:left; clip-path:none;
+}

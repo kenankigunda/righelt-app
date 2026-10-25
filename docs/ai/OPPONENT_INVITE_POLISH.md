@@ -9,9 +9,11 @@ This is a separate follow-up to the board UX and result releases. Its initial co
 - The initial Invite a friend card closes when its intended vacant seat becomes authoritatively occupied. Pending approval, a viewer arriving or a temporary disconnect does not close it. Viewer invitations remain available under Players.
 - A held route-loading sweep keeps visibly pulsing while its position remains fixed. Keep its sharp facets, existing transition geometry and reduced-motion behavior. Apply the treatment to every shared use of that held phase.
 - Piece destruction produces one short stone-crack sound per causing action, including a batch of destroyed pieces. Respect mute, gesture and foreground gates. Initial hydration, reload, history, visual replay and repeated receipts stay silent.
+- Actual invitation join failures stay visible with the existing action available for manual retry. Scope feedback and completion to the exact game, account and visit; preserve keyboard focus and ignore stale completions.
+- Selected archived moves use the same narrow inline after-state preview as retained moves. Unknown legacy lineage does not imply permission to undo or restore.
 - History offers additional records only when they exist. Use More game history initially and Load more history for remaining pages. Remove exhausted controls, retain accumulated records and mark undone history accurately. Keep the full diagnostic decision explorer separate from ordinary move history.
 
-Human message subject wording is being clarified. Your opponent is the default recommendation for seated human play; spectators need an unambiguous Red or Blue subject. Do not claim a human is thinking merely because their turn is active.
+Seated human play uses Your opponent, as confirmed by the user. Spectators use an unambiguous Red or Blue subject. Do not claim a human is thinking merely because their turn is active.
 
 ## Implementation ownership
 
@@ -50,3 +52,7 @@ Physical iPhone Safari checks remain a supplemental gap when no device is availa
 ## Continuity
 
 Use supervised heavy and preview launches. Keep run ownership, exact revisions, failed attempts and next actions in private test-results checkpoints. Critical-pressure cancellation is incomplete validation and must resume only after recorded recovery and cleanup. Reuse compatible proof explicitly; avoid repeating unchanged cumulative suites. Keep Codex, unrelated resources and all worktrees open. The lead owns completion of this follow-up as well as the preceding releases.
+
+## Later selection and event explanations
+
+The subsequent tooltip follow-up uses the user’s selection rule: piece and move explanations, including inactivity and blocked actions, belong in the board message area. Floating tooltips are reserved for events such as destruction and must wrap and reposition within the viewport. This later slice must preserve this release’s narration, Pass, replay, inspection and stable geometry contracts.

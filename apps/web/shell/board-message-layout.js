@@ -1,18 +1,20 @@
 import {activityActorSide,setActivityActor} from './activity-affiliation.js';
 import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
-import { describeComputerMove } from './computer-narration.js';
+import { describeComputerMove, describeMove } from './computer-narration.js';
 
 const escape = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
 // Measure the real formatter at the board's longest coordinate width. Keeping
 // every supported verb/profile avoids guessing which proportional text is widest.
-const narrationSizes = Object.keys(COMPUTER_PROFILES).flatMap(profile =>
+const narrationSizes = [
+  ...['Your opponent','Red','Blue'].flatMap(name => ['move','project','rush','push','retreat','follow'].map(type => describeMove({action:{type,from:{row:9,col:9},to:{row:9,col:9}}},name))),
+  ...Object.keys(COMPUTER_PROFILES).flatMap(profile =>
   ['move','project','rush','push','retreat','follow'].map(type => describeComputerMove({
     computerProof:{profile}, action:{type,from:{row:9,col:9},to:{row:9,col:9}},
   })),
-);
+)];
 
 export function renderBoardMessageSlot({id, loading = false} = {}) {
-  return `<div class="board-message-slot"><div class="board-message-live"><p class="board-preview-label"${id ? ` id="${escape(id)}"` : ''}${loading ? ' aria-hidden="true"' : ''}>${loading ? '' : 'Select a piece'}</p><span class="board-message-activity" aria-hidden="true" data-loading-state="idle" data-loading-context="external"></span></div>${narrationSizes.map(text => `<p class="board-preview-label board-message-sizing" aria-hidden="true" inert>${escape(text)} <button type="button" class="board-preview-inline-button" disabled tabindex="-1">Show me again</button></p>`).join('')}</div>`;
+  return `<div class="board-message-slot"><div class="board-message-live"><p class="board-preview-label"${id ? ` id="${escape(id)}"` : ''}${loading ? ' aria-hidden="true"' : ''}>${loading ? '' : 'Select a piece'}</p><span class="board-message-activity" aria-hidden="true" data-loading-state="idle" data-loading-context="external"></span></div>${narrationSizes.map(text => `<p class="board-preview-label board-message-sizing" aria-hidden="true" inert>${escape(text)} <button type="button" class="board-preview-inline-button" disabled tabindex="-1">Pass</button> <button type="button" class="board-preview-inline-button" disabled tabindex="-1">Show me again</button></p>`).join('')}</div>`;
 }
 
 export function renderBoardHeadingSlot({loading = false} = {}) {

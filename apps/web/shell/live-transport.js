@@ -1185,6 +1185,7 @@ export const createLiveTransportStore = ({
     createGame,
     computerControl: (gameId, values) => decisionRequest(gameId, 'computer-control', values),
     decisionHistory: (gameId, cursor) => decisionRequest(gameId, 'decision-history', { cursor }),
+    additionalHistory: (gameId, values) => decisionRequest(gameId, 'decision-history', { ...values, mode:'additional' }),
     decisionNotes: (gameId, values) => decisionRequest(gameId, 'decision-notes', values),
     decisionAttempt: (gameId, values) => decisionRequest(gameId, 'decision-attempt', values),
     decisionAttempts: (gameId, kind, cursor) => decisionRequest(gameId, 'decision-attempts', { kind, cursor }),

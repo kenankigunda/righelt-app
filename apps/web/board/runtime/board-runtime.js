@@ -522,6 +522,12 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return;
     }
 
+    if (pieceSummary && selectedPieceId && host.canInteract?.(state) === false) {
+      if (selectedSource) setBoardPreviewPromptHtml(`Piece at ${renderBoardPreviewCoordinate(selectedSource)} – Supply and command lines`);
+      else setBoardPreviewPrompt("Supply and command lines");
+      return;
+    }
+
     if (!pieceSummary) {
       selectedPieceMoves = [];
       selectedPieceMovePreviews = [];
@@ -1173,9 +1179,19 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     void submitCurrentAction();
   };
 
+  const submitPass = () => {
+    if (interactionBlocked || selectedPieceId || inspection || state?.continuation || host.canInteract?.(state) === false || !legalActions.some(action => action.type === "pass")) return;
+    void submitCurrentAction({type:"pass"});
+  };
+
   const handleBoardPreviewClick = (event) => {
     const externalAction = event.target.closest("[data-board-message-action]");
-    if (externalAction) { controls.onBoardMessageAction?.(externalAction.getAttribute("data-board-message-action")); return; }
+    if (externalAction) {
+      const action=externalAction.getAttribute("data-board-message-action");
+      if (action === "pass") submitPass();
+      else controls.onBoardMessageAction?.(action);
+      return;
+    }
     if (interactionBlocked) return;
     const actionButton = event.target.closest("[data-board-preview-action]");
     if (!actionButton) {
@@ -1183,7 +1199,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
     const previewAction = actionButton.getAttribute("data-board-preview-action");
     if (previewAction === "pass") {
-      if (!selectedPieceId && !state?.continuation && legalActions.some(action => action.type === "pass")) void submitCurrentAction({type: "pass"});
+      submitPass();
       return;
     }
     if (previewAction === "end-turn") {

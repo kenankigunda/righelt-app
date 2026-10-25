@@ -1,5 +1,5 @@
 import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, canonicalCommandJson } from '../../shared-types/src/sync-protocol';
-import { archiveStatements, readDecision, readDecisionPage, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
+import { archiveStatements, readDecision, readDecisionPage, readAdditionalDecisionPage, parseHistoryCursor, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
 import { COMPUTER_LIMITS, changeComputerControl, computerCommandError, createComputerControl, parseComputerSeats, type ComputerProof } from '../../shared-types/src/computer-play';
 import { STORAGE_POLICY, STORAGE_GENERATION_HEADER } from "../../shared-types/src/storage-policy";
 import { storageRoomName } from "./storage-generation";
@@ -445,6 +445,16 @@ export class GameRoomDO {
     }
 
     if (request.method === 'POST' && path === '/decision-history') {
+      if(body.mode==='additional') {
+        if(body.historyRevision!==game.gameplayRevision)return json({ok:false,error:'history_changed',gameplayRevision:game.gameplayRevision},409);
+        const partial=(game.archiveStartRevision??1)>0;
+        if(game.archiveStartRevision===undefined) {
+          try { parseHistoryCursor(body.cursor); } catch { return json({ok:false,error:'invalid_history_cursor'},400); }
+          return json({ok:true,gameplayRevision:game.gameplayRevision,partial,available:false,items:[],nextCursor:null});
+        }
+        try{return json({ok:true,gameplayRevision:game.gameplayRevision,partial,...await readAdditionalDecisionPage(this.env,game,body.cursor,body.metadataOnly===true)});}
+        catch(error){if((error as Error).message==='invalid_history_cursor')return json({ok:false,error:'invalid_history_cursor'},400);throw error;}
+      }
       if (game.archiveStartRevision === undefined) {
         const cursor = body.cursor as { eventSeq?: unknown; ordinal?: unknown } | null;
         const after = cursor?.ordinal ?? -1;

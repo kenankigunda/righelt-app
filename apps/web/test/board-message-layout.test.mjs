@@ -3,19 +3,21 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {renderBoardHeadingSlot,renderBoardMessageSlot,updateComputerBoardLoading} from '../shell/board-message-layout.js';
 import {COMPUTER_PROFILES} from '../generated/packages/shared-types/src/computer-play.js';
-import {describeComputerMove} from '../shell/computer-narration.js';
+import {describeComputerMove,describeMove} from '../shell/computer-narration.js';
 
 test('message reservation uses real profile narration and excludes duplicate live actions',()=>{
  const html=renderBoardMessageSlot({id:'shell-board-preview-label'});
  assert.equal((html.match(/id=/g)??[]).length,1);
- assert.equal((html.match(/board-message-sizing/g)??[]).length,Object.keys(COMPUTER_PROFILES).length*6);
+ assert.equal((html.match(/board-message-sizing/g)??[]).length,(Object.keys(COMPUTER_PROFILES).length+3)*6);
  assert(!html.includes('data-action'));assert(!html.includes('data-board-message-action'));assert(!html.includes('data-board-preview-action'));
  for(const profile of Object.keys(COMPUTER_PROFILES)){
   assert(html.includes(describeComputerMove({computerProof:{profile},action:{type:'retreat',from:{row:9,col:9},to:{row:9,col:9}}})));
  }
+ for(const name of ['Your opponent','Red','Blue'])assert(html.includes(describeMove({action:{type:'retreat',from:{row:9,col:9},to:{row:9,col:9}}},name)));
  for(const paragraph of html.matchAll(/<p class="board-preview-label board-message-sizing"([^>]*)>(.*?)<\/p>/g)){
   assert(paragraph[1].includes('aria-hidden="true" inert'));
-  assert(paragraph[2].includes('disabled tabindex="-1"'));
+  assert.equal((paragraph[2].match(/disabled tabindex="-1"/g)??[]).length,2);
+  assert(paragraph[2].includes('>Pass</button>'));assert(paragraph[2].includes('>Show me again</button>'));
  }
 });
 test('loading retains identical sizing replicas without a visible prompt or identity',()=>{

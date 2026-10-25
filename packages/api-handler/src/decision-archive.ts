@@ -43,9 +43,13 @@ export async function readDecision(env: LiveGameEnv, gameId: string, decisionId:
   const amendment = await env.DB.prepare("SELECT payload_json FROM live_decision_archive WHERE game_id = ?1 AND json_extract(payload_json, '$.kind') = 'finalization' AND json_extract(payload_json, '$.targetDecisionId') = ?2 ORDER BY event_seq DESC, event_ordinal DESC LIMIT 1").bind(gameId, decisionId).first<{ payload_json: string }>();
   return amendment ? { ...entry, move: JSON.parse(amendment.payload_json).finalizedMove } : entry;
 }
-export async function readDecisionPage(env: LiveGameEnv, gameId: string, cursor: unknown) {
+export function parseHistoryCursor(cursor: unknown) {
   const parsed = cursor && typeof cursor === 'object' ? cursor as { eventSeq?: unknown; ordinal?: unknown } : { eventSeq: 0, ordinal: -1 };
   if (!Number.isSafeInteger(parsed.eventSeq) || Number(parsed.eventSeq) < 0 || !Number.isSafeInteger(parsed.ordinal) || Number(parsed.ordinal) < -1) throw new Error('invalid_history_cursor');
+  return parsed;
+}
+export async function readDecisionPage(env: LiveGameEnv, gameId: string, cursor: unknown) {
+  const parsed = parseHistoryCursor(cursor);
   const rows = await env.DB.prepare(`SELECT original.payload_json,
     (SELECT amendment.payload_json FROM live_decision_archive AS amendment
       WHERE amendment.game_id = original.game_id
@@ -62,6 +66,49 @@ export async function readDecisionPage(env: LiveGameEnv, gameId: string, cursor:
   const items = entries.slice(0, COMPUTER_LIMITS.historyPage);
   const last = items.at(-1);
   return { items, nextCursor: entries.length > items.length && last ? { eventSeq: last.eventSeq, ordinal: last.ordinal } : null };
+}
+
+/** Ordinary history reads only decisions absent from the bounded live list. */
+export async function readAdditionalDecisionPage(env: LiveGameEnv, game: LiveGame, cursor: unknown, metadataOnly = false) {
+  const parsed = parseHistoryCursor(cursor);
+  const bindings=[game.id,parsed.eventSeq,parsed.ordinal,metadataOnly?1:COMPUTER_LIMITS.historyPage+1,JSON.stringify(game.moves.map(move=>move.moveId))];
+  const filter=`FROM live_decision_archive AS original WHERE original.game_id=?1
+    AND json_extract(original.payload_json,'$.kind')='decision'
+    AND original.decision_id NOT IN (SELECT value FROM json_each(?5))
+    AND (original.event_seq>?2 OR (original.event_seq=?2 AND original.event_ordinal>?3))`;
+  if(metadataOnly){
+    const rows=await env.DB.prepare(`SELECT 1 AS available ${filter} LIMIT ?4`).bind(...bindings).all<{available:number}>();
+    return {available:Boolean(rows.results?.length),items:[],nextCursor:null};
+  }
+  const restorationJoins=`FROM live_decision_archive AS restoration
+    LEFT JOIN live_decision_archive AS target ON target.game_id=restoration.game_id
+      AND target.decision_id=json_extract(restoration.payload_json,'$.targetDecisionId')
+    LEFT JOIN live_decision_archive AS fallback ON fallback.game_id=restoration.game_id
+      AND fallback.decision_id=json_extract(restoration.payload_json,'$.restoredIds[0]')
+    WHERE restoration.game_id=original.game_id AND json_extract(restoration.payload_json,'$.kind')='restoration'
+    AND (restoration.event_seq>original.event_seq OR (restoration.event_seq=original.event_seq AND restoration.event_ordinal>original.event_ordinal))`;
+  const boundaryBefore=`(COALESCE(target.event_seq,fallback.event_seq)<original.event_seq
+    OR (COALESCE(target.event_seq,fallback.event_seq)=original.event_seq AND COALESCE(target.event_ordinal,fallback.event_ordinal)<=original.event_ordinal))`;
+  const rows=await env.DB.prepare(`SELECT original.payload_json,
+    (SELECT amendment.payload_json FROM live_decision_archive AS amendment
+      WHERE amendment.game_id=original.game_id AND json_extract(amendment.payload_json,'$.kind')='finalization'
+      AND json_extract(amendment.payload_json,'$.targetDecisionId')=original.decision_id
+      ORDER BY amendment.event_seq DESC,amendment.event_ordinal DESC LIMIT 1) AS finalized_payload_json,
+    EXISTS(SELECT 1 ${restorationJoins} AND (${boundaryBefore}
+      OR EXISTS(SELECT 1 FROM json_each(restoration.payload_json,'$.restoredIds') WHERE value=original.decision_id))) AS restored,
+    EXISTS(SELECT 1 ${restorationJoins} AND target.decision_id IS NULL
+      AND (fallback.decision_id IS NULL OR fallback.event_seq>original.event_seq
+        OR (fallback.event_seq=original.event_seq AND fallback.event_ordinal>original.event_ordinal))) AS uncertain
+    ${filter} ORDER BY original.event_seq,original.event_ordinal LIMIT ?4`).bind(...bindings).all<{payload_json:string;finalized_payload_json?:string|null;restored:number;uncertain:number}>();
+  const entries=(rows.results??[]).map(row=>{
+    const entry:ArchivedDecision=JSON.parse(row.payload_json);
+    const move=row.finalized_payload_json?JSON.parse(row.finalized_payload_json).finalizedMove:entry.move;
+    const undone=Boolean(move?.undone||row.restored);
+    const historyStatus=undone?'undone':row.uncertain?'unknown':'active';
+    return {...entry,historyStatus,move:{...move,undone:historyStatus==='unknown'?undefined:undone}};
+  });
+  const items=entries.slice(0,COMPUTER_LIMITS.historyPage),last=items.at(-1);
+  return {available:entries.length>0,items,nextCursor:entries.length>items.length&&last?{eventSeq:last.eventSeq,ordinal:last.ordinal}:null};
 }
 export async function readDecisionNotes(env: LiveGameEnv, gameId: string, accountId: string) {
   const rows = await env.DB.prepare('SELECT decision_id, note_json FROM live_decision_notes WHERE game_id = ?1 AND account_id = ?2').bind(gameId, accountId).all<{ decision_id: string; note_json: string }>();

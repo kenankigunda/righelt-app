@@ -3398,3 +3398,32 @@ test("board runtime refreshes a preserved branch selection from the new legal ac
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(submitted.length, 1, "late moves from the previous snapshot cannot revive a removed action");
 });
+
+test('read-only selected pieces remain informational during rush, follow and retreat',async()=>{
+ for(const continuation of [{type:'rush',rushedPieceIds:['A'],rushChainPieceIds:['A']},{type:'push',phase:'follow',attackerId:'A'},{type:'push',phase:'retreat',pushedPieceId:'A'}]){
+  let html='';const label={addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
+  const state={sideToMove:'P1',turnIndex:0,continuation,pieces:[{id:'A',owner:'P1',kind:'unit',position:{row:4,col:2},supplied:true,commanded:true}]};
+  const adapter={mount:noop,render:noop,getSelectedPieceSummary:({selectedPieceId})=>selectedPieceId?{details:{owner:'P1'}}:null,getPieceById:(snapshot,id)=>snapshot.pieces.find(piece=>piece.id===id)};
+  const runtime=createBoardRuntime({boardAdapter:adapter,host:{canInteract:()=>false,loadPieceMoves:async()=>({actions:[],previewActions:[]})}});
+  runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+  await runtime.loadSnapshot(state,{legalActions:[{type:'end_turn'}],selectionState:{selectedPieceId:'A',source:{row:4,col:2},target:null}});
+  assert.match(html,/Piece at/);assert.match(html,/4/);assert.match(html,/2/);assert.doesNotMatch(html,/data-board-preview-action|Select a rush|End Turn|Retreat|Follow/);
+  runtime.setInspection({kind:'command',pieceId:'A'});assert.match(html,/command connection|Command lines/);assert.doesNotMatch(html,/data-board-preview-action/);
+ }
+});
+
+test('message and ordinary Pass share one guarded admission with stale-state and inspection fences',async()=>{
+ let click,canInteract=true,release;const applied=[],external=[];
+ const label={innerHTML:'',textContent:'',addEventListener:(kind,callback)=>{if(kind==='click')click=callback},removeEventListener:noop};
+ const state={sideToMove:'P1',turnIndex:0,continuation:null,pieces:[]};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getSelectedPieceSummary:()=>null},host:{canInteract:()=>canInteract,applyAction:async(_state,action)=>{applied.push(action);return new Promise(resolve=>{release=()=>resolve({accepted:true,state:{...state,turnIndex:1},legalActions:[]})})}},controls:{onBoardMessageAction:id=>external.push(id)}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});await runtime.loadSnapshot(state,{legalActions:[{type:'pass'}]});
+ const fire=(message=true)=>click({target:{closest:selector=>selector===(message?'[data-board-message-action]':'[data-board-preview-action]')?{getAttribute:()=> 'pass'}:null}});
+ runtime.setInteractionBlocked(true);fire();assert.equal(applied.length,0);runtime.setInteractionBlocked(false);
+ canInteract=false;fire();assert.equal(applied.length,0);canInteract=true;
+ runtime.setInspection({kind:'supply',owner:'P1'});fire();assert.equal(applied.length,0);runtime.clearInspection();
+ await runtime.loadSnapshot({...state,continuation:{type:'rush'}},{legalActions:[{type:'pass'}]});fire();assert.equal(applied.length,0);
+ await runtime.loadSnapshot(state,{legalActions:[]});fire();assert.equal(applied.length,0);
+ await runtime.loadSnapshot(state,{legalActions:[{type:'pass'}]});fire();fire(false);assert.deepEqual(applied,[{type:'pass'}]);assert.deepEqual(external,[]);
+ release();await new Promise(resolve=>setTimeout(resolve,0));fire();assert.equal(applied.length,1);
+});

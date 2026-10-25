@@ -298,7 +298,9 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
 });
 
 test("transport subscriptions drive immediate game-shell updates", () => {
-  assert.match(source, /transport\.subscribe\(\(change\) => \{[\s\S]*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);[\s\S]*boardRuntime\?\.showRemovalEffects\(transition\.effects, null\);\s*\}\);/s);
+  const start=source.indexOf("const subscribeToTransport ="),end=source.indexOf("\nsubscribeToTransport();",start);
+  assert.ok(start>=0&&end>start);
+  assert.match(source.slice(start,end), /transport\.subscribe\(\(change\) => \{[\s\S]*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);[\s\S]*boardRuntime\?\.showRemovalEffects\(transition\.effects, null\);/s);
   assert.match(source, /const canHydrateRouteFromLocalState = \(route = currentRoute\) => \{/);
   assert.match(source, /return Boolean\(transport\.getGameViewModel\(route\.gameId\)\);/);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
