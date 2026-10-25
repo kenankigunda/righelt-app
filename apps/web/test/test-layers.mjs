@@ -38,6 +38,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "bootstrap.test.mjs",
   "client-move-generation.test.mjs",
   "command-journal.test.mjs",
+  "command-observations.test.mjs",
   "deploy-config.test.mjs",
   "engine-board-adapter.test.mjs",
   "e2e-stack.test.mjs",
