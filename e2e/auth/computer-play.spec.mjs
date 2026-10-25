@@ -3,6 +3,7 @@ import { submitPlayableAction, switchGamePanel } from '../support/app.mjs';
 import { AUTH_CONTROL_ORIGIN } from './fixture.mjs';
 import { readProjectedGame, waitForComputerDecision } from '../support/computer-projection.mjs';
 import { isOperationRequest, operationValues } from '../support/shared-request.mjs';
+import { attachFailureAndRethrow } from '../support/failure-evidence.mjs';
 
 const projected = (page, id) => page.evaluate(readProjectedGame, { id });
 
@@ -44,14 +45,14 @@ test('ordinary computer play records real worker evidence, preserves private not
   await expect.poll(async () => (await projected(page, created.id)).moves.length).toBeGreaterThan(0);
   const afterHuman = await projected(page, created.id);
   if (afterHuman.canEndTurn) await page.locator('[data-action="end-turn"]').click();
+  let lastVerifiedGame=afterHuman;
   try { await expect.poll(async () => {
     const game = await projected(page, created.id);
+    lastVerifiedGame=game;
     return game.moves.some(move => move.computerProof?.modelId === 'initial-1554');
   }, { timeout: 100000, message: 'The production worker must submit a real trained-computer decision' }).toBe(true);
   } catch (error) {
-    const game = await projected(page, created.id);
-    await testInfo.attach('computer-failure-state', { contentType: 'application/json', body: JSON.stringify({ computer: game.computer, revision: game.gameplayRevision, state: game.board.state, currentTurn: game.currentTurn, moves: game.moves, status: await page.locator('[data-computer-status]').innerText(), errors }) });
-    throw error;
+    await attachFailureAndRethrow(error,{page,testInfo,lastVerifiedProjection:lastVerifiedGame,details:{journeyPhase,errors}});
   }
   const navigation = page.getByRole('button', { name: 'Open navigation menu', exact: true });
   if (await navigation.isVisible()) await navigation.click();
