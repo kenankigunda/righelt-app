@@ -1,6 +1,6 @@
 import { SYNC_TIMING } from './sync-protocol.js';
 /** Browser, server and diagnostics share these public behavior contracts. */
-export const COMPUTER_TIMING = Object.freeze({ detailAfterMs: 5_000, saveNoticeAfterMs: 10_000, stalledAfterMs: 30_000, renewAfterMs: SYNC_TIMING.heartbeatIntervalMs, leaseMs: SYNC_TIMING.inboundTimeoutMs });
+export const COMPUTER_TIMING = Object.freeze({ phaseLabelAfterMs: 500, detailAfterMs: 5_000, saveNoticeAfterMs: 10_000, stalledAfterMs: 30_000, renewAfterMs: SYNC_TIMING.heartbeatIntervalMs, leaseMs: SYNC_TIMING.inboundTimeoutMs });
 export const COMPUTER_CAPABILITIES = Object.freeze({ resumeHere: 'resume-here-v1' });
 export const COMPUTER_LIMITS = Object.freeze({ cachedModels: 2, historyPage: 100, attemptPage: 20, checkpointEvery: 50, noteCharacters: 2000, attemptBytes: 256 * 1024 });
 export const COMPUTER_PROFILES = Object.freeze({

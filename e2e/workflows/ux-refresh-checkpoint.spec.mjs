@@ -179,7 +179,7 @@ test('copy feedback preserves focus and collapses its space when empty',async({p
  await page.goto('/');await page.getByTestId('home-create-game').click();await page.getByRole('button',{name:'Start a friend game',exact:true}).click();await page.getByRole('button',{name:'Close invite',exact:true}).click();
  const panel=page.locator('[data-game-panel="join"]');const copy=panel.locator('[data-invite-role="blue"]');
  // Measure the same authoritative controls before and after transient feedback.
- await expect(panel.getByRole('button',{name:'Play as both players',exact:true})).toBeVisible();
+ await expect(panel.getByRole('button',{name:'Play both sides',exact:true})).toBeVisible();
  await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
  await copy.focus();
  await page.evaluate(()=>document.fonts.ready);

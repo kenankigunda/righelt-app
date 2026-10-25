@@ -79,9 +79,9 @@ export const recoveryMessage = (game, now = Date.now(), { computerSaveActive = f
     ? "Still recording earlier moves. Please wait before making another."
     : game.unsavedCommand ? "We couldn’t save your move. Please try again."
       : "We’re having trouble saving. Please try again.";
-  if (!game.recovering && game.syncStatus !== "confirming" && !game.confirmationOverdue) return "";
   if (["session_changed", "invalid_credentials"].includes(game.recoveryIssue)) return "Please sign in again to continue.";
   if (game.recoveryIssue === "invalid_response") return "We couldn’t record your move. Please reconnect.";
+  if (!game.recovering && game.syncStatus !== "confirming" && !game.confirmationOverdue) return "";
   const elapsed = recoveryWaitMs(game, now);
   if (game.pendingComputerSaveStartedAt != null) {
     if (!needsRecoveryAction(game, now)) {

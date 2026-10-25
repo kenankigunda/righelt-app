@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
+import {renderSummarySlots,renderHistorySlots} from '../shell/panel-loading.js';
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
 const source = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
@@ -75,11 +76,12 @@ test("game, join/invite, and history use shared section spacing structure", () =
   assert.match(source, /const renderSectionActions = \(actions\) => \{/);
   assert.match(source, /if \(items\.length === 0\) \{\s*return "";\s*\}/s);
   assert.match(source, /class="section-followup"/);
-  assert.match(source, /class="section-stack"/);
-  assert.match(
-    source.slice(source.indexOf('const renderHistoryPanel ='), source.indexOf('const renderBoardPanel =')),
-    /<div class="section-followup">\s*\$\{game\.historyLoading \|\| game\.historyLoadError[^\n]*data-testid="history-load-status"[^\n]*\n\s*<ol class="history-list"[^>]*>\$\{historyRows\}<\/ol>/s,
-  );
+  assert.match(extractSourceSegment('const renderGameSummaryPanel =','const renderJoinInvitePanel ='), /return renderSummarySlots\(/);
+  assert.match(extractSourceSegment('const renderHistoryPanel =','const renderBoardPanel ='), /return renderHistorySlots\(\{rows:historyRows/);
+  const summary=renderSummarySlots({title:'Game',started:'Started',role:'Role',turn:'Turn',latest:'Latest'});
+  assert.match(summary, /class="section-stack"/);
+  assert.match(summary, /<div class="section-followup"><p class="small"[^>]*>Turn<\/p><p class="small">Latest<\/p>/);
+  assert.match(renderHistorySlots({rows:'<li>Move</li>'}), /<div class="section-followup"><ol class="history-list"[^>]*><li>Move<\/li><\/ol>/);
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
 });
 

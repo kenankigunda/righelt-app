@@ -21,7 +21,7 @@ test('thinking overrides human selection and historical boards do not show live 
 
 test('optimistic computer completion never exposes a human prompt before confirmation', () => {
  const g=game();g.pendingComputerSaveStartedAt=0;g.pendingComputerProfile='tau';
- assert.equal(computerBoardMessage(g,{phase:'saving'},{selectedPieceId:'p'}),'Tau is finishing the turn');
+ assert.equal(computerBoardMessage(g,{phase:'saving'},{selectedPieceId:'p'}),'Tau is saving their move');
  g.inHistoryMode=true;assert.equal(computerBoardMessage(g,{phase:'saving'}),null);
 });
 
@@ -32,6 +32,33 @@ test('all profiles keep thinking and save narration plain for the animated cue',
    const message=computerBoardMessage(g,{profile,phase});assert.equal(message,`${name} is thinking`);assert.doesNotMatch(message,/…|\.\.\./);
   }
   assert.equal(computerBoardMessage(g,{profile,phase:'preparing'}),`Preparing ${name}`);
-  g.pendingComputerSaveStartedAt=0;assert.equal(computerBoardMessage(g,{profile,phase:'saving'}),`${name} is finishing the turn`);
+  g.pendingComputerSaveStartedAt=0;assert.equal(computerBoardMessage(g,{profile,phase:'saving'}),`${name} is saving their move`);
  }
+});
+
+
+test('phase labels skip sub-500ms phases and preparing never includes an elapsed timer', () => {
+  const g = {...game(), computerTurn:'tau'};
+  for (const phase of ['checking','looking-ahead','saving']) {
+    assert.equal(computerBoardMessage(g,{phase,phaseElapsedMs:499}), 'Tau is thinking');
+    assert.equal(computerBoardMessage(g,{phase,phaseElapsedMs:500}), phase === 'saving' ? 'Tau is saving their move' : phase === 'checking' ? 'Tau is checking their options' : 'Tau is thinking');
+  }
+  assert.equal(computerBoardMessage(g,{phase:'preparing',detailed:true,elapsedMs:60000}), 'Preparing Tau');
+  assert.equal(computerBoardMessage(g,{phase:'initializing-verified-runtime',detailed:true,elapsedMs:60000}), 'Preparing Tau');
+});
+
+test('pending save uses its own clock and profile even after the computer turn changes', () => {
+  const g = {...game(), pendingComputerSaveStartedAt:10000, pendingComputerProfile:'babs'};
+  assert.equal(computerBoardMessage(g,{profile:'tau',phase:'checking',phaseElapsedMs:30000,observedAt:10499}), 'Babs is thinking');
+  assert.equal(computerBoardMessage(g,{profile:'tau',phase:'checking',phaseElapsedMs:30000,observedAt:10500}), 'Babs is saving their move');
+});
+
+
+test('pending journal timestamps do not conceal recovery, and same-scope captured profile remains available', () => {
+ const g={...game(),pendingComputerSaveStartedAt:100,pendingComputerProfile:'babs'};
+ assert.equal(computerBoardMessage(g,{phase:'recovery',profile:'tau',observedAt:60000}), 'Babs needs a hand');
+ assert.equal(computerBoardMessage(g,{phase:'other-device',profile:'tau',observedAt:60000}), 'Babs is thinking');
+ assert.equal(computerBoardMessage(g,{phase:'paused',profile:'tau',observedAt:60000}), 'Babs is paused');
+ delete g.pendingComputerProfile;
+ assert.equal(computerBoardMessage(g,{phase:'saving',profile:'tau',observedAt:60000}), 'Tau is saving their move');
 });

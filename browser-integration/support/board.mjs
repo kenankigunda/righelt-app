@@ -29,6 +29,13 @@ const setup = async (type = "rush", hover = true) => {
 };
 window.boardFixture = {
   setup,
+  configure: async (snapshot, legalActions, {selectionState, interactive = true} = {}) => {
+    state = snapshot;
+    actions = legalActions;
+    canInteract = interactive;
+    await runtime.loadSnapshot(state, {legalActions: actions, selectionState});
+  },
+  inspect: value => runtime.setInspection(value),
   selection: () => runtime.getSelection(),
   applied: () => applied,
   message: value => { message = value; runtime.refreshStatus(); },

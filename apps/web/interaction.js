@@ -66,6 +66,12 @@ export function getBlockedPreviewLabel(blockedReason) {
   return `Disallowed: ${blockedReason ?? "rule violation"}.`;
 }
 
+export function getBlockedMoveExplanation(blockedReason) {
+  if (blockedReason === BLOCKED_PREVIEW_REASON.SUPPLY_DESTINATION_UNSUPPLIED) return "Destination would have no supply";
+  if (blockedReason === BLOCKED_PREVIEW_REASON.PUSH_STRENGTH_TOO_WEAK) return "Group too weak to push";
+  return "Move unavailable";
+}
+
 export function deriveForcedContinuationSelection(snapshot, legalActions) {
   if (!snapshot?.continuation || snapshot.continuation.type !== "push" || !Array.isArray(legalActions)) {
     return null;

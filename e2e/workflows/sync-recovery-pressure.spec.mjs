@@ -335,8 +335,8 @@ test('E07 cold invitation keeps upgrade recovery tied to its resolved game', asy
 test('I10 browser reconnect transfers one current snapshot after205 moves and30 duplicate submissions',async({page},info)=>{
  test.skip(info.project.name!=='chromium');test.setTimeout(120000);
  const {gameId}=await createGameFromHome(page);
- await page.getByRole('button',{name:'Play as both players',exact:true}).click();
- await expect(page.getByRole('button',{name:'Play as both players',exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'Play both sides',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Play both sides',exact:true})).toHaveCount(0);
  const result=await page.evaluate(async gameId=>{
   const {commandFingerprint}=await import('/generated/packages/shared-types/src/sync-protocol.js');
   const identityId=localStorage.getItem('righelt.identity.id.v1');

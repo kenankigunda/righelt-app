@@ -59,7 +59,7 @@ for (const width of [320, 390]) test(`computer action icons preserve labels and 
   ['other-device', []],
   ['stalled', ['Resume here']],
   ['watching', ['Pause']],
-  ['upgrade', ['Use new model','Keep this model']],
+  ['upgrade', ['Update opponent','Keep current']],
  ];
  for (const scale of [100,200]) for (const [mode,labels] of cases) {
   await page.evaluate(async ({mode,scale}) => {

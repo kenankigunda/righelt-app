@@ -1,17 +1,23 @@
+@import "./loading-edge.css";
 body {display:flow-root;}
 /* Loading, normal status and inspection share geometry at each text size. */
 .board-heading { min-height: 1.5em; }
 .board-preview-label { min-height: max(3.1em, 44px); font-size: 1rem; line-height: 1.5; margin-block: .25rem .65rem; }
-.board-message-slot {display:grid;margin-block:.25rem .65rem;}
+.board-message-slot {display:grid;margin-block:.25rem .65rem;font-family:var(--font-family);}
 .board-message-slot > .board-preview-label {grid-area:1 / 1;min-width:0;margin:0;}
 .board-message-live {grid-area:1 / 1;min-width:0;font-size:1rem;line-height:1.5;}
 .board-message-live > .board-preview-label {display:inline;margin:0;}
+/* Keep inline tokens inside the explicit line box while the font loads.
+   Middle alignment depends on the font's x-height and can enlarge a line. */
+.board-message-slot :is(.board-preview-coordinate-chip,.board-preview-highlight-chip,.board-preview-retreat-chip,.board-preview-inline-button) {vertical-align:top;}
 .board-message-activity {display:none;}
-.board-message-activity[data-loading-state="pending"] {display:inline-flex;vertical-align:middle;margin-inline-start:.3em;}
+.board-message-activity[data-loading-state="pending"] {display:inline-flex;vertical-align:middle;}
+.board-message-activity[data-loading-suppressed="true"] {display:none;}
 .board-message-sizing, .board-heading-sizing {visibility:hidden;pointer-events:none;user-select:none;}
-.board-heading-slot {display:grid;}
+.board-heading-slot {display:grid;grid-template-columns:minmax(0,1fr);min-width:0;}
 .board-heading-slot > .board-heading {grid-area:1 / 1;min-width:0;}
 .board-heading-slot + .board-message-slot {margin-block-start:0;}
+#app[data-shell-layout-mode="narrow"] [data-shell-panel="board"] .board {grid-template-columns:repeat(10,minmax(0,1fr));}
 /* Expand the tap surface inside the reserved message space, without moving
    the board or turning the inline action into a heavy toolbar. */
 .board-preview-label .board-preview-inline-button {position:relative;min-width:44px;}
@@ -22,6 +28,12 @@ body {display:flow-root;}
 .history-inline-preview .mini-board-preview-surface { width:100%; }
 .computer-recovery-area:empty { display:none; }
 .computer-play:empty { display:none; }
+
+/* Status notices are positioned separately, so reserve only the logo and
+   controls here. An empty rem-sized center track collapses the logo at zoom. */
+#app[data-shell-layout-mode="wide"] .shell-header {grid-template-columns:minmax(0,1fr) auto;}
+#app[data-shell-layout-mode="wide"] .shell-header-actions {grid-column:2;}
+#app[data-shell-layout-mode="wide"] .shell-header-actions .nav-row {flex-wrap:nowrap;width:auto;}
 
 #app[data-shell-layout-mode="narrow"] .shell-header {display:flex;align-items:center;flex-wrap:nowrap;gap:8px;margin:0 0 8px;padding:4px 0;min-height:44px;}
 #app[data-shell-layout-mode="narrow"] .shell-header-main {flex:1 1 auto;min-width:0;}
@@ -62,3 +74,29 @@ body {display:flow-root;}
 
 .overlay-key {display:flex;flex-wrap:wrap;gap:10px 12px;}
 .overlay-key .legend-inspection {white-space:nowrap;}
+
+/* Desktop squares fit beneath stable chrome; short windows keep usable cells and scroll. */
+#app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board-wrap:not(.computer-replay-wrap) {
+  width:min(100%,var(--desktop-board-side,max(396px,calc(100dvh - 25.5rem))));
+  margin-inline:auto;
+}
+#app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board {
+  aspect-ratio:1;
+  grid-template-columns:repeat(10,minmax(0,1fr));
+  grid-template-rows:repeat(10,minmax(0,1fr));
+}
+#app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board > .cell {aspect-ratio:1;min-height:0;min-width:0;padding:3px;}
+@media(pointer:coarse) {
+  #app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board-wrap:not(.computer-replay-wrap) {width:min(100%,var(--desktop-board-side,max(476px,calc(100dvh - 25.5rem))));}
+}
+
+#shell-board-turn-indicator {display:block;max-width:100%;min-width:0;}
+#shell-board-turn-indicator:has(.board-turn-name) {display:flex;}
+.board-turn-name {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+#shell-board-turn-indicator > :last-child {flex-shrink:0;white-space:pre;}
+
+.board-heading {display:flex;flex-wrap:wrap;align-items:baseline;gap:.25em;}
+.board-heading > span:last-child {flex:1 1 8ch;min-width:0;}
+.board-heading > .board-heading-separator {flex:0 0 auto;}
+
+.board-turn-name,.history-actor {unicode-bidi:isolate;}

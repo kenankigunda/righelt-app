@@ -30,3 +30,13 @@ Independent review found no remaining actionable findings in the reviewed featur
 The approved production investigation found outer API CPU failures on this game's control and read requests. Recovery158 owns the streaming response repair and deployment. After its verified production source SHA and rollout time arrive, this feature owns a bounded read-only provider-log check for the original game. No original-game mutations are authorized by that check.
 
 Server-side computer execution is tracked as backlog T-131, To Do, improvement, First public release m-2, pushed at backlog commit8519342.
+
+## Combined source checkpoint
+
+The 158 capability-bootstrap repair5c16990 is integrated atd5cc5e6. Canonical neutral recovery copy and legacy404 tests are restored ata40a35f while preserving the app's convergence-readiness assertions. The result animation test uses the154 owner's approved atomic frame check fromd7f84a8.
+
+Before the159 merge, computer-entry and recovery-alert passed81 browser checks across all three engines. Delayed computer save and immediate Resume here passed6 checks across all three engines atf7f5213. The delayed-save test proves the original request remains durably rejected after lease expiry, a fresh generation and request commit exactly one computer move, and each generation retains one submission identity. The initial read-only test receipt request omitted knownSnapshotEventSeq and failed400 after gameplay had already recovered; the corrected contract rerun passed. The first failure remains retained.
+
+Remaining Firefox/WebKit tab workflows passed6 cases with4 intentional Chromium-only skips. Compatible Chromium closing/manual/competing/process-termination and observed JavaScript suspension proof is retained. The complete browser window was cleaned and released before the training admission window.
+
+The pending159 source integration usesafd4971b9eb7499c693283e9e908fbc444271bbd. Conflicts retain configured computer seats, real Players activity and Resume here, shared overdue recovery, both session test tails, source-observed phase deadlines, and all browser workflow selections. The shared history renderer accepts an optional before slot to retain scoped history hydration/error recovery before the move list without changing normal layout. The canonical mobile history durable-operation test patch is applied. Bounded source review and syntax checks pass. Combined source tests, current CI, actual prerequisite merges and released final proof remain gates.

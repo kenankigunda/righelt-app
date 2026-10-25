@@ -264,3 +264,20 @@ test('an active uncertain computer save becomes actionable by the earliest fifte
  assert.match(recoveryMessage({...game,confirmationOverdue:true},100,{computerSaveActive:true}),/retry or view details/);
  for(const recoveryIssue of ['session_changed','invalid_credentials','invalid_response'])assert.equal(needsRecoveryAction({...game,recoveryIssue},1),true);
 });
+
+test('recovery uses finite earliest clocks and never postpones explicit failures',()=>{
+ const game={recovering:true,pendingCommandCount:1,pendingComputerSaveStartedAt:5000,recoveryStartedAt:0};
+ assert.equal(recoveryMessage(game,9999),'');
+ assert.match(recoveryMessage(game,10000),/computer’s move/);
+ assert.equal(needsRecoveryAction(game,14999),false);
+ assert.equal(needsRecoveryAction(game,15000),true);
+ for(const starts of [{recoveryStartedAt:null,pendingComputerSaveStartedAt:0},{recoveryStartedAt:NaN,pendingComputerSaveStartedAt:0},{recoveryStartedAt:0,pendingComputerSaveStartedAt:Infinity}])assert.equal(needsRecoveryAction({...game,...starts},15000),true);
+ assert.equal(needsRecoveryAction({recovering:true,recoveryStartedAt:NaN,pendingComputerSaveStartedAt:null},999999),false);
+ for(const issue of [{storageBlocked:true},{upgradeRequired:true},{recoveryIssue:'session_changed'},{recoveryIssue:'invalid_credentials'},{recoveryIssue:'invalid_response'}]){
+  const pending={...game,...issue,recovering:false,syncStatus:'ready'};
+  assert.equal(needsRecoveryAction(pending,1),true);assert.notEqual(recoveryMessage(pending,1,{computerSaveActive:true}),'');
+ }
+ assert.equal(needsRecoveryAction({...game,confirmationOverdue:true},1),true);
+ assert.match(recoveryMessage({...game,confirmationOverdue:true},1,{computerSaveActive:true}),/retry or view details/);
+ assert.equal(recoveryMessage({...game,recoveryIssue:'unavailable'},9999,{computerSaveActive:true}),'');
+});

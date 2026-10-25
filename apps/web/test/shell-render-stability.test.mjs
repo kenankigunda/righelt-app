@@ -49,7 +49,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /: isActive\s*\? 'tabindex="-1"'/);
   assert.match(source, /: 'aria-hidden="true" tabindex="-1" inert'/);
   assert.match(source, /const viewedGameId = getCurrentViewedGameId\(\);/);
-  assert.match(source, /data-shell-alert-zone="\$\{gameAlerts \? "active" : "idle"\}"/);
+  assert.match(source, /data-shell-alert-zone="\$\{gameAlerts \|\| startupStatus \? "active" : "idle"\}"/);
   assert.match(source, /data-action="toggle-header-menu"/);
   assert.match(source, /data-header-menu-open="\$\{headerMenuOpen \? "true" : "false"\}"/);
   assert.match(source, /const menuId = "shell-header-menu";/);
@@ -75,7 +75,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.doesNotMatch(source, /rollbackNotice: game\.rollbackNotice/);
   assert.match(source, /const orderedItems = notificationStack\.order\(game\.id, items\);/);
   assert.match(source, /renderGameAlertStackCard\(\{/);
-  assert.match(source, /<div class="shell-header-status" data-shell-alert-zone="\$\{gameAlerts \? "active" : "idle"\}">/);
+  assert.match(source, /<div class="shell-header-status" data-shell-alert-zone="\$\{gameAlerts \|\| startupStatus \? "active" : "idle"\}">/);
   assert.match(source, /id="shell-game-alerts"/);
   assert.match(source, /data-game-shell-root data-game-id=/);
   assert.match(source, /data-game-shell-track/);
@@ -279,20 +279,20 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /const branchButton = game\.inHistoryMode && game\.historyIndex === move\.index && move\.undone !== true/);
   assert.match(source, /const revertButton = game\.inHistoryMode && game\.historyIndex === move\.index && move\.undone !== true/);
   assert.match(source, /data-action="revert-to-move"/);
-  assert.match(source, /data-action="undo-last-move"/);
+  assert.doesNotMatch(source, /data-action="undo-last-move"/);
   assert.match(source, /class="history-item history-item-pending/);
   assert.match(source, /data-testid="history-pending-move-item"/);
   assert.match(source, /aria-busy="true"/);
   assert.match(source, /Pending<\/span>/);
-  assert.match(source, /const liveContinuationText =[\s\S]*Live: Waiting for \$\{controlSeat \|\| "next player"\} to continue/s);
-  assert.match(source, /const liveWaitingText =[\s\S]*Live: Waiting on \$\{activeTurn\.playerSeat \|\| "next player"\} to move/s);
+  assert.match(source, /const liveContinuationText =[\s\S]*liveHistoryLabel\(game,liveState,\{identityId:transport\.getIdentityId\(\)\}\)/s);
+  assert.match(source, /const liveWaitingText =[\s\S]*liveHistoryLabel\(game,liveState,\{identityId:transport\.getIdentityId\(\)\}\)/s);
   assert.match(source, /const liveStatusText = liveContinuationText \?\? liveWaitingText;/);
   assert.match(source, /class="history-item history-item-waiting history-empty-line/);
   assert.match(source, /return `\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
   assert.doesNotMatch(source, /if \(game\.inHistoryMode && activeTurn\.moveIndexes\.length > 0\) \{/);
   assert.match(source, /if \(!game\.inHistoryMode && !liveStatusItem && activeTurn\.moveIndexes\.length > 0\) \{\s*return `\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;\s*\}/s);
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
-  assert.match(source, /return `\$\{emptyTurnItem\}\$\{undoLastMoveItem\}\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
+  assert.match(source, /return `\$\{emptyTurnItem\}\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
   assert.match(source, /data-action="launch-history-branch"/);
   assert.match(source, /New game before this move/);
 });
@@ -372,12 +372,12 @@ test("history navigation stays local-first without the removed global busy wrapp
 
 test("shell renders durable browser E2E selectors for core workflow surfaces", () => {
   assert.match(source, /data-testid="home-create-game"/);
-  assert.match(source, /data-testid="game-role"/);
+  assert.match(readFileSync(join(testDir,"..","shell","panel-loading.js"),"utf8"), /data-testid="game-role"/);
   assert.match(source, /data-testid="copy-invite"/);
   assert.match(source, /renderPlayersPanel\(game,/);
   assert.match(readFileSync(join(testDir, "..", "shell", "players-panel.js"), "utf8"), /data-testid="participants-list"/);
   assert.match(source, /data-testid="game-board"/);
-  assert.match(source, /data-testid="history-list"/);
+  assert.match(readFileSync(join(testDir,"..","shell","panel-loading.js"),"utf8"), /data-testid="history-list"/);
   assert.match(source, /data-testid="history-move-item"/);
   assert.match(source, /data-testid="history-pending-move-item"/);
   assert.match(source, /data-testid="history-destruction-item"/);
@@ -412,24 +412,11 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /const isDualSeatIdentity = \(game\) =>/);
   assert.match(source, /return '<strong class="player-tone-both">both players<\/strong>';/);
   assert.match(source, /const renderConnectionStatusIcon = \(status, label\) =>/);
-  assert.match(source, /const renderPlayerSlotStatus = \(seat, participant, \{ verbose = false \} = \{\}\) =>/);
-  assert.match(source, /return `<span class="mini-board-card-connection-item">\$\{renderSeatLabel\(seat\)\}\$\{renderConnectionStatusIcon\(\s*"open",\s*statusLabel,\s*\)\}<\/span>`;/s);
-  assert.match(source, /const shouldUseVerboseHomeConnectionCopy = \(game\) =>/);
-  assert.match(source, /const renderHomeRoleLine = \(game\) =>/);
-  assert.doesNotMatch(source, /renderConnectionStatusIcon\(Boolean\(game\?\.myConnectionConnected\),/);
-  assert.match(source, /if \(game\?\.myRole === "Guest"\) \{\s*return game\?\.canJoinAsPlayer \? "Open to join as player" : "Open to view";\s*\}/);
-  assert.match(source, /const renderHomeSeatConnectionLine = \(game\) =>/);
-  assert.match(source, /return `<p class="small mini-board-card-connection-line">\$\{connectionSummary\}<\/p>`;/);
-  assert.match(source, /return '<p class="small mini-board-card-connection-line is-placeholder" aria-hidden="true"><span>&nbsp;<\/span><\/p>';/);
-  assert.doesNotMatch(source, /You are connected here|You are not connected here/);
-  assert.match(source, /const seatConnectionLine = renderHomeSeatConnectionLine\(game\);/);
-  assert.match(source, /const renderHomeConnectionSummary = \(game\) =>/);
-  assert.match(source, /const filteredSlots = isDualSeatIdentity\(game\) && isPlayerRole\(game\?\.myRole\)/);
-  assert.match(source, /renderPlayerSlotStatus\(entry\.seat, entry\.participant, \{ verbose: shouldUseVerboseHomeConnectionCopy\(game\) \}\)/);
+  assert.match(source, /import \{ renderHomeCardIdentity \} from "\.\/home-card-identity\.js"/);
+  assert.match(source, /renderHomeCardIdentity\(game, \{identityId: transport\.getIdentityId\(\)\}\)/);
+  assert.doesNotMatch(source, /renderHomeSeatConnectionLine|renderHomeConnectionSummary|renderHomeRoleLine/);
   assert.match(source, /<div class="mini-board-card-copy">/);
   assert.match(source, /<div class="mini-board-card-meta mini-board-card-meta-primary">/);
-  assert.match(source, /<span>\$\{renderHomeRoleLine\(game\)\}<\/span>/);
-  assert.match(source, /\$\{seatConnectionLine\}/);
   assert.match(source, /const moveLabel = `Move \$\{game\.moveCount \+ 1\}`;/);
   assert.match(source, /reconcileMiniBoardPreviews\(\);\s*syncMountedGameShellPanelUi\(shellRoot\);\s*scheduleGameShellStickyLayout\(\);/);
 });
@@ -521,4 +508,29 @@ test("loading frames and guest invitation surfaces never enter the loaded-shell 
  assert.match(gate,/\[data-game-shell-root\]\[data-testid="game-shell"\]/);
  assert.match(gate,/getInviteContextForGame\(game, "game"\)\) return false/);
  assert.doesNotMatch(gate,/game-loading-shell/);
+});
+
+
+test('startup progress and bootstrap retry stay in the out-of-flow header status zone',()=>{
+ const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
+ const zone=source.slice(source.indexOf('const renderHeaderAlertZone ='),source.indexOf('const syncShellLayoutMode ='));
+ const header=source.slice(source.indexOf('const renderHeader ='),source.indexOf('const setSelectedScenarioFeedback ='));
+ assert.match(zone,/loadingAttributes\("account-startup"/);assert.match(zone,/role="status">Connecting/);assert.match(zone,/role="alert"/);assert.match(zone,/data-action="retry-account-startup"/);assert.match(zone,/\$\{startupStatus\}/);
+ assert.doesNotMatch(header,/loadingAttributes\("account-startup"|data-action="retry-account-startup"/);
+});
+
+test('home loading metadata matches the consolidated identity title without an obsolete presence row',()=>{
+ const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');const skeleton=source.slice(source.indexOf('const renderHomeCardSkeleton ='),source.indexOf('const renderHomeSectionSkeleton ='));
+ assert.match(skeleton,/mini-board-card-meta mini-board-card-meta-primary/);assert.doesNotMatch(skeleton,/mini-board-card-connection-line/);
+ assert.match(skeleton,/length:100/);assert.match(skeleton,/mini-board-preview-status/);
+});
+
+
+test('all history undo/create actions belong to moves and the top keeps only Return to live',()=>{
+ const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');const panel=source.slice(source.indexOf('const renderHistoryPanel ='),source.indexOf('const renderBoardPanel ='));
+ assert.doesNotMatch(panel,/data-action="(?:launch-history-branch|revert-to-move|undo-last-move)"/);
+ assert.doesNotMatch(source,/data-action="undo-last-move"/);
+ const moves=source.slice(source.indexOf('const renderTurnHistory ='),source.indexOf('const renderHeader ='));
+ assert.match(moves,/history-item-actions/);assert.match(moves,/data-action="launch-history-branch"/);assert.match(moves,/data-action="revert-to-move"/);assert.match(moves,/data-testid="history-return-live"/);
+ const css=readFileSync(new URL('../shell/shell.css',import.meta.url),'utf8');assert.match(css,/\.shell-header-menu-button \{\s*display: flex;\s*align-items: center;\s*justify-content: center;/);
 });

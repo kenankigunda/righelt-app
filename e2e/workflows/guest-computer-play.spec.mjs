@@ -99,7 +99,7 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
   await expect.poll(async()=> (await projected(page,initial.id)).moves.some(move=>move.moveId===saved.moveId)).toBe(true);
   await expect(page.getByTestId('account-dialog')).not.toBeVisible();
   await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
-  const continueHere=page.getByRole('button',{name:'Continue on this device',exact:true});
+  const continueHere=page.getByRole('button',{name:'Continue play',exact:true});
   if(await continueHere.isVisible()) {
     const switched=page.waitForRequest(r=>isOperationRequest(r,'computer-control') && operationValues(r)?.action==='switch');
     await continueHere.click();const request=await switched;

@@ -61,7 +61,7 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  });
  const {gameId}=await importScenarioGame(page,scenario,baseURL);
  const players=page.getByRole("button",{name:"Players",exact:true});if(await players.isVisible())await players.click();
- await page.getByRole("button",{name:"Play as both players",exact:true}).click();
+ await page.getByRole("button",{name:"Play both sides",exact:true}).click();
  const boardTab=page.getByRole("button",{name:"Board",exact:true});if(await boardTab.isVisible())await boardTab.click();
  await page.route(`**/api/shell/games/${gameId}/reconcile`,async route=>{
   const response=await route.fetch();

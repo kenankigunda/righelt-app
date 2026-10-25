@@ -1,5 +1,17 @@
 import {test,expect} from '@playwright/test';
 import {createGameFromHome,makeAnyLegalMove,openDirectGameLink,requestPlayerJoin,acceptPendingRequest} from '../support/app.mjs';
+import {isOperationRequest} from '../support/shared-request.mjs';
+
+const expectAcceptedShared = async(page,gameId,request)=>{
+  const envelope=request.postDataJSON();expect(envelope.kind).toBe('shared');
+  const headers=Object.fromEntries(Object.entries(request.headers()).filter(([name])=>name.startsWith('x-righelt-')));
+  await expect.poll(()=>page.evaluate(async({gameId,envelope,headers})=>{
+    const response=await fetch(`/api/shell/games/${gameId}/reconcile`,{method:'POST',headers:{...headers,'content-type':'application/json'},
+      body:JSON.stringify({protocolVersion:2,identityId:envelope.identityId,knownSnapshotEventSeq:0,commands:[envelope]})});
+    if(!response.ok)throw Error(`Receipt lookup failed HTTP ${response.status}`);
+    return (await response.json()).commandOutcomes?.find(outcome=>outcome.clientCommandId===envelope.clientCommandId);
+  },{gameId,envelope,headers})).toMatchObject({outcome:'accepted',clientCommandId:envelope.clientCommandId,fingerprint:envelope.fingerprint});
+};
 
 const board = page => page.getByTestId('game-board');
 const tab = (page,key) => page.locator(`[data-action="switch-game-panel"][data-panel="${key}"]`);
@@ -25,7 +37,7 @@ const expectNoHorizontalOverflow=page=>expect.poll(()=>page.evaluate(()=>documen
 const selfPlay=async(page)=>{
   const game=await createGameFromHome(page);
   if(await page.locator('#app').getAttribute('data-shell-layout-mode')==='narrow')await switchPanel(page,'players');
-  await page.getByRole('button',{name:'Play as both players',exact:true}).click();
+  await page.getByRole('button',{name:'Play both sides',exact:true}).click();
   await expect(page.getByTestId('game-role')).toContainText('both players');
   if(await page.locator('#app').getAttribute('data-shell-layout-mode')==='narrow')await switchPanel(page,'board');
   return game;
@@ -118,9 +130,9 @@ test.describe('narrow board and history',()=>{
     const game=await readGame(page,gameId),first=game.moves[0];
     await switchPanel(page,'history');await page.locator(`[data-move-id="${first.moveId}"][data-testid="history-move-item"]`).click();
     await expect(page.getByTestId('history-inline-preview')).toBeVisible();
-    const response=page.waitForResponse(r=>new URL(r.url()).pathname.endsWith('/revert-request')&&r.request().method()==='POST');
+    const request=page.waitForRequest(r=>isOperationRequest(r,'revert-request'));
     await page.getByRole('button',{name:'Undo before this move',exact:true}).tap();
-    expect((await response).ok()).toBe(true);
+    await expectAcceptedShared(page,gameId,await request);
     await expect(tab(page,'board')).toHaveAttribute('aria-pressed','true');
     await expect(page.getByTestId('history-inline-preview')).toHaveCount(0);
     const live=await readGame(page,gameId);await expect.poll(()=>renderedPieces(board(page))).toEqual(expectedPieces(live.board.state));
@@ -147,9 +159,16 @@ test.describe('narrow board and history',()=>{
       await expect(page.getByTestId('undo-waiting-notice')).toBeVisible();
       await expect(guest.getByTestId('undo-approval-notice')).toBeVisible();
       await firstRow.click();await secondRow.click();await firstRow.click();await expect(firstRow).toHaveClass(/is-selected/);
-      await guestContext.route('**/revert-approve',async route=>{approvalSeen=true;await held;await route.continue();});
+      await guestContext.route(/\/(shared|revert-approve)$/,async route=>{
+        if(!isOperationRequest(route.request(),'revert-approve'))return route.continue();
+        approvalSeen=true;await held;await route.continue();
+      });
+      const approval=guest.waitForRequest(request=>isOperationRequest(request,'revert-approve'));
       await guest.getByTestId('undo-approval-notice').getByRole('button',{name:'Accept',exact:true}).click();
-      await expect.poll(()=>approvalSeen).toBe(true);release();
+      await expect.poll(()=>approvalSeen).toBe(true);
+      await expect(firstRow).toHaveClass(/is-selected/);
+      expect((await readGame(page,gameId)).pendingRevertRequest).toBeTruthy();
+      release();await expectAcceptedShared(guest,gameId,await approval);
       await expect(page.getByTestId('undo-waiting-notice')).toHaveCount(0);
       await expect(tab(page,'history')).toHaveAttribute('aria-pressed','true');
       await expect(firstRow).toHaveClass(/is-selected/);

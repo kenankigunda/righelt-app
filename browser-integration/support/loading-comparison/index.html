@@ -1,0 +1,38 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Righelt activity studies</title>
+<link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"><link rel="stylesheet" href="/apps/web/shell/loading.css"><link rel="stylesheet" href="./study.css"></head>
+<body><main><header><p class="eyebrow">Righelt · Activity studies</p><h1>Same rhythm, different relationship to the text</h1><p>Red and Blue use the actual player colors. Each study uses the shipped Manrope font. The reference retains the actual board message reservation</p></header>
+<div id="studies"></div><p class="study-note">A comparison only · Production behavior is unchanged</p></main>
+<script type="module">
+import {renderBoardMessageSlot,updateComputerBoardLoading} from '/apps/web/shell/board-message-layout.js';
+import {mountLoadingFeedback} from '/apps/web/shell/loading.js';
+const studies=[['current','Current reference','The existing cluster is a sibling of the sentence, with a fixed 3px gap and a vertical setting motion'],['type','A · Typographic','Manrope punctuation sits on the sentence baseline. Only opacity changes, including inside a button'],['separate','B · Separate component','The cut pieces have their own breathing room and are centered beside the text'],['hybrid','C · Contextual hybrid','Small cut pieces sit like an ellipsis and stay with the last word. Buttons use a distinct, centered cluster']];
+const phases=['Tau is thinking','Tau is checking their options','Tau is saving their move'];
+const pieces='<span class="loading-pieces" aria-hidden="true"><i></i><i></i><i></i></span>';
+const glyphs='<span class="type-ellipsis" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span>';
+const cue=kind=>kind==='type'?glyphs:pieces;
+const sentence=(kind,phase)=>{const last=phase.lastIndexOf(' ');return kind!=='hybrid'?`<span class="sentence">${phase}</span><span class="study-cue" data-loading-phase="visible">${cue(kind)}</span>`:`<span class="sentence">${phase.slice(0,last)} </span><span class="cue-tail"><span class="last-word">${phase.slice(last+1)}</span><span class="study-cue" data-loading-phase="visible">${cue(kind)}</span></span>`;};
+for(const [kind,title,description] of studies){
+ const section=document.createElement('section');section.className=`panel study study-${kind}`;section.dataset.study=kind;
+ section.innerHTML=`<h2>${title}</h2><p class="study-description">${description}</p><div class="samples"></div><div class="button-samples"></div><div class="board-edge" aria-hidden="true"></div>`;
+ for(const side of ['P1','P2']){
+  const sample=document.createElement('div');sample.className='actor-sample';sample.dataset.activitySide=side;
+  sample.innerHTML=`<span class="actor-name">${side==='P1'?'Red':'Blue'}</span>`;
+  for(const phase of phases.slice(0,1)){
+   const row=document.createElement('div');row.className='study-message';row.dataset.loadingPhase='visible';
+   row.innerHTML=renderBoardMessageSlot({id:`${kind}-${side}-${sample.children.length}`});
+   if(kind==='current'){
+    row.querySelector('.board-preview-label').textContent=phase;
+    updateComputerBoardLoading(row.querySelector('.board-message-activity'),{id:`study-${side}`,computer:{},computerTurn:'tau',board:{state:{sideToMove:side}}},{phase:'thinking'});
+   } else row.querySelector('.board-preview-label').innerHTML=sentence(kind,phase);
+   sample.append(row);
+  }
+  section.querySelector('.samples').append(sample);
+  section.querySelector('.button-samples').insertAdjacentHTML('beforeend',`<button type="button" class="secondary loading-control" data-activity-side="${side}" data-loading-phase="visible"><span class="loading-icon-slot">${cue(kind==='hybrid'?'separate':kind)}</span><span>Saving move</span></button>`);
+ }
+ document.querySelector('#studies').append(section);
+}
+mountLoadingFeedback(document);
+await document.fonts.ready;
+window.studyReady=true;
+window.studyPhase=phase=>{for(const row of document.querySelectorAll('.study-message')){const label=row.querySelector('.board-preview-label'),sentence=label.querySelector('.sentence'),lastWord=label.querySelector('.last-word');if(sentence){const last=phase.lastIndexOf(' ');sentence.textContent=lastWord?phase.slice(0,last)+' ':phase;if(lastWord)lastWord.textContent=phase.slice(last+1);}else label.textContent=phase;}};
+</script></body></html>
