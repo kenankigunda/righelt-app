@@ -38,7 +38,7 @@ async function fixture({ actions = [action(), action("rush", coord(4, 2), coord(
   handlers.onCellClick(state.pieces[0].position);
   await settle();
   return { runtime, applied, click: value => handlers.onCellClick(value), hover: value => handlers.onCellHoverStart(value), rendered: () => rendered,
-    endTurn: () => previewClick({ target: { closest: () => ({ getAttribute: () => "end-turn" }) } }),
+    endTurn: () => previewClick({ target: { closest: selector => selector === '[data-board-preview-action]' ? { getAttribute: () => "end-turn" } : null } }),
   };
 }
 
@@ -62,6 +62,25 @@ test("retained selection follows a moved piece through snapshot hydration", asyn
   f.click(coord(4, 4));
   assert.deepEqual(f.applied, [moves[0]]);
 });
+
+for (const type of ['rush', 'retreat', 'follow']) {
+  test(`${type} selection recovers after hydration under a temporary interaction gate`, async () => {
+    let interactive = true;
+    const state = snapshot();
+    if (type === 'retreat') state.continuation = {type: 'push', phase: 'retreat', pushedPieceId: 'A'};
+    if (type === 'follow') state.continuation = {type: 'push', phase: 'follow', followGroupPieceIds: ['A']};
+    const moves = [action(type), action(type, coord(4, 2), coord(5, 2))];
+    const f = await fixture({state, actions: moves, host: {canInteract: () => interactive}});
+    interactive = false;
+    await f.runtime.loadSnapshot(state, {legalActions: moves, selectionState: {selectedPieceId: 'A', source: coord(4, 2), target: null}});
+    f.click(coord(4, 3));
+    assert.deepEqual(f.applied, []);
+    interactive = true;
+    // The pointer need not move or emit another hover after the gate opens.
+    f.click(coord(4, 3));
+    assert.deepEqual(f.applied, [moves[0]]);
+  });
+}
 
 test("duplicate clicks and end-turn cannot overlap a pending submission", async () => {
   const pending = deferred();

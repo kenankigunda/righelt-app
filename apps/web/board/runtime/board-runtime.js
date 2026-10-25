@@ -144,14 +144,16 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return "actionPreviews";
     }
     const selectedPiece = getBoardPieceById(selectedPieceId);
-    if (!selectedPiece || selectedPiece.owner !== state.sideToMove || host.canInteract?.(state) === false) {
+    // A temporary recovery gate must not persist a different personal overlay
+    // after authority becomes available again. Submission checks authority live.
+    if (!selectedPiece || selectedPiece.owner !== state.sideToMove) {
       return "supplyCommand";
     }
     return hasActionLayer(selectedPieceMoves, selectedPieceMovePreviews) ? "actionPreviews" : "supplyCommand";
   };
 
   const getEffectiveSelectedPieceMovesForBoard = () => {
-    if (inspection) return { selectedPieceMoves: [], selectedPieceMovePreviews: [] };
+    if (inspection || host.canInteract?.(state) === false) return { selectedPieceMoves: [], selectedPieceMovePreviews: [] };
     if (selectedPieceOverlayPhase !== "supplyCommand") {
       return { selectedPieceMoves, selectedPieceMovePreviews };
     }
@@ -444,7 +446,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       removalEffects,
       allowFreeSelection: getAllowFreeSelection(),
       currentActionType: getActionType(),
-      selectedPieceOverlayPhase,
+      selectedPieceOverlayPhase: host.canInteract?.(state) === false ? "supplyCommand" : selectedPieceOverlayPhase,
     });
     controls.onVisualsUpdated?.({
       command: Boolean(elements.overlayLinesEl?.querySelector('[data-legend-kind="command"]')),
@@ -549,7 +551,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         } else {
           setBoardPreviewPrompt("No moves");
         }
-      } else if (selectedPieceOverlayPhase === "actionPreviews") {
+      } else if (selectedPieceOverlayPhase === "actionPreviews" && host.canInteract?.(state) !== false) {
         if (selectedSource) {
           setBoardPreviewPromptHtml(
             `Piece at ${renderBoardPreviewCoordinate(selectedSource)} – Select a move`,
@@ -1018,7 +1020,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       if (inspection?.kind === "command" && !inspection.pieceId) {
         inspection = canPreview ? null : {kind: "combined", pieceId: clickedPiece.id};
         selectedPieceOverlayPhase = canPreview ? "actionPreviews" : "supplyCommand";
-      } else if (inspection || selectedPieceOverlayPhase === "supplyCommand") {
+      } else if (inspection || selectedPieceOverlayPhase === "supplyCommand" || !canPreview) {
         inspection = {kind: "command", owner: clickedPiece.owner};
       } else {
         inspection = {kind: "combined", pieceId: clickedPiece.id};
