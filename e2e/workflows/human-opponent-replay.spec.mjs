@@ -1,14 +1,23 @@
-import {test,expect} from '@playwright/test';
+import {test as base,expect} from '@playwright/test';
+import {ownedContexts} from '../support/owned-contexts.mjs';
+// Teardown has Playwright's separate bounded fixture phase. Setup and every
+// behavior assertion retain the existing 60-second test budget.
+const test=base.extend({
+ ownedRoleContext:async({browser},use)=>{
+  const owned=ownedContexts(browser);
+  try{await use(options=>owned.create(options));}
+  finally{await owned.close();}
+ },
+});
 import {createGameFromHome,openDirectGameLink,requestPlayerJoin,acceptPendingRequest,joinAsViewer,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
 import {readProjectedGame} from '../support/computer-projection.mjs';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
 const label=page=>page.locator('#shell-board-preview-label');
 const replayButton=page=>label(page).getByRole('button',{name:'Show me again',exact:true});
 const assertUnchanged=(before,after)=>{expect(after.gameplayRevision).toBe(before.gameplayRevision);expect(after.board.state).toEqual(before.board.state);expect(after.moves.map(move=>({id:move.moveId,undone:move.undone}))).toEqual(before.moves.map(move=>({id:move.moveId,undone:move.undone})));};
-for(const width of [390,1440])test(`human opponent replay preserves authority and read-only inspection at ${width}px`,async({browser,baseURL},info)=>{
- const contexts=await Promise.all([0,1,2].map(()=>browser.newContext({viewport:{width,height:900}})));
+for(const width of [390,1440])test(`human opponent replay preserves authority and read-only inspection at ${width}px`,async({ownedRoleContext,baseURL},info)=>{
+ const contexts=await Promise.all([0,1,2].map(()=>ownedRoleContext({viewport:{width,height:900}})));
  const [owner,opponent,viewer]=await Promise.all(contexts.map(context=>context.newPage()));
- try{
   const {gameId,gameHash}=await createGameFromHome(owner);
   await openDirectGameLink(opponent,baseURL,gameHash);await requestPlayerJoin(opponent);await acceptPendingRequest(owner);
   await expect(opponent.getByTestId('game-role')).toContainText('Player 2');
@@ -51,5 +60,4 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
   await pass.click();await expect.poll(async()=>(await projected(owner,gameId)).board.state.turnIndex).toBe(beforePass.board.state.turnIndex+1);
   const passed=await projected(owner,gameId);expect(passed.gameplayRevision).toBe(beforePass.gameplayRevision+1);expect(passed.moves.at(-1).action).toEqual({type:'pass'});expect(passWrites).toHaveLength(1);owner.off('request',trackPass);
   await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
- }finally{await Promise.all(contexts.map(context=>context.close()));}
 });
