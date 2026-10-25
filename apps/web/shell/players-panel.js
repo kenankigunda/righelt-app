@@ -8,8 +8,9 @@ export function renderPlayersPanel(game,{identityId,expanded=false,pendingSeat,i
  const own=humanControlledSides(game,{identityId});
  const seats=['P1','P2'].map((side,index)=>{
   const person=game[index?'player2':'player1'],color=index?'Blue':'Red';
+  const computerProfile=game.computer ? game.computer.seats?.[index?'p2':'p1'] : person?.computerProfile;
   const accessibleIdentity=own.includes(side)?'You':playerDisplayName(game,side);
-  const content=person?.computerProfile?renderComputerPlayerCard(person,{gameId:game.id,side,expanded:expandedComputers.has(side),activity:computerActivity}):person?participantButton(person,{key:`seat:${side}`,side:side.toLowerCase(),presence:formatStatus(person.connected),displayName:own.includes(side)?'You':participantDisplayName(person,'Guest'),accessibleName:`${accessibleIdentity}, ${color}, ${person.connected?'Connected':'Disconnected'}`}):`<span class="participant-empty" data-player-side="${side.toLowerCase()}" ${pendingSeat===(index?'blue':'red')?'data-testid="pending-invitation"':''}>${icon('account')}<span>${pendingSeat===(index?'blue':'red')?'Awaiting player':'Open seat'}</span><span class="sr-only">${color}</span></span>`;
+  const content=computerProfile?renderComputerPlayerCard({...person,computerProfile},{gameId:game.id,side,expanded:expandedComputers.has(side),activity:computerActivity}):person?participantButton(person,{key:`seat:${side}`,side:side.toLowerCase(),presence:formatStatus(person.connected),displayName:own.includes(side)?'You':participantDisplayName(person,'Guest'),accessibleName:`${accessibleIdentity}, ${color}, ${person.connected?'Connected':'Disconnected'}`}):`<span class="participant-empty" data-player-side="${side.toLowerCase()}" ${pendingSeat===(index?'blue':'red')?'data-testid="pending-invitation"':''}>${icon('account')}<span>${pendingSeat===(index?'blue':'red')?'Awaiting player':'Open seat'}</span><span class="sr-only">${color}</span></span>`;
   return `<li data-testid="participant-player-${index+1}">${content}</li>`;
  }).join('');
  const viewers=viewerSummary(game.viewers??[],{identityId});

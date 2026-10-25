@@ -48,3 +48,11 @@ test('both computer seats receive the same session status and independent access
  assert.match(html,/computer-details-game-P1/);assert.match(html,/computer-details-game-P2/);
  assert.equal((html.match(/disabled aria-describedby=/g)||[]).length,2);
 });
+
+test('configured computer seats remain recoverable when manual projections omit the computer marker',()=>{
+ for(const marker of [undefined,null])for(const both of [false,true]){
+  const html=renderPlayersPanel({...game,computer:{manual:true,paused:true,seats:{p1:both?'babs':null,p2:'horus'}},player1:{identityId:'me',computerProfile:marker},player2:{identityId:'me',computerProfile:marker}},{identityId:'me',expandedComputers:new Set(['P1','P2']),computerActivity:{state:'paused',label:'Paused',showResume:true,disabledReason:null}});
+  assert.match(html,/Horus, Blue, Paused/);assert.equal((html.match(/>Resume here<\/button>/g)||[]).length,both?2:1);
+  if(both)assert.match(html,/Babs, Red, Paused/);else assert.match(html,/<bdi>You<\/bdi>/);
+ }
+});

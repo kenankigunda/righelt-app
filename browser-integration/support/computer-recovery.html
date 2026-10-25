@@ -11,7 +11,7 @@ function setState(state){
  game={id:'fixture',canControlComputer:identityId==='owner',computer:structuredClone(control),computerTurn:'horus',player1:{identityId:'owner'},player2:{identityId:'owner',computerProfile:'horus'},viewers:[],board:{state:{outcome:{status:state==='finished'?'p1_win':'ongoing'},sideToMove:'P2',turnIndex:0}}};
  if(state==='here'||state==='paused'||state==='manual')game.computer.lease={deviceId:'here',expiresAt:1000000};
  if(state==='elsewhere')game.computer.lease={deviceId:'other',expiresAt:1000000};
- game.computer.paused=state==='paused';game.computer.manual=state==='manual';render();
+ game.computer.paused=state==='paused';game.computer.manual=state==='manual';if(state==='manual')game.player2.computerProfile=null;render();
 }
 function patch(root,html){const next=root.cloneNode(false);next.innerHTML=html;patchSectionContent(root,next);}
 function render(){
