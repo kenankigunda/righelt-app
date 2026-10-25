@@ -1,0 +1,19 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Recovery space</title>
+<link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"><link rel="stylesheet" href="/apps/web/shell/notification-motion.css">
+<style>body{min-height:2200px}</style></head><body><main id="app" class="app-root" data-shell-layout-mode="narrow"></main>
+<script type="module">
+import {mountRecoverySpace} from '/apps/web/shell/recovery-space.js';
+import {renderGameAlertCard} from '/apps/web/shell/game-alert.js';
+import {renderWordmark} from '/apps/web/shell/brand.js';
+import {icon,soundToggle,headerActionContent} from '/apps/web/shell/ui.js';
+const source=await(await fetch('/apps/web/shell/app.js')).text(),app=document.querySelector('#app');
+const extract=(from,to)=>{const a=source.indexOf(from),b=source.indexOf(to,a);if(a<0||b<a)throw Error('Actual header renderer missing');return source.slice(a,b);};
+const account={snapshot:()=>({ready:true,enabled:true,available:true,session:{authenticated:false}})};
+const alert=renderGameAlertCard({body:'Undo request accepted',activity:'processing',action:`<button type="button">${icon('rematch')}Reload game</button><a class="button-link secondary" href="#/">${icon('home')}Home</a>`,testId:'recovery-notice'});
+const deps={account,headerMenuOpen:false,currentRoute:{},icon,headerActionContent,soundToggle,gameSound:{enabled:()=>true},buildHomeHash:()=> '#/',getCurrentFlyoutState:()=>({}),renderWordmark,brand:{getState:()=>({})},accountContinuationError:null,accountStartupError:null,issueDiagnostics:{list:()=>[]},isDiagnosticOpen:()=>false,renderDiagnosticDisclosure:()=>'',isNarrowHeaderMode:()=>true,getCurrentViewedGameId:()=> 'g',transport:{getGameViewModel:()=>({id:'g'})},renderGameAlertsHtml:()=>alert};
+const render=Function(...Object.keys(deps),`${extract('const renderHeaderNarrowMenu =','const renderHeaderAlertZone =')}${extract('const renderHeaderAlertZone =','const syncShellLayoutMode =')}${extract('const renderHeader =','const setSelectedScenarioFeedback =')};return renderHeader;`)(...Object.values(deps));
+app.innerHTML=render();
+window.setHeaderHeight=height=>{document.querySelector('.shell-header').style.minHeight=`${height}px`;};
+window.replaceHeader=()=>{const holder=document.createElement('div');holder.innerHTML=render();document.querySelector('.shell-header').replaceWith(holder.firstElementChild);};
+window.disposeRecoverySpace=mountRecoverySpace(app);await document.fonts.ready;window.fixtureReady=true;
+</script></body></html>
