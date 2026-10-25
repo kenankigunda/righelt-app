@@ -39,7 +39,7 @@ test('shipped trained weights complete a rush using current semantics without re
   const {readFile}=await import('node:fs/promises'), {createHash}=await import('node:crypto');
   const ort=await import('onnxruntime-web');
   const {CURRENT_COMPUTER_MODEL}=await import('../../shared-types/src/computer-play.ts');
-  const bytes=await readFile(new URL('../../../apps/web/computer/models/initial-1554.onnx',import.meta.url));
+  const bytes=await readFile(new URL('../../../apps/web'+CURRENT_COMPUTER_MODEL.url,import.meta.url));
   assert.equal(createHash('sha256').update(bytes).digest('hex'),CURRENT_COMPUTER_MODEL.sha256);
   const configBytes=await readFile(new URL('../config/experiment-v1.json',import.meta.url));
   assert.equal(createHash('sha256').update(configBytes).digest('hex'),'f433dd71f410c451fd6523946b224df710919be5008abe507cbc80aca97a374d');

@@ -1,3 +1,4 @@
+import { CURRENT_COMPUTER_MODEL } from '../../packages/shared-types/src/computer-play.ts';
 import { test, expect } from '@playwright/test';
 import { submitPlayableAction } from '../support/app.mjs';
 import { AUTH_CONTROL_ORIGIN } from './fixture.mjs';
@@ -36,7 +37,7 @@ test('ordinary computer play records real worker evidence, preserves private not
   expect(createResponse.status(), `Computer game creation failed (request ${createResponse.headers()['x-righelt-request-id'] || 'unavailable'})`).toBe(200);
   const created = (await createResponse.json()).game;
   expect(created.computer.seats).toEqual({ p1: null, p2: 'babs' });
-  expect(created.computer.modelId).toBe('initial-1554');
+  expect(created.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
   await expect(page.getByTestId('game-role')).toContainText('Player 1');
   await waitForPlayableBoard(page);
@@ -47,7 +48,7 @@ test('ordinary computer play records real worker evidence, preserves private not
   if (afterHuman.canEndTurn) await page.locator('[data-action="end-turn"]').click();
   try { await expect.poll(async () => {
     const game = await projected(page, created.id);
-    return game.moves.some(move => move.computerProof?.modelId === 'initial-1554');
+    return game.moves.some(move => move.computerProof?.modelId === created.computer.modelId);
   }, { timeout: 100000, message: 'The production worker must submit a real trained-computer decision' }).toBe(true);
   } catch (error) {
     const game = await projected(page, created.id);
@@ -135,12 +136,13 @@ test('ordinary computer undo restores the human turn and resumes computer contro
   expect(response.ok()).toBe(true);
   const initial = (await response.json()).game;
   expect(initial.computer.seats).toEqual({ p1: null, p2: 'babs' });
+  expect(initial.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
   await waitForPlayableBoard(page);
   await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
   await expect.poll(async () => (await projected(page, initial.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();
-  await waitForComputerDecision(page, initial.id, 'babs');
+  await waitForComputerDecision(page, initial.id, 'babs', { modelId: initial.computer.modelId });
   const controls = [];
   const observe = request => {
     if (isOperationRequest(request, 'computer-control')) controls.push({ action: operationValues(request).action,
@@ -193,12 +195,13 @@ test(`${profile} prepares and plays as Player 2 with the production model`, asyn
   expect(createResponse.status(), `Computer game creation failed (request ${createResponse.headers()['x-righelt-request-id'] || 'unavailable'})`).toBe(200);
   const created = (await createResponse.json()).game;
   expect(created.computer.seats).toEqual({ p1: null, p2: profile });
+  expect(created.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
   await waitForPlayableBoard(page);
   await submitPlayableAction(page, created.legalActions.find(action => action.from && action.to));
   await expect.poll(async () => (await projected(page, created.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, created.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();
-  const played = await waitForComputerDecision(page, created.id, profile);
+  const played = await waitForComputerDecision(page, created.id, profile, { modelId: created.computer.modelId });
   expect(played.moves.find(move => move.computerProof)?.computerProof.profile).toBe(profile);
   await info.attach('accepted-profile-decisions', { contentType: 'application/json', body: JSON.stringify({ profile, humanFirst: played.moves }) });
 });
@@ -229,7 +232,8 @@ test(`${profile} branches from a human decision and plays as Player 1 with the p
     expect(branched.board.state).toEqual(created.board.state);
     expect(branched.computer.seats).toEqual({ p1: profile, p2: null });
     await expect(popup.getByTestId('game-role')).toContainText('Player 2');
-    const computerFirst = await waitForComputerDecision(popup, branched.id, profile);
+    expect(branched.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
+    const computerFirst = await waitForComputerDecision(popup, branched.id, profile, { modelId: branched.computer.modelId });
     expect(computerFirst.moves.find(move => move.computerProof)?.computerProof.profile).toBe(profile);
     const unchangedSource = await projected(page, sourceId);
     expect(unchangedSource.gameplayRevision).toBe(played.gameplayRevision);

@@ -48,7 +48,7 @@ for (const accounts of [true, false]) test(`native ${accounts ? 'account' : 'gue
     assert.equal((await call(route('computer-control'),a2,{action:'acquire',deviceId:'device-b',generation:game.computer.generation})).status,409);
     assert.equal((await call(route('computer-control'),b,{action:'switch',deviceId:'device-b',generation:game.computer.generation})).status,409);
     const action = game.legalActions.find(action => action.from && action.to);
-    const proof = (g, device, id) => ({deviceId:device,generation:g.computer.generation,modelId:'initial-1554',profile:'babs',profileVersion:'experimental-v1',seed:107,attemptId:id});
+    const proof = (g, device, id) => ({deviceId:device,generation:g.computer.generation,modelId:g.computer.modelId,profile:'babs',profileVersion:'experimental-v1',seed:107,attemptId:id});
     const command = async (actor,g,id,p) => {
       const value = { protocolVersion:2,gameId:g.id,identityId:actor.id,authContextId:actor.context,clientCommandId:id,kind:'action',payload:{action,...(p ? {computer:p}: {})},expectedState:g.board.state,expectedGameplayRevision:g.gameplayRevision };
       return {...value,fingerprint:await commandFingerprint(value)};

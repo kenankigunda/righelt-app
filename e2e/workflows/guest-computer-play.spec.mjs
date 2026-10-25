@@ -1,3 +1,4 @@
+import {CURRENT_COMPUTER_MODEL} from '../../packages/shared-types/src/computer-play.ts';
 import {readFile} from 'node:fs/promises';
 import {isOperationRequest,operationValues} from "../support/shared-request.mjs";
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
@@ -26,8 +27,9 @@ test('guest computer finishes a catalog position and prepares a fresh rematch',a
   const final=source.moves.at(-1);
   const game=(await request('/api/shell/history/branch',{sourceGameId:source.id,sourceDecisionId:final.moveId,creatorSide:'p2',computer:{p1:'babs',p2:null}})).game;
   expect(game.board.state).toEqual(final.selectionSnapshot);
+  expect(game.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
   await page.goto(`/#/game/${game.id}`);
-  await waitForComputerDecision(page,game.id,'babs',{guest:true});
+  await waitForComputerDecision(page,game.id,'babs',{guest:true,modelId:game.computer.modelId});
   await expect.poll(async()=>(await projected(page,game.id)).board.state.outcome.status).toBe('p1_win');
   const result=page.getByTestId('game-result');await expect(result).toBeVisible();
   await page.screenshot({path:info.outputPath('guest-computer-finished.png')});
@@ -61,9 +63,10 @@ for (const width of [390, 1440]) test(`guest computer play survives reload and u
   await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
   await expect.poll(async () => (await projected(page, initial.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();
-  await waitForComputerDecision(page, initial.id, 'babs', {guest:true});
+  await waitForComputerDecision(page, initial.id, 'babs', {guest:true,modelId:initial.computer.modelId});
   const saved = (await projected(page, initial.id)).moves.find(move=>move.computerProof);
-  expect(saved.computerProof.modelId).toBe('initial-1554');
+  expect(initial.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
+  expect(saved.computerProof.modelId).toBe(initial.computer.modelId);
   await page.reload();
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',initial.id);
   await expect.poll(async()=> (await projected(page,initial.id)).moves.some(move=>move.moveId===saved.moveId)).toBe(true);
