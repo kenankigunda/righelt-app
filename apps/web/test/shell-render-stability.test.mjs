@@ -308,7 +308,7 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /return !game\.pendingPlayerRequestSeat && activeResultGameId !== game\.id && hostInvite\?\.gameId !== game\.id && !getActiveApprovalRequest\(game\) && !getActiveRevertRequest\(game\) && !getActivePendingRevertRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
   assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),[\s\S]*includeBoard,\s*animatePanels,\s*\}\);/s);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*(?:if \()?updateMountedGameShell\(\{/s);
-  assert.match(source, /const game = transport\.getGameViewModel\(gameId\);\s*if \(!routeHydrated && !game\) \{/s);
+  assert.match(source, /if \(!routeHydrated && !game\) \{\s*return renderGameViewSkeleton\(\);/s);
   assert.match(source, /if \(canHydrateRouteFromLocalState\(currentRoute\)\) \{\s*routeHydrated = true;\s*syncLiveChannels\(\);\s*render\(\);\s*maybeRevealRouteTransition\(\);\s*return;\s*\}/s);
 });
 
@@ -513,4 +513,5 @@ test("upgrade fencing keeps a static recovery notice without discarding viewing 
   const subscriber = source.slice(source.indexOf('const subscribeToTransport'), source.indexOf('subscribeToTransport();'));
   assert.doesNotMatch(subscriber, /location\.reload|sync-v2-refresh/);
   assert.match(source, /game\.upgradeRequired \? `<button class="secondary(?: mini-button)?" data-action="refresh-game"/);
+  assert.match(source, /if \(!game && transport\.isUpgradeRequired\?\.\(gameId\)\) \{\s*return `<section[^`]+data-action="refresh-game"/);
 });
