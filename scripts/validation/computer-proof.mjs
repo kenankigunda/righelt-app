@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
 import { proof } from './proof.mjs';
+import {candidateCapabilities} from './capabilities.mjs';
+import {assertResultHeading} from './result-heading.mjs';
 import { request as accountRequest, selectTerminalScenario } from './results-proof.mjs';
 
 export async function request(page, route, body) {
@@ -25,6 +27,7 @@ async function readyStory(page) {
 // This is a real local-stack journey. The model, worker, accepted command,
 // archive and result must agree. No enabled failure selects a legacy contract.
 export async function proveComputerPlay({ page, info, root, submitPlayableAction }) {
+  const capabilities = await candidateCapabilities(root);
   let creates = 0;
   const observe = request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/shell/games') creates++; };
   page.on('request', observe);
@@ -81,7 +84,7 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     // This page owns the worker and observes an ongoing-to-terminal transition.
     // Await delivery of that transition instead of branching on a transient frame.
     await expect(result).toBeVisible();
-    await expect(result.getByRole('heading', { name: 'Loss', exact: true })).toBeVisible();
+    await assertResultHeading(result, {contract: capabilities.resultHeadingContract, outcome: finished.board.state.outcome.status, viewerSide: 'p2'});
     await proof(page, info, 'computer-game-result', result);
     await result.getByRole('button', { name: 'Play again', exact: true }).click();
     const chooser = page.getByRole('dialog', { name: 'Play again', exact: true });
