@@ -1,4 +1,5 @@
 import {readFile} from 'node:fs/promises';
+import {isOperationRequest,operationValues} from "../support/shared-request.mjs";
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {test,expect} from '@playwright/test';
 import {submitPlayableAction} from '../support/app.mjs';
@@ -69,15 +70,15 @@ for (const width of [390, 1440]) test(`guest computer play survives reload and u
   await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
   const continueHere=page.getByRole('button',{name:'Continue on this device',exact:true});
   if(await continueHere.isVisible()) {
-    const switched=page.waitForResponse(r=>new URL(r.url()).pathname.endsWith('/computer-control') && r.request().postDataJSON()?.action==='switch');
-    await continueHere.click();expect((await switched).status()).toBe(200);
+    const switched=page.waitForRequest(r=>isOperationRequest(r,'computer-control') && operationValues(r)?.action==='switch');
+    await continueHere.click();const request=await switched;
+    await expect.poll(async()=> (await projected(page,initial.id)).computer.lease?.deviceId).toBe(operationValues(request).deviceId);
   }
   const controls = [];
-  const observe = response => {
-    if (new URL(response.url()).pathname === `/api/shell/games/${initial.id}/computer-control`)
-      controls.push({ action: response.request().postDataJSON().action, status: response.status() });
+  const observe = request => {
+    if (isOperationRequest(request,'computer-control')) controls.push({action:operationValues(request).action,envelope:request.postDataJSON()});
   };
-  page.on('response', observe);
+  page.on('request', observe);
   try {
     const history = page.locator('[data-action="switch-game-panel"][data-panel="history"]');
     if (await history.isVisible()) await history.click();
@@ -89,8 +90,12 @@ for (const width of [390, 1440]) test(`guest computer play survives reload and u
     const board = page.locator('[data-action="switch-game-panel"][data-panel="board"]');
     if (await board.isVisible()) await board.click();
     await expect(page.locator('[data-computer-status]')).toBeHidden();
-    expect(controls.filter(control => control.action === 'resume')).toEqual([{ action: 'resume', status: 200 }]);
-    expect(controls.every(control => control.status === 200)).toBe(true);
+    const resumes=controls.filter(control=>control.action==='resume');
+    expect(new Set(resumes.map(control=>control.envelope.clientCommandId)).size).toBe(1);
+    const envelope=resumes[0].envelope;
+    expect(envelope.kind).toBe('shared');
+    const receipt=await (await page.request.post(`/api/shell/games/${initial.id}/reconcile`,{data:{protocolVersion:2,identityId:envelope.identityId,knownSnapshotEventSeq:0,commands:[envelope]}})).json();
+    expect(receipt.commandOutcomes[0]).toMatchObject({outcome:'accepted',clientCommandId:envelope.clientCommandId,fingerprint:envelope.fingerprint});
     await page.evaluate(async () => {
       await Promise.all(document.getAnimations().filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime)).map(animation => animation.finished.catch(() => {})));
     });
@@ -105,5 +110,5 @@ for (const width of [390, 1440]) test(`guest computer play survives reload and u
     const exported=JSON.parse(await readFile(await (await downloaded).path(),'utf8'));
     expect(exported.notes).toEqual([]);expect(exported.analyses).toEqual([]);expect(exported.attempts.length).toBeGreaterThan(0);
     await info.attach('undo-controls', { contentType: 'application/json', body: JSON.stringify(controls) });
-  } finally { page.off('response', observe); }
+  } finally { page.off('request', observe); }
 });

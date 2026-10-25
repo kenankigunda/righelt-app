@@ -4,6 +4,12 @@ import { createAccountController } from "../shell/account-controller.js";
 import { createLiveTransportStore } from "../shell/live-transport.js";
 import { STORAGE_GENERATION_HEADER } from "../generated/packages/shared-types/src/storage-policy.js";
 
+for(const status of [500,503,200])test(`headerless HTTP ${status} is not evidence of a storage reset`,async()=>{
+ const transport=createLiveTransportStore({storage:{getItem:()=>"actor",setItem(){}},auth:{enabled:false,storageGeneration:"current"},commandJournal:{list:async()=>[],close:async()=>{}},fetcher:async()=>Response.json(status===200?{ok:true}:{ok:false,error:"temporarily_unavailable"},{status})});
+ try{await assert.rejects(transport.loadGame("g"),error=>error.code===(status===200?"storage_generation_unverified":"temporarily_unavailable"));assert.equal(transport.getGameViewModel("g"),null);}
+ finally{transport.retire();}
+});
+
 test("bootstrap fences guest requests and retires delayed previous-generation responses",async()=>{
   let observed;
   let serverGeneration="reset-one";

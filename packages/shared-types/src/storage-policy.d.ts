@@ -11,6 +11,8 @@ export const STORAGE_POLICY: Readonly<{
   maintenanceObjects:number;
   chunkRows:number;
   maximumStateBytes:number;
+  maximumLegacyStateBytes:number;
+  maximumStoredStateBytes:number;
   maximumChunkBytes:number;
   warnFraction:number;
   stopFraction:number;
