@@ -1,4 +1,4 @@
-import {playerDisplayName} from '../shell/perspective-labels.js';
+import {playerDisplayName,liveHistoryLabel} from '../shell/perspective-labels.js';
 import {canReadAdditionalHistory} from '../shell/additional-history.js';
 import {renderHistorySlots} from '../shell/panel-loading.js';
 import test from "node:test";
@@ -12,6 +12,7 @@ import { createRenderGestureGate } from "../shell/render-gesture.js";
 import { renderResultMark, createResultPresentation } from '../shell/result-presentation.js';
 import { icon } from '../shell/ui.js';
 import { createLiveTransportStore } from '../shell/live-transport.js';
+import {activityStateActorSide} from '../shell/activity-affiliation.js';
 
 const source = readFileSync(new URL("../shell/app.js", import.meta.url), "utf8");
 const extract = (start, end) => {
@@ -191,6 +192,8 @@ function historyRouteHarness(t) {
     window:{location:{origin:'https://local.test',pathname:'/'},scrollY:0,requestAnimationFrame:noop},
     document:{getElementById:()=>null,querySelector:()=>main},
     getCurrentFlyoutState:()=>({}),buildInviteHash:()=>'',
+    icon,historyActorLabel,liveHistoryLabel,renderHistorySlots,canReadAdditionalHistory,activityStateActorSide,
+    account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})},
     escapeHtml:String,formatClientDateTime:String,toStableKey:JSON.stringify,
     getControlSeatForTurn:(_state,seat)=>seat,playerToneClassForSide:()=>'',playerToneClassForSeat:()=>'',
     getShellLayoutMode:()=> 'narrow',getShellLayoutModeForRoute:()=> 'narrow',
@@ -208,6 +211,7 @@ function historyRouteHarness(t) {
     ${patchHelper}
     ${extract('const preparePanelTransition =','const getCurrentFlyoutState =')}
     ${extract('const renderTurnHistory =','const renderHeader =')}
+    ${extract('const renderAdditionalHistory =','const renderHistoryPanel =')}
     ${extract('const renderHistoryPanel =','const renderBoardPanel =')}
     ${extract('const updateMountedGameShell =','const doesMountedFlyoutStateMatchRoute =')}
     globalThis.paintHistory = () => updateMountedGameShell({game:transport.getGameViewModel('g'),includeBoard:false});
