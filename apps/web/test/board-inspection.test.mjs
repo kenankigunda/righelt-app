@@ -26,16 +26,16 @@ test('supply-point lookup recognizes only actual supply coordinates', () => {
   assert.equal(supplyOwnerAt(null),null);
 });
 
-function harness({canInteract=true, message=null, moves=[]}={}) {
-  let click, rendered, prompt='', writes=0;
-  const label={get innerHTML(){return prompt;},set innerHTML(value){prompt=value;},get textContent(){return prompt;},set textContent(value){prompt=value;},addEventListener(){},removeEventListener(){}};
+function harness({canInteract=true, message=null, moves=[], previews=moves, onMessageAction=()=>{}}={}) {
+  let click, rendered, prompt='', writes=0, messageClick;
+  const label={get innerHTML(){return prompt;},set innerHTML(value){prompt=value;},get textContent(){return prompt;},set textContent(value){prompt=value;},addEventListener(type,handler){if(type==='click')messageClick=handler;},removeEventListener(){}};
   const runtime=createBoardRuntime({
     boardAdapter:{mount:options=>{click=options.onCellClick;},render:value=>{rendered=value;},getSelectedPieceSummary:({selectedPieceId,snapshot})=>{const found=snapshot.pieces.find(item=>item.id===selectedPieceId);return found ? {details:found}:null;},getPieceById:(state,id)=>state.pieces.find(item=>item.id===id),getPieceAt:(state,coord)=>state.pieces.find(item=>item.position.row===coord.row&&item.position.col===coord.col),nextSelectionForCell:({snapshot,clickedCoord,selection})=>{const selected=snapshot.pieces.find(item=>item.position.row===clickedCoord.row&&item.position.col===clickedCoord.col);return {selection:selected?{selectedPieceId:selected.id,source:selected.position,target:null}:{...selection,target:clickedCoord},nextActionType:'move'};}},
-    host:{canSelect:()=>true,canInteract:()=>canInteract,loadPieceMoves:async()=>({actions:moves,previewActions:moves}),applyAction:async()=>{writes++;return {accepted:false};}},
-    controls:{getAllowFreeSelection:()=>true,getBoardMessage:()=>message}
+    host:{canSelect:()=>true,canInteract:()=>canInteract,loadPieceMoves:async()=>({actions:moves,previewActions:previews}),applyAction:async()=>{writes++;return {accepted:false};}},
+    controls:{getAllowFreeSelection:()=>true,getBoardMessage:()=>message,onBoardMessageAction:onMessageAction}
   });
   runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
-  return {runtime,click:coord=>click(coord),get rendered(){return rendered;},get prompt(){return prompt;},get writes(){return writes;}};
+  return {runtime,click:coord=>click(coord),messageClick:id=>messageClick({target:{closest:selector=>selector==='[data-board-message-action]'?{getAttribute:()=>id}:null}}),get rendered(){return rendered;},get prompt(){return prompt;},get writes(){return writes;}};
 }
 
 test('legend inspection toggles single paths and owned networks without losing selection',async()=>{
@@ -110,4 +110,29 @@ test('read-only commander reclick alternates its lines and command network witho
   h.click(point(3,3)); assert.deepEqual(h.runtime.getInspection(),{kind:'command',owner:'P1'});
   h.click(point(3,3)); assert.deepEqual(h.runtime.getInspection(),{kind:'combined',pieceId:'C1'});
   assert.equal(h.writes,0);
+});
+
+
+test('external replay actions remain usable while board input is blocked',async()=>{
+  const actions=[];
+  const h=harness({message:{text:'Replay',actions:[{id:'stop',label:'Stop replay'},{id:'next',label:'Next step'}]},onMessageAction:id=>actions.push(id)});
+  await h.runtime.loadSnapshot(position(),{legalActions:[]});
+  h.runtime.setInteractionBlocked(true);
+  h.messageClick('stop'); h.messageClick('next');
+  assert.deepEqual(actions,['stop','next']);
+  assert.match(h.prompt,/Stop replay/); assert.match(h.prompt,/Next step/);
+  assert.equal(h.writes,0);
+});
+
+
+test('only legal destinations take priority over unoccupied supply-point inspection',async()=>{
+  let supply; for(let row=0;row<10;row++)for(let col=0;col<10;col++)if(supplyOwnerAt(point(row,col))==='P1')supply=point(row,col);
+  const blocked={type:'move',actorId:'C1',from:point(3,3),to:supply,legal:false};
+  const h=harness({previews:[blocked]}); await h.runtime.loadSnapshot(position(),{legalActions:[]});
+  h.click(point(3,3)); await Promise.resolve(); h.click(supply);
+  assert.equal(h.runtime.getInspection().kind,'supply'); assert.equal(h.writes,0);
+  const legal={...blocked,legal:true}; const playable=harness({moves:[legal]});
+  await playable.runtime.loadSnapshot(position(),{legalActions:[legal]});
+  playable.click(point(3,3)); await Promise.resolve(); playable.click(supply);
+  assert.equal(playable.runtime.getInspection(),null);
 });

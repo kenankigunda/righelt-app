@@ -305,6 +305,7 @@ function findPreferredPieceAt(snapshot, row, col) {
 function buildPieceToken(piece, ghost = false) {
   const token = document.createElement("span");
   token.className = `piece-token ${piece.owner === "P1" ? "p1" : "p2"} ${piece.kind}`;
+  if (typeof piece.id === "string") token.setAttribute("data-piece-id", piece.id);
   const renderStatus = getPieceRenderStatus(piece);
   if (!ghost && (!renderStatus.supplied || !renderStatus.commanded)) {
     token.classList.add("inactive");

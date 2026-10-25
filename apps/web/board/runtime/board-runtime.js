@@ -491,8 +491,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const externalMessage = controls.getBoardMessage?.({state, selectedPieceId, inspection});
     if (externalMessage) {
       const message = typeof externalMessage === "string" ? {text: externalMessage} : externalMessage;
-      const action = message.action;
-      setBoardPreviewPromptHtml(`${escapeHtml(message.text ?? "")}${action ? ` <button type="button" class="board-preview-inline-button" data-board-message-action="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>` : ""}`);
+      const actions = Array.isArray(message.actions) ? message.actions : message.action ? [message.action] : [];
+      setBoardPreviewPromptHtml(`${escapeHtml(message.text ?? "")}${actions.map(action => ` <button type="button" class="board-preview-inline-button" data-board-message-action="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>`).join("")}`);
       return;
     }
     if (inspection) {
@@ -1007,7 +1007,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const usesHoverTargetSelection = getUsesHoverTargetSelection();
     const clickedPiece = boardAdapter.getPieceAt(state, clickedCoord);
     const ownerAtPoint = supplyOwnerAt(clickedCoord);
-    const legalTarget = [...selectedPieceMoves, ...selectedPieceMovePreviews].some(action => sameCoordinate(action.to, clickedCoord));
+    const legalTarget = [...selectedPieceMoves, ...selectedPieceMovePreviews.filter(action => action.legal !== false)].some(action => sameCoordinate(action.to, clickedCoord));
     if (!clickedPiece && ownerAtPoint && !legalTarget) {
       setInspection({kind: "supply", owner: ownerAtPoint, point: clickedCoord});
       return;
@@ -1158,9 +1158,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const handleBoardPreviewClick = (event) => {
-    if (interactionBlocked) return;
     const externalAction = event.target.closest("[data-board-message-action]");
     if (externalAction) { controls.onBoardMessageAction?.(externalAction.getAttribute("data-board-message-action")); return; }
+    if (interactionBlocked) return;
     const actionButton = event.target.closest("[data-board-preview-action]");
     if (!actionButton) {
       return;

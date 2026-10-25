@@ -1203,3 +1203,14 @@ test('explicit inspection draws only deduplicated requested network and temporar
     adapter.unmount();
   });
 });
+
+test('stacked push tokens expose their own piece identities for visual replay',async()=>{
+  await withFakeDocument(()=>{
+    const {adapter,boardEl}=createMountedAdapter();
+    const snapshot={sideToMove:'P2',continuation:{type:'push',phase:'retreat',pushedPieceId:'defender'},pieces:[{id:'attacker',owner:'P1',kind:'unit',position:{row:4,col:4},supplied:true,commanded:true},{id:'defender',owner:'P2',kind:'unit',position:{row:4,col:4},supplied:true,commanded:true,pushed:true}]};
+    adapter.render({snapshot,selection:{selectedPieceId:null,source:null,target:null},overlay:{mode:'none'},legalActions:[],selectedPieceMoves:[],interactionMode:'static'});
+    const tokens=getCell(boardEl,4,4).querySelectorAll('.piece-token');
+    assert.deepEqual(tokens.map(token=>token.getAttribute('data-piece-id')).sort(),['attacker','defender']);
+    adapter.unmount();
+  });
+});
