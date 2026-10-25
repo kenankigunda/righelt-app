@@ -39,7 +39,7 @@ test('ordinary computer play records real worker evidence, preserves private not
   expect(created.computer.modelId).toBe('initial-1554');
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
   await expect(page.getByTestId('game-role')).toContainText('Player 1');
-  await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase', 'idle');
+  await waitForPlayableBoard(page);
   const humanAction = created.legalActions.find(action => action.from && action.to);
   await submitPlayableAction(page, humanAction);
   await expect.poll(async () => (await projected(page, created.id)).moves.length).toBeGreaterThan(0);
@@ -194,7 +194,7 @@ test(`${profile} prepares and plays as Player 2 with the production model`, asyn
   const created = (await createResponse.json()).game;
   expect(created.computer.seats).toEqual({ p1: null, p2: profile });
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
-  await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase', 'idle');
+  await waitForPlayableBoard(page);
   await submitPlayableAction(page, created.legalActions.find(action => action.from && action.to));
   await expect.poll(async () => (await projected(page, created.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, created.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();
@@ -218,7 +218,8 @@ test(`${profile} branches from a human decision and plays as Player 1 with the p
   const chooser = page.getByRole('dialog', { name: 'Create a new game here', exact: true });
   await chooser.getByRole('combobox', { name: 'Opponent', exact: true }).selectOption(profile);
   await chooser.getByRole('radio', { name: 'Player 2 · Blue', exact: true }).check();
-  await expect(chooser.getByRole('button', { name: 'Start game', exact: true })).toBeEnabled();
+  // Real model preparation uses the remaining test budget, as story entry does.
+  await chooser.getByRole('button', { name: 'Start game', exact: true }).click({ trial: true });
   const branchResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/history/branch');
   const popupPromise = page.waitForEvent('popup');
   await chooser.getByRole('button', { name: 'Start game', exact: true }).click();

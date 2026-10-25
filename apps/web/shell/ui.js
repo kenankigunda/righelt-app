@@ -1,6 +1,7 @@
 export const icon = (name) => {
   const paths = {
     key:'M4 3h6l3 3v6l-3 3H4l-3-3V6ZM13 10h8v4h-4v3h-4M5 7h4v4H5Z',
+    home:'M3 11L12 3l9 8v10h-6v-7H9v7H3Z',
     exit:'M10 3H4v18h6M10 12h12M17 7l5 5-5 5',
     check:'M4 12l5 5L21 5',
     scenarios:'M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h7v7h-7Z',
