@@ -62,10 +62,22 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
   });
   const initial=await measure();
   expect(initial.slot.height).toBeGreaterThanOrEqual(44);
-  if(scale==='100%')expect(initial.slot.height).toBeCloseTo(49.6,0);
+  // The frozen-sequence explanation is three wrapped lines at320px. Measure
+  // the real finite replicas at intrinsic height, rather than the old two-line
+  // minimum that predates mandatory reconnect/retreat/follow explanations.
+  const reservation=await page.locator('.board-message-slot').evaluate(slot=>{
+    const width=slot.getBoundingClientRect().width;
+    const heights=[...slot.querySelectorAll('.board-message-sizing')].map(node=>{
+      const copy=node.cloneNode(true);copy.style.cssText=`position:absolute;inline-size:${width}px;height:auto;align-self:start;margin:0`;
+      slot.append(copy);const height=copy.getBoundingClientRect().height;copy.remove();return height;
+    });
+    return {required:Math.max(...heights),lineHeight:parseFloat(getComputedStyle(slot.querySelector('.board-preview-label')).lineHeight)};
+  });
+  expect(initial.slot.height).toBeCloseTo(reservation.required,5);
+  if(scale==='100%')expect(initial.slot.height).toBeLessThanOrEqual(reservation.lineHeight*3);
   await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(0);
-  for(const phase of ['thinking','completed','completed-pass','selection','loading','human']){
+  for(const phase of ['thinking','completed','completed-pass','spectator-long-name','selection','frozen-reconnect','frozen-retreat','frozen-follow','loading','human']){
     await page.evaluate(async phase=>{
       const {computerBoardMessage}=await import('/apps/web/shell/computer-narration.js');
       const {opponentBoardMessage}=await import('/apps/web/shell/opponent-narration.js');
@@ -76,15 +88,38 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
       const preview=document.querySelector('#preview');
       if(phase==='loading'){preview.closest('.board-message-slot').outerHTML=renderBoardMessageSlot({id:'preview',loading:true});return;}
       if(phase==='selection'){preview.textContent='Piece at (9, 9) – Select a move';return;}
+      if(phase.startsWith('frozen-')){
+        const {getSelectedPieceExplanation,SELECTED_CONTINUATION_LABELS}=await import('/apps/web/board/piece-explanations.js');
+        const {renderCoordinateChip}=await import('/apps/web/board/coordinate-chip.js');
+        const type=phase==='frozen-reconnect'?'rush':'push',piece={id:'selected',supplied:true,commanded:true};
+        const explanation=getSelectedPieceExplanation(piece,{continuation:{type,frozenPieceStatesById:{selected:{supplied:false,commanded:false}}}});
+        if(typeof explanation!=='string'||!explanation.trim())throw Error('Frozen continuation must produce a real piece explanation');
+        const coordinate=renderCoordinateChip({row:9,col:9}),continuation=phase==='frozen-reconnect'?`${SELECTED_CONTINUATION_LABELS.rushBlocker} ${coordinate}`:phase==='frozen-retreat'?SELECTED_CONTINUATION_LABELS.retreat:SELECTED_CONTINUATION_LABELS.follow;
+        preview.innerHTML=`Piece at ${coordinate} – ${explanation} · ${continuation}`;return;
+      }
+
       if(phase==='human'){preview.innerHTML='Select a piece <button type="button" class="board-preview-inline-button" data-board-preview-action="pass">Pass</button>';return;}
       if(phase==='thinking')game.computerTurn='horus';
-      const message=phase==='completed-pass'?opponentBoardMessage({...game,myRoles:['Player 2'],legalActions:[{type:'pass'}],computer:null,turns:[{index:0,status:'complete',playerSeat:'Player 1'}],moves:[{turnIndex:0,actorSide:'P1',action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]},{},{},{canInteract:true}):computerBoardMessage(game,{});
-      preview.textContent=typeof message==='string'?message:message.text;
-      for(const action of message.actions??(message.action?[message.action]:[])){const button=document.createElement('button');button.type='button';button.className='board-preview-inline-button';button.dataset.boardMessageAction=action.id;button.textContent=action.label;preview.append(' ',button);}
+      const longName='界'.repeat(16)+'W'.repeat(16);
+      const message=phase==='spectator-long-name'?opponentBoardMessage({id:'named-viewer',myRole:'Viewer',myRoles:['Viewer'],player1:{identityId:'p1',profile:{displayName:longName}},player2:{identityId:'p2'},controlSeat:'Player 2',board:{state:{turnIndex:1,sideToMove:'P2'}},turns:[{index:0,status:'complete',playerSeat:'Player 1'}],moves:[{turnIndex:0,actorSide:'P1',action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]},{},{},{canInteract:false,identityId:'viewer'}):phase==='completed-pass'?opponentBoardMessage({...game,myRoles:['Player 2'],legalActions:[{type:'pass'}],computer:null,turns:[{index:0,status:'complete',playerSeat:'Player 1'}],moves:[{turnIndex:0,actorSide:'P1',action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]},{},{},{canInteract:true}):computerBoardMessage(game,{});
+      if(phase==='spectator-long-name'&&(!message?.text?.startsWith(`${longName} `)||message.action?.label!=='Show me again'))throw Error('Spectator narration must retain the actual full name and replay action');
+      if(phase==='spectator-long-name')window.namedSpectatorMessage=message;
+      window.boardFixture.message(message);
     },phase);
     expect(await measure(),`${phase} must preserve board and card geometry`).toEqual(initial);
-    if(phase==='completed'||phase==='completed-pass'){
+    if(phase==='frozen-reconnect'&&width===320)await page.screenshot({path:info.outputPath(`stable-frozen-reconnect-${width}-${scale}.png`)});
+    if(phase==='completed'||phase==='completed-pass'||phase==='spectator-long-name'){
       await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(1);
+      if(phase==='spectator-long-name'){
+        const name=page.locator('#preview .board-message-name'),replay=page.getByRole('button',{name:'Show me again',exact:true});
+        await expect(name).toHaveAttribute('dir','auto');await expect(name).toHaveAttribute('title','界'.repeat(16)+'W'.repeat(16));await expect(name).toHaveText('界'.repeat(16)+'W'.repeat(16));
+        expect(await name.evaluate(el=>el.scrollWidth>el.clientWidth)).toBe(true);
+        await replay.focus();await replay.evaluate(button=>{window.namedReplayButton=button;window.namedActorNode=button.parentElement.querySelector('.board-message-name');});
+        await page.evaluate(()=>window.boardFixture.message({...window.namedSpectatorMessage,text:window.namedSpectatorMessage.text.replace('retreated','followed')}));
+        await expect(replay).toBeFocused();expect(await replay.evaluate(button=>button===window.namedReplayButton&&button.parentElement.querySelector('.board-message-name')===window.namedActorNode)).toBe(true);
+        await expect(page.locator('#preview')).toContainText('followed a piece from (9, 9) to (0, 0)');
+        expect(await measure(),'Named narration refresh preserves the board, card, and action focus').toEqual(initial);
+      }
       if(phase==='completed-pass')await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
       const typography=await page.evaluate(()=>{const properties=['fontFamily','fontSize','fontWeight','lineHeight','height','padding','borderWidth'];const style=selector=>{const computed=getComputedStyle(document.querySelector(selector));return Object.fromEntries(properties.map(key=>[key,computed[key]]));};return{live:style('#preview button'),replica:style('.board-message-sizing button')};});
       expect(typography.live).toEqual(typography.replica);

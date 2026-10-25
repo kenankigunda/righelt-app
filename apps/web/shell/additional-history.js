@@ -1,3 +1,9 @@
+// Account deployments protect archive reads. Public board hydration and the
+// bounded ordinary move list remain available without an account.
+export const canReadAdditionalHistory = (game, accountState) => Boolean(game) && (
+ !accountState?.enabled || Boolean(accountState.ready && accountState.session?.authenticated && game.ownershipMode !== 'legacy_guest')
+);
+
 const sameScope=(a,b)=>Boolean(a&&b&&a.gameId===b.gameId&&a.owner===b.owner&&a.generation===b.generation&&a.revision===b.revision);
 
 // Ordinary history never fetches private notes or preloads unbounded archive pages.

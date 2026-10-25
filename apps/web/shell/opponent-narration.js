@@ -43,8 +43,9 @@ export function opponentBoardMessage(game, status, selection = {}, {canInteract 
       const completed = latestOpponentTurn(game, {identityId});
       const currentTurn = game.board?.state?.turnIndex;
       const started = (game.moves ?? []).some(move => !move.undone && move.turnIndex === currentTurn);
-      if (completed && !started) return {text: describeMove(completed.last, playerDisplayName(game,completed.side)), action: {id:'replay-computer',label:'Show me again'}};
-      return `${playerDisplayName(game,actor)} to play`;
+      if (completed && !started) {const actorName=playerDisplayName(game,completed.side);return {text:describeMove(completed.last,actorName),actorName,action:{id:'replay-computer',label:'Show me again'}};}
+      const actorName=playerDisplayName(game,actor);
+      return {text:`${actorName} to play`,actorName};
     }
     if (own.has(actor)) return 'Your turn';
     return 'Waiting for your opponent';
