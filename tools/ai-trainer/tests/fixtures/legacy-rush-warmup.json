@@ -1,0 +1,455 @@
+{
+  "sourceRevision": "b6c4c761c7078afc44b730c42e0bf475831a2511",
+  "game": {
+    "id": "legacy-warmup",
+    "partition": "train",
+    "rootState": {
+      "boardSize": 10,
+      "sideToMove": "P1",
+      "turnIndex": 0,
+      "pieces": [
+        {
+          "id": "C1",
+          "owner": "P1",
+          "kind": "commander",
+          "position": {
+            "row": 3,
+            "col": 6
+          },
+          "supplied": true,
+          "commanded": true
+        },
+        {
+          "id": "C2",
+          "owner": "P2",
+          "kind": "commander",
+          "position": {
+            "row": 6,
+            "col": 3
+          },
+          "supplied": true,
+          "commanded": true
+        },
+        {
+          "id": "L",
+          "owner": "P1",
+          "kind": "unit",
+          "position": {
+            "row": 3,
+            "col": 3
+          },
+          "supplied": true,
+          "commanded": true
+        },
+        {
+          "id": "A",
+          "owner": "P1",
+          "kind": "unit",
+          "position": {
+            "row": 4,
+            "col": 4
+          },
+          "supplied": true,
+          "commanded": true
+        },
+        {
+          "id": "B",
+          "owner": "P1",
+          "kind": "unit",
+          "position": {
+            "row": 5,
+            "col": 3
+          },
+          "supplied": true,
+          "commanded": true
+        },
+        {
+          "id": "E",
+          "owner": "P2",
+          "kind": "unit",
+          "position": {
+            "row": 4,
+            "col": 2
+          },
+          "supplied": true,
+          "commanded": true
+        }
+      ],
+      "continuation": null,
+      "outcome": {
+        "status": "ongoing"
+      },
+      "artifacts": {
+        "mode": "minimal",
+        "supply": [
+          {
+            "player": "P1",
+            "reachability": [],
+            "shortestPathByPieceId": {},
+            "distanceByPieceId": {}
+          },
+          {
+            "player": "P2",
+            "reachability": [],
+            "shortestPathByPieceId": {},
+            "distanceByPieceId": {}
+          }
+        ],
+        "command": {
+          "candidateEdges": [],
+          "cutEdges": [],
+          "activeEdges": [],
+          "shortestPathToCommanderByPieceId": {}
+        },
+        "groups": {
+          "componentByPieceId": {},
+          "membersByComponentId": {},
+          "strengthByComponentId": {}
+        }
+      }
+    },
+    "warmupActions": [
+      {
+        "type": "rush",
+        "actorId": "A",
+        "from": {
+          "row": 4,
+          "col": 4
+        },
+        "to": {
+          "row": 4,
+          "col": 3
+        }
+      },
+      {
+        "type": "pass"
+      }
+    ],
+    "initialState": {
+      "boardSize": 10,
+      "sideToMove": "P2",
+      "turnIndex": 1,
+      "pieces": [
+        {
+          "id": "C1",
+          "owner": "P1",
+          "kind": "commander",
+          "position": {
+            "row": 3,
+            "col": 6
+          },
+          "supplied": true,
+          "commanded": true,
+          "displaySupplied": true,
+          "displayCommanded": true,
+          "shifted": false,
+          "pushed": false
+        },
+        {
+          "id": "A",
+          "owner": "P1",
+          "kind": "unit",
+          "position": {
+            "row": 4,
+            "col": 3
+          },
+          "supplied": true,
+          "commanded": true,
+          "displaySupplied": true,
+          "displayCommanded": true,
+          "shifted": false,
+          "pushed": false
+        },
+        {
+          "id": "B",
+          "owner": "P1",
+          "kind": "unit",
+          "position": {
+            "row": 5,
+            "col": 3
+          },
+          "supplied": true,
+          "commanded": true,
+          "displaySupplied": true,
+          "displayCommanded": true,
+          "shifted": false,
+          "pushed": false
+        },
+        {
+          "id": "L",
+          "owner": "P1",
+          "kind": "unit",
+          "position": {
+            "row": 3,
+            "col": 3
+          },
+          "supplied": true,
+          "commanded": true,
+          "displaySupplied": true,
+          "displayCommanded": true,
+          "shifted": false,
+          "pushed": false
+        },
+        {
+          "id": "C2",
+          "owner": "P2",
+          "kind": "commander",
+          "position": {
+            "row": 6,
+            "col": 3
+          },
+          "supplied": true,
+          "commanded": true,
+          "displaySupplied": true,
+          "displayCommanded": true,
+          "shifted": false,
+          "pushed": false
+        },
+        {
+          "id": "E",
+          "owner": "P2",
+          "kind": "unit",
+          "position": {
+            "row": 4,
+            "col": 2
+          },
+          "supplied": true,
+          "commanded": false,
+          "displaySupplied": true,
+          "displayCommanded": false,
+          "shifted": false,
+          "pushed": false
+        }
+      ],
+      "continuation": null,
+      "outcome": {
+        "status": "ongoing"
+      },
+      "artifacts": {
+        "mode": "minimal",
+        "supply": [
+          {
+            "player": "P1",
+            "reachability": [
+              "A",
+              "B",
+              "C1",
+              "L"
+            ],
+            "shortestPathByPieceId": {},
+            "distanceByPieceId": {}
+          },
+          {
+            "player": "P2",
+            "reachability": [
+              "C2",
+              "E"
+            ],
+            "shortestPathByPieceId": {},
+            "distanceByPieceId": {}
+          }
+        ],
+        "command": {
+          "candidateEdges": [
+            "A|B",
+            "A|L",
+            "C1|L"
+          ],
+          "cutEdges": [],
+          "activeEdges": [
+            "A|B",
+            "A|L",
+            "C1|L"
+          ],
+          "shortestPathToCommanderByPieceId": {}
+        },
+        "groups": {
+          "componentByPieceId": {
+            "A": "P1:A",
+            "B": "P1:A",
+            "L": "P1:A",
+            "C1": "P1:C1",
+            "C2": "P2:C2",
+            "E": "P2:E"
+          },
+          "membersByComponentId": {
+            "P1:A": [
+              "A",
+              "B",
+              "L"
+            ],
+            "P1:C1": [
+              "C1"
+            ],
+            "P2:C2": [
+              "C2"
+            ],
+            "P2:E": [
+              "E"
+            ]
+          },
+          "strengthByComponentId": {
+            "P1:A": 3,
+            "P1:C1": 1,
+            "P2:C2": 1,
+            "P2:E": 1
+          }
+        }
+      }
+    },
+    "decisions": [
+      {
+        "id": "legacy:0",
+        "action": {
+          "type": "pass"
+        },
+        "controller": "P2",
+        "legal": [
+          2800,
+          1767,
+          1765,
+          1766,
+          1771,
+          1769,
+          1770,
+          1779,
+          1773,
+          1778,
+          1774
+        ],
+        "beforeHash": "ee53b92819c0979c8971722e224e7378902faa6ae393a59c1b257c95fe6b5228",
+        "afterHash": "8f7ba3ee5b17f2c2992bb764ac265bbe26505d0024eb00c27e9747f39f933cee",
+        "policy": [
+          {
+            "index": 2800,
+            "probability": 1
+          }
+        ],
+        "policyMask": true,
+        "fallback": null
+      },
+      {
+        "id": "legacy:1",
+        "action": {
+          "type": "pass"
+        },
+        "controller": "P1",
+        "legal": [
+          2800,
+          1008,
+          1011,
+          1009,
+          1010,
+          1012,
+          1015,
+          1013,
+          1014,
+          1209,
+          1219,
+          1217,
+          1223,
+          1491,
+          1489,
+          1498,
+          1494,
+          1497,
+          1495,
+          1502,
+          928,
+          931,
+          929,
+          938
+        ],
+        "beforeHash": "8f7ba3ee5b17f2c2992bb764ac265bbe26505d0024eb00c27e9747f39f933cee",
+        "afterHash": "f24f42461dba8dba8575e9102649fc968c34214ce78d9bba1720f91b0266db46",
+        "policy": [
+          {
+            "index": 2800,
+            "probability": 1
+          }
+        ],
+        "policyMask": true,
+        "fallback": null
+      },
+      {
+        "id": "legacy:2",
+        "action": {
+          "type": "pass"
+        },
+        "controller": "P2",
+        "legal": [
+          2800,
+          1767,
+          1765,
+          1766,
+          1771,
+          1769,
+          1770,
+          1779,
+          1773,
+          1778,
+          1774
+        ],
+        "beforeHash": "f24f42461dba8dba8575e9102649fc968c34214ce78d9bba1720f91b0266db46",
+        "afterHash": "8b772074572564009d31cddea821d8442a42ebc220f872008292d1119b8eb974",
+        "policy": [
+          {
+            "index": 2800,
+            "probability": 1
+          }
+        ],
+        "policyMask": true,
+        "fallback": null
+      },
+      {
+        "id": "legacy:3",
+        "action": {
+          "type": "pass"
+        },
+        "controller": "P1",
+        "legal": [
+          2800,
+          1008,
+          1011,
+          1009,
+          1010,
+          1012,
+          1015,
+          1013,
+          1014,
+          1209,
+          1219,
+          1217,
+          1223,
+          1491,
+          1489,
+          1498,
+          1494,
+          1497,
+          1495,
+          1502,
+          928,
+          931,
+          929,
+          938
+        ],
+        "beforeHash": "8b772074572564009d31cddea821d8442a42ebc220f872008292d1119b8eb974",
+        "afterHash": "ee492bcc19c991f88966e4d22245791c903a37c6e39c9ff81b1aef39fe60c4cc",
+        "policy": [
+          {
+            "index": 2800,
+            "probability": 1
+          }
+        ],
+        "policyMask": true,
+        "fallback": null
+      }
+    ],
+    "finalHash": "ee492bcc19c991f88966e4d22245791c903a37c6e39c9ff81b1aef39fe60c4cc",
+    "outcome": {
+      "status": "ongoing"
+    },
+    "termination": "truncated",
+    "truncationReason": "repetition"
+  }
+}

@@ -83,7 +83,7 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toBeVisible();
  game=await currentGame(page,gameId);expect(game.board.state.continuation.phase).toBe("retreat");
 
- await expect(page.locator("#shell-board-preview-label")).toContainText("Choose where to retreat");
+ await expect(page.locator("#shell-board-preview-label")).toContainText("Select a retreat");
  // The tentative retreat stays visible, but no command is allowed while the
  // accepted push's response is still unknown. The quiet banner is not readiness.
  const retreat=game.legalActions.find(a=>a.type==="retreat");expect(retreat).toBeTruthy();
@@ -169,4 +169,54 @@ for(const reduced of [false,true])test(`routine reconnect stays quiet four secon
   hold=false;release();await page.clock.resume();
   await page.unrouteAll({behavior:"wait"});
  }
+});
+
+test('branch chooser waits for this page recovery before creating exactly one original-position popup',async({page},info)=>{
+ let hold=false,release,seen;
+ const gate=new Promise(resolve=>release=resolve),held=new Promise(resolve=>seen=resolve);
+ const popups=[],branches=[];
+ page.on('popup',popup=>popups.push(popup));
+ await page.routeWebSocket(/\/api\/shell\/games\//,socket=>{
+  const server=socket.connectToServer();server.onMessage(message=>{if(!hold)socket.send(message);});
+ });
+ const {gameId}=await createGameFromHome(page);
+ let applied;
+ await page.route(`**/api/shell/games/${gameId}/apply`,async route=>{
+  const response=await route.fetch();applied=await response.json();await route.fulfill({response});
+ });
+ const {makeAnyLegalMove}=await import('../support/app.mjs');
+ await makeAnyLegalMove(page);
+ // The live socket may acknowledge first and cancel the browser HTTP fetch.
+ // Capture its actual server response at the route boundary before cancellation.
+ await expect.poll(()=>Boolean(applied?.game)).toBe(true);
+ const original=applied.game;
+ const row=page.getByTestId('history-move-item').first();
+ await row.click();await row.locator('[data-action="launch-history-branch"]').click();
+ const chooser=page.getByRole('dialog',{name:'Create a new game here',exact:true});
+ const start=chooser.getByRole('button',{name:'Start game',exact:true});
+ await expect(start).toBeEnabled();
+ await page.route(`**/api/shell/games/${gameId}/reconcile`,async route=>{
+  const response=await route.fetch();if(hold){seen();await gate;}await route.fulfill({response});
+ });
+ await page.context().route('**/api/shell/history/branch',async route=>{branches.push(route.request().postDataJSON());await route.continue();});
+ try{
+  hold=true;await page.evaluate(()=>{dispatchEvent(new Event('pagehide'));dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}));});
+  await held;
+  await expect(start).toBeDisabled();await expect(chooser.getByRole('status')).toHaveText('Updating this game');
+  expect(branches).toHaveLength(0);expect(popups).toHaveLength(0);
+  await page.screenshot({path:info.outputPath('branch-updating-source.png')});
+  hold=false;release();
+  // This UI transition is driven by the page's own transport subscription.
+  // An independent HTTP projection cannot prove that this tab has recovered.
+  await expect(start).toBeEnabled();await expect(chooser.getByRole('status')).toHaveText('');
+  const responsePromise=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/history/branch');
+  const popupPromise=page.waitForEvent('popup');await start.click();
+  const popup=await popupPromise,response=await responsePromise;
+  expect(response.status()).toBe(200);const branched=(await response.json()).game;
+  await expect(popup.getByTestId('game-shell')).toHaveAttribute('data-game-id',branched.id);
+  expect(branched.board.state).toEqual(original.moves[0].selectionSnapshot);
+  expect(branched.moves).toHaveLength(0);expect(branches).toHaveLength(1);expect(popups).toHaveLength(1);
+  await expect(page.getByTestId('history-move-item')).toHaveCount(original.moves.length);
+  await popup.close();
+ }finally{hold=false;release();await page.context().unrouteAll({behavior:'wait'});await page.unrouteAll({behavior:'wait'});}
 });

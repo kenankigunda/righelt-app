@@ -19,9 +19,9 @@ const unwrapOperationResult = async (value) => {
   return resolved;
 };
 
-export const createShellBoardHost = ({ transport, gameId, canInteract, canSelect, getInspectionSnapshot = () => null }) => ({
+export const createShellBoardHost = ({ transport, gameId, canInteract, canSelect, getInspectionSnapshot = () => null, getGameView = () => transport.getGameViewModel(gameId) }) => ({
   async loadInitialState() {
-    const game = transport.getGameViewModel(gameId);
+    const game = getGameView();
     const legalActions = Array.isArray(game?.legalActions) ? game.legalActions : [];
     return {
       state: game?.currentSnapshot ?? null,
@@ -31,7 +31,7 @@ export const createShellBoardHost = ({ transport, gameId, canInteract, canSelect
   async loadLegalActions(state) {
     const inspection = getInspectionSnapshot();
     if (inspection) return { ok: true, state: inspection, legalActions: [] };
-    const game = transport.getGameViewModel(gameId);
+    const game = getGameView();
     return {
       ok: true,
       state: game?.currentSnapshot ?? state,
@@ -41,7 +41,7 @@ export const createShellBoardHost = ({ transport, gameId, canInteract, canSelect
   async loadPieceMoves(state, pieceId) {
     const inspection = getInspectionSnapshot();
     if (inspection) return buildPieceMoveResponse({ state: inspection, legalActions: [], pieceId });
-    const game = transport.getGameViewModel(gameId);
+    const game = getGameView();
     const snapshot = game?.currentSnapshot ?? state;
     const legalActions = Array.isArray(game?.legalActions) ? game.legalActions : [];
     return buildPieceMoveResponse({ state: snapshot, legalActions, pieceId });
@@ -50,7 +50,7 @@ export const createShellBoardHost = ({ transport, gameId, canInteract, canSelect
     if (getInspectionSnapshot()) return { accepted: false, validation: { code: 'inspection_only' }, state, legalActions: [] };
     const response = await unwrapOperationResult(transport.applyGameAction({ gameId, state, action }));
     if (response?.accepted) {
-      const current = response.game ?? transport.getGameViewModel(gameId);
+      const current = response.game ?? getGameView();
       const snapshot = current?.currentSnapshot ?? response.state ?? state;
       const legalActions = Array.isArray(current?.legalActions)
         ? current.legalActions
@@ -74,7 +74,7 @@ export const createShellBoardHost = ({ transport, gameId, canInteract, canSelect
     if (getInspectionSnapshot()) return { accepted: false, validation: { code: 'inspection_only' }, state, legalActions: [] };
     try {
       const result = await unwrapOperationResult(transport.endTurn({ gameId }));
-      const game = result?.game ?? transport.getGameViewModel(gameId);
+      const game = result?.game ?? getGameView();
       const snapshot = game?.currentSnapshot ?? state;
       const legalActions = Array.isArray(game?.legalActions) ? game.legalActions : [];
       return {
@@ -90,7 +90,7 @@ export const createShellBoardHost = ({ transport, gameId, canInteract, canSelect
       };
     } catch (error) {
       const code = typeof error?.code === "string" ? error.code : "end_turn_failed";
-      const current = transport.getGameViewModel(gameId);
+      const current = getGameView();
       return {
         ok: true,
         accepted: false,

@@ -5,6 +5,13 @@ export async function enterUsername(page, username) {
   await page.getByTestId("account-dialog").getByLabel("Username", { exact: true }).fill(username);
 }
 
+export async function revealAccountEntry(page) {
+  const entry = page.getByRole("button", {name:"Account", exact:true});
+  if (!await entry.isVisible()) await page.getByRole("button", {name:"Open navigation menu", exact:true}).click();
+  await expect(entry).toBeVisible();
+  return entry;
+}
+
 export async function waitForAccountStartup(page) {
   await expect(page.getByTestId("home-create-game")).toBeVisible();
   // Read one DOM state. Separate locator calls can straddle the transition

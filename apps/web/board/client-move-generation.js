@@ -296,7 +296,7 @@ const buildHypotheticalPiecesForPreview = (state, action, actor) => {
 };
 
 const buildPreviewPiece = (state, action) => {
-  if (!state || action?.type === "pass" || !action?.to) {
+  if (!state || ["pass", "end_turn"].includes(action?.type) || !action?.to) {
     return null;
   }
 
@@ -374,6 +374,8 @@ const validateContinuation = (state, action) => {
     return null;
   }
 
+  if (action.type === "end_turn") return canCloseContinuationNow(state) ? null : {code: "CONTINUATION_REQUIRED"};
+
   if (state.continuation.type === "push") {
     if (state.continuation.phase === "retreat") {
       return action.type === "retreat" ? null : { code: "CONTINUATION_REQUIRED" };
@@ -382,13 +384,13 @@ const validateContinuation = (state, action) => {
   }
 
   if (state.continuation.type === "rush") {
-    return action.type === "rush" || action.type === "pass" ? null : { code: "CONTINUATION_REQUIRED" };
+    return action.type === "rush" || action.type === "end_turn" ? null : { code: "CONTINUATION_REQUIRED" };
   }
 
   return null;
 };
 
-const validateActionForPreview = (state, action) => {
+export const validateActionForPreview = (state, action) => {
   if (state?.outcome?.status !== "ongoing") {
     return { ok: false, code: "TERMINAL_GAME" };
   }
@@ -404,14 +406,9 @@ const validateActionForPreview = (state, action) => {
     return { ok: false, code: continuationValidation.code };
   }
 
-  if (action.type === "pass") {
-    if (state.continuation && state.continuation.type !== "rush") {
-      return { ok: false, code: "CONTINUATION_REQUIRED" };
-    }
-    if (state.continuation?.type === "rush" && !canCloseContinuationNow(state)) {
-      return { ok: false, code: "CONTINUATION_REQUIRED" };
-    }
-    return { ok: true };
+  if (action.type === "pass") return state.continuation ? {ok: false, code: "CONTINUATION_REQUIRED"} : {ok: true};
+  if (action.type === "end_turn") {
+    return state.continuation && canCloseContinuationNow(state) ? {ok: true} : {ok: false, code: "CONTINUATION_REQUIRED"};
   }
 
   const actor = resolveActor(state, action);
@@ -594,7 +591,7 @@ export const listPieceMovesFromLegalActions = ({ state, legalActions, pieceId })
 
   return legalActions
     .filter((action) => {
-      if (!action || action.type === "pass") {
+      if (!action || ["pass", "end_turn"].includes(action.type)) {
         return false;
       }
       if (action.type === "push" && !allowPush) {

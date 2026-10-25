@@ -1,5 +1,6 @@
 @import url('../design-tokens.css');
 @import url('./loading.css');
+@import url('./result-presentation.css');
 @font-face { font-family: Manrope; src: url('../assets/fonts/Manrope-variable.ttf') format('truetype'); font-weight: 200 800; font-display: swap; }
 :root { --font-family: Manrope, 'Avenir Next', sans-serif; --player-p1:#c2452f; --player-p2:#2d67c7; --radius-card:20px; --shell-elevated-surface:var(--surface-raised); }
 body { font-family:var(--font-family); background:var(--surface-foundation); }
@@ -231,7 +232,7 @@ body {background-image:var(--stone-grain);background-color:var(--surface-foundat
 .opponent-choice-arrow {position:absolute;right:12px;bottom:18px;color:var(--text-secondary);}
 .opponent-choice-arrow .righelt-icon {width:16px;height:16px;}
 .righelt-icon {width:20px;height:20px;flex:none;vertical-align:middle;}
-button:has(> .righelt-icon):not(.ui-icon-button) {display:inline-flex;align-items:center;justify-content:center;gap:9px;}
+:where(button,.button-link):has(> .righelt-icon):not(.ui-icon-button) {display:inline-flex;align-items:center;justify-content:center;gap:9px;}
 [data-hover-capability="hover"] .home-refresh button.opponent-choice:not(:disabled):hover {background:transparent;box-shadow:none;}
 [data-hover-capability="hover"] .home-refresh button.opponent-choice:not(:disabled):hover::before {background:linear-gradient(rgb(37 43 45 / 3%),rgb(37 43 45 / 3%)),var(--stone-grain),#fffdf6;}
 .home-refresh button.opponent-choice:focus-visible {outline:2px solid var(--ink);outline-offset:5px;}
@@ -335,7 +336,7 @@ html[data-page-active="false"] .shell-header button.ui-icon-button {transition:n
 
 /* Results and rematches share the layered surface and clear action hierarchy. */
 .game-result { max-width:660px; margin:32px auto 48px; padding:32px; --corner-start:var(--player-p1);--corner-end:var(--player-p2); }
-.game-result h1 {font-size:clamp(36px,7vw,56px);margin:12px 0;}
+.game-result h1 {font-size:clamp(1.75rem,7vw,3.5rem);margin:12px 0;}
 .game-result .story-modal-actions {margin-top:24px;}
 .game-result .button-link {display:flex;align-items:center;justify-content:center;min-height:48px;text-decoration:none;}
 .rematch-modal label {display:grid;gap:8px;}
@@ -345,6 +346,22 @@ html[data-page-active="false"] .shell-header button.ui-icon-button {transition:n
 .rematch-modal fieldset label {display:flex;align-items:center;gap:10px;min-height:44px;}
 .rematch-modal input[type="radio"] {appearance:auto;-webkit-appearance:radio;box-sizing:border-box;padding:0;border:0;border-radius:50%;background:transparent;box-shadow:none;min-width:20px;min-height:20px;width:20px;height:20px;margin:0;flex:none;accent-color:var(--player-p1);}
 .rematch-modal input[value="p2"] {accent-color:var(--player-p2);}
+.story-modal.rematch-modal .modal-content {padding-top:12px;}
+.rematch-modal .story-modal-actions {grid-template-columns:repeat(2,minmax(0,1fr));}
+.rematch-modal .story-modal-actions button {min-height:44px;font-size:1rem;padding:8px;}
+.rematch-opponent-cards {display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;}
+.rematch-modal .rematch-opponent-card {position:relative;isolation:isolate;display:flex;flex-direction:column;justify-content:center;gap:4px;grid-column:span 2;min-width:44px;min-height:80px;padding:8px 4px;border:1px solid transparent;cursor:pointer;font-size:.9rem;text-align:center;}
+.rematch-modal .rematch-opponent-card:nth-last-child(-n+2) {grid-column:span 3;}
+.rematch-opponent-card::before {content:'';position:absolute;inset:0;z-index:-1;clip-path:polygon(8px 0,calc(100% - 8px) 0,100% 8px,100% calc(100% - 8px),calc(100% - 8px) 100%,8px 100%,0 calc(100% - 8px),0 8px);background:var(--stone-grain),#eee7d9;}
+.rematch-opponent-card:has(input:checked) {font-weight:700;}
+.rematch-opponent-card:has(input:checked)::after {content:'';position:absolute;inset:0;z-index:-2;pointer-events:none;clip-path:polygon(8px 0,calc(100% - 8px) 0,100% 8px,100% calc(100% - 8px),calc(100% - 8px) 100%,8px 100%,0 calc(100% - 8px),0 8px);background:var(--action-color);}
+.rematch-opponent-card:has(input:checked)::before {inset:1px;background:var(--stone-grain),color-mix(in srgb,var(--action-color) 12%,#fffdf7);}
+.rematch-opponent-card:has(input:focus-visible) {outline:2px solid var(--ink);outline-offset:2px;}
+.rematch-opponent-card:has(input:disabled) {cursor:default;opacity:.65;}
+.rematch-modal .rematch-opponent-card input {position:absolute;top:6px;right:6px;min-width:14px;min-height:14px;width:14px;height:14px;}
+.rematch-opponent-mark {display:flex;align-items:center;justify-content:center;height:36px;}
+.rematch-opponent-mark img {width:36px;height:36px;object-fit:cover;clip-path:polygon(5px 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) 100%,0 100%,0 5px);}
+.rematch-opponent-mark .righelt-icon {width:32px;height:32px;}
 @media(max-width:480px){.game-result{padding:24px;margin:16px 0 32px;}}
 
 /* Account settings occupy the same side rail as the secondary tools. */
@@ -488,6 +505,7 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .computer-play p,.debug-summary p,.debug-section-body p { margin:0; }
 .computer-play { padding-block:.5rem 1rem; }
 .computer-status-line,.computer-progress,.computer-actions { display:flex; gap:.65rem; align-items:center; flex-wrap:wrap; }
+.computer-play :is(button,.button-link) { min-width:44px; min-height:44px; }
 .computer-status-line { justify-content:space-between; }
 .computer-progress progress { flex:1; min-width:8rem; accent-color:var(--player-p1); }
 .debug-section { border-top:1px solid var(--line); padding-block:.75rem; min-width:0; }

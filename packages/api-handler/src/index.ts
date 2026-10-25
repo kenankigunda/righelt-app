@@ -9,6 +9,7 @@ import { AuthProblem } from './auth-controls';
 import { handleAuthRequest, type AuthEnv } from './auth-handler';
 import type { ClientCommand, ServerEvent } from "../../shared-types/src";
 import { LIVE_HISTORY } from "../../shared-types/src/sync-protocol";
+import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION } from "../../shared-types/src/sync-protocol";
 import { CACHE_NO_STORE } from "../../shared-types/src/http";
 import { GameRoomDO, compactHistoryResponse } from "./game-room-do";
 import { handleLiveGameRequest, handleLiveGameWebSocketUpgrade } from "./shell-live";
@@ -129,6 +130,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
   if (response.status !== 101) {
     const headers = new Headers(response.headers);
     headers.set("X-Righelt-Request-Id", requestId);
+    headers.set(ACTION_CONTRACT_HEADER, String(ACTION_CONTRACT_VERSION));
     if (env.STORAGE_GENERATION) headers.set(STORAGE_GENERATION_HEADER, env.STORAGE_GENERATION);
     headers.set("X-Righelt-Server-Build", String((env as ApiEnv & { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? "unavailable"));
     response = new Response(response.body, { status: response.status, statusText: response.statusText, headers });

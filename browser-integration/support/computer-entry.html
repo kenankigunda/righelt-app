@@ -12,7 +12,7 @@ const prepare = opponent => opponent === 'friend' || opponent === 'self' ? prepa
 const dialog = createRematchDialog({ createModal,
   getReadiness: opponent => opponent === 'friend' || opponent === 'self' ? { state: 'ready', message: 'Ready' } : preparation.snapshot('rematch'),
   onOpponentChange: prepare, onRetry: prepare, onClose: () => preparation.cancel('rematch'),
-  onStart: intent => window.created.push(intent),
+  onStart: async intent => {window.created.push(intent);await window.startDelay;},
 });
 document.querySelector('#open').onclick = () => dialog.open({ opponent: 'babs', rematchSide: 'p1' });
 mountLoadingFeedback(document);

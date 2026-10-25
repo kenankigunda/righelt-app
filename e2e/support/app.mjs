@@ -31,6 +31,17 @@ const getVisibleJoinSurface = async (page) => {
   return null;
 };
 
+export const switchGamePanel = async (page, key) => {
+  if (await page.locator('#app').getAttribute('data-shell-layout-mode') !== 'narrow') return;
+  const controls = page.locator('[data-mobile-nav-controls]');
+  if (await controls.count() && await controls.getAttribute('inert') !== null) await page.getByRole('button',{name:'Show game navigation',exact:true}).click();
+  const tab = page.locator(`[data-action="switch-game-panel"][data-panel="${key}"]`);
+  await tab.click();
+  await expect(tab).toHaveAttribute('aria-pressed','true');
+  await expect.poll(()=>page.locator(`[data-mobile-panel="${key}"]`).evaluate(el=>el.closest('.game-shell-track').getAnimations().some(animation=>animation.playState==='running'||animation.pending)),{message:'Expected the panel transition to finish'}).toBe(false);
+  await expect.poll(()=>page.locator(`[data-mobile-panel="${key}"]`).evaluate(el=>Math.abs(el.getBoundingClientRect().left-el.closest('.game-shell-track-wrap').getBoundingClientRect().left)),{message:'Expected the selected panel to finish its horizontal transition'}).toBeLessThanOrEqual(1);
+};
+
 export const buildAppUrl = (baseURL, hash = "#/") => `${baseURL}${hash}`;
 
 export const createIsolatedPage = async (browser) => {
@@ -283,7 +294,7 @@ export const makeAnyLegalMove = async (page, ownerClass = "p1") => {
 
   // Read the actual client: describe-level and popup settings can differ from the project defaults.
   if (await page.evaluate(() => navigator.maxTouchPoints > 0)) {
-    await selectGamePanel(page,'board');
+    await switchGamePanel(page, "board");
     await sourceCell.tap();
     await expect(sourceCell).toHaveClass(/selected-piece/);
     await expect(targetCell.locator('.move-ghost')).toBeVisible();
@@ -312,7 +323,7 @@ export const openHistoryMode = async (page, moveIndex = 0) => {
   // Deliberately reveal the panel instead of scrolling a transformed offscreen pane.
   await expect(page.locator("#app")).toHaveAttribute("data-shell-layout-mode", /^(narrow|wide)$/);
   if (await page.locator("#app").getAttribute("data-shell-layout-mode") === "narrow") {
-    await selectGamePanel(page,'history');
+    await switchGamePanel(page, "history");
   }
   await expect(historyMoveItems(page).nth(moveIndex)).toBeVisible();
   await historyMoveItems(page).nth(moveIndex).click();

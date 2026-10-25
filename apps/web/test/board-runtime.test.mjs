@@ -4,6 +4,23 @@ import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 
 const noop = () => {};
 
+test('board status updates keep matching message controls and safely replace changed actions',async()=>{
+ const text={nodeType:3,nodeValue:'Replay · 1 of 3 '};
+ const stop={dataset:{boardMessageAction:'replay-stop'},textContent:'Stop replay'};
+ let html='',writes=0,message={text:'Replay · 2 of 3',actions:[{id:'replay-stop',label:'Stop replay'}]};
+ const label={firstChild:text,childNodes:[text,stop],querySelectorAll:()=>[stop],addEventListener:noop,removeEventListener:noop,
+  get innerHTML(){return html;},set innerHTML(value){writes++;html=value;}};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getSelectedPieceSummary:()=>null},host:{canInteract:()=>false},controls:{getBoardMessage:()=>message}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ await runtime.loadSnapshot({sideToMove:'P1',turnIndex:0,pieces:[],outcome:{status:'ongoing'}},{legalActions:[]});
+ assert.equal(writes,0);assert.equal(text.nodeValue,'Replay · 2 of 3 ');assert.equal(stop.textContent,'Stop replay');
+ message={text:'Replay · 3 of 3',actions:[{id:'replay-stop',label:'Stop'}]};runtime.refreshStatus();
+ assert.equal(writes,0);assert.equal(text.nodeValue,'Replay · 3 of 3 ');assert.equal(stop.textContent,'Stop');
+ message={text:'Finished <safely>',action:{id:'replay"next',label:'<Next>'}};runtime.refreshStatus();
+ assert.equal(writes,1);assert.match(html,/Finished &lt;safely&gt;/);assert.match(html,/data-board-message-action="replay&quot;next"/);assert.match(html,/&lt;Next&gt;/);
+ assert.doesNotMatch(html,/<safely>|<Next>|data-board-message-action="replay-stop"/);
+});
+
 test("board runtime keeps internal action type when external controls are absent", () => {
   const runtime = createBoardRuntime({
     boardAdapter: {
@@ -121,7 +138,7 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
   assert.equal(renderCalls.at(-1)?.overlay?.mode, "recorded-action");
   assert.deepEqual(renderCalls.at(-1)?.overlay?.recordedAction, recordedAction);
   assert.deepEqual(renderCalls.at(-1)?.overlay?.recordedActionStartPiece, recordedActionStartPiece);
-  assert.equal(boardPreviewLabelEl.textContent, "Showing recorded move.");
+  assert.equal(boardPreviewLabelEl.textContent, "Recorded move");
 });
 
 test("board runtime starts history destruction in the removal-effects layer before the settled overlay appears", async () => {
@@ -310,7 +327,7 @@ test("board runtime renders removal effects returned from shell apply actions", 
   }
 });
 
-test("board runtime shortens rush continuation CTA on narrow mobile viewports only", async () => {
+test("board runtime uses the same concise End Turn CTA at narrow and wide widths", async () => {
   let previewHtml = "";
   const originalWindow = globalThis.window;
   globalThis.window = {
@@ -392,7 +409,7 @@ test("board runtime shortens rush continuation CTA on narrow mobile viewports on
       },
     );
 
-    assert.match(previewHtml, />end turn now</);
+    assert.match(previewHtml, />End Turn</);
     assert.doesNotMatch(previewHtml, />end your turn now</);
   } finally {
     globalThis.window = originalWindow;
@@ -523,8 +540,8 @@ test("board runtime omits end-turn CTA when the rush chain is not yet closable",
   );
 
   assert.doesNotMatch(previewHtml, /data-board-preview-action="end-turn"/);
-  assert.match(previewHtml, /Continue rushing on one of the/);
-  assert.match(previewHtml, /to reconnect your piece at/);
+  assert.match(previewHtml, /Rush to reconnect|Select a rush/);
+  assert.match(previewHtml, /to reconnect piece at/);
   assert.match(previewHtml, /board-preview-coordinate-chip-rush-blocker/);
   assert.match(previewHtml, />4,3</);
 });
@@ -677,8 +694,8 @@ test("board runtime falls back to generic rush prompt when blocker lookup yields
     },
   );
 
-  assert.match(previewHtml, /Continue rushing on one of the/);
-  assert.doesNotMatch(previewHtml, /to reconnect your piece at/);
+  assert.match(previewHtml, /Rush to reconnect|Select a rush/);
+  assert.doesNotMatch(previewHtml, /to reconnect piece at/);
   assert.doesNotMatch(previewHtml, /board-preview-coordinate-chip-rush-blocker/);
 });
 
@@ -1317,7 +1334,7 @@ test("board runtime does not flash no-moves preview text while selected piece mo
   });
 });
 
-test("board runtime uses hover-aware action prompt copy", async () => {
+test("board runtime uses concise action confirmation across input modes", async () => {
   const createBoardPreviewLabel = () => {
     let value = "";
     return {
@@ -1431,7 +1448,7 @@ test("board runtime uses hover-aware action prompt copy", async () => {
   );
   nonHover.getOnCellClick()?.({ row: 4, col: 2 });
   nonHover.getOnCellClick()?.({ row: 4, col: 3 });
-  assert.equal(nonHover.boardPreviewLabelEl.textContent.includes("Click again to"), true);
+  assert.equal(nonHover.boardPreviewLabelEl.textContent.includes("Confirm"), true);
 
   const hover = createRuntime({ supportsHover: true });
   hover.runtime.bindElements({
@@ -1454,7 +1471,7 @@ test("board runtime uses hover-aware action prompt copy", async () => {
   );
   hover.getOnCellClick()?.({ row: 4, col: 2 });
   hover.getOnCellHoverStart()?.({ row: 4, col: 3 });
-  assert.equal(hover.boardPreviewLabelEl.textContent.includes("Click to"), true);
+  assert.equal(hover.boardPreviewLabelEl.textContent.includes("Confirm"), true);
   assert.equal(hover.boardPreviewLabelEl.textContent.includes("Click again to"), false);
 });
 
@@ -1567,7 +1584,7 @@ test("board runtime can force click target selection even on hover-capable devic
     source: { row: 4, col: 2 },
     target: { row: 4, col: 3 },
   });
-  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Click again to"), true);
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Confirm"), true);
 
   onCellClick({ row: 4, col: 3 });
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1759,13 +1776,13 @@ test("board runtime toggles overlay phase when the selected piece is clicked aga
   onCellClick({ row: 4, col: 2 });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(renderCalls.at(-1)?.selectedPieceOverlayPhase, "actionPreviews");
-  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Choose where to move your piece at"), true);
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Select a move"), true);
 
   onCellClick({ row: 4, col: 2 });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(renderCalls.at(-1)?.selectedPieceOverlayPhase, "supplyCommand");
   assert.deepEqual(runtime.getSelection().target, null);
-  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Showing supply & command lines"), true);
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Supply and command lines"), true);
 });
 
 test("board runtime can submit a legal target immediately after piece selection", async () => {
@@ -2814,11 +2831,11 @@ test("board runtime restores hover target selection when click target selection 
     source: { row: 4, col: 2 },
     target: { row: 4, col: 3 },
   });
-  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Click again to"), true);
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Confirm"), true);
 
   forceClickTargetSelection = false;
   assert.equal(runtime.syncInteractionCapabilities(), true);
-  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Click to"), true);
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Confirm"), true);
 
   onCellHoverStart({ row: 5, col: 2 });
   assert.deepEqual(runtime.getSelection(), {
@@ -3380,4 +3397,33 @@ test("board runtime refreshes a preserved branch selection from the new legal ac
   click(action.to);
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(submitted.length, 1, "late moves from the previous snapshot cannot revive a removed action");
+});
+
+test('read-only selected pieces remain informational during rush, follow and retreat',async()=>{
+ for(const continuation of [{type:'rush',rushedPieceIds:['A'],rushChainPieceIds:['A']},{type:'push',phase:'follow',attackerId:'A'},{type:'push',phase:'retreat',pushedPieceId:'A'}]){
+  let html='';const label={addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
+  const state={sideToMove:'P1',turnIndex:0,continuation,pieces:[{id:'A',owner:'P1',kind:'unit',position:{row:4,col:2},supplied:true,commanded:true}]};
+  const adapter={mount:noop,render:noop,getSelectedPieceSummary:({selectedPieceId})=>selectedPieceId?{details:{owner:'P1'}}:null,getPieceById:(snapshot,id)=>snapshot.pieces.find(piece=>piece.id===id)};
+  const runtime=createBoardRuntime({boardAdapter:adapter,host:{canInteract:()=>false,loadPieceMoves:async()=>({actions:[],previewActions:[]})}});
+  runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+  await runtime.loadSnapshot(state,{legalActions:[{type:'end_turn'}],selectionState:{selectedPieceId:'A',source:{row:4,col:2},target:null}});
+  assert.match(html,/Piece at/);assert.match(html,/4/);assert.match(html,/2/);assert.doesNotMatch(html,/data-board-preview-action|Select a rush|End Turn|Retreat|Follow/);
+  runtime.setInspection({kind:'command',pieceId:'A'});assert.match(html,/command connection|Command lines/);assert.doesNotMatch(html,/data-board-preview-action/);
+ }
+});
+
+test('message and ordinary Pass share one guarded admission with stale-state and inspection fences',async()=>{
+ let click,canInteract=true,release;const applied=[],external=[];
+ const label={innerHTML:'',textContent:'',addEventListener:(kind,callback)=>{if(kind==='click')click=callback},removeEventListener:noop};
+ const state={sideToMove:'P1',turnIndex:0,continuation:null,pieces:[]};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getSelectedPieceSummary:()=>null},host:{canInteract:()=>canInteract,applyAction:async(_state,action)=>{applied.push(action);return new Promise(resolve=>{release=()=>resolve({accepted:true,state:{...state,turnIndex:1},legalActions:[]})})}},controls:{onBoardMessageAction:id=>external.push(id)}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});await runtime.loadSnapshot(state,{legalActions:[{type:'pass'}]});
+ const fire=(message=true)=>click({target:{closest:selector=>selector===(message?'[data-board-message-action]':'[data-board-preview-action]')?{getAttribute:()=> 'pass'}:null}});
+ runtime.setInteractionBlocked(true);fire();assert.equal(applied.length,0);runtime.setInteractionBlocked(false);
+ canInteract=false;fire();assert.equal(applied.length,0);canInteract=true;
+ runtime.setInspection({kind:'supply',owner:'P1'});fire();assert.equal(applied.length,0);runtime.clearInspection();
+ await runtime.loadSnapshot({...state,continuation:{type:'rush'}},{legalActions:[{type:'pass'}]});fire();assert.equal(applied.length,0);
+ await runtime.loadSnapshot(state,{legalActions:[]});fire();assert.equal(applied.length,0);
+ await runtime.loadSnapshot(state,{legalActions:[{type:'pass'}]});fire();fire(false);assert.deepEqual(applied,[{type:'pass'}]);assert.deepEqual(external,[]);
+ release();await new Promise(resolve=>setTimeout(resolve,0));fire();assert.equal(applied.length,1);
 });

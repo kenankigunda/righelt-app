@@ -1,5 +1,5 @@
-import { canonicalCommandJson } from '../../shared-types/src/sync-protocol';
-import { archiveStatements, readDecision, readDecisionPage, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
+import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, canonicalCommandJson } from '../../shared-types/src/sync-protocol';
+import { archiveStatements, readDecision, readDecisionPage, readAdditionalDecisionPage, parseHistoryCursor, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
 import { StorageWriteLimitError } from './storage-codec';
 import { COMPUTER_LIMITS, changeComputerControl, computerCommandError, createComputerControl, parseComputerSeats, type ComputerProof } from '../../shared-types/src/computer-play';
 import { STORAGE_POLICY, STORAGE_GENERATION_HEADER } from "../../shared-types/src/storage-policy";
@@ -75,6 +75,7 @@ const json = (body: unknown, status = 200) =>
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
+      [ACTION_CONTRACT_HEADER]: String(ACTION_CONTRACT_VERSION),
       "cache-control": "no-store",
     },
   });
@@ -470,6 +471,16 @@ export class GameRoomDO {
     }
 
     if (request.method === 'POST' && path === '/decision-history') {
+      if(body.mode==='additional') {
+        if(body.historyRevision!==game.gameplayRevision)return json({ok:false,error:'history_changed',gameplayRevision:game.gameplayRevision},409);
+        const partial=(game.archiveStartRevision??1)>0;
+        if(game.archiveStartRevision===undefined) {
+          try { parseHistoryCursor(body.cursor); } catch { return json({ok:false,error:'invalid_history_cursor'},400); }
+          return json({ok:true,gameplayRevision:game.gameplayRevision,partial,available:false,items:[],nextCursor:null});
+        }
+        try{return json({ok:true,gameplayRevision:game.gameplayRevision,partial,...await readAdditionalDecisionPage(this.env,game,body.cursor,body.metadataOnly===true)});}
+        catch(error){if((error as Error).message==='invalid_history_cursor')return json({ok:false,error:'invalid_history_cursor'},400);throw error;}
+      }
       if (game.archiveStartRevision === undefined) {
         const cursor = body.cursor as { eventSeq?: unknown; ordinal?: unknown } | null;
         const after = cursor?.ordinal ?? -1;
@@ -1264,6 +1275,11 @@ export class GameRoomDO {
       await this.persistCandidate(clone(this.game!), null, rejected);
       return rejected;
     };
+    // Previously accepted receipts remain authoritative across contract upgrades.
+    const action = asAction(command.payload.action);
+    const oldContinuationPass = action?.type === "pass" && Boolean(asGameState(command.expectedState)?.continuation);
+    if (command.actionContractVersion !== undefined && command.actionContractVersion !== ACTION_CONTRACT_VERSION
+      || oldContinuationPass && command.actionContractVersion !== ACTION_CONTRACT_VERSION) return reject("upgrade_required");
     if (command.predecessor) {
       const parent = await loadCommandReceipt(this.env, game.id, command.predecessor.clientCommandId);
       if (!parent) return outcome("unknown", "dependency_pending");
@@ -1318,15 +1334,16 @@ export class GameRoomDO {
       result = applyServerActionWithExpectedState(game, action, asGameState(command.expectedState), typeof payload.notation === "string" ? payload.notation : undefined, command.clientCommandId);
     }
     if (!result.ok) return reject(result.error);
-    if (payload.computer && game.moves.length) game.moves[game.moves.length - 1].computerProof = clone(payload.computer as ComputerProof);
+    if (payload.computer && asAction(payload.action)?.type !== "end_turn" && game.moves.length) game.moves[game.moves.length - 1].computerProof = clone(payload.computer as ComputerProof);
     if (game.computer?.singleStep && payload.computer) { game.computer.paused = true; game.computer.singleStep = false; game.computer.generation++; }
     if (game.computer?.takeoverTurn !== null && game.computer?.takeoverTurn !== undefined && game.computer.takeoverTurn !== getActiveTurn(game)?.index) { game.computer.takeoverTurn = null; game.computer.generation++; }
     const accepted = { ...outcome("accepted", null, this.eventSeq + 1, game.gameplayRevision + 1), result: {
       ...("turn" in result ? { turn: result.turn } : {}),
+      ...(payload.computer && asAction(payload.action)?.type === "end_turn" ? { computerProof: clone(payload.computer as ComputerProof) } : {}),
       ...("removedPieces" in result ? { removedPieces: result.removedPieces } : {}),
       ...("destroyedPieces" in result ? { destroyedPieces: result.destroyedPieces } : {}),
     } } as CommandReceipt;
-    const event: EventAppendedEvent = { type: "event_appended", reason: command.kind === "end_turn" ? "turn_ended" : "move_recorded", eventSeq: this.eventSeq + 1, clientCommandId: command.clientCommandId, game: clone(game) };
+    const event: EventAppendedEvent = { type: "event_appended", reason: command.kind === "end_turn" || asAction(payload.action)?.type === "end_turn" ? "turn_ended" : "move_recorded", eventSeq: this.eventSeq + 1, clientCommandId: command.clientCommandId, game: clone(game) };
     try { await this.persistCandidate(game, event, accepted); }
     catch(error) {
       // Encoding limits are checked before DB.batch. The unchanged authoritative
@@ -1452,7 +1469,7 @@ export class GameRoomDO {
     }
     try {
       const projected = session?.compactHistory ? compactHistoryResponse(payload as unknown as Record<string,unknown>) : payload;
-      socket.send(JSON.stringify({ ...projected, ...(env.STORAGE_GENERATION ? { storageGeneration: env.STORAGE_GENERATION } : {}), ...(authActive(env) ? { authProtocolVersion: AUTH_PROTOCOL_VERSION } : {}), protocolVersion: 2, gameId: this.getLoadedGameId() }));
+      socket.send(JSON.stringify({ ...projected, ...(env.STORAGE_GENERATION ? { storageGeneration: env.STORAGE_GENERATION } : {}), ...(authActive(env) ? { authProtocolVersion: AUTH_PROTOCOL_VERSION } : {}), protocolVersion: 2, actionContractVersion: ACTION_CONTRACT_VERSION, gameId: this.getLoadedGameId() }));
     } catch {
       const session = this.sessions.get(socket);
       this.sessions.delete(socket);

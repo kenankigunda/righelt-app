@@ -3,7 +3,7 @@ import { expect } from "@playwright/test";
 
 export async function expectRematchRadioGeometry(dialog) {
   await waitForOverlayEntry(dialog);
-  const radios = dialog.getByRole("radio");
+  const radios = dialog.getByRole("group", {name:"Your side",exact:true}).getByRole("radio");
   await expect(radios).toHaveCount(2);
   for (const radio of await radios.all()) {
     const geometry = await radio.evaluate(input => {

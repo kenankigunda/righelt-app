@@ -126,7 +126,7 @@ export function deriveAutoSelectedTarget(actions) {
 }
 
 export function buildActionPayload(type, source, target, actorId = null) {
-  if (type === "pass") {
+  if (type === "pass" || type === "end_turn") {
     return { type };
   }
 

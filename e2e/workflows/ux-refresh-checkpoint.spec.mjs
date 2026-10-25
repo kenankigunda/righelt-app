@@ -41,8 +41,10 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  await expect(page.getByRole('dialog',{name:'Invite a friend'})).toBeVisible();
  await page.keyboard.press('Escape');
  await expect(page.getByTestId('game-board')).toBeVisible();
- const legend=page.locator('.overlay-key > span:visible');
+ const legend=page.locator('.overlay-key').getByRole('button');
  await expect(legend).toHaveText(['Commander','Supply point']);
+ await expect(legend.nth(0)).toHaveAccessibleName('Commander');
+ await expect(legend.nth(1)).toHaveAccessibleName('Supply point');
  await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
  await expect(page.locator('[data-action="guest-profile"]').first()).toHaveText('Guest player');
  const supply=await page.locator('.supply-point-marker.supply-point-p1').first().evaluate(el=>({core:getComputedStyle(el.querySelector('svg')).fill}));

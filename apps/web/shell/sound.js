@@ -1,4 +1,7 @@
+import { createDestructionSoundTracker, playStoneCrack } from './destruction-sound.js';
 import { swipeProgress } from './navigation-motion.js';
+import { getGameResult } from './game-result.js';
+import { resultSound } from './result-presentation.js';
 // Device preference is independent of authentication. Only deliberate mute is inherited.
 export const SOUND_KEY = 'righelt.device.sound-enabled';
 export const INCOMING_REMINDER_MS = 30_000;
@@ -16,13 +19,15 @@ export const createGameSound = ({
   createAudio = () => new (globalThis.AudioContext || globalThis.webkitAudioContext)({latencyHint:'interactive'}),
   hidden = () => Boolean(globalThis.document?.hidden),
   focused = () => globalThis.document?.hasFocus?.() ?? true,
+  getIdentityId = () => null,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
 } = {}) => {
   let enabled = true, audio, reminderTimer = null, pendingIncoming = false;
+  const destructionSounds = createDestructionSoundTracker();
   const sequences = new Map(), localCommands = new Set(), localStates = new Map();
   const active = () => !hidden() && focused();
-  const cue = (state, previous, fallback='move', confirmed=true) => confirmed && state?.outcome?.status && state.outcome.status !== 'ongoing' ? 'result' : previous?.pieces?.length > state?.pieces?.length ? 'capture' : previous && (previous.sideToMove !== state?.sideToMove || previous.turnIndex !== state?.turnIndex) ? 'turn' : fallback;
+  const cue = (state, previous, fallback='move', confirmed=true) => confirmed && state?.outcome?.status && state.outcome.status !== 'ongoing' ? 'result' : previous && (previous.sideToMove !== state?.sideToMove || previous.turnIndex !== state?.turnIndex) ? 'turn' : fallback;
   try { enabled = storage?.getItem(SOUND_KEY) !== 'false'; } catch {}
   const cancelPreview = () => {}; // Hover never schedules audio. Retained for interaction reset callers.
   const clearIncoming = () => { if (reminderTimer !== null) clearTimer(reminderTimer); reminderTimer = null; pendingIncoming = false; };
@@ -39,6 +44,17 @@ export const createGameSound = ({
     const duration = (kind === "enter" || kind === "leave") && Number.isFinite(transitionDuration) ? Math.max(.04, Math.min(1, transitionDuration)) : cueDuration;
     try {
       const t = audio.currentTime;
+      if (kind === 'destruction') {playStoneCrack(audio);return true;}
+      if (['result-victory','result-defeat','result-draw'].includes(kind)) {
+        const notes = kind === 'result-victory' ? [560,700,840] : kind === 'result-defeat' ? [420,360] : [520,520];
+        for (const [index,frequency] of notes.entries()) {
+          const oscillator=audio.createOscillator(),envelope=audio.createGain(),start=t+index*.1;
+          oscillator.type='sine';oscillator.frequency.value=frequency;
+          envelope.gain.setValueAtTime(.0001,start);envelope.gain.exponentialRampToValueAtTime(kind==='result-defeat'?.018:.025,start+.012);envelope.gain.exponentialRampToValueAtTime(.0001,start+.16);
+          oscillator.connect(envelope);envelope.connect(audio.destination);oscillator.start(start);oscillator.stop(start+.17);oscillator.onended=()=>{oscillator.disconnect();envelope.disconnect();};
+        }
+        return true;
+      }
       if (kind === 'enter' || kind === 'leave') {
         // A breathy noise sweep follows the swipe without a pitched note.
         const up = kind === 'enter';
@@ -113,14 +129,19 @@ export const createGameSound = ({
       const state=payload.game.board?.state;
       const terminal=Boolean(state?.outcome?.status && state.outcome.status!=='ongoing');
       sequences.set(id,{seq,pieces:state?.pieces?.length,terminal});
-      // Initial snapshots, replay and local acknowledgements never notify.
+      const destructionBatches=destructionSounds.update(payload.game,{commandId:payload.clientCommandId,sequence:seq,baseline:silent || payload.type!=='event_appended' || !['move_recorded','turn_ended'].includes(payload.reason)});
+      // Initial snapshots and replay never notify. Local acknowledgements may
+      // confirm a destruction; their ordinary move cue is still deduplicated.
       if(silent || payload.type!=='event_appended' || !['move_recorded','turn_ended','moves_reverted'].includes(payload.reason))return false;
       if(!active())return payload.reason==='move_recorded' && isOpponentMove(payload.game,payload.clientCommandId) ? incoming() : false;
       clearIncoming();
-      if(terminal && !previous?.terminal)return play('result');
-      if(localCommands.has(payload.clientCommandId) || terminal)return false;
+      let destroyed=false;
+      for(let i=0;i<destructionBatches;i++)destroyed=play('destruction') || destroyed;
+      if(terminal && previous?.terminal===false)return play(resultSound(getGameResult(payload.game,getIdentityId()))) || destroyed;
+      if(localCommands.has(payload.clientCommandId) || terminal)return destroyed;
+      if(destroyed)return true;
       if(payload.reason === "moves_reverted")return play("history-back");
-      return play(state?.outcome?.status && state.outcome.status!=='ongoing'?'result':previous?.pieces>state?.pieces?.length?'capture':payload.reason==='turn_ended'?'turn':'move');
+      return play(state?.outcome?.status && state.outcome.status!=='ongoing'?'result':payload.reason==='turn_ended'?'turn':'move');
     },
   };
 };

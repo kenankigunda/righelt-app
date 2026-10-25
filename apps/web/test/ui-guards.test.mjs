@@ -78,7 +78,7 @@ test("game, join/invite, and history use shared section spacing structure", () =
   assert.match(source, /class="section-stack"/);
   assert.match(
     source,
-    /<div class="section-followup">\s*\$\{historyBanner\}.*?<ol class="history-list"[^>]*>\$\{historyRows\}<\/ol>/s,
+    /<div class="section-followup">\s*<ol class="history-list"[^>]*>\$\{historyRows\}<\/ol>/s,
   );
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
 });

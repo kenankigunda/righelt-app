@@ -87,7 +87,7 @@ export function applyAction(state: GameState, action: Action, options?: { onRemo
     clearShiftedFlags(next);
   };
 
-  if (action.type === "pass") {
+  if (action.type === "pass" || action.type === "end_turn") {
     endTurn();
   } else if (action.type === "move" && actor && action.to) {
     actor.position = { ...action.to };

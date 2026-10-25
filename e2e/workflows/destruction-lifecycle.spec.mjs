@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import fs from 'node:fs';
-import {importScenarioGame,openDirectGameLink,joinAsViewer,submitPlayableAction} from '../support/app.mjs';
+import {importScenarioGame,openDirectGameLink,joinAsViewer,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
 const fixture=JSON.parse(fs.readFileSync(new URL('../../packages/game-engine/test/fixtures/destruction-turn-end.json',import.meta.url)));
 const scenario={formatVersion:2,id:'af0a1f18-1cb2-47a8-b203-4b5598f96893',title:'Turn-end destruction regression',description:'Deferred supply losses from the reported game',incorrect:false,initialState:fixture.initialState,moves:[],resultingState:fixture.initialState,expectedFinalStateHash:'',expectedOutcome:'ongoing'};
 
@@ -10,8 +10,7 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
  const page=await owner.newPage(), viewer=await observer.newPage();
  try{
   const {gameId,gameHash}=await importScenarioGame(page,scenario,baseURL);
-  const boardTab=page.getByRole('button',{name:'Board',exact:true});
-  if(await boardTab.isVisible())await boardTab.click();
+  await switchGamePanel(page,'board');
   await openDirectGameLink(viewer,baseURL,gameHash);await joinAsViewer(viewer);
   await submitPlayableAction(page,fixture.action);
   await expect(page.getByTestId('history-move-item')).toHaveCount(1);
@@ -30,15 +29,28 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
   const saved=await read();expect(saved.moves[0].destroyedPieces.map(r=>r.position)).toEqual([{row:6,col:4},{row:7,col:4}]);
   expect(saved.moves[0].snapshot.pieces.some(p=>p.id==='U1-2'||p.id==='U1-3')).toBe(false);
   await page.reload();await expect(page.getByTestId('game-shell')).toBeVisible();
-  if(await boardTab.isVisible())await boardTab.click();
+  await switchGamePanel(page,'board');
   await expect(effects(page)).toHaveCount(0);
-  const historyTab=page.getByRole('button',{name:'History',exact:true});if(await historyTab.isVisible())await historyTab.click();
+  await switchGamePanel(page,'history');
   await expect(page.getByTestId('history-destruction-item')).toHaveCount(2);
   await page.getByTestId('history-move-item').first().click();
-  if(await boardTab.isVisible())await boardTab.click();
-  await expect(effects(page)).toHaveCount(2);
-  await expect(page.locator('#shell-board .history-destruction-piece')).toHaveCount(2);
-  await page.screenshot({path:testInfo.outputPath('history-removals.png')});
+  if(mobile){
+   const preview=page.getByTestId('history-inline-preview');
+   await expect(preview.locator('.cell')).toHaveCount(100);
+   const renderedIds=()=>preview.locator('.piece-token[data-piece-id]:not(.move-ghost):not(.removal-piece):not(.history-destruction-piece)').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('data-piece-id')).sort());
+   await expect.poll(renderedIds).toEqual(saved.moves[0].snapshot.pieces.map(piece=>piece.id).sort());
+   await expect(preview.locator('.removal-piece,.history-destruction-piece')).toHaveCount(0);
+   await expect(page.getByTestId('history-destruction-item')).toHaveCount(2);
+   await page.screenshot({path:testInfo.outputPath('history-removals.png')});
+   await switchGamePanel(page,'board');
+   await expect(page.getByTestId('history-inline-preview')).toHaveCount(0);
+   await expect(effects(page)).toHaveCount(0);
+   await expect(page.locator('#shell-board .history-destruction-piece')).toHaveCount(0);
+  }else{
+   await expect(effects(page)).toHaveCount(2);
+   await expect(page.locator('#shell-board .history-destruction-piece')).toHaveCount(2);
+   await page.screenshot({path:testInfo.outputPath('history-removals.png')});
+  }
  }finally{await owner.close();await observer.close();}
 });
 

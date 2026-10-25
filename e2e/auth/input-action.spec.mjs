@@ -1,6 +1,6 @@
 import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { test, expect } from "@playwright/test";
-import { continueFriendIntroduction, enterUsername, openPlaySignIn } from "./helpers.mjs";
+import { continueFriendIntroduction, enterUsername, openPlaySignIn, revealAccountEntry } from "./helpers.mjs";
 
 const dialog = page => page.getByTestId("account-dialog");
 const password = "A varied password 42! ".repeat(4);
@@ -59,7 +59,7 @@ for (const { width, zoom } of [{ width: 320, zoom: 1 }, { width: 390, zoom: 1 },
     await expect(dialog(page)).not.toBeVisible();
     await continueFriendIntroduction(page);
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
-    await page.getByRole("button", { name: "Account", exact: true }).click();
+    await (await revealAccountEntry(page)).click();
     await dialog(page).getByRole("button", { name: "Change password", exact: true }).click();
     await expect(dialog(page).getByLabel("Current password", { exact: true })).toHaveCount(0);
     await proveInputAction(page, "New password", "text");

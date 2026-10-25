@@ -1,6 +1,23 @@
 import { deterministicStateHash } from '../../packages/game-engine/src/index.ts';
-import { encodeAction, encodeState, legalActionMap, transition, verifyLegalSubset } from '../../packages/computer-player/src/index.ts';
+import { encodeAction, encodeState, legalActionMap, verifyLegalSubset } from '../../packages/computer-player/src/index.ts';
 import { validateDecisionProvenance } from './decision-provenance.mjs';
+import { transitionArchivedAction } from './archived-action.mjs';
+import { commanderOutcome } from '../../packages/shared-types/src/commander-outcome.js';
+
+// Older terminal records called a removed commander unsupplied. Preserve their
+// exact hashes only when substituting that historical reason matches every
+// serialized state field. This never changes archives or global hash semantics.
+export function legacyCommanderReplayState(next, expectedHash) {
+  const outcome = next.outcome;
+  if (!outcome?.reason?.includes('destroyed')) return null;
+  const actual = commanderOutcome(next.pieces);
+  if (actual.status !== outcome.status || actual.reason !== outcome.reason) return null;
+  const reason = outcome.status === 'draw' ? 'both_commanders_unsupplied'
+    : outcome.status === 'p1_win' ? 'p2_commander_unsupplied' : 'p1_commander_unsupplied';
+  const retained = structuredClone(next);
+  retained.outcome = { ...outcome, reason };
+  return deterministicStateHash(retained) === expectedHash ? retained : null;
+}
 
 // The replay verifier independently applies authoritative rules. Search's cached
 // next state is never accepted as proof, and partial masks never become targets.
@@ -27,7 +44,11 @@ export function replayDecision(state, record, bounded) {
           record.policy.some((item, i) => Math.abs(item.probability - visits[i] / total) > 1e-10)) throw new Error('Replay policy visits mismatch');
     }
   }
-  const next = bounded(() => transition(state, record.action));
-  if (deterministicStateHash(next) !== record.afterHash) throw new Error('Replay after-state mismatch');
+  const next = transitionArchivedAction(state, record.action, bounded);
+  if (deterministicStateHash(next) !== record.afterHash) {
+    const retained = legacyCommanderReplayState(next, record.afterHash);
+    if (!retained) throw new Error('Replay after-state mismatch');
+    return retained;
+  }
   return next;
 }

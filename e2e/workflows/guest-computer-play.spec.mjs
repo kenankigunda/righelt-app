@@ -1,8 +1,9 @@
+import {assertReplayIntegrity} from '../support/replay-write-contract.mjs';
 import {readFile} from 'node:fs/promises';
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {test,expect} from '@playwright/test';
-import {submitPlayableAction} from '../support/app.mjs';
-import {readProjectedGame,waitForComputerDecision} from '../support/computer-projection.mjs';
+import {submitPlayableAction,switchGamePanel} from '../support/app.mjs';
+import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
 
 test('guest computer finishes a catalog position and prepares a fresh rematch',async({page},info)=>{
@@ -31,7 +32,7 @@ test('guest computer finishes a catalog position and prepares a fresh rematch',a
   await page.screenshot({path:info.outputPath('guest-computer-finished.png')});
   await result.getByRole('button',{name:'Play again',exact:true}).click();
   const chooser=page.getByRole('dialog',{name:'Play again',exact:true});
-  await expect(chooser.getByRole('combobox',{name:'Opponent',exact:true})).toHaveValue('babs');
+  await expect(chooser.getByRole('group',{name:'Opponent',exact:true}).getByRole('radio',{name:'Babs',exact:true})).toBeChecked();
   const creation=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/shell/games'&&r.request().method()==='POST');
   await chooser.getByRole('button',{name:'Start game',exact:true}).click();
   const response=await creation;expect(response.status()).toBe(200);
@@ -39,13 +40,13 @@ test('guest computer finishes a catalog position and prepares a fresh rematch',a
   expect(fresh.computer.seats).toEqual({p1:null,p2:'babs'});
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',fresh.id);
 });
-for (const width of [390, 1440]) test(`guest computer play survives reload and undo at ${width}px`, async ({ page }, info) => {
+for (const width of [320, 390, 430, 1440]) test(`guest computer play survives reload and undo at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({width,height:900});
   await page.goto('/');
   expect((await (await page.request.get('/api/shell/bootstrap')).json()).accountsRequired).toBe(false);
   let creations=0; page.on('request',request=>{if(request.method()==='POST' && new URL(request.url()).pathname==='/api/shell/games')creations++;});
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
-  await expect(page.getByRole('button',{name:'Play Babs',exact:true})).toBeEnabled();
+  await waitForOpponentReady(page);
   await page.keyboard.press('Escape');
   expect(creations).toBe(0);
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
@@ -56,10 +57,40 @@ for (const width of [390, 1440]) test(`guest computer play survives reload and u
   const initial = (await response.json()).game;
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
   await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase', 'idle');
+  await page.evaluate(() => {
+    window.boardStatusGeometry={running:true,samples:[]};
+    const sample=()=>{const record=window.boardStatusGeometry;if(!record.running)return;const board=document.querySelector('#shell-board');if(board){const rect=board.getBoundingClientRect();record.samples.push({y:rect.top+scrollY,height:rect.height,message:document.querySelector('#shell-board-preview-label')?.textContent});}requestAnimationFrame(sample);};sample();
+  });
   await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
   await expect.poll(async () => (await projected(page, initial.id)).moves.length).toBeGreaterThan(0);
-  if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();
+  if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-board-preview-action="end-turn"]').click();
   await waitForComputerDecision(page, initial.id, 'babs', {guest:true});
+  await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible({timeout:30000});
+  const geometry=await page.evaluate(()=>{window.boardStatusGeometry.running=false;return window.boardStatusGeometry.samples;});
+  expect(geometry.length).toBeGreaterThan(2);
+  const topValues=geometry.map(sample=>sample.y);
+  expect(Math.max(...topValues)-Math.min(...topValues),JSON.stringify(geometry.filter((sample,index)=>index===0||sample.y!==geometry[index-1].y))).toBeLessThanOrEqual(1);
+  const beforeReplay=await projected(page,initial.id);
+  const writes=[];
+  const observeReplay=request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/')){let body;try{body=request.postDataJSON();}catch{}writes.push({method:request.method(),path:new URL(request.url()).pathname,body});}};
+  page.on('request',observeReplay);
+  try {
+    await page.getByRole('button',{name:'Show me again',exact:true}).click();
+    await expect(page.locator('.computer-replay')).toBeVisible();
+    await expect(page.getByRole('button',{name:'Stop replay',exact:true})).toBeVisible();
+    await page.screenshot({path:info.outputPath('computer-turn-replay.png')});
+    // A short animated turn may finish during screenshot capture. Verify its
+    // natural completion; the manual replay below exercises explicit Stop.
+    await expect(page.locator('.computer-replay')).toHaveCount(0);
+    await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
+    assertReplayIntegrity({writes,before:beforeReplay,after:await projected(page,initial.id)});
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await page.getByRole('button',{name:'Show me again',exact:true}).click();
+    await expect(page.getByRole('button',{name:'Next',exact:true})).toBeVisible();
+    await page.getByRole('button',{name:'Stop replay',exact:true}).click();
+    assertReplayIntegrity({writes,before:beforeReplay,after:await projected(page,initial.id)});
+    await page.emulateMedia({reducedMotion:'no-preference'});
+  } finally {page.off('request',observeReplay);}
   const saved = (await projected(page, initial.id)).moves.find(move=>move.computerProof);
   expect(saved.computerProof.modelId).toBe('initial-1554');
   await page.reload();
@@ -79,15 +110,13 @@ for (const width of [390, 1440]) test(`guest computer play survives reload and u
   };
   page.on('response', observe);
   try {
-    const history = page.locator('[data-action="switch-game-panel"][data-panel="history"]');
-    if (await history.isVisible()) await history.click();
+    await switchGamePanel(page, "history");
     await page.locator('[data-action="undo-last-move"]').click();
     await expect.poll(async () => {
       const game = await projected(page, initial.id);
       return { activeMoves: game.moves.filter(move => !move.undone).length, paused: game.computer.paused, state: game.board.state };
     }).toEqual({ activeMoves: 0, paused: false, state: initial.board.state });
-    const board = page.locator('[data-action="switch-game-panel"][data-panel="board"]');
-    if (await board.isVisible()) await board.click();
+    await switchGamePanel(page, "board");
     await expect(page.locator('[data-computer-status]')).toBeHidden();
     expect(controls.filter(control => control.action === 'resume')).toEqual([{ action: 'resume', status: 200 }]);
     expect(controls.every(control => control.status === 200)).toBe(true);

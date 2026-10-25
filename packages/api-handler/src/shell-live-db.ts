@@ -745,15 +745,9 @@ const normalizePersistedStaticGameCard = (
 };
 
 export const loadGameProjection = async (env: LiveGameEnv, gameId: string): Promise<PersistedGameProjection | null> => {
-  let row: PersistedGameRow | null;
-  try {
-    row = await env.DB.prepare(`SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision, ownership_mode FROM ${LIVE_GAMES_TABLE} WHERE game_id = ?1`).bind(gameId).first<PersistedGameRow>();
-  } catch (error) {
-    // Only pre-migration guest deployments may lack the ownership column.
-    // Any other database failure must fail closed, including account-enabled deployments.
-    if ((env.AUTH_REQUIRED === "true" || env.AUTH_ENABLED === "true") || !/no such column: ownership_mode/i.test(String(error))) throw error;
-    row = await env.DB.prepare(`SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision FROM ${LIVE_GAMES_TABLE} WHERE game_id = ?1`).bind(gameId).first<PersistedGameRow>();
-  }
+  // Current deployments require all migrations. A missing ownership column is
+  // a deployment/schema error, never permission to read through an old schema.
+  const row = await env.DB.prepare(`SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision, ownership_mode FROM ${LIVE_GAMES_TABLE} WHERE game_id = ?1`).bind(gameId).first<PersistedGameRow>();
   if (!row?.state_json) {
     return null;
   }

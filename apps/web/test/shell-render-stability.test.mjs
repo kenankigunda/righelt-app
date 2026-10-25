@@ -19,7 +19,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const GAME_ENTRY_ROUTE_TRANSITION_COVER_MS = 160;/);
   assert.match(source, /const GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS = 200;/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", "narrow"\);/);
-  assert.match(source, /const renderGameShellFrame = \(game\) =>/);
+  assert.match(source, /const renderGameShellFrame = \(game, \{ loading = false \} = \{\}\) =>/);
   assert.match(source, /const renderScenarioFlyout = \(\) =>/);
   assert.match(source, /const renderDebugFlyout = \(\) =>/);
   assert.match(source, /<section class="panel debug-panel scenario-panel scenario-panel-load">/);
@@ -239,7 +239,7 @@ test("shell render patches same-route game updates without replacing the board p
 test("live sync applies authoritative pushed game payloads before render", () => {
   assert.match(syncStoreSource, /payload\?\.type === "state_sync"/);
   assert.match(syncStoreSource, /payload\?\.type === "event_appended"/);
-  assert.match(syncStoreSource, /transport\.applyLiveGameUpdate\(\{\s*game: payload\.game,\s*eventSeq: payload\.eventSeq,\s*clientCommandId: payload\.clientCommandId \?\? null,\s*commandOutcome: payload\.commandOutcome \?\? null,\s*\.\.\.\(payload\.type === "state_sync" \? \{ baseline: true \} : \{\}\),\s*\}\);/s);
+  assert.match(syncStoreSource, /transport\.applyLiveGameUpdate\(\{\s*game: payload\.game,\s*eventSeq: payload\.eventSeq,\s*clientCommandId: payload\.clientCommandId \?\? null,\s*commandOutcome: payload\.commandOutcome \?\? null,\s*\.\.\.\(payload\.type === "state_sync" \? \{ baseline: true \} : \{\}\),\s*\.\.\.\(payload\.actionContractVersion !== undefined \? \{ actionContractVersion: payload\.actionContractVersion \} : \{\}\),\s*\}\);/s);
   assert.match(source, /if \(document\.getElementById\("shell-debug-last-event"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
 });
 
@@ -293,22 +293,21 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /if \(!game\.inHistoryMode && !liveStatusItem && activeTurn\.moveIndexes\.length > 0\) \{\s*return `\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;\s*\}/s);
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
   assert.match(source, /return `\$\{emptyTurnItem\}\$\{undoLastMoveItem\}\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
-  assert.match(source, /const hasHistoryMoves = Array\.isArray\(game\.moves\) && game\.moves\.length > 0;/);
   assert.match(source, /data-action="launch-history-branch"/);
-  assert.match(source, /Create new game at this move/);
-  assert.match(source, /Incoming live moves will appear at top\./);
-  assert.match(source, /: hasHistoryMoves\s*\? '<p class="small">You are on the live view\.<\/p><p class="small">Click moves below to see historical state\.<\/p>'\s*: '<p class="small">You are on the live view\.<\/p>'/);
+  assert.match(source, /New game before this move/);
 });
 
 test("transport subscriptions drive immediate game-shell updates", () => {
-  assert.match(source, /transport\.subscribe\(\(change\) => \{[\s\S]*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);[\s\S]*boardRuntime\?\.showRemovalEffects\(transition\.effects, null\);\s*\}\);/s);
+  const start=source.indexOf("const subscribeToTransport ="),end=source.indexOf("\nsubscribeToTransport();",start);
+  assert.ok(start>=0&&end>start);
+  assert.match(source.slice(start,end), /transport\.subscribe\(\(change\) => \{[\s\S]*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);[\s\S]*boardRuntime\?\.showRemovalEffects\(transition\.effects, null\);/s);
   assert.match(source, /const canHydrateRouteFromLocalState = \(route = currentRoute\) => \{/);
   assert.match(source, /return Boolean\(transport\.getGameViewModel\(route\.gameId\)\);/);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
-  assert.match(source, /return !game\.pendingPlayerRequestSeat && activeResultGameId !== game\.id && hostInvite\?\.gameId !== game\.id && !getActiveApprovalRequest\(game\) && !getActiveRevertRequest\(game\) && !getActivePendingRevertRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
+  assert.match(source, /return !game\.pendingPlayerRequestSeat && activeResultGameId !== game\.id && hostInvite\?\.gameId !== game\.id && !getActiveApprovalRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
   assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),[\s\S]*includeBoard,\s*animatePanels,\s*\}\);/s);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*(?:if \()?updateMountedGameShell\(\{/s);
-  assert.match(source, /const game = transport\.getGameViewModel\(gameId\);\s*if \(!routeHydrated && !game\) \{/s);
+  assert.match(source, /if \(!routeHydrated && !game\) \{\s*return renderGameViewSkeleton\(\);/s);
   assert.match(source, /if \(canHydrateRouteFromLocalState\(currentRoute\)\) \{\s*routeHydrated = true;\s*syncLiveChannels\(\);\s*render\(\);\s*maybeRevealRouteTransition\(\);\s*return;\s*\}/s);
 });
 
@@ -385,7 +384,7 @@ test("shell renders durable browser E2E selectors for core workflow surfaces", (
   assert.match(source, /data-testid="approval-gate"/);
   assert.match(source, /data-testid="accept-request"/);
   assert.match(source, /data-testid="ignore-request"/);
-  assert.match(source, /data-testid="invite-gate"/);
+  assert.match(source, /testId:approval\?'undo-approval-notice':'undo-waiting-notice'/);
   assert.match(source, /data-testid="invite-join-player"/);
   assert.match(source, /data-testid="invite-join-viewer"/);
 });
@@ -507,4 +506,18 @@ test("history navigation uses pointer-down press state with a single mouseup rel
   assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*clearControlPress\(\);[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
   assert.match(source, /if \(action === "return-live"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);/s);
   assert.doesNotMatch(source, /jump-destruction/);
+});
+
+test("upgrade fencing keeps a static recovery notice without discarding viewing context", () => {
+ const subscriber=source.slice(source.indexOf('const subscribeToTransport'),source.indexOf('subscribeToTransport();'));
+ assert.doesNotMatch(subscriber,/location\.reload|sync-v2-refresh/);
+ assert.match(source,/game\.upgradeRequired \? `<button class="secondary[^"\n]*" data-action="refresh-game"/);
+ assert.match(source,/if \(!game && transport\.isUpgradeRequired\?\.\(gameId\)\) \{\s*return `<section[^`]+data-action="refresh-game"/);
+});
+
+test("loading frames and guest invitation surfaces never enter the loaded-shell patch path", () => {
+ const gate=source.slice(source.indexOf('const shouldUseIncrementalGameShell'),source.indexOf('const renderGameContent'));
+ assert.match(gate,/\[data-game-shell-root\]\[data-testid="game-shell"\]/);
+ assert.match(gate,/getInviteContextForGame\(game, "game"\)\) return false/);
+ assert.doesNotMatch(gate,/game-loading-shell/);
 });

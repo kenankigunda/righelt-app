@@ -17,6 +17,7 @@ test("live board loading follows blocked recovery without requiring a reconnect 
  assert.equal(isBoardRecoveryPending({...pending,syncStatus:"ready"}),false);
  for (const flags of [{inHistoryMode:true},{storageBlocked:true},{upgradeRequired:true},{recoveryIssue:"session_changed"},{recoveryIssue:"invalid_credentials"}])
   assert.equal(isBoardRecoveryPending({...pending,...flags}),false);
+ assert.equal(isBoardRecoveryPending({...pending,pendingComputerSaveStartedAt:1000}),false);
  assert.equal(isBoardRecoveryPending(null),false);
 });
 
@@ -218,4 +219,36 @@ test("accepting two commands preserves the first inspected pending board when it
  assert.equal(t.getGameViewModel(game.id).inspectedDecision.moveId,"accepted-first");
  assert.deepEqual(t.getGameViewModel(game.id).currentSnapshot,snapshot(44));
  t.retire();
+});
+
+test("returning to live never restores End Turn from move count without authoritative legality", () => {
+ for (const [legalActions,expected] of [[[{type:'pass'},{type:'move'}],false],[[{type:'rush'}],false],[[{type:'follow'}],false],[[{type:'end_turn'},{type:'rush'}],true]]) {
+  const t=store(),game=fixture();
+  game.player1={identityId:'actor'};game.player2={identityId:'other'};
+  game.turns=[{index:9,playerSeat:'Player 1',moveIndexes:[0]}];game.legalActions=legalActions;
+  t.applyLiveGameUpdate({game});t.selectHistoryMove({gameId:'history',moveIndex:0});
+  assert.equal(t.getGameViewModel('history').canEndTurn,false);
+  t.returnToLive({gameId:'history'});
+  assert.equal(t.getGameViewModel('history').canEndTurn,expected);
+  t.retire();
+ }
+});
+
+
+test('live return keeps legal End Turn available for captured continuations without move rows',()=>{
+ const t=store(),game=fixture();
+ game.player1={identityId:'actor'};game.player2={identityId:'other'};
+ game.turns=[{index:9,playerSeat:'Player 1',moveIndexes:[]}];game.legalActions=[{type:'end_turn'}];
+ t.applyLiveGameUpdate({game});t.selectHistoryMove({gameId:'history',moveIndex:0});t.returnToLive({gameId:'history'});
+ assert.equal(t.getGameViewModel('history').canEndTurn,true);t.retire();
+});
+
+test("computer saves remain quiet until slow and never hide failures", () => {
+ const saving={recovering:true,pendingCommandCount:1,pendingComputerSaveStartedAt:1000};
+ assert.equal(recoveryMessage(saving,10999),"");
+ assert.match(recoveryMessage(saving,11000),/computer’s move/);
+ assert.equal(recoveryMessage(saving,12000,{computerSaveActive:true}),"");
+ assert.match(recoveryMessage({...saving,storageBlocked:true},1001),/trouble saving/);
+ assert.match(recoveryMessage({...saving,recoveryIssue:"invalid_response"},1001),/reconnect/);
+ assert.match(recoveryMessage({...saving,upgradeRequired:true},1001),/Refresh/);
 });

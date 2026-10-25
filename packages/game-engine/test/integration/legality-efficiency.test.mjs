@@ -30,7 +30,7 @@ test('closable rush remains optional when a rush is legal and ends exactly once 
   assert.equal(canCloseContinuationNow(open),true);
   const optional=resolveToStability(open);
   assert.equal(optional.continuation?.type,'rush');
-  assert.ok(listLegalActions(optional).some(action=>action.type==='pass'));
+  assert.ok(listLegalActions(optional).some(action=>action.type==='end_turn'));
   const noMore=structuredClone(optional);
   noMore.continuation.rushedPieceIds=noMore.pieces.filter(piece=>piece.owner==='P1').map(piece=>piece.id);
   const closed=resolveToStability(noMore);
@@ -47,7 +47,7 @@ test('complete action ordering agrees with brute enumeration throughout catalog 
     for(const move of scenario.moves){
       // The catalog records explicit rush endings in the next move's turn index.
       if(state.continuation?.type==='rush'&&move.turnIndex>state.turnIndex){
-        state=resolveToStability(applyAction(state,{type:'pass'}).state);
+        state=resolveToStability(applyAction(state,{type:'end_turn'}).state);
       }
       assert.deepEqual(listLegalActions(state),bruteLegalActions(state),scenario.title);
       state=resolveToStability(applyAction(state,move.action).state);

@@ -160,7 +160,7 @@ test("closing the scenarios flyout restores hover target selection on an already
         message: "Expected the live board to use hover target selection before the scenarios flyout opens",
       })
       .toBe(true);
-    await expect(page.locator("#shell-board-preview-label")).toContainText("Click to");
+    await expect(page.locator("#shell-board-preview-label")).toContainText("Confirm");
 
     await page.getByRole("button", { name: "Scenarios", exact: true }).click();
     await expect(page.locator('[data-scenario-save-field="title"]')).toBeVisible();
@@ -192,7 +192,7 @@ test("closing the scenarios flyout restores hover target selection on an already
         message: "Expected closing the flyout to restore hover target selection on the mounted board",
       })
       .toBe(true);
-    await expect(page.locator("#shell-board-preview-label")).toContainText("Click to");
+    await expect(page.locator("#shell-board-preview-label")).toContainText("Confirm");
   } finally {
     await closeContextQuietly(context);
   }
