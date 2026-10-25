@@ -37,6 +37,19 @@ export async function selectGamePanel(page,key) {
   await expect.poll(()=>panel.evaluate(element=>Math.abs(element.getBoundingClientRect().left-element.closest('.game-shell-track-wrap').getBoundingClientRect().left)),{message:'Selected game panel must settle into the visible track'}).toBeLessThanOrEqual(1);
 }
 
+// A mounted game can still be covered by route entry or quietly recovering
+// its command authority. Read this page's admission markers, not a separate
+// server projection that cannot describe the local recovery gate.
+export async function waitForPlayableBoard(page) {
+  await expect.poll(() => page.evaluate(() => {
+    const app = document.querySelector('#app');
+    const board = document.querySelector('[data-testid="game-board-wrap"]');
+    return app?.getAttribute('data-shell-transition-phase') === 'idle'
+      && board?.getAttribute('data-reconnecting') === 'false'
+      && board?.getAttribute('aria-busy') === 'false';
+  }), {message: 'Board entry and local recovery must settle before selecting a piece'}).toBe(true);
+}
+
 export async function revealAccountControl(page,control=page.getByRole('button',{name:'Account',exact:true})) {
   // An opacity-zero menu can still have geometric visibility. Role queries
   // honor aria-hidden and prove the entry is actually exposed to the user.

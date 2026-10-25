@@ -3,6 +3,7 @@ import { submitPlayableAction } from '../support/app.mjs';
 import { AUTH_CONTROL_ORIGIN } from './fixture.mjs';
 import { readProjectedGame, waitForComputerDecision } from '../support/computer-projection.mjs';
 import { isOperationRequest, operationValues } from '../support/shared-request.mjs';
+import { waitForPlayableBoard } from '../../scripts/validation/browser-navigation.mjs';
 
 const projected = (page, id) => page.evaluate(readProjectedGame, { id });
 
@@ -135,7 +136,7 @@ test('ordinary computer undo restores the human turn and resumes computer contro
   const initial = (await response.json()).game;
   expect(initial.computer.seats).toEqual({ p1: null, p2: 'babs' });
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
-  await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase', 'idle');
+  await waitForPlayableBoard(page);
   await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
   await expect.poll(async () => (await projected(page, initial.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();
