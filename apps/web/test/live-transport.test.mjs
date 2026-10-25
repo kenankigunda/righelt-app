@@ -1775,3 +1775,69 @@ test('Retry-After delays command and lifecycle reconciliation through the same r
  assert.equal(requests.length,2);assert.ok(requests[1]-requests[0]>=2000);
  assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);
 });
+
+
+for (const operation of ["computer-control", "revert-request"]) for(const accepted of [true,false]) for(const repair of [null,"connection","snapshot"]) test(`socket ${accepted ? "acceptance" : "rejection"} completes ${operation} while preserving ${repair ?? "no newer"} recovery`,async()=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,"id-live");
+ let envelope,signal;
+ const store=createLiveTransportStore({storage,fetcher:(url,init)=>{
+  envelope=JSON.parse(init.body);signal=init.signal;
+  return new Promise(()=>{});
+ }});
+ const game=buildLiveGame();game.sharedReceipts=true;
+ store.applyLiveGameUpdate({game,eventSeq:1});
+ const completion=operation==="computer-control"?store.computerControl(game.id,{action:"acquire",deviceId:"device",tabId:"tab"}):store.requestRevertToMove({gameId:game.id,targetMoveId:game.moves[0].moveId});
+ const settled=completion.then(()=>({ok:true}),error=>({ok:false,error}));
+ for(let i=0;i<50&&!envelope;i++)await tick();
+ assert.ok(envelope);
+ assert.equal(store.getGameViewModel(game.id).sharedMutationsBlocked,true);
+ if(repair==="connection")store.setConnectionRecovering(game.id,true);
+ if(repair==="snapshot")store.prepareSafeReconnect(game.id);
+ const outcome={gameId:game.id,identityId:envelope.identityId,clientCommandId:envelope.clientCommandId,fingerprint:envelope.fingerprint,outcome:accepted?"accepted":"rejected",reason:accepted?null:"stale_state",eventSeq:2,gameplayRevision:game.gameplayRevision};
+ store.applyLiveGameUpdate({game,eventSeq:2,commandOutcome:outcome});
+ assert.equal((await settled).ok,accepted);
+ assert.equal(signal.aborted,true,"socket confirmation retires the HTTP request");
+ assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);
+ assert.equal(store.getGameViewModel(game.id).recovering,Boolean(repair));
+ assert.equal(store.getGameViewModel(game.id).sharedMutationsBlocked,Boolean(repair));
+ if(repair)store.setConnectionRecovering(game.id,false);
+ if(repair!=="snapshot") {
+  assert.equal(store.getGameViewModel(game.id).canRecordMove,game.canRecordMove);
+  assert.equal(store.getAuthoritativeGame(game.id).canRecordMove,game.canRecordMove);
+ }
+ store.retire();
+});
+
+
+test("invalid socket snapshot followed by empty authoritative reconciliation releases recovery",async()=>{
+ const game=buildLiveGame();
+ const store=createLiveTransportStore({storage:createMemoryStorage(),fetcher:async()=>Response.json({ok:true,protocolVersion:2,gameId:game.id,gameplayRevision:game.gameplayRevision,eventSeq:2,game,commandOutcomes:[]})});
+ store.applyLiveGameUpdate({game,eventSeq:1});
+ store.applyLiveGameUpdate({game,eventSeq:-1});
+ await store.reconcileGame(game.id);
+ assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);
+ assert.equal(store.getGameViewModel(game.id).syncStatus,"ready");
+ assert.equal(store.getGameViewModel(game.id).recovering,false);
+ assert.equal(store.getGameViewModel(game.id).canRecordMove,game.canRecordMove);
+ store.retire();
+});
+
+
+for(const accepted of [true,false]) for(const newerRepair of [false,true]) test(`HTTP shared ${accepted?"acceptance":"rejection"} preserves newer repair=${newerRepair}`,async()=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,"id-live");let envelope,reply;
+ const game=buildLiveGame();game.sharedReceipts=true;
+ const store=createLiveTransportStore({storage,fetcher:(url,init)=>{
+  envelope=JSON.parse(init.body);return new Promise(resolve=>{reply=resolve;});
+ }});
+ store.applyLiveGameUpdate({game,eventSeq:1});
+ const completion=store.computerControl(game.id,{action:"acquire",deviceId:"device",tabId:"tab"}).then(()=>true,()=>false);
+ for(let i=0;i<50&&!envelope;i++)await tick();
+ assert.ok(envelope);
+ if(newerRepair)store.setConnectionRecovering(game.id,true);
+ reply(Response.json({ok:true,protocolVersion:2,gameId:game.id,eventSeq:2,gameplayRevision:game.gameplayRevision,game,commandOutcomes:[{gameId:game.id,identityId:envelope.identityId,clientCommandId:envelope.clientCommandId,fingerprint:envelope.fingerprint,outcome:accepted?"accepted":"rejected",reason:accepted?null:"stale_state",eventSeq:2,gameplayRevision:game.gameplayRevision}]}));
+ assert.equal(await completion,accepted);
+ assert.equal(store.getGameViewModel(game.id).recovering,newerRepair);
+ store.setConnectionRecovering(game.id,false);
+ assert.equal(store.getGameViewModel(game.id).canRecordMove,game.canRecordMove);
+ store.retire();
+});
