@@ -59,12 +59,20 @@ test('a pending friend request surfaces approval without prematurely settling th
 
 test('join failures stay visible for manual retry and late failures cannot follow a different visit',async({page,browser,baseURL},info)=>{
  const context=await browser.newContext({baseURL,viewport:{width:390,height:844}});
+ let guest,primaryError;
  try{
   await page.goto('/');await waitForLegacyIdentity(page);await page.getByTestId('home-create-game').click();await continueFriendIntroduction(page,{friendIntroduction:true});
   await expect(page.getByRole('dialog',{name:'Invite a friend',exact:true})).toBeVisible();
   const gameId=decodeURIComponent(new URL(page.url()).hash.match(/^#\/game\/([^?]+)/)[1]);
   const token=await page.evaluate(async id=>{const identityId=localStorage.getItem('righelt.identity.id.v1');return(await(await fetch(`/api/shell/games/${id}?identityId=${encodeURIComponent(identityId)}`)).json()).game.inviteToken;},gameId);
-  const guest=await context.newPage();const invite=`/#/invite/${token}?as=blue`;await guest.goto(invite);
+  guest=await context.newPage();
+  await guest.addInitScript(()=>{
+   const records=window.inviteFocusObservations=[];
+   const record=event=>{if(records.length<200)records.push({type:event.type,at:performance.now(),focused:document.hasFocus(),hidden:document.hidden,activeAction:document.activeElement?.getAttribute('data-action')??null,activeTag:document.activeElement?.tagName??null});};
+   for(const type of ['focus','blur'])window.addEventListener(type,record);
+   for(const type of ['focusin','focusout'])document.addEventListener(type,record);
+  });
+  const invite=`/#/invite/${token}?as=blue`;await guest.goto(invite);
   let requests=0,release;let attempt='reset';
   await guest.route('**/api/shell/games/*/join',async route=>{
    requests++;
@@ -75,6 +83,9 @@ test('join failures stay visible for manual retry and late failures cannot follo
    await route.continue();
   });
   const join=guest.getByRole('button',{name:'Play as Blue',exact:true}),error=guest.getByRole('dialog').getByTestId('join-failure');
+  // Element.focus alone does not activate a separate native browser window.
+  // Establish keyboard focus before testing its retention across a failure.
+  await guest.bringToFront();await expect.poll(()=>guest.evaluate(()=>document.hasFocus()&&!document.hidden)).toBe(true);
   await join.focus();await join.press('Enter');await expect(error).toHaveText('Could not join. Try again');await expect(join).toBeEnabled();await expect(join).toBeFocused();expect(requests).toBe(1);await guest.screenshot({path:info.outputPath('join-failure-focused.png')});
   await expect(error).not.toHaveAttribute('data-loading-state',/.+/);await guest.setViewportSize({width:391,height:844});await expect(error).toHaveText('Could not join. Try again');expect(requests).toBe(1);
   attempt='reject';await join.press('Enter');await expect(join).toBeDisabled();await expect(error).toHaveCount(0);await expect.poll(()=>typeof release).toBe('function');release();
@@ -84,5 +95,9 @@ test('join failures stay visible for manual retry and late failures cannot follo
   await expect(error).toHaveCount(0);await expect(guest.getByTestId('home-create-game')).toBeVisible();expect(requests).toBe(3);
   await guest.goto(invite);await expect(join).toBeEnabled();await expect(error).toHaveCount(0);
   attempt='success';await join.click();await expect(guest.getByTestId('game-role')).toContainText('Player 2');await expect(error).toHaveCount(0);expect(requests).toBe(4);
- }finally{await context.close();}
+ }catch(error){primaryError=error;throw error;}finally{
+  try{if(guest)await info.attach('Guest invite native focus',{body:JSON.stringify(await guest.evaluate(()=>({focused:document.hasFocus(),hidden:document.hidden,activeAction:document.activeElement?.getAttribute('data-action')??null,activeTag:document.activeElement?.tagName??null,events:window.inviteFocusObservations})).catch(error=>({readError:String(error)})),null,2),contentType:'application/json'});}
+  catch(error){if(!primaryError)throw error;info.annotations.push({type:'diagnostic capture failure',description:String(error)});}
+  finally{await context.close();}
+ }
 });
