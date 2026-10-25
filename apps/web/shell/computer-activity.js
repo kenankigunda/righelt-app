@@ -12,7 +12,7 @@ export function computerActivity({ game, identityId, deviceId, authenticated, vi
   const override = control.paused || control.manual || control.takeoverTurn === turnIndex;
   const liveLease = Boolean(control.lease && control.lease.expiresAt > now);
   const localLease = liveLease && control.lease.deviceId === deviceId;
-  const uncertain = Boolean(projection.sharedMutationsBlocked || projection.pendingCommandCount > 0);
+  const uncertain = Boolean(projection.sharedMutationsBlocked || projection.pendingCommandCount > 0 || projection.upgradeRequired);
   const activeHere = Boolean(owner && authenticated && visible && ongoing && localLease && controlAcknowledged && !override && !uncertain && !resuming && !lastAcquisitionFailure && !['recovery', 'other-device'].includes(status.phase));
   let state = 'attention', label = 'Needs attention';
   if (resuming) { state = 'resuming'; label = 'Resuming'; }
@@ -22,6 +22,7 @@ export function computerActivity({ game, identityId, deviceId, authenticated, vi
   let disabledReason = null;
   if (!owner || !authenticated) disabledReason = 'Only the game owner can resume computer play.';
   else if (!ongoing) disabledReason = 'This game has finished.';
+  else if (projection.upgradeRequired) disabledReason = 'Reload the game to resume computer play here.';
   else if (!resumeSupported) disabledReason = 'Refresh after the server update to resume computer play here.';
   else if (resuming) disabledReason = 'Resuming computer play…';
   const computerTurn = computerProfileFor(control, game.board?.state?.sideToMove, turnIndex);

@@ -53,3 +53,11 @@ test('a retained local device lease needs acknowledgement in the current session
  assert.equal(computerActivity(c).label,'Needs attention');assert.equal(computerActivity(c).showResume,true);
  assert.equal(computerActivity(c).showRecoveryNotice,false);
 });
+
+test('a terminal protocol mismatch exposes disabled card recovery with a reload reason',()=>{
+ for(const expiresAt of [115000,1]){
+  const c=context();c.projection.upgradeRequired=true;c.game.computer.lease.expiresAt=expiresAt;
+  const result=computerActivity(c);assert.equal(result.activeHere,false);assert.equal(result.label,'Needs attention');assert.equal(result.showResume,true);
+  assert.match(result.disabledReason,/Reload the game/);assert.equal(result.showRecoveryNotice,false);
+ }
+});
