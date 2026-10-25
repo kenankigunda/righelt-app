@@ -1,6 +1,6 @@
 # Board and computer play acceptance
 
-This program follows the October 2026 product decisions. Independent healthy PRs may deploy in sequence. The lead owns the final combined result. Hosted data deletion, account activation and evidence publication require separate authorization.
+This program follows the October 2026 product decisions. Independent healthy PRs may deploy in sequence. The lead owns the final combined result. All production games, including synthetic smoke-test games, must be preserved as training data. Preserve their move history, durable receipts and model provenance. Do not run production game deletion, destructive migrations or retention cleanup. Account activation and evidence publication require separate authorization.
 
 ## Interaction contracts
 
