@@ -21,6 +21,31 @@ const instrument=()=>{
   return result;
  };
 };
+test('native audio resumes and advances after a trusted pointer gesture without application code',async({page},info)=>{
+ await page.setContent('<button>Start native audio</button>');
+ await page.evaluate(()=>{
+  window.nativeAudioProof={events:[]};
+  document.querySelector('button').addEventListener('pointerdown',event=>{
+   const proof=window.nativeAudioProof;
+   proof.trusted=event.isTrusted;proof.focused=document.hasFocus();proof.hidden=document.hidden;
+   const audio=window.nativeAudioContext=new AudioContext({latencyHint:'interactive'});
+   proof.initialState=audio.state;proof.initialTime=audio.currentTime;
+   audio.addEventListener('statechange',()=>proof.events.push({kind:'state',state:audio.state,time:audio.currentTime}));
+   audio.resume().then(()=>proof.events.push({kind:'resolved',state:audio.state,time:audio.currentTime}),error=>proof.events.push({kind:'rejected',error:String(error)}));
+  },{once:true});
+ });
+ try{
+  await page.getByRole('button',{name:'Start native audio'}).click();
+  await expect.poll(()=>page.evaluate(()=>window.nativeAudioContext?.state)).toBe('running');
+  await expect.poll(()=>page.evaluate(()=>window.nativeAudioContext.currentTime-window.nativeAudioProof.initialTime)).toBeGreaterThan(0);
+  expect(await page.evaluate(()=>window.nativeAudioProof)).toMatchObject({trusted:true,focused:true,hidden:false});
+ }finally{
+  const proof=await page.evaluate(()=>({...window.nativeAudioProof,state:window.nativeAudioContext?.state,time:window.nativeAudioContext?.currentTime}));
+  await info.attach('Native audio baseline',{body:JSON.stringify(proof,null,2),contentType:'application/json'});
+  // Do not await a native close promise when diagnosing an unresponsive backend.
+  await page.evaluate(()=>{void window.nativeAudioContext?.close().catch(()=>{});});
+ }
+});
 test('real audio destruction batches deduplicate local receipts and remote finalization while mute and replays stay silent',async({browser,baseURL,browserName},info)=>{
  const ownerContext=await browser.newContext({viewport:{width:1440,height:1100}}),viewerContext=await browser.newContext({viewport:{width:1440,height:1100}});
  await ownerContext.addInitScript(installPassiveAudioObservations);await viewerContext.addInitScript(installPassiveAudioObservations);

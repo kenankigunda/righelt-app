@@ -27,10 +27,16 @@ export function installPassiveAudioObservations() {
  }
  const prototypes=new WeakSet();
  for(const name of ['AudioContext','webkitAudioContext']){
-  const prototype=window[name]?.prototype;if(!prototype||prototypes.has(prototype)||!Object.hasOwn(prototype,'resume'))continue;
+  let prototype=window[name]?.prototype;
+  while(prototype&&!Object.hasOwn(prototype,'resume'))prototype=Object.getPrototypeOf(prototype);
+  if(!prototype||prototypes.has(prototype)||typeof prototype.resume!=='function')continue;
   prototypes.add(prototype);
   const resume=prototype.resume;
-  prototype.resume=function(...args){context(this);note('resume-request',{state:this.state});const result=Reflect.apply(resume,this,args);result.then(()=>note('resume-resolved',{state:this.state}),error=>note('resume-rejected',{state:this.state,error:String(error)}));return result;};
+  prototype.resume=function(...args){
+   context(this);note('resume-request',{state:this.state});
+   let result;try{result=Reflect.apply(resume,this,args);}catch(error){note('resume-threw',{state:this.state,error:String(error)});throw error;}
+   result.then(()=>note('resume-resolved',{state:this.state}),error=>note('resume-rejected',{state:this.state,error:String(error)}));return result;
+  };
  }
  const base=window.BaseAudioContext?.prototype;
  if(base)for(const method of ['createBufferSource','createOscillator']){
