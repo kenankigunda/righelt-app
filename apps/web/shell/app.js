@@ -1,4 +1,4 @@
-import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName} from './perspective-labels.js';
+import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
 import { buildTurnReplay, createComputerReplay } from './computer-replay.js';
@@ -531,10 +531,10 @@ const formatOutcomeStatus = (outcome) => {
 
 const formatSideToMoveLabel = (snapshot) => {
   if (snapshot?.sideToMove === "P1") {
-    return "Player 1 to play";
+    return "Red to play";
   }
   if (snapshot?.sideToMove === "P2") {
-    return "Player 2 to play";
+    return "Blue to play";
   }
   return "Turn unknown";
 };
@@ -3116,7 +3116,6 @@ const renderApprovalGate = (game, request) => {
               data-requester-id="${escapeHtml(request.identityId)}"
               data-testid="ignore-request"
             >${icon('close')}Ignore</button>
-            <span class="small invite-choice-note">Dismiss this prompt for now. The request remains visible in Join / Invite.</span>
           </div>
         </div>
       </section>
@@ -3128,10 +3127,27 @@ const renderApprovalGate = (game, request) => {
 };
 
 const renderResult = game => {
-  const result = getGameResult(transport.getAuthoritativeGame(game.id), transport.getIdentityId());
+  const confirmed = transport.getAuthoritativeGame(game.id);
+  const result = getGameResult(confirmed, transport.getIdentityId());
   if (!result) return "";
-  const names = game.selfPlayMode && !game.player1?.computerProfile && !game.player2?.computerProfile ? "Self-play" : [game.player1, game.player2].map((person, i) => participantDisplayName(person, `Player ${i + 1}`)).join(" vs ");
-  return `<section class="panel game-result" data-testid="game-result" data-result-tone="${result.tone}" data-winner="${result.winner ?? ''}"><p class="small">Game finished</p>${renderResultMark(result)}<h1 tabindex="-1">${escapeHtml(result.title)}</h1><p>${escapeHtml(result.reason)}</p><p>${escapeHtml(names)}</p><p class="small">Game ${escapeHtml(formatDisplayGameId(game.id))}</p><div class="story-modal-actions"><button data-action="analysis" data-game-id="${escapeHtml(game.id)}">${icon('back')}Review game</button><button${result.tone === "victory" ? "" : ' class="secondary"'} data-action="rematch" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Play again</button><a class="button-link secondary" href="#/">${icon('home')}Home</a></div></section>`;
+  const names = ['P1','P2'].map(side => playerDisplayName(confirmed,side));
+  const isolatedName = name => `<bdi dir="auto">${escapeHtml(name)}</bdi>`;
+  const namedText = text => {
+    if (result.side) return escapeHtml(text);
+    const winnerName = result.winner ? playerDisplayName(confirmed,result.winner) : null;
+    if (winnerName && text === `${winnerName} won`) return `${isolatedName(winnerName)} won`;
+    const unique = [...new Set(names)].sort((a,b) => b.length-a.length);
+    let remaining = text, html = '';
+    while (remaining) {
+      const matches = unique.map(name => ({name,index:remaining.indexOf(`${name}’s commander`)})).filter(match => match.index >= 0).sort((a,b) => a.index-b.index || b.name.length-a.name.length);
+      if (!matches.length) return html + escapeHtml(remaining);
+      const {name,index} = matches[0];
+      html += escapeHtml(remaining.slice(0,index)) + isolatedName(name);
+      remaining = remaining.slice(index+name.length);
+    }
+    return html;
+  };
+  return `<section class="panel game-result" data-testid="game-result" data-result-tone="${result.tone}" data-winner="${result.winner ?? ''}"><p class="small">Game finished</p>${renderResultMark(result)}<h1 tabindex="-1">${namedText(result.title)}</h1><p>${namedText(result.reason)}</p><p>${result.controlsBothSides ? "You play both sides" : names.map(isolatedName).join(" vs ")}</p><p class="small">Game ${escapeHtml(formatDisplayGameId(game.id))}</p><div class="story-modal-actions"><button data-action="analysis" data-game-id="${escapeHtml(game.id)}">${icon('back')}Review game</button><button${result.tone === "victory" ? "" : ' class="secondary"'} data-action="rematch" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Play again</button><a class="button-link secondary" href="#/">${icon('home')}Home</a></div></section>`;
 };
 
 const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
@@ -3188,7 +3204,6 @@ const renderInviteLanding = (inviteContext) => {
               disabled: !canJoinPlayer,
               className: `invite-action invite-${inviteContext.intendedRole === "blue" ? "blue" : inviteContext.intendedRole === "red" ? "red" : !game.player1 ? "red" : "blue"}`,
             })}>${icon("play")}${escapeHtml(playerActionLabel)}</button>
-            ${inviteContext.inviteType === "player" ? "" : '<span class="small invite-choice-note">Ask a player to approve your seat</span>'}
           </div>` : ""}
           ${canJoinViewer ? `<div class="invite-choice-row">
             <button data-action="accept-invite-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-viewer"${renderButtonStateAttributes({
