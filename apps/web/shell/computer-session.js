@@ -195,7 +195,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       // calculation while its durable receipt settles instead of calculating again.
       if (leaseWork && leaseWorkAction === 'renew') {
         await leaseWork;
-        if (run !== epoch || current().key !== context.key) return;
+        if (run !== epoch || current().key !== context.key || !sameOwnerScope(ownerScope(context), current())) return;
       }
       // Recovery can begin during calculation or evidence persistence. Keep the
       // completed evidence, then calculate again from settled authority later.

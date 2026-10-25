@@ -21,6 +21,8 @@ A shared receipt can arrive over a ready socket before HTTP completes. Either re
 
 The real-runtime large-history test prohibits projection loads in the outer API while exercising legacy full reads, compact reads, controls, invites, source imports and branches with both new writers disabled. This proves the bounded outer work structure. Local wall-clock timing does not prove the production CPU budget. Provider verification after the coordinated deployment remains required.
 
+Rollback must preserve shared-command journal and receipt support in both the browser and server. These commands use the existing IndexedDB journal. Earlier clients reject saved `kind: "shared"` records and earlier servers reject their reconciliation before checking receipts. Disabling the storage writers does not remove this protocol requirement. Keep this release's compatible handling in rollback candidates, or verify that every outstanding shared intent, including delayed journal cleanup, has drained before deploying older handling. Refresh every later feature against actual main so it retains this support.
+
 ## Reader before writer
 
 Both writer settings default to false. No production activation is authorized by this change.
@@ -35,7 +37,7 @@ Both writer settings default to false. No production activation is authorized by
 
 Canonical implementation: `codex/seamless-recovery`, isolated checkout `righelt-seamless-recovery`, initially based on main `74a0c30`.
 
-The app improvements chat owns board geometry, visual feedback, phase wording, identities and undo viewing intent. Its release ledger is `righelt-context-explanations/docs/ai/CONTEXTUAL_BOARD_FEEDBACK.md`. Existing release order remains 150 → 154 → 149 → 151 → 152 → 156 → follow-on, refreshed against actual main after each merge. The engine stream owns the next deployment. Reserve migration 0022 with that owner before landing.
+The app improvements chat owns board geometry, visual feedback, phase wording, identities and undo viewing intent. Its release ledger is `righelt-context-explanations/docs/ai/CONTEXTUAL_BOARD_FEEDBACK.md`. The coordinated order is deployed 150 → 158 → released result-compatible tooling → 154, then the remaining features. Source and independent reviews found no dependency requiring 154 before this critical CPU and receipt repair. Refresh every feature against actual main after each merge and retain the protocol compatibility described above. One owner deploys at a time. Migration 0022 is reserved here.
 
 The training chat is held pending a fresh readiness signal from both app work and this feature. Heavy recovery validation supersedes the earlier planning-only resource clearance. The user subsequently authorized shepherding this feature to merge and deployment in the shared release queue. Model or storage writer activation, storage generation changes and production deletion still require their separate gates. Evidence publication and schedules remain paused.
 

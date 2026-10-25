@@ -596,3 +596,19 @@ test('automatic acquisition reports scoped Resuming and disables recovery until 
  f.game().computer.lease=null;acknowledge=null;const next=f.session.tick();while(!acknowledge)await Promise.resolve();
  f.switchGame();assert.notEqual(f.session.snapshot().activity.label,'Resuming');acknowledge();await next;assert.notEqual(observed.at(-1).label,'Resuming');
 });
+
+for(const change of ['switchGame','changeAccount','changeTransport'])test(`completed calculation waiting for renewal cannot follow ${change}`,async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ const control=f.transport.computerControl;let release;
+ f.transport.computerControl=async(...args)=>{
+  if(args[1].action==='renew'){f.setBlocked(true);await new Promise(resolve=>{release=resolve;});}
+  await control(...args);f.setBlocked(false);
+ };
+ const work=f.session.tick();f.setTime(5200);await f.session.tick();
+ while(!release)await Promise.resolve();
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});
+ for(let i=0;i<10;i++)await Promise.resolve();
+ f[change]();release();await work;
+ assert.equal(f.submissions(),0);assert.equal(f.computations(),1);
+ assert.equal(f.session.snapshot().phase,'idle');
+});
