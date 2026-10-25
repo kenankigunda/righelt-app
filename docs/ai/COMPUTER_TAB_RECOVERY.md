@@ -10,7 +10,7 @@ Resume here requires the advertised resume-here-v1 capability and shared receipt
 
 ## Coordination
 
-- Recovery chat owns PR158 transport receipts, retry ownership, capability advertisement integration, and outer API CPU optimization. Integrated committed prerequisites e0f016aeb7ca4dcdcf8ba45a1628ebe0d20e6366 and e81f0dcafa766aeab1b9e8e1116773634af6a9be. Later recovery repairs must be integrated before release.
+- Recovery chat owns PR158 transport receipts, retry ownership, capability advertisement integration, and outer API CPU optimization. Integrated committed prerequisites e0f016aeb7ca4dcdcf8ba45a1628ebe0d20e6366 and e81f0dcafa766aeab1b9e8e1116773634af6a9be. Receipt repair8daad3f and server CPU stream407f9e25e329977399c702c27273bdc710aa44a9 are also integrated. Later recovery repairs must be integrated before release.
 - App improvements owns PR156 and Players prerequisite 5e16db4 (base c21a69ea2593f8fb06e341a5b03a97ae59c49fcd), geometry, presentation and the shared release ledger. The earlier semantic-only computer badge decision is superseded in Players by actual tab activity. Home's computer badge remains an identity label.
 - This feature owns session activity, automatic acquisition, deliberate resume semantics, Players wiring and associated tests.
 - Training keeps its existing holds. Test windows require explicit resource readiness. No model or storage-writer activation is included.
@@ -19,10 +19,10 @@ Resume here requires the advertised resume-here-v1 capability and shared receipt
 
 ## Evidence and remaining release gates
 
-The web suite passed1027 checks before final narrow renewal/lifecycle hardening. The component matrix passed18 checks across Chromium, Firefox and WebKit at320/390/1440 widths. Visual inspection identified a narrow name truncation issue, repaired by wrapping the Computer badge. That responsive repair still requires its bounded rerun. Raw artifacts remain in test-results/computer-recovery.
+The combined web suite passed1047 checks at90d0472. Transport/sender/session integration passed142 checks after receipt repair, and server stream/control/self-play passed31 checks. Scoped history conflict repair passed28 checks. The component matrix passed18 checks across Chromium, Firefox and WebKit at320/390/1440 widths. Visual inspection identified a narrow name truncation issue, repaired by wrapping the Computer badge. That responsive repair still requires its bounded rerun. Raw artifacts remain in test-results/computer-recovery.
 
 Independent review found an unsupported-server recovery notice action, now suppressed by shared capability eligibility. Bounded re-review reported no remaining actionable findings in that fix or session hardening.
 
-Real-stack recovery, final combined committed-head proof, exact-head CI, prerequisite merges and coordinated deployment verification remain required. Local tests do not establish release readiness. Evidence publication remains paused.
+The first real-stack attempt failed at the accepted-control reconnect latch in prerequisite PR158; its committed repair is now integrated. The run was stopped at that failure with artifacts retained and cleanup verified. Real-stack rerun, final combined committed-head proof, exact-head CI, prerequisite merges and coordinated deployment verification remain required. Local tests do not establish release readiness. Evidence publication remains paused.
 
 Server-side computer execution is tracked as backlog T-131, To Do, improvement, First public release m-2, pushed at backlog commit8519342.
