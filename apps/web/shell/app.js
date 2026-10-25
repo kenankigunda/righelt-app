@@ -4920,6 +4920,7 @@ appEl.addEventListener("click", async (event) => {
     let reverted;
     try { reverted = computerUndo ? await computerSession.withMutation(revert) : await revert(); }
     catch {
+      viewingIntent.cancelUndo(gameId);
       if (undoScopeIsCurrent()) setUndoRequestFeedback(gameId, "Undo could not finish");
       return;
     }
