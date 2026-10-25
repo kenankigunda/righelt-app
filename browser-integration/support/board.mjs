@@ -5,11 +5,13 @@ import { buildPieceMoveResponse } from "/apps/web/board/client-move-generation.j
 let state, actions, runtime, applied = [], pending = null, canInteract = true;
 const coord = (row, col) => ({ row, col });
 const setup = async (type = "rush", hover = true) => {
+  runtime?.destroy();
+  canInteract = true;
   state = { boardSize: 10, sideToMove: "P1", turnIndex: 0, continuation: null, outcome: { status: "ongoing" },
     pieces: [{ id: "A", owner: "P1", kind: "unit", position: coord(4, 2), supplied: true, commanded: true }] };
   if (type === "retreat") state.continuation = { type: "push", phase: "retreat", pushedPieceId: "A" };
   if (type === "follow") state.continuation = { type: "push", phase: "follow", followGroupPieceIds: ["A"] };
-  actions = [coord(4, 3), coord(5, 2)].map(to => ({ type, actorId: "A", from: coord(4, 2), to }));
+  actions = type === "pass" ? [{type:"pass"}] : [coord(4, 3), coord(5, 2)].map(to => ({ type, actorId: "A", from: coord(4, 2), to }));
   applied = [];
   runtime = createBoardRuntime({ boardAdapter: createEngineBoardAdapter(), controls: { getSupportsHover: () => hover }, host: {
     canInteract: () => canInteract,

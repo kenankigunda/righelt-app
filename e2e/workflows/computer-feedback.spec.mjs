@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test';
-import {readProjectedGame,waitForComputerDecision} from '../support/computer-projection.mjs';
+import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
 
 test.use({viewport:{width:390,height:740},isMobile:true,hasTouch:true});
 const notice=page=>page.locator('[data-computer-status]');
@@ -7,6 +7,7 @@ const geometry=page=>page.getByTestId('game-board').evaluate(el=>{const r=el.get
 async function createBabs(page){
   await page.goto('/');
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
+  await waitForOpponentReady(page);
   const creation=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');
   await page.getByRole('button',{name:'Play Babs',exact:true}).click();
   const response=await creation;expect(response.ok()).toBe(true);
@@ -38,6 +39,8 @@ test('computer save failures take priority while the delayed saving notice stays
     await expect(delayed).toHaveCount(1,{timeout:13000});
     if(await delayed.evaluate(el=>Boolean(el.closest('[hidden],[inert],[aria-hidden="true"]'))))await page.locator('[data-action="cycle-game-alert-stack"][tabindex="0"]').press('Enter');
     await expect(delayed).toBeVisible();
+    await expect(page.locator('[data-alert-stack-card][inert] .shell-game-alert-copy').first()).toBeHidden();
+    await expect(page.locator('[data-alert-stack-card][inert] button').first()).toBeHidden();
     expect(await delayed.evaluate(el=>!el.closest('[hidden],[inert],[aria-hidden="true"]'))).toBe(true);
     await expect(page.getByRole('button',{name:'Interrupt',exact:true})).toHaveCount(0);
     expect(await geometry(page)).toEqual(before);
