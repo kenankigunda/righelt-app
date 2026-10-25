@@ -54,3 +54,18 @@ export async function assertAccountEntry(page,{authenticated=false}={}) {
   const close=page.getByRole('button',{name:'Close navigation menu',exact:true});
   if(await close.isVisible())await close.click();
 }
+
+// Rematch and branch choices may use the older select or native mini cards.
+// Assert the selected opponent in either public contract; preparation checks
+// stay with the caller and must still reach actual readiness before Start.
+export async function assertOpponentChoice(dialog, opponent) {
+  const labels={babs:'Babs',tau:'Tau',horus:'Horus',friend:'Friend',self:'Self-play'};
+  if(!Object.hasOwn(labels,opponent))throw Error(`Unknown opponent: ${opponent}`);
+  const legacy=dialog.getByRole('combobox',{name:'Opponent',exact:true});
+  if(await legacy.count())await expect(legacy).toHaveValue(opponent);
+  else {
+    const group=dialog.getByRole('group',{name:'Opponent',exact:true});
+    await expect(group.getByRole('radio',{name:labels[opponent],exact:true})).toBeChecked();
+    await expect(group.locator('input[type="radio"]:checked')).toHaveCount(1);
+  }
+}

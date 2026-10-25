@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {selectGamePanel} from './browser-navigation.mjs';
+import {assertOpponentChoice,selectGamePanel} from './browser-navigation.mjs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
@@ -85,7 +85,7 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     await proof(page, info, 'computer-game-result', result);
     await result.getByRole('button', { name: 'Play again', exact: true }).click();
     const chooser = page.getByRole('dialog', { name: 'Play again', exact: true });
-    await expect(chooser.getByRole('combobox', { name: 'Opponent', exact: true })).toHaveValue('babs');
+    await assertOpponentChoice(chooser,'babs');
     await expect(chooser.getByRole('radio', { name: 'Player 1 · Red', exact: true })).toBeChecked();
     await expect(chooser.getByRole('button', { name: 'Start game', exact: true })).toBeEnabled();
     await expect(chooser.locator('[role=status]')).toContainText('Ready to play');

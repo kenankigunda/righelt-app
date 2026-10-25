@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import assert from 'node:assert/strict';
-import {selectGamePanel,revealAccountControl,assertAccountEntry} from '../scripts/validation/browser-navigation.mjs';
+import {assertOpponentChoice,selectGamePanel,revealAccountControl,assertAccountEntry} from '../scripts/validation/browser-navigation.mjs';
 import {assertMovePreview} from '../scripts/validation/browser-move.mjs';
 
 const navigation=({collapsed=false,wide=false}={})=>`<style>.game-shell-track-wrap{width:300px;height:100px;overflow:hidden}.game-shell-track{display:flex;width:900px;transition:transform 180ms linear}.panel{width:300px;flex:none;height:100px}[data-mobile-nav-controls][inert]{visibility:hidden}</style>
@@ -62,4 +62,15 @@ for(const menu of [false,true])test(`released account access supports ${menu?'na
 for(const message of ['Preview. Activate this destination again to play.','Move from (1, 2) to (2, 2)'])test(`preview proof uses actual destination state with ${message.startsWith('Preview')?'legacy':'short'} copy`,async({page})=>{
   await page.setContent(`<p id="shell-board-preview-label">${message}</p><div id="target" class="cell target"><span class="move-ghost">Piece</span></div>`);
   await assertMovePreview(page,page.locator('#target'));
+});
+
+for(const cards of [false,true])test(`opponent proof asserts the exact ${cards?'native card':'legacy dropdown'} choice`,async({page})=>{
+ await page.setContent(`<dialog open aria-label="Play again">${cards?'<fieldset><legend>Opponent</legend><label><input name="opponent" type="radio" value="babs" checked>Babs</label><label><input name="opponent" type="radio" value="friend">Friend</label></fieldset>':'<label>Opponent<select><option value="babs">Babs</option><option value="friend">Friend</option></select></label>'}</dialog>`);
+ const dialog=page.getByRole('dialog',{name:'Play again',exact:true});
+ await assertOpponentChoice(dialog,'babs');
+ if(cards)await dialog.getByRole('radio',{name:'Friend',exact:true}).check();else await dialog.getByRole('combobox',{name:'Opponent',exact:true}).selectOption('friend');
+ await assertOpponentChoice(dialog,'friend');
+ // A visible wrong known choice must fail the proof in both UI contracts.
+ await assert.rejects(()=>assertOpponentChoice(dialog,'babs'));
+ await assert.rejects(()=>assertOpponentChoice(dialog,'unknown'),/Unknown opponent/);
 });
