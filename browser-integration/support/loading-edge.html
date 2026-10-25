@@ -8,6 +8,6 @@ document.querySelector('#fixture-heading').innerHTML=renderBoardHeadingSlot();
 document.querySelector('#fixture-message').innerHTML=renderBoardMessageSlot({id:'preview'});
 await window.boardFixture.setup('pass');await document.fonts.ready;
 window.edgeDispose=mountLoadingEdges(document);
-window.edgeLayout=()=>{document.querySelector('#app').dataset.shellLayoutMode=innerWidth>900?'wide':'narrow';};
+window.edgeLayout=()=>{document.querySelector('#app').dataset.shellLayoutMode=innerWidth>=933?'wide':'narrow';};
 window.addEventListener('resize',window.edgeLayout);window.edgeLayout();window.edgeReady=true;
 </script></body></html>
