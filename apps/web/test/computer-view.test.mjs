@@ -34,3 +34,14 @@ test('every computer thinking label leaves ellipsis to the existing animated loa
   assert.match(html,/<span role="status" data-loading-state="pending" data-loading-context="external" data-loading-key="computer:thinking-game:thinking-attempt">/);
  }
 });
+
+
+test('human-readable profile versions omit the qualifier while raw evidence stays unchanged', () => {
+ const proof={profile:'tau',profileVersion:'experimental-v1',modelId:'initial-1554',seed:107,attemptId:'attempt'};
+ const game={id:'game',moves:[{moveId:'move',index:0,action:{type:'pass'},computerProof:proof}],currentSnapshot:{sideToMove:'P1',turnIndex:1}};
+ const state={drafts:new Map(),notes:[],attempts:new Map(),open:new Set(['decision']),items:[]};
+ const html=renderDecisionDebug({game,status:{},state,signedIn:false});
+ assert.match(html,/<dt>Profile version<\/dt><dd>v1<\/dd>/);
+ assert.equal(proof.profileVersion,'experimental-v1');
+ assert.match(html,/&quot;profileVersion&quot;: &quot;experimental-v1&quot;/);
+});
