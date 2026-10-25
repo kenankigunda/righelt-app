@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import {createViewingIntent} from '../shell/viewing-state.js';
+import {resolveInitialSelectionHydration} from '../shell/selection-hydration.js';
 
 const source = readFileSync(new URL('../shell/app.js', import.meta.url), 'utf8');
 const start = source.indexOf('  if (action === "revert-to-move" || action === "undo-last-move")');
@@ -110,3 +111,78 @@ for (const boundary of ['mutation', 'pause', 'committed', 'acquire']) {
     }
   });
 }
+
+// Use the actual return handler and both mount hydration paths: clearing the
+// runtime alone must not restore the undone target on the following render.
+const slice = (from, to) => {
+  const start=source.indexOf(from),end=source.indexOf(to,start);
+  assert.ok(start>=0 && end>start,`Undo hydration source boundary: ${from}`);
+  return source.slice(start,end);
+};
+const undoSelectionScript = new vm.Script(`
+  ${slice('const getSelectionHydrationGame =','const isPlayerRole =')}
+  ${slice('const maybeReturnAfterUndo =','const subscribeToTransport =')}
+  globalThis.returnAfterUndo = () => maybeReturnAfterUndo('g');
+  globalThis.hydrate = () => {
+    const game = transport.getAuthoritativeGame('g');
+    const snapshot = game.board.state, effectiveLegalActions = game.legalActions;
+    ${slice('  const selectionHydrationGame =','  if (!snapshot) {')}
+    return {scenario:scenarioSelectionHydration,initial:initialSelectionHydration};
+  };
+`);
+function hydrationHarness(continuation=null) {
+  const action={type:continuation?.type==='push'?'retreat':continuation?'rush':'move',actorId:'C1',from:{row:2,col:5},to:{row:2,col:6}};
+  const state={sideToMove:'P1',turnIndex:0,continuation,pieces:[{id:'C1',position:action.from}]};
+  const game={id:'g',gameplayRevision:2,moves:[{moveId:'m',undone:true}],lastRestoration:{decisionId:'m',at:'restore-1'},board:{state},
+    inHistoryMode:false,canRecordMove:true,legalActions:[action],initialSelectionAction:action,
+    pendingScenarioSelection:{source:action.from,target:action.to,actorSide:'P1',turnIndex:0}};
+  const viewingIntent=createViewingIntent(),token=viewingIntent.beginUndo('g',{targetMoveId:'m',revision:1,scope:'a'});
+  viewingIntent.commitUndo('g',token);
+  const calls=[],context=vm.createContext({
+    currentRoute:{name:'game',gameId:'g'},viewingIntent,viewingScope:()=> 'a',
+    consumedInitialSelectionActionKeyByGameId:new Map(),
+    toStableKey:JSON.stringify,resolveInitialSelectionHydration,
+    transport:{getAuthoritativeGame:()=>game,returnToLive:()=>calls.push('live')},
+    boardRuntime:{clearSelection:()=>calls.push('clear')},mountedOverlayKey:'old',
+    getShellLayoutMode:()=> 'wide',
+  });
+  undoSelectionScript.runInContext(context);
+  return {context,game,action,calls,viewingIntent};
+}
+test('accepted ordinary undo clears both legal old previews before the next board render',()=>{
+  const h=hydrationHarness();
+  const restoration=h.game.lastRestoration;
+  h.game.lastRestoration=null;
+  assert.deepEqual(h.context.hydrate().initial.selectionAction,h.action,'An independent branch seed still hydrates');
+  assert.deepEqual(h.context.hydrate().scenario.selectionAction,h.action);
+  h.game.lastRestoration=restoration;
+  h.context.returnAfterUndo();
+  assert.deepEqual(h.calls,['clear','live']);
+  for(let i=0;i<2;i++) {
+    const hydration=h.context.hydrate();
+    assert.equal(hydration.initial.selectionAction,null);
+    assert.equal(hydration.scenario.selectionAction,null);
+    assert.equal(hydration.scenario.selectionState,null);
+  }
+  assert.deepEqual(h.game.initialSelectionAction,h.action,'The authoritative restored record stays untouched');
+  assert.deepEqual(h.game.pendingScenarioSelection.target,h.action.to);
+  h.game.initialSelectionAction=null;
+  assert.deepEqual(h.context.hydrate().scenario.selectionAction,h.action,'A newly loaded scenario seed is independent of the consumed undo preview');
+});
+for(const continuation of [{type:'rush'},{type:'push',phase:'retreat'}]) test(`undo preserves currently legal ${continuation.type} continuation hydration`,()=>{
+  const h=hydrationHarness(continuation);h.context.returnAfterUndo();
+  assert.deepEqual(h.calls,['clear','live']);
+  const hydration=h.context.hydrate();
+  assert.deepEqual(hydration.initial.selectionAction,h.action);
+  assert.deepEqual(hydration.scenario.selectionAction,h.action);
+  h.game.legalActions=[];
+  assert.equal(h.context.hydrate().initial.selectionAction,null,'Continuation restoration never invents legality');
+  assert.equal(h.context.hydrate().scenario.selectionAction,null);
+});
+test('browsing a different move while undo is pending never clears selection or returns to live',()=>{
+  const h=hydrationHarness();h.viewingIntent.navigate('g');h.context.returnAfterUndo();
+  assert.deepEqual(h.calls,[]);
+  assert.deepEqual(h.game.initialSelectionAction,h.action);
+  assert.deepEqual(h.game.pendingScenarioSelection.target,h.action.to);
+  assert.equal(h.context.mountedOverlayKey,'old','No history view or board selection is cleared');
+});
