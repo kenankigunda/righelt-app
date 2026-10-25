@@ -26,7 +26,7 @@ Report assembly and captions never invoke product tests. Run full viewer tests w
 
 Run files and raw logs live under ignored test-results. Only site/ is publishable. The main manifest records private coordination state; never upload it wholesale. Report source includes a deliberately allowlisted public projection.
 
-A shared exclusive lock prevents two validation stacks from occupying port pair 9888/9887. A conflicting server is an error, never silently reused. Inspect lock owner before clearing an abandoned lock; never kill another run.
+A shared exclusive lock prevents two validation stacks from occupying port pair 9888/9887. Account proof independently reserves its 9988 stack; if an interrupted fixture leaves its lock, preserve the owner evidence and inspect actual process identities and occupied ports before manually preserving the abandoned lock for a retry. Neither a PID/name match nor a permission error establishes that a live owner may be replaced. A denied zero-signal cleanup probe is accepted only after the shared process table proves the group has no live members; actual signal failures and inspection failures remain errors. A conflicting server is an error, never silently reused. Inspect lock owner before clearing an abandoned lock; never kill another run.
 
 ## Coverage and repairs
 

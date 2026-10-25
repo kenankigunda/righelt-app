@@ -74,3 +74,26 @@ for(const cards of [false,true])test(`opponent proof asserts the exact ${cards?'
  await assert.rejects(()=>assertOpponentChoice(dialog,'babs'));
  await assert.rejects(()=>assertOpponentChoice(dialog,'unknown'),/Unknown opponent/);
 });
+
+
+for(const narrow of [false,true])test(`account entry waits for a cold ${narrow?'narrow':'wide'} toolbar before choosing its affordance`,async({page})=>{
+ await page.setContent('<p role="status">Starting</p>');page.setDefaultTimeout(600);
+ const pending=revealAccountControl(page).then(control=>({control}),error=>({error}));
+ // This command follows the helper's first visibility check, while neither
+ // toolbar affordance exists. Mount the actual public contract afterwards.
+ await page.evaluate(narrow=>{
+  window.menuClicks=0;window.accountClicks=0;
+  document.body.innerHTML=narrow?'<button aria-label="Open navigation menu">Menu</button><div id="menu" aria-hidden="true" style="opacity:0;pointer-events:none"><button data-testid="account-open">Account</button></div>':'<button data-testid="account-open" disabled>Account</button>';
+  document.querySelector('[aria-label="Open navigation menu"]')?.addEventListener('click',()=>{window.menuClicks++;const menu=document.querySelector('#menu');menu.removeAttribute('aria-hidden');menu.style.opacity='1';menu.style.pointerEvents='auto';});
+  document.querySelector('[data-testid="account-open"]').onclick=()=>window.accountClicks++;
+ },narrow);
+ if(!narrow)await page.evaluate(()=>document.querySelector('[data-testid="account-open"]').disabled=false);
+ const result=await pending;expect(result.error).toBeUndefined();await result.control.click();
+ expect(await page.evaluate(()=>({menu:window.menuClicks,account:window.accountClicks}))).toEqual({menu:Number(narrow),account:1});
+});
+
+
+test('missing toolbar affordances fail with a bounded readiness explanation',async({page})=>{
+ await page.setContent('<p role="status">Starting</p>');
+ await assert.rejects(()=>revealAccountControl(page),/Account or Open navigation menu must be visible before account entry/);
+});

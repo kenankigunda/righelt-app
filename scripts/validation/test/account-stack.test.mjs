@@ -169,3 +169,27 @@ test('simplified account cutover controls work without recovery columns and stil
     assert.equal(calls.every(c=>c.sql.includes('recovery_acknowledged')), !simplifiedAccounts);
   }
 });
+
+
+for(const state of ['absent','zombie','live'])test(`EPERM on a group existence probe only accepts verified ${state} membership`,async()=>{
+ const {terminateProcessGroup}=await import('../account-stack.mjs');
+ const failure=Object.assign(Error('probe denied'),{code:'EPERM'}),signals=[];
+ const options={kill:(pid,signal)=>{signals.push(signal);if(signal===0)throw failure;},table:async()=>state==='absent'?[]:[{pid:456,pgid:123,state:state==='zombie'?'Z':'S',start:'saved'}]};
+ if(state==='live')await assert.rejects(terminateProcessGroup(123,options),error=>error===failure);
+ else await terminateProcessGroup(123,options);
+ assert.deepEqual(signals,['SIGTERM',0]);
+});
+test('an unrelated live group does not prevent verified cleanup of the vanished group',async()=>{
+ const {terminateProcessGroup}=await import('../account-stack.mjs');
+ await terminateProcessGroup(123,{kill:(_pid,signal)=>{if(signal===0)throw Object.assign(Error('denied'),{code:'EPERM'});},table:async()=>[{pid:123,pgid:999,state:'S',start:'reused'}]});
+});
+test('failed ownership inspection and permission errors on actual signals remain failures',async()=>{
+ const {terminateProcessGroup}=await import('../account-stack.mjs');
+ const inspection=Error('process table unavailable');
+ await assert.rejects(terminateProcessGroup(123,{kill:(_pid,signal)=>{if(signal===0)throw Object.assign(Error('denied'),{code:'EPERM'});},table:async()=>{throw inspection;}}),error=>error===inspection);
+ for(const denied of ['SIGTERM','SIGKILL']){
+  const failure=Object.assign(Error(`${denied} denied`),{code:'EPERM'});let clock=0,inspections=0;
+  await assert.rejects(terminateProcessGroup(123,{kill:(_pid,signal)=>{if(signal===denied)throw failure;},table:async()=>{inspections++;return [];},now:()=>clock,graceMs:0,pause:async ms=>{clock+=25;}}),error=>error===failure);
+  assert.equal(inspections,0,'a denied destructive signal cannot be treated as a missing process');
+ }
+});

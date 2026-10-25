@@ -1,5 +1,6 @@
 import { localHttpsEnvironment } from '../local-https.mjs';
 import { cliPath } from '../resources/supervisor.mjs';
+import { processTable, live } from '../resources/system.mjs';
 import {candidateCapabilities} from './capabilities.mjs';
 // Versioned validation fixture. Runs candidate code; never rewrites candidate scripts.
 import { spawn } from 'node:child_process';
@@ -145,17 +146,30 @@ export function assertRunning(stopping) {
   if (stopping) throw new Error('Account fixture shutdown requested');
 }
 // Wait for the process group, not merely pnpm's leader. A child may outlive it.
-export async function terminateProcessGroup(pid, { kill = process.kill, pause = ms => new Promise(resolve => setTimeout(resolve, ms)), graceMs = 5000, now = Date.now } = {}) {
+export async function terminateProcessGroup(pid, { kill = process.kill, pause = ms => new Promise(resolve => setTimeout(resolve, ms)), graceMs = 5000, now = Date.now, table = processTable } = {}) {
   if (!Number.isInteger(pid) || pid <= 0) return;
-  const send = signal => { try { kill(-pid, signal); return true; } catch (error) { if (error.code === 'ESRCH') return false; throw error; } };
-  if (!send('SIGTERM')) return;
+  const send = async signal => {
+    try { kill(-pid, signal); return true; }
+    catch (error) {
+      if (error.code === 'ESRCH') return false;
+      // macOS can deny a zero-signal probe after the last live member exits.
+      // Only authoritative absence permits cleanup; denied actual signals,
+      // live members (regardless of identity), and failed inspection still fail.
+      if (error.code === 'EPERM' && signal === 0) {
+        const rows = await table();
+        if (!rows.some(row => row.pgid === pid && live(row))) return false;
+      }
+      throw error;
+    }
+  };
+  if (!await send('SIGTERM')) return;
   const deadline = now() + graceMs;
-  while (send(0)) {
+  while (await send(0)) {
     if (now() >= deadline) {
-      send('SIGKILL');
+      await send('SIGKILL');
       // Keep the lock until the kernel reports the group gone.
       const killedDeadline = now() + 5000;
-      while (send(0)) { if (now() >= killedDeadline) throw new Error(`Account fixture process group ${pid} did not exit`); await pause(25); }
+      while (await send(0)) { if (now() >= killedDeadline) throw new Error(`Account fixture process group ${pid} did not exit`); await pause(25); }
       return;
     }
     await pause(25);
