@@ -1,3 +1,4 @@
+import { CURRENT_COMPUTER_MODEL } from '../generated/packages/shared-types/src/computer-play.js';
 import { STORAGE_GENERATION_HEADER } from "../generated/packages/shared-types/src/storage-policy.js";
 import { issueDiagnostics } from "./issue-diagnostics.js";
 import { equivalentGameStates, listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
@@ -874,11 +875,11 @@ export const createLiveTransportStore = ({
     return body;
   };
 
-  const createGame = async ({ selfPlayMode = false, gameId = null, creatorSide = "p1", computer } = {}) => {
+  const createGame = async ({ selfPlayMode = false, gameId = null, creatorSide = "p1", computer, computerModelId = CURRENT_COMPUTER_MODEL.id } = {}) => {
     const response = await fetcher("/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, selfPlayMode, gameId, creatorSide, computer }),
+      body: JSON.stringify({ identityId, selfPlayMode, gameId, creatorSide, computer, ...(computer ? {computerModelId} : {}) }),
     });
     const body = await mustOk(response);
     return upsertGame(body.game);
@@ -905,6 +906,7 @@ export const createLiveTransportStore = ({
     sourceGameplayRevision = null,
     creatorSide = "p1",
     computer,
+    computerModelId = CURRENT_COMPUTER_MODEL.id,
     scenario,
     initialSelectionAction,
     participantCopyMode,
@@ -918,7 +920,7 @@ export const createLiveTransportStore = ({
         gameId,
         sourceGameId,
         sourceMoveIndex,
-        sourceDecisionId, sourceGameplayRevision, creatorSide, computer,
+        sourceDecisionId, sourceGameplayRevision, creatorSide, computer, ...(computer ? {computerModelId} : {}),
         scenario,
         initialSelectionAction,
         participantCopyMode,

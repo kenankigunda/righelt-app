@@ -40,3 +40,10 @@ test('failed preparation stays unavailable until an explicit successful retry', 
   f.settle().resolve(); await retry;
   assert.equal(f.preparation.snapshot('intro').state, 'ready'); f.preparation.cancel();
 });
+
+test('readiness names the exact prepared model and a different version retires it', async () => {
+ const f=fixture();const first=f.preparation.start('intro','initial-1554');f.settle().resolve();await first;
+ assert.equal(f.preparation.snapshot('intro').modelId,'initial-1554');
+ const next=f.preparation.start('intro','production-20261025-99');assert.equal(f.preparation.snapshot('intro').state,'preparing');assert.equal(f.preparation.snapshot('intro').modelId,'production-20261025-99');
+ f.settle().resolve();await next;assert.equal(f.preparation.snapshot('intro').state,'ready');f.preparation.cancel();
+});

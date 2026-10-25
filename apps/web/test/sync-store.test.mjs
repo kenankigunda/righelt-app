@@ -1334,3 +1334,24 @@ test('archived undo reaches the server without fabricating an optimistic restore
   await handle.committed;
   assert.equal(payload.targetMoveId, 'evicted-1');
 });
+
+for (const operation of ['createGame', 'launchHistoryBranch']) test(`${operation} pins its optimistic computer and request to a retained model`, async () => {
+  const {transport, games} = createTransportHarness();
+  let sent;
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({...transport, [operation]: async payload => {
+      sent = payload;
+      const game = games.get(payload.gameId);
+      return operation === 'createGame' ? game : {game};
+    }}),
+    createSyncClient: () => ({connectGame(){}, disconnectGame(){}, disconnectAll(){}, getDesiredGameIds:()=>[]}),
+  });
+  const handle = store[operation]({computer:{p1:'babs',p2:null}, computerModelId:'initial-1554', sourceGameId:'source', sourceMoveIndex:0});
+  const game = operation === 'createGame' ? handle.result : handle.result.game;
+  assert.equal(game.computer.modelId, 'initial-1554');
+  assert.equal(game.awaitingCreation, true);
+  assert.equal(game.canRecordMove, false);
+  await handle.committed;
+  assert.equal(sent.computerModelId, 'initial-1554');
+});

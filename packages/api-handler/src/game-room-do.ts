@@ -1,7 +1,7 @@
 import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, canonicalCommandJson } from '../../shared-types/src/sync-protocol';
 import { archiveStatements, readDecision, readDecisionPage, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
 import { StorageWriteLimitError } from './storage-codec';
-import { COMPUTER_LIMITS, changeComputerControl, computerCommandError, createComputerControl, parseComputerSeats, type ComputerProof } from '../../shared-types/src/computer-play';
+import { COMPUTER_LIMITS, changeComputerControl, computerCommandError, computerModelForCreation, createComputerControl, parseComputerSeats, type ComputerProof } from '../../shared-types/src/computer-play';
 import { STORAGE_POLICY, STORAGE_GENERATION_HEADER } from "../../shared-types/src/storage-policy";
 import { storageRoomName } from "./storage-generation";
 import { archiveRow, beginArchive, captureArchiveStep, pruneArchivedEvidence, restoreArchiveStep, saveArchivedView } from "./storage-archive";
@@ -386,7 +386,9 @@ export class GameRoomDO {
         const seats = parseComputerSeats(body.computer);
         if (authActive(this.env) && !this.requestAuthority) throw new AuthProblem("invalid_credentials", 401);
         if (!seats) return json({ ok: false, error: "invalid_computer_seats" }, 400);
-        candidate.computer = createComputerControl(identityId, seats);
+        const model = computerModelForCreation(body.computerModelId);
+        if (!model) return json({ ok: false, error: 'invalid_computer_model' }, 400);
+        candidate.computer = createComputerControl(identityId, seats, model.id);
         candidate.selfPlayMode = true;
         const owner = candidate.player1 ?? candidate.player2!;
         candidate.player1 = clone(owner);
@@ -430,7 +432,9 @@ export class GameRoomDO {
         const seats = parseComputerSeats(body.computer);
         if (authActive(this.env) && !this.requestAuthority) throw new AuthProblem("invalid_credentials", 401);
         if (!seats) return json({ ok: false, error: "invalid_computer_seats" }, 400);
-        candidate.computer = createComputerControl(identityId, seats);
+        const model = computerModelForCreation(body.computerModelId);
+        if (!model) return json({ ok: false, error: 'invalid_computer_model' }, 400);
+        candidate.computer = createComputerControl(identityId, seats, model.id);
         candidate.selfPlayMode = true;
         const owner = candidate.player1 ?? candidate.player2!;
         candidate.player1 = clone(owner); candidate.player2 = clone(owner);

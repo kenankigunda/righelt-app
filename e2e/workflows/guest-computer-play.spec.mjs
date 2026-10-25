@@ -25,7 +25,7 @@ test('guest computer finishes a catalog position and prepares a fresh rematch',a
   },{route,body,header:STORAGE_GENERATION_HEADER});
   const source=(await request('/api/shell/scenarios/import',{scenario})).game;
   const final=source.moves.at(-1);
-  const game=(await request('/api/shell/history/branch',{sourceGameId:source.id,sourceDecisionId:final.moveId,creatorSide:'p2',computer:{p1:'babs',p2:null}})).game;
+  const game=(await request('/api/shell/history/branch',{sourceGameId:source.id,sourceDecisionId:final.moveId,creatorSide:'p2',computer:{p1:'babs',p2:null},computerModelId:CURRENT_COMPUTER_MODEL.id})).game;
   expect(game.board.state).toEqual(final.selectionSnapshot);
   expect(game.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
   await page.goto(`/#/game/${game.id}`);
@@ -40,6 +40,7 @@ test('guest computer finishes a catalog position and prepares a fresh rematch',a
   await chooser.getByRole('button',{name:'Start game',exact:true}).click();
   const response=await creation;expect(response.status()).toBe(200);
   const fresh=(await response.json()).game;expect(fresh.id).not.toBe(game.id);
+  expect(response.request().postDataJSON().computerModelId).toBe(CURRENT_COMPUTER_MODEL.id);expect(fresh.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
   expect(fresh.computer.seats).toEqual({p1:null,p2:'babs'});
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',fresh.id);
 });

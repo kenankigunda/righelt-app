@@ -39,6 +39,7 @@ test('ordinary computer play records real worker evidence, preserves private not
   const created = (await createResponse.json()).game;
   expect(created.computer.seats).toEqual({ p1: null, p2: 'babs' });
   expect(created.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
+  expect(createResponse.request().postDataJSON().computerModelId).toBe(CURRENT_COMPUTER_MODEL.id);
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
   await expect(page.getByTestId('game-role')).toContainText('Player 1');
   await waitForPlayableBoard(page);
@@ -204,6 +205,7 @@ test(`${profile} prepares and plays as Player 2 with the production model`, asyn
   const created = (await createResponse.json()).game;
   expect(created.computer.seats).toEqual({ p1: null, p2: profile });
   expect(created.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
+  expect(createResponse.request().postDataJSON().computerModelId).toBe(CURRENT_COMPUTER_MODEL.id);
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
   await waitForPlayableBoard(page);
   await submitPlayableAction(page, created.legalActions.find(action => action.from && action.to));
