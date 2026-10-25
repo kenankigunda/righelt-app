@@ -3,9 +3,9 @@
 .loading-edge-layer {position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:8;}
 .loading-edge-frame {position:absolute;overflow:visible;pointer-events:none;}
 .loading-edge-p1,.loading-edge-p2 {stroke-dasharray:440 560;animation:righelt-edge-cut 2.4s ease-in-out infinite;}
-.loading-edge-p1 {stroke:var(--player-p1);--edge-offset:0;}
-.loading-edge-p2 {stroke:var(--player-p2);--edge-offset:500;}
-@keyframes righelt-edge-cut {from {stroke-dashoffset:var(--edge-offset);}to {stroke-dashoffset:calc(var(--edge-offset) - 1000);}}
+.loading-edge-p1 {stroke:var(--player-p1);--edge-offset:0px;}
+.loading-edge-p2 {stroke:var(--player-p2);--edge-offset:500px;}
+@keyframes righelt-edge-cut {from {stroke-dashoffset:var(--edge-offset);}to {stroke-dashoffset:calc(var(--edge-offset) - 1000px);}}
 [data-loading-hidden] .loading-edge-frame polygon {animation-play-state:paused;}
 @media(prefers-reduced-motion:reduce){.loading-edge-frame polygon {animation:none;stroke-dashoffset:var(--edge-offset);}}
 /* Retain the route timing contract while replacing its old full-content wash. */

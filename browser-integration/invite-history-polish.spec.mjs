@@ -24,8 +24,8 @@ test('additional history exposes real availability, keeps pages and hides exhaus
  await expect(page.getByRole('button',{name:'More game history',exact:true})).toHaveCount(0);
  await page.evaluate(()=>window.historyRequests[0].resolve({available:true,items:[],nextCursor:null}));await page.getByRole('button',{name:'More game history',exact:true}).click();
  await expect.poll(()=>page.evaluate(()=>window.historyRequests.length)).toBe(2);
- await page.evaluate(()=>window.historyRequests[1].resolve({available:true,items:[{id:'a',at:'2026-01-01',move:{moveId:'a',notation:'MOVE A',undone:false,snapshot:window.archiveSnapshot}},{id:'b',at:'2026-01-01',move:{notation:'MOVE B',undone:true}}],nextCursor:{eventSeq:2,ordinal:0}}));
- await expect(page.locator('[data-archive-move-id]')).toHaveCount(2);await expect(page.locator('[data-archive-move-id="b"]')).toContainText('Undone');
+ await page.evaluate(()=>window.historyRequests[1].resolve({available:true,items:[{id:'a',at:'2026-01-01',move:{moveId:'a',actorSide:'P1',notation:'MOVE A',undone:false,snapshot:window.archiveSnapshot}},{id:'b',at:'2026-01-01',move:{actorSide:'P2',notation:'MOVE B',undone:true}}],nextCursor:{eventSeq:2,ordinal:0}}));
+ await expect(page.locator('[data-archive-move-id]')).toHaveCount(2);await expect(page.locator('[data-archive-move-id="a"] .history-actor')).toHaveText('Guest 1');await expect(page.locator('[data-archive-move-id="b"] .history-actor')).toHaveText('Guest 2');await expect(page.locator('[data-archive-move-id="b"]')).toContainText('Undone');
  const selected=page.locator('[data-archive-move-id="a"]');await selected.getByRole('button').click();await expect(selected).toHaveClass(/is-selected/);await expect(selected.getByRole('button')).toHaveAttribute('aria-current','true');
  await expect(selected.locator('[data-testid="history-inline-preview"] .cell')).toHaveCount(100);
  expect(await selected.evaluate(el=>el.querySelector('.history-move-at').compareDocumentPosition(el.querySelector('.history-inline-preview'))&Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy();
@@ -35,7 +35,7 @@ test('additional history exposes real availability, keeps pages and hides exhaus
  await page.evaluate(()=>window.historyRequests[2].reject(Error('unavailable')));await expect(page.getByRole('status')).toContainText('We couldn’t load more history');await expect(page.locator('[data-archive-move-id]')).toHaveCount(2);
  await page.getByRole('button',{name:'Retry',exact:true}).click();await expect.poll(()=>page.evaluate(()=>window.historyRequests.length)).toBe(4);
  expect(await page.evaluate(()=>window.historyRequests[3].values.cursor)).toEqual({eventSeq:2,ordinal:0});
- await page.evaluate(()=>window.historyRequests[3].resolve({available:true,items:[{id:'c',at:'2026-01-01',move:{notation:'PASS',undone:false}}],nextCursor:null}));await expect(page.locator('[data-archive-move-id]')).toHaveCount(3);
+ await page.evaluate(()=>window.historyRequests[3].resolve({available:true,items:[{id:'c',at:'2026-01-01',move:{actorSide:'P1',notation:'PASS',undone:false}}],nextCursor:null}));await expect(page.locator('[data-archive-move-id]')).toHaveCount(3);
  await expect(page.getByRole('button',{name:/More game history|Load more history|Retry/})).toHaveCount(0);
  await page.evaluate(()=>window.renderHistory());expect(await page.evaluate(()=>window.historyRequests.length)).toBe(4);await page.screenshot({path:info.outputPath('additional-history-exhausted.png')});
 });
@@ -45,18 +45,22 @@ test('short games with no additional records never show an archive CTA',async({p
  await page.evaluate(()=>window.historyRequests[0].resolve({available:false,items:[],nextCursor:null}));await expect(page.locator('[data-testid="additional-history"]')).toBeAttached();await expect(page.getByRole('button')).toHaveCount(0);
 });
 
-for(const route of ['home','game','invite'])test(`held ${route} loading facets pulse without moving the surface`,async({page})=>{
+for(const route of ['home','game','invite'])test(`held ${route} Edge cuts keep moving without moving the surface`,async({page},info)=>{
  await page.evaluate(route=>window.holdSweep(route),route);
- const sweep=page.locator('.shell-route-transition-layer-swipe');const before=await sweep.evaluate(e=>({transform:getComputedStyle(e).transform,rect:e.getBoundingClientRect().toJSON()}));
- const motion=await sweep.evaluate(e=>{const animations=e.getAnimations({subtree:true});window.heldAnimations=animations;return animations.length;});expect(motion).toBe(2);
- const opacity=Number(await sweep.evaluate(e=>getComputedStyle(e,'::before').opacity));
- await expect.poll(async()=>Math.abs(Number(await sweep.evaluate(e=>getComputedStyle(e,'::before').opacity))-opacity),{timeout:3000}).toBeGreaterThan(.05);
- expect(await sweep.evaluate(e=>({transform:getComputedStyle(e).transform,rect:e.getBoundingClientRect().toJSON()}))).toEqual(before);
- expect(await sweep.evaluate(e=>e.getAnimations({subtree:true}).every((animation,index)=>animation===window.heldAnimations[index]))).toBe(true);
- await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});await expect(page.locator('html')).toHaveAttribute('data-loading-hidden','');expect(await sweep.evaluate(e=>e.getAnimations({subtree:true}).every(a=>a.playState==='paused'))).toBe(true);
- await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});await expect(page.locator('html')).not.toHaveAttribute('data-loading-hidden');expect(await sweep.evaluate(e=>e.getAnimations({subtree:true}).every(a=>a.playState==='running'))).toBe(true);
- await page.emulateMedia({reducedMotion:'reduce'});expect(await sweep.evaluate(e=>e.getAnimations({subtree:true}).length)).toBe(0);
- await page.evaluate(()=>window.finishSweep());await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-active','false');
+ const frame=page.locator('.loading-edge-frame');await expect(frame).toHaveCount(1);
+ const paths=frame.locator('g polygon');await expect(paths).toHaveCount(2);
+ const geometry=()=>page.locator('.shell-main-content section.panel').first().evaluate(e=>e.getBoundingClientRect().toJSON());
+ const before=await geometry();
+ const motion=await paths.evaluateAll(nodes=>{window.heldPaths=nodes;window.heldAnimations=nodes.map(node=>node.getAnimations()[0]);return {animations:window.heldAnimations.map(animation=>({duration:animation.effect.getTiming().duration,iterations:animation.effect.getTiming().iterations,playState:animation.playState})),colors:nodes.map(node=>getComputedStyle(node).stroke),classes:nodes.map(node=>node.getAttribute('class')),offsets:nodes.map(node=>getComputedStyle(node).strokeDashoffset)};});
+ expect(motion.animations).toEqual([{duration:2400,iterations:Infinity,playState:'running'},{duration:2400,iterations:Infinity,playState:'running'}]);expect(motion.classes).toEqual(['loading-edge-p1','loading-edge-p2']);expect(motion.colors).toEqual(await Promise.all(['#p1','#p2'].map(selector=>page.locator(selector).evaluate(node=>getComputedStyle(node).backgroundColor))));
+ await expect.poll(async()=>(await paths.evaluateAll(nodes=>nodes.map(node=>getComputedStyle(node).strokeDashoffset))).every((offset,index)=>offset!==motion.offsets[index])).toBe(true);
+ expect(await geometry()).toEqual(before);
+ expect(await paths.evaluateAll(nodes=>nodes.every((node,index)=>node===window.heldPaths[index]&&node.getAnimations()[0]===window.heldAnimations[index]))).toBe(true);
+ await page.screenshot({path:info.outputPath(`held-${route}-edge.png`),fullPage:true});
+ await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});await expect(page.locator('html')).toHaveAttribute('data-loading-hidden','');expect(await paths.evaluateAll(nodes=>nodes.every(node=>node.getAnimations()[0].playState==='paused'))).toBe(true);
+ await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});await expect(page.locator('html')).not.toHaveAttribute('data-loading-hidden');expect(await paths.evaluateAll(nodes=>nodes.every(node=>node.getAnimations()[0].playState==='running'))).toBe(true);
+ await page.emulateMedia({reducedMotion:'reduce'});expect(await paths.evaluateAll(nodes=>nodes.every(node=>node.getAnimations().length===0))).toBe(true);await expect(frame).toBeVisible();expect(await geometry()).toEqual(before);
+ await page.evaluate(()=>window.finishSweep());await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-active','false');await expect(frame).toHaveCount(0);
 });
 
 
