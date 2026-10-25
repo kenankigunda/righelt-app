@@ -26,6 +26,10 @@ html .shell-game-alert[data-notification-activity="waiting"]::after {
 [data-loading-hidden] .shell-game-alert::after { animation-play-state: paused!important; }
 /* Hidden stack cards should not compete for attention or spend animation work. */
 .shell-game-alert-stack-card:not(.is-active) .shell-game-alert::after { animation-play-state: paused!important; }
+/* Back cards expose only their stone surface. Their copy and controls must
+   never show through a shorter active notice or extend into the board. */
+.shell-game-alert-stack-card:not(.is-active) { overflow: hidden; }
+.shell-game-alert-stack-card:not(.is-active) .shell-game-alert > * { visibility: hidden; }
 @media (prefers-reduced-motion: reduce), (forced-colors: active) {
   html .shell-game-alert::after { animation: none!important; opacity: 0; }
 }
