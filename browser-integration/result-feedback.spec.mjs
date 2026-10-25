@@ -9,7 +9,7 @@ for(const width of [320,390,1440])test(`result perspectives remain readable and 
  for(const [side,tone]of[['red','victory'],['blue','defeat'],['viewer','neutral']]){
   await page.evaluate(side=>window.resultFixture.setup(side),side);await page.getByRole('button',{name:'Finish live game',exact:true}).click();
   const result=page.locator('.game-result');await expect(result).toHaveAttribute('data-result-tone',tone);
-  await expect(result.getByRole('heading',{name:side==='red'?'You won':side==='blue'?'Your opponent won':'Player 1 wins',exact:true})).toBeVisible();await expect(result).toContainText(side==='red'?'Your opponent’s commander was destroyed':side==='blue'?'Your commander was destroyed':'Player 2’s commander was destroyed');
+  await expect(result.getByRole('heading',{name:side==='red'?'You won':side==='blue'?'Your opponent won':'Guest 1 won',exact:true})).toBeVisible();await expect(result).toContainText(side==='red'?'Your opponent’s commander was destroyed':side==='blue'?'Your commander was destroyed':'Guest 2’s commander was destroyed');
   await page.evaluate(async()=>{await document.fonts.ready;await Promise.all(document.querySelector('.game-result').getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));});
   expect(await result.evaluate(element=>element.scrollWidth<=element.clientWidth+1)).toBe(true);
   for(const action of await result.locator('button,a').all()){await action.scrollIntoViewIfNeeded();await expect(action).toBeInViewport({ratio:1});expect(await action.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})).toBe(true);}
@@ -54,7 +54,7 @@ for(const width of [320,390])test(`200% result text enlarges its heading and kee
  for(const side of ['red','blue','viewer']){
   await page.evaluate(side=>window.resultFixture.setup(side,'p1_win'),side);
   const result=page.locator('.game-result'),heading=result.getByRole('heading');
-  await expect(heading).toHaveText(side==='red'?'You won':side==='blue'?'Your opponent won':'Player 1 wins');
+  await expect(heading).toHaveText(side==='red'?'You won':side==='blue'?'Your opponent won':'Guest 1 won');
   expect(await heading.evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(56);
   if(side==='blue')expect(await heading.evaluate(el=>{const start=el.firstChild.textContent.indexOf('opponent'),range=document.createRange();range.setStart(el.firstChild,start);range.setEnd(el.firstChild,start+8);return range.getClientRects().length;})).toBe(1);
   expect(await result.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
@@ -103,7 +103,7 @@ test('red and blue winners keep their actual side color throughout the victory a
   await result.getByRole('button',{name:'Play again',exact:true}).click();
   const dialog=page.getByRole('dialog',{name:'Play again',exact:true}),opposite=winner==='p1'?'blue':'red';await expect(dialog).toBeVisible();
   await expect(dialog).toHaveAttribute('data-action-affiliation',opposite);
-  await expect(dialog.getByRole('radio',{name:opposite==='blue'?'Player 2 · Blue':'Player 1 · Red',exact:true})).toBeChecked();
+  await expect(dialog.getByRole('radio',{name:opposite==='blue'?'Blue':'Red',exact:true})).toBeChecked();
   const expected=await dialog.evaluate((el,opposite)=>{const probe=document.createElement('i');probe.style.color=`var(--player-${opposite})`;el.append(probe);const color=getComputedStyle(probe).color;probe.remove();return color;},opposite);
   await expect.poll(()=>dialog.getByRole('button',{name:'Start game',exact:true}).evaluate(el=>getComputedStyle(el).backgroundColor)).toBe(expected);
   await dialog.getByRole('button',{name:'Cancel',exact:true}).click();await expect(dialog).toBeHidden();

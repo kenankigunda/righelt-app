@@ -13,8 +13,8 @@ test('preparation preserves usable controls and stable loading until real readin
   const start = page.getByRole('button', { name: 'Start game', exact: true });
   const status = page.getByRole('status');
   await expect(start).toBeDisabled();
-  await expect(page.getByRole('radio', { name: 'Player 2 · Blue', exact: true })).toBeEnabled();
-  await page.getByRole('radio', { name: 'Player 2 · Blue', exact: true }).check();
+  await expect(page.getByRole('radio', { name: 'Blue', exact: true })).toBeEnabled();
+  await page.getByRole('radio', { name: 'Blue', exact: true }).check();
   await page.evaluate(() => window.requests[0].progress({ phase: 'fetching-model', received: 50, total: 100 }));
   await page.clock.runFor(200);
   await expect(status.locator('.loading-pieces')).toBeVisible();
@@ -128,7 +128,7 @@ for(const width of [320,390])test(`native opponent cards preserve keyboard choic
 test('starting a card choice disables every opponent and side until cancellation',async({page})=>{
  await page.locator('#open').click();
  const dialog=page.getByRole('dialog',{name:'Play again',exact:true});
- await dialog.getByRole('group',{name:'Opponent',exact:true}).getByRole('radio',{name:'Self-play',exact:true}).check();
+ await dialog.getByRole('group',{name:'Opponent',exact:true}).getByRole('radio',{name:'Play both sides',exact:true}).check();
  await page.evaluate(()=>{window.startDelay=new Promise(resolve=>window.releaseStart=resolve);});
  await dialog.getByRole('button',{name:'Start game',exact:true}).click();
  for(const radio of await dialog.getByRole('radio').all())await expect(radio).toBeDisabled();
