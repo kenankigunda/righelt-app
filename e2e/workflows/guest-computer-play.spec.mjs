@@ -4,6 +4,7 @@ import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage
 import {test,expect} from '@playwright/test';
 import {submitPlayableAction} from '../support/app.mjs';
 import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
+import {waitForPlayableBoard} from '../../scripts/validation/browser-navigation.mjs';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
 
 test('guest computer finishes a catalog position and prepares a fresh rematch',async({page},info)=>{
@@ -56,7 +57,7 @@ for (const width of [390, 1440]) test(`guest computer play survives reload and u
   expect(response.ok()).toBe(true);
   const initial = (await response.json()).game;
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
-  await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase', 'idle');
+  await waitForPlayableBoard(page);
   await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
   await expect.poll(async () => (await projected(page, initial.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();

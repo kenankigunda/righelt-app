@@ -1,0 +1,16 @@
+.game-result {--result-color:var(--player-p1);}
+.game-result h1 {line-height:1.15;letter-spacing:-.04em;overflow-wrap:normal;}
+.game-result[data-winner="p2"] {--result-color:var(--player-p2);}
+.game-result[data-result-tone="victory"] {--action-color:var(--result-color);--action-hover:var(--player-red-hover);--action-pressed:var(--player-red-pressed);--accent:var(--action-color);}
+.game-result[data-result-tone="victory"][data-winner="p2"] {--action-hover:var(--player-blue-hover);--action-pressed:var(--player-blue-pressed);}
+/* Keep victory actions above the older, more specific shell hover palette. */
+[data-hover-capability="hover"] #app .game-result[data-result-tone="victory"] .story-modal-actions > button[data-action]:not(:disabled):hover {background:var(--action-hover);}
+.result-mark {width:160px;margin:0 auto 20px;text-align:center;color:var(--result-color);}
+.result-mark svg {display:block;width:160px;height:110px;overflow:visible;}
+.result-stone {fill:currentColor;}
+.result-ground {fill:none;stroke:currentColor;stroke-width:2;opacity:.3;}
+.result-fragment {fill:currentColor;opacity:.7;transform-box:fill-box;transform-origin:center;}
+.game-result[data-result-tone="defeat"] .result-mark {color:var(--text-secondary);}
+.game-result:is([data-result-tone="defeat"],[data-result-tone="neutral"],[data-result-tone="draw"]) .result-fragment {display:none;}
+.game-result:is([data-result-tone="draw"],[data-result-tone="neutral"]) .result-mark {color:var(--ink);}
+@media(prefers-reduced-motion:reduce){.result-mark,.result-mark * {animation:none!important;}}

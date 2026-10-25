@@ -1,5 +1,6 @@
 @import url('../design-tokens.css');
 @import url('./loading.css');
+@import url('./result-presentation.css');
 @font-face { font-family: Manrope; src: url('../assets/fonts/Manrope-variable.ttf') format('truetype'); font-weight: 200 800; font-display: swap; }
 :root { --font-family: Manrope, 'Avenir Next', sans-serif; --player-p1:#c2452f; --player-p2:#2d67c7; --radius-card:20px; --shell-elevated-surface:var(--surface-raised); }
 body { font-family:var(--font-family); background:var(--surface-foundation); }
@@ -231,7 +232,7 @@ body {background-image:var(--stone-grain);background-color:var(--surface-foundat
 .opponent-choice-arrow {position:absolute;right:12px;bottom:18px;color:var(--text-secondary);}
 .opponent-choice-arrow .righelt-icon {width:16px;height:16px;}
 .righelt-icon {width:20px;height:20px;flex:none;vertical-align:middle;}
-button:has(> .righelt-icon):not(.ui-icon-button) {display:inline-flex;align-items:center;justify-content:center;gap:9px;}
+:where(button,.button-link):has(> .righelt-icon):not(.ui-icon-button) {display:inline-flex;align-items:center;justify-content:center;gap:9px;}
 [data-hover-capability="hover"] .home-refresh button.opponent-choice:not(:disabled):hover {background:transparent;box-shadow:none;}
 [data-hover-capability="hover"] .home-refresh button.opponent-choice:not(:disabled):hover::before {background:linear-gradient(rgb(37 43 45 / 3%),rgb(37 43 45 / 3%)),var(--stone-grain),#fffdf6;}
 .home-refresh button.opponent-choice:focus-visible {outline:2px solid var(--ink);outline-offset:5px;}
@@ -335,7 +336,7 @@ html[data-page-active="false"] .shell-header button.ui-icon-button {transition:n
 
 /* Results and rematches share the layered surface and clear action hierarchy. */
 .game-result { max-width:660px; margin:32px auto 48px; padding:32px; --corner-start:var(--player-p1);--corner-end:var(--player-p2); }
-.game-result h1 {font-size:clamp(36px,7vw,56px);margin:12px 0;}
+.game-result h1 {font-size:clamp(1.75rem,7vw,3.5rem);margin:12px 0;}
 .game-result .story-modal-actions {margin-top:24px;}
 .game-result .button-link {display:flex;align-items:center;justify-content:center;min-height:48px;text-decoration:none;}
 .rematch-modal label {display:grid;gap:8px;}
