@@ -2,6 +2,9 @@
 <link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css">
 </head><body><main class="app-root"><header class="shell-header"><div class="shell-header-actions"><div class="nav-row"></div></div></header><a class="button-link secondary" href="#/" data-testid="ordinary-link"></a></main>
 <script type="module">
+import {createHoverCapabilityController} from '/apps/web/hover-capability.js';
+const query={matches:new URL(location.href).searchParams.get('hover')!=='none',addEventListener(){},removeEventListener(){}};
+createHoverCapabilityController({windowObject:{matchMedia:()=>query}});
 import {headerActionContent,icon} from '/apps/web/shell/ui.js';
 const source=await(await fetch('/apps/web/shell/app.js')).text();
 const start=source.indexOf('const renderHeaderWideActions =');

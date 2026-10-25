@@ -74,3 +74,9 @@ test("hover-only styles are gated behind the root hover capability marker", () =
   assert.match(shellStylesSource, /\[data-hover-capability="hover"\]\s+\.shell-header-title-link:hover/);
   assert.match(shellStylesSource, /\.player-tone-both\s*\{/);
 });
+
+test("header label hover follows the shared hybrid-aware capability marker",()=>{
+ const refresh=readFileSync(join(testDir,"..","shell","refresh.css"),"utf8");
+ assert.match(refresh,/\[data-hover-capability="hover"\] \.header-icon-action:hover \.header-action-label/);
+ assert.doesNotMatch(refresh,/@media\(hover:hover\)\{\.header-icon-action/);
+});

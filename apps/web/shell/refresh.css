@@ -259,7 +259,7 @@ body {background-image:var(--stone-grain);background-color:var(--surface-foundat
   transition:max-width 180ms ease-out,opacity 140ms ease-out,margin-left 180ms ease-out;
   margin-left:0;
 }
-@media(hover:hover){.header-icon-action:hover .header-action-label{max-width:100px;opacity:1;margin-left:8px;}}
+[data-hover-capability="hover"] .header-icon-action:hover .header-action-label{max-width:100px;opacity:1;margin-left:8px;}
 .header-icon-action:focus-visible .header-action-label{max-width:100px;opacity:1;margin-left:8px;}
 .shell-header .header-icon-action:is(:hover,:focus-visible){background:rgb(37 43 45 / 4%);color:var(--ink);border-color:transparent;}
 @media(prefers-reduced-motion:reduce){.header-icon-action .header-action-label{transition:none;}}
