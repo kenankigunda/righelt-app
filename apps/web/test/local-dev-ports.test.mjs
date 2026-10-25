@@ -17,6 +17,7 @@ test("local dev web ports map to isolated API worker ports and state directories
     { suffix: "c", webPort: 8791, apiPort: 8794 },
     { suffix: "e2e", webPort: 9888, apiPort: 9887 },
     { suffix: "auth-e2e", webPort: 9988, apiPort: 9987 },
+  { suffix: "computer-recovery-e2e", webPort: 10193, apiPort: 10194 },
   ]);
 
   assert.equal(resolveLocalApiPort("8788"), 8787);
@@ -25,6 +26,7 @@ test("local dev web ports map to isolated API worker ports and state directories
   assert.equal(resolveLocalApiPort("8791"), 8794);
   assert.equal(resolveLocalApiPort("9888"), 9887);
   assert.equal(resolveLocalApiPort("9988"), 9987);
+  assert.equal(resolveLocalApiPort("10193"), 10194);
   assert.equal(buildLocalApiOrigin("9988"), "http://127.0.0.1:9987");
   assert.equal(buildLocalApiPersistPath("9988"), ".wrangler/state/api-local-dev-auth-e2e");
 
