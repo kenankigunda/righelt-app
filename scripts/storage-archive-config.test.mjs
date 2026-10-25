@@ -41,3 +41,17 @@ test('metadata writers require a prior reader revision and compression',async()=
  validateStorageDeployment(env,source);
  for(const change of [{RIGHELT_STORAGE_METADATA_READER_SHA:''},{RIGHELT_STORAGE_COMPRESSION:'false'},{RIGHELT_STORAGE_METADATA_WRITES_ENABLED:'invalid'}])assert.throws(()=>validateStorageDeployment({...env,...change},source));
 });
+
+
+test('writer canary requires a valid game and an enabled reader-verified writer',async()=>{
+ const {validateStorageDeployment}=await import('./deploy-account-services.mjs');
+ const env={DEPLOY_SHA:'a'.repeat(40),RIGHELT_STORAGE_GENERATION:'reset-986736d3-c72e-4539-9edc-6597847f64e7',RIGHELT_STORAGE_COMPRESSION:'true',RIGHELT_STORAGE_METADATA_WRITES_ENABLED:'true',RIGHELT_STORAGE_METADATA_READER_SHA:'b'.repeat(40),RIGHELT_STORAGE_WRITER_CANARY_GAME_ID:game};
+ validateStorageDeployment(env,source);
+ assert.throws(()=>validateStorageDeployment({...env,RIGHELT_STORAGE_WRITER_CANARY_GAME_ID:'wrong'},source),/canary/);
+ assert.throws(()=>validateStorageDeployment({...env,RIGHELT_STORAGE_METADATA_WRITES_ENABLED:'false'},source),/enabled writer/);
+ assert.throws(()=>validateStorageDeployment({...env,RIGHELT_STORAGE_METADATA_READER_SHA:''},source),/verified reader/);
+ const workflow=readFileSync(new URL('../.github/workflows/deploy.yml',import.meta.url),'utf8');
+ assert.equal(workflow.split('RIGHELT_STORAGE_WRITER_CANARY_GAME_ID:').length-1,2,'preflight and actual deployment receive the same scope');
+ const deploy=readFileSync(new URL('./deploy-account-services.mjs',import.meta.url),'utf8');
+ assert.ok(deploy.includes('STORAGE_WRITER_CANARY_GAME_ID:${process.env.RIGHELT_STORAGE_WRITER_CANARY_GAME_ID || ""}'));
+});
