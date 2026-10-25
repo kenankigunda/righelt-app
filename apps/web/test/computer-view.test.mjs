@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderDecisionDebug, renderComputerProgress } from '../shell/computer-view.js';
+import { COMPUTER_PROFILES, CURRENT_COMPUTER_MODEL } from '../generated/packages/shared-types/src/computer-play.js';
+import { computerBoardMessage } from '../shell/computer-narration.js';
+import { renderBoardMessageSlot, updateComputerBoardLoading } from '../shell/board-message-layout.js';
 
 test('client-reported search diagnostics cannot inject markup or break date rendering', () => {
  const state = { drafts: new Map(), notes: [], attempts: new Map(), open: new Set(), items: [], attemptPages: {
@@ -35,6 +38,24 @@ test('computer recovery controls wait for their own phase thresholds', () => {
  assert.equal(renderComputerProgress(game,{phase:'other-device',phaseElapsedMs:29999}), '');
  assert.match(renderComputerProgress(game,{phase:'other-device',phaseElapsedMs:30000}), /Continue on this device/);
  assert.equal(renderComputerProgress({...game,computerTurn:null},{phase:'other-device',phaseElapsedMs:30000}), '');
+});
+
+test('every profile keeps plain board copy and a persistent cue while ordinary external progress stays quiet',()=>{
+ for(const [profile,{name}] of Object.entries(COMPUTER_PROFILES)){
+  const game={id:'thinking-game',gameplayRevision:7,canControlComputer:true,computerTurn:profile,computer:{seats:{p1:profile,p2:null},modelId:CURRENT_COMPUTER_MODEL.id}};
+  const cue={dataset:{},hasAttribute:()=>false};let key;
+  for(const phase of ['preparing','checking','looking-ahead','initializing-verified-runtime','saving']){
+   const status={profile,phase,attemptId:'thinking-attempt',detailed:false};
+   assert.equal(renderComputerProgress(game,status),'',`${profile}/${phase} has no early external notice or CTA`);
+   const message=computerBoardMessage(game,status);
+   assert.equal(message,['preparing','initializing-verified-runtime'].includes(phase)?`Preparing ${name}`:`${name} is thinking`);
+   assert.doesNotMatch(message,/…|\.\.\./);
+   updateComputerBoardLoading(cue,game,status);
+   assert.equal(cue.dataset.loadingState,'pending');
+   key??=cue.dataset.loadingKey;assert.equal(cue.dataset.loadingKey,key,'phase changes keep the same loading operation');
+  }
+ }
+ assert.match(renderBoardMessageSlot(),/class="board-message-activity" aria-hidden="true" data-loading-state="idle" data-loading-context="external"/);
 });
 
 test('human-readable profile versions omit the qualifier while raw evidence stays unchanged', () => {
