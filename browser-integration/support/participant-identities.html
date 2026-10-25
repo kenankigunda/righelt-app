@@ -1,0 +1,14 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><style>body{margin:0;padding:12px}main{max-width:600px;margin:auto}</style></head><body><main><section class="panel" id="participants"></section></main><script type="module">
+import {createInlineProfiles} from '/apps/web/shell/public-profile.js';
+import {renderPlayersPanel} from '/apps/web/shell/players-panel.js';
+import {icon} from '/apps/web/shell/ui.js';
+import {ensureHoverCapabilityController} from '/apps/web/hover-capability.js';
+const source=await(await fetch('/apps/web/shell/app.js')).text(),escapeHtml=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const extract=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));
+const helpers=Function('escapeHtml',`${extract('const playerToneClassForSeat =','const isDualSeatIdentity =')}${extract('const renderConnectionStatusIcon =','const colorizePlayerReferences =')};return {renderSeatLabel,renderConnectionStatusIcon};`)(escapeHtml);
+const render=game=>renderPlayersPanel(game,{identityId:'human',expanded:true,icon,formatStatus:connected=>helpers.renderConnectionStatusIcon(connected?'connected':'disconnected',connected?'Connected':'Disconnected')});
+const profiles=createInlineProfiles({fetcher:async()=>({ok:true,json:async()=>({joinedMonth:'2026-01'})})});
+window.renderPlayers=(computerSide='p2',profile='horus')=>{const human={identityId:'human',profile:{username:'alice',displayName:'Alice'},connected:true},computer={identityId:'human',computerProfile:profile,profile:human.profile,connected:false};document.querySelector('#participants').innerHTML=render({id:'game',myRole:computerSide==='p1'?'Player 2':'Player 1',player1:computerSide==='p1'?computer:human,player2:computerSide==='p2'?computer:human,viewers:[{identityId:'guest',connected:false}]});profiles.sync();};
+document.addEventListener('click',event=>{const button=event.target.closest('[data-profile-key]');if(button)void profiles.open(button.dataset.username,button);});
+ensureHoverCapabilityController(document);window.renderPlayers();await document.fonts.ready;window.fixtureReady=true;
+</script></body></html>
