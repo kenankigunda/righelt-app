@@ -1,7 +1,7 @@
 import { parseComputerControl } from '../../shared-types/src/computer-play';
 import { archiveRow, readArchivedGame } from "./storage-archive";
 import { growthGuard } from "./storage-budget";
-import { encodeStorage, decodeStorage, stateWriteLimits, StorageWriteLimitError } from "./storage-codec";
+import { encodeStorage, decodeStorage, stateWriteLimits, storageWriterEnabled, StorageWriteLimitError } from "./storage-codec";
 import { STORAGE_POLICY } from "../../shared-types/src/storage-policy";
 import type { CutoverPolicy } from './account-cutover';
 import type { ServerEvent } from "../../shared-types/src/events";
@@ -58,6 +58,7 @@ export type LiveGameEnv = {
   STORAGE_COMPRESSION?: string;
   STORAGE_LARGE_STATES_ENABLED?: string;
   STORAGE_METADATA_WRITES_ENABLED?: string;
+  STORAGE_WRITER_CANARY_GAME_ID?: string;
   STORAGE_ARCHIVES_ENABLED?: string;
   STORAGE_ARCHIVE_MODE?: string;
   STORAGE_ARCHIVE_CANARY_GAME_ID?: string;
@@ -972,9 +973,9 @@ export const persistGameState = async (
   const compact = env.STORAGE_COMPRESSION === "true";
   const previous = options.preservePayload ? await env.DB.prepare("SELECT state_json, event_seq FROM live_games WHERE game_id = ?1").bind(game.id).first<{state_json:string;event_seq:number}>() : null;
   if(options.preservePayload && (!previous || previous.event_seq !== base))throw new Error("stale_commit_revision");
-  const retained = options.metadataOnly && compact && env.STORAGE_METADATA_WRITES_ENABLED === "true"
+  const retained = options.metadataOnly && compact && storageWriterEnabled(env, env.STORAGE_METADATA_WRITES_ENABLED, game.id)
     ? await env.DB.prepare("SELECT format_version,state_blob,state_sha256 FROM game_payloads WHERE game_id=?1").bind(game.id).first<{format_version:number;state_blob:unknown;state_sha256:string}>() : null;
-  const stored = !options.preservePayload && !retained && compact ? await encodeStorage(game,stateWriteLimits(env)) : null;
+  const stored = !options.preservePayload && !retained && compact ? await encodeStorage(game,stateWriteLimits(env,game.id)) : null;
   const card = previous?.state_json ?? (compact ? JSON.stringify({...game,moves:[],turns:game.turns.slice(-1),moveCount:game.moves.length}) : JSON.stringify(game));
   if(!options.preservePayload && new TextEncoder().encode(card).byteLength>STORAGE_POLICY.maximumStoredStateBytes)throw new StorageWriteLimitError();
   const statements = [...budget.before, ...(options.before ?? []), projectionStatement(env, game, eventSeq, base, card), ...(options.invitesChanged === false ? [] : inviteStatements(env, game))];
