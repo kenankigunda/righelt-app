@@ -84,3 +84,38 @@ print(json.dumps(a.record()))
 ''')
         self.assertEqual(r['workers'],2);self.assertEqual(r['memory_gib'],16)
         self.assertEqual(r['reason'],'pending-work-cap')
+
+    def test_warning_is_advisory_only_at_initial_cap_even_with_idle_ramp(self):
+        r=self.run_policy('''
+p=AdaptivePolicy()
+for t in range(0,1001,5): a=p.decide(sample(t,memory_pressure='warning'))
+print(json.dumps(a.record()))
+''')
+        self.assertFalse(r['paused']);self.assertFalse(r['stop'])
+        self.assertEqual(r['workers'],2);self.assertEqual(r['memory_gib'],16)
+        self.assertEqual(r['reason'],'warning-advisory')
+
+    def test_warning_never_bypasses_low_headroom_overcap_or_swap_growth(self):
+        r=self.run_policy('''
+low=AdaptivePolicy().decide(sample(memory_pressure='warning',available_bytes=5*GIB))
+over=AdaptivePolicy().decide(sample(memory_pressure='warning',experiment_bytes=17*GIB))
+p=AdaptivePolicy();p.decide(sample(memory_pressure='warning',swap_used_bytes=0))
+swap=p.decide(sample(5,memory_pressure='warning',swap_used_bytes=GIB))
+print(json.dumps([low.record(),over.record(),swap.record()]))
+''')
+        self.assertTrue(all(x['paused'] and x['workers']==0 for x in r))
+
+    def test_unknown_pressure_stops_the_opt_in_policy(self):
+        r=self.run_policy("print(json.dumps(AdaptivePolicy().decide(sample(memory_pressure='unknown')).record()))")
+        self.assertTrue(r['stop']);self.assertEqual(r['workers'],0)
+
+    def test_legacy_warning_still_pauses(self):
+        script='''
+import json
+from righelt_training.resources import AdaptivePolicy,Sample,GIB
+print(json.dumps(AdaptivePolicy().decide(Sample(0,0,False,0,'warning',4*GIB,40*GIB,500*GIB,0)).record()))
+'''
+        result=subprocess.run([sys.executable,'-c',script],capture_output=True,text=True,
+                              env={**os.environ,'RIGHELT_RESOURCE_POLICY':'adaptive-headroom-v2'},check=True)
+        value=json.loads(result.stdout)
+        self.assertTrue(value['paused']);self.assertFalse(value['stop'])

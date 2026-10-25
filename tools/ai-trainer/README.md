@@ -8,6 +8,11 @@ authorized October 25 round on a 48-GiB local machine. Historical runs retain
 `RIGHELT_RESOURCE_POLICY=production-headroom-v3`; never alter the frozen model
 configuration to change operational limits.
 
+For this opt-in policy, warning pressure is advisory only at two workers and
+16 GiB, even when an idle ramp was authorized. Low available memory, swap growth
+and the memory ceiling still pause work. Critical or unknown pressure stops it.
+The historical policy retains its existing warning-pause behavior.
+
 `snapshot-production.py` performs SELECT-only exports into a new private
 directory. A revision fence before and after export rejects concurrent changes
 without overwriting earlier snapshots. `production-corpus.mjs` checks snapshot

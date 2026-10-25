@@ -50,7 +50,7 @@ class AdaptivePolicy:
             return Allocation(0, LIMITS['minMemoryGiB'], True, True, 'artifact-cap')
         if sample.disk_free_bytes < LIMITS['freeDiskFloorGiB'] * GIB:
             return Allocation(0, LIMITS['minMemoryGiB'], True, True, 'disk-reserve')
-        if POLICY_ID == 'production-headroom-v3' and sample.memory_pressure == 'critical':
+        if POLICY_ID == 'production-headroom-v3' and sample.memory_pressure not in ('normal','warning'):
             return Allocation(0, LIMITS['minMemoryGiB'], True, True, 'memory-pressure')
         # A gap or clock jump does not establish sustained healthy observations.
         if self.last_sample is not None and not 0 <= sample.now - self.last_sample <= 2 * LIMITS['sampleSeconds']:
@@ -69,7 +69,9 @@ class AdaptivePolicy:
             self.quiet_since = None
             return Allocation(0, LIMITS['minMemoryGiB'], True, False,
                               'development-active' if fresh else 'activity-unknown')
-        pressured = (sample.memory_pressure != 'normal' or sample.available_bytes < LIMITS['pauseAvailableGiB'] * GIB
+        pressure_blocks = (sample.memory_pressure not in ('normal','warning')
+                           if POLICY_ID == 'production-headroom-v3' else sample.memory_pressure != 'normal')
+        pressured = (pressure_blocks or sample.available_bytes < LIMITS['pauseAvailableGiB'] * GIB
                      or not swap_known or swap_growth)
         busy = dev_busy or sample.external_cpu_percent >= LIMITS['externalCpuBusyPercent']
         headroom = sample.available_bytes >= LIMITS['resumeAvailableGiB'] * GIB
@@ -102,12 +104,14 @@ class AdaptivePolicy:
             # pauses compute, but is not evidence of actual memory pressure.
             self.workers=LIMITS['minWorkers'];self.quiet_since=None
             return Allocation(0,LIMITS['minMemoryGiB'],True,False,'device-memory-unknown')
-        if POLICY_ID == 'production-headroom-v3' and sample.ramp_authorized is not True:
+        if POLICY_ID == 'production-headroom-v3' and (sample.ramp_authorized is not True
+                                                     or sample.memory_pressure == 'warning'):
             self.workers=LIMITS['minWorkers'];self.quiet_since=None
             self.memory_ceiling=LIMITS['minMemoryGiB']
             if sample.experiment_bytes > self.memory_ceiling*GIB:
                 return Allocation(0,self.memory_ceiling,True,False,'idle-grant-required')
-            return Allocation(self.workers,self.memory_ceiling,False,False,'pending-work-cap')
+            return Allocation(self.workers,self.memory_ceiling,False,False,
+                              'warning-advisory' if sample.memory_pressure == 'warning' else 'pending-work-cap')
         if busy:
             self.workers = LIMITS['minWorkers']
             self.quiet_since = None
