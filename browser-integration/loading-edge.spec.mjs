@@ -94,33 +94,46 @@ for(const productionSwipe of [false,true])test(`a reconnecting narrow track keep
  }
  await page.evaluate(()=>{window.trackMotion.currentTime=window.trackDuration/6;window.dispatchEvent(new Event('resize'));});
  await expect.poll(async()=> (await sample()).alignment).toBeLessThan(.1);
- // Observe motion entirely inside the page's frame loop. This removes remote
- // polling gaps while keeping native clock and geometry in the same sample.
- const active=await page.evaluate(()=>new Promise(resolve=>{
+ // Observe native state/geometry/suppression, not painted FPS. The production
+ // transition uses bounded native timers because CI can coalesce frame
+ // callbacks; sparse native clock progress must still fail the same gates.
+ const active=await page.evaluate(productionSwipe=>new Promise(resolve=>{
   const samples=[],accepted=[];let previousTime=window.trackMotion.currentTime,previousLeft=Infinity;
   const duration=window.trackDuration,deadline=duration-Math.min(100,duration*.1),step=Math.min(80,duration*.15);
+  let timer=null,raf=null,done=false,previousCallback=null;
+  const callbackSource=productionSwipe?'native-timer-8ms':'requestAnimationFrame';
+  const finish=result=>{if(done)return;done=true;if(timer!==null)clearTimeout(timer);if(raf!==null)cancelAnimationFrame(raf);window.removeEventListener('pagehide',leave);if(window.edgeObservationCancel===cancel)delete window.edgeObservationCancel;resolve({...result,callbackSource});};
+  const leave=()=>finish({ok:false,samples,accepted,deadline,reason:'Page left during native observation'});
+  const cancel=()=>finish({ok:false,samples,accepted,deadline,reason:'Test retired native observation'});window.edgeObservationCancel=cancel;
+  window.addEventListener('pagehide',leave,{once:true});
+  const schedule=()=>{if(done)return;if(productionSwipe)timer=setTimeout(tick,8);else raf=requestAnimationFrame(tick);};
   const tick=()=>{
-   let sample=window.edgeSnapshot(false);samples.push(sample);
-   if(sample.state!=='running'||sample.time>=deadline){resolve({ok:false,samples,accepted,deadline,reason:'No three valid checkpoints before native end'});return;}
-   if(sample.visible){resolve({ok:false,samples,accepted,deadline,reason:'Decorative stroke became visible during navigation'});return;}
+   timer=null;raf=null;
+   const callbackAt=performance.now(),wallGapMs=previousCallback===null?null:callbackAt-previousCallback;previousCallback=callbackAt;
+   const snapshot=full=>({...window.edgeSnapshot(full),callbackSource,callbackAt,wallGapMs});
+   try{
+   let sample=snapshot(false);samples.push(sample);
+   if(sample.state!=='running'||sample.time>=deadline){finish({ok:false,samples,accepted,deadline,reason:'No three valid checkpoints before native end'});return;}
+   if(sample.visible){finish({ok:false,samples,accepted,deadline,reason:'Decorative stroke became visible during navigation'});return;}
    if(sample.time>previousTime+step&&sample.clipped&&sample.same&&!sample.visible){
     // Full geometry is freshly measured only at eligible checkpoints. The
     // transition can advance during that work, so recheck every gate against
     // this new full sample rather than accepting the earlier light sample.
-    sample=window.edgeSnapshot();samples.push(sample);
-    if(sample.state!=='running'||sample.time>=deadline){resolve({ok:false,samples,accepted,deadline,reason:'No three valid checkpoints before native end'});return;}
-    if(sample.visible){resolve({ok:false,samples,accepted,deadline,reason:'Decorative stroke became visible during navigation'});return;}
+    sample=snapshot(true);samples.push(sample);
+    if(sample.state!=='running'||sample.time>=deadline){finish({ok:false,samples,accepted,deadline,reason:'No three valid checkpoints before native end'});return;}
+    if(sample.visible){finish({ok:false,samples,accepted,deadline,reason:'Decorative stroke became visible during navigation'});return;}
     if(sample.time>previousTime+step&&sample.clipped&&sample.same&&!sample.visible){
-     if(sample.panel.left>=previousLeft){resolve({ok:false,samples,accepted,deadline,reason:'Panel failed to progress in swipe direction'});return;}
+     if(sample.panel.left>=previousLeft){finish({ok:false,samples,accepted,deadline,reason:'Panel failed to progress in swipe direction'});return;}
      accepted.push(sample);previousLeft=sample.panel.left;previousTime=sample.time;
      if(accepted.length===1)window.edgeTrack.dataset.transitionState='';
-     if(accepted.length===3){resolve({ok:true,samples,accepted,deadline});return;}
+     if(accepted.length===3){finish({ok:true,samples,accepted,deadline});return;}
     }
    }
-   requestAnimationFrame(tick);
+   schedule();
+   }catch(error){finish({ok:false,samples,accepted,deadline,reason:'Native observation threw',error:String(error)});}
   };
-  requestAnimationFrame(()=>{window.trackMotion.play();window.dispatchEvent(new Event('resize'));requestAnimationFrame(tick);});
- }));
+  raf=requestAnimationFrame(()=>{raf=null;try{window.trackMotion.play();window.dispatchEvent(new Event('resize'));schedule();}catch(error){finish({ok:false,samples,accepted,deadline,reason:'Native observation could not start',error:String(error)});}});
+ }),productionSwipe);
  observations.push(...active.samples);
  expect(active.ok,JSON.stringify(active)).toBe(true);expect(active.accepted).toHaveLength(3);expect(active.accepted.every(sample=>sample.full)).toBe(true);
  expect(active.accepted[2].navigation).toBe('');
@@ -145,5 +158,5 @@ for(const productionSwipe of [false,true])test(`a reconnecting narrow track keep
  await page.evaluate(()=>{window.edgeTrack.style.transition='none';window.edgeTrack.style.transform='translateX(0px)';});
  await expect.poll(async()=>{const s=await sample();return s.alignment<.1&&s.clipped&&s.clear&&s.visible&&!s.moving;}).toBe(true);
  await page.evaluate(()=>window.edgeDispose());await expect(page.locator('.loading-edge-layer')).toHaveCount(0);
- }finally{const path=info.outputPath('edge-track-geometry-samples.json');await writeFile(path,JSON.stringify(observations,null,2));await info.attach('edge-track-geometry-samples',{path,contentType:'application/json'});}
+ }finally{await page.evaluate(()=>window.edgeObservationCancel?.()).catch(()=>{});const path=info.outputPath('edge-track-geometry-samples.json');await writeFile(path,JSON.stringify(observations,null,2));await info.attach('edge-track-geometry-samples',{path,contentType:'application/json'});}
 });
