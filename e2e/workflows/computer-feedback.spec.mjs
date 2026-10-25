@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
 
-test.use({viewport:{width:390,height:740},isMobile:true,hasTouch:true});
+test.use({viewport:{width:390,height:740},hasTouch:true});
 const notice=page=>page.locator('[data-computer-status]');
 const geometry=page=>page.getByTestId('game-board').evaluate(el=>{const r=el.getBoundingClientRect();return{x:r.x+scrollX,y:r.y+scrollY,width:r.width,height:r.height};});
 async function createBabs(page){

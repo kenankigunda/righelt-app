@@ -33,7 +33,7 @@ const selfPlay=async(page)=>{
 
 // Actual touch capability matters for focus-visible, tap confirmation, and idle hiding.
 test.describe('narrow board and history',()=>{
-  test.use({viewport:{width:390,height:640},isMobile:true,hasTouch:true});
+  test.use({viewport:{width:390,height:640},hasTouch:true});
 
   test('compact header and lightweight navigation leave one document scroller',async({page},info)=>{
     await createGameFromHome(page);
@@ -128,7 +128,7 @@ test.describe('narrow board and history',()=>{
 
   test('friend undo preserves a deliberately selected surviving move while approval is pending',async({page,browser,baseURL})=>{
     const {gameId,gameHash}=await createGameFromHome(page);
-    const guestContext=await browser.newContext({baseURL,viewport:{width:390,height:640},isMobile:true,hasTouch:true});
+    const guestContext=await browser.newContext({baseURL,viewport:{width:390,height:640},hasTouch:true});
     const guest=await guestContext.newPage();
     let release;const held=new Promise(resolve=>{release=resolve;});
     let approvalSeen=false;
