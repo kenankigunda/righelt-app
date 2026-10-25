@@ -1190,3 +1190,16 @@ test("group strength badge sits inset from the square's upper-left corner", () =
 test("group strength badge only renders for strengths above one", () => {
   assert.match(adapterSource, /if \(anchorCell && typeof groupInfo\.strength === "number" && groupInfo\.strength > 1\) \{/);
 });
+
+test('explicit inspection draws only deduplicated requested network and temporarily overrides recorded arrows',async()=>{
+  await withFakeDocument(()=>{
+    const {adapter,overlayLinesEl}=createMountedAdapter();
+    const a={row:3,col:3},b={row:3,col:4},c={row:3,col:5};
+    const snapshot={sideToMove:'P1',pieces:[{id:'A',owner:'P1',kind:'unit',position:a,supplied:true,commanded:true},{id:'B',owner:'P1',kind:'unit',position:b,supplied:true,commanded:true}],artifacts:{supply:[{player:'P1',shortestPathByPieceId:{A:[a,b,c],B:[b,c]}}],command:{shortestPathToCommanderByPieceId:{A:[a,b]}}}};
+    adapter.render({snapshot,selection:{selectedPieceId:null,source:null,target:null},overlay:{mode:'recorded-action',recordedAction:{type:'move',from:a,to:b},inspection:{kind:'supply',owner:'P1'}},legalActions:[],selectedPieceMoves:[]});
+    const lines=overlayLinesEl.children.filter(child=>child.tagName==='LINE');
+    assert.equal(lines.length,2);
+    assert.equal(lines.every(line=>line.getAttribute('data-legend-kind')==='supply'),true);
+    adapter.unmount();
+  });
+});

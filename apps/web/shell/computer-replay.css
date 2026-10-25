@@ -1,0 +1,9 @@
+/* Match the ordinary board, including responsive piece geometry. */
+.computer-replay > .computer-replay-wrap {
+  width: 100%;
+  margin: 0;
+}
+.computer-replay .computer-replay-changed-piece {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
