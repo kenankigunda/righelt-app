@@ -3,7 +3,7 @@ export const LIVE_HISTORY = Object.freeze({ requestHeader: "X-Righelt-Projection
 export const SHARED_OPERATIONS = Object.freeze(["revert-request", "revert-approve", "revert-reject", "revert-rescind", "computer-control"] as const);
 export const SYNC_PROTOCOL_VERSION = 2 as const;
 export const SYNC_LIMITS = Object.freeze({ commandsPerRequest: 16, outstandingPerGame: 16, outstandingPerIdentity: 128, commandIdCharacters: 128, historyCacheEntries: 64, envelopeBytes: 64 * 1024, bodyBytes: 1024 * 1024 });
-export const SYNC_TIMING = Object.freeze({ requestTimeoutMs: 5_000, recoveryPassMs: 10_000, reconnectAlertMs: 4_000, confirmationBudgetMs: 15_000, degradedPollMs: 5_000, degradedSlowPollMs: 30_000, degradedSlowAfterMs: 60_000, heartbeatIntervalMs: 5_000, inboundTimeoutMs: 15_000, retryDelaysMs: Object.freeze([500, 1_000, 2_000, 4_000, 5_000]), retryJitter: 0.2 });
+export const SYNC_TIMING = Object.freeze({ requestTimeoutMs: 5_000, recoveryPassMs: 10_000, reconnectAlertMs: 4_000, confirmationBudgetMs: 15_000, degradedPollMs: 5_000, degradedSlowPollMs: 30_000, degradedSlowAfterMs: 60_000, heartbeatIntervalMs: 5_000, inboundTimeoutMs: 15_000, retryDelaysMs: Object.freeze([500, 1_000, 2_000, 4_000, 5_000]), maximumRetryAfterMs: 2_147_483_647, retryJitter: 0.2 });
 export type SyncCommand = {
   protocolVersion: 2;
   gameId: string;
