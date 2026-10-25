@@ -1,0 +1,31 @@
+/* Motion belongs to a uniform surface layer. Copy and controls never fade. */
+html .shell-game-alert {
+  position: relative;
+  isolation: isolate;
+}
+html .shell-game-alert::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px);
+  background: color-mix(in srgb,var(--player-p1) 12%,transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+html .shell-game-alert[data-notification-activity="processing"]::after {
+  animation: notification-processing 2.4s ease-in-out infinite;
+}
+html .shell-game-alert[data-notification-activity="waiting"]::after {
+  background: color-mix(in srgb,var(--player-p2) 8%,transparent);
+  animation: notification-waiting 4s ease-in-out infinite;
+}
+@keyframes notification-processing { 0%,100% { opacity: .15 } 50% { opacity: .85 } }
+@keyframes notification-waiting { 0%,100% { opacity: .1 } 50% { opacity: .55 } }
+[data-loading-hidden] .shell-game-alert::after { animation-play-state: paused!important; }
+/* Hidden stack cards should not compete for attention or spend animation work. */
+.shell-game-alert-stack-card:not(.is-active) .shell-game-alert::after { animation-play-state: paused!important; }
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  html .shell-game-alert::after { animation: none!important; opacity: 0; }
+}
