@@ -6,7 +6,7 @@ import { createComputerControl, changeComputerControl } from '../generated/packa
 import { createInitialState } from '../generated/packages/game-engine/src/state.js';
 
 function fixture({canAnalyze = true, timers = {setInterval(){return 1;},clearInterval(){}}, onChange = () => {}} = {}) {
-  let now = 100, visible = true, authenticated = true, generation = 1, cancelCount = 0, submitted = 0, computed = 0, blocked = false, pending;
+  let now = 100, visible = true, authenticated = true, unresolved = false, generation = 1, cancelCount = 0, submitted = 0, computed = 0, blocked = false, pending;
   let progress;
   let game = { id: 'g', gameplayRevision: 0, computer: createComputerControl('owner', { p1: 'babs', p2: null }), board: { state: createInitialState() } };
   const saved = [];
@@ -16,8 +16,8 @@ function fixture({canAnalyze = true, timers = {setInterval(){return 1;},clearInt
     applyGameAction: async () => { submitted++; return { committed: Promise.resolve() }; },
   };
   const runtime = { compute: async (_, onProgress) => new Promise((resolve, reject) => { computed++; progress = onProgress; pending = { resolve, reject }; }), cancel: () => { cancelCount++; pending?.reject(Error('cancelled')); pending = null; } };
-  const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: runtime, clock: () => now, timers, onChange, getContext: () => ({ game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
-  return { session, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { game = { ...game, id: 'other-game' }; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelCount };
+  const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: runtime, clock: () => now, timers, onChange, getContext: () => ({ game: unresolved ? null : game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
+  return { session, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { unresolved=false; game = { ...game, id: 'other-game' }; }, unresolvedGame: () => { unresolved=true; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelCount };
 }
 
 test('connection recovery defers computer work before calculation without saving or submitting', async t => {
@@ -342,6 +342,23 @@ for (const rejected of [false, true]) test(`history mutation fences automatic re
   f.session.destroy();
 });
 
+test('a routine lease renewal retains a completed calculation until its receipt settles',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ const control=f.transport.computerControl;let release;
+ f.transport.computerControl=async(...args)=>{
+  if(args[1].action==='renew'){f.setBlocked(true);await new Promise(resolve=>{release=resolve;});}
+  await control(...args);f.setBlocked(false);
+ };
+ const work=f.session.tick();assert.equal(f.computations(),1);
+ f.setTime(5200);await f.session.tick();
+ while(!release)await Promise.resolve();
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});
+ for(let i=0;i<10;i++)await Promise.resolve();
+ assert.equal(f.submissions(),0);assert.equal(f.computations(),1);
+ release();await work;
+ assert.equal(f.submissions(),1);assert.equal(f.computations(),1);
+});
+
 
 test('phase clocks include proof saving, survive same-phase ticks and accept zero-based clocks', async () => {
   const f=fixture(); f.setTime(0); await f.session.tick(); const computation=f.session.tick();
@@ -515,4 +532,35 @@ test('an acknowledged save failure with a retained journal keeps immediate recov
  f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;
  assert.equal(f.session.snapshot().phase,'recovery');assert.equal(f.deadlines.size,0);
  assert.match(renderComputerProgress({...f.game(),canControlComputer:true},f.session.snapshot()),/Retry/);
+});
+
+for(const change of ['switchGame','changeAccount','changeTransport'])test(`completed calculation waiting for renewal cannot follow ${change}`,async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ const control=f.transport.computerControl;let release;
+ f.transport.computerControl=async(...args)=>{
+  if(args[1].action==='renew'){f.setBlocked(true);await new Promise(resolve=>{release=resolve;});}
+  await control(...args);f.setBlocked(false);
+ };
+ const work=f.session.tick();f.setTime(5200);await f.session.tick();
+ while(!release)await Promise.resolve();
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});
+ for(let i=0;i<10;i++)await Promise.resolve();
+ f[change]();release();await work;
+ assert.equal(f.submissions(),0);assert.equal(f.computations(),1);
+ assert.equal(f.session.snapshot().phase,'idle');
+});
+
+test('a visible unresolved game route clears the old computer phase deadline without dereferencing a missing snapshot',async t=>{
+ const f=phaseDeadlineFixture();t.after(()=>f.session.destroy());await f.session.tick();const work=f.session.tick();
+ f.progress({phase:'checking'});assert.equal(f.deadlines.size,1);
+ const stale=[...f.deadlines.values()][0].callback;
+ // Navigation has a visible/authenticated game route before its snapshot exists.
+ // The transport still owns the old game so its lease can be released safely.
+ f.unresolvedGame();
+ assert.doesNotThrow(()=>f.session.snapshot());assert.equal(f.deadlines.size,0);
+ const before=f.changes();stale();assert.equal(f.changes(),before);
+ await assert.doesNotReject(f.session.tick());await work;
+ const status=f.session.snapshot();assert.equal(status.phase,'idle');assert.equal(status.phaseStartedAt,undefined);
+ assert.equal(f.deadlines.size,0);assert.equal(f.submissions(),0);
+ const after=f.changes();f.setTime(600);assert.doesNotThrow(stale);assert.equal(f.changes(),after);
 });

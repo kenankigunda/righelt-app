@@ -2010,8 +2010,8 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
       canAuthorScenarios
         ? `<section class="panel debug-panel scenario-panel scenario-panel-create">
             <h2>Capture a position</h2>
-            <p>${capturing ? scenarioCapture.mode === 'live' ? 'Following this manual game until you save. History inspection does not change the capture.' : 'Position frozen when capture began. Live play may continue separately.' : 'Start a capture to choose a piece and target, then save explicitly.'}</p>
-            <button class="secondary" data-action="${capturing ? 'end-scenario-capture' : 'begin-scenario-capture'}">${capturing ? 'End capture' : 'Capture this position'}</button>
+            <p>${!capturing && game?.historyLoading ? 'Loading the selected position before capture.' : capturing ? scenarioCapture.mode === 'live' ? 'Following this manual game until you save. History inspection does not change the capture.' : 'Position frozen when capture began. Live play may continue separately.' : 'Start a capture to choose a piece and target, then save explicitly.'}</p>
+            <button class="secondary" data-action="${capturing ? 'end-scenario-capture' : 'begin-scenario-capture'}"${!capturing && game?.historyLoading ? ' disabled aria-disabled="true"' : ''}>${capturing ? 'End capture' : 'Capture this position'}</button>
             <div class="form-row">
               <label for="save-scenario-title">Title</label>
               <input id="save-scenario-title" data-scenario-save-field="title" value="${escapeHtml(saveDraft.title)}" />
@@ -2553,6 +2553,7 @@ const renderAdditionalHistory = game => {
 const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
   return renderHistorySlots({rows:historyRows,extra:renderAdditionalHistory(game),
+    before:game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? "Loading this move" : "This move couldn’t load. Your current view is still available."}</p>${game.historyLoadError ? `<button class="secondary mini-button" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${game.historyLoadIndex}">Retry</button>` : ""}</div>` : "",
     after:getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">${icon("history")}View result</button>` : ""});
 };
 
@@ -3230,7 +3231,7 @@ const getHistoryDestroyedPieceOverlays = (game) => {
   if (!game?.inHistoryMode || typeof game.historyIndex !== "number") {
     return [];
   }
-  const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
+  const move = game.inspectedDecision ?? (Array.isArray(game.moves) ? game.moves[game.historyIndex] : null);
   return buildDestroyedPieceOverlays({
     destroyedPieceRecords: move?.destroyedPieces ?? [],
     preActionSnapshot: move?.selectionSnapshot ?? null,
@@ -3241,7 +3242,7 @@ const getHistoryRecordedActionStartPiece = (game) => {
   if (!game?.inHistoryMode || typeof game.historyIndex !== "number") {
     return null;
   }
-  const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
+  const move = game.inspectedDecision ?? (Array.isArray(game.moves) ? game.moves[game.historyIndex] : null);
   if (!move?.selectionSnapshot || !move?.action) {
     return null;
   }
@@ -3264,7 +3265,7 @@ const updateReconnectPresentation = game => {
   clearTimeout(reconnectPresentationTimer);
   if (recovering && game.recoveryStartedAt) {
     const elapsed = Date.now() - game.recoveryStartedAt;
-    const remaining = elapsed < LOADING_CUE_DELAY_MS ? LOADING_CUE_DELAY_MS - elapsed : elapsed < SYNC_TIMING.reconnectAlertMs ? SYNC_TIMING.reconnectAlertMs - elapsed : null;
+    const remaining = elapsed < LOADING_CUE_DELAY_MS ? LOADING_CUE_DELAY_MS - elapsed : elapsed < SYNC_TIMING.reconnectAlertMs ? SYNC_TIMING.reconnectAlertMs - elapsed : elapsed < SYNC_TIMING.confirmationBudgetMs ? SYNC_TIMING.confirmationBudgetMs - elapsed : null;
     if (remaining !== null) reconnectPresentationTimer = setTimeout(() => { const next = transport.getGameViewModel(game.id); updateReconnectPresentation(next); updateMountedHeader(); }, remaining + 1);
   }
 };
@@ -5253,7 +5254,9 @@ appEl.addEventListener("click", async (event) => {
 
   if (action === 'begin-scenario-capture' || action === 'end-scenario-capture') {
     if (!canAuthorScenariosLocally()) return;
-    const game = getActiveScenarioGame(), historyContext = resolveHistoryScenarioExportContext(game);
+    const game = getActiveScenarioGame();
+    if (action === 'begin-scenario-capture' && game?.historyLoading) return;
+    const historyContext = resolveHistoryScenarioExportContext(game);
     boardRuntime?.clearRemovalEffects();
     destructionTransitions.update(game, { reset: true });
     scenarioCapture = action === 'begin-scenario-capture' ? beginScenarioCapture(game, transport.getIdentityId(), historyContext) : null;

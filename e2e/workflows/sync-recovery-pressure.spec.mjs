@@ -2,6 +2,7 @@ import {e2eControlPort} from '../../scripts/e2e-control.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {test as base, expect} from '@playwright/test';
 import {createFaultLifecycle, fetchFaultResponse, disposeFaultContexts as cleanup} from '../support/fault-lifecycle.mjs';
+import {isOperationRequest} from '../support/shared-request.mjs';
 const owned = new WeakMap();
 const test = base.extend({
  faultCleanup: [async ({context}, use, info) => {
@@ -36,8 +37,8 @@ async function wire(page) {
  });
  await page.route('**/api/shell/games/**',route=>lifecycle.run(async()=>{
   fault.requests++;
-  if(fault.http || (fault.loseReply && /\/reconcile$/.test(new URL(route.request().url()).pathname))){await route.abort();return;}
-  const mutation=route.request().method()==='POST'&&/\/apply$/.test(new URL(route.request().url()).pathname);
+  if(fault.http || (fault.loseReply && isOperationRequest(route.request(),'reconcile'))){await route.abort();return;}
+  const mutation=isOperationRequest(route.request(),'apply');
   // Loss of an admitted move begins at submission, not during pointer setup.
   // Otherwise a slow browser can enter recovery and reject the click entirely.
   if(mutation&&fault.loseAtApply){fault.loseAtApply=false;fault.receive=true;fault.loseReply=true;}
@@ -51,7 +52,7 @@ async function wire(page) {
   if(fault.legacy){try{const parsed=JSON.parse(body);if(parsed.game){parsed.protocolVersion=1;body=Buffer.from(JSON.stringify(parsed));}}catch{}}
   fault.bytes+=body.length;
   try{const parsed=JSON.parse(body);if(parsed.game)fault.snapshots++;if(mutation)fault.outcomes.push(...(parsed.commandOutcomes??[]));}catch{}
-  if(fault.interruptNextRecovery && /\/reconcile$/.test(new URL(route.request().url()).pathname)){
+  if(fault.interruptNextRecovery && isOperationRequest(route.request(),'reconcile')){
    fault.interruptNextRecovery=false;fault.interruptedRecoveries=(fault.interruptedRecoveries||0)+1;fault.http=true;await route.abort();return;
   }
   if(mutation&&fault.loseReply){await route.abort();return;}

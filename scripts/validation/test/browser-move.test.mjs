@@ -45,7 +45,7 @@ for(const touch of [true,false]){
  test(`preview source uses actual ${touch?'touch':'pointer'} activation and cleans up on interruption`,async()=>{
   const page=new EventEmitter();let evaluations=0;const activations=[];
   page.evaluate=async()=>++evaluations===1?{gameId:'g',action:{from:{row:1,col:1},to:{row:2,col:1}}}:touch;
-  page.locator=selector=>selector.includes('history-move-item')?{count:async()=>4}:selector.includes('switch-game-panel')?{isVisible:async()=>false}:{
+  page.locator=selector=>selector==='#app'?{getAttribute:async()=> 'wide'}:selector.includes('history-move-item')?{count:async()=>4}:selector.includes('switch-game-panel')?{isVisible:async()=>false}:{
    tap:async()=>{activations.push('tap');throw Error('stop after source');},
    click:async()=>{activations.push('click');throw Error('stop after source');},
   };

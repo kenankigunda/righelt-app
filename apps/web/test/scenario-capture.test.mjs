@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { beginScenarioCapture, scenarioCapturePosition, canLoadScenarioInPlace } from '../shell/scenario-capture.js';
 import { activeDecisionLineage } from '../shell/decision-history.js';
 const game = () => ({ id: 'game', currentSnapshot: { turnIndex: 0 }, board: { state: { turnIndex: 0 } }, moves: [], selfPlayMode: true, player1: { identityId: 'me' }, player2: { identityId: 'me' } });
+test('capture waits for a pending historical position instead of freezing the live fallback', () => {
+  assert.throws(() => beginScenarioCapture({ ...game(), historyLoading: true }, 'me'), /loading/i);
+  assert.equal(beginScenarioCapture({ ...game(), historyLoading: false }, 'me').mode, 'live');
+});
 test('manual capture follows authoritative play but history inspection never changes its source', () => {
   const g = game(), capture = beginScenarioCapture(g, 'me');
   assert.equal(capture.mode, 'live'); g.currentSnapshot = { turnIndex: 99 }; g.board.state = { turnIndex: 2 };

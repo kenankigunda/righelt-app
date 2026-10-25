@@ -1,7 +1,8 @@
 import { parseComputerControl } from '../../shared-types/src/computer-play';
 import { archiveRow, readArchivedGame } from "./storage-archive";
 import { growthGuard } from "./storage-budget";
-import { encodeStorage, decodeStorage } from "./storage-codec";
+import { encodeStorage, decodeStorage, stateWriteLimits, StorageWriteLimitError } from "./storage-codec";
+import { STORAGE_POLICY } from "../../shared-types/src/storage-policy";
 import type { CutoverPolicy } from './account-cutover';
 import type { ServerEvent } from "../../shared-types/src/events";
 import {
@@ -55,6 +56,8 @@ export type D1DatabaseLike = {
 export type LiveGameEnv = {
   STORAGE_GENERATION?: string;
   STORAGE_COMPRESSION?: string;
+  STORAGE_LARGE_STATES_ENABLED?: string;
+  STORAGE_METADATA_WRITES_ENABLED?: string;
   STORAGE_ARCHIVES_ENABLED?: string;
   STORAGE_ARCHIVE_MODE?: string;
   STORAGE_ARCHIVE_CANARY_GAME_ID?: string;
@@ -750,8 +753,12 @@ export const loadGameProjection = async (env: LiveGameEnv, gameId: string): Prom
   }
   const payload = await env.DB.prepare("SELECT format_version,state_blob,state_sha256 FROM game_payloads WHERE game_id=?1").bind(gameId).first<{format_version:number;state_blob:number[];state_sha256:string}>();
   if (payload) {
-    if (payload.format_version !== 1) throw new Error("unsupported_storage_format");
-    row.state_json = JSON.stringify(await decodeStorage(payload.state_blob, payload.state_sha256));
+    if (![1,2].includes(payload.format_version)) throw new Error("unsupported_storage_format");
+    const decoded = await decodeStorage(payload.state_blob, payload.state_sha256) as LiveGame;
+    if (payload.format_version === 2) {
+      const { moves: _moves, turns: _turns, moveCount: _count, ...metadata } = JSON.parse(row.state_json);
+      row.state_json = JSON.stringify({ ...decoded, ...metadata, moves: decoded.moves, turns: decoded.turns });
+    } else row.state_json = JSON.stringify(decoded);
   } else {
     const archived = await archiveRow(env,gameId);
     if(archived && archived.status !== "archiving") row.state_json=JSON.stringify(await readArchivedGame(env,archived));
@@ -950,19 +957,27 @@ export const persistGameState = async (
   game: LiveGame,
   eventSeq: number,
   event?: (ServerEvent & { eventSeq: number }) | null,
-  options: { invitesChanged?: boolean; activityChanged?: boolean; baseEventSeq?: number; statements?: D1Statement[]; before?: D1Statement[]; after?: D1Statement[] } = {},
+  options: { metadataOnly?: boolean; preservePayload?: boolean; invitesChanged?: boolean; activityChanged?: boolean; baseEventSeq?: number; statements?: D1Statement[]; before?: D1Statement[]; after?: D1Statement[] } = {},
 ) => {
   const base = options.baseEventSeq ?? eventSeq - 1;
   if (!Number.isSafeInteger(base) || base < 0 || !Number.isSafeInteger(eventSeq) || eventSeq <= base) throw new Error("invalid_commit_revision");
   if (event && event.eventSeq !== eventSeq) throw new Error("event_revision_mismatch");
   const budget = growthGuard(env);
   const compact = env.STORAGE_COMPRESSION === "true";
-  const stored = compact ? await encodeStorage(game) : null;
-  const card = compact ? JSON.stringify({...game,moves:[],turns:game.turns.slice(-1),moveCount:game.moves.length}) : JSON.stringify(game);
+  const previous = options.preservePayload ? await env.DB.prepare("SELECT state_json, event_seq FROM live_games WHERE game_id = ?1").bind(game.id).first<{state_json:string;event_seq:number}>() : null;
+  if(options.preservePayload && (!previous || previous.event_seq !== base))throw new Error("stale_commit_revision");
+  const retained = options.metadataOnly && compact && env.STORAGE_METADATA_WRITES_ENABLED === "true"
+    ? await env.DB.prepare("SELECT format_version,state_blob,state_sha256 FROM game_payloads WHERE game_id=?1").bind(game.id).first<{format_version:number;state_blob:unknown;state_sha256:string}>() : null;
+  const stored = !options.preservePayload && !retained && compact ? await encodeStorage(game,stateWriteLimits(env)) : null;
+  const card = previous?.state_json ?? (compact ? JSON.stringify({...game,moves:[],turns:game.turns.slice(-1),moveCount:game.moves.length}) : JSON.stringify(game));
+  if(!options.preservePayload && new TextEncoder().encode(card).byteLength>STORAGE_POLICY.maximumStoredStateBytes)throw new StorageWriteLimitError();
   const statements = [...budget.before, ...(options.before ?? []), projectionStatement(env, game, eventSeq, base, card), ...(options.invitesChanged === false ? [] : inviteStatements(env, game))];
   if (stored) {
     statements.push(env.DB.prepare("INSERT INTO game_payloads(game_id,format_version,state_blob,state_sha256) VALUES(?1,1,?2,?3) ON CONFLICT(game_id) DO UPDATE SET format_version=excluded.format_version,state_blob=excluded.state_blob,state_sha256=excluded.state_sha256").bind(game.id,stored.blob,stored.checksum));
-  } else {
+  } else if (retained) {
+    // The card is the metadata authority for format 2. History bytes stay immutable.
+    statements.push(env.DB.prepare("UPDATE game_payloads SET format_version=2 WHERE game_id=?1").bind(game.id));
+  } else if (!options.preservePayload) {
     // Readers always understand compact data. Disabling compression writes must
     // remove its stale authoritative copy atomically with the new JSON state.
     statements.push(env.DB.prepare("DELETE FROM game_payloads WHERE game_id=?1").bind(game.id));

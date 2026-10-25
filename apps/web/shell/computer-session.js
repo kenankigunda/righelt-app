@@ -12,7 +12,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     phaseDeadline = null;
   };
   const phaseLabelIdentity = context => {
-    if (disposed || !context.visible || !context.authenticated || context.game?.computer?.paused || !sameOwnerScope(statusScope, context)) return null;
+    if (disposed || !context.visible || !context.authenticated || !context.game || context.game.computer?.paused || !sameOwnerScope(statusScope, context)) return null;
     const projection = context.transport.getGameViewModel?.(context.game.id);
     const pendingAt = projection?.pendingComputerSaveStartedAt;
     const phase = pendingAt != null && !['recovery', 'other-device', 'paused'].includes(status.phase) ? 'saving' : status.phase;
@@ -168,6 +168,12 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       await context.transport.decisionAttempt(game.id, { operation: 'write', kind: 'computer', attemptId, attempt }); saved = true;
       if (run !== epoch || current().key !== context.key || !sameOwnerScope(ownerScope(context), current())) return;
       if (response.result.status !== 'ready') throw new Error(response.result.reason);
+      // A routine renewal keeps the same control generation. Preserve completed
+      // calculation while its durable receipt settles instead of calculating again.
+      if (leaseWork && leaseWorkAction === 'renew') {
+        await leaseWork;
+        if (run !== epoch || current().key !== context.key || !sameOwnerScope(ownerScope(context), current())) return;
+      }
       // Recovery can begin during calculation or evidence persistence. Keep the
       // completed evidence, then calculate again from settled authority later.
       if (context.transport.getGameViewModel(game.id)?.sharedMutationsBlocked) {

@@ -22,7 +22,7 @@ export const renderPlayersLoading = () => `
     </ul><div class="row section-actions panel-loading-actions">${loadingAction('Invite someone to view')}</div><div class="invite-feedback"></div>
   </div>`;
 
-export const renderHistorySlots = ({rows, extra = '', after = ''}) => `<h2>History</h2><div class="section-followup"><ol class="history-list" data-testid="history-list">${rows}</ol>${extra}</div>${after}`;
+export const renderHistorySlots = ({rows, extra = '', before = '', after = ''}) => `<h2>History</h2><div class="section-followup">${before}<ol class="history-list" data-testid="history-list">${rows}</ol>${extra}</div>${after}`;
 export const renderHistoryLoading = () => `<div class="panel-loading-content" aria-hidden="true">${renderHistorySlots({rows:`<li class="history-item history-item-waiting history-empty-line"><span class="history-move-line">${loadingText('auto','Live · Waiting on you to move')}</span></li>`,extra:'<div><ol class="history-list"></ol></div>'})}</div>`;
 
 export const renderInvitationLoading = ({actions = 3} = {}) => `<div class="panel-loading-content" aria-hidden="true">

@@ -8,7 +8,7 @@ export const applyHistoryIntent = (game, intent, identityId) => {
   let selected = intent.moveId ? moves.find((move) => historyMoveKey(move) === intent.moveId || (intent.clientCommandId && move.clientCommandId === intent.clientCommandId)) : null;
   const currentIndex = selected?.index ?? null;
   if (intent.frozen && intent.moveId) {
-    if (!intent.frozen.moveId && selected?.moveId) intent.frozen = structuredClone(selected);
+    if (!intent.frozen.moveId && selected?.moveId) intent.frozen = structuredClone({ ...intent.frozen, ...selected, snapshot: selected.snapshot ?? intent.frozen.snapshot, selectionSnapshot: selected.selectionSnapshot ?? intent.frozen.selectionSnapshot });
     selected = intent.frozen;
   }
   if (intent.moveId && !selected) {
@@ -30,6 +30,7 @@ export const applyHistoryIntent = (game, intent, identityId) => {
   game.inHistoryMode = Boolean(selected);
   game.historyIndex = intent.frozen ? currentIndex : selected?.index ?? null;
   game.inspectedDecision = selected ? structuredClone(selected) : null;
+  if (selected && Array.isArray(game.moves)) game.moves=game.moves.map(move=>historyMoveKey(move)===historyMoveKey(selected) ? {...move,snapshot:selected.snapshot ?? move.snapshot,selectionSnapshot:selected.selectionSnapshot ?? move.selectionSnapshot} : move);
   game.inspectedAtRevision = intent.revision;
   game.historySelectionAction = selected?.action ?? null;
   game.currentSnapshot = structuredClone(selected?.snapshot ?? selected?.selectionSnapshot ?? game.board.state);

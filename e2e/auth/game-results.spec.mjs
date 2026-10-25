@@ -3,13 +3,13 @@ import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { expectRematchRadioGeometry } from "../support/rematch-layout.mjs";
+import { AUTH_PROTOCOL_HEADER, AUTH_PROTOCOL_VERSION, SESSION_CONTEXT_HEADER } from '../../packages/shared-types/src/auth-policy.js';
 const scenario = JSON.parse(readFileSync(new URL("../../apps/web/scenarios/catalog.json", import.meta.url))).scenarios.find(s => s.title === "Capture supply point to win by unsupplying the commander");
 test.beforeEach(async () => { expect((await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`, { method: "POST" })).ok).toBe(true); });
 for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game has persistent result, review and swapped rematch`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  let creationHeaders;
-  page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creationHeaders = request.headers(); });
   await page.goto("/");
+  const creation = page.waitForResponse(response => response.ok() && response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/shell/games');
   await page.getByTestId("home-create-game").waitFor();
   await (opponent === "self" ? page.getByRole("button", {name:"Play both sides", exact:true}) : page.getByTestId("home-create-game")).click();
   const dialog = page.getByTestId("account-dialog");
@@ -20,10 +20,11 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   if (opponent === "friend") await page.getByRole("button",{name:"Start a friend game",exact:true}).click();
   if (opponent === "friend") await page.getByRole("button",{name:"Close invite",exact:true}).click();
   await expect(page.getByTestId("game-shell")).toBeVisible();
-  // The invitation preview is also visible while its dismissal animates.
-  // Wait for the live shell before choosing the scenario import target.
-  await expect(page.getByTestId("game-shell")).toHaveAttribute("data-game-id", /^game-/);
-  const gameId = await page.getByTestId("game-shell").getAttribute("data-game-id");
+  // The optimistic invitation shell can precede the authenticated create request.
+  // Its accepted response supplies both the real target and its protocol headers.
+  const acceptedCreation = await creation, gameId = (await acceptedCreation.json()).game.id;
+  const creationHeaders = Object.fromEntries(Object.entries(acceptedCreation.request().headers()).filter(([name]) => name.startsWith('x-righelt-')));
+  await expect(page.getByTestId("game-shell")).toHaveAttribute("data-game-id", gameId);
   const loaded = await page.evaluate(async ({ scenario, gameId, headers }) => {
     const response = await fetch("/api/shell/scenarios/import", { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ scenario, targetGameId: gameId, protocolVersion: 2 }) });
     return { status: response.status, body: await response.json() };
@@ -87,13 +88,13 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
     await expect(page.getByTestId('game-result')).toHaveCount(0);
     // Read the real authenticated HTTP projection, not the optimistic creation
     // object or a warm socket snapshot. Repeating catches persistence regressions.
-    const projected = await page.evaluate(async gameId => {
+    const projected = await page.evaluate(async ({ gameId, protocolHeader, protocolVersion, contextHeader }) => {
       const session = await (await fetch("/api/auth/session")).json();
       const response = await fetch(`/api/shell/games/${encodeURIComponent(gameId)}`, {
-        headers: { "X-Righelt-Auth-Version": "1", "X-Righelt-Session": session.contextId },
+        headers: { [protocolHeader]: String(protocolVersion), [contextHeader]: session.contextId },
       });
       return { status: response.status, body: await response.json() };
-    }, gameId);
+    }, { gameId, protocolHeader: AUTH_PROTOCOL_HEADER, protocolVersion: AUTH_PROTOCOL_VERSION, contextHeader: SESSION_CONTEXT_HEADER });
     expect(projected.status).toBe(200);
     if (opponent === "self") expect(projected.body.game.selfPlayStartSide).toBe("p1");
     if (cycle === 0) {

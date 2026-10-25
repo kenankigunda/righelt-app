@@ -73,5 +73,5 @@ test("diagnostic total event and byte budgets retain initial evidence and mark t
  for(let i=0;i<20;i++){last=d.capture(`budget:${i}`,{operation:"initial",stage:"failed"});for(let j=0;j<20;j++)d.capture(`budget:${i}`,{stage:"retry",retry:j});}
  assert.ok(d.list().reduce((sum,r)=>sum+r.events.length,0)<=200);assert.equal(d.get(last).initial.operation,"initial");assert.ok(d.list().some(r=>r.truncated));
  for(let i=0;i<200;i++)d.capture("large",{browser:"x".repeat(2048),authoritativeState:{pieces:Array.from({length:100},(_,id)=>({id:String(id),owner:"P1",position:{row:0,col:0},kind:"unit"}))}});
- assert.ok(new TextEncoder().encode(JSON.stringify(d.list())).length<=1048576);assert.ok(d.list().at(-1).initial);assert.equal(d.list().at(-1).truncated,true);
+ assert.ok(new TextEncoder().encode(JSON.stringify(d.list())).length<=1048576);assert.ok(d.list().at(-1).initial);assert.ok(d.list().at(-1).events.every(event=>event.authoritativeState===undefined));
 });

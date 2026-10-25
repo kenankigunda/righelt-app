@@ -58,6 +58,10 @@ export function validateStorageDeployment(env,source) {
   const configured=/^STORAGE_GENERATION\s*=\s*"([^"]*)"/m.exec(source)?.[1];
   if(configured && env.RIGHELT_STORAGE_GENERATION!==configured)throw Error("Storage generation differs from prepared binding");
   if(!["true","false"].includes(env.RIGHELT_STORAGE_COMPRESSION||"false"))throw Error("Storage compression must be true or false");
+  if(!["true","false"].includes(env.RIGHELT_STORAGE_METADATA_WRITES_ENABLED||"false"))throw Error("Metadata activation must be true or false");
+  if(env.RIGHELT_STORAGE_METADATA_WRITES_ENABLED==="true" && (env.RIGHELT_STORAGE_COMPRESSION!=="true" || !/^[a-f0-9]{40}$/.test(env.RIGHELT_STORAGE_METADATA_READER_SHA||"")))throw Error("Metadata writes require compression and a verified reader deployment revision");
+  if(!["true","false"].includes(env.RIGHELT_STORAGE_LARGE_STATES_ENABLED||"false"))throw Error("Large-state activation must be true or false");
+  if(env.RIGHELT_STORAGE_LARGE_STATES_ENABLED==="true" && (env.RIGHELT_STORAGE_COMPRESSION!=="true" || !/^[a-f0-9]{40}$/.test(env.RIGHELT_STORAGE_LARGE_STATES_READER_SHA||"")))throw Error("Large-state writes require compression and a verified reader deployment revision");
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
@@ -81,6 +85,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         `STORAGE_GENERATION:${process.env.RIGHELT_STORAGE_GENERATION || ""}`,
         "--var",
         `STORAGE_COMPRESSION:${process.env.RIGHELT_STORAGE_COMPRESSION || "false"}`,
+        "--var",
+        `STORAGE_LARGE_STATES_ENABLED:${process.env.RIGHELT_STORAGE_LARGE_STATES_ENABLED || "false"}`,
+        "--var",
+        `STORAGE_METADATA_WRITES_ENABLED:${process.env.RIGHELT_STORAGE_METADATA_WRITES_ENABLED || "false"}`,
         "--var",
         `AUTH_ALLOWED_ORIGINS:${origin}`,
         "--var",
