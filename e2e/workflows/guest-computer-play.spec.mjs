@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {isOperationRequest,operationValues} from "../support/shared-request.mjs";
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {test,expect} from '@playwright/test';
+import {ownedContexts} from '../support/owned-contexts.mjs';
 import {submitPlayableAction,switchGamePanel,waitForLegacyIdentity} from '../support/app.mjs';
 import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
 import {waitForPlayableBoard} from '../../scripts/validation/browser-navigation.mjs';
@@ -68,7 +69,23 @@ test('guest computer finishes a catalog position and prepares a fresh rematch',a
   expect(fresh.computer.seats).toEqual({p1:null,p2:'babs'});
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',fresh.id);
 });
-for (const width of [320, 390, 430, 1440]) test(`guest computer play survives reload and undo at ${width}px`, async ({ page }, info) => {
+for (const width of [320, 390, 430, 1440]) test.describe(`retained guest computer game at ${width}px`, () => {
+  // Three distinct journeys share the actual browser, identity and accepted game.
+  // Each keeps the configured 60-second budget. Failures skip dependent journeys.
+  test.describe.configure({mode:'serial'});
+  let owned, context, page, played, retained;
+  test.beforeAll(async ({browser}, info) => {
+    owned=ownedContexts(browser);
+    const use=info.project.use;
+    context=await owned.create({...use.contextOptions,baseURL:use.baseURL,
+      viewport:{width,height:900},deviceScaleFactor:use.deviceScaleFactor,
+      isMobile:use.isMobile,hasTouch:use.hasTouch,userAgent:use.userAgent});
+    page=await context.newPage();
+  });
+  // Playwright records all live contexts per test, including this retained one.
+  // The ownership helper closes even partially completed context creation.
+  test.afterAll(async () => {await owned?.close();});
+  test(`guest computer prepares and replays a real turn at ${width}px`, async ({}, info) => {
   await page.setViewportSize({width,height:900});
   await page.goto('/');
   expect((await (await page.request.get('/api/shell/bootstrap')).json()).accountsRequired).toBe(false);
@@ -83,6 +100,8 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
   const response = await creation;
   expect(response.ok()).toBe(true);
   const initial = (await response.json()).game;
+  const identityId=await page.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'));
+  expect(identityId).toBeTruthy();
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
   await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase', 'idle');
   await waitForPlayableBoard(page);
@@ -124,6 +143,15 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
   } finally {page.off('request',observeReplay);}
   const saved = (await projected(page, initial.id)).moves.find(move=>move.computerProof);
   expect(saved.computerProof.modelId).toBe('initial-1554');
+  // Serialized seed fields cannot be mutated by either later journey.
+  played=Object.freeze({initialJSON:JSON.stringify(initial),savedJSON:JSON.stringify(saved),identityId});
+  });
+
+  test(`the same guest computer game survives reload and undo at ${width}px`, async ({}, info) => {
+  expect(played).toBeTruthy();
+  const initial=JSON.parse(played.initialJSON),saved=JSON.parse(played.savedJSON),{identityId}=played;
+  await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',initial.id);
+  expect(await page.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'))).toBe(identityId);
   await page.reload();
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',initial.id);
   await expect.poll(async()=> (await projected(page,initial.id)).moves.some(move=>move.moveId===saved.moveId)).toBe(true);
@@ -166,6 +194,23 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
       await Promise.all(document.getAnimations().filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime)).map(animation => animation.finished.catch(() => {})));
     });
     await page.screenshot({ path: info.outputPath('computer-undo-resumed.png') });
+    expect(saved.computerProof.attemptId).toBeTruthy();
+    retained=Object.freeze({gameId:initial.id,identityId,modelId:saved.computerProof.modelId,
+      moveId:saved.moveId,attemptId:saved.computerProof.attemptId,
+      action:Object.freeze(structuredClone(saved.action)),proof:Object.freeze(structuredClone(saved.computerProof))});
+    await info.attach('undo-controls', { contentType: 'application/json', body: JSON.stringify(controls) });
+  } finally { page.off('request', observe); }
+  });
+
+  test(`export preserves the same undone computer game and accepted attempt at ${width}px`, async () => {
+    expect(retained).toBeTruthy();
+    await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',retained.gameId);
+    expect(await page.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'))).toBe(retained.identityId);
+    const game=await projected(page,retained.gameId);
+    expect(game.id).toBe(retained.gameId);expect(game.computer.modelId).toBe(retained.modelId);
+    expect(game.moves.filter(move=>!move.undone)).toHaveLength(0);
+    const original=game.moves.find(move=>move.moveId===retained.moveId);
+    expect(original?.undone).toBe(true);expect(original?.computerProof).toEqual(retained.proof);
     const navigation=page.getByRole('button',{name:'Open navigation menu',exact:true});
     if(await navigation.isVisible())await navigation.click();
     await page.getByRole('button',{name:'Debug',exact:true}).click();
@@ -174,7 +219,12 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
     const downloaded=page.waitForEvent('download');
     await raw.getByRole('button',{name:'Export game evidence and my notes'}).click();
     const exported=JSON.parse(await readFile(await (await downloaded).path(),'utf8'));
+    expect(exported.gameId).toBe(retained.gameId);
     expect(exported.notes).toEqual([]);expect(exported.analyses).toEqual([]);expect(exported.attempts.length).toBeGreaterThan(0);
-    await info.attach('undo-controls', { contentType: 'application/json', body: JSON.stringify(controls) });
-  } finally { page.off('request', observe); }
+    const entry=exported.entries.find(item=>item.kind==='decision'&&item.id===retained.moveId);
+    expect(entry?.move.computerProof).toEqual(retained.proof);expect(entry?.move.action).toEqual(retained.action);
+    const attempt=exported.attempts.find(item=>item.attemptId===retained.attemptId);
+    expect(attempt?.attempt.proof).toEqual(retained.proof);
+    expect(attempt?.attempt.result).toMatchObject({status:'ready',action:retained.action});
+  });
 });

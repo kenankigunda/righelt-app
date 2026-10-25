@@ -1,7 +1,7 @@
 import {mkdir,writeFile} from "node:fs/promises";
 import { test, expect } from "@playwright/test";
 import { runScopedAxeScan } from "../support/ux.mjs";
-import { createGameFromHome, makeAnyLegalMove, submitPlayableAction, selectPlayableAction } from "../support/app.mjs";
+import { createGameFromHome, makeAnyLegalMove, submitPlayableAction, selectPlayableAction, switchGamePanel } from "../support/app.mjs";
 import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
 
 for (const width of [933, 932, 901, 900, 899, 390]) test(`recovery overlay and storage gate at ${width}px`, async ({page},info) => {
@@ -12,11 +12,10 @@ for (const width of [933, 932, 901, 900, 899, 390]) test(`recovery overlay and s
  await page.setViewportSize({width,height:1000});
  await page.emulateMedia({reducedMotion:"reduce"});
  const {gameId}=await createGameFromHome(page);
- const useTabs=await page.getByRole("button",{name:"Players",exact:true}).isVisible();
- if(useTabs) await page.getByRole("button",{name:"Players",exact:true}).click();
+ await switchGamePanel(page,"players");
  await page.getByRole("button",{name:"Play both sides",exact:true}).click();
  await expect(page.getByRole("button",{name:"Play both sides",exact:true})).toHaveCount(0);
- if(useTabs) await page.getByRole("button",{name:"Board",exact:true}).click();
+ await switchGamePanel(page,"board");
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  await makeAnyLegalMove(page);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);

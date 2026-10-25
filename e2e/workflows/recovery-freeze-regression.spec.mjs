@@ -1,6 +1,6 @@
 import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
 import {test,expect} from "@playwright/test";
-import {createGameFromHome,importScenarioGame,submitPlayableAction} from "../support/app.mjs";
+import {createGameFromHome,importScenarioGame,submitPlayableAction,switchGamePanel} from "../support/app.mjs";
 
 const currentGame=(page,gameId)=>page.evaluate(async id=>{
  const identityId=localStorage.getItem("righelt.identity.id.v1");return (await (await fetch(`/api/shell/games/${id}?identityId=${identityId}`)).json()).game;
@@ -60,9 +60,9 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
   sockets.push(socket);const server=socket.connectToServer();server.onMessage(message=>{if(!socketsUnavailable)socket.send(message);});
  });
  const {gameId}=await importScenarioGame(page,scenario,baseURL);
- const players=page.getByRole("button",{name:"Players",exact:true});if(await players.isVisible())await players.click();
+ await switchGamePanel(page,"players");
  await page.getByRole("button",{name:"Play both sides",exact:true}).click();
- const boardTab=page.getByRole("button",{name:"Board",exact:true});if(await boardTab.isVisible())await boardTab.click();
+ await switchGamePanel(page,"board");
  await page.route(`**/api/shell/games/${gameId}/**`,async route=>{
   const request=route.request();
   if(isOperationRequest(request,'reconcile')){
@@ -152,11 +152,9 @@ for(const reduced of [false,true])test(`routine reconnect stays quiet four secon
   const response=await route.fetch();if(hold){held();await gate;}await route.fulfill({response});
  });
  try {
+ await switchGamePanel(page,"board");
  const boardTab=page.getByRole("button",{name:"Board",exact:true});
- if(await boardTab.isVisible()){
-  await boardTab.click();
-  await expect(boardTab).toHaveAttribute("aria-pressed","true");
- }
+ if(await boardTab.isVisible()) await expect(boardTab).toHaveAttribute("aria-pressed","true");
  await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
  const board=page.getByTestId("game-board");
  // The measured board must be on its settled panel before timers are frozen.
