@@ -73,7 +73,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /if \(!isBuildingGameAlerts\) \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
   assert.doesNotMatch(source, /failedOperations\.length === 0 && game\.rollbackNotice/);
   assert.doesNotMatch(source, /rollbackNotice: game\.rollbackNotice/);
-  assert.match(source, /const orderedItems = notificationStack\.order\(game\.id, items\);/);
+  assert.match(source, /const items = getHeaderAlertItems\(game\);\s*const scope=game\?\.id \?\? `loading:\$\{loadingContextScope\(\)\}`;\s*const orderedItems = notificationStack\.order\(scope, items\);/);
   assert.match(source, /renderGameAlertStackCard\(\{/);
   assert.match(source, /<div class="shell-header-status" data-shell-alert-zone="\$\{gameAlerts \|\| startupStatus \? "active" : "idle"\}">/);
   assert.match(source, /id="shell-game-alerts"/);
@@ -424,6 +424,12 @@ test("shell renders and reconciles mini board previews for home and debug surfac
 test("app uses route skeleton sync and localized loading instead of a global busy wrapper", () => {
   assert.doesNotMatch(source, /const withBusy = async/);
   assert.doesNotMatch(source, /let busy = false;/);
+  const mount=source.slice(source.indexOf('mountLoadingFeedback(document,{'),source.indexOf('const currentReplayContext ='));
+  assert.match(mount,/getScope:loadingContextScope/);
+  assert.match(mount,/onContextsChange:contexts=>\{\s*slowLoadingContexts=contexts;/);
+  assert.match(mount,/if\(updateMountedHeader\(\)\)syncRenderedMarkupSnapshot\(\);/);
+  assert.doesNotMatch(mount,/\brender\(/);
+  assert.ok(source.indexOf('mountLoadingFeedback(document,{')>source.indexOf('let transport = syncStore;'),'Loading callbacks mount after authoritative scope initialization');
   assert.match(source, /const pendingHomeSectionKeys = new Set\(\);/);
   assert.match(source, /const SCENARIO_LOAD_PENDING_KEY = "scenario:load";/);
   assert.match(source, /const startRouteSync = \(\{ renderStart = true \} = \{\}\) => \{/);
@@ -455,7 +461,7 @@ test("app uses route skeleton sync and localized loading instead of a global bus
   );
   assert.match(
     source,
-    /const cycleGameAlertStack = \(gameId, actionEl = null\) => \{[\s\S]*const items = getGameAlertItems\(game\);[\s\S]*refreshMountedAlertHeader\(gameId, actionEl\);/s,
+    /const cycleGameAlertStack = \(gameId, actionEl = null\) => \{[\s\S]*if\(gameId!==scope\)return;\s*const items = getHeaderAlertItems\(game\);[\s\S]*notificationStack\.advance\(scope, items\)[\s\S]*refreshMountedAlertHeader\(gameId, actionEl\);/s,
   );
   assert.match(
     source,

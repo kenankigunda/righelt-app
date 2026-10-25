@@ -106,7 +106,8 @@ import {
 } from "./routes.js";
 import { createTutorialController } from "./tutorial.js";
 
-mountLoadingFeedback(document);
+let slowLoadingContexts=[];
+const loadingContextScope=()=>`${account.snapshot().generation}:${activeStorageGeneration}:${window.location.hash}`;
 mountLoadingEdges(document);
 void fetch("/deploy-meta.json", { cache: "no-store", signal: AbortSignal.timeout(5000) }).then(response => response.json()).then(meta => { globalThis.__righeltClientBuild = meta.sha ?? meta.commitSha ?? "unavailable"; }).catch(() => {});
 const appEl = document.getElementById("app");
@@ -1388,7 +1389,7 @@ const renderHeaderNarrowMenu = () => {
 const renderHeaderAlertZone = () => {
   const viewedGameId = getCurrentViewedGameId();
   const viewedGame = viewedGameId ? transport.getGameViewModel(viewedGameId) : null;
-  const gameAlerts = viewedGame ? renderGameAlertsHtml(viewedGame) : "";
+  const gameAlerts = renderGameAlertsHtml(viewedGame);
   const startupStatus = accountStartupError
     ? `<p role="alert">${escapeHtml(accountStartupError)}</p><button class="secondary" data-action="retry-account-startup">Try again</button>`
     : !account.snapshot().ready
@@ -1662,7 +1663,7 @@ const focusCurrentAlertStackCard = (gameId) => {
     return;
   }
   const focusedCard = appEl?.querySelector?.(
-    `[data-action="cycle-game-alert-stack"][data-game-id="${gameId}"][tabindex="0"]`,
+    `[data-action="cycle-game-alert-stack"][data-game-id="${CSS.escape(gameId)}"][tabindex="0"]`,
   );
   if (focusedCard instanceof HTMLElement) {
     focusedCard.focus({ preventScroll: true });
@@ -1683,11 +1684,10 @@ const refreshMountedAlertHeader = (gameId = null, actionEl = null) => {
 
 const cycleGameAlertStack = (gameId, actionEl = null) => {
   const game = gameId ? transport.getGameViewModel(gameId) : null;
-  if (!game) {
-    return;
-  }
-  const items = getGameAlertItems(game);
-  if (!notificationStack.advance(gameId, items)) {
+  const scope=game?.id ?? `loading:${loadingContextScope()}`;
+  if(gameId!==scope)return;
+  const items = getHeaderAlertItems(game);
+  if (!notificationStack.advance(scope, items)) {
     return;
   }
   refreshMountedAlertHeader(gameId, actionEl);
@@ -2382,16 +2382,26 @@ const scrollHomeSectionToTop = (sectionKey) => {
 const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Choose your opponent</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
 const renderHome = () => `<section class="stack home-refresh">${storageResetNotice ? '<p class="small" role="status">The saved data was reset. You can start a new game.</p>' : ""}${renderHomeGameSection('my')}${renderStartChoices()}${getVisibleHomeSectionKeys().filter(key=>key!=='my').map(renderHomeGameSection).join('')}</section>`;
 
+const getHeaderAlertItems = game => {
+  const scope=loadingContextScope();
+  const slow=accountStartupError?[]:slowLoadingContexts.filter(context=>context.scope===scope).map(context=>({
+    key:context.key,
+    html:renderGameAlertCard({tone:'neutral',activity:'processing',body:`<span role="status">${escapeHtml(context.message)}</span>`,testId:'slow-loading-notice'}),
+  }));
+  return [...(game?getGameAlertItems(game):[]),...slow];
+};
+
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
   isBuildingGameAlerts = true;
   try {
-    const items = getGameAlertItems(game);
-    const orderedItems = notificationStack.order(game.id, items);
+    const items = getHeaderAlertItems(game);
+    const scope=game?.id ?? `loading:${loadingContextScope()}`;
+    const orderedItems = notificationStack.order(scope, items);
     if (orderedItems.length === 0) return "";
     return orderedItems
       .map((item, stackIndex) =>
         renderGameAlertStackCard({
-          gameId: game.id,
+          gameId: scope,
           item,
           stackIndex,
           totalAlerts: orderedItems.length,
@@ -4126,6 +4136,15 @@ const makeAccountSyncStore = auth => createSyncStore({
 let activeStorageGeneration = account.snapshot().storageGeneration;
 let syncStore = makeAccountSyncStore(account.snapshot());
 let transport = syncStore;
+mountLoadingFeedback(document,{
+  getScope:loadingContextScope,
+  onContextsChange:contexts=>{
+    slowLoadingContexts=contexts;
+    // Patch only an already-mounted header. The next ordinary render consumes
+    // current descriptors when no header exists, without a full render loop.
+    if(updateMountedHeader())syncRenderedMarkupSnapshot();
+  },
+});
 const currentReplayContext = () => {
   const gameId=getCurrentViewedGameId(),game=transport.getAuthoritativeGame(gameId);
   return {owner:transport,scope:viewingScope(),gameId,revision:game?.gameplayRevision,lineageHead:game?.moves?.filter(move=>!move.undone).at(-1)?.moveId ?? null,visible:!document.hidden};
