@@ -552,7 +552,7 @@ export const createLiveTransportStore = ({
       recalculateOptimisticGame(gameId);
       return;
     }
-    if (command.kind === "shared" && !gameById.get(gameId)?.sharedReceipts) { markUpgradeRequired(gameId); return; }
+    if (command.kind === "shared" && gameById.has(gameId) && !gameById.get(gameId).sharedReceipts) { markUpgradeRequired(gameId); return; }
     if (shouldDeferCommandSend(gameId, command)) return;
     const attempt = { commandId: command.clientCommandId, controller: new AbortController() };
     attempt.done = new Promise((resolve) => { attempt.finish = resolve; });
@@ -576,6 +576,18 @@ export const createLiveTransportStore = ({
     }
     recalculateOptimisticGame(gameId);
     try {
+      if (command.kind === "shared" && !gameById.has(gameId)) {
+        // Initial HTTP fallback can hydrate the journal before a socket or page
+        // has supplied a snapshot. Discover support without sending saved intent.
+        const snapshot = await boundedRequest(`/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}`, {
+          method: "GET", cache: "no-store",
+        }, attempt.controller);
+        if (optimistic.attempt !== attempt) return;
+        if (snapshot.protocolVersion !== 2) { markUpgradeRequired(gameId); return; }
+        if (!validSyncSnapshot(snapshot.game, gameId) || !isSyncRevision(snapshot.eventSeq)) throw Object.assign(new Error("invalid_snapshot"), { code: "invalid_response" });
+        upsertGameSnapshot({ game: snapshot.game, eventSeq: snapshot.eventSeq, publish: false });
+        if (!gameById.get(gameId)?.sharedReceipts) { markUpgradeRequired(gameId); return; }
+      }
       if (reconcileFirst) {
         const response = await reconcileRequest(gameId, attempt.controller, () => optimistic.attempt === attempt);
         if (optimistic.attempt !== attempt) return;

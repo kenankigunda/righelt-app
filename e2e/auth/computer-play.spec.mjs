@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { submitPlayableAction } from '../support/app.mjs';
 import { AUTH_CONTROL_ORIGIN } from './fixture.mjs';
 import { readProjectedGame, waitForComputerDecision } from '../support/computer-projection.mjs';
+import { isOperationRequest, operationValues } from '../support/shared-request.mjs';
 
 const projected = (page, id) => page.evaluate(readProjectedGame, { id });
 
@@ -140,11 +141,11 @@ test('ordinary computer undo restores the human turn and resumes computer contro
   if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();
   await waitForComputerDecision(page, initial.id, 'babs');
   const controls = [];
-  const observe = response => {
-    if (new URL(response.url()).pathname === `/api/shell/games/${initial.id}/computer-control`)
-      controls.push({ action: response.request().postDataJSON().action, status: response.status() });
+  const observe = request => {
+    if (isOperationRequest(request, 'computer-control')) controls.push({ action: operationValues(request).action,
+      envelope: request.postDataJSON(), headers: Object.fromEntries(Object.entries(request.headers()).filter(([name]) => name.startsWith('x-righelt-'))) });
   };
-  page.on('response', observe);
+  page.on('request', observe);
   try {
     const history = page.locator('[data-action="switch-game-panel"][data-panel="history"]');
     if (await history.isVisible()) await history.click();
@@ -156,14 +157,24 @@ test('ordinary computer undo restores the human turn and resumes computer contro
     const board = page.locator('[data-action="switch-game-panel"][data-panel="board"]');
     if (await board.isVisible()) await board.click();
     await expect(page.locator('[data-computer-status]')).toBeHidden();
-    expect(controls.filter(control => control.action === 'resume')).toEqual([{ action: 'resume', status: 200 }]);
-    expect(controls.every(control => control.status === 200)).toBe(true);
+    await expect.poll(() => controls.filter(control => control.action === 'resume').length).toBeGreaterThan(0);
+    const resumes = controls.filter(control => control.action === 'resume');
+    expect(new Set(resumes.map(control => control.envelope.clientCommandId)).size).toBe(1);
+    const { envelope, headers } = resumes[0]; expect(envelope.kind).toBe('shared');
+    // A live receipt may cancel its HTTP response. Check durable acceptance instead.
+    const receipt = await page.evaluate(async ({ id, envelope, headers }) => {
+      const response = await fetch(`/api/shell/games/${id}/reconcile`, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ protocolVersion: 2, identityId: envelope.identityId, knownSnapshotEventSeq: 0, commands: [envelope] }) });
+      if (!response.ok) throw Error(`Receipt lookup failed: ${response.status}`);
+      return response.json();
+    }, { id: initial.id, envelope, headers });
+    expect(receipt.commandOutcomes[0]).toMatchObject({ outcome: 'accepted', clientCommandId: envelope.clientCommandId, fingerprint: envelope.fingerprint });
     await page.evaluate(async () => {
       await Promise.all(document.getAnimations().filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime)).map(animation => animation.finished.catch(() => {})));
     });
     await page.screenshot({ path: info.outputPath('computer-undo-resumed.png') });
     await info.attach('undo-controls', { contentType: 'application/json', body: JSON.stringify(controls) });
-  } finally { page.off('response', observe); }
+  } finally { page.off('request', observe); }
 });
 
 

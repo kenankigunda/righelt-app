@@ -610,3 +610,36 @@ test("restored rejected shared control settles its own handle without a gameplay
  await until(async()=>(await f.journal.list(identityId,f.gameId)).length===0);
  const next=await f.move(restored);await next.committed;
 });
+
+for (const supported of [true, false]) test(`initial shared recovery discovers server capability before replay (${supported})`, async t => {
+ let restoring = false, reads = 0, sharedPosts = 0;
+ const f = await setup({ fault: async (url, init, call) => {
+  if (restoring && (!init?.method || init.method === 'GET') && url.includes('/games/')) {
+   reads++; const response = await call(); const body = await response.json();
+   if (!supported) delete body.game.sharedReceipts;
+   return Response.json(body);
+  }
+  if (restoring && url.endsWith('/shared')) sharedPosts++;
+  return call();
+ } });
+ await (await f.move()).committed;
+ const game = f.store.getAuthoritativeGame(f.gameId), identityId = f.store.getIdentityId();
+ const envelope = { protocolVersion: 2, gameId: f.gameId, identityId, clientCommandId: `v2:initial-shared-${supported}`,
+  kind: 'shared', payload: { operation: 'revert-request', values: { targetMoveId: game.moves[0].moveId, requestId: 'original-undo' } },
+  expectedState: game.board.state, expectedGameplayRevision: game.gameplayRevision };
+ envelope.fingerprint = await commandFingerprint(envelope); await f.journal.admit(envelope); f.store.retire(); restoring = true;
+ const resumed = f.create(); t.after(() => resumed.retire());
+ // Socket fallback can reconcile before any game snapshot or Home list exists.
+ await resumed.reconcileGame(f.gameId);
+ assert.equal(reads, 1);
+ if (supported) {
+  await until(() => f.env.DB.getReceipt(f.gameId, envelope.clientCommandId));
+  assert.equal(f.env.DB.getReceipt(f.gameId, envelope.clientCommandId).outcome, 'accepted');
+  await until(async () => (await f.journal.list(identityId, f.gameId)).length === 0);
+  assert.equal(sharedPosts, 1); assert.equal(resumed.isUpgradeRequired(f.gameId), false);
+  assert.equal(f.env.DB.getGameState(f.gameId).gameplayRevision, 2);
+ } else {
+  assert.equal(sharedPosts, 0); assert.equal(resumed.isUpgradeRequired(f.gameId), true);
+  assert.deepEqual(await f.journal.list(identityId, f.gameId), [envelope]);
+ }
+});
