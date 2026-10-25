@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {createGameFromHome,openDirectGameLink,requestPlayerJoin,acceptPendingRequest,joinAsViewer,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
 import {readProjectedGame} from '../support/computer-projection.mjs';
+import {isOperationRequest} from '../support/shared-request.mjs';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
 const label=page=>page.locator('#shell-board-preview-label');
 const replayButton=page=>label(page).getByRole('button',{name:'Show me again',exact:true});
@@ -17,7 +18,7 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
   const initial=await projected(owner,gameId),action=initial.legalActions.find(action=>action.type==='move'&&action.from&&action.to);expect(action).toBeTruthy();
   await submitPlayableAction(owner,action);
   await expect(replayButton(opponent)).toBeVisible();await expect(label(opponent)).toContainText('Your opponent moved');
-  await expect(replayButton(viewer)).toBeVisible();await expect(label(viewer)).toContainText('Red moved');
+  await expect(replayButton(viewer)).toBeVisible();await expect(label(viewer)).toContainText('Guest 1 moved');
   for(const page of [owner,viewer])await expect(label(page).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
   // An inactive seated player can still inspect a piece and its command lines.
   const saved=await projected(owner,gameId),piece=saved.board.state.pieces.find(piece=>piece.owner==='P1');
@@ -37,7 +38,7 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
   const viewerIdentity=await viewer.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'));
   const viewerWrites=[];const watch=request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/'))viewerWrites.push({method:request.method(),path:new URL(request.url()).pathname,body:request.postDataJSON()})};viewer.on('request',watch);
   const current=await projected(opponent,gameId),next=current.legalActions.find(action=>action.type==='move'&&action.from&&action.to);expect(next).toBeTruthy();
-  await submitPlayableAction(opponent,next);await expect(viewer.locator('.computer-replay')).toHaveCount(0);await expect(label(viewer)).toContainText('Blue moved');
+  await submitPlayableAction(opponent,next);await expect(viewer.locator('.computer-replay')).toHaveCount(0);await expect(label(viewer)).toContainText('Guest 2 moved');
   const advanced=await projected(opponent,gameId),seenByViewer=await projected(viewer,gameId);assertUnchanged(advanced,seenByViewer);
   for(const write of viewerWrites){
    expect(write.method).toBe('POST');expect(write.path).toBe(`/api/shell/games/${gameId}/decision-history`);
@@ -47,7 +48,7 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
   await owner.reload();await expect(owner.getByTestId('game-shell')).toBeVisible();await switchGamePanel(owner,'board');
   await expect(label(owner)).toContainText('Your opponent moved');await expect(replayButton(owner)).toBeVisible();
   const pass=label(owner).getByRole('button',{name:'Pass',exact:true});await expect(pass).toBeVisible();
-  const beforePass=await projected(owner,gameId),passWrites=[];const trackPass=request=>{if(request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/apply'))passWrites.push(request.postDataJSON())};owner.on('request',trackPass);
+  const beforePass=await projected(owner,gameId),passWrites=[];const trackPass=request=>{if(isOperationRequest(request,'apply'))passWrites.push(request.postDataJSON())};owner.on('request',trackPass);
   await pass.click();await expect.poll(async()=>(await projected(owner,gameId)).board.state.turnIndex).toBe(beforePass.board.state.turnIndex+1);
   const passed=await projected(owner,gameId);expect(passed.gameplayRevision).toBe(beforePass.gameplayRevision+1);expect(passed.moves.at(-1).action).toEqual({type:'pass'});expect(passWrites).toHaveLength(1);owner.off('request',trackPass);
   await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
