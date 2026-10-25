@@ -1,4 +1,5 @@
-import {test,expect} from '@playwright/test';
+import {test,expect,chromium} from '@playwright/test';
+import {browserLaunchOptions} from '../../scripts/playwright-launch-options.mjs';
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {submitPlayableAction,switchGamePanel} from '../support/app.mjs';
 import {readProjectedGame,waitForComputerDecision} from '../support/computer-projection.mjs';
@@ -80,23 +81,31 @@ test('competing tabs transfer control deliberately without changing seats or mod
  await page.screenshot({path:info.outputPath('computer-competing-tabs.png')});
 });
 
-test('abrupt renderer termination releases authority after lease expiry',async({page,context,browserName})=>{
- test.skip(browserName!=='chromium','Renderer crash is exposed by Chromium CDP.');
- const id=await createComputer(page),before=await projected(page,id),other=await context.newPage();
- const cdp=await context.newCDPSession(page),crashed=page.waitForEvent('crash');void cdp.send('Page.crash').catch(()=>{});await crashed;
- await other.goto(`/#/game/${id}`);await switchGamePanel(other,'players');
- await expect(other.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:25000});
- const after=await projected(other,id);expect(after.computer.generation).toBeGreaterThan(before.computer.generation);expect(after.gameplayRevision).toBe(before.gameplayRevision);
+test('abrupt browser termination releases authority after lease expiry',async({browser,browserName,baseURL})=>{
+ test.skip(browserName!=='chromium','The isolated process termination probe uses Chromium.');
+ const server=await chromium.launchServer({headless:true,...browserLaunchOptions('chromium')});let restored;
+ try {
+  const original=await chromium.connect(server.wsEndpoint()),owner=await original.newContext({baseURL}),page=await owner.newPage();
+  const id=await createComputer(page),before=await projected(page,id),storageState=await owner.storageState();
+  const exited=new Promise(resolve=>server.process().once('exit',(code,signal)=>resolve({code,signal}))),disconnected=new Promise(resolve=>original.once('disconnected',resolve));
+  await server.kill();await disconnected;expect((await exited).signal).toBe('SIGKILL');
+  restored=await browser.newContext({baseURL,storageState});const other=await restored.newPage();
+  await other.goto(`/#/game/${id}`);await switchGamePanel(other,'players');
+  await expect(other.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:25000});
+  const after=await projected(other,id);expect(after.computer.generation).toBeGreaterThan(before.computer.generation);expect(after.gameplayRevision).toBe(before.gameplayRevision);
+ } finally {await restored?.close();await server.close();}
 });
 
 test('a frozen background renderer reacquires authority when resumed',async({page,context,browserName})=>{
  test.skip(browserName!=='chromium','Renderer lifecycle freezing is exposed by Chromium CDP.');
- const id=await createComputer(page),before=await projected(page,id);
- expect(before.computer.lease.expiresAt).toBeGreaterThan(Date.now());
- const cdp=await context.newCDPSession(page);await cdp.send('Page.setWebLifecycleState',{state:'frozen'});
- const observer=await context.newPage();await observer.goto('/');
+ const id=await createComputer(page),observer=await context.newPage();await observer.goto('/');
+ await page.bringToFront();await expect(page.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:25000});
+ const before=await projected(page,id);expect(before.computer.lease.expiresAt).toBeGreaterThan(Date.now());
+ await page.evaluate(()=>{window.freezeEvents=[];for(const name of ['freeze','resume'])document.addEventListener(name,()=>window.freezeEvents.push(name));});
+ const cdp=await context.newCDPSession(page);await cdp.send('Emulation.setFocusEmulationEnabled',{enabled:false});await cdp.send('Page.setWebLifecycleState',{state:'frozen'});
  try {await expect.poll(async()=>{const control=(await projected(observer,id)).computer;expect(control.generation).toBe(before.computer.generation);expect(control.lease?.deviceId).toBe(before.computer.lease.deviceId);expect(control.lease?.expiresAt).toBe(before.computer.lease.expiresAt);return control.lease.expiresAt<=Date.now();},{timeout:25000}).toBe(true);}
- finally {await cdp.send('Page.setWebLifecycleState',{state:'active'});}
+ finally {await cdp.send('Page.setWebLifecycleState',{state:'active'});await cdp.send('Emulation.setFocusEmulationEnabled',{enabled:true});await test.info().attach('freeze-events',{body:JSON.stringify(await page.evaluate(()=>window.freezeEvents)),contentType:'application/json'});}
+ expect(await page.evaluate(()=>window.freezeEvents)).toEqual(['freeze','resume']);
  await expect(page.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:10000});
  await expect.poll(async()=>(await projected(observer,id)).computer.lease.expiresAt,{timeout:10000}).toBeGreaterThan(before.computer.lease.expiresAt);
  expect((await projected(page,id)).gameplayRevision).toBe(before.gameplayRevision);
