@@ -56,7 +56,8 @@ for (const width of [320, 390]) test(`computer action icons preserve labels and 
   ['recovery', ['Retry','Play this turn','Play both sides','Create new game here','Exit']],
   ['paused', ['Resume','Single step','Play this turn','Play both sides']],
   ['thinking', ['Interrupt']],
-  ['other-device', ['Continue on this device']],
+  ['other-device', []],
+  ['stalled', ['Resume here']],
   ['watching', ['Pause']],
   ['upgrade', ['Use new model','Keep this model']],
  ];
@@ -67,11 +68,12 @@ for (const width of [320, 390]) test(`computer action icons preserve labels and 
    const computer=createComputerControl('owner',{p1:'babs',p2:mode==='paused'||mode==='watching'?'tau':null});
    computer.paused=mode==='paused';
    if(mode==='upgrade')computer.modelId='previous-model';
-   const status=mode==='thinking'?{phase:'checking',elapsedMs:60000}:mode==='other-device'?{phase:'other-device',phaseElapsedMs:60000}:{phase:mode==='watching'||mode==='upgrade'?'idle':mode};
+   const status=mode==='thinking'?{phase:'checking',elapsedMs:60000}:mode==='other-device'?{phase:'other-device',phaseElapsedMs:60000}:mode==='stalled'?{phase:'idle',activity:{showRecoveryNotice:true}}:{phase:mode==='watching'||mode==='upgrade'?'idle':mode};
    document.documentElement.style.fontSize=`${scale}%`;
    document.querySelector('main').innerHTML=renderComputerProgress({id:'icon-proof',computer,computerTurn:'babs',canControlComputer:true},status);
   }, {mode,scale});
   const region=page.getByRole('region',{name:'Computer play',exact:true});
+  if(!labels.length){await expect(region).toHaveCount(0);continue;}
   await expect(region.getByRole('button')).toHaveCount(labels.length-(mode==='recovery'?1:0));
   for(const label of labels){
    const control=region.getByRole(label==='Exit'?'link':'button',{name:label,exact:true});

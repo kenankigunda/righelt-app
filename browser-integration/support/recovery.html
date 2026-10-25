@@ -9,35 +9,38 @@ import {icon} from "/apps/web/shell/ui.js";
 import {renderGameAlertCard} from "/apps/web/shell/game-alert.js";
 import {issueDiagnostics} from "/apps/web/shell/issue-diagnostics.js";
 import {handleDiagnosticAction,renderDiagnosticDisclosure,closeDiagnostic} from "/apps/web/shell/diagnostic-disclosure.js";
-import {recoveryMessage,isBoardRecoveryPending} from "/apps/web/shell/recovery-view.js";
+import {recoveryMessage,needsRecoveryAction,isBoardRecoveryPending} from "/apps/web/shell/recovery-view.js";
 import {mountLoadingFeedback} from "/apps/web/shell/loading.js";
 const wrap=document.querySelector('.board-wrap');
 wrap.querySelector('.board').innerHTML=Array.from({length:25},(_,i)=>`<button class="cell" aria-label="Square ${i+1}">●</button>`).join('');
 const incident=issueDiagnostics.capture("recovery:fixture",{operation:"move_recovery",stage:"command_confirmation",gameId:"fixture",action:{type:"rush",actorId:"U2-1"}});
 // Exercise the actual app action templates without mounting its full shell.
 const appSource=await(await fetch('/apps/web/shell/app.js')).text();
-const templateStart=appSource.indexOf('action: game.storageBlocked',appSource.indexOf('const getGameAlertItems'))+'action: '.length;
+const templateStart=appSource.indexOf('action: !recoveryNeedsAction',appSource.indexOf('const getGameAlertItems'))+'action: '.length;
 const templateEnd=appSource.indexOf(',\n      }),',templateStart);
 if(templateStart<20||templateEnd<templateStart)throw Error('Recovery action template missing');
-const renderActions=new Function('game','dismissed','escapeHtml','icon',`return (${appSource.slice(templateStart,templateEnd)});`);
-const recoveryActions=(game,dismissed=false)=>renderActions({id:'fixture',...game},dismissed,value=>String(value),icon);
+const renderActions=new Function('game','dismissed','escapeHtml','icon','recoveryNeedsAction',`return (${appSource.slice(templateStart,templateEnd)});`);
+const recoveryActions=(game,dismissed=false)=>renderActions({id:'fixture',...game},dismissed,value=>String(value),icon,needsRecoveryAction(game));
 const button=(label,action)=>`<button class="secondary mini-button" data-action="${action}">${icon('close')}${label}</button>`;
 const modes={
- recording:{game:{recovering:true,pendingCommandCount:1},action:recoveryActions({recovering:true})},
- overdue:{game:{recovering:true,pendingCommandCount:3,confirmationOverdue:true},action:recoveryActions({recovering:true})},
- reconnect:{game:{recovering:true,recoveryStartedAt:Date.now()-5000},action:recoveryActions({recovering:true})},
- storage:{game:{storageBlocked:true,unsavedCommand:true},action:recoveryActions({storageBlocked:true})},
- paused:{game:{storageBlocked:true},body:"Saving is paused.",action:recoveryActions({storageBlocked:true},true)},
- upgrade:{game:{upgradeRequired:true},action:recoveryActions({upgradeRequired:true})},
- signin:{game:{recovering:true,recoveryIssue:"invalid_credentials"},action:recoveryActions({recoveryIssue:"invalid_credentials"})},
+ quiet:{game:{recovering:true,recoveryStartedAt:Date.now()}},
+ recording:{game:{recovering:true,pendingCommandCount:1,recoveryStartedAt:Date.now()-5000}},
+ overdue:{game:{recovering:true,pendingCommandCount:3,confirmationOverdue:true}},
+ reconnect:{game:{recovering:true,recoveryStartedAt:Date.now()-5000}},
+ storage:{game:{storageBlocked:true,unsavedCommand:true}},
+ paused:{game:{storageBlocked:true},body:"Saving is paused.",dismissed:true},
+ upgrade:{game:{upgradeRequired:true}},
+ signin:{game:{recovering:true,recoveryIssue:"invalid_credentials"}},
  failure:{tone:"danger",body:"Board changed before your move was recorded. Check it and try again.",action:button("Dismiss","dismiss-failed-operation")},
  resolved:{tone:"",body:"Resolved",action:button("Dismiss","dismiss-diagnostic")},
  information:{tone:"",body:"History changed. Showing the closest available move.",diagnostics:false},
 };
 window.renderMode=(name,options={})=>{
  closeDiagnostic(incident);
- const mode=modes[name];
- const html=renderGameAlertCard({tone:mode.tone??"warn",body:options.longMessage?"The response is taking longer than expected. Your moves are saved on this device while Righelt checks their receipts. Please keep this game open until recording finishes.":mode.body??recoveryMessage(mode.game),action:mode.action??"",incidentId:options.diagnostics===false||mode.diagnostics===false?null:incident,testId:"fixture-alert"});
+ const mode=modes[name],game=options.game??mode.game;
+ const action=mode.action??(game?recoveryActions(game,mode.dismissed??false):""),body=options.longMessage?"The response is taking longer than expected. Your moves are saved on this device while Righelt checks their receipts. Please keep this game open until recording finishes.":mode.body??recoveryMessage(game);
+ if(!body&&!action){document.querySelector('#shell-game-alerts').innerHTML="";return;}
+ const html=renderGameAlertCard({tone:mode.tone??"warn",body,action,incidentId:options.diagnostics===false||mode.diagnostics===false?null:incident,testId:"fixture-alert"});
  document.querySelector('#shell-game-alerts').innerHTML=`<div class="shell-game-alert-stack-card is-active">${html}</div>`+(options.stacked?`<div class="shell-game-alert-stack-card" data-stack-index="1" aria-hidden="true">${renderGameAlertCard({body:"Another notification"})}</div>`:"");
 };
 window.setRecovery=game=>{
