@@ -3,13 +3,14 @@ import {readFile} from 'node:fs/promises';
 import {isOperationRequest,operationValues} from "../support/shared-request.mjs";
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {test,expect} from '@playwright/test';
-import {submitPlayableAction,switchGamePanel} from '../support/app.mjs';
+import {submitPlayableAction,switchGamePanel,waitForLegacyIdentity} from '../support/app.mjs';
 import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
 
 test('guest computer finishes a catalog position and prepares a fresh rematch',async({page},info)=>{
   await page.goto('/');
   await expect(page.getByTestId('home-create-game')).toBeVisible();
+  await waitForLegacyIdentity(page);
   const catalog=JSON.parse(await readFile(new URL('../../apps/web/scenarios/catalog.json',import.meta.url),'utf8'));
   const scenario=catalog.scenarios.find(item=>item.title==='Capture supply point to win by unsupplying the commander');
   expect(scenario).toBeTruthy();

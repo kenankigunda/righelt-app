@@ -46,14 +46,29 @@ test('native audio resumes and advances after a trusted pointer gesture without 
   await page.evaluate(()=>{void window.nativeAudioContext?.close().catch(()=>{});});
  }
 });
-test('real audio destruction batches deduplicate local receipts and remote finalization while mute and replays stay silent',async({browser,baseURL,browserName},info)=>{
+const withObservedAudio=async(browser,info,run)=>{
  const ownerContext=await browser.newContext({viewport:{width:1440,height:1100}}),viewerContext=await browser.newContext({viewport:{width:1440,height:1100}});
  await ownerContext.addInitScript(installPassiveAudioObservations);await viewerContext.addInitScript(installPassiveAudioObservations);
  await ownerContext.addInitScript(instrument);await viewerContext.addInitScript(instrument);
  const owner=await ownerContext.newPage(),viewer=await viewerContext.newPage();
  const observations={owner:[],viewer:[]};
  const retain=async(label,page,phase)=>{observations[label].push({phase,...await page.evaluate(()=>({timeline:window.passiveAudioObservations,probe:window.destructionAudioProbe,ui:window.passiveAudioUiState?.()})).catch(error=>({readError:String(error)}))});};
- try{
+ try{await run({owner,viewer,retain});}finally{
+  try{
+   for(const [label,page]of[['owner',owner],['viewer',viewer]]){
+    await retain(label,page,'final');
+    const path=info.outputPath(`audio-observations-${label}.json`);await writeFile(path,JSON.stringify(observations[label],null,2));await info.attach(`Passive native audio ${label}`,{path,contentType:'application/json'});
+   }
+  }finally{await closeContextQuietly(ownerContext);await closeContextQuietly(viewerContext);}
+ }
+};
+const sendEndTurn=(page,gameId,body,generation)=>page.evaluate(async({gameId,body,generation,header})=>{
+ const response=await fetch(`/api/shell/games/${gameId}/end-turn`,{method:'POST',headers:{'Content-Type':'application/json',...(generation?{[header]:generation}:{})},body:JSON.stringify(body)});
+ return {status:response.status,body:await response.json()};
+},{gameId,body,generation,header:STORAGE_GENERATION_HEADER});
+
+test('real audio destruction batches deduplicate local receipts while mute and replays stay silent',async({browser,baseURL,browserName},info)=>{
+ await withObservedAudio(browser,info,async({owner,viewer,retain})=>{
   const first=await importScenarioGame(owner,scenario,baseURL);await switchGamePanel(owner,'board');
   await openDirectGameLink(viewer,baseURL,first.gameHash);await joinAsViewer(viewer);await switchGamePanel(viewer,'board');
   await owner.bringToFront();await expect.poll(()=>owner.evaluate(()=>document.hasFocus()&&!document.hidden)).toBe(true);
@@ -70,12 +85,8 @@ test('real audio destruction batches deduplicate local receipts and remote final
   await expect.poll(async()=>(await crackStarts(owner)).length).toBe(1);expect(await crackStarts(viewer)).toHaveLength(viewerInitiallyActive?1:0);
   expect((await crackStarts(owner))[0]).toMatchObject({focused:true,hidden:false,audioContextState:'running'});
   const command=request.postDataJSON(),generation=request.headers()[STORAGE_GENERATION_HEADER.toLowerCase()];
-  const send=(page,gameId,body)=>page.evaluate(async({gameId,body,generation,header})=>{
-   const response=await fetch(`/api/shell/games/${gameId}/end-turn`,{method:'POST',headers:{'Content-Type':'application/json',...(generation?{[header]:generation}:{})},body:JSON.stringify(body)});
-   return {status:response.status,body:await response.json()};
-  },{gameId,body,generation,header:STORAGE_GENERATION_HEADER});
   const beforeDuplicate=await projected(owner,first.gameId);
-  for(let i=0;i<2;i++){const duplicate=await send(owner,first.gameId,command);expect(duplicate.status).toBe(200);expect(duplicate.body).toMatchObject({accepted:true,duplicate:true,clientCommandId:command.clientCommandId});}
+  for(let i=0;i<2;i++){const duplicate=await sendEndTurn(owner,first.gameId,command,generation);expect(duplicate.status).toBe(200);expect(duplicate.body).toMatchObject({accepted:true,duplicate:true,clientCommandId:command.clientCommandId});}
   expect((await projected(owner,first.gameId)).gameplayRevision).toBe(beforeDuplicate.gameplayRevision);expect(await crackStarts(owner)).toHaveLength(1);
   // Reload/history/replay are informational and must not reproduce destruction audio.
   await retain('owner',owner,'local-confirmed-and-duplicates');await retain('viewer',viewer,'local-confirmed-and-duplicates');
@@ -92,9 +103,20 @@ test('real audio destruction batches deduplicate local receipts and remote final
   expect(await crackStarts(owner)).toHaveLength(0);expect(await owner.evaluate(()=>localStorage.getItem('righelt.device.sound-enabled'))).toBe('false');
   await retain('owner',owner,'muted-confirmed');
   await owner.reload();await expect(owner.getByTestId('game-shell')).toBeVisible();await expect(owner.getByRole('button',{name:'Enable sound',exact:true})).toBeVisible();expect(await crackStarts(owner)).toHaveLength(0);
+  const proof=JSON.stringify({browserName,localCracks:1,initialViewerActive:viewerInitiallyActive,initialViewerCracks:viewerInitiallyActive?1:0,nativeBackgroundObserved:!viewerInitiallyActive,duplicateCracks:0,reloadHistoryReplayCracks:0,mutedCracks:0,systemMute:'unchanged; no audible audition claimed'},null,2);
+  await writeFile(info.outputPath('audio-receipt-proof.json'),proof);
+  await info.attach('Real WebAudio local destruction receipt proof',{path:info.outputPath('audio-receipt-proof.json'),contentType:'application/json'});
+ });
+});
+
+test('real audio remote finalization deduplicates its durable receipt while its owner stays muted',async({browser,baseURL,browserName},info)=>{
+ await withObservedAudio(browser,info,async({owner,viewer})=>{
   // A confirmed remote action can sound on the foreground viewer, even though
   // its muted owner performs the authenticated request without taking focus.
-  const remote=await importScenarioGame(owner,{...scenario,id:'b71f581c-6cfe-4c5a-9827-1687a23ace34'},baseURL);await owner.bringToFront();await submitPlayableAction(owner,fixture.action);
+  const remote=await importScenarioGame(owner,{...scenario,id:'b71f581c-6cfe-4c5a-9827-1687a23ace34'},baseURL);await owner.bringToFront();
+  await owner.getByRole('button',{name:'Mute sound',exact:true}).click();
+  await expect(owner.getByRole('button',{name:'Enable sound',exact:true})).toBeVisible();
+  await submitPlayableAction(owner,fixture.action);
   await openDirectGameLink(viewer,baseURL,remote.gameHash);await joinAsViewer(viewer);await switchGamePanel(viewer,'board');
   await viewer.bringToFront();
   await expect.poll(()=>viewer.evaluate(()=>document.hasFocus()&&!document.hidden)).toBe(true);
@@ -103,23 +125,16 @@ test('real audio destruction batches deduplicate local receipts and remote final
   const remoteRequest=owner.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/end-turn'));
   await owner.evaluate(()=>document.querySelector('[data-board-preview-action="end-turn"]').click());
   const capturedRemote=await remoteRequest;
-  const remoteCommand=capturedRemote.postDataJSON();
+  const remoteCommand=capturedRemote.postDataJSON(),generation=capturedRemote.headers()[STORAGE_GENERATION_HEADER.toLowerCase()];
   expect(await viewer.evaluate(()=>document.hasFocus()&&!document.hidden)).toBe(true);expect(await owner.evaluate(()=>document.hasFocus()&&!document.hidden)).toBe(ownerRemoteActive);
   await expect.poll(async()=>(await projected(viewer,remote.gameId)).moves[0].destroyedPieces.length).toBe(2);await expect.poll(async()=>(await crackStarts(viewer)).length).toBe(1);
   expect((await crackStarts(viewer))[0]).toMatchObject({focused:true,hidden:false,audioContextState:'running'});
   expect(await crackStarts(owner)).toHaveLength(0);
   // WebSocket acceptance can intentionally abort the owner's in-flight HTTP
   // request. The same immutable command must return its durable accepted receipt.
-  const remoteDuplicate=await send(owner,remote.gameId,remoteCommand);expect(remoteDuplicate.status).toBe(200);expect(remoteDuplicate.body).toMatchObject({accepted:true,duplicate:true,clientCommandId:remoteCommand.clientCommandId});expect(await crackStarts(viewer)).toHaveLength(1);
-  const proof=JSON.stringify({browserName,localCracks:1,initialViewerActive:viewerInitiallyActive,initialViewerCracks:viewerInitiallyActive?1:0,nativeBackgroundObserved:!viewerInitiallyActive,ownerRemoteActive,focusSetup:'Actual document APIs recorded without overrides; native background proof remains a gap when both windows report active',duplicateCracks:0,reloadHistoryReplayCracks:0,mutedCracks:0,remoteForeground:await crackStarts(viewer),systemMute:'unchanged; no audible audition claimed'},null,2);
-  await writeFile(info.outputPath('audio-receipt-proof.json'),proof);
-  await info.attach('Real WebAudio destruction receipt proof',{path:info.outputPath('audio-receipt-proof.json'),contentType:'application/json'});
- }finally{
-  try{
-  for(const [label,page]of[['owner',owner],['viewer',viewer]]){
-   await retain(label,page,'final');
-   const path=info.outputPath(`audio-observations-${label}.json`);await writeFile(path,JSON.stringify(observations[label],null,2));await info.attach(`Passive native audio ${label}`,{path,contentType:'application/json'});
-  }
-  }finally{await closeContextQuietly(ownerContext);await closeContextQuietly(viewerContext);}
- }
+  const remoteDuplicate=await sendEndTurn(owner,remote.gameId,remoteCommand,generation);expect(remoteDuplicate.status).toBe(200);expect(remoteDuplicate.body).toMatchObject({accepted:true,duplicate:true,clientCommandId:remoteCommand.clientCommandId});expect(await crackStarts(viewer)).toHaveLength(1);
+  const proof=JSON.stringify({browserName,ownerRemoteActive,focusSetup:'Actual document APIs recorded without overrides; native background proof remains a gap when both windows report active',duplicateCracks:0,mutedCracks:0,remoteForeground:await crackStarts(viewer),systemMute:'unchanged; no audible audition claimed'},null,2);
+  await writeFile(info.outputPath('audio-remote-receipt-proof.json'),proof);
+  await info.attach('Real WebAudio remote destruction receipt proof',{path:info.outputPath('audio-remote-receipt-proof.json'),contentType:'application/json'});
+ });
 });
