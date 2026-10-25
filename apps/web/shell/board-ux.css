@@ -29,6 +29,12 @@ body {display:flow-root;}
 .computer-recovery-area:empty { display:none; }
 .computer-play:empty { display:none; }
 
+/* Status notices are positioned separately, so reserve only the logo and
+   controls here. An empty rem-sized center track collapses the logo at zoom. */
+#app[data-shell-layout-mode="wide"] .shell-header {grid-template-columns:minmax(0,1fr) auto;}
+#app[data-shell-layout-mode="wide"] .shell-header-actions {grid-column:2;}
+#app[data-shell-layout-mode="wide"] .shell-header-actions .nav-row {flex-wrap:nowrap;width:auto;}
+
 #app[data-shell-layout-mode="narrow"] .shell-header {display:flex;align-items:center;flex-wrap:nowrap;gap:8px;margin:0 0 8px;padding:4px 0;min-height:44px;}
 #app[data-shell-layout-mode="narrow"] .shell-header-main {flex:1 1 auto;min-width:0;}
 #app[data-shell-layout-mode="narrow"] .shell-header-title-link {width:min(100%,190px);}

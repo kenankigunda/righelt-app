@@ -6,6 +6,22 @@ import { normalizeStaticGameCard, buildStaticGameCardFromGame } from '../shell/s
 const person=(id,profile,connected=true)=>({identityId:id,profile,connected});
 const game=(myRole='Player 1')=>({myRole,player1:person('me',{displayName:'Red player',username:'red'}),player2:person('other',{displayName:'Blue player',username:'blue'}),previewSnapshot:{sideToMove:'P2'}});
 
+test('configured computer identity survives manual control and fresh list/full-game cards',()=>{
+ for(const [profile,{name}] of Object.entries(COMPUTER_PROFILES))for(const side of ['p1','p2'])for(const manual of [false,true])for(const marker of [undefined,null,profile==='babs'?'horus':'babs']){
+  const source={...game('Both Players'),selfPlayMode:true,player1:person('me',{displayName:'Owner'}),player2:person('me',{displayName:'Owner'}),computer:{manual,seats:{p1:null,p2:null,[side]:profile}}};
+  source[side==='p1'?'player1':'player2'].computerProfile=marker;
+  const before=structuredClone(source);
+  for(const card of [source,normalizeStaticGameCard(source),buildStaticGameCardFromGame(source)]){
+   const matchup=homeCardMatchup(card,{identityId:'me'});
+   assert.equal(matchup.kind,'player');assert.equal(matchup.ownSide,side==='p1'?'p2':'p1');
+   const html=renderHomeCardIdentity(card,{identityId:'me'});
+   assert(html.includes(`<bdi>${name}</bdi>`));assert(html.includes('Computer player'));
+   assert(!html.includes('You play both sides'));assert(!html.includes('is-disconnected'));
+  }
+  assert.deepEqual(source,before,'card identity cannot mutate control settings');
+ }
+});
+
 test('You and the opponent use actual seat colors, independent of turn or list/full-game projections',()=>{
  for(const side of ['p1','p2']){
   const input=game(side==='p1'?'Player 1':'Player 2');const identityId=side==='p1'?'me':'other';

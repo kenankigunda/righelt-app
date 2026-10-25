@@ -1,11 +1,12 @@
 import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
+import {computerProfileForCard} from './static-game-cards.js';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, character =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
 const seatForRole = role => role === 'Player 1' ? 'p1' : role === 'Player 2' ? 'p2' : null;
 
-const participant = (person, side) => {
-  const computer = COMPUTER_PROFILES[person?.computerProfile];
+const participant = (person, side, game) => {
+  const computer = COMPUTER_PROFILES[computerProfileForCard(game, side)];
   return {
     side,
     name: computer?.name || person?.profile?.displayName || person?.profile?.username || (person ? 'Guest' : 'Open seat'),
@@ -17,7 +18,7 @@ const participant = (person, side) => {
 
 /** Explicit role and the captured current identity determine perspective, never whose turn it is. */
 export function homeCardMatchup(game, { identityId } = {}) {
-  const seats = [participant(game?.player1, 'p1'), participant(game?.player2, 'p2')];
+  const seats = [participant(game?.player1, 'p1', game), participant(game?.player2, 'p2', game)];
   let ownSide = seatForRole(game?.myRole);
   const computers = seats.filter(seat => seat.computer);
   // Computer seats may share their owner's identity. Keep the human in their real color.

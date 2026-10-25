@@ -57,7 +57,25 @@ test('desktop board fits primary viewport, remains stable through scroll/header 
  }
  await page.setViewportSize({width:1440,height:800});await page.evaluate(()=>document.documentElement.style.fontSize='200%');
  await expect.poll(async()=>Math.round((await read(page)).board.width)).toBe(396);expect((await read(page)).panel.y+(await read(page)).panel.height).toBeGreaterThan(800);
- await page.screenshot({path:info.outputPath('desktop-fit-1440x800-200.png')});
+ for(const width of [1440,944]){
+  await page.setViewportSize({width,height:800});await expect(page.locator('#app')).toHaveAttribute('data-shell-layout-mode','wide');
+  const headerGeometry=()=>page.locator('.shell-header').evaluate(header=>{
+   const logo=header.querySelector('.shell-header-title-link svg').getBoundingClientRect();
+   const buttons=[...header.querySelectorAll('.shell-header-actions .nav-row > button')].map(button=>{
+    const rect=button.getBoundingClientRect();return {top:rect.top,left:rect.left,right:rect.right,height:rect.height};
+   });
+   return {logoWidth:logo.width,height:header.getBoundingClientRect().height,buttons,
+    rowSpread:Math.max(...buttons.map(button=>button.top))-Math.min(...buttons.map(button=>button.top)),
+    overflow:document.documentElement.scrollWidth-innerWidth};
+  });
+  await expect.poll(async()=>{const geometry=await headerGeometry();return geometry.logoWidth>=200&&geometry.rowSpread<=1&&geometry.height<150;}).toBe(true);
+  const geometry=await headerGeometry();expect(geometry.logoWidth).toBeGreaterThanOrEqual(200);
+  expect(geometry.buttons).toHaveLength(4);expect(geometry.rowSpread).toBeLessThanOrEqual(1);expect(geometry.height).toBeLessThan(150);
+  expect(geometry.buttons.every(button=>button.height>=43.99&&button.left>=0&&button.right<=width)).toBe(true);
+  expect(geometry.overflow).toBeLessThanOrEqual(1);
+  await writeFile(info.outputPath(`header-${width}-200.json`),JSON.stringify(geometry,null,2));
+  await page.screenshot({path:info.outputPath(`desktop-fit-${width}x800-200.png`)});
+ }
  await page.evaluate(()=>document.documentElement.style.fontSize='100%');await page.setViewportSize({width:390,height:740});
  await expect(page.locator('#app')).toHaveAttribute('data-shell-layout-mode','narrow');expect(await page.locator('[data-testid="game-board-wrap"]').evaluate(el=>el.style.getPropertyValue('--desktop-board-side'))).toBe('');
  await switchGamePanel(page,'board');await makeAnyLegalMove(page);await switchGamePanel(page,'history');
