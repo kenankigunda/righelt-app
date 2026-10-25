@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {assertOpponentChoice,selectGamePanel} from './browser-navigation.mjs';
+import {assertOpponentChoice,selectGamePanel,waitForPlayableBoard} from './browser-navigation.mjs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
@@ -44,6 +44,7 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     assert.equal(creates, 1); assert.equal(initial.computer.modelId, 'initial-1554');
     assert.deepEqual(initial.computer.seats, { p1: null, p2: 'babs' });
     await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
+    await waitForPlayableBoard(page);
     await submitPlayableAction(initial.legalActions.find(action => action.from && action.to));
     if ((await gameAt(page, initial.id)).canEndTurn) await page.locator('[data-action="end-turn"], [data-board-preview-action="end-turn"]').filter({visible:true}).click();
     await expect.poll(async () => (await gameAt(page, initial.id)).moves.some(move => move.computerProof?.modelId === 'initial-1554'), { message: 'A real model decision must be accepted' }).toBe(true);
