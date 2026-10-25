@@ -1,4 +1,5 @@
 import { waitForOverlayEntry } from "../support/overlay-motion.mjs";
+import { switchGamePanel } from '../support/app.mjs';
 import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
@@ -46,7 +47,8 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  await expect(legend.nth(0)).toHaveAccessibleName('Commander');
  await expect(legend.nth(1)).toHaveAccessibleName('Supply point');
  await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
- await expect(page.locator('[data-action="guest-profile"]').first()).toHaveText('Guest player');
+ const ownProfile=page.getByTestId('participant-player-1').locator('[data-action="guest-profile"]');
+ await expect(ownProfile).toHaveText('You');await expect(ownProfile).toHaveAccessibleName('You, Red, Connected');
  const supply=await page.locator('.supply-point-marker.supply-point-p1').first().evaluate(el=>({core:getComputedStyle(el.querySelector('svg')).fill}));
  expect(supply.core).toBe('rgb(194, 69, 47)');
  await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-phase','idle');
@@ -69,12 +71,16 @@ test('phone home and Babs carets fit without horizontal overflow',async({page})=
  await page.screenshot({path:test.info().outputPath('babs-phone.png')});
 });
 
-test('Friend invite remains open after copy, viewer intent survives arrival, and Back dismisses it',async({page,browser})=>{
+test('Friend invite stays open after player copy and Players shares viewer intent',async({page,browser})=>{
  await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedInvite=text;}}}));
  await page.goto('/');await page.getByTestId('home-create-game').click();await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
  const modal=page.getByRole('dialog',{name:'Invite a friend'});await expect(modal).toBeVisible();
- await modal.getByRole('button',{name:'Invite someone to view',exact:true}).click();
+ await expect(modal.locator('[data-invite-role="viewer"]')).toHaveCount(0);
+ await modal.locator('[data-invite-role="blue"]').click();
  await expect(modal.getByRole('status')).toHaveText('Link copied! Ready to share.');await expect(modal).toBeVisible();
+ expect(await page.evaluate(()=>window.copiedInvite)).toContain('as=blue');
+ await modal.getByRole('button',{name:'Close invite',exact:true}).click();await switchGamePanel(page,'players');
+ const viewer=page.locator('[data-game-panel="join"] [data-invite-role="viewer"]');await viewer.focus();await page.keyboard.press('Enter');await expect(viewer).toBeFocused();
  const link=await page.evaluate(()=>window.copiedInvite);expect(link).toContain('as=viewer');
  const context=await browser.newContext();const guest=await context.newPage();await guest.goto(link);
  await expect(guest.getByRole('heading',{name:'Watch this game'})).toBeVisible();await expect(guest.getByTestId('invite-join-player')).toBeHidden();
@@ -91,20 +97,22 @@ test('home refresh preserves a pressed opponent and first home sound starts with
  expect(await page.evaluate(()=>window.audioCues.length)).toBe(2);await page.unrouteAll({behavior:'ignoreErrors'});
 });
 
-test('top invitation preserves the selected role through pending copy and failure',async({page})=>{
+test('Players viewer invitation preserves focus through pending copy and failure',async({page})=>{
  await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:()=>new Promise((resolve,reject)=>{window.finishCopy=resolve;window.failCopy=reject;})}}));
  await page.goto('/');await page.getByTestId('home-create-game').click();await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
  const modal=page.getByRole('dialog',{name:'Invite a friend'});await expect(modal).toBeVisible();
  await expect.poll(()=>modal.evaluate(el=>el.getBoundingClientRect().top)).toBeLessThan(250);
  const background=page.locator('.invite-gate-content');await expect(background).toHaveAttribute('inert','');
  await expect.poll(()=>page.evaluate(()=>{const surface=document.querySelector('.invite-gate-modal');const behind=document.querySelector('.invite-gate-content');return surface && behind ? behind.getBoundingClientRect().top-surface.getBoundingClientRect().bottom : -1;})).toBeGreaterThan(0);
- const viewer=modal.locator('[data-invite-role="viewer"]');await viewer.focus();await page.keyboard.press('Enter');
+ await expect(modal.locator('[data-invite-role="viewer"]')).toHaveCount(0);
+ await modal.getByRole('button',{name:'Close invite',exact:true}).click();await switchGamePanel(page,'players');
+ const panel=page.locator('[data-game-panel="join"]'),viewer=panel.locator('[data-invite-role="viewer"]');await viewer.focus();await page.keyboard.press('Enter');
  await expect.poll(()=>page.evaluate(()=>typeof window.finishCopy)).toBe('function');
  await page.evaluate(()=>{window.finishCopy();delete window.failCopy;});await expect(viewer).not.toHaveAttribute('aria-busy','true');await expect(viewer).toBeFocused();
  await page.keyboard.press('Enter');await expect.poll(()=>page.evaluate(()=>typeof window.failCopy)).toBe('function');
  await page.evaluate(()=>window.failCopy(new Error('Clipboard denied')));
- await expect(modal.getByRole('textbox',{name:'Invitation link'})).toBeVisible();await expect(viewer).toBeFocused();
- await expect(modal.getByRole('textbox',{name:'Invitation link'})).toHaveValue(/as=viewer/);
+ await expect(panel.getByRole('textbox',{name:'Invitation link'})).toBeVisible();await expect(viewer).toBeFocused();
+ await expect(panel.getByRole('textbox',{name:'Invitation link'})).toHaveValue(/as=viewer/);
 });
 
 test('carousel keeps cycling under hover and focus but stops after a caret',async({page})=>{
@@ -186,7 +194,8 @@ test('copy feedback preserves focus and collapses its space when empty',async({p
  await expect.poll(()=>panel.evaluate(el=>el.getAnimations().length)).toBe(0);
  const before=(await panel.boundingBox()).height;await page.keyboard.press('Enter');
  await expect(panel.getByRole('status')).toHaveText('Link copied! Ready to share.');await expect(copy).toBeFocused();
- await expect(panel.getByTestId('pending-invitation')).toHaveText('Awaiting player');
+ const pendingSeat=panel.getByTestId('pending-invitation');await expect(pendingSeat).toHaveAttribute('data-player-side','p2');
+ await expect(pendingSeat.locator('span:not(.sr-only)')).toHaveText('Awaiting player');await expect(pendingSeat.locator('.sr-only')).toHaveText('Blue');
  await expect(panel.getByTestId('participant-player-1').getByRole('img',{name:'Connected',exact:true})).toBeVisible();
  await expect.poll(()=>panel.evaluate(el=>el.getAnimations().length)).toBe(0);
  expect((await panel.boundingBox()).height).toBeGreaterThanOrEqual(before);
@@ -310,7 +319,7 @@ for (const width of [375, 900, 1440]) test(`identity hierarchy remains aligned a
  await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-phase','idle');
  const playersTab=page.getByRole('button',{name:'Players',exact:true});
  await expect(page.locator('#app')).toHaveAttribute('data-shell-layout-mode',width<=900?'narrow':'wide');
- if(width<=900){await expect(playersTab).toBeVisible();await playersTab.click();await expect(playersTab).toHaveAttribute('aria-pressed','true');}
+ await switchGamePanel(page,'players');
  const list=page.getByTestId('participants-list');await expect(list).toBeVisible();await page.evaluate(()=>document.fonts.ready);
  if(await playersTab.isVisible()) {
    // Focus/scrollIntoView must not create a second horizontal scroll position
@@ -322,12 +331,14 @@ for (const width of [375, 900, 1440]) test(`identity hierarchy remains aligned a
  await expect.poll(()=>page.locator('.panel').evaluateAll(items=>items.reduce((n,el)=>n+el.getAnimations().length,0))).toBe(0);
  await expect(async()=>{
  const measurements=await list.evaluate(el=>{
-  const row=el.querySelector('li'), label=row.firstElementChild, button=row.querySelector('button'), emblem=button.querySelector('.player-emblem'),name=button.querySelector('.player-name-stack'),status=button.querySelector('.connection-status-icon');
+  const row=el.querySelector('li'),button=row.querySelector('button'),emblem=button.querySelector('.player-emblem'),name=button.querySelector('.player-name-stack'),status=button.querySelector('.connection-status-icon');
   const rect=e=>e.getBoundingClientRect();
-  return {labelGap:rect(emblem).left-rect(label).right,identityGap:rect(name).left-rect(emblem).right,statusGap:rect(status).left-rect(name).right,nameX:rect(name).left,emptyX:[...el.querySelectorAll('.participant-empty > span')].map(e=>rect(e).left),overflow:el.scrollWidth>el.clientWidth};
+  const center=e=>rect(e).top+rect(e).height/2;
+  return {identityGap:rect(name).left-rect(emblem).right,statusGap:rect(status).left-rect(name).right,emblemCenter:center(emblem),nameCenter:center(name),statusCenter:center(status),nameX:rect(name).left,emptyX:[...el.querySelectorAll('.participant-empty > span:not(.sr-only)')].map(e=>rect(e).left),buttonInside:rect(button).left>=rect(row).left&&rect(button).right<=rect(row).right,overflow:el.scrollWidth>el.clientWidth};
  });
- expect(measurements.labelGap).toBeGreaterThan(measurements.identityGap);
- expect(measurements.identityGap).toBeLessThanOrEqual(10);expect(measurements.statusGap).toBeLessThanOrEqual(10);
+ expect(measurements.identityGap).toBeGreaterThanOrEqual(0);expect(measurements.identityGap).toBeLessThanOrEqual(10);
+ expect(measurements.statusGap).toBeGreaterThanOrEqual(0);expect(measurements.statusGap).toBeLessThanOrEqual(10);
+ expect(Math.abs(measurements.emblemCenter-measurements.nameCenter)).toBeLessThan(1);expect(Math.abs(measurements.statusCenter-measurements.nameCenter)).toBeLessThan(1);expect(measurements.buttonInside).toBe(true);
  for(const x of measurements.emptyX)expect(Math.abs(x-measurements.nameX)).toBeLessThan(1);
  expect(measurements.overflow).toBe(false);
  }).toPass({timeout:10000});

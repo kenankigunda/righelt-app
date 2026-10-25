@@ -2,7 +2,7 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {dirname} from 'node:path';
 import {test,expect} from '@playwright/test';
 
-for(const reduced of [false,true])test(`header utility spacing stays collapsed and expands on intent${reduced?' with reduced motion':''}`,async({page},info)=>{
+for(const capability of ['native','hover','none'])for(const reduced of [false,true])test(`header utility spacing follows ${capability} capability and keyboard intent${reduced?' with reduced motion':''}`,async({page},info)=>{
  const samples=[];
  const capture=async stage=>{
   try{samples.push(await page.evaluate(stage=>{
@@ -20,13 +20,19 @@ for(const reduced of [false,true])test(`header utility spacing stays collapsed a
  try {
  await page.setViewportSize({width:1440,height:1000});
  await page.emulateMedia({reducedMotion:reduced?'reduce':'no-preference'});
- await page.goto('/browser-integration/support/header-actions.html');
+ await page.goto(`/browser-integration/support/header-actions.html?capability=${capability}`);
  await page.waitForFunction(()=>window.fixtureReady);
+ const policy=await page.evaluate(()=>window.fixtureHoverPolicy);
+ if(capability==='native')expect(policy.supportsHover).toBe(await page.evaluate(()=>matchMedia('(any-hover: hover)').matches));
+ else expect(policy.supportsHover).toBe(capability==='hover');
+ await expect(page.locator('html')).toHaveAttribute('data-hover-capability',policy.supportsHover?'hover':'none');
  const scenarios=page.getByRole('button',{name:'Scenarios',exact:true}),debug=page.getByRole('button',{name:'Debug',exact:true});
  await expect.poll(async()=>(await scenarios.boundingBox()).width).toBeLessThanOrEqual(46);
  expect(await scenarios.evaluate(element=>getComputedStyle(element).gap)).toBe('0px');
  await page.evaluate(()=>window.originalHeaderControl=document.querySelector('[data-action="open-scenarios"]'));
- await capture('before-hover');await scenarios.hover();await capture('immediately-after-hover');await expect.poll(async()=>(await scenarios.boundingBox()).width).toBeGreaterThan(90);
+ await capture('before-hover');await scenarios.hover();await capture('immediately-after-hover');
+ if(policy.supportsHover)await expect.poll(async()=>(await scenarios.boundingBox()).width).toBeGreaterThan(90);
+ else {await expect.poll(async()=>(await scenarios.boundingBox()).width).toBeLessThanOrEqual(46);expect(await scenarios.locator('.header-action-label').evaluate(element=>getComputedStyle(element).opacity)).toBe('0');}
  await page.mouse.move(1,1);await expect.poll(async()=>(await scenarios.boundingBox()).width).toBeLessThanOrEqual(46);
  // Safari's default keyboard navigation includes all controls with Option-Tab.
  const nextControl=info.project.name==='webkit'?'Alt+Tab':'Tab';
@@ -47,7 +53,7 @@ for(const reduced of [false,true])test(`header utility spacing stays collapsed a
  finally {
   const path=info.outputPath('header-hover-diagnostics.json');
   await mkdir(dirname(path),{recursive:true});
-  await writeFile(path,JSON.stringify({browser:info.project.name,reducedMotion:reduced,samples},null,2));
+  await writeFile(path,JSON.stringify({browser:info.project.name,capability,reducedMotion:reduced,samples},null,2));
   await info.attach('header-hover-diagnostics',{path,contentType:'application/json'});
  }
 });

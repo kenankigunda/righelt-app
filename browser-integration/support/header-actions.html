@@ -3,6 +3,16 @@
 </head><body><main class="app-root"><header class="shell-header"><div class="shell-header-actions"><div class="nav-row"></div></div></header><a class="button-link secondary" href="#/" data-testid="ordinary-link"></a></main>
 <script type="module">
 import {headerActionContent,icon} from '/apps/web/shell/ui.js';
+import {ensureHoverCapabilityController,HOVER_CAPABILITY_QUERY} from '/apps/web/hover-capability.js';
+// Exercise the actual controller dependency seam, never substitute CSS. Native
+// admission keeps the browser's genuine capabilities; explicit cases prove
+// the same policy for hybrid/mouse and touch-only environments.
+const capability=new URLSearchParams(location.search).get('capability')??'native';
+if(!['native','hover','none'].includes(capability))throw Error('Unknown hover capability');
+const hoverWindow=capability==='native'?window:{matchMedia(query){if(query!==HOVER_CAPABILITY_QUERY)throw Error('Unexpected capability query');return {matches:capability==='hover',addEventListener(){},removeEventListener(){}};}};
+const hoverController=ensureHoverCapabilityController({windowObject:hoverWindow});
+window.fixtureHoverPolicy={capability,supportsHover:hoverController.getSupportsHover()};
+window.addEventListener('pagehide',()=>hoverController.destroy(),{once:true});
 const source=await(await fetch('/apps/web/shell/app.js')).text();
 const start=source.indexOf('const renderHeaderWideActions =');
 const end=source.indexOf('const renderHeaderNarrowMenu =',start);

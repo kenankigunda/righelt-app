@@ -2,7 +2,9 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import { legacyClientFixture } from '../../apps/web/test/support/legacy-client.mjs';
-import { createGameFromHome, makeAnyLegalMove } from '../support/app.mjs';
+import { createGameFromHome, makeAnyLegalMove, switchGamePanel } from '../support/app.mjs';
+
+import {readProjectedGame} from '../support/computer-projection.mjs';
 
 const journalRecords = page => page.evaluate(() => new Promise((resolve, reject) => {
   const request = indexedDB.open('righelt.online-commands.v2');
@@ -57,10 +59,16 @@ for (const fault of ['uncommitted', 'delayed-cleanup']) test(`actual150 browser 
       return fault === 'uncommitted' && !allow ? route.abort() : route.continue();
     });
     if (fault === 'delayed-cleanup') await page.evaluate(() => sessionStorage.setItem('mixed.hold-cleanup', 'true'));
-    const history = page.locator('[data-action="switch-game-panel"][data-panel="history"]');
-    if (await history.isVisible()) await history.click();
-    await page.locator('[data-action="undo-last-move"]').click();
+    // This fixture has exactly one accepted move: undo before that immutable
+    // boundary must restore the original board, independent of history ordering.
+    const activeMoves=(await page.evaluate(readProjectedGame,{id:gameId,guest:true})).moves.filter(move=>!move.undone);
+    expect(activeMoves).toHaveLength(1);expect(activeMoves[0].moveId).toBeTruthy();
+    await switchGamePanel(page,'history');
+    const undoRow=page.locator(`[data-testid="history-move-item"][data-move-id="${activeMoves[0].moveId}"]`);
+    await undoRow.locator('.history-item-info').click();
+    await undoRow.getByRole('button',{name:'Undo before this move',exact:true}).click();
     await expect.poll(() => envelope?.kind).toBe('shared');
+    expect(envelope.payload.values.targetMoveId).toBe(activeMoves[0].moveId);
     if (fault === 'delayed-cleanup') await expect(page.getByTestId('sync-recovery-banner')).toContainText(/saving|save/i);
     const original = await journalRecords(page); expect(original).toHaveLength(1);
     expect(original[0]).toEqual(envelope);
