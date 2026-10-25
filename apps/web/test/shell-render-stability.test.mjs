@@ -19,7 +19,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const GAME_ENTRY_ROUTE_TRANSITION_COVER_MS = 160;/);
   assert.match(source, /const GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS = 200;/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", "narrow"\);/);
-  assert.match(source, /const renderGameShellFrame = \(game\) =>/);
+  assert.match(source, /const renderGameShellFrame = \(game, \{ loading = false \} = \{\}\) =>/);
   assert.match(source, /const renderScenarioFlyout = \(\) =>/);
   assert.match(source, /const renderDebugFlyout = \(\) =>/);
   assert.match(source, /<section class="panel debug-panel scenario-panel scenario-panel-load">/);
@@ -293,11 +293,8 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /if \(!game\.inHistoryMode && !liveStatusItem && activeTurn\.moveIndexes\.length > 0\) \{\s*return `\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;\s*\}/s);
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
   assert.match(source, /return `\$\{emptyTurnItem\}\$\{undoLastMoveItem\}\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
-  assert.match(source, /const hasHistoryMoves = Array\.isArray\(game\.moves\) && game\.moves\.length > 0;/);
   assert.match(source, /data-action="launch-history-branch"/);
-  assert.match(source, /Create new game at this move/);
-  assert.match(source, /Incoming live moves will appear at top\./);
-  assert.match(source, /: hasHistoryMoves\s*\? '<p class="small">You are on the live view\.<\/p><p class="small">Click moves below to see historical state\.<\/p>'\s*: '<p class="small">You are on the live view\.<\/p>'/);
+  assert.match(source, /New game before this move/);
 });
 
 test("transport subscriptions drive immediate game-shell updates", () => {
