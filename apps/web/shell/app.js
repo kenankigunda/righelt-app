@@ -59,7 +59,7 @@ import {
   resolveHistoryScenarioExportContext,
   tryLocalScenarioWrite,
 } from "./scenarios.js";
-import { buildStaticGameCardFromScenario } from "./static-game-cards.js";
+import { buildStaticGameCardFromScenario, computerOpponentLabel } from "./static-game-cards.js";
 import { buildDestroyedPieceOverlays, findRecordedActionStartPiece } from "./history-preview.js";
 import { resolveInitialSelectionHydration } from "./selection-hydration.js";
 import { shouldResetBoardSelection, shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
@@ -425,6 +425,8 @@ const renderPlayerSlotStatus = (seat, participant, { verbose = false } = {}) => 
 const shouldUseVerboseHomeConnectionCopy = (game) =>
   (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) || game?.myRole === "Player 1" || game?.myRole === "Player 2";
 const renderHomeRoleLine = (game) => {
+  const opponent = computerOpponentLabel(game);
+  if (opponent) return escapeHtml(opponent);
   if (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) {
     return `You are ${renderRoleLabel(game.myRole, game)}`;
   }
@@ -2405,7 +2407,7 @@ const scrollHomeSectionToTop = (sectionKey) => {
   });
 };
 
-const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Computer players are experimental. Try a game.</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
+const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Choose your opponent</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
 const renderHome = () => `<section class="stack home-refresh">${storageResetNotice ? '<p class="small" role="status">The saved data was reset. You can start a new game.</p>' : ""}${renderHomeGameSection('my')}${renderStartChoices()}${getVisibleHomeSectionKeys().filter(key=>key!=='my').map(renderHomeGameSection).join('')}</section>`;
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
