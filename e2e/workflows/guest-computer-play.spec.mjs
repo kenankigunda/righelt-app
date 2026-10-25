@@ -2,7 +2,7 @@ import {readFile} from 'node:fs/promises';
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {test,expect} from '@playwright/test';
 import {submitPlayableAction} from '../support/app.mjs';
-import {readProjectedGame,waitForComputerDecision} from '../support/computer-projection.mjs';
+import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
 
 test('guest computer finishes a catalog position and prepares a fresh rematch',async({page},info)=>{
@@ -45,7 +45,7 @@ for (const width of [390, 1440]) test(`guest computer play survives reload and u
   expect((await (await page.request.get('/api/shell/bootstrap')).json()).accountsRequired).toBe(false);
   let creations=0; page.on('request',request=>{if(request.method()==='POST' && new URL(request.url()).pathname==='/api/shell/games')creations++;});
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
-  await expect(page.getByRole('button',{name:'Play Babs',exact:true})).toBeEnabled();
+  await waitForOpponentReady(page);
   await page.keyboard.press('Escape');
   expect(creations).toBe(0);
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
