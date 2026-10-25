@@ -1,4 +1,5 @@
 import { commanderOutcome } from '../generated/packages/shared-types/src/commander-outcome.js';
+export const RESULT_HEADING_CONTRACT = 'perspective-v1';
 
 const terminal = new Set(["p1_win", "p2_win", "draw"]);
 export const getGameResult = (game, identityId) => {

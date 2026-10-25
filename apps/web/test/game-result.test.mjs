@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getGameResult, createResultTransitions, createRematchDialog } from "../shell/game-result.js";
+import { getGameResult, createResultTransitions, createRematchDialog, RESULT_HEADING_CONTRACT } from "../shell/game-result.js";
 const game = (status = "ongoing") => ({ id: "g", player1: { identityId: "red" }, player2: { identityId: "blue" }, board: { state: { outcome: { status, reason: "p2_commander_unsupplied" } } } });
 test("results use authoritative outcome and selected self-play side, with swapped rematch side", () => {
+  assert.equal(RESULT_HEADING_CONTRACT, 'perspective-v1');
   assert.equal(getGameResult(game(), "red"), null);
   assert.equal(getGameResult(game("p1_win"), "red").title, "You won");
   assert.equal(getGameResult(game("p1_win"), "blue").title, "Your opponent won");
