@@ -1,3 +1,4 @@
+import {canReadAdditionalHistory} from '../shell/additional-history.js';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -94,7 +95,7 @@ test("authoritative terminal rollback clears result state so the board can remou
 test("optimistic terminal state cannot expose a result or open it before confirmation", () => {
   const optimistic = {id:"g",board:{state:{outcome:{status:"p1_win"}}},player1:{identityId:"me"}};
   let confirmed = {...optimistic,board:{state:{outcome:{status:"ongoing"}}}};
-  const context = {renderResultMark,resultPresentation:createResultPresentation(),additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})}, getGameResult, transport:{getIdentityId:()=>"me",getAuthoritativeGame:()=>confirmed},escapeHtml:value=>String(value),formatDisplayGameId:value=>value,icon,renderTurnHistory:()=>"",participantName,participantDisplayName,render:()=>{},activeResultGameId:null};
+  const context = {canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},renderResultMark,resultPresentation:createResultPresentation(),additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})}, getGameResult, transport:{getIdentityId:()=>"me",getAuthoritativeGame:()=>confirmed},escapeHtml:value=>String(value),formatDisplayGameId:value=>value,icon,renderTurnHistory:()=>"",participantName,participantDisplayName,render:()=>{},activeResultGameId:null};
   runInNewContext(`${extract("const renderResult =", "const renderGame =")}
     ${extract("const renderAdditionalHistory =", "const renderHistoryPanel =")}
     ${extract("const renderHistoryPanel =", "const renderBoardPanel =")}
@@ -113,7 +114,7 @@ test("optimistic terminal state cannot expose a result or open it before confirm
 test("computer seats have distinct human, watch, history and result labels despite shared authority", () => {
   const person = {identityId:'me', profile:{username:'owner', displayName:'Owner'}};
   const game = {id:'g', player1:person, player2:{...person, computerProfile:'babs'}, selfPlayMode:true, computer:{seats:{p1:null,p2:'babs'},manual:false}, board:{state:{outcome:{status:'p1_win'}}}, moves:[]};
-  const context = {renderResultMark,isPlayerRole:role=>['Player 1','Player 2'].includes(role),escapeHtml:String,participantName,participantDisplayName,getGameResult,transport:{getIdentityId:()=> 'me',getAuthoritativeGame:()=>game},additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})},formatDisplayGameId:String,icon:()=>'',renderTurnHistory:()=>''};
+  const context = {canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},renderResultMark,isPlayerRole:role=>['Player 1','Player 2'].includes(role),escapeHtml:String,participantName,participantDisplayName,getGameResult,transport:{getIdentityId:()=> 'me',getAuthoritativeGame:()=>game},additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})},formatDisplayGameId:String,icon:()=>'',renderTurnHistory:()=>''};
   runInNewContext(`${extract('const playerToneClassForSeat =','const renderConnectionStatusIcon =')}
     ${extract('const renderResult =','const renderGame =')}
     ${extract('const renderAdditionalHistory =','const renderHistoryPanel =')}

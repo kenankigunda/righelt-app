@@ -6,7 +6,7 @@ import {syncMiniBoardPreviews} from '/apps/web/board/mini-board-preview.js';
 import {createEngineBoardAdapter,createInitialBoardSnapshot} from '/apps/web/board-adapters/engine-board-adapter.js';
 import {icon} from '/apps/web/shell/ui.js';
 import {renderInvitationSurface} from '/apps/web/shell/invitations.js';
-import {createAdditionalHistory} from '/apps/web/shell/additional-history.js';
+import {createAdditionalHistory,canReadAdditionalHistory} from '/apps/web/shell/additional-history.js';
 import {patchSectionContent} from '/apps/web/shell/dom-patch.js';
 import {mountLoadingFeedback} from '/apps/web/shell/loading.js';
 const source=await(await fetch('/apps/web/shell/app.js')).text(),root=document.querySelector('#app');
@@ -24,7 +24,7 @@ const owner={};
 const history=createAdditionalHistory({getScope:gameId=>({gameId,owner,generation:1,revision}),load:(scope,values)=>new Promise((resolve,reject)=>window.historyRequests.push({values,resolve:body=>resolve({gameplayRevision:revision,partial:false,...body}),reject})),onChange:()=>drawHistory()});
 const renderedMiniBoardPreviewPayloads=new Map(),registry=new Map();let inspectedDecision=null;
 const renderMini=Function('renderedMiniBoardPreviewPayloads','escapeHtml',`${extract('const registerMiniBoardPreview =','const formatOutcomeStatus =')};return renderMiniBoardPreviewRoot;`)(renderedMiniBoardPreviewPayloads,escapeHtml);
-const renderHistory=Function('getShellLayoutMode','renderMiniBoardPreviewRoot','toStableKey','additionalHistory','escapeHtml','formatClientDateTime','icon',`${extract('const renderAdditionalHistory =','const renderHistoryPanel =')};return renderAdditionalHistory;`)(()=> 'narrow',renderMini,JSON.stringify,history,escapeHtml,()=> 'Jan 1',icon);
+const renderHistory=Function('canReadAdditionalHistory','account','getShellLayoutMode','renderMiniBoardPreviewRoot','toStableKey','additionalHistory','escapeHtml','formatClientDateTime','icon',`${extract('const renderAdditionalHistory =','const renderHistoryPanel =')};return renderAdditionalHistory;`)(canReadAdditionalHistory,{snapshot:()=>({enabled:false})},()=> 'narrow',renderMini,JSON.stringify,history,escapeHtml,()=> 'Jan 1',icon);
 function drawHistory(){root.classList.add("panel");const next=root.cloneNode(false);next.innerHTML=renderHistory({id:'g',inHistoryMode:Boolean(inspectedDecision),inspectedDecision});patchSectionContent(root,next);syncMiniBoardPreviews({previews:[...root.querySelectorAll('[data-mini-board-preview]')].map(rootEl=>({rootEl,...renderedMiniBoardPreviewPayloads.get(rootEl.dataset.previewId)})),registry,createAdapter:()=>createEngineBoardAdapter()});}
 root.addEventListener('click',event=>{const action=event.target.closest('[data-action]')?.dataset.action;if(action==='inspect-history-archive'){const id=event.target.closest('[data-action]').dataset.decisionId;inspectedDecision={...history.snapshot('g').items.find(entry=>entry.id===id).move,moveId:id};drawHistory();}if(action==='load-history-archive'){void history.more('g');drawHistory();}if(action==='retry-history-archive'){void history.retry('g');drawHistory();}});
 window.renderHistory=drawHistory;window.archiveSnapshot=createInitialBoardSnapshot();window.returnArchiveLive=()=>{inspectedDecision=null;drawHistory();};window.nextHistoryRevision=()=>{revision++;drawHistory();};
