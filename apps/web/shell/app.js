@@ -1423,7 +1423,7 @@ const renderHeaderNarrowMenu = () => {
         data-header-menu-panel
         aria-hidden="${headerMenuOpen ? "false" : "true"}"
       >
-        <button class="secondary shell-header-menu-item" type="button" data-action="account-open" data-testid="account-open" data-header-menu-close="true" tabindex="${headerMenuOpen ? "0" : "-1"}" ${!account.snapshot().ready || !account.snapshot().enabled || !account.snapshot().available ? 'disabled' : ''}>${icon('account')}Account</button>
+        <button class="secondary shell-header-menu-item" type="button" data-action="account-open" data-testid="account-open" data-authenticated="${account.snapshot().session.authenticated}" data-header-menu-close="true" tabindex="${headerMenuOpen ? "0" : "-1"}" ${!account.snapshot().ready || !account.snapshot().enabled || !account.snapshot().available ? 'disabled' : ''}>${icon('account')}Account</button>
         <button
           class="secondary shell-header-menu-item${currentRoute.scenarios ? " is-active" : ""}"
           type="button"
