@@ -72,7 +72,7 @@ for (const width of [320, 390]) test(`computer action icons preserve labels and 
    document.documentElement.style.fontSize=`${scale}%`;
    document.querySelector('main').innerHTML=renderComputerProgress({id:'icon-proof',computer,computerTurn:'babs',canControlComputer:true},status);
   }, {mode,scale});
-  const region=page.getByRole('region',{name:'Computer play',exact:true});
+  const region=page.getByRole('region',{name:'Babs play status',exact:true});
   if(!labels.length){await expect(region).toHaveCount(0);continue;}
   await expect(region.getByRole('button')).toHaveCount(labels.length-(mode==='recovery'?1:0));
   for(const label of labels){

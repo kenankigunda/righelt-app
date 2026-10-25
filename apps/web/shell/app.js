@@ -2530,11 +2530,12 @@ const renderParticipantsPanel = game => renderPlayersPanel(game, {
   expandedComputers:expandedComputerCards.get(game.id) ?? new Set(),
 });
 const updateParticipantCards = game => {
-  const panel=appEl.querySelector('[data-game-panel="participants"]');
+  const panel=appEl.querySelector('[data-testid="participants-list"]');
   if(!panel || !game)return;
   const focused=document.activeElement;
   const restoreSide=panel.contains(focused) && focused?.dataset.control==='resume-here' ? focused.dataset.computerSide : null;
-  patchToolHtml(panel,renderParticipantsPanel(game));
+  const next=document.createElement('div');next.innerHTML=renderParticipantsPanel(game);
+  patchSectionContent(panel,next.firstElementChild);
   if(restoreSide && (!focused.isConnected || focused.disabled))panel.querySelector(`[data-action="toggle-computer-card"][data-computer-side="${restoreSide}"]`)?.focus({preventScroll:true});
   inlineProfiles.sync();
 };
@@ -2959,7 +2960,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   const alertsEl = document.getElementById("shell-game-alerts");
   const summaryEl = shellRoot.querySelector('[data-game-panel="summary"]');
   const joinEl = shellRoot.querySelector('[data-game-panel="join"]');
-  const participantsEl = shellRoot.querySelector('[data-game-panel="participants"]');
+  const participantsEl = shellRoot.querySelector('[data-testid="participants-list"]');
   const historyEl = shellRoot.querySelector('[data-game-panel="history"]');
   const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(
     game.inviteToken || inviteToken || game.id,
@@ -2974,17 +2975,18 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   if (summaryEl instanceof HTMLElement) {
     summaryEl.innerHTML = renderGameSummaryPanel(game);
   }
+  if (participantsEl instanceof HTMLElement) updateParticipantCards(game);
   if (joinEl instanceof HTMLElement) {
     const markup=renderJoinInvitePanel(game, inviteLink);
     if(joinMarkupByElement.get(joinEl) !== markup){
       const animateJoin = animatePanels && !routeTransition && joinMarkupByElement.has(joinEl);
       const oldHeight=joinEl.getBoundingClientRect().height;
       const focus=joinEl.contains(document.activeElement)?document.activeElement:null;
-      const selector=focus?.matches('.invite-link-field')?'.invite-link-field':focus?.dataset.action?`[data-action="${CSS.escape(focus.dataset.action)}"]${focus.dataset.inviteRole?`[data-invite-role="${CSS.escape(focus.dataset.inviteRole)}"]`:''}${focus.dataset.profileKey?`[data-profile-key="${CSS.escape(focus.dataset.profileKey)}"]`:''}`:null;
+      const selector=focus?.matches('.invite-link-field')?'.invite-link-field':focus?.dataset.action?`[data-action="${CSS.escape(focus.dataset.action)}"]${focus.dataset.inviteRole?`[data-invite-role="${CSS.escape(focus.dataset.inviteRole)}"]`:''}${focus.dataset.profileKey?`[data-profile-key="${CSS.escape(focus.dataset.profileKey)}"]`:''}${focus.dataset.computerSide?`[data-computer-side="${CSS.escape(focus.dataset.computerSide)}"]`:''}`:null;
       const selection=focus instanceof HTMLInputElement?[focus.selectionStart,focus.selectionEnd]:null;
       if(selector)panelPendingFocus.set(joinEl,{selector,selection});
       else if(document.activeElement !== document.body)panelPendingFocus.delete(joinEl);
-      joinEl.innerHTML=markup;
+      patchToolHtml(joinEl,markup);
       joinMarkupByElement.set(joinEl,markup);
       const savedFocus=panelPendingFocus.get(joinEl);
       if(savedFocus){
@@ -3001,9 +3003,6 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
         panelSizeAnimations.delete(joinEl);
       }
     }
-  }
-  if (participantsEl instanceof HTMLElement) {
-    updateParticipantCards(game);
   }
   if (historyEl instanceof HTMLElement) {
     patchToolHtml(historyEl, renderHistoryPanel(game));
