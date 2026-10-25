@@ -100,3 +100,6 @@ body {display:flow-root;}
 .board-heading > .board-heading-separator {flex:0 0 auto;}
 
 .board-turn-name,.history-actor {unicode-bidi:isolate;}
+
+/* Bound only spectator names. Full names stay in DOM/title for accessibility. */
+.board-message-name {display:inline-block;max-inline-size:12ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:top;unicode-bidi:isolate;}

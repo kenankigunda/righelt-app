@@ -1,3 +1,4 @@
+import {boardMessagePresentation,renderBoardMessageHtml} from '../message-presentation.js';
 import { inspectionPaths, supplyOwnerAt } from "../inspection.js";
 import {renderCoordinateChip} from '../coordinate-chip.js';
 import {SELECTED_CONTINUATION_LABELS} from '../piece-explanations.js';
@@ -503,12 +504,12 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const externalMessage = controls.getBoardMessage?.({state, selectedPieceId, inspection});
     if (externalMessage) {
       const message = typeof externalMessage === "string" ? {text: externalMessage} : externalMessage;
-      const actions = Array.isArray(message.actions) ? message.actions : message.action ? [message.action] : [];
+      const {actorName,rest,actions} = boardMessagePresentation(message);
       const label = elements.boardPreviewLabelEl;
       const buttons = Array.from(label?.querySelectorAll?.(':scope > button[data-board-message-action]') ?? []);
       // A replay counter changes while its controls stay the same. Patch the
       // text in place so a focused Next/Stop button remains usable across steps.
-      if (actions.length && label?.firstChild?.nodeType === 3 && label.childNodes.length === actions.length * 2
+      if (!actorName && actions.length && label?.firstChild?.nodeType === 3 && label.childNodes.length === actions.length * 2
         && buttons.length === actions.length && buttons.every((button, index) => button.dataset.boardMessageAction === String(actions[index].id))) {
         const text = `${message.text ?? ""} `;
         if (label.firstChild.nodeValue !== text) label.firstChild.nodeValue = text;
@@ -518,7 +519,18 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         });
         return;
       }
-      setBoardPreviewPromptHtml(`${escapeHtml(message.text ?? "")}${actions.map(action => ` <button type="button" class="board-preview-inline-button" data-board-message-action="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>`).join("")}`);
+      const name = label?.firstChild;
+      if (actorName && name?.nodeName === 'BDI' && name.classList?.contains('board-message-name')
+        && label.childNodes[1]?.nodeType === 3 && label.childNodes.length === Math.max(2, actions.length * 2 + 1)
+        && buttons.length === actions.length && buttons.every((button, index) => button.dataset.boardMessageAction === String(actions[index].id))) {
+        if (name.textContent !== actorName) name.textContent = actorName;
+        if (name.title !== actorName) name.title = actorName;
+        const suffix = `${rest}${actions.length ? " " : ""}`;
+        if (label.childNodes[1].nodeValue !== suffix) label.childNodes[1].nodeValue = suffix;
+        buttons.forEach((button, index) => { const text=String(actions[index].label); if(button.textContent!==text)button.textContent=text; });
+        return;
+      }
+      setBoardPreviewPromptHtml(renderBoardMessageHtml(message));
       return;
     }
     const explanation = pieceSummary?.details?.explanation;
