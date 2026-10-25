@@ -7,7 +7,7 @@ import { buildLocalApiWsHost, isLocalDevHost } from "../local-dev-ports.js";
 import { createLiveTransportStore, validSyncSnapshot } from "./live-transport.js";
 import { createOperationManager } from "./operation-manager.js";
 
-import { LIVE_HISTORY, SYNC_TIMING, isSyncRevision } from "../generated/packages/shared-types/src/sync-protocol.js";
+import { LIVE_HISTORY, SYNC_PROTOCOL_VERSION, SYNC_TIMING, isSyncRevision } from "../generated/packages/shared-types/src/sync-protocol.js";
 
 const PENDING_LOCAL_GAMES_KEY = "righelt.pendingLocalGames";
 const WS_RECONNECT_BASE_MS = SYNC_TIMING.retryDelaysMs[0];
@@ -109,6 +109,7 @@ export const createLiveSyncClient = ({
   onRecovery = () => {},
   onReconcile = async () => {},
   onReady = async () => {},
+  onUnsupportedProtocol = () => {},
   degradedPollMs = SYNC_TIMING.degradedPollMs,
   degradedSlowPollMs = SYNC_TIMING.degradedSlowPollMs,
   degradedSlowAfterMs = SYNC_TIMING.degradedSlowAfterMs,
@@ -126,6 +127,7 @@ export const createLiveSyncClient = ({
   const generations = new Map();
   const connectionState = new Map();
   const repairOwners = new Map();
+  const unsupportedProtocols = new Map();
   const httpRecoveredGames = new Set();
   const pollTimers = new Map();
   const degradedStartedAt = new Map();
@@ -211,7 +213,7 @@ export const createLiveSyncClient = ({
     }
   };
 
-  const cleanupSocket = (gameId, { closeReason = "intentional_disconnect", emitDisconnected = false } = {}) => {
+  const cleanupSocket = (gameId, { closeReason = "intentional_disconnect", emitDisconnected = false, initialResult } = {}) => {
     clearHeartbeat(gameId);
     const socket = sockets.get(gameId) ?? null;
     if (!socket) {
@@ -231,7 +233,7 @@ export const createLiveSyncClient = ({
     sockets.delete(gameId);
     generations.set(gameId, (generations.get(gameId) ?? 0) + 1);
     const connection = connectionState.get(gameId);
-    if (connection) { clearTimeout(connection.initialTimer); clearTimeout(connection.watchdog); connection.resolveInitial(); connectionState.delete(gameId); }
+    if (connection) { clearTimeout(connection.initialTimer); clearTimeout(connection.watchdog); connection.resolveInitial(initialResult); connectionState.delete(gameId); }
     closeReasonBySocket.set(socket, closeReason);
     try {
       socket.close();
@@ -358,7 +360,7 @@ export const createLiveSyncClient = ({
   };
 
   const repair = (gameId, reason, evidence = {}) => {
-    if (!desiredGameIds.has(gameId)) return Promise.resolve();
+    if (unsupportedProtocols.has(gameId) || !desiredGameIds.has(gameId)) return Promise.resolve();
     // Once HTTP restores authority, an unready replacement socket has no new
     // state to invalidate. Keep repairing it without interrupting board input.
     const background = httpRecoveredGames.has(gameId)
@@ -401,7 +403,7 @@ export const createLiveSyncClient = ({
   };
 
   const connect = (gameId) => {
-    if (retired) return;
+    if (retired || unsupportedProtocols.has(gameId)) return;
     if (!gameId) {
       return;
     }
@@ -440,7 +442,7 @@ export const createLiveSyncClient = ({
     connection.initial = new Promise((resolve) => { connection.resolveInitial = resolve; });
     connectionState.set(gameId, connection);
     const reconnectGate = reconnectGates.get(gameId);
-    if (reconnectGate) void connection.initial.then(() => { reconnectGate.resolve(); if (reconnectGates.get(gameId) === reconnectGate) reconnectGates.delete(gameId); });
+    if (reconnectGate) void connection.initial.then(result => { reconnectGate.resolve(result); if (reconnectGates.get(gameId) === reconnectGate) reconnectGates.delete(gameId); });
     connection.initialTimer = setTimeout(() => { if (current()) void repair(gameId, "initial_snapshot_timeout"); }, initialSnapshotTimeoutMs);
     connection.initialTimer.unref?.();
     const refreshWatchdog = () => {
@@ -473,6 +475,19 @@ export const createLiveSyncClient = ({
       try {
         const payload = JSON.parse(typeof event.data === "string" ? event.data : "{}");
         if (auth?.storageGeneration && payload.storageGeneration !== auth.storageGeneration) throw new Error("storage_reset");
+        // Only a recognized frame from this current connection can establish
+        // incompatibility. No snapshot is accepted here, including an old
+        // server's missing auth marker. Storage authority remains fenced first.
+        if (Number.isSafeInteger(payload.protocolVersion) && payload.protocolVersion > 0 && payload.protocolVersion !== SYNC_PROTOCOL_VERSION
+          && payload.gameId === gameId && isSyncRevision(payload.eventSeq)
+          && (payload.type === "heartbeat_ack" || (isAuthoritativeSyncEvent(payload) && validSyncSnapshot(payload.game, gameId)))) {
+          const result = { upgradeRequired: true, protocolVersion: payload.protocolVersion };
+          unsupportedProtocols.set(gameId, result);
+          clearReconnect(gameId); clearPoll(gameId); repairOwners.delete(gameId);
+          cleanupSocket(gameId, { closeReason: "upgrade_required", initialResult: result });
+          onUnsupportedProtocol({ gameId, ...result, socketGeneration: generation });
+          return;
+        }
         if (auth?.enabled && payload.authProtocolVersion !== AUTH_PROTOCOL_VERSION) throw new Error("upgrade_required");
         if (payload.protocolVersion !== 2 || payload.gameId !== gameId || !isSyncRevision(payload.eventSeq)) throw new Error("invalid_socket_event");
         if (payload.type === "heartbeat_ack") {
@@ -628,10 +643,11 @@ export const createLiveSyncClient = ({
     connectGame: (gameId) => connect(gameId),
     waitForInitialSnapshot,
     prepareInitialLoad: async (gameId) => {
+      if (unsupportedProtocols.has(gameId)) return unsupportedProtocols.get(gameId);
       if (!desiredGameIds.has(gameId)) return false;
       try { await waitForInitialSnapshot(gameId); }
       catch { await repair(gameId, "initial_load_fallback"); }
-      return true;
+      return unsupportedProtocols.get(gameId) ?? true;
     },
     getAdvertisedEventSeq: (gameId) => advertisedEventSeqByGameId.get(gameId) ?? 0,
     disconnectGame,
@@ -1234,6 +1250,7 @@ export const createSyncStore = ({
       if (isCurrent()) transport.setConnectionRecovering?.(gameId, false);
     },
     getLastEventSeq: (gameId) => (gameId ? transport.getLastEventSeq(gameId) : 0),
+    onUnsupportedProtocol: ({ gameId }) => { if (active) transport.markUpgradeRequired?.(gameId); },
     onEvent: (payload, context = {}) => {
       if (!active) return false;
       if (isAuthoritativeSyncEvent(payload)) {

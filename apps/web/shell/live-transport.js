@@ -494,6 +494,7 @@ export const createLiveTransportStore = ({
   const scheduleRetry = (gameId, retryAttempt, reconcileFirst = true, retryAfterMs = 0) => {
     if (!active) return;
     const optimistic = getOptimisticState(gameId);
+    if (optimistic.upgradeRequired) return;
     if (optimistic.retryTimer) clearTimeout(optimistic.retryTimer);
     const delays = timing.retryDelaysMs;
     const delay = Math.min(5000, delays[Math.min(retryAttempt, delays.length - 1)] * (1 - timing.retryJitter + random() * timing.retryJitter * 2));
@@ -525,6 +526,9 @@ export const createLiveTransportStore = ({
   const reconcileRequest = async (gameId, controller, isCurrent = () => true) => {
     if (auth?.enabled && (!auth.session.authenticated || gameById.get(gameId)?.ownershipMode === "legacy_guest")) return null;
     if (!isCurrent()) return null;
+    // Starting another request and consuming a valid in-flight receipt have
+    // different permissions. Compatibility blocks only the former.
+    if (getOptimisticState(gameId).upgradeRequired) return null;
     const recoveryEpoch = getOptimisticState(gameId).mutationRecoveryEpoch;
     const envelopes = getOptimisticState(gameId).pendingCommands.map((entry) => entry.envelope);
     const body = await boundedRequest(`/api/shell/games/${encodeURIComponent(gameId)}/reconcile`, {
@@ -544,6 +548,7 @@ export const createLiveTransportStore = ({
   const sendNextPendingCommand = async (gameId, { retryAttempt = 0, reconcileFirst = false } = {}) => {
     if (!active) return;
     const optimistic = getOptimisticState(gameId);
+    if (optimistic.upgradeRequired) return;
     if (optimistic.attempt || optimistic.retryTimer) return;
     if ((optimistic.retryNotBefore ?? 0) > Date.now()) {scheduleRetry(gameId,retryAttempt,reconcileFirst,optimistic.retryNotBefore-Date.now());return;}
     const command = optimistic.pendingCommands[0];
@@ -582,7 +587,7 @@ export const createLiveTransportStore = ({
         const snapshot = await boundedRequest(`/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}`, {
           method: "GET", cache: "no-store",
         }, attempt.controller);
-        if (optimistic.attempt !== attempt) return;
+        if (optimistic.attempt !== attempt || optimistic.upgradeRequired) return;
         if (snapshot.protocolVersion !== 2) { markUpgradeRequired(gameId); return; }
         if (!validSyncSnapshot(snapshot.game, gameId) || !isSyncRevision(snapshot.eventSeq)) throw Object.assign(new Error("invalid_snapshot"), { code: "invalid_response" });
         upsertGameSnapshot({ game: snapshot.game, eventSeq: snapshot.eventSeq, publish: false });
@@ -590,11 +595,12 @@ export const createLiveTransportStore = ({
       }
       if (reconcileFirst) {
         const response = await reconcileRequest(gameId, attempt.controller, () => optimistic.attempt === attempt);
-        if (optimistic.attempt !== attempt) return;
+        if (optimistic.attempt !== attempt || optimistic.upgradeRequired) return;
         const own = response.commandOutcomes.find((entry) => entry.clientCommandId === command.clientCommandId);
         const current = gameById.get(gameId);
         if (!own || own.outcome !== "unknown" || own.reason === "dependency_pending" || own.reason === "legacy_evidence" || (command.kind !== "shared" && (current?.gameplayRevision !== command.envelope.expectedGameplayRevision || !equivalentGameStates(current.board.state, command.envelope.expectedState)))) throw unresolvedCommandOutcome;
       }
+      if (optimistic.upgradeRequired) return;
       const body = await boundedRequest(`/api/shell/games/${encodeURIComponent(gameId)}/${command.kind === "shared" ? "shared" : command.kind === "apply" ? "apply" : "end-turn"}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(command.envelope),
       }, attempt.controller);
@@ -721,6 +727,7 @@ export const createLiveTransportStore = ({
   };
   const reconcileGame = (gameId) => {
     const optimistic = getOptimisticState(gameId);
+    if (optimistic.upgradeRequired) return Promise.reject(Object.assign(new Error("upgrade_required"), { code: "upgrade_required" }));
     if (optimistic.recoveryPromise) return optimistic.recoveryPromise;
     const owner = {}; optimistic.recoveryOwner = owner;
     optimistic.recoveryGeneration = (optimistic.recoveryGeneration ?? 0) + 1;
@@ -730,9 +737,9 @@ export const createLiveTransportStore = ({
     const work = Promise.resolve().then(async () => {
       if((optimistic.retryNotBefore??0)>Date.now())throw Object.assign(new Error("retry_delayed"),{code:"retry_delayed",retryAfterMs:optimistic.retryNotBefore-Date.now()});
       await hydrateJournal(gameId, current);
-      if (!current()) return;
+      if (!current() || optimistic.upgradeRequired) return;
       if (optimistic.attempt) await optimistic.attempt.done;
-      if (!current()) return;
+      if (!current() || optimistic.upgradeRequired) return;
       if (optimistic.retryTimer) { clearTimeout(optimistic.retryTimer); optimistic.retryTimer = null; }
       if (optimistic.pendingCommands.length) await sendNextPendingCommand(gameId, { reconcileFirst: true });
       else {
@@ -742,6 +749,7 @@ export const createLiveTransportStore = ({
         try { await reconcileRequest(gameId, attempt.controller, () => current() && optimistic.attempt === attempt); }
         finally { if (optimistic.attempt === attempt) optimistic.attempt = null; attempt.finish(); }
       }
+      if (optimistic.upgradeRequired) return;
       if (current() && optimistic.forceSnapshot) throw Object.assign(new Error("snapshot_required"), { code: "invalid_response" });
       if (current() && !optimistic.pendingCommands.length) setConnectionRecovering(gameId, false);
     });
@@ -835,15 +843,24 @@ export const createLiveTransportStore = ({
   };
 
   const markUpgradeRequired = (gameId) => {
-    getOptimisticState(gameId).upgradeRequired = true;
+    const optimistic = getOptimisticState(gameId);
+    if (optimistic.upgradeRequired) return;
+    optimistic.upgradeRequired = true;
+    clearTimeout(optimistic.retryTimer); optimistic.retryTimer = null;
+    clearTimeout(optimistic.recoveryRetryTimer); optimistic.recoveryRetryTimer = null;
     recalculateOptimisticGame(gameId);
     emitChange({ type: "upgrade_required", gameId });
   };
   const loadGame = async (gameId, { openAsViewer = false } = {}) => {
+    if (getOptimisticState(gameId).upgradeRequired) throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
     // A fresh route already opened its socket. Its bounded initial snapshot owns recovery;
     // only fall back to HTTP after that generation has been retired by the connection owner.
     if (!openAsViewer && !lastEventSeqByGameId.get(gameId)) {
       const socketOwned = await Promise.resolve(beforeReconcile(gameId, { initialLoad: true })).catch(() => false);
+      if (socketOwned?.upgradeRequired === true || getOptimisticState(gameId).upgradeRequired) {
+        markUpgradeRequired(gameId);
+        throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
+      }
       if (lastEventSeqByGameId.get(gameId) && gameById.has(gameId)) {
         await hydrateJournal(gameId).catch(() => {});
         return getGameViewModel(gameId);
@@ -1355,6 +1372,7 @@ export const createLiveTransportStore = ({
     getHomeGameCard,
     getGameViewModel,
     isUpgradeRequired: (gameId) => getOptimisticState(gameId).upgradeRequired === true,
+    markUpgradeRequired,
     getAuthoritativeGame: (gameId) => clone(gameById.get(gameId) ?? null),
     applyGamePreview: (gameId,game) => {getOptimisticState(gameId).externalPreview=game?clone(game):null;recalculateOptimisticGame(gameId);emitChange({type:"local_preview",gameId});},
     getIdentityId,
