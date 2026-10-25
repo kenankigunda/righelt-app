@@ -7,6 +7,9 @@ body {display:flow-root;}
 .board-message-slot > .board-preview-label {grid-area:1 / 1;min-width:0;margin:0;}
 .board-message-live {grid-area:1 / 1;min-width:0;font-size:1rem;line-height:1.5;}
 .board-message-live > .board-preview-label {display:inline;margin:0;}
+/* Keep inline tokens inside the explicit line box while the font loads.
+   Middle alignment depends on the font's x-height and can enlarge a line. */
+.board-message-slot :is(.board-preview-coordinate-chip,.board-preview-highlight-chip,.board-preview-retreat-chip,.board-preview-inline-button) {vertical-align:top;}
 .board-message-activity {display:none;}
 .board-message-activity[data-loading-state="pending"] {display:inline-flex;vertical-align:middle;}
 .board-message-activity[data-loading-suppressed="true"] {display:none;}

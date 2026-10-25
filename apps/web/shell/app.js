@@ -3466,6 +3466,9 @@ const mountBoardForGame = (game) => {
     mountedLegalActionsKey = legalActionsKey;
     mountedOverlayKey = overlayKey;
     mountedSyncStatusKey = syncStatusKey;
+    // Readiness and opponent activity can change without a board revision.
+    // Refresh the message while preserving the current board and selection.
+    boardRuntime.refreshStatus();
     return;
   }
   const shouldReloadSnapshot =
@@ -3474,6 +3477,7 @@ const mountBoardForGame = (game) => {
     mountedOverlayKey !== overlayKey ||
     resetSelection;
   if (!shouldReloadSnapshot) {
+    boardRuntime.refreshStatus();
     return;
   }
   mountedSnapshotKey = snapshotKey;

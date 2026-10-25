@@ -10,8 +10,24 @@ function installGeometryProbe() {
   const slot=selector=>{const element=panel.querySelector(selector);return element?rectangle(element):null;};
   return {startup:{fonts:document.fonts.status,header:rectangle(document.querySelector('.shell-header')),children:[...document.querySelector('.shell-header').children].map(element=>({class:element.className,height:element.getBoundingClientRect().height,margin:getComputedStyle(element).margin})),pending:Boolean(document.querySelector('.shell-header > .loading-region'))},kind:board.id==='shell-board'?'live':'loading',panel:rectangle(panel),board:rectangle(board),heading:slot('.board-heading-slot'),message:slot('.board-message-slot'),legend:slot('.overlay-key'),shape:{panelPadding:style.padding,panelRadius:style.borderRadius,panelBorder:style.borderWidth,stoneOutline:getComputedStyle(panel,'::before').clipPath,boardRadius:grid.borderRadius,boardBorder:grid.borderWidth,gap:grid.gap,cellRadius:first.borderRadius,cellPadding:first.padding,cellBorder:first.borderWidth},cells:[...board.children].map(rectangle),documentHeight:document.documentElement.scrollHeight,scrollY};
  };
- window.desktopFrames=[];window.recordDesktopFrames=true;
- const sample=()=>{if(!window.recordDesktopFrames)return;const geometry=window.desktopGeometry();if(geometry&&window.desktopFrames.length<200)window.desktopFrames.push(geometry);requestAnimationFrame(sample);};requestAnimationFrame(sample);
+ window.desktopFrames=[];window.desktopLoadingTimeline=[];window.recordDesktopFrames=true;
+ let previousGeometry,previousPhase;
+ const sample=()=>{
+  if(!window.recordDesktopFrames)return;
+  const geometry=window.desktopGeometry();
+  if(geometry){
+   const key=JSON.stringify(geometry);
+   if(key!==previousGeometry&&window.desktopFrames.length<500){window.desktopFrames.push(geometry);previousGeometry=key;}
+   const wrap=document.querySelector('[data-testid="game-board-wrap"]'),prompt=document.querySelector('#shell-board-preview-label');
+   const phase={kind:geometry.kind,loading:wrap?.dataset.loadingState??null,reconnecting:wrap?.dataset.reconnecting??null,
+    prompt:prompt?.textContent??'',pass:Boolean(prompt?.querySelector('[data-board-preview-action="pass"],[data-board-message-action="pass"]')),
+    edges:document.querySelectorAll('.loading-edge-frame').length};
+   phase.ready=phase.loading==='idle'&&phase.edges===0&&phase.prompt.includes('Select a piece')&&phase.pass;
+   const signature=JSON.stringify(phase);
+   if(signature!==previousPhase){window.desktopLoadingTimeline.push({at:performance.now(),...phase});previousPhase=signature;}
+  }
+  requestAnimationFrame(sample);
+ };requestAnimationFrame(sample);
 }
 const read=page=>page.evaluate(()=>window.desktopGeometry());
 const compareRect=(a,b,label)=>{for(const key of ['x','y','width','height'])expect(Math.abs(a[key]-b[key]),`${label} ${key}`).toBeLessThanOrEqual(1);};
@@ -59,7 +75,18 @@ test('desktop board fits primary viewport, remains stable through scroll/header 
 });
 
 for(const [width,height,text]of[[1440,800,100],[390,740,100],[1440,800,200]])test(`cold loading populates the same card shape and100-cell grid at ${width}x${height} and${text}% text`,async({page,context},info)=>{
- await page.setViewportSize({width,height});const {gameId}=await createGameFromHome(page);await page.addInitScript(installGeometryProbe);
+ await page.setViewportSize({width,height});const {gameId}=await createGameFromHome(page);
+ // An unfilled friend seat legitimately waits for an opponent after reload.
+ // Establish a real playable game before testing gameplay readiness after load.
+ await switchGamePanel(page,'players');
+ await page.locator('[data-action="play-as-both-players"]').click();
+ await expect(page.getByTestId('game-role')).toContainText('both players');
+ await expect(page.locator('[data-game-panel="join"]')).not.toContainText('Open seat');
+ await switchGamePanel(page,'board');
+ await expect(page.locator('#shell-board-preview-label')).toContainText('Select a piece');
+ await expect(page.locator('#shell-board-preview-label :is([data-board-preview-action="pass"],[data-board-message-action="pass"])')).toBeVisible();
+ await page.screenshot({path:info.outputPath('ready-before-reload-normal-text.png')});
+ await page.addInitScript(installGeometryProbe);
  await page.addInitScript(text=>document.addEventListener('DOMContentLoaded',()=>{document.documentElement.style.fontSize=`${text}%`;},{once:true}),text);
  let release;const held=new Promise(resolve=>{release=resolve;});let closing=false;
  let releaseFont,fontSeen=false;const fontHeld=new Promise(resolve=>{releaseFont=resolve;});
@@ -93,15 +120,47 @@ for(const [width,height,text]of[[1440,800,100],[390,740,100],[1440,800,200]])tes
   compareGeometry(await read(page),loading);
   await page.screenshot({path:info.outputPath('held-loading.png')});
   release();await expect(page.getByTestId('game-board').locator('.cell')).toHaveCount(100);await expect(page.getByTestId('game-shell')).toBeVisible();
+  // A briefly idle wrapper can precede the next authoritative reconcile. Require
+  // the real untouched-turn affordance, then witness retirement across frames.
+  await expect(page.locator('#shell-board-preview-label')).toContainText('Select a piece');
+  await expect(page.locator('#shell-board-preview-label :is([data-board-preview-action="pass"],[data-board-message-action="pass"])')).toBeVisible();
   await expect(page.getByTestId('game-board-wrap')).toHaveAttribute('data-loading-state','idle');
   await expect(page.locator('.loading-edge-frame')).toHaveCount(0);
+  await expect.poll(()=>page.evaluate(()=>new Promise(resolve=>{
+   let remaining=3;
+   const sample=()=>{
+    const wrap=document.querySelector('[data-testid="game-board-wrap"]');
+    const prompt=document.querySelector('#shell-board-preview-label');
+    const ready=wrap?.dataset.loadingState==='idle'&&!document.querySelector('.loading-edge-frame')
+     &&prompt?.textContent.includes('Select a piece')
+     &&Boolean(prompt.querySelector('[data-board-preview-action="pass"],[data-board-message-action="pass"]'));
+    if(!ready)return resolve(false);
+    if(--remaining===0)return resolve(true);
+    requestAnimationFrame(sample);
+   };
+   requestAnimationFrame(sample);
+  }))).toBe(true);
   await writeFile(info.outputPath('cold-geometry-before-assertions.json'),JSON.stringify({beforeFont,loading,firstLoaded:await read(page),frames:await page.evaluate(()=>window.desktopFrames)},null,2));
   await expect.poll(async()=>Math.abs((await read(page)).panel.height-loading.panel.height)).toBeLessThanOrEqual(1);
   const loaded=await read(page);compareGeometry(loading,loaded);
-  const frames=await page.evaluate(()=>{window.recordDesktopFrames=false;return window.desktopFrames;});expect(frames.length).toBeGreaterThan(1);
+  await page.screenshot({path:info.outputPath('hydrated.png')});
+  const {frames,timeline}=await page.evaluate(()=>{window.recordDesktopFrames=false;return {frames:window.desktopFrames,timeline:window.desktopLoadingTimeline};});expect(frames.length).toBeGreaterThan(1);
+  await writeFile(info.outputPath('loading-timeline.json'),JSON.stringify(timeline,null,2));
+  const readyAt=timeline.findIndex(phase=>phase.ready);expect(readyAt).toBeGreaterThanOrEqual(0);
+  expect(timeline.slice(readyAt).every(phase=>phase.ready),'ready gameplay must not flash back into loading during ordinary hydration').toBe(true);
   for(const frame of frames)compareGeometry(frame,loaded);
   if(width===1440&&text===100)expect(loaded.panel.y+loaded.panel.height).toBeLessThanOrEqual(height);
   const path=info.outputPath('cold-geometry.json');await writeFile(path,JSON.stringify({beforeFont,loading,loaded,frames},null,2));await info.attach('cold geometry',{path,contentType:'application/json'});
-  await page.screenshot({path:info.outputPath('hydrated.png')});
- }finally{closing=true;release();releaseFont();await context.unrouteAll({behavior:'wait'});}
+  if(text===200){
+   await page.locator('#shell-board .cell').filter({has:page.locator('.piece-token')}).first().click();
+   await expect(page.locator('#shell-board-preview-label .board-preview-coordinate-chip')).toBeVisible();
+   await page.locator('#shell-board-preview-label').scrollIntoViewIfNeeded();
+   await page.screenshot({path:info.outputPath('selected-coordinate-200.png'),fullPage:true});
+   await page.evaluate(()=>document.documentElement.style.fontSize='100%');
+   await page.screenshot({path:info.outputPath('selected-coordinate-100.png'),fullPage:true});
+  }
+ }finally{
+  await writeFile(info.outputPath('loading-observations.json'),JSON.stringify(await page.evaluate(()=>({frames:window.desktopFrames,timeline:window.desktopLoadingTimeline})),null,2)).catch(()=>{});
+  closing=true;release();releaseFont();await context.unrouteAll({behavior:'wait'});
+ }
 });
