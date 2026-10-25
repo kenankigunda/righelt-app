@@ -11,7 +11,7 @@ import { applyDecisionNotes } from './decision-notes.js';
 import { createUtilityMemory } from './utility-memory.js';
 import { createReplayRequest } from './replay-request.js';
 import { activeDecisionLineage } from './decision-history.js';
-import { createAdditionalHistory } from './additional-history.js';
+import { createAdditionalHistory, canReadAdditionalHistory } from './additional-history.js';
 import { createJoinFeedback } from './join-feedback.js';
 import { beginScenarioCapture, scenarioCapturePosition, canLoadScenarioInPlace } from './scenario-capture.js';
 import { createComputerPreparation } from './computer-preparation.js';
@@ -2529,11 +2529,12 @@ const renderParticipantsPanel = game => renderPlayersPanel(game, {
 
 const joinFeedback=createJoinFeedback({getScope:gameId=>({gameId,owner:transport,generation:account.snapshot().generation,visit:inviteVisit,route:window.location.hash})});
 const additionalHistory=createAdditionalHistory({
-  getScope:gameId=>({gameId,owner:transport,generation:account.snapshot().generation,revision:transport.getAuthoritativeGame(gameId)?.gameplayRevision}),
+  getScope:gameId=>{const game=transport.getAuthoritativeGame(gameId),state=account.snapshot();return canReadAdditionalHistory(game,state)?{gameId,owner:transport,generation:state.generation,revision:game.gameplayRevision}:null;},
   load:(scope,values)=>scope.owner.additionalHistory(scope.gameId,values),
   onChange:gameId=>{if(getCurrentViewedGameId()===gameId)render({animatePanels:false,includeBoard:false});},
 });
 const renderAdditionalHistory = game => {
+  if(!canReadAdditionalHistory(game,account.snapshot()))return '<div data-testid="additional-history"><ol class="history-list" aria-label="Additional game history"></ol></div>';
   const state=additionalHistory.snapshot(game.id);
   if(!state)return "";
   if(!state.metadata&&!state.loading&&!state.error)queueMicrotask(()=>void additionalHistory.ensure(game.id));

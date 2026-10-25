@@ -6,7 +6,7 @@ import {syncMiniBoardPreviews} from '/apps/web/board/mini-board-preview.js';
 import {createEngineBoardAdapter,createInitialBoardSnapshot} from '/apps/web/board-adapters/engine-board-adapter.js';
 import {icon} from '/apps/web/shell/ui.js';
 import {renderInvitationSurface} from '/apps/web/shell/invitations.js';
-import {createAdditionalHistory} from '/apps/web/shell/additional-history.js';
+import {createAdditionalHistory,canReadAdditionalHistory} from '/apps/web/shell/additional-history.js';
 import {patchSectionContent} from '/apps/web/shell/dom-patch.js';
 import {mountLoadingFeedback,loadingAttributes} from '/apps/web/shell/loading.js';
 import {mountLoadingEdges} from '/apps/web/shell/loading-edge.js';
@@ -29,7 +29,7 @@ const history=createAdditionalHistory({getScope:gameId=>({gameId,owner,generatio
 const renderedMiniBoardPreviewPayloads=new Map(),registry=new Map();let inspectedDecision=null;
 const renderMini=Function('renderedMiniBoardPreviewPayloads','escapeHtml',`${extract('const registerMiniBoardPreview =','const formatOutcomeStatus =')};return renderMiniBoardPreviewRoot;`)(renderedMiniBoardPreviewPayloads,escapeHtml);
 const archiveGame={id:'g',myRole:'Viewer',player1:{identityId:'red'},player2:{identityId:'blue'}};
-const historyDeps={getShellLayoutMode:()=> 'narrow',renderMiniBoardPreviewRoot:renderMini,toStableKey:JSON.stringify,additionalHistory:history,escapeHtml,formatClientDateTime:()=> 'Jan 1',icon,historyActorLabel,transport:{getIdentityId:()=> 'viewer'}};
+const historyDeps={canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},getShellLayoutMode:()=> 'narrow',renderMiniBoardPreviewRoot:renderMini,toStableKey:JSON.stringify,additionalHistory:history,escapeHtml,formatClientDateTime:()=> 'Jan 1',icon,historyActorLabel,transport:{getIdentityId:()=> 'viewer'}};
 const renderHistory=Function(...Object.keys(historyDeps),`${extract('const renderAdditionalHistory =','const renderHistoryPanel =')};return renderAdditionalHistory;`)(...Object.values(historyDeps));
 function drawHistory(){root.classList.add("panel");const next=root.cloneNode(false);next.innerHTML=renderHistory({...archiveGame,inHistoryMode:Boolean(inspectedDecision),inspectedDecision});patchSectionContent(root,next);syncMiniBoardPreviews({previews:[...root.querySelectorAll('[data-mini-board-preview]')].map(rootEl=>({rootEl,...renderedMiniBoardPreviewPayloads.get(rootEl.dataset.previewId)})),registry,createAdapter:()=>createEngineBoardAdapter()});}
 root.addEventListener('click',event=>{const action=event.target.closest('[data-action]')?.dataset.action;if(action==='inspect-history-archive'){const id=event.target.closest('[data-action]').dataset.decisionId;inspectedDecision={...history.snapshot('g').items.find(entry=>entry.id===id).move,moveId:id};drawHistory();}if(action==='load-history-archive'){void history.more('g');drawHistory();}if(action==='retry-history-archive'){void history.retry('g');drawHistory();}});
