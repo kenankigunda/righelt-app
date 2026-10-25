@@ -484,3 +484,32 @@ test("large legacy replies and compact reads traverse outer API with both new wr
   assert.deepEqual(projected.game.moves,game.moves);
  }finally{await h.close();}
 });
+
+
+test("scoped writers retain metadata bytes and large-command receipts when the canary scope changes",{timeout:120000},async()=>{
+ const h=await harness({STORAGE_LARGE_STATES_ENABLED:"true",STORAGE_METADATA_WRITES_ENABLED:"true",STORAGE_WRITER_CANARY_GAME_ID:"g"});
+ try{
+  await h.call("create",{gameId:"g",selfPlayMode:true});
+  const original=await h.db.prepare("SELECT * FROM game_payloads WHERE game_id='g'").first();
+  assert.equal((await h.call("join",{identityId:"viewer",mode:"viewer"})).status,200);
+  const metadata=await h.db.prepare("SELECT * FROM game_payloads WHERE game_id='g'").first();
+  assert.equal(metadata.format_version,2);assert.equal(metadata.state_sha256,original.state_sha256);
+  await h.restart({STORAGE_WRITER_CANARY_GAME_ID:"another-game"});
+  const outside=await h.call("join",{identityId:"other-viewer",mode:"viewer"});assert.equal(outside.status,200);
+  assert.equal((await h.db.prepare("SELECT format_version FROM game_payloads WHERE game_id='g'").first()).format_version,1);
+  const {game,row}=await h.current();
+  for(let i=0;i<100;i++){assert.equal(applyServerAction(game,{type:"pass"}).ok,true);game.moves.at(-1).notation="Recorded decision ".repeat(1100);}
+  game.archiveStartRevision=0;const encoded=await encodeStorage(game);assert.ok(encoded.rawBytes>2_000_000);
+  await h.db.prepare("UPDATE game_payloads SET state_blob=?1,state_sha256=?2 WHERE game_id='g'").bind(encoded.blob,encoded.checksum).run();
+  await h.restart({STORAGE_WRITER_CANARY_GAME_ID:"g"});
+  const command={protocolVersion:2,gameId:"g",identityId:"actor",clientCommandId:"v2:scoped-large",kind:"action",payload:{action:{type:"pass"}},expectedState:game.board.state,expectedGameplayRevision:row.gameplay_revision};command.fingerprint=await commandFingerprint(command);
+  assert.equal((await h.call("apply",command,{"x-harness-lose-response":"1"})).status,500);
+  await h.restart({STORAGE_WRITER_CANARY_GAME_ID:"another-game"});
+  const duplicate=await h.call("apply",command);assert.equal(duplicate.status,200);assert.equal(duplicate.body.duplicate,true);assert.equal(duplicate.body.game.moves.length,101);
+  const retained=(await h.call("reconcile",{commands:[],knownSnapshotEventSeq:0})).body.game;
+  const next={...command,clientCommandId:"v2:outside-large",expectedState:retained.board.state,expectedGameplayRevision:retained.gameplayRevision};next.fingerprint=await commandFingerprint(next);
+  const rejected=await h.call("apply",next);assert.equal(rejected.body.commandOutcomes[0].reason,"state_capacity_exceeded");
+  const after=(await h.call("reconcile",{commands:[],knownSnapshotEventSeq:0})).body.game;
+  assert.deepEqual(after.board,retained.board);assert.deepEqual(after.moves,retained.moves);
+ }finally{await h.close();}
+});
