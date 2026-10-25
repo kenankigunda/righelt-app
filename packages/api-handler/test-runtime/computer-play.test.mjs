@@ -30,7 +30,7 @@ for (const accounts of [true, false]) test(`native ${accounts ? 'account' : 'gue
       const response = await runtime.dispatchFetch(`https://test/api/shell/${route}${query}`, { method: body === undefined ? 'GET' : 'POST', headers: { Origin: 'https://test', 'Content-Type': 'application/json', 'X-Righelt-Auth': '1', 'X-Righelt-Auth-Version': '2', Cookie: `__Host-righelt_session=${actor.token}`, 'X-Righelt-Session': actor.context }, ...(body === undefined ? {} : { body: JSON.stringify({ protocolVersion: 2, identityId: actor.id, ...body }) }) });
       return { status: response.status, body: await response.json() };
     };
-    for(const [name,modelId]of [['cached',undefined],['current',CURRENT_COMPUTER_MODEL.id],['retained','initial-1554']]){
+    for(const [name,modelId]of [['cached',undefined],['explicit-published',CURRENT_COMPUTER_MODEL.id]]){
       const value=await call('games',a,{gameId:'pin-'+name,computer:{p1:'babs',p2:null},...(modelId===undefined?{}:{computerModelId:modelId})});
       assert.equal(value.status,200,JSON.stringify(value.body));assert.equal(value.body.game.computer.modelId,modelId??'initial-1554');
       const reloaded = await call('games/pin-'+name,a);assert.equal(reloaded.status,200,JSON.stringify(reloaded.body));assert.equal(reloaded.body.game.computer.modelId,modelId??'initial-1554');
@@ -72,7 +72,7 @@ for (const accounts of [true, false]) test(`native ${accounts ? 'account' : 'gue
     assert.equal((await call(route('decision-attempt'),a2,{operation:'write',kind:'computer',attemptId:p.attemptId,attempt})).status,200);
     assert.equal((await call(route('decision-attempt'),a2,{operation:'write',kind:'computer',attemptId:p.attemptId,attempt:{...attempt,outcome:'changed'}})).status,409);
     const sent = await command(a2,game,'v2:accepted',p);
-    const changedModelCommand = await command(a2,game,'v2:accepted',{...p,modelId:CURRENT_COMPUTER_MODEL.id});
+    const changedModelCommand = await command(a2,game,'v2:accepted',{...p,modelId:'test-unpublished-model'});
     assert.notEqual(changedModelCommand.fingerprint,sent.fingerprint,'Model choice is part of immutable command identity');
     const accepted = await call(route('apply'),a2,sent);
     assert.equal(accepted.body.commandOutcomes[0].outcome,'accepted',JSON.stringify(accepted.body));
@@ -141,7 +141,7 @@ for (const accounts of [true, false]) test(`native ${accounts ? 'account' : 'gue
     assert.deepEqual(branch.body.game.board.state,decision.move.selectionSnapshot);
     assert.equal(branch.body.game.player1,null);assert.equal(branch.body.game.player2.identityId,'viewer');
     assert.equal(branch.body.game.computer,undefined);
-    for(const [name,modelId]of [['cached',undefined],['current',CURRENT_COMPUTER_MODEL.id],['retained','initial-1554']]){
+    for(const [name,modelId]of [['cached',undefined],['explicit-published',CURRENT_COMPUTER_MODEL.id]]){
       const value=await call('history/branch',a,{gameId:'branch-pin-'+name,sourceGameId:game.id,sourceDecisionId:decision.id,computer:{p1:'babs',p2:null},...(modelId===undefined?{}:{computerModelId:modelId})});
       assert.equal(value.status,200,JSON.stringify(value.body));assert.equal(value.body.game.computer.modelId,modelId??'initial-1554');
     }

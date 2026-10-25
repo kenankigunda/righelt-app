@@ -85,7 +85,7 @@ test('guest projection uses the persisted guest identity without an account requ
  assert.deepEqual(requests,[{url:'/api/shell/games/game-1?identityId=guest%20id',options:{headers:{}}}]);
 });
 
-for (const modelId of ['initial-1554', 'production-20261025-99']) test(`observation helper binds explicit model identity ${modelId}`, async () => {
+for (const modelId of ['initial-1554', 'test-next-model']) test(`observation helper binds explicit model identity ${modelId}`, async () => {
  let observed;
  const page={evaluate:async(fn,options)=>{assert.equal(fn,readProjectedGame);observed=options;return 'accepted';}};
  assert.equal(await waitForComputerDecision(page,'game-1','horus',{modelId}), 'accepted');

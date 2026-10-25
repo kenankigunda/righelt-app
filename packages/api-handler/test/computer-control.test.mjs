@@ -56,8 +56,10 @@ test('main game projection keeps computer turns read only until explicit takeove
   assert.equal(withViewModel(game, 'owner').canRecordMove, true);
 });
 
-test('new computer games use the current model while retained controls keep their original model', () => {
+test('published model controls retain their pinned identity and generation fences', () => {
  assert.equal(initial().modelId,CURRENT_COMPUTER_MODEL.id);
+ assert.equal(CURRENT_COMPUTER_MODEL.id,'initial-1554');
+ assert.equal(getComputerModel('production-20261025-99'),null);
  const old={...initial(),modelId:'initial-1554'};
  assert.equal(parseComputerControl(JSON.parse(JSON.stringify(old))).modelId,'initial-1554');
  assert.equal(getComputerModel('initial-1554').sha256,'748fcc5e7346900ead62a241002c50ca1012ef8857c73c3eb71e308b955d0490');

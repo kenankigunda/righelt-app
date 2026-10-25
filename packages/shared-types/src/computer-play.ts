@@ -9,26 +9,22 @@ export const COMPUTER_PROFILES = Object.freeze({
   horus: Object.freeze({ name: 'Horus', version: 'experimental-v1', simulations: 128, temperature: 0.1, maxValueGap: 0.01 }),
 });
 export type ComputerProfile = keyof typeof COMPUTER_PROFILES;
-const INITIAL_COMPUTER_MODEL = Object.freeze({
+export const CURRENT_COMPUTER_MODEL = Object.freeze({
   id: 'initial-1554', sha256: '748fcc5e7346900ead62a241002c50ca1012ef8857c73c3eb71e308b955d0490', bytes: 411327,
   checkpoint: '04302e437e01868cc48a237df3c3e8621d84dade628511324b6a3e6e438d6291',
   url: '/computer/models/initial-1554.onnx', experimental: true,
 });
 export type ComputerModel = Readonly<{ id: string; sha256: string; bytes: number; checkpoint: string; url: string; experimental: boolean }>;
-export const CURRENT_COMPUTER_MODEL = Object.freeze({
-  id: 'production-20261025-99', sha256: 'c842b577ebc9d31d3e27e204cd471391c04235a80b5f6d0acf6044ad9173597b', bytes: 411327,
-  checkpoint: 'e02c45896c40aebc7b52247ead4abf7744c7c64b955114c197580efd8af73d16',
-  url: '/computer/models/production-20261025-99.onnx', experimental: true,
-});
-// Published compatible versions remain addressable for existing games and explicit upgrades.
+// This historical HTTP default stays fixed when CURRENT changes in a later release.
+const LEGACY_COMPUTER_MODEL_ID = 'initial-1554';
+// Only published compatible models belong here.
 export const COMPUTER_MODELS: Readonly<Record<string, ComputerModel>> = Object.freeze({
-  [INITIAL_COMPUTER_MODEL.id]: INITIAL_COMPUTER_MODEL,
   [CURRENT_COMPUTER_MODEL.id]: CURRENT_COMPUTER_MODEL,
 });
 export const getComputerModel = (id: string) => Object.hasOwn(COMPUTER_MODELS, id) ? COMPUTER_MODELS[id] : null;
 /** Requests from cached clients predate model pinning and know only the original model. */
 export const computerModelForCreation = (value: unknown): ComputerModel | null => value === undefined
-  ? getComputerModel(INITIAL_COMPUTER_MODEL.id) : typeof value === 'string' ? getComputerModel(value) : null;
+  ? getComputerModel(LEGACY_COMPUTER_MODEL_ID) : typeof value === 'string' ? getComputerModel(value) : null;
 export type ComputerSeats = { p1: ComputerProfile | null; p2: ComputerProfile | null };
 export type ComputerControl = {
   ownerId: string; seats: ComputerSeats; modelId: string; generation: number;
