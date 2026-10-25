@@ -37,7 +37,8 @@ export const switchGamePanel = async (page, key) => {
   // collapsed while the current panel stays visible and ready.
   if (await tab.getAttribute('aria-pressed') !== 'true') {
     const reveal = page.getByRole('button',{name:'Show game navigation',exact:true});
-    if (await reveal.count() && await reveal.getAttribute('aria-expanded') !== 'true') await reveal.click();
+    // Refresh the idle window even when the bar is about to hide.
+    if (await reveal.count()) await reveal.click();
     await tab.click();
   }
   await expect(tab).toHaveAttribute('aria-pressed','true');
