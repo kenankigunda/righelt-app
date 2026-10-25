@@ -6,6 +6,20 @@ import {assertMovePreview} from '../scripts/validation/browser-move.mjs';
 const navigation=({collapsed=false,wide=false}={})=>`<style>.game-shell-track-wrap{width:300px;height:100px;overflow:hidden}.game-shell-track{display:flex;width:900px;transition:transform 180ms linear}.panel{width:300px;flex:none;height:100px}[data-mobile-nav-controls][inert]{visibility:hidden}</style>
 <div id="app" data-shell-layout-mode="${wide?'wide':'narrow'}"><div class="game-shell-track-wrap"><div class="game-shell-track">${['players','board','history'].map((key,index)=>`<div class="panel" data-mobile-panel="${key}" ${collapsed&&index?'inert':''}>${key}</div>`).join('')}</div></div>
 ${collapsed?'<button id="reveal" aria-label="Show game navigation">Reveal</button>':''}<nav ${collapsed?'data-mobile-nav-controls inert':''}>${['players','board','history'].map((key,index)=>`<button data-action="switch-game-panel" data-panel="${key}" aria-pressed="${!index}">${key}</button>`).join('')}</nav></div>`;
+
+for(const label of ['Play as both players','Play both sides'])test(`self-play proof uses the stable action with ${label} copy`,async({page})=>{
+ await page.setContent(`<button data-action="create-self-play">${label}</button><button data-action="play-as-both-players" data-game-id="current">${label}</button>`);
+ await page.evaluate(()=>{
+  window.selfPlayClicks=0;window.otherClicks=0;
+  document.querySelector('[data-action="create-self-play"]').onclick=()=>window.otherClicks++;
+  document.querySelector('[data-action="play-as-both-players"]').onclick=event=>{window.selfPlayClicks++;event.currentTarget.remove();};
+ });
+ const control=page.locator('[data-action="play-as-both-players"]');await expect(control).toHaveCount(1);await control.click();await expect(control).toHaveCount(0);
+ expect(await page.evaluate(()=>({selected:window.selfPlayClicks,other:window.otherClicks}))).toEqual({selected:1,other:0});
+ await page.setContent('<button data-action="play-as-both-players">One</button><button data-action="play-as-both-players">Two</button>');
+ await assert.rejects(()=>page.locator('[data-action="play-as-both-players"]').click(),/strict mode violation/);
+});
+
 async function mountNavigation(page,options){
   await page.setContent(navigation(options));
   await page.evaluate(({collapsed})=>{
