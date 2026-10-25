@@ -15,7 +15,7 @@ test('human completed turn offers role narration and the existing isolated repla
 test('read only boards never receive gameplay or replay CTAs for another player',()=>{
  const g=game();g.controlSeat='Player 1';
  assert.equal(opponentBoardMessage(g,{}),'Waiting for your opponent');
- g.myRoles=[];g.moves.push({...g.moves[0],moveId:'current',turnIndex:1});assert.equal(opponentBoardMessage(g,{}),'Red to play');
+ g.myRoles=[];g.moves.push({...g.moves[0],moveId:'current',turnIndex:1});assert.equal(opponentBoardMessage(g,{}),'Guest 1 to play');
  g.controlSeat='Player 2';assert.equal(opponentBoardMessage(g,{}, {},{identityId:'me'}),'Your turn');
  g.pendingCommandCount=1;assert.equal(opponentBoardMessage(g,{}),'Saving your move');
  g.inHistoryMode=true;assert.equal(opponentBoardMessage(g,{}),null);
@@ -54,11 +54,11 @@ test('local rush, follow and forced retreat keep their real action prompts witho
  const g=game();g.computer={seats:{p1:'tau'}};g.computerTurn='tau';g.board.state.continuation={type:'rush'};
  assert.equal(opponentBoardMessage(g,{}, {},{canInteract:false}),'Tau is thinking');
 });
-test('spectators can replay Red or Blue completed turns only before the next acknowledged action',()=>{
+test('spectators can replay named guest completed turns only before the next acknowledged action',()=>{
  for(const side of ['P1','P2']){
   const g=game();g.myRoles=[];g.moves[0].actorSide=side;g.turns[0].playerSeat=side==='P1'?'Player 1':'Player 2';g.controlSeat=side==='P1'?'Player 2':'Player 1';
-  const message=opponentBoardMessage(g,{});assert.equal(message.text,`${side==='P1'?'Red':'Blue'} rushed a piece from (1, 2) to (2, 3)`);assert.equal(message.action.label,'Show me again');
-  g.moves.push({...g.moves[0],moveId:'current',turnIndex:1});assert.equal(opponentBoardMessage(g,{}),`${side==='P1'?'Blue':'Red'} to play`);
+  const message=opponentBoardMessage(g,{});assert.equal(message.text,`${side==='P1'?'Guest 1':'Guest 2'} rushed a piece from (1, 2) to (2, 3)`);assert.equal(message.action.label,'Show me again');
+  g.moves.push({...g.moves[0],moveId:'current',turnIndex:1});assert.equal(opponentBoardMessage(g,{}),`${side==='P1'?'Guest 2':'Guest 1'} to play`);
   g.moves[1].undone=true;assert.equal(opponentBoardMessage(g,{}).action.label,'Show me again');
   g.sharedMutationsBlocked=true;assert.equal(opponentBoardMessage(g,{}),'Waiting for the game');
  }
@@ -79,4 +79,13 @@ test('legal untouched local turns offer Pass beside human and computer narration
   g.legalActions=[{type:'pass'}];assert.equal(opponentBoardMessage(g,{}, {},{canInteract:false}).actions,undefined);
   g.board.state.continuation={type:'rush'};assert.equal(opponentBoardMessage(g,{}, {},{canInteract:true}),null);
  }
+});
+
+test('spectator narration uses participant names and preserves owned relative wording',()=>{
+ const g=game();g.myRoles=[];g.player1.profile={displayName:'Étoile 星'};g.player2.profile={username:'BlueMoon'};
+ const message=opponentBoardMessage(g,{});assert.equal(message.text,'Étoile 星 rushed a piece from (1, 2) to (2, 3)');assert.equal(message.action.label,'Show me again');
+ g.moves.push({...g.moves[0],moveId:'current',turnIndex:1});assert.equal(opponentBoardMessage(g,{}),'BlueMoon to play');
+ assert.equal(opponentBoardMessage(g,{}, {},{identityId:'me'}),'Your turn');
+ g.controlSeat='Player 1';assert.equal(opponentBoardMessage(g,{}, {},{identityId:'me'}),'Waiting for your opponent');
+ const actorSides=g.moves.map(move=>move.actorSide);assert.deepEqual(actorSides,['P1','P1']);
 });

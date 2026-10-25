@@ -2505,7 +2505,7 @@ const renderJoinInvitePanel = (game, inviteLink) => {
       ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({
           className: "secondary",
           pendingKey: playAsBothButtonKey,
-        })}>Play as both players</button>`
+        })}>Play both sides</button>`
       : "",
   ]);
 

@@ -22,8 +22,8 @@ test('create, move, viewer live update, reload and reconnect',async({page,contex
  try{
   const {gameHash}=await createGameFromHome(page,capabilities);
   const players=page.locator('[data-action="switch-game-panel"][data-panel="players"]');if(await players.isVisible())await players.click();
-  await page.getByRole('button',{name:'Play as both players',exact:true}).click();
-  await expect(page.getByRole('button',{name:'Play as both players',exact:true})).toHaveCount(0);
+  await page.locator('[data-action="play-as-both-players"]').click();
+  await expect(page.locator('[data-action="play-as-both-players"]')).toHaveCount(0);
   const board=page.locator('[data-action="switch-game-panel"][data-panel="board"]');if(await board.isVisible())await board.click();
   await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
   await geometry(page);await proof(page,info,'created',page.getByTestId('game-board'));

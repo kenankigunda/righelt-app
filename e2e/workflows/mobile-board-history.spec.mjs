@@ -25,7 +25,7 @@ const expectNoHorizontalOverflow=page=>expect.poll(()=>page.evaluate(()=>documen
 const selfPlay=async(page)=>{
   const game=await createGameFromHome(page);
   if(await page.locator('#app').getAttribute('data-shell-layout-mode')==='narrow')await switchPanel(page,'players');
-  await page.getByRole('button',{name:'Play as both players',exact:true}).click();
+  await page.getByRole('button',{name:'Play both sides',exact:true}).click();
   await expect(page.getByTestId('game-role')).toContainText('both players');
   if(await page.locator('#app').getAttribute('data-shell-layout-mode')==='narrow')await switchPanel(page,'board');
   return game;

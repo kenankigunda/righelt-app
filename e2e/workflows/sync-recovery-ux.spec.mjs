@@ -13,8 +13,8 @@ for (const width of [933, 932, 901, 900, 899, 390]) test(`recovery overlay and s
  const {gameId}=await createGameFromHome(page);
  const useTabs=await page.getByRole("button",{name:"Players",exact:true}).isVisible();
  if(useTabs) await page.getByRole("button",{name:"Players",exact:true}).click();
- await page.getByRole("button",{name:"Play as both players",exact:true}).click();
- await expect(page.getByRole("button",{name:"Play as both players",exact:true})).toHaveCount(0);
+ await page.getByRole("button",{name:"Play both sides",exact:true}).click();
+ await expect(page.getByRole("button",{name:"Play both sides",exact:true})).toHaveCount(0);
  if(useTabs) await page.getByRole("button",{name:"Board",exact:true}).click();
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  await makeAnyLegalMove(page);

@@ -27,6 +27,9 @@ test('loading preserves the real empty feedback and additional-history footer fl
  const context={...slots,escapeHtml:String,icon:()=>'',getJoinButtonKey:()=>'',getPlayAsBothButtonKey:()=>'',getCopyInviteButtonKey:()=>'',renderSectionActions:items=>`<div class="row section-actions">${items.join('')}</div>`,invitationOptions:()=>[{role:'viewer',label:'Invite someone to view'}],renderButtonStateAttributes:()=>'',renderParticipantsPanel:()=>'<ul class="participant-list"></ul>',joinFeedback:{message:()=>''},issueDiagnostics:{list:()=>[]},currentRoute:{gameId:'g'},inviteFeedback:'',inviteFallback:null,additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})}};
  vm.runInNewContext(`${extract('const renderInviteFeedback =','const setInviteFeedback =')}${extract('const renderJoinInvitePanel =','const expandedViewerGames =')}${extract('const renderAdditionalHistory =','const renderHistoryPanel =')};globalThis.players=renderJoinInvitePanel;globalThis.extra=renderAdditionalHistory;`,context);
  const live=context.players({id:'g',pendingJoinRequests:[]});
+ const both=context.players({id:'g',pendingJoinRequests:[],canPlayAsBothPlayers:true});
+ assert.match(both,/data-action="play-as-both-players"[^>]*>Play both sides<\/button>/);
+ assert.doesNotMatch(live,/data-action="play-as-both-players"/);
  assert.match(live,/section-actions[\s\S]*<div class="invite-feedback" role="status" aria-live="polite"[^>]*><\/div>/);
  assert.match(slots.renderPlayersLoading(),/panel-loading-actions[\s\S]*<div class="invite-feedback"><\/div>/);
  assert.match(context.extra({id:'g'}),/<div[^>]*><ol class="history-list"[^>]*><\/ol><\/div>/);

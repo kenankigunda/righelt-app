@@ -1,3 +1,4 @@
+import {playerDisplayName} from './perspective-labels.js';
 import {computerBoardMessage, describeMove} from './computer-narration.js';
 import {activityStateActorSide, normalizeActivitySide} from './activity-affiliation.js';
 import {getTurnOwnerSideForState} from '../generated/packages/shared-types/src/shell-live-turn.js';
@@ -42,8 +43,8 @@ export function opponentBoardMessage(game, status, selection = {}, {canInteract 
       const completed = latestOpponentTurn(game, {identityId});
       const currentTurn = game.board?.state?.turnIndex;
       const started = (game.moves ?? []).some(move => !move.undone && move.turnIndex === currentTurn);
-      if (completed && !started) return {text: describeMove(completed.last, completed.side === 'P1' ? 'Red' : 'Blue'), action: {id:'replay-computer',label:'Show me again'}};
-      return `${actor === 'P1' ? 'Red' : 'Blue'} to play`;
+      if (completed && !started) return {text: describeMove(completed.last, playerDisplayName(game,completed.side)), action: {id:'replay-computer',label:'Show me again'}};
+      return `${playerDisplayName(game,actor)} to play`;
     }
     if (own.has(actor)) return 'Your turn';
     return 'Waiting for your opponent';
