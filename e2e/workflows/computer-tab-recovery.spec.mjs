@@ -61,3 +61,27 @@ test('player card deliberately restores paused manual play and lost acknowledgem
  expect(game.pendingCommandCount).toBe(0);
  await page.screenshot({path:info.outputPath('computer-card-resumed.png')});
 });
+
+test('competing tabs transfer control deliberately without changing seats or model',async({page,context},info)=>{
+ const id=await createComputer(page),before=await projected(page,id),other=await context.newPage();
+ await other.goto(`/#/game/${id}`);await switchGamePanel(other,'players');
+ const elsewhere=other.getByRole('button',{name:'Babs, Blue, Active in another tab',exact:true});await expect(elsewhere).toBeVisible();await elsewhere.click();
+ await other.getByRole('button',{name:'Resume here',exact:true}).click();
+ await expect(other.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible();
+ const first=page.getByRole('button',{name:'Babs, Blue, Active in another tab',exact:true});await expect(first).toBeVisible();await first.click();
+ await page.getByRole('button',{name:'Resume here',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible();
+ await expect(other.getByRole('button',{name:'Babs, Blue, Active in another tab',exact:true})).toBeVisible();
+ const after=await projected(page,id);expect(after.computer.generation).toBe(before.computer.generation+2);
+ expect(after.computer.seats).toEqual(before.computer.seats);expect(after.computer.modelId).toBe(before.computer.modelId);expect(after.gameplayRevision).toBe(before.gameplayRevision);
+ await page.screenshot({path:info.outputPath('computer-competing-tabs.png')});
+});
+
+test('abrupt renderer termination releases authority after lease expiry',async({page,context,browserName})=>{
+ test.skip(browserName!=='chromium','Renderer crash is exposed by Chromium CDP.');
+ const id=await createComputer(page),before=await projected(page,id),other=await context.newPage();
+ const cdp=await context.newCDPSession(page);void cdp.send('Page.crash').catch(()=>{});
+ await other.goto(`/#/game/${id}`);await switchGamePanel(other,'players');
+ await expect(other.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:25000});
+ const after=await projected(other,id);expect(after.computer.generation).toBeGreaterThan(before.computer.generation);expect(after.gameplayRevision).toBe(before.gameplayRevision);
+});
