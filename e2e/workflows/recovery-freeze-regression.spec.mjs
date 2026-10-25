@@ -83,7 +83,7 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toBeVisible();
  game=await currentGame(page,gameId);expect(game.board.state.continuation.phase).toBe("retreat");
 
- await expect(page.locator("#shell-board-preview-label")).toContainText("Choose where to retreat");
+ await expect(page.locator("#shell-board-preview-label")).toContainText("Select a retreat");
  // The tentative retreat stays visible, but no command is allowed while the
  // accepted push's response is still unknown. The quiet banner is not readiness.
  const retreat=game.legalActions.find(a=>a.type==="retreat");expect(retreat).toBeTruthy();
