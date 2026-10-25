@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {installPassiveAudioObservations} from '../../../e2e/support/audio-observations.mjs';
 
-const fixture=()=>{
+const fixture=({inheritedResume=false,throwsResume=false}={})=>{
  const failure=new Error('native constructor failure'),nodeReturn={},startReturn={},resumePromise=Promise.resolve();
  class Events{listeners=new Map();addEventListener(type,listener){const list=this.listeners.get(type)??[];list.push(listener);this.listeners.set(type,list);}emit(type,event={}){for(const listener of this.listeners.get(type)??[])listener(event);}}
  class Base extends Events{createBufferSource(){return nodeReturn;}createOscillator(){return nodeReturn;}}
@@ -12,6 +12,8 @@ const fixture=()=>{
   constructor(options){super();if(options?.fail)throw failure;this.newTarget=new.target;this.state='running';this.sampleRate=44100;}
   resume(){return resumePromise;}
  }
+ if(throwsResume)Native.prototype.resume=function(){throw failure;};
+ if(inheritedResume){Base.prototype.resume=Native.prototype.resume;delete Native.prototype.resume;}
  class Source{constructor(context){this.context=context;this.buffer=null;}start(){return startReturn;}}
  class Socket extends Events{static OPEN=1;constructor(url){super();this.url=url;}}
  const ui={label:'Mute sound',pressed:'true',preference:null,replay:false,selected:null};
@@ -54,4 +56,15 @@ test('gesture and native socket observations capture actual UI preferences witho
  const records=f.window.passiveAudioObservations,gesture=records.find(record=>record.kind==='gesture'),message=records.find(record=>record.kind==='socket-message');
  assert.equal(gesture.trusted,true);assert.equal(gesture.ui.soundPreference,'false');assert.equal(gesture.ui.soundControl.label,'Enable sound');assert.equal(gesture.ui.replayMounted,true);assert.equal(gesture.ui.selectedHistoryMove,'m1');
  assert.equal(message.eventSeq,5);assert.equal(message.destructionCount,2);assert.equal(message.ui.soundPreference,'false');
+});
+
+
+test('passive inherited resume observes the actual method owner once and preserves native errors',async()=>{
+ const f=fixture({inheritedResume:true}),audio=new f.window.AudioContext();
+ assert.equal(audio.resume(),f.resumePromise);await f.resumePromise;
+ assert.equal(f.window.passiveAudioObservations.filter(record=>record.kind==='resume-request').length,1);
+ assert.equal(f.window.passiveAudioObservations.filter(record=>record.kind==='resume-resolved').length,1);
+ const broken=fixture({inheritedResume:true,throwsResume:true}),badAudio=new broken.window.AudioContext();
+ assert.throws(()=>badAudio.resume(),error=>error===broken.failure);
+ assert.equal(broken.window.passiveAudioObservations.filter(record=>record.kind==='resume-threw').length,1);
 });
