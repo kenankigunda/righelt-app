@@ -32,3 +32,12 @@ test('mirror write failure stops installation and browser failure is not retried
 test('unknown project fails before changing mirrors or installing',()=>{
  assert.throws(()=>installBrowsers({env:{...hosted,PROJECT:'unknown'},platform:'linux',read:()=>{throw Error('unexpected read');},spawn:()=>{throw Error('unexpected install');}}),/Unknown browser/);
 });
+test('hosted Firefox installs native audio dependencies only after the browser install succeeds',()=>{
+ const env={...hosted,CI:'true',PROJECT:'firefox'},calls=[];
+ assert.equal(installBrowsers({env,platform:'linux',read:()=>original,spawn:(...args)=>{calls.push(args);return {status:0};}}),0);
+ assert.deepEqual(calls.at(-1),['sudo',['apt-get','install','--yes','--no-install-recommends','pulseaudio','pulseaudio-utils'],{stdio:'inherit'}]);
+ assert.equal(calls.length,3);
+ let count=0;
+ assert.equal(installBrowsers({env,platform:'linux',read:()=>ubuntuArchiveMirrors(original),spawn:()=>{count++;return {status:8};}}),8);
+ assert.equal(count,1);
+});
