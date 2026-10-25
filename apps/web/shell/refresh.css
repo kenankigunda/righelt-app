@@ -232,7 +232,7 @@ body {background-image:var(--stone-grain);background-color:var(--surface-foundat
 .opponent-choice-arrow {position:absolute;right:12px;bottom:18px;color:var(--text-secondary);}
 .opponent-choice-arrow .righelt-icon {width:16px;height:16px;}
 .righelt-icon {width:20px;height:20px;flex:none;vertical-align:middle;}
-button:has(> .righelt-icon):not(.ui-icon-button) {display:inline-flex;align-items:center;justify-content:center;gap:9px;}
+:is(button,.button-link):has(> .righelt-icon):not(.ui-icon-button) {display:inline-flex;align-items:center;justify-content:center;gap:9px;}
 [data-hover-capability="hover"] .home-refresh button.opponent-choice:not(:disabled):hover {background:transparent;box-shadow:none;}
 [data-hover-capability="hover"] .home-refresh button.opponent-choice:not(:disabled):hover::before {background:linear-gradient(rgb(37 43 45 / 3%),rgb(37 43 45 / 3%)),var(--stone-grain),#fffdf6;}
 .home-refresh button.opponent-choice:focus-visible {outline:2px solid var(--ink);outline-offset:5px;}
