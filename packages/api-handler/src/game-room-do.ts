@@ -1240,7 +1240,7 @@ export class GameRoomDO {
     };
     // Previously accepted receipts remain authoritative across contract upgrades.
     const action = asAction(command.payload.action);
-    const oldContinuationPass = action?.type === "pass" && Boolean(game.board.state.continuation);
+    const oldContinuationPass = action?.type === "pass" && Boolean(asGameState(command.expectedState)?.continuation);
     if (command.actionContractVersion !== undefined && command.actionContractVersion !== ACTION_CONTRACT_VERSION
       || oldContinuationPass && command.actionContractVersion !== ACTION_CONTRACT_VERSION) return reject("upgrade_required");
     if (command.predecessor) {
