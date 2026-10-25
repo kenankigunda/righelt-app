@@ -100,6 +100,16 @@ The parent workspace permissions allow these command prefixes without interactiv
 
 For Codex local approval persistence, prefer saving a stable wrapper prefix for app pushes such as `./scripts/git-app.sh push` or `./scripts/git-app.sh push origin`. Do not save branch-qualified variants such as `./scripts/git-app.sh push origin codex/<branch>` because they only auto-approve that one branch name.
 
+## Prelaunch compatibility
+
+Before launch, prefer resetting explicitly scoped disposable development data over adding adapters for retired formats. Read `docs/ai/PRELAUNCH_COMPATIBILITY.md` before removing compatibility code or planning a reset.
+
+- Identify current consumers and retained data first. Remove obsolete interpretation paths only with regression proof or an explicit reset prerequisite.
+- Preserve accounts, trained model assets, checkpoint identity, historical evidence and provenance unless the user explicitly authorizes their disposal.
+- Keep active authorization, idempotency receipts/tombstones, uncertain-save recovery, archive integrity, ownership boundaries and resource safeguards. Their age or naming is not a reason to remove them.
+- Never run a hosted reset by inference from implementation, merge or deployment authorization. Document its exact scope, fencing, rollback and verification first.
+- Revisit this default once real customer data creates preservation obligations.
+
 ## 5.1) Shared Constants Policy
 
 - Any constant that defines shared runtime behavior, protocol semantics, cache policy, validation rules, game invariants, or other cross-module behavior must have a single source of truth.
