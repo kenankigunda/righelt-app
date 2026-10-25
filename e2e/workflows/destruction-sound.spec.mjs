@@ -123,7 +123,7 @@ test('real audio remote finalization deduplicates its durable receipt while its 
   // A trusted gesture starts native resume asynchronously. The sound contract
   // intentionally skips cues while suspended instead of replaying them later.
   // Establish the audible viewer before sending the remote confirmation.
-  await expect.poll(()=>viewer.evaluate(()=>window.passiveAudioObservations.some(event=>event.kind==='resume-resolved'&&event.state==='running')))).toBe(true);
+  await expect.poll(()=>viewer.evaluate(()=>window.passiveAudioObservations.some(event=>event.kind==='resume-resolved'&&event.state==='running'))).toBe(true);
   const ownerRemoteActive=await owner.evaluate(()=>document.hasFocus()&&!document.hidden);
 
   const remoteRequest=owner.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/end-turn'));
