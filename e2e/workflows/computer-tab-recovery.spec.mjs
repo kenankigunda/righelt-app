@@ -91,9 +91,11 @@ test('abrupt renderer termination releases authority after lease expiry',async({
 
 test('a frozen background renderer reacquires authority when resumed',async({page,context,browserName})=>{
  test.skip(browserName!=='chromium','Renderer lifecycle freezing is exposed by Chromium CDP.');
- const id=await createComputer(page),before=await projected(page,id),observer=await context.newPage();await observer.goto('/');
+ const id=await createComputer(page),before=await projected(page,id);
+ expect(before.computer.lease.expiresAt).toBeGreaterThan(Date.now());
  const cdp=await context.newCDPSession(page);await cdp.send('Page.setWebLifecycleState',{state:'frozen'});
- try {await expect.poll(async()=>((await projected(observer,id)).computer.lease?.expiresAt??0)<=Date.now(),{timeout:25000}).toBe(true);}
+ const observer=await context.newPage();await observer.goto('/');
+ try {await expect.poll(async()=>{const control=(await projected(observer,id)).computer;expect(control.generation).toBe(before.computer.generation);expect(control.lease?.deviceId).toBe(before.computer.lease.deviceId);expect(control.lease?.expiresAt).toBe(before.computer.lease.expiresAt);return control.lease.expiresAt<=Date.now();},{timeout:25000}).toBe(true);}
  finally {await cdp.send('Page.setWebLifecycleState',{state:'active'});}
  await expect(page.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:10000});
  await expect.poll(async()=>(await projected(observer,id)).computer.lease.expiresAt,{timeout:10000}).toBeGreaterThan(before.computer.lease.expiresAt);
