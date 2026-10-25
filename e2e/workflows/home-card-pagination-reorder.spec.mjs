@@ -45,7 +45,7 @@ test("home pagination refreshes correctly when a moved game reorders onto an ear
     const reorderedCard = page.locator(`[data-game-id="${oldestGameId}"]`).first();
     await expect(reorderedCard).toBeVisible();
     await expect(reorderedCard).toContainText("Move 2");
-    await expect(reorderedCard.locator(".mini-board-preview-status")).toContainText("Player 2 to play");
+    await expect(reorderedCard.locator(".mini-board-preview-status")).toContainText("Blue to play");
   } finally {
     await closeContextQuietly(context);
   }
