@@ -7,7 +7,7 @@ import { ComputerRuntime } from './computer-runtime.js';
 export function createComputerSession({ getContext, onChange = () => {}, runtime = new ComputerRuntime(), analysisRuntime = new ComputerRuntime(), clock = () => Date.now(), timers = globalThis, deviceId = crypto.randomUUID() }) {
   let status = { phase: 'idle' }, statusScope = null, epoch = 0, active = null, busy = false, leaseWork = null, leaseWorkAction = null, controlWork = 0, renewedAt = 0, recovery = null, pendingSubmission = null;
   let analysis = null, analysisContext = null, analysisEpoch = 0, lastPositionRevision = null, destroyed = false;
-  let activityScope = null, waitingSince = null, waitingRevision = null, lastAcquisitionFailure = null, acquisitionAttempts = 0, retryAt = 0, resumeWork = null, resumeScope = null;
+  let activityScope = null, waitingSince = null, waitingRevision = null, lastAcquisitionFailure = null, acquisitionAttempts = 0, retryAt = 0, resumeWork = null, resumeScope = null, leaseScope = null;
   const progressWork = new Map();
   const repetitions = new Map();
   const ownerScope = context => ({gameId:context.game?.id, transport:context.transport, accountGeneration:context.accountGeneration});
@@ -38,7 +38,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   };
   const activity = (context, scopedStatus) => {
     updateActivity(context);
-    return computerActivity({ game: context.game, identityId: context.transport.getIdentityId(), deviceId, authenticated: context.authenticated, visible: context.visible, status: scopedStatus, projection: context.game ? context.transport.getGameViewModel(context.game.id) : {}, now: clock(), resuming: Boolean(resumeWork && sameOwnerScope(resumeScope, context)), waitingMs: waitingSince === null ? 0 : Math.max(0, clock() - waitingSince), lastAcquisitionFailure, resumeSupported: resumeSupported(context.game) });
+    return computerActivity({ game: context.game, identityId: context.transport.getIdentityId(), deviceId, authenticated: context.authenticated, visible: context.visible, status: scopedStatus, projection: context.game ? context.transport.getGameViewModel(context.game.id) : {}, now: clock(), resuming: Boolean((resumeWork && sameOwnerScope(resumeScope, context)) || (leaseWork && leaseWorkAction === 'acquire' && sameOwnerScope(leaseScope, context))), waitingMs: waitingSince === null ? 0 : Math.max(0, clock() - waitingSince), lastAcquisitionFailure, resumeSupported: resumeSupported(context.game) });
   };
   const noteProgress = (context, progress) => {
     if (!recoveryScopeIsCurrent(context)) return;
@@ -51,7 +51,8 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     const pending = Promise.resolve().then(work);
     leaseWork = pending;
     leaseWorkAction = action;
-    const clear = () => { if (leaseWork === pending) { leaseWork = null; leaseWorkAction = null; } };
+    leaseScope = ownerScope(current());
+    const clear = () => { if (leaseWork === pending) { leaseWork = null; leaseWorkAction = null; leaseScope = null; } };
     void pending.then(clear, clear);
     return pending;
   };

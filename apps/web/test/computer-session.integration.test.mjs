@@ -585,3 +585,11 @@ test('destroying a session fences an in-flight explicit recovery before it can a
  const work=f.session.action('resume-here');while(!release)await Promise.resolve();f.session.destroy();release();await work;
  await f.session.tick();assert.equal(requests,0);
 });
+
+test('automatic acquisition reports scoped Resuming and disables recovery until settlement',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());enableResume(f);let acknowledge;
+ const control=f.transport.computerControl;f.transport.computerControl=async(...args)=>{await new Promise(resolve=>{acknowledge=resolve;});return control(...args);};
+ const work=f.session.tick();while(!acknowledge)await Promise.resolve();
+ const activity=f.session.snapshot().activity;assert.equal(activity.label,'Resuming');assert.equal(activity.showResume,true);assert.ok(activity.disabledReason);
+ f.switchGame();assert.notEqual(f.session.snapshot().activity.label,'Resuming');acknowledge();await work;
+});
