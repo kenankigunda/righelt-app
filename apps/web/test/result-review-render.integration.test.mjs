@@ -6,6 +6,7 @@ import { getGameResult } from "../shell/game-result.js";
 import { participantName, participantDisplayName } from "../shell/public-profile.js";
 import { createRenderGestureGate } from "../shell/render-gesture.js";
 import { renderResultMark, createResultPresentation } from '../shell/result-presentation.js';
+import { icon } from '../shell/ui.js';
 
 const source = readFileSync(new URL("../shell/app.js", import.meta.url), "utf8");
 const extract = (start, end) => {
@@ -93,7 +94,7 @@ test("authoritative terminal rollback clears result state so the board can remou
 test("optimistic terminal state cannot expose a result or open it before confirmation", () => {
   const optimistic = {id:"g",board:{state:{outcome:{status:"p1_win"}}},player1:{identityId:"me"}};
   let confirmed = {...optimistic,board:{state:{outcome:{status:"ongoing"}}}};
-  const context = {renderResultMark,resultPresentation:createResultPresentation(),getDecisionDebugState: () => ({ items: [], cursor: null }), getGameResult, transport:{getIdentityId:()=>"me",getAuthoritativeGame:()=>confirmed},escapeHtml:value=>String(value),formatDisplayGameId:value=>value,icon:()=>"",renderTurnHistory:()=>"",participantName,participantDisplayName,render:()=>{},activeResultGameId:null};
+  const context = {renderResultMark,resultPresentation:createResultPresentation(),getDecisionDebugState: () => ({ items: [], cursor: null }), getGameResult, transport:{getIdentityId:()=>"me",getAuthoritativeGame:()=>confirmed},escapeHtml:value=>String(value),formatDisplayGameId:value=>value,icon,renderTurnHistory:()=>"",participantName,participantDisplayName,render:()=>{},activeResultGameId:null};
   runInNewContext(`${extract("const renderResult =", "const renderGame =")}
     ${extract("const renderHistoryPanel =", "const renderBoardPanel =")}
     globalThis.result = renderResult;globalThis.history = renderHistoryPanel;
@@ -103,6 +104,7 @@ test("optimistic terminal state cannot expose a result or open it before confirm
   context.openResult();assert.equal(context.activeResultGameId,null);
   confirmed=optimistic;
   assert.match(context.result(optimistic),/>You won</);
+  assert.match(context.result(optimistic),/<a[^>]+href="#\/">[\s\S]*?<svg[^>]+aria-hidden="true"[^>]+focusable="false"[\s\S]*?<\/svg>Home<\/a>/);
   assert.match(context.history(optimistic),/data-action="view-result"/);
   context.openResult();assert.equal(context.activeResultGameId,"g");
 });
