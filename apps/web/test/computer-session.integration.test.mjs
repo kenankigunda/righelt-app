@@ -7,6 +7,7 @@ import { createInitialState } from '../generated/packages/game-engine/src/state.
 
 function fixture({canAnalyze = true} = {}) {
   let now = 100, visible = true, authenticated = true, generation = 1, cancelCount = 0, submitted = 0, pending;
+  let progress;
   let game = { id: 'g', gameplayRevision: 0, computer: createComputerControl('owner', { p1: 'babs', p2: null }), board: { state: createInitialState() } };
   const saved = [];
   const transport = { getIdentityId: () => 'owner', getGameViewModel: () => ({ ...game, pendingCommandCount: 0 }), loadGame: async () => game,
@@ -14,9 +15,9 @@ function fixture({canAnalyze = true} = {}) {
     decisionAttempt: async (_, value) => { saved.push(value); },
     applyGameAction: async () => { submitted++; return { committed: Promise.resolve() }; },
   };
-  const runtime = { compute: async () => new Promise((resolve, reject) => { pending = { resolve, reject }; }), cancel: () => { cancelCount++; pending?.reject(Error('cancelled')); pending = null; } };
+  const runtime = { compute: async (_, onProgress) => new Promise((resolve, reject) => { progress = onProgress; pending = { resolve, reject }; }), cancel: () => { cancelCount++; pending?.reject(Error('cancelled')); pending = null; } };
   const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: runtime, clock: () => now, timers: { setInterval() { return 1; }, clearInterval() {} }, getContext: () => ({ game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
-  return { session, transport, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { game = { ...game, id: 'other-game' }; }, game: () => game, saved, setTime: value => { now = value; }, hide: () => { visible = false; }, pending: () => pending, submissions: () => submitted, cancellations: () => cancelCount };
+  return { session, transport, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { game = { ...game, id: 'other-game' }; }, game: () => game, saved, setTime: value => { now = value; }, hide: () => { visible = false; }, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelCount };
 }
 test('detailed disclosure begins at five seconds without cancelling progressing work', async () => {
   const f = fixture(); await f.session.tick(); const computation = f.session.tick();
@@ -264,4 +265,21 @@ for (const rejected of [false, true]) test(`history mutation fences automatic re
   await f.session.tick(); await Promise.resolve();
   assert.deepEqual(requests, [rejected ? 'renew' : 'acquire']);
   f.session.destroy();
+});
+
+
+test('phase clocks include proof saving, survive same-phase ticks and accept zero-based clocks', async () => {
+  const f=fixture(); f.setTime(0); await f.session.tick(); const computation=f.session.tick();
+  assert.equal(f.session.snapshot().startedAt,0);
+  f.setTime(5000); f.progress({phase:'computing'});
+  assert.equal(f.session.snapshot().elapsedMs,5000); assert.equal(f.session.snapshot().phaseElapsedMs,0);
+  f.setTime(5100); f.progress({phase:'computing'});
+  assert.equal(f.session.snapshot().phaseElapsedMs,100);
+  let finishProof; const proofSaved=new Promise(resolve=>{finishProof=resolve});
+  f.transport.decisionAttempt=async()=>proofSaved;
+  f.pending().resolve({result:{status:'ready',action:{type:'pass'}}}); await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.session.snapshot().phase,'saving');
+  f.setTime(15100); assert.equal(f.session.snapshot().phaseElapsedMs,10000);
+  assert.equal(f.submissions(),0); finishProof(); await computation;
+  assert.equal(f.submissions(),1); f.session.destroy();
 });

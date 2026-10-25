@@ -6,7 +6,10 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   let status = { phase: 'idle' }, epoch = 0, active = null, busy = false, leaseWork = null, leaseWorkAction = null, controlWork = 0, renewedAt = 0, recovery = null, pendingSubmission = null;
   let analysis = null, analysisContext = null, analysisEpoch = 0, lastPositionRevision = null;
   const repetitions = new Map();
-  const publish = (next) => { status = { ...status, ...next }; onChange(); };
+  const publish = (next) => {
+    const phaseStartedAt = next.phase !== undefined && next.phase !== status.phase ? clock() : status.phaseStartedAt;
+    status = { ...status, ...next, phaseStartedAt }; onChange();
+  };
   const keyFor = ({ game, accountGeneration }) => game ? `${accountGeneration}:${game.id}:${game.gameplayRevision}:${game.computer?.generation}:${game.computer?.modelId}` : null;
   const current = () => { const context = getContext(); return { ...context, key: keyFor(context) }; };
   const cancelWork = (reason) => { epoch++; runtime.cancel(reason); };
@@ -68,7 +71,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     // Do not renew or start computation with the previous client generation.
     if (controlWork) return;
     if (analysis?.phase === 'computing' && clock() - analysis.startedAt >= COMPUTER_TIMING.detailAfterMs) onChange();
-    if (busy && status.startedAt && clock() - status.startedAt >= COMPUTER_TIMING.detailAfterMs) onChange();
+    if (busy && status.startedAt !== undefined && clock() - status.startedAt >= COMPUTER_TIMING.detailAfterMs) onChange();
     if (!ownLease(game)) {
       cancelWork('other-device');
       if (game.computer.lease?.expiresAt > clock()) { if (status.phase !== 'other-device') publish({ phase: 'other-device' }); return; }
@@ -115,6 +118,9 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       const response = await runtime.compute({ gameId: game.id, gameplayRevision: game.gameplayRevision, state: game.board.state, modelId: game.computer.modelId, profile, seed, controlGeneration: game.computer.generation }, progress => { if (run === epoch) publish({ phase: progress.phase, progress }); });
       if (run !== epoch || current().key !== context.key) return;
       const attempt = { ...base, completedAt: clock(), outcome: response.result.status, result: response.result, cacheAvailable: runtime.cacheAvailable, evidenceSource: 'client-reported' };
+      // Proof persistence is part of saving; a slow evidence write deserves the
+      // same delayed feedback as a slow gameplay command.
+      publish({ phase: 'saving', progress: null });
       await context.transport.decisionAttempt(game.id, { operation: 'write', kind: 'computer', attemptId, attempt }); saved = true;
       if (run !== epoch || current().key !== context.key) return;
       if (response.result.status !== 'ready') throw new Error(response.result.reason);
@@ -168,7 +174,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     snapshot: () => {
       const context = current();
       const scopedAnalysis = context.authenticated && analysis?.gameId === context.game?.id && analysisContext?.accountGeneration === context.accountGeneration && analysisContext?.transport === context.transport ? analysis : null;
-      return { ...status, elapsedMs: status.startedAt ? clock() - status.startedAt : 0, detailed: Boolean(status.startedAt && clock() - status.startedAt >= COMPUTER_TIMING.detailAfterMs), analysis: scopedAnalysis, deviceId };
+      return { ...status, elapsedMs: status.startedAt !== undefined ? Math.max(0, clock() - status.startedAt) : 0, phaseElapsedMs: status.phaseStartedAt !== undefined ? Math.max(0, clock() - status.phaseStartedAt) : 0, detailed: Boolean(status.startedAt !== undefined && clock() - status.startedAt >= COMPUTER_TIMING.detailAfterMs), analysis: scopedAnalysis, deviceId };
     },
     action: async action => { if (action === 'switch') await withControlWork(async () => { cancelWork('switch'); const context = current(); await control(context, 'switch'); }); else await fence(action === 'retry' ? 'resume' : action); },
     suspend: () => { const previous = active; cancelWork('session-changed'); cancelAnalysis(); analysis = null; analysisContext = null; active = null; recovery = null; status = { phase: 'idle' }; if (previous && ownLease(previous.game)) void control(previous, 'release').catch(() => {}); onChange(); },

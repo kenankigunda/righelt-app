@@ -21,7 +21,7 @@ function buildContinuationTransitions(actionSequence) {
   for (let index = 0; index < actionSequence.length; index += 1) {
     const action = actionSequence[index];
     const opensContinuation = action.type === "push" || action.type === "rush";
-    const closesContinuation = action.type === "pass" || action.type === "move" || action.type === "project";
+    const closesContinuation = action.type === "pass" || action.type === "end_turn" || action.type === "move" || action.type === "project";
 
     if (opensContinuation && !active) {
       transitions.push({ index, from: null, to: action.type });

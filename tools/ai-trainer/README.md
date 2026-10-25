@@ -182,3 +182,9 @@ For the next authorized diagnostic, six-hour and twelve-hour stages, pass `--dev
 Each attempt preserves its plan, source/runtime/checkpoint identity and individual case receipts under the run's `development/` directory. `development-latest.json` links the immutable proof and report. The supervisor's existing operation watchdog also bounds blocked inference; interruption cannot add compute time. No standalone collector command bypasses supervision.
 
 Use `development_probe report --cases CASES --proof COMPLETE_PROOF --output REPORT` to read a complete bootstrap proof or stage development proof. Use `development_probe compare --cases CASES --before BEFORE_REPORT --after AFTER_REPORT --output COMPARISON` for matched checkpoint observations. Both commands are read-only with respect to experiment artifacts and execute no model. Numeric export output alone is insufficient. Comparisons require matching frozen cases, engine/search/model dependencies and native runtime; unrelated browser plumbing need not match. A change in preferred moves or raw values does not establish improved playing strength.
+
+### Turn-control policy slot
+
+The current engine uses `pass` only at turn start and `end_turn` to close a legal active sequence. Search and generated training decisions carry those semantic actions directly. Training replay rejects continuation `pass` records rather than silently converting them.
+
+The frozen `absolute-v1` config retains the historical `passIndex` key at slot 2800. That slot represents the mutually exclusive legal turn-control action. Keeping its bytes preserves existing checkpoint, manifest and export hashes. No new weights or training run are required. Rename that key only with a future explicit encoding version and regenerate its artifacts together. This is model metadata, not a submission shim.

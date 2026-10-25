@@ -20,12 +20,13 @@ export function bruteLegalActions(state) {
         candidates.push({type:'follow',actorId:piece.id,from:piece.position,to:continuation.followPoint});
       }
     }
+    if (continuation.phase !== 'retreat') candidates.push({type:'end_turn'});
   } else if (continuation?.type === 'rush') {
     for (const piece of own) for (let dr=-1;dr<=1;dr++) for (let dc=-1;dc<=1;dc++) {
       if (dr || dc) candidates.push({type:'rush',actorId:piece.id,from:piece.position,
         to:{row:piece.position.row+dr,col:piece.position.col+dc}});
     }
-    candidates.push({type:'pass'});
+    candidates.push({type:'end_turn'});
   } else {
     candidates.push({type:'pass'});
     for (const piece of own) for (const type of ['move','project','rush','push']) {

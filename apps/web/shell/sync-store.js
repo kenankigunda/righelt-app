@@ -1190,6 +1190,7 @@ export const createSyncStore = ({
           clientCommandId: payload.clientCommandId ?? null,
           commandOutcome: payload.commandOutcome ?? null,
           ...(payload.type === "state_sync" ? { baseline: true } : {}),
+          ...(payload.actionContractVersion !== undefined ? { actionContractVersion: payload.actionContractVersion } : {}),
         });
         if (applied === null) return false;
       }

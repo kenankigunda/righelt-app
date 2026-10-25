@@ -5,7 +5,7 @@ import { loadIdentity, saveIdentity } from "./persistence.js";
 import { defaultNotationForAction, projectOptimisticGame } from "./optimistic-live.js";
 import { buildStaticGameCardFromGame, normalizeStaticGameCard } from "./static-game-cards.js";
 import { createCommandJournal } from "./command-journal.js";
-import { SYNC_PROTOCOL_VERSION, SYNC_TIMING, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
+import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, SYNC_PROTOCOL_VERSION, SYNC_TIMING, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
 
 import { applyHistoryIntent, historyMoveKey } from "./recovery-view.js";
 
@@ -94,6 +94,7 @@ export const createLiveTransportStore = ({
     ...(auth?.storageGeneration ? { databaseName: `righelt.online-commands.storage.${auth.storageGeneration}.${auth?.enabled ? auth.session.contextId || "anonymous" : "guest"}` } : auth?.enabled ? { databaseName: `righelt.online-commands.account-v1.${auth.session.contextId || "anonymous"}` } : {}),
     isCurrent: () => active,
   });
+  let serverActionContract = null;
   const rawFetcher = fetcher;
   fetcher = async (url, init = {}, evidence = {}) => {
     assertActive();
@@ -102,7 +103,7 @@ export const createLiveTransportStore = ({
     const routeKind = /\/games\/[^/?]+\/([^/?]+)/.exec(url)?.[1];
     Object.assign(evidence, { requestId, status: null, durationMs: 0, serverBuild: "unavailable", requestPhase: "headers",
       requestKind: ["apply", "end-turn", "reconcile"].includes(routeKind) ? routeKind : "read" });
-    init = { ...init, headers: { ...init.headers, "X-Righelt-Request-Id": requestId, ...(auth?.storageGeneration ? { [STORAGE_GENERATION_HEADER]: auth.storageGeneration } : {}) } };
+    init = { ...init, headers: { ...init.headers, "X-Righelt-Request-Id": requestId, [ACTION_CONTRACT_HEADER]: String(ACTION_CONTRACT_VERSION), ...(auth?.storageGeneration ? { [STORAGE_GENERATION_HEADER]: auth.storageGeneration } : {}) } };
     let response;
     try { response = await rawFetcher(url, init); }
     catch(error) {
@@ -125,6 +126,8 @@ export const createLiveTransportStore = ({
     assertActive();
     const responseGeneration = response.headers?.get?.(STORAGE_GENERATION_HEADER);
     if (auth?.storageGeneration && responseGeneration !== auth.storageGeneration) throw Object.assign(new Error("storage_reset"), { code: "storage_reset" });
+    const advertisedContract = response.headers?.get?.(ACTION_CONTRACT_HEADER);
+    serverActionContract = advertisedContract == null ? null : Number(advertisedContract);
     const json = response.json.bind(response);
     response.json = async () => { const body = await json(); assertActive(); return body; };
     return response;
@@ -410,7 +413,7 @@ export const createLiveTransportStore = ({
     if (notifications) notifications.push(notification); else emitChange(notification);
     return true;
   };
-  const applyLiveGameUpdate = ({ game, eventSeq = null, commandOutcome = null, baseline = false }) => {
+  const applyLiveGameUpdate = ({ game, eventSeq = null, commandOutcome = null, baseline = false, actionContractVersion }) => {
     if (eventSeq !== null || commandOutcome) {
       if (!validSyncSnapshot(game, game?.id) || !isSyncRevision(eventSeq)
         || (commandOutcome && (!isSyncRevision(commandOutcome.eventSeq) || !isSyncRevision(commandOutcome.gameplayRevision)
@@ -425,6 +428,7 @@ export const createLiveTransportStore = ({
         return null;
       }
     }
+    if (actionContractVersion !== undefined) serverActionContract = actionContractVersion;
     const notifications = [];
     if (commandOutcome && game) {
       const confirming = getOptimisticState(game.id).syncStatus === "confirming";
@@ -470,6 +474,10 @@ export const createLiveTransportStore = ({
     for (const outcome of body.commandOutcomes) settleOutcome(gameId, outcome, notifications);
     if (body.game) upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, publish: false });
     for (const notification of notifications) emitChange(notification);
+    if (body.commandOutcomes.some(outcome => outcome.reason === "upgrade_required")) {
+      markUpgradeRequired(gameId);
+      throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
+    }
     if (!getOptimisticState(gameId).pendingCommands.length && !getOptimisticState(gameId).forceSnapshot) setConnectionRecovering(gameId, false);
     emitChange({ type: "authoritative_update", gameId });
     void sendNextPendingCommand(gameId);
@@ -603,8 +611,13 @@ export const createLiveTransportStore = ({
       if (auth?.enabled && (!auth.session.authenticated)) throw Object.assign(new Error("invalid_credentials"), { code: "invalid_credentials" });
       const current = getGameViewModel(gameId);
       if (current?.sharedMutationsBlocked) throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
+      const isClosure = command.kind === "end-turn" || command.action?.type === "end_turn";
+      if (isClosure && serverActionContract !== ACTION_CONTRACT_VERSION) {
+        markUpgradeRequired(gameId);
+        throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
+      }
       const predecessor = optimistic.pendingCommands.at(-1)?.envelope;
-      const envelope = { protocolVersion: 2, gameId, identityId, clientCommandId: command.clientCommandId, submittedAt: Date.parse(command.queuedAt) || Date.now(),
+      const envelope = { protocolVersion: 2, actionContractVersion: ACTION_CONTRACT_VERSION, gameId, identityId, clientCommandId: command.clientCommandId, submittedAt: Date.parse(command.queuedAt) || Date.now(),
         ...(auth?.enabled ? { authContextId: auth.session.contextId } : {}),
         kind: command.kind === "apply" ? "action" : "end_turn", payload: command.kind === "apply" ? { action: command.action, notation: command.notation, ...(command.computer ? { computer: command.computer } : {}) } : {},
         expectedState: clone(command.state ?? current.board.state), expectedGameplayRevision: predecessor ? predecessor.expectedGameplayRevision + 1 : (gameById.get(gameId)?.gameplayRevision ?? 0),
