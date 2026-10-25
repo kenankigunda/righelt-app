@@ -14,7 +14,7 @@ Pass is a top-level action. It is legal before a sequence starts. End Turn close
 
 End Turn is stored as a turn-control event and command receipt. It has no move-history row or move number. Turn-end removals finalize the preceding move. A computer End Turn retains its matching attempt proof on the receipt, without overwriting that move's proof.
 
-The frozen `absolute-v1` model metadata names policy slot 2800 `passIndex`. Runtime code calls it `TURN_CONTROL_POLICY_INDEX`. The legal-action map decodes it as either Pass or End Turn for the current position. Search generates the correct action directly. There is no submission-time translation shim. The model file, tensor dimensions and configuration hash remain unchanged, preserving checkpoint and export identity. Rename the metadata key only in an explicit future encoding version and regenerate its training/export artifacts together.
+The frozen `absolute-v1` model metadata names policy slot 2800 `passIndex`. Runtime code calls it `TURN_CONTROL_POLICY_INDEX`. The legal-action map decodes it as either Pass or End Turn for the current position. Search and generated training decisions carry the correct semantic action directly. Training replay rejects continuation Pass records rather than silently converting them. There is no submission-time translation shim and no new weights or training run are required. The model file, tensor dimensions and configuration hash remain unchanged, preserving checkpoint, manifest and export identity. Rename the metadata key only in an explicit future encoding version and regenerate its training/export artifacts together.
 
 ## Action contract rollout
 

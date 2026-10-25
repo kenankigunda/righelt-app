@@ -3126,6 +3126,9 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
 
 const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
   const game = transport.getGameViewModel(gameId);
+  if (!game && transport.isUpgradeRequired?.(gameId)) {
+    return `<section class="panel" data-testid="sync-recovery-banner" role="status"><p>Righelt has an update. Refresh to keep playing.</p><button class="secondary" data-action="refresh-game">Refresh</button></section>`;
+  }
   if (!routeHydrated && !game) {
     return renderGameViewSkeleton();
   }
@@ -4040,9 +4043,11 @@ const syncRouteDataAndLiveChannels = () => {
     if (read.route.name === "invite") {
       const invite = await read.owner.resolveInvite(read.route.inviteToken);
       assertCurrentRouteRead(read);
+      // Keep validated invitation routing metadata even if its board requires an
+      // upgrade. It identifies the recovery fence without trusting a snapshot.
+      resolvedInvite = invite;
       await read.owner.loadGame(invite.gameId, { openAsViewer: false });
       assertCurrentRouteRead(read);
-      resolvedInvite = invite;
     }
     assertCurrentRouteRead(read);
     syncLiveChannels();

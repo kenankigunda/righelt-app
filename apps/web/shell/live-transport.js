@@ -1237,6 +1237,7 @@ export const createLiveTransportStore = ({
     listGames,
     getHomeGameCard,
     getGameViewModel,
+    isUpgradeRequired: (gameId) => getOptimisticState(gameId).upgradeRequired === true,
     getAuthoritativeGame: (gameId) => clone(gameById.get(gameId) ?? null),
     getIdentityId,
     subscribe,

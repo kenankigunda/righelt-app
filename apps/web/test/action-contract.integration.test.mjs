@@ -17,6 +17,18 @@ const gameView=()=>{
 const memoryStorage=()=>{const values=new Map([[IDENTITY_KEY,'owner']]);return {getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)}};
 const journal=(initial=[])=>{let entries=initial;return {list:async()=>entries,admit:async value=>{entries.push(value)},remove:async value=>{entries=entries.filter(entry=>entry.clientCommandId!==value.clientCommandId)}}};
 
+test('cold protocol rejection exposes recovery without accepting a snapshot or changing the journal', async t => {
+  const commands = journal([{clientCommandId: 'saved'}]);
+  const store = createLiveTransportStore({storage:memoryStorage(), commandJournal:commands,
+    fetcher:async()=>Response.json({protocolVersion:1,game:gameView(),commandOutcomes:[]})});
+  t.after(()=>store.retire());
+  await assert.rejects(store.loadGame('g'), {code:'upgrade_required'});
+  assert.equal(store.isUpgradeRequired('g'), true);
+  assert.equal(store.getGameViewModel('g'), null);
+  assert.equal(store.getAuthoritativeGame('g'), null);
+  assert.deepEqual(await commands.list(), [{clientCommandId:'saved'}]);
+});
+
 for(const advertised of [null,'1']) test(`unsupported server contract ${advertised} blocks End Turn before optimistic admission`,async(t)=>{
   const game=gameView(), commands=journal();let writes=0;
   const store=createLiveTransportStore({storage:memoryStorage(),commandJournal:commands,fetcher:async(_url,init)=>{
