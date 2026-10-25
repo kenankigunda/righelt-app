@@ -1,10 +1,12 @@
 /** Shared online command contract. Unknown is never a terminal outcome. */
+export const LIVE_HISTORY = Object.freeze({ requestHeader: "X-Righelt-Projection", requestValue: "history-v1", socketQuery: "historyProjection", snapshotValue: "summary-v1" });
+export const SHARED_OPERATIONS = Object.freeze(["revert-request", "revert-approve", "revert-reject", "revert-rescind", "computer-control"] as const);
 export const SYNC_PROTOCOL_VERSION = 2 as const;
 /** Semantic action contract; intentionally independent of transport protocol. */
 export const ACTION_CONTRACT_VERSION = 2 as const;
 export const ACTION_CONTRACT_HEADER = "X-Righelt-Action-Contract";
-export const SYNC_LIMITS = Object.freeze({ commandsPerRequest: 16, outstandingPerGame: 16, outstandingPerIdentity: 128, commandIdCharacters: 128, envelopeBytes: 64 * 1024, bodyBytes: 1024 * 1024 });
-export const SYNC_TIMING = Object.freeze({ requestTimeoutMs: 5_000, recoveryPassMs: 10_000, reconnectAlertMs: 4_000, confirmationBudgetMs: 15_000, heartbeatIntervalMs: 5_000, inboundTimeoutMs: 15_000, retryDelaysMs: Object.freeze([500, 1_000, 2_000, 4_000, 5_000]), retryJitter: 0.2 });
+export const SYNC_LIMITS = Object.freeze({ commandsPerRequest: 16, outstandingPerGame: 16, outstandingPerIdentity: 128, commandIdCharacters: 128, historyCacheEntries: 64, envelopeBytes: 64 * 1024, bodyBytes: 1024 * 1024 });
+export const SYNC_TIMING = Object.freeze({ requestTimeoutMs: 5_000, recoveryPassMs: 10_000, reconnectAlertMs: 4_000, confirmationBudgetMs: 15_000, degradedPollMs: 5_000, degradedSlowPollMs: 30_000, degradedSlowAfterMs: 60_000, heartbeatIntervalMs: 5_000, inboundTimeoutMs: 15_000, retryDelaysMs: Object.freeze([500, 1_000, 2_000, 4_000, 5_000]), maximumRetryAfterMs: 2_147_483_647, retryJitter: 0.2 });
 export type SyncCommand = {
   protocolVersion: 2;
   actionContractVersion?: number;
@@ -12,7 +14,7 @@ export type SyncCommand = {
   identityId: string;
   authContextId?: string;
   clientCommandId: string;
-  kind: "move" | "action" | "end_turn";
+  kind: "move" | "action" | "end_turn" | "shared";
   payload: Record<string, unknown>;
   expectedState: Record<string, unknown>;
   expectedGameplayRevision: number;
@@ -60,7 +62,7 @@ export function isSyncCommand(value: unknown): value is SyncCommand {
   if (!record(value) || value.protocolVersion !== 2 || !nonempty(value.gameId) || !nonempty(value.identityId) || !commandId(value.clientCommandId) || !fingerprint(value.fingerprint)) return false;
   if (value.actionContractVersion !== undefined && !isSyncRevision(value.actionContractVersion)) return false;
   if (value.authContextId !== undefined && (typeof value.authContextId !== "string" || !/^[a-f0-9]{64}$/.test(value.authContextId))) return false;
-  if (!["move", "action", "end_turn"].includes(String(value.kind)) || !record(value.payload) || !record(value.expectedState) || !isSyncRevision(value.expectedGameplayRevision)) return false;
+  if (!["move", "action", "end_turn", "shared"].includes(String(value.kind)) || !record(value.payload) || !record(value.expectedState) || !isSyncRevision(value.expectedGameplayRevision)) return false;
   if ((value.kind === "end_turn" || value.expectedTurnIndex !== undefined) && !isSyncRevision(value.expectedTurnIndex)) return false;
   if (value.predecessor !== undefined && (!record(value.predecessor) || !commandId(value.predecessor.clientCommandId) || value.predecessor.clientCommandId === value.clientCommandId || !fingerprint(value.predecessor.fingerprint))) return false;
   try { canonicalCommandJson(value); return encodedSyncBytes(value) <= SYNC_LIMITS.envelopeBytes; } catch { return false; }
@@ -91,7 +93,7 @@ export function isCommandOutcome(value: unknown, command: SyncCommand): value is
   return record(value) && value.gameId === command.gameId && value.identityId === command.identityId && value.clientCommandId === command.clientCommandId && value.fingerprint === command.fingerprint
     && ["accepted", "rejected", "unknown"].includes(String(value.outcome)) && (value.reason === null || nonempty(value.reason))
     && (value.outcome !== "rejected" || nonempty(value.reason)) && isSyncRevision(value.eventSeq) && isSyncRevision(value.gameplayRevision)
-    && (value.outcome !== "accepted" || (value.gameplayRevision === command.expectedGameplayRevision + 1 && value.eventSeq > 0));
+    && (value.outcome !== "accepted" || ((value.gameplayRevision === command.expectedGameplayRevision + 1 || (command.kind === "shared" && Number(value.gameplayRevision) >= command.expectedGameplayRevision)) && value.eventSeq > 0));
 }
 /** Validates metadata only. Consumers must validate optional game with the authoritative game parser before applying it. */
 export function isReconcileResponse(value: unknown, gameId: string, commands: SyncCommand[]): value is ReconcileResponse {

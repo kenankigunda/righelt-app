@@ -5,6 +5,20 @@ import { handleApiRequest } from "../src/index.ts";
 
 const CACHE_NO_STORE = "no-store";
 
+test("guest room exceptions retain error response generation and request evidence",async()=>{
+  const env=buildEnv();
+  env.STORAGE_GENERATION="current";
+  env.CF_VERSION_METADATA={id:"tested-build"};
+  env.GAME_ROOMS.get=()=>({fetch(){throw Error("private database details");}});
+  const requestId=crypto.randomUUID();
+  const response=await handleApiRequest(new Request("https://test/api/shell/games/g/reconcile",{method:"POST",headers:{"content-type":"application/json","X-Righelt-Storage-Generation":"current","X-Righelt-Request-Id":requestId},body:JSON.stringify({protocolVersion:2,identityId:"actor",knownSnapshotEventSeq:0,commands:[]})}),env);
+  assert.equal(response.status,503);
+  assert.equal(response.headers.get("X-Righelt-Storage-Generation"),"current");
+  assert.equal(response.headers.get("X-Righelt-Request-Id"),requestId);
+  assert.equal(response.headers.get("X-Righelt-Server-Build"),"tested-build");
+  assert.equal((await response.json()).error,"temporarily_unavailable");
+});
+
 function buildEnv() {
   return {
     DB: {

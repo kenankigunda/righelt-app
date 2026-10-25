@@ -3,6 +3,15 @@ import test from "node:test";
 
 import { onRequest } from "../functions/api/[[path]].js";
 
+test("upstream exceptions keep correlation and return a safe retryable error",async()=>{
+  const requestId=crypto.randomUUID();
+  const response=await onRequest({request:new Request("https://righelt.pages.dev/api/health",{headers:{"X-Righelt-Request-Id":requestId}}),env:{API_SERVICE:{fetch(){throw Error("private infrastructure details");}}}});
+  assert.equal(response.status,503);
+  assert.equal(response.headers.get("X-Righelt-Request-Id"),requestId);
+  assert.equal(response.headers.get("cache-control"),"no-store");
+  assert.deepEqual(await response.json(),{ok:false,error:"upstream_unavailable"});
+});
+
 test("Pages proxy forwards requests through API_SERVICE when present", async () => {
   const request = new Request("https://righelt.pages.dev/api/health", {
     method: "POST",

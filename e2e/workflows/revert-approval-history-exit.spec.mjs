@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import {isOperationRequest,operationValues} from "../support/shared-request.mjs";
 
 import {
   acceptPendingRequest,
@@ -60,11 +61,17 @@ test("accepting undo preserves each selected retained entry until explicit retur
     await requestUndoForFirstMoveViaApi(owner.page);
     await expect(guest.page.locator('[data-action="accept-revert-request"]')).toBeVisible();
 
-    const approvalResponse = guest.page.waitForResponse(response => response.url().endsWith("/revert-approve") && response.request().method() === "POST");
+    const approvalRequest = guest.page.waitForRequest(request => isOperationRequest(request,"revert-approve"));
     await guest.page.locator('[data-action="accept-revert-request"]').click();
-    const response = await approvalResponse;
-    expect(response.ok()).toBe(true);
-    const approved = await response.json();
+    const request = await approvalRequest;
+    // A socket receipt can settle and cancel the HTTP reply. Read durable state
+    // independently, then verify the client leaves recovery after returning live.
+    const gameUrl=request.url().replace(/\/[^/]+$/,"")+`?identityId=${encodeURIComponent(operationValues(request).identityId)}`;
+    let approved;
+    await expect.poll(async()=>{
+      approved=await (await guest.page.request.get(gameUrl)).json();
+      return !approved.game.pendingRevertRequest && approved.game.moves.every(move=>move.undone);
+    }).toBe(true);
     const liveState = approved.game.board.state;
     const expectedBoard = Array.from({ length: liveState.boardSize ** 2 }, (_, index) => {
       const row = Math.floor(index / liveState.boardSize), col = index % liveState.boardSize;
@@ -78,6 +85,7 @@ test("accepting undo preserves each selected retained entry until explicit retur
       await expect(selected).toHaveClass(/is-selected/);
       await expect(selected).toHaveClass(/is-undone/);
       await page.getByTestId("history-return-live").click();
+      await expect(page.getByTestId("game-board-wrap")).toHaveAttribute("data-reconnecting","false");
     }
     await expect(owner.page.getByTestId("history-return-live")).toHaveCount(0);
     await expect(guest.page.getByTestId("history-return-live")).toHaveCount(0);

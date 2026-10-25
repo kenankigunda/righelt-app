@@ -166,6 +166,7 @@ export const createFakeD1 = () => {
           return { success: true };
         }
 
+        if (normalized.startsWith("UPDATE game_payloads SET format_version=2")) { const payload=payloads.get(params[0]);if(payload)payload.format_version=2;return {success:true};}
         if (normalized.startsWith("INSERT INTO game_payloads")) {payloads.set(params[0],{format_version:1,state_blob:structuredClone(params[1]),state_sha256:params[2]});return {success:true};}
         if (normalized.startsWith("DELETE FROM game_payloads")) {payloads.delete(params[0]);return {success:true};}
         if (normalized.startsWith("UPDATE live_games SET commit_base_event_seq=NULL,retention_activity_at=")) {const row=shellGames.get(params[0]);if(row)Object.assign(row,{retention_activity_at:params[1]?params[2]:row.retention_activity_at??row.created_at,outcome_status:params[3],next_actor_identity_id:params[4],move_count:params[5],commit_base_event_seq:null});return {success:true};}
