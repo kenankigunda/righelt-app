@@ -213,3 +213,22 @@ test("client move generation keeps sequence-completable rush previews legal", ()
     true,
   );
 });
+
+test('non-spatial turn actions never become piece moves even with stale actor metadata', () => {
+  const piece={id:'C1',owner:'P1',kind:'commander',position:{row:3,col:3},supplied:true,commanded:true};
+  const state={sideToMove:'P1',continuation:null,outcome:{status:'ongoing'},pieces:[piece]};
+  const response=buildPieceMoveResponse({state,pieceId:'C1',legalActions:[{type:'pass',actorId:'C1'},{type:'end_turn',actorId:'C1'}]});
+  assert.deepEqual(response.actions,[]);
+});
+
+test('client previews reject Pass in sequences and allow End Turn only for closable rush', async () => {
+  const {validateActionForPreview}=await import('../board/client-move-generation.js');
+  const base={sideToMove:'P1',outcome:{status:'ongoing'},pieces:[],continuation:null};
+  assert.equal(validateActionForPreview(base,{type:'pass'}).ok,true);
+  assert.equal(validateActionForPreview(base,{type:'end_turn'}).ok,false);
+  for(const continuation of [{type:'rush',owner:'P1',rushedPieceIds:[]},{type:'push',phase:'retreat'},{type:'push',phase:'follow'}]) {
+    const state={...base,continuation};
+    assert.equal(validateActionForPreview(state,{type:'pass'}).ok,false);
+    assert.equal(validateActionForPreview(state,{type:'end_turn'}).ok,continuation.type==='rush');
+  }
+});

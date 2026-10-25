@@ -1190,3 +1190,38 @@ test("group strength badge sits inset from the square's upper-left corner", () =
 test("group strength badge only renders for strengths above one", () => {
   assert.match(adapterSource, /if \(anchorCell && typeof groupInfo\.strength === "number" && groupInfo\.strength > 1\) \{/);
 });
+
+test('explicit inspection draws only deduplicated requested network and temporarily overrides recorded arrows',async()=>{
+  await withFakeDocument(()=>{
+    const {adapter,overlayLinesEl}=createMountedAdapter();
+    const a={row:3,col:3},b={row:3,col:4},c={row:3,col:5};
+    const snapshot={sideToMove:'P1',pieces:[{id:'A',owner:'P1',kind:'unit',position:a,supplied:true,commanded:true},{id:'B',owner:'P1',kind:'unit',position:b,supplied:true,commanded:true}],artifacts:{supply:[{player:'P1',shortestPathByPieceId:{A:[a,b,c],B:[b,c]}}],command:{shortestPathToCommanderByPieceId:{A:[a,b]}}}};
+    adapter.render({snapshot,selection:{selectedPieceId:null,source:null,target:null},overlay:{mode:'recorded-action',recordedAction:{type:'move',from:a,to:b},inspection:{kind:'supply',owner:'P1'}},legalActions:[],selectedPieceMoves:[]});
+    const lines=overlayLinesEl.children.filter(child=>child.tagName==='LINE');
+    assert.equal(lines.length,2);
+    assert.equal(lines.every(line=>line.getAttribute('data-legend-kind')==='supply'),true);
+    adapter.unmount();
+  });
+});
+
+test('stacked push tokens expose their own piece identities for visual replay',async()=>{
+  await withFakeDocument(()=>{
+    const {adapter,boardEl}=createMountedAdapter();
+    const snapshot={sideToMove:'P2',continuation:{type:'push',phase:'retreat',pushedPieceId:'defender'},pieces:[{id:'attacker',owner:'P1',kind:'unit',position:{row:4,col:4},supplied:true,commanded:true},{id:'defender',owner:'P2',kind:'unit',position:{row:4,col:4},supplied:true,commanded:true,pushed:true}]};
+    adapter.render({snapshot,selection:{selectedPieceId:null,source:null,target:null},overlay:{mode:'none'},legalActions:[],selectedPieceMoves:[],interactionMode:'static'});
+    const tokens=getCell(boardEl,4,4).querySelectorAll('.piece-token');
+    assert.deepEqual(tokens.map(token=>token.getAttribute('data-piece-id')).sort(),['attacker','defender']);
+    adapter.unmount();
+  });
+});
+
+test('combined explicit inspection keeps overlapping supply and command strokes separately visible',async()=>{
+  await withFakeDocument(()=>{
+    const {adapter,overlayLinesEl}=createMountedAdapter();const path=[{row:3,col:3},{row:3,col:4}];
+    const snapshot={sideToMove:'P1',pieces:[{id:'A',owner:'P1',kind:'unit',position:path[0],supplied:true,commanded:true}],artifacts:{supply:[{player:'P1',shortestPathByPieceId:{A:path}}],command:{shortestPathToCommanderByPieceId:{A:path}}}};
+    adapter.render({snapshot,selection:{selectedPieceId:'A',source:path[0],target:null},overlay:{mode:'interactive',inspection:{kind:'combined',pieceId:'A'}},legalActions:[],selectedPieceMoves:[]});
+    const lines=overlayLinesEl.children.filter(child=>child.tagName==='LINE');
+    assert.equal(lines.length,2);assert.notEqual(lines[0].getAttribute('y1'),lines[1].getAttribute('y1'));
+    adapter.unmount();
+  });
+});

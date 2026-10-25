@@ -289,7 +289,7 @@ test("scenario flyout round-trips a settled post-rush board state after ending t
     await importScenarioIntoExistingGame(page, RUSH_CAN_END_SCENARIO, gameId);
     await page.goto(`${baseURL}#/game/${encodeURIComponent(gameId)}`);
     await expect(page.getByTestId("game-shell")).toBeVisible();
-    await expect(page.locator("#shell-board-preview-label")).toContainText("Continue rushing on one of the");
+    await expect(page.locator("#shell-board-preview-label")).toContainText("Select a rush");
     await expect(page.locator('[data-board-preview-action="end-turn"]')).toBeVisible();
 
     const endTurn = page.locator('[data-board-preview-action="end-turn"]');
@@ -302,7 +302,7 @@ test("scenario flyout round-trips a settled post-rush board state after ending t
 
     await expect(page.locator("#shell-board-turn-indicator")).toContainText("Player 1 to play");
     await expect(page.locator('[data-board-preview-action="end-turn"]')).toHaveCount(0);
-    await expect(page.locator("#shell-board-preview-label")).not.toContainText("Continue rushing on one of the");
+    await expect(page.locator("#shell-board-preview-label")).not.toContainText("Select a rush");
 
     const selectionAction = {
       type: "project",
@@ -369,7 +369,7 @@ test("scenario flyout round-trips a settled post-rush board state after ending t
     await expect(page.locator('[data-testid="scenario-load-skeleton"]')).toHaveCount(0);
     await expect(page.locator("#shell-board-turn-indicator")).toContainText("Player 1 to play");
     await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 7,4");
-    await expect(page.locator("#shell-board-preview-label")).not.toContainText("Continue rushing on one of the");
+    await expect(page.locator("#shell-board-preview-label")).not.toContainText("Select a rush");
     await expect
       .poll(async () => getHistoryMoveCount(page), {
         message: "Expected loading the saved scenario to restore the replayed move history without adding a synthetic end-turn move",

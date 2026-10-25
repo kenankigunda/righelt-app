@@ -45,7 +45,7 @@ async function proveInputAction(page, label, initialType) {
 }
 
 for (const { width, zoom } of [{ width: 320, zoom: 1 }, { width: 390, zoom: 1 }, { width: 768, zoom: 1 }, { width: 1440, zoom: 2 }]) {
-  test(`password action stays inside its field across all account forms at ${width}px and zoom ${zoom}`, async ({ page }) => {
+  test(`password action stays inside its field across sign-in and sign-up forms at ${width}px and zoom ${zoom}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1100 });
     await page.goto("/");
     if (zoom !== 1) await page.addStyleTag({ content: `.account-dialog { zoom: ${zoom}; }` });
@@ -55,6 +55,16 @@ for (const { width, zoom } of [{ width: 320, zoom: 1 }, { width: 390, zoom: 1 },
     await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
     await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveValue("");
     await proveInputAction(page, "Password", "text");
+  });
+
+  test(`password action stays inside its field in account password forms at ${width}px and zoom ${zoom}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1100 });
+    await page.goto("/");
+    if (zoom !== 1) await page.addStyleTag({ content: `.account-dialog { zoom: ${zoom}; }` });
+    await openPlaySignIn(page);
+    await enterUsername(page, uniqueName());
+    await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
+    await dialog(page).getByLabel("Password", { exact: true }).fill(password);
     await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
     await expect(dialog(page)).not.toBeVisible();
     await continueFriendIntroduction(page);
