@@ -96,17 +96,25 @@ test('abrupt browser termination releases authority after lease expiry',async({b
  } finally {await restored?.close();await server.close();}
 });
 
-test('a frozen background renderer reacquires authority when resumed',async({page,context,browserName})=>{
- test.skip(browserName!=='chromium','Renderer lifecycle freezing is exposed by Chromium CDP.');
- const id=await createComputer(page),observer=await context.newPage();await observer.goto('/');
- await page.bringToFront();await expect(page.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:25000});
- const before=await projected(page,id);expect(before.computer.lease.expiresAt).toBeGreaterThan(Date.now());
- await page.evaluate(()=>{window.freezeEvents=[];for(const name of ['freeze','resume'])document.addEventListener(name,()=>window.freezeEvents.push(name));});
- const cdp=await context.newCDPSession(page);await cdp.send('Emulation.setFocusEmulationEnabled',{enabled:false});await cdp.send('Page.setWebLifecycleState',{state:'frozen'});
- try {await expect.poll(async()=>{const control=(await projected(observer,id)).computer;expect(control.generation).toBe(before.computer.generation);expect(control.lease?.deviceId).toBe(before.computer.lease.deviceId);expect(control.lease?.expiresAt).toBe(before.computer.lease.expiresAt);return control.lease.expiresAt<=Date.now();},{timeout:25000}).toBe(true);}
- finally {await cdp.send('Page.setWebLifecycleState',{state:'active'});await cdp.send('Emulation.setFocusEmulationEnabled',{enabled:true});await test.info().attach('freeze-events',{body:JSON.stringify(await page.evaluate(()=>window.freezeEvents)),contentType:'application/json'});}
- expect(await page.evaluate(()=>window.freezeEvents)).toEqual(['freeze','resume']);
+// This proves actual JavaScript suspension. Native OS background/freeze behavior
+// remains a separate acceptance gap; Page.setWebLifecycleState emitted no events.
+test('a suspended JavaScript renderer reacquires authority when resumed',async({page,context,browserName})=>{
+ test.skip(browserName!=='chromium','The observed debugger suspension probe uses Chromium.');
+ const id=await createComputer(page),initial=await projected(page,id),identity=await page.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'));
+ const read=async()=>{const response=await context.request.get(`/api/shell/games/${id}?identityId=${encodeURIComponent(identity)}`);expect(response.ok()).toBe(true);return (await response.json()).game;};
+ const cdp=await context.newCDPSession(page),signals=[];let paused=false,before;
+ cdp.on('Debugger.paused',()=>{paused=true;signals.push('paused');});cdp.on('Debugger.resumed',()=>signals.push('resumed'));
+ await cdp.send('Debugger.enable');
+ try {
+  const stopped=new Promise(resolve=>cdp.once('Debugger.paused',resolve));await cdp.send('Debugger.pause');await stopped;
+  before=await read();expect(before.computer.generation).toBe(initial.computer.generation);expect(before.computer.lease.deviceId).toBe(initial.computer.lease.deviceId);expect(before.computer.lease.expiresAt).toBeGreaterThan(Date.now());
+  await expect.poll(async()=>{const control=(await read()).computer;expect(control.generation).toBe(before.computer.generation);expect(control.lease?.deviceId).toBe(before.computer.lease.deviceId);expect(control.lease?.expiresAt).toBe(before.computer.lease.expiresAt);return control.lease.expiresAt<=Date.now();},{timeout:25000}).toBe(true);
+ } finally {
+  if(paused){const resumed=new Promise(resolve=>cdp.once('Debugger.resumed',resolve));await cdp.send('Debugger.resume');await resumed;}
+  await cdp.send('Debugger.disable');await test.info().attach('suspension-events',{body:JSON.stringify(signals),contentType:'application/json'});
+ }
+ expect(signals).toEqual(['paused','resumed']);
  await expect(page.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:10000});
- await expect.poll(async()=>(await projected(observer,id)).computer.lease.expiresAt,{timeout:10000}).toBeGreaterThan(before.computer.lease.expiresAt);
- expect((await projected(page,id)).gameplayRevision).toBe(before.gameplayRevision);
+ await expect.poll(async()=>(await read()).computer.lease.expiresAt,{timeout:10000}).toBeGreaterThan(before.computer.lease.expiresAt);
+ expect((await read()).gameplayRevision).toBe(initial.gameplayRevision);
 });
