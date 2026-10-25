@@ -760,6 +760,11 @@ const updateSelectedScenarioRecord = async ({
   }
   return { ok: true, reason: metadataChanged ? "updated" : "state_updated", scenario };
 };
+// Undo records retain the old action for provenance, not an ordinary move
+// preview. Forced continuations still restore only currently legal selections;
+// independent branch/scenario seeds have no restoration or no initial action.
+const getSelectionHydrationGame = game => game.lastRestoration && game.initialSelectionAction && !game.board?.state?.continuation
+  ? { ...game, pendingScenarioSelection: null, initialSelectionAction: null } : game;
 const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
   const pendingSelection = game?.pendingScenarioSelection ?? null;
   const canControlBoard = Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
@@ -3400,14 +3405,15 @@ const mountBoardForGame = (game) => {
   const historySelectionAction = game.inHistoryMode && !capturing ? game.historySelectionAction ?? null : null;
   const overlayMode = game.inHistoryMode && !capturing ? "recorded-action" : "interactive";
   const effectiveLegalActions = Array.isArray(game.legalActions) && !game.inHistoryMode && !(capturing && scenarioCapture.mode === 'frozen') ? game.legalActions : [];
+  const selectionHydrationGame = getSelectionHydrationGame(game);
   const scenarioSelectionHydration = resolvePendingScenarioHydration({
-    game,
+    game: selectionHydrationGame,
     snapshot,
     legalActions: effectiveLegalActions,
   });
   const initialSelectionHydration = resolveInitialSelectionHydration({
     gameId: game.id,
-    initialSelectionAction: !game.inHistoryMode ? game.initialSelectionAction ?? null : null,
+    initialSelectionAction: !game.inHistoryMode ? selectionHydrationGame.initialSelectionAction ?? null : null,
     legalActions: effectiveLegalActions,
     consumedActionKey: consumedInitialSelectionActionKeyByGameId.get(game.id) ?? null,
     toStableKey,
