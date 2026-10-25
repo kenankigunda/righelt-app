@@ -21,16 +21,19 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
   await page.bringToFront();
   await page.evaluate(()=>{
    window.destructionMotionProof=new Promise((resolve,reject)=>{
-    let first;
+    let first,nextNodeId=0;
+    const nodeIds=new WeakMap(),expectedSignatures=['6,4:Red unit','7,4:Red unit'],expectedIds=['U1-2','U1-3'];
     const frame=()=>{
      const samples=[...document.querySelectorAll('#shell-board .removal-piece')].map(node=>{
       const animation=node.getAnimations()[0],timing=animation?.effect.getComputedTiming();
-      return {id:node.dataset.pieceId,duration:timing?.activeDuration,elapsed:typeof animation?.currentTime==='number'?animation.currentTime-(timing?.delay??0):null};
-     }).sort((a,b)=>a.id.localeCompare(b.id));
-     if(samples.length===2&&samples.every(sample=>sample.duration===2400&&Number.isFinite(sample.elapsed))){
+      const cell=node.closest('[data-row][data-col]');
+      if(!nodeIds.has(node))nodeIds.set(node,++nextNodeId);
+      return {id:node.dataset.pieceId,signature:`${cell?.dataset.row},${cell?.dataset.col}:${node.getAttribute('aria-label')}`,nodeId:nodeIds.get(node),duration:timing?.activeDuration,elapsed:typeof animation?.currentTime==='number'?animation.currentTime-(timing?.delay??0):null};
+     }).sort((a,b)=>a.signature.localeCompare(b.signature));
+     if(samples.length===2&&samples.every((sample,index)=>sample.id===expectedIds[index]&&sample.signature===expectedSignatures[index]&&sample.duration===2400&&Number.isFinite(sample.elapsed))){
       if(!first)first=samples;
       else if(samples.every((sample,index)=>sample.id===first[index].id&&sample.elapsed>first[index].elapsed)){resolve({first,next:samples});return;}
-      else if(samples.some((sample,index)=>sample.id!==first[index].id||sample.elapsed<first[index].elapsed)){reject(Error('Destruction timeline or identity reset'));return;}
+      else if(samples.some((sample,index)=>sample.id!==first[index].id||sample.elapsed<first[index].elapsed)){reject(Error(`Destruction logical identity or timeline reset: ${JSON.stringify({first,next:samples})}`));return;}
      }else if(first){reject(Error('Destruction effect expired before advancing'));return;}
      requestAnimationFrame(frame);
     };requestAnimationFrame(frame);
@@ -39,7 +42,10 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
   await end.click();
   const effects=p=>p.locator('#shell-board .removal-piece');
   const [motion]=await Promise.all([page.evaluate(()=>window.destructionMotionProof),expect(effects(viewer)).toHaveCount(2)]);
-  expect(motion.first).toHaveLength(2);expect(motion.next.map(sample=>sample.id)).toEqual(motion.first.map(sample=>sample.id));
+  expect(motion.first.map(sample=>sample.signature)).toEqual(['6,4:Red unit','7,4:Red unit']);
+  expect(motion.next.map(sample=>sample.signature)).toEqual(motion.first.map(sample=>sample.signature));
+  expect(motion.first.map(sample=>sample.id)).toEqual(['U1-2','U1-3']);
+  expect(motion.next.map(sample=>sample.id)).toEqual(motion.first.map(sample=>sample.id));
   expect(motion.next.every((sample,index)=>sample.duration===2400&&sample.elapsed>motion.first[index].elapsed)).toBe(true);
   await page.screenshot({path:testInfo.outputPath('turn-end-removals.png')});
   for(const p of [page,viewer])await expect(effects(p)).toHaveCount(0);

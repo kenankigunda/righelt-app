@@ -39,6 +39,7 @@ import { renderDiagnosticDisclosure, handleDiagnosticAction, isDiagnosticOpen, c
 import { patchSectionContent } from "./dom-patch.js";
 import { SWIPE_EASING_CSS } from './navigation-motion.js';
 import { getGameResult, createResultTransitions, createRematchDialog } from './game-result.js';
+import { renderResultMark, createResultPresentation } from './result-presentation.js';
 import { createRouteHydration } from './route-hydration.js';
 import { createRenderGestureGate, preserveBoardFocus } from './render-gesture.js';
 import { participantButton, participantName, participantDisplayName, createInlineProfiles } from './public-profile.js';
@@ -200,7 +201,7 @@ const accountDialog = createAccountDialog({ controller: account, onSound:kind=>g
   onComplete: intent => { void completeAccountContinuation(intent); },
   onLayoutChange: () => render({animatePanels:false,includeBoard:false}),
 });
-const gameSound = createGameSound({ storage });
+const gameSound = createGameSound({ storage, getIdentityId:()=>transport.getIdentityId() });
 const brand = createBrandController();
 createBrandGrid();
 document.addEventListener('pointerdown',()=>{gameSound.gesture();gameSound.cancelPreview();},{passive:true});
@@ -230,6 +231,7 @@ const toStableKey = (value) => {
 };
 
 const resultTransitions = createResultTransitions();
+const resultPresentation = createResultPresentation();
 let activeResultGameId = null;
 let pendingResultReviewFocus = null;
 let currentRoute = parseRouteFromHash(window.location.hash);
@@ -1668,6 +1670,7 @@ const getGameAlertItems = (game) => {
   }));
 
   const message = presentedRecoveryMessage(game);
+  const recoveryNeedsAction = game.storageBlocked || game.upgradeRequired || ["session_changed", "invalid_credentials", "invalid_response"].includes(game.recoveryIssue) || game.confirmationOverdue || (game.recoveryStartedAt && Date.now() - game.recoveryStartedAt >= SYNC_TIMING.confirmationBudgetMs);
   for (const report of issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.key.startsWith("operation:"))) if (!failedOperations.some(op => `operation:${op.id}` === report.key)) issueDiagnostics.resolve(report.key);
   const retained = issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.resolvedAt && isDiagnosticOpen(r.id));
   for (const report of retained) items.push({ key: `resolved:${report.id}`, html: renderGameAlertCard({ body: "Resolved", incidentId: report.id, action: `<button class="secondary mini-button" data-action="dismiss-diagnostic" data-incident-id="${report.id}">${icon('close')}Dismiss</button>` }) });
@@ -1675,9 +1678,9 @@ const getGameAlertItems = (game) => {
   const dismissed = dismissedRecoveryNotices.get(game.id) === message;
   if (message && (!dismissed || game.storageBlocked)) {
     items.unshift({
-      key: `live-sync:${game.id}:${game.recoveryEpisodeId ?? "current"}`, priority: game.storageBlocked || game.upgradeRequired || game.recoveryIssue ? "urgent" : "normal",
-      html: renderGameAlertCard({ tone: "warn", activity: recoveryActivity(game), actorSide: activityActorSide(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: game.incidentId,
-        action: game.storageBlocked
+      key: `live-sync:${game.id}:${game.recoveryEpisodeId ?? "current"}`, priority: recoveryNeedsAction ? "urgent" : "normal",
+      html: renderGameAlertCard({ tone: recoveryNeedsAction ? "warn" : "neutral", activity: recoveryActivity(game), actorSide: activityActorSide(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: recoveryNeedsAction ? game.incidentId : null,
+        action: !recoveryNeedsAction ? "" : game.storageBlocked
           ? `<button class="secondary mini-button" data-action="retry-saving" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Retry saving</button>${dismissed ? "" : `<button class="secondary mini-button" data-action="dismiss-recovery-notice" data-game-id="${escapeHtml(game.id)}">${icon('close')}Dismiss</button>`}`
           : game.upgradeRequired ? `<button class="secondary mini-button" data-action="refresh-game">${icon('rematch')}Refresh</button>`
           : ["session_changed", "invalid_credentials"].includes(game.recoveryIssue) ? `<button class="secondary mini-button" data-action="account-open">${icon('account')}Sign in</button>`
@@ -2071,8 +2074,8 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
       canAuthorScenarios
         ? `<section class="panel debug-panel scenario-panel scenario-panel-create">
             <h2>Capture a position</h2>
-            <p>${capturing ? scenarioCapture.mode === 'live' ? 'Following this manual game until you save. History inspection does not change the capture.' : 'Position frozen when capture began. Live play may continue separately.' : 'Start a capture to choose a piece and target, then save explicitly.'}</p>
-            <button class="secondary" data-action="${capturing ? 'end-scenario-capture' : 'begin-scenario-capture'}">${capturing ? 'End capture' : 'Capture this position'}</button>
+            <p>${!capturing && game?.historyLoading ? 'Loading the selected position before capture.' : capturing ? scenarioCapture.mode === 'live' ? 'Following this manual game until you save. History inspection does not change the capture.' : 'Position frozen when capture began. Live play may continue separately.' : 'Start a capture to choose a piece and target, then save explicitly.'}</p>
+            <button class="secondary" data-action="${capturing ? 'end-scenario-capture' : 'begin-scenario-capture'}"${!capturing && game?.historyLoading ? ' disabled aria-disabled="true"' : ''}>${capturing ? 'End capture' : 'Capture this position'}</button>
             <div class="form-row">
               <label for="save-scenario-title">Title</label>
               <input id="save-scenario-title" data-scenario-save-field="title" value="${escapeHtml(saveDraft.title)}" />
@@ -2637,6 +2640,7 @@ const renderHistoryPanel = (game) => {
     ${currentNames ? `<p class="small" data-testid="history-player-names">${currentNames}</p>` : ""}
     ${getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button>` : ""}
     <div class="section-followup">
+      ${game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? "Loading this move" : "This move couldn’t load. Your current view is still available."}</p>${game.historyLoadError ? `<button class="secondary mini-button" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${game.historyLoadIndex}">Retry</button>` : ""}</div>` : ""}
       <ol class="history-list" data-testid="history-list">${historyRows}</ol>
       <button class="secondary" data-action="debug-load-history">${getDecisionDebugState(game.id).cursor ? 'Load older archive page' : 'Browse full decision archive'}</button>
       <ol class="debug-history">${getDecisionDebugState(game.id).items.filter(entry => entry.move && !game.moves.some(move => move.moveId === entry.id)).map(entry => `<li data-key="${escapeHtml(entry.id)}"><button class="secondary" data-action="debug-inspect-decision" data-decision-id="${escapeHtml(entry.id)}">${escapeHtml(entry.move.notation)} · ${escapeHtml(formatClientDateTime(entry.at))}</button></li>`).join('')}</ol>
@@ -3203,7 +3207,7 @@ const renderResult = game => {
   const result = getGameResult(transport.getAuthoritativeGame(game.id), transport.getIdentityId());
   if (!result) return "";
   const names = game.selfPlayMode && !game.player1?.computerProfile && !game.player2?.computerProfile ? "Self-play" : [game.player1, game.player2].map((person, i) => participantDisplayName(person, `Player ${i + 1}`)).join(" vs ");
-  return `<section class="panel game-result" data-testid="game-result"><p class="small">Game finished</p><h1 tabindex="-1">${escapeHtml(result.title)}</h1><p>${escapeHtml(result.reason)}</p><p>${escapeHtml(names)}</p><p class="small">Game ${escapeHtml(formatDisplayGameId(game.id))}</p><div class="story-modal-actions"><button data-action="analysis" data-game-id="${escapeHtml(game.id)}">${icon('back')}Review game</button><button class="secondary" data-action="rematch" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Play again</button><a class="button-link secondary" href="#/">${icon('home')}Home</a></div></section>`;
+  return `<section class="panel game-result" data-testid="game-result" data-result-tone="${result.tone}" data-winner="${result.winner ?? ''}"><p class="small">Game finished</p>${renderResultMark(result)}<h1 tabindex="-1">${escapeHtml(result.title)}</h1><p>${escapeHtml(result.reason)}</p><p>${escapeHtml(names)}</p><p class="small">Game ${escapeHtml(formatDisplayGameId(game.id))}</p><div class="story-modal-actions"><button data-action="analysis" data-game-id="${escapeHtml(game.id)}">${icon('back')}Review game</button><button${result.tone === "victory" ? "" : ' class="secondary"'} data-action="rematch" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Play again</button><a class="button-link secondary" href="#/">${icon('home')}Home</a></div></section>`;
 };
 
 const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
@@ -3328,7 +3332,7 @@ const getHistoryDestroyedPieceOverlays = (game) => {
   if (!game?.inHistoryMode || typeof game.historyIndex !== "number") {
     return [];
   }
-  const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
+  const move = game.inspectedDecision ?? (Array.isArray(game.moves) ? game.moves[game.historyIndex] : null);
   return buildDestroyedPieceOverlays({
     destroyedPieceRecords: move?.destroyedPieces ?? [],
     preActionSnapshot: move?.selectionSnapshot ?? null,
@@ -3339,7 +3343,7 @@ const getHistoryRecordedActionStartPiece = (game) => {
   if (!game?.inHistoryMode || typeof game.historyIndex !== "number") {
     return null;
   }
-  const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
+  const move = game.inspectedDecision ?? (Array.isArray(game.moves) ? game.moves[game.historyIndex] : null);
   if (!move?.selectionSnapshot || !move?.action) {
     return null;
   }
@@ -3362,7 +3366,7 @@ const updateReconnectPresentation = game => {
   clearTimeout(reconnectPresentationTimer);
   if (recovering && game.recoveryStartedAt) {
     const elapsed = Date.now() - game.recoveryStartedAt;
-    const remaining = elapsed < LOADING_CUE_DELAY_MS ? LOADING_CUE_DELAY_MS - elapsed : elapsed < SYNC_TIMING.reconnectAlertMs ? SYNC_TIMING.reconnectAlertMs - elapsed : null;
+    const remaining = elapsed < LOADING_CUE_DELAY_MS ? LOADING_CUE_DELAY_MS - elapsed : elapsed < SYNC_TIMING.reconnectAlertMs ? SYNC_TIMING.reconnectAlertMs - elapsed : elapsed < SYNC_TIMING.confirmationBudgetMs ? SYNC_TIMING.confirmationBudgetMs - elapsed : null;
     if (remaining !== null) reconnectPresentationTimer = setTimeout(() => { const next = transport.getGameViewModel(game.id); updateReconnectPresentation(next); updateMountedHeader(); }, remaining + 1);
   }
 };
@@ -3852,7 +3856,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   if(currentRoute.name==='game' && routeHydrated){
     const game=transport.getGameViewModel(currentRoute.gameId), confirmed=transport.getAuthoritativeGame(currentRoute.gameId);
     if (activeResultGameId === currentRoute.gameId && confirmed?.board?.state?.outcome && !getGameResult(confirmed, transport.getIdentityId())) activeResultGameId = null;
-    if(resultTransitions.observe(confirmed,{inHistory:game?.inHistoryMode,hidden:document.hidden,storyOpen:storyDialog.isOpen()}))activeResultGameId=currentRoute.gameId;
+    if(resultTransitions.observe(confirmed,{inHistory:game?.inHistoryMode,hidden:document.hidden,storyOpen:storyDialog.isOpen()})){activeResultGameId=currentRoute.gameId;resultPresentation.enter(confirmed.id,getGameResult(confirmed,transport.getIdentityId()));}
     if(storyDialog.gameId()===currentRoute.gameId && getGameResult(confirmed,transport.getIdentityId()))storyDialog.setMatchStatus('Game finished',true);
   }
   document.title = getDocumentTitle();
@@ -3980,7 +3984,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   reconcileMiniBoardPreviews();
   animateHomeSectionTransitions();
   syncScenarioAuthoringControls();
-  if(currentRoute.name==='game' && activeResultGameId===currentRoute.gameId){destroyMountedBoardRuntime();if(!hadResultView)appEl.querySelector('.game-result h1')?.focus({preventScroll:true});return;}
+  if(currentRoute.name==='game' && activeResultGameId===currentRoute.gameId){destroyMountedBoardRuntime();resultPresentation.mount(appEl.querySelector('.game-result'),currentRoute.gameId);if(!hadResultView)appEl.querySelector('.game-result h1')?.focus({preventScroll:true});return;}
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     scheduleGameShellStickyLayout();
     destroyMountedBoardRuntime();
@@ -4379,12 +4383,12 @@ const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: oppon
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) preparation.cancel();
+  if (document.hidden) {preparation.cancel();resultPresentation.clear();}
   else if (storyDialog.isOpen()) void prepareOpponent('intro',storyDialog.opponent());
   else if (rematchDialog.isOpen()) void prepareOpponent('rematch',rematchDialog.opponent());
   else if (branchDialog.isOpen()) void prepareOpponent('branch',branchDialog.opponent());
 });
-window.addEventListener('pagehide', () => preparation.cancel());
+window.addEventListener('pagehide', () => {preparation.cancel();resultPresentation.clear();});
 
 document.addEventListener('toggle', event => {
   const key = event.target?.dataset?.debugSection;
@@ -4459,7 +4463,7 @@ function resetAccountTransport(next) {
   activeStorageGeneration=next.storageGeneration;
   if(storageChanged){storageResetPending=true;storageResetNotice=true;resolvedInvite=null;}
   clearAccountContinuation();
-  resultTransitions.clear();activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();branchDialog.close();pendingBranch=null;
+  resultTransitions.clear();resultPresentation.clear();activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();branchDialog.close();pendingBranch=null;
   hostInvite=null;inviteVisit++;inviteFeedback="";inviteFallback=null;preparedPlayerInvitations.clear();
   gameSound.leaveGame();storyDialog.close();inlineProfiles.close();
   const gameId = getCurrentViewedGameId();
@@ -4530,7 +4534,7 @@ window.addEventListener("hashchange", () => {
   if(parsedRoute.name!=='game' || parsedRoute.gameId!==currentRoute.gameId)gameSound.leaveGame();
   if(hostInvite && (parsedRoute.name!=='game' || parsedRoute.gameId!==hostInvite.gameId)){hostInvite=null;inviteVisit++;}
   inlineProfiles.close();
-  if(parsedRoute.gameId!==previousRoute.gameId){activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();}
+  if(parsedRoute.gameId!==previousRoute.gameId){resultPresentation.clear();activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();}
   if (previousRoute.name === "tutorial" && (parsedRoute.name !== "tutorial" || parsedRoute.gameId !== previousRoute.gameId)) retireTutorialSave();
   const enteringRoute = normalizeRouteFlyoutState(parsedRoute);
   preparePanelTransition(previousRoute, enteringRoute);
@@ -4727,8 +4731,8 @@ appEl.addEventListener("click", async (event) => {
     accountDialog.open("login", intent, actionEl);
     return;
   }
-  if (action === "view-result") { if (!getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId())) return; activeResultGameId = actionGameId; render({ animatePanels: false }); return; }
-  if (action === "analysis") { pendingResultReviewFocus = actionGameId; activeResultGameId = null; render({ animatePanels: false }); navigateTo(buildGameHash(actionGameId, null, getCurrentGameHashState("history"))); return; }
+  if (action === "view-result") { if (!getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId())) return; resultPresentation.clear();activeResultGameId = actionGameId; render({ animatePanels: false }); return; }
+  if (action === "analysis") { resultPresentation.clear();pendingResultReviewFocus = actionGameId; activeResultGameId = null; render({ animatePanels: false }); navigateTo(buildGameHash(actionGameId, null, getCurrentGameHashState("history"))); return; }
   if (action === "rematch") {
     const result = getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId());
     if(result)rematchDialog.open(result,actionEl);return;
@@ -5296,7 +5300,9 @@ appEl.addEventListener("click", async (event) => {
 
   if (action === 'begin-scenario-capture' || action === 'end-scenario-capture') {
     if (!canAuthorScenariosLocally()) return;
-    const game = getActiveScenarioGame(), historyContext = resolveHistoryScenarioExportContext(game);
+    const game = getActiveScenarioGame();
+    if (action === 'begin-scenario-capture' && game?.historyLoading) return;
+    const historyContext = resolveHistoryScenarioExportContext(game);
     boardRuntime?.clearRemovalEffects();
     destructionTransitions.update(game, { reset: true });
     scenarioCapture = action === 'begin-scenario-capture' ? beginScenarioCapture(game, transport.getIdentityId(), historyContext) : null;

@@ -26,7 +26,7 @@ Report assembly and captions never invoke product tests. Run full viewer tests w
 
 Run files and raw logs live under ignored test-results. Only site/ is publishable. The main manifest records private coordination state; never upload it wholesale. Report source includes a deliberately allowlisted public projection.
 
-A shared exclusive lock prevents two validation stacks from occupying port pair 9888/9887. A conflicting server is an error, never silently reused. Inspect lock owner before clearing an abandoned lock; never kill another run.
+A shared exclusive lock prevents two validation stacks from occupying port pair 9888/9887. Account proof independently reserves its 9988 stack; if an interrupted fixture leaves its lock, preserve the owner evidence and inspect actual process identities and occupied ports before manually preserving the abandoned lock for a retry. Neither a PID/name match nor a permission error establishes that a live owner may be replaced. A denied zero-signal cleanup probe is accepted only after the shared process table proves the group has no live members; actual signal failures and inspection failures remain errors. A conflicting server is an error, never silently reused. Inspect lock owner before clearing an abandoned lock; never kill another run.
 
 ## Coverage and repairs
 
@@ -63,6 +63,8 @@ Account proof preserves real acknowledged account sessions, ownership, history, 
 Only fixed loopback fixture controls are exposed; they reject browser Origin headers and accept no caller-supplied SQL. Every database command is local. Private continuity files include synthetic credentials and cookie state and must stay outside the published site. Mask recovery codes in context, component, thumbnail, and full-page evidence; unredacted debugging traces remain private. Inspect actual screenshots and require every expected account workflow, viewport, and checkpoint before claiming complete evidence.
 
 The account harness selects the computer-play contract from candidate source before execution. Candidates without the explicit trained-play capability retain unavailable-story proof. Enabled candidates require the separate trained-computer journey: actual verified preparation, dismissal without creation, accepted model play and durable search evidence, ordinary undo, a catalog-backed computer finish and a prepared rematch. A failed enabled journey cannot fall back to unavailable-story proof. Retained account continuity remains a separate required workflow.
+
+Result headings also use a source contract selected before either result journey. An absent `RESULT_HEADING_CONTRACT` declaration retains legacy Win/Loss assertions. The explicit `perspective-v1` declaration requires You won/Your opponent won for seated players. Both contracts retain exact draw and neutral-observer headings. Unknown declarations stop validation. A failed assertion never selects another heading contract.
 ### Capture boundaries
 
 Component evidence shows only pixels visible within the viewport and clipping ancestors; reveal or scroll a component deliberately before capturing another view. Labels identify visible-area crops. Do not stitch fixed, sticky or modal surfaces into full-page images: repeated controls misrepresent the app. Keep whole-viewport context for those surfaces and capture additional named scroll positions when necessary. Ordinary scrolling documents can retain full-page evidence.

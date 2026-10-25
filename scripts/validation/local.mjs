@@ -10,6 +10,7 @@ import {candidateCapabilities} from './capabilities.mjs';
 import {initializeAccountUpgrade} from './account-stack.mjs';
 import {verifyAccountEvidence} from './account-evidence.mjs';
 import {loadCIReceipt} from './ci-evidence.mjs';
+import {canonicalCommands} from './suite-ci-evidence.mjs';
 import {executeCheck,checkProvenance,createAuthLane} from './execution.mjs';
 import {assertHistorySnapshot} from './history-continuity.mjs';
 export async function fingerprint(cwd){const tracked=await git(['ls-files','-z'],cwd);const untracked=await git(['ls-files','--others','--exclude-standard','-z'],cwd);const entries=[];for(const p of [...new Set((tracked+'\0'+untracked).split('\0').filter(Boolean))].sort()){try{entries.push([p,hash((await lstat(path.join(cwd,p))).isSymbolicLink()?await readlink(path.join(cwd,p)):await readFile(path.join(cwd,p)))]);}catch(e){if(e.code==='ENOENT')entries.push([p,'deleted']);else throw e;}}return hash(entries);}
@@ -83,7 +84,7 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
    if(checkCwd!==cwd){checkEnv.RIGHELT_VALIDATION_TARGET_ROOT=checkCwd;checkEnv.RIGHELT_ACCOUNT_CANDIDATE_ROOT=checkCwd;checkEnv.RIGHELT_AUTH_E2E_WEB_PORT='9988';}
    const provenance=policy?await checkProvenance(checkCwd,argv,checkEnv,{name,fingerprint:stage.fingerprint,phase:name==='Auth E2E'?'fresh-auth':policy?.phase==='final'&&name==='E2E'?'fresh-general':persistRoot?'retained':'fresh'}):null;
    const log=path.join(dir,`stage-${stageIndex}-${name.replaceAll(' ','-')}.log`);
-   if(policy&&ciEvidence&&['Typecheck','Generated runtime','Unit','Integration','E2E','Auth E2E'].includes(name)){
+   if(policy&&ciEvidence&&Object.hasOwn(canonicalCommands,name)){
     const receipt=await loadCIReceipt(ciEvidence,{name,argv,tree:provenance.tree});
     if(receipt)return {name,status:'passed',duration:0,reused:true,source:'github-actions',provenance,receipt,reason:'Exact CI coverage credited; retained-state proof remains local'};
    }

@@ -1,4 +1,6 @@
 import { icon } from './ui.js';
+import { commanderOutcome } from '../generated/packages/shared-types/src/commander-outcome.js';
+export const RESULT_HEADING_CONTRACT = 'perspective-v1';
 
 const terminal = new Set(["p1_win", "p2_win", "draw"]);
 export const getGameResult = (game, identityId) => {
@@ -7,9 +9,15 @@ export const getGameResult = (game, identityId) => {
   const ownsSeat = game.player1?.identityId === identityId || game.player2?.identityId === identityId;
   const side = game.computer && !game.computer.manual ? (!ownsSeat || (game.computer.seats.p1 && game.computer.seats.p2) ? null : game.computer.seats.p1 ? "p2" : "p1") : game.selfPlayMode && ownsSeat ? game.selfPlayStartSide || "p1" : game.player1?.identityId === identityId ? "p1" : game.player2?.identityId === identityId ? "p2" : null;
   const winner = outcome.status === "draw" ? null : outcome.status.slice(0, 2);
-  const title = !winner ? "Draw" : side ? winner === side ? "Win" : "Loss" : `Player ${winner === "p1" ? "1" : "2"} wins`;
-  const reasons = { both_commanders_unsupplied: "Both commanders lost their supply.", p1_commander_unsupplied: "Player 1’s commander lost its supply.", p2_commander_unsupplied: "Player 2’s commander lost its supply." };
-  return { title, side, reason: reasons[outcome.reason] || "The game has finished.", opponent: game.computer && !game.computer.manual ? (game.computer.seats.p1 || game.computer.seats.p2) : game.selfPlayMode ? "self" : "friend", rematchSide: side === "p1" ? "p2" : "p1" };
+  const title = !winner ? "Draw" : side ? winner === side ? "You won" : "Your opponent won" : `Player ${winner === "p1" ? "1" : "2"} wins`;
+  const commander = owner => !side ? `Player ${owner === 'p1' ? '1' : '2'}’s commander` : side === owner ? 'Your commander' : 'Your opponent’s commander';
+  const reasons = { both_commanders_unsupplied: "Both commanders lost their supply.", p1_commander_unsupplied: `${commander('p1')} lost its supply.`, p2_commander_unsupplied: `${commander('p2')} lost its supply.`, p1_commander_destroyed: `${commander('p1')} was destroyed.`, p2_commander_destroyed: `${commander('p2')} was destroyed.`, both_commanders_destroyed: "Both commanders were destroyed.", p1_commander_destroyed_p2_unsupplied: `${commander('p1')} was destroyed. ${commander('p2')} lost its supply.`, p1_commander_unsupplied_p2_destroyed: `${commander('p1')} lost its supply. ${commander('p2')} was destroyed.` };
+  // Old outcomes used 'unsupplied' even after a commander was removed by a
+  // push. Read the saved terminal position without rewriting that record.
+  const legacy = Array.isArray(game.board.state.pieces) && ['both_commanders_unsupplied','p1_commander_unsupplied','p2_commander_unsupplied'].includes(outcome.reason) ? commanderOutcome(game.board.state.pieces) : null;
+  const reason = legacy?.status === outcome.status ? legacy.reason : outcome.reason;
+  const tone = !winner ? 'draw' : !side ? 'neutral' : winner === side ? 'victory' : 'defeat';
+  return { title, side, winner, tone, reason: reasons[reason] || "The game has finished.", opponent: game.computer && !game.computer.manual ? (game.computer.seats.p1 || game.computer.seats.p2) : game.selfPlayMode ? "self" : "friend", rematchSide: side === "p1" ? "p2" : "p1" };
 };
 
 // Only an observed live transition opens automatically. Initial hydration,

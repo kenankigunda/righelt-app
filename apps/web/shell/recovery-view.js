@@ -8,7 +8,7 @@ export const applyHistoryIntent = (game, intent, identityId) => {
   let selected = intent.moveId ? moves.find((move) => historyMoveKey(move) === intent.moveId || (intent.clientCommandId && move.clientCommandId === intent.clientCommandId)) : null;
   const currentIndex = selected?.index ?? null;
   if (intent.frozen && intent.moveId) {
-    if (!intent.frozen.moveId && selected?.moveId) intent.frozen = structuredClone(selected);
+    if (!intent.frozen.moveId && selected?.moveId) intent.frozen = structuredClone({ ...intent.frozen, ...selected, snapshot: selected.snapshot ?? intent.frozen.snapshot, selectionSnapshot: selected.selectionSnapshot ?? intent.frozen.selectionSnapshot });
     selected = intent.frozen;
   }
   if (intent.moveId && !selected) {
@@ -30,6 +30,7 @@ export const applyHistoryIntent = (game, intent, identityId) => {
   game.inHistoryMode = Boolean(selected);
   game.historyIndex = intent.frozen ? currentIndex : selected?.index ?? null;
   game.inspectedDecision = selected ? structuredClone(selected) : null;
+  if (selected && Array.isArray(game.moves)) game.moves=game.moves.map(move=>historyMoveKey(move)===historyMoveKey(selected) ? {...move,snapshot:selected.snapshot ?? move.snapshot,selectionSnapshot:selected.selectionSnapshot ?? move.selectionSnapshot} : move);
   game.inspectedAtRevision = intent.revision;
   game.historySelectionAction = selected?.action ?? null;
   game.currentSnapshot = structuredClone(selected?.snapshot ?? selected?.selectionSnapshot ?? game.board.state);
@@ -73,16 +74,14 @@ export const recoveryMessage = (game, now = Date.now(), { computerSaveActive = f
   if (!game.recovering && game.syncStatus !== "confirming" && !game.confirmationOverdue) return "";
   if (["session_changed", "invalid_credentials"].includes(game.recoveryIssue)) return "Please sign in again to continue.";
   if (game.recoveryIssue === "invalid_response") return "We couldn’t record your move. Please reconnect.";
-  if (game.recoveryIssue) return "We couldn’t record your move. Please reconnect.";
   if (game.pendingComputerSaveStartedAt != null) {
     if (computerSaveActive || now - game.pendingComputerSaveStartedAt < COMPUTER_TIMING.saveNoticeAfterMs) return "";
     return "Saving the computer’s move is taking longer than usual";
   }
-  if (game.pendingCommandCount > 0) return game.confirmationOverdue
-    ? "It’s taking a while to record your move. Hang tight!" : "Recording your move";
-  if (game.recoveryIssue) return "We couldn’t record your move. Please reconnect.";
-  if (game.recoveryStartedAt && now - game.recoveryStartedAt < SYNC_TIMING.reconnectAlertMs) return "";
-  return "Reconnecting. We’ll be right back!";
+  const elapsed = game.recoveryStartedAt ? Math.max(0, now - game.recoveryStartedAt) : 0;
+  if (elapsed < SYNC_TIMING.reconnectAlertMs && !game.confirmationOverdue) return "";
+  if (elapsed < SYNC_TIMING.confirmationBudgetMs && !game.confirmationOverdue) return game.pendingCommandCount > 0 ? "Recording your move" : "Reconnecting";
+  return game.pendingCommandCount > 0 ? "Still checking your move. You can retry or view details." : "Still reconnecting. You can retry or view details.";
 };
 
 export const sharedMutationActions = new Set([

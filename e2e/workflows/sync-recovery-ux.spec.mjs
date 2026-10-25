@@ -113,7 +113,7 @@ test("pending feedback reaches overdue once, then clears or explains definitive 
  },gameId);
  await submitPlayableAction(page,action);
  await expect(page.getByTestId("sync-recovery-banner")).toContainText("Recording your move");
- await expect(page.getByTestId("sync-recovery-banner")).toContainText("It’s taking a while to record your move. Hang tight!",{timeout:20000});
+ await expect(page.getByTestId("sync-recovery-banner")).toContainText("Still checking your move. You can retry or view details.",{timeout:20000});
  expect(unknownResponses).toBeGreaterThan(0);
  const board=await page.getByTestId("game-board").innerHTML();
  mode="reject";

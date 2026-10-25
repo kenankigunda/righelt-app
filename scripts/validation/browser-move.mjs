@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {selectGamePanel} from './browser-navigation.mjs';
 import {expect} from '@playwright/test';
 import {makeAnyLegalMove,getHistoryMoveCount} from '../../e2e/support/app.mjs';
 
@@ -41,16 +42,22 @@ export async function makeValidationMove(page,{movePreview},ownerClass='p1'){
  });
  const touch=await page.evaluate(()=>navigator.maxTouchPoints>0);
  const activate=locator=>touch?locator.tap():locator.click();
- const boardTab=page.locator('[data-action="switch-game-panel"][data-panel="board"]');
- if(await boardTab.isVisible())await activate(boardTab);
+ await selectGamePanel(page,'board');
  const cell=position=>page.locator(`[data-testid="game-board"] .cell[data-row="${position.row}"][data-col="${position.col}"]`);
  await observeGameApplies(page,gameId,writes=>provePreviewConfirmation({
   history:()=>getHistoryMoveCount(page),writes,
   source:()=>activate(cell(action.from)),destination:()=>activate(cell(action.to)),
   preview:async()=>{
-   await expect(page.locator('#shell-board-preview-label')).toBeVisible();
-   await expect(page.locator('#shell-board-preview-label')).toContainText('Preview. Activate this destination again to play.');
+   await assertMovePreview(page,cell(action.to));
   },
   committed:expected=>expect.poll(()=>getHistoryMoveCount(page)).toBe(expected),
  }));
+}
+
+// Prove the actual selected destination and preview token, rather than copy
+// that may become shorter while the confirmation contract stays unchanged.
+export async function assertMovePreview(page,target){
+ await expect(page.locator('#shell-board-preview-label')).toBeVisible();
+ await expect(target).toHaveClass(/\btarget\b/);
+ await expect(target.locator('.move-ghost')).toBeVisible();
 }
