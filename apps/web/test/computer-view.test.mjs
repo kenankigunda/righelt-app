@@ -97,13 +97,14 @@ test('pending save recovery remains actionable immediately, with its separate cl
 });
 
 
-test('delayed remote computation offers a friendly recovery without device internals',()=>{
+test('shared stalled-turn eligibility offers friendly recovery without device internals',()=>{
  const game={id:'remote',computer:{seats:{p1:null,p2:'tau'},modelId:CURRENT_COMPUTER_MODEL.id},canControlComputer:true,computerTurn:'tau'};
  assert.equal(renderComputerProgress(game,{phase:'other-device',phaseElapsedMs:29999}), '');
- const html=renderComputerProgress(game,{phase:'other-device',phaseElapsedMs:30000});
- assert.match(html,/Tau is taking longer than usual/);assert.match(html,/data-control="switch"/);assert.match(html,/Continue play/);
- assert.match(html,/data-notification-activity="processing"/);assert.doesNotMatch(html,/device|lease|worker|Interrupt/);
- assert.equal(renderComputerProgress({...game,canControlComputer:false},{phase:'other-device',phaseElapsedMs:30000}),'');
+ assert.equal(renderComputerProgress(game,{phase:'other-device',phaseElapsedMs:30000}), '');
+ const html=renderComputerProgress(game,{phase:'idle',activity:{showRecoveryNotice:true}});
+ assert.match(html,/Tau hasn’t resumed/);assert.match(html,/data-control="resume-here"/);assert.match(html,/Resume here/);
+ assert.match(html,/data-notification-activity="static"/);assert.doesNotMatch(html,/device|lease|worker|Interrupt|Continue play/);
+ assert.equal(renderComputerProgress({...game,canControlComputer:false},{phase:'idle',activity:{showRecoveryNotice:true}}),'');
  const update=renderComputerProgress({...game,computerTurn:null,computer:{...game.computer,modelId:'previous'}},{phase:'idle'});
  assert.match(update,/An opponent update is available/);assert.match(update,/Update opponent/);assert.match(update,/Keep current/);
  assert.doesNotMatch(update,/new computer model|Use new model/);
