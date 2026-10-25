@@ -7,6 +7,7 @@ import {localRun,harnessRoot,fingerprint} from './local.mjs';
 import {candidateCapabilities} from './capabilities.mjs';
 import {ensureInstallation} from './execution.mjs';
 import {loadSuccessfulEvidence,saveSuccessfulEvidence} from './reuse.mjs';
+import {restoreRetainedInput,assertRetainedOutput} from './retained-input.mjs';
 import {createCheckpoint,restoreCheckpoint} from './checkpoints.mjs';
 import {renderReport} from './report.mjs';
 import {publish} from './publish.mjs';
@@ -19,9 +20,12 @@ export function markInterrupted(run){
  run.complete=false;run.orchestration='failed';
  const stage=run.stages.at(-1);if(stage){stage.status='failed';stage.checks.push({name:'Validation orchestration',status:'failed',reason:'Checkpoint or execution did not complete; inspect private diagnostics'});}
 }
-export async function boundedIntegratedRun({spec,cwd=process.cwd(),dir,resume=false,config,publishReport=config?.publicationEnabled===true,ciEvidence}){
- validatePlan(spec);dir=path.resolve(dir??path.join(cwd,'test-results','validation',`integrated-${Date.now()}`));await mkdir(dir,{recursive:true});
- const file=path.join(dir,'run.json'),previous=resume?await readJSON(file,null):null;
+export async function boundedIntegratedRun({spec,cwd=process.cwd(),dir,resume=false,config,publishReport=config?.publicationEnabled===true,ciEvidence,retainedInput}){
+ validatePlan(spec);if(retainedInput&&resume)throw Error('Retained input cannot be combined with resume');dir=path.resolve(dir??path.join(cwd,'test-results','validation',`integrated-${Date.now()}`));
+ const file=path.join(dir,'run.json');
+ if(retainedInput)await assertRetainedOutput(retainedInput,dir,{allowOwnedLock:true});
+ await mkdir(dir,{recursive:true});
+ const previous=resume?await readJSON(file,null):null;
  await git(['fetch','origin',spec.base],cwd);const base=await git(['rev-parse','FETCH_HEAD'],cwd);
  const prs=[];
  for(const input of spec.prs){
@@ -33,12 +37,22 @@ export async function boundedIntegratedRun({spec,cwd=process.cwd(),dir,resume=fa
   prs.push({...input,title:p.title,url:p.url,head:p.headRefOid,branch:p.headRefName,base:p.baseRefName,inputBaseSha:p.baseRefOid,open:true,draft:p.isDraft,...(old?.authorization?{authorization:{...old.authorization,state:old.base===p.baseRefName?old.authorization.state:'suspended'}}:{})});
  }
  const harnessRevision=await git(['rev-parse','HEAD'],harnessRoot),harnessFingerprint=await fingerprint(harnessRoot);
- const attempt=Date.now(),attemptDir=path.join(dir,'attempts',String(attempt));await mkdir(attemptDir,{recursive:true});
- const run={version:2,id:previous?.id??`integrated-${attempt}`,mode:'integrated',repository:spec.repository,startedAt:previous?.startedAt??new Date().toISOString(),base,prs,stages:[],risks:[],findings:[],mergeMethod:spec.mergeMethod??'squash',complete:false,harnessRevision,harnessFingerprint,plan:spec,publication:{status:'pending'},emailThreads:previous?.emailThreads??[],notifications:previous?.notifications??[],attempts:previous?[...(previous.attempts??[]),{id:previous.attempt,base:previous.base,stages:previous.stages,risks:previous.risks,publication:previous.publication}]:[],attempt};
+ const attempt=Date.now(),attemptDir=path.join(dir,'attempts',String(attempt));
+ if(retainedInput){await mkdir(path.dirname(attemptDir),{recursive:true});await mkdir(attemptDir,{mode:0o700});}else await mkdir(attemptDir,{recursive:true});
+ const run={version:2,id:previous?.id??`integrated-${attempt}`,mode:'integrated',repository:spec.repository,startedAt:previous?.startedAt??new Date().toISOString(),base,prs,stages:[],risks:[],findings:[],mergeMethod:spec.mergeMethod??'squash',complete:false,harnessRevision,harnessFingerprint,plan:spec,publication:{status:'pending'},emailThreads:previous?.emailThreads??[],notifications:previous?.notifications??[],attempts:previous?[...(previous.attempts??[]),{id:previous.attempt,base:previous.base,stages:previous.stages,risks:previous.risks,publication:previous.publication,...(previous.retainedTransfer?{retainedTransfer:previous.retainedTransfer}:{})}]:[],attempt};
+ if(previous?.retainedTransfer)run.retainedTransfer=structuredClone(previous.retainedTransfer);
  const root=path.join(path.dirname(cwd),`righelt-validation-${attempt}`);await git(['worktree','add','--detach',root,base],cwd);run.worktree=root;await saveJSON(file,run);
- let state=path.join(attemptDir,'state'),continuity,accountContinuity,legacyContinuity,canReuse=true;
- await mkdir(state,{recursive:true,mode:0o700});
+ let state=path.join(attemptDir,'state'),continuity,accountContinuity,legacyContinuity,canReuse=!retainedInput;
+ if(!retainedInput)await mkdir(state,{recursive:true,mode:0o700});
  try{
+  if(retainedInput){
+   const restored=await restoreRetainedInput({input:retainedInput,repository:spec.repository,baseBranch:spec.base,baseline:base,cwd, destination:state,targetRunDir:dir,assertStopped:stopped});
+   ({continuity,accountContinuity,legacyContinuity}=restored);
+   run.retainedTransfer=restored.origin;
+   await saveJSON(path.join(attemptDir,'retained-transfer.json'),restored.origin);
+   run.findings.push(`Retained data restored from original ${restored.origin.sourceStage} at ${restored.origin.originalHead}; all current baseline proof runs anew.`);
+   await saveJSON(file,run);
+  }
   for(let index=0;index<=prs.length;index++){
    const before=await git(['rev-parse','HEAD'],root);
    if(index)await git(['merge','--no-edit','--no-ff',prs[index-1].head],root);

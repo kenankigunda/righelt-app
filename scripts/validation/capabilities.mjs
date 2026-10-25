@@ -1,6 +1,6 @@
 import {access,readFile} from 'node:fs/promises';
 import path from 'node:path';
-import ts from 'typescript';
+import {sourceFile,stringContract,currentModelContract} from './source-contract.mjs';
 // Source capabilities select explicit contracts before tests run. A failed
 // assertion never changes contracts or downgrades account proof to guest proof.
 export async function candidateCapabilities(root) {
@@ -10,16 +10,8 @@ export async function candidateCapabilities(root) {
   let resultHeadingContract='legacy', rematchChoicesContract='legacy';
   try {
     const result=await readFile(path.join(root,'apps/web/shell/game-result.js'),'utf8');
-    const source=ts.createSourceFile('game-result.js',result,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
-    const selectContract=(name,allowed,label)=>{
-      const markers=source.statements.filter(statement=>ts.isVariableStatement(statement)&&statement.modifiers?.some(modifier=>modifier.kind===ts.SyntaxKind.ExportKeyword))
-        .flatMap(statement=>statement.declarationList.declarations.filter(declaration=>ts.isIdentifier(declaration.name)&&declaration.name.text===name)
-          .map(declaration=>({declaration,constant:Boolean(statement.declarationList.flags&ts.NodeFlags.Const)})));
-      if(!markers.length)return 'legacy';
-      const marker=markers[0],initializer=marker.declaration.initializer;
-      if(markers.length!==1||!marker.constant||!initializer||!ts.isStringLiteral(initializer)||!allowed.includes(initializer.text))throw new Error(`Unsupported ${label} contract declaration`);
-      return initializer.text;
-    };
+    const source=sourceFile('game-result.js',result);
+    const selectContract=(name,allowed,label)=>stringContract(source,name,allowed,label);
     resultHeadingContract=selectContract('RESULT_HEADING_CONTRACT',['perspective-v1','perspective-v2'],'result heading');
     rematchChoicesContract=selectContract('REMATCH_CHOICES_CONTRACT',['colors-v1'],'rematch choices');
   } catch(error) { if(error.code!=='ENOENT') throw error; }
@@ -38,7 +30,10 @@ export async function candidateCapabilities(root) {
     usernameOnlySignup=/^export const ACCOUNT_SIGNUP_PROFILE\s*=\s*['"]username-only['"];?$/m.test(dialog);
     separateAccountForms=/^export const ACCOUNT_ENTRY_LAYOUT\s*=\s*['"]separate['"];?$/m.test(dialog);
   } catch(error) { if(error.code!=='ENOENT') throw error; }
+  let currentComputerModel=null;
+  if(trainedComputerPlay) currentComputerModel=currentModelContract(await readFile(path.join(root,'packages/shared-types/src/computer-play.ts'),'utf8'));
   return {
+    currentComputerModel,
     resultHeadingContract,
     rematchChoicesContract,
     trainedComputerPlay,

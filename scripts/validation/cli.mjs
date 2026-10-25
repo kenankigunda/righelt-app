@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import {readJSON,saveJSON,configPath,withRunLock} from './io.mjs';
+import {retainedInputOptions,assertRetainedOutput} from './retained-input.mjs';
 import {localRun,fingerprint} from './local.mjs';
 import {git} from './io.mjs';
 import {integratedRun} from './integrated.mjs';
@@ -14,6 +15,7 @@ import {candidateCapabilities} from './capabilities.mjs';
 import {refreshPR,mergeAuthorized} from './merge.mjs';
 const [mode,...args]=process.argv.slice(2);const flags={};for(let i=0;i<args.length;i++){if(args[i]==='--')continue;if(!args[i].startsWith('--'))throw Error(`Unexpected argument ${args[i]}`);flags[args[i].slice(2)]=args[i+1]&&!args[i+1].startsWith('--')?args[++i]:true;}
 try{
+ const retainedInput=retainedInputOptions({mode,args,flags});
  const config=await readJSON(configPath(),{});
  if(mode==='status'){if(!flags.run)throw Error('Provide --run');console.log(JSON.stringify(compactStatus(await readJSON(path.resolve(flags.run)),{afterCursor:flags.cursor})));}
  else if(mode==='import-ci'){if(!flags.repository||!flags['run-id']||!flags.expected||!flags.out||!flags.candidate)throw Error('Provide --repository --run-id --expected JSON --out DIRECTORY --candidate PATH');const r=await importCI({repository:flags.repository,runId:Number(flags['run-id']),cwd:path.resolve(flags.candidate),outDir:path.resolve(flags.out),expected:await readJSON(flags.expected)});console.log(JSON.stringify({run:r.run,credited:Object.keys(r.receipts),rejected:r.rejected}));}
@@ -23,7 +25,8 @@ try{
   console.log('Email is connector-managed: the invoking skill must check availability and send the consolidated digest.');
   if(mode==='integrated'&&!flags.manifest)throw Error('Provide --manifest FILE');
   const candidate=path.resolve(flags.candidate??process.cwd());
-  const options={cwd:candidate,base:flags.base??'origin/main',dir:flags.out??path.join(process.cwd(),'test-results','validation',`${mode}-${Date.now()}-${process.pid}`),full:Boolean(flags.full),ciEvidence:flags['ci-evidence']?path.resolve(flags['ci-evidence']):undefined,config,publishReport:config.publicationEnabled===true&&!flags['no-publish'],manifest:flags.manifest,resume:Boolean(flags.resume)};
+  const options={cwd:candidate,base:flags.base??'origin/main',dir:flags.out??path.join(process.cwd(),'test-results','validation',`${mode}-${Date.now()}-${process.pid}`),full:Boolean(flags.full),ciEvidence:flags['ci-evidence']?path.resolve(flags['ci-evidence']):undefined,config,publishReport:config.publicationEnabled===true&&!flags['no-publish'],manifest:flags.manifest,resume:Boolean(flags.resume),retainedInput};
+  if(retainedInput)await assertRetainedOutput(retainedInput,path.resolve(options.dir));
   if(mode==='integrated'&&!flags.legacy&&(await readJSON(flags.manifest)).version!==2)throw Error('Use a version 2 release-question manifest; --legacy is only for historical reproduction');
   if(mode==='local'&&!flags.legacy){const spec=flags.plan?await readJSON(flags.plan):await defaultLocalPlan(candidate);const changed=(await git(['diff','--name-only',options.base],candidate)).split('\n').filter(Boolean);options.policy=stagePolicy(spec,0,{accounts:(await candidateCapabilities(candidate)).accounts,changed});options.cacheDir=path.join(path.resolve(options.dir),'check-cache');}
   if(mode==='local'&&flags.resume){options.dir=path.dirname(path.resolve(flags.resume));options.cacheDir=path.join(options.dir,'check-cache');}
