@@ -1,0 +1,97 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { test, expect } from '@playwright/test';
+import { legacyClientFixture } from '../../apps/web/test/support/legacy-client.mjs';
+import { createGameFromHome, makeAnyLegalMove } from '../support/app.mjs';
+
+const journalRecords = page => page.evaluate(() => new Promise((resolve, reject) => {
+  const request = indexedDB.open('righelt.online-commands.v2');
+  request.onerror = () => reject(request.error);
+  request.onsuccess = () => {
+    const db = request.result, tx = db.transaction('commands'), read = tx.objectStore('commands').getAll();
+    read.onsuccess = () => resolve(read.result); read.onerror = () => reject(read.error);
+    tx.oncomplete = () => db.close();
+  };
+}));
+
+for (const fault of ['uncommitted', 'delayed-cleanup']) test(`actual150 browser preserves158 shared journal through ${fault}`, async ({ page, context }, info) => {
+  test.setTimeout(75000);
+  const fixture = await legacyClientFixture(); let old;
+  try {
+    await page.addInitScript(() => {
+      // Isolate HTTP receipt recovery from live confirmations.
+      window.WebSocket = undefined;
+      const remove = IDBObjectStore.prototype.delete;
+      IDBObjectStore.prototype.delete = function (...args) {
+        const request = remove.apply(this, args);
+        if (this.name === 'commands' && sessionStorage.getItem('mixed.hold-cleanup') === 'true') {
+          request.addEventListener('success', () => this.transaction.abort());
+        }
+        return request;
+      };
+    });
+    const { gameId, gameHash } = await createGameFromHome(page);
+    await page.locator('[data-action="play-as-both-players"]').click();
+    await makeAnyLegalMove(page, 'p1');
+    await expect.poll(async () => (await journalRecords(page)).length).toBe(0);
+    old = await context.newPage();
+    await old.route('**/*.js', async route => {
+      const pathname = new URL(route.request().url()).pathname;
+      if (!/^\/(shell\/|generated\/|main\.js$|local-dev-ports\.js$)/.test(pathname)) return route.continue();
+      const body = await readFile(join(fixture.web, pathname));
+      return route.fulfill({ status: 200, contentType: 'application/javascript', body });
+    });
+    const oldSends = []; old.on('request', request => {
+      if (request.method() === 'POST' && request.url().includes('/api/')) oldSends.push(request.postDataJSON());
+    });
+    await old.goto(page.url()); await expect(old.getByTestId('game-board')).toBeVisible();
+    expect(await old.evaluate(async () => {
+      const { isSyncCommand } = await import('/generated/packages/shared-types/src/sync-protocol.js');
+      return isSyncCommand({ protocolVersion: 2, kind: 'shared', gameId: 'g', identityId: 'i',
+        clientCommandId: 'v2:probe', fingerprint: 'a'.repeat(64), payload: {}, expectedState: {}, expectedGameplayRevision: 0 });
+    })).toBe(false);
+    let allow = false, envelope; const sends = [];
+    await page.route(`**/api/shell/games/${gameId}/reconcile`, route => allow ? route.continue() : route.abort());
+    await page.route(`**/api/shell/games/${gameId}/shared`, route => {
+      const command = route.request().postDataJSON(); envelope ??= command; sends.push(command);
+      return fault === 'uncommitted' && !allow ? route.abort() : route.continue();
+    });
+    if (fault === 'delayed-cleanup') await page.evaluate(() => sessionStorage.setItem('mixed.hold-cleanup', 'true'));
+    const history = page.locator('[data-action="switch-game-panel"][data-panel="history"]');
+    if (await history.isVisible()) await history.click();
+    await page.locator('[data-action="undo-last-move"]').click();
+    await expect.poll(() => envelope?.kind).toBe('shared');
+    if (fault === 'delayed-cleanup') await expect(page.getByTestId('sync-recovery-banner')).toContainText(/saving|save/i);
+    const original = await journalRecords(page); expect(original).toHaveLength(1);
+    expect(original[0]).toEqual(envelope);
+    // Real same-origin storage notification reaches the already-open150 tab.
+    await old.evaluate(async id => {
+      const identityId = localStorage.getItem('righelt.identity.id.v1');
+      const { game } = await (await fetch(`/api/shell/games/${id}?identityId=${identityId}`)).json();
+      localStorage.setItem('righelt.pendingLocalGames', JSON.stringify({ [id]: game }));
+    }, gameId);
+    await page.evaluate(() => localStorage.removeItem('righelt.pendingLocalGames'));
+    await expect(old.getByTestId('game-board')).toBeVisible();
+    expect(await journalRecords(old)).toEqual(original);
+    await old.reload(); await expect(old.getByTestId('game-board')).toBeVisible();
+    await expect(old.getByTestId('sync-recovery-banner')).toContainText(/saving|save/i);
+    expect(await journalRecords(old)).toEqual(original);
+    expect(oldSends.some(body => body?.kind === 'shared' || body?.commands?.some(command => command.kind === 'shared'))).toBe(false);
+    await page.evaluate(() => sessionStorage.removeItem('mixed.hold-cleanup'));
+    allow = true; await page.reload();
+    await expect.poll(async () => (await journalRecords(page)).length, { timeout: 25000 }).toBe(0);
+    await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
+    const proof = await page.evaluate(async ({ gameId, envelope }) => {
+      const response = await fetch(`/api/shell/games/${gameId}/reconcile`, { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ protocolVersion: 2, identityId: envelope.identityId, knownSnapshotEventSeq: 0, commands: [envelope] }) });
+      return response.json();
+    }, { gameId, envelope });
+    expect(proof.commandOutcomes[0]).toMatchObject({ outcome: 'accepted', clientCommandId: envelope.clientCommandId, fingerprint: envelope.fingerprint });
+    expect(proof.game.gameplayRevision).toBe(2);
+    for (const sent of sends) expect(sent).toEqual(envelope);
+    if (fault === 'delayed-cleanup') expect(sends).toHaveLength(1);
+    await info.attach('mixed-client-proof', { contentType: 'application/json', body: JSON.stringify({ legacyRevision: fixture.revision,
+      legacyTransportHash: fixture.transportHash, fault, clientCommandId: envelope.clientCommandId, fingerprint: envelope.fingerprint,
+      outcome: proof.commandOutcomes[0], oldTabSharedSends: 0, sharedAttempts: sends.length, gameHash }) });
+  } finally { await old?.close(); await fixture.close(); }
+});

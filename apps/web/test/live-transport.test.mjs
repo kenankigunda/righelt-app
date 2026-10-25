@@ -13,6 +13,30 @@ import {
   finalizeResolvedTurn,
   getControlSeatForTurn,
 } from "../generated/packages/shared-types/src/shell-live-turn.js";
+import { commandFingerprint } from '../generated/packages/shared-types/src/sync-protocol.js';
+
+test('initial shared capability timeout preserves intent and never submits it', async t => {
+ const game = buildLiveGame(), storage = createMemoryStorage(); storage.setItem(IDENTITY_KEY, 'id-a');
+ const envelope = { protocolVersion: 2, gameId: game.id, identityId: 'id-a', clientCommandId: 'v2:unknown-capability',
+  kind: 'shared', payload: { operation: 'computer-control', values: { action: 'pause' } },
+  expectedState: game.board.state, expectedGameplayRevision: game.gameplayRevision };
+ envelope.fingerprint = await commandFingerprint(envelope);
+ let removed = 0; const reads = [];
+ const store = createLiveTransportStore({ storage, commandJournal: { list: async () => [envelope], remove: async () => { removed++; } },
+  timing: { requestTimeoutMs: 20, recoveryPassMs: 80, retryDelaysMs: [1000], retryJitter: 0 },
+  fetcher: (url, init) => { reads.push({ url, init }); return new Promise(() => {}); } });
+ t.after(() => store.retire());
+ await store.reconcileGame(game.id);
+ assert.ok(reads.length > 0);
+ for (const { init } of reads) {
+  assert.equal(init.method, 'GET'); assert.equal(init.body, undefined);
+  assert.equal(init.headers['X-Righelt-Projection'], 'history-v1');
+  assert.equal(init.signal.aborted, true);
+ }
+ assert.equal(store.getGameViewModel(game.id), null);
+ assert.equal(store.getCommandOutcome(game.id, envelope.clientCommandId), null);
+ assert.equal(store.isUpgradeRequired(game.id), false); assert.equal(removed, 0);
+});
 
 let sentCommands = new Map();
 beforeEach(() => { globalThis.indexedDB = new IDBFactory(); sentCommands = new Map(); });
