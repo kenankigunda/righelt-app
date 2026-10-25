@@ -1214,3 +1214,14 @@ test('stacked push tokens expose their own piece identities for visual replay',a
     adapter.unmount();
   });
 });
+
+test('combined explicit inspection keeps overlapping supply and command strokes separately visible',async()=>{
+  await withFakeDocument(()=>{
+    const {adapter,overlayLinesEl}=createMountedAdapter();const path=[{row:3,col:3},{row:3,col:4}];
+    const snapshot={sideToMove:'P1',pieces:[{id:'A',owner:'P1',kind:'unit',position:path[0],supplied:true,commanded:true}],artifacts:{supply:[{player:'P1',shortestPathByPieceId:{A:path}}],command:{shortestPathToCommanderByPieceId:{A:path}}}};
+    adapter.render({snapshot,selection:{selectedPieceId:'A',source:path[0],target:null},overlay:{mode:'interactive',inspection:{kind:'combined',pieceId:'A'}},legalActions:[],selectedPieceMoves:[]});
+    const lines=overlayLinesEl.children.filter(child=>child.tagName==='LINE');
+    assert.equal(lines.length,2);assert.notEqual(lines[0].getAttribute('y1'),lines[1].getAttribute('y1'));
+    adapter.unmount();
+  });
+});

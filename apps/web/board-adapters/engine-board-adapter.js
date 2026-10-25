@@ -1,5 +1,6 @@
 import { REMOVAL_EFFECT_DURATION_MS, REMOVAL_FLASH_COUNT } from "../board/removal-timing.js";
-import { inspectionSegments } from "../board/inspection.js";
+import { inspectionSegments, normalizeConnectionPath as normalizeOverlayPath } from "../board/inspection.js";
+export { normalizeConnectionPath as normalizeOverlayPath } from "../board/inspection.js";
 import { renderPieceSymbol } from '../piece-symbols.js';
 export { createInitialState as createInitialBoardSnapshot, listLegalActions as listBoardLegalActions } from '../generated/packages/game-engine/src/index.js';
 import { BOARD_SIZE, SUPPLY_POINTS } from "../generated/packages/game-engine/src/deterministic.js";
@@ -126,47 +127,6 @@ export const getSegmentKey = (from, to) => {
   }
   const [start, end] = getCanonicalSegment(from, to);
   return `${coordKey(start)}>${coordKey(end)}`;
-};
-
-const gcd = (left, right) => {
-  let a = Math.abs(left);
-  let b = Math.abs(right);
-  while (b !== 0) {
-    const next = a % b;
-    a = b;
-    b = next;
-  }
-  return a || 1;
-};
-
-export const normalizeOverlayPath = (path) => {
-  if (!Array.isArray(path) || path.length < 2) {
-    return Array.isArray(path) ? [...path] : [];
-  }
-
-  const normalized = [{ ...path[0] }];
-  for (let index = 0; index < path.length - 1; index += 1) {
-    const from = path[index];
-    const to = path[index + 1];
-    if (!from || !to) {
-      continue;
-    }
-
-    const deltaRow = to.row - from.row;
-    const deltaCol = to.col - from.col;
-    const steps = gcd(deltaRow, deltaCol);
-    const rowStep = deltaRow / steps;
-    const colStep = deltaCol / steps;
-
-    for (let step = 1; step <= steps; step += 1) {
-      normalized.push({
-        row: from.row + rowStep * step,
-        col: from.col + colStep * step,
-      });
-    }
-  }
-
-  return normalized;
 };
 
 const getPathSegmentKeys = (path) => {
@@ -761,8 +721,13 @@ export function createEngineBoardAdapter() {
     setOverlayViewBox();
 
     if (overlay?.inspection) {
-      for (const segment of inspectionSegments(snapshot, overlay.inspection)) {
-        drawPath([segment.from, segment.to], segment.kind === "supply" ? "#2f8e63" : PREVIEW_STROKE_BY_OWNER[segment.owner], "2 6", null, segment.kind);
+      const segments = inspectionSegments(snapshot, overlay.inspection);
+      const supplyKeys = new Set(segments.filter(segment => segment.kind === "supply").map(segment => getSegmentKey(segment.from, segment.to)));
+      const commandKeys = new Set(segments.filter(segment => segment.kind === "command").map(segment => getSegmentKey(segment.from, segment.to)));
+      for (const segment of segments) {
+        const key = getSegmentKey(segment.from, segment.to);
+        const offset = supplyKeys.has(key) && commandKeys.has(key) ? (segment.kind === "supply" ? -OVERLAY_PARALLEL_SPLIT_OFFSET : OVERLAY_PARALLEL_SPLIT_OFFSET) : 0;
+        drawPath([segment.from, segment.to], segment.kind === "supply" ? "#2f8e63" : PREVIEW_STROKE_BY_OWNER[segment.owner], "2 6", new Map([[key, offset]]), segment.kind);
       }
       const selected = findPieceById(snapshot, selectedPieceId);
       if (selected) cellByCoordinateKey.get(coordKey(selected.position))?.classList.add("selected-piece");
