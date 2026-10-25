@@ -80,9 +80,11 @@ test('join failures stay visible for manual retry and late failures cannot follo
    for(const type of ['focusin','focusout'])document.addEventListener(type,record);
   });
   const invite=`/#/invite/${token}?as=blue`;await guest.goto(invite);
-  let requests=0,release;let attempt='reset';
+  let requests=0,release;let attempt='fast-reject';
+  const focusFailureCode='invite_focus_failure_before_keyup';
   await guest.route('**/api/shell/games/*/join',async route=>{
    requests++;
+   if(attempt==='fast-reject'){await route.fulfill({status:503,json:{ok:false,error:focusFailureCode}});return;}
    if(attempt==='reset'){await route.abort('connectionreset');return;}
    if(attempt==='reject'||attempt==='stale'){
     await new Promise(resolve=>release=resolve);await route.fulfill({status:503,json:{ok:false,error:'temporarily_unavailable'}});return;
@@ -93,15 +95,22 @@ test('join failures stay visible for manual retry and late failures cannot follo
   // Element.focus alone does not activate a separate native browser window.
   // Establish keyboard focus before testing its retention across a failure.
   await guest.bringToFront();await expect.poll(()=>guest.evaluate(()=>document.hasFocus()&&!document.hidden)).toBe(true);
-  await join.focus();await join.press('Enter');await expect(error).toHaveText('Could not join. Try again');await expect(join).toBeEnabled();await expect(join).toBeFocused();expect(requests).toBe(1);await guest.screenshot({path:info.outputPath('join-failure-focused.png')});
+  await join.focus();
+  // Complete the fast failure while Enter still defers DOM replacement. Focus
+  // must survive the actual keyup render, not a request-finally timing window.
+  await guest.keyboard.down('Enter');
+  try { await expect.poll(()=>guest.evaluate(()=>window.__righeltLastError)).toBe(focusFailureCode); }
+  finally { await guest.keyboard.up('Enter'); }
+  await expect(error).toHaveText('Could not join. Try again');await expect(join).toBeEnabled();await expect(join).toBeFocused();expect(requests).toBe(1);await guest.screenshot({path:info.outputPath('join-failure-focused.png')});
   await expect(error).not.toHaveAttribute('data-loading-state',/.+/);await guest.setViewportSize({width:391,height:844});await expect(error).toHaveText('Could not join. Try again');expect(requests).toBe(1);
+  attempt='reset';await join.press('Enter');await expect(error).toHaveText('Could not join. Try again');await expect(join).toBeFocused();expect(requests).toBe(2);
   attempt='reject';await join.press('Enter');await expect(join).toBeDisabled();await expect(error).toHaveCount(0);await expect.poll(()=>typeof release).toBe('function');release();
-  await expect(error).toHaveText('Could not join. Try again');await expect(join).toBeFocused();expect(requests).toBe(2);
+  await expect(error).toHaveText('Could not join. Try again');await expect(join).toBeFocused();expect(requests).toBe(3);
   attempt='stale';release=undefined;await join.press('Enter');await expect.poll(()=>typeof release).toBe('function');
   await guest.getByRole('link',{name:'Back home',exact:true}).click();await expect(guest.getByTestId('home-create-game')).toBeVisible();release();
-  await expect(error).toHaveCount(0);await expect(guest.getByTestId('home-create-game')).toBeVisible();expect(requests).toBe(3);
+  await expect(error).toHaveCount(0);await expect(guest.getByTestId('home-create-game')).toBeVisible();expect(requests).toBe(4);
   await guest.goto(invite);await expect(join).toBeEnabled();await expect(error).toHaveCount(0);
-  attempt='success';await join.click();await expect(guest.getByTestId('game-role')).toContainText('Player 2');await expect(error).toHaveCount(0);expect(requests).toBe(4);
+  attempt='success';await join.click();await expect(guest.getByTestId('game-role')).toContainText('Player 2');await expect(error).toHaveCount(0);expect(requests).toBe(5);
  }catch(error){primaryError=error;throw error;}finally{
   try{if(guest)await info.attach('Guest invite native focus',{body:JSON.stringify(await guest.evaluate(()=>({focused:document.hasFocus(),hidden:document.hidden,activeAction:document.activeElement?.getAttribute('data-action')??null,activeTag:document.activeElement?.tagName??null,events:window.inviteFocusObservations})).catch(error=>({readError:String(error)})),null,2),contentType:'application/json'});}
   catch(error){if(!primaryError)throw error;info.annotations.push({type:'diagnostic capture failure',description:String(error)});}

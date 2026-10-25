@@ -2540,6 +2540,9 @@ const renderParticipantsPanel = game => renderPlayersPanel(game, {
 });
 
 const joinFeedback=createJoinFeedback({getScope:gameId=>({gameId,owner:transport,generation:account.snapshot().generation,visit:inviteVisit,route:window.location.hash})});
+// A deliberate focus or pointer move retires only the join's focus intent.
+document.addEventListener('focusin',event=>joinFeedback.noteFocus(event.target));
+document.addEventListener('pointerdown',event=>joinFeedback.noteFocus(event.target),true);
 const additionalHistory=createAdditionalHistory({
   getScope:gameId=>{const game=transport.getAuthoritativeGame(gameId),state=account.snapshot();return canReadAdditionalHistory(game,state)?{gameId,owner:transport,generation:state.generation,revision:game.gameplayRevision}:null;},
   load:(scope,values)=>scope.owner.additionalHistory(scope.gameId,values),
@@ -3771,6 +3774,7 @@ const captureScenarioDraftFocus = (baseRouteKey) => {
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (renderGesture.defer({ animatePanels, includeBoard })) return;
+  const previousJoinFocus = document.activeElement;
   utilityMemory.capture();
   const result = preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => renderContent({ animatePanels, includeBoard }));
   utilityMemory.restore();
@@ -3780,6 +3784,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     const heading = appEl.querySelector('[data-game-panel="history"] h2');
     if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }
   }
+  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });
   return result;
 };
 const renderContent = ({ animatePanels, includeBoard }) => {
@@ -4940,8 +4945,7 @@ appEl.addEventListener("click", async (event) => {
     }
     const gameId = actionEl.getAttribute("data-game-id");
     if (!gameId) return;
-    const restoreJoinFocus=document.activeElement===actionEl;
-    const joinAttempt=joinFeedback.begin(gameId);
+    const joinAttempt=joinFeedback.begin(gameId,{focusAction:document.activeElement===actionEl?action:null});
     void withPendingButton(getJoinButtonKey("viewer", gameId), async () => {
       try {
       await joinAttempt.scope.owner.joinGame({
@@ -4958,9 +4962,6 @@ appEl.addEventListener("click", async (event) => {
       }
       await syncRouteDataAndLiveChannels();
       } catch(error) { joinFeedback.fail(joinAttempt);throw error; }
-    }).finally(()=>{
-      if(restoreJoinFocus&&joinFeedback.isCurrent(joinAttempt)&&joinFeedback.message(gameId)&&document.activeElement===document.body)
-        document.querySelector(`[data-action="${action}"][data-game-id="${CSS.escape(gameId)}"]`)?.focus({preventScroll:true});
     });
     return;
   }
@@ -4968,8 +4969,7 @@ appEl.addEventListener("click", async (event) => {
   if (action === "join-player" || action === "accept-invite-player") {
     const gameId = actionEl.getAttribute("data-game-id");
     if (!gameId) return;
-    const restoreJoinFocus=document.activeElement===actionEl;
-    const joinAttempt=joinFeedback.begin(gameId);
+    const joinAttempt=joinFeedback.begin(gameId,{focusAction:document.activeElement===actionEl?action:null});
     void withPendingButton(getJoinButtonKey("player", gameId), async () => {
       try {
       const result = await joinAttempt.scope.owner.joinGame({
@@ -4989,9 +4989,6 @@ appEl.addEventListener("click", async (event) => {
       }
       await syncRouteDataAndLiveChannels();
       } catch(error) { joinFeedback.fail(joinAttempt);throw error; }
-    }).finally(()=>{
-      if(restoreJoinFocus&&joinFeedback.isCurrent(joinAttempt)&&joinFeedback.message(gameId)&&document.activeElement===document.body)
-        document.querySelector(`[data-action="${action}"][data-game-id="${CSS.escape(gameId)}"]`)?.focus({preventScroll:true});
     });
     return;
   }
