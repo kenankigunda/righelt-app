@@ -4042,13 +4042,19 @@ const withPendingButton = async (pendingKey, fn, { renderStart = true, renderEnd
   }
 };
 
-const captureRouteRead = () => ({
-  generation: account.snapshot().generation,
-  hash: window.location.hash,
-  owner: transport,
-  route: { ...currentRoute },
-  inputs: JSON.stringify(getVisibleHomeSectionKeys().map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])),
-});
+const captureRouteRead = () => {
+  // A queued authority refresh can run after the URL changes but before the
+  // browser delivers hashchange. Keep the read and its deduplication key on
+  // the same URL instead of sharing an old route's work under the new hash.
+  const hash = window.location.hash;
+  return {
+    generation: account.snapshot().generation,
+    hash,
+    owner: transport,
+    route: parseRouteFromHash(hash),
+    inputs: JSON.stringify(getVisibleHomeSectionKeys().map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])),
+  };
+};
 const routeReadIsCurrent = read => read.generation === account.snapshot().generation && read.hash === window.location.hash && read.owner === transport;
 const assertCurrentRouteRead = read => {
   if (!routeReadIsCurrent(read)) throw Object.assign(new Error("session_changed"), { code: "session_changed" });
