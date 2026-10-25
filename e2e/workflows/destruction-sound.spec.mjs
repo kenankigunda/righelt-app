@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {installPassiveAudioObservations} from '../support/audio-observations.mjs';
 import {readFile,writeFile} from 'node:fs/promises';
 import {importScenarioGame,openDirectGameLink,joinAsViewer,submitPlayableAction,switchGamePanel,returnToLive,closeContextQuietly} from '../support/app.mjs';
 import {readProjectedGame} from '../support/computer-projection.mjs';
@@ -22,8 +23,11 @@ const instrument=()=>{
 };
 test('real audio destruction batches deduplicate local receipts and remote finalization while mute and replays stay silent',async({browser,baseURL,browserName},info)=>{
  const ownerContext=await browser.newContext({viewport:{width:1440,height:1100}}),viewerContext=await browser.newContext({viewport:{width:1440,height:1100}});
+ await ownerContext.addInitScript(installPassiveAudioObservations);await viewerContext.addInitScript(installPassiveAudioObservations);
  await ownerContext.addInitScript(instrument);await viewerContext.addInitScript(instrument);
  const owner=await ownerContext.newPage(),viewer=await viewerContext.newPage();
+ const observations={owner:[],viewer:[]};
+ const retain=async(label,page,phase)=>{observations[label].push({phase,...await page.evaluate(()=>({timeline:window.passiveAudioObservations,probe:window.destructionAudioProbe})).catch(error=>({readError:String(error)}))});};
  try{
   const first=await importScenarioGame(owner,scenario,baseURL);await switchGamePanel(owner,'board');
   await openDirectGameLink(viewer,baseURL,first.gameHash);await joinAsViewer(viewer);await switchGamePanel(viewer,'board');
@@ -48,16 +52,19 @@ test('real audio destruction batches deduplicate local receipts and remote final
   for(let i=0;i<2;i++){const duplicate=await send(owner,first.gameId,command);expect(duplicate.status).toBe(200);expect(duplicate.body).toMatchObject({accepted:true,duplicate:true,clientCommandId:command.clientCommandId});}
   expect((await projected(owner,first.gameId)).gameplayRevision).toBe(beforeDuplicate.gameplayRevision);expect(await crackStarts(owner)).toHaveLength(1);
   // Reload/history/replay are informational and must not reproduce destruction audio.
+  await retain('owner',owner,'local-confirmed-and-duplicates');await retain('viewer',viewer,'local-confirmed-and-duplicates');
   await viewer.bringToFront();await viewer.reload();await expect(viewer.getByTestId('game-shell')).toBeVisible();expect(await crackStarts(viewer)).toHaveLength(0);
   await switchGamePanel(viewer,'history');await viewer.getByTestId('history-move-item').first().locator('.history-move-line').click();await expect(viewer.locator('#shell-board .history-destruction-piece')).toHaveCount(2);expect(await crackStarts(viewer)).toHaveLength(0);
   await returnToLive(viewer);await switchGamePanel(viewer,'board');await viewer.emulateMedia({reducedMotion:'reduce'});
   await viewer.locator('#shell-board-preview-label').getByRole('button',{name:'Show me again',exact:true}).click();await expect(viewer.locator('.computer-replay')).toBeVisible();
   await viewer.locator('#shell-board-preview-label').getByRole('button',{name:'Stop replay',exact:true}).click();expect(await crackStarts(viewer)).toHaveLength(0);
   // Deliberate in-app mute persists; no system output setting is read or changed.
+  await retain('owner',owner,'before-mute');await retain('viewer',viewer,'history-and-replay');
   await owner.bringToFront();await owner.getByRole('button',{name:'Mute sound',exact:true}).click();
   const muted=await importScenarioGame(owner,{...scenario,id:'b71f581c-6cfe-4c5a-9827-1687a23ace33'},baseURL);await owner.bringToFront();
   await submitPlayableAction(owner,fixture.action);await owner.locator('[data-board-preview-action="end-turn"]').click();await expect.poll(async()=>(await projected(owner,muted.gameId)).moves[0].destroyedPieces.length).toBe(2);
   expect(await crackStarts(owner)).toHaveLength(0);expect(await owner.evaluate(()=>localStorage.getItem('righelt.device.sound-enabled'))).toBe('false');
+  await retain('owner',owner,'muted-confirmed');
   await owner.reload();await expect(owner.getByTestId('game-shell')).toBeVisible();await expect(owner.getByRole('button',{name:'Enable sound',exact:true})).toBeVisible();expect(await crackStarts(owner)).toHaveLength(0);
   // A confirmed remote action can sound on the foreground viewer, even though
   // its muted owner performs the authenticated request without taking focus.
@@ -81,5 +88,12 @@ test('real audio destruction batches deduplicate local receipts and remote final
   const proof=JSON.stringify({browserName,localCracks:1,initialViewerActive:viewerInitiallyActive,initialViewerCracks:viewerInitiallyActive?1:0,nativeBackgroundObserved:!viewerInitiallyActive,ownerRemoteActive,focusSetup:'Actual document APIs recorded without overrides; native background proof remains a gap when both windows report active',duplicateCracks:0,reloadHistoryReplayCracks:0,mutedCracks:0,remoteForeground:await crackStarts(viewer),systemMute:'unchanged; no audible audition claimed'},null,2);
   await writeFile(info.outputPath('audio-receipt-proof.json'),proof);
   await info.attach('Real WebAudio destruction receipt proof',{path:info.outputPath('audio-receipt-proof.json'),contentType:'application/json'});
- }finally{await closeContextQuietly(ownerContext);await closeContextQuietly(viewerContext);}
+ }finally{
+  try{
+  for(const [label,page]of[['owner',owner],['viewer',viewer]]){
+   await retain(label,page,'final');
+   const path=info.outputPath(`audio-observations-${label}.json`);await writeFile(path,JSON.stringify(observations[label],null,2));await info.attach(`Passive native audio ${label}`,{path,contentType:'application/json'});
+  }
+  }finally{await closeContextQuietly(ownerContext);await closeContextQuietly(viewerContext);}
+ }
 });

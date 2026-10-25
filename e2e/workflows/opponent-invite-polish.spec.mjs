@@ -25,7 +25,14 @@ test('the initial invitation survives a viewer and closes once its friend joins'
   await expect(dialog).toHaveCount(0);await expect(page.getByTestId('game-board')).toBeVisible();
   await expect.poll(()=>page.locator('#shell-board .cell').first().evaluate(e=>document.activeElement===e)).toBe(true);
   await page.evaluate(()=>window.finishInviteCopy());await expect(dialog).toHaveCount(0);await expect(page.getByText('Link copied! Ready to share.',{exact:true})).toHaveCount(0);
-  await switchGamePanel(page,'players');await expect(page.getByTestId('copy-viewer-invite')).toBeEnabled();await expect(page.getByTestId('participant-player-2')).toContainText('Guest player');
+  await switchGamePanel(page,'players');await expect(page.getByTestId('copy-viewer-invite')).toBeEnabled();
+  const friendIdentity=await friend.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'));expect(friendIdentity).toBeTruthy();
+  await expect.poll(()=>page.evaluate(async id=>{
+   const identityId=localStorage.getItem('righelt.identity.id.v1');
+   const body=await(await fetch(`/api/shell/games/${id}?identityId=${encodeURIComponent(identityId)}`)).json();
+   return body.game?.player2?.identityId;
+  },gameId)).toBe(friendIdentity);
+  await expect(page.getByTestId('participant-player-2')).toHaveText('Guest');
   await page.screenshot({path:info.outputPath('friend-joined-players.png')});
   await switchGamePanel(page,'history');
   const readContract=await page.evaluate(async id=>{
