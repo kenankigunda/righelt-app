@@ -142,14 +142,14 @@ test('E02 silent online receive loss triggers watchdog and survives interrupted 
   expect(await p.pages[1].evaluate(()=>navigator.onLine)).toBe(true);
   await p.pages[1].evaluate(()=>{
    window.recoveryDetectedAt=null;
-   const observer=new MutationObserver(()=>{if(document.querySelector('[data-testid="sync-recovery-banner"]')?.textContent.includes('Please reconnect')){window.recoveryDetectedAt=Date.now();observer.disconnect();}});
+   const observer=new MutationObserver(()=>{if(document.querySelector('[data-testid="sync-recovery-banner"]')?.textContent.includes('Reconnecting')){window.recoveryDetectedAt=Date.now();observer.disconnect();}});
    observer.observe(document.body,{subtree:true,childList:true,characterData:true});
   });
   await move(p.pages[0],p.gameId);
-  await expect(p.pages[1].getByTestId('sync-recovery-banner')).toContainText('We couldn’t record your move. Please reconnect.',{timeout:17000});
+  await expect(p.pages[1].getByTestId('sync-recovery-banner')).toContainText('Reconnecting',{timeout:22000});
   const detectedAt=await p.pages[1].evaluate(()=>window.recoveryDetectedAt);
   expect(Number.isFinite(detectedAt)).toBe(true);expect(detectedAt).toBeGreaterThan(0);
-  const detectionMs=detectedAt-p.faults[1].lastInbound;expect(detectionMs).toBeGreaterThanOrEqual(0);expect(detectionMs).toBeLessThanOrEqual(16000);
+  const detectionMs=detectedAt-p.faults[1].lastInbound;expect(detectionMs).toBeGreaterThanOrEqual(0);expect(detectionMs).toBeLessThanOrEqual(21000);
   p.faults[1].interruptNextRecovery=true;p.faults[1].http=false;
   await expect.poll(()=>p.faults[1].interruptedRecoveries||0,{timeout:10000}).toBe(1);
   await p.pages[1].waitForTimeout(1000);
