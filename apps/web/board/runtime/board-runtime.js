@@ -494,6 +494,20 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (externalMessage) {
       const message = typeof externalMessage === "string" ? {text: externalMessage} : externalMessage;
       const actions = Array.isArray(message.actions) ? message.actions : message.action ? [message.action] : [];
+      const label = elements.boardPreviewLabelEl;
+      const buttons = Array.from(label?.querySelectorAll?.(':scope > button[data-board-message-action]') ?? []);
+      // A replay counter changes while its controls stay the same. Patch the
+      // text in place so a focused Next/Stop button remains usable across steps.
+      if (actions.length && label?.firstChild?.nodeType === 3 && label.childNodes.length === actions.length * 2
+        && buttons.length === actions.length && buttons.every((button, index) => button.dataset.boardMessageAction === String(actions[index].id))) {
+        const text = `${message.text ?? ""} `;
+        if (label.firstChild.nodeValue !== text) label.firstChild.nodeValue = text;
+        buttons.forEach((button, index) => {
+          const text = String(actions[index].label);
+          if (button.textContent !== text) button.textContent = text;
+        });
+        return;
+      }
       setBoardPreviewPromptHtml(`${escapeHtml(message.text ?? "")}${actions.map(action => ` <button type="button" class="board-preview-inline-button" data-board-message-action="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>`).join("")}`);
       return;
     }

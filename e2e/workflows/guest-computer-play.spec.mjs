@@ -79,8 +79,10 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
     await expect(page.locator('.computer-replay')).toBeVisible();
     await expect(page.getByRole('button',{name:'Stop replay',exact:true})).toBeVisible();
     await page.screenshot({path:info.outputPath('computer-turn-replay.png')});
-    await page.getByRole('button',{name:'Stop replay',exact:true}).click();
+    // A short animated turn may finish during screenshot capture. Verify its
+    // natural completion; the manual replay below exercises explicit Stop.
     await expect(page.locator('.computer-replay')).toHaveCount(0);
+    await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
     assertReplayIntegrity({writes,before:beforeReplay,after:await projected(page,initial.id)});
     await page.emulateMedia({reducedMotion:'reduce'});
     await page.getByRole('button',{name:'Show me again',exact:true}).click();

@@ -4,6 +4,23 @@ import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 
 const noop = () => {};
 
+test('board status updates keep matching message controls and safely replace changed actions',async()=>{
+ const text={nodeType:3,nodeValue:'Replay · 1 of 3 '};
+ const stop={dataset:{boardMessageAction:'replay-stop'},textContent:'Stop replay'};
+ let html='',writes=0,message={text:'Replay · 2 of 3',actions:[{id:'replay-stop',label:'Stop replay'}]};
+ const label={firstChild:text,childNodes:[text,stop],querySelectorAll:()=>[stop],addEventListener:noop,removeEventListener:noop,
+  get innerHTML(){return html;},set innerHTML(value){writes++;html=value;}};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getSelectedPieceSummary:()=>null},host:{canInteract:()=>false},controls:{getBoardMessage:()=>message}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ await runtime.loadSnapshot({sideToMove:'P1',turnIndex:0,pieces:[],outcome:{status:'ongoing'}},{legalActions:[]});
+ assert.equal(writes,0);assert.equal(text.nodeValue,'Replay · 2 of 3 ');assert.equal(stop.textContent,'Stop replay');
+ message={text:'Replay · 3 of 3',actions:[{id:'replay-stop',label:'Stop'}]};runtime.refreshStatus();
+ assert.equal(writes,0);assert.equal(text.nodeValue,'Replay · 3 of 3 ');assert.equal(stop.textContent,'Stop');
+ message={text:'Finished <safely>',action:{id:'replay"next',label:'<Next>'}};runtime.refreshStatus();
+ assert.equal(writes,1);assert.match(html,/Finished &lt;safely&gt;/);assert.match(html,/data-board-message-action="replay&quot;next"/);assert.match(html,/&lt;Next&gt;/);
+ assert.doesNotMatch(html,/<safely>|<Next>|data-board-message-action="replay-stop"/);
+});
+
 test("board runtime keeps internal action type when external controls are absent", () => {
   const runtime = createBoardRuntime({
     boardAdapter: {

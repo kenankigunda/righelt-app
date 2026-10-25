@@ -2,6 +2,29 @@ import {test,expect} from '@playwright/test';
 test.use({viewport:{width:390,height:740},hasTouch:true});
 const geometry=page=>page.locator('#board').evaluate(el=>{const rect=el.getBoundingClientRect();return{x:rect.x,y:rect.y,width:rect.width,height:rect.height};});
 
+test('replay message steps preserve action nodes and keyboard focus',async({page})=>{
+ await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
+ await page.evaluate(async()=>{
+  await window.boardFixture.setup('pass',false);
+  window.replayMessage={text:'Replay · 1 of 3',actions:[{id:'replay-next',label:'Next'},{id:'replay-stop',label:'Stop replay'}]};
+  window.boardFixture.message(window.replayMessage);
+ });
+ const stop=page.getByRole('button',{name:'Stop replay',exact:true});await stop.focus();
+ await page.evaluate(()=>{window.savedReplayStop=document.activeElement;window.savedReplayNext=document.querySelector('[data-board-message-action="replay-next"]');});
+ const before=await geometry(page);
+ for(const step of [2,3]){
+  await page.evaluate(step=>window.boardFixture.message({...window.replayMessage,text:`Replay · ${step} of 3`}),step);
+  await expect(page.locator('#preview')).toContainText(`Replay · ${step} of 3`);
+  expect(await page.evaluate(()=>({stop:window.savedReplayStop===document.querySelector('[data-board-message-action="replay-stop"]'),next:window.savedReplayNext===document.querySelector('[data-board-message-action="replay-next"]'),focus:document.activeElement===window.savedReplayStop}))).toEqual({stop:true,next:true,focus:true});
+  expect(await geometry(page)).toEqual(before);
+ }
+ await stop.press('Enter');expect(await page.evaluate(()=>window.boardFixture.messageActions())).toEqual(['replay-stop']);
+ expect(await page.evaluate(()=>window.boardFixture.applied())).toEqual([]);
+ await page.evaluate(()=>window.boardFixture.message({text:'Finished <safely>',action:{id:'replay-computer',label:'Show me again'}}));
+ await expect(stop).toHaveCount(0);await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
+ await expect(page.locator('#preview')).toContainText('Finished <safely>');expect(await page.locator('#preview safely').count()).toBe(0);
+});
+
 test('compact Pass accepts actual touches at both ends of its 44px hit area without moving the board',async({page},info)=>{
   await page.goto('/browser-integration/support/board-message.html');
   await page.waitForFunction(()=>window.fixtureReady);
