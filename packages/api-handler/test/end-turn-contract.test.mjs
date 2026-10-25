@@ -78,3 +78,14 @@ test('API advertises the independent semantic action contract',async()=>{
  const response=await handleApiRequest(new Request('https://test/api/health'),{DB:createFakeD1()});
  assert.equal(response.headers.get(ACTION_CONTRACT_HEADER),String(ACTION_CONTRACT_VERSION));
 });
+
+
+test('legacy Pass fencing uses immutable intent, not an earlier current continuation',async()=>{
+  const h=await harness(), game=h.DB.getGameState('g');
+  const next=structuredClone(game.board.state);next.continuation=null;next.sideToMove='P2';next.turnIndex++;
+  const command=await h.command({type:'pass'},{actionContractVersion:undefined,expectedState:next,expectedGameplayRevision:game.gameplayRevision+1,predecessor:{clientCommandId:'v2:pending-parent',fingerprint:'a'.repeat(64)}});
+  const result=await h.call('apply',command);
+  assert.equal(result.commandOutcomes[0].outcome,'unknown');
+  assert.equal(result.commandOutcomes[0].reason,'dependency_pending');
+  assert.equal(h.DB.getReceipt('g',command.clientCommandId),null);
+});
