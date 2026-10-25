@@ -2651,7 +2651,7 @@ const renderHistoryPanel = (game) => {
     ${currentNames ? `<p class="small" data-testid="history-player-names">${currentNames}</p>` : ""}
     ${getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button>` : ""}
     <div class="section-followup">
-
+      ${game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? "Loading this move" : "This move couldn’t load. Your current view is still available."}</p>${game.historyLoadError ? `<button class="secondary mini-button" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${game.historyLoadIndex}">Retry</button>` : ""}</div>` : ""}
       <ol class="history-list" data-testid="history-list">${historyRows}</ol>
       ${renderAdditionalHistory(game)}
     </div>
