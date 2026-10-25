@@ -2008,8 +2008,8 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
       canAuthorScenarios
         ? `<section class="panel debug-panel scenario-panel scenario-panel-create">
             <h2>Capture a position</h2>
-            <p>${capturing ? scenarioCapture.mode === 'live' ? 'Following this manual game until you save. History inspection does not change the capture.' : 'Position frozen when capture began. Live play may continue separately.' : 'Start a capture to choose a piece and target, then save explicitly.'}</p>
-            <button class="secondary" data-action="${capturing ? 'end-scenario-capture' : 'begin-scenario-capture'}">${capturing ? 'End capture' : 'Capture this position'}</button>
+            <p>${!capturing && game?.historyLoading ? 'Loading the selected position before capture.' : capturing ? scenarioCapture.mode === 'live' ? 'Following this manual game until you save. History inspection does not change the capture.' : 'Position frozen when capture began. Live play may continue separately.' : 'Start a capture to choose a piece and target, then save explicitly.'}</p>
+            <button class="secondary" data-action="${capturing ? 'end-scenario-capture' : 'begin-scenario-capture'}"${!capturing && game?.historyLoading ? ' disabled aria-disabled="true"' : ''}>${capturing ? 'End capture' : 'Capture this position'}</button>
             <div class="form-row">
               <label for="save-scenario-title">Title</label>
               <input id="save-scenario-title" data-scenario-save-field="title" value="${escapeHtml(saveDraft.title)}" />
@@ -5275,7 +5275,9 @@ appEl.addEventListener("click", async (event) => {
 
   if (action === 'begin-scenario-capture' || action === 'end-scenario-capture') {
     if (!canAuthorScenariosLocally()) return;
-    const game = getActiveScenarioGame(), historyContext = resolveHistoryScenarioExportContext(game);
+    const game = getActiveScenarioGame();
+    if (action === 'begin-scenario-capture' && game?.historyLoading) return;
+    const historyContext = resolveHistoryScenarioExportContext(game);
     boardRuntime?.clearRemovalEffects();
     destructionTransitions.update(game, { reset: true });
     scenarioCapture = action === 'begin-scenario-capture' ? beginScenarioCapture(game, transport.getIdentityId(), historyContext) : null;
