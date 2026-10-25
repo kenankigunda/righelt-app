@@ -52,7 +52,8 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     leaseWork = pending;
     leaseWorkAction = action;
     leaseScope = ownerScope(current());
-    const clear = () => { if (leaseWork === pending) { leaseWork = null; leaseWorkAction = null; leaseScope = null; } };
+    onChange();
+    const clear = () => { if (leaseWork === pending) { leaseWork = null; leaseWorkAction = null; leaseScope = null; if (!destroyed) onChange(); } };
     void pending.then(clear, clear);
     return pending;
   };

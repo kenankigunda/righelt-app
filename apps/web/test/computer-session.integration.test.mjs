@@ -5,7 +5,7 @@ import { renderComputerProgress } from '../shell/computer-view.js';
 import { COMPUTER_CAPABILITIES, createComputerControl, changeComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
 import { createInitialState } from '../generated/packages/game-engine/src/state.js';
 
-function fixture({canAnalyze = true} = {}) {
+function fixture({canAnalyze = true, onChange} = {}) {
   let now = 100, visible = true, authenticated = true, generation = 1, cancelCount = 0, submitted = 0, computed = 0, blocked = false, pending;
   let progress;
   let game = { id: 'g', gameplayRevision: 0, computer: createComputerControl('owner', { p1: 'babs', p2: null }), board: { state: createInitialState() } };
@@ -16,7 +16,7 @@ function fixture({canAnalyze = true} = {}) {
     applyGameAction: async () => { submitted++; return { committed: Promise.resolve() }; },
   };
   const runtime = { compute: async (_, onProgress) => new Promise((resolve, reject) => { computed++; progress = onProgress; pending = { resolve, reject }; }), cancel: () => { cancelCount++; pending?.reject(Error('cancelled')); pending = null; } };
-  const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: runtime, clock: () => now, timers: { setInterval() { return 1; }, clearInterval() {} }, getContext: () => ({ game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
+  const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: runtime, onChange, clock: () => now, timers: { setInterval() { return 1; }, clearInterval() {} }, getContext: () => ({ game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
   return { session, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { game = { ...game, id: 'other-game' }; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, show: () => {visible = true;}, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelCount };
 }
 
@@ -587,9 +587,12 @@ test('destroying a session fences an in-flight explicit recovery before it can a
 });
 
 test('automatic acquisition reports scoped Resuming and disables recovery until settlement',async t=>{
- const f=fixture();t.after(()=>f.session.destroy());enableResume(f);let acknowledge;
+ const observed=[];let f;f=fixture({onChange:()=>observed.push(f.session.snapshot().activity)});t.after(()=>f.session.destroy());enableResume(f);let acknowledge;
  const control=f.transport.computerControl;f.transport.computerControl=async(...args)=>{await new Promise(resolve=>{acknowledge=resolve;});return control(...args);};
  const work=f.session.tick();while(!acknowledge)await Promise.resolve();
  const activity=f.session.snapshot().activity;assert.equal(activity.label,'Resuming');assert.equal(activity.showResume,true);assert.ok(activity.disabledReason);
- f.switchGame();assert.notEqual(f.session.snapshot().activity.label,'Resuming');acknowledge();await work;
+ assert.equal(observed.at(-1).label,'Resuming');assert.ok(observed.at(-1).disabledReason);
+ acknowledge();await work;assert.equal(observed.at(-1).label,'Active here');
+ f.game().computer.lease=null;acknowledge=null;const next=f.session.tick();while(!acknowledge)await Promise.resolve();
+ f.switchGame();assert.notEqual(f.session.snapshot().activity.label,'Resuming');acknowledge();await next;assert.notEqual(observed.at(-1).label,'Resuming');
 });
