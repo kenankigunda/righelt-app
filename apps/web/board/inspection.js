@@ -1,5 +1,46 @@
 import { SUPPLY_POINTS } from '../generated/packages/game-engine/src/deterministic.js';
 
+const gcd = (left, right) => {
+  let a = Math.abs(left);
+  let b = Math.abs(right);
+  while (b !== 0) {
+    const next = a % b;
+    a = b;
+    b = next;
+  }
+  return a || 1;
+};
+
+export const normalizeConnectionPath = (path) => {
+  if (!Array.isArray(path) || path.length < 2) {
+    return Array.isArray(path) ? [...path] : [];
+  }
+
+  const normalized = [{ ...path[0] }];
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const from = path[index];
+    const to = path[index + 1];
+    if (!from || !to) {
+      continue;
+    }
+
+    const deltaRow = to.row - from.row;
+    const deltaCol = to.col - from.col;
+    const steps = gcd(deltaRow, deltaCol);
+    const rowStep = deltaRow / steps;
+    const colStep = deltaCol / steps;
+
+    for (let step = 1; step <= steps; step += 1) {
+      normalized.push({
+        row: from.row + rowStep * step,
+        col: from.col + colStep * step,
+      });
+    }
+  }
+
+  return normalized;
+};
+
 const samePoint = (a, b) => Boolean(a && b && a.row === b.row && a.col === b.col);
 export const supplyOwnerAt = point => Object.entries(SUPPLY_POINTS).find(([, value]) => samePoint(point, value))?.[0] ?? null;
 
@@ -16,7 +57,7 @@ export function inspectionPaths(snapshot, inspection) {
   const paths = [];
   for (const piece of candidates) {
     for (const kind of inspection.kind === 'combined' ? ['supply', 'command'] : [inspection.kind]) {
-      const path = (kind === 'supply' ? supply : command)[piece.id] ?? [];
+      const path = normalizeConnectionPath((kind === 'supply' ? supply : command)[piece.id] ?? []);
       if (path.length < 2) continue;
       if (inspection.point && !path.some(point => samePoint(point, inspection.point))) continue;
       paths.push({kind, owner, path});

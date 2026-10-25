@@ -29,16 +29,16 @@ test('replay includes authoritative finalization without adding gameplay moves',
 });
 
 function fixture({manual=true,throwRender=false,withTokens=false,baseTransform='none'}={}) {
-  const handlers=new Map(),events=[],renders=[],timers=new Map(),motions=[]; let nextTimer=0,destroyed=0,tokens=[];
+  const handlers=new Map(),events=[],renders=[],timers=new Map(),motions=[],ghosts=[]; let nextTimer=0,destroyed=0,tokens=[];
   const doc={hidden:false,addEventListener:(key,fn)=>handlers.set(key,fn),removeEventListener:key=>handlers.delete(key),defaultView:{getComputedStyle:()=>({transform:baseTransform}),addEventListener:(key,fn)=>handlers.set(key,fn),removeEventListener:key=>handlers.delete(key)}};
-  const element=()=>({ownerDocument:doc,style:{},setAttribute(){},addEventListener(){},appendChild(child){child.parent=this;},querySelector(){return null;},querySelectorAll(){return tokens;},remove(){this.removed=true;}});
+  const element=()=>({ownerDocument:doc,style:{},setAttribute(){},addEventListener(){},appendChild(child){child.parent=this;},getBoundingClientRect:()=>({left:0,top:0}),querySelector(){return null;},querySelectorAll(){return tokens;},remove(){this.removed=true;}});
   doc.createElement=element; const rootEl=element();
   const updateTokens = frame => {
     if (!withTokens) return;
-    tokens=(frame.snapshot.pieces ?? []).map(piece=>({getAttribute:()=>piece.id,classList:{contains:()=>false,add(){}},getBoundingClientRect:()=>({left:piece.position.col*10,top:piece.position.row*10}),animate:frames=>{motions.push({id:piece.id,frames});return {cancel(){},finished:Promise.resolve()};}}));
+    tokens=(frame.snapshot.pieces ?? []).map(piece=>({getAttribute:()=>piece.id,classList:{contains:()=>false,add(){}},getBoundingClientRect:()=>({left:piece.position.col*10,top:piece.position.row*10,width:10,height:10}),cloneNode:()=>{const ghost={style:{transform:baseTransform},setAttribute(){},remove(){},animate:()=>({cancel(){},finished:Promise.resolve()})};ghosts.push(ghost);return ghost;},animate:frames=>{motions.push({id:piece.id,frames});return {cancel(){},finished:Promise.resolve()};}}));
   };
   const replay=createComputerReplay({rootEl,onChange:status=>events.push(status),onFinish:event=>events.push(event),reducedMotion:()=>manual,createPreview:({preview})=>{if(throwRender)throw Error('render failed');renders.push(preview);updateTokens(preview);return {update:frame=>{renders.push(frame);updateTokens(frame);},destroy:()=>{destroyed++;}};},setTimer:fn=>{timers.set(++nextTimer,fn);return nextTimer;},clearTimer:id=>timers.delete(id)});
-  return {replay,doc,handlers,events,renders,timers,motions,get destroyed(){return destroyed;},tick(){const [id,fn]=timers.entries().next().value;timers.delete(id);fn();}};
+  return {replay,doc,handlers,events,renders,timers,motions,ghosts,get destroyed(){return destroyed;},tick(){const [id,fn]=timers.entries().next().value;timers.delete(id);fn();}};
 }
 
 test('reduced motion advances manually and owns no gameplay interfaces',async()=>{
@@ -105,4 +105,14 @@ test('replay motion preserves the target token baseline stack transform',async()
   assert.match(f.motions[0].frames[0].transform,/matrix\(1, 0, 0, 1, -5, -5\)$/);
   assert.equal(f.motions[0].frames[1].transform,'matrix(1, 0, 0, 1, -5, -5)');
   f.replay.stop();await pending;f.replay.destroy();
+});
+
+
+test('removed stack ghosts use measured geometry without applying the stack transform twice',async()=>{
+  const f=fixture({manual:false,withTokens:true,baseTransform:'matrix(1, 0, 0, 1, -5, -5)'});
+  const pending=f.replay.play({frames:[{before:state(3),after:{pieces:[]},action:{type:'end_turn'}}]});
+  f.tick();await Promise.resolve();
+  assert.equal(f.ghosts.length,1);assert.equal(f.ghosts[0].style.transform,'none');
+  assert.equal(f.ghosts[0].style.left,'30px');
+  f.tick();await pending;f.replay.destroy();
 });

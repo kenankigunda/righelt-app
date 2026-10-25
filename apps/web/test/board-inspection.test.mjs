@@ -136,3 +136,9 @@ test('only legal destinations take priority over unoccupied supply-point inspect
   playable.click(point(3,3)); await Promise.resolve(); playable.click(supply);
   assert.equal(playable.runtime.getInspection(),null);
 });
+
+test('whole networks deduplicate compressed and unit-step representations of the same connection',()=>{
+  const state=position();
+  state.artifacts.supply[0].shortestPathByPieceId={C1:[point(3,3),point(3,5)],A:[point(3,3),point(3,4),point(3,5)]};
+  assert.equal(inspectionSegments(state,{kind:'supply',owner:'P1'}).length,2);
+});

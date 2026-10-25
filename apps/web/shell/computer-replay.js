@@ -80,7 +80,7 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
         if (afterIds.has(id) || !source.rect || !layerRect || !source.token?.cloneNode) continue;
         const ghost = source.token.cloneNode(true);
         ghost.setAttribute('aria-hidden', 'true');
-        Object.assign(ghost.style, {position: 'absolute', left: `${source.rect.left - layerRect.left}px`, top: `${source.rect.top - layerRect.top}px`, width: `${source.rect.width}px`, height: `${source.rect.height}px`, pointerEvents: 'none'});
+        Object.assign(ghost.style, {position: 'absolute', left: `${source.rect.left - layerRect.left}px`, top: `${source.rect.top - layerRect.top}px`, width: `${source.rect.width}px`, height: `${source.rect.height}px`, transform: 'none', pointerEvents: 'none'});
         layer.appendChild(ghost); removedTokens.push(ghost);
         if (ghost.animate) { const animation = ghost.animate([{opacity: 1}, {opacity: 0}], {duration: timing.motion, fill: 'forwards'}); animation.finished.catch(() => {}); animations.push(animation); }
       }
