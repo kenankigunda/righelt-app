@@ -1759,3 +1759,17 @@ for(const lateCommit of [false,true])test(`uncertain admission ${lateCommit?"com
  await store.retrySaving(game.id);await tick();assert.equal(applies,1);assert.equal(admissions,lateCommit?1:2);
  assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);assert.equal(store.getGameViewModel(game.id).storageBlocked,false);assert.deepEqual(saved,[]);store.retire();
 });
+
+
+for(const status of [404,405]) test(`missing reconciliation endpoint ${status} never falls back to an obsolete server read`,async(t)=>{
+ const baseGame=buildLiveGame();let reads=0,reconciles=0;
+ const store=createLiveTransportStore({storage:createMemoryStorage(),commandJournal:{list:async()=>[]},beforeReconcile:async()=>true,
+   fetcher:async(url)=>{
+    if(url.endsWith('/reconcile')){reconciles++;return Response.json({error:'not_found'},{status});}
+    reads++;return Response.json({protocolVersion:2,ok:true,game:baseGame,eventSeq:1});
+   }});
+ t.after(()=>store.retire());
+ await assert.rejects(store.loadGame(baseGame.id));
+ assert.equal(reconciles,1);assert.equal(reads,0);
+ assert.equal(store.getGameViewModel(baseGame.id),null);
+});
