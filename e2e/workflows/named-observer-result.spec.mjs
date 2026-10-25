@@ -7,7 +7,11 @@ import {openDirectGameLink,joinAsViewer,switchGamePanel,waitForLegacyIdentity} f
 // never injected into the DOM and no browser-side engine computes the result.
 test('a guest observer sees named results while the two-sided owner retains winner color and rematch semantics',async({page,browser,baseURL},info)=>{
  const context=await browser.newContext({baseURL,viewport:{width:390,height:844}});
- const viewer=await context.newPage(),errors=[];
+ const viewer=await context.newPage(),errors=[],pendingSnapshots=new Set();
+ const isSnapshot=request=>new URL(request.url()).pathname.endsWith('/decision-snapshot');
+ viewer.on('request',request=>{if(isSnapshot(request))pendingSnapshots.add(request);});
+ viewer.on('requestfinished',request=>pendingSnapshots.delete(request));
+ viewer.on('requestfailed',request=>pendingSnapshots.delete(request));
  for(const client of [page,viewer])client.on('pageerror',error=>errors.push(error.message));
  const read=(client,id)=>client.evaluate(async id=>{
   const identityId=localStorage.getItem('righelt.identity.id.v1');
@@ -60,7 +64,14 @@ test('a guest observer sees named results while the two-sided owner retains winn
   // Neutral observers retain the ink mark; victory color belongs to the owner.
   await viewer.screenshot({path:info.outputPath('guest-observer-result.png')});
   await observerResult.getByRole('button',{name:'Review game',exact:true}).click();await switchGamePanel(viewer,'history');
-  await viewer.getByTestId('history-move-item').last().locator('.history-move-line').click();await expect(observerResult).toHaveCount(0);
+  const inspectedMove=viewer.getByTestId('history-move-item').last();
+  await inspectedMove.locator('.history-move-line').click();await expect(observerResult).toHaveCount(0);
+  // Complete the requested inspection and adjacent prefetch before a normal
+  // reload. Keep strict page-error checks instead of filtering navigation errors.
+  await expect(inspectedMove).toHaveClass(/is-selected/);
+  await expect(inspectedMove.getByTestId('history-inline-preview').locator('.cell')).toHaveCount(100);
+  await expect(viewer.getByTestId('history-load-status')).toHaveCount(0);
+  await expect.poll(()=>pendingSnapshots.size,{message:'Expected observed history snapshot reads to finish before reload'}).toBe(0);
   await viewer.reload();await expect(viewer.getByTestId('game-shell')).toBeVisible();await expect(observerResult).toHaveCount(0);
   await openResult(viewer);await expect(observerResult.getByRole('heading',{name:'Guest 1 won',exact:true})).toBeVisible();
   unchanged(before,await read(page,game.id));
