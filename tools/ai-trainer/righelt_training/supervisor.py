@@ -2,11 +2,12 @@
 import argparse
 import fcntl
 import hashlib
-from dataclasses import asdict
+from dataclasses import asdict,replace
 import json
 import os
 from pathlib import Path
 import signal
+import subprocess
 import sys
 import time
 import uuid
@@ -23,6 +24,8 @@ from .resource_policy import LIMITS,manifest_fields
 from .telemetry import Telemetry,read_device_memory
 from .resume import validate_reset_checkpoint
 from .recovery_inspection import inspect_owned
+from .coexistence import from_environment as coexistence_guard
+from .coexistence import UnsafeResources
 
 
 def begin_phase(allocation,phase,directory,manifest_digest):
@@ -80,7 +83,7 @@ def request_validation_handoff(run_dir,runtime,now):
     return True
 
 
-def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sleep=time.sleep,sample_seconds=None,runtime=None):
+def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sleep=time.sleep,sample_seconds=None,runtime=None,guard=None):
     sample_seconds=sample_seconds or LIMITS['sampleSeconds']
     next_sample=clock();paused_since=None
     startup_deadline=next_sample+LIMITS['startupHeartbeatSeconds'];device_seen=False
@@ -100,6 +103,31 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
             if runtime is not None and runtime.get('command')=='training' and now>=validation_boundary(runtime,now)+60:
                 stop_group(process)
                 return 'validation-handoff-timeout'
+            if guard is not None:
+                try:guard.check()
+                except (ValueError,KeyError,OSError,TypeError) as error:guard.request_handoff(error)
+                if guard.cleanup_due():
+                    stop_group(process)
+                    return 'coexistence-handoff-timeout'
+                if guard.handoff_at is not None:
+                    # Revocation stops admission, not host safety monitoring.
+                    # Do not query the revoked reader or grant workers while
+                    # the runner drains its current operation and checkpoints.
+                    if now>=next_sample:
+                        try:draining=telemetry.sample()
+                        except (RuntimeError,OSError):
+                            stop_group(process)
+                            return 'telemetry-failed-during-handoff'
+                        hard=policy.hard_stop(draining)
+                        if hard is not None:
+                            stop_group(process)
+                            return hard.reason
+                        if draining.experiment_bytes>LIMITS['minMemoryGiB']*1024**3 or draining.available_bytes<LIMITS['pauseAvailableGiB']*1024**3:
+                            stop_group(process)
+                            return 'memory-pressure-during-handoff'
+                        next_sample=now+sample_seconds
+                    sleep(min(.25,max(0,budget.remaining(clock()))))
+                    continue
             if now>=next_sample:
                 try:
                     sample=telemetry.sample()
@@ -108,7 +136,25 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
                         f.write(json.dumps({'event':'telemetry-failed','error':str(error)})+'\n')
                     stop_group(process)
                     return 'telemetry-failed'
-                allocation=policy.decide(sample)
+                observation=None
+                if guard is not None:
+                    hard=policy.hard_stop(sample)
+                    if hard is not None:
+                        stop_group(process)
+                        return hard.reason
+                    try:
+                        observation=guard.observe(sample)
+                        sample=replace(sample,now=time.time())
+                    except UnsafeResources:
+                        stop_group(process)
+                        return 'coexistence-resource-stop'
+                    except (ValueError,KeyError,OSError,TypeError,subprocess.SubprocessError) as error:
+                        guard.request_handoff(error)
+                        continue
+                allocation=policy.decide(sample,coexistence=observation) if guard is not None else policy.decide(sample)
+                if guard is not None and allocation.paused and not allocation.stop and allocation.reason != 'device-memory-unknown':
+                    guard.request_handoff(allocation.reason)
+                    continue
                 device_seen=device_seen or sample.device_memory_known
                 atomic_json(Path(run_dir)/'allocation.json',{**allocation.record(),'observedAt':sample.now})
                 with events.open('a') as f:
@@ -157,14 +203,22 @@ def latest_recovery(run_dir,runtime,budget):
     return path,data['state']
 
 
-def wait_for_resources(budget,policy,telemetry,run_dir,runtime,*,clock=time.monotonic,sleep=time.sleep):
+def wait_for_resources(budget,policy,telemetry,run_dir,runtime,*,clock=time.monotonic,sleep=time.sleep,guard=None):
     """The caller has verified cleanup; the original allocation remains open."""
     while budget.remaining(clock())>0:
         now=clock()
         if runtime['command']=='training' and now>=validation_boundary(runtime,now):return 'validation-boundary'
         try:sample=telemetry.sample()
         except (RuntimeError,OSError):return 'telemetry-failed'
-        assigned=policy.decide(sample)
+        observation=None
+        if guard is not None:
+            hard=policy.hard_stop(sample)
+            if hard is not None:return hard.reason
+            try:
+                observation=guard.observe(sample)
+                sample=replace(sample,now=time.time())
+            except (UnsafeResources,ValueError,KeyError,OSError,TypeError,subprocess.SubprocessError):return 'coexistence-unverified'
+        assigned=policy.decide(sample,coexistence=observation) if guard is not None else policy.decide(sample)
         atomic_json(Path(run_dir)/'allocation.json',{**assigned.record(),'observedAt':sample.now})
         with (Path(run_dir)/'resource-events.jsonl').open('a') as stream:
             stream.write(json.dumps({'event':'charged-resource-wait','sample':asdict(sample),'allocation':assigned.record()})+'\n')
@@ -179,10 +233,11 @@ def wait_for_resources(budget,policy,telemetry,run_dir,runtime,*,clock=time.mono
 def run_phase(argv,env,log,budget,runtime,run_dir,artifact_root,activity_file,*,clock=time.monotonic,sleep=time.sleep):
     """Retry only resource stops, never repair/correctness failures or new budgets."""
     directory=Path(run_dir);policy=AdaptivePolicy();process=None;recovering=False
+    guard=coexistence_guard(runtime,directory)
     while True:
         # Initial launch and every restart wait on host resources before loading
         # MPS. No GPU heartbeat is required while no owned compute exists.
-        reason=wait_for_resources(budget,policy,Telemetry(artifact_root,activity_file),directory,runtime,clock=clock,sleep=sleep)
+        reason=wait_for_resources(budget,policy,Telemetry(artifact_root,activity_file),directory,runtime,clock=clock,sleep=sleep,guard=guard)
         if reason not in ('resources-ready','validation-boundary'):return reason,process
         if runtime['command']=='training' and (recovering or reason=='validation-boundary'):
             path,state=latest_recovery(directory,runtime,budget)
@@ -202,10 +257,14 @@ def run_phase(argv,env,log,budget,runtime,run_dir,artifact_root,activity_file,*,
         try:
             register_owned(directory,process)
             reason=supervise(process,budget,policy,Telemetry(artifact_root,activity_file,directory/'device-memory.json',process.pid),directory,
-                             runtime=runtime,clock=clock,sleep=sleep)
+                             runtime=runtime,clock=clock,sleep=sleep,guard=guard)
         finally:
             stop_group(process)
             cleanup_owned(directory)
+        if guard is not None:
+            # Every interval returns to its coordinator. Automatic pressure
+            # recovery must never reuse a lease or an old checkpoint binding.
+            return reason,process
         if reason!='resource-pressure-stop':return reason,process
         with (directory/'resource-events.jsonl').open('a') as stream:
             stream.write(json.dumps({'event':'resource-compute-stopped','pid':process.pid,'reason':reason,'cleanupVerified':True})+'\n')

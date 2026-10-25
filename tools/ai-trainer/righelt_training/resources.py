@@ -2,6 +2,7 @@
 from dataclasses import dataclass, asdict
 import math
 from .resource_policy import LIMITS, POLICY_ID
+from .coexistence import timestamp
 GIB = 1024 ** 3
 
 @dataclass(frozen=True)
@@ -41,7 +42,7 @@ class AdaptivePolicy:
         self.last_swap_used = None
         self.memory_ceiling = LIMITS['minMemoryGiB']
 
-    def decide(self, sample: Sample) -> Allocation:
+    def hard_stop(self, sample: Sample):
         nums = [sample.now, sample.external_cpu_percent, sample.experiment_bytes,
                 sample.available_bytes, sample.disk_free_bytes, sample.artifact_bytes]
         if any(not math.isfinite(n) or n < 0 for n in nums):
@@ -52,6 +53,12 @@ class AdaptivePolicy:
             return Allocation(0, LIMITS['minMemoryGiB'], True, True, 'disk-reserve')
         if POLICY_ID == 'production-headroom-v3' and sample.memory_pressure not in ('normal','warning'):
             return Allocation(0, LIMITS['minMemoryGiB'], True, True, 'memory-pressure')
+        return None
+
+    def decide(self, sample: Sample, *, coexistence=None) -> Allocation:
+        hard = self.hard_stop(sample)
+        if hard is not None:
+            return hard
         # A gap or clock jump does not establish sustained healthy observations.
         if self.last_sample is not None and not 0 <= sample.now - self.last_sample <= 2 * LIMITS['sampleSeconds']:
             self.quiet_since = self.recovery_since = None
@@ -64,7 +71,27 @@ class AdaptivePolicy:
                  and math.isfinite(sample.activity_observed_at)
                  and 0 <= sample.now - sample.activity_observed_at <= LIMITS['activityFreshSeconds'])
         dev_busy = not fresh or sample.development_active is not False
-        if POLICY_ID == 'production-headroom-v3' and dev_busy:
+        coexists = False
+        if coexistence is not None:
+            try:
+                age = sample.now - timestamp(coexistence['observedAt'])
+                coexists = (POLICY_ID == 'production-headroom-v3' and fresh
+                    and 0 <= age <= LIMITS['sampleSeconds']
+                    and coexistence['subject'] == 'model'
+                    and coexistence['coexistenceVerified'] is True
+                    and coexistence['decision'] == 'continue'
+                    and coexistence['blockers'] == []
+                    and type(coexistence['modelBytes']) is int
+                    and type(coexistence['foreignRssBytes']) is int
+                    and 0 <= coexistence['modelBytes'] <= LIMITS['minMemoryGiB'] * GIB
+                    and 0 <= coexistence['foreignRssBytes'] <= 12 * GIB)
+            except (ValueError, TypeError, KeyError):
+                coexists = False
+            if not coexists:
+                return Allocation(0, LIMITS['minMemoryGiB'], True, False, 'coexistence-unverified')
+            self.memory_ceiling = LIMITS['minMemoryGiB']
+            self.workers = LIMITS['minWorkers']
+        if POLICY_ID == 'production-headroom-v3' and dev_busy and not coexists:
             self.workers = LIMITS['minWorkers']
             self.quiet_since = None
             return Allocation(0, LIMITS['minMemoryGiB'], True, False,
@@ -104,7 +131,9 @@ class AdaptivePolicy:
             # pauses compute, but is not evidence of actual memory pressure.
             self.workers=LIMITS['minWorkers'];self.quiet_since=None
             return Allocation(0,LIMITS['minMemoryGiB'],True,False,'device-memory-unknown')
-        if POLICY_ID == 'production-headroom-v3' and (sample.ramp_authorized is not True
+        if coexists and sample.available_bytes <= LIMITS['resumeAvailableGiB'] * GIB:
+            return Allocation(0, LIMITS['minMemoryGiB'], True, False, 'coexistence-headroom')
+        if POLICY_ID == 'production-headroom-v3' and (coexists or sample.ramp_authorized is not True
                                                      or sample.memory_pressure == 'warning'):
             self.workers=LIMITS['minWorkers'];self.quiet_since=None
             self.memory_ceiling=LIMITS['minMemoryGiB']
