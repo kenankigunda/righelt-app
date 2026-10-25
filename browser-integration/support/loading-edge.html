@@ -1,0 +1,13 @@
+<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"><style>body{padding:0;min-height:1600px}.game-shell-frame{display:block}.fixture-legend{display:flex;flex-wrap:wrap;gap:8px}</style></head>
+<body><div class="shell-route-transition-layer" data-active="false" data-phase="covered"></div><main id="app" class="app-root" data-shell-layout-mode="narrow" data-shell-route="game"><div class="shell-main-content"><div class="game-shell-frame"><section class="panel" data-shell-panel="board"><div id="fixture-heading"></div><div id="fixture-message"></div><div class="board-wrap" data-reconnecting="true" data-loading-state="pending" data-loading-phase="visible"><div id="board" class="board"></div><svg id="lines" class="overlay-lines"></svg></div><div class="overlay-key fixture-legend"><button>Commander</button><button>Supply point</button><span id="fixture-text">Command lines</span></div></section></div></div></main>
+<script type="module">
+import {renderBoardHeadingSlot,renderBoardMessageSlot} from '/apps/web/shell/board-message-layout.js';
+import {mountLoadingEdges} from '/apps/web/shell/loading-edge.js';
+import '/browser-integration/support/board.mjs';
+document.querySelector('#fixture-heading').innerHTML=renderBoardHeadingSlot();
+document.querySelector('#fixture-message').innerHTML=renderBoardMessageSlot({id:'preview'});
+await window.boardFixture.setup('pass');await document.fonts.ready;
+window.edgeDispose=mountLoadingEdges(document);
+window.edgeLayout=()=>{document.querySelector('#app').dataset.shellLayoutMode=innerWidth>900?'wide':'narrow';};
+window.addEventListener('resize',window.edgeLayout);window.edgeLayout();window.edgeReady=true;
+</script></body></html>

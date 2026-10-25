@@ -16,7 +16,7 @@ const attrs=Function('isButtonPending','escapeHtml',`${extract('const renderButt
 window.renderInvite=(role='blue',extra={})=>{
  const game={id:'g',player1:{identityId:'host'},player2:null,canJoinAsPlayer:true,showJoinActions:true,canJoinAsViewer:true,...extra};
  const context={gameId:'g',inviteType:'player',intendedRole:role};
- const deps={joinFeedback:{message:()=>null},routeHydrated:true,transport:{getGameViewModel:()=>game},renderGameContent:()=>'<section class="panel">Live board</section>',renderInvitationSurface,renderSeatLabel:label=>escapeHtml(label),account:{snapshot:()=>({enabled:false})},currentRoute:{name:'invite'},escapeHtml,colorizePlayerReferences:escapeHtml,getJoinButtonKey:()=> 'join',buildHomeHash:()=> '#/',getCurrentFlyoutState:()=>({}),renderButtonStateAttributes:attrs,icon};
+ const deps={joinFeedback:{message:()=>extra.joinFailure||null},routeHydrated:true,transport:{getGameViewModel:()=>game},renderGameContent:()=>'<section class="panel">Live board</section>',renderInvitationSurface,renderSeatLabel:label=>escapeHtml(label),account:{snapshot:()=>({enabled:false})},currentRoute:{name:'invite'},escapeHtml,colorizePlayerReferences:escapeHtml,getJoinButtonKey:()=> 'join',buildHomeHash:()=> '#/',getCurrentFlyoutState:()=>({}),renderButtonStateAttributes:attrs,icon};
  root.innerHTML=Function(...Object.keys(deps),'context',`${extract('const renderInviteLanding =','const renderTutorial =')};return renderInviteLanding(context);`)(...Object.values(deps),context);
 };
 window.historyRequests=[];let revision=7;

@@ -1,0 +1,19 @@
+<!doctype html>
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/apps/web/design-tokens.css"><link rel="stylesheet" href="/apps/web/styles.css"><style>
+body{margin:0;min-height:1800px}.fixture-board{position:relative;height:650px;margin-top:140px}.fixture-anchor{position:absolute;width:28px;height:28px;background:#2d67c7;border:0;padding:0}.fixture-anchor:focus{outline:2px solid red}#fixture-focus{position:fixed;bottom:8px;left:8px}
+</style></head><body><div id="fixture-board" class="fixture-board"></div><button id="fixture-focus">Keep focus</button><script type="module">
+import {createBoardEventLabels} from '/apps/web/board/event-label-controller.js';
+const boardEl=document.querySelector('#fixture-board');
+const controller=createBoardEventLabels({boardEl});let scope='first';
+window.fixtureUpdate=(positions,options={})=>{
+ const previous=new Map([...boardEl.children].map(node=>[node.dataset.eventId,node]));
+ const events=positions.map(({id,x,y,reason='loss_of_supply'})=>{
+  const anchorEl=previous.get(id)??document.createElement('button');anchorEl.className='fixture-anchor';anchorEl.dataset.eventId=id;anchorEl.setAttribute('aria-label',`Piece ${id}`);anchorEl.style.left=`${x}px`;anchorEl.style.top=`${y}px`;anchorEl.onclick=()=>window.fixtureClicks++;boardEl.appendChild(anchorEl);previous.delete(id);
+  return {id,anchorEl,record:{reason,message:'Retained original explanation with coordinates (3, 7)'}};
+ });
+ for(const node of previous.values())node.remove();
+ scope=options.scope??scope;controller.update({scope,events,enabled:options.enabled??true});
+};
+window.fixtureClicks=0;window.fixtureController=controller;window.fixtureBoard=boardEl;
+window.fixtureReady=true;
+</script></body></html>

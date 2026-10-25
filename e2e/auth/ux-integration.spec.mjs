@@ -66,3 +66,27 @@ test('self-play profile controls preserve focus and expansion across viewer pres
  await guest.goto(page.url());await guest.getByTestId('join-viewer').click();await expect(page.getByTestId('participant-viewer')).toBeVisible();await expect(blue).toBeFocused();await expect(blue).toHaveAttribute('aria-expanded','true');}finally{await watcher.close();}
  await blue.click();await expect(profile).toHaveCount(0);
 });
+
+test('a held account game creation shows its captured owner profile before any authoritative game response',async({page},info)=>{
+ let release,requests=0;const held=new Promise(resolve=>release=resolve);
+ await page.route('**/api/shell/games',async route=>{
+  if(route.request().method()!=='POST'){await route.continue();return;}
+  requests++;await held;await route.continue();
+ });
+ await page.addInitScript(()=>{
+  window.__guestSeatFlashes=[];
+  new MutationObserver(()=>{for(const row of document.querySelectorAll('[data-testid="participant-player-1"],[data-testid="participant-player-2"]'))if(/Guest player|Playing as a guest/.test(row.textContent))window.__guestSeatFlashes.push(row.dataset.testid);}).observe(document,{subtree:true,childList:true,characterData:true});
+ });
+ const registered=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/auth/register'&&response.request().method()==='POST');
+ try{
+  await createSelfPlayAccount(page);const account=(await(await registered).json()).account;
+  await expect.poll(()=>requests).toBe(1);
+  const owner=page.getByTestId('participant-player-1').getByRole('button'),other=page.getByTestId('participant-player-2').getByRole('button');
+  for(const button of [owner,other]){await expect(button).toHaveAttribute('data-action','public-profile');await expect(button).toHaveAttribute('data-username',account.username);}
+  expect(await page.evaluate(()=>window.__guestSeatFlashes)).toEqual([]);
+  await owner.focus();await owner.press('Enter');await expect(page.getByTestId('public-profile')).toContainText('Joined');await expect(owner).toHaveAttribute('aria-expanded','true');await expect(owner).toBeFocused();
+  await page.screenshot({path:info.outputPath('held-account-profile.png')});
+  const committed=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');release();
+  expect((await committed).status()).toBe(200);await expect(owner).toHaveAttribute('data-username',account.username);await expect(owner).toHaveAttribute('aria-expanded','true');await expect(owner).toBeFocused();await expect(page.getByTestId('public-profile')).toContainText('Joined');expect(requests).toBe(1);expect(await page.evaluate(()=>window.__guestSeatFlashes)).toEqual([]);
+ }finally{release();await page.unrouteAll({behavior:'wait'});}
+});

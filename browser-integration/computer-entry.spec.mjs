@@ -56,9 +56,9 @@ for (const width of [320, 390]) test(`computer action icons preserve labels and 
   ['recovery', ['Retry','Play this turn','Play both sides','Create new game here','Exit']],
   ['paused', ['Resume','Single step','Play this turn','Play both sides']],
   ['thinking', ['Interrupt']],
-  ['other-device', ['Continue on this device']],
+  ['other-device', ['Continue play']],
   ['watching', ['Pause']],
-  ['upgrade', ['Use new model','Keep this model']],
+  ['upgrade', ['Update opponent','Keep current']],
  ];
  for (const scale of [100,200]) for (const [mode,labels] of cases) {
   await page.evaluate(async ({mode,scale}) => {

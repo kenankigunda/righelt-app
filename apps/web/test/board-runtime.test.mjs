@@ -4,6 +4,27 @@ import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 
 const noop = () => {};
 
+test('turn indicator accepts host perspective text while preserving actual actor color',async()=>{
+ const tones=new Set();
+ const indicator={textContent:'',classList:{remove:(...values)=>values.forEach(value=>tones.delete(value)),add:value=>tones.add(value)}};
+ let current={text:'Opponent to play',side:'P2'};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getSelectedPieceSummary:()=>null},host:{canInteract:()=>false},controls:{getTurnIndicator:()=>current}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null,boardTurnIndicatorEl:indicator});
+ await runtime.loadSnapshot({sideToMove:'P1',pieces:[],outcome:{status:'ongoing'}},{legalActions:[]});
+ assert.equal(indicator.textContent,'Opponent to play');assert(tones.has('player-tone-p2'));assert(!tones.has('player-tone-p1'));
+ current={text:'Your turn to play',side:'P1'};runtime.refreshStatus();
+ assert.equal(indicator.textContent,'Your turn to play');assert(tones.has('player-tone-p1'));assert(!tones.has('player-tone-p2'));
+});
+
+test('generic turn indicator uses color names without game identity',async()=>{
+ const indicator={textContent:'',classList:{remove:noop,add:noop}};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getSelectedPieceSummary:()=>null},host:{canInteract:()=>false}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null,boardTurnIndicatorEl:indicator});
+ for(const [side,text] of [['P1','Red to play'],['P2','Blue to play']]){
+  await runtime.loadSnapshot({sideToMove:side,pieces:[],outcome:{status:'ongoing'}},{legalActions:[]});assert.equal(indicator.textContent,text);
+ }
+});
+
 test('board status updates keep matching message controls and safely replace changed actions',async()=>{
  const text={nodeType:3,nodeValue:'Replay · 1 of 3 '};
  const stop={dataset:{boardMessageAction:'replay-stop'},textContent:'Stop replay'};

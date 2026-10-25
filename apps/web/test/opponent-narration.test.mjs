@@ -67,7 +67,7 @@ test('spectators can replay Red or Blue completed turns only before the next ack
 
 test('optimistic computer terminal saves finish before confirmed game-complete narration',()=>{
  const g=game();g.computer={seats:{p1:'tau'}};g.pendingComputerProfile='tau';g.pendingComputerSaveStartedAt=123;g.board.state.outcome={status:'p1_win'};
- assert.equal(opponentBoardMessage(g,{}),'Tau is finishing the turn');delete g.pendingComputerSaveStartedAt;
+ assert.equal(opponentBoardMessage(g,{}),'Tau is saving their move');delete g.pendingComputerSaveStartedAt;
  assert.equal(opponentBoardMessage(g,{}),'Game complete');
 });
 test('legal untouched local turns offer Pass beside human and computer narration only',()=>{

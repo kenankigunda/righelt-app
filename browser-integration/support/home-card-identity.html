@@ -1,0 +1,18 @@
+<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><style>body{margin:0;padding:12px}main{display:grid;gap:12px}.mini-board-card{width:100%;box-sizing:border-box}</style></head><body><main class="home-refresh" id="cards"></main><script type="module">
+import {renderHomeCardIdentity} from '/apps/web/shell/home-card-identity.js';
+const p=(identityId,profile,connected=true)=>({identityId,profile,connected});
+const red=p('me',{displayName:'Sam',username:'sam'}),blue=p('friend',{displayName:'Morgan',username:'morgan'});
+const cases=[
+ {id:'human-red',myRole:'Player 1',player1:red,player2:blue},
+ {id:'human-blue',myRole:'Player 2',player1:red,player2:blue,identity:'friend'},
+ {id:'computer-red',myRole:'Player 1',player1:red,player2:{...red,computerProfile:'horus',connected:false}},
+ {id:'computer-blue',myRole:'Player 1',player1:{...red,computerProfile:'horus',connected:false},player2:red},
+ {id:'waiting',myRole:'Player 1',player1:red,player2:null},
+ {id:'guest',myRole:'Player 1',player1:red,player2:p('guest',undefined,false)},
+ {id:'viewer',myRole:'Viewer',player1:red,player2:blue},
+ {id:'self',myRole:'Player 1',player1:red,player2:red},
+ {id:'long',myRole:'Player 1',player1:red,player2:p('long',{displayName:'UnbrokenName'.repeat(12)})},
+];
+for(const game of cases){const article=document.createElement('article');article.className='mini-board-card';article.dataset.case=game.id;article.innerHTML=`<a class="mini-board-card-link-surface" href="#${game.id}"><div class="mini-board-card-copy"><div class="mini-board-card-header"><span class="mini-board-card-link">${game.id}</span></div><div class="mini-board-card-meta mini-board-card-meta-primary">${renderHomeCardIdentity(game,{identityId:game.identity??'me'})}<span class="small">Move 2</span></div></div></a>`;document.querySelector('#cards').appendChild(article);}
+await document.fonts.ready;window.fixtureReady=true;
+</script></body></html>

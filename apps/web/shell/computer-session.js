@@ -6,17 +6,52 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   let status = { phase: 'idle' }, statusScope = null, epoch = 0, active = null, busy = false, leaseWork = null, leaseWorkAction = null, controlWork = 0, renewedAt = 0, recovery = null, pendingSubmission = null;
   let analysis = null, analysisContext = null, analysisEpoch = 0, lastPositionRevision = null;
   const repetitions = new Map();
+  let phaseDeadline = null, disposed = false;
+  const cancelPhaseDeadline = () => {
+    if (phaseDeadline) timers.clearTimeout?.(phaseDeadline.timer);
+    phaseDeadline = null;
+  };
+  const phaseLabelIdentity = context => {
+    if (disposed || !context.visible || !context.authenticated || context.game?.computer?.paused || !sameOwnerScope(statusScope, context)) return null;
+    const projection = context.transport.getGameViewModel?.(context.game.id);
+    const pendingAt = projection?.pendingComputerSaveStartedAt;
+    const phase = pendingAt != null && !['recovery', 'other-device', 'paused'].includes(status.phase) ? 'saving' : status.phase;
+    if (!['checking', 'saving'].includes(phase)) return null;
+    const startedAt = pendingAt ?? status.phaseStartedAt;
+    return startedAt == null ? null : {
+      key: context.key, phase, startedAt, attemptId: status.attemptId, scope: ownerScope(context),
+    };
+  };
+  const samePhaseLabel = (a, b) => Boolean(a && b && a.key === b.key && a.phase === b.phase &&
+    a.startedAt === b.startedAt && a.attemptId === b.attemptId && sameOwnerScope(a.scope, {
+      game: {id: b.scope.gameId}, transport: b.scope.transport, accountGeneration: b.scope.accountGeneration,
+    }));
+  const schedulePhaseLabel = () => {
+    const identity = phaseLabelIdentity(current());
+    if (samePhaseLabel(phaseDeadline, identity)) return;
+    cancelPhaseDeadline();
+    if (!identity || clock() - identity.startedAt >= COMPUTER_TIMING.phaseLabelAfterMs || !timers.setTimeout) return;
+    const deadline = { ...identity };
+    // One notification at the phase-label boundary; progress updates keep this deadline.
+    // Recheck the current session authority before touching a newly navigated board.
+    deadline.timer = timers.setTimeout(() => {
+      if (phaseDeadline !== deadline) return;
+      phaseDeadline = null;
+      if (samePhaseLabel(deadline, phaseLabelIdentity(current()))) onChange();
+    }, COMPUTER_TIMING.phaseLabelAfterMs - (clock() - identity.startedAt));
+    phaseDeadline = deadline;
+  };
   const ownerScope = context => ({gameId:context.game?.id, transport:context.transport, accountGeneration:context.accountGeneration});
   const sameOwnerScope = (scope, context) => scope?.gameId === context.game?.id && scope?.transport === context.transport && scope?.accountGeneration === context.accountGeneration;
   const publish = (next, context = current()) => {
     if (!sameOwnerScope(statusScope, context)) status = {phase:'idle'};
     const phaseStartedAt = next.phase !== undefined && next.phase !== status.phase ? clock() : status.phaseStartedAt;
     statusScope = ownerScope(context);
-    status = { ...status, ...next, phaseStartedAt }; onChange();
+    status = { ...status, ...next, phaseStartedAt }; schedulePhaseLabel(); onChange();
   };
   const keyFor = ({ game, accountGeneration }) => game ? `${accountGeneration}:${game.id}:${game.gameplayRevision}:${game.computer?.generation}:${game.computer?.modelId}` : null;
   const current = () => { const context = getContext(); return { ...context, key: keyFor(context) }; };
-  const cancelWork = (reason) => { epoch++; runtime.cancel(reason); };
+  const cancelWork = (reason) => { cancelPhaseDeadline(); epoch++; runtime.cancel(reason); };
   const ownLease = (game) => game?.computer?.lease?.deviceId === deviceId && game.computer.lease.expiresAt > clock();
   const control = async (context, action) => context.transport.computerControl(context.game.id, { action, deviceId, generation: context.game.computer.generation });
   const startLeaseWork = (work, action = 'acquire') => {
@@ -212,13 +247,14 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       }
     }),
     snapshot: () => {
+      schedulePhaseLabel();
       const context = current();
       const scopedAnalysis = context.authenticated && analysis?.gameId === context.game?.id && analysisContext?.accountGeneration === context.accountGeneration && analysisContext?.transport === context.transport ? analysis : null;
       const scopedStatus = sameOwnerScope(statusScope, context) ? status : {phase:'idle'};
-      return { ...scopedStatus, elapsedMs: scopedStatus.startedAt !== undefined ? Math.max(0, clock() - scopedStatus.startedAt) : 0, phaseElapsedMs: scopedStatus.phaseStartedAt !== undefined ? Math.max(0, clock() - scopedStatus.phaseStartedAt) : 0, detailed: Boolean(scopedStatus.startedAt !== undefined && clock() - scopedStatus.startedAt >= COMPUTER_TIMING.detailAfterMs), analysis: scopedAnalysis, deviceId };
+      return { ...scopedStatus, observedAt: clock(), elapsedMs: scopedStatus.startedAt !== undefined ? Math.max(0, clock() - scopedStatus.startedAt) : 0, phaseElapsedMs: scopedStatus.phaseStartedAt !== undefined ? Math.max(0, clock() - scopedStatus.phaseStartedAt) : 0, detailed: Boolean(scopedStatus.startedAt !== undefined && clock() - scopedStatus.startedAt >= COMPUTER_TIMING.detailAfterMs), analysis: scopedAnalysis, deviceId };
     },
     action: async action => { if (action === 'switch') await withControlWork(async () => { cancelWork('switch'); const context = current(); await control(context, 'switch'); }); else await fence(action === 'retry' ? 'resume' : action); },
     suspend: () => { const previous = active; cancelWork('session-changed'); cancelAnalysis(); analysis = null; analysisContext = null; active = null; recovery = null; status = { phase: 'idle' }; if (previous && ownLease(previous.game)) void control(previous, 'release').catch(() => {}); onChange(); },
-    destroy: () => { timers.clearInterval(timer); cancelWork('destroyed'); cancelAnalysis(); active = null; },
+    destroy: () => { disposed = true; timers.clearInterval(timer); cancelWork('destroyed'); cancelAnalysis(); active = null; },
   };
 }

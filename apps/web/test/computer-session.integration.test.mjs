@@ -5,7 +5,7 @@ import { renderComputerProgress } from '../shell/computer-view.js';
 import { createComputerControl, changeComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
 import { createInitialState } from '../generated/packages/game-engine/src/state.js';
 
-function fixture({canAnalyze = true} = {}) {
+function fixture({canAnalyze = true, timers = {setInterval(){return 1;},clearInterval(){}}, onChange = () => {}} = {}) {
   let now = 100, visible = true, authenticated = true, generation = 1, cancelCount = 0, submitted = 0, computed = 0, blocked = false, pending;
   let progress;
   let game = { id: 'g', gameplayRevision: 0, computer: createComputerControl('owner', { p1: 'babs', p2: null }), board: { state: createInitialState() } };
@@ -16,7 +16,7 @@ function fixture({canAnalyze = true} = {}) {
     applyGameAction: async () => { submitted++; return { committed: Promise.resolve() }; },
   };
   const runtime = { compute: async (_, onProgress) => new Promise((resolve, reject) => { computed++; progress = onProgress; pending = { resolve, reject }; }), cancel: () => { cancelCount++; pending?.reject(Error('cancelled')); pending = null; } };
-  const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: runtime, clock: () => now, timers: { setInterval() { return 1; }, clearInterval() {} }, getContext: () => ({ game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
+  const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: runtime, clock: () => now, timers, onChange, getContext: () => ({ game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
   return { session, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { game = { ...game, id: 'other-game' }; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelCount };
 }
 
@@ -472,4 +472,47 @@ test('a repeated-position pause cannot relabel its old warning into another game
   release();await pause;
   assert.equal(f.session.snapshot().phase,'idle');assert.equal(f.session.snapshot().message,undefined);
   f.session.destroy();
+});
+
+
+function phaseDeadlineFixture() {
+ const deadlines=new Map();let sequence=0,changes=0;
+ const timers={setInterval(){return 1;},clearInterval(){},setTimeout(callback,delay){const id=++sequence;deadlines.set(id,{callback,delay});return id;},clearTimeout(id){deadlines.delete(id);}};
+ const f=fixture({timers,onChange:()=>changes++});
+ return {...f, deadlines, changes:()=>changes, fire(){const [id,entry]=[...deadlines][0];deadlines.delete(id);entry.callback();}};
+}
+
+test('phase label deadline refreshes once at 500ms without a progress update or the five-second tick', async t => {
+ const f=phaseDeadlineFixture();t.after(()=>f.session.destroy());await f.session.tick();const work=f.session.tick();
+ f.progress({phase:'checking'});assert.equal(f.deadlines.size,1);const first=[...f.deadlines.values()][0];assert.equal(first.delay,500);
+ f.setTime(300);f.progress({phase:'checking',completed:1});assert.equal([...f.deadlines.values()][0],first,'same phase progress keeps its deadline');
+ const before=f.changes();f.setTime(600);f.fire();assert.equal(f.changes(),before+1);assert.equal(f.session.snapshot().phaseElapsedMs,500);assert.equal(f.deadlines.size,0);
+ f.progress({phase:'saving'});assert.equal(f.deadlines.size,1);const previous=[...f.deadlines.values()][0].callback;
+ f.setTime(700);f.progress({phase:'checking'});assert.equal(f.deadlines.size,1);const after=f.changes();previous();assert.equal(f.changes(),after,'cancelled phase cannot publish');
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;assert.equal(f.deadlines.size,0);
+});
+
+for (const change of ['switchGame','changeAccount','changeTransport','hide','suspend','destroy']) test(`phase label deadline cannot refresh after ${change}`, async t => {
+ const f=phaseDeadlineFixture();t.after(()=>f.session.destroy());await f.session.tick();const work=f.session.tick();f.progress({phase:'checking'});
+ const stale=[...f.deadlines.values()][0].callback;
+ if(change==='suspend'||change==='destroy')f.session[change]();else f[change]();
+ const before=f.changes();f.setTime(600);stale();assert.equal(f.changes(),before);
+ if(f.pending())f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;
+});
+
+test('pending optimistic saving replaces a stale search phase deadline with the real save clock', async t => {
+ const f=phaseDeadlineFixture();t.after(()=>f.session.destroy());await f.session.tick();const work=f.session.tick();f.progress({phase:'checking'});
+ f.setTime(300);f.game().pendingComputerSaveStartedAt=300;f.game().pendingComputerProfile='tau';f.session.snapshot();
+ assert.equal(f.deadlines.size,1);assert.equal([...f.deadlines.values()][0].delay,500);
+ const before=f.changes();f.setTime(800);f.fire();assert.equal(f.changes(),before+1);
+ delete f.game().pendingComputerSaveStartedAt;f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;
+});
+
+
+test('an acknowledged save failure with a retained journal keeps immediate recovery and no phase deadline', async t => {
+ const f=phaseDeadlineFixture();t.after(()=>f.session.destroy());await f.session.tick();const work=f.session.tick();
+ f.transport.applyGameAction=async()=>{f.game().pendingComputerSaveStartedAt=100;return {committed:Promise.reject(Error('save failed'))};};
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;
+ assert.equal(f.session.snapshot().phase,'recovery');assert.equal(f.deadlines.size,0);
+ assert.match(renderComputerProgress({...f.game(),canControlComputer:true},f.session.snapshot()),/Retry/);
 });

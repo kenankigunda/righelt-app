@@ -659,6 +659,14 @@ const createParticipant = (identityId, at) => ({
   sessionCount: 1,
 });
 
+// Only presentation metadata is copied to optimistic seats. Branch control
+// authority remains unavailable until the canonical creation response arrives.
+const annotateComputerParticipants = (game, seats) => {
+  for (const [side, seat] of [['p1','player1'],['p2','player2']]) {
+    if (seats[side] && game[seat]) game[seat].computerProfile = seats[side];
+  }
+};
+
 const buildLocalGameView = ({
   gameId,
   identityId,
@@ -933,6 +941,15 @@ export const createSyncStore = ({
   createSyncClient = createLiveSyncClient,
 } = {}) => {
   let active = true;
+  // Capture this store's authenticated public identity, never a later global
+  // account. It may seed only seats owned by the same transport identity.
+  const account = auth?.enabled && auth.session?.authenticated ? auth.session.account : null;
+  const capturedProfile = account && typeof account.id === 'string' && typeof account.username === 'string'
+    ? {id:account.id,username:account.username,displayName:account.displayName || account.username} : null;
+  const createKnownParticipant = (identityId, at) => ({
+    ...createParticipant(identityId, at),
+    ...(capturedProfile?.id === identityId ? {profile:{username:capturedProfile.username,displayName:capturedProfile.displayName}} : {}),
+  });
   if (auth?.enabled || auth?.storageGeneration) {
     const base = storage, prefix = `${auth?.storageGeneration ? `righelt.storage.${auth.storageGeneration}.` : ""}${auth?.enabled ? `righelt.account.${auth.session.contextId || "anonymous"}.` : ""}`;
     const scopedKey=key=>!auth?.enabled && key===IDENTITY_KEY ? key : prefix+key;
@@ -1304,11 +1321,12 @@ export const createSyncStore = ({
       }
     },
     createGame: ({ selfPlayMode = false, creatorSide = "p1", computer } = {}) => {
+      computer = computer ? {...computer} : computer;
       const gameId = createGameId();
       const createdAt = new Date().toISOString();
       const identityId = transport.getIdentityId();
-      const player1 = selfPlayMode || creatorSide === "p1" ? createParticipant(identityId, createdAt) : null;
-      const player2 = selfPlayMode || creatorSide === "p2" ? createParticipant(identityId, createdAt) : null;
+      const player1 = selfPlayMode || creatorSide === "p1" ? createKnownParticipant(identityId, createdAt) : null;
+      const player2 = selfPlayMode || creatorSide === "p2" ? createKnownParticipant(identityId, createdAt) : null;
       const stubGame = buildLocalGameView({
         gameId,
         identityId,
@@ -1321,7 +1339,7 @@ export const createSyncStore = ({
         myRole: creatorSide === "p2" && !selfPlayMode ? "Player 2" : "Player 1",
         notifications: ["Game creation pending sync"],
       });
-      if (computer) { stubGame.computer = createComputerControl(identityId, computer); stubGame.awaitingCreation = true; stubGame.canRecordMove = false; stubGame.canEndTurn = false; }
+      if (computer) { stubGame.computer = createComputerControl(identityId, computer); annotateComputerParticipants(stubGame,stubGame.computer.seats); stubGame.awaitingCreation = true; stubGame.canRecordMove = false; stubGame.canEndTurn = false; }
       transport.applyLiveGameUpdate({ game: stubGame });
       savePendingLocalGame(stubGame);
 
@@ -1400,6 +1418,7 @@ export const createSyncStore = ({
       participantCopyMode,
       selfPlayMode = false,
     } = {}) => {
+      computer = computer ? {...computer} : computer;
       const gameId = createGameId();
       const createdAt = new Date().toISOString();
       const identityId = transport.getIdentityId();
@@ -1412,9 +1431,9 @@ export const createSyncStore = ({
       let myRole = sideToMoveSeat;
 
       myRole = creatorSide === 'p2' ? 'Player 2' : 'Player 1';
-      if (creatorSide === 'p2') player2 = createParticipant(identityId, createdAt);
-      else player1 = createParticipant(identityId, createdAt);
-      if (selfPlayMode || computer) { player1 = createParticipant(identityId, createdAt); player2 = clone(player1); }
+      if (creatorSide === 'p2') player2 = createKnownParticipant(identityId, createdAt);
+      else player1 = createKnownParticipant(identityId, createdAt);
+      if (selfPlayMode || computer) { player1 = createKnownParticipant(identityId, createdAt); player2 = clone(player1); }
 
       const stubGame = buildLocalGameView({
         gameId,
@@ -1429,6 +1448,7 @@ export const createSyncStore = ({
         notifications: ["History branch pending sync"],
         initialSelectionAction,
       });
+      if (computer) annotateComputerParticipants(stubGame,createComputerControl(identityId,computer).seats);
       // The server derives the branch position. Do not queue moves against a client preview.
       stubGame.awaitingCreation = true; stubGame.canRecordMove = false; stubGame.canEndTurn = false;
       transport.applyLiveGameUpdate({ game: stubGame });

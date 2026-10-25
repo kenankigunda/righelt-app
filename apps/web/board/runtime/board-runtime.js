@@ -1,7 +1,10 @@
 import { inspectionPaths, supplyOwnerAt } from "../inspection.js";
+import {renderCoordinateChip} from '../coordinate-chip.js';
+import {SELECTED_CONTINUATION_LABELS} from '../piece-explanations.js';
 import { REMOVAL_EFFECT_DURATION_MS } from "../removal-timing.js";
 import {
   getBlockedPreviewLabel,
+  getBlockedMoveExplanation,
   buildActionPayload,
   deriveContinuationHighlightByPieceId,
   deriveAutoSelectedTarget,
@@ -366,7 +369,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return "";
     }
     const chipClass = getBoardPreviewCoordinateChipClass(coord);
-    return `<span class="board-preview-coordinate-chip ${chipClass}">${escapeHtml(`${coord.row},${coord.col}`)}</span>`;
+    return renderCoordinateChip(coord,chipClass);
   };
 
   const setBoardPreviewAction = (text) => {
@@ -462,8 +465,15 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
 
     if (elements.boardTurnIndicatorEl) {
-      elements.boardTurnIndicatorEl.textContent = state.sideToMove === "P1" ? "Player 1 to play" : "Player 2 to play";
-      setPlayerTone(elements.boardTurnIndicatorEl, state.sideToMove);
+      const turnIndicator = controls.getTurnIndicator?.(state);
+      elements.boardTurnIndicatorEl.textContent = turnIndicator?.text ?? (state.sideToMove === "P1" ? "Red to play" : "Blue to play");
+      if(turnIndicator?.name && elements.boardTurnIndicatorEl.ownerDocument){
+        const name=elements.boardTurnIndicatorEl.ownerDocument.createElement('span');
+        name.className='board-turn-name';name.dir='auto';name.textContent=turnIndicator.name;name.title=turnIndicator.name;
+        const suffix=elements.boardTurnIndicatorEl.ownerDocument.createElement('span');suffix.textContent=turnIndicator.suffix??'';
+        elements.boardTurnIndicatorEl.replaceChildren(name,suffix);
+      }
+      setPlayerTone(elements.boardTurnIndicatorEl, turnIndicator?.side ?? state.sideToMove);
     }
 
     const pieceSummary =
@@ -511,9 +521,33 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       setBoardPreviewPromptHtml(`${escapeHtml(message.text ?? "")}${actions.map(action => ` <button type="button" class="board-preview-inline-button" data-board-message-action="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>`).join("")}`);
       return;
     }
+    const explanation = pieceSummary?.details?.explanation;
+    const setPieceExplanation = () => {
+      const text = selectedSource ? `Piece at ${renderBoardPreviewCoordinate(selectedSource)} – ${escapeHtml(explanation)}` : escapeHtml(explanation);
+      let continuation = "";
+      if (host.canInteract?.(state) !== false) {
+        if (state.continuation?.type === "rush") {
+          const blocker = !canCloseContinuationNow(state) && getRushContinuationBlockingPiece(state);
+          if (blocker && blocker.id !== selectedPieceId) continuation = ` · ${SELECTED_CONTINUATION_LABELS.rushBlocker} ${renderBoardPreviewCoordinate(blocker.position)}`;
+        } else if (state.continuation?.type === "push") {
+          continuation = ` · ${state.continuation.phase === "retreat" ? SELECTED_CONTINUATION_LABELS.retreat : SELECTED_CONTINUATION_LABELS.follow}`;
+        }
+        if (state.continuation && legalActions.some(action => action.type === "end_turn")) continuation += ' <button type="button" class="board-preview-inline-button" data-board-preview-action="end-turn">End Turn</button>';
+      }
+      setBoardPreviewPromptHtml(text + continuation);
+    };
     if (inspection) {
+      if (explanation && inspection.pieceId === selectedPieceId) {
+        setPieceExplanation();
+        return;
+      }
       const label = inspection.kind === "combined" ? "Supply and command lines" : inspection.kind === "command" ? "Command lines" : "Supply lines";
       setBoardPreviewPrompt(inspectionPaths(state, inspection).length ? label : inspection.kind === "command" ? "No command connection" : inspection.kind === "supply" ? "No supply connection" : "No connection");
+      return;
+    }
+
+    if (explanation && !selectedTarget) {
+      setPieceExplanation();
       return;
     }
     if (overlayMode === OVERLAY_MODE.RECORDED_ACTION) {
@@ -598,6 +632,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const preferredPreview = previewsAtTarget.find((action) => action.type === getActionType()) ?? previewsAtTarget[0] ?? null;
 
     if (!preferredPreview || preferredPreview.legal === false) {
+      if (preferredPreview?.legal === false) {
+        setBoardPreviewPromptHtml(`Piece at ${renderBoardPreviewCoordinate(selectedSource)} – ${escapeHtml(getBlockedMoveExplanation(preferredPreview.blockedReason))}`);
+        return;
+      }
       if (canOverlayToggle && selectedPieceOverlayPhase === "supplyCommand" && selectedSource) {
         setBoardPreviewPromptHtml(
           `Piece at ${renderBoardPreviewCoordinate(selectedSource)} – Supply and command lines`,
@@ -1485,6 +1523,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     getInspection: () => inspection ? structuredClone(inspection) : null,
     setInteractionBlocked: value => { interactionBlocked = Boolean(value); if (interactionBlocked) clearHoveredTarget(); },
     refreshStatus: renderStatus,
+    refreshVisuals: () => { if (!destroyed) renderBoard(); },
     destroy,
     bindElements,
     submitCurrentAction,

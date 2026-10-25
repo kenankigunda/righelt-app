@@ -14,7 +14,7 @@ for(const width of [320,390])test(`invitation controls use explicit seats and ic
   await play.focus();await page.keyboard.press(info.project.name==='webkit'?'Alt+Tab':'Tab');await expect(dialog.getByRole('button',{name:'Join as viewer',exact:true})).toBeFocused();
   if(role==='blue')await page.screenshot({path:info.outputPath(`blue-invite-${scale}.png`),fullPage:true});
  }
- await page.evaluate(()=>window.renderInvite('blue',{player2:{identityId:'taken'}}));await expect(page.getByRole('button',{name:'Play as Blue',exact:true})).toBeDisabled();await expect(page.getByRole('dialog')).toContainText('That seat is taken');
+ await page.evaluate(()=>window.renderInvite('blue',{player2:{identityId:'taken'}}));await expect(page.getByRole('button',{name:'Play as Blue',exact:true})).toHaveCount(0);await expect(page.getByRole('dialog')).toContainText('That seat is taken');
  await page.evaluate(()=>window.renderInvite('viewer'));await expect(page.getByRole('button',{name:/Play as/})).toHaveCount(0);await expect(page.getByRole('button',{name:'Join as viewer',exact:true})).toBeEnabled();
  await page.evaluate(()=>window.renderInvite('blue',{pendingPlayerRequestSeat:'Player 2'}));await expect(page.getByRole('dialog')).toContainText('Waiting for approval');await expect(page.getByRole('button',{name:/Play as/})).toHaveCount(0);
 });
@@ -57,4 +57,23 @@ for(const route of ['home','game','invite'])test(`held ${route} loading facets p
  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});await expect(page.locator('html')).not.toHaveAttribute('data-loading-hidden');expect(await sweep.evaluate(e=>e.getAnimations({subtree:true}).every(a=>a.playState==='running'))).toBe(true);
  await page.emulateMedia({reducedMotion:'reduce'});expect(await sweep.evaluate(e=>e.getAnimations({subtree:true}).length)).toBe(0);
  await page.evaluate(()=>window.finishSweep());await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-active','false');
+});
+
+
+test('invitation choices reflect available actions without exposing rule metadata',async({page},info)=>{
+ await page.setViewportSize({width:320,height:844});await page.emulateMedia({reducedMotion:'reduce'});
+ await page.evaluate(()=>{document.documentElement.style.fontSize='200%';window.renderInvite('blue',{selfPlayMode:true,canJoinAsPlayer:false,joinAsPlayerDisabledReason:'Self-play mode does not accept remote player joins.'});});
+ const dialog=page.getByRole('dialog');
+ await expect(dialog.getByRole('heading',{name:'Watch this game',exact:true})).toBeVisible();
+ await expect(dialog.getByRole('button')).toHaveCount(1);await expect(dialog.getByRole('button',{name:'Join as viewer',exact:true})).toBeEnabled();
+ await expect(dialog.getByRole('link',{name:'Back home',exact:true})).toBeVisible();
+ await expect(dialog).not.toContainText(/Self-play|remote|seat|unavailable/);
+ await page.screenshot({path:info.outputPath('self-play-view-only.png'),fullPage:true});
+ await page.evaluate(()=>window.renderInvite('blue',{player2:{identityId:'friend'},joinFailure:'Could not join. Try again'}));
+ await expect(dialog.getByRole('heading',{name:'Watch this game',exact:true})).toBeVisible();await expect(dialog).toContainText('That seat is taken');await expect(page.getByTestId('join-failure')).toHaveText('Could not join. Try again');
+ await expect(dialog.getByRole('button',{name:'Play as Blue',exact:true})).toHaveCount(0);
+ await page.evaluate(()=>window.renderInvite('blue',{canJoinAsPlayer:false,canJoinAsViewer:false,joinAsPlayerDisabledReason:'INTERNAL_PLAYER_RULE',joinAsViewerDisabledReason:'INTERNAL_VIEWER_RULE'}));
+ await expect(dialog.getByRole('heading',{name:'Invitation unavailable',exact:true})).toBeVisible();await expect(dialog.getByRole('button')).toHaveCount(0);await expect(dialog.getByRole('link',{name:'Back home',exact:true})).toBeVisible();await expect(dialog).not.toContainText('INTERNAL_');
+ await page.evaluate(()=>window.renderInvite('blue',{pendingPlayerRequestSeat:'Player 2'}));
+ await expect(page.getByTestId('pending-player-request-notice')).toContainText('awaiting approval');await expect(dialog.getByRole('heading',{name:'Waiting for approval',exact:true})).toBeVisible();
 });

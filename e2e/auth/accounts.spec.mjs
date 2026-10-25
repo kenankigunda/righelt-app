@@ -4,7 +4,7 @@ import { profileLayoutDisplayName, sampleParticipantGeometry } from "../support/
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { AUTH_REQUEST_HEADER, AUTH_PROTOCOL_HEADER, AUTH_PROTOCOL_VERSION, SESSION_CONTEXT_HEADER } from "../../packages/shared-types/src/auth-policy.js";
-import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
+import { getHistoryMoveCount, submitPlayableAction, switchGamePanel } from "../support/app.mjs";
 
 const password = "A long browser test password 482";
 const replacement = "A different browser test password 963";
@@ -503,20 +503,23 @@ test("current public names follow the account across browsers through the minima
     await expect(dialog(other).getByLabel("Display name", { exact: true })).toHaveValue("Étoile 🌟");
     await dialog(other).getByRole("button", { name: "Close", exact: true }).click();
     await other.reload();
-    await expect(other.getByTestId("participant-player-1")).toContainText("Étoile 🌟");
-    await expect(other.getByTestId("participant-player-1")).toContainText(`@${username}`);
-    await expect(other.getByTestId("history-player-names")).toContainText("Étoile 🌟");
+    await switchGamePanel(other,"players");
+    const ownPlayer=other.getByTestId("participant-player-1").getByRole("button");
+    await expect(ownPlayer).toContainText("You");
+    await expect(ownPlayer).toHaveAttribute("data-username",username);
+    await expect(other.getByTestId("history-player-names")).toHaveCount(0);
     const spectator = await browser.newContext({ ignoreHTTPSErrors: true });
     try {
       const guest = await spectator.newPage();
       await guest.goto(gameUrl);
+      await switchGamePanel(guest,"players");
       const person = guest.getByTestId("participant-player-1").getByRole("button");
       await expect(person).toContainText("Étoile 🌟");
       await person.click();
       const profileDialog = guest.getByTestId("public-profile");
       await expect(profileDialog).toContainText("Joined");
       await expect(person).toHaveAttribute("aria-expanded","true");
-      await expect(person).toContainText(`@${username}`);
+      await expect(person).toHaveAttribute("data-username",username);
       // Safari pointer clicks need not focus buttons. Exercise keyboard
       // collapse explicitly to verify the focus-preservation contract.
       await person.focus();

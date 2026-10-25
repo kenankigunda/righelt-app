@@ -25,3 +25,10 @@ test('initial invitation settles only its captured vacant seat in the same autho
  }
  assert.equal(hostInvitationSettled(createHostInvitation(null,3),{id:'g',player1:{identityId:'host'}},3),false);
 });
+
+
+test('self-play invitations expose viewing only even with an unfilled optimistic seat',()=>{
+ const game={id:'self',selfPlayMode:true,player1:{identityId:'owner'},player2:null,inviteToken:'private-player',inviteTokens:{viewer:'public-viewer'}};
+ assert.deepEqual(invitationOptions(game),[{role:'viewer',label:'Invite someone to view',token:'public-viewer'}]);
+ assert.equal(game.inviteToken,'private-player','presentation does not change server permissions');
+});

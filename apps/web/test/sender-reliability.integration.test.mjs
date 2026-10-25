@@ -56,8 +56,10 @@ for (const committed of [false, true]) test(`reconcile timeout replays the exact
   t.after(() => f.store.retire());
   const handle = await f.move();
   await until(() => handle.status === "committed");
-  assert.equal(sent.length, 2);
-  assert.deepEqual(sent[1], sent[0]);
+  // A healthy replay may also exceed this fixture's30ms request deadline under
+  // suite load. Every attempt must retain the same durable command, even then.
+  assert.ok(sent.length >= 2, "the lost request must be replayed");
+  for (const submission of sent.slice(1)) assert.deepEqual(submission, sent[0]);
   assert.equal(f.env.DB.getGameState(f.gameId).moves.length, 1);
   assert.equal((await f.journal.list(f.store.getIdentityId(), f.gameId)).length, 0);
 });

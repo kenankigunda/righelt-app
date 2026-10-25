@@ -1,4 +1,7 @@
 import { REMOVAL_EFFECT_DURATION_MS, REMOVAL_FLASH_COUNT } from "../board/removal-timing.js";
+import { createBoardEventLabels } from "../board/event-label-controller.js";
+import { getPieceRenderStatus, getSelectedPieceExplanation } from "../board/piece-explanations.js";
+export { getPieceRenderStatus } from "../board/piece-explanations.js";
 import { inspectionSegments, normalizeConnectionPath as normalizeOverlayPath } from "../board/inspection.js";
 export { normalizeConnectionPath as normalizeOverlayPath } from "../board/inspection.js";
 import { renderPieceSymbol } from '../piece-symbols.js';
@@ -28,10 +31,6 @@ const coordKey = (coord) => `${coord.row},${coord.col}`;
 const isSupplyPoint = (row, col) =>
   (row === SUPPLY_POINTS.P1.row && col === SUPPLY_POINTS.P1.col) ||
   (row === SUPPLY_POINTS.P2.row && col === SUPPLY_POINTS.P2.col);
-export const getPieceRenderStatus = (piece) => ({
-  supplied: piece?.displaySupplied ?? piece?.supplied ?? false,
-  commanded: piece?.displayCommanded ?? piece?.commanded ?? false,
-});
 
 export const getRemovalAnimationDelayMs = (effect, now = Date.now()) => {
   if (!effect || typeof effect.startedAt !== "number") {
@@ -516,6 +515,7 @@ function isPushContinuationGroupMember(snapshot, piece) {
 
 export function createEngineBoardAdapter() {
   let boardEl = null;
+  let eventLabels = null;
   let overlayLinesEl = null;
   let interactionMode = "interactive";
   let onCellClick = null;
@@ -948,6 +948,11 @@ export function createEngineBoardAdapter() {
     },
 
     mount(options) {
+      if (boardEl !== options.boardEl) {
+        eventLabels?.destroy();
+        eventLabels = options.boardEl?.ownerDocument?.defaultView
+          ? createBoardEventLabels({boardEl: options.boardEl}) : null;
+      }
       if (boardEl) {
         boardEl.removeEventListener("click", onBoardClick);
         boardEl.removeEventListener("mouseover", onBoardMouseOver);
@@ -974,6 +979,8 @@ export function createEngineBoardAdapter() {
     },
 
     unmount() {
+      eventLabels?.destroy();
+      eventLabels = null;
       if (boardEl) {
         boardEl.removeEventListener("click", onBoardClick);
         boardEl.removeEventListener("mouseover", onBoardMouseOver);
@@ -1400,6 +1407,17 @@ export function createEngineBoardAdapter() {
         currentActionType,
         selectedPieceOverlayPhase,
       });
+      eventLabels?.update({
+        scope: boardEl,
+        enabled: effectiveInteractionMode === "interactive" && overlay?.mode !== "recorded-action",
+        events: (Array.isArray(removalEffects) ? removalEffects : [])
+          .filter(effect => effect.reason !== "history_destroyed" && effect.position)
+          .map(effect => ({
+            id: effect.eventId ?? `${effect.startedAt}:${effect.pieceId}:${coordKey(effect.position)}`,
+            anchorEl: cellByCoordinateKey.get(coordKey(effect.position)),
+            record: effect,
+          })),
+      });
     },
 
     getCommanderSupplySummary(snapshot) {
@@ -1428,6 +1446,7 @@ export function createEngineBoardAdapter() {
           commanded: getPieceRenderStatus(selectedPiece).commanded,
           actionableSupplied: selectedPiece.supplied,
           actionableCommanded: selectedPiece.commanded,
+          explanation: getSelectedPieceExplanation(selectedPiece, snapshot),
           groupComponentId: groupInfo.componentId,
           groupStrength: groupInfo.strength,
         },

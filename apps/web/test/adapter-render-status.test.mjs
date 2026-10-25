@@ -74,6 +74,7 @@ test("selected piece summary exposes live render status and frozen actionable st
     commanded: false,
     actionableSupplied: true,
     actionableCommanded: true,
+    explanation: "Inactive: no command connection",
     groupComponentId: "P1:C1",
     groupStrength: 2,
   });
