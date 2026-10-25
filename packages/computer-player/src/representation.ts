@@ -3,6 +3,9 @@ import { SUPPLY_POINTS, listLegalActions, legalActionCandidates, validateAction 
 import type { Action, Coordinate, GameState } from "../../shared-types/src/engine";
 
 export { config as experimentConfig };
+// Frozen model metadata calls this passIndex. It is the non-spatial turn-control
+// slot: current legal actions decode it as Pass OR End Turn, never both.
+export const TURN_CONTROL_POLICY_INDEX = config.passIndex;
 const area = config.boardSize ** 2;
 const channels = (config.actionCount - 1) / area;
 const planeIndexes = new Map(config.planes.map((name, index) => [name, index]));
@@ -80,7 +83,7 @@ export function encodeState(state: GameState): Float32Array {
 
 /** Geometry is a key, never an action constructor. Decode with legalActionMap. */
 export function encodeAction(action: Action): number {
-  if (action.type === "pass") return config.passIndex;
+  if (action.type === "pass" || action.type === "end_turn") return TURN_CONTROL_POLICY_INDEX;
   if (!action.from || !action.to || !(action.type in config.actionChannels)) throw new Error("Action geometry missing");
   const source = square(action.from);
   square(action.to);

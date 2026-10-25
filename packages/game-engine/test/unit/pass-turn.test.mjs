@@ -38,7 +38,7 @@ test("C-003 side alternation", () => {
   assert.equal(afterTwo.sideToMove, state.sideToMove);
 });
 
-test("C-004 pass legal during rush continuation", () => {
+test("C-004 Pass is forbidden during rush continuation", () => {
   const state = makeState({
     continuation: {
       type: "rush",
@@ -50,5 +50,6 @@ test("C-004 pass legal during rush continuation", () => {
   });
 
   const result = validateAction(state, { type: "pass" });
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, false);
+  assert.equal(validateAction(state, { type: "end_turn" }).ok, true);
 });

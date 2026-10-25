@@ -1242,11 +1242,16 @@ test("live transport store clears pending command when ws confirms after transpo
 
 test("live transport store does not infer end-turn confirmation from move history command ids", async () => {
   const baseGame = buildLiveGame();
+  const initial = createInitialState();
+  initial.pieces.push(...[['L',3,3],['A',4,4],['B',5,3]].map(([id,row,col])=>({id,owner:'P1',kind:'unit',position:{row,col},supplied:true,commanded:true})),
+    {id:'E',owner:'P2',kind:'unit',position:{row:4,col:2},supplied:true,commanded:true});
+  const state=resolveToStability(applyAction(resolveToStability(initial),{type:'rush',actorId:'A',from:{row:4,col:4},to:{row:4,col:3}}).state);
+  baseGame.board.state=state; baseGame.currentSnapshot=state; baseGame.legalActions=listLegalActions(state);
   const store = createLiveTransportStore({
     storage: createMemoryStorage(),
     fetcher: async (url, init = {}) => {
       if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
-        return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 });
+        return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 }, {headers:{"X-Righelt-Action-Contract":"2"}});
       }
       if (String(url) === `/api/shell/games/${baseGame.id}/end-turn` && init.method === "POST") {
         return new Promise(() => {});

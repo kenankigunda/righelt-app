@@ -517,7 +517,7 @@ export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) =>
     if (!moved.ok) {
       throw new Error(moved.error || "scenario_apply_failed");
     }
-    moveTimes.push(moved.move.at);
+    if ("move" in moved && moved.move) moveTimes.push(moved.move.at);
   }
 
   renumberImportedHistory(game);
@@ -952,7 +952,7 @@ export const withFullViewModel = (game: LiveGame, identityId: string) => {
       !inHistoryMode &&
       controlSeat === turnOwnerSeat &&
       turnOwnerIdentity === identityId &&
-      Boolean(activeTurn && activeTurn.moveIndexes.length > 0),
+      Boolean(activeTurn && activeTurn.moveIndexes.length > 0) && validateAction(game.board.state, { type: "end_turn" }).ok,
     currentTurn: activeTurn ? clone(activeTurn) : null,
     historySelectionAction,
     initialSelectionAction,
@@ -975,6 +975,7 @@ const formatCoordinate = (coord: { row: number; col: number } | null | undefined
   coord ? `(${coord.row},${coord.col})` : "(?,?)";
 
 const defaultNotationForAction = (action: Action) => {
+  if (action.type === "end_turn") return "END TURN";
   if (action.type === "pass") {
     return "PASS";
   }
@@ -1142,6 +1143,7 @@ export const applyServerActionWithExpectedState = (
   if (!validation.ok) {
     return { ok: false as const, error: validation.code || "invalid_action", validation, state: stable };
   }
+  if (action.type === "end_turn") return endServerTurn(game, clientCommandId ?? undefined);
   const moveIdForEffects = nextMoveId();
   const events: RemovalEvent[] = [];
   const onRemoval = (event: RemovalEvent) => events.push(event);
@@ -1181,7 +1183,7 @@ export const applyServerActionWithExpectedState = (
   addNotification(game, `Move recorded in turn ${activeTurn.index + 1}`);
   let turnSettled = false;
   if (next.continuation == null) {
-    const ended = endServerTurn(game, clientCommandId ?? moveIdForEffects);
+    const ended = settleServerTurn(game, clientCommandId ?? moveIdForEffects);
     if (ended.ok) events.push(...ended.removalEvents);
     if (!ended.ok) {
       return { ok: false as const, error: ended.error };
@@ -1202,7 +1204,7 @@ export const applyServerMove = (game: LiveGame, notation?: string, clientCommand
   return applyServerAction(game, action, notation, clientCommandId);
 };
 
-export const endServerTurn = (game: LiveGame, operationId = nextMoveId()) => {
+const settleServerTurn = (game: LiveGame, operationId = nextMoveId()) => {
   const activeTurn = getActiveTurn(game);
   if (!activeTurn) {
     return { ok: false as const, error: "turn_not_initialized" };
@@ -1231,6 +1233,19 @@ export const endServerTurn = (game: LiveGame, operationId = nextMoveId()) => {
   game.updatedAt = endedAt;
   addNotification(game, `Turn ${activeTurn.index + 1} ended. ${nextTurn.playerSeat} to play`);
   return { ok: true as const, turn: clone(nextTurn), removalEvents, removedPieces: removalNotices(removalEvents, operationId), destroyedPieces: destructionRecords(removalEvents, operationId) };
+};
+
+/** Explicit closure uses the same engine legality/transition as computer search. */
+export const endServerTurn = (game: LiveGame, operationId = nextMoveId()) => {
+  const activeTurn = getActiveTurn(game);
+  if (!activeTurn || activeTurn.moveIndexes.length === 0) {
+    return { ok: false as const, error: activeTurn ? "turn_has_no_moves" : "turn_not_initialized" };
+  }
+  const validation = validateAction(game.board.state, { type: "end_turn" });
+  if (!validation.ok) return { ok: false as const, error: validation.code, validation };
+  game.board.state = applyAction(game.board.state, { type: "end_turn" }).state;
+  const ended = settleServerTurn(game, operationId);
+  return ended.ok ? { ...ended, state: clone(game.board.state), turnSettled: true as const } : ended;
 };
 
 export const enumeratePieceActions = (state: GameState, pieceId: string): Action[] => {

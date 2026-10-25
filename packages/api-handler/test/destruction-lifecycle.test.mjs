@@ -58,21 +58,17 @@ test('engine reports removal at the actual resolution boundary without aliasing 
   assert.equal(applied.state.pieces.find(p=>p.id===events[0].piece.id).position.row,6);
 });
 
-test('pass closes the same rush continuation, recording removals once on the pass', () => {
-  const game=setup();
-  applyServerAction(game,fixture.action,undefined,'rush');
+test('semantic End Turn closes rush without a move row and records removals once', () => {
+  const game=setup(); applyServerAction(game,fixture.action,undefined,'rush');
   const base=structuredClone(game);
-  const optimistic=projectOptimisticGame({authoritativeGame:base,identityId:'test-player',queue:[{kind:'apply',action:{type:'pass'},clientCommandId:'pass',queuedAt:'2026-01-01T00:00:00Z'}]});
-  const pass=applyServerAction(game,{type:'pass'},undefined,'pass');
-  assert.equal(pass.ok,true);
-  assert.equal(pass.destroyedPieces.length,2);
-  assert.deepEqual(pass.destroyedPieces,optimistic.commandResults.get('pass').destroyedPieces);
-  assert.deepEqual(pass.removedPieces.map(e=>e.eventId),['pass:U1-2','pass:U1-3']);
-  assert.deepEqual(game.moves[0].destroyedPieces,[]);
-  const duplicate=applyServerAction(game,{type:'pass'},undefined,'pass');
-  assert.equal(duplicate.duplicate,true);
-  assert.deepEqual(duplicate.removedPieces,[]);
-  assert.equal(game.moves.length,2);
+  const optimistic=projectOptimisticGame({authoritativeGame:base,identityId:'test-player',queue:[{kind:'apply',action:{type:'end_turn'},clientCommandId:'end',queuedAt:'2026-01-01T00:00:00Z'}]});
+  const ended=applyServerAction(game,{type:'end_turn'},undefined,'end');
+  assert.equal(ended.ok,true); assert.equal(ended.destroyedPieces.length,2);
+  assert.deepEqual(ended.destroyedPieces,optimistic.commandResults.get('end').destroyedPieces);
+  assert.deepEqual(ended.removedPieces.map(e=>e.eventId),['end:U1-2','end:U1-3']);
+  assert.deepEqual(game.moves[0].destroyedPieces,ended.destroyedPieces);
+  assert.equal(game.moves.length,1);
+  assert.equal(optimistic.game.pendingMoves.length,0);
 });
 
 const projectFixture = JSON.parse(fs.readFileSync(new URL('../../game-engine/test/fixtures/destruction-project.json',import.meta.url)));
