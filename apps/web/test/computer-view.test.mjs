@@ -109,3 +109,15 @@ test('shared stalled-turn eligibility offers friendly recovery without device in
  assert.match(update,/An opponent update is available/);assert.match(update,/Update opponent/);assert.match(update,/Keep current/);
  assert.doesNotMatch(update,/new computer model|Use new model/);
 });
+
+test('recovery and pause identify configured opponents even on a human turn',()=>{
+ for(const [profile,{name}] of Object.entries(COMPUTER_PROFILES)){
+  const game={id:'named',canControlComputer:true,computerTurn:null,computer:{seats:{p1:null,p2:profile},modelId:CURRENT_COMPUTER_MODEL.id,takeoverTurn:null}};
+  const recovery=renderComputerProgress(game,{phase:'recovery'});
+  assert.match(recovery,new RegExp(`${name} needs a hand`));assert.match(recovery,new RegExp(`aria-label="${name} play status"`));
+  assert.match(renderComputerProgress({...game,computer:{...game.computer,paused:true}},{phase:'paused'}),new RegExp(`${name} is paused`));
+ }
+ const watch={id:'watch',canControlComputer:true,computerTurn:null,computer:{seats:{p1:'babs',p2:'horus'},modelId:CURRENT_COMPUTER_MODEL.id,takeoverTurn:null}};
+ assert.match(renderComputerProgress(watch,{phase:'idle'}),/Watching Babs and Horus/);
+ assert.match(renderComputerProgress({...watch,computer:{...watch.computer,paused:true}},{phase:'paused'}),/Babs and Horus are paused/);
+});

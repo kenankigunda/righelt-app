@@ -18,23 +18,24 @@ export function renderComputerProgress(game, status = {}) {
   const control = game.computer;
   const owner = game.canControlComputer;
   const watch = Boolean(control.seats.p1 && control.seats.p2);
-  const name = COMPUTER_PROFILES[status.profile ?? game.computerTurn]?.name ?? 'Computer';
+  const names = Object.values(control.seats).map(profile => COMPUTER_PROFILES[profile]?.name).filter(Boolean);
+  const name = COMPUTER_PROFILES[status.profile ?? game.computerTurn]?.name ?? names[0] ?? 'Computer';
   const working = ['preparing', 'checking', 'looking-ahead', 'initializing-verified-runtime', 'saving'].includes(status.phase);
   let body = '';
   if (!owner) body = '';
   else if (status.activity?.showRecoveryNotice) body = `<p>${escapeDebug(name)} hasn’t resumed</p>${button('resume-here', 'Resume here')}`;
   else if (status.phase === 'other-device') { /* Deliberate handoff remains available in the player card. */ }
-  else if (status.phase === 'recovery') body = `<p>The computer needs a hand.</p><div class="computer-actions">${status.activity && !status.activity.disabledReason ? button('resume-here', 'Resume here') : button('retry', 'Retry')}${button('takeover', 'Play this turn')}${button('manual', 'Play both sides')}<button class="secondary" data-action="computer-branch">${icon('board')}Create new game here</button><a class="button-link secondary" href="#/">${icon('exit')}Exit</a></div>`;
+  else if (status.phase === 'recovery') body = `<p>${escapeDebug(name)} needs a hand.</p><div class="computer-actions">${status.activity && !status.activity.disabledReason ? button('resume-here', 'Resume here') : button('retry', 'Retry')}${button('takeover', 'Play this turn')}${button('manual', 'Play both sides')}<button class="secondary" data-action="computer-branch">${icon('board')}Create new game here</button><a class="button-link secondary" href="#/">${icon('exit')}Exit</a></div>`;
   else if (working) {
     const slowSave = status.phase === 'saving' && status.phaseElapsedMs >= COMPUTER_TIMING.saveNoticeAfterMs;
     const slowThink = status.phase !== 'saving' && status.elapsedMs >= COMPUTER_TIMING.stalledAfterMs;
     if (slowSave || slowThink) body = `<div class="computer-status-line"><span>${escapeDebug(slowSave ? 'Saving the move is taking longer than usual' : `${name} is still thinking`)}</span>${slowThink ? button('pause', 'Interrupt') : ''}</div>`;
-  } else if (control.paused) body = `<p>${escapeDebug(status.message || 'Computer play paused.')}</p><div class="computer-actions">${button('resume', 'Resume')}${watch ? button('step', 'Single step') : ''}${button('takeover', 'Play this turn')}${button('manual', 'Play both sides')}</div>`;
+  } else if (control.paused) body = `<p>${escapeDebug(status.message || (watch ? `${names.join(' and ')} are paused.` : `${name} is paused.`))}</p><div class="computer-actions">${button('resume', 'Resume')}${watch ? button('step', 'Single step') : ''}${button('takeover', 'Play this turn')}${button('manual', 'Play both sides')}</div>`;
   else if (control.manual) body = '';
   else if (control.takeoverTurn !== null) body = '';
-  else if (watch) body = `<div class="computer-status-line"><span>Watching computer play</span>${button('pause', 'Pause')}</div>`;
+  else if (watch) body = `<div class="computer-status-line"><span>Watching ${escapeDebug(names.join(' and '))}</span>${button('pause', 'Pause')}</div>`;
   if (owner && control.modelId !== CURRENT_COMPUTER_MODEL.id && control.declinedModelId !== CURRENT_COMPUTER_MODEL.id) body += `<p>An opponent update is available</p><div class="computer-actions">${button('upgrade', 'Update opponent')}${button('decline-upgrade', 'Keep current')}</div>`;
-  return body ? `<section class="computer-play" aria-label="Computer play" data-computer-status data-key="computer-notice:${escapeDebug(game.id)}">${renderGameAlertCard({body, actorSide:activityActorSide(game,{thinking:true}), activity:working || status.phase==='other-device'?'processing':'static',tone:status.phase==='recovery'?'warn':''})}</section>` : '';
+  return body ? `<section class="computer-play" aria-label="${escapeDebug(name)} play status" data-computer-status data-key="computer-notice:${escapeDebug(game.id)}">${renderGameAlertCard({body, actorSide:activityActorSide(game,{thinking:true}), activity:working || status.phase==='other-device'?'processing':'static',tone:status.phase==='recovery'?'warn':''})}</section>` : '';
 }
 
 const json = value => `<pre class="debug-pre">${escapeDebug(JSON.stringify(value, null, 2))}</pre>`;

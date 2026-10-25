@@ -123,7 +123,7 @@ test('a confirmed pause clears a stale control error while preserving its unfini
   assert.equal(f.session.snapshot().phase, 'paused');
   assert.equal(f.session.snapshot().message, null);
   const view = renderComputerProgress({ ...f.game(), canControlComputer: true }, f.session.snapshot());
-  assert.match(view, /Computer play paused/);
+  assert.match(view, /Babs is paused/);
   assert.doesNotMatch(view, /computer_control_changed/);
   assert.equal(f.saved.at(-1).attempt.reason, 'computer_control_changed');
   assert.equal(f.saved.at(-1).attempt.outcome, 'unfinished');
