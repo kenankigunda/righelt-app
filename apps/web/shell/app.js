@@ -4388,16 +4388,6 @@ const subscribeToTransport = () => transport.subscribe((change) => {
   }
   queueMicrotask(() => { void computerSession?.tick(); });
   gameSound.local(change, transport.getGameViewModel(change?.gameId), {silent:currentRoute.name!=='game' || currentRoute.gameId!==change?.gameId || Boolean(transport.getGameViewModel(change?.gameId)?.inHistoryMode)});
-  if (change?.type === "upgrade_required") {
-    try {
-      const key = "righelt.sync-v2-refresh";
-      if (!window.sessionStorage.getItem(key)) {
-        window.sessionStorage.setItem(key, "1");
-        window.location.reload();
-        return;
-      }
-    } catch { /* Keep the visible update notice if session storage cannot guard a reload. */ }
-  }
   const visibleGameId = getCurrentViewedGameId();
   const game = transport.getGameViewModel(visibleGameId);
   const frozenCapture = Boolean(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === visibleGameId);

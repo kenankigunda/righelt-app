@@ -508,3 +508,9 @@ test("history navigation uses pointer-down press state with a single mouseup rel
   assert.match(source, /if \(action === "return-live"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);/s);
   assert.doesNotMatch(source, /jump-destruction/);
 });
+
+test("upgrade fencing keeps a static recovery notice without discarding viewing context", () => {
+  const subscriber = source.slice(source.indexOf('const subscribeToTransport'), source.indexOf('subscribeToTransport();'));
+  assert.doesNotMatch(subscriber, /location\.reload|sync-v2-refresh/);
+  assert.match(source, /game\.upgradeRequired \? `<button class="secondary(?: mini-button)?" data-action="refresh-game"/);
+});
