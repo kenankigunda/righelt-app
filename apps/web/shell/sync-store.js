@@ -904,7 +904,9 @@ const buildOptimisticApprovedRevertGame = ({
     currentTurn,
     turns,
     historySelectionAction: null,
-    initialSelectionAction: targetMove.action ? clone(targetMove.action) : null,
+    // Do not flash the undone ordinary target while acceptance is pending.
+    // A forced sequence retains its legal continuation preview.
+    initialSelectionAction: stableState.continuation && targetMove.action ? clone(targetMove.action) : null,
     turnOwnerSeat,
     controlSeat,
     control: controlSeat === turnOwnerSeat ? "turn-owner" : "opponent",
