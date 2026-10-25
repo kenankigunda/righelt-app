@@ -5,9 +5,8 @@ const createReplayPreview = ({rootEl, createAdapter, preview}) => {
   const lines = doc.createElementNS('http://www.w3.org/2000/svg', 'svg'); lines.classList.add('overlay-lines');
   wrap.append(board, lines); rootEl.appendChild(wrap);
   const adapter = createAdapter();
-  adapter.mount({boardEl: board, overlayLinesEl: lines, interactionMode: 'static', onCellClick: () => {}});
   const update = ({snapshot, overlay}) => adapter.render({snapshot, overlay, selection: {selectedPieceId: null, source: null, target: null}, legalActions: [], selectedPieceMoves: [], selectedPieceMovePreviews: [], removalEffects: [], interactionMode: 'static'});
-  try { update(preview); } catch (error) {adapter.unmount(); wrap.remove(); throw error;}
+  try { adapter.mount({boardEl: board, overlayLinesEl: lines, interactionMode: 'static', onCellClick: () => {}}); update(preview); } catch (error) {adapter.unmount(); wrap.remove(); throw error;}
   return {update, destroy() {adapter.unmount(); wrap.remove();}};
 };
 
@@ -51,7 +50,7 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
     replay = null; index = -1;
     notify(); onFinish({reason});
   };
-  const findToken = piece => layer.querySelector(`[data-row="${piece.position.row}"][data-col="${piece.position.col}"] .piece-token:not(.move-ghost)`);
+  const findToken = piece => Array.from(layer.querySelectorAll?.(".piece-token[data-piece-id]") ?? []).find(token => token.getAttribute("data-piece-id") === piece.id && !token.classList.contains("ghost"));
   const render = (state, key, frame = null) => preview.update({snapshot: state, previewKey: key, overlay: {mode: 'none'}});
   const showFrame = () => {
     if (!replay || index < 0) return;
@@ -68,7 +67,8 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
       const moved = source && (source.piece.position.row !== piece.position.row || source.piece.position.col !== piece.position.col);
       if (moved || !source) token.classList.add('computer-replay-changed-piece');
       if (!manual && token.animate && rect && (!source || source.rect && moved)) {
-        const frames = source ? [{transform: `translate(${source.rect.left - rect.left}px, ${source.rect.top - rect.top}px)`}, {transform: 'translate(0, 0)'}] : [{opacity: 0}, {opacity: 1}];
+        const baseTransform = doc.defaultView?.getComputedStyle?.(token).transform ?? token.style?.transform ?? 'none';
+        const frames = source ? [{transform: `translate(${source.rect.left - rect.left}px, ${source.rect.top - rect.top}px)${baseTransform === 'none' ? '' : ` ${baseTransform}`}`}, {transform: baseTransform}] : [{opacity: 0}, {opacity: 1}];
         const animation = token.animate(frames, {duration: timing.motion, easing: 'cubic-bezier(.2,.75,.25,1)'});
         animation.finished.catch(() => {}); animations.push(animation);
       }
