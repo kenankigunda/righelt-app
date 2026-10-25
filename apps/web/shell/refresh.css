@@ -383,9 +383,11 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .player-username {display:block;font-size:.78rem;font-weight:400;color:var(--muted);line-height:1.4;}
 .participant-identity[data-player-side="p1"] .player-emblem {color:var(--player-p1);}
 .participant-identity[data-player-side="p2"] .player-emblem {color:var(--player-p2);}
-.panel .participant-identity button.participant-profile {display:inline-flex;align-items:center;justify-content:flex-start;gap:var(--identity-gap,10px);background:transparent;color:var(--ink);border:0;border-radius:0;padding:5px 0;box-shadow:none;max-width:100%;text-align:left;}
+.panel .participant-identity .participant-profile {display:inline-flex;align-items:center;justify-content:flex-start;gap:var(--identity-gap,10px);background:transparent;color:var(--ink);border:0;border-radius:0;padding:5px 0;box-shadow:none;max-width:100%;text-align:left;}
 [data-hover-capability="hover"] .panel .participant-identity button.participant-profile:not(:disabled):hover {background:transparent;box-shadow:none;transform:none;filter:none;}
-[data-hover-capability="hover"] .participant-profile:hover .player-name {text-decoration:underline;text-underline-offset:3px;}
+[data-hover-capability="hover"] button.participant-profile:hover .player-name {text-decoration:underline;text-underline-offset:3px;}
+.participant-computer .player-name-stack {display:flex;align-items:center;gap:.45em;}
+.player-kind-badge {font-size:.65em;font-weight:400;line-height:1.4;color:var(--muted);flex:none;}
 .player-profile-details {display:block;overflow:hidden;font-size:.85rem;color:var(--muted);}
 .player-profile-details > span {display:block;padding:6px 0 8px 44px;}
 @media(max-width:700px){.account-dialog[data-presentation="flyout"]{--flyout-offset-x:0%;--flyout-offset-y:100%;inset:0;width:100vw;max-width:100vw;height:100dvh;padding:max(24px,env(safe-area-inset-top)) 20px max(24px,env(safe-area-inset-bottom));}}
@@ -402,7 +404,7 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .story-modal::after {bottom:0;}
 
 /* Seat labels are metadata. Emblem, name and presence form one identity. */
-[data-testid="participants-list"] {--identity-icon-size:34px;--identity-gap:8px;display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:20px;}
+[data-testid="participants-list"] {container:participants / inline-size;--identity-icon-size:34px;--identity-gap:8px;display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:20px;}
 [data-testid="participants-list"] > li {display:grid;grid-template-columns:subgrid;grid-column:1/-1;align-items:center;column-gap:20px;}
 [data-testid="participants-list"] > li > :first-child {grid-column:1;grid-row:1;font-size:.9rem;align-self:start;line-height:44px;}
 [data-testid="participants-list"] .participant-identity {display:grid;grid-column:2;min-width:0;}
@@ -414,6 +416,16 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 [data-testid="participants-list"] :is(.player-name,.player-username,.player-name-stack > bdi) {display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 [data-testid="participants-list"] .player-emblem {width:var(--identity-icon-size);height:var(--identity-icon-size);flex-shrink:0;}
 [data-testid="participants-list"] .participant-empty {grid-column:2;padding-left:calc(var(--identity-icon-size) + var(--identity-gap));font-size:1rem;min-height:44px;display:flex;align-items:center;}
+
+/* Large text must leave room for the identity, rather than clipping its badge. */
+@container participants (max-width:12em) {
+  .participant-computer .player-name-stack {flex-wrap:wrap;row-gap:2px;}
+  .participant-computer .player-name {flex:none;}
+  [data-testid="participants-list"] > li {grid-template-columns:minmax(0,1fr);row-gap:2px;}
+  [data-testid="participants-list"] > li > :first-child {grid-column:1;grid-row:1;line-height:1.4;}
+  [data-testid="participants-list"] .participant-identity,
+  [data-testid="participants-list"] .participant-empty {grid-column:1;grid-row:2;}
+}
 
 /* Close controls share the lightweight icon-button treatment everywhere. */
 :is(.shell-flyout,.story-modal,.account-dialog,.panel) button.ui-icon-button {border-radius:50%;color:var(--ink);background:transparent;box-shadow:none;}
@@ -447,6 +459,22 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .participant-empty > .righelt-icon {width:var(--identity-icon-size);height:var(--identity-icon-size);flex:none;color:var(--muted);opacity:.45;padding:5px;box-sizing:border-box;}
 /* Empty feedback must not leave reserved space at the foot of a section. */
 .invite-feedback:empty,.section-followup:has(> .participant-list:empty) {display:none;}
+
+/* Seat color lives in the emblem; identity and viewer names stay neutral. */
+[data-testid="participants-list"].perspective-participants {grid-template-columns:minmax(0,1fr);}
+[data-testid="participants-list"].perspective-participants > li {display:block;grid-column:1;min-width:0;}
+[data-testid="participants-list"].perspective-participants > li > :first-child {grid-column:auto;grid-row:auto;font-size:1rem;line-height:inherit;}
+[data-testid="participants-list"].perspective-participants .participant-identity {grid-column:auto;grid-row:auto;}
+[data-testid="participants-list"].perspective-participants .participant-empty {grid-column:auto;grid-row:auto;gap:var(--identity-gap);}
+.perspective-participants .participant-empty[data-player-side="p1"] > svg {color:var(--player-p1);opacity:1;}
+.perspective-participants .participant-empty[data-player-side="p2"] > svg {color:var(--player-p2);opacity:1;}
+.panel .viewers-summary.secondary {display:flex;align-items:center;gap:8px;min-height:44px;width:100%;padding:4px 0;text-align:left;border:0;background:transparent;color:var(--ink);box-shadow:none;}
+.viewers-summary > bdi {min-width:0;overflow-wrap:anywhere;}
+.viewers-summary > svg,.viewers-disclosure {flex:none;}
+.viewers-disclosure {margin-left:auto;}
+.viewers-summary[aria-expanded="true"] .viewers-disclosure {transform:rotate(90deg);}
+.expanded-viewers {list-style:none;padding:4px 0 0 12px;margin:0;border-left:1px solid var(--divider);}
+.expanded-viewers[hidden] {display:none;}
 .panel > :first-child {margin-top:0;}
 .panel > :last-child {margin-bottom:0;}
 .panel > .section-actions:last-of-type:not(:has(~ :not(.invite-feedback:empty))) {margin-bottom:0;}
