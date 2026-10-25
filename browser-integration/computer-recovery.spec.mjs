@@ -16,5 +16,6 @@ for(const width of [320,390,1440])test(`computer card reports local activity and
  await expect(page.locator('#notice').getByRole('button',{name:'Resume here',exact:true})).toBeEnabled();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
  expect(await page.locator('.participant-computer .player-name').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ await page.locator('#notice').evaluate(async root=>{await Promise.all(root.getAnimations({subtree:true}).filter(animation=>animation.effect?.getComputedTiming().iterations!==Infinity).map(animation=>animation.finished.catch(()=>{})));});
  await page.screenshot({path:info.outputPath(`computer-recovery-${width}.png`),fullPage:true});
 });
