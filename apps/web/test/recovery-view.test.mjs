@@ -219,3 +219,26 @@ test("accepting two commands preserves the first inspected pending board when it
  assert.deepEqual(t.getGameViewModel(game.id).currentSnapshot,snapshot(44));
  t.retire();
 });
+
+
+test("returning to live never restores End Turn from move count without authoritative legality", () => {
+ for (const [legalActions,expected] of [[[{type:'pass'},{type:'move'}],false],[[{type:'rush'}],false],[[{type:'follow'}],false],[[{type:'end_turn'},{type:'rush'}],true]]) {
+  const t=store(),game=fixture();
+  game.player1={identityId:'actor'};game.player2={identityId:'other'};
+  game.turns=[{index:9,playerSeat:'Player 1',moveIndexes:[0]}];game.legalActions=legalActions;
+  t.applyLiveGameUpdate({game});t.selectHistoryMove({gameId:'history',moveIndex:0});
+  assert.equal(t.getGameViewModel('history').canEndTurn,false);
+  t.returnToLive({gameId:'history'});
+  assert.equal(t.getGameViewModel('history').canEndTurn,expected);
+  t.retire();
+ }
+});
+
+
+test('live return keeps legal End Turn available for captured continuations without move rows',()=>{
+ const t=store(),game=fixture();
+ game.player1={identityId:'actor'};game.player2={identityId:'other'};
+ game.turns=[{index:9,playerSeat:'Player 1',moveIndexes:[]}];game.legalActions=[{type:'end_turn'}];
+ t.applyLiveGameUpdate({game});t.selectHistoryMove({gameId:'history',moveIndex:0});t.returnToLive({gameId:'history'});
+ assert.equal(t.getGameViewModel('history').canEndTurn,true);t.retire();
+});

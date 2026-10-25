@@ -2,6 +2,9 @@
 export const LIVE_HISTORY = Object.freeze({ requestHeader: "X-Righelt-Projection", requestValue: "history-v1", socketQuery: "historyProjection", snapshotValue: "summary-v1" });
 export const SHARED_OPERATIONS = Object.freeze(["revert-request", "revert-approve", "revert-reject", "revert-rescind", "computer-control"]);
 export const SYNC_PROTOCOL_VERSION = 2;
+/** Semantic action contract; intentionally independent of transport protocol. */
+export const ACTION_CONTRACT_VERSION = 2;
+export const ACTION_CONTRACT_HEADER = "X-Righelt-Action-Contract";
 export const SYNC_LIMITS = Object.freeze({ commandsPerRequest: 16, outstandingPerGame: 16, outstandingPerIdentity: 128, commandIdCharacters: 128, historyCacheEntries: 64, envelopeBytes: 64 * 1024, bodyBytes: 1024 * 1024 });
 export const SYNC_TIMING = Object.freeze({ requestTimeoutMs: 5_000, recoveryPassMs: 10_000, reconnectAlertMs: 4_000, confirmationBudgetMs: 15_000, degradedPollMs: 5_000, degradedSlowPollMs: 30_000, degradedSlowAfterMs: 60_000, heartbeatIntervalMs: 5_000, inboundTimeoutMs: 15_000, retryDelaysMs: Object.freeze([500, 1_000, 2_000, 4_000, 5_000]), maximumRetryAfterMs: 2_147_483_647, retryJitter: 0.2 });
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -24,8 +27,8 @@ export function canonicalCommandJson(value) {
     throw new Error("Command contains a non-JSON value");
 }
 export async function commandFingerprint(command) {
-    const { protocolVersion, gameId, identityId, clientCommandId, kind, payload, expectedState, expectedGameplayRevision, expectedTurnIndex, predecessor, authContextId } = command;
-    const intent = { protocolVersion, gameId, identityId, clientCommandId, kind, payload, expectedState, expectedGameplayRevision,
+    const { protocolVersion, gameId, identityId, clientCommandId, kind, payload, expectedState, expectedGameplayRevision, expectedTurnIndex, predecessor, authContextId, actionContractVersion } = command;
+    const intent = { protocolVersion, ...(actionContractVersion === undefined ? {} : { actionContractVersion }), gameId, identityId, clientCommandId, kind, payload, expectedState, expectedGameplayRevision,
         ...(authContextId === undefined ? {} : { authContextId }),
         ...(expectedTurnIndex === undefined ? {} : { expectedTurnIndex }), ...(predecessor === undefined ? {} : { predecessor }) };
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalCommandJson(intent)));
@@ -34,6 +37,8 @@ export async function commandFingerprint(command) {
 /** Structural validation; the server must recompute commandFingerprint before accepting supplied content. */
 export function isSyncCommand(value) {
     if (!record(value) || value.protocolVersion !== 2 || !nonempty(value.gameId) || !nonempty(value.identityId) || !commandId(value.clientCommandId) || !fingerprint(value.fingerprint))
+        return false;
+    if (value.actionContractVersion !== undefined && !isSyncRevision(value.actionContractVersion))
         return false;
     if (value.authContextId !== undefined && (typeof value.authContextId !== "string" || !/^[a-f0-9]{64}$/.test(value.authContextId)))
         return false;

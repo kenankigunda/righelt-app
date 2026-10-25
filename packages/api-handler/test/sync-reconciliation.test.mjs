@@ -143,7 +143,7 @@ test("I-04 legacy evidence blocks replay without fabricating rejection", async (
   assert.equal(h.DB.getGameState("g").moves.length, 0);
 });
 
-test("end-turn preserves turn-owner authority when continuation control differs", async () => {
+test("end-turn preserves authority and cannot bypass mandatory defender response", async () => {
   const { resolveToStability } = await import("../../game-engine/src/resolve");
   const { applyServerAction } = await import("../src/shell-live-core.ts");
   const h = await harness();
@@ -164,12 +164,12 @@ test("end-turn preserves turn-owner authority when continuation control differs"
   const owner = await h.command({ kind: "end_turn", expectedTurnIndex: 0 });
   const defender = await h.command({ identityId: "defender", kind: "end_turn", expectedTurnIndex: 0 });
   assert.equal((await h.call("end-turn", defender)).commandOutcomes[0].reason, "not_your_turn");
-  const accepted = await h.call("end-turn", owner);
-  assert.equal(accepted.commandOutcomes[0].outcome, "accepted");
-  assert.equal(accepted.turn.playerSeat, "Player 2");
+  const rejected = await h.call("end-turn", owner);
+  assert.equal(rejected.commandOutcomes[0].outcome, "rejected");
+  assert.equal(rejected.commandOutcomes[0].reason, "CONTINUATION_REQUIRED");
   const duplicate = await h.call("end-turn", owner);
-  assert.deepEqual(duplicate.turn, accepted.turn);
-  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.commandOutcomes[0].reason, "CONTINUATION_REQUIRED");
+  assert.equal(h.DB.getGameState("g").board.state.continuation.phase, "retreat");
 });
 
 test("committed acknowledgment and reconciliation are independent of a stalled broadcast",async()=>{

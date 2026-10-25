@@ -55,6 +55,7 @@ test("all 28 geometric channels and pass match source-major public encoding", ()
   }
   assert.equal(channel, 28);
   assert.equal(encodeAction({ type: "pass" }), 2800);
+  assert.equal(encodeAction({ type: "end_turn" }), 2800);
   assert.throws(() => encodeAction({ type: "move", from: origin, to: { row: 5, col: 5 } }), /channel/);
 });
 

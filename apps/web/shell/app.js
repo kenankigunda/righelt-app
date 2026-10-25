@@ -3099,6 +3099,9 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
 
 const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
   const game = transport.getGameViewModel(gameId);
+  if (!game && transport.isUpgradeRequired?.(gameId)) {
+    return `<section class="panel" data-testid="sync-recovery-banner" role="status"><p>Righelt has an update. Refresh to keep playing.</p><button class="secondary" data-action="refresh-game">Refresh</button></section>`;
+  }
   if (!routeHydrated && !game) {
     return renderGameViewSkeleton();
   }
@@ -4073,9 +4076,11 @@ const syncRouteDataAndLiveChannels = () => {
     if (read.route.name === "invite") {
       const invite = await read.owner.resolveInvite(read.route.inviteToken);
       assertCurrentRouteRead(read);
+      // Keep validated invitation routing metadata even if its board requires an
+      // upgrade. It identifies the recovery fence without trusting a snapshot.
+      resolvedInvite = invite;
       await read.owner.loadGame(invite.gameId, { openAsViewer: false });
       assertCurrentRouteRead(read);
-      resolvedInvite = invite;
     }
     assertCurrentRouteRead(read);
     syncLiveChannels();
@@ -4387,16 +4392,6 @@ const subscribeToTransport = () => transport.subscribe((change) => {
   }
   queueMicrotask(() => { void computerSession?.tick(); });
   gameSound.local(change, transport.getGameViewModel(change?.gameId), {silent:currentRoute.name!=='game' || currentRoute.gameId!==change?.gameId || Boolean(transport.getGameViewModel(change?.gameId)?.inHistoryMode)});
-  if (change?.type === "upgrade_required") {
-    try {
-      const key = "righelt.sync-v2-refresh";
-      if (!window.sessionStorage.getItem(key)) {
-        window.sessionStorage.setItem(key, "1");
-        window.location.reload();
-        return;
-      }
-    } catch { /* Keep the visible update notice if session storage cannot guard a reload. */ }
-  }
   const visibleGameId = getCurrentViewedGameId();
   const game = transport.getGameViewModel(visibleGameId);
   const frozenCapture = Boolean(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === visibleGameId);
@@ -4882,12 +4877,19 @@ appEl.addEventListener("click", async (event) => {
     };
     // Keep automatic control work fenced until the undo response is applied;
     // the server drops its lease before that acknowledgement reaches us.
-    const reverted = computerUndo ? await computerSession.withMutation(revert) : await revert();
+    let reverted;
+    try { reverted = computerUndo ? await computerSession.withMutation(revert) : await revert(); }
+    catch {
+      if (undoScopeIsCurrent()) setUndoRequestFeedback(gameId, "Undo could not finish");
+      return;
+    }
     if (computerUndo && reverted) {
       if (!undoScopeIsCurrent()) return;
-      await computerSession.tick();
-      if (!undoScopeIsCurrent()) return;
-      await computerSession.action('resume');
+      try {
+        await computerSession.tick();
+        if (!undoScopeIsCurrent()) return;
+        await computerSession.action('resume');
+      } catch { /* The undo is accepted. Computer recovery explains an uncertain resume. */ }
     }
     return;
   }
