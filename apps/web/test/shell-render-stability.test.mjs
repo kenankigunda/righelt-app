@@ -302,7 +302,7 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /const canHydrateRouteFromLocalState = \(route = currentRoute\) => \{/);
   assert.match(source, /return Boolean\(transport\.getGameViewModel\(route\.gameId\)\);/);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
-  assert.match(source, /return !game\.pendingPlayerRequestSeat && activeResultGameId !== game\.id && hostInvite\?\.gameId !== game\.id && !getActiveApprovalRequest\(game\) && !getActiveRevertRequest\(game\) && !getActivePendingRevertRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
+  assert.match(source, /return !game\.pendingPlayerRequestSeat && activeResultGameId !== game\.id && hostInvite\?\.gameId !== game\.id && !getActiveApprovalRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
   assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),[\s\S]*includeBoard,\s*animatePanels,\s*\}\);/s);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*(?:if \()?updateMountedGameShell\(\{/s);
   assert.match(source, /const game = transport\.getGameViewModel\(gameId\);\s*if \(!routeHydrated && !game\) \{/s);
@@ -382,7 +382,7 @@ test("shell renders durable browser E2E selectors for core workflow surfaces", (
   assert.match(source, /data-testid="approval-gate"/);
   assert.match(source, /data-testid="accept-request"/);
   assert.match(source, /data-testid="ignore-request"/);
-  assert.match(source, /data-testid="invite-gate"/);
+  assert.match(source, /testId:approval\?'undo-approval-notice':'undo-waiting-notice'/);
   assert.match(source, /data-testid="invite-join-player"/);
   assert.match(source, /data-testid="invite-join-viewer"/);
 });
@@ -504,4 +504,10 @@ test("history navigation uses pointer-down press state with a single mouseup rel
   assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*clearControlPress\(\);[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
   assert.match(source, /if \(action === "return-live"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);/s);
   assert.doesNotMatch(source, /jump-destruction/);
+});
+
+test("upgrade fencing keeps a static recovery notice without discarding viewing context", () => {
+ const subscriber=source.slice(source.indexOf('const subscribeToTransport'),source.indexOf('subscribeToTransport();'));
+ assert.doesNotMatch(subscriber,/location\.reload|sync-v2-refresh/);
+ assert.match(source,/game\.upgradeRequired \? `<button class="secondary[^"\n]*" data-action="refresh-game"/);
 });

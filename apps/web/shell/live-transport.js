@@ -237,6 +237,8 @@ export const createLiveTransportStore = ({
     const next = clone(game);
     next.pendingMoves = Array.isArray(next.pendingMoves) ? next.pendingMoves : [];
     next.pendingCommandCount = optimistic.pendingCommands.length;
+    next.pendingComputerSaveStartedAt = optimistic.pendingCommands.length && optimistic.pendingCommands.every(command => command.computer)
+      ? Math.min(...optimistic.pendingCommands.map(command => Date.parse(command.queuedAt))) : null;
     next.liveCurrentSnapshot = clone(next.liveCurrentSnapshot ?? next.board?.state ?? next.currentSnapshot ?? null);
     next.syncStatus = optimistic.storageBlocked ? "storage-blocked" : optimistic.syncStatus;
     next.storageBlocked = optimistic.storageBlocked;

@@ -39,3 +39,10 @@ test('scroll memory is isolated by game/panel and cleared on account change', ()
   assert.equal(intent.scrollTop('g','history'),200);assert.equal(intent.scrollTop('g','board'),0);assert.equal(intent.scrollTop('other','history'),0);
   intent.clear();assert.equal(intent.scrollTop('g','history'),0);
 });
+
+test('accepted undo of an archived decision uses authoritative restoration identity', () => {
+ const intent=createViewingIntent(),token=intent.beginUndo('g',{targetMoveId:'archived',revision:5,scope:'a'});
+ intent.commitUndo('g',token);
+ assert.equal(intent.observeUndo('g',{gameplayRevision:6,moves:[],lastRestoration:{decisionId:'different'}},'a'),false);
+ assert.equal(intent.observeUndo('g',{gameplayRevision:6,moves:[],lastRestoration:{decisionId:'archived'}},'a'),true);
+});

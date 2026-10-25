@@ -22,7 +22,7 @@ export function renderComputerProgress(game, status = {}) {
   else if (working) {
     const progress = status.progress;
     const completed = progress?.completed ?? progress?.received, total = progress?.total;
-    const slowSave = status.phase === 'saving' && status.phaseElapsedMs >= (COMPUTER_TIMING.saveNoticeAfterMs ?? 10_000);
+    const slowSave = status.phase === 'saving' && status.phaseElapsedMs >= COMPUTER_TIMING.saveNoticeAfterMs;
     const slowThink = status.phase !== 'saving' && status.elapsedMs >= COMPUTER_TIMING.stalledAfterMs;
     if (slowSave || slowThink) body = `<div class="computer-status-line"><span>${escapeDebug(slowSave ? 'Saving the move is taking longer than usual' : `${name} is still thinking`)}</span>${slowThink ? button('pause', 'Interrupt') : ''}</div>${slowThink ? `<div class="computer-progress"><progress aria-label="${escapeDebug(phase)}" ${Number.isFinite(completed) && total > 0 ? `max="${total}" value="${Math.min(completed, total)}"` : ''}></progress><span>${Math.floor(status.elapsedMs / 1000)}s</span></div>` : ''}`;
   } else if (control.paused) body = `<p>${escapeDebug(status.message || 'Computer play paused.')}</p><div class="computer-actions">${button('resume', 'Resume')}${watch ? button('step', 'Single step') : ''}${button('takeover', 'Play this turn')}${button('manual', 'Play both sides')}</div>`;

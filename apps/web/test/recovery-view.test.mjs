@@ -17,6 +17,7 @@ test("live board loading follows blocked recovery without requiring a reconnect 
  assert.equal(isBoardRecoveryPending({...pending,syncStatus:"ready"}),false);
  for (const flags of [{inHistoryMode:true},{storageBlocked:true},{upgradeRequired:true},{recoveryIssue:"session_changed"},{recoveryIssue:"invalid_credentials"}])
   assert.equal(isBoardRecoveryPending({...pending,...flags}),false);
+ assert.equal(isBoardRecoveryPending({...pending,pendingComputerSaveStartedAt:1000}),false);
  assert.equal(isBoardRecoveryPending(null),false);
 });
 
@@ -196,4 +197,14 @@ test('live return keeps legal End Turn available for captured continuations with
  game.turns=[{index:9,playerSeat:'Player 1',moveIndexes:[]}];game.legalActions=[{type:'end_turn'}];
  t.applyLiveGameUpdate({game});t.selectHistoryMove({gameId:'history',moveIndex:0});t.returnToLive({gameId:'history'});
  assert.equal(t.getGameViewModel('history').canEndTurn,true);t.retire();
+});
+
+test("computer saves remain quiet until slow and never hide failures", () => {
+ const saving={recovering:true,pendingCommandCount:1,pendingComputerSaveStartedAt:1000};
+ assert.equal(recoveryMessage(saving,10999),"");
+ assert.match(recoveryMessage(saving,11000),/computer’s move/);
+ assert.equal(recoveryMessage(saving,12000,{computerSaveActive:true}),"");
+ assert.match(recoveryMessage({...saving,storageBlocked:true},1001),/trouble saving/);
+ assert.match(recoveryMessage({...saving,recoveryIssue:"invalid_response"},1001),/reconnect/);
+ assert.match(recoveryMessage({...saving,upgradeRequired:true},1001),/Refresh/);
 });

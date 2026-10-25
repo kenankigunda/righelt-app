@@ -81,8 +81,8 @@ test("accepting undo preserves each selected retained entry until explicit retur
     }
     await expect(owner.page.getByTestId("history-return-live")).toHaveCount(0);
     await expect(guest.page.getByTestId("history-return-live")).toHaveCount(0);
-    await expect(owner.page.getByText("You are on the live view.")).toBeVisible();
-    await expect(guest.page.getByText("You are on the live view.")).toBeVisible();
+    await expect(owner.page.locator("#shell-board-preview-label")).toBeVisible();
+    await expect(guest.page.locator("#shell-board-preview-label")).toBeVisible();
     // Action previews and recorded-action ghosts vary with pointer/selection.
     // Compare actual rendered pieces to the confirmed server state on each page.
     const board = page => page.locator('[data-testid="game-board"] .cell').evaluateAll(cells => cells.map(cell => ({

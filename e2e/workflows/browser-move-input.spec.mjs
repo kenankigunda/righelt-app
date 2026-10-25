@@ -27,7 +27,7 @@ test('phone instructions keep the board stationary during source and hover selec
   await page.mouse.move(0,0);
   const before = await geometry();
   await cell(action.from).click();
-  await expect(page.locator('#shell-board-preview-label')).toContainText('Choose where to move your piece');
+  await expect(page.locator('#shell-board-preview-label')).toContainText('Select a move');
   expect(await geometry()).toEqual(before);
   await cell(action.to).hover();
   await expect(cell(action.to)).toHaveClass(/\btarget\b/);

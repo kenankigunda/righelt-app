@@ -26,7 +26,7 @@ export function createViewingIntent() {
       if (scope !== token.scope || generation(id) !== token.generation) { undos.delete(id); return false; }
       const target = game?.moves?.find(move => move.moveId === token.targetMoveId);
       const pending = game?.myPendingRevertRequest ?? game?.pendingRevertRequest;
-      if (!token.committed || pending || !(game?.gameplayRevision > token.revision) || !target?.undone) return false;
+      if (!token.committed || pending || !(game?.gameplayRevision > token.revision) || !(target?.undone || game?.lastRestoration?.decisionId === token.targetMoveId)) return false;
       undos.delete(id); return true;
     },
     cancelUndo(id) { undos.delete(id); },

@@ -73,3 +73,23 @@ test('record a complete processing and waiting pulse for visual review',async({p
   await page.screenshot({path:info.outputPath('waiting-peak.png')});
   await page.waitForTimeout(2000);
 });
+
+test('an urgent arrival cannot make focused or expanded notification controls inert',async({page})=>{
+  await open(page);
+  await page.evaluate(()=>{
+    const card=document.querySelector('[data-key="processing"]');
+    card.querySelector('button').focus();
+    window.focusedNotice=card;window.focusedControl=document.activeElement;
+    window.update([{key:'urgent',priority:'urgent',activity:'static',body:'Recording failed'},{key:'processing'}]);
+  });
+  await expect(page.locator('[data-key="processing"]')).toHaveClass(/is-active/);
+  expect(await page.evaluate(()=>document.activeElement===window.focusedControl&&!window.focusedControl.closest('[inert]'))).toBe(true);
+  await expect(page.locator('[data-key="urgent"]')).toBeAttached();
+  await page.evaluate(()=>{
+    document.activeElement.blur();
+    document.querySelector('[data-key="processing"] details').open=false;
+    window.update([{key:'urgent',priority:'urgent',activity:'static',body:'Recording failed'},{key:'processing'}]);
+  });
+  await expect(page.locator('[data-key="urgent"]')).toHaveClass(/is-active/);
+  expect(await page.evaluate(()=>window.focusedNotice===document.querySelector('[data-key="processing"]'))).toBe(true);
+});
