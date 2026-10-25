@@ -41,6 +41,8 @@ import { createModal } from './modal.js';
 import { createOpponentStoryDialog, OPPONENT_STORIES } from './opponent-stories.js';
 import { recoveryMessage, sharedMutationActions, isBoardRecoveryPending } from "./recovery-view.js";
 import { renderGameAlertCard } from "./game-alert.js";
+import { createNotificationStack, recoveryActivity } from "./notification-state.js";
+import { patchNotificationTree, patchNotificationHtml, replaceMainPreservingHeader } from "./notification-dom.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEngineBoardAdapter, createInitialBoardSnapshot, listBoardLegalActions } from "../board-adapters/engine-board-adapter.js";
 import { createMiniBoardPreview, syncMiniBoardPreviews } from "../board/mini-board-preview.js";
@@ -59,7 +61,7 @@ import {
   resolveHistoryScenarioExportContext,
   tryLocalScenarioWrite,
 } from "./scenarios.js";
-import { buildStaticGameCardFromScenario } from "./static-game-cards.js";
+import { buildStaticGameCardFromScenario, computerOpponentLabel } from "./static-game-cards.js";
 import { buildDestroyedPieceOverlays, findRecordedActionStartPiece } from "./history-preview.js";
 import { resolveInitialSelectionHydration } from "./selection-hydration.js";
 import { shouldResetBoardSelection, shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
@@ -237,7 +239,7 @@ let inviteFeedbackTimer = null;
 let undoRequestFeedback = "";
 let undoRequestFeedbackGameId = null;
 let undoRequestFeedbackTimer = null;
-const alertStackRotationByGameId = new Map();
+const notificationStack = createNotificationStack();
 const seenUndoRequestOutcomeByGameId = new Map();
 let routeHydrated = false;
 let resolvedInvite = null;
@@ -425,6 +427,8 @@ const renderPlayerSlotStatus = (seat, participant, { verbose = false } = {}) => 
 const shouldUseVerboseHomeConnectionCopy = (game) =>
   (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) || game?.myRole === "Player 1" || game?.myRole === "Player 2";
 const renderHomeRoleLine = (game) => {
+  const opponent = computerOpponentLabel(game);
+  if (opponent) return escapeHtml(opponent);
   if (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) {
     return `You are ${renderRoleLabel(game.myRole, game)}`;
   }
@@ -1623,7 +1627,7 @@ const getGameAlertItems = (game) => {
   maybeUpdateUndoRequestOutcomeFeedback(game);
 
   const items = failedOperations.map((operation) => ({
-    key: `failed:${operation.id}`,
+    key: `failed:${operation.id}`, priority: "urgent",
     html: renderGameAlertCard({
       tone: "danger",
       body: escapeHtml(operation.error?.message || "The operation could not be completed."),
@@ -1640,8 +1644,8 @@ const getGameAlertItems = (game) => {
   const dismissed = dismissedRecoveryNotices.get(game.id) === message;
   if (message && (!dismissed || game.storageBlocked)) {
     items.unshift({
-      key: `live-sync:${message}`,
-      html: renderGameAlertCard({ tone: "warn", body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: game.incidentId,
+      key: `live-sync:${game.id}:${game.recoveryEpisodeId ?? "current"}`, priority: game.storageBlocked || game.upgradeRequired || game.recoveryIssue ? "urgent" : "normal",
+      html: renderGameAlertCard({ tone: "warn", activity: recoveryActivity(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: game.incidentId,
         action: game.storageBlocked
           ? `<button class="secondary mini-button" data-action="retry-saving" data-game-id="${escapeHtml(game.id)}">Retry saving</button>${dismissed ? "" : `<button class="secondary mini-button" data-action="dismiss-recovery-notice" data-game-id="${escapeHtml(game.id)}">Dismiss</button>`}`
           : game.upgradeRequired ? `<button class="secondary mini-button" data-action="refresh-game">Refresh</button>`
@@ -1650,11 +1654,11 @@ const getGameAlertItems = (game) => {
       }),
     });
   }
-  if (game.historyNotice) items.push({ key: "history-change", html: renderGameAlertCard({ body: escapeHtml(game.historyNotice) }) });
+  if (game.historyNotice) items.push({ key: `history-change:${game.id}`, html: renderGameAlertCard({ body: escapeHtml(game.historyNotice) }) });
 
   if (undoRequestFeedback && undoRequestFeedbackGameId === game.id) {
     items.push({
-      key: `undo:${game.id}:${undoRequestFeedback}`,
+      key: `undo:${game.id}`,
       html: renderGameAlertCard({
         body: escapeHtml(undoRequestFeedback),
       }),
@@ -1662,22 +1666,6 @@ const getGameAlertItems = (game) => {
   }
 
   return items;
-};
-
-const getAlertStackRotation = (gameId, alertCount) => {
-  if (!gameId || alertCount <= 1) {
-    return 0;
-  }
-  return (alertStackRotationByGameId.get(gameId) ?? 0) % alertCount;
-};
-
-const advanceAlertStackRotation = (gameId, alertCount) => {
-  if (!gameId || alertCount <= 1) {
-    return false;
-  }
-  const nextRotation = ((alertStackRotationByGameId.get(gameId) ?? 0) + 1) % alertCount;
-  alertStackRotationByGameId.set(gameId, nextRotation);
-  return true;
 };
 
 const focusCurrentAlertStackCard = (gameId) => {
@@ -1709,8 +1697,8 @@ const cycleGameAlertStack = (gameId, actionEl = null) => {
   if (!game) {
     return;
   }
-  const alertCount = getGameAlertItems(game).length;
-  if (!advanceAlertStackRotation(gameId, alertCount)) {
+  const items = getGameAlertItems(game);
+  if (!notificationStack.advance(gameId, items)) {
     return;
   }
   refreshMountedAlertHeader(gameId, actionEl);
@@ -1725,13 +1713,15 @@ const renderGameAlertStackCard = ({ gameId, item, stackIndex, totalAlerts }) => 
   return `<div
       class="shell-game-alert-stack-card${isActive ? " is-active" : ""}${interactive ? " is-interactive" : ""}"
       data-alert-stack-card
+      data-key="${escapeHtml(item.key)}"
+      data-notification-id="${escapeHtml(item.key)}"
       data-stack-index="${stackIndex}"
       data-stack-count="${totalAlerts}"
       ${interactive
         ? `data-action="cycle-game-alert-stack" data-game-id="${escapeHtml(gameId)}" tabindex="0"`
         : isActive
           ? 'tabindex="-1"'
-          : 'aria-hidden="true" tabindex="-1"'}
+          : 'aria-hidden="true" tabindex="-1" inert'}
       aria-label="${escapeHtml(ariaLabel)}"
     >
       ${item.html}
@@ -2405,18 +2395,15 @@ const scrollHomeSectionToTop = (sectionKey) => {
   });
 };
 
-const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Computer players are experimental. Try a game.</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
+const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Choose your opponent</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
 const renderHome = () => `<section class="stack home-refresh">${storageResetNotice ? '<p class="small" role="status">The saved data was reset. You can start a new game.</p>' : ""}${renderHomeGameSection('my')}${renderStartChoices()}${getVisibleHomeSectionKeys().filter(key=>key!=='my').map(renderHomeGameSection).join('')}</section>`;
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
   isBuildingGameAlerts = true;
   try {
     const items = getGameAlertItems(game);
-    if (items.length === 0) {
-      return "";
-    }
-    const rotation = getAlertStackRotation(game.id, items.length);
-    const orderedItems = items.map((_, index) => items[(rotation + index) % items.length]);
+    const orderedItems = notificationStack.order(game.id, items);
+    if (orderedItems.length === 0) return "";
     return orderedItems
       .map((item, stackIndex) =>
         renderGameAlertStackCard({
@@ -2787,12 +2774,16 @@ const patchHomeAroundCreateControl = (markup) => {
       for (const attribute of [...current.attributes]) if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
       for (const attribute of next.attributes) current.setAttribute(attribute.name, attribute.value);
     }
+    const retainedHeader = [...current.children].find(child => child.matches('.shell-header'));
+    const freshHeader = [...next.children].find(child => child.matches('.shell-header'));
+    if (retainedHeader && freshHeader) patchNotificationTree(retainedHeader, freshHeader);
     const sectionNodes = new Map([...current.children].filter(el=>el.hasAttribute('data-home-section-root')).map(el=>[el.dataset.homeSectionRoot,el]));
     const nextSectionKeys = new Set([...next.children].filter(el=>el.hasAttribute('data-home-section-root')).map(el=>el.dataset.homeSectionRoot));
-    for (const child of [...current.childNodes]) if (!(child instanceof HTMLElement && nextSectionKeys.has(child.dataset.homeSectionRoot)) && child !== retained && !(child instanceof HTMLElement && child.matches("[data-shell-flyouts]"))) child.remove();
+    for (const child of [...current.childNodes]) if (!(child instanceof HTMLElement && nextSectionKeys.has(child.dataset.homeSectionRoot)) && child !== retained && child !== retainedHeader && !(child instanceof HTMLElement && child.matches("[data-shell-flyouts]"))) child.remove();
     let after = false;
     for (const child of next.childNodes) {
       if (child === replacement) { after = true; continue; }
+      if (child === freshHeader && retainedHeader) continue;
       if(child instanceof HTMLElement && child.matches("[data-shell-flyouts]"))continue;
       const section=child instanceof HTMLElement ? sectionNodes.get(child.dataset.homeSectionRoot) : null;
       if(section){patchSectionContent(section,child);continue;}
@@ -2820,8 +2811,8 @@ const updateMountedHeader = () => {
   const focused = currentHeaderEl.contains(document.activeElement) ? document.activeElement : null;
   const focusAction = focused?.getAttribute("data-action");
   const focusIncident = focused?.getAttribute("data-incident-id");
-  currentHeaderEl.replaceWith(nextHeaderEl);
-  if (focusAction) nextHeaderEl.querySelector(`[data-action="${CSS.escape(focusAction)}"]${focusIncident ? `[data-incident-id="${CSS.escape(focusIncident)}"]` : ""}`)?.focus({ preventScroll: true });
+  patchNotificationTree(currentHeaderEl, nextHeaderEl);
+  if (focusAction && !focused.isConnected) currentHeaderEl.querySelector(`[data-action="${CSS.escape(focusAction)}"]${focusIncident ? `[data-incident-id="${CSS.escape(focusIncident)}"]` : ""}`)?.focus({ preventScroll: true });
   return true;
 };
 const getFlyoutAwareHref = (element) => {
@@ -3019,7 +3010,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   if (computerStatusEl) patchToolHtml(computerStatusEl, renderComputerProgress(game, computerSession?.snapshot()));
   if (alertsEl instanceof HTMLElement) {
     const html = renderGameAlertsHtml(game, inviteFromRole);
-    if (alertsEl.innerHTML !== html) alertsEl.innerHTML = html;
+    if (alertsEl.innerHTML !== html) patchNotificationHtml(alertsEl, html);
     updateRecoveryAnnouncement(game);
   }
   if (summaryEl instanceof HTMLElement) {
@@ -3968,7 +3959,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
     if (currentRoute.name !== "home" || !patchHomeAroundCreateControl(nextMarkup)) {
       const currentMain=appEl.querySelector('.shell-main-content');
       const nextMain=createMarkupRoot(nextMarkup)?.querySelector('.shell-main-content');
-      if(currentMain && nextMain){currentMain.replaceWith(nextMain);updateMountedFlyouts();}
+      if(currentMain && nextMain){if(!replaceMainPreservingHeader(currentMain,nextMain))currentMain.replaceWith(nextMain);updateMountedFlyouts();}
       else appEl.innerHTML = nextMarkup;
     }
     restoreScenarioDraftFocus?.();
@@ -4051,13 +4042,19 @@ const withPendingButton = async (pendingKey, fn, { renderStart = true, renderEnd
   }
 };
 
-const captureRouteRead = () => ({
-  generation: account.snapshot().generation,
-  hash: window.location.hash,
-  owner: transport,
-  route: { ...currentRoute },
-  inputs: JSON.stringify(getVisibleHomeSectionKeys().map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])),
-});
+const captureRouteRead = () => {
+  // A queued authority refresh can run after the URL changes but before the
+  // browser delivers hashchange. Keep the read and its deduplication key on
+  // the same URL instead of sharing an old route's work under the new hash.
+  const hash = window.location.hash;
+  return {
+    generation: account.snapshot().generation,
+    hash,
+    owner: transport,
+    route: parseRouteFromHash(hash),
+    inputs: JSON.stringify(getVisibleHomeSectionKeys().map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])),
+  };
+};
 const routeReadIsCurrent = read => read.generation === account.snapshot().generation && read.hash === window.location.hash && read.owner === transport;
 const assertCurrentRouteRead = read => {
   if (!routeReadIsCurrent(read)) throw Object.assign(new Error("session_changed"), { code: "session_changed" });

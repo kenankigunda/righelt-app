@@ -1,4 +1,5 @@
 @import "./loading.css";
+@import "./notification-motion.css";
 :root {
   --bg: #f4f1e8;
   --ink: #1d2d35;
@@ -91,8 +92,8 @@ body {
 
 .shell-route-transition-layer-backdrop {
   opacity: 0;
-  background: linear-gradient(180deg, rgba(244, 241, 232, 0.05) 0%, rgba(244, 241, 232, 0.22) 100%);
-  backdrop-filter: blur(0px);
+  background: rgba(244, 241, 232, 0.12);
+  backdrop-filter: none;
 }
 
 .shell-route-transition-layer-swipe {
@@ -101,22 +102,22 @@ body {
   left: -38%;
   width: 176%;
   inset-inline: auto;
-  background:
-    linear-gradient(
-      100deg,
-      color-mix(in srgb, var(--player-p1) 18%, transparent) 0%,
-      color-mix(in srgb, var(--player-p1) 10%, transparent) 18%,
-      color-mix(in srgb, #fff 4%, transparent) 36%,
-      color-mix(in srgb, var(--player-p2) 10%, transparent) 58%,
-      color-mix(in srgb, var(--player-p2) 18%, transparent) 100%
-    ),
-    radial-gradient(circle at 28% 58%, color-mix(in srgb, var(--player-p1) 6%, transparent) 0%, transparent 28%),
-    radial-gradient(circle at 72% 42%, color-mix(in srgb, var(--player-p2) 6%, transparent) 0%, transparent 30%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.015) 0%, rgba(244, 241, 232, 0.06) 100%);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.035),
-    0 8px 18px rgba(29, 45, 53, 0.03);
+  background: none;
+  box-shadow: none;
   transform: translateX(-74%) skewX(-14deg);
+}
+
+.shell-route-transition-layer-swipe::before,
+.shell-route-transition-layer-swipe::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(8% 0,55% 0,47% 100%,0 100%);
+  background: color-mix(in srgb,var(--player-p1) 24%,transparent);
+}
+.shell-route-transition-layer-swipe::after {
+  clip-path: polygon(55% 0,100% 0,92% 100%,47% 100%);
+  background: color-mix(in srgb,var(--player-p2) 24%,transparent);
 }
 
 .shell-route-transition-layer[data-phase="covering"] .shell-route-transition-layer-backdrop {
@@ -125,7 +126,7 @@ body {
 
 .shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-backdrop {
   opacity: 0.26;
-  backdrop-filter: blur(1.5px);
+  backdrop-filter: none;
 }
 
 .shell-route-transition-layer[data-phase="revealing"] .shell-route-transition-layer-backdrop {
@@ -157,22 +158,22 @@ body {
 @keyframes shell-game-entry-backdrop-in {
   0% {
     opacity: 0;
-    backdrop-filter: blur(0px);
+    backdrop-filter: none;
   }
   100% {
     opacity: 0.26;
-    backdrop-filter: blur(1.5px);
+    backdrop-filter: none;
   }
 }
 
 @keyframes shell-game-entry-backdrop-out {
   0% {
     opacity: 0.26;
-    backdrop-filter: blur(1.5px);
+    backdrop-filter: none;
   }
   100% {
     opacity: 0;
-    backdrop-filter: blur(0px);
+    backdrop-filter: none;
   }
 }
 
@@ -2142,9 +2143,25 @@ textarea:focus-visible {
 .reconnect-background { display: none; position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; }
 .board-wrap[data-reconnecting="true"]:is([data-loading-phase="visible"], [data-loading-phase="slow"]) > :is(.board, .overlay-lines) { opacity: .2; }
 .board-wrap[data-reconnecting="true"]:is([data-loading-phase="visible"], [data-loading-phase="slow"]) .reconnect-background { display: block; }
-.reconnect-background::before { content: ""; position: absolute; top: 0; bottom: 0; left: -35%; width: 35%; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--player-p1) 18%, transparent) 32%, color-mix(in srgb, var(--player-p2) 22%, transparent) 68%, transparent); clip-path: polygon(25% 0, 100% 0, 75% 100%, 0 100%); animation: reconnect-sweep 2.4s ease-in-out infinite; }
-@keyframes reconnect-sweep { from { transform: translateX(0); } to { transform: translateX(400%); } }
-[data-loading-hidden] .reconnect-background::before { animation-play-state: paused; }
+.reconnect-background::before,
+.reconnect-background::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -35%;
+  width: 17.5%;
+  background: color-mix(in srgb,var(--player-p1) 18%,transparent);
+  clip-path: polygon(50% 0,100% 0,50% 100%,0 100%);
+  animation: reconnect-sweep 2.4s ease-in-out infinite;
+}
+.reconnect-background::after {
+  left: -26.25%;
+  background: color-mix(in srgb,var(--player-p2) 22%,transparent);
+}
+@keyframes reconnect-sweep { from { transform: translateX(0); } to { transform: translateX(800%); } }
+[data-loading-hidden] .reconnect-background::before,
+[data-loading-hidden] .reconnect-background::after { animation-play-state: paused; }
 .issue-diagnostic > button.issue-caret { background: transparent; color: var(--muted); box-shadow: none; border: 0; min-width: 44px; min-height: 44px; padding: 0; opacity: .6; font-size: 20px; }
 .issue-details { font-size: 13px; line-height: 1.4; }
 .issue-details pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; user-select: text; }
@@ -2157,7 +2174,8 @@ textarea:focus-visible {
 .shell-header-status:has(.issue-details) { height: auto; }
 @media (prefers-reduced-motion: reduce) {
   .board-wrap > .board, .board-wrap > .overlay-lines { transition: none; }
-  .reconnect-background::before { animation: none; left: 32.5%; }
+  .reconnect-background::before { animation: none; left: 37%; }
+  .reconnect-background::after { animation: none; left: 45.75%; }
 }
 
 .board-wrap > .loading-pieces { display: none; }
