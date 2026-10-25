@@ -1756,15 +1756,19 @@ for(const lateCommit of [false,true])test(`uncertain admission ${lateCommit?"com
 });
 
 
-for(const status of [404,405]) test(`missing reconciliation endpoint ${status} never falls back to an obsolete server read`,async(t)=>{
+for(const status of [404,405])for(const protocolVersion of [1,2]) test(`missing reconciliation endpoint ${status} retains bounded protocol ${protocolVersion} discovery without a command submission`,async(t)=>{
  const baseGame=buildLiveGame();let reads=0,reconciles=0;
  const store=createLiveTransportStore({storage:createMemoryStorage(),commandJournal:{list:async()=>[]},beforeReconcile:async()=>true,
-   fetcher:async(url)=>{
+   fetcher:async(url,init)=>{
     if(url.endsWith('/reconcile')){reconciles++;return Response.json({error:'not_found'},{status});}
-    reads++;return Response.json({protocolVersion:2,ok:true,game:baseGame,eventSeq:1});
+    assert.equal(init.method,'GET','Only a read may follow missing-route discovery');
+    assert.match(url,new RegExp(`/api/shell/games/${baseGame.id}\\?`));
+    reads++;return Response.json({protocolVersion,ok:true,game:baseGame,eventSeq:1});
    }});
  t.after(()=>store.retire());
- await assert.rejects(store.loadGame(baseGame.id));
- assert.equal(reconciles,1);assert.equal(reads,0);
- assert.equal(store.getGameViewModel(baseGame.id),null);
+ if(protocolVersion===1)await assert.rejects(store.loadGame(baseGame.id),error=>error.code==='upgrade_required');
+ else await store.loadGame(baseGame.id);
+ assert.equal(reconciles,1);assert.equal(reads,1);
+ if(protocolVersion===1)assert.equal(store.getGameViewModel(baseGame.id),null);
+ else assert.equal(store.getGameViewModel(baseGame.id).id,baseGame.id);
 });

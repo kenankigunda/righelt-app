@@ -773,10 +773,16 @@ export const createLiveTransportStore = ({
         return getGameViewModel(gameId);
       }
       if (socketOwned) {
-        await reconcileGame(gameId);
-        const recovered = getGameViewModel(gameId);
-        if (!recovered) throw new Error("invalid_snapshot");
-        return recovered;
+        try {
+          await reconcileGame(gameId);
+          const recovered = getGameViewModel(gameId);
+          if (!recovered) throw new Error("invalid_snapshot");
+          return recovered;
+        } catch (error) {
+          // Retain bounded protocol discovery until terminal-protocol recovery
+          // supplies its replacement. A read never decides a command outcome.
+          if (error.status !== 404 && error.status !== 405) throw error;
+        }
       }
     }
     const body = await boundedRequest(
