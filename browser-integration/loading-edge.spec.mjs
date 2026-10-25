@@ -11,7 +11,7 @@ test('edge cut protects real labels, axes, controls and grid at every board form
   const geometry=await page.locator('.loading-edge-frame').evaluate(svg=>{
    const s=svg.getBoundingClientRect(),cuts=[...svg.querySelectorAll('mask rect')].slice(1).map(node=>Object.fromEntries(['x','y','width','height'].map(key=>[key,Number(node.getAttribute(key))])));
    return {width:document.documentElement.scrollWidth,pointer:getComputedStyle(svg.parentElement).pointerEvents,inert:svg.parentElement.inert,
-    protected:[...document.querySelectorAll('h2,p,button,.board,.axis-label,.overlay-key')].filter(node=>node.getClientRects().length&&!node.closest('[inert]')).map(node=>{const b=node.getBoundingClientRect();return cuts.some(c=>c.x<=b.left-s.left-1.9&&c.y<=b.top-s.top-1.9&&c.x+c.width>=b.right-s.left+1.9&&c.y+c.height>=b.bottom-s.top+1.9);}),
+    protected:[...document.querySelectorAll('h2,p,button,.board,.axis-label,.overlay-key')].filter(node=>!node.closest('[inert]')&&node.getClientRects().length).map(node=>{const b=node.getBoundingClientRect();return cuts.some(c=>c.x<=b.left-s.left-1.9&&c.y<=b.top-s.top-1.9&&c.x+c.width>=b.right-s.left+1.9&&c.y+c.height>=b.bottom-s.top+1.9);}),
     colors:[...svg.querySelectorAll('g polygon')].map(node=>getComputedStyle(node).stroke),opacity:[...svg.querySelectorAll('g polygon')].map(node=>getComputedStyle(node).opacity)};
   });
   expect(geometry.width).toBeLessThanOrEqual(width);expect(geometry.protected.every(Boolean)).toBe(true);expect(geometry.pointer).toBe('none');expect(geometry.inert).toBe(true);expect(new Set(geometry.colors).size).toBe(2);expect(geometry.opacity).toEqual(['1','1']);
@@ -70,7 +70,7 @@ for(const productionSwipe of [false,true])test(`a reconnecting narrow track keep
   const values=getComputedStyle(svg).clipPath.match(/-?[\d.]+px/g)?.map(parseFloat)??[];
   const inset=values.length===1?[values[0],values[0],values[0],values[0]]:values.length===2?[values[0],values[1],values[0],values[1]]:values.length===3?[values[0],values[1],values[2],values[1]]:values;
   const cuts=[...svg.querySelectorAll('mask rect')].slice(1).map(node=>Object.fromEntries(['x','y','width','height'].map(key=>[key,Number(node.getAttribute(key))])));
-  const protectedNodes=[...panel.querySelectorAll('h2,p,button,.board,.axis-label,.overlay-key')].filter(node=>node.getClientRects().length&&!node.closest('[inert]')&&(!node.closest('.board')||node.matches('.board,.axis-label')));
+  const protectedNodes=[...panel.querySelectorAll('h2,p,button,.board,.axis-label,.overlay-key')].filter(node=>!node.closest('[inert]')&&(!node.closest('.board')||node.matches('.board,.axis-label'))&&node.getClientRects().length);
   const failingTargets=protectedNodes.filter(node=>{const b=node.getBoundingClientRect();return !cuts.some(c=>c.x<=b.left-s.left-1.9&&c.y<=b.top-s.top-1.9&&c.x+c.width>=b.right-s.left+1.9&&c.y+c.height>=b.bottom-s.top+1.9);}).map(node=>({tag:node.tagName,className:node.className,text:node.textContent.slice(0,100),rect:node.getBoundingClientRect().toJSON()}));
   return {time:window.trackMotion.currentTime,duration:window.trackMotion.effect.getComputedTiming().duration,state:window.trackMotion.playState,navigation:window.edgeTrack.dataset.transitionState,visible:getComputedStyle(svg).visibility!=='hidden',moving:svg.hasAttribute('data-edge-moving'),strokeTime:window.edgeClock?.currentTime,inset,panel:p.toJSON(),frame:s.toJSON(),viewport:v.toJSON(),failingTargets,alignment:Math.max(Math.abs(s.left-(p.left-2)),Math.abs(s.top-(p.top-2))),
    clipped:inset.length===4&&s.left+inset[3]>=v.left-.1&&s.right-inset[1]<=v.right+.1&&s.top+inset[0]>=v.top-.1&&s.bottom-inset[2]<=v.bottom+.1,
@@ -95,8 +95,8 @@ for(const productionSwipe of [false,true])test(`a reconnecting narrow track keep
   const duration=window.trackDuration,deadline=duration-Math.min(100,duration*.1),step=Math.min(80,duration*.15);
   const tick=()=>{
    const sample=window.edgeSnapshot();samples.push(sample);
-   if(sample.visible){resolve({ok:false,samples,accepted,deadline,reason:'Decorative stroke became visible during navigation'});return;}
    if(sample.state!=='running'||sample.time>=deadline){resolve({ok:false,samples,accepted,deadline,reason:'No three valid checkpoints before native end'});return;}
+   if(sample.visible){resolve({ok:false,samples,accepted,deadline,reason:'Decorative stroke became visible during navigation'});return;}
    if(sample.time>previousTime+step&&sample.clipped&&sample.same&&!sample.visible){
     if(sample.panel.left>=previousLeft){resolve({ok:false,samples,accepted,deadline,reason:'Panel failed to progress in swipe direction'});return;}
     accepted.push(sample);previousLeft=sample.panel.left;previousTime=sample.time;

@@ -39,6 +39,10 @@ export const edgeViewportClip = (frame,viewport,clipX,clipY) => [
  clipX?Math.max(0,viewport.left-frame.left):0,
 ];
 
+// Exclude inert replicas and board interiors before requesting layout.
+export const isProtectedEdgeNode = node => !node.closest('[inert]')&&
+ (!node.closest('.board')||node.matches('.board,.axis-label'))&&node.getClientRects().length>0;
+
 const NS='http://www.w3.org/2000/svg';
 const VISIBLE_PHASE=':is([data-loading-phase="visible"],[data-loading-phase="slow"])';
 const PROTECTED='h1,h2,h3,p,label,button,a,input,select,textarea,.board,.axis-label,.overlay-key,[role="status"]';
@@ -87,7 +91,7 @@ export function mountLoadingEdges(document) {
    const clipping=clipHost&&(clipX||clipY)?edgeViewportClip(
     {left:rect.left-outset,top:rect.top-outset,right:rect.right+outset,bottom:rect.bottom+outset},
     clipHost.getBoundingClientRect(),clipX,clipY):null;
-   const protectedRects=[...panel.querySelectorAll(PROTECTED)].filter(node=>node.getClientRects().length&&!node.closest('[inert]')&&(!node.closest('.board')||node.matches('.board,.axis-label'))).map(node=>edgeProtectedRect(node.getBoundingClientRect(),rect));
+   const protectedRects=[...panel.querySelectorAll(PROTECTED)].filter(isProtectedEdgeNode).map(node=>edgeProtectedRect(node.getBoundingClientRect(),rect));
    const key=JSON.stringify([rect.x,rect.y,rect.width,rect.height,points,protectedRects,clipping]);
    if(frame.key===key)continue;frame.key=key;
    svg.style.cssText=`left:${rect.left-outset}px;top:${rect.top-outset}px;width:${rect.width+outset*2}px;height:${rect.height+outset*2}px;${clipping?`clip-path:inset(${clipping.map(value=>`${value}px`).join(' ')})`:""}`;
