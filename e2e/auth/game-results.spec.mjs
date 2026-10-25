@@ -30,7 +30,7 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   expect(loaded.status, JSON.stringify(loaded.body)).toBe(200);
   expect(loaded.body.game.id).toBe(gameId);
   await expect(page.getByTestId("game-result")).toBeVisible();
-  await expect(page.getByTestId("game-result").getByRole("heading", { name: "Player 1 wins" })).toBeVisible();
+  await expect(page.getByTestId("game-result").getByRole("heading", { name: "You won" })).toBeVisible();
   await expect(page.getByTestId("game-result")).toHaveAttribute('data-result-tone','victory');
   const review = page.getByRole("button", { name: "Review game" });
   await review.focus();
@@ -99,7 +99,7 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
       await page.getByRole("button", { name: "History", exact: true }).click();
     }
     await page.getByRole("button", { name: "View result" }).click();
-    await expect(page.getByTestId("game-result").getByRole("heading", { name: "Player 1 wins" })).toBeVisible();
+    await expect(page.getByTestId("game-result").getByRole("heading", { name: "You won" })).toBeVisible();
     expect(await page.getByTestId('game-result').evaluate(element=>element.getAnimations({subtree:true}).filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime)).length)).toBe(0);
   }
   await page.getByRole("button", { name: "Play again" }).click();

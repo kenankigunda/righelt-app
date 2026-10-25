@@ -17,6 +17,6 @@ test('defeat settles gently, while reduced motion, draws and spectators remain s
  for(const tone of ['draw','neutral']){const v=fixture();v.controller.enter('g',{tone});v.controller.mount(v.root(),'g');assert.equal(v.motions.length,0);}
 });
 test('perspective copy is accessible and visual ornaments never become actions',()=>{
- for(const tone of ['victory','defeat','draw','neutral']){const html=renderResultMark({tone});assert.match(html,/<svg[^>]*aria-hidden="true"/);assert.match(html,/<span class="result-perspective">/);assert.doesNotMatch(html,/button|data-action|tabindex/);}
+ for(const tone of ['victory','defeat','draw','neutral']){const html=renderResultMark({tone});assert.match(html,/<svg[^>]*aria-hidden="true"/);assert.doesNotMatch(html,/result-perspective/);assert.doesNotMatch(html,/button|data-action|tabindex/);}
  assert.equal(resultSound({tone:'victory'}),'result-victory');assert.equal(resultSound({tone:'defeat'}),'result-defeat');assert.equal(resultSound({tone:'draw'}),'result-draw');assert.equal(resultSound({tone:'neutral'}),'result');
 });

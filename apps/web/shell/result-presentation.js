@@ -1,6 +1,6 @@
 export const resultSound = result => ({victory:'result-victory',defeat:'result-defeat',draw:'result-draw'}[result?.tone] ?? 'result');
 
-export const renderResultMark = result => `<div class="result-mark" data-result-mark><svg viewBox="0 0 160 110" focusable="false" aria-hidden="true"><path class="result-stone" d="M53 95V64h13V49h13V33h13v16h13v15h13v31z"/><path class="result-ground" d="M38 102h94"/>${[-1,1].flatMap(direction=>[0,1].map(row=>`<path data-result-fragment="${direction}" class="result-fragment" d="M${direction<0?20+row*8:130-row*8} ${25+row*25}l5 -5h8l5 5v8l-5 5h-8l-5 -5z"/>`)).join('')}</svg><span class="result-perspective">${result.tone==='victory'?'Your side won':result.tone==='defeat'?'The other side won':result.tone==='draw'?'An even finish':'Game complete'}</span></div>`;
+export const renderResultMark = () => `<div class="result-mark" data-result-mark><svg viewBox="0 0 160 110" focusable="false" aria-hidden="true"><path class="result-stone" d="M53 95V64h13V49h13V33h13v16h13v15h13v31z"/><path class="result-ground" d="M38 102h94"/>${[-1,1].flatMap(direction=>[0,1].map(row=>`<path data-result-fragment="${direction}" class="result-fragment" d="M${direction<0?20+row*8:130-row*8} ${25+row*25}l5 -5h8l5 5v8l-5 5h-8l-5 -5z"/>`)).join('')}</svg></div>`;
 
 // An observed live finish owns one timeline. Repainting its result preserves
 // elapsed time, while manual opening, hydration and reload never create one.

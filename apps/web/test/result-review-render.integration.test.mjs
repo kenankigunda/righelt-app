@@ -102,7 +102,7 @@ test("optimistic terminal state cannot expose a result or open it before confirm
   assert.doesNotMatch(context.history(optimistic),/data-action="view-result"/);
   context.openResult();assert.equal(context.activeResultGameId,null);
   confirmed=optimistic;
-  assert.match(context.result(optimistic),/>Player 1 wins</);
+  assert.match(context.result(optimistic),/>You won</);
   assert.match(context.history(optimistic),/data-action="view-result"/);
   context.openResult();assert.equal(context.activeResultGameId,"g");
 });

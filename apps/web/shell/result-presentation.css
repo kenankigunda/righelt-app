@@ -1,11 +1,11 @@
 .game-result {--result-color:var(--player-p1);}
+.game-result h1 {font-size:clamp(32px,4.5vw,48px);line-height:1.15;letter-spacing:-.04em;}
 .game-result[data-winner="p2"] {--result-color:var(--player-p2);}
 .result-mark {width:160px;margin:0 auto 20px;text-align:center;color:var(--result-color);}
 .result-mark svg {display:block;width:160px;height:110px;overflow:visible;}
 .result-stone {fill:currentColor;}
 .result-ground {fill:none;stroke:currentColor;stroke-width:2;opacity:.3;}
 .result-fragment {fill:currentColor;opacity:.7;transform-box:fill-box;transform-origin:center;}
-.result-perspective {display:block;margin-top:10px;font-size:.9rem;font-weight:700;color:var(--text-secondary);}
 .game-result[data-result-tone="defeat"] .result-mark {color:var(--text-secondary);}
 .game-result:is([data-result-tone="defeat"],[data-result-tone="neutral"],[data-result-tone="draw"]) .result-fragment {display:none;}
 .game-result:is([data-result-tone="draw"],[data-result-tone="neutral"]) .result-mark {color:var(--ink);}
