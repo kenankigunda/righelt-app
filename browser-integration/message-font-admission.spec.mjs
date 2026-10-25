@@ -60,7 +60,7 @@ test('loaded message width envelope never exceeds its permanent fallback reserva
 
 
 test('measured font boundaries keep cold, loaded and settled-reload row envelopes identical',async({page},info)=>{
- const bands=[[10.1875,10.53125],[11.125,11.40625],[14.75,14.90625],[21.875,22.4375]];
+ const bands=[[8.5,8.5628662109375],[8.5628662109375,10.5997314453125],[10.5997314453125,11.46728515625],[11.46728515625,14.96893310546875],[14.96893310546875,22.406005859375]];
  const receipts={cold:[],loaded:[],warm:[]};let release,seen=false,hold=true;const held=new Promise(resolve=>{release=resolve;});
  const key='message-boundary-admission',fontUrl=`/apps/web/assets/fonts/Manrope-variable.ttf?${key}`;
  await page.route('**/apps/web/shell/refresh.css',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text()).replace('../assets/fonts/Manrope-variable.ttf',fontUrl)});});
@@ -69,11 +69,13 @@ test('measured font boundaries keep cold, loaded and settled-reload row envelope
   const result=[];
   for(const scale of [100,200]){
    await page.evaluate(scale=>{document.documentElement.style.fontSize=`${scale}%`;},scale);
+   const before=await anchors(page);
    result.push(...await page.evaluate(({scale,bands})=>{
     const size=parseFloat(getComputedStyle(document.querySelector('.board-message-slot')).fontSize);
-    const widths=[...new Set([280,296,334.375,366.8,491.6,800,...(scale===200?[326.125,326.25,326.5,326.75,327]:[]),...bands.flatMap(([lower,upper])=>[lower*size-.5,lower*size,lower*size+.5,(lower+upper)*size/2,upper*size-.5,upper*size,upper*size+.5])])].filter(width=>width>=280&&width<=800).sort((a,b)=>a-b);
-    return widths.map(width=>({scale,...window.fontEnvelope(width)}));
+    const widths=[...new Set([272,273.59375,280,296,334.375,349.5,355.5,365,365.5,366.8,471.5,491.6,696,699.5,800,...(scale===200?[326.125,326.25,326.5,326.75,327]:[]),...bands.flatMap(([lower,upper])=>[lower*size-.125,lower*size,lower*size+.125,(lower+upper)*size/2,upper*size-.125,upper*size,upper*size+.125])])].filter(width=>width>=8.5*size&&width<=800).sort((a,b)=>a-b);
+    return widths.map(width=>({scale,...window.fontEnvelope(width),intrinsicPrimary:window.fontEnvelope(width,{intrinsic:true}).primary}));
    },{scale,bands}));
+   sameAnchors(before,await anchors(page));
   }
   return result;
  };
@@ -87,9 +89,10 @@ test('measured font boundaries keep cold, loaded and settled-reload row envelope
   for(let index=0;index<receipts.cold.length;index++){
    const cold=receipts.cold[index],loaded=receipts.loaded[index],warm=receipts.warm[index],label=`${cold.scale}% / ${cold.width}px`;
    expect(loaded.primary,`${label} primary fits permanent fallback`).toBeLessThanOrEqual(loaded.fallback+.1);
+   expect(loaded.intrinsicPrimary,`${label} intrinsic primary fits reservation`).toBeLessThanOrEqual(Math.max(loaded.primary,loaded.fallback)+.1);
    expect(Math.max(cold.primary,cold.fallback),`${label} cold to loaded`).toBeCloseTo(Math.max(loaded.primary,loaded.fallback),5);
    expect(Math.max(warm.primary,warm.fallback),`${label} settled reload`).toBeCloseTo(Math.max(loaded.primary,loaded.fallback),5);
-   if(cold.scale===100)expect(Math.max(loaded.primary,loaded.fallback),`${label} normal three-line bound`).toBeLessThanOrEqual(loaded.rows[0].lineHeight*3);
+   if(cold.scale===100&&cold.width>=272)expect(Math.max(loaded.primary,loaded.fallback),`${label} supported normal three-line bound`).toBeLessThanOrEqual(loaded.rows[0].lineHeight*3);
   }
  }finally{hold=false;release();const path=info.outputPath('font-boundary-admission.json');await writeFile(path,JSON.stringify(receipts,null,2));await info.attach('font-boundary-admission',{path,contentType:'application/json'});}
 });

@@ -16,20 +16,23 @@ body {display:flow-root;}
 .board-message-sizing, .board-heading-sizing {visibility:hidden;pointer-events:none;user-select:none;}
 .board-message-fallback-sizing {font-family:var(--font-family-fallback);}
 .board-message-fallback-sizing :is(.board-preview-coordinate-chip,.board-preview-highlight-chip,.board-preview-retreat-chip,.board-preview-inline-button) {font-family:inherit;}
-/* Measured primary/fallback wrap frontiers, expressed in the message's own
-   1rem basis. Only uncovered ranges reserve another real 1.5em line. The
-   permanent formatter replicas still determine every other height. Current
-   macOS browser measurements require separate Linux boundary admission. */
-@container board-message (min-width:10.1875em) and (width < 10.53125em) {
+/* Conservative intrinsic Manrope row frontiers measured across all three
+   macOS/Linux engines at 100/200%, in this container's explicit 1rem basis.
+   The permanent fallback replicas can still reserve more space. Evidence
+   starts at 8.5em; narrower unsupported widths keep their intrinsic sizing. */
+@container board-message (min-width:8.5em) and (width < 8.5628662109375em) {
+  .board-message-sizing {min-height:10.5em;}
+}
+@container board-message (min-width:8.5628662109375em) and (width < 10.5997314453125em) {
   .board-message-sizing {min-height:9em;}
 }
-@container board-message (min-width:11.125em) and (width < 11.40625em) {
+@container board-message (min-width:10.5997314453125em) and (width < 11.46728515625em) {
   .board-message-sizing {min-height:7.5em;}
 }
-@container board-message (min-width:14.75em) and (width < 14.90625em) {
+@container board-message (min-width:11.46728515625em) and (width < 14.96893310546875em) {
   .board-message-sizing {min-height:6em;}
 }
-@container board-message (min-width:21.875em) and (width < 22.4375em) {
+@container board-message (min-width:14.96893310546875em) and (width < 22.406005859375em) {
   .board-message-sizing {min-height:4.5em;}
 }
 .board-heading-slot {display:grid;grid-template-columns:minmax(0,1fr);min-width:0;}
