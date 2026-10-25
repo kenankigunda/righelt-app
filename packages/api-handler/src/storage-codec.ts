@@ -5,8 +5,12 @@ export class StorageWriteLimitError extends Error {
   constructor() { super("storage_payload_too_large"); this.name = "StorageWriteLimitError"; }
 }
 export const stateReadLimits: StorageLimits = Object.freeze({ rawBytes: STORAGE_POLICY.maximumStateBytes, storedBytes: STORAGE_POLICY.maximumLegacyStateBytes });
-export const stateWriteLimits = (env: { STORAGE_LARGE_STATES_ENABLED?: string }): StorageLimits => ({
-  rawBytes: env.STORAGE_LARGE_STATES_ENABLED === "true" ? STORAGE_POLICY.maximumStateBytes : STORAGE_POLICY.maximumLegacyStateBytes,
+type WriterScope = { STORAGE_WRITER_CANARY_GAME_ID?: string };
+// A scoped deployment changes only the recorded canary. Readers are never scoped.
+export const storageWriterEnabled = (env: WriterScope, flag: string | undefined, gameId?: string) =>
+  flag === "true" && (!env.STORAGE_WRITER_CANARY_GAME_ID || env.STORAGE_WRITER_CANARY_GAME_ID === gameId);
+export const stateWriteLimits = (env: WriterScope & { STORAGE_LARGE_STATES_ENABLED?: string }, gameId?: string): StorageLimits => ({
+  rawBytes: storageWriterEnabled(env, env.STORAGE_LARGE_STATES_ENABLED, gameId) ? STORAGE_POLICY.maximumStateBytes : STORAGE_POLICY.maximumLegacyStateBytes,
   storedBytes: STORAGE_POLICY.maximumStoredStateBytes,
 });
 const limitsFor = (limits: number | StorageLimits): StorageLimits => {
