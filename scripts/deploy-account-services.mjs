@@ -62,6 +62,9 @@ export function validateStorageDeployment(env,source) {
   if(env.RIGHELT_STORAGE_METADATA_WRITES_ENABLED==="true" && (env.RIGHELT_STORAGE_COMPRESSION!=="true" || !/^[a-f0-9]{40}$/.test(env.RIGHELT_STORAGE_METADATA_READER_SHA||"")))throw Error("Metadata writes require compression and a verified reader deployment revision");
   if(!["true","false"].includes(env.RIGHELT_STORAGE_LARGE_STATES_ENABLED||"false"))throw Error("Large-state activation must be true or false");
   if(env.RIGHELT_STORAGE_LARGE_STATES_ENABLED==="true" && (env.RIGHELT_STORAGE_COMPRESSION!=="true" || !/^[a-f0-9]{40}$/.test(env.RIGHELT_STORAGE_LARGE_STATES_READER_SHA||"")))throw Error("Large-state writes require compression and a verified reader deployment revision");
+  const canary = env.RIGHELT_STORAGE_WRITER_CANARY_GAME_ID || "";
+  if(canary && !/^game-[a-f0-9]{32}$/.test(canary))throw Error("Writer canary requires one explicit game ID");
+  if(canary && env.RIGHELT_STORAGE_LARGE_STATES_ENABLED!=="true" && env.RIGHELT_STORAGE_METADATA_WRITES_ENABLED!=="true")throw Error("Writer canary requires an enabled writer");
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
@@ -89,6 +92,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         `STORAGE_LARGE_STATES_ENABLED:${process.env.RIGHELT_STORAGE_LARGE_STATES_ENABLED || "false"}`,
         "--var",
         `STORAGE_METADATA_WRITES_ENABLED:${process.env.RIGHELT_STORAGE_METADATA_WRITES_ENABLED || "false"}`,
+        "--var",
+        `STORAGE_WRITER_CANARY_GAME_ID:${process.env.RIGHELT_STORAGE_WRITER_CANARY_GAME_ID || ""}`,
         "--var",
         `AUTH_ALLOWED_ORIGINS:${origin}`,
         "--var",
