@@ -1,3 +1,5 @@
+import {assertAccountEntry,revealAccountControl,revealGameNavigation,selectGamePanel} from '../scripts/validation/browser-navigation.mjs';
+import {assertMovePreview} from '../scripts/validation/browser-move.mjs';
 import {patchAccountPreferences} from "../scripts/validation/account-preferences.mjs";
 import {test,expect} from '@playwright/test';
 import {closeHostInvitation,continueFriendIntroduction} from '../e2e/support/app.mjs';
@@ -25,13 +27,13 @@ async function submitPlayableAction(page,action,info){
   page.on('request',observe);
   try{
   const cell=p=>page.locator(`[data-testid="game-board"] .cell[data-row="${p.row}"][data-col="${p.col}"]`);
+  await selectGamePanel(page,'board');
   const target=cell(action.to);await cell(action.from).click();
   if(capabilities.movePreview){
     // Preview runtime: the first destination activation arms the preview on
     // both pointer types; a touch click is not a separate selection step.
     await target.click();
-    await expect(page.locator('#shell-board-preview-label')).toBeVisible();
-    await expect(page.locator('#shell-board-preview-label')).toContainText('Preview. Activate this destination again to play.');
+    await assertMovePreview(page,target);
     expect(writes).toBe(0);expect(await count(page)).toBe(before);
     await mobileNavigationClear(page);
     await proof(page,info,'move-preview-before-confirm',page.getByTestId('game-board'));
@@ -63,15 +65,16 @@ async function fits(page,locator){
 async function mobileNavigationClear(page){
   if(await page.locator('#app').getAttribute('data-shell-layout-mode')!=='narrow')return;
   await page.getByTestId('game-board').evaluate(element=>element.scrollIntoView({block:'start',behavior:'instant'}));
+  await revealGameNavigation(page);
   // Both the expanded preview and the collapsed legacy help must leave the
   // navigation usable after the journey has scrolled the real document.
   await expect.poll(()=>page.evaluate(()=>{
     const help=document.querySelector('[data-zone="game-help"]');
     const navigation=document.querySelector('.shell-mobile-tabbar');
     const tabs=[...document.querySelectorAll('.shell-mobile-tabbar .shell-mobile-tab')];
-    if(!help||!navigation)return false;
-    const helpRect=help.getBoundingClientRect(),navRect=navigation.getBoundingClientRect();
-    return tabs.length===3&&helpRect.bottom<=navRect.top+1&&tabs.every(tab=>{
+    if(!navigation)return false;
+    const navRect=navigation.getBoundingClientRect();
+    return tabs.length===3&&(!help||help.getBoundingClientRect().bottom<=navRect.top+1)&&tabs.every(tab=>{
       const rect=tab.getBoundingClientRect();
       return rect.top>=0&&rect.bottom<=innerHeight+1&&rect.left>=0&&rect.right<=innerWidth+1
         &&tab.contains(document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2));
@@ -93,14 +96,13 @@ async function settledHome(page){
   // to the visible action and completed loaders, not the presence of game cards.
   await expect(page.getByTestId('home-create-game')).toBeEnabled();
 }
-async function accountOpen(page){await page.getByRole('button',{name:'Account',exact:true}).click();await expect(dialog(page)).toBeVisible();}
+async function accountOpen(page){await (await revealAccountControl(page)).click();await expect(dialog(page)).toBeVisible();}
 async function openSignedOutAccount(page){
   if(!capabilities.playAccountEntry){
     await page.getByRole('button',{name:'Sign in',exact:true}).click();
   }else{
     if(capabilities.alwaysVisibleAccount){
-      await expect(page.getByTestId('account-open')).toBeVisible();
-      await expect(page.getByTestId('account-open')).toHaveAttribute('data-authenticated','false');
+      await assertAccountEntry(page,{authenticated:false});
     }else await expect(page.getByTestId('account-open')).toHaveCount(0);
     if(new URL(page.url()).hash.startsWith('#/game/')){
       // A board click opens only account access, without a game or move intent.
@@ -263,8 +265,7 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   await dialog(page).getByRole('button',{name:'Sign out',exact:true}).click();
   if(capabilities.playAccountEntry){
     if(capabilities.alwaysVisibleAccount){
-      await expect(page.getByTestId('account-open')).toBeVisible();
-      await expect(page.getByTestId('account-open')).toHaveAttribute('data-authenticated','false');
+      await assertAccountEntry(page,{authenticated:false});
     }else await expect(page.getByTestId('account-open')).toHaveCount(0);
     await expect.poll(async()=>(await session(page)).authenticated).toBe(false);
   }else await expect(page.getByRole('button',{name:'Sign in',exact:true})).toBeVisible();

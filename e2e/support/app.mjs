@@ -1,3 +1,4 @@
+import {selectGamePanel} from '../../scripts/validation/browser-navigation.mjs';
 import {readPlayableAction} from "./read-playable-action.mjs";
 import { expect, test } from "@playwright/test";
 
@@ -282,8 +283,7 @@ export const makeAnyLegalMove = async (page, ownerClass = "p1") => {
 
   // Read the actual client: describe-level and popup settings can differ from the project defaults.
   if (await page.evaluate(() => navigator.maxTouchPoints > 0)) {
-    const boardTab = page.locator('[data-action="switch-game-panel"][data-panel="board"]');
-    if (await boardTab.isVisible()) await boardTab.tap();
+    await selectGamePanel(page,'board');
     await sourceCell.tap();
     await expect(sourceCell).toHaveClass(/selected-piece/);
     await expect(targetCell.locator('.move-ghost')).toBeVisible();
@@ -309,13 +309,10 @@ export const openHistoryAndReturnLive = async (page) => {
 };
 
 export const openHistoryMode = async (page, moveIndex = 0) => {
-  const tab = page.locator('[data-action="switch-game-panel"][data-panel="history"]');
   // Deliberately reveal the panel instead of scrolling a transformed offscreen pane.
   await expect(page.locator("#app")).toHaveAttribute("data-shell-layout-mode", /^(narrow|wide)$/);
   if (await page.locator("#app").getAttribute("data-shell-layout-mode") === "narrow") {
-    await expect(tab).toBeVisible();
-    await tab.click();
-    await expect(tab).toHaveAttribute("aria-pressed", "true");
+    await selectGamePanel(page,'history');
   }
   await expect(historyMoveItems(page).nth(moveIndex)).toBeVisible();
   await historyMoveItems(page).nth(moveIndex).click();
