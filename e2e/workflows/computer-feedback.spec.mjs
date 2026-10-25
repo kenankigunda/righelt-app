@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {ACTION_CONTRACT_HEADER,ACTION_CONTRACT_VERSION} from '../../apps/web/generated/packages/shared-types/src/sync-protocol.js';
 import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
 
 test.use({viewport:{width:390,height:740},hasTouch:true});
@@ -21,14 +22,15 @@ const readyAttempt=route=>{const body=route.request().postDataJSON();return body
 
 test('computer save failures take priority while the delayed saving notice stays available without shifting the board',async({page,context},info)=>{
   const game=await createBabs(page);
-  let holdGameplay=true,attemptSeen=false;
+  let holdGameplay=true,attemptSeen=false,originalCommand;const submissions=[];
   // The proof save keeps its normal five-second failure budget. Lose only
   // the durable gameplay submission; real reconciliation and leases stay live.
-  await context.route('**/apply',async route=>{if(holdGameplay&&route.request().postDataJSON()?.payload?.computer){attemptSeen=true;await route.abort();return;}await route.continue();});
+  await context.route('**/apply',async route=>{const command=route.request().postDataJSON();if(command?.payload?.computer){originalCommand??=command;submissions.push({id:command.clientCommandId,generation:command.payload.computer.generation});if(holdGameplay){attemptSeen=true;await route.abort();return;}}await route.continue();});
   try{
     const before=await geometry(page);
     await page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true}).tap();
     await expect.poll(()=>attemptSeen,{timeout:30000}).toBe(true);
+    const heldLease=(await page.evaluate(readProjectedGame,{id:game.id,guest:true})).computer.lease;
     await expect(notice(page)).toHaveCount(0);
     await expect(page.locator('#shell-board-preview-label')).not.toContainText('Select a piece');
     await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toHaveCount(0);
@@ -49,12 +51,25 @@ test('computer save failures take priority while the delayed saving notice stays
     expect(await geometry(page)).toEqual(before);
     await settleNotice(page);
     await page.screenshot({path:info.outputPath('computer-delayed-saving.png')});
+    expect(heldLease.expiresAt).toBeLessThanOrEqual(Date.now());
     holdGameplay=false;
-    await waitForComputerDecision(page,game.id,'babs',{guest:true});
+    // The original command can be durably rejected after its lease expires.
+    // Allow automatic reacquisition to settle before judging the final result.
+    // A transient recovery card here does not establish a terminal failure.
+    await expect.poll(()=>page.evaluate(readProjectedGame,{id:game.id,guest:true,expectedComputer:{modelId:'initial-1554',profile:'babs'}}),{timeout:30000}).toBeTruthy();
     await expect(notice(page)).toHaveCount(0);
     expect(await geometry(page)).toEqual(before);
     const saved=await page.evaluate(readProjectedGame,{id:game.id,guest:true});
-    expect(saved.moves.some(move=>move.computerProof?.modelId==='initial-1554')).toBe(true);
+    const committed=saved.moves.filter(move=>move.computerProof?.modelId==='initial-1554');
+    expect(committed).toHaveLength(1);
+    expect(saved.computer.generation).toBeGreaterThan(originalCommand.payload.computer.generation);
+    expect(committed[0].clientCommandId).not.toBe(originalCommand.clientCommandId);
+    expect(committed[0].computerProof.generation).toBe(saved.computer.generation);
+    // Read the original durable receipt without submitting or replacing it.
+    const receipt=await context.request.post(`/api/shell/games/${game.id}/reconcile`,{headers:{[ACTION_CONTRACT_HEADER]:String(ACTION_CONTRACT_VERSION)},data:{protocolVersion:2,identityId:originalCommand.identityId,knownSnapshotEventSeq:0,commands:[originalCommand]}});
+    expect(receipt.ok()).toBe(true);
+    expect((await receipt.json()).commandOutcomes).toEqual([expect.objectContaining({clientCommandId:originalCommand.clientCommandId,fingerprint:originalCommand.fingerprint,outcome:'rejected',reason:'computer_control_changed'})]);
+    for(const generation of new Set(submissions.map(command=>command.generation)))expect(new Set(submissions.filter(command=>command.generation===generation).map(command=>command.id)).size).toBe(1);
   }finally{holdGameplay=false;await context.unrouteAll({behavior:'wait'});}
 });
 
