@@ -95,9 +95,12 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toBeVisible();
  game=await currentGame(page,gameId);expect(game.board.state.continuation.phase).toBe("retreat");
 
- await expect(page.locator("#shell-board-preview-label")).toContainText("Select a retreat");
- // The tentative retreat stays visible, but no command is allowed while the
- // accepted push's response is still unknown. The quiet banner is not readiness.
+ const message=page.locator("#shell-board-preview-label");
+ await expect(message).toContainText('Piece at 4,2');
+ await expect(message).toContainText('Supply and command lines');
+ await expect(message.locator('[data-board-preview-action],[data-board-message-action]')).toHaveCount(0);
+ // The selected piece remains inspectable, but continuation CTAs must stay
+ // hidden while the accepted push's response is still unknown.
  const retreat=game.legalActions.find(a=>a.type==="retreat");expect(retreat).toBeTruthy();
  const retreatTarget=page.locator(`[data-testid="game-board"] .cell[data-row="${retreat.to.row}"][data-col="${retreat.to.col}"]`);
 
@@ -114,15 +117,19 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  holdConfirmation=false;releaseConfirmation();
  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0,{timeout:10000});
  await page.screenshot({path:info.outputPath("retreat-recovered.png")});
-
+ // Admission is restored only by the definitive original receipt. Verify the
+ // required defender's legal destination before confirming the actual retreat.
+ await expect(message).toContainText("Select a retreat");
  await submitPlayableAction(page,retreat);
  await expect.poll(async()=> (await currentGame(page,gameId)).board.state.continuation?.phase).toBe("follow");
  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0,{timeout:10000});
  game=await currentGame(page,gameId);const follow=game.legalActions.find(a=>a.type==="follow");expect(follow).toBeTruthy();
- await expect(page.locator(`[data-testid="game-board"] .cell[data-row="${follow.from.row}"][data-col="${follow.from.col}"]`)).toHaveClass(/(?:^|\s)source(?:\s|$)/);
+ // The required continuation actor is already selected, even when a pushed
+ // defender shares its square with the attacker and has no generic source class.
  await submitPlayableAction(page,follow);
  await expect.poll(async()=> (await currentGame(page,gameId)).moves.length).toBe(3);
  game=await currentGame(page,gameId);expect(game.board.state.continuation).toBeNull();
+ expect(game.moves.map(move=>move.action)).toEqual([push,retreat,follow]);
  expect(new Set(game.moves.map(m=>m.clientCommandId)).size).toBe(3);
  expect(new Set(commands.filter(c=>actionFor(c)?.type==="push").map(c=>c.clientCommandId)).size).toBe(1);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
@@ -175,9 +182,12 @@ for(const reduced of [false,true])test(`routine reconnect stays quiet four secon
  await page.clock.runFor(199);await expect(page.locator('.board-wrap')).toHaveAttribute('data-loading-phase','quiet');
  await page.clock.runFor(2);await expect(page.locator('.board-wrap')).toHaveAttribute('data-loading-phase','visible');
  await expect(page.locator('.reconnect-background')).toBeHidden();
+ // Phase publication schedules the Edge via MutationObserver then rAF. Give
+ // that rendering turn its clock time rather than waiting on a frozen clock.
+ await page.clock.runFor(16);
  await expect(page.locator('.loading-edge-p1')).toBeVisible();
  await page.evaluate(()=>{window.heldRecoveryEdge=document.querySelector('.loading-edge-p1');});
- await page.clock.runFor(3798);await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
+ await page.clock.runFor(3782);await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  await page.clock.runFor(2);
  await expect(page.getByTestId("sync-recovery-banner")).toBeVisible();
  await expect(page.getByTestId("sync-recovery-banner")).toHaveText("Reconnecting");
