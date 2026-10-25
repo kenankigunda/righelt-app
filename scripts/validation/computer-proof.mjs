@@ -75,7 +75,7 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     const source = (await request(page, '/api/shell/scenarios/import', { scenario, protocolVersion: 2 })).game;
     const finalDecision = source.moves.at(-1);
     assert.ok(finalDecision?.moveId);
-    const branched = (await request(page, '/api/shell/history/branch', { sourceGameId: source.id, sourceDecisionId: finalDecision.moveId, creatorSide: 'p2', computer: { p1: 'babs', p2: null } })).game;
+    const branched = (await request(page, '/api/shell/history/branch', { sourceGameId: source.id, sourceDecisionId: finalDecision.moveId, creatorSide: 'p2', computer: { p1: 'babs', p2: null }, computerModelId: capabilities.currentComputerModel.id })).game;
     assert.equal(branched.computer.modelId, capabilities.currentComputerModel.id);
     assert.equal(branched.board.state.outcome.status, 'ongoing');
     assert.deepEqual(branched.board.state, finalDecision.selectionSnapshot);

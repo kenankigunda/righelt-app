@@ -25,6 +25,7 @@ test('real computer proof binds decisions to each created game model without an 
  assert.match(source,/assert\.equal\(initial\.computer\.modelId, capabilities\.currentComputerModel\.id\)/);
  assert.match(source,/move\.computerProof\?\.modelId === initial\.computer\.modelId/);
  assert.match(source,/assert\.equal\(decision\.computerProof\.modelId, initial\.computer\.modelId\)/);
+ assert.match(source,/request\(page, '\/api\/shell\/history\/branch', \{[^\n]+computerModelId: capabilities\.currentComputerModel\.id/);
  assert.match(source,/assert\.equal\(branched\.computer\.modelId, capabilities\.currentComputerModel\.id\)/);
  assert.match(source,/assert\.equal\(finished\.moves\.at\(-1\)\.computerProof\?\.modelId, branched\.computer\.modelId\)/);
  assert.match(source,/assert\.equal\(fresh\.computer\.modelId, capabilities\.currentComputerModel\.id\)/);
