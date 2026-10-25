@@ -1,6 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildStaticGameCardFromGame, buildStaticGameCardFromScenario, normalizeStaticGameCard } from "../shell/static-game-cards.js";
+import { buildStaticGameCardFromGame, buildStaticGameCardFromScenario, normalizeStaticGameCard, computerOpponentLabel } from "../shell/static-game-cards.js";
+
+test('computer identity survives list normalization and full-game refresh on either side', () => {
+  for (const profile of ['babs', 'tau', 'horus']) for (const side of ['player1', 'player2']) {
+    const input = { id:'computer', myRole:'Player 1', player1:{identityId:'owner'}, player2:{identityId:'owner'} };
+    input[side].computerProfile = profile;
+    for (const card of [normalizeStaticGameCard(input), buildStaticGameCardFromGame(input)]) {
+      assert.equal(card[side].computerProfile, profile);
+      assert.equal(computerOpponentLabel(card), `You vs ${profile[0].toUpperCase()}${profile.slice(1)}`);
+    }
+  }
+});
+
+test('watched games and genuine self-play remain distinct', () => {
+  assert.equal(computerOpponentLabel({player1:{computerProfile:'babs'},player2:{computerProfile:'tau'}}), 'Babs vs Tau');
+  assert.equal(computerOpponentLabel({myRole:'Viewer',player2:{computerProfile:'tau'}}), 'Tau · Computer');
+  const self = normalizeStaticGameCard({player1:{identityId:'owner'},player2:{identityId:'owner'}});
+  assert.equal(computerOpponentLabel(self), null);
+  assert.equal(normalizeStaticGameCard({player1:{identityId:'owner',computerProfile:'invalid'}}).player1.computerProfile, null);
+});
 
 test("static game cards normalize list payloads without requiring full game state", () => {
   const card = normalizeStaticGameCard({

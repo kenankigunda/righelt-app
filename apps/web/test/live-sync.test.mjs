@@ -433,7 +433,7 @@ test("live sync does not send websocket ack frames after receiving events", asyn
   }
 });
 
-test("live sync sends beacon-backed disconnect hints on offline and reconnects on online", async () => {
+test("offline hints preserve a healthy socket and online triggers an authoritative refresh", async () => {
   const originalWs = globalThis.WebSocket;
   const originalWindow = globalThis.window;
   const originalDocument = globalThis.document;
@@ -474,8 +474,8 @@ test("live sync sends beacon-backed disconnect hints on offline and reconnects o
     windowMock.dispatchEvent("offline");
     await flushAsync(0);
 
-    assert.equal(beacons.length, 1);
-    assert.equal(String(beacons[0].url), "http://localhost:8789/api/shell/games/g-online/presence");
+    assert.equal(beacons.length, 0);
+    assert.equal(MockSocket.instances[0].readyState,1);
     assert.equal(fetchCalls.length, 0);
 
     globalThis.navigator.onLine = true;
@@ -699,13 +699,13 @@ test("socket failures reconcile immediately but retain increasing capped reconne
   globalThis.WebSocket = MockSocket; globalThis.window = createMockWindow(); globalThis.document = createMockDocument();
   MockSocket.instances = []; Math.random = () => 0.5;
   t.mock.timers.enable({apis:["setTimeout"]});
-  const client = createLiveSyncClient({identityId:"backoff-test",onEvent(){},onRecovery:event=>recoveries.push(event),onReconcile:async()=>{reconciles++;if(httpUnavailable)throw new Error("offline");},reconnectBaseMs:5,reconnectMaxMs:20,onMetric:metric=>{if(metric.type==="reconnect_scheduled")delays.push(metric.delayMs);}});
+  const client = createLiveSyncClient({identityId:"backoff-test",onEvent(){},onRecovery:event=>recoveries.push(event),onReconcile:async()=>{reconciles++;if(httpUnavailable)throw new Error("offline");},reconnectBaseMs:5,reconnectMaxMs:20,degradedPollMs:1000,onMetric:metric=>{if(metric.type==="reconnect_scheduled")delays.push(metric.delayMs);}});
   try {
     client.connectGame("backoff-game");
     for (const [index,delay] of [5,10,20,20].entries()) {
       const socket = MockSocket.instances.at(-1); socket.emit("open"); socket.close();
       for(let i=0;i<10;i++)await Promise.resolve();
-      assert.equal(reconciles,index+1,"HTTP finishes before the socket retry");
+      assert.equal(reconciles,1,"background socket retries share the successful HTTP evidence until its poll is due");
       assert.equal(MockSocket.instances.length,index+1);
       t.mock.timers.tick(delay-1); assert.equal(MockSocket.instances.length,index+1);
       t.mock.timers.tick(1); assert.equal(MockSocket.instances.length,index+2);
@@ -715,6 +715,7 @@ test("socket failures reconcile immediately but retain increasing capped reconne
     httpUnavailable = true;
     MockSocket.instances.at(-1).close();
     for(let i=0;i<10;i++)await Promise.resolve();
+    t.mock.timers.tick(1000);for(let i=0;i<30;i++)await Promise.resolve();
     assert.equal(recoveries.at(-1).reason,"reconciliation_failed","failed HTTP fallback must immediately restore blocking");
     assert.equal(recoveries.at(-1).background,undefined);
     httpUnavailable = false;
@@ -730,23 +731,49 @@ test("socket failures reconcile immediately but retain increasing capped reconne
 });
 
 test("new cursor evidence supersedes a held background HTTP repair", async t => {
-  const recoveries = []; let repairs = 0, release;
+  const recoveries = [], reconciled = []; let repairs = 0, release;
   const client = controlledClient(t, {
     getLastEventSeq: () => 1,
+    degradedPollMs:10,
     onRecovery: event => recoveries.push(event),
+    onMetric: metric => { if (metric.type === "recovery_reconciled") reconciled.push(metric); },
     onReconcile: async () => { if (++repairs === 2) await new Promise(resolve => { release = resolve; }); },
   });
   client.connectGame("g"); MockSocket.instances[0].close();
   await until(() => MockSocket.instances.length === 2);
   MockSocket.instances[1].close();
-  await until(() => repairs === 2 && MockSocket.instances.length === 3);
+  await until(() => repairs === 2 && MockSocket.instances.length >= 3);
   assert.equal(recoveries.at(-1).background, true);
-  MockSocket.instances[2].emit("message", { data: JSON.stringify({ type:"heartbeat_ack", protocolVersion:2, gameId:"g", eventSeq:9 }) });
+  MockSocket.instances.at(-1).emit("message", { data: JSON.stringify({ type:"heartbeat_ack", protocolVersion:2, gameId:"g", eventSeq:9 }) });
   assert.equal(recoveries.at(-1).background, false);
   assert.equal(recoveries.at(-1).superseded, true);
   assert.equal(recoveries.at(-1).reason, "behind_server");
   await until(() => repairs === 3);
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  const reconciledBeforeRelease = reconciled.length;
+  assert.equal(reconciled.filter(metric => metric.reason === "behind_server").length, 1, "fresh cursor recovery must reconcile before releasing superseded work");
   release();
-  await flushAsync(5);
+  // Settle the held promise's callbacks without advancing the independent
+  // normal degraded-poll timer. A wall-clock sleep can include that next poll.
+  for (let i = 0; i < 10; i++) await Promise.resolve();
   assert.equal(repairs, 3, "late superseded work cannot replace the fresh recovery owner");
+  assert.equal(reconciled.length, reconciledBeforeRelease, "superseded completion cannot publish recovery evidence");
+});
+
+test("a false offline hint permits connection attempts",async(t)=>{
+ const client=controlledClient(t);
+ globalThis.navigator.onLine=false;
+ client.connectGame("g");
+ assert.equal(MockSocket.instances.length,1);
+});
+
+test("blocked sockets keep polling HTTP without reopening recovery and stop on disconnect",async(t)=>{
+ let reads=0;const recoveries=[];
+ const client=controlledClient(t,{initialSnapshotTimeoutMs:8,reconnectBaseMs:2,reconnectMaxMs:3,degradedPollMs:10,degradedSlowAfterMs:25,degradedSlowPollMs:30,
+ onReconcile:async()=>{reads++;},onRecovery:e=>recoveries.push(e)});
+ client.connectGame("g");
+ await until(()=>reads>=3);
+ assert.equal(recoveries.filter(e=>!e.background).length,1);
+ client.disconnectGame("g");const before=reads;
+ await flushAsync(45);assert.equal(reads,before);
 });

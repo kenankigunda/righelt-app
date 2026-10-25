@@ -1,4 +1,4 @@
-import { withCutoverPolicy, maintenanceAllowed } from './account-cutover';
+import { withCutoverPolicy, maintenanceAllowed, type CutoverEnv } from './account-cutover';
 import { enrichAccountNames } from './account-profiles';
 import type { AuthDatabase } from './auth-db';
 import { AUTH_PROTOCOL_VERSION } from '../../shared-types/src/auth-policy.js';
@@ -8,8 +8,9 @@ import { authCookie, readAuthCookie } from './auth-security';
 import { AuthProblem } from './auth-controls';
 import { handleAuthRequest, type AuthEnv } from './auth-handler';
 import type { ClientCommand, ServerEvent } from "../../shared-types/src";
+import { LIVE_HISTORY, ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION } from "../../shared-types/src/sync-protocol";
 import { CACHE_NO_STORE } from "../../shared-types/src/http";
-import { GameRoomDO } from "./game-room-do";
+import { GameRoomDO, compactHistoryResponse } from "./game-room-do";
 import { handleLiveGameRequest, handleLiveGameWebSocketUpgrade } from "./shell-live";
 
 import type { D1DatabaseLike } from "./shell-live-db";
@@ -17,7 +18,7 @@ import { assertStorageGeneration } from "./storage-generation";
 import { STORAGE_GENERATION_HEADER } from "../../shared-types/src/storage-policy";
 export type { D1DatabaseLike } from "./shell-live-db";
 
-export type ApiEnv = {
+export type ApiEnv = CutoverEnv & {
   STORAGE_GENERATION?: string;
   AUTH_ENABLED?: string;
   AUTH_ALLOWED_ORIGINS?: string;
@@ -65,8 +66,30 @@ const handleApiRequestInternal = async (request: Request, env: ApiEnv): Promise<
     return websocketUpgrade;
   }
   const initialAuthority = authActive(env) ? await readGameAuthority(request, env) : null;
+  const initialPolicy = JSON.stringify([env.AUTH_ENABLED, env.AUTH_REQUIRED, env.ACCOUNT_POLICY]);
   const liveResponse = await handleLiveGameRequest(request, env);
   if (liveResponse?.handled) {
+    if ("response" in liveResponse) {
+      const response = liveResponse.response;
+      // The room owns JSON projection/sanitization. Recheck small authority and
+      // policy records here without decoding its potentially multi-MB response.
+      try {
+        env = await withCutoverPolicy(env);
+        if (initialPolicy !== JSON.stringify([env.AUTH_ENABLED, env.AUTH_REQUIRED, env.ACCOUNT_POLICY])) throw new AuthProblem("temporarily_unavailable", 503);
+        const authority = authActive(env) ? await readGameAuthority(request, env) : null;
+        if (initialAuthority && (!authority || authority.contextId !== initialAuthority.contextId)) throw new AuthProblem("session_changed", 409);
+        const headers = new Headers(response.headers);
+        headers.set("cache-control", CACHE_NO_STORE);
+        if (authActive(env) && request.method === "POST" && response.status < 400) {
+          const actor = await authenticatedActor(request, env as unknown as AuthEnv), token = readAuthCookie(request);
+          if (actor && token) headers.append("Set-Cookie", authCookie(token, Math.max(0, Math.floor((actor.expires_at - actor.read_at) / 1000))));
+        }
+        return new Response(response.body, {status:response.status, statusText:response.statusText, headers});
+      } catch (error) {
+        await response.body?.cancel().catch(() => {});
+        throw error;
+      }
+    }
     if (authActive(env)) liveResponse.body = await enrichAccountNames(liveResponse.body, env.DB as unknown as AuthDatabase);
     env = await withCutoverPolicy(env);
     const authority = authActive(env) ? await readGameAuthority(request, env) : null;
@@ -74,7 +97,7 @@ const handleApiRequestInternal = async (request: Request, env: ApiEnv): Promise<
     const accountGame = (liveResponse.body.game as { ownershipMode?: string } | undefined)?.ownershipMode === "account_v1";
     const body = authActive(env) || accountGame ? sanitizeGameResponse(liveResponse.body, authority, !maintenanceAllowed(env,authority?.accountId)) : liveResponse.body;
     if (authActive(env)) body.authProtocolVersion = AUTH_PROTOCOL_VERSION;
-    const response = json(body, liveResponse.status, liveResponse.cacheControl);
+    const response = json(request.headers.get(LIVE_HISTORY.requestHeader) === LIVE_HISTORY.requestValue ? compactHistoryResponse(body) : body, liveResponse.status, liveResponse.cacheControl);
     if (authActive(env) && request.method === 'POST' && response.status < 400) {
       const actor = await authenticatedActor(request, env as unknown as AuthEnv), token = readAuthCookie(request);
       if (actor && token) response.headers.append('Set-Cookie', authCookie(token, Math.max(0, Math.floor((actor.expires_at - actor.read_at) / 1000))));
@@ -119,11 +142,16 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
   const started = Date.now();
   let response: Response;
   try { response = await handleApiRequestInternal(request, env); }
-  catch (error) { if (authActive(env) || error instanceof AuthProblem) response = authErrorResponse(error); else throw error; }
+  catch (error) {
+    // Keep correlation and generation headers on every application-controlled
+    // failure. A platform-generated 500 cannot carry our recovery evidence.
+    response = authErrorResponse(error);
+  }
   // WebSocket upgrade responses must retain their platform-specific socket.
   if (response.status !== 101) {
     const headers = new Headers(response.headers);
     headers.set("X-Righelt-Request-Id", requestId);
+    headers.set(ACTION_CONTRACT_HEADER, String(ACTION_CONTRACT_VERSION));
     if (env.STORAGE_GENERATION) headers.set(STORAGE_GENERATION_HEADER, env.STORAGE_GENERATION);
     headers.set("X-Righelt-Server-Build", String((env as ApiEnv & { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? "unavailable"));
     response = new Response(response.body, { status: response.status, statusText: response.statusText, headers });

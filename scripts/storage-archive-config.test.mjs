@@ -27,3 +27,17 @@ test('deployment pins generation, revision and migration target',async()=>{
  validateStorageDeployment(env,source);
  for(const change of [{DEPLOY_SHA:''},{RIGHELT_STORAGE_GENERATION:'reset-other'},{CLOUDFLARE_D1_DB_NAME:'old-db'},{RIGHELT_STORAGE_COMPRESSION:'invalid'}])assert.throws(()=>validateStorageDeployment({...env,...change},source));
 });
+
+test('large-state writers require a prior reader revision and compression',async()=>{
+ const {validateStorageDeployment}=await import('./deploy-account-services.mjs');
+ const env={DEPLOY_SHA:'a'.repeat(40),RIGHELT_STORAGE_GENERATION:'reset-986736d3-c72e-4539-9edc-6597847f64e7',RIGHELT_STORAGE_COMPRESSION:'true',RIGHELT_STORAGE_LARGE_STATES_ENABLED:'true',RIGHELT_STORAGE_LARGE_STATES_READER_SHA:'b'.repeat(40)};
+ validateStorageDeployment(env,source);
+ for(const change of [{RIGHELT_STORAGE_LARGE_STATES_READER_SHA:''},{RIGHELT_STORAGE_COMPRESSION:'false'},{RIGHELT_STORAGE_LARGE_STATES_ENABLED:'invalid'}])assert.throws(()=>validateStorageDeployment({...env,...change},source));
+});
+
+test('metadata writers require a prior reader revision and compression',async()=>{
+ const {validateStorageDeployment}=await import('./deploy-account-services.mjs');
+ const env={DEPLOY_SHA:'a'.repeat(40),RIGHELT_STORAGE_GENERATION:'reset-986736d3-c72e-4539-9edc-6597847f64e7',RIGHELT_STORAGE_COMPRESSION:'true',RIGHELT_STORAGE_METADATA_WRITES_ENABLED:'true',RIGHELT_STORAGE_METADATA_READER_SHA:'b'.repeat(40)};
+ validateStorageDeployment(env,source);
+ for(const change of [{RIGHELT_STORAGE_METADATA_READER_SHA:''},{RIGHELT_STORAGE_COMPRESSION:'false'},{RIGHELT_STORAGE_METADATA_WRITES_ENABLED:'invalid'}])assert.throws(()=>validateStorageDeployment({...env,...change},source));
+});

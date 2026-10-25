@@ -13,6 +13,30 @@ import {
   finalizeResolvedTurn,
   getControlSeatForTurn,
 } from "../generated/packages/shared-types/src/shell-live-turn.js";
+import { commandFingerprint } from '../generated/packages/shared-types/src/sync-protocol.js';
+
+test('initial shared capability timeout preserves intent and never submits it', async t => {
+ const game = buildLiveGame(), storage = createMemoryStorage(); storage.setItem(IDENTITY_KEY, 'id-a');
+ const envelope = { protocolVersion: 2, gameId: game.id, identityId: 'id-a', clientCommandId: 'v2:unknown-capability',
+  kind: 'shared', payload: { operation: 'computer-control', values: { action: 'pause' } },
+  expectedState: game.board.state, expectedGameplayRevision: game.gameplayRevision };
+ envelope.fingerprint = await commandFingerprint(envelope);
+ let removed = 0; const reads = [];
+ const store = createLiveTransportStore({ storage, commandJournal: { list: async () => [envelope], remove: async () => { removed++; } },
+  timing: { requestTimeoutMs: 20, recoveryPassMs: 80, retryDelaysMs: [1000], retryJitter: 0 },
+  fetcher: (url, init) => { reads.push({ url, init }); return new Promise(() => {}); } });
+ t.after(() => store.retire());
+ await store.reconcileGame(game.id);
+ assert.ok(reads.length > 0);
+ for (const { init } of reads) {
+  assert.equal(init.method, 'GET'); assert.equal(init.body, undefined);
+  assert.equal(init.headers['X-Righelt-Projection'], 'history-v1');
+  assert.equal(init.signal.aborted, true);
+ }
+ assert.equal(store.getGameViewModel(game.id), null);
+ assert.equal(store.getCommandOutcome(game.id, envelope.clientCommandId), null);
+ assert.equal(store.isUpgradeRequired(game.id), false); assert.equal(removed, 0);
+});
 
 let sentCommands = new Map();
 beforeEach(() => { globalThis.indexedDB = new IDBFactory(); sentCommands = new Map(); });
@@ -1242,11 +1266,16 @@ test("live transport store clears pending command when ws confirms after transpo
 
 test("live transport store does not infer end-turn confirmation from move history command ids", async () => {
   const baseGame = buildLiveGame();
+  const initial = createInitialState();
+  initial.pieces.push(...[['L',3,3],['A',4,4],['B',5,3]].map(([id,row,col])=>({id,owner:'P1',kind:'unit',position:{row,col},supplied:true,commanded:true})),
+    {id:'E',owner:'P2',kind:'unit',position:{row:4,col:2},supplied:true,commanded:true});
+  const state=resolveToStability(applyAction(resolveToStability(initial),{type:'rush',actorId:'A',from:{row:4,col:4},to:{row:4,col:3}}).state);
+  baseGame.board.state=state; baseGame.currentSnapshot=state; baseGame.legalActions=listLegalActions(state);
   const store = createLiveTransportStore({
     storage: createMemoryStorage(),
     fetcher: async (url, init = {}) => {
       if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
-        return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 });
+        return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 }, {headers:{"X-Righelt-Action-Contract":"2"}});
       }
       if (String(url) === `/api/shell/games/${baseGame.id}/end-turn` && init.method === "POST") {
         return new Promise(() => {});
@@ -1755,6 +1784,92 @@ for(const lateCommit of [false,true])test(`uncertain admission ${lateCommit?"com
  assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);assert.equal(store.getGameViewModel(game.id).storageBlocked,false);assert.deepEqual(saved,[]);store.retire();
 });
 
+test('Retry-After delays command and lifecycle reconciliation through the same recovery owner',async t=>{
+ t.mock.timers.enable({apis:['setTimeout','Date'],now:Date.parse('2026-10-25T00:00:00Z')});
+ const game=buildLiveGame(),storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
+ const action=game.legalActions[0],acknowledged=buildAcknowledgedGame(game,action);const requests=[];
+ const store=createLiveTransportStore({storage,commandJournal:{list:async()=>[],admit:async()=>{},remove:async()=>{}},
+ timing:{requestTimeoutMs:5000,recoveryPassMs:10000,confirmationBudgetMs:15000,retryDelaysMs:[10],retryJitter:0},fetcher:async()=>{
+   requests.push(Date.now());
+   if(requests.length===1)return Response.json({ok:false,error:'temporarily_unavailable'},{status:503,headers:{'Retry-After':'2'}});
+   return commandResponse({ok:true,game:acknowledged,eventSeq:2});
+ }});
+ t.after(()=>{store.retire();t.mock.timers.reset();});
+ store.applyLiveGameUpdate({game,eventSeq:1});await store.applyGameAction({gameId:game.id,state:game.board.state,action});
+ for(let i=0;i<30;i++)await Promise.resolve();
+ await assert.rejects(store.reconcileGame(game.id),/retry_delayed/);
+ assert.equal(requests.length,1);
+ t.mock.timers.tick(1999);for(let i=0;i<20;i++)await Promise.resolve();assert.equal(requests.length,1);
+ t.mock.timers.tick(1);for(let i=0;i<50;i++)await Promise.resolve();
+ assert.equal(requests.length,2);assert.ok(requests[1]-requests[0]>=2000);
+ assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);
+});
+
+
+for (const operation of ["computer-control", "revert-request"]) for(const accepted of [true,false]) for(const repair of [null,"connection","snapshot"]) test(`socket ${accepted ? "acceptance" : "rejection"} completes ${operation} while preserving ${repair ?? "no newer"} recovery`,async()=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,"id-live");
+ let envelope,signal;
+ const store=createLiveTransportStore({storage,fetcher:(url,init)=>{
+  envelope=JSON.parse(init.body);signal=init.signal;
+  return new Promise(()=>{});
+ }});
+ const game=buildLiveGame();game.sharedReceipts=true;
+ store.applyLiveGameUpdate({game,eventSeq:1});
+ const completion=operation==="computer-control"?store.computerControl(game.id,{action:"acquire",deviceId:"device",tabId:"tab"}):store.requestRevertToMove({gameId:game.id,targetMoveId:game.moves[0].moveId});
+ const settled=completion.then(()=>({ok:true}),error=>({ok:false,error}));
+ for(let i=0;i<50&&!envelope;i++)await tick();
+ assert.ok(envelope);
+ assert.equal(store.getGameViewModel(game.id).sharedMutationsBlocked,true);
+ if(repair==="connection")store.setConnectionRecovering(game.id,true);
+ if(repair==="snapshot")store.prepareSafeReconnect(game.id);
+ const outcome={gameId:game.id,identityId:envelope.identityId,clientCommandId:envelope.clientCommandId,fingerprint:envelope.fingerprint,outcome:accepted?"accepted":"rejected",reason:accepted?null:"stale_state",eventSeq:2,gameplayRevision:game.gameplayRevision};
+ store.applyLiveGameUpdate({game,eventSeq:2,commandOutcome:outcome});
+ assert.equal((await settled).ok,accepted);
+ assert.equal(signal.aborted,true,"socket confirmation retires the HTTP request");
+ assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);
+ assert.equal(store.getGameViewModel(game.id).recovering,Boolean(repair));
+ assert.equal(store.getGameViewModel(game.id).sharedMutationsBlocked,Boolean(repair));
+ if(repair)store.setConnectionRecovering(game.id,false);
+ if(repair!=="snapshot") {
+  assert.equal(store.getGameViewModel(game.id).canRecordMove,game.canRecordMove);
+  assert.equal(store.getAuthoritativeGame(game.id).canRecordMove,game.canRecordMove);
+ }
+ store.retire();
+});
+
+
+test("invalid socket snapshot followed by empty authoritative reconciliation releases recovery",async()=>{
+ const game=buildLiveGame();
+ const store=createLiveTransportStore({storage:createMemoryStorage(),fetcher:async()=>Response.json({ok:true,protocolVersion:2,gameId:game.id,gameplayRevision:game.gameplayRevision,eventSeq:2,game,commandOutcomes:[]})});
+ store.applyLiveGameUpdate({game,eventSeq:1});
+ store.applyLiveGameUpdate({game,eventSeq:-1});
+ await store.reconcileGame(game.id);
+ assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);
+ assert.equal(store.getGameViewModel(game.id).syncStatus,"ready");
+ assert.equal(store.getGameViewModel(game.id).recovering,false);
+ assert.equal(store.getGameViewModel(game.id).canRecordMove,game.canRecordMove);
+ store.retire();
+});
+
+
+for(const accepted of [true,false]) for(const newerRepair of [false,true]) test(`HTTP shared ${accepted?"acceptance":"rejection"} preserves newer repair=${newerRepair}`,async()=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,"id-live");let envelope,reply;
+ const game=buildLiveGame();game.sharedReceipts=true;
+ const store=createLiveTransportStore({storage,fetcher:(url,init)=>{
+  envelope=JSON.parse(init.body);return new Promise(resolve=>{reply=resolve;});
+ }});
+ store.applyLiveGameUpdate({game,eventSeq:1});
+ const completion=store.computerControl(game.id,{action:"acquire",deviceId:"device",tabId:"tab"}).then(()=>true,()=>false);
+ for(let i=0;i<50&&!envelope;i++)await tick();
+ assert.ok(envelope);
+ if(newerRepair)store.setConnectionRecovering(game.id,true);
+ reply(Response.json({ok:true,protocolVersion:2,gameId:game.id,eventSeq:2,gameplayRevision:game.gameplayRevision,game,commandOutcomes:[{gameId:game.id,identityId:envelope.identityId,clientCommandId:envelope.clientCommandId,fingerprint:envelope.fingerprint,outcome:accepted?"accepted":"rejected",reason:accepted?null:"stale_state",eventSeq:2,gameplayRevision:game.gameplayRevision}]}));
+ assert.equal(await completion,accepted);
+ assert.equal(store.getGameViewModel(game.id).recovering,newerRepair);
+ store.setConnectionRecovering(game.id,false);
+ assert.equal(store.getGameViewModel(game.id).canRecordMove,game.canRecordMove);
+ store.retire();
+});
 
 for(const status of [404,405])for(const protocolVersion of [1,2]) test(`missing reconciliation endpoint ${status} retains bounded protocol ${protocolVersion} discovery without a command submission`,async(t)=>{
  const baseGame=buildLiveGame();let reads=0,reconciles=0;

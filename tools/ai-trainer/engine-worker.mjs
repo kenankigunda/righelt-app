@@ -5,6 +5,7 @@ import { createEngineOperationBudget, EngineExpansionLimit } from './engine-oper
 import { searchRecovery } from './search-recovery.mjs';
 import { decisionProvenance } from './decision-provenance.mjs';
 import { replayDecision } from './decision-replay.mjs';
+import { transitionArchivedAction } from './archived-action.mjs';
 import { trainingExplorationOptions } from './exploration-provenance.mjs';
 import { explorationRecord } from './exploration-record.mjs';
 import { jobBudgetMs } from './worker-budget.mjs';
@@ -120,7 +121,7 @@ async function main() {
     }
     const snapshots = [];
     let state = job.game.rootState ?? job.game.initialState;
-    for (const action of job.game.warmupActions ?? []) { check(); state = transition(state, action); }
+    for (const action of job.game.warmupActions ?? []) { check(); state = transitionArchivedAction(state, action, bounded); }
     if (deterministicStateHash(state) !== deterministicStateHash(job.game.initialState)) throw new Error('Replay warmup mismatch');
     const repetitions = new Map([[ruleFingerprint(state), 1]]);
     for (const [index, record] of job.game.decisions.entries()) {

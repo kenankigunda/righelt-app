@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { IDBFactory } from "fake-indexeddb";
 import { createSyncStore } from "../shell/sync-store.js";
 import { createCommandJournal } from "../shell/command-journal.js";
-import { SYNC_TIMING } from "../generated/packages/shared-types/src/sync-protocol.js";
+import { SYNC_TIMING, commandFingerprint } from "../generated/packages/shared-types/src/sync-protocol.js";
 import { issueDiagnostics } from "../shell/issue-diagnostics.js";
 import apiWorker from "../../api/index.js";
 import { createFakeD1 } from "../../../packages/api-handler/test/support/fake-d1.mjs";
@@ -38,6 +38,23 @@ const setup = async ({ journal: override, timing = {}, fault = (url, init, call)
   const move = async (target = store) => { const game = target.getGameViewModel(gameId); const action = game.legalActions.find((entry) => entry.type === "move") ?? game.legalActions[0]; return target.applyGameAction({ gameId, state: game.currentSnapshot, action }); };
   return { store, create, gameId, move, journal, requests, env, actual };
 };
+
+test("healthy reads do not reopen a resolved command recovery report",async(t)=>{
+  issueDiagnostics.clear();
+  let failOnce=true;
+  const f=await setup({fault:async(url,init,call)=>{
+    if(url.endsWith('/apply')&&failOnce){failOnce=false;throw Error('temporary link failure');}
+    return call();
+  }});
+  t.after(()=>{f.store.retire();issueDiagnostics.clear();});
+  const handle=await f.move();
+  await handle.committed;
+  const report=issueDiagnostics.list().find(r=>r.key===`recovery:${f.gameId}`);
+  assert.ok(report?.resolvedAt);
+  await f.store.loadGame(f.gameId);
+  assert.equal(issueDiagnostics.list().filter(r=>r.key===`recovery:${f.gameId}`).length,1);
+  assert.equal(issueDiagnostics.get(report.id).resolvedAt,report.resolvedAt);
+});
 
 for (const committed of [false, true]) test(`reconcile timeout replays the exact durable command after ${committed ? "lost acceptance" : "lost delivery"}`, async (t) => {
   let applies = 0;
@@ -491,4 +508,110 @@ test("committed A excludes optimistic B and a late A receipt retains newer autho
   f.store.applyLiveGameUpdate({ game: firstBody.game, eventSeq: firstBody.eventSeq, commandOutcome: firstBody.commandOutcomes[0] });
   assert.equal(f.store.getGameViewModel(f.gameId).moves.length, 2);
   releaseSecond();
+});
+
+for(const committed of [false,true])test(`shared undo recovery preserves one durable intent after ${committed?"lost reply":"lost delivery"}`,async(t)=>{
+ let shared=0;const sent=[];
+ const f=await setup({fault:async(url,init,call)=>{
+   if(url.endsWith("/shared")){
+     sent.push(JSON.parse(init.body));
+     if(++shared===1){if(committed)await call();throw Error("shared response lost");}
+   }
+   return call();
+ }});
+ t.after(()=>f.store.retire());
+ const handle=await f.move();await handle.committed;
+ const game=f.store.getGameViewModel(f.gameId),targetMoveId=game.moves.at(-1).moveId;
+ const undo=f.store.requestRevertToMove({gameId:f.gameId,targetMoveId});
+ await undo.committed;
+ assert.ok(sent.length>=1);
+ for(const envelope of sent)assert.deepEqual(envelope,sent[0]);
+ const saved=f.env.DB.getGameState(f.gameId);
+ assert.equal(saved.moves.filter(move=>move.undone).length,1);
+ assert.equal(saved.notifications.filter(note=>note.includes("accepted the undo")).length,1);
+ assert.equal((await f.journal.list(f.store.getIdentityId(),f.gameId)).length,0);
+});
+
+test("a shared request lost before arrival replays after unrelated gameplay advances",async(t)=>{
+ let dropped=false;const shared=[];
+ const f=await setup({fault:async(url,init,call)=>{
+  if(url.endsWith("/shared")){
+   shared.push(JSON.parse(init.body));
+   if(!dropped){
+    dropped=true;
+    const current=await (await f.actual(`/api/shell/games/${f.gameId}?identityId=${f.store.getIdentityId()}`)).json();
+    const command={protocolVersion:2,gameId:f.gameId,identityId:f.store.getIdentityId(),clientCommandId:"v2:unrelated-gameplay",kind:"action",payload:{action:{type:"pass"}},expectedState:current.game.board.state,expectedGameplayRevision:current.game.gameplayRevision};
+    command.fingerprint=await commandFingerprint(command);
+    assert.equal((await (await f.actual(`/api/shell/games/${f.gameId}/apply`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(command)})).json()).accepted,true);
+    throw Error("shared request did not arrive");
+   }
+  }
+  return call();
+ }});
+ t.after(()=>f.store.retire());
+ const move=await f.move();await move.committed;
+ const undo=f.store.requestRevertToMove({gameId:f.gameId,targetMoveId:f.store.getGameViewModel(f.gameId).moves[0].moveId});
+ await undo.committed;
+ assert.ok(shared.length>=2);for(const envelope of shared)assert.deepEqual(envelope,shared[0]);
+ assert.equal(f.env.DB.getGameState(f.gameId).moves.filter(move=>move.undone).length,2);
+ assert.equal((await f.journal.list(f.store.getIdentityId(),f.gameId)).length,0);
+});
+
+
+test("a rejected computer control does not report a failed human move",async(t)=>{
+ const f=await setup();t.after(()=>f.store.retire());
+ await assert.rejects(f.store.computerControl(f.gameId,{action:"acquire",deviceId:"device",tabId:"tab"}),error=>error.code==="not_computer_game");
+ assert.equal(f.store.getFailedOperations(f.gameId).length,0);
+ assert.equal(f.store.getGameViewModel(f.gameId).recovering,false);
+ const next=await f.move();await next.committed;
+ assert.equal(f.store.getGameViewModel(f.gameId).moves.length,1);
+});
+
+
+test("restored rejected shared control settles its own handle without a gameplay rollback notice",async(t)=>{
+ const f=await setup();const identityId=f.store.getIdentityId(),game=f.store.getAuthoritativeGame(f.gameId);
+ const envelope={protocolVersion:2,gameId:f.gameId,identityId,clientCommandId:"v2:restored-rejected-control",kind:"shared",payload:{operation:"computer-control",values:{action:"acquire",deviceId:"device",tabId:"tab"}},expectedState:game.board.state,expectedGameplayRevision:game.gameplayRevision};
+ envelope.fingerprint=await commandFingerprint(envelope);await f.journal.admit(envelope);f.store.retire();
+ const restored=f.create();t.after(()=>restored.retire());await restored.loadGame(f.gameId);
+ await until(()=>restored.getFailedOperations(f.gameId).length===1);
+ const failure=restored.getFailedOperations(f.gameId)[0];
+ assert.equal(failure.id,envelope.clientCommandId);
+ assert.equal(failure.error.code,"not_computer_game");
+ assert.doesNotMatch(failure.error.message,/move|board changed/i);
+ assert.equal(restored.getGameViewModel(f.gameId).pendingCommandCount,0);
+ await until(async()=>(await f.journal.list(identityId,f.gameId)).length===0);
+ const next=await f.move(restored);await next.committed;
+});
+
+for (const supported of [true, false]) test(`initial shared recovery discovers server capability before replay (${supported})`, async t => {
+ let restoring = false, reads = 0, sharedPosts = 0;
+ const f = await setup({ fault: async (url, init, call) => {
+  if (restoring && (!init?.method || init.method === 'GET') && url.includes('/games/')) {
+   reads++; const response = await call(); const body = await response.json();
+   if (!supported) delete body.game.sharedReceipts;
+   return Response.json(body);
+  }
+  if (restoring && url.endsWith('/shared')) sharedPosts++;
+  return call();
+ } });
+ await (await f.move()).committed;
+ const game = f.store.getAuthoritativeGame(f.gameId), identityId = f.store.getIdentityId();
+ const envelope = { protocolVersion: 2, gameId: f.gameId, identityId, clientCommandId: `v2:initial-shared-${supported}`,
+  kind: 'shared', payload: { operation: 'revert-request', values: { targetMoveId: game.moves[0].moveId, requestId: 'original-undo' } },
+  expectedState: game.board.state, expectedGameplayRevision: game.gameplayRevision };
+ envelope.fingerprint = await commandFingerprint(envelope); await f.journal.admit(envelope); f.store.retire(); restoring = true;
+ const resumed = f.create(); t.after(() => resumed.retire());
+ // Socket fallback can reconcile before any game snapshot or Home list exists.
+ await resumed.reconcileGame(f.gameId);
+ assert.equal(reads, 1);
+ if (supported) {
+  await until(() => f.env.DB.getReceipt(f.gameId, envelope.clientCommandId));
+  assert.equal(f.env.DB.getReceipt(f.gameId, envelope.clientCommandId).outcome, 'accepted');
+  await until(async () => (await f.journal.list(identityId, f.gameId)).length === 0);
+  assert.equal(sharedPosts, 1); assert.equal(resumed.isUpgradeRequired(f.gameId), false);
+  assert.equal(f.env.DB.getGameState(f.gameId).gameplayRevision, 2);
+ } else {
+  assert.equal(sharedPosts, 0); assert.equal(resumed.isUpgradeRequired(f.gameId), true);
+  assert.deepEqual(await f.journal.list(identityId, f.gameId), [envelope]);
+ }
 });

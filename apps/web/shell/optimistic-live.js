@@ -21,6 +21,7 @@ const getSeatIdentity = (game, seat) => (seat === "Player 1" ? game.player1?.ide
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "(?,?)");
 
 export const defaultNotationForAction = (action) => {
+  if (action?.type === "end_turn") return "END TURN";
   if (action?.type === "pass") {
     return "PASS";
   }
@@ -33,15 +34,18 @@ const completeTurn = (game, queuedAt, pendingMoves, operationId) => {
   if (!activeTurn) {
     return { ok: false, error: "turn_not_initialized" };
   }
-  if (activeTurn.moveIndexes.length === 0) {
+  if (activeTurn.moveIndexes.length === 0 && !game.board.state.continuation) {
     return { ok: false, error: "turn_has_no_moves" };
   }
 
+  const validation = validateAction(game.board.state, { type: "end_turn" });
+  if (!validation.ok) return { ok: false, error: validation.code, validation };
+  const closed = applyAction(game.board.state, { type: "end_turn" }).state;
   const endedAt = queuedAt;
   activeTurn.endedAt = endedAt;
   activeTurn.status = "complete";
   const { nextState, nextTurn } = finalizeResolvedTurn({
-    state: game.board.state,
+    state: closed,
     activeTurn,
     endedAt,
     resolveToStability,
@@ -99,7 +103,7 @@ const finalizeProjectedView = ({ authoritativeGame, workingGame, identityId, que
     !next.inHistoryMode &&
     controlSeat === turnOwnerSeat &&
     turnOwnerIdentity === identityId &&
-    Boolean(activeTurn?.moveIndexes?.length);
+    validateAction(next.board.state, { type: "end_turn" }).ok;
   return next;
 };
 
@@ -114,7 +118,7 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
   const commandResults = new Map();
 
   for (const command of queue) {
-    if (command.kind === "apply") {
+    if (command.kind === "apply" && command.action?.type !== "end_turn") {
       const activeTurn = getActiveTurn(workingGame);
       if (!activeTurn) {
         return { ok: false, error: "turn_not_initialized", clientCommandId: command.clientCommandId };

@@ -1,6 +1,7 @@
 import { deterministicStateHash } from '../../packages/game-engine/src/index.ts';
-import { encodeAction, encodeState, legalActionMap, transition, verifyLegalSubset } from '../../packages/computer-player/src/index.ts';
+import { encodeAction, encodeState, legalActionMap, verifyLegalSubset } from '../../packages/computer-player/src/index.ts';
 import { validateDecisionProvenance } from './decision-provenance.mjs';
+import { transitionArchivedAction } from './archived-action.mjs';
 
 // The replay verifier independently applies authoritative rules. Search's cached
 // next state is never accepted as proof, and partial masks never become targets.
@@ -27,7 +28,7 @@ export function replayDecision(state, record, bounded) {
           record.policy.some((item, i) => Math.abs(item.probability - visits[i] / total) > 1e-10)) throw new Error('Replay policy visits mismatch');
     }
   }
-  const next = bounded(() => transition(state, record.action));
+  const next = transitionArchivedAction(state, record.action, bounded);
   if (deterministicStateHash(next) !== record.afterHash) throw new Error('Replay after-state mismatch');
   return next;
 }
