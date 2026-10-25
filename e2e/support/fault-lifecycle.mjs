@@ -3,7 +3,10 @@
 export async function fetchFaultResponse(route, options, onReset = () => {}) {
  try { return await route.fetch(options); }
  catch (error) {
-  if (!/\bECONNRESET\b/.test(String(error?.message))) throw error;
+  const firstLine = String(error?.message).split(/\r?\n/)[0];
+  const reset = error?.code === 'ECONNRESET' || /\bECONNRESET\b/.test(firstLine)
+    || firstLine === 'socket hang up' || firstLine === 'route.fetch: socket hang up';
+  if (!reset) throw error;
   onReset();
   await route.abort("connectionreset");
   return null;
