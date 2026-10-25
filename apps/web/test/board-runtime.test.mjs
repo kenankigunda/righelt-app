@@ -27,16 +27,16 @@ test('generic turn indicator uses color names without game identity',async()=>{
 
 test('board status updates keep matching message controls and safely replace changed actions',async()=>{
  const text={nodeType:3,nodeValue:'Replay · 1 of 3 '};
- const stop={dataset:{boardMessageAction:'replay-stop'},textContent:'Stop replay'};
+ const stopLabel={textContent:'Stop replay'},stopSvg={},stop={dataset:{boardMessageAction:'replay-stop'},children:[stopSvg,stopLabel],querySelector:()=>stopLabel};
  let html='',writes=0,message={text:'Replay · 2 of 3',actions:[{id:'replay-stop',label:'Stop replay'}]};
  const label={firstChild:text,childNodes:[text,stop],querySelectorAll:()=>[stop],addEventListener:noop,removeEventListener:noop,
   get innerHTML(){return html;},set innerHTML(value){writes++;html=value;}};
  const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getSelectedPieceSummary:()=>null},host:{canInteract:()=>false},controls:{getBoardMessage:()=>message}});
  runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
  await runtime.loadSnapshot({sideToMove:'P1',turnIndex:0,pieces:[],outcome:{status:'ongoing'}},{legalActions:[]});
- assert.equal(writes,0);assert.equal(text.nodeValue,'Replay · 2 of 3 ');assert.equal(stop.textContent,'Stop replay');
+ assert.equal(writes,0);assert.equal(text.nodeValue,'Replay · 2 of 3 ');assert.equal(stopLabel.textContent,'Stop replay');
  message={text:'Replay · 3 of 3',actions:[{id:'replay-stop',label:'Stop'}]};runtime.refreshStatus();
- assert.equal(writes,0);assert.equal(text.nodeValue,'Replay · 3 of 3 ');assert.equal(stop.textContent,'Stop');
+ assert.equal(writes,0);assert.equal(text.nodeValue,'Replay · 3 of 3 ');assert.equal(stopLabel.textContent,'Stop');
  message={text:'Finished <safely>',action:{id:'replay"next',label:'<Next>'}};runtime.refreshStatus();
  assert.equal(writes,1);assert.match(html,/Finished &lt;safely&gt;/);assert.match(html,/data-board-message-action="replay&quot;next"/);assert.match(html,/&lt;Next&gt;/);
  assert.doesNotMatch(html,/<safely>|<Next>|data-board-message-action="replay-stop"/);
@@ -44,7 +44,8 @@ test('board status updates keep matching message controls and safely replace cha
 
 test('named board messages update suffix and controls in place without replacing action nodes',async()=>{
  const name={nodeName:'BDI',classList:{contains:value=>value==='board-message-name'},textContent:'Old name',title:'Old name'};
- const suffix={nodeType:3,nodeValue:' moved '},button={dataset:{boardMessageAction:'replay-computer'},textContent:'Show me again'};
+ const buttonLabel={textContent:'Show me again'},buttonSvg={};
+ const suffix={nodeType:3,nodeValue:' moved '},button={dataset:{boardMessageAction:'replay-computer'},children:[buttonSvg,buttonLabel],querySelector:()=>buttonLabel};
  let writes=0,html='',message={actorName:'משחק 星',text:'משחק 星 rushed from (1, 2) to (3, 4)',action:{id:'replay-computer',label:'Show me again'}};
  const label={firstChild:name,childNodes:[name,suffix,button],querySelectorAll:()=>[button],addEventListener:noop,removeEventListener:noop,
   get innerHTML(){return html;},set innerHTML(value){writes++;html=value;}};
@@ -53,7 +54,7 @@ test('named board messages update suffix and controls in place without replacing
  await runtime.loadSnapshot({sideToMove:'P1',turnIndex:0,pieces:[],outcome:{status:'ongoing'}},{legalActions:[]});
  assert.equal(writes,0);assert.equal(name.textContent,'משחק 星');assert.equal(name.title,'משחק 星');assert.equal(suffix.nodeValue,' rushed from (1, 2) to (3, 4) ');assert.equal(label.childNodes[2],button);
  message={...message,text:'משחק 星 followed from (3, 4) to (5, 6)',action:{id:'replay-computer',label:'Replay'}};runtime.refreshStatus();
- assert.equal(writes,0);assert.equal(suffix.nodeValue,' followed from (3, 4) to (5, 6) ');assert.equal(button.textContent,'Replay');assert.equal(label.firstChild,name);assert.equal(label.childNodes[2],button);
+ assert.equal(writes,0);assert.equal(suffix.nodeValue,' followed from (3, 4) to (5, 6) ');assert.equal(buttonLabel.textContent,'Replay');assert.equal(label.firstChild,name);assert.equal(label.childNodes[2],button);assert.equal(button.children[0],buttonSvg);assert.equal(button.children[1],buttonLabel);
  message={actorName:'mismatch',text:'Ordinary <safe>',action:{id:'replay-computer',label:'Replay'}};runtime.refreshStatus();
  assert.equal(writes,1);assert.match(html,/Ordinary &lt;safe&gt;/);assert.doesNotMatch(html,/<bdi/);
 });

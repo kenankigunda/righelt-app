@@ -1,4 +1,4 @@
-import {boardMessagePresentation,renderBoardMessageHtml} from '../message-presentation.js';
+import {boardMessagePresentation,renderBoardMessageHtml,renderBoardInlineAction,updateBoardInlineActionLabel} from '../message-presentation.js';
 import { inspectionPaths, supplyOwnerAt } from "../inspection.js";
 import {renderCoordinateChip} from '../coordinate-chip.js';
 import {SELECTED_CONTINUATION_LABELS} from '../piece-explanations.js';
@@ -404,7 +404,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
     const endTurnLabel = "End Turn";
     setBoardPreviewPromptHtml(
-      `Select a rush or <button type="button" class="board-preview-inline-button" data-board-preview-action="end-turn">${endTurnLabel}</button>`,
+      `Select a rush or ${renderBoardInlineAction({id:"end-turn",label:endTurnLabel},{preview:true})}`,
     );
   };
 
@@ -515,7 +515,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         if (label.firstChild.nodeValue !== text) label.firstChild.nodeValue = text;
         buttons.forEach((button, index) => {
           const text = String(actions[index].label);
-          if (button.textContent !== text) button.textContent = text;
+          updateBoardInlineActionLabel(button,text);
         });
         return;
       }
@@ -527,7 +527,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         if (name.title !== actorName) name.title = actorName;
         const suffix = `${rest}${actions.length ? " " : ""}`;
         if (label.childNodes[1].nodeValue !== suffix) label.childNodes[1].nodeValue = suffix;
-        buttons.forEach((button, index) => { const text=String(actions[index].label); if(button.textContent!==text)button.textContent=text; });
+        buttons.forEach((button, index) => { const text=String(actions[index].label); updateBoardInlineActionLabel(button,text); });
         return;
       }
       setBoardPreviewPromptHtml(renderBoardMessageHtml(message));
@@ -544,7 +544,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         } else if (state.continuation?.type === "push") {
           continuation = ` · ${state.continuation.phase === "retreat" ? SELECTED_CONTINUATION_LABELS.retreat : SELECTED_CONTINUATION_LABELS.follow}`;
         }
-        if (state.continuation && legalActions.some(action => action.type === "end_turn")) continuation += ' <button type="button" class="board-preview-inline-button" data-board-preview-action="end-turn">End Turn</button>';
+        if (state.continuation && legalActions.some(action => action.type === "end_turn")) continuation += ` ${renderBoardInlineAction({id:'end-turn',label:'End Turn'},{preview:true})}`;
       }
       setBoardPreviewPromptHtml(text + continuation);
     };
@@ -586,7 +586,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         setPushFollowContinuationPrompt(state.sideToMove);
       } else {
         const canPass = !selectedPieceId && !state.continuation && host.canInteract?.(state) !== false && legalActions.some(action => action.type === "pass");
-        if (canPass) setBoardPreviewPromptHtml('Select a piece <button type="button" class="board-preview-inline-button" data-board-preview-action="pass">Pass</button>');
+        if (canPass) setBoardPreviewPromptHtml(`Select a piece ${renderBoardInlineAction({id:'pass',label:'Pass'},{preview:true})}`);
         else setBoardPreviewPrompt("Select a piece");
       }
       return;

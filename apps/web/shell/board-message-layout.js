@@ -1,3 +1,4 @@
+import {renderBoardInlineAction} from '../board/message-presentation.js';
 import {BOARD_TURN_CAPTIONS} from './perspective-labels.js';
 import {activityActorSide,setActivityActor} from './activity-affiliation.js';
 import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
@@ -19,15 +20,25 @@ const maximumCoordinate=renderCoordinateChip({row:9,col:9});
 const explanationSizes = SELECTED_PIECE_EXPLANATIONS.flatMap(text => {
   const base=`Piece at ${maximumCoordinate} – ${escape(text)}`;
   return [
-    `${base} <button type="button" class="board-preview-inline-button" disabled tabindex="-1">End Turn</button>`,
+    `${base} ${renderBoardInlineAction({id:"end-turn",label:"End Turn"},{sizing:true})}`,
     `${base} · ${SELECTED_CONTINUATION_LABELS.rushBlocker} ${maximumCoordinate}`,
     `${base} · ${SELECTED_CONTINUATION_LABELS.retreat}`,
     `${base} · ${SELECTED_CONTINUATION_LABELS.follow}`,
   ];
 });
 
+// Both font families use this one real formatter. The fallback remains present
+// after Manrope loads, so a cold font swap cannot shrink the reserved message.
+// This finite set is 96 paragraphs per family, with no actionable replicas.
+const renderMessageSizing = fallback => {
+  const fontClass=fallback?' board-message-fallback-sizing':'';
+  const attrs=index=>`data-sizing-font="${fallback?'fallback':'primary'}" data-sizing-variant="${index}" aria-hidden="true" inert`;
+  return narrationSizes.map((text,index) => `<p class="board-preview-label board-message-sizing${fontClass}" ${attrs(`narration:${index}`)}>${escape(text)} ${renderBoardInlineAction({id:"pass",label:"Pass"},{sizing:true})} ${renderBoardInlineAction({id:"replay-computer",label:"Show me again"},{sizing:true})}</p>`).join('')
+    + explanationSizes.map((text,index) => `<p class="board-preview-label board-message-sizing board-explanation-sizing${fontClass}" ${attrs(`explanation:${index}`)}>${text}</p>`).join('');
+};
+
 export function renderBoardMessageSlot({id, loading = false, loadingKey} = {}) {
-  return `<div class="board-message-slot"><div class="board-message-live"><p class="board-preview-label"${id ? ` id="${escape(id)}"` : ''}${loading ? ' aria-hidden="true"' : ''}>${loading ? '' : 'Select a piece'}</p><span class="board-message-activity" aria-hidden="true" data-loading-state="${loading && loadingKey ? 'pending' : 'idle'}" data-loading-context="external"${loading && loadingKey ? ` data-loading-key="${escape(loadingKey)}"` : ''}></span></div>${narrationSizes.map(text => `<p class="board-preview-label board-message-sizing" aria-hidden="true" inert>${escape(text)} <button type="button" class="board-preview-inline-button" disabled tabindex="-1">Pass</button> <button type="button" class="board-preview-inline-button" disabled tabindex="-1">Show me again</button></p>`).join('')}${explanationSizes.map(text => `<p class="board-preview-label board-message-sizing board-explanation-sizing" aria-hidden="true" inert>${text}</p>`).join('')}</div>`;
+  return `<div class="board-message-slot"><div class="board-message-live"><p class="board-preview-label"${id ? ` id="${escape(id)}"` : ''}${loading ? ' aria-hidden="true"' : ''}>${loading ? '' : 'Select a piece'}</p><span class="board-message-activity" aria-hidden="true" data-loading-state="${loading && loadingKey ? 'pending' : 'idle'}" data-loading-context="external"${loading && loadingKey ? ` data-loading-key="${escape(loadingKey)}"` : ''}></span></div>${renderMessageSizing(false)}${renderMessageSizing(true)}</div>`;
 }
 
 export function renderBoardHeadingSlot({loading = false} = {}) {
