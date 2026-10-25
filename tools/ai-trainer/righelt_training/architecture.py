@@ -1,6 +1,7 @@
 """Architecture identity is separate from the historical46-plane/action ABI."""
 import hashlib
 import json
+from .sequence_targets import HORIZONS,FACTS,FUTURE_LOSS_WEIGHT
 
 BASELINE = 'residual-32x4-v1'
 DEFINITIONS = {
@@ -8,10 +9,12 @@ DEFINITIONS = {
                'encoding': 'absolute-v1', 'inputPlanes': 46, 'actionCount': 2801},
     'board-attention-48x2-v1': {'kind': 'board-attention', 'width': 48, 'blocks': 2,
         'heads': 4, 'expansion': 2, 'relativeGeometry': True, 'encoding': 'absolute-v1',
-        'inputPlanes': 46, 'actionCount': 2801},
+        'inputPlanes': 46, 'actionCount': 2801, 'futureFacts': {'horizons':list(HORIZONS),
+        'facts':list(FACTS),'lossWeight':FUTURE_LOSS_WEIGHT}},
     'board-attention-64x2-v1': {'kind': 'board-attention', 'width': 64, 'blocks': 2,
         'heads': 4, 'expansion': 2, 'relativeGeometry': True, 'encoding': 'absolute-v1',
-        'inputPlanes': 46, 'actionCount': 2801},
+        'inputPlanes': 46, 'actionCount': 2801, 'futureFacts': {'horizons':list(HORIZONS),
+        'facts':list(FACTS),'lossWeight':FUTURE_LOSS_WEIGHT}},
 }
 
 

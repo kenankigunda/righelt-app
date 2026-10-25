@@ -75,6 +75,23 @@ test('the real replay and training inventory worker preserve retained final hash
  assert.deepEqual(game,before);
 });
 
+test('completed-turn teaching metadata must match exact engine replay',async()=>{
+ const source=destroyedCommanderGame();let state=source.initial;
+ const decisions=source.decisions.map(record=>{
+  const stamped={...record,turnIndex:state.turnIndex};state=replayDecision(state,record,work=>work());return stamped;
+ });
+ const game={id:'turn-metadata',partition:'train',initialState:source.initial,decisions,
+  finalHash:deterministicStateHash(source.retained),outcome:source.retained.outcome,termination:'terminal'};
+ const replay=game=>new Promise((resolve,reject)=>{
+  const child=execFile(process.execPath,['--import','tsx','tools/ai-trainer/engine-worker.mjs'],{timeout:10000},
+   (error,stdout,stderr)=>error?reject(new Error(`${stderr}\n${stdout}`,{cause:error})):resolve(JSON.parse(stdout.trim())));
+  child.stdin.end(JSON.stringify({command:'replay',game,budgetMs:8000})+'\n');
+ });
+ assert.equal((await replay(game)).hash,game.finalHash);
+ const changed=structuredClone(game);changed.decisions[0].turnIndex++;
+ await assert.rejects(replay(changed),/completed-turn index mismatch/);
+});
+
 test('a retained terminal warmup preserves its exact old initial and final hashes with no decisions',async()=>{
  const source=destroyedCommanderGame(),game={id:'retained-terminal-warmup',partition:'train',rootState:source.initial,warmupActions:source.decisions.map(record=>record.action),initialState:source.retained,decisions:[],finalHash:deterministicStateHash(source.retained),outcome:source.retained.outcome,termination:'terminal'},before=structuredClone(game);
  const replay=game=>new Promise((resolve,reject)=>{

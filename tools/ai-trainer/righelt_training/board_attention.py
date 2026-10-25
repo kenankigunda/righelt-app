@@ -4,6 +4,7 @@ import torch
 from torch import nn
 from .architecture import DEFINITIONS, validate_architecture
 from .config import CONFIG
+from .sequence_targets import TARGET_COUNT
 
 
 class BoardAttentionBlock(nn.Module):
@@ -52,15 +53,27 @@ class BoardAttentionNet(nn.Module):
         self.policy = nn.Linear(width, channels)
         self.pass_head = nn.Linear(width, 1)
         self.value = nn.Sequential(nn.Linear(2 * width, 64), nn.ReLU(), nn.Linear(64, 1))
+        self.future_facts = nn.Linear(2 * width, TARGET_COUNT)
         nn.init.normal_(self.position, std=0.02)
 
-    def forward(self, inputs):
+    def features(self, inputs):
         # Plane-major board input becomes row-major square tokens. Channel
         # order stays exactly the existing28actions per square, then Pass.
         tokens = inputs.flatten(2).transpose(1, 2)
         x = self.final_norm(self.blocks(self.input(tokens) + self.position))
+        return x
+
+    def outputs(self,x):
         mean = x.mean(dim=1)
         policy = torch.cat((self.policy(x).flatten(1), self.pass_head(mean)), dim=1)
         pooled = torch.cat((mean, x.amax(dim=1)), dim=1)
         value = torch.tanh(self.value(pooled)).clamp(-1., 1.).squeeze(-1)
-        return policy, value
+        return policy, value, pooled
+
+    def forward(self,inputs):
+        policy,value,_=self.outputs(self.features(inputs))
+        return policy,value
+
+    def forward_with_future(self,inputs):
+        policy,value,pooled=self.outputs(self.features(inputs))
+        return policy,value,torch.sigmoid(self.future_facts(pooled))

@@ -137,6 +137,9 @@ async function main() {
     for (const [index, record] of job.game.decisions.entries()) {
       check();
       const before = state;
+      if(record.turnIndex!==undefined && (!Number.isSafeInteger(record.turnIndex)||record.turnIndex!==before.turnIndex)) {
+        throw new Error('Replay completed-turn index mismatch');
+      }
       state = replayDecision(state, record, bounded);
       if (inventory && indices.includes(index)) snapshots.push({ index, state: before,
         hash: record.beforeHash, decisionId: record.id, controller: record.controller });
@@ -234,10 +237,10 @@ async function main() {
       const unfinished=searchRecovery(result,{schema:1,id:job.id,familyId:job.familyId,partition:job.partition,
         initialState,decisions,finalHash:deterministicStateHash(state),outcome:state.outcome});
       if(unfinished){send(unfinished);return;}
-      const beforeHash = deterministicStateHash(state), controller = state.sideToMove;
+      const beforeHash = deterministicStateHash(state), controller = state.sideToMove, turnIndex = state.turnIndex;
       const encoded = Array.from(encodeState(state)), legal = result.legality.indices;
       state = result.nextState;
-      decisions.push({ id: `${job.id}:${n}`, controller, action: result.action, beforeHash,
+      decisions.push({ id: `${job.id}:${n}`, controller, turnIndex, action: result.action, beforeHash,
         afterHash: deterministicStateHash(state), seed, legal, encoded,
         modelVersion: arena ? job.modelVersions[controller] : job.modelVersion,
         profileVersion: arena ? job.profileVersions[controller] : `selfplay-${SEARCH_POLICY_VERSION}`,

@@ -52,7 +52,9 @@ class ReplayBuffer:
             validate_decision_recipe(decision)
             if self.protected_encoding_hashes and 'encoded' not in decision:
                 raise ValueError('protected replay requires encoded position evidence')
-        for decision in game['decisions']:
+        from .sequence_targets import observed_future_targets
+        future_targets=observed_future_targets(game['decisions'],protected_encodings=self.protected_encoding_hashes)
+        for decision,future in zip(game['decisions'],future_targets):
             position={k:decision[k] for k in ('id','legal','policy','policyMask','fallback','legality','trainingRecipe') if k in decision}
             mask=decision.get('policyMask',True)
             fallback=decision.get('fallback')
@@ -78,6 +80,7 @@ class ReplayBuffer:
             if self.protected_encoding_hashes and encoding_hash(position['encoded']) in self.protected_encoding_hashes:
                 self.protected_exclusions[game['id']]=self.protected_exclusions.get(game['id'],0)+1
                 continue
+            if any(future['mask']):position['futureFacts']=future
             self.positions.append({**position,'terminalMask':terminal,'terminalValue':value,'gameId':game['id']})
         self.ids.add(game['id'])
         self.game_ids.append(game['id'])

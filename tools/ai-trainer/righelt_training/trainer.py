@@ -6,6 +6,7 @@ import time
 import torch
 from .config import CONFIG
 from .model import training_loss
+from .sequence_targets import future_batch,FUTURE_LOSS_WEIGHT
 
 
 def make_optimizer(model):
@@ -66,12 +67,24 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
             before = clock()
             batch = [positions[i] for i in order[start:start + batch_size]]
             inputs, legal, target, value, mask, policy_mask = tensor_batch(batch, device)
-            if not (mask.any() or policy_mask.any()):
+            future_values,future_masks=future_batch(batch)
+            has_future=hasattr(model,'forward_with_future')and any(any(row)for row in future_masks)
+            if not (mask.any() or policy_mask.any() or has_future):
                 result['skippedUnsupervisedBatches'] += 1
                 continue
             optimizer.zero_grad(set_to_none=True)
-            logits, values = model(inputs)
+            future_loss=None
+            if hasattr(model,'forward_with_future'):
+                logits,values,future=model.forward_with_future(inputs)
+                if not torch.isfinite(future).all():raise ValueError('Nonfinite future predictions')
+                if has_future:
+                    future_target=torch.tensor(future_values,dtype=torch.float32,device=device)
+                    future_mask=torch.tensor(future_masks,dtype=torch.bool,device=device)
+                    future_loss=((future[future_mask]-future_target[future_mask])**2).mean()
+            else:
+                logits, values = model(inputs)
             loss, policy_loss, value_loss = training_loss(logits, values, legal, target, value, mask, policy_mask)
+            if future_loss is not None:loss=loss+FUTURE_LOSS_WEIGHT*future_loss
             if not torch.isfinite(loss):
                 raise ValueError('nonfinite loss')
             loss.backward()
@@ -85,6 +98,8 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
                        'gradientNorm': norm.item(), 'parameterDelta': delta, 'positions': len(batch),
                        'seconds': clock() - before, 'batchIndex': start // batch_size,
                        'policyPositions': int(policy_mask.sum()), 'valuePositions': int(mask.sum())}
+            if future_loss is not None:
+                metrics.update(futureFactLoss=future_loss.item(),futureFactLabels=sum(sum(row)for row in future_masks))
             # Aggregate the actual sampled rows, without changing order, masks,
             # loss or RNG. Legacy fixtures without game identities stay unknown.
             if all(p.get('gameId') for p in batch):
