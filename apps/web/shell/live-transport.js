@@ -66,7 +66,7 @@ const mustOk = async (response) => {
     if (retryAfter) {
       const seconds = Number(retryAfter);
       const until = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now();
-      if (Number.isFinite(until) && until > 0) error.retryAfterMs = Math.min(until, 60_000);
+      if (Number.isFinite(until) && until > 0) error.retryAfterMs = Math.min(until, SYNC_TIMING.maximumRetryAfterMs);
     }
     error.diagnosticEvidence = response.righeltDiagnosticEvidence;
     throw error;

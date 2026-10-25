@@ -382,7 +382,7 @@ export const createLiveSyncClient = ({
       if (["manual_reconnect", "pageshow", "visibility_resumed", "network_online"].includes(reason)) connect(gameId);
       else scheduleReconnect(gameId);
     }
-    owner.promise = Promise.resolve().then(() => onReconcile({ gameId, reason })).then(() => {
+    owner.promise = Promise.resolve().then(() => background && reason !== "http_poll" ? undefined : onReconcile({ gameId, reason })).then(() => {
       if (repairOwners.get(gameId) !== owner || !desiredGameIds.has(gameId)) return;
       httpRecoveredGames.add(gameId);
       recordMetric("recovery_reconciled", { gameId, reason });
