@@ -28,7 +28,7 @@ body {display:flow-root;}
 #app[data-shell-layout-mode="narrow"] .shell-header-title-link {width:min(100%,190px);}
 #app[data-shell-layout-mode="narrow"] .shell-header-actions {flex:0 0 auto;}
 #app[data-shell-layout-mode="narrow"] .shell-header-actions .nav-row {display:flex;flex-wrap:nowrap;gap:4px;width:auto;}
-#app[data-shell-layout-mode="narrow"] .shell-header-status {position:fixed;top:calc(env(safe-area-inset-top,0px) + 58px);left:8px;right:8px;width:auto;max-height:calc(100dvh - 130px);z-index:30;pointer-events:none;}
+#app[data-shell-layout-mode="narrow"] .shell-header-status {position:fixed;top:calc(env(safe-area-inset-top,0px) + 58px);left:8px;right:8px;width:auto;max-width:none;min-height:0;transform:none;max-height:calc(100dvh - 130px);z-index:30;pointer-events:none;}
 #app[data-shell-layout-mode="narrow"] .shell-header-status > * {pointer-events:auto;}
 #app[data-shell-layout-mode="narrow"] .shell-header-menu-root {display:block;}
 #app[data-shell-route="game"][data-shell-layout-mode="narrow"] .shell-main-content {min-height:0;display:block;}

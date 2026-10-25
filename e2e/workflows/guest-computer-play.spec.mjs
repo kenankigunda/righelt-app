@@ -1,3 +1,4 @@
+import {assertReplayIntegrity} from '../support/replay-write-contract.mjs';
 import {readFile} from 'node:fs/promises';
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {test,expect} from '@playwright/test';
@@ -71,7 +72,7 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
   expect(Math.max(...topValues)-Math.min(...topValues),JSON.stringify(geometry.filter((sample,index)=>index===0||sample.y!==geometry[index-1].y))).toBeLessThanOrEqual(1);
   const beforeReplay=await projected(page,initial.id);
   const writes=[];
-  const observeReplay=request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/'))writes.push(request.url());};
+  const observeReplay=request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/')){let body;try{body=request.postDataJSON();}catch{}writes.push({method:request.method(),path:new URL(request.url()).pathname,body});}};
   page.on('request',observeReplay);
   try {
     await page.getByRole('button',{name:'Show me again',exact:true}).click();
@@ -80,12 +81,12 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
     await page.screenshot({path:info.outputPath('computer-turn-replay.png')});
     await page.getByRole('button',{name:'Stop replay',exact:true}).click();
     await expect(page.locator('.computer-replay')).toHaveCount(0);
-    expect((await projected(page,initial.id)).board.state).toEqual(beforeReplay.board.state);
-    expect(writes).toEqual([]);
+    assertReplayIntegrity({writes,before:beforeReplay,after:await projected(page,initial.id)});
     await page.emulateMedia({reducedMotion:'reduce'});
     await page.getByRole('button',{name:'Show me again',exact:true}).click();
     await expect(page.getByRole('button',{name:'Next',exact:true})).toBeVisible();
     await page.getByRole('button',{name:'Stop replay',exact:true}).click();
+    assertReplayIntegrity({writes,before:beforeReplay,after:await projected(page,initial.id)});
     await page.emulateMedia({reducedMotion:'no-preference'});
   } finally {page.off('request',observeReplay);}
   const saved = (await projected(page, initial.id)).moves.find(move=>move.computerProof);

@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 import { runScopedAxeScan } from "../support/ux.mjs";
 import { createGameFromHome, makeAnyLegalMove, submitPlayableAction, selectPlayableAction } from "../support/app.mjs";
 
-for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gate at ${width}px`, async ({page},info) => {
+for (const width of [933, 932, 901, 900, 899, 390]) test(`recovery overlay and storage gate at ${width}px`, async ({page},info) => {
  const metrics={requests:0,snapshots:0,applicationPayloadBytes:0};
  page.on('request',request=>{if(request.url().includes('/api/shell/'))metrics.requests++;});
  page.on('response',async response=>{if(!response.url().includes('/api/shell/'))return;try{const body=await response.body();metrics.applicationPayloadBytes+=body.length;if(JSON.parse(body)?.game)metrics.snapshots++;}catch{}});
@@ -64,7 +64,8 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
   await caret.click();await expect(caret).toHaveAttribute("aria-expanded","false");
  }
  const placement=await page.locator('[data-shell-alert-zone]').evaluate(el=>getComputedStyle(el).position);
- expect(placement).toBe(width<=900?"fixed":"absolute");
+ await expect(page.locator("#app")).toHaveAttribute("data-shell-layout-mode",width<933?"narrow":"wide");
+ expect(placement).toBe(width<933?"fixed":"absolute");
  await page.getByRole("button",{name:"Dismiss",exact:true}).click();
  await expect(page.getByRole("button",{name:"Retry saving"})).toBeVisible();
  await expect(page.getByTestId("sync-recovery-banner")).toContainText("Saving is paused.");
@@ -91,16 +92,19 @@ test("pending feedback reaches overdue once, then clears or explains definitive 
  await page.setViewportSize({width:1440,height:1100});
  const {gameId}=await createGameFromHome(page);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
- let mode="hold";
- await page.route(`**/api/shell/games/${gameId}/apply`,async route=>{
-  if(mode==="hold"){await route.abort();return;}
+ let mode="hold", unknownResponses=0;
+ // A transport failure must show its error immediately. To exercise genuinely
+ // pending work instead, return valid unknown receipts without applying it.
+ await page.route(new RegExp(`/api/shell/games/${gameId}/(?:apply|reconcile)(?:\\?.*)?$`),async route=>{
   if(mode==="accept"){await route.continue();return;}
-  const command=route.request().postDataJSON();
-  const response=await page.request.get(`/api/shell/games/${gameId}?identityId=${command.identityId}`);
+  const payload=route.request().postDataJSON();
+  const commands=payload.commands??[payload];
+  const response=await page.request.get(`/api/shell/games/${gameId}?identityId=${payload.identityId}`);
   const current=await response.json();
+  if(mode==="hold")unknownResponses++;
   await route.fulfill({json:{...current,protocolVersion:2,gameId,gameplayRevision:current.game.gameplayRevision,
-   commandOutcomes:[{gameId,identityId:command.identityId,clientCommandId:command.clientCommandId,fingerprint:command.fingerprint,
-    outcome:"rejected",reason:"stale_state",eventSeq:current.eventSeq,gameplayRevision:current.game.gameplayRevision}]}});
+   commandOutcomes:commands.map(command=>({gameId,identityId:command.identityId,clientCommandId:command.clientCommandId,fingerprint:command.fingerprint,
+    outcome:mode==="hold"?"unknown":"rejected",reason:mode==="hold"?null:"stale_state",eventSeq:current.eventSeq,gameplayRevision:current.game.gameplayRevision}))}});
  });
  const action=await page.evaluate(async gameId=>{
    const identityId=localStorage.getItem("righelt.identity.id.v1");
@@ -110,6 +114,7 @@ test("pending feedback reaches overdue once, then clears or explains definitive 
  await submitPlayableAction(page,action);
  await expect(page.getByTestId("sync-recovery-banner")).toContainText("Recording your move");
  await expect(page.getByTestId("sync-recovery-banner")).toContainText("It’s taking a while to record your move. Hang tight!",{timeout:20000});
+ expect(unknownResponses).toBeGreaterThan(0);
  const board=await page.getByTestId("game-board").innerHTML();
  mode="reject";
  await expect(page.getByTestId("sync-failure-banner")).toContainText("Board changed before your move was recorded. Check it and try again.",{timeout:10000});

@@ -1,3 +1,5 @@
+import { icon } from './ui.js';
+import { activityActorSide } from './activity-affiliation.js';
 import { COMPUTER_PROFILES, CURRENT_COMPUTER_MODEL, COMPUTER_TIMING, COMPUTER_LIMITS } from '../generated/packages/shared-types/src/computer-play.js';
 import { renderGameAlertCard } from './game-alert.js';
 const displayValue = value => {
@@ -6,7 +8,8 @@ const displayValue = value => {
   try { return JSON.stringify(value) ?? 'Unavailable'; } catch { return 'Unavailable'; }
 };
 export const escapeDebug = value => displayValue(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const button = (action, label) => `<button class="secondary" data-action="computer-control" data-control="${action}">${label}</button>`;
+const controlIcons={retry:'rematch',takeover:'play',manual:'players',switch:'right',pause:'pause',resume:'play',step:'right',upgrade:'check','decline-upgrade':'close'};
+const button = (action, label) => `<button class="secondary" data-action="computer-control" data-control="${action}">${icon(controlIcons[action])}${label}</button>`;
 export function renderComputerProgress(game, status = {}) {
   if (!game?.computer) return '';
   const control = game.computer;
@@ -18,7 +21,7 @@ export function renderComputerProgress(game, status = {}) {
   let body = '';
   if (!owner) { if(game.computerTurn) body = '<p>Computer play runs on the owner’s device.</p>'; }
   else if (status.phase === 'other-device') { if(game.computerTurn && status.phaseElapsedMs >= COMPUTER_TIMING.stalledAfterMs) body = `<p>Computer play is on another device.</p>${button('switch', 'Continue on this device')}`; }
-  else if (status.phase === 'recovery') body = `<p>The computer needs a hand.</p><div class="computer-actions">${button('retry', 'Retry')}${button('takeover', 'Play this turn')}${button('manual', 'Play both sides')}<button class="secondary" data-action="computer-branch">Create new game here</button><a class="button secondary" href="#/">Exit</a></div>`;
+  else if (status.phase === 'recovery') body = `<p>The computer needs a hand.</p><div class="computer-actions">${button('retry', 'Retry')}${button('takeover', 'Play this turn')}${button('manual', 'Play both sides')}<button class="secondary" data-action="computer-branch">${icon('board')}Create new game here</button><a class="button-link secondary" href="#/">${icon('exit')}Exit</a></div>`;
   else if (working) {
     const progress = status.progress;
     const completed = progress?.completed ?? progress?.received, total = progress?.total;
@@ -30,7 +33,7 @@ export function renderComputerProgress(game, status = {}) {
   else if (control.takeoverTurn !== null) body = '';
   else if (watch) body = `<div class="computer-status-line"><span>Watching computer play</span>${button('pause', 'Pause')}</div>`;
   if (owner && control.modelId !== CURRENT_COMPUTER_MODEL.id && control.declinedModelId !== CURRENT_COMPUTER_MODEL.id) body += `<p>A new computer model is available.</p><div class="computer-actions">${button('upgrade', 'Use new model')}${button('decline-upgrade', 'Keep this model')}</div>`;
-  return body ? `<section class="computer-play" aria-label="Computer play" data-computer-status data-key="computer-notice:${escapeDebug(game.id)}">${renderGameAlertCard({body, activity:working?'processing':'static',tone:status.phase==='recovery'?'warn':''})}</section>` : '';
+  return body ? `<section class="computer-play" aria-label="Computer play" data-computer-status data-key="computer-notice:${escapeDebug(game.id)}">${renderGameAlertCard({body, actorSide:activityActorSide(game,{thinking:true}), activity:working?'processing':'static',tone:status.phase==='recovery'?'warn':''})}</section>` : '';
 }
 
 const json = value => `<pre class="debug-pre">${escapeDebug(JSON.stringify(value, null, 2))}</pre>`;

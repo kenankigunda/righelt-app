@@ -8,8 +8,12 @@ import { createCommandJournal } from "./command-journal.js";
 import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, SYNC_PROTOCOL_VERSION, SYNC_TIMING, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
 
 import { applyHistoryIntent, historyMoveKey } from "./recovery-view.js";
+import { activityStateActorSide } from "./activity-affiliation.js";
 
 const clone = (value) => structuredClone(value);
+// A validated, unresolved receipt is pending durable intent, not a failed
+// request. Private identity prevents external error messages impersonating it.
+const unresolvedCommandOutcome = Symbol('unresolved-command-outcome');
 export const validSyncSnapshot = (game, gameId) => {
   const state = game?.board?.state;
   return typeof gameId === "string" && gameId.length > 0 && game?.id === gameId
@@ -237,6 +241,10 @@ export const createLiveTransportStore = ({
     const next = clone(game);
     next.pendingMoves = Array.isArray(next.pendingMoves) ? next.pendingMoves : [];
     next.pendingCommandCount = optimistic.pendingCommands.length;
+    const pendingState = (optimistic.pendingCommands[0] ?? optimistic.unsavedCommand)?.envelope?.expectedState;
+    // During a forced retreat the defender acts within the attacker’s turn.
+    // Resolve the captured command actor before an optimistic turn change.
+    next.pendingActorSide = activityStateActorSide(pendingState);
     next.pendingComputerSaveStartedAt = optimistic.pendingCommands.length && optimistic.pendingCommands.every(command => command.computer)
       ? Math.min(...optimistic.pendingCommands.map(command => Date.parse(command.queuedAt))) : null;
     next.pendingComputerProfile = next.pendingComputerSaveStartedAt != null ? optimistic.pendingCommands[0]?.computer?.profile : null;
@@ -543,21 +551,22 @@ export const createLiveTransportStore = ({
         if (optimistic.attempt !== attempt) return;
         const own = response.commandOutcomes.find((entry) => entry.clientCommandId === command.clientCommandId);
         const current = gameById.get(gameId);
-        if (!own || own.outcome !== "unknown" || own.reason === "dependency_pending" || own.reason === "legacy_evidence" || current?.gameplayRevision !== command.envelope.expectedGameplayRevision || !equivalentGameStates(current.board.state, command.envelope.expectedState)) throw new Error("outcome_unknown");
+        if (!own || own.outcome !== "unknown" || own.reason === "dependency_pending" || own.reason === "legacy_evidence" || current?.gameplayRevision !== command.envelope.expectedGameplayRevision || !equivalentGameStates(current.board.state, command.envelope.expectedState)) throw unresolvedCommandOutcome;
       }
       const body = await boundedRequest(`/api/shell/games/${encodeURIComponent(gameId)}/${command.kind === "apply" ? "apply" : "end-turn"}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(command.envelope),
       }, attempt.controller);
       if (optimistic.attempt !== attempt) return;
       processResponse(gameId, body, [command.envelope]);
-      if (optimistic.pendingCommands.includes(command)) throw new Error("outcome_unknown");
+      if (optimistic.pendingCommands.includes(command)) throw unresolvedCommandOutcome;
     } catch (error) {
       if (optimistic.attempt !== attempt) return;
-      captureRecoveryIssue(gameId, "command_confirmation", error);
-      optimistic.recoveryIssue = error.code ?? (error.message === "invalid_confirmation" ? "invalid_response" : "unavailable");
+      const unresolved = error === unresolvedCommandOutcome;
+      if (!unresolved) captureRecoveryIssue(gameId, "command_confirmation", error);
+      optimistic.recoveryIssue = unresolved ? null : error.code ?? (error.message === "invalid_confirmation" ? "invalid_response" : "unavailable");
       if (error.code === "upgrade_required") markUpgradeRequired(gameId);
       optimistic.syncStatus = "confirming";
-      incrementSyncMetric("httpConfirmFailed", gameId);
+      if (!unresolved) incrementSyncMetric("httpConfirmFailed", gameId);
       recalculateOptimisticGame(gameId);
       emitChange({ type: "optimistic_confirming", gameId, clientCommandId: command.clientCommandId });
       // A stalled receipt read must not permanently gate an idempotent submission.

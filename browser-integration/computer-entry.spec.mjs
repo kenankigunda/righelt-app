@@ -49,6 +49,46 @@ test('preparation failure, retry and dismissal never create or enable a stale ga
   expect(await page.evaluate(() => window.cancelled)).toBeGreaterThanOrEqual(2);
 });
 
+for (const width of [320, 390]) test(`computer action icons preserve labels and usable targets at ${width}px`, async ({page}, info) => {
+ await page.setViewportSize({width,height:844});
+ await page.emulateMedia({reducedMotion:'reduce'});
+ const cases = [
+  ['recovery', ['Retry','Play this turn','Play both sides','Create new game here','Exit']],
+  ['paused', ['Resume','Single step','Play this turn','Play both sides']],
+  ['thinking', ['Interrupt']],
+  ['other-device', ['Continue on this device']],
+  ['watching', ['Pause']],
+  ['upgrade', ['Use new model','Keep this model']],
+ ];
+ for (const scale of [100,200]) for (const [mode,labels] of cases) {
+  await page.evaluate(async ({mode,scale}) => {
+   const {renderComputerProgress}=await import('/apps/web/shell/computer-view.js');
+   const {createComputerControl}=await import('/apps/web/generated/packages/shared-types/src/computer-play.js');
+   const computer=createComputerControl('owner',{p1:'babs',p2:mode==='paused'||mode==='watching'?'tau':null});
+   computer.paused=mode==='paused';
+   if(mode==='upgrade')computer.modelId='previous-model';
+   const status=mode==='thinking'?{phase:'checking',elapsedMs:60000}:mode==='other-device'?{phase:'other-device',phaseElapsedMs:60000}:{phase:mode==='watching'||mode==='upgrade'?'idle':mode};
+   document.documentElement.style.fontSize=`${scale}%`;
+   document.querySelector('main').innerHTML=renderComputerProgress({id:'icon-proof',computer,computerTurn:'babs',canControlComputer:true},status);
+  }, {mode,scale});
+  const region=page.getByRole('region',{name:'Computer play',exact:true});
+  await expect(region.getByRole('button')).toHaveCount(labels.length-(mode==='recovery'?1:0));
+  for(const label of labels){
+   const control=region.getByRole(label==='Exit'?'link':'button',{name:label,exact:true});
+   await control.scrollIntoViewIfNeeded();
+   await expect(control.locator('svg')).toHaveAttribute('aria-hidden','true');
+   await expect(control.locator('svg path')).toHaveAttribute('d',/.+/);
+   const bounds=await control.boundingBox();
+   // Firefox serializes a 44px border box as 43.999996px at some positions.
+   // Keep the actual target requirement, discarding only sub-millipixel noise.
+   expect(Number(bounds.width.toFixed(3))).toBeGreaterThanOrEqual(44);expect(Number(bounds.height.toFixed(3))).toBeGreaterThanOrEqual(44);
+   expect(bounds.x).toBeGreaterThanOrEqual(0);expect(bounds.x+bounds.width).toBeLessThanOrEqual(width);
+   expect(await control.evaluate(element=>{const b=element.getBoundingClientRect();return document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)?.closest('button,a')===element;})).toBe(true);
+  }
+  if(mode==='recovery'&&scale===200)await page.screenshot({path:info.outputPath('computer-recovery-icons-enlarged.png'),fullPage:true});
+ }
+});
+
 for(const width of [320,390])test(`native opponent cards preserve keyboard choice and focus through preparation at ${width}px`,async({page},info)=>{
  await page.setViewportSize({width,height:844});await page.locator('#open').click();
  const dialog=page.getByRole('dialog',{name:'Play again',exact:true});
@@ -76,6 +116,7 @@ for(const width of [320,390])test(`native opponent cards preserve keyboard choic
   const bounds=element.getBoundingClientRect();
   return !element.getAnimations().some(animation=>(animation.playState==='running'||animation.pending)&&Number.isFinite(animation.effect?.getComputedTiming().endTime)) && [...element.querySelectorAll('[data-rematch-start],[data-modal-close]')].every(button=>button.getBoundingClientRect().bottom<=bounds.bottom);
  })).toBe(true);
+ for(const label of ['Start game','Cancel']){const action=dialog.getByRole('button',{name:label,exact:true});await expect(action.locator('svg')).toHaveAttribute('aria-hidden','true');await expect(action.locator('svg path')).toHaveAttribute('d',/.+/);}
  const startRect=await dialog.getByRole('button',{name:'Start game',exact:true}).boundingBox(),cancelRect=await dialog.getByRole('button',{name:'Cancel',exact:true}).boundingBox();
  const dialogRect=await dialog.boundingBox();
  expect(startRect.y+startRect.height).toBeLessThanOrEqual(dialogRect.y+dialogRect.height);expect(cancelRect.y+cancelRect.height).toBeLessThanOrEqual(dialogRect.y+dialogRect.height);

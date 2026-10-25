@@ -860,7 +860,7 @@ button.secondary:disabled {
   min-width: 0;
 }
 
-.shell-game-alert-actions > button {
+.shell-game-alert-actions > :is(button,.button-link) {
   min-height: 44px;
   min-width: 44px;
   margin: 0;
@@ -2151,13 +2151,13 @@ textarea:focus-visible {
   bottom: 0;
   left: -35%;
   width: 17.5%;
-  background: color-mix(in srgb,var(--player-p1) 18%,transparent);
+  background: color-mix(in srgb,var(--activity-color,var(--player-p1)) 18%,transparent);
   clip-path: polygon(50% 0,100% 0,50% 100%,0 100%);
   animation: reconnect-sweep 2.4s ease-in-out infinite;
 }
 .reconnect-background::after {
   left: -26.25%;
-  background: color-mix(in srgb,var(--player-p2) 22%,transparent);
+  background: color-mix(in srgb,var(--activity-color,var(--player-p2)) 22%,transparent);
 }
 @keyframes reconnect-sweep { from { transform: translateX(0); } to { transform: translateX(800%); } }
 [data-loading-hidden] .reconnect-background::before,

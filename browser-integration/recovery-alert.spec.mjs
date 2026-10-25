@@ -8,7 +8,7 @@ async function containedControls(page){
  const geometry=await page.getByTestId("fixture-alert").evaluate(alert=>{
   const card=alert.getBoundingClientRect();
   return {card:{x:card.x,y:card.y,right:card.right,bottom:card.bottom},width:innerWidth,height:innerHeight,
-   controls:[...alert.querySelectorAll('button')].map(button=>{const b=button.getBoundingClientRect();return {label:button.textContent,width:b.width,height:b.height,x:b.x,y:b.y,right:b.right,bottom:b.bottom,hit:document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)?.closest('button')===button};}),
+   controls:[...alert.querySelectorAll('button,a.button-link')].map(button=>{const b=button.getBoundingClientRect();return {label:button.textContent,width:b.width,height:b.height,x:b.x,y:b.y,right:b.right,bottom:b.bottom,hit:document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)?.closest('button,a.button-link')===button};}),
    messageVisible:alert.querySelector('.shell-game-alert-copy').scrollHeight<=alert.querySelector('.shell-game-alert-copy').clientHeight+1};
  });
  expect(geometry.card.x).toBeGreaterThanOrEqual(-1);expect(geometry.card.right).toBeLessThanOrEqual(geometry.width+1);
@@ -93,4 +93,34 @@ for(const reduced of [false,true]) test(`confirmation fades the board and sweeps
  await page.clock.runFor(200);await expect.poll(()=>board.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(1);
  await page.evaluate(game=>window.setRecovery({...game,recoveryIssue:'invalid_credentials'}),pending);await expect(wrap).toHaveAttribute('aria-busy','false');
  await page.clock.resume();
+});
+
+for(const width of [320,390])test(`recovery actions keep icons, labels and navigation at ${width}px with enlarged text`,async({page},info)=>{
+ await page.setViewportSize({width,height:844});await page.emulateMedia({reducedMotion:'reduce'});await openFixture(page);
+ await page.evaluate(()=>{document.documentElement.style.fontSize='200%';window.renderMode('overdue',{diagnostics:false});});
+ const alert=page.getByTestId('fixture-alert'),reload=alert.getByRole('button',{name:'Reload game',exact:true}),home=alert.getByRole('link',{name:'Home',exact:true});
+ await expect(reload).toHaveAttribute('data-action','reconnect-safely');await expect(home).toHaveAttribute('href','#/');
+ for(const control of [reload,home]){
+  await expect(control.locator('svg')).toHaveAttribute('aria-hidden','true');
+  await expect(control.locator('svg path')).toHaveAttribute('d',/.+/);
+ }
+ await containedControls(page);await reload.focus();await expect(reload).toBeFocused();
+ // Safari's default keyboard navigation uses Option-Tab to include links.
+ await page.keyboard.press(info.project.name==='webkit'?'Alt+Tab':'Tab');await expect(home).toBeFocused();
+ await page.screenshot({path:info.outputPath('recovery-actions-enlarged.png')});
+ await home.press('Enter');await expect(page).toHaveURL(/#\/$/);
+ for(const mode of ['storage','paused','upgrade','signin']){
+  await page.evaluate(mode=>window.renderMode(mode,{diagnostics:false}),mode);
+  for(const control of await alert.locator('.shell-game-alert-actions button').all())await expect(control.locator('svg path')).toHaveAttribute('d',/.+/);
+  await containedControls(page);
+ }
+ expect((await runScopedAxeScan({page,include:'[data-testid="fixture-alert"]'})).violations).toEqual([]);
+});
+
+for(const width of [320,390])test(`normal recovery keeps Home beside Reload game at ${width}px`,async({page},info)=>{
+ await page.setViewportSize({width,height:844});await page.emulateMedia({reducedMotion:'reduce'});await openFixture(page);
+ await page.evaluate(()=>window.renderMode('overdue',{diagnostics:false}));
+ const alert=page.getByTestId('fixture-alert'),reload=alert.getByRole('button',{name:'Reload game',exact:true}),home=alert.getByRole('link',{name:'Home',exact:true});
+ await containedControls(page);const a=await reload.boundingBox(),b=await home.boundingBox();expect(b.x).toBeGreaterThanOrEqual(a.x+a.width);expect(b.y).toBeCloseTo(a.y,1);
+ await page.screenshot({path:info.outputPath('recovery-actions-normal.png')});
 });

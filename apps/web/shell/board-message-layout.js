@@ -1,3 +1,4 @@
+import {activityActorSide,setActivityActor} from './activity-affiliation.js';
 import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
 import { describeComputerMove } from './computer-narration.js';
 
@@ -31,15 +32,18 @@ export function updateComputerBoardLoading(element, game, status = {}, {replayin
   const owner = `${scope}:${game?.id}`;
   if (!pending) {
     activeMessages.delete(element);
+    setActivityActor(element,null);
     if (element.dataset.loadingState !== 'idle') element.dataset.loadingState = 'idle';
     if (element.hasAttribute('data-loading-key')) element.removeAttribute('data-loading-key');
     return;
   }
   let active = activeMessages.get(element);
   if (active?.owner !== owner) {
-    active = {owner,key:`computer-board:${owner}:${++operation}`};
+    active = {owner,actorSide:null,key:`computer-board:${owner}:${++operation}`};
     activeMessages.set(element,active);
   }
+  active.actorSide=activityActorSide(game,{thinking:true}) ?? active.actorSide;
+  setActivityActor(element,active.actorSide);
   if (element.dataset.loadingKey !== active.key) element.dataset.loadingKey = active.key;
   if (element.dataset.loadingState !== 'pending') element.dataset.loadingState = 'pending';
 }

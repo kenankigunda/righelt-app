@@ -3,6 +3,7 @@ import { deriveBoardView, createViewingIntent } from './viewing-state.js';
 import { mountMobileNavigation } from './mobile-navigation.js';
 import { computerBoardMessage, latestComputerTurn } from './computer-narration.js';
 import { renderBoardHeadingSlot, renderBoardMessageSlot, updateComputerBoardLoading } from './board-message-layout.js';
+import { activityActorSide, setActivityActor, undoApprovalActorSide } from './activity-affiliation.js';
 import { applyDecisionNotes } from './decision-notes.js';
 import { createUtilityMemory } from './utility-memory.js';
 import { createReplayRequest } from './replay-request.js';
@@ -1661,7 +1662,7 @@ const getGameAlertItems = (game) => {
     html: renderGameAlertCard({
       tone: "danger",
       body: escapeHtml(operation.error?.message || "The operation could not be completed."),
-      action: `<button class="secondary mini-button" data-action="dismiss-failed-operation" data-operation-id="${escapeHtml(operation.id)}">Dismiss</button>`,
+      action: `<button class="secondary mini-button" data-action="dismiss-failed-operation" data-operation-id="${escapeHtml(operation.id)}">${icon('close')}Dismiss</button>`,
       testId: "sync-failure-banner", incidentId: (issueDiagnostics.list().find(r => r.key === `operation:${operation.id}`)?.id ?? issueDiagnostics.capture(`operation:${operation.id}`, { operation: operation.kind ?? "game_operation", code: operation.error?.code, gameId: game.id, stage: "operation_failed" })),
     }),
   }));
@@ -1669,18 +1670,18 @@ const getGameAlertItems = (game) => {
   const message = presentedRecoveryMessage(game);
   for (const report of issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.key.startsWith("operation:"))) if (!failedOperations.some(op => `operation:${op.id}` === report.key)) issueDiagnostics.resolve(report.key);
   const retained = issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.resolvedAt && isDiagnosticOpen(r.id));
-  for (const report of retained) items.push({ key: `resolved:${report.id}`, html: renderGameAlertCard({ body: "Resolved", incidentId: report.id, action: `<button class="secondary mini-button" data-action="dismiss-diagnostic" data-incident-id="${report.id}">Dismiss</button>` }) });
+  for (const report of retained) items.push({ key: `resolved:${report.id}`, html: renderGameAlertCard({ body: "Resolved", incidentId: report.id, action: `<button class="secondary mini-button" data-action="dismiss-diagnostic" data-incident-id="${report.id}">${icon('close')}Dismiss</button>` }) });
   if (!message) dismissedRecoveryNotices.delete(game.id);
   const dismissed = dismissedRecoveryNotices.get(game.id) === message;
   if (message && (!dismissed || game.storageBlocked)) {
     items.unshift({
       key: `live-sync:${game.id}:${game.recoveryEpisodeId ?? "current"}`, priority: game.storageBlocked || game.upgradeRequired || game.recoveryIssue ? "urgent" : "normal",
-      html: renderGameAlertCard({ tone: "warn", activity: recoveryActivity(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: game.incidentId,
+      html: renderGameAlertCard({ tone: "warn", activity: recoveryActivity(game), actorSide: activityActorSide(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: game.incidentId,
         action: game.storageBlocked
-          ? `<button class="secondary mini-button" data-action="retry-saving" data-game-id="${escapeHtml(game.id)}">Retry saving</button>${dismissed ? "" : `<button class="secondary mini-button" data-action="dismiss-recovery-notice" data-game-id="${escapeHtml(game.id)}">Dismiss</button>`}`
-          : game.upgradeRequired ? `<button class="secondary mini-button" data-action="refresh-game">Refresh</button>`
-          : ["session_changed", "invalid_credentials"].includes(game.recoveryIssue) ? `<button class="secondary mini-button" data-action="account-open">Sign in</button>`
-          : `<button class="secondary mini-button" data-action="reconnect-safely" data-game-id="${escapeHtml(game.id)}">Reload now</button>`,
+          ? `<button class="secondary mini-button" data-action="retry-saving" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Retry saving</button>${dismissed ? "" : `<button class="secondary mini-button" data-action="dismiss-recovery-notice" data-game-id="${escapeHtml(game.id)}">${icon('close')}Dismiss</button>`}`
+          : game.upgradeRequired ? `<button class="secondary mini-button" data-action="refresh-game">${icon('rematch')}Refresh</button>`
+          : ["session_changed", "invalid_credentials"].includes(game.recoveryIssue) ? `<button class="secondary mini-button" data-action="account-open">${icon('account')}Sign in</button>`
+          : `<button class="secondary mini-button" data-action="reconnect-safely" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Reload game</button><a class="secondary mini-button button-link" href="#/">${icon('home')}Home</a>`,
       }),
     });
   }
@@ -1693,9 +1694,9 @@ const getGameAlertItems = (game) => {
   if (request) {
     const move = game.moves?.find(entry => entry.moveId === request.targetMoveId);
     const attrs = `data-game-id="${escapeHtml(game.id)}" data-request-id="${escapeHtml(request.requestId)}"`;
-    items.push({key:`undo-request:${request.requestId}`, html:renderGameAlertCard({activity:'waiting', testId:approval?'undo-approval-notice':'undo-waiting-notice',
+    items.push({key:`undo-request:${request.requestId}`, html:renderGameAlertCard({activity:'waiting', actorSide:undoApprovalActorSide(game,request), testId:approval?'undo-approval-notice':'undo-waiting-notice',
       body:approval ? `Undo requested before ${escapeHtml(move?.notation ?? 'this move')}` : 'Waiting for undo approval',
-      action:approval ? `<button data-action="accept-revert-request" ${attrs}>Accept</button><button class="secondary" data-action="reject-revert-request" ${attrs}>Reject</button>` : `<button class="secondary" data-action="rescind-revert-request" ${attrs}>Cancel request</button>`})});
+      action:approval ? `<button data-action="accept-revert-request" ${attrs}>${icon('check')}Accept</button><button class="secondary" data-action="reject-revert-request" ${attrs}>${icon('close')}Reject</button>` : `<button class="secondary" data-action="rescind-revert-request" ${attrs}>${icon('close')}Cancel request</button>`})});
   }
 
   if (undoRequestFeedback && undoRequestFeedbackGameId === game.id) {
@@ -3128,7 +3129,7 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
 const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
   const game = transport.getGameViewModel(gameId);
   if (!game && transport.isUpgradeRequired?.(gameId)) {
-    return `<section class="panel" data-testid="sync-recovery-banner" role="status"><p>Righelt has an update. Refresh to keep playing.</p><button class="secondary" data-action="refresh-game">Refresh</button></section>`;
+    return `<section class="panel" data-testid="sync-recovery-banner" role="status"><p>Righelt has an update. Refresh to keep playing.</p><button class="secondary" data-action="refresh-game">${icon('rematch')}Refresh</button></section>`;
   }
   if (!routeHydrated && !game) {
     return renderGameViewSkeleton();
@@ -3202,13 +3203,12 @@ const renderResult = game => {
   const result = getGameResult(transport.getAuthoritativeGame(game.id), transport.getIdentityId());
   if (!result) return "";
   const names = game.selfPlayMode && !game.player1?.computerProfile && !game.player2?.computerProfile ? "Self-play" : [game.player1, game.player2].map((person, i) => participantDisplayName(person, `Player ${i + 1}`)).join(" vs ");
-  return `<section class="panel game-result" data-testid="game-result"><p class="small">Game finished</p><h1 tabindex="-1">${escapeHtml(result.title)}</h1><p>${escapeHtml(result.reason)}</p><p>${escapeHtml(names)}</p><p class="small">Game ${escapeHtml(formatDisplayGameId(game.id))}</p><div class="story-modal-actions"><button data-action="analysis" data-game-id="${escapeHtml(game.id)}">${icon('back')}Review game</button><button class="secondary" data-action="rematch" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Play again</button><a class="button-link secondary" href="#/">Home</a></div></section>`;
+  return `<section class="panel game-result" data-testid="game-result"><p class="small">Game finished</p><h1 tabindex="-1">${escapeHtml(result.title)}</h1><p>${escapeHtml(result.reason)}</p><p>${escapeHtml(names)}</p><p class="small">Game ${escapeHtml(formatDisplayGameId(game.id))}</p><div class="story-modal-actions"><button data-action="analysis" data-game-id="${escapeHtml(game.id)}">${icon('back')}Review game</button><button class="secondary" data-action="rematch" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Play again</button><a class="button-link secondary" href="#/">${icon('home')}Home</a></div></section>`;
 };
 
 const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
-  if (!routeHydrated) {
-    return renderGameContent(gameId, inviteFromRole, inviteToken);
-  }
+  // A socket may supply the snapshot before route hydration finishes. Keep
+  // that known game in the same shell and gates as its settled render.
   const game = transport.getGameViewModel(gameId);
   if (!game) {
     return renderGameContent(gameId, inviteFromRole, inviteToken);
@@ -3351,6 +3351,7 @@ const updateReconnectPresentation = game => {
   const wrap = document.querySelector('[data-testid="game-board-wrap"]');
   const recovering = isBoardRecoveryPending(game);
   if (wrap) {
+    setActivityActor(wrap, activityActorSide(game));
     wrap.dataset.reconnecting = String(recovering);
     wrap.dataset.loadingState = recovering ? "pending" : "idle";
     // A retry or socket generation change does not restart an uninterrupted cue.

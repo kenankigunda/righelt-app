@@ -179,7 +179,11 @@ test.describe('narrow board and history',()=>{
   for(const {width,textScale} of [{width:390,textScale:100},{width:1440,textScale:100},{width:320,textScale:200},{width:390,textScale:200}])test(`cold game loading reserves the settled board geometry at ${width}px and ${textScale}% text`,async({page,context},info)=>{
     await page.setViewportSize({width,height:740});
     const {gameId}=await selfPlay(page);
-    await page.addInitScript(scale=>document.addEventListener('DOMContentLoaded',()=>document.documentElement.style.fontSize=`${scale}%`,{once:true}),textScale);
+    await page.addInitScript(scale=>document.addEventListener('DOMContentLoaded',()=>{
+      document.documentElement.style.fontSize=`${scale}%`;
+      window.coldBoardFrames=[];window.recordColdBoard=true;
+      const sample=()=>{if(!window.recordColdBoard)return;const panel=document.querySelector('[data-shell-panel="board"]');if(panel&&panel.getBoundingClientRect().width>0)window.coldBoardFrames.push({canonical:Boolean(panel.closest('[data-game-shell-root]'))});requestAnimationFrame(sample);};sample();
+    },{once:true}),textScale);
     let release;const held=new Promise(resolve=>{release=resolve;});
     // Either snapshot GET or durable reconciliation can win hydration. Hold
     // both real responses so every browser observes the same cold boundary.
@@ -202,10 +206,20 @@ test.describe('narrow board and history',()=>{
       await expect(board(page).locator('.cell')).toHaveCount(100);
       await expect(page.locator('[data-shell-panel="board"]')).toHaveAttribute('data-turn-side','red');
       await expect(page.locator('[data-shell-panel="board"]').getByRole('heading')).toHaveCount(1);
-      const loaded=await documentGeometry(board(page));
-      const loadedHeading=await documentGeometry(page.locator('[data-shell-panel="board"] .board-heading:not([aria-hidden])'));
+      await expect(page.getByTestId('game-shell')).toBeVisible();
+      await expect(page.locator('[data-shell-panel="board"] .board-heading:not([aria-hidden])')).toBeVisible();
+      const {loaded,loadedHeading,frames}=await page.getByTestId('game-shell').evaluate(shell=>{
+        const geometry=element=>{const b=element.getBoundingClientRect();return{x:b.x+scrollX,y:b.y+scrollY,width:b.width,height:b.height};};
+        window.recordColdBoard=false;
+        return{loaded:geometry(shell.querySelector('[data-testid="game-board"]')),loadedHeading:geometry(shell.querySelector('.board-heading:not([aria-hidden])')),frames:window.coldBoardFrames};
+      });
+      expect(frames.length).toBeGreaterThan(1);
+      expect(frames.every(frame=>frame.canonical),'Every painted loading/live board uses the canonical shell').toBe(true);
       console.log('[cold-board-geometry]',JSON.stringify({width,textScale,loading,loaded,loadingHeading,loadedHeading}));
-      for(const key of ['x','y','width','height'])expect(Math.abs(loaded[key]-loading[key]),`board ${key} should match its loading frame`).toBeLessThanOrEqual(1);
+      for(const key of ['x','y','width','height']){
+        expect(Math.abs(loaded[key]-loading[key]),`board ${key} should match its loading frame`).toBeLessThanOrEqual(1);
+        expect(Math.abs(loadedHeading[key]-loadingHeading[key]),`heading ${key} should match its loading frame`).toBeLessThanOrEqual(1);
+      }
       await expectNoHorizontalOverflow(page);
     }finally{closing=true;release();await context.unrouteAll({behavior:'wait'});}
   });

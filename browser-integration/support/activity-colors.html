@@ -1,0 +1,25 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Actor activity colors</title><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"><style>body{padding:16px}main{max-width:520px;margin:auto;--action-color:var(--player-p1)}.board-wrap{width:100%;height:90px;margin-top:20px}.reconnect-background{display:block}.expected{position:absolute;visibility:hidden}</style></head><body><main><div id="message"></div><div id="notices"></div><div class="board-wrap"><div class="reconnect-background"></div></div><span id="expected" class="expected"></span></main><script type="module">
+import {renderBoardMessageSlot,updateComputerBoardLoading} from '/apps/web/shell/board-message-layout.js';
+import {mountLoadingFeedback} from '/apps/web/shell/loading.js';
+import {activityActorSide,setActivityActor} from '/apps/web/shell/activity-affiliation.js';
+import {renderComputerProgress} from '/apps/web/shell/computer-view.js';
+import {renderGameAlertCard} from '/apps/web/shell/game-alert.js';
+import {patchNotificationHtml} from '/apps/web/shell/notification-dom.js';
+import {CURRENT_COMPUTER_MODEL} from '/apps/web/generated/packages/shared-types/src/computer-play.js';
+document.querySelector('#message').outerHTML=renderBoardMessageSlot({id:'prompt'});
+mountLoadingFeedback(document);
+window.activityStep=({actor='P2',phase='looking-ahead',mode='computer',unknown=false}={})=>{
+ const saving=phase==='saving',next=actor==='P1'?'P2':'P1';
+ const game={id:'activity',computer:{paused:false,manual:false,takeoverTurn:null,seats:{p1:actor==='P1'?'babs':null,p2:actor==='P2'?'babs':null},modelId:CURRENT_COMPUTER_MODEL.id},canControlComputer:true,computerTurn:saving?null:'babs',controlSeat:(saving?next:actor)==='P1'?'Player 1':'Player 2',board:{state:{sideToMove:saving?next:actor}},pendingActorSide:saving&&!unknown?actor:null,pendingCommandCount:saving?1:0,pendingComputerSaveStartedAt:saving?0:null};
+ const status={phase,profile:'babs',elapsedMs:60000,phaseElapsedMs:20000,progress:{completed:1,total:3}};
+ updateComputerBoardLoading(document.querySelector('.board-message-activity'),game,status,{scope:'owner'});
+ setActivityActor(document.querySelector('.board-wrap'),activityActorSide(game));
+ const html=mode==='computer'?renderComputerProgress(game,status):renderGameAlertCard({body:'Waiting for approval',activity:'waiting',actorSide:actor});
+ patchNotificationHtml(document.querySelector('#notices'),html);
+ document.querySelector('#prompt').textContent=saving?'Saving the move':'Babs is thinking';
+ window.activityGame=game;
+};
+window.activityExpected=side=>{const target=document.querySelector('#expected');target.style.color=`var(--player-${side.toLowerCase()})`;return getComputedStyle(target).color;};
+window.activityMixed=(side,amount)=>{const target=document.querySelector('#expected');target.style.backgroundColor=`color-mix(in srgb,var(--player-${side.toLowerCase()}) ${amount}%,transparent)`;return getComputedStyle(target).backgroundColor;};
+window.fixtureReady=true;
+</script></body></html>
