@@ -1,3 +1,4 @@
+import {icon} from '../shell/ui.js';
 import {canReadAdditionalHistory} from '../shell/additional-history.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -35,4 +36,27 @@ test('loading preserves the real empty feedback and additional-history footer fl
  assert.match(slots.renderPlayersLoading(),/panel-loading-actions[\s\S]*<div class="invite-feedback"><\/div>/);
  assert.match(context.extra({id:'g'}),/<div[^>]*><ol class="history-list"[^>]*><\/ol><\/div>/);
  assert.match(slots.renderHistoryLoading(),/<div><ol class="history-list"><\/ol><\/div>/);
+});
+
+
+test('actual invitation actions keep capability guards and decorative angular icons',()=>{
+ const context={icon,escapeHtml:String,getJoinButtonKey:()=>'',getPlayAsBothButtonKey:()=>'',getCopyInviteButtonKey:()=>'',getApproveRequestButtonKey:()=>'',
+  renderSectionActions:items=>items.join(''),invitationOptions:()=>[],renderButtonStateAttributes:({disabled})=>disabled?' disabled':'',
+  renderParticipantsPanel:()=>'',participantButton:()=>'<span>Guest</span>',playerToneClassForSeat:()=> 'player-tone-p2',sideColorName:()=> 'Blue',
+  joinFeedback:{message:()=>''},renderInviteFeedback:()=>'',inviteFallback:null};
+ vm.runInNewContext(`${extract('const renderJoinInvitePanel =','const expandedViewerGames =')};globalThis.players=renderJoinInvitePanel;`,context);
+ const game={id:'g',pendingJoinRequests:[{identityId:'friend',requestedSeat:'Player 2'}],approvableRequesterIds:['friend'],canJoinAsPlayer:true,showJoinActions:true,canPlayAsBothPlayers:true};
+ const html=context.players(game);
+ for(const [glyph,label]of[['check','Approve'],['play','Join as player'],['players','Play both sides']])assert(html.includes(`${icon(glyph)}${label}</button>`));
+ assert.match(html,/data-requester-id="friend"/);assert.match(html,/player-tone-p2">Blue/);
+ assert.doesNotMatch(html,/data-testid="approve-request-inline" disabled/);
+ const blocked=context.players({...game,approvableRequesterIds:[],canJoinAsPlayer:false,canPlayAsBothPlayers:false});
+ assert.match(blocked,/data-testid="approve-request-inline" disabled/);
+ assert.doesNotMatch(blocked,/data-action="(?:join-player|play-as-both-players)"/);
+ const approval={...context,renderGameContent:()=>'<div>Board</div>'};
+ vm.runInNewContext(`${extract('const renderApprovalGate =','const renderResult =')};globalThis.approval=renderApprovalGate;`,approval);
+ const gate=approval.approval(game,game.pendingJoinRequests[0]);
+ assert(gate.includes(`${icon('check')}Accept</button>`));assert(gate.includes(`${icon('close')}Ignore</button>`));
+ assert.doesNotMatch(gate,/Approve the request and promote/);
+ assert.match(gate,/data-requester-id="friend"/);assert.match(gate,/aria-hidden="true" inert/);
 });

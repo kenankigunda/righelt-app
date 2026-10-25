@@ -12,6 +12,7 @@
   --player-red-pressed: #802128;
   --player-blue-pressed: #183e66;
   --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-family-fallback: "Avenir Next", sans-serif;
   --type-body: 1rem;
   --type-secondary: .875rem;
   --type-caption: .75rem;

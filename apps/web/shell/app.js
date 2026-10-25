@@ -37,6 +37,7 @@ const patchToolHtml = (element, html) => {
 import { createDestructionTransitions } from "./destruction-transitions.js";
 import { isPassivePageClick } from "./passive-click.js";
 import {mountLoadingEdges} from './loading-edge.js';
+import {mountRecoverySpace} from './recovery-space.js';
 import { mountLoadingFeedback, loadingAttributes, LOADING_CUE_DELAY_MS } from "./loading.js";
 import { SYNC_TIMING } from "../generated/packages/shared-types/src/sync-protocol.js";
 import { latestRequestEvidence } from "./request-evidence.js";
@@ -109,6 +110,7 @@ mountLoadingFeedback(document);
 mountLoadingEdges(document);
 void fetch("/deploy-meta.json", { cache: "no-store", signal: AbortSignal.timeout(5000) }).then(response => response.json()).then(meta => { globalThis.__righeltClientBuild = meta.sha ?? meta.commitSha ?? "unavailable"; }).catch(() => {});
 const appEl = document.getElementById("app");
+mountRecoverySpace(appEl);
 const utilityMemory = createUtilityMemory({ root: appEl, getScope: key => `${account.snapshot().generation}:${key === 'debug' ? getCurrentViewedGameId() ?? 'home' : 'scenarios'}` });
 const dismissedRecoveryNotices = new Map();
 // This node survives header/panel rendering, including repeated heartbeat snapshots.
@@ -1623,7 +1625,7 @@ const getGameAlertItems = (game) => {
       html: renderGameAlertCard({ tone: recoveryNeedsAction ? "warn" : "neutral", activity: recoveryActivity(game), actorSide: activityActorSide(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: recoveryNeedsAction ? game.incidentId : null,
         action: !recoveryNeedsAction ? "" : game.storageBlocked
           ? `<button class="secondary mini-button" data-action="retry-saving" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Retry saving</button>${dismissed ? "" : `<button class="secondary mini-button" data-action="dismiss-recovery-notice" data-game-id="${escapeHtml(game.id)}">${icon('close')}Dismiss</button>`}`
-          : game.upgradeRequired ? `<button class="secondary mini-button" data-action="refresh-game">${icon('rematch')}Refresh</button>`
+          : game.upgradeRequired ? `<button class="secondary mini-button" data-action="refresh-game">${icon('rematch')}Reload game</button><a class="secondary mini-button button-link" href="#/">${icon('home')}Home</a>`
           : ["session_changed", "invalid_credentials"].includes(game.recoveryIssue) ? `<button class="secondary mini-button" data-action="account-open">${icon('account')}Sign in</button>`
           : `<button class="secondary mini-button" data-action="reconnect-safely" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Reload game</button><a class="secondary mini-button button-link" href="#/">${icon('home')}Home</a>`,
       }),
@@ -1750,12 +1752,12 @@ const renderTurnHistory = (game) => {
     const branchButton = game.inHistoryMode && game.historyIndex === move.index && move.undone !== true
       ? `<button class="secondary mini-button history-branch-button" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}" data-move-index="${escapeHtml(
           String(move.index),
-        )}">New game before this move</button>`
+        )}">${icon("play")}New game before this move</button>`
       : "";
     const revertButton = game.inHistoryMode && game.historyIndex === move.index && move.undone !== true && game.myRoles?.some(role => role === "Player 1" || role === "Player 2")
       ? `<button class="secondary mini-button history-branch-button" data-action="revert-to-move" data-game-id="${escapeHtml(game.id)}" data-move-id="${escapeHtml(
           move.moveId || "",
-        )}">Undo before this move</button>`
+        )}">${icon("back")}Undo before this move</button>`
       : "";
     const destroyedPieces = Array.isArray(move.destroyedPieces) ? move.destroyedPieces : [];
     const destructionSubBullets = destroyedPieces.length > 0
@@ -1856,7 +1858,7 @@ const renderTurnHistory = (game) => {
   const emptyTurnItem = game.inHistoryMode
     ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(
         game.id,
-      )}" data-testid="history-return-live">Return to live view</button></li>`
+      )}" data-testid="history-return-live">${icon("board")}Return to live view</button></li>`
     : liveStatusItem;
 
   return `${emptyTurnItem}${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
@@ -2483,7 +2485,7 @@ const renderJoinInvitePanel = (game, inviteLink) => {
                 className: "secondary",
                 pendingKey: approveRequestButtonKey,
                 disabled: !Array.isArray(game.approvableRequesterIds) || !game.approvableRequesterIds.includes(request.identityId),
-              })}>Approve</button>
+              })}>${icon("check")}Approve</button>
             </li>`;
             },
           )
@@ -2498,14 +2500,14 @@ const renderJoinInvitePanel = (game, inviteLink) => {
     game.canJoinAsPlayer && game.showJoinActions
       ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" data-testid="join-player"${renderButtonStateAttributes({
           pendingKey: joinPlayerButtonKey,
-        })}>Join as player</button>`
+        })}>${icon("play")}Join as player</button>`
       : "",
     ...invitationOptions(game).map(option => `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-invite-role="${option.role}" ${option.role==='viewer'?'data-testid="copy-viewer-invite"':'data-testid="copy-invite"'}${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:copyInviteButtonKey,disabled:!game.canInvite})}>${icon('invite')}${option.label}</button>`),
     game.canPlayAsBothPlayers
       ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({
           className: "secondary",
           pendingKey: playAsBothButtonKey,
-        })}>Play both sides</button>`
+        })}>${icon("players")}Play both sides</button>`
       : "",
   ]);
 
@@ -2565,7 +2567,7 @@ const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
   return renderHistorySlots({rows:historyRows,extra:renderAdditionalHistory(game),
     before:game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? "Loading this move" : "This move couldn’t load. Your current view is still available."}</p>${game.historyLoadError ? `<button class="secondary mini-button" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${game.historyLoadIndex}">Retry</button>` : ""}</div>` : "",
-    after:getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button>` : ""});
+    after:getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">${icon("history")}View result</button>` : ""});
 };
 
 const renderBoardPanel = (game) => `
@@ -2986,6 +2988,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
       const selection=focus instanceof HTMLInputElement?[focus.selectionStart,focus.selectionEnd]:null;
       if(selector)panelPendingFocus.set(joinEl,{selector,selection});
       else if(document.activeElement !== document.body)panelPendingFocus.delete(joinEl);
+      // Preserve Players/profile controls across unrelated presence updates (canonical160 b0604f1).
       patchToolHtml(joinEl,markup);
       joinMarkupByElement.set(joinEl,markup);
       const savedFocus=panelPendingFocus.get(joinEl);
@@ -3056,7 +3059,7 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
 const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
   const game = transport.getGameViewModel(gameId);
   if (!game && transport.isUpgradeRequired?.(gameId)) {
-    return `<section class="panel" data-testid="sync-recovery-banner" role="status"><p>Righelt has an update. Refresh to keep playing.</p><button class="secondary" data-action="refresh-game">${icon('rematch')}Refresh</button></section>`;
+    return `<section class="panel" data-testid="sync-recovery-banner" role="status"><p>Righelt has an update. Refresh to keep playing.</p><button class="secondary" data-action="refresh-game">${icon('rematch')}Reload game</button><a class="secondary mini-button button-link" href="#/">${icon('home')}Home</a></section>`;
   }
   if (!routeHydrated && !game) {
     return renderGameViewSkeleton();
@@ -3105,7 +3108,6 @@ const renderApprovalGate = (game, request) => {
               data-requester-id="${escapeHtml(request.identityId)}"
               data-testid="accept-request"
             >${icon('check')}Accept</button>
-            <span class="small invite-choice-note">Approve the request and promote this participant into the requested player seat.</span>
           </div>
           <div class="invite-choice-row">
             <button

@@ -44,7 +44,7 @@ test('recovery action templates keep semantic navigation, visible labels and dec
  assert.match(html,/<a[^>]+href="#\/">[\s\S]*?Home<\/a>/);
  assert.equal((html.match(/aria-hidden="true"/g)||[]).length,2);
  assert.equal((html.match(/focusable="false"/g)||[]).length,2);
- for(const [game,label,action] of [[{storageBlocked:true},'Retry saving','retry-saving'],[{upgradeRequired:true},'Refresh','refresh-game'],[{recoveryIssue:'invalid_credentials'},'Sign in','account-open']]){
+ for(const [game,label,action] of [[{storageBlocked:true},'Retry saving','retry-saving'],[{upgradeRequired:true},'Reload game','refresh-game'],[{recoveryIssue:'invalid_credentials'},'Sign in','account-open']]){
   const markup=render({id:'g',...game},false,String,icon);
   assert.match(markup,new RegExp(`data-action="${action}"`));
   assert.match(markup,new RegExp(`</svg>${label}</button>`));
@@ -65,4 +65,31 @@ test('actual recovery actions stay absent while quiet/recording and appear at th
  }
  const immediate=[{storageBlocked:true},{upgradeRequired:true},{recoveryIssue:'session_changed'},{recoveryIssue:'invalid_credentials'},{recoveryIssue:'invalid_response'}];
  for(const issue of immediate){const value={...game,...issue};assert.ok(recoveryMessage(value,1));assert.notEqual(actions(value,false,String,icon,needsRecoveryAction(value,1)),'');}
+});
+
+test('saved-game upgrade immediately offers Reload game and Home without replacing the refresh action',()=>{
+ const start=source.indexOf('action: !recoveryNeedsAction',source.indexOf('const getGameAlertItems'))+'action: '.length;
+ const end=source.indexOf(',\n      }),',start);assert.ok(start>20&&end>start);
+ const actions=new Function('game','dismissed','escapeHtml','icon','recoveryNeedsAction',`return (${source.slice(start,end)});`);
+ const game={id:'g',upgradeRequired:true,recovering:false};
+ assert.equal(needsRecoveryAction(game,0),true);
+ const markup=actions(game,false,String,icon,needsRecoveryAction(game,0));
+ assert.match(markup,/data-action="refresh-game">[\s\S]*?<\/svg>Reload game<\/button>/);
+ assert.match(markup,/<a[^>]+href="#\/">[\s\S]*?<\/svg>Home<\/a>/);
+ assert.equal((markup.match(/aria-hidden="true" focusable="false"/g)||[]).length,2);
+ assert.doesNotMatch(markup,/reconnect-safely/);
+ assert.match(source,/if \(action === "refresh-game"\) \{ window\.location\.reload\(\); return; \}/);
+});
+test('cold upgrade offers the same branded recovery choices without fabricating a board or reading a journal',()=>{
+ const start=source.indexOf('const renderGameContent ='),end=source.indexOf('const renderApprovalGate =',start);assert.ok(start>0&&end>start);
+ const reads=[];
+ const render=new Function('transport','icon','routeHydrated','renderGameViewSkeleton',`${source.slice(start,end)};return renderGameContent;`)(
+  {getGameViewModel:id=>{reads.push(['view',id]);return null;},isUpgradeRequired:id=>{reads.push(['upgrade',id]);return true;}},icon,false,()=>assert.fail('Upgrade must not return a loading skeleton'));
+ const markup=render('saved-game');
+ assert.deepEqual(reads,[['view','saved-game'],['upgrade','saved-game']]);
+ assert.match(markup,/data-testid="sync-recovery-banner" role="status"/);
+ assert.match(markup,/data-action="refresh-game">[\s\S]*?<\/svg>Reload game<\/button>/);
+ assert.match(markup,/<a[^>]+href="#\/">[\s\S]*?<\/svg>Home<\/a>/);
+ assert.equal((markup.match(/aria-hidden="true" focusable="false"/g)||[]).length,2);
+ assert.doesNotMatch(markup,/game-board|<progress|reconnect-safely/);
 });

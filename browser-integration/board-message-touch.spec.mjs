@@ -10,13 +10,14 @@ test('replay message steps preserve action nodes and keyboard focus',async({page
   window.boardFixture.message(window.replayMessage);
  });
  const stop=page.getByRole('button',{name:'Stop replay',exact:true});await stop.focus();
- await page.evaluate(()=>{window.savedReplayStop=document.activeElement;window.savedReplayNext=document.querySelector('[data-board-message-action="replay-next"]');});
+ await page.evaluate(()=>{window.savedReplayStop=document.activeElement;window.savedReplayNext=document.querySelector('[data-board-message-action="replay-next"]');window.savedReplayIcon=window.savedReplayStop.querySelector("svg");window.savedReplayLabel=window.savedReplayStop.querySelector(".board-inline-action-label");});
  const before=await geometry(page);
  for(const step of [2,3]){
   await page.evaluate(step=>window.boardFixture.message({...window.replayMessage,text:`Replay · ${step} of 3`}),step);
   await expect(page.locator('#preview')).toContainText(`Replay · ${step} of 3`);
   expect(await page.evaluate(()=>({stop:window.savedReplayStop===document.querySelector('[data-board-message-action="replay-stop"]'),next:window.savedReplayNext===document.querySelector('[data-board-message-action="replay-next"]'),focus:document.activeElement===window.savedReplayStop}))).toEqual({stop:true,next:true,focus:true});
   expect(await geometry(page)).toEqual(before);
+  expect(await stop.evaluate(button=>button.querySelector('svg')===window.savedReplayIcon&&button.querySelector('.board-inline-action-label')===window.savedReplayLabel)).toBe(true);
  }
  await stop.press('Enter');expect(await page.evaluate(()=>window.boardFixture.messageActions())).toEqual(['replay-stop']);
  expect(await page.evaluate(()=>window.boardFixture.applied())).toEqual([]);
@@ -98,7 +99,7 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
         preview.innerHTML=`Piece at ${coordinate} – ${explanation} · ${continuation}`;return;
       }
 
-      if(phase==='human'){preview.innerHTML='Select a piece <button type="button" class="board-preview-inline-button" data-board-preview-action="pass">Pass</button>';return;}
+      if(phase==='human'){const {renderBoardInlineAction}=await import('/apps/web/board/message-presentation.js');preview.innerHTML=`Select a piece ${renderBoardInlineAction({id:'pass',label:'Pass'},{preview:true})}`;return;}
       if(phase==='thinking')game.computerTurn='horus';
       const longName='界'.repeat(16)+'W'.repeat(16);
       const message=phase==='spectator-long-name'?opponentBoardMessage({id:'named-viewer',myRole:'Viewer',myRoles:['Viewer'],player1:{identityId:'p1',profile:{displayName:longName}},player2:{identityId:'p2'},controlSeat:'Player 2',board:{state:{turnIndex:1,sideToMove:'P2'}},turns:[{index:0,status:'complete',playerSeat:'Player 1'}],moves:[{turnIndex:0,actorSide:'P1',action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]},{},{},{canInteract:false,identityId:'viewer'}):phase==='completed-pass'?opponentBoardMessage({...game,myRoles:['Player 2'],legalActions:[{type:'pass'}],computer:null,turns:[{index:0,status:'complete',playerSeat:'Player 1'}],moves:[{turnIndex:0,actorSide:'P1',action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]},{},{},{canInteract:true}):computerBoardMessage(game,{});
