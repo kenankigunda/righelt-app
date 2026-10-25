@@ -952,7 +952,7 @@ export const withFullViewModel = (game: LiveGame, identityId: string) => {
       !inHistoryMode &&
       controlSeat === turnOwnerSeat &&
       turnOwnerIdentity === identityId &&
-      Boolean(activeTurn && activeTurn.moveIndexes.length > 0) && validateAction(game.board.state, { type: "end_turn" }).ok,
+      validateAction(game.board.state, { type: "end_turn" }).ok,
     currentTurn: activeTurn ? clone(activeTurn) : null,
     historySelectionAction,
     initialSelectionAction,
@@ -1209,9 +1209,6 @@ const settleServerTurn = (game: LiveGame, operationId = nextMoveId()) => {
   if (!activeTurn) {
     return { ok: false as const, error: "turn_not_initialized" };
   }
-  if (activeTurn.moveIndexes.length === 0) {
-    return { ok: false as const, error: "turn_has_no_moves" };
-  }
   const removalEvents: RemovalEvent[] = [];
   const endedAt = now();
   activeTurn.endedAt = endedAt;
@@ -1238,7 +1235,7 @@ const settleServerTurn = (game: LiveGame, operationId = nextMoveId()) => {
 /** Explicit closure uses the same engine legality/transition as computer search. */
 export const endServerTurn = (game: LiveGame, operationId = nextMoveId()) => {
   const activeTurn = getActiveTurn(game);
-  if (!activeTurn || activeTurn.moveIndexes.length === 0) {
+  if (!activeTurn || activeTurn.moveIndexes.length === 0 && !game.board.state.continuation) {
     return { ok: false as const, error: activeTurn ? "turn_has_no_moves" : "turn_not_initialized" };
   }
   const validation = validateAction(game.board.state, { type: "end_turn" });

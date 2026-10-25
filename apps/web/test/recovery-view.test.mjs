@@ -188,3 +188,12 @@ test("returning to live never restores End Turn from move count without authorit
   t.retire();
  }
 });
+
+
+test('live return keeps legal End Turn available for captured continuations without move rows',()=>{
+ const t=store(),game=fixture();
+ game.player1={identityId:'actor'};game.player2={identityId:'other'};
+ game.turns=[{index:9,playerSeat:'Player 1',moveIndexes:[]}];game.legalActions=[{type:'end_turn'}];
+ t.applyLiveGameUpdate({game});t.selectHistoryMove({gameId:'history',moveIndex:0});t.returnToLive({gameId:'history'});
+ assert.equal(t.getGameViewModel('history').canEndTurn,true);t.retire();
+});

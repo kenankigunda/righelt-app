@@ -89,3 +89,18 @@ test('legacy Pass fencing uses immutable intent, not an earlier current continua
   assert.equal(result.commandOutcomes[0].reason,'dependency_pending');
   assert.equal(h.DB.getReceipt('g',command.clientCommandId),null);
 });
+
+
+test('captured continuation can End Turn without inventing earlier local move history',async()=>{
+  const h=await harness();
+  h.DB.overwriteGameState('g',game=>({...game,moves:[],turns:[{...game.turns.at(-1),moveIndexes:[]}]}));h.restart();
+  const game=h.DB.getGameState('g'), view=withViewModel(game,'owner');
+  assert.equal(view.canEndTurn,true);
+  const command=await h.command({type:'end_turn'});
+  const optimistic=projectOptimisticGame({authoritativeGame:view,identityId:'owner',queue:[{kind:'apply',action:{type:'end_turn'},clientCommandId:command.clientCommandId,queuedAt:game.updatedAt}]});
+  assert.equal(optimistic.ok,true);assert.equal(optimistic.game.pendingMoves.length,0);
+  const accepted=await h.call('apply',command);
+  assert.equal(accepted.accepted,true);assert.equal(h.DB.getGameState('g').moves.length,0);
+  assert.equal(h.DB.getGameState('g').board.state.continuation,null);
+  assert.equal(h.DB.getGameState('g').board.state.turnIndex,1);
+});

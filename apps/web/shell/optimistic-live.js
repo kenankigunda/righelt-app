@@ -34,7 +34,7 @@ const completeTurn = (game, queuedAt, pendingMoves, operationId) => {
   if (!activeTurn) {
     return { ok: false, error: "turn_not_initialized" };
   }
-  if (activeTurn.moveIndexes.length === 0) {
+  if (activeTurn.moveIndexes.length === 0 && !game.board.state.continuation) {
     return { ok: false, error: "turn_has_no_moves" };
   }
 
@@ -103,7 +103,7 @@ const finalizeProjectedView = ({ authoritativeGame, workingGame, identityId, que
     !next.inHistoryMode &&
     controlSeat === turnOwnerSeat &&
     turnOwnerIdentity === identityId &&
-    Boolean(activeTurn?.moveIndexes?.length) && validateAction(next.board.state, { type: "end_turn" }).ok;
+    validateAction(next.board.state, { type: "end_turn" }).ok;
   return next;
 };
 
