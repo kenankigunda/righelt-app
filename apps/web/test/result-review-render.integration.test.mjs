@@ -145,5 +145,8 @@ test('actual result renderer affiliates victory with the authoritative winning s
   runInNewContext(`${extract('const renderResult =','const renderGame =')};globalThis.output=renderResult(game);`,context);
   assert.match(context.output,new RegExp(`data-result-tone="victory" data-winner="${winner}"`));
   assert.match(context.output,/>You won<\/h1>/);assert.match(context.output,/Your opponent’s commander was destroyed/);
+  const actions=[...context.output.matchAll(/<button([^>]*)data-action="(analysis|rematch)"[^>]*>/g)];
+  assert.equal(actions.length,2);for(const action of actions)assert.doesNotMatch(action[1],/secondary/);
+  assert.equal(getGameResult(game,identity).rematchSide,winner==='p1'?'p2':'p1');
  }
 });

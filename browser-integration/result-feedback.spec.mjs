@@ -1,5 +1,9 @@
 import{test,expect}from'@playwright/test';
 const open=async page=>{await page.goto('/browser-integration/support/result-feedback.html');await page.waitForFunction(()=>window.fixtureReady);};
+const contrast=(a,b)=>{
+ const luminance=color=>color.match(/[\d.]+/g).slice(0,3).map(value=>{const n=Number(value)/255;return n<=.04045?n/12.92:((n+.055)/1.055)**2.4;}).reduce((sum,n,index)=>sum+n*[.2126,.7152,.0722][index],0);
+ const [light,dark]=[luminance(a),luminance(b)].sort((a,b)=>b-a);return(light+.05)/(dark+.05);
+};
 for(const width of [320,390,1440])test(`result perspectives remain readable and actions reachable at ${width}px`,async({page},info)=>{
  await page.setViewportSize({width,height:844});await open(page);
  for(const [side,tone]of[['red','victory'],['blue','defeat'],['viewer','neutral']]){
@@ -49,19 +53,48 @@ for(const width of [320,390])test(`200% result text enlarges its heading and kee
  }
 });
 
-test('red and blue winners keep their actual side color throughout the victory animation',async({page},info)=>{
+test('red and blue winners keep their actual side color throughout the victory animation and actions',async({page},info)=>{
  await page.setViewportSize({width:390,height:844});await open(page);await page.emulateMedia({reducedMotion:'no-preference'});
+ await page.evaluate(()=>document.documentElement.dataset.hoverCapability='hover');
  for(const [identity,winner]of[['red','p1'],['blue','p2']]){
   await page.evaluate(([identity,winner])=>{window.resultFixture.setup(identity);window.resultFixture.finish(false,`${winner}_win`);},[identity,winner]);
   const result=page.locator('.game-result');await expect(result).toHaveAttribute('data-result-tone','victory');await expect(result).toHaveAttribute('data-winner',winner);
   await expect(result.getByRole('heading',{name:'You won',exact:true})).toBeVisible();
-  const colors=await result.evaluate((el,winner)=>{
-   const probe=document.createElement('i');probe.style.color=`var(--player-${winner})`;el.append(probe);const expected=getComputedStyle(probe).color;probe.remove();
+  const colors=await result.evaluate((el,{winner,identity})=>{
+   const resolve=token=>{const probe=document.createElement('i');probe.style.color=token;el.append(probe);const color=getComputedStyle(probe).color;probe.remove();return color;};
+   const expected=resolve(`var(--player-${winner})`),hover=resolve(`var(--player-${identity}-hover)`),paper=resolve('var(--paper)');
    const mark=el.querySelector('.result-mark'),animations=mark.getAnimations({subtree:true});animations.forEach(animation=>animation.pause());
    const samples=[0,300,900].map(time=>{animations.forEach(animation=>animation.currentTime=time);return{color:getComputedStyle(mark).color,stone:getComputedStyle(mark.querySelector('.result-stone')).fill,fragments:[...mark.querySelectorAll('.result-fragment')].map(fragment=>getComputedStyle(fragment).fill)};});
-   animations.forEach(animation=>animation.currentTime=300);return{expected,samples,count:animations.length};
-  },winner);
+   animations.forEach(animation=>animation.currentTime=300);return{expected,hover,paper,samples,count:animations.length};
+  },{winner,identity});
   expect(colors.count).toBeGreaterThan(0);for(const sample of colors.samples){expect(sample.color).toBe(colors.expected);expect(sample.stone).toBe(colors.expected);expect(sample.fragments).toHaveLength(4);expect(sample.fragments.every(color=>color===colors.expected)).toBe(true);}
+  for(const name of ['Review game','Play again']){
+   const action=result.getByRole('button',{name,exact:true});await page.mouse.move(0,0);
+   await expect.poll(()=>action.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe(colors.expected);
+   expect(contrast(await action.evaluate(el=>getComputedStyle(el).color),colors.expected)).toBeGreaterThanOrEqual(4.5);
+   await action.evaluate(el=>el.blur());
+   // Safari's native full-control navigation is Option-Tab.
+   for(let step=0;step<8 && !(await action.evaluate(el=>el===document.activeElement));step++)await page.keyboard.press(info.project.name==='webkit'?'Alt+Tab':'Tab');
+   await expect(action).toBeFocused();
+   const outline=await action.evaluate(el=>({width:parseFloat(getComputedStyle(el).outlineWidth),style:getComputedStyle(el).outlineStyle,color:getComputedStyle(el).outlineColor}));
+   expect(outline.width).toBeGreaterThanOrEqual(2);expect(outline.style).not.toBe('none');expect(contrast(outline.color,colors.paper)).toBeGreaterThanOrEqual(3);
+   await action.hover();await expect.poll(()=>action.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe(colors.hover);
+   expect(contrast(await action.evaluate(el=>getComputedStyle(el).color),colors.hover)).toBeGreaterThanOrEqual(4.5);
+  }
+  await page.mouse.move(0,0);await page.evaluate(()=>document.activeElement?.blur());
+  await expect.poll(()=>result.getByRole('button',{name:'Play again',exact:true}).evaluate(el=>getComputedStyle(el).backgroundColor)).toBe(colors.expected);
   await result.screenshot({path:info.outputPath(`victory-${identity}-midpoint.png`)});
+  await result.getByRole('button',{name:'Play again',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Play again',exact:true}),opposite=winner==='p1'?'blue':'red';await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute('data-action-affiliation',opposite);
+  await expect(dialog.getByRole('radio',{name:opposite==='blue'?'Player 2 · Blue':'Player 1 · Red',exact:true})).toBeChecked();
+  const expected=await dialog.evaluate((el,opposite)=>{const probe=document.createElement('i');probe.style.color=`var(--player-${opposite})`;el.append(probe);const color=getComputedStyle(probe).color;probe.remove();return color;},opposite);
+  await expect.poll(()=>dialog.getByRole('button',{name:'Start game',exact:true}).evaluate(el=>getComputedStyle(el).backgroundColor)).toBe(expected);
+  await dialog.getByRole('button',{name:'Cancel',exact:true}).click();await expect(dialog).toBeHidden();
+  await expect(page.locator('.overlay-exit-copy')).toHaveCount(0);
  }
+ await page.evaluate(()=>window.resultFixture.setup('red','p2_win'));
+ await expect(page.locator('.game-result')).toHaveAttribute('data-result-tone','defeat');
+ await expect(page.getByRole('button',{name:'Play again',exact:true})).toHaveClass('secondary');
+ expect(await page.getByRole('button',{name:'Play again',exact:true}).evaluate(el=>getComputedStyle(el).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
 });

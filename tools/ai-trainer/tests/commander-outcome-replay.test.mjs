@@ -74,3 +74,17 @@ test('the real replay and training inventory worker preserve retained final hash
  }
  assert.deepEqual(game,before);
 });
+
+test('a retained terminal warmup preserves its exact old initial and final hashes with no decisions',async()=>{
+ const source=destroyedCommanderGame(),game={id:'retained-terminal-warmup',partition:'train',rootState:source.initial,warmupActions:source.decisions.map(record=>record.action),initialState:source.retained,decisions:[],finalHash:deterministicStateHash(source.retained),outcome:source.retained.outcome,termination:'terminal'},before=structuredClone(game);
+ const replay=game=>new Promise((resolve,reject)=>{
+  const child=execFile(process.execPath,['--import','tsx','tools/ai-trainer/engine-worker.mjs'],{timeout:10000},(error,stdout,stderr)=>error?reject(new Error(`${stderr}\n${stdout}`,{cause:error})):resolve(JSON.parse(stdout.trim())));
+  child.stdin.end(JSON.stringify({command:'replay',game,budgetMs:8000})+'\n');
+ });
+ const result=await replay(game);assert.equal(result.type,'replayed');assert.equal(result.hash,game.finalHash);assert.deepEqual(result.outcome,game.outcome);assert.deepEqual(game,before);
+ for(const alter of [g=>g.initialState.turnIndex++,g=>g.initialState.pieces.push(unit('extra','P1',0,0)),g=>g.warmupActions.pop()]){
+  const changed=structuredClone(game);alter(changed);await assert.rejects(replay(changed),/Replay warmup mismatch/);
+ }
+ const changed=structuredClone(game);changed.warmupActions[0]={type:'pass'};await assert.rejects(replay(changed),/Cannot apply invalid action/);
+ await assert.rejects(replay({...game,finalHash:'altered'}),/Replay final hash mismatch/);
+});
