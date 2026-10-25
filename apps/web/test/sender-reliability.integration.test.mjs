@@ -556,3 +556,32 @@ test("a shared request lost before arrival replays after unrelated gameplay adva
  assert.equal(f.env.DB.getGameState(f.gameId).moves.filter(move=>move.undone).length,2);
  assert.equal((await f.journal.list(f.store.getIdentityId(),f.gameId)).length,0);
 });
+
+for(const committed of [false,true])test(`resume here preserves one durable control intent after ${committed?'lost acceptance':'lost delivery'}`,async t=>{
+ const sent=[];let interrupted=false;
+ const f=await setup({fault:async(url,init,call)=>{
+  if(url.endsWith('/shared')){
+   const envelope=JSON.parse(init.body);
+   if(envelope.payload?.values?.action==='resume-here'){
+    sent.push(envelope);
+    if(!interrupted){interrupted=true;if(committed)await call();throw Error('lost resume response');}
+   }
+  }
+  return call();
+ }});
+ t.after(()=>f.store.retire());
+ const created=f.store.createGame({selfPlayMode:true,computer:{p1:null,p2:'horus'}});await created.committed;
+ const id=created.gameId;
+ const control=async(action,deviceId='previous')=>f.store.computerControl(id,{action,deviceId,generation:f.store.getAuthoritativeGame(id).computer.generation});
+ await control('acquire');await control('manual');await control('pause');
+ const previous=f.store.getAuthoritativeGame(id);
+ assert.equal(previous.sharedReceipts,true);
+ assert.equal(previous.computerCapabilities.resumeHere,'resume-here-v1');
+ await control('resume-here','current');
+ const next=f.store.getAuthoritativeGame(id).computer;
+ assert.equal(next.generation,previous.computer.generation+1);assert.equal(next.lease.deviceId,'current');
+ assert.deepEqual([next.paused,next.manual,next.singleStep,next.takeoverTurn],[false,false,false,null]);
+ assert.ok(sent.length>=1);for(const envelope of sent)assert.deepEqual(envelope,sent[0]);
+ assert.equal((await f.journal.list(f.store.getIdentityId(),id)).length,0);
+ assert.equal(f.store.getGameViewModel(id).pendingCommandCount,0);
+});

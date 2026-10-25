@@ -32,10 +32,10 @@ test('known snapshots preserve result, host and approval gates before hydration 
 });
 
 test('recovery action templates keep semantic navigation, visible labels and decorative brand icons',()=>{
- const start=source.indexOf('action: game.storageBlocked',source.indexOf('const getGameAlertItems'))+'action: '.length;
+ const start=source.indexOf('action: !recoveryNeedsAction',source.indexOf('const getGameAlertItems'))+'action: '.length;
  const end=source.indexOf(',\n      }),',start);
  assert.ok(start>20&&end>start);
- const render=new Function('game','dismissed','escapeHtml','icon',`return (${source.slice(start,end)});`);
+ const render=new Function('game','dismissed','escapeHtml','icon',`const recoveryNeedsAction=true;return (${source.slice(start,end)});`);
  const html=render({id:'game<1'},false,value=>String(value).replaceAll('<','&lt;'),icon);
  assert.match(html,/data-action="reconnect-safely" data-game-id="game&lt;1"/);
  assert.match(html,/>Reload game<\/button>/);assert.doesNotMatch(html,/Reload now/);

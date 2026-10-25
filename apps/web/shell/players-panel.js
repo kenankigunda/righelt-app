@@ -1,14 +1,15 @@
 import {participantButton,participantDisplayName} from './public-profile.js';
 import {humanControlledSides,playerDisplayName} from './perspective-labels.js';
 import {viewerSummary} from './viewer-summary.js';
+import {renderComputerPlayerCard} from './computer-player-card.js';
 const escape = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-export function renderPlayersPanel(game,{identityId,expanded=false,pendingSeat,icon=()=>'',formatStatus=()=>''}={}) {
+export function renderPlayersPanel(game,{identityId,expanded=false,pendingSeat,icon=()=>'',formatStatus=()=>'',computerActivity,expandedComputers=new Set()}={}) {
  const own=humanControlledSides(game,{identityId});
  const seats=['P1','P2'].map((side,index)=>{
   const person=game[index?'player2':'player1'],color=index?'Blue':'Red';
   const accessibleIdentity=own.includes(side)?'You':playerDisplayName(game,side);
-  const content=person?participantButton(person,{key:`seat:${side}`,side:side.toLowerCase(),presence:formatStatus(person.connected),displayName:own.includes(side)?'You':participantDisplayName(person,'Guest'),accessibleName:`${accessibleIdentity}, ${color}, ${person.computerProfile?'Computer player':person.connected?'Connected':'Disconnected'}`}):`<span class="participant-empty" data-player-side="${side.toLowerCase()}" ${pendingSeat===(index?'blue':'red')?'data-testid="pending-invitation"':''}>${icon('account')}<span>${pendingSeat===(index?'blue':'red')?'Awaiting player':'Open seat'}</span><span class="sr-only">${color}</span></span>`;
+  const content=person?.computerProfile?renderComputerPlayerCard(person,{gameId:game.id,side,expanded:expandedComputers.has(side),activity:computerActivity}):person?participantButton(person,{key:`seat:${side}`,side:side.toLowerCase(),presence:formatStatus(person.connected),displayName:own.includes(side)?'You':participantDisplayName(person,'Guest'),accessibleName:`${accessibleIdentity}, ${color}, ${person.connected?'Connected':'Disconnected'}`}):`<span class="participant-empty" data-player-side="${side.toLowerCase()}" ${pendingSeat===(index?'blue':'red')?'data-testid="pending-invitation"':''}>${icon('account')}<span>${pendingSeat===(index?'blue':'red')?'Awaiting player':'Open seat'}</span><span class="sr-only">${color}</span></span>`;
   return `<li data-testid="participant-player-${index+1}">${content}</li>`;
  }).join('');
  const viewers=viewerSummary(game.viewers??[],{identityId});

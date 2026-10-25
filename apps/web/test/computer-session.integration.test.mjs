@@ -491,7 +491,7 @@ test('a repeated-position pause cannot relabel its old warning into another game
 });
 
 test('failed automatic acquisition records its error and retries with bounded delay without resetting the notice clock',async t=>{
- const f=fixture();t.after(()=>f.session.destroy());let requests=0;
+ const f=fixture();t.after(()=>f.session.destroy());enableResume(f);let requests=0;
  f.transport.computerControl=async()=>{requests++;throw Object.assign(Error('request_timeout'),{code:'request_timeout'});};
  await f.session.tick();assert.equal(requests,1);
  assert.equal(f.session.snapshot().activity.lastAcquisitionFailure.code,'request_timeout');
@@ -560,4 +560,28 @@ test('acquisition failure from a previous game never contaminates current activi
  const work=f.session.tick();while(!reject)await Promise.resolve();f.switchGame();reject(Error('old-request-failed'));await work;
  assert.equal(f.session.snapshot().activity.lastAcquisitionFailure,null);
  assert.equal(f.session.snapshot().activity.waitingMs,0);
+});
+
+test('transport recovery owns retries without automatic lease requests or extra refreshes',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());let controls=0,loads=0;
+ f.transport.computerControl=async()=>{controls++;};f.transport.loadGame=async()=>{loads++;};f.setBlocked(true);
+ for(const now of [100,1100,5100,30100]){f.setTime(now);await f.session.tick();}
+ assert.equal(controls,0);assert.equal(loads,0);assert.equal(f.computations(),0);
+});
+
+test('a failed renewal retains completed work when refreshed authority still owns this tab',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();const work=f.session.tick();
+ const cancelled=f.cancellations();let renewed=false;
+ f.transport.computerControl=async()=>{renewed=true;throw Object.assign(Error('sync_recovering'),{code:'sync_recovering'});};
+ f.setTime(5200);await f.session.tick();
+ for(let i=0;i<20;i++)await Promise.resolve();
+ assert.equal(renewed,true);assert.equal(f.cancellations(),cancelled);
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;assert.equal(f.submissions(),1);
+});
+
+test('destroying a session fences an in-flight explicit recovery before it can acquire',async()=>{
+ const f=fixture();enableResume(f);let release,requests=0;
+ f.transport.reconcileGame=async()=>new Promise(resolve=>{release=resolve;});f.transport.computerControl=async()=>{requests++;};
+ const work=f.session.action('resume-here');while(!release)await Promise.resolve();f.session.destroy();release();await work;
+ await f.session.tick();assert.equal(requests,0);
 });

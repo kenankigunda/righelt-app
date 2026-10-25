@@ -28,7 +28,7 @@ test('unsolicited recovery appears only at thirty seconds without control', () =
 });
 
 test('healthy work, explicit overrides and uncertain delivery suppress the unsolicited notice', () => {
-  for (const change of [c => c.visible = false, c => c.authenticated = false, c => c.identityId = 'viewer', c => c.game.board.state.sideToMove = 'P1', c => c.game.board.state.outcome.status = 'won', c => c.game.computer.paused = true, c => c.game.computer.manual = true, c => c.game.computer.takeoverTurn = 35, c => c.projection.pendingCommandCount = 1, c => c.projection.sharedMutationsBlocked = true, c => c.resuming = true, ...['preparing', 'initializing-verified-runtime', 'checking', 'looking-ahead', 'saving', 'recovery'].map(phase => c => c.status.phase = phase)]) {
+  for (const change of [c => c.resumeSupported = false, c => c.visible = false, c => c.authenticated = false, c => c.identityId = 'viewer', c => c.game.board.state.sideToMove = 'P1', c => c.game.board.state.outcome.status = 'won', c => c.game.computer.paused = true, c => c.game.computer.manual = true, c => c.game.computer.takeoverTurn = 35, c => c.projection.pendingCommandCount = 1, c => c.projection.sharedMutationsBlocked = true, c => c.resuming = true, ...['preparing', 'initializing-verified-runtime', 'checking', 'looking-ahead', 'saving', 'recovery'].map(phase => c => c.status.phase = phase)]) {
     const c = context(); c.game.computer.lease = null; change(c);
     assert.equal(computerActivity(c).showRecoveryNotice, false);
   }

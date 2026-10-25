@@ -45,6 +45,7 @@ import { renderResultMark, createResultPresentation } from './result-presentatio
 import { createRouteHydration } from './route-hydration.js';
 import { createRenderGestureGate, preserveBoardFocus } from './render-gesture.js';
 import { participantButton, participantName, participantDisplayName, createInlineProfiles } from './public-profile.js';
+import { renderPlayersPanel } from './players-panel.js';
 import { createAccountController, safeAccountIntent } from './account-controller.js';
 import { createAccountDialog } from './account-dialog.js';
 import { renderPieceSymbol } from '../piece-symbols.js';
@@ -2608,35 +2609,22 @@ const renderJoinInvitePanel = (game, inviteLink) => {
   `;
 };
 
-const renderParticipantsPanel = (game) => {
-  const participants = [
-    { label: "Player 1", value: game.player1 },
-    { label: "Player 2", value: game.player2 },
-  ];
-
-  const participantRows = participants
-    .map((entry) => {
-      if (!entry.value) {
-        const pending = preparedPlayerInvitations.get(game.id) === (entry.label === "Player 1" ? "red" : "blue");
-        return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)} <span class="small participant-empty" ${pending ? 'data-testid="pending-invitation"' : ''}>${icon('account')}<span>${pending ? 'Awaiting player' : 'Open seat'}</span></span></li>`;
-      }
-      return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)} ${participantButton(entry.value, {key:entry.label,side:entry.label === "Player 1" ? "p1" : "p2",presence:formatStatus(entry.value.connected)})}</li>`;
-    })
-    .join("");
-
-  const viewerRows =
-    game.viewers.length === 0
-      ? `<li><span>Viewers</span><span class="small participant-empty">${icon('account-none')}<span>None</span></span></li>`
-      : game.viewers
-          .map(
-            (viewer) =>
-              `<li data-testid="participant-viewer"><span>Viewer</span> ${participantButton(viewer,{presence:formatStatus(viewer.connected)})}</li>`,
-          )
-          .join("");
-  return `
-
-    <ul class="participant-list" data-testid="participants-list">${participantRows}${viewerRows}</ul>
-  `;
+const expandedViewerGames = new Set();
+const expandedComputerCards = new Map();
+const renderParticipantsPanel = game => renderPlayersPanel(game, {
+  identityId:transport.getIdentityId(), expanded:expandedViewerGames.has(game.id),
+  pendingSeat:preparedPlayerInvitations.get(game.id), icon, formatStatus,
+  computerActivity:computerSession?.snapshot().activity,
+  expandedComputers:expandedComputerCards.get(game.id) ?? new Set(),
+});
+const updateParticipantCards = game => {
+  const panel=appEl.querySelector('[data-game-panel="participants"]');
+  if(!panel || !game)return;
+  const focused=document.activeElement;
+  const restoreSide=panel.contains(focused) && focused?.dataset.control==='resume-here' ? focused.dataset.computerSide : null;
+  patchToolHtml(panel,renderParticipantsPanel(game));
+  if(restoreSide && (!focused.isConnected || focused.disabled))panel.querySelector(`[data-action="toggle-computer-card"][data-computer-side="${restoreSide}"]`)?.focus({preventScroll:true});
+  inlineProfiles.sync();
 };
 
 const joinFeedback=createJoinFeedback({getScope:gameId=>({gameId,owner:transport,generation:account.snapshot().generation,visit:inviteVisit,route:window.location.hash})});
@@ -3104,7 +3092,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
     }
   }
   if (participantsEl instanceof HTMLElement) {
-    participantsEl.innerHTML = renderParticipantsPanel(game);
+    updateParticipantCards(game);
   }
   if (historyEl instanceof HTMLElement) {
     patchToolHtml(historyEl, renderHistoryPanel(game));
@@ -4286,6 +4274,7 @@ const startComputerReplay = async () => {
 const updateComputerUi = () => {
   boardRuntime?.refreshStatus?.();
   const gameId = getCurrentViewedGameId(), game = gameId ? transport.getGameViewModel(gameId) : null;
+  updateParticipantCards(game);
   const alerts=appEl.querySelector('#shell-game-alerts');
   if(alerts && game) {
     const html=renderGameAlertsHtml(game);
@@ -4496,7 +4485,7 @@ accountInitialized = true;
 function resetAccountTransport(next) {
   joinFeedback.clear();
   additionalHistory.clear();
-  utilityMemory.clear();
+  utilityMemory.clear(); expandedViewerGames.clear(); expandedComputerCards.clear();
   viewingIntent.clear();
   replayController?.stop("account-changed");
   preparation.cancel();
@@ -4839,6 +4828,17 @@ appEl.addEventListener("click", async (event) => {
       render({animatePanels:false,includeBoard:false});await work;
     }
     return;
+  }
+  if (action === 'toggle-computer-card') {
+    const gameId=actionEl.dataset.gameId, side=actionEl.dataset.computerSide;
+    const open=expandedComputerCards.get(gameId) ?? new Set();
+    if(open.has(side))open.delete(side);else open.add(side);
+    expandedComputerCards.set(gameId,open); updateParticipantCards(transport.getGameViewModel(gameId));return;
+  }
+  if (action === 'toggle-viewers') {
+    const gameId=actionEl.dataset.gameId;
+    if(expandedViewerGames.has(gameId))expandedViewerGames.delete(gameId);else expandedViewerGames.add(gameId);
+    updateParticipantCards(transport.getGameViewModel(gameId));return;
   }
   if (action === 'computer-control') { await withPendingButton(`computer:${actionEl.dataset.control}`, () => computerSession.action(actionEl.dataset.control)); return; }
   if (action === 'computer-watch') {

@@ -25,6 +25,6 @@ export function computerActivity({ game, identityId, deviceId, authenticated, vi
   else if (!resumeSupported) disabledReason = 'Refresh after the server update to resume computer play here.';
   else if (resuming) disabledReason = 'Resuming computer play…';
   const computerTurn = computerProfileFor(control, game.board?.state?.sideToMove, turnIndex);
-  const showRecoveryNotice = Boolean(owner && authenticated && visible && ongoing && computerTurn && !override && !uncertain && !resuming && !activeHere && !liveLease && !workingPhases.has(status.phase) && status.phase !== 'recovery' && waitingMs >= COMPUTER_TIMING.stalledAfterMs);
+  const showRecoveryNotice = Boolean(resumeSupported && owner && authenticated && visible && ongoing && computerTurn && !override && !uncertain && !resuming && !activeHere && !liveLease && !workingPhases.has(status.phase) && status.phase !== 'recovery' && waitingMs >= COMPUTER_TIMING.stalledAfterMs);
   return { state, label, activeHere, showResume: !activeHere, disabledReason, showRecoveryNotice, waitingMs, lastAcquisitionFailure };
 }
