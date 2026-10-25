@@ -9,6 +9,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   let analysis = null, analysisContext = null, analysisEpoch = 0, lastPositionRevision = null, destroyed = false;
   let activityScope = null, waitingSince = null, waitingRevision = null, lastAcquisitionFailure = null, acquisitionAttempts = 0, retryAt = 0, resumeWork = null, resumeScope = null, leaseScope = null;
   const progressWork = new Map();
+  let acknowledgedLease = null;
   const repetitions = new Map();
   let phaseDeadline = null;
   const cancelPhaseDeadline = () => {
@@ -57,7 +58,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   const keyFor = ({ game, accountGeneration }) => game ? `${accountGeneration}:${game.id}:${game.gameplayRevision}:${game.computer?.generation}:${game.computer?.modelId}` : null;
   const current = () => { const context = getContext(); return { ...context, key: keyFor(context) }; };
   const cancelWork = (reason) => { cancelPhaseDeadline(); epoch++; runtime.cancel(reason); };
-  const ownLease = (game) => game?.computer?.lease?.deviceId === deviceId && game.computer.lease.expiresAt > clock();
+  const ownLease = game => !destroyed && sameOwnerScope(acknowledgedLease, current()) && acknowledgedLease.generation === game?.computer?.generation && game?.computer?.lease?.deviceId === deviceId && game.computer.lease.expiresAt > clock();
   const resumeSupported = game => game?.sharedReceipts === true && game.computerCapabilities?.resumeHere === COMPUTER_CAPABILITIES.resumeHere;
   const recoveryScopeIsCurrent = context => !destroyed && sameOwnerScope(ownerScope(context), current()) && current().authenticated;
   const updateActivity = context => {
@@ -73,7 +74,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   };
   const activity = (context, scopedStatus) => {
     updateActivity(context);
-    return computerActivity({ game: context.game, identityId: context.transport.getIdentityId(), deviceId, authenticated: context.authenticated, visible: context.visible, status: scopedStatus, projection: context.game ? context.transport.getGameViewModel(context.game.id) : {}, now: clock(), resuming: Boolean((resumeWork && sameOwnerScope(resumeScope, context)) || (leaseWork && leaseWorkAction === 'acquire' && sameOwnerScope(leaseScope, context))), waitingMs: waitingSince === null ? 0 : Math.max(0, clock() - waitingSince), lastAcquisitionFailure, resumeSupported: resumeSupported(context.game) });
+    return computerActivity({ game: context.game, identityId: context.transport.getIdentityId(), deviceId, authenticated: context.authenticated, visible: context.visible, status: scopedStatus, projection: context.game ? context.transport.getGameViewModel(context.game.id) : {}, now: clock(), resuming: Boolean((resumeWork && sameOwnerScope(resumeScope, context)) || (leaseWork && leaseWorkAction === 'acquire' && sameOwnerScope(leaseScope, context))), waitingMs: waitingSince === null ? 0 : Math.max(0, clock() - waitingSince), lastAcquisitionFailure, resumeSupported: resumeSupported(context.game), controlAcknowledged: ownLease(context.game) });
   };
   const noteProgress = (context, progress) => {
     if (!recoveryScopeIsCurrent(context)) return;
@@ -81,7 +82,18 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     const key = `${progress.asset ?? ''}:${progress.phase ?? ''}`;
     if (Number.isFinite(work) && work > (progressWork.get(key) ?? 0)) { progressWork.set(key, work); waitingSince = clock(); }
   };
-  const control = async (context, action) => context.transport.computerControl(context.game.id, { action, deviceId, generation: context.game.computer.generation });
+  const control = async (context, action) => {
+    const result = await context.transport.computerControl(context.game.id, { action, deviceId, generation: context.game.computer.generation });
+    // Public leases omit authentication context. A stable tab ID alone cannot
+    // establish ownership after account/transport replacement. Only an accepted
+    // control response in this exact scope establishes local authority.
+    if (recoveryScopeIsCurrent(context)) {
+      const latest = current();
+      acknowledgedLease = latest.game?.computer?.lease?.deviceId === deviceId
+        ? { ...ownerScope(latest), generation: latest.game.computer.generation } : null;
+    }
+    return result;
+  };
   const startLeaseWork = (work, action = 'acquire') => {
     const pending = Promise.resolve().then(work);
     leaseWork = pending;

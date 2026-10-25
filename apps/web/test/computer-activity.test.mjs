@@ -47,3 +47,9 @@ test('expired leases and failed or uncertain sessions never claim Active here', 
     const c = context(); change(c); assert.equal(computerActivity(c).activeHere, false);
   }
 });
+
+test('a retained local device lease needs acknowledgement in the current session scope',()=>{
+ const c=context();c.controlAcknowledged=false;
+ assert.equal(computerActivity(c).label,'Needs attention');assert.equal(computerActivity(c).showResume,true);
+ assert.equal(computerActivity(c).showRecoveryNotice,false);
+});

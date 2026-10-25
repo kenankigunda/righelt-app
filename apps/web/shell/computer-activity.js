@@ -3,7 +3,7 @@ import { COMPUTER_TIMING, computerProfileFor } from '../generated/packages/share
 const workingPhases = new Set(['preparing', 'initializing-verified-runtime', 'initializing', 'computing', 'checking', 'looking-ahead', 'saving']);
 
 /** Local runner health is distinct from the computer opponent's identity. */
-export function computerActivity({ game, identityId, deviceId, authenticated, visible, status = {}, projection = {}, now, resuming = false, waitingMs = 0, lastAcquisitionFailure = null, resumeSupported = true }) {
+export function computerActivity({ game, identityId, deviceId, authenticated, visible, status = {}, projection = {}, now, resuming = false, waitingMs = 0, lastAcquisitionFailure = null, resumeSupported = true, controlAcknowledged = true }) {
   const control = game?.computer;
   if (!control) return null;
   const owner = control.ownerId === identityId && game.canControlComputer !== false;
@@ -13,7 +13,7 @@ export function computerActivity({ game, identityId, deviceId, authenticated, vi
   const liveLease = Boolean(control.lease && control.lease.expiresAt > now);
   const localLease = liveLease && control.lease.deviceId === deviceId;
   const uncertain = Boolean(projection.sharedMutationsBlocked || projection.pendingCommandCount > 0);
-  const activeHere = Boolean(owner && authenticated && visible && ongoing && localLease && !override && !uncertain && !resuming && !lastAcquisitionFailure && !['recovery', 'other-device'].includes(status.phase));
+  const activeHere = Boolean(owner && authenticated && visible && ongoing && localLease && controlAcknowledged && !override && !uncertain && !resuming && !lastAcquisitionFailure && !['recovery', 'other-device'].includes(status.phase));
   let state = 'attention', label = 'Needs attention';
   if (resuming) { state = 'resuming'; label = 'Resuming'; }
   else if (override) { state = 'paused'; label = 'Paused'; }

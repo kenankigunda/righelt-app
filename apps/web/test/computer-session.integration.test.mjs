@@ -9,15 +9,15 @@ function fixture({canAnalyze = true, timers = {setInterval(){return 1;},clearInt
   let now = 100, visible = true, authenticated = true, generation = 1, cancelCount = 0, submitted = 0, computed = 0, blocked = false, pending;
   let progress;
   let game = { id: 'g', gameplayRevision: 0, computer: createComputerControl('owner', { p1: 'babs', p2: null }), board: { state: createInitialState() } };
-  const saved = [];
+  const saved = [], controls = []; let authContextId = 'session';
   let transport = { getIdentityId: () => 'owner', getGameViewModel: () => ({ ...game, pendingCommandCount: 0, sharedMutationsBlocked: blocked }), loadGame: async () => game,
-    computerControl: async (_, values) => { game = { ...game, computer: changeComputerControl(game.computer, { ...values, ownerId: 'owner', authContextId: 'session', now, turnIndex: 0 }) }; },
+    computerControl: async (_, values) => { controls.push({...values,authContextId}); game = { ...game, computer: changeComputerControl(game.computer, { ...values, ownerId: 'owner', authContextId, now, turnIndex: 0 }) }; },
     decisionAttempt: async (_, value) => { saved.push(value); },
     applyGameAction: async () => { submitted++; return { committed: Promise.resolve() }; },
   };
   const runtime = { compute: async (_, onProgress) => new Promise((resolve, reject) => { computed++; progress = onProgress; pending = { resolve, reject }; }), cancel: () => { cancelCount++; pending?.reject(Error('cancelled')); pending = null; } };
   const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: runtime, clock: () => now, timers, onChange, getContext: () => ({ game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
-  return { session, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { game = { ...game, id: 'other-game' }; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, show: () => {visible = true;}, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelCount };
+  return { session, controls, relogin: () => {generation++;authContextId=`session-${generation}`;transport={...transport};}, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { game = { ...game, id: 'other-game' }; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, show: () => {visible = true;}, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelCount };
 }
 
 test('connection recovery defers computer work before calculation without saving or submitting', async t => {
@@ -653,4 +653,34 @@ test('an acknowledged save failure with a retained journal keeps immediate recov
  f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;
  assert.equal(f.session.snapshot().phase,'recovery');assert.equal(f.deadlines.size,0);
  assert.match(renderComputerProgress({...f.game(),canControlComputer:true},f.session.snapshot()),/Retry/);
+});
+
+test('a replacement login cannot claim the previous session lease and acquires only after expiry',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());enableResume(f);await f.session.tick();
+ assert.equal(f.session.snapshot().activity.activeHere,true);
+ const before=structuredClone(f.game().computer);f.relogin();
+ const activity=f.session.snapshot().activity;assert.equal(activity.label,'Needs attention');assert.equal(activity.showResume,true);
+ await f.session.tick();assert.equal(f.controls.length,1);assert.equal(f.computations(),0);assert.equal(f.submissions(),0);
+ assert.deepEqual(f.game().computer,before);
+ f.setTime(before.lease.expiresAt+1);await f.session.tick();
+ assert.equal(f.controls.length,2);assert.equal(f.controls[1].action,'acquire');
+ assert.equal(f.game().computer.generation,before.generation+1);assert.equal(f.session.snapshot().activity.activeHere,true);
+ const work=f.session.tick();f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;
+ assert.equal(f.submissions(),1);assert.equal(f.saved[0].attempt.proof.generation,f.game().computer.generation);
+});
+
+test('explicit resume establishes replacement-session ownership without waiting for the old lease',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());enableResume(f);await f.session.tick();
+ const before=structuredClone(f.game().computer);f.relogin();await f.session.action('resume-here');
+ assert.equal(f.controls.at(-1).action,'resume-here');assert.equal(f.game().computer.generation,before.generation+1);
+ assert.deepEqual(f.game().computer.seats,before.seats);assert.equal(f.game().computer.modelId,before.modelId);
+ assert.equal(f.session.snapshot().activity.activeHere,true);
+});
+
+test('an old scope control acknowledgement cannot establish current local authority',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());let release;
+ const control=f.transport.computerControl;f.transport.computerControl=async(...args)=>{await new Promise(resolve=>{release=resolve;});return control(...args);};
+ const work=f.session.tick();while(!release)await Promise.resolve();f.relogin();release();await work;
+ assert.equal(f.session.snapshot().activity.activeHere,false);assert.equal(f.session.snapshot().activity.showResume,true);
+ assert.equal(f.computations(),0);assert.equal(f.submissions(),0);
 });
