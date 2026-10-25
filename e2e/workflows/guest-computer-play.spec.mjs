@@ -31,7 +31,7 @@ test('guest computer finishes a catalog position and prepares a fresh rematch',a
   await page.screenshot({path:info.outputPath('guest-computer-finished.png')});
   await result.getByRole('button',{name:'Play again',exact:true}).click();
   const chooser=page.getByRole('dialog',{name:'Play again',exact:true});
-  await expect(chooser.getByRole('combobox',{name:'Opponent',exact:true})).toHaveValue('babs');
+  await expect(chooser.getByRole('group',{name:'Opponent',exact:true}).getByRole('radio',{name:'Babs',exact:true})).toBeChecked();
   const creation=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/shell/games'&&r.request().method()==='POST');
   await chooser.getByRole('button',{name:'Start game',exact:true}).click();
   const response=await creation;expect(response.status()).toBe(200);

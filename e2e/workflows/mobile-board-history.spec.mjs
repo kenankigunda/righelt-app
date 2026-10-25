@@ -176,22 +176,35 @@ test.describe('narrow board and history',()=>{
     expect(await page.locator('.shell-header').evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
   });
 
-  for(const width of [390,1440])test(`cold game loading reserves the settled board geometry at ${width}px`,async({page,context},info)=>{
+  for(const {width,textScale} of [{width:390,textScale:100},{width:1440,textScale:100},{width:320,textScale:200},{width:390,textScale:200}])test(`cold game loading reserves the settled board geometry at ${width}px and ${textScale}% text`,async({page,context},info)=>{
     await page.setViewportSize({width,height:740});
     const {gameId}=await selfPlay(page);
+    await page.addInitScript(scale=>document.addEventListener('DOMContentLoaded',()=>document.documentElement.style.fontSize=`${scale}%`,{once:true}),textScale);
     let release;const held=new Promise(resolve=>{release=resolve;});
-    await context.route(`**/api/shell/games/${gameId}?*`,async route=>{if(route.request().method()==='GET')await held;await route.continue();});
+    // Either snapshot GET or durable reconciliation can win hydration. Hold
+    // both real responses so every browser observes the same cold boundary.
+    await context.route(new RegExp(`/api/shell/games/${gameId}(?:\\?|$|/reconcile(?:\\?|$))`),async route=>{
+      const request=route.request();
+      if(request.method()==='GET'||new URL(request.url()).pathname.endsWith('/reconcile'))await held;
+      await route.continue();
+    });
     let snapshots=0;let closing=false;
     await page.routeWebSocket(new RegExp(`/api/shell/games/${gameId}/ws`),socket=>{const server=socket.connectToServer();server.onMessage(async message=>{snapshots++;await held;if(!closing)socket.send(message);});});
     try{
       await page.reload({waitUntil:'domcontentloaded'});
       await expect(page.getByTestId('game-loading-shell')).toBeVisible();
       const silhouette=page.locator('.loading-board-silhouette');await expect(silhouette).toBeVisible();
+      await page.evaluate(()=>document.fonts.ready);
       const loading=await documentGeometry(silhouette);
+      const loadingHeading=await documentGeometry(page.locator('[data-shell-panel="board"] .board-heading:not([aria-hidden])'));
       await page.screenshot({path:info.outputPath('mobile-board-loading.png')});
       release();
       await expect(board(page).locator('.cell')).toHaveCount(100);
+      await expect(page.locator('[data-shell-panel="board"]')).toHaveAttribute('data-turn-side','red');
+      await expect(page.locator('[data-shell-panel="board"]').getByRole('heading')).toHaveCount(1);
       const loaded=await documentGeometry(board(page));
+      const loadedHeading=await documentGeometry(page.locator('[data-shell-panel="board"] .board-heading:not([aria-hidden])'));
+      console.log('[cold-board-geometry]',JSON.stringify({width,textScale,loading,loaded,loadingHeading,loadedHeading}));
       for(const key of ['x','y','width','height'])expect(Math.abs(loaded[key]-loading[key]),`board ${key} should match its loading frame`).toBeLessThanOrEqual(1);
       await expectNoHorizontalOverflow(page);
     }finally{closing=true;release();await context.unrouteAll({behavior:'wait'});}

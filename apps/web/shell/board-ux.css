@@ -2,6 +2,16 @@ body {display:flow-root;}
 /* Loading, normal status and inspection share geometry at each text size. */
 .board-heading { min-height: 1.5em; }
 .board-preview-label { min-height: max(3.1em, 44px); font-size: 1rem; line-height: 1.5; margin-block: .25rem .65rem; }
+.board-message-slot {display:grid;margin-block:.25rem .65rem;}
+.board-message-slot > .board-preview-label {grid-area:1 / 1;min-width:0;margin:0;}
+.board-message-live {grid-area:1 / 1;min-width:0;font-size:1rem;line-height:1.5;}
+.board-message-live > .board-preview-label {display:inline;margin:0;}
+.board-message-activity {display:none;}
+.board-message-activity[data-loading-state="pending"] {display:inline-flex;vertical-align:middle;margin-inline-start:.3em;}
+.board-message-sizing, .board-heading-sizing {visibility:hidden;pointer-events:none;user-select:none;}
+.board-heading-slot {display:grid;}
+.board-heading-slot > .board-heading {grid-area:1 / 1;min-width:0;}
+.board-heading-slot + .board-message-slot {margin-block-start:0;}
 /* Expand the tap surface inside the reserved message space, without moving
    the board or turning the inline action into a heavy toolbar. */
 .board-preview-label .board-preview-inline-button {position:relative;min-width:44px;}

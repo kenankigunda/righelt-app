@@ -1,3 +1,5 @@
+import { icon } from './ui.js';
+
 const terminal = new Set(["p1_win", "p2_win", "draw"]);
 export const getGameResult = (game, identityId) => {
   const outcome = game?.board?.state?.outcome;
@@ -27,9 +29,9 @@ export const createResultTransitions = () => {
 };
 
 export const createRematchDialog = ({ createModal, document = globalThis.document, onStart, title = "Play again", labelId = "rematch-title", getReadiness = () => ({ state: 'ready', message: '' }), onOpponentChange = () => {}, onRetry = () => {}, onClose = () => {} }) => {
-  let session = 0, busy = false;
-  const modal = createModal({ document, labelId, className: "rematch-modal", onClose: () => { session++; busy = false; onClose(); } });
-  const opponent = () => modal.element.querySelector("[name=rematch-opponent]")?.value;
+  let session = 0, busy = false, startFailure = null;
+  const modal = createModal({ document, labelId, className: "rematch-modal", onClose: () => { session++; busy = false; startFailure = null; onClose(); } });
+  const opponent = () => modal.element.querySelector("[name=rematch-opponent]:checked")?.value;
   const refresh = () => {
     if (!modal.element.open) return;
     const friendHelp = modal.element.querySelector('[data-rematch-friend-help]');
@@ -40,9 +42,9 @@ export const createRematchDialog = ({ createModal, document = globalThis.documen
     start.dataset.loadingState = busy ? 'pending' : 'idle'; start.setAttribute('aria-busy', String(busy));
     for (const control of modal.element.querySelectorAll?.('select,input') ?? []) control.disabled = busy;
     const status = modal.element.querySelector('[role=status]');
-    status.textContent = readiness.message ?? '';
+    status.textContent = startFailure ?? readiness.message ?? '';
     if (status.dataset) {
-      status.dataset.loadingState = readiness.state === 'preparing' ? 'pending' : 'idle';
+      status.dataset.loadingState = !startFailure && readiness.state === 'preparing' ? 'pending' : 'idle';
       status.dataset.loadingKey = `${labelId}:preparation:${session}`;
       status.dataset.loadingContext = 'external';
     }
@@ -51,27 +53,26 @@ export const createRematchDialog = ({ createModal, document = globalThis.documen
   };
   modal.element.addEventListener("change", event => {
     if (event.target.name === "rematch-side") modal.element.dataset.actionAffiliation = event.target.value === "p2" ? "blue" : "red";
-    if (event.target.name === 'rematch-opponent') { onOpponentChange(opponent()); refresh(); }
+    if (event.target.name === 'rematch-opponent') { startFailure = null; onOpponentChange(opponent()); refresh(); }
   });
   modal.element.addEventListener("click", async event => {
     if (busy || !modal.element.open) return;
-    if (event.target.closest('[data-rematch-retry]')) { await onRetry(opponent()); refresh(); return; }
+    if (event.target.closest('[data-rematch-retry]')) { startFailure = null; await onRetry(opponent()); refresh(); return; }
     if (!event.target.closest("[data-rematch-start]") || getReadiness(opponent()).state !== 'ready') return;
     const intent = { opponent: opponent(), side: modal.element.querySelector("[name=rematch-side]:checked").value };
     const request = session;
-    busy = true; refresh();
+    startFailure = null; busy = true; refresh();
     try {
       await onStart(intent, { isCurrent: () => request === session && modal.element.open });
       if (request === session) modal.close();
     } catch {
       if (request !== session) return;
-      busy = false; refresh();
-      modal.element.querySelector("[role=status]").textContent = "Could not start. Try again.";
+      startFailure = "Could not start. Try again."; busy = false; refresh();
     }
   });
   return { close: modal.close, refresh, isOpen: () => modal.element.open, opponent, open(result, trigger) {
-    session++; busy = false;
-    modal.open(`<h2 id="${labelId}">${title}</h2><label>Opponent<select name="rematch-opponent">${[["babs","Babs"],["tau","Tau"],["horus","Horus"],["friend","Friend"],["self","Self-play"]].map(([id,label]) => `<option value="${id}" ${result.opponent === id ? "selected" : ""} >${label}</option>`).join("")}</select></label><fieldset><legend>Your side</legend>${[["p1","Player 1 · Red"],["p2","Player 2 · Blue"]].map(([id,label]) => `<label><input type="radio" name="rematch-side" value="${id}" ${result.rematchSide === id ? "checked" : ""}>${label}</label>`).join("")}</fieldset><p class="small" data-rematch-friend-help hidden>Friend starts a new invitation. Your friend chooses whether to join.</p><p role="status"></p><div class="story-modal-actions"><button data-rematch-start data-loading-state="idle" data-loading-message="Starting your game is taking a little longer than usual.">Start game</button><button class="secondary" data-rematch-retry hidden>Retry</button><button class="secondary" data-modal-close>Cancel</button></div>`, trigger);
+    session++; busy = false; startFailure = null;
+    modal.open(`<h2 id="${labelId}">${title}</h2><fieldset class="rematch-opponents"><legend>Opponent</legend><div class="rematch-opponent-cards">${[["babs","Babs"],["tau","Tau"],["horus","Horus"],["friend","Friend"],["self","Self-play"]].map(([id,label]) => `<label class="rematch-opponent-card"><input type="radio" name="rematch-opponent" value="${id}" ${result.opponent === id ? "checked autofocus" : ""}><span class="rematch-opponent-mark" aria-hidden="true">${id === 'self' ? icon('board') : `<img src="${new URL(`../assets/opponents/${id}-portrait.webp`,import.meta.url).href}" alt="" width="36" height="36">`}</span><span>${label}</span></label>`).join("")}</div></fieldset><fieldset><legend>Your side</legend>${[["p1","Player 1 · Red"],["p2","Player 2 · Blue"]].map(([id,label]) => `<label><input type="radio" name="rematch-side" value="${id}" ${result.rematchSide === id ? "checked" : ""}>${label}</label>`).join("")}</fieldset><p class="small" data-rematch-friend-help hidden>Friend starts a new invitation. Your friend chooses whether to join.</p><p role="status"></p><div class="story-modal-actions"><button data-rematch-start data-loading-state="idle" data-loading-message="Starting your game is taking a little longer than usual.">Start game</button><button class="secondary" data-rematch-retry hidden>Retry</button><button class="secondary" data-modal-close>Cancel</button></div>`, trigger);
     modal.element.dataset.actionAffiliation = result.rematchSide === "p2" ? "blue" : "red";
     onOpponentChange(opponent()); refresh();
   } };

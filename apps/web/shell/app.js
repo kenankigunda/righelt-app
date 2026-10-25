@@ -2,6 +2,7 @@ import { buildComputerTurnReplay, createComputerReplay } from './computer-replay
 import { deriveBoardView, createViewingIntent } from './viewing-state.js';
 import { mountMobileNavigation } from './mobile-navigation.js';
 import { computerBoardMessage, latestComputerTurn } from './computer-narration.js';
+import { renderBoardHeadingSlot, renderBoardMessageSlot, updateComputerBoardLoading } from './board-message-layout.js';
 import { applyDecisionNotes } from './decision-notes.js';
 import { createUtilityMemory } from './utility-memory.js';
 import { createReplayRequest } from './replay-request.js';
@@ -2495,7 +2496,7 @@ const renderHomeSectionSkeleton = (title, { showStartButton = false, sectionKey 
   </section>
 `;
 
-const renderBoardLoadingPreview = gameId => `<div class="loading-region" ${loadingAttributes(`game:${gameId}`)}><h2 class="board-heading">Board</h2><p class="board-preview-label" aria-hidden="true"></p><div class="board-wrap"><div class="loading-board-silhouette board" aria-hidden="true">${Array.from({length:100},()=>'<div class="cell"></div>').join('')}</div></div><div class="overlay-key" aria-hidden="true"><span class="legend-inspection">Commander</span><span class="legend-inspection">Supply point</span></div></div>`;
+const renderBoardLoadingPreview = gameId => `<div class="loading-region" ${loadingAttributes(`game:${gameId}`)}>${renderBoardHeadingSlot({loading:true})}${renderBoardMessageSlot({loading:true})}<div class="board-wrap"><div class="loading-board-silhouette board" aria-hidden="true">${Array.from({length:100},()=>'<div class="cell"></div>').join('')}</div></div><div class="overlay-key" aria-hidden="true"><span class="legend-inspection">Commander</span><span class="legend-inspection">Supply point</span></div></div>`;
 const renderGameViewSkeleton = () => `<div data-testid="game-view-skeleton">${renderGameShellFrame({id:currentRoute.gameId || 'loading',currentSnapshot:null},{loading:true})}</div>`;
 
 const renderInvitePageSkeleton = () => `
@@ -2646,8 +2647,8 @@ const renderBoardPanel = (game) => `
   ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p class="alert" role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
   ${game.ownershipMode === "legacy_guest" && account.snapshot().enabled ? '<p class="alert" role="status">This older guest game is view-only. <button data-action="create-game">Start new game</button></p>' : ''}
   ${account.snapshot().enabled && account.snapshot().available && !account.snapshot().maintenance && !account.canPlay() ? '<p class="alert" role="status">Sign in to play or analyze. The board remains available to view.</p>' : ''}
-  <h2 class="board-heading">Board <span class="board-heading-separator">-</span> <span id="shell-board-turn-indicator">-</span></h2>
-  <p class="board-preview-label" id="shell-board-preview-label">Select a piece</p>
+  ${renderBoardHeadingSlot()}
+  ${renderBoardMessageSlot({id:"shell-board-preview-label"})}
   <div class="board-wrap" data-testid="game-board-wrap">
     <div id="shell-board" class="board" data-testid="game-board"></div>
     <div class="reconnect-background" aria-hidden="true"></div>
@@ -3451,12 +3452,17 @@ const mountBoardForGame = (game) => {
         onInteractionSound: event => gameSound.interaction(event),
         getBoardMessage: selection => {
           const replayFeedback = replayRequests.snapshot();
+          const replay = replayController?.snapshot();
+          const view = getBoardGame(transport.getGameViewModel(game.id));
+          const status = computerSession?.snapshot();
+          updateComputerBoardLoading(document.getElementById('shell-board-preview-label')?.parentElement.querySelector('.board-message-activity'), view, status, {
+            replaying: Boolean(replay?.playing || replayFeedback?.gameId === game.id), scope: viewingScope(),
+          });
           if (replayFeedback?.gameId === game.id) return replayFeedback.phase === "loading"
             ? {text:"Preparing replay",action:{id:"replay-cancel",label:"Cancel replay"}}
             : {text:"Replay unavailable",actions:[{id:"replay-computer",label:"Try again"},{id:"replay-dismiss",label:"Dismiss"}]};
-          const replay = replayController?.snapshot();
           if (replay?.playing) return { text:`Replay · ${Math.max(1,replay.step)} of ${replay.total}`, actions:[...(replay.manual ? [{id:'replay-next',label:'Next'}] : []),{id:'replay-stop',label:'Stop replay'}] };
-          return computerBoardMessage(getBoardGame(transport.getGameViewModel(game.id)), computerSession?.snapshot(), selection);
+          return computerBoardMessage(view, status, selection);
         },
         onBoardMessageAction: id => {
           if (id === 'replay-computer') void startComputerReplay();
@@ -4320,9 +4326,18 @@ const rematchDialog = createRematchDialog({createModal,getReadiness:opponent=>re
   if(opponent==='friend')openFriendInvite(handle.result.id);
 }});
 let pendingBranch = null;
-const branchDialog = createRematchDialog({ createModal, getReadiness:opponent=>readinessForChoice('branch',opponent), onOpponentChange:opponent=>prepareOpponent('branch',opponent), onRetry:opponent=>prepareOpponent('branch',opponent), onClose:()=>preparation.cancel('branch'), title: 'Create a new game here', labelId: 'branch-title', onStart: async ({ opponent, side }, { isCurrent }) => {
+const getBranchReadiness = opponent => {
+  const readiness = readinessForChoice('branch',opponent);
+  if (readiness.state !== 'ready') return readiness;
+  const source = pendingBranch && transport.getGameViewModel(pendingBranch.sourceGameId);
+  return source?.sharedMutationsBlocked
+    ? { state: 'preparing', message: 'Updating this game' }
+    : readiness;
+};
+const branchDialog = createRematchDialog({ createModal, getReadiness:getBranchReadiness, onOpponentChange:opponent=>prepareOpponent('branch',opponent), onRetry:opponent=>prepareOpponent('branch',opponent), onClose:()=>preparation.cancel('branch'), title: 'Create a new game here', labelId: 'branch-title', onStart: async ({ opponent, side }, { isCurrent }) => {
   if (!account.canPlay() || !pendingBranch || !isCurrent()) throw new Error('Sign in to create a game.');
-  if (readinessForChoice('branch',opponent).state !== 'ready') throw new Error('Prepare your opponent first.');
+  const readiness = getBranchReadiness(opponent);
+  if (readiness.state !== 'ready') throw new Error(readiness.message || 'Prepare your opponent first.');
   const computer = COMPUTER_PROFILES[opponent] ? { p1: side === 'p2' ? opponent : null, p2: side === 'p1' ? opponent : null } : undefined;
   const handle = transport.launchHistoryBranch({ ...pendingBranch, creatorSide: side, selfPlayMode: opponent === 'self', computer });
   const nextHash = buildGameHash(handle.result.game.id, null, { debug: false, scenarios: false });
@@ -4402,6 +4417,7 @@ const maybeReturnAfterUndo = gameId => {
   if (getShellLayoutMode() === 'narrow') navigateTo(buildGameHash(gameId,null,getCurrentGameHashState('board')));
 };
 const subscribeToTransport = () => transport.subscribe((change) => {
+  branchDialog.refresh();
   const liveReplayGame = transport.getAuthoritativeGame(getCurrentViewedGameId());
   replayRequests.reconcile(currentReplayContext());
   replayController?.reconcile({gameId:liveReplayGame?.id,revision:liveReplayGame?.gameplayRevision,lineageHead:liveReplayGame?.moves?.filter(move=>!move.undone).at(-1)?.moveId ?? null});
