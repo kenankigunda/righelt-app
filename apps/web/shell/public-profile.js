@@ -13,7 +13,7 @@ export const participantDisplayName = (person, fallback = 'Guest player') =>
   COMPUTER_PROFILES[person?.computerProfile]?.name || person?.profile?.displayName || person?.profile?.username || fallback;
 export const participantName = (person) =>
   person?.computerProfile && COMPUTER_PROFILES[person.computerProfile]
-    ? `<span class="player-name">${COMPUTER_PROFILES[person.computerProfile].name}</span><span class="player-username">Computer · experimental</span>`
+    ? `<span class="player-name">${COMPUTER_PROFILES[person.computerProfile].name}</span><span class="player-username">Computer</span>`
     : person?.profile
     ? `<span class="player-name"><bdi>${escape(person.profile.displayName || person.profile.username)}</bdi></span><span class="player-username"><bdi>@${escape(person.profile.username)}</bdi></span>`
     : `<bdi>Guest player</bdi>`;
