@@ -2,12 +2,36 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { recoveryMessage, isBoardRecoveryPending } from "../shell/recovery-view.js";
 import { createLiveTransportStore } from "../shell/live-transport.js";
+import { beginScenarioCapture } from '../shell/scenario-capture.js';
+import { resolveHistoryScenarioExportContext } from '../shell/scenarios.js';
 
 const snapshot = (n) => ({ pieces: [], sideToMove: "P1", turnIndex: n });
 const fixture = () => ({ id: "history", createdAt: "2026-01-01", updatedAt: "2026-01-01", gameplayRevision: 0,
  board: { state: snapshot(9) }, currentSnapshot: snapshot(9), turns: [], canRecordMove: true, canEndTurn: true,
  moves: [0,1,2,3].map((index) => ({ index, moveId: `m${index}`, snapshot: snapshot(index), selectionSnapshot: snapshot(20+index) })) });
 const store = () => createLiveTransportStore({ storage: {getItem:()=>"actor",setItem(){}}, fetcher: () => { throw Error("No network needed for history"); } });
+
+test('delayed history capture waits for the immutable pre-action position', { timeout: 5000 }, async t => {
+ let release, notifyStarted;
+ const started = new Promise(resolve => { notifyStarted = resolve; });
+ const game = fixture(), before = { ...snapshot(2), sideToMove: 'P1' }, after = { ...snapshot(3), sideToMove: 'P2' };
+ const full = { ...game.moves[2], snapshot: after, selectionSnapshot: before, actorSide: 'P1', turnIndex: 2,
+  action: { type: 'move', from: { row: 1, col: 1 }, to: { row: 1, col: 2 } } };
+ game.moves[2] = { ...full }; delete game.moves[2].snapshot; delete game.moves[2].selectionSnapshot;
+ const transport = createLiveTransportStore({ storage: { getItem: () => 'actor', setItem() {} },
+  fetcher: () => new Promise(resolve => { release = () => resolve(Response.json({ gameId: game.id, gameplayRevision: game.gameplayRevision, move: full })); notifyStarted(); }) });
+ t.after(() => transport.retire()); transport.applyLiveGameUpdate({ game });
+ transport.selectHistoryMove({ gameId: game.id, moveIndex: 2 });
+ const pending = transport.getGameViewModel(game.id); assert.equal(pending.historyLoading, true);
+ assert.throws(() => beginScenarioCapture(pending, 'actor', resolveHistoryScenarioExportContext(pending)), /loading/i);
+ await started;
+ release();
+ for (let i = 0; i < 100 && transport.getGameViewModel(game.id).historyLoading; i++) await new Promise(resolve => setTimeout(resolve, 1));
+ const selected = transport.getGameViewModel(game.id); assert.equal(selected.historyLoading, false);
+ const capture = beginScenarioCapture(selected, 'actor', resolveHistoryScenarioExportContext(selected));
+ assert.deepEqual(capture.snapshot, before); assert.notDeepEqual(capture.snapshot, after);
+ assert.deepEqual(capture.selection, { source: { row: 1, col: 1 }, target: { row: 1, col: 2 }, actorSide: 'P1', turnIndex: 2 });
+});
 
 test("live board loading follows blocked recovery without requiring a reconnect timestamp", () => {
  const pending = {sharedMutationsBlocked:true,syncStatus:"confirming",pendingCommandCount:3,recoveryStartedAt:null};
