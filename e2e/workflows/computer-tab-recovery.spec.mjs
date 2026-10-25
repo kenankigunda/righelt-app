@@ -58,7 +58,10 @@ test('player card deliberately restores paused manual play and lost acknowledgem
  const game=await projected(page,id);
  expect([game.computer.paused,game.computer.manual,game.computer.singleStep,game.computer.takeoverTurn]).toEqual([false,false,false,null]);
  expect(sent.length).toBeGreaterThan(0);for(const envelope of sent)expect(envelope).toEqual(sent[0]);
- expect(game.pendingCommandCount).toBe(0);
+ await expect.poll(()=>page.evaluate(id=>new Promise((resolve,reject)=>{
+  const request=indexedDB.open('righelt.online-commands.v2');request.onerror=()=>reject(request.error);
+  request.onsuccess=()=>{const db=request.result,tx=db.transaction('commands'),read=tx.objectStore('commands').getAll();read.onsuccess=()=>{const pending=read.result.filter(command=>command.gameId===id).length;db.close();resolve(pending);};read.onerror=()=>{db.close();reject(read.error);};};
+ }),id)).toBe(0);
  await page.screenshot({path:info.outputPath('computer-card-resumed.png')});
 });
 
@@ -80,7 +83,7 @@ test('competing tabs transfer control deliberately without changing seats or mod
 test('abrupt renderer termination releases authority after lease expiry',async({page,context,browserName})=>{
  test.skip(browserName!=='chromium','Renderer crash is exposed by Chromium CDP.');
  const id=await createComputer(page),before=await projected(page,id),other=await context.newPage();
- const cdp=await context.newCDPSession(page);void cdp.send('Page.crash').catch(()=>{});
+ const cdp=await context.newCDPSession(page),crashed=page.waitForEvent('crash');void cdp.send('Page.crash').catch(()=>{});await crashed;
  await other.goto(`/#/game/${id}`);await switchGamePanel(other,'players');
  await expect(other.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:25000});
  const after=await projected(other,id);expect(after.computer.generation).toBeGreaterThan(before.computer.generation);expect(after.gameplayRevision).toBe(before.gameplayRevision);
