@@ -8,6 +8,31 @@ import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '..
 import {waitForPlayableBoard} from '../../scripts/validation/browser-navigation.mjs';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
 
+const assertFullBoardGeometry = async (page, info, phase) => {
+  await expect(page.locator('#shell-board .cell')).toHaveCount(100);
+  const geometry=await page.locator('#shell-board').evaluate(board=>{
+    const bounds=element=>{const r=element.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
+    const cells=[...board.querySelectorAll('.cell')];
+    return {viewport:{width:document.documentElement.clientWidth,height:innerHeight},board:bounds(board),
+      panel:bounds(board.closest('[data-shell-panel="board"]')),
+      cells:cells.map(cell=>({row:cell.dataset.row,col:cell.dataset.col,...bounds(cell)}))};
+  });
+  const context=JSON.stringify({phase,geometry});
+  expect(new Set(geometry.cells.map(cell=>`${cell.row}:${cell.col}`)).size,context).toBe(100);
+  expect(geometry.board.left,context).toBeGreaterThanOrEqual(-1);
+  expect(geometry.board.right,context).toBeLessThanOrEqual(geometry.viewport.width+1);
+  expect(geometry.board.top,context).toBeGreaterThanOrEqual(-1);
+  expect(geometry.board.bottom,context).toBeLessThanOrEqual(geometry.viewport.height+1);
+  for(const cell of geometry.cells) {
+    expect(cell.width,context).toBeGreaterThan(0);expect(cell.height,context).toBeGreaterThan(0);
+    expect(cell.left,context).toBeGreaterThanOrEqual(Math.max(0,geometry.board.left,geometry.panel.left)-1);
+    expect(cell.right,context).toBeLessThanOrEqual(Math.min(geometry.viewport.width,geometry.board.right,geometry.panel.right)+1);
+    expect(cell.top,context).toBeGreaterThanOrEqual(Math.max(0,geometry.board.top,geometry.panel.top)-1);
+    expect(cell.bottom,context).toBeLessThanOrEqual(Math.min(geometry.viewport.height,geometry.board.bottom,geometry.panel.bottom)+1);
+  }
+  await info.attach(`board-geometry-${phase}`,{contentType:'application/json',body:JSON.stringify(geometry)});
+};
+
 test('guest computer finishes a catalog position and prepares a fresh rematch',async({page},info)=>{
   await page.goto('/');
   await expect(page.getByTestId('home-create-game')).toBeVisible();
@@ -60,6 +85,8 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
   const initial = (await response.json()).game;
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
   await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase', 'idle');
+  await waitForPlayableBoard(page);
+  await assertFullBoardGeometry(page,info,'initial');
   await page.evaluate(() => {
     window.boardStatusGeometry={running:true,samples:[]};
     const sample=()=>{const record=window.boardStatusGeometry;if(!record.running)return;const board=document.querySelector('#shell-board');if(board){const rect=board.getBoundingClientRect();record.samples.push({y:rect.top+scrollY,height:rect.height,message:document.querySelector('#shell-board-preview-label')?.textContent});}requestAnimationFrame(sample);};sample();
@@ -128,6 +155,7 @@ for (const width of [320, 390, 430, 1440]) test(`guest computer play survives re
     await expect(page.locator('[data-computer-status]')).toBeHidden();
     await expect(page.locator('#shell-board-preview-label')).toContainText('Select a piece');
     await expect(page.locator('#shell-board .move-ghost')).toHaveCount(0);
+    await assertFullBoardGeometry(page,info,'after-undo');
     const resumes=controls.filter(control=>control.action==='resume');
     expect(new Set(resumes.map(control=>control.envelope.clientCommandId)).size).toBe(1);
     const envelope=resumes[0].envelope;
