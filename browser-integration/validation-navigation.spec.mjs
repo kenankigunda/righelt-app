@@ -1,0 +1,76 @@
+import {test,expect} from '@playwright/test';
+import assert from 'node:assert/strict';
+import {assertOpponentChoice,selectGamePanel,revealAccountControl,assertAccountEntry} from '../scripts/validation/browser-navigation.mjs';
+import {assertMovePreview} from '../scripts/validation/browser-move.mjs';
+
+const navigation=({collapsed=false,wide=false}={})=>`<style>.game-shell-track-wrap{width:300px;height:100px;overflow:hidden}.game-shell-track{display:flex;width:900px;transition:transform 180ms linear}.panel{width:300px;flex:none;height:100px}[data-mobile-nav-controls][inert]{visibility:hidden}</style>
+<div id="app" data-shell-layout-mode="${wide?'wide':'narrow'}"><div class="game-shell-track-wrap"><div class="game-shell-track">${['players','board','history'].map((key,index)=>`<div class="panel" data-mobile-panel="${key}" ${collapsed&&index?'inert':''}>${key}</div>`).join('')}</div></div>
+${collapsed?'<button id="reveal" aria-label="Show game navigation">Reveal</button>':''}<nav ${collapsed?'data-mobile-nav-controls inert':''}>${['players','board','history'].map((key,index)=>`<button data-action="switch-game-panel" data-panel="${key}" aria-pressed="${!index}">${key}</button>`).join('')}</nav></div>`;
+async function mountNavigation(page,options){
+  await page.setContent(navigation(options));
+  await page.evaluate(({collapsed})=>{
+    window.panelClicks=0;window.reveals=0;
+    document.querySelector('#reveal')?.addEventListener('click',()=>{window.reveals++;const controls=document.querySelector('nav');controls.removeAttribute('inert');controls.animate([{opacity:0},{opacity:1}],{duration:120});});
+    document.querySelectorAll('[data-panel]').forEach(button=>button.addEventListener('click',()=>{
+      window.panelClicks++;const index=['players','board','history'].indexOf(button.dataset.panel);
+      document.querySelectorAll('[data-panel]').forEach(other=>other.setAttribute('aria-pressed',String(other===button)));
+      if(collapsed)document.querySelectorAll('[data-mobile-panel]').forEach(panel=>panel.inert=panel.dataset.mobilePanel!==button.dataset.panel);
+      document.querySelector('.game-shell-track').style.transform=`translateX(${-300*index}px)`;
+    }));
+  },options);
+}
+
+for(const collapsed of [false,true])test(`released navigation selects and settles ${collapsed?'collapsed':'legacy always-visible'} panels`,async({page})=>{
+  await mountNavigation(page,{collapsed});
+  await selectGamePanel(page,'history');
+  expect(await page.evaluate(()=>({clicks:window.panelClicks,reveals:window.reveals}))).toEqual({clicks:1,reveals:Number(collapsed)});
+  expect(await page.locator('[data-mobile-panel="history"]').evaluate(panel=>{const rect=panel.getBoundingClientRect();return panel.contains(document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2));})).toBe(true);
+  expect(await page.locator('.game-shell-track').evaluate(track=>track.getAnimations().some(animation=>animation.playState==='running'))).toBe(false);
+  await selectGamePanel(page,'board');
+  await expect(page.locator('[data-panel="board"]')).toHaveAttribute('aria-pressed','true');
+  expect(await page.evaluate(()=>window.panelClicks)).toBe(2);
+});
+
+test('wide candidates do not receive narrow navigation actions',async({page})=>{
+  await mountNavigation(page,{wide:true});await selectGamePanel(page,'history');
+  expect(await page.evaluate(()=>window.panelClicks)).toBe(0);
+});
+test('a collapsed candidate without its accessible reveal control fails without clicking hidden tabs',async({page})=>{
+  await mountNavigation(page,{collapsed:true});await page.locator('#reveal').evaluate(element=>element.remove());
+  page.setDefaultTimeout(150);
+  await assert.rejects(()=>selectGamePanel(page,'board'),/Show game navigation/);
+  expect(await page.evaluate(()=>window.panelClicks)).toBe(0);
+});
+
+for(const menu of [false,true])test(`released account access supports ${menu?'narrow menu':'legacy direct'} entry`,async({page})=>{
+  await page.setContent(`<style>#account-menu[aria-hidden="true"]{opacity:0;pointer-events:none;transform:translateY(12px)}</style>${menu?'<button id="menu" aria-label="Open navigation menu">Menu</button>':''}<div id="account-menu" ${menu?'aria-hidden="true"':''}><button data-testid="account-open" data-authenticated="false">Account</button></div>`);
+  await page.evaluate(()=>{
+    window.accountClicks=0;window.menuToggles=0;
+    document.querySelector('[data-testid="account-open"]').onclick=()=>window.accountClicks++;
+    document.querySelector('#menu')?.addEventListener('click',event=>{window.menuToggles++;const menu=document.querySelector('#account-menu'),closed=menu.getAttribute('aria-hidden')==='true';menu.setAttribute('aria-hidden',String(!closed));event.currentTarget.setAttribute('aria-label',closed?'Close navigation menu':'Open navigation menu');});
+  });
+  if(menu){
+    expect(await page.getByTestId('account-open').isVisible()).toBe(true);
+    await expect(page.getByRole('button',{name:'Account',exact:true})).toHaveCount(0);
+  }
+  await assertAccountEntry(page,{authenticated:false});
+  expect(await page.evaluate(()=>window.menuToggles)).toBe(menu?2:0);
+  if(menu)await expect(page.getByRole('button',{name:'Open navigation menu',exact:true})).toBeVisible();
+  await(await revealAccountControl(page,page.getByTestId('account-open'))).click();expect(await page.evaluate(()=>window.accountClicks)).toBe(1);
+});
+
+for(const message of ['Preview. Activate this destination again to play.','Move from (1, 2) to (2, 2)'])test(`preview proof uses actual destination state with ${message.startsWith('Preview')?'legacy':'short'} copy`,async({page})=>{
+  await page.setContent(`<p id="shell-board-preview-label">${message}</p><div id="target" class="cell target"><span class="move-ghost">Piece</span></div>`);
+  await assertMovePreview(page,page.locator('#target'));
+});
+
+for(const cards of [false,true])test(`opponent proof asserts the exact ${cards?'native card':'legacy dropdown'} choice`,async({page})=>{
+ await page.setContent(`<dialog open aria-label="Play again">${cards?'<fieldset><legend>Opponent</legend><label><input name="opponent" type="radio" value="babs" checked>Babs</label><label><input name="opponent" type="radio" value="friend">Friend</label></fieldset>':'<label>Opponent<select><option value="babs">Babs</option><option value="friend">Friend</option></select></label>'}</dialog>`);
+ const dialog=page.getByRole('dialog',{name:'Play again',exact:true});
+ await assertOpponentChoice(dialog,'babs');
+ if(cards)await dialog.getByRole('radio',{name:'Friend',exact:true}).check();else await dialog.getByRole('combobox',{name:'Opponent',exact:true}).selectOption('friend');
+ await assertOpponentChoice(dialog,'friend');
+ // A visible wrong known choice must fail the proof in both UI contracts.
+ await assert.rejects(()=>assertOpponentChoice(dialog,'babs'));
+ await assert.rejects(()=>assertOpponentChoice(dialog,'unknown'),/Unknown opponent/);
+});
