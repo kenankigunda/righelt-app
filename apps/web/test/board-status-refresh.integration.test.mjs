@@ -54,3 +54,20 @@ test('status-only refresh preserves a separate ongoing computer cue operation',a
  for(const gate of [false,true,false]){blocked=gate;runtime.refreshStatus();assert.equal(cue.dataset.loadingKey,key);assert.equal(cue.dataset.loadingState,'pending');}
  assert.match(label.value,/data-board-preview-action="pass"/);
 });
+
+test('a required defender retains legal retreat previews across a temporary recovery gate',async()=>{
+ let blocked=true,hover,click,submissions=0;
+ const label=preview(),adapter=createEngineBoardAdapter();
+ const piece=(id,owner,kind,row,col)=>({id,owner,kind,position:{row,col},supplied:true,commanded:true});
+ const snapshot={boardSize:10,sideToMove:'P2',turnIndex:0,outcome:{status:'ongoing'},continuation:{type:'push',owner:'P2',attackerOwner:'P1',phase:'retreat',attackerId:'A1',pushedPieceId:'D1'},pieces:[piece('C1','P1','commander',3,1),piece('C2','P2','commander',4,4),piece('A1','P1','unit',4,2),piece('D1','P2','unit',4,2)]};
+ const retreat={type:'retreat',actorId:'D1',from:{row:4,col:2},to:{row:3,col:2}},other={...retreat,to:{row:5,col:2}};
+ const runtime=createBoardRuntime({boardAdapter:{...adapter,mount:options=>{hover=options.onCellHoverStart;click=options.onCellClick;},render:noop},host:{canSelect:()=>true,canInteract:()=>!blocked,applyAction:async()=>{submissions++;},loadPieceMoves:async()=>({state:snapshot,actions:[retreat,other],previewActions:[retreat,other]})},controls:{getSupportsHover:()=>true}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ await runtime.loadSnapshot(snapshot,{legalActions:[retreat,other]});
+ assert.equal(runtime.getSelection().selectedPieceId,'D1');
+ click(retreat.to);click(retreat.to);
+ assert.equal(runtime.getSelection().selectedPieceId,null,'blocked empty-square inspection clears the forced selection');
+ assert.equal(submissions,0,'uncertain delivery cannot submit the next action');
+ blocked=false;runtime.refreshStatus();hover(retreat.to);
+ assert.deepEqual(runtime.getSelection().target,retreat.to,'admission restoration reinstates the required defender before selecting its legal destination');
+});

@@ -31,10 +31,10 @@ for (const width of [933, 932, 901, 900, 899, 390]) test(`recovery overlay and s
    new MutationObserver(()=>window.announcements.push(window.announcementNode.textContent)).observe(window.announcementNode,{childList:true,subtree:true,characterData:true});
  });
  // Choose a legal action through the real board without waiting for rejected optimistic publication.
- const action=await page.evaluate(async gameId=>{
+ const {action,revisionBeforeRejectedMove}=await page.evaluate(async gameId=>{
    const identityId=localStorage.getItem("righelt.identity.id.v1");
    const body=await (await fetch(`/api/shell/games/${gameId}?identityId=${identityId}`)).json();
-   return body.game.legalActions.find(a=>a.from&&a.to);
+   return {action:body.game.legalActions.find(a=>a.from&&a.to),revisionBeforeRejectedMove:body.game.gameplayRevision};
  },gameId);
  expect(action).toBeTruthy();
  const to=await selectPlayableAction(page,action);
@@ -81,6 +81,14 @@ for (const width of [933, 932, 901, 900, 899, 390]) test(`recovery overlay and s
  const announcements=await page.evaluate(()=>window.announcements.filter(Boolean));
  expect(announcements.filter(x=>x.includes("We couldn’t save your move")).length).toBe(1);
  if(await gated.count()) await expect(gated).toBeEnabled();
+ // The next helper chooses from the server's legal actions. Wait for the retried
+ // original move to reach that authority instead of reading its old position
+ // while the healthy client already displays the optimistic next position.
+ await expect.poll(()=>page.evaluate(async({gameId})=>{
+  const identityId=localStorage.getItem("righelt.identity.id.v1");
+  const {game}=await (await fetch(`/api/shell/games/${gameId}?identityId=${identityId}`)).json();
+  return {revision:game.gameplayRevision,action:game.moves.at(-1)?.action};
+ },{gameId})).toEqual({revision:revisionBeforeRejectedMove+1,action});
  await makeAnyLegalMove(page);
  const result={fault:`storage-${width}px`,restoredAt:new Date(restoredAt).toISOString(),convergenceMs:Date.now()-restoredAt,...metrics};
  expect(result.convergenceMs).toBeLessThanOrEqual(25000);

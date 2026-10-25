@@ -784,9 +784,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
   };
 
-  const applyForcedContinuationSelection = () => {
+  const applyForcedContinuationSelection = ({requireLegalAction=false}={}) => {
     const forcedSelection = deriveForcedContinuationSelection(state, legalActions);
-    if (!forcedSelection) {
+    if (!forcedSelection || (requireLegalAction && !legalActions.some(action=>action.type===forcedSelection.actionType && action.actorId===forcedSelection.selectedPieceId))) {
       return false;
     }
 
@@ -1534,7 +1534,13 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     clearInspection,
     getInspection: () => inspection ? structuredClone(inspection) : null,
     setInteractionBlocked: value => { interactionBlocked = Boolean(value); if (interactionBlocked) clearHoveredTarget(); },
-    refreshStatus: renderStatus,
+    refreshStatus: () => {
+      // A blocked board still permits inspection. Empty-square clicks can clear
+      // its forced actor, so restore that actor from current legal actions only
+      // after admission returns. Preserve deliberate inspections and selections.
+      if (!selectedPieceId && !inspection && host.canInteract?.(state) !== false && applyForcedContinuationSelection({requireLegalAction:true})) renderBoard();
+      renderStatus();
+    },
     refreshVisuals: () => { if (!destroyed) renderBoard(); },
     destroy,
     bindElements,
