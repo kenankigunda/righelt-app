@@ -459,11 +459,18 @@ export const createLiveTransportStore = ({
     }
     if (actionContractVersion !== undefined) serverActionContract = actionContractVersion;
     const notifications = [];
+    const receiptOwner = game && commandOutcome ? getOptimisticState(game.id).pendingCommands.find(command => command.clientCommandId === commandOutcome.clientCommandId)?.sharedRecoveryEpoch : undefined;
     if (commandOutcome && game) {
       const confirming = getOptimisticState(game.id).syncStatus === "confirming";
       if (settleOutcome(game.id, commandOutcome, notifications) && confirming) incrementSyncMetric("wsConfirmedAfterHttpFail", game.id);
     }
     const result = upsertGameSnapshot({ game, eventSeq, changeType: "authoritative_update", publish: false });
+    if (game && notifications.length) {
+      const optimistic = getOptimisticState(game.id);
+      // A socket receipt may beat (and cancel) HTTP. Finish only the recovery
+      // started by this shared write, never a newer connection/snapshot repair.
+      if (receiptOwner !== undefined && receiptOwner === optimistic.connectionRecoveryEpoch && !optimistic.pendingCommands.length && !optimistic.forceSnapshot) setConnectionRecovering(game.id, false);
+    }
     for (const notification of notifications) emitChange(notification);
     if (game) { emitChange({ type: "authoritative_update", gameId: game.id, baseline }); void sendNextPendingCommand(game.id); }
     return result;
@@ -499,6 +506,8 @@ export const createLiveTransportStore = ({
   const processResponse = (gameId, body, envelopes) => {
     if (body?.protocolVersion === 1) { markUpgradeRequired(gameId); throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" }); }
     if (!isReconcileResponse(body, gameId, envelopes) || (body.game !== undefined && (!validSyncSnapshot(body.game, gameId) || body.game.gameplayRevision !== body.gameplayRevision))) throw Object.assign(new Error("invalid_confirmation"), { code: "invalid_response" });
+    const optimistic = getOptimisticState(gameId);
+    const sharedRecoveryOwners = optimistic.pendingCommands.filter(command => command.kind === "shared" && body.commandOutcomes.some(outcome => outcome.clientCommandId === command.clientCommandId && outcome.outcome !== "unknown")).map(command => command.sharedRecoveryEpoch);
     const notifications = [];
     for (const outcome of body.commandOutcomes) settleOutcome(gameId, outcome, notifications);
     if (body.game) upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, publish: false });
@@ -507,7 +516,8 @@ export const createLiveTransportStore = ({
       markUpgradeRequired(gameId);
       throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
     }
-    if (!getOptimisticState(gameId).pendingCommands.length && !getOptimisticState(gameId).forceSnapshot) setConnectionRecovering(gameId, false);
+    if (!optimistic.pendingCommands.length && !optimistic.forceSnapshot && (!sharedRecoveryOwners.length || sharedRecoveryOwners.some(epoch => epoch !== undefined && epoch === optimistic.connectionRecoveryEpoch))) setConnectionRecovering(gameId, false);
+
     emitChange({ type: "authoritative_update", gameId });
     void sendNextPendingCommand(gameId);
     return body;
@@ -685,8 +695,10 @@ export const createLiveTransportStore = ({
       optimistic.recoveryEpisodeId = crypto.randomUUID();
     }
     optimistic.connectionEvidence = { ...optimistic.connectionEvidence, ...evidence };
+    if (recovering) optimistic.connectionRecoveryEpoch = (optimistic.connectionRecoveryEpoch ?? 0) + 1;
     optimistic.connectionRecovering = recovering || optimistic.forceSnapshot === true;
     if (!optimistic.connectionRecovering && !optimistic.pendingCommands.length) {
+      optimistic.syncStatus = "ready";
       optimistic.recoveryStartedAt = null; optimistic.recoveryIssue = null;
       clearTimeout(optimistic.recoveryRetryTimer); optimistic.recoveryRetryTimer = null; optimistic.recoveryRetryAttempt = 0;
       issueDiagnostics.resolve(`recovery:${gameId}`);
@@ -1138,14 +1150,16 @@ export const createLiveTransportStore = ({
       try{await commandJournal.admit(envelope);}catch(error){blockStorage(gameId,error);throw error;}
       assertActive();
       const completion=new Promise((resolve,reject)=>sharedWaiters.set(envelope.clientCommandId,{resolve,reject}));
-      optimistic.pendingCommands.push(internalCommand(envelope));
+      const pending = internalCommand(envelope);
+      optimistic.pendingCommands.push(pending);
       setConnectionRecovering(gameId,true);
+      pending.sharedRecoveryEpoch = optimistic.connectionRecoveryEpoch;
       void sendNextPendingCommand(gameId);
       return {completion};
     });
     optimistic.admission=admitted;
     const {completion}=await admitted;await completion;
-    return {ok:true,game:getGameViewModel(gameId),eventSeq:lastEventSeqByGameId.get(gameId)};
+    return {ok:true,game:clone(gameById.get(gameId)),eventSeq:lastEventSeqByGameId.get(gameId)};
   };
   const boundedSharedRequest = async (gameId, url, init) => {
     if(gameById.get(gameId)?.sharedReceipts && SHARED_OPERATIONS.includes(url.split("/").at(-1)))return journalSharedRequest(gameId,url,init);
