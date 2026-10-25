@@ -331,7 +331,9 @@ export class GameRoomDO {
             throw new AuthProblem("session_changed", 409);
           }
           this.env = await withCutoverPolicy(this.env);
-          const safe = authActive(this.env) ? sanitizeGameResponse(body, this.requestAuthority, !maintenanceAllowed(this.env,this.requestAuthority?.accountId)) : body;
+          const accountGame = (body.game as {ownershipMode?:string} | undefined)?.ownershipMode === "account_v1";
+          const safe = authActive(this.env) || accountGame ? sanitizeGameResponse(body, this.requestAuthority, !authActive(this.env) || !maintenanceAllowed(this.env,this.requestAuthority?.accountId)) : body;
+          if (authActive(this.env)) safe.authProtocolVersion = AUTH_PROTOCOL_VERSION;
           return json(request.headers.get(LIVE_HISTORY.requestHeader) === LIVE_HISTORY.requestValue ? compactHistoryResponse(safe) : safe, response.status);
         } finally {
           this.requestAuthority = null;
@@ -441,6 +443,20 @@ export class GameRoomDO {
       return json({ ok: true, game: withViewModel(candidate, identityId), eventSeq: this.eventSeq });
     }
 
+    if (request.method === "GET" && ["/snapshot", "/metadata"].includes(path)) {
+      const projection = await loadGameProjection(this.env, this.getLoadedGameId() ?? "");
+      if (!projection) return json({ok:false,error:"game_not_found"},404);
+      if (projection.kind === "invalid") return json({ok:false,error:"invalid_persisted_game"},500);
+      const game = projection.game;
+      // Reads retain the durable freshness contract without decoding history in
+      // the outer API. Serialized room requests cannot race a room commit here.
+      this.game = game;
+      this.eventSeq = projection.eventSeq;
+      if (path === "/metadata") return json({ok:true,selfPlayMode:game.selfPlayMode,ownershipMode:game.ownershipMode});
+      const identityId = asIdentity(url.searchParams.get("identityId")) ?? "";
+      return json({ok:true,protocolVersion:2,game:withViewModel(game,authActive(this.env) && game.ownershipMode !== "account_v1" ? "" : identityId),eventSeq:this.eventSeq});
+    }
+
     const body = path === '/decision-attempt' ? await readSyncBody(request, COMPUTER_LIMITS.attemptBytes) : ["/moves", "/apply", "/end-turn", "/reconcile", '/decision-history', '/decision-snapshot', '/decision-attempts', '/decision-notes'].includes(path) ? await readSyncBody(request) : await parseBody(request);
     const identityId = asIdentity(body.identityId);
       this.requestIdentity=identityId??"";
@@ -454,12 +470,28 @@ export class GameRoomDO {
     }
     const game = loaded;
     if (!authActive(this.env) && game.ownershipMode === "account_v1") throw new AuthProblem("temporarily_unavailable", 503);
-    if (authActive(this.env) && game.ownershipMode !== "account_v1" && !["/legal", "/piece-moves", "/piece-actions", '/decision-history', '/decision-snapshot', '/decision-attempts', '/decision-attempt', '/decision-notes'].includes(path)) throw new AuthProblem("legacy_read_only", 403);
+    if (authActive(this.env) && game.ownershipMode !== "account_v1" && !["/prepare-branch", "/legal", "/piece-moves", "/piece-actions", '/decision-history', '/decision-snapshot', '/decision-attempts', '/decision-attempt', '/decision-notes'].includes(path)) throw new AuthProblem("legacy_read_only", 403);
     if (["/moves", "/apply", "/end-turn", "/shared", "/reconcile"].includes(path)) {
       return this.handleSyncCommand(path, body, game);
     }
     if (!["/history", "/live", "/presence", "/legal", "/piece-actions", "/piece-moves"].includes(path) && body.protocolVersion !== 2) {
       return json({ ok: false, error: "upgrade_required", protocolVersion: 2 }, 426);
+    }
+
+    if (request.method === "POST" && path === "/prepare-branch") {
+      const decisionId = asIdentity(body.sourceDecisionId);
+      const index = typeof body.sourceMoveIndex === "number" && Number.isInteger(body.sourceMoveIndex) ? body.sourceMoveIndex : null;
+      const archived = decisionId ? await readDecision(this.env, game.id, decisionId) : null;
+      const selected = archived?.move ?? (decisionId ? game.moves.find(move => move.moveId === decisionId) : index !== null ? game.moves[index] : null);
+      const live = body.sourceGameplayRevision === game.gameplayRevision && !decisionId && index === null;
+      if (!selected && !archived?.state && !live) return json({ok:false,error:"branch_source_changed"},409);
+      const state = clone(selected?.selectionSnapshot ?? archived?.state ?? game.board.state);
+      const scenario = {
+        formatVersion:2,id:crypto.randomUUID(),title:"History branch",description:"A new game from an inspected position.",incorrect:false,
+        initialState:state,resultingState:state,moves:[],savedSelection:null,
+        expectedFinalStateHash:deterministicStateHash(resolveToStability(state,{artifactMode:"full"})),expectedOutcome:state.outcome.status,
+      };
+      return json({ok:true,scenario,initialSelectionAction:selected?.action ?? null});
     }
 
     if (request.method === 'POST' && path === '/decision-snapshot') {
@@ -884,8 +916,15 @@ export class GameRoomDO {
       return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
+    if (request.method === "POST" && ["/legal", "/piece-moves"].includes(path)) {
+      const role = findRoleForIdentity(game, identityId);
+      if (!authActive(this.env) && role !== "Player 1" && role !== "Player 2") return json({ok:false,error:"role_not_allowed"},403);
+      const seatIdentity = getSeatIdentity(game, getSideToMoveSeat(game));
+      if (!authActive(this.env) && (!seatIdentity || seatIdentity !== identityId)) return json({ok:false,error:"not_your_turn"},409);
+    }
+
     if (request.method === "POST" && path === "/legal") {
-      const stable = game.board.state;
+      const stable = resolveToStability(game.board.state, {artifactMode:"full"});
       return json({
         ok: true,
         state: stable,
@@ -896,16 +935,18 @@ export class GameRoomDO {
     }
 
     if (request.method === "POST" && path === "/piece-moves") {
+      if (!asGameState(body.state)) return json({ok:false,error:"invalid_state"},400);
       const pieceId = asIdentity(body.pieceId);
       if (!pieceId) {
         return json({ ok: false, error: "invalid_piece_id" }, 400);
       }
+      const stable = resolveToStability(game.board.state, {artifactMode:"full"});
       return json({
         ok: true,
-        state: game.board.state,
+        state: stable,
         pieceId,
-        actions: enumeratePieceActions(game.board.state, pieceId),
-        previewActions: enumeratePieceActionPreviews(game.board.state, pieceId),
+        actions: enumeratePieceActions(stable, pieceId),
+        previewActions: enumeratePieceActionPreviews(stable, pieceId),
         game: withViewModel(game, identityId),
         eventSeq: this.eventSeq,
       });

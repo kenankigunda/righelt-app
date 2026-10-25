@@ -11,6 +11,16 @@ This feature addresses the October 2026 recovery reports. The confirmed October 
 - History projection is negotiated per HTTP request and socket, including hibernation attachments. Old clients receive full games. New clients retain all move summaries and the latest full move. Older boards load through a read-only decision endpoint. A failed read preserves the current view, cached selections work offline, and return-to-live invalidates an outstanding selection. Inspected pending boards survive assignment of their durable IDs.
 - Metadata representation 2 retains the compressed history and applies current card metadata when reading. Metadata commits still run revision, account, cutover and capacity guards. An archive captures the merged game and restores a full representation.
 
+## CPU and receipt pressure hardening
+
+The forwarded October 25 investigation confirmed 125 outer API CPU-limit failures in one 95-second window. The failures occurred on game reads and computer controls, while the game room completed work. Moving only metadata writes behind a flag would leave this failure path active.
+
+Room responses now stream through the outer API. Game reads, legal actions, previews, controls, joins and scenario results do not decode or serialize history there. Invites and source imports read bounded metadata from the room. History branches prepare the selected immutable position in the source room and send only that position through the outer API to the target room. Room reads preserve durable freshness and repair behavior. Both layers retain session and deployment-policy checks. A policy change while awaiting a stream fails closed and cancels the unused response.
+
+A shared receipt can arrive over a ready socket before HTTP completes. Either response now finishes only the recovery owned by that write. Newer connection repair and forced snapshots remain protected. Shared completion returns authoritative state instead of a temporary UI projection. Successful reconciliation with no pending commands clears stale confirmation status. These cases cover human undo and computer controls, including rejection and interrupted delivery.
+
+The real-runtime large-history test prohibits projection loads in the outer API while exercising legacy full reads, compact reads, controls, invites, source imports and branches with both new writers disabled. This proves the bounded outer work structure. Local wall-clock timing does not prove the production CPU budget. Provider verification after the coordinated deployment remains required.
+
 ## Reader before writer
 
 Both writer settings default to false. No production activation is authorized by this change.
@@ -27,7 +37,7 @@ Canonical implementation: `codex/seamless-recovery`, isolated checkout `righelt-
 
 The app improvements chat owns board geometry, visual feedback, phase wording, identities and undo viewing intent. Its release ledger is `righelt-context-explanations/docs/ai/CONTEXTUAL_BOARD_FEEDBACK.md`. Existing release order remains 150 → 154 → 149 → 151 → 152 → 156 → follow-on, refreshed against actual main after each merge. The engine stream owns the next deployment. Reserve migration 0022 with that owner before landing.
 
-The training chat is held pending a fresh readiness signal from both app work and this feature. Heavy recovery validation supersedes the earlier planning-only resource clearance. No merge, deployment, model activation, storage generation change or production deletion is implied. Evidence publication and schedules remain paused.
+The training chat is held pending a fresh readiness signal from both app work and this feature. Heavy recovery validation supersedes the earlier planning-only resource clearance. The user subsequently authorized shepherding this feature to merge and deployment in the shared release queue. Model or storage writer activation, storage generation changes and production deletion still require their separate gates. Evidence publication and schedules remain paused.
 
 ## Validation
 

@@ -16,6 +16,11 @@ for(const width of [390,1440])test(`lazy history retains the selected board thro
  await page.route(`**/api/shell/games/${gameId}/decision-snapshot`,async route=>{reads++;if(fail)await route.abort();else await route.continue();});
  await page.locator('[data-testid="history-move-item"][data-move-index="0"] .history-move-line').click();
  await expect(page.getByText('This move couldn’t load. Your current view is still available.')).toBeVisible();
+ const status=page.getByTestId('history-load-status');
+ await expect(status).toBeVisible();
+ expect(await status.evaluate(element=>Boolean(element.closest('[data-tool="history"],section.panel')))).toBe(true);
+ const statusBox=await status.boundingBox(),logoBox=await page.getByRole('img',{name:'Righelt',exact:true}).boundingBox();
+ expect(statusBox.y).toBeGreaterThanOrEqual(logoBox.y+logoBox.height);
  expect(await page.getByTestId('game-board').innerHTML()).toBe(selected);
  await expect(page.locator('[data-testid="history-move-item"][data-move-index="1"]')).toHaveClass(/is-selected/);
  await page.screenshot({path:info.outputPath(`history-retry-${width}.png`)});

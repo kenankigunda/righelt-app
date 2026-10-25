@@ -438,3 +438,49 @@ for(const operation of ["revert-request","computer-control"])test(`shared ${oper
   assert.equal((await h.call("shared",conflicting)).body.commandOutcomes[0].reason,"command_id_conflict");
  }finally{await h.close();}
 });
+
+
+test("large legacy replies and compact reads traverse outer API with both new writers disabled",{timeout:120000},async()=>{
+ const h=await harness({STORAGE_LARGE_STATES_ENABLED:"false",STORAGE_METADATA_WRITES_ENABLED:"false"});
+ try{
+  await h.call("create",{gameId:"g",selfPlayMode:true});
+  const {game}=await h.current();
+  for(let i=0;i<80;i++){
+   assert.equal(applyServerAction(game,{type:"pass"}).ok,true);
+   game.moves.at(-1).notation="Recorded decision ".repeat(900);
+  }
+  const encoded=await encodeStorage(game);
+  assert.ok(encoded.rawBytes>1_500_000 && encoded.rawBytes<2_000_000);
+  await h.db.prepare("UPDATE game_payloads SET state_blob=?1,state_sha256=?2 WHERE game_id='g'").bind(encoded.blob,encoded.checksum).run();
+  await h.restart();
+  const get=async(compact)=>{
+   const response=await h.runtime.dispatchFetch("https://test/api/shell/games/g?identityId=actor",{headers:compact?{"X-Righelt-Projection":"history-v1"}:{}});
+   assert.equal(response.status,200);
+   return response.json();
+  };
+  const full=await get(false),compact=await get(true);
+  assert.deepEqual(full.game.moves,game.moves);
+  assert.equal(compact.game.moves.length,game.moves.length);
+  assert.equal(compact.game.moves[1].snapshot,undefined);
+  assert.deepEqual(compact.game.board,full.game.board);
+  const control=await h.call("api/shell/games/g/computer-control",{action:"claim",deviceId:"test-device",tabId:"test-tab"});
+  // A game without computer seats rejects this operation definitively. It must
+  // still traverse the CPU-bounded outer path, without loading history there.
+  assert.equal(control.status,409,JSON.stringify(control));
+  assert.equal(control.body.error,"not_computer_game");
+  const invite=await h.runtime.dispatchFetch(`https://test/api/shell/invites/${game.inviteTokens.viewer}`);
+  assert.equal(invite.status,200);
+  assert.equal((await invite.json()).gameId,"g");
+  const selected=game.moves.at(-1);
+  const branch=await h.call("api/shell/history/branch",{sourceGameId:"g",sourceDecisionId:selected.moveId,gameId:"large-branch"});
+  assert.equal(branch.status,200,JSON.stringify(branch));
+  assert.deepEqual(branch.body.game.board.state,selected.selectionSnapshot);
+  const state=game.moves[0].selectionSnapshot;
+  const scenario={formatVersion:2,id:crypto.randomUUID(),title:"Large source import",description:"Bounded metadata",incorrect:false,initialState:state,resultingState:state,moves:[],savedSelection:null,expectedFinalStateHash:"placeholder",expectedOutcome:state.outcome.status};
+  const imported=await h.call("api/shell/scenarios/import",{sourceGameId:"g",gameId:"large-import",scenario});
+  assert.equal(imported.status,200,JSON.stringify(imported));
+  assert.equal(imported.body.game.selfPlayMode,true);
+  const projected=await get(false);
+  assert.deepEqual(projected.game.moves,game.moves);
+ }finally{await h.close();}
+});

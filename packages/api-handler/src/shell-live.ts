@@ -1,31 +1,18 @@
-import { deterministicStateHash } from '../../game-engine/src/hash';
-import { readDecision } from './decision-archive';
 import { storageRoomName } from "./storage-generation";
 import { AUTH_PROTOCOL_VERSION } from '../../shared-types/src/auth-policy.js';
 import { authorizeGameRequest, authActive, sanitizeGameResponse, type GameAuthority } from './auth-game';
 import { AuthProblem } from './auth-controls';
 import { readSyncBody, SyncBodyError } from "./sync-body";
-import { listLegalActions } from "../../game-engine/src/legal";
-import { resolveToStability } from "../../game-engine/src/resolve";
 import { CACHE_BOOTSTRAP_SHORT, CACHE_NO_STORE } from "../../shared-types/src/http";
 import {
   asAction,
-  asGameState,
   asIdentity,
   asScenarioRecord,
-  enumeratePieceActionPreviews,
-  enumeratePieceActions,
-  findRoleForIdentity,
-  getSeatIdentity,
-  getSideToMoveSeat,
   nextGameId,
-  resolveLaunchParticipantCopyMode,
-  withFullViewModel,
 } from "./shell-live-core";
 import {
   countHomeSectionGames,
   listHomeSectionStaticGameCardPage,
-  loadGameProjection,
   resolveInvite,
   type D1DatabaseLike,
 } from "./shell-live-db";
@@ -49,7 +36,6 @@ export type LiveGameRequestEnv = {
 };
 
 const GAME_ROOMS_BINDING_ERROR = "server_misconfigured_game_rooms_binding";
-const INVALID_PERSISTED_GAME_ERROR = "invalid_persisted_game";
 const nowMs = () => Date.now();
 
 type HomeSectionKey = "my" | "other" | "smoke";
@@ -159,7 +145,7 @@ export const handleLiveGameWebSocketUpgrade = async (request: Request, env: Live
 export const handleLiveGameRequest = async (
   request: Request,
   env: LiveGameRequestEnv,
-): Promise<{ handled: boolean; status: number; body: Record<string, unknown>; cacheControl: string } | null> => {
+): Promise<{ handled: boolean; status: number; body: Record<string, unknown>; cacheControl: string } | { handled: true; response: Response } | null> => {
   let url = new URL(request.url);
   const route = parsePath(url.pathname);
   if (!route) return null;
@@ -265,22 +251,13 @@ export const handleLiveGameRequest = async (
     if (!invite) {
       return { handled: true, status: 404, body: { ok: false, error: "invite_not_found" }, cacheControl: CACHE_NO_STORE };
     }
-    const gameProjection = await loadGameProjection(env, invite.gameId);
-    if (!gameProjection) {
-      return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: CACHE_NO_STORE };
-    }
-    if (gameProjection.kind === "invalid") {
-      return {
-        handled: true,
-        status: 500,
-        body: { ok: false, error: INVALID_PERSISTED_GAME_ERROR },
-        cacheControl: CACHE_NO_STORE,
-      };
-    }
+    const metadataResponse = await fetchGameRoom(request, env, invite.gameId, "/metadata", {method:"GET"});
+    if (!metadataResponse.ok) return {handled:true,response:metadataResponse};
+    const metadata = await metadataResponse.json() as {ownershipMode?:string};
     return {
       handled: true,
       status: 200,
-      body: { ok: true, gameId: invite.gameId, inviteToken: token, inviteFromRole: invite.sharedByRole, ...(authActive(env) ? { ownershipMode: gameProjection.game.ownershipMode } : {}) },
+      body: { ok: true, gameId: invite.gameId, inviteToken: token, inviteFromRole: invite.sharedByRole, ...(authActive(env) ? { ownershipMode: metadata.ownershipMode } : {}) },
       cacheControl: CACHE_NO_STORE,
     };
   }
@@ -308,12 +285,7 @@ export const handleLiveGameRequest = async (
         ...(body.computer === undefined ? {} : { computer: body.computer }),
       }),
     });
-    return {
-      handled: true,
-      status: response.status,
-      body: (await response.json()) as Record<string, unknown>,
-      cacheControl: CACHE_NO_STORE,
-    };
+    return { handled: true, response };
   }
 
   if (request.method === "POST" && route.length === 2 && route[0] === "scenarios" && route[1] === "import") {
@@ -335,28 +307,18 @@ export const handleLiveGameRequest = async (
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ identityId, scenario, protocolVersion: body.protocolVersion }),
       });
-      return {
-        handled: true,
-        status: response.status,
-        body: (await response.json()) as Record<string, unknown>,
-        cacheControl: CACHE_NO_STORE,
-      };
+      return { handled: true, response };
     }
 
-    const sourceProjection = sourceGameId ? await loadGameProjection(env, sourceGameId) : null;
-    if (sourceProjection?.kind === "invalid") {
-      return {
-        handled: true,
-        status: 500,
-        body: { ok: false, error: INVALID_PERSISTED_GAME_ERROR },
-        cacheControl: CACHE_NO_STORE,
-      };
+    let sourceSelfPlay = false;
+    if (sourceGameId) {
+      const metadataResponse = await fetchGameRoom(request, env, sourceGameId, "/metadata", {method:"GET"});
+      if (!metadataResponse.ok && metadataResponse.status !== 404) return {handled:true,response:metadataResponse};
+      if (metadataResponse.ok) sourceSelfPlay = (await metadataResponse.json() as {selfPlayMode?:boolean}).selfPlayMode === true;
+      else await metadataResponse.body?.cancel();
     }
     const requestedGameId = asIdentity(body.gameId);
     const newGameId = requestedGameId ?? nextGameId();
-    const participantCopyMode = sourceProjection?.game
-      ? resolveLaunchParticipantCopyMode(sourceProjection.game, identityId)
-      : null;
     const response = await fetchGameRoom(request, env, newGameId, "/create-from-scenario", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -364,19 +326,12 @@ export const handleLiveGameRequest = async (
         identityId,
         gameId: newGameId,
         scenario,
-        selfPlayMode: sourceProjection?.game.selfPlayMode === true,
-        sourceGame: sourceProjection?.game ?? null,
-        participantCopyMode,
+        selfPlayMode: sourceSelfPlay,
         initialSelectionAction,
         preserveResultingState: "if_not_behind",
       }),
     });
-    return {
-      handled: true,
-      status: response.status,
-      body: (await response.json()) as Record<string, unknown>,
-      cacheControl: CACHE_NO_STORE,
-    };
+    return { handled: true, response };
   }
 
   if (request.method === "POST" && route.length === 2 && route[0] === "history" && route[1] === "branch") {
@@ -390,32 +345,14 @@ export const handleLiveGameRequest = async (
     if (!identityId || !sourceGameId) {
       return { handled: true, status: 400, body: { ok: false, error: "invalid_history_branch_payload" }, cacheControl: CACHE_NO_STORE };
     }
-    const sourceProjection = await loadGameProjection(env, sourceGameId);
-    if (!sourceProjection) {
-      return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: CACHE_NO_STORE };
-    }
-    if (sourceProjection.kind === "invalid") {
-      return {
-        handled: true,
-        status: 500,
-        body: { ok: false, error: INVALID_PERSISTED_GAME_ERROR },
-        cacheControl: CACHE_NO_STORE,
-      };
-    }
-    const source = sourceProjection.game;
-    const sourceDecisionId = asIdentity(body.sourceDecisionId);
-    const archived = sourceDecisionId ? await readDecision(env, sourceGameId, sourceDecisionId) : null;
-    const selected = archived?.move ?? (sourceDecisionId ? source.moves.find(move => move.moveId === sourceDecisionId) : sourceMoveIndex !== null ? source.moves[sourceMoveIndex] : null);
-    const live = body.sourceGameplayRevision === source.gameplayRevision && !sourceDecisionId && sourceMoveIndex === null;
-    if (!selected && !archived?.state && !live) return { handled: true, status: 409, body: { ok: false, error: "branch_source_changed" }, cacheControl: CACHE_NO_STORE };
-    // Position and next selection are derived from the immutable archive, never client scenario bytes.
-    const state = structuredClone(selected?.selectionSnapshot ?? archived?.state ?? source.board.state);
-    const initialSelectionAction = selected?.action ?? null;
-    const scenario = {
-      formatVersion: 2, id: crypto.randomUUID(), title: "History branch", description: "A new game from an inspected position.", incorrect: false,
-      initialState: state, resultingState: state, moves: [], savedSelection: null,
-      expectedFinalStateHash: deterministicStateHash(resolveToStability(state, { artifactMode: "full" })), expectedOutcome: state.outcome.status,
-    };
+    // Derive the immutable position where the history lives. The outer Worker
+    // handles only this bounded position, never the source's complete history.
+    const prepared = await fetchGameRoom(request, env, sourceGameId, "/prepare-branch", {
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({identityId,protocolVersion:2,sourceMoveIndex,sourceDecisionId:body.sourceDecisionId,sourceGameplayRevision:body.sourceGameplayRevision}),
+    });
+    if (!prepared.ok) return {handled:true,response:prepared};
+    const {scenario,initialSelectionAction} = await prepared.json() as Record<string,unknown>;
     const requestedGameId = asIdentity(body.gameId);
     const newGameId = requestedGameId ?? nextGameId();
     const response = await fetchGameRoom(request, env, newGameId, "/create-from-scenario", {
@@ -432,12 +369,7 @@ export const handleLiveGameRequest = async (
         preserveResultingState: true,
       }),
     });
-    return {
-      handled: true,
-      status: response.status,
-      body: (await response.json()) as Record<string, unknown>,
-      cacheControl: CACHE_NO_STORE,
-    };
+    return { handled: true, response };
   }
 
   if (route.length >= 2 && route[0] === "games") {
@@ -451,35 +383,23 @@ export const handleLiveGameRequest = async (
       }
       if (!hasGameRoomsBinding(env)) return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
       const response = await fetchGameRoom(request, env, gameId, `/${route[2]}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(syncBody) });
-      return { handled: true, status: response.status, body: await response.json() as Record<string, unknown>, cacheControl: CACHE_NO_STORE };
+      return { handled: true, response };
     }
-    const projection = await loadGameProjection(env, gameId);
-    if (!projection) {
-      return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: CACHE_NO_STORE };
-    }
-    if (projection.kind === "invalid") {
-      return {
-        handled: true,
-        status: 500,
-        body: { ok: false, error: INVALID_PERSISTED_GAME_ERROR },
-        cacheControl: CACHE_NO_STORE,
-      };
-    }
-    const game = projection.game;
-
+    // Room replies are already personalized and checked there. Keep the outer
+    // Worker independent of history size, including legacy full projections.
     if (request.method === "GET" && route.length === 2) {
       const identityId = asIdentity(url.searchParams.get("identityId")) ?? (authActive(env) ? "" : null);
-      if (identityId === null) {
-        return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
-      }
-      return {
-        handled: true,
-        status: 200,
-        body: { ok: true, protocolVersion: 2, game: withFullViewModel(game, authActive(env) && game.ownershipMode !== "account_v1" ? "" : identityId), eventSeq: projection.eventSeq },
-        cacheControl: CACHE_NO_STORE,
-      };
+      if (identityId === null) return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
+      if (!hasGameRoomsBinding(env)) return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
+      return { handled: true, response: await fetchGameRoom(request, env, gameId, `/snapshot?identityId=${encodeURIComponent(identityId)}`, { method: "GET" }) };
     }
-
+    if (request.method === "POST" && route.length === 3 && [
+      "computer-control", "decision-history", "decision-snapshot", "decision-notes", "decision-attempt", "decision-attempts",
+      "approve", "history", "live", "play-as-both", "presence", "legal", "piece-moves", "revert-request", "revert-approve", "revert-reject", "revert-rescind",
+    ].includes(route[2])) {
+      if (!hasGameRoomsBinding(env)) return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
+      return { handled: true, response: await forwardRequestToGameRoom(env, gameId, request, `/${route[2]}`) };
+    }
     if (request.method !== "POST") {
       return { handled: true, status: 404, body: { ok: false, error: "not_found" }, cacheControl: CACHE_NO_STORE };
     }
@@ -516,110 +436,7 @@ export const handleLiveGameRequest = async (
           inviteToken: body.inviteToken,
         }),
       });
-      return {
-        handled: true,
-        status: response.status,
-        body: (await response.json()) as Record<string, unknown>,
-        cacheControl: CACHE_NO_STORE,
-      };
-    }
-
-    if (
-      route.length === 3 &&
-      [
-        "computer-control",
-        "decision-history",
-        "decision-snapshot",
-        "decision-notes",
-        "decision-attempt",
-        "decision-attempts",
-        "approve",
-        "moves",
-        "apply",
-        "reconcile",
-        "end-turn",
-        "history",
-        "live",
-        "play-as-both",
-        "presence",
-        "revert-request",
-        "revert-approve",
-        "revert-reject",
-        "revert-rescind",
-      ].includes(route[2])
-    ) {
-      if (!hasGameRoomsBinding(env)) {
-        return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
-      }
-      const response = await fetchGameRoom(request, env, gameId, `/${route[2]}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      return {
-        handled: true,
-        status: response.status,
-        body: (await response.json()) as Record<string, unknown>,
-        cacheControl: CACHE_NO_STORE,
-      };
-    }
-
-    if (route.length === 3 && route[2] === "legal") {
-      const role = findRoleForIdentity(game, identityId);
-      if (!authActive(env) && role !== "Player 1" && role !== "Player 2") {
-        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: CACHE_NO_STORE };
-      }
-      const sideToMoveSeat = getSideToMoveSeat(game);
-      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
-      if (!authActive(env) && (!sideToMoveIdentity || sideToMoveIdentity !== identityId)) {
-        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: CACHE_NO_STORE };
-      }
-      const stable = resolveToStability(game.board.state, { artifactMode: "full" });
-      return {
-        handled: true,
-        status: 200,
-        body: {
-          ok: true,
-          state: stable,
-          legalActions: listLegalActions(stable),
-          game: withFullViewModel(game, authActive(env) && game.ownershipMode !== "account_v1" ? "" : identityId),
-        },
-        cacheControl: CACHE_NO_STORE,
-      };
-    }
-
-    if (route.length === 3 && route[2] === "piece-moves") {
-      const role = findRoleForIdentity(game, identityId);
-      if (!authActive(env) && role !== "Player 1" && role !== "Player 2") {
-        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: CACHE_NO_STORE };
-      }
-      const sideToMoveSeat = getSideToMoveSeat(game);
-      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
-      if (!authActive(env) && (!sideToMoveIdentity || sideToMoveIdentity !== identityId)) {
-        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: CACHE_NO_STORE };
-      }
-      const bodyState = asGameState(body.state);
-      const pieceId = asIdentity(body.pieceId);
-      if (!bodyState) {
-        return { handled: true, status: 400, body: { ok: false, error: "invalid_state" }, cacheControl: CACHE_NO_STORE };
-      }
-      if (!pieceId) {
-        return { handled: true, status: 400, body: { ok: false, error: "invalid_piece_id" }, cacheControl: CACHE_NO_STORE };
-      }
-      const stable = resolveToStability(game.board.state, { artifactMode: "full" });
-      return {
-        handled: true,
-        status: 200,
-        body: {
-          ok: true,
-          state: stable,
-          pieceId,
-          actions: enumeratePieceActions(stable, pieceId),
-          previewActions: enumeratePieceActionPreviews(stable, pieceId),
-          game: withFullViewModel(game, authActive(env) && game.ownershipMode !== "account_v1" ? "" : identityId),
-        },
-        cacheControl: CACHE_NO_STORE,
-      };
+      return { handled: true, response };
     }
 
     return { handled: true, status: 404, body: { ok: false, error: "not_found" }, cacheControl: CACHE_NO_STORE };

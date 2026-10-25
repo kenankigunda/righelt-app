@@ -1655,10 +1655,6 @@ const getGameAlertItems = (game) => {
       }),
     });
   }
-  if (game.historyLoading || game.historyLoadError) items.push({key:`history-load:${game.id}`,html:renderGameAlertCard({
-    body:game.historyLoading ? "Loading this move" : "This move couldn’t load. Your current view is still available.",
-    action:game.historyLoadError ? `<button class="secondary mini-button" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${game.historyLoadIndex}">Retry</button>` : "",
-  })});
   if (game.historyNotice) items.push({ key: `history-change:${game.id}`, html: renderGameAlertCard({ body: escapeHtml(game.historyNotice) }) });
 
   if (undoRequestFeedback && undoRequestFeedbackGameId === game.id) {
@@ -2618,6 +2614,7 @@ const renderHistoryPanel = (game) => {
     ${getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button>` : ""}
     <div class="section-followup">
       ${historyBanner}
+      ${game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? "Loading this move" : "This move couldn’t load. Your current view is still available."}</p>${game.historyLoadError ? `<button class="secondary mini-button" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${game.historyLoadIndex}">Retry</button>` : ""}</div>` : ""}
       ${game.inHistoryMode && selectedMove?.moveId ? `<div class="history-item-actions"><button class="secondary" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}">Create a new game before this decision</button>${game.myRoles?.some(role => role === 'Player 1' || role === 'Player 2') ? `<button class="secondary" data-action="revert-to-move" data-game-id="${escapeHtml(game.id)}" data-move-id="${escapeHtml(selectedMove.moveId)}">Undo before this decision</button>` : ''}</div>` : ''}
       <ol class="history-list" data-testid="history-list">${historyRows}</ol>
       <button class="secondary" data-action="debug-load-history">${getDecisionDebugState(game.id).cursor ? 'Load older archive page' : 'Browse full decision archive'}</button>
