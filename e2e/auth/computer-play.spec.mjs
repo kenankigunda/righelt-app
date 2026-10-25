@@ -5,6 +5,7 @@ import { AUTH_CONTROL_ORIGIN } from './fixture.mjs';
 import { readProjectedGame, waitForComputerDecision } from '../support/computer-projection.mjs';
 import { isOperationRequest, operationValues } from '../support/shared-request.mjs';
 import { waitForPlayableBoard } from '../../scripts/validation/browser-navigation.mjs';
+import {installPassiveCommandObservations,attachCommandObservations} from '../support/command-observations.mjs';
 
 const projected = (page, id) => page.evaluate(readProjectedGame, { id });
 
@@ -128,6 +129,9 @@ test('ordinary computer play records real worker evidence, preserves private not
 });
 
 test('ordinary computer undo restores the human turn and resumes computer control', async ({ page }, info) => {
+  await page.addInitScript(installPassiveCommandObservations);
+  let primaryError;
+  try{
   await registerComputerTester(page);
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
   const creation = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST' && response.request().postDataJSON()?.computer?.p2 === 'babs');
@@ -139,7 +143,9 @@ test('ordinary computer undo restores the human turn and resumes computer contro
   expect(initial.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
   await waitForPlayableBoard(page);
+  await page.evaluate(()=>window.commandObservationCheckpoint('before-first-human-action'));
   await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
+  await page.evaluate(()=>window.commandObservationCheckpoint('after-first-human-confirmation'));
   await expect.poll(async () => (await projected(page, initial.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();
   await waitForComputerDecision(page, initial.id, 'babs', { modelId: initial.computer.modelId });
@@ -178,6 +184,8 @@ test('ordinary computer undo restores the human turn and resumes computer contro
     await page.screenshot({ path: info.outputPath('computer-undo-resumed.png') });
     await info.attach('undo-controls', { contentType: 'application/json', body: JSON.stringify(controls) });
   } finally { page.off('request', observe); }
+  }catch(error){primaryError=error;throw error;}
+  finally{try{await attachCommandObservations(page,info);}catch(error){if(!primaryError)throw error;info.annotations.push({type:'diagnostic-capture-failed',description:String(error)});}}
 });
 
 

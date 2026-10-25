@@ -69,7 +69,7 @@ test("rush blocker preview chip matches the highlighted square", async ({ browse
 
     const previewLabel = page.locator("#shell-board-preview-label");
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
-    await expect(previewLabel).toContainText("Continue rushing on one of the highlighted squares to reconnect your piece at");
+    await expect(previewLabel).toContainText("Rush to reconnect piece at");
     const blockerChip = previewLabel.locator(".board-preview-coordinate-chip-rush-blocker");
     await expect(blockerChip).toHaveText("4,3");
 
