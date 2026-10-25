@@ -33,10 +33,14 @@ const getVisibleJoinSurface = async (page) => {
 
 export const switchGamePanel = async (page, key) => {
   if (await page.locator('#app').getAttribute('data-shell-layout-mode') !== 'narrow') return;
-  const controls = page.locator('[data-mobile-nav-controls]');
-  if (await controls.count() && await controls.getAttribute('inert') !== null) await page.getByRole('button',{name:'Show game navigation',exact:true}).click();
   const tab = page.locator(`[data-action="switch-game-panel"][data-panel="${key}"]`);
-  await tab.click();
+  // An already selected panel needs no navigation click. The controls can be
+  // collapsed while the current panel stays visible and ready.
+  if (await tab.getAttribute('aria-pressed') !== 'true') {
+    const reveal = page.getByRole('button',{name:'Show game navigation',exact:true});
+    if (await reveal.count() && await reveal.getAttribute('aria-expanded') !== 'true') await reveal.click();
+    await tab.click();
+  }
   await expect(tab).toHaveAttribute('aria-pressed','true');
   await expect.poll(()=>page.locator(`[data-mobile-panel="${key}"]`).evaluate(el=>el.closest('.game-shell-track').getAnimations().some(animation=>animation.playState==='running'||animation.pending)),{message:'Expected the panel transition to finish'}).toBe(false);
   await expect.poll(()=>page.locator(`[data-mobile-panel="${key}"]`).evaluate(el=>Math.abs(el.getBoundingClientRect().left-el.closest('.game-shell-track-wrap').getBoundingClientRect().left)),{message:'Expected the selected panel to finish its horizontal transition'}).toBeLessThanOrEqual(1);

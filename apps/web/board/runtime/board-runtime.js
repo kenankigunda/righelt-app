@@ -522,6 +522,12 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return;
     }
 
+    if (pieceSummary && selectedPieceId && host.canInteract?.(state) === false) {
+      if (selectedSource) setBoardPreviewPromptHtml(`Piece at ${renderBoardPreviewCoordinate(selectedSource)} – Supply and command lines`);
+      else setBoardPreviewPrompt("Supply and command lines");
+      return;
+    }
+
     if (!pieceSummary) {
       selectedPieceMoves = [];
       selectedPieceMovePreviews = [];
