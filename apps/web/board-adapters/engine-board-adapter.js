@@ -1,4 +1,5 @@
 import { REMOVAL_EFFECT_DURATION_MS, REMOVAL_FLASH_COUNT } from "../board/removal-timing.js";
+import { inspectionSegments } from "../board/inspection.js";
 import { renderPieceSymbol } from '../piece-symbols.js';
 export { createInitialState as createInitialBoardSnapshot, listLegalActions as listBoardLegalActions } from '../generated/packages/game-engine/src/index.js';
 import { BOARD_SIZE, SUPPLY_POINTS } from "../generated/packages/game-engine/src/deterministic.js";
@@ -757,6 +758,15 @@ export function createEngineBoardAdapter() {
     clearCellDecorations();
     overlayLinesEl.innerHTML = "";
     setOverlayViewBox();
+
+    if (overlay?.inspection) {
+      for (const segment of inspectionSegments(snapshot, overlay.inspection)) {
+        drawPath([segment.from, segment.to], segment.kind === "supply" ? "#2f8e63" : PREVIEW_STROKE_BY_OWNER[segment.owner], "2 6", null, segment.kind);
+      }
+      const selected = findPieceById(snapshot, selectedPieceId);
+      if (selected) cellByCoordinateKey.get(coordKey(selected.position))?.classList.add("selected-piece");
+      return;
+    }
 
     if (overlay?.mode === "recorded-action") {
       const action = overlay.recordedAction;
