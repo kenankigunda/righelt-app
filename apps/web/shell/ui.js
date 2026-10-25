@@ -1,5 +1,8 @@
 export const icon = (name) => {
   const paths = {
+    players:'M6 4h4l2 2v4l-2 2H6l-2-2V6ZM2 22v-5l3-3h6l3 3v5M16 5h3l2 2v3l-2 2h-3M17 15h2l3 3v4',
+    board:'M4 2h16l2 2v16l-2 2H4l-2-2V4ZM8 2v20M16 2v20M2 8h20M2 16h20',
+    history:'M4 4h16v16H4ZM8 8h8M8 12h8M8 16h4',
     key:'M4 3h6l3 3v6l-3 3H4l-3-3V6ZM13 10h8v4h-4v3h-4M5 7h4v4H5Z',
     exit:'M10 3H4v18h6M10 12h12M17 7l5 5-5 5',
     check:'M4 12l5 5L21 5',
