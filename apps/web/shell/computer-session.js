@@ -108,7 +108,8 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       if (!busy && status.phase !== (game.computer.paused ? 'paused' : 'idle')) publish({ phase: game.computer.paused ? 'paused' : 'idle', message: null });
       return;
     }
-    if (busy || leaseWork || pendingSubmission || context.transport.getGameViewModel(game.id)?.pendingCommandCount > 0 || recovery === context.key) return;
+    const projection = context.transport.getGameViewModel(game.id);
+    if (busy || leaseWork || pendingSubmission || projection?.sharedMutationsBlocked || projection?.pendingCommandCount > 0 || recovery === context.key) return;
     if (game.computer.seats.p1 && game.computer.seats.p2 && lastPositionRevision !== game.gameplayRevision) {
       lastPositionRevision = game.gameplayRevision;
       const position = structuredClone(game.board.state); position.turnIndex = 0;
@@ -132,6 +133,12 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       await context.transport.decisionAttempt(game.id, { operation: 'write', kind: 'computer', attemptId, attempt }); saved = true;
       if (run !== epoch || current().key !== context.key || !sameOwnerScope(ownerScope(context), current())) return;
       if (response.result.status !== 'ready') throw new Error(response.result.reason);
+      // Recovery can begin during calculation or evidence persistence. Keep the
+      // completed evidence, then calculate again from settled authority later.
+      if (context.transport.getGameViewModel(game.id)?.sharedMutationsBlocked) {
+        publish({ phase: 'idle', message: null }, context);
+        return;
+      }
       publish({ phase: 'saving', progress: null }, context);
       const handle = await context.transport.applyGameAction({ gameId: game.id, state: game.board.state, action: response.result.action, computer: proof });
       if (!handle?.committed) throw new Error(handle?.validation?.code ?? 'move-not-submitted');
@@ -140,6 +147,13 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       publish({ phase: 'idle' }, context);
     } catch (error) {
       if (!saved) void context.transport.decisionAttempt(game.id, { operation: 'write', kind: 'computer', attemptId, attempt: { ...base, stoppedAt: clock(), outcome: 'unfinished', reason: error.message, progress: status.progress ?? null } }).catch(() => {});
+      // The admission guard may win the final race after the projection check.
+      // No command exists yet, so wait for recovery instead of latching a
+      // computer failure. Once admitted, its durable outcome remains binding.
+      if (saved && !pendingSubmission && error.code === 'sync_recovering' && run === epoch && current().key === context.key && sameOwnerScope(ownerScope(context), current())) {
+        publish({ phase: 'idle', message: null }, context);
+        return;
+      }
       if (run === epoch) { recovery = context.key; publish({ phase: 'recovery', message: error.message }, context); }
     } finally { busy = false; pendingSubmission = null; }
   }

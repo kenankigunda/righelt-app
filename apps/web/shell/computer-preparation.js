@@ -31,7 +31,7 @@ export function createComputerPreparation({ runtime = new ComputerRuntime(), onC
       try {
         await runtime.prepare(modelId, progress => { if (run === epoch) { state.progress = progress; onChange(); } });
         if (run !== epoch) return { state: 'cancelled' };
-        state = { ...state, state: 'ready', message: 'Ready to play · Experimental computer player' };
+        state = { ...state, state: 'ready', message: 'Ready to play' };
       } catch (error) {
         if (run !== epoch) return { state: 'cancelled' };
         state = { ...state, state: 'error', message: 'Could not prepare your opponent. Try again.', reason: error.message };

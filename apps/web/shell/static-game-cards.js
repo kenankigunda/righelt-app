@@ -1,3 +1,4 @@
+import { COMPUTER_PROFILES, isComputerProfile } from '../generated/packages/shared-types/src/computer-play.js';
 const clone = (value) => (value == null ? value : structuredClone(value));
 
 const normalizeParticipant = (participant) =>
@@ -5,8 +6,19 @@ const normalizeParticipant = (participant) =>
     ? {
         identityId: participant.identityId,
         connected: participant.connected === true,
+        computerProfile: isComputerProfile(participant.computerProfile) ? participant.computerProfile : null,
+        ...(participant.profile ? { profile: clone(participant.profile) } : {}),
       }
     : null;
+
+export const computerOpponentLabel = game => {
+  const first = COMPUTER_PROFILES[game?.player1?.computerProfile]?.name;
+  const second = COMPUTER_PROFILES[game?.player2?.computerProfile]?.name;
+  if (first && second) return `${first} vs ${second}`;
+  const name = first || second;
+  if (!name) return null;
+  return game.myRole === 'Player 1' || game.myRole === 'Player 2' ? `You vs ${name}` : `${name} · Computer`;
+};
 
 export const normalizeStaticGameCard = (card) => ({
   id: String(card?.id || ""),

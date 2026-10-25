@@ -40,14 +40,14 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const renderHeaderWideActions = \(\) =>/);
   assert.match(source, /const renderHeaderNarrowMenu = \(\) =>/);
   assert.match(source, /const renderHeaderAlertZone = \(\) => \{/);
-  assert.match(source, /const alertStackRotationByGameId = new Map\(\);/);
+  assert.match(source, /const notificationStack = createNotificationStack\(\);/);
   assert.match(source, /const getGameAlertItems = \(game\) => \{/);
   assert.match(source, /const renderGameAlertStackCard = \(\{ gameId, item, stackIndex, totalAlerts \}\) => \{/);
   assert.match(source, /const isActive = stackIndex === 0;/);
   assert.match(source, /data-action="cycle-game-alert-stack"/);
   assert.doesNotMatch(source, /data-action="cycle-game-alert-stack" data-game-id="\$\{escapeHtml\(gameId\)\}" role="button" tabindex="0"/);
   assert.match(source, /: isActive\s*\? 'tabindex="-1"'/);
-  assert.match(source, /: 'aria-hidden="true" tabindex="-1"'/);
+  assert.match(source, /: 'aria-hidden="true" tabindex="-1" inert'/);
   assert.match(source, /const viewedGameId = getCurrentViewedGameId\(\);/);
   assert.match(source, /data-shell-alert-zone="\$\{gameAlerts \? "active" : "idle"\}"/);
   assert.match(source, /data-action="toggle-header-menu"/);
@@ -73,7 +73,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /if \(!isBuildingGameAlerts\) \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
   assert.doesNotMatch(source, /failedOperations\.length === 0 && game\.rollbackNotice/);
   assert.doesNotMatch(source, /rollbackNotice: game\.rollbackNotice/);
-  assert.match(source, /const rotation = getAlertStackRotation\(game\.id,\s*items\.length\);/);
+  assert.match(source, /const orderedItems = notificationStack\.order\(game\.id, items\);/);
   assert.match(source, /renderGameAlertStackCard\(\{/);
   assert.match(source, /<div class="shell-header-status" data-shell-alert-zone="\$\{gameAlerts \? "active" : "idle"\}">/);
   assert.match(source, /id="shell-game-alerts"/);
@@ -90,7 +90,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /if \(includeBoard \|\| mountedBoardGameId === game\.id \|\| !document\.querySelector\("#shell-board \.cell"\)\) \{\s*mountBoardForGame\(game\);\s*\}/s);
   assert.match(source, /const getMountedHeaderEl = \(\) =>/);
   assert.match(source, /const updateMountedHeader = \(\) => \{/);
-  assert.match(source, /currentHeaderEl\.replaceWith\(nextHeaderEl\);/);
+  assert.match(source, /patchNotificationTree\(currentHeaderEl, nextHeaderEl\);/);
   assert.match(source, /const doesMountedFlyoutStateMatchRoute = \(\) => \{/);
   assert.match(source, /return FLYOUT_KEYS\.every\(\(flyoutKey\) => \{/);
   assert.match(source, /const shouldEnableStickyShellColumn = \(\{ matchesWideScreen, columnHeight, viewportHeight \}\) =>/);
@@ -468,7 +468,7 @@ test("app uses route skeleton sync and localized loading instead of a global bus
   );
   assert.match(
     source,
-    /const cycleGameAlertStack = \(gameId, actionEl = null\) => \{[\s\S]*const alertCount = getGameAlertItems\(game\)\.length;[\s\S]*refreshMountedAlertHeader\(gameId, actionEl\);/s,
+    /const cycleGameAlertStack = \(gameId, actionEl = null\) => \{[\s\S]*const items = getGameAlertItems\(game\);[\s\S]*refreshMountedAlertHeader\(gameId, actionEl\);/s,
   );
   assert.match(
     source,
