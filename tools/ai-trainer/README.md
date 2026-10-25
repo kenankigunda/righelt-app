@@ -15,7 +15,12 @@ checksums and independently replays decisions, turn finalizations and known
 restoration targets. It preserves excluded records and exact historical outcome
 compatibility. Verified positions become new self-play starts, never historical
 policy labels or invented terminal outcomes. Withheld game families and matching
-position hashes cannot enter the new training curriculum.
+position hashes cannot enter production-start sampling. A second guard excludes
+unique withheld FP32 input encodings from every learned replay source, including
+ordinary/simple/continuation self-play, inherited archives and later generated
+transpositions. Raw archives remain intact, and excluded example counts stay
+visible. The shared initial position and single-Pass opening prefix are labeled
+separately; their results are not claims about globally unseen positions.
 
 The optional manifest `productionCorpus` binds an absolute path and file SHA256.
 Its curriculum uses a deterministic four-job cycle: two production positions,

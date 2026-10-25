@@ -17,6 +17,7 @@ class Sample:
     artifact_bytes: int
     device_memory_known: bool = True
     swap_used_bytes: int | None = 0
+    ramp_authorized: bool = False
 
 @dataclass(frozen=True)
 class Allocation:
@@ -101,6 +102,12 @@ class AdaptivePolicy:
             # pauses compute, but is not evidence of actual memory pressure.
             self.workers=LIMITS['minWorkers'];self.quiet_since=None
             return Allocation(0,LIMITS['minMemoryGiB'],True,False,'device-memory-unknown')
+        if POLICY_ID == 'production-headroom-v3' and sample.ramp_authorized is not True:
+            self.workers=LIMITS['minWorkers'];self.quiet_since=None
+            self.memory_ceiling=LIMITS['minMemoryGiB']
+            if sample.experiment_bytes > self.memory_ceiling*GIB:
+                return Allocation(0,self.memory_ceiling,True,False,'idle-grant-required')
+            return Allocation(self.workers,self.memory_ceiling,False,False,'pending-work-cap')
         if busy:
             self.workers = LIMITS['minWorkers']
             self.quiet_since = None

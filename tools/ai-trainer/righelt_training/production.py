@@ -5,7 +5,7 @@ from pathlib import Path
 from .replay import partition_for_family
 
 
-def load_corpus(binding):
+def corpus_record(binding):
     if not isinstance(binding, dict) or set(binding) != {'path', 'sha256'}:
         raise ValueError('invalid production corpus binding')
     raw = Path(binding['path']).read_bytes()
@@ -17,14 +17,24 @@ def load_corpus(binding):
     held = set(corpus['heldOut'])
     positions = corpus['positions']
     withheld = {p['stateHash'] for p in positions if p['partition'] != 'train'}
+    protected = {p['encodingHash'] for p in positions if p['partition'] != 'train' and not p.get('sharedOpening',False)}
     for p in positions:
         if p['partition'] not in ('train', 'validation'):
             raise ValueError('invalid production partition')
-        if p['partition'] == 'train' and (p['gameId'] in held or p['stateHash'] in withheld):
+        if p['partition'] == 'train' and (p['gameId'] in held or p['stateHash'] in withheld or p['encodingHash'] in protected):
             raise ValueError('production evaluation leakage')
         if p['state']['outcome']['status'] != 'ongoing':
             raise ValueError('terminal production start')
-    return [p for p in positions if p['partition'] == 'train']
+    return corpus
+
+
+def load_corpus(binding):
+    return [p for p in corpus_record(binding)['positions'] if p['partition'] == 'train']
+
+
+def protected_encodings(binding):
+    return {p['encodingHash'] for p in corpus_record(binding)['positions']
+            if p['partition'] != 'train' and not p.get('sharedOpening',False)}
 
 
 def production_job(position, *, seed, index, model_version, binding):

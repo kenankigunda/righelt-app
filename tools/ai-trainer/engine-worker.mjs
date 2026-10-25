@@ -8,6 +8,7 @@ import { replayDecision, legacyCommanderReplayState } from './decision-replay.mj
 import { transitionArchivedAction } from './archived-action.mjs';
 import { trainingExplorationOptions } from './exploration-provenance.mjs';
 import { explorationRecord } from './exploration-record.mjs';
+import {encodingHash} from './production-corpus.mjs';
 import { jobBudgetMs } from './worker-budget.mjs';
 import { createHash } from 'node:crypto';
 import { createInitialState, deterministicStateHash, normalizeState, resolveToStability } from '../../packages/game-engine/src/index.ts';
@@ -60,6 +61,10 @@ export function ruleFingerprint(state) {
 class BudgetExpired extends Error { constructor(reason='deadline') { super(reason); this.reason=reason; } }
 async function main() {
   const job = await read();
+  if(job.protectedEncodingHashes!==undefined && (job.command!=='generate'||job.partition!=='train'||
+    !Array.isArray(job.protectedEncodingHashes)||new Set(job.protectedEncodingHashes).size!==job.protectedEncodingHashes.length||
+    job.protectedEncodingHashes.some(hash=>typeof hash!=='string'||!/^[a-f0-9]{64}$/.test(hash))))throw Error('Invalid evaluation protection');
+  const protectedEncodings=new Set(job.protectedEncodingHashes??[]);
   const explorationOptions = trainingExplorationOptions(job);
   const adoption = job.explorationAdoption;
   if (adoption !== undefined && (job.command !== 'generate' || job.partition !== 'train' ||
@@ -197,12 +202,18 @@ async function main() {
     }
   }
   const initialState = structuredClone(state), decisions = [], repetitions = new Map();
+  if(protectedEncodings.size && protectedEncodings.has(encodingHash(state))) {
+    send({type:'unavailable-start',id:job.id,reason:'protected-evaluation-position'});return;
+  }
   if (job.command === 'prepare') {
     send({ type: 'prepared', rootState, warmupActions, initialState }); return;
   }
   let requestId = 0, termination = 'terminal', truncationReason = null;
   try {
     for (let n = 0; state.outcome.status === 'ongoing'; n++) {
+      if(protectedEncodings.size && protectedEncodings.has(encodingHash(state))) {
+        send({type:'unfinished',id:job.id,reason:'protected-evaluation-position',decisions:decisions.length});return;
+      }
       check();
       const key = ruleFingerprint(state), count = (repetitions.get(key) ?? 0) + 1;
       repetitions.set(key, count);

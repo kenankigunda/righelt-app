@@ -117,7 +117,12 @@ class Runner:
         torch.manual_seed(seed)
         self.model = PolicyValueNet().to(self.device)
         self.optimizer = make_optimizer(self.model)
-        self.buffer = ReplayBuffer()
+        corpus_binding=self.manifest['manifest'].get('productionCorpus')
+        if corpus_binding:
+            from .production import protected_encodings
+            protected=protected_encodings(corpus_binding)
+        else:protected=()
+        self.buffer = ReplayBuffer(protected_encoding_hashes=protected)
         self.state = default_state()
         self.seed = seed
         self.stage = stage
@@ -359,6 +364,7 @@ class Runner:
         self.state['terminalGames' if game['termination'] == 'terminal' else 'truncatedGames'] += 1
         self.state['generationKinds'][game['kind']] += 1
         self.state['replayChecks'] += 1
+        self.state['protectedReplayExclusions']=dict(self.buffer.protected_exclusions)
         add_fallback_game(self.state.setdefault('fallbackReport',{}),game)
         self.event('game', id=game['id'], termination=game['termination'], decisions=len(game['decisions']), kind=game['kind'],
                    policyPositions=sum(d.get('policyMask',True) for d in game['decisions']),
@@ -376,6 +382,8 @@ class Runner:
         if job is None:
             index=ledger.job(self.stage,getattr(self,'seed',self.curriculum.seed),self.state['nextJob'])
             job=self.curriculum.job(index,self.model_version)
+            protected=getattr(getattr(self,'buffer',None),'protected_encoding_hashes',())
+            if protected:job['protectedEncodingHashes']=sorted(protected)
             prefix=getattr(self,'manifest',{}).get('manifest',{}).get('jobPrefix',self.stage)
             job['id']=f"{prefix}-{job['id']}"
             self.state['nextJob']=index+1

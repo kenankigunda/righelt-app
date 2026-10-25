@@ -2,7 +2,8 @@
 import {createHash} from 'node:crypto';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
-import {deterministicStateHash,resolveToStability} from '../../packages/game-engine/src/index.ts';
+import {createInitialState,deterministicStateHash,resolveToStability} from '../../packages/game-engine/src/index.ts';
+import {encodeState,transition} from '../../packages/computer-player/src/index.ts';
 import {transitionArchivedAction} from './archived-action.mjs';
 import {legacyCommanderReplayState} from './decision-replay.mjs';
 import {createEngineOperationBudget} from './engine-operation-budget.mjs';
@@ -12,6 +13,19 @@ export const HELD_OUT_GAMES = Object.freeze([
   'game-8661089e1008698531149ffeba8e3e4b6b05',
 ]);
 export const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+export function encodingHash(state) {
+  const values=encodeState(state),bytes=Buffer.alloc(values.length*4);
+  values.forEach((value,index)=>bytes.writeFloatLE(value,index*4));
+  return createHash('sha256').update(bytes).digest('hex');
+}
+let sharedPrefixHashes;
+export function sharedOpening(state) {
+  if(!sharedPrefixHashes) {
+    const initial=resolveToStability(createInitialState(),{artifactMode:'full'});
+    sharedPrefixHashes=new Set([encodingHash(initial),encodingHash(transition(initial,{type:'pass'}))]);
+  }
+  return sharedPrefixHashes.has(encodingHash(state));
+}
 
 export function exactRetainedState(actual,expected,bounded=operation=>operation()) {
   const hash=deterministicStateHash(expected);
@@ -55,6 +69,7 @@ export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds
           if(before.outcome.status==='ongoing')candidates.push({
             gameId:game.game_id,decisionId:record.id,revision:record.revision,
             state:structuredClone(before),stateHash:deterministicStateHash(before),partition,
+            encodingHash:encodingHash(before),sharedOpening:sharedOpening(before),
             category:before.continuation?.type??(move.displayMoveNumber===1?'opening':'ordinary'),
             historicalAction:move.action,computerProof:move.computerProof??null,
           });
@@ -90,12 +105,14 @@ export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds
   // Shared opening prefixes and identical positions cannot leak into training
   // from a second game. All withheld-position hashes take precedence.
   const withheld=new Set(starts.filter(x=>x.partition!=='train').map(x=>x.stateHash));
+  const protectedEncodings=new Set(starts.filter(x=>x.partition!=='train'&&!x.sharedOpening).map(x=>x.encodingHash));
   const seen=new Set();const positions=starts.filter(x=>{
-    if(x.partition==='train' && withheld.has(x.stateHash))return false;
+    if(x.partition==='train' && (withheld.has(x.stateHash)||protectedEncodings.has(x.encodingHash)))return false;
     const key=x.partition+':'+x.stateHash;if(seen.has(key))return false;
     seen.add(key);return true;
   });
   const result={schema:1,kind:'production-starts-v1',heldOut:[...heldOut],reports,positions,
+    evaluationScope:'Shared initial and single-Pass opening prefixes are labeled separately; unique withheld encodings are excluded from every learned replay source.',
     engineBudget:stats,rawHistoricalPolicyTargets:false};
   return {...result,sha256:digest(result)};
 }
