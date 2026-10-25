@@ -51,7 +51,7 @@ test("home cards render, open the full game, and refresh after live progress", a
     const updatedCard = page.locator(`.mini-board-card-link-surface[data-game-id="${gameId}"]`).first();
     await expect(updatedCard).toBeVisible();
     await expect(updatedCard).toContainText("Move 2");
-    await expect(updatedCard.locator(".mini-board-preview-status")).toContainText("Player 2 to play");
+    await expect(updatedCard.locator(".mini-board-preview-status")).toContainText("Blue to play");
   } finally {
     await closeContextQuietly(context);
   }
@@ -70,7 +70,7 @@ test("live updates only refresh the moved game's home preview and leave neighbor
     const stationaryCard = page.locator(`[data-game-id="${stationaryGameId}"]`).first();
     await expect(stationaryCard).toBeVisible();
     await expect(stationaryCard).toContainText("Move 1");
-    await expect(stationaryCard.locator(".mini-board-preview-status")).toContainText("Player 1 to play");
+    await expect(stationaryCard.locator(".mini-board-preview-status")).toContainText("Red to play");
 
     await page.locator(`[data-game-id="${movedGameId}"]`).first().click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
@@ -79,10 +79,10 @@ test("live updates only refresh the moved game's home preview and leave neighbor
     await page.getByRole("link", { name: "Righelt" }).click();
     const movedCard = page.locator(`[data-game-id="${movedGameId}"]`).first();
     await expect(movedCard).toContainText("Move 2");
-    await expect(movedCard.locator(".mini-board-preview-status")).toContainText("Player 2 to play");
+    await expect(movedCard.locator(".mini-board-preview-status")).toContainText("Blue to play");
 
     await expect(stationaryCard).toContainText("Move 1");
-    await expect(stationaryCard.locator(".mini-board-preview-status")).toContainText("Player 1 to play");
+    await expect(stationaryCard.locator(".mini-board-preview-status")).toContainText("Red to play");
   } finally {
     await closeContextQuietly(context);
   }

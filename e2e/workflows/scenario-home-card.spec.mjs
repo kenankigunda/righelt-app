@@ -72,7 +72,7 @@ test("scenario import creates a home card with the imported preview state", asyn
     await expect(homeCard).toBeVisible();
     await expect(homeCard.locator("[data-mini-board-preview]")).toBeVisible();
     await expect(homeCard).toContainText("Move 1");
-    await expect(homeCard.locator(".mini-board-preview-status")).toContainText("Player 1 to play");
+    await expect(homeCard.locator(".mini-board-preview-status")).toContainText("Red to play");
   } finally {
     await closeContextQuietly(context);
   }
