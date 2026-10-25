@@ -7,18 +7,21 @@ export async function candidateCapabilities(root) {
   const has = async file => { try { await access(path.join(root,file)); return true; } catch(e) { if(e.code==='ENOENT') return false; throw e; } };
   let alwaysVisibleAccount=false, separateAccountForms=false, usernameOnlySignup=false, playAccountEntry=false, friendIntroduction=false;
   let trainedComputerPlay=false;
-  let resultHeadingContract='legacy';
+  let resultHeadingContract='legacy', rematchChoicesContract='legacy';
   try {
     const result=await readFile(path.join(root,'apps/web/shell/game-result.js'),'utf8');
     const source=ts.createSourceFile('game-result.js',result,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
-    const markers=source.statements.filter(statement=>ts.isVariableStatement(statement)&&statement.modifiers?.some(modifier=>modifier.kind===ts.SyntaxKind.ExportKeyword))
-      .flatMap(statement=>statement.declarationList.declarations.filter(declaration=>ts.isIdentifier(declaration.name)&&declaration.name.text==='RESULT_HEADING_CONTRACT')
-        .map(declaration=>({declaration,constant:Boolean(statement.declarationList.flags&ts.NodeFlags.Const)})));
-    if(markers.length){
+    const selectContract=(name,allowed,label)=>{
+      const markers=source.statements.filter(statement=>ts.isVariableStatement(statement)&&statement.modifiers?.some(modifier=>modifier.kind===ts.SyntaxKind.ExportKeyword))
+        .flatMap(statement=>statement.declarationList.declarations.filter(declaration=>ts.isIdentifier(declaration.name)&&declaration.name.text===name)
+          .map(declaration=>({declaration,constant:Boolean(statement.declarationList.flags&ts.NodeFlags.Const)})));
+      if(!markers.length)return 'legacy';
       const marker=markers[0],initializer=marker.declaration.initializer;
-      if(markers.length!==1||!marker.constant||!initializer||!ts.isStringLiteral(initializer)||initializer.text!=='perspective-v1')throw new Error('Unsupported result heading contract declaration');
-      resultHeadingContract=initializer.text;
-    }
+      if(markers.length!==1||!marker.constant||!initializer||!ts.isStringLiteral(initializer)||!allowed.includes(initializer.text))throw new Error(`Unsupported ${label} contract declaration`);
+      return initializer.text;
+    };
+    resultHeadingContract=selectContract('RESULT_HEADING_CONTRACT',['perspective-v1','perspective-v2'],'result heading');
+    rematchChoicesContract=selectContract('REMATCH_CHOICES_CONTRACT',['colors-v1'],'rematch choices');
   } catch(error) { if(error.code!=='ENOENT') throw error; }
   try {
     const runtime=await readFile(path.join(root,'apps/web/shell/computer-runtime.js'),'utf8');
@@ -37,6 +40,7 @@ export async function candidateCapabilities(root) {
   } catch(error) { if(error.code!=='ENOENT') throw error; }
   return {
     resultHeadingContract,
+    rematchChoicesContract,
     trainedComputerPlay,
     alwaysVisibleAccount,
     friendIntroduction,

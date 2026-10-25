@@ -20,3 +20,17 @@ test('a wrong contract, perspective or longer lookalike fails without accepting 
     await assert.rejects(() => assertResultHeading(page.getByTestId('result'), {contract, outcome:'p1_win', viewerSide}, {timeout:100}));
   }
 });
+
+
+test('named observer heading is exact and never falls back to numbered, wrong-name or longer copy',async({page})=>{
+ const result=page.getByTestId('result');
+ for(const winnerName of ['Guest 1','Guest 2','Horus','名字 שלום']) {
+  await page.setContent('<section data-testid="result"><h2></h2></section>');
+  await result.getByRole('heading').evaluate((node,text)=>node.textContent=text,`${winnerName} won`);
+  await assertResultHeading(result,{contract:'perspective-v2',outcome:'p2_win',winnerName});
+ }
+ for(const title of ['Player 2 wins','Guest 1 won','Horus won again']) {
+  await page.setContent(`<section data-testid="result"><h2>${title}</h2></section>`);
+  await assert.rejects(()=>assertResultHeading(result,{contract:'perspective-v2',outcome:'p2_win',winnerName:'Horus'},{timeout:100}));
+ }
+});
