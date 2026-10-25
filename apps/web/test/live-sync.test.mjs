@@ -732,11 +732,12 @@ test("socket failures reconcile immediately but retain increasing capped reconne
 });
 
 test("new cursor evidence supersedes a held background HTTP repair", async t => {
-  const recoveries = []; let repairs = 0, release;
+  const recoveries = [], reconciled = []; let repairs = 0, release;
   const client = controlledClient(t, {
     getLastEventSeq: () => 1,
     degradedPollMs:10,
     onRecovery: event => recoveries.push(event),
+    onMetric: metric => { if (metric.type === "recovery_reconciled") reconciled.push(metric); },
     onReconcile: async () => { if (++repairs === 2) await new Promise(resolve => { release = resolve; }); },
   });
   client.connectGame("g"); MockSocket.instances[0].close();
@@ -749,9 +750,15 @@ test("new cursor evidence supersedes a held background HTTP repair", async t => 
   assert.equal(recoveries.at(-1).superseded, true);
   assert.equal(recoveries.at(-1).reason, "behind_server");
   await until(() => repairs === 3);
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  const reconciledBeforeRelease = reconciled.length;
+  assert.equal(reconciled.filter(metric => metric.reason === "behind_server").length, 1, "fresh cursor recovery must reconcile before releasing superseded work");
   release();
-  await flushAsync(5);
+  // Settle the held promise's callbacks without advancing the independent
+  // normal degraded-poll timer. A wall-clock sleep can include that next poll.
+  for (let i = 0; i < 10; i++) await Promise.resolve();
   assert.equal(repairs, 3, "late superseded work cannot replace the fresh recovery owner");
+  assert.equal(reconciled.length, reconciledBeforeRelease, "superseded completion cannot publish recovery evidence");
 });
 
 test("a false offline hint permits connection attempts",async(t)=>{

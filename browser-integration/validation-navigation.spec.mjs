@@ -1,11 +1,70 @@
 import {test,expect} from '@playwright/test';
 import assert from 'node:assert/strict';
-import {assertOpponentChoice,selectGamePanel,revealAccountControl,assertAccountEntry} from '../scripts/validation/browser-navigation.mjs';
+import {assertOpponentChoice,selectGamePanel,revealAccountControl,assertAccountEntry,waitForPlayableBoard} from '../scripts/validation/browser-navigation.mjs';
 import {assertMovePreview} from '../scripts/validation/browser-move.mjs';
 
 const navigation=({collapsed=false,wide=false}={})=>`<style>.game-shell-track-wrap{width:300px;height:100px;overflow:hidden}.game-shell-track{display:flex;width:900px;transition:transform 180ms linear}.panel{width:300px;flex:none;height:100px}[data-mobile-nav-controls][inert]{visibility:hidden}</style>
 <div id="app" data-shell-layout-mode="${wide?'wide':'narrow'}"><div class="game-shell-track-wrap"><div class="game-shell-track">${['players','board','history'].map((key,index)=>`<div class="panel" data-mobile-panel="${key}" ${collapsed&&index?'inert':''}>${key}</div>`).join('')}</div></div>
 ${collapsed?'<button id="reveal" aria-label="Show game navigation">Reveal</button>':''}<nav ${collapsed?'data-mobile-nav-controls inert':''}>${['players','board','history'].map((key,index)=>`<button data-action="switch-game-panel" data-panel="${key}" aria-pressed="${!index}">${key}</button>`).join('')}</nav></div>`;
+
+for (const first of ['route', 'recovery']) test(`computer proof waits for quiet local recovery and route entry (${first} first)`, async ({page}) => {
+  await page.setContent(`<div id="app" data-shell-transition-phase="covering"><div data-testid="game-board-wrap" data-reconnecting="true" aria-busy="true"><button id="source">Piece</button><button id="destination" class="cell">Destination</button><p id="shell-board-preview-label">Preview</p></div></div>`);
+  await page.evaluate(() => {
+    window.sourceClicks = 0; window.writes = 0; window.previewed = false;
+    window.readinessReads = 0;
+    const app = document.querySelector('#app');
+    const getAttribute = app.getAttribute.bind(app);
+    app.getAttribute = name => {
+      if (name === 'data-shell-transition-phase') window.readinessReads++;
+      return getAttribute(name);
+    };
+    document.querySelector('#source').onclick = () => { window.sourceClicks++; };
+    document.querySelector('#destination').onclick = event => {
+      if (window.previewed) { window.writes++; return; }
+      window.previewed = true;
+      event.currentTarget.classList.add('target');
+      event.currentTarget.innerHTML = '<span class="move-ghost">Piece</span>';
+    };
+  });
+  let admitted = false;
+  const ready = waitForPlayableBoard(page).then(() => { admitted = true; return page.locator('#source').click(); });
+  await expect.poll(() => page.evaluate(() => window.readinessReads)).toBeGreaterThan(0);
+  const release = gate => page.evaluate(async gate => {
+    window.readinessReads = 0;
+    if (gate === 'route') document.querySelector('#app').dataset.shellTransitionPhase = 'idle';
+    else { const board = document.querySelector('[data-testid="game-board-wrap"]'); board.dataset.reconnecting = 'false'; board.setAttribute('aria-busy', 'false'); }
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return {clicks: window.sourceClicks, writes: window.writes};
+  }, gate);
+  expect(await release(first)).toEqual({clicks: 0, writes: 0});
+  // Observe a fresh helper probe with exactly one gate released. Two frames
+  // alone could finish before the polling helper had inspected that state.
+  await expect.poll(() => page.evaluate(() => window.readinessReads)).toBeGreaterThan(0);
+  expect(admitted).toBe(false);
+  expect(await page.evaluate(() => ({clicks: window.sourceClicks, writes: window.writes}))).toEqual({clicks: 0, writes: 0});
+  await release(first === 'route' ? 'recovery' : 'route');
+  await ready;
+  expect(await page.evaluate(() => window.sourceClicks)).toBe(1);
+  await page.locator('#destination').click();
+  await assertMovePreview(page, page.locator('#destination'));
+  expect(await page.evaluate(() => window.writes)).toBe(0);
+  await page.locator('#destination').click();
+  expect(await page.evaluate(() => window.writes)).toBe(1);
+});
+
+for(const label of ['Play as both players','Play both sides'])test(`self-play proof uses the stable action with ${label} copy`,async({page})=>{
+ await page.setContent(`<button data-action="create-self-play">${label}</button><button data-action="play-as-both-players" data-game-id="current">${label}</button>`);
+ await page.evaluate(()=>{
+  window.selfPlayClicks=0;window.otherClicks=0;
+  document.querySelector('[data-action="create-self-play"]').onclick=()=>window.otherClicks++;
+  document.querySelector('[data-action="play-as-both-players"]').onclick=event=>{window.selfPlayClicks++;event.currentTarget.remove();};
+ });
+ const control=page.locator('[data-action="play-as-both-players"]');await expect(control).toHaveCount(1);await control.click();await expect(control).toHaveCount(0);
+ expect(await page.evaluate(()=>({selected:window.selfPlayClicks,other:window.otherClicks}))).toEqual({selected:1,other:0});
+ await page.setContent('<button data-action="play-as-both-players">One</button><button data-action="play-as-both-players">Two</button>');
+ await assert.rejects(()=>page.locator('[data-action="play-as-both-players"]').click(),/strict mode violation/);
+});
+
 async function mountNavigation(page,options){
   await page.setContent(navigation(options));
   await page.evaluate(({collapsed})=>{

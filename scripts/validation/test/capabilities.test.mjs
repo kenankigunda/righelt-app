@@ -5,6 +5,31 @@ import os from 'node:os';
 import path from 'node:path';
 import {candidateCapabilities} from '../capabilities.mjs';
 
+test('result headings select an explicit source contract before execution and fail closed on unknown declarations',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'result-heading-capability-'));
+ try{
+  const directory=path.join(root,'apps/web/shell');await mkdir(directory,{recursive:true});
+  const file=path.join(directory,'game-result.js');
+  assert.equal((await candidateCapabilities(root)).resultHeadingContract,'legacy');
+  await writeFile(file,'// export const RESULT_HEADING_CONTRACT = "perspective-v1";\nconst title="You won";');
+  assert.equal((await candidateCapabilities(root)).resultHeadingContract,'legacy');
+  for(const inactive of ['/*\nexport const RESULT_HEADING_CONTRACT = "perspective-v1";\n*/','const example=`\nexport const RESULT_HEADING_CONTRACT = "perspective-v1";\n`;','function nested(){const RESULT_HEADING_CONTRACT="perspective-v1";}']){
+   await writeFile(file,inactive);
+   assert.equal((await candidateCapabilities(root)).resultHeadingContract,'legacy');
+  }
+  await writeFile(file,'export const RESULT_HEADING_CONTRACT = "perspective-v1";\nthrow Error("Never execute candidate source");');
+  assert.equal((await candidateCapabilities(root)).resultHeadingContract,'perspective-v1');
+  for(const declaration of ['"future-v2"','""','someFunction()']){
+   await writeFile(file,`export const RESULT_HEADING_CONTRACT = ${declaration};`);
+   await assert.rejects(()=>candidateCapabilities(root),/Unsupported result heading contract/);
+  }
+  for(const invalid of ['export let RESULT_HEADING_CONTRACT="perspective-v1";','export const RESULT_HEADING_CONTRACT="perspective-v1";\nexport const RESULT_HEADING_CONTRACT="perspective-v1";']){
+   await writeFile(file,invalid);
+   await assert.rejects(()=>candidateCapabilities(root),/Unsupported result heading contract/);
+  }
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
 test('trained play is selected before execution by an explicit source contract',async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'computer-capabilities-'));
  try {
