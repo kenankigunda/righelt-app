@@ -4,14 +4,14 @@ import { getGameResult, createResultTransitions, createRematchDialog } from "../
 const game = (status = "ongoing") => ({ id: "g", player1: { identityId: "red" }, player2: { identityId: "blue" }, board: { state: { outcome: { status, reason: "p2_commander_unsupplied" } } } });
 test("results use authoritative outcome and selected self-play side, with swapped rematch side", () => {
   assert.equal(getGameResult(game(), "red"), null);
-  assert.equal(getGameResult(game("p1_win"), "red").title, "Win");
-  assert.equal(getGameResult(game("p1_win"), "blue").title, "Loss");
+  assert.equal(getGameResult(game("p1_win"), "red").title, "Player 1 wins");
+  assert.equal(getGameResult(game("p1_win"), "blue").title, "Player 1 wins");
   assert.equal(getGameResult(game("p1_win"), "viewer").title, "Player 1 wins");
   assert.equal(getGameResult(game("draw"), "blue").title, "Draw");
   const self = { ...game("p1_win"), selfPlayMode: true, selfPlayStartSide: "p2", currentSnapshot: { outcome: { status: "ongoing" } } };
   assert.equal(getGameResult(self, "viewer").title, "Player 1 wins");
   assert.equal(getGameResult(self, "viewer").side, null);
-  assert.deepEqual(getGameResult(self, "red"), { title: "Loss", side: "p2", reason: "Player 2’s commander lost its supply.", opponent: "self", rematchSide: "p1" });
+  assert.deepEqual(getGameResult(self, "red"), { title: "Player 1 wins", side: "p2", winner: "p1", tone: "defeat", reason: "Player 2’s commander lost its supply.", opponent: "self", rematchSide: "p1" });
 });
 test("result automatic entry happens once on an observed live finish, never hydration/history/hidden/story", () => {
   const tracker = createResultTransitions();
@@ -24,6 +24,17 @@ test("result automatic entry happens once on an observed live finish, never hydr
     assert.equal(tracker.observe(game("draw"), { [option]: true }), false);
     assert.equal(tracker.observe(game("draw")), false);
   }
+});
+
+test('actual defeat causes remain distinct and legacy push results are interpreted without rewriting history',()=>{
+ const captured={...game('p1_win'),board:{state:{outcome:{status:'p1_win',reason:'p2_commander_destroyed'},pieces:[{id:'C1',supplied:true}]}}};
+ assert.equal(getGameResult(captured,'red').reason,'Player 2’s commander was destroyed.');
+ assert.equal(getGameResult(captured,'red').tone,'victory');assert.equal(getGameResult(captured,'blue').tone,'defeat');assert.equal(getGameResult(captured,'viewer').tone,'neutral');
+ const legacy=structuredClone(captured);legacy.board.state.outcome.reason='p2_commander_unsupplied';const original=structuredClone(legacy);
+ assert.equal(getGameResult(legacy,'red').reason,'Player 2’s commander was destroyed.');assert.deepEqual(legacy,original);
+ legacy.board.state.pieces.push({id:'C2',supplied:false});assert.equal(getGameResult(legacy,'red').reason,'Player 2’s commander lost its supply.');
+ assert.equal(getGameResult(game('draw'),'red').tone,'draw');
+ const watch={...captured,computer:{seats:{p1:'tau',p2:'horus'},manual:false}};assert.equal(getGameResult(watch,'red').tone,'neutral');
 });
 
 
@@ -43,7 +54,7 @@ test("cancelled rematch gate cannot create or close a reopened dialog", async ()
 
 test('spectators of computer games see a neutral winner', () => {
   const played = { ...game('p1_win'), computer: { seats: { p1: null, p2: 'horus' }, manual: false } };
-  assert.equal(getGameResult(played, 'red').title, 'Win');
+  assert.equal(getGameResult(played, 'red').title, 'Player 1 wins');
   assert.equal(getGameResult(played, 'spectator').title, 'Player 1 wins');
   assert.equal(getGameResult(played, null).side, null);
 });

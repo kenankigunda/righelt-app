@@ -1,5 +1,6 @@
 @import url('../design-tokens.css');
 @import url('./loading.css');
+@import url('./result-presentation.css');
 @font-face { font-family: Manrope; src: url('../assets/fonts/Manrope-variable.ttf') format('truetype'); font-weight: 200 800; font-display: swap; }
 :root { --font-family: Manrope, 'Avenir Next', sans-serif; --player-p1:#c2452f; --player-p2:#2d67c7; --radius-card:20px; --shell-elevated-surface:var(--surface-raised); }
 body { font-family:var(--font-family); background:var(--surface-foundation); }

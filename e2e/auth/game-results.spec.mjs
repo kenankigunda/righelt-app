@@ -30,7 +30,8 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   expect(loaded.status, JSON.stringify(loaded.body)).toBe(200);
   expect(loaded.body.game.id).toBe(gameId);
   await expect(page.getByTestId("game-result")).toBeVisible();
-  await expect(page.getByTestId("game-result").getByRole("heading", { name: "Win" })).toBeVisible();
+  await expect(page.getByTestId("game-result").getByRole("heading", { name: "Player 1 wins" })).toBeVisible();
+  await expect(page.getByTestId("game-result")).toHaveAttribute('data-result-tone','victory');
   const review = page.getByRole("button", { name: "Review game" });
   await review.focus();
   await page.evaluate(() => window.dispatchEvent(new Event("offline")));
@@ -69,12 +70,18 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   await expect(page.getByTestId("game-result")).toHaveCount(0);
   await page.getByRole("button", { name: "History", exact: true }).click();
   await page.getByRole("button", { name: "View result" }).click();
+  expect(await page.getByTestId('game-result').evaluate(element=>element.getAnimations({subtree:true}).filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime)).length)).toBe(0);
   for (let cycle = 0; cycle < 2; cycle++) {
     await page.getByRole("button", { name: "Review game" }).focus();
     await page.keyboard.press("Enter");
     await expect(page.locator('[data-game-panel="history"] h2')).toBeFocused();
     await expect(page.getByTestId("game-shell")).toBeVisible();
     await expect(page.getByTestId("game-result")).toHaveCount(0);
+    // Selecting a saved after-state must keep the History board/mini preview,
+    // never open a result overlay or replay a celebration.
+    const lastMove=page.locator('[data-action="jump-history"]').last();
+    await lastMove.click();
+    await expect(page.getByTestId('game-result')).toHaveCount(0);
     // Read the real authenticated HTTP projection, not the optimistic creation
     // object or a warm socket snapshot. Repeating catches persistence regressions.
     const projected = await page.evaluate(async gameId => {
@@ -92,7 +99,8 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
       await page.getByRole("button", { name: "History", exact: true }).click();
     }
     await page.getByRole("button", { name: "View result" }).click();
-    await expect(page.getByTestId("game-result").getByRole("heading", { name: "Win" })).toBeVisible();
+    await expect(page.getByTestId("game-result").getByRole("heading", { name: "Player 1 wins" })).toBeVisible();
+    expect(await page.getByTestId('game-result').evaluate(element=>element.getAnimations({subtree:true}).filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime)).length)).toBe(0);
   }
   await page.getByRole("button", { name: "Play again" }).click();
   const rematch = page.getByRole("dialog", { name: "Play again" });

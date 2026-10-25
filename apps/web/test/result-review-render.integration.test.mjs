@@ -5,6 +5,7 @@ import { runInNewContext } from "node:vm";
 import { getGameResult } from "../shell/game-result.js";
 import { participantName, participantDisplayName } from "../shell/public-profile.js";
 import { createRenderGestureGate } from "../shell/render-gesture.js";
+import { renderResultMark, createResultPresentation } from '../shell/result-presentation.js';
 
 const source = readFileSync(new URL("../shell/app.js", import.meta.url), "utf8");
 const extract = (start, end) => {
@@ -22,6 +23,7 @@ function harness({ resultMounted = true, activeResult = null } = {}) {
   const appEl = new Element();
   appEl.querySelector = selector => selector === ".game-result" ? (resultMounted ? new Element() : null) : new Element();
   const context = {
+    resultPresentation:createResultPresentation(),
     HTMLElement: Element, appEl, currentRoute: { name: "game", gameId: "g", panel: "board" },
     activeResultGameId: activeResult,
     lastRenderedRouteKey: "g|board", lastRenderedBaseRouteKey: "g", lastRenderedTransitionPhaseKey: "idle",
@@ -91,7 +93,7 @@ test("authoritative terminal rollback clears result state so the board can remou
 test("optimistic terminal state cannot expose a result or open it before confirmation", () => {
   const optimistic = {id:"g",board:{state:{outcome:{status:"p1_win"}}},player1:{identityId:"me"}};
   let confirmed = {...optimistic,board:{state:{outcome:{status:"ongoing"}}}};
-  const context = {getDecisionDebugState: () => ({ items: [], cursor: null }), getGameResult, transport:{getIdentityId:()=>"me",getAuthoritativeGame:()=>confirmed},escapeHtml:value=>String(value),formatDisplayGameId:value=>value,icon:()=>"",renderTurnHistory:()=>"",participantName,participantDisplayName,render:()=>{},activeResultGameId:null};
+  const context = {renderResultMark,resultPresentation:createResultPresentation(),getDecisionDebugState: () => ({ items: [], cursor: null }), getGameResult, transport:{getIdentityId:()=>"me",getAuthoritativeGame:()=>confirmed},escapeHtml:value=>String(value),formatDisplayGameId:value=>value,icon:()=>"",renderTurnHistory:()=>"",participantName,participantDisplayName,render:()=>{},activeResultGameId:null};
   runInNewContext(`${extract("const renderResult =", "const renderGame =")}
     ${extract("const renderHistoryPanel =", "const renderBoardPanel =")}
     globalThis.result = renderResult;globalThis.history = renderHistoryPanel;
@@ -100,7 +102,7 @@ test("optimistic terminal state cannot expose a result or open it before confirm
   assert.doesNotMatch(context.history(optimistic),/data-action="view-result"/);
   context.openResult();assert.equal(context.activeResultGameId,null);
   confirmed=optimistic;
-  assert.match(context.result(optimistic),/>Win</);
+  assert.match(context.result(optimistic),/>Player 1 wins</);
   assert.match(context.history(optimistic),/data-action="view-result"/);
   context.openResult();assert.equal(context.activeResultGameId,"g");
 });
@@ -108,7 +110,7 @@ test("optimistic terminal state cannot expose a result or open it before confirm
 test("computer seats have distinct human, watch, history and result labels despite shared authority", () => {
   const person = {identityId:'me', profile:{username:'owner', displayName:'Owner'}};
   const game = {id:'g', player1:person, player2:{...person, computerProfile:'babs'}, selfPlayMode:true, computer:{seats:{p1:null,p2:'babs'},manual:false}, board:{state:{outcome:{status:'p1_win'}}}, moves:[]};
-  const context = {isPlayerRole:role=>['Player 1','Player 2'].includes(role),escapeHtml:String,participantName,participantDisplayName,getGameResult,transport:{getIdentityId:()=> 'me',getAuthoritativeGame:()=>game},getDecisionDebugState:()=>({items:[],cursor:null}),formatDisplayGameId:String,icon:()=>'',renderTurnHistory:()=>''};
+  const context = {renderResultMark,isPlayerRole:role=>['Player 1','Player 2'].includes(role),escapeHtml:String,participantName,participantDisplayName,getGameResult,transport:{getIdentityId:()=> 'me',getAuthoritativeGame:()=>game},getDecisionDebugState:()=>({items:[],cursor:null}),formatDisplayGameId:String,icon:()=>'',renderTurnHistory:()=>''};
   runInNewContext(`${extract('const playerToneClassForSeat =','const renderConnectionStatusIcon =')}
     ${extract('const renderResult =','const renderGame =')}
     ${extract('const renderHistoryPanel =','const renderBoardPanel =')}
