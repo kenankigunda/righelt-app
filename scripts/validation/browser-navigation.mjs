@@ -38,7 +38,11 @@ export async function selectGamePanel(page,key) {
 }
 
 export async function revealAccountControl(page,control=page.getByRole('button',{name:'Account',exact:true})) {
-  if(!await control.isVisible())await page.getByRole('button',{name:'Open navigation menu',exact:true}).click();
+  // An opacity-zero menu can still have geometric visibility. Role queries
+  // honor aria-hidden and prove the entry is actually exposed to the user.
+  const accessible=page.getByRole('button',{name:'Account',exact:true});
+  if(!await accessible.isVisible())await page.getByRole('button',{name:'Open navigation menu',exact:true}).click();
+  await expect(accessible).toBeVisible();
   await expect(control).toBeVisible();
   await expect(control).toBeEnabled();
   return control;

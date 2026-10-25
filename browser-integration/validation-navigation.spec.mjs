@@ -43,15 +43,20 @@ test('a collapsed candidate without its accessible reveal control fails without 
 });
 
 for(const menu of [false,true])test(`released account access supports ${menu?'narrow menu':'legacy direct'} entry`,async({page})=>{
-  await page.setContent(`${menu?'<button id="menu" aria-label="Open navigation menu">Menu</button>':''}<div id="account-menu" ${menu?'hidden':''}><button data-testid="account-open" data-authenticated="false">Account</button></div>`);
+  await page.setContent(`<style>#account-menu[aria-hidden="true"]{opacity:0;pointer-events:none;transform:translateY(12px)}</style>${menu?'<button id="menu" aria-label="Open navigation menu">Menu</button>':''}<div id="account-menu" ${menu?'aria-hidden="true"':''}><button data-testid="account-open" data-authenticated="false">Account</button></div>`);
   await page.evaluate(()=>{
-    window.accountClicks=0;
+    window.accountClicks=0;window.menuToggles=0;
     document.querySelector('[data-testid="account-open"]').onclick=()=>window.accountClicks++;
-    document.querySelector('#menu')?.addEventListener('click',event=>{const menu=document.querySelector('#account-menu');menu.hidden=!menu.hidden;event.currentTarget.setAttribute('aria-label',menu.hidden?'Open navigation menu':'Close navigation menu');});
+    document.querySelector('#menu')?.addEventListener('click',event=>{window.menuToggles++;const menu=document.querySelector('#account-menu'),closed=menu.getAttribute('aria-hidden')==='true';menu.setAttribute('aria-hidden',String(!closed));event.currentTarget.setAttribute('aria-label',closed?'Close navigation menu':'Open navigation menu');});
   });
+  if(menu){
+    expect(await page.getByTestId('account-open').isVisible()).toBe(true);
+    await expect(page.getByRole('button',{name:'Account',exact:true})).toHaveCount(0);
+  }
   await assertAccountEntry(page,{authenticated:false});
+  expect(await page.evaluate(()=>window.menuToggles)).toBe(menu?2:0);
   if(menu)await expect(page.getByRole('button',{name:'Open navigation menu',exact:true})).toBeVisible();
-  await(await revealAccountControl(page)).click();expect(await page.evaluate(()=>window.accountClicks)).toBe(1);
+  await(await revealAccountControl(page,page.getByTestId('account-open'))).click();expect(await page.evaluate(()=>window.accountClicks)).toBe(1);
 });
 
 for(const message of ['Preview. Activate this destination again to play.','Move from (1, 2) to (2, 2)'])test(`preview proof uses actual destination state with ${message.startsWith('Preview')?'legacy':'short'} copy`,async({page})=>{
