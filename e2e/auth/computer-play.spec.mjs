@@ -9,6 +9,35 @@ import {installPassiveCommandObservations,attachCommandObservations} from '../su
 
 const projected = (page, id) => page.evaluate(readProjectedGame, { id });
 
+function captureInitialComputerControl(page) {
+  const acquisition = page.waitForRequest(request => isOperationRequest(request, 'computer-control') && operationValues(request)?.action === 'acquire');
+  acquisition.catch(() => {});
+  return acquisition;
+}
+
+async function waitForInitialComputerControl(page, initial, acquisition) {
+  const request = await acquisition;
+  const command = request.postDataJSON(), values = operationValues(request);
+  expect(command.kind).toBe('shared');
+  expect(command.gameId).toBe(initial.id);
+  expect(command.clientCommandId).toMatch(/^v2:/);
+  expect(values.generation).toBe(initial.computer.generation);
+  expect(typeof values.deviceId).toBe('string');
+  expect(values.deviceId.length).toBeGreaterThan(0);
+  const acceptedGeneration = initial.computer.generation + 1;
+  await expect.poll(async () => {
+    const game = await projected(page, initial.id);
+    return { deviceId: game.computer.lease?.deviceId ?? null,
+      generation: game.computer.generation, canRecordMove: game.canRecordMove };
+  }, { message: 'Initial computer control must be acknowledged before the first human action' }).toEqual({
+    deviceId: values.deviceId, generation: acceptedGeneration, canRecordMove: true,
+  });
+  await waitForPlayableBoard(page);
+  await test.info().attach('initial-computer-control-readiness', { contentType: 'application/json',
+    body: JSON.stringify({ gameId: initial.id, clientCommandId: command.clientCommandId,
+      deviceId: values.deviceId, submittedGeneration: values.generation, acceptedGeneration }) });
+}
+
 async function registerComputerTester(page, { home = true } = {}) {
   expect((await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`, { method: 'POST' })).ok).toBe(true);
   await page.goto('/');
@@ -33,6 +62,7 @@ test('ordinary computer play records real worker evidence, preserves private not
   await registerComputerTester(page);
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
   const create = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST' && response.request().postDataJSON()?.computer?.p2 === 'babs');
+  const initialControl = captureInitialComputerControl(page);
   await page.getByRole('button', { name: 'Play Babs', exact: true }).click();
   const createResponse = await create;
   expect(createResponse.status(), `Computer game creation failed (request ${createResponse.headers()['x-righelt-request-id'] || 'unavailable'})`).toBe(200);
@@ -41,7 +71,7 @@ test('ordinary computer play records real worker evidence, preserves private not
   expect(created.computer.modelId).toBe('initial-1554');
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
   await expect(page.getByTestId('game-role')).toContainText('Player 1');
-  await waitForPlayableBoard(page);
+  await waitForInitialComputerControl(page, created, initialControl);
   const humanAction = created.legalActions.find(action => action.from && action.to);
   await submitPlayableAction(page, humanAction);
   await expect.poll(async () => (await projected(page, created.id)).moves.length).toBeGreaterThan(0);
@@ -135,13 +165,14 @@ test('ordinary computer undo restores the human turn and resumes computer contro
   await registerComputerTester(page);
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
   const creation = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST' && response.request().postDataJSON()?.computer?.p2 === 'babs');
+  const initialControl = captureInitialComputerControl(page);
   await page.getByRole('button', { name: 'Play Babs', exact: true }).click();
   const response = await creation;
   expect(response.ok()).toBe(true);
   const initial = (await response.json()).game;
   expect(initial.computer.seats).toEqual({ p1: null, p2: 'babs' });
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
-  await waitForPlayableBoard(page);
+  await waitForInitialComputerControl(page, initial, initialControl);
   await page.evaluate(()=>window.commandObservationCheckpoint('before-first-human-action'));
   await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
   await page.evaluate(()=>window.commandObservationCheckpoint('after-first-human-confirmation'));
@@ -199,13 +230,14 @@ test(`${profile} prepares and plays as Player 2 with the production model`, asyn
   await story.locator('[data-story-play]').click({ trial: true });
   await expect(story.locator('[data-story-readiness]')).toContainText('Ready to play');
   const create = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST' && response.request().postDataJSON()?.computer?.p2 === profile);
+  const initialControl = captureInitialComputerControl(page);
   await story.locator('[data-story-play]').click();
   const createResponse = await create;
   expect(createResponse.status(), `Computer game creation failed (request ${createResponse.headers()['x-righelt-request-id'] || 'unavailable'})`).toBe(200);
   const created = (await createResponse.json()).game;
   expect(created.computer.seats).toEqual({ p1: null, p2: profile });
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
-  await waitForPlayableBoard(page);
+  await waitForInitialComputerControl(page, created, initialControl);
   await submitPlayableAction(page, created.legalActions.find(action => action.from && action.to));
   await expect.poll(async () => (await projected(page, created.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, created.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();
