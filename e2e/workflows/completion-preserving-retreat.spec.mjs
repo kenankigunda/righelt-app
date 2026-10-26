@@ -1,0 +1,152 @@
+import {test,expect} from '@playwright/test';
+import {deterministicStateHash,resolveToStability,serializeState} from '../../apps/web/generated/packages/game-engine/src/index.js';
+import {ACTION_CONTRACT_HEADER,ACTION_CONTRACT_VERSION,commandFingerprint,isSyncCommand,isReconcileResponse,isCommandOutcome} from '../../apps/web/generated/packages/shared-types/src/sync-protocol.js';
+import {importScenarioGame,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
+import {waitForOpponentReady,waitForComputerDecision} from '../support/computer-projection.mjs';
+import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
+import {makeRetreatScenario,readRetreatCapture,FOLLOW_ACTION,RETREAT_CAPTURE_SHA256} from '../support/retreat-completion-fixture.mjs';
+
+const f=readRetreatCapture(),safe=f.alternatives.find(row=>row.completable);
+// Capture identity is explicitly minimal-artifact. Search and command
+// fingerprints below retain the exact full authoritative state instead.
+const capturedHash=state=>{
+ const minimal=resolveToStability(structuredClone(state),{artifactMode:'minimal'});
+ const originalCore=JSON.parse(serializeState(state)),minimalCore=JSON.parse(serializeState(minimal));
+ delete originalCore.artifacts;delete minimalCore.artifacts;
+ expect(minimalCore,'Capture-domain conversion must preserve every non-artifact authoritative field').toEqual(originalCore);
+ return deterministicStateHash(minimal);
+};
+const board=page=>page.getByTestId('game-board');
+const cell=(page,at)=>board(page).locator(`.cell[data-row="${at.row}"][data-col="${at.col}"]`);
+async function request(page,route,body){
+ const result=await page.evaluate(async({route,body,header,version})=>{
+  const identityId=localStorage.getItem('righelt.identity.id.v1');if(!identityId)throw Error('Native fixture identity missing');
+  const response=await fetch(body===undefined?`${route}?identityId=${encodeURIComponent(identityId)}`:route,{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json',[header]:String(version)},...(body===undefined?{}:{body:JSON.stringify({protocolVersion:2,identityId,...body})})});
+  return {status:response.status,body:await response.json()};
+ },{route,body,header:ACTION_CONTRACT_HEADER,version:ACTION_CONTRACT_VERSION});
+ expect(result.status).toBe(200);expect(result.body.ok).toBe(true);return result.body;
+}
+const current=async(page,id)=>(await request(page,`/api/shell/games/${id}`)).game;
+async function atHash(page,id,hash){
+ await expect.poll(async()=>capturedHash((await current(page,id)).board.state)).toBe(hash);
+ return current(page,id);
+}
+async function receipt(page,id,command,outcome='accepted'){
+ expect(isSyncCommand(command)).toBe(true);
+ // Current shared Undo envelopes omit this optional gameplay version. Actual
+ // action commands must advertise the new retreat contract exactly.
+ expect(command.actionContractVersion).toBe(command.kind==='shared'?undefined:3);
+ expect(command.gameId).toBe(id);expect(await commandFingerprint(command)).toBe(command.fingerprint);
+ let body;
+ await expect.poll(async()=>{
+  body=await request(page,`/api/shell/games/${id}/reconcile`,{knownSnapshotEventSeq:0,commands:[command]});
+  expect(isReconcileResponse(body,id,[command])).toBe(true);
+  return body.commandOutcomes.find(row=>row.clientCommandId===command.clientCommandId)?.outcome;
+ }).toBe(outcome);
+ const own=body.commandOutcomes.filter(row=>row.clientCommandId===command.clientCommandId);expect(own).toHaveLength(1);
+ expect(isCommandOutcome(own[0],command)).toBe(true);
+ expect(own[0]).toMatchObject({outcome,fingerprint:command.fingerprint,identityId:command.identityId});return own[0];
+}
+async function submit(page,id,action){
+ const sent=page.waitForRequest(req=>req.method()==='POST'&&new URL(req.url()).pathname===`/api/shell/games/${id}/apply`);
+ await submitPlayableAction(page,action);const command=(await sent).postDataJSON();expect(command.payload.action).toEqual(action);
+ await receipt(page,id,command);return command;
+}
+async function claimBoth(page){
+ await switchGamePanel(page,'players');
+ const control=page.locator('[data-action="play-as-both-players"]');await expect(control).toBeVisible();await control.click();
+ await expect(page.getByTestId('game-role')).toContainText('both');await switchGamePanel(page,'board');
+}
+async function noClosure(page,game){
+ expect(game.canEndTurn).toBe(false);expect(game.legalActions.some(a=>a.type==='pass'||a.type==='end_turn')).toBe(false);
+ await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toHaveCount(0);
+ await expect(page.locator('[data-action="end-turn"],[data-board-preview-action="end-turn"]').filter({visible:true})).toHaveCount(0);
+}
+function completed(game){
+ expect(game.board.state.continuation).toBeNull();expect(game.board.state.outcome.status).toBe('ongoing');
+ const stable=resolveToStability(game.board.state);
+ for(const id of ['U2-11','U2-15'])expect(stable.pieces.find(piece=>piece.id===id)).toMatchObject({owner:'P2',supplied:true});
+}
+
+test('human retreat excludes the stranded square and completes the native Follow',async({page,baseURL},info)=>{
+ const {gameId}=await importScenarioGame(page,makeRetreatScenario('human'),baseURL);await claimBoth(page);
+ await atHash(page,gameId,f.push.beforeHash);await submit(page,gameId,f.push.action);
+ const pushed=await atHash(page,gameId,f.push.afterHash);expect(pushed.legalActions).toEqual([safe.action]);await noClosure(page,pushed);
+ expect(pushed.board.state.pieces.some(piece=>piece.id==='U1-28')).toBe(true);
+ // Exercise the real invalid target with native events. A blocked preview may
+ // explain the rule, but it must never submit a gameplay command.
+ const wrong=[];const observe=req=>{if(req.method()==='POST'&&new URL(req.url()).pathname===`/api/shell/games/${gameId}/apply`)wrong.push(req.postDataJSON());};
+ page.on('request',observe);
+ try{
+  await expect(cell(page,f.retreat.action.to)).not.toHaveClass(/(?:^|\s)target(?:\s|$)/);
+  await cell(page,f.retreat.action.to).hover();await expect(cell(page,f.retreat.action.to)).not.toHaveClass(/(?:^|\s)target(?:\s|$)/);
+  await cell(page,f.retreat.action.to).click();await cell(page,f.retreat.action.to).click();
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  expect(wrong).toEqual([]);await atHash(page,gameId,f.push.afterHash);
+ }finally{page.off('request',observe);}
+ const identityId=await page.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'));
+ const unsafe={protocolVersion:2,actionContractVersion:3,gameId,identityId,clientCommandId:`v2:${crypto.randomUUID()}`,kind:'action',payload:{action:f.retreat.action},expectedState:pushed.board.state,expectedGameplayRevision:pushed.gameplayRevision};
+ unsafe.fingerprint=await commandFingerprint(unsafe);
+ const rejected=await request(page,`/api/shell/games/${gameId}/apply`,unsafe);expect(rejected.accepted).toBe(false);
+ expect((await receipt(page,gameId,unsafe,'rejected')).reason).toBe('SUPPLY_DESTINATION_UNSUPPLIED');
+ const unchanged=await current(page,gameId);expect(unchanged.board).toEqual(pushed.board);expect(unchanged.gameplayRevision).toBe(pushed.gameplayRevision);expect(unchanged.moves).toEqual(pushed.moves);
+ // Clicking an empty unhighlighted square deliberately clears selection.
+ // Resume through the actual pushed-piece control before selecting its move.
+ await cell(page,safe.action.from).click();await expect(cell(page,safe.action.from)).toHaveClass(/(?:^|\s)source(?:\s|$)/);
+ await submit(page,gameId,safe.action);const retreat=await atHash(page,gameId,safe.stateHash);
+ expect(retreat.legalActions).toEqual([FOLLOW_ACTION]);await noClosure(page,retreat);
+ await page.screenshot({path:info.outputPath('safe-retreat-awaits-follow.png')});
+ await submit(page,gameId,FOLLOW_ACTION);completed(await current(page,gameId));
+ await info.attach('captured-retreat-provenance',{body:JSON.stringify({sha256:RETREAT_CAPTURE_SHA256,provenance:f.provenance,unsafe,receipt:rejected.commandOutcomes},null,2),contentType:'application/json'});
+});
+
+test('the real computer defender records only the completion-preserving retreat',async({page,baseURL},info)=>{
+ await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);await page.keyboard.press('Escape');
+ const {gameId:sourceId}=await importScenarioGame(page,makeRetreatScenario('computer'),baseURL);
+ const source=await current(page,sourceId);expect(capturedHash(source.board.state)).toBe(safe.stateHash);
+ const sourceDecisionId=source.moves.at(-1).moveId;
+ const branched=(await request(page,'/api/shell/history/branch',{sourceGameId:sourceId,sourceDecisionId,creatorSide:'p2',computer:{p1:'babs',p2:null},computerModelId:'initial-1554'})).game;
+ expect(branched.computer.modelId).toBe('initial-1554');expect(branched.computer.seats).toEqual({p1:'babs',p2:null});
+ expect(capturedHash(branched.board.state)).toBe(f.push.afterHash);expect(branched.legalActions).toEqual([safe.action]);
+ const sent=page.waitForRequest(req=>req.method()==='POST'&&new URL(req.url()).pathname===`/api/shell/games/${branched.id}/apply`&&Boolean(req.postDataJSON()?.payload?.computer));
+ await page.goto(`${baseURL}/#/game/${encodeURIComponent(branched.id)}`);await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',branched.id);
+ const accepted=await waitForComputerDecision(page,branched.id,'babs',{guest:true,modelId:'initial-1554'}),command=(await sent).postDataJSON();
+ expect(command.payload.action).toEqual(safe.action);await receipt(page,branched.id,command);
+ const move=accepted.moves.find(row=>row.clientCommandId===command.clientCommandId);expect(move).toBeTruthy();
+ expect(move.action).toEqual(safe.action);expect(move.retreatSemantics).toBe('completion-preserving-retreat-v2');expect(move.computerProof).toEqual(command.payload.computer);
+ expect(capturedHash(move.selectionSnapshot)).toBe(f.push.afterHash);expect(capturedHash(move.snapshot)).toBe(safe.stateHash);
+ expect(command.expectedState).toEqual(branched.board.state);expect(move.selectionSnapshot).toEqual(branched.board.state);
+ const attempt=(await request(page,`/api/shell/games/${branched.id}/decision-attempt`,{attemptId:move.computerProof.attemptId,kind:'computer'})).attempt;
+ expect(attempt.proof).toEqual(move.computerProof);expect(attempt.fingerprint).toBe(deterministicStateHash(branched.board.state));expect(attempt.result.status).toBe('ready');expect(attempt.result.action).toEqual(safe.action);
+ expect(attempt.result.legality).toMatchObject({complete:true,unknown:0,indices:[1144]});expect(attempt.result.actionIndex).toBe(1144);
+ const archive=await request(page,`/api/shell/games/${branched.id}/decision-history`,{});expect(archive.items.some(item=>item.id===move.moveId)).toBe(true);
+ const ready=await atHash(page,branched.id,safe.stateHash);expect(ready.legalActions).toEqual([FOLLOW_ACTION]);await switchGamePanel(page,'board');await noClosure(page,ready);
+ await page.screenshot({path:info.outputPath('computer-safe-retreat.png')});
+ await submit(page,branched.id,FOLLOW_ACTION);completed(await current(page,branched.id));
+ await info.attach('accepted-computer-retreat',{body:JSON.stringify({command,move,attempt},null,2),contentType:'application/json'});
+});
+
+test('a retained stranded Follow stays ongoing and its move-row Undo restores live Board',async({page,baseURL},info)=>{
+ await page.setViewportSize({width:390,height:740});
+ const {gameId}=await importScenarioGame(page,makeRetreatScenario('retained'),baseURL);await claimBoth(page);
+ const retained=await atHash(page,gameId,f.retreat.afterHash);
+ expect(retained.board.state.outcome.status).toBe('ongoing');expect(retained.board.state.continuation.phase).toBe('follow');expect(retained.legalActions).toEqual([]);
+ expect(retained.board.state.pieces.some(piece=>piece.id==='U1-28')).toBe(true);await noClosure(page,retained);
+ expect(retained.moves.map(move=>move.action)).toEqual([f.push.action,f.retreat.action]);expect(retained.moves.map(move=>move.retreatSemantics)).toEqual(['geometric-retreat-v1','geometric-retreat-v1']);
+ await page.screenshot({path:info.outputPath('retained-stranded-follow.png')});
+ const target=retained.moves.at(-1);await switchGamePanel(page,'history');
+ // The immutable row identity remains available when the action markup changes.
+ const exactRow=page.locator(`[data-testid="history-move-item"][data-move-id="${target.moveId}"]`);
+ await expect(exactRow).toHaveCount(1);await exactRow.locator('.history-item-info').click();await expect(page.getByTestId('history-inline-preview')).toBeVisible();
+ const sent=page.waitForRequest(req=>isOperationRequest(req,'revert-request'));
+ await exactRow.locator('[data-action="revert-to-move"]').click();const nativeRequest=await sent,command=nativeRequest.postDataJSON();
+ expect(command.kind).toBe('shared');expect(command.payload.operation).toBe('revert-request');expect(operationValues(nativeRequest).targetMoveId).toBe(target.moveId);
+ expect(command.expectedGameplayRevision).toBe(retained.gameplayRevision);expect(command.expectedState).toEqual(retained.board.state);
+ await receipt(page,gameId,command);
+ const restored=await atHash(page,gameId,f.push.afterHash);expect(restored.lastRestoration.decisionId).toBe(target.moveId);expect(restored.legalActions).toEqual([safe.action]);
+ expect(restored.moves.map(move=>move.moveId)).toEqual(retained.moves.map(move=>move.moveId));expect(restored.moves.find(move=>move.moveId===target.moveId).undone).toBe(true);
+ expect(restored.moves.map(move=>move.action)).toEqual(retained.moves.map(move=>move.action));expect(restored.board.state.pieces.some(piece=>piece.id==='U1-28')).toBe(true);
+ await expect(page.locator('[data-action="switch-game-panel"][data-panel="board"]')).toHaveAttribute('aria-pressed','true');await expect(page.getByTestId('history-inline-preview')).toHaveCount(0);
+ await expect(board(page)).toBeVisible();await page.screenshot({path:info.outputPath('stranded-undo-restores-live.png')});
+ await info.attach('retained-undo-receipt',{body:JSON.stringify({command,originalMoves:retained.moves,restoration:restored.lastRestoration},null,2),contentType:'application/json'});
+});
