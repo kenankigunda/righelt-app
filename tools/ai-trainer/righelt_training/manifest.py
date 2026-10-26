@@ -103,6 +103,12 @@ ADOPTION_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for n
     'tools/ai-trainer/tests/test_sequence.py','tools/ai-trainer/tests/test_eight_hour.py','tools/ai-trainer/tests/test_fresh_health.py','tools/ai-trainer/tests/test_stage.py')
 
 PROOF_PATHS=('packages/game-engine/src','packages/computer-player/src','packages/shared-types/src',
+    'tools/ai-trainer/production-corpus.mjs','tools/ai-trainer/snapshot-production.py',
+    'tools/ai-trainer/righelt_training/production.py','tools/ai-trainer/righelt_training/curriculum.py',
+    'tools/ai-trainer/righelt_training/replay.py',
+    'tools/ai-trainer/righelt_training/resource_policy.py','tools/ai-trainer/righelt_training/resources.py',
+    'tools/ai-trainer/righelt_training/telemetry.py',
+    'tools/ai-trainer/righelt_training/incremental.py',
     'packages/computer-player/config/training-recipes-v1.json',
     'tools/ai-trainer/righelt_training/model.py','tools/ai-trainer/righelt_training/export.py',
     'tools/ai-trainer/righelt_training/parity.py','tools/ai-trainer/requirements.lock','pnpm-lock.yaml',*SCREEN_PROOF_PATHS,*ADOPTION_PROOF_PATHS)
@@ -112,7 +118,11 @@ def dependency_inventory(revision=None):
     inventory={}
     for name in PROOF_PATHS:
         if not (ROOT/name).exists():raise ValueError(f'proof dependency missing: {name}')
-        files=subprocess.check_output(['git','ls-tree','-r','--name-only',revision or 'HEAD','--',name],cwd=ROOT,text=True).splitlines()
+        # Explicit current files may be newly authored while regression tests
+        # run. Inventory their actual bytes; build_manifest still rejects all
+        # uncommitted launch inputs. Historical inventories remain Git-only.
+        files=([name] if revision is None and (ROOT/name).is_file() else
+               subprocess.check_output(['git','ls-tree','-r','--name-only',revision or 'HEAD','--',name],cwd=ROOT,text=True).splitlines())
         if not files:raise ValueError(f'empty proof dependency: {name}')
         for filename in files:
             data=subprocess.check_output(['git','show',f'{revision}:{filename}'],cwd=ROOT) if revision else (ROOT/filename).read_bytes()

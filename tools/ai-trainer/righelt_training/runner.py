@@ -117,7 +117,12 @@ class Runner:
         torch.manual_seed(seed)
         self.model = PolicyValueNet().to(self.device)
         self.optimizer = make_optimizer(self.model)
-        self.buffer = ReplayBuffer()
+        corpus_binding=self.manifest['manifest'].get('productionCorpus')
+        if corpus_binding:
+            from .production import protected_encodings
+            protected=protected_encodings(corpus_binding)
+        else:protected=()
+        self.buffer = ReplayBuffer(protected_encoding_hashes=protected)
         self.state = default_state()
         self.seed = seed
         self.stage = stage
@@ -129,7 +134,8 @@ class Runner:
             self.restore(Path(resume))
         restore_observations(self.state,self.directory)
         self.restore_admission_claims()
-        self.curriculum = Curriculum(seed, switched=self.state['curriculumSwitched'])
+        self.curriculum = Curriculum(seed, switched=self.state['curriculumSwitched'],
+                                     production_corpus=self.manifest['manifest'].get('productionCorpus'))
         self.model.eval()
         self.report_device_memory()
 
@@ -148,6 +154,29 @@ class Runner:
         with self.operation("restore-and-replay",300):return self._restore(checkpoint)
 
     def _restore(self, checkpoint):
+        warm = getattr(self,'manifest',{}).get('manifest', {}).get('warmStart')
+        if warm and not (self.directory / 'latest.json').exists():
+            if (checkpoint.resolve() != Path(warm['path']).resolve()
+                    or hashlib.sha256(checkpoint.read_bytes()).hexdigest() != warm['sha256']):
+                raise ValueError('incremental warm-start checkpoint changed')
+            data = load_checkpoint(checkpoint, self.model, self.optimizer,
+                                   manifest_sha256=warm['manifestSha256'], require_recovery=True,
+                                   training_recipe=self.training_recipe)
+            # This is a new authorized round, not a continuation of a closed
+            # allocation. Preserve optimizer/RNG and replay ancestry, but count
+            # every new game and update honestly in this round's own state.
+            self.state = default_state()
+            self.state['updates'] = data['updates']
+            self.state['inheritedUpdates'] = data['updates']
+            self.state['warmStart'] = warm
+            source = checkpoint.parent.parent
+            for name in data['recovery']['state']['archives']:
+                path = (source / name).resolve()
+                with gzip.open(path, 'rt') as stream:
+                    self.buffer.append(json.load(stream))
+                self.state['archives'].append(str(path))
+            self.model_version = warm['sha256']
+            return
         continuation = getattr(self, 'continuation', None)
         if continuation is None:
             continuation = fresh_health.continuation_for(self.directory, getattr(self, 'manifest', {}).get('manifest', {}))
@@ -306,6 +335,8 @@ class Runner:
         return True
 
     def accept_game(self, game, round_deadline, *, job=None):
+        if job is not None and game.get('productionSource') != job.get('productionSource'):
+            raise ValueError('generated game changed production source provenance')
         self.maybe_checkpoint()
         path = save_game(self.directory / 'games', game)
         exploration_adoption.validate_game(game, getattr(self,'training_recipe',recipe_binding()), getattr(self,'exploration_adoption',None))
@@ -333,6 +364,7 @@ class Runner:
         self.state['terminalGames' if game['termination'] == 'terminal' else 'truncatedGames'] += 1
         self.state['generationKinds'][game['kind']] += 1
         self.state['replayChecks'] += 1
+        self.state['protectedReplayExclusions']=dict(self.buffer.protected_exclusions)
         add_fallback_game(self.state.setdefault('fallbackReport',{}),game)
         self.event('game', id=game['id'], termination=game['termination'], decisions=len(game['decisions']), kind=game['kind'],
                    policyPositions=sum(d.get('policyMask',True) for d in game['decisions']),
@@ -350,7 +382,10 @@ class Runner:
         if job is None:
             index=ledger.job(self.stage,getattr(self,'seed',self.curriculum.seed),self.state['nextJob'])
             job=self.curriculum.job(index,self.model_version)
-            job['id']=f"{self.stage}-{job['id']}"
+            protected=getattr(getattr(self,'buffer',None),'protected_encoding_hashes',())
+            if protected:job['protectedEncodingHashes']=sorted(protected)
+            prefix=getattr(self,'manifest',{}).get('manifest',{}).get('jobPrefix',self.stage)
+            job['id']=f"{prefix}-{job['id']}"
             self.state['nextJob']=index+1
             self.state['pendingGenerationJob']=job
         job=exploration_adoption.authorize_job(job,getattr(self,'training_recipe',recipe_binding()),getattr(self,'exploration_adoption',None))

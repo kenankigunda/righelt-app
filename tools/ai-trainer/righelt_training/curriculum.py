@@ -35,9 +35,16 @@ def family_for_root(root):
 
 
 class Curriculum:
-    def __init__(self, seed, *, switched=False):
+    def __init__(self, seed, *, switched=False, production_corpus=None):
         self.seed = seed
         self.switched = switched
+        self.production_binding = production_corpus
+        self.production_positions = []
+        if production_corpus:
+            from .production import load_corpus
+            self.production_positions = load_corpus(production_corpus)
+            if not self.production_positions:
+                raise ValueError('production curriculum has no verified training starts')
 
     def observe(self, elapsed_seconds, terminal_games, truncated_games, completed_games):
         if not self.switched and elapsed_seconds >= 3600 and (
@@ -50,9 +57,23 @@ class Curriculum:
         # Job index, rather than asynchronous completion order, determines all starts.
         seed = int.from_bytes(hashlib.sha256(f'{self.seed}:{index}'.encode()).digest()[:4], 'big')
         rng = random.Random(seed)
+        if self.production_positions:
+            # Fixed four-job cycle preserves the approved 50/25/25 mix even
+            # under asynchronous completion and checkpoint recovery.
+            if index % 4 < 2:
+                from .production import production_job
+                groups = {}
+                for position in self.production_positions:
+                    groups.setdefault(position['gameId'], {}).setdefault(position['category'], []).append(position)
+                group = groups[rng.choice(sorted(groups))]
+                positions = group[rng.choice(sorted(group))]
+                return production_job(rng.choice(positions), seed=seed, index=index,
+                                      model_version=model_version, binding=self.production_binding)
         weights = CONFIG['training']['fallbackCurriculum' if self.switched else 'curriculum']
         draw = rng.random()
         kind = 'normal' if draw < weights[0] else 'simple' if draw < weights[0] + weights[1] else 'continuation'
+        if self.production_positions:
+            kind = 'normal' if index % 4 == 2 else rng.choice(['simple', 'continuation'])
         for attempt in range(10000):
             candidate_seed = (seed + attempt) % (2**32)
             root = None if kind == 'normal' else simple_root(candidate_seed)

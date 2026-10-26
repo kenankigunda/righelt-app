@@ -72,10 +72,11 @@ export async function readProjectedGame({ id, expectedComputer, wait = false, gu
   }
 }
 
-export async function waitForComputerDecision(page, id, profile, { guest = false } = {}) {
+export async function waitForComputerDecision(page, id, profile, { guest = false, modelId } = {}) {
+  if (typeof modelId !== 'string' || !modelId) throw Error('Expected computer model identity required');
   // Preparation and search use the existing test budget. Accepted server history,
   // not a short UI-transition deadline or a client-side result, completes the wait.
   return page.evaluate(readProjectedGame, {
-    id, guest, expectedComputer: { modelId: 'initial-1554', profile }, wait: true,
+    id, guest, expectedComputer: { modelId, profile }, wait: true,
   });
 }

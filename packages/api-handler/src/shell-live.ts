@@ -1,3 +1,4 @@
+import { computerModelForCreation } from '../../shared-types/src/computer-play';
 import { storageRoomName } from "./storage-generation";
 import { AUTH_PROTOCOL_VERSION } from '../../shared-types/src/auth-policy.js';
 import { authorizeGameRequest, authActive, sanitizeGameResponse, type GameAuthority } from './auth-game';
@@ -273,6 +274,7 @@ export const handleLiveGameRequest = async (
       return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
     }
     if (body.creatorSide !== undefined && body.creatorSide !== "p1" && body.creatorSide !== "p2") return { handled: true, status: 400, body: { ok: false, error: "invalid_creator_side" }, cacheControl: CACHE_NO_STORE };
+    if (body.computer !== undefined && !computerModelForCreation(body.computerModelId)) return { handled: true, status: 400, body: { ok: false, error: 'invalid_computer_model' }, cacheControl: CACHE_NO_STORE };
     const gameId = requestedGameId ?? nextGameId();
     const response = await fetchGameRoom(request, env, gameId, "/create", {
       method: "POST",
@@ -282,7 +284,7 @@ export const handleLiveGameRequest = async (
         gameId,
         selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
         creatorSide: body.creatorSide === "p2" ? "p2" : "p1",
-        ...(body.computer === undefined ? {} : { computer: body.computer }),
+        ...(body.computer === undefined ? {} : { computer: body.computer, computerModelId: body.computerModelId }),
       }),
     });
     return { handled: true, response };
@@ -345,6 +347,7 @@ export const handleLiveGameRequest = async (
     if (!identityId || !sourceGameId) {
       return { handled: true, status: 400, body: { ok: false, error: "invalid_history_branch_payload" }, cacheControl: CACHE_NO_STORE };
     }
+    if (body.computer !== undefined && !computerModelForCreation(body.computerModelId)) return { handled: true, status: 400, body: { ok: false, error: 'invalid_computer_model' }, cacheControl: CACHE_NO_STORE };
     // Derive the immutable position where the history lives. The outer Worker
     // handles only this bounded position, never the source's complete history.
     const prepared = await fetchGameRoom(request, env, sourceGameId, "/prepare-branch", {
@@ -365,7 +368,7 @@ export const handleLiveGameRequest = async (
         initialSelectionAction,
         selfPlayMode: body.selfPlayMode === true,
         creatorSide: body.creatorSide === "p2" ? "p2" : "p1",
-        ...(body.computer === undefined ? {} : { computer: body.computer }),
+        ...(body.computer === undefined ? {} : { computer: body.computer, computerModelId: body.computerModelId }),
         preserveResultingState: true,
       }),
     });

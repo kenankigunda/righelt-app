@@ -91,7 +91,7 @@ test('a failed computer proof save exposes usable recovery immediately and Resum
   await settleNotice(page);
   await page.screenshot({path:info.outputPath('computer-proof-recovery.png')});
   await retry.tap();
-  await waitForComputerDecision(page,game.id,'babs',{guest:true});
+  await waitForComputerDecision(page,game.id,'babs',{guest:true,modelId:game.computer.modelId});
   await expect(notice(page)).toHaveCount(0);
   expect(await geometry(page)).toEqual(before);
 });

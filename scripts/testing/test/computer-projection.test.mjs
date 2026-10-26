@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readProjectedGame } from '../../../e2e/support/computer-projection.mjs';
+import { readProjectedGame, waitForComputerDecision } from '../../../e2e/support/computer-projection.mjs';
 
 const expectedComputer = { modelId: 'initial-1554', profile: 'horus' };
 function fixture(t, { sessionStatus = 200, session = { contextId: 'account-context' }, projectionStatus = 200, game = { id: 'game-1', moves: [] } } = {}) {
@@ -83,4 +83,14 @@ test('guest projection uses the persisted guest identity without an account requ
  const {requests,game}=fixture(t);
  assert.deepEqual(await readProjectedGame({id:'game-1',guest:true}),game);
  assert.deepEqual(requests,[{url:'/api/shell/games/game-1?identityId=guest%20id',options:{headers:{}}}]);
+});
+
+for (const modelId of ['initial-1554', 'test-next-model']) test(`observation helper binds explicit model identity ${modelId}`, async () => {
+ let observed;
+ const page={evaluate:async(fn,options)=>{assert.equal(fn,readProjectedGame);observed=options;return 'accepted';}};
+ assert.equal(await waitForComputerDecision(page,'game-1','horus',{modelId}), 'accepted');
+ assert.deepEqual(observed,{id:'game-1',guest:false,expectedComputer:{modelId,profile:'horus'},wait:true});
+});
+test('observation helper rejects missing model identity before browser execution', async () => {
+ await assert.rejects(waitForComputerDecision({evaluate:()=>{throw Error('must not run');}},'game-1','horus'),/Expected computer model identity required/);
 });

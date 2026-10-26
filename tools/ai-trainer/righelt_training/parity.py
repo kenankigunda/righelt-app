@@ -7,7 +7,7 @@ import torch
 from .config import CONFIG,CONFIG_SHA256
 from .checkpoint import atomic_json,load_checkpoint
 from .export import export_onnx,numeric_parity
-from .model import PolicyValueNet
+from .model import PolicyValueNet,model_from_record
 from .replay import partition_for_family
 
 
@@ -30,11 +30,13 @@ def main():
     if args.require_mps and not torch.backends.mps.is_available():raise RuntimeError('MPS unavailable')
     reference_device='mps' if args.require_mps else 'cpu'
     trained=False
-    rows=verify_corpus(json.loads(args.corpus.read_text()));model=PolicyValueNet()
+    rows=verify_corpus(json.loads(args.corpus.read_text()));model=None
     if args.checkpoint:
         meta=json.loads(args.checkpoint.with_suffix('.json').read_text())
+        model=model_from_record(meta)
         load_checkpoint(args.checkpoint,model,manifest_sha256=meta['manifestSha256'])
         trained=meta['updates']>0
+    if model is None:model=PolicyValueNet()
     args.output.mkdir(parents=True,exist_ok=True);asset=args.output/'model.onnx'
     metadata=export_onnx(model,asset)
     import numpy as np

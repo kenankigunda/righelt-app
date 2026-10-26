@@ -11,7 +11,7 @@ from .config import ROOT,CONFIG,CONFIG_SHA256
 from .checkpoint import atomic_json,load_checkpoint
 from .export import export_onnx
 from .parity import verify_corpus
-from .model import PolicyValueNet
+from .model import PolicyValueNet,model_from_record
 from .runner import stop_worker
 
 
@@ -58,10 +58,12 @@ def main():
     parser.add_argument('--repair-reference',type=Path);parser.add_argument('--reference-revision');parser.add_argument('--checkpoint',type=Path);parser.add_argument('--device',choices=['cpu','mps'],default='mps');parser.add_argument('--limit',type=int,default=1000);parser.add_argument('--seconds',type=float,default=1800);args=parser.parse_args()
     if not 0<args.limit<=1000 or not 0<args.seconds<=1800:raise ValueError('invalid proof bounds')
     if args.device=='mps' and not torch.backends.mps.is_available():raise RuntimeError('requires MPS')
-    torch.set_num_threads(1);torch.manual_seed(107);device=args.device;model=PolicyValueNet().eval()
+    torch.set_num_threads(1);torch.manual_seed(107);device=args.device;model=None
     if args.checkpoint:
         meta=json.loads(args.checkpoint.with_suffix('.json').read_text())
+        model=model_from_record(meta).eval()
         load_checkpoint(args.checkpoint,model,manifest_sha256=meta['manifestSha256'])
+    if model is None:model=PolicyValueNet().eval()
     asset=export_onnx(model,args.output.with_suffix('.onnx'));model=model.to(device).eval()
     corpus=json.loads(args.corpus.read_text());verify_corpus(corpus);profile={'simulations':8,'temperature':0,'maxValueGap':0}
     result={'schema':1,'configSha256':CONFIG_SHA256,'referenceDevice':device,'modelSha256':asset['sha256'],'corpusSha256':hashlib.sha256(args.corpus.read_bytes()).hexdigest(),'profile':profile,'modelSeed':107,'states':[],
