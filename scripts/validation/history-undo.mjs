@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {expect} from '@playwright/test';
 import {isOperationRequest,operationValues} from '../../e2e/support/shared-request.mjs';
+import {SUPPORTED_ACTION_CONTRACT_VERSIONS} from './source-contract.mjs';
 import {selectGamePanel} from './browser-navigation.mjs';
 import {isSyncCommand,isCommandOutcome,isReconcileResponse,commandFingerprint} from '../../packages/shared-types/src/sync-protocol.ts';
 
@@ -21,7 +22,7 @@ async function assertUndoIntent(envelope,{gameId,moveId,identityId,beforeState,b
  if(envelope.kind==='shared'){
   assert.equal(isSyncCommand(envelope),true,'Captured undo must be a valid immutable command');
   assert.equal(envelope.gameId,gameId);assert.equal(envelope.payload.operation,'revert-request');
-  assert.ok(actionContractVersion===null||[2,3].includes(actionContractVersion),'An explicit supported source-selected action version is required');
+  assert.ok(actionContractVersion===null||SUPPORTED_ACTION_CONTRACT_VERSIONS.includes(actionContractVersion),'An explicit supported source-selected action version is required');
   assert.equal(envelope.actionContractVersion,actionContractVersion===null?undefined:actionContractVersion,'Undo action contract must match the candidate source');
   assert.equal(envelope.predecessor,undefined,'Current UI shared commands must not introduce an unverified dependency');
   assert.equal(envelope.payload.action,undefined,'Shared undo must not carry a gameplay action');
@@ -50,7 +51,7 @@ export async function assertUndoReceipt(body,envelope,{gameId,moveId,identityId,
 }
 
 export async function undoBeforeHumanMove(page,{gameId,moveId,identityId,initialState,beforeState,beforeRevision,undoLabel,actionContractVersion}){
- assert.ok(actionContractVersion===null||[2,3].includes(actionContractVersion),'An explicit supported source-selected action version is required');
+ assert.ok(actionContractVersion===null||SUPPORTED_ACTION_CONTRACT_VERSIONS.includes(actionContractVersion),'An explicit supported source-selected action version is required');
  assert.ok(['Undo back to this move','Undo before this move'].includes(undoLabel),'An explicit supported source-selected undo label is required');
  assert.ok(typeof gameId==='string'&&gameId.trim().length,'Game ID is required before browser activity');
  assert.ok(typeof moveId==='string'&&moveId.length,'Human decision ID is required before browser activity');

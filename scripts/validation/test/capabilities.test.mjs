@@ -4,6 +4,7 @@ import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {candidateCapabilities} from '../capabilities.mjs';
+import {ACTION_CONTRACT_VERSION} from '../../../packages/shared-types/src/sync-protocol.ts';
 
 test('result headings select an explicit source contract before execution and fail closed on unknown declarations',async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'result-heading-capability-'));
@@ -191,7 +192,7 @@ test('candidate action version is selected from a supported literal without eval
   const file=path.join(dir,'sync-protocol.ts');
   for(const version of [2,3])for(const assertion of ['', ' as const']){await writeFile(file,`export const ACTION_CONTRACT_VERSION = ${version}${assertion};`);assert.equal((await candidateCapabilities(root)).actionContractVersion,version);}
   const tracked=await readFile(new URL('../../../packages/shared-types/src/sync-protocol.ts',import.meta.url),'utf8');
-  await writeFile(file,tracked);assert.equal((await candidateCapabilities(root)).actionContractVersion,2);
+  await writeFile(file,tracked);assert.equal((await candidateCapabilities(root)).actionContractVersion,ACTION_CONTRACT_VERSION);
   for(const invalid of [
    'export let ACTION_CONTRACT_VERSION=3;',
    'export const ACTION_CONTRACT_VERSION=999;',
