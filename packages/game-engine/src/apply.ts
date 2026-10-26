@@ -1,6 +1,7 @@
+import type { RetreatRuleOptions } from '../../shared-types/src/retreat-rules';
 import { reportRemoval, type RemovalCollector } from "./removals";
 import type { Action, ApplyResult, GameState } from "./types";
-import { getRushChainMembers } from "./continuation";
+import { buildPushRetreatSuccessorActions, getRushChainMembers } from "./continuation";
 import { BOARD_SIZE, normalizeState } from "./deterministic";
 import { localGroupMembers, validateAction } from "./legal";
 
@@ -65,8 +66,8 @@ function captureFrozenPieceStates(state: GameState, owner: "P1" | "P2") {
   );
 }
 
-export function applyAction(state: GameState, action: Action, options?: { onRemoval?: RemovalCollector }): ApplyResult {
-  const validation = validateAction(state, action);
+export function applyAction(state: GameState, action: Action, options?: RetreatRuleOptions & { onRemoval?: RemovalCollector }): ApplyResult {
+  const validation = validateAction(state, action, options);
   if (!validation.ok) {
     throw new Error(`Cannot apply invalid action: ${validation.code}`);
   }
@@ -156,19 +157,7 @@ export function applyAction(state: GameState, action: Action, options?: { onRemo
     };
     next.sideToMove = defender.owner;
 
-    const retreatSquares = [
-      { row: defender.position.row - 1, col: defender.position.col },
-      { row: defender.position.row + 1, col: defender.position.col },
-      { row: defender.position.row, col: defender.position.col - 1 },
-      { row: defender.position.row, col: defender.position.col + 1 },
-    ].filter((to) =>
-      validateAction(next, {
-        type: "retreat",
-        actorId: defender.id,
-        from: defender.position,
-        to,
-      }).ok,
-    );
+    const retreatSquares = buildPushRetreatSuccessorActions(next);
     if (retreatSquares.length === 0) {
       reportRemoval(defender, "no_retreat", options?.onRemoval);
       next.pieces = next.pieces.filter((piece) => piece.id !== defender.id);

@@ -5,6 +5,7 @@ import {pathToFileURL} from 'node:url';
 import {createInitialState,deterministicStateHash,resolveToStability} from '../../packages/game-engine/src/index.ts';
 import {encodeState,transition} from '../../packages/computer-player/src/index.ts';
 import {transitionArchivedAction} from './archived-action.mjs';
+import {archivedRetreatSemantics} from '../../packages/shared-types/src/retreat-rules.ts';
 import {legacyCommanderReplayState} from './decision-replay.mjs';
 import {createEngineOperationBudget} from './engine-operation-budget.mjs';
 
@@ -64,14 +65,14 @@ export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds
           if(!current)throw Error('Unverified production lineage');
           exactRetainedState(current,move.selectionSnapshot,bounded);
           const before=current;
-          current=exactRetainedState(transitionArchivedAction(before,move.action,bounded),move.snapshot,bounded);
+          current=exactRetainedState(transitionArchivedAction(before,move.action,bounded,move.retreatSemantics),move.snapshot,bounded);
           known.set(deterministicStateHash(current),current);moves.set(record.id,move);verified++;
           if(before.outcome.status==='ongoing')candidates.push({
             gameId:game.game_id,decisionId:record.id,revision:record.revision,
             state:structuredClone(before),stateHash:deterministicStateHash(before),partition,
             encodingHash:encodingHash(before),sharedOpening:sharedOpening(before),
             category:before.continuation?.type??(move.displayMoveNumber===1?'opening':'ordinary'),
-            historicalAction:move.action,computerProof:move.computerProof??null,
+            historicalAction:move.action,historicalRetreatSemantics:archivedRetreatSemantics(move.retreatSemantics),computerProof:move.computerProof??null,
           });
         } else if(record.kind==='turn') {
           if(!current)throw Error('Unverified turn lineage');

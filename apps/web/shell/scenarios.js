@@ -1,3 +1,4 @@
+import { archivedRetreatSemantics } from "../generated/packages/shared-types/src/retreat-rules.js";
 import { isUuidV4 } from "../generated/packages/shared-types/src/validation.js";
 import { computeScenarioStateHash } from "../scenario-adapters/engine-scenario-adapter.js";
 
@@ -50,6 +51,11 @@ const createUuidV4 = () => {
   ].join("-");
 };
 
+const retainedMoveRules = (move) => {
+  const value = archivedRetreatSemantics(move?.retreatSemantics);
+  return move?.retreatSemantics === undefined ? {} : { retreatSemantics: value };
+};
+
 const normalizeScenario = (scenario) => ({
   formatVersion: 2,
   id: String(scenario?.id || ""),
@@ -64,6 +70,7 @@ const normalizeScenario = (scenario) => ({
         actorSide: move?.actorSide === "P2" ? "P2" : "P1",
         notation: String(move?.notation || ""),
         action: structuredClone(move?.action ?? null),
+        ...retainedMoveRules(move),
       }))
     : [],
   resultingState: structuredClone(scenario?.resultingState ?? scenario?.resulting_state ?? null),
@@ -174,6 +181,7 @@ export const buildScenarioFromGame = async (
       actorSide: move.actorSide,
       notation: move.notation,
       action: structuredClone(move.action),
+      ...retainedMoveRules(move),
     })),
     resultingState,
     expectedFinalStateHash,
@@ -235,6 +243,7 @@ export const buildHistoryBranchSeedFromGame = (game, moveIndex) => {
         actorSide: selectedMove.actorSide,
         notation: selectedMove.notation,
         action: structuredClone(selectedMove.action),
+        ...retainedMoveRules(selectedMove),
       })),
       resultingState,
       expectedFinalStateHash: "",

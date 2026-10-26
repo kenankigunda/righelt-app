@@ -131,9 +131,10 @@ Post-action command loss does not invalidate those actions; command is evaluated
 
 - Retreat is the only legal action for the owner of the pushed piece during the retreat sub-phase.
 - Only the currently pushed piece may retreat.
-- Retreat destination must be an orthogonally adjacent empty square that is not the current follow-point.
+- Retreat destination must be an orthogonally adjacent empty square that is not the current follow-point, and its successor must permit completion of the recorded attacker follow group to an end-supplied state.
+- Push admission requires at least one such completion-preserving retreat when geometric retreat squares exist; it does not require every geometric retreat to permit completion.
 - If there is exactly one legal retreat square, that retreat source and destination are considered forced.
-- If there is no legal retreat square, the pushed piece is removed and no retreat action is taken.
+- If there is no geometric retreat square (orthogonally adjacent, empty, not the follow-point), the pushed piece is removed and no retreat action is taken. An imported position with geometric but no completion-preserving retreats is not reclassified as a capture.
 - After retreat completes, `pushed` state clears and play immediately returns to the attacker for follow continuation.
 
 ## 5.7 Follow (during attacker follow sub-phase only)

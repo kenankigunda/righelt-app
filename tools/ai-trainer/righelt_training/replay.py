@@ -53,7 +53,7 @@ class ReplayBuffer:
             if self.protected_encoding_hashes and 'encoded' not in decision:
                 raise ValueError('protected replay requires encoded position evidence')
         for decision in game['decisions']:
-            position={k:decision[k] for k in ('id','legal','policy','policyMask','fallback','legality','trainingRecipe') if k in decision}
+            position={k:decision[k] for k in ('id','legal','policy','policyMask','fallback','legality','trainingRecipe','retreatSemantics') if k in decision}
             mask=decision.get('policyMask',True)
             fallback=decision.get('fallback')
             if type(mask) is not bool or (fallback is not None) != (not mask):

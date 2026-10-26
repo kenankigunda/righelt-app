@@ -13,7 +13,7 @@ import {
   finalizeResolvedTurn,
   getControlSeatForTurn,
 } from "../generated/packages/shared-types/src/shell-live-turn.js";
-import { commandFingerprint } from '../generated/packages/shared-types/src/sync-protocol.js';
+import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, commandFingerprint } from '../generated/packages/shared-types/src/sync-protocol.js';
 
 test('initial shared capability timeout preserves intent and never submits it', async t => {
  const game = buildLiveGame(), storage = createMemoryStorage(); storage.setItem(IDENTITY_KEY, 'id-a');
@@ -1275,7 +1275,7 @@ test("live transport store does not infer end-turn confirmation from move histor
     storage: createMemoryStorage(),
     fetcher: async (url, init = {}) => {
       if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
-        return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 }, {headers:{"X-Righelt-Action-Contract":"2"}});
+        return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 }, {headers:{[ACTION_CONTRACT_HEADER]:String(ACTION_CONTRACT_VERSION)}});
       }
       if (String(url) === `/api/shell/games/${baseGame.id}/end-turn` && init.method === "POST") {
         return new Promise(() => {});

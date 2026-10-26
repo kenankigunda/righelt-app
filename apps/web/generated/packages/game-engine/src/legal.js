@@ -1,3 +1,4 @@
+import { CURRENT_RETREAT_SEMANTICS, liveRetreatSemantics } from '../../shared-types/src/retreat-rules.js';
 import { checkEngineComputation, isEngineComputationObserved, observeEngineComputation } from "./computation-guard.js";
 import { buildContinuationSuccessorState, canCloseContinuationNow, isContinuationCompletable, } from "./continuation.js";
 import { BOARD_SIZE, SUPPLY_POINTS } from "./deterministic.js";
@@ -376,13 +377,14 @@ export function enumerateLegalActions(state, options = {}) {
     return result;
 }
 /** Existing callers still receive all legal actions or an exception, never a subset. */
-export function listLegalActions(state) {
+export function listLegalActions(state, options) {
+    liveRetreatSemantics(options);
     const actions = [];
     const observed = isEngineComputationObserved();
     for (const action of legalActionCandidates(state)) {
         if (observed)
             observeEngineComputation({ type: "candidate", action });
-        const validation = validateAction(state, action);
+        const validation = validateAction(state, action, options);
         if (observed)
             observeEngineComputation({ type: "candidate-result", action, status: validation.ok ? "legal" : "illegal" });
         if (validation.ok)
@@ -390,7 +392,8 @@ export function listLegalActions(state) {
     }
     return actions;
 }
-export function validateAction(state, action) {
+export function validateAction(state, action, options) {
+    const retreatSemantics = liveRetreatSemantics(options);
     checkEngineComputation();
     if (state.outcome.status !== "ongoing") {
         return {
@@ -736,6 +739,16 @@ export function validateAction(state, action) {
                 code: "RULE_VIOLATION",
                 message: "Retreat destination cannot be the reserved follow-point",
             };
+        }
+        if (retreatSemantics === CURRENT_RETREAT_SEMANTICS) {
+            const successor = buildContinuationSuccessorState(state, action);
+            if (!isContinuationCompletable(successor)) {
+                return {
+                    ok: false,
+                    code: "SUPPLY_DESTINATION_UNSUPPLIED",
+                    message: "Retreat destination cannot complete to an end-supplied pushing group",
+                };
+            }
         }
         return { ok: true };
     }

@@ -1,8 +1,10 @@
+import { liveRetreatSemantics } from "../../shared-types/src/retreat-rules.js";
 import { applyAction } from "./apply.js";
 import { normalizeState } from "./deterministic.js";
 import { validateAction } from "./legal.js";
 import { resolveToStability } from "./resolve.js";
 export function replayActions(initial, actions, options) {
+    liveRetreatSemantics(options);
     const includeTrace = options?.includeTrace ?? true;
     const artifactMode = options?.artifactMode ?? "minimal";
     let current = resolveToStability(normalizeState(initial), {
@@ -11,7 +13,7 @@ export function replayActions(initial, actions, options) {
     const trace = includeTrace ? [normalizeState(current)] : undefined;
     for (let i = 0; i < actions.length; i += 1) {
         const action = actions[i];
-        const validation = validateAction(current, action);
+        const validation = validateAction(current, action, options);
         if (!validation.ok) {
             return {
                 finalState: current,
@@ -23,7 +25,7 @@ export function replayActions(initial, actions, options) {
                 },
             };
         }
-        const result = applyAction(current, action);
+        const result = applyAction(current, action, options);
         current = resolveToStability(normalizeState(result.state), {
             artifactMode,
         });

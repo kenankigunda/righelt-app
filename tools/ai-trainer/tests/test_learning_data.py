@@ -198,6 +198,21 @@ inventory.main()
             p.write_text('altered')
             with self.assertRaisesRegex(ValueError, 'changed'): verify_inventory(inv, items, 1, engine=engine)
 
+    def test_verified_start_preserves_explicit_retreat_provenance_without_inventing_old_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            p = Path(directory) / 'archive'; p.write_text('bound')
+            for version in (None, 'completion-preserving-retreat-v2'):
+                g = game()
+                if version is not None: g['retreatSemantics'] = version
+                items = [{'game': g, 'path': str(p), 'sha256': sha(p)}]
+                def engine(job, timeout):
+                    self.assertEqual(job['game'], g)
+                    return {'type': 'inventoried', 'hash': g['finalHash'], 'states': [{'index': 0,
+                        'state': g['initialState'], 'hash': 'one', 'decisionId': 'one:0', 'controller': 'P2'}]}
+                row = verify_inventory(candidates(items), items, 1, engine=engine)['verifiedStates'][0]
+                if version is None: self.assertNotIn('retreatSemantics', row)
+                else: self.assertEqual(row['retreatSemantics'], version)
+
     def test_correctness_failure_does_not_become_timeout(self):
         with tempfile.TemporaryDirectory() as directory:
             p = Path(directory) / 'archive'; p.write_text('bound')

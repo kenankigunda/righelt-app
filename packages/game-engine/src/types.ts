@@ -1,3 +1,4 @@
+import type { RetreatRuleOptions } from '../../shared-types/src/retreat-rules';
 import type {
   Action,
   ArtifactMode,
@@ -56,7 +57,7 @@ export type ApplyResult = {
   outcome: Outcome;
 };
 
-export type ReplayOptions = {
+export type ReplayOptions = RetreatRuleOptions & {
   includeTrace?: boolean;
   artifactMode?: ArtifactMode;
 };

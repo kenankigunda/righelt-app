@@ -1,3 +1,4 @@
+import type { RetreatRuleOptions } from '../../shared-types/src/retreat-rules';
 import config from "../config/experiment-v1.json";
 import { SUPPLY_POINTS, listLegalActions, legalActionCandidates, validateAction } from "../../game-engine/src/index";
 import type { Action, Coordinate, GameState } from "../../shared-types/src/engine";
@@ -96,9 +97,9 @@ export function encodeAction(action: Action): number {
   return source * channels + config.actionChannels[action.type] + direction;
 }
 
-export function legalActionMap(state: GameState): Map<number, Action> {
+export function legalActionMap(state: GameState, options?: RetreatRuleOptions): Map<number, Action> {
   const result = new Map<number, Action>();
-  for (const action of listLegalActions(state)) {
+  for (const action of listLegalActions(state, options)) {
     const key = encodeAction(action);
     if (result.has(key)) throw new Error(`Legal action encoding collision: ${key}`);
     result.set(key, action);
@@ -122,13 +123,13 @@ export function scanLegalActions(state: GameState, classify: (operation: () => b
 }
 
 /** Verify a recorded subset without asking unrelated candidates to finish. */
-export function verifyLegalSubset(state: GameState, indices: number[]): void {
+export function verifyLegalSubset(state: GameState, indices: number[], options?: RetreatRuleOptions): void {
   const pending = new Set(indices);
   if (!indices.length || pending.size !== indices.length) throw new Error("Invalid legal subset");
   for (const action of legalActionCandidates(state)) {
     const index = encodeAction(action);
     if (!pending.has(index)) continue;
-    if (!validateAction(state, action).ok) throw new Error("Illegal action in recorded subset");
+    if (!validateAction(state, action, options).ok) throw new Error("Illegal action in recorded subset");
     pending.delete(index);
   }
   if (pending.size) throw new Error("Unknown action in recorded subset");

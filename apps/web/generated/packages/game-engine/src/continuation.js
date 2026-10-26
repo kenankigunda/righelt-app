@@ -440,7 +440,9 @@ function buildRushSuccessorActions(state) {
         return actions;
     });
 }
-function buildPushRetreatSuccessorActions(state) {
+/** Geometric candidates only: live legality also requires a completable Follow.
+ * Keep capture/removal separate from completion filtering, especially for retained positions. */
+export function buildPushRetreatSuccessorActions(state) {
     if (!state.continuation || state.continuation.type !== "push" || state.continuation.phase !== "retreat") {
         return [];
     }

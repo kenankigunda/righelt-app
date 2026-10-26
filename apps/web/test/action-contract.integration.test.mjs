@@ -45,11 +45,11 @@ for(const advertised of [null,'1']) test(`unsupported server contract ${advertis
 test('socket-first contract advertisement permits semantic End Turn without an HTTP preload',async(t)=>{
   const game=gameView(), commands=journal();let sent=0;
   const store=createLiveTransportStore({storage:memoryStorage(),commandJournal:commands,fetcher:async()=>{sent++;return new Promise(()=>{})}});t.after(()=>store.retire());
-  store.applyLiveGameUpdate({game,eventSeq:1,baseline:true,actionContractVersion:2});
+  store.applyLiveGameUpdate({game,eventSeq:1,baseline:true,actionContractVersion:3});
   await store.endTurn({gameId:'g'});
   assert.equal(store.getGameViewModel('g').board.state.continuation,null);
   assert.equal(store.getGameViewModel('g').pendingMoves.length,0);
-  const [envelope]=await commands.list();assert.equal(envelope.actionContractVersion,2);
+  const [envelope]=await commands.list();assert.equal(envelope.actionContractVersion,3);
   assert.equal(sent,1);
 });
 
