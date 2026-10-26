@@ -28,22 +28,60 @@ for(const mutation of ['small-side','small-card','blocked-native-choice'])test(`
  await assert.rejects(()=>assertRematchControlTargets(page.getByRole('dialog'),{contract:'colors-v1',opponent:'friend',assertionOptions:{timeout:100}}));
 });
 
-for(const shared of [false,true])test(`ordinary undo uses the immutable human row and ${shared?'accepted command receipt':'legacy approval'}`,async({page})=>{
- const state={turnIndex:1,pieces:[{id:'human'}]},requests=[];
+async function mountUndoFixture(page,{transport='shared-http',mutate}={}){
+ const shared=transport!=='legacy';
+ const state={turnIndex:1,pieces:[{id:'human'}]},requests=[],reads=[];
  const envelope=shared?{protocolVersion:2,gameId:'game-1',identityId:'human-account',kind:'shared',clientCommandId:'v2:undo-1',expectedState:{turnIndex:3},expectedGameplayRevision:2,payload:{operation:'revert-request',values:{targetMoveId:'human-1'}}}:{identityId:'human-account',targetMoveId:'human-1'};
+ if(mutate)mutate(envelope);
  if(shared)envelope.fingerprint=await commandFingerprint(envelope);
- const body={ok:true,autoApproved:true,accepted:true,protocolVersion:2,gameId:'game-1',eventSeq:10,gameplayRevision:2,clientCommandId:envelope.clientCommandId,commandOutcomes:[{gameId:'game-1',identityId:'human-account',clientCommandId:'v2:undo-1',fingerprint:envelope.fingerprint,outcome:'accepted',reason:null,eventSeq:10,gameplayRevision:2}],game:{id:'game-1',lastRestoration:{decisionId:'human-1'},board:{state},moves:[{moveId:'human-1',undone:true},{moveId:'computer-1',undone:true}]}};
+ const acceptedRevision=Math.max(2,envelope.expectedGameplayRevision??2);
+ const body={ok:true,autoApproved:true,accepted:true,protocolVersion:2,gameId:'game-1',eventSeq:10,gameplayRevision:acceptedRevision,clientCommandId:envelope.clientCommandId,commandOutcomes:[{gameId:'game-1',identityId:'human-account',clientCommandId:'v2:undo-1',fingerprint:envelope.fingerprint,outcome:'accepted',reason:null,eventSeq:10,gameplayRevision:acceptedRevision}],game:{id:'game-1',gameplayRevision:acceptedRevision,lastRestoration:{decisionId:'human-1'},board:{state},moves:[{moveId:'human-1',undone:true},{moveId:'computer-1',undone:true}]}};
+ const reconcileBody={...body};delete reconcileBody.accepted;delete reconcileBody.clientCommandId;
+ await page.unroute('**/undo-fixture');await page.unroute('**/api/shell/games/game-1/*');
  await page.route('**/undo-fixture',route=>route.fulfill({contentType:'text/html',body:`<div id="app" data-shell-layout-mode="wide">${['computer-1','human-1'].map(id=>`<div data-testid="history-move-item" data-move-id="${id}"><button class="history-item-info">${id}</button><button hidden data-action="revert-to-move" data-game-id="game-1" data-move-id="${id}">Undo before this move</button></div>`).join('')}</div>`}));
- await page.route('**/api/shell/games/game-1/*',async route=>{requests.push(route.request().postDataJSON());await route.fulfill({json:body});});
+ await page.route('**/api/shell/games/game-1/*',async route=>{
+  const receiptRead=new URL(route.request().url()).pathname.endsWith('/reconcile');
+  if(receiptRead)reads.push(route.request().postDataJSON());else requests.push(route.request().postDataJSON());
+  // This fixture simulates HTTP cancellation and a stored receipt. It does not
+  // simulate a real WebSocket or replace the separately required real-stack proof.
+  // Unsafe-intent cases offer a matching hypothetical accepted reply on purpose:
+  // their admission guard must reject before inspecting it, not reject its shape.
+  const capturedOne=requests.length===1&&JSON.stringify(requests[0])===JSON.stringify(envelope);
+  if(!capturedOne){await route.fulfill({status:409,json:{ok:false,error:'fixture_original_mutation_not_observed'}});return;}
+  if(receiptRead){await route.fulfill({json:reconcileBody});return;}
+  if(transport==='shared-aborted-http')await route.abort();else await route.fulfill({json:body});
+ });
  await page.goto('/undo-fixture');
  await page.evaluate(({shared,envelope})=>{
   window.selectedRows=[];
   for(const row of document.querySelectorAll('[data-testid="history-move-item"]')){
    row.querySelector('.history-item-info').onclick=()=>{window.selectedRows.push(row.dataset.moveId);row.querySelector('[data-action]').hidden=false;};
-   row.querySelector('[data-action]').onclick=()=>fetch(`/api/shell/games/game-1/${shared?'shared':'revert-request'}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(envelope)});
+   row.querySelector('[data-action]').onclick=()=>fetch(`/api/shell/games/game-1/${shared?'shared':'revert-request'}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(envelope)}).catch(()=>{});
   }
  },{shared,envelope});
- await undoBeforeHumanMove(page,{gameId:'game-1',moveId:'human-1',identityId:'human-account',initialState:state});
- expect(requests).toEqual([envelope]);expect(await page.evaluate(()=>window.selectedRows)).toEqual(['human-1']);
+ return {shared,state,requests,reads,envelope,options:{gameId:'game-1',moveId:'human-1',identityId:'human-account',initialState:state,beforeState:{turnIndex:3},beforeRevision:2}};
+}
+
+for(const transport of ['legacy','shared-http','shared-aborted-http'])test(`ordinary undo uses the immutable human row and ${transport}`,async({page})=>{
+ const fixture=await mountUndoFixture(page,{transport});
+ await undoBeforeHumanMove(page,fixture.options);
+ expect(fixture.requests).toEqual([fixture.envelope]);expect(await page.evaluate(()=>window.selectedRows)).toEqual(['human-1']);
+ expect(fixture.reads).toEqual(fixture.shared?[{protocolVersion:2,identityId:fixture.envelope.identityId,knownSnapshotEventSeq:0,commands:[fixture.envelope]}]:[]);
  await expect(page.locator('[data-move-id="computer-1"] [data-action]')).toBeHidden();
+});
+
+test('unsafe undo intents with genuine fingerprints fail before any receipt lookup',async({page})=>{
+ const mutations=[
+  [envelope=>{envelope.actionContractVersion=999;},/action contract/],
+  [envelope=>{envelope.predecessor={clientCommandId:'v2:unverified',fingerprint:'a'.repeat(64)};},/unverified dependency/],
+  [envelope=>{envelope.expectedGameplayRevision=3;},/observed authoritative revision/],
+  [envelope=>{envelope.payload.action={type:'pass'};},/gameplay action/],
+ ];
+ for(const [mutate,message]of mutations){
+  const fixture=await mountUndoFixture(page,{mutate});
+  expect(fixture.envelope.fingerprint).toBe(await commandFingerprint(fixture.envelope));
+  await assert.rejects(()=>undoBeforeHumanMove(page,fixture.options),message);
+  await expect.poll(()=>fixture.requests.length).toBe(1);
+  expect(fixture.reads).toEqual([]);
+ }
 });

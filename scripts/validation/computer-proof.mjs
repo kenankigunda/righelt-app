@@ -51,6 +51,7 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     await submitPlayableAction(humanAction);
     if ((await gameAt(page, initial.id)).canEndTurn) await page.locator('[data-action="end-turn"], [data-board-preview-action="end-turn"]').filter({visible:true}).click();
     await expect.poll(async () => (await gameAt(page, initial.id)).moves.some(move => move.computerProof?.modelId === initial.computer.modelId), { message: 'A real model decision must be accepted' }).toBe(true);
+    await expect.poll(async()=>(await gameAt(page,initial.id)).computerTurn,{message:'The completed computer turn must return control to the human before ordinary undo'}).toBeNull();
     const accepted = await gameAt(page, initial.id), decision = accepted.moves.find(move => move.computerProof);
     assert.equal(decision.computerProof.modelId, initial.computer.modelId);
     const evidence = await request(page, `/api/shell/games/${initial.id}/decision-attempt`, { attemptId: decision.computerProof.attemptId, kind: 'computer' });
@@ -60,7 +61,7 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     assert.ok(archive.items.some(item => item.id === decision.moveId), 'Accepted model decision must be durable');
     await proof(page, info, 'computer-accepted-play', page.getByTestId('game-board'));
     const human=humanMoveForUndo(initial,accepted,humanAction);
-    await undoBeforeHumanMove(page,{gameId:initial.id,moveId:human.moveId,identityId:initial.player1.identityId,initialState:initial.board.state});
+    await undoBeforeHumanMove(page,{gameId:initial.id,moveId:human.moveId,identityId:initial.player1.identityId,initialState:initial.board.state,beforeState:accepted.board.state,beforeRevision:accepted.gameplayRevision});
     await expect.poll(async () => (await gameAt(page, initial.id)).moves.filter(move => !move.undone).length).toBe(0);
     assert.deepEqual((await gameAt(page, initial.id)).board.state, initial.board.state);
     const retained = await request(page, `/api/shell/games/${initial.id}/decision-history`, {});
