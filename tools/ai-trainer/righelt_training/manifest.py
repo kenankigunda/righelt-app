@@ -66,7 +66,7 @@ def amend_manifest(directory,manifest,repair):
         raise ValueError('Repair changes model architecture')
     if prior['manifest'].get('explorationAdoption') != manifest.get('explorationAdoption'):
         raise ValueError('repair changes recipe adoption')
-    for key in ('pilotRecipe','replaySeed','warmStart','productionCorpus'):
+    for key in ('pilotRecipe','replaySeed','warmStart','productionCorpus','roundDataBinding','phaseContinuation'):
         if prior['manifest'].get(key)!=manifest.get(key):raise ValueError('Repair changes frozen pilot initialization/recipe/data')
     if prior['manifest'].get('finalFamilies')!=manifest.get('finalFamilies'):
         raise ValueError('Repair changes frozen final families')

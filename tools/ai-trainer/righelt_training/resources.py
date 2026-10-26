@@ -71,14 +71,21 @@ class AdaptivePolicy:
                  and math.isfinite(sample.activity_observed_at)
                  and 0 <= sample.now - sample.activity_observed_at <= LIMITS['activityFreshSeconds'])
         dev_busy = not fresh or sample.development_active is not False
-        coexists = False
+        coexists = False;exclusive_ramp=False;worker_ceiling=LIMITS['minWorkers']
         if coexistence is not None:
             try:
                 age = sample.now - timestamp(coexistence['observedAt'])
                 exclusive=(coexistence.get('exclusiveVerified')is True
                     and coexistence.get('foreignRssBytes')==0
                     and isinstance(coexistence.get('rootGrantId'),str)and bool(coexistence['rootGrantId']))
-                coexists = (POLICY_ID == 'production-headroom-v3' and (fresh or exclusive)
+                worker_ceiling=coexistence.get('exclusiveMaxWorkers',2)
+                memory_ceiling=coexistence.get('exclusiveMemoryGiB',16)
+                ramp_flag=coexistence.get('exclusiveRampAuthorized',False)
+                capacity_valid=(type(worker_ceiling)is int and worker_ceiling in(2,4,8)
+                    and type(memory_ceiling)is int and memory_ceiling==16
+                    and ramp_flag is(worker_ceiling>2)and(worker_ceiling==2 or exclusive))
+                exclusive_ramp=exclusive and capacity_valid and ramp_flag is True
+                coexists = (capacity_valid and POLICY_ID == 'production-headroom-v3' and (fresh or exclusive)
                     and 0 <= age <= LIMITS['sampleSeconds']
                     and coexistence['subject'] == 'model'
                     and coexistence['coexistenceVerified'] is True
@@ -93,7 +100,7 @@ class AdaptivePolicy:
             if not coexists:
                 return Allocation(0, LIMITS['minMemoryGiB'], True, False, 'coexistence-unverified')
             self.memory_ceiling = LIMITS['minMemoryGiB']
-            self.workers = LIMITS['minWorkers']
+            self.workers = min(self.workers,worker_ceiling)if exclusive_ramp else LIMITS['minWorkers']
         if POLICY_ID == 'production-headroom-v3' and dev_busy and not coexists:
             self.workers = LIMITS['minWorkers']
             self.quiet_since = None
@@ -103,7 +110,7 @@ class AdaptivePolicy:
                            if POLICY_ID == 'production-headroom-v3' else sample.memory_pressure != 'normal')
         pressured = (pressure_blocks or sample.available_bytes < LIMITS['pauseAvailableGiB'] * GIB
                      or not swap_known or swap_growth)
-        busy = dev_busy or sample.external_cpu_percent >= LIMITS['externalCpuBusyPercent']
+        busy = (dev_busy and not exclusive_ramp) or sample.external_cpu_percent >= LIMITS['externalCpuBusyPercent']
         headroom = sample.available_bytes >= LIMITS['resumeAvailableGiB'] * GIB
         # Check the already-granted ceiling before escalation: an over-limit
         # runner cannot escape pressure by qualifying for a larger allocation.
@@ -136,7 +143,7 @@ class AdaptivePolicy:
             return Allocation(0,LIMITS['minMemoryGiB'],True,False,'device-memory-unknown')
         if coexists and sample.available_bytes <= LIMITS['resumeAvailableGiB'] * GIB:
             return Allocation(0, LIMITS['minMemoryGiB'], True, False, 'coexistence-headroom')
-        if POLICY_ID == 'production-headroom-v3' and (coexists or sample.ramp_authorized is not True
+        if POLICY_ID == 'production-headroom-v3' and ((not exclusive_ramp and(coexists or sample.ramp_authorized is not True))
                                                      or sample.memory_pressure == 'warning'):
             self.workers=LIMITS['minWorkers'];self.quiet_since=None
             self.memory_ceiling=LIMITS['minMemoryGiB']
@@ -160,8 +167,8 @@ class AdaptivePolicy:
         if self.quiet_since is None:
             self.quiet_since = sample.now
         if sample.now - self.quiet_since >= LIMITS['quietSeconds'] and (self.last_ramp is None or sample.now - self.last_ramp >= LIMITS['rampSeconds']):
-            self.workers = min(LIMITS['maxWorkers'], self.workers + 1)
+            self.workers = min(worker_ceiling if exclusive_ramp else LIMITS['maxWorkers'], self.workers + 1)
             self.last_ramp = sample.now
-            ceiling = LIMITS['maxMemoryGiB']
+            ceiling = LIMITS['minMemoryGiB'] if exclusive_ramp else LIMITS['maxMemoryGiB']
             self.memory_ceiling = ceiling
         return Allocation(self.workers, ceiling, False, False, 'quiet-ramp')

@@ -124,6 +124,8 @@ class Runner:
                     or self.runtime['deadlineWall']>__import__('datetime').datetime.fromisoformat(contract['phaseDeadline']).timestamp()
                     or self.runtime.get('optimizationAllowed')!=(contract['phase']in ('pilot','main'))):
                 raise ValueError('Runner escaped fixed round contract')
+        from .phase_transfer import checked_phase_transfer
+        self.phase_transfer=checked_phase_transfer(self.manifest['manifest'],resume,self.directory)
         self.device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
         if record_architecture(self.runtime)!=record_architecture(self.manifest['manifest']):
             raise ValueError('Runner architecture differs from supervised manifest')
@@ -238,7 +240,7 @@ class Runner:
 
     def _restore(self, checkpoint):
         warm = getattr(self,'manifest',{}).get('manifest', {}).get('warmStart')
-        if warm and not (self.directory / 'latest.json').exists():
+        if warm and not (self.directory / 'latest.json').exists() and getattr(self,'phase_transfer',None)is None:
             if (checkpoint.resolve() != Path(warm['path']).resolve()
                     or hashlib.sha256(checkpoint.read_bytes()).hexdigest() != warm['sha256']):
                 raise ValueError('incremental warm-start checkpoint changed')

@@ -6,6 +6,11 @@ from datetime import datetime
 from .budget import Budget
 
 
+ROUND_SECONDS=86400
+PILOT_SECONDS=8*3600
+RELEASE_RESERVE_SECONDS=5*3600
+
+
 def stamp(value):
     d=datetime.fromisoformat(value.replace('Z','+00:00'))
     if d.tzinfo is None:raise ValueError('Round timezone required')
@@ -20,13 +25,13 @@ def validate_round(contract,state,now):
         raise ValueError('Original round identity changed')
     start,end=stamp(contract['executionStartedAt']),stamp(contract['deadline'])
     phase=contract.get('phase');phase_end=stamp(contract['phaseDeadline'])
-    if not math.isfinite(now)or end-start!=86400 or not start<=now<phase_end<=end:
+    if not math.isfinite(now)or end-start!=ROUND_SECONDS or not start<=now<phase_end<=end:
         raise ValueError('Expired or reset24-hour round')
     if phase not in ('pilot','main','evaluation','handoff-proof'):
         raise ValueError('Unknown round phase')
-    if phase=='pilot'and phase_end>start+8*3600:
+    if phase=='pilot'and phase_end>start+PILOT_SECONDS:
         raise ValueError('Pilot exceeds implementation/pilot reserve')
-    if phase=='main'and phase_end>end-5*3600:
+    if phase=='main'and phase_end>end-RELEASE_RESERVE_SECONDS:
         raise ValueError('Main training consumes release reserve')
     if contract.get('checkpointReserveSeconds')!=60:
         raise ValueError('Round checkpoint reserve changed')

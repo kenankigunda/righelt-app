@@ -34,6 +34,19 @@ def atomic(path, value):
     os.replace(temporary, path)
 
 
+def capacity_binding(permit,binding):
+    legacy={'maxWorkers':2,'maxMemoryGiB':16,'rampAuthorized':False}
+    capacity=permit.get('capacity',legacy)
+    if (not isinstance(capacity,dict)or set(capacity)!=set(legacy)
+            or type(capacity['maxWorkers'])is not int or capacity['maxWorkers']not in(2,4,8)
+            or type(capacity['maxMemoryGiB'])is not int or capacity['maxMemoryGiB']!=16
+            or capacity['rampAuthorized']is not(capacity['maxWorkers']>2)
+            or binding.get('capacity',legacy)!=capacity
+            or(capacity['maxWorkers']>2 and permit.get('mode')!='exclusive')):
+        raise ValueError('Explicit exclusive worker capacity mismatch')
+    return capacity
+
+
 class LeaseGuard:
     """A launch binding must be refreshed explicitly for every checkpoint resume."""
     def __init__(self, binding, runtime, directory, *, clock=time.time, monotonic=time.monotonic, execute=subprocess.run):
@@ -83,12 +96,13 @@ class LeaseGuard:
         if self.permit['overallDeadline'] != followup['deadline'] or self.runtime['deadlineWall'] > end:
             raise ValueError('Runtime exceeds original deadline')
         grant = followup['currentResourceGrant']
+        capacity=capacity_binding(self.permit,self.binding)
         if (grant.get('active') is not True or grant.get('subject') != 'model'
                 or grant.get('grantId') != self.permit['grantId']
                 or grant.get('permitSha256') != self.binding['permitSha256']
                 or grant.get('recordedAt') != self.permit['grantRecordedAt']
-                or grant.get('maxWorkers') != 2 or grant.get('maxMemoryGiB') != 16
-                or grant.get('rampAuthorized') is not False):
+                or grant.get('maxWorkers') != capacity['maxWorkers'] or grant.get('maxMemoryGiB') != capacity['maxMemoryGiB']
+                or grant.get('rampAuthorized') is not capacity['rampAuthorized']):
             raise ValueError('Model grant withdrawn or changed')
         if grant.get('handoffRequested')is True:
             raise ValueError('Model handoff requested')
@@ -174,7 +188,10 @@ class LeaseGuard:
             raise UnsafeResources('Closing exclusive source binding changed')
         if self.monotonic()>=deadline:raise UnsafeResources('Exclusive observation timed out')
         self.check()
+        capacity=capacity_binding(self.permit,self.binding)
         return {'subject':'model','decision':'continue','coexistenceVerified':True,
+                'exclusiveMaxWorkers':capacity['maxWorkers'],'exclusiveMemoryGiB':16,
+                'exclusiveRampAuthorized':capacity['rampAuthorized'],
                 'exclusiveVerified':True,'rootGrantId':grant['grantId'],
                 'permitSha256':self.binding['permitSha256'],
                 'observedAt':datetime.now().astimezone().isoformat(),
