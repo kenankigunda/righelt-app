@@ -48,6 +48,7 @@ import { SWIPE_EASING_CSS } from './navigation-motion.js';
 import { getGameResult, createResultTransitions, createRematchDialog } from './game-result.js';
 import { renderResultMark, createResultPresentation } from './result-presentation.js';
 import { createRouteHydration } from './route-hydration.js';
+import { invitationLoadFailureKind, renderInviteLoadRecovery } from './invite-load-recovery.js';
 import { createRenderGestureGate, preserveBoardFocus } from './render-gesture.js';
 import { participantButton, participantName, participantDisplayName, createInlineProfiles } from './public-profile.js';
 import { renderPlayersPanel } from './players-panel.js';
@@ -271,6 +272,7 @@ const notificationStack = createNotificationStack();
 const seenUndoRequestOutcomeByGameId = new Map();
 let routeHydrated = false;
 let resolvedInvite = null;
+let inviteLoadState = null;
 let scenarioCatalog = { id: "S", title: "Saved Scenarios", scenarios: [] };
 let selectedScenarioId = null;
 let selectedScenarioFeedback = "";
@@ -3882,7 +3884,12 @@ const renderContent = ({ animatePanels, includeBoard }) => {
     const inviteContext = getInviteContextForGame(game, "game");
     body = inviteContext ? renderInviteLanding(inviteContext) : renderGame(currentRoute.gameId, currentRoute.inviteFromRole);
   } else if (currentRoute.name === "invite") {
-    if (!routeHydrated) {
+    if (inviteLoadState && routeReadIsCurrent(inviteLoadState.read) && (inviteLoadState.status === "error" || inviteLoadState.retrying)) {
+      body = renderInvitationSurface({
+        content: renderInviteLoadRecovery({ pending: inviteLoadState.status === "loading", kind: inviteLoadState.kind, loadingKey: `invitation-load:${inviteLoadState.requestId}`, homeHref: buildHomeHash(getCurrentFlyoutState()) }),
+        background: renderGameViewSkeleton(),
+      });
+    } else if (!routeHydrated) {
       body = renderInvitePageSkeleton();
     } else {
       const game = resolvedInvite?.gameId ? transport.getGameViewModel(resolvedInvite.gameId) : null;
@@ -3987,27 +3994,40 @@ const withPendingButton = async (pendingKey, fn, { renderStart = true, renderEnd
   }
 };
 
+const routeReadKey = hash => {
+  // Ignore only utility parameters; retain token, role, panel and unknown inputs.
+  const [path, query = ""] = hash.split("?");
+  const params = new URLSearchParams(query);
+  for (const key of FLYOUT_KEYS) params.delete(key);
+  const text = params.toString();
+  return `${path}${text ? `?${text}` : ""}`;
+};
 const captureRouteRead = () => {
   // A queued authority refresh can run after the URL changes but before the
   // browser delivers hashchange. Keep the read and its deduplication key on
   // the same URL instead of sharing an old route's work under the new hash.
   const hash = window.location.hash;
-  return {
+  const read = {
     generation: account.snapshot().generation,
     hash,
+    routeKey: routeReadKey(hash),
     owner: transport,
     route: parseRouteFromHash(hash),
     inputs: JSON.stringify(getVisibleHomeSectionKeys().map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])),
   };
+  read.epoch = hydrateRoute.observe(read);
+  return read;
 };
-const routeReadIsCurrent = read => read.generation === account.snapshot().generation && read.hash === window.location.hash && read.owner === transport;
-const assertCurrentRouteRead = read => {
-  if (!routeReadIsCurrent(read)) throw Object.assign(new Error("session_changed"), { code: "session_changed" });
+const routeReadIsCurrent = read => {
+  const current = captureRouteRead();
+  return read.generation === current.generation && read.routeKey === current.routeKey && read.owner === current.owner && read.epoch === current.epoch;
 };
-const syncRouteDataAndLiveChannels = () => {
-  const read = captureRouteRead();
-  return hydrateRoute(read, async () => {
-    assertCurrentRouteRead(read);
+const assertCurrentRouteRead = (read, isActive = () => true) => {
+  if (!routeReadIsCurrent(read) || !isActive()) throw Object.assign(new Error("session_changed"), { code: "session_changed" });
+};
+const syncRouteDataAndLiveChannels = (read = captureRouteRead()) => {
+  return hydrateRoute(read, async isActive => {
+    assertCurrentRouteRead(read, isActive);
     if (read.route.name === "home") await syncHomeSections();
     if (read.route.name === "game") {
       resolvedInvite = null;
@@ -4015,14 +4035,14 @@ const syncRouteDataAndLiveChannels = () => {
     }
     if (read.route.name === "invite") {
       const invite = await read.owner.resolveInvite(read.route.inviteToken);
-      assertCurrentRouteRead(read);
+      assertCurrentRouteRead(read, isActive);
       // Keep validated invitation routing metadata even if its board requires an
       // upgrade. It identifies the recovery fence without trusting a snapshot.
       resolvedInvite = invite;
       await read.owner.loadGame(invite.gameId, { openAsViewer: false });
-      assertCurrentRouteRead(read);
+      assertCurrentRouteRead(read, isActive);
     }
-    assertCurrentRouteRead(read);
+    assertCurrentRouteRead(read, isActive);
     syncLiveChannels();
   });
 };
@@ -4080,6 +4100,10 @@ const canHydrateRouteFromLocalState = (route = currentRoute) => {
 
 const startRouteSync = ({ renderStart = true } = {}) => {
   const requestId = ++routeSyncRequestId;
+  const read = captureRouteRead();
+  const retrying = read.route.name === "invite" && inviteLoadState?.status === "error" && routeReadIsCurrent(inviteLoadState.read);
+  inviteLoadState = read.route.name === "invite" ? { read, requestId, status: "loading", retrying, kind: "retry" } : null;
+  resolvedInvite = null;
   routeHydrated = false;
   syncLiveChannels();
   if (renderStart) {
@@ -4087,13 +4111,21 @@ const startRouteSync = ({ renderStart = true } = {}) => {
   }
   void (async () => {
     try {
-      await syncRouteDataAndLiveChannels();
-    } catch (error) {
-      window.__righeltLastError = error instanceof Error ? error.message : String(error);
-    } finally {
-      if (requestId !== routeSyncRequestId) {
-        return;
+      await syncRouteDataAndLiveChannels(read);
+      if (requestId === routeSyncRequestId && routeReadIsCurrent(read)) {
+        inviteLoadState = null;
+        issueDiagnostics.resolve("invite-load");
       }
+    } catch (error) {
+      if (requestId !== routeSyncRequestId || !routeReadIsCurrent(read)) return;
+      window.__righeltLastError = error instanceof Error ? error.message : String(error);
+      if (read.route.name === "invite" && error?.code !== "upgrade_required") {
+        resolvedInvite = null;
+        inviteLoadState = { read, requestId, status: "error", retrying: false, kind: invitationLoadFailureKind(error) };
+        issueDiagnostics.capture("invite-load", { ...error?.diagnosticEvidence, operation: "invitation_lookup", stage: "route_read_failed", code: error?.code ?? "unavailable", status: error?.status ?? null });
+      } else inviteLoadState = null;
+    } finally {
+      if (requestId !== routeSyncRequestId || !routeReadIsCurrent(read)) return;
       routeHydrated = true;
       render({ animatePanels: false, includeBoard: false });
       maybeRevealRouteTransition();
@@ -4432,6 +4464,8 @@ const subscribeToTransport = () => transport.subscribe((change) => {
 subscribeToTransport();
 accountInitialized = true;
 function resetAccountTransport(next) {
+  inviteLoadState = null;
+  if (currentRoute.name === "invite") resolvedInvite = null;
   joinFeedback.clear();
   additionalHistory.clear();
   utilityMemory.clear(); expandedViewerGames.clear(); expandedComputerCards.clear();
@@ -4529,6 +4563,9 @@ window.addEventListener("hashchange", () => {
     window.scrollTo({top:0,behavior:'instant'});
   }
   syncRouteTransitionForCurrentRoute();
+  // Observe before normalization or cached fast paths can skip hydration.
+  const previousRouteEpoch = hydrateRoute.currentEpoch();
+  const routeReadChanged = captureRouteRead().epoch !== previousRouteEpoch;
   const normalizedHash = buildHashForRoute(currentRoute);
   if (window.location.hash !== normalizedHash) {
     window.location.hash = normalizedHash;
@@ -4542,7 +4579,7 @@ window.addEventListener("hashchange", () => {
     maybeRevealRouteTransition();
     return;
   }
-  if (isFlyoutOnlyRouteChange(previousRoute, currentRoute)) {
+  if (!routeReadChanged && isFlyoutOnlyRouteChange(previousRoute, currentRoute)) {
     if (currentRoute.name === "home" && previousRoute.debug !== currentRoute.debug) {
       startRouteSync({ renderStart: false });
       return;
@@ -4673,6 +4710,10 @@ appEl.addEventListener("click", async (event) => {
   }
 
   const action = actionEl.getAttribute("data-action");
+  if (action === "retry-invite-load") {
+    if (currentRoute.name === "invite" && inviteLoadState?.status === "error" && inviteLoadState.kind === "retry" && routeReadIsCurrent(inviteLoadState.read)) startRouteSync();
+    return;
+  }
   if (action === "toggle-diagnostic" || action === "copy-diagnostic" || action === "dismiss-diagnostic") {
     event.stopPropagation();
     await handleDiagnosticAction(actionEl);

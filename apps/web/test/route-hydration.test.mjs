@@ -27,3 +27,35 @@ test('new generation, route, and transport never reuse old authority reads', asy
     assert.equal(await current, 'current');
   }
 });
+
+test('only the current hydration flight can publish after navigating away and back to the same route', async () => {
+  const hydrate=createRouteHydration(), owner={};
+  let firstActive, releaseFirst;
+  const key={generation:1,hash:'#/invite/a',owner};
+  const first=hydrate(key, isActive=>{firstActive=isActive;return new Promise(resolve=>{releaseFirst=resolve;});});
+  await Promise.resolve();assert.equal(firstActive(),true);
+  await hydrate({...key,hash:'#/invite/b'},async isActive=>assert.equal(isActive(),true));
+  assert.equal(firstActive(),false);
+  const current=hydrate(key,async isActive=>{assert.equal(isActive(),true);assert.equal(firstActive(),false);return 'new-a';});
+  assert.equal(await current,'new-a');releaseFirst('old-a');assert.equal(await first,'old-a');assert.equal(firstActive(),false);
+});
+
+
+test('observing a cached route invalidates a pending flight without starting another read',async()=>{
+  const hydrate=createRouteHydration(),owner={};let active,release;
+  const firstKey={generation:1,hash:'#/invite/a',owner};
+  const first=hydrate(firstKey,isActive=>{active=isActive;return new Promise(resolve=>{release=resolve;});});
+  await Promise.resolve();const oldEpoch=hydrate.currentEpoch();
+  hydrate.observe({...firstKey,hash:'#/game/cached'});assert.equal(active(),false);assert.notEqual(hydrate.currentEpoch(),oldEpoch);
+  const fresh=hydrate(firstKey,async()=> 'fresh');assert.notEqual(fresh,first);assert.equal(await fresh,'fresh');release();await first;
+});
+
+test('utility-only URLs share the canonical flight while stale captured epochs cannot retire current work',async()=>{
+  const hydrate=createRouteHydration(),owner={};let release;
+  const key={generation:1,hash:'#/invite/a',routeKey:'#/invite/a',owner};key.epoch=hydrate.observe(key);
+  const first=hydrate(key,()=>new Promise(resolve=>{release=resolve;}));await Promise.resolve();
+  assert.equal(hydrate({...key,hash:'#/invite/a?scenarios=1'},()=>assert.fail('duplicate lookup')),first);
+  const next={...key,routeKey:'#/invite/b'};next.epoch=hydrate.observe(next);
+  const second=hydrate(next,async()=> 'b');await assert.rejects(hydrate(key,()=>assert.fail('stale lookup')),/session_changed/);
+  assert.equal(await second,'b');release();await first;
+});
