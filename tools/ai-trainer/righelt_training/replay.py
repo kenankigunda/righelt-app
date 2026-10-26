@@ -34,11 +34,12 @@ def save_game(directory,game):
     return path
 
 class ReplayBuffer:
-    def __init__(self,capacity=None,*,protected_encoding_hashes=()):
+    def __init__(self,capacity=None,*,protected_encoding_hashes=(),protected_family_ids=()):
         self.positions=deque(maxlen=capacity or CONFIG['training']['replayCapacity'])
         self.ids=set()
         self.game_ids=[]
         self.protected_encoding_hashes=frozenset(protected_encoding_hashes)
+        self.protected_family_ids=frozenset(protected_family_ids)
         self.protected_exclusions={}
 
     def append(self,game):
@@ -50,10 +51,15 @@ class ReplayBuffer:
         # Validate all recipe bindings before mutating the replay buffer.
         for decision in game['decisions']:
             validate_decision_recipe(decision)
-            if self.protected_encoding_hashes and 'encoded' not in decision:
+            if (self.protected_encoding_hashes or self.protected_family_ids) and 'encoded' not in decision:
                 raise ValueError('protected replay requires encoded position evidence')
         from .sequence_targets import observed_future_targets
-        future_targets=observed_future_targets(game['decisions'],protected_encodings=self.protected_encoding_hashes)
+        endpoint=None
+        if 'finalEncoding'in game and 'finalTurnIndex'in game:
+            endpoint={'encoded':game['finalEncoding'],'turnIndex':game['finalTurnIndex'],
+                      'stateHash':game['finalHash'],'terminal':terminal}
+        future_targets=observed_future_targets(game['decisions'],protected_encodings=self.protected_encoding_hashes,
+            protected_families=self.protected_family_ids,endpoint=endpoint)
         for decision,future in zip(game['decisions'],future_targets):
             position={k:decision[k] for k in ('id','legal','policy','policyMask','fallback','legality','trainingRecipe') if k in decision}
             mask=decision.get('policyMask',True)
@@ -80,6 +86,11 @@ class ReplayBuffer:
             if self.protected_encoding_hashes and encoding_hash(position['encoded']) in self.protected_encoding_hashes:
                 self.protected_exclusions[game['id']]=self.protected_exclusions.get(game['id'],0)+1
                 continue
+            if self.protected_family_ids:
+                from .evaluation_families import commander_family
+                if commander_family(position['encoded']) in self.protected_family_ids:
+                    self.protected_exclusions[game['id']]=self.protected_exclusions.get(game['id'],0)+1
+                    continue
             if any(future['mask']):position['futureFacts']=future
             self.positions.append({**position,'terminalMask':terminal,'terminalValue':value,'gameId':game['id']})
         self.ids.add(game['id'])

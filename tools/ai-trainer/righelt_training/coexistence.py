@@ -8,6 +8,7 @@ import subprocess
 import time
 from datetime import datetime
 from .manifest_envelope import active_envelope
+RESOURCE_SYSTEM=Path(__file__).resolve().parents[4]/'righelt-validation-tools/scripts/resources/system.mjs'
 
 
 def timestamp(value):
@@ -96,6 +97,8 @@ class LeaseGuard:
 
     def observe(self, sample):
         self.check()
+        if self.permit.get('mode')=='exclusive':
+            return self.observe_exclusive(sample)
         try:
             result = self.execute(['node', self.binding['readerPath'], os.environ['RIGHELT_RESOURCE_RUN'],
                                self.binding['permitPath'], self.binding['permitSha256'], self.binding['statePath'],
@@ -109,6 +112,71 @@ class LeaseGuard:
             raise ValueError('Actual ownership observation mismatch')
         self.check()
         return observation
+
+    def observe_exclusive(self,sample):
+        """Reviewed serialized fallback, a positive lease, never a fake idle flag."""
+        deadline=self.monotonic()+5
+        def execute(args,**kwargs):
+            remaining=deadline-self.monotonic()
+            if remaining<=0:raise UnsafeResources('Exclusive observation timed out')
+            kwargs['timeout']=min(kwargs.get('timeout',remaining),remaining)
+            result=self.execute(args,**kwargs)
+            if self.monotonic()>=deadline:raise UnsafeResources('Exclusive observation timed out')
+            return result
+        if (type(sample.experiment_bytes)is not int or not 0<=sample.experiment_bytes<=16*1024**3
+                or sample.memory_pressure not in ('normal','warning')
+                or type(sample.available_bytes)is not int or sample.available_bytes<6*1024**3):
+            raise UnsafeResources('Unsafe exclusive host or model memory')
+        registry=(Path.home()/'.local/state/righelt/resources').resolve(strict=True)
+        if (self.permit.get('registryPath')!=str(registry)
+                or os.environ.get('RIGHELT_RESOURCE_REGISTRY',str(registry))!=str(registry)):
+            raise UnsafeResources('Global exclusive registry binding changed')
+        grant=json.loads(Path(self.binding['statePath']).read_text())['followupTraining']['currentResourceGrant']
+        if grant.get('mode')!='exclusive':raise UnsafeResources('Exclusive lease required')
+        inputs=self.binding.get('exclusiveInputs')
+        if not isinstance(inputs,dict)or str(RESOURCE_SYSTEM.resolve())not in inputs or any(digest(path)!=expected for path,expected in inputs.items()):
+            raise UnsafeResources('Frozen exclusive dependencies changed')
+        if digest(self.binding['permitPath'])!=self.binding['permitSha256']:
+            raise UnsafeResources('Exclusive permit changed')
+        if Path.cwd().resolve()!=Path(self.permit['model']['cwd']).resolve():
+            raise UnsafeResources('Exclusive working directory changed')
+        if digest(self.binding['readerPath'])!=self.binding['readerSha256']:
+            raise UnsafeResources('Reviewed exclusive reader changed')
+        run=os.environ['RIGHELT_RESOURCE_RUN']
+        own=json.loads((registry/(run+'.json')).read_text())
+        if own['cwd']!=self.permit['model']['cwd']or own['kind']!='heavy'or own['pgid']!=os.getpgrp():
+            raise UnsafeResources('Exclusive caller ownership mismatch')
+        env={**os.environ,'RIGHELT_RESOURCE_REGISTRY':str(registry)}
+        try:
+            head=execute(['git','rev-parse','HEAD'],cwd=self.permit['model']['cwd'],capture_output=True,text=True,timeout=2,check=True).stdout.strip()
+            dirty=execute(['git','status','--porcelain','--untracked-files=normal'],cwd=self.permit['model']['cwd'],capture_output=True,text=True,timeout=2,check=True).stdout.strip()
+            if head!=self.binding['sourceRevision']or dirty:
+                raise UnsafeResources('Exclusive source changed')
+            outputs=[]
+            for _ in range(2):
+                result=execute(['node',self.binding['readerPath'],run],env=env,
+                    capture_output=True,text=True,timeout=5,check=True)
+                outputs.append(json.loads(result.stdout))
+        except (OSError,ValueError,subprocess.SubprocessError)as error:
+            raise UnsafeResources('Actual exclusive ownership unavailable')from error
+        try:
+            closing_head=execute(['git','rev-parse','HEAD'],cwd=self.permit['model']['cwd'],capture_output=True,text=True,timeout=2,check=True).stdout.strip()
+            closing_dirty=execute(['git','status','--porcelain','--untracked-files=normal'],cwd=self.permit['model']['cwd'],capture_output=True,text=True,timeout=2,check=True).stdout.strip()
+            if closing_head!=self.binding['sourceRevision']or closing_dirty:
+                raise UnsafeResources('Closing exclusive checkout changed')
+        except(OSError,ValueError,subprocess.SubprocessError)as error:
+            raise UnsafeResources('Closing exclusive source unavailable')from error
+        if any(o.get('exclusiveVerified')is not True or o.get('blockers')!=[] for o in outputs):
+            raise UnsafeResources('Foreign work or unknown ownership')
+        if any(digest(path)!=expected for path,expected in inputs.items())or digest(self.binding['permitPath'])!=self.binding['permitSha256']or digest(self.binding['readerPath'])!=self.binding['readerSha256']:
+            raise UnsafeResources('Closing exclusive source binding changed')
+        if self.monotonic()>=deadline:raise UnsafeResources('Exclusive observation timed out')
+        self.check()
+        return {'subject':'model','decision':'continue','coexistenceVerified':True,
+                'exclusiveVerified':True,'rootGrantId':grant['grantId'],
+                'permitSha256':self.binding['permitSha256'],
+                'observedAt':datetime.now().astimezone().isoformat(),
+                'modelBytes':sample.experiment_bytes,'foreignRssBytes':0,'blockers':[]}
 
     def request_handoff(self, reason):
         if self.handoff_at is None:

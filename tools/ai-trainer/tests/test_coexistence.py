@@ -16,7 +16,7 @@ from dataclasses import asdict
 
 from righelt_training.coexistence import LeaseGuard, timestamp
 from righelt_training.coexistence import atomic
-from righelt_training.coexistence import UnsafeResources
+from righelt_training.coexistence import UnsafeResources,RESOURCE_SYSTEM
 from righelt_training.resources import AdaptivePolicy, Sample, GIB
 
 
@@ -65,6 +65,15 @@ class CoexistencePolicyTest(unittest.TestCase):
                 a = AdaptivePolicy().decide(sample(**changes), coexistence=observation())
                 self.assertTrue(a.paused)
                 self.assertEqual(a.workers, 0)
+
+    def test_explicit_exclusive_proof_can_bound_unknown_chat_activity_without_faking_idle(self):
+        s=sample(activity_observed_at=None,development_active=None)
+        receipt=observation(exclusiveVerified=True,foreignRssBytes=0,rootGrantId='root-exclusive')
+        self.assertFalse(AdaptivePolicy().decide(s,coexistence=receipt).paused)
+        self.assertIsNone(s.development_active)
+        self.assertTrue(AdaptivePolicy().decide(s,coexistence={**receipt,'rootGrantId':''}).paused)
+        self.assertTrue(AdaptivePolicy().decide(s,coexistence={**receipt,'foreignRssBytes':1}).paused)
+        self.assertTrue(AdaptivePolicy().decide(replace(s,memory_pressure='critical'),coexistence=receipt).stop)
 
     def test_coexistence_never_ramps_with_idle_activity(self):
         p = AdaptivePolicy()
@@ -180,6 +189,57 @@ class LeaseTest(unittest.TestCase):
         with patch.dict(os.environ,{'RIGHELT_RESOURCE_RUN':'test-own-run'}):
             with self.assertRaisesRegex(ValueError,'observation mismatch'):g.observe(sample())
 
+    def exclusive_fixture(self):
+        registry=self.root/'.local/state/righelt/resources'
+        registry.mkdir(parents=True)
+        (registry/'own-run.json').write_text(json.dumps({'cwd':str(self.root),'kind':'heavy','pgid':os.getpgrp()}))
+        self.permit.update(mode='exclusive',registryPath=str(registry),model={'sourceRevision':'a'*40,'cwd':str(self.root)})
+        self.permit_path.write_text(json.dumps(self.permit))
+        self.binding['permitSha256']=self.sha(self.permit_path)
+        self.binding['exclusiveInputs']={str(self.reader):self.sha(self.reader),str(RESOURCE_SYSTEM.resolve()):self.sha(RESOURCE_SYSTEM)}
+        self.grant.update(mode='exclusive',permitSha256=self.binding['permitSha256'])
+        self.write_state()
+        return registry
+
+    def test_exclusive_actual_binding_closes_over_source_and_owned_registry(self):
+        self.exclusive_fixture()
+        def execute(args,**kwargs):
+            if args[:2]==['git','rev-parse']:return SimpleNamespace(stdout='a'*40)
+            if args[:2]==['git','status']:return SimpleNamespace(stdout='')
+            return SimpleNamespace(stdout=json.dumps({'exclusiveVerified':True,'blockers':[]}))
+        with patch.object(Path,'home',return_value=self.root),patch.object(Path,'cwd',return_value=self.root),patch.dict(os.environ,{'RIGHELT_RESOURCE_RUN':'own-run'},clear=False):
+            g=self.guard(execute)
+            self.assertTrue(g.observe(sample())['exclusiveVerified'])
+            self.reader.write_text('changed source')
+            with self.assertRaises(UnsafeResources):g.observe(sample())
+
+    def test_exclusive_unsafe_memory_stops_before_any_reader(self):
+        self.exclusive_fixture();execute=Mock(side_effect=AssertionError('No unsafe read'))
+        with patch.object(Path,'home',return_value=self.root),patch.object(Path,'cwd',return_value=self.root),patch.dict(os.environ,{'RIGHELT_RESOURCE_RUN':'own-run'},clear=False):
+            g=self.guard(execute)
+            for change in ({'experiment_bytes':17*GIB},{'experiment_bytes':float('nan')},{'memory_pressure':'unknown'},{'available_bytes':5*GIB}):
+                with self.assertRaises(UnsafeResources):g.observe(sample(**change))
+        execute.assert_not_called()
+
+    def test_exclusive_all_calls_share_single_observation_deadline(self):
+        self.exclusive_fixture();elapsed=[1000.]
+        def execute(args,**kwargs):
+            elapsed[0]+=3
+            return SimpleNamespace(stdout='a'*40 if args[:2]==['git','rev-parse']else'')
+        with patch.object(Path,'home',return_value=self.root),patch.object(Path,'cwd',return_value=self.root),patch.dict(os.environ,{'RIGHELT_RESOURCE_RUN':'own-run'},clear=False):
+            g=self.guard(execute);g.monotonic=lambda:elapsed[0]
+            with self.assertRaisesRegex(UnsafeResources,'timed out'):g.observe(sample())
+
+    def test_exclusive_closing_checkout_change_fails_closed(self):
+        self.exclusive_fixture();calls=[]
+        def execute(args,**kwargs):
+            calls.append(args)
+            if args[:2]==['git','rev-parse']:return SimpleNamespace(stdout='a'*40)
+            if args[:2]==['git','status']:return SimpleNamespace(stdout=''if len(calls)<5 else' M changed')
+            return SimpleNamespace(stdout=json.dumps({'exclusiveVerified':True,'blockers':[]}))
+        with patch.object(Path,'home',return_value=self.root),patch.object(Path,'cwd',return_value=self.root),patch.dict(os.environ,{'RIGHELT_RESOURCE_RUN':'own-run'},clear=False):
+            with self.assertRaisesRegex(UnsafeResources,'checkout changed'):self.guard(execute).observe(sample())
+
     def test_naive_dates_fail_closed(self):
         with self.assertRaises(ValueError):timestamp('2026-10-25T12:00:00')
 
@@ -206,7 +266,7 @@ class LeaseTest(unittest.TestCase):
                    'LIMITS':{'sampleSeconds':5,'startupHeartbeatSeconds':30,'minMemoryGiB':16,'pauseAvailableGiB':6},
                    'Path':Path,'json':json,'os':os,'subprocess':subprocess,
                    'stop_group':stop,'asdict':asdict,'atomic_json':atomic,'replace':replace,
-                   'UnsafeResources':UnsafeResources}
+                   'UnsafeResources':UnsafeResources,'read_device_memory':Mock(return_value=(0,False)),'signal':SimpleNamespace(SIGUSR1=10)}
         exec(compile(ast.Module(body=[node],type_ignores=[]),str(source),'exec'),namespace)
         return namespace['supervise']
 
@@ -232,6 +292,35 @@ class LeaseTest(unittest.TestCase):
         self.assertEqual(result,'completed')
         self.assertEqual(json.loads((self.root/'allocation.json').read_text())['workers'],2)
         self.assertTrue(telemetry.sample.return_value.development_active)
+
+    def test_actual_watchdog_unknown_initial_heartbeat_gets_no_workers_then_recovers(self):
+        g=Mock();g.handoff_at=None;g.cleanup_due.return_value=False
+        g.observe.side_effect=lambda s:observation(observedAt=iso(self.now))
+        process=Mock();process.pid=123;process.returncode=None;process.poll.side_effect=lambda:process.returncode
+        telemetry=Mock();telemetry.sample.side_effect=lambda:sample(now=self.now,activity_observed_at=self.now,device_memory_known=self.now>1000)
+        allocations=[]
+        def tick(_):
+            allocations.append(json.loads((self.root/'allocation.json').read_text()))
+            if self.now>=1005:process.returncode=0
+            self.now+=5
+        budget=Mock();budget.remaining.return_value=1000
+        self.assertEqual(self.supervisor_function(Mock())(process,budget,AdaptivePolicy(),telemetry,self.root,guard=g,clock=lambda:self.now,sleep=tick),'completed')
+        self.assertEqual(allocations[0]['workers'],0)
+        self.assertEqual(allocations[-1]['workers'],2)
+        g.request_handoff.assert_not_called()
+
+    def test_actual_watchdog_lost_established_heartbeat_stops_owned_process(self):
+        g=Mock();g.handoff_at=None;g.cleanup_due.return_value=False
+        g.observe.side_effect=lambda s:observation(observedAt=iso(self.now))
+        process=Mock();process.pid=123;process.returncode=None;process.poll.side_effect=lambda:process.returncode
+        telemetry=Mock();telemetry.sample.side_effect=lambda:sample(now=self.now,activity_observed_at=self.now,device_memory_known=self.now==1000)
+        budget=Mock();budget.remaining.return_value=1000
+        def tick(_):self.now+=5
+        stop=Mock()
+        self.assertEqual(self.supervisor_function(stop)(process,budget,AdaptivePolicy(),telemetry,self.root,guard=g,clock=lambda:self.now,sleep=tick),'resource-pressure-stop')
+        self.assertEqual(self.now,1010)
+        self.assertEqual(json.loads((self.root/'allocation.json').read_text())['workers'],0)
+        self.assertTrue(stop.called)
 
     def test_actual_watchdog_revocation_requests_checkpoint_and_cleans(self):
         g=self.guard()

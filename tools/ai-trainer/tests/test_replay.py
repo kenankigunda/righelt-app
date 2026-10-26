@@ -28,4 +28,13 @@ class ReplayTest(unittest.TestCase):
         b.append(self.game())
         with self.assertRaises(ValueError):b.append(self.game())
 
+    def test_all_origin_family_guard_excludes_inherited_position(self):
+        from righelt_training.evaluation_families import commander_family
+        encoded=[0.]*4600;encoded[0]=1.;encoded[1300+99]=1.
+        g=self.game();g['decisions'][0]['encoded']=encoded
+        b=ReplayBuffer(protected_family_ids={commander_family(encoded)});b.append(g)
+        self.assertEqual(len(b.positions),0)
+        self.assertEqual(b.protected_exclusions[g['id']],1)
+        self.assertEqual(b.game_ids,[g['id']])
+
 if __name__=='__main__':unittest.main()

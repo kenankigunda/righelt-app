@@ -66,6 +66,10 @@ def amend_manifest(directory,manifest,repair):
         raise ValueError('Repair changes model architecture')
     if prior['manifest'].get('explorationAdoption') != manifest.get('explorationAdoption'):
         raise ValueError('repair changes recipe adoption')
+    if prior['manifest'].get('finalFamilies')!=manifest.get('finalFamilies'):
+        raise ValueError('Repair changes frozen final families')
+    if prior['manifest'].get('roundContract')!=manifest.get('roundContract'):
+        raise ValueError('Repair changes fixed round clock/phase')
     if prior['manifest']==manifest:return prior
     if prior['manifest'].get('continuation')!=manifest.get('continuation'):
         raise ValueError('repair changes continuation authorization')

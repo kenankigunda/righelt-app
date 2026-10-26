@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {deterministicStateHash,listLegalActions} from '../../../packages/game-engine/src/index.ts';
-import {transition} from '../../../packages/computer-player/src/index.ts';
+import {transition,encodeState} from '../../../packages/computer-player/src/index.ts';
 import {commanderOutcome} from '../../../packages/shared-types/src/commander-outcome.js';
 import {commander,unit,makeState} from '../../../packages/game-engine/test/helpers/state-builders.mjs';
 import {replayDecision,legacyCommanderReplayState} from '../decision-replay.mjs';
@@ -104,4 +104,16 @@ test('a retained terminal warmup preserves its exact old initial and final hashe
  }
  const changed=structuredClone(game);changed.warmupActions[0]={type:'pass'};await assert.rejects(replay(changed),/Cannot apply invalid action/);
  await assert.rejects(replay({...game,finalHash:'altered'}),/Replay final hash mismatch/);
+});
+
+test('terminal endpoint teaching facts are exact engine facts, never caller inventions',async()=>{
+ const source=destroyedCommanderGame(),game={id:'terminal-endpoint',partition:'train',initialState:source.initial,decisions:source.decisions,finalHash:deterministicStateHash(source.retained),outcome:source.retained.outcome,termination:'terminal',finalTurnIndex:source.retained.turnIndex,finalEncoding:Array.from(encodeState(source.retained))};
+ const replay=g=>new Promise((resolve,reject)=>{
+  const child=execFile(process.execPath,['--import','tsx','tools/ai-trainer/engine-worker.mjs'],{timeout:10000},(error,stdout,stderr)=>error?reject(new Error(`${stderr}\n${stdout}`,{cause:error})):resolve(JSON.parse(stdout.trim())));
+  child.stdin.end(JSON.stringify({command:'replay',game:g,budgetMs:8000})+'\n');
+ });
+ assert.equal((await replay(game)).hash,game.finalHash);
+ await assert.rejects(replay({...game,finalTurnIndex:game.finalTurnIndex+1}),/final.*turn|turn.*final/i);
+ const altered=structuredClone(game);altered.finalEncoding[0]=1-altered.finalEncoding[0];
+ await assert.rejects(replay(altered),/final.*encod|encod.*final/i);
 });

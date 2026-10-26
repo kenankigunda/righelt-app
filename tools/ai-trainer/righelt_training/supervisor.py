@@ -27,6 +27,7 @@ from .recovery_inspection import inspect_owned
 from .coexistence import from_environment as coexistence_guard
 from .coexistence import UnsafeResources
 from .architecture import DEFINITIONS,BASELINE,architecture_binding
+from .round_contract import validate_round,bound_runtime,require_round_match,validate_workload
 
 
 def begin_phase(allocation,phase,directory,manifest_digest):
@@ -359,6 +360,8 @@ def main():
     parser.add_argument('--stage',choices=('initial','overnight'),required=True)
     parser.add_argument('--seed',type=int,required=True)
     parser.add_argument('--model-architecture',choices=tuple(DEFINITIONS),default=BASELINE)
+    parser.add_argument('--round-contract',type=Path)
+    parser.add_argument('--final-families',type=Path)
     parser.add_argument('--resume',type=Path)
     parser.add_argument('--continuation',type=Path)
     parser.add_argument('--diagnostic',action='store_true')
@@ -372,6 +375,7 @@ def main():
     parser.add_argument('--candidate-checkpoint',type=Path)
     parser.add_argument('--opponent-checkpoint',type=Path)
     args=parser.parse_args()
+    if args.round_contract and args.continuation:parser.error('Round contracts are independent of historical continuation budgets')
     if args.diagnostic and not args.prepare_arena:parser.error('diagnostic flag requires preparation')
     artifact_root=ROOT/'.ai-runs'
     parity_digest=parity_arguments(args,artifact_root)
@@ -391,6 +395,17 @@ def main():
     validate_launch(continuation,args.seed,args.stage)
     selected_architecture=architecture_binding(args.model_architecture)
     manifest=build_manifest(args.seed,args.stage,model_architecture=selected_architecture)
+    if args.final_families:
+        from .evaluation_families import read_final_families
+        final_binding={'path':str(args.final_families.resolve()),'sha256':hashlib.sha256(args.final_families.read_bytes()).hexdigest()}
+        read_final_families(final_binding)
+        manifest['finalFamilies']=final_binding
+    round_contract=None
+    if args.round_contract:
+        round_contract=json.loads(args.round_contract.read_text())
+        state=json.loads(Path(round_contract['statePath']).read_text())
+        validate_round(round_contract,state,time.time())
+        manifest['roundContract']=round_contract
     if continuation:
         from .continuation_policy import stage_for_phase
         if args.stage!=stage_for_phase(continuation['phase']):
@@ -400,6 +415,7 @@ def main():
     # legacy stage launches keep their original health requirements.
     validate_gate_report(json.loads(args.gate_report.read_text()),manifest['sourceRevision'],'initial' if continuation else args.stage)
     phase='canary' if args.canary else 'export-parity' if args.export_parity else 'prepare-arena' if args.prepare_arena else 'health' if args.health else 'arena' if arena_digest else 'training'
+    if round_contract is not None:validate_workload(round_contract,phase)
     if args.canary and (args.resume or args.export_parity or args.prepare_arena or args.health or args.arena_plan):raise ValueError('canary is exclusive')
     allocation=Allocation(artifact_root,args.run_dir)
     if continuation:allocation.create_continuation(continuation)
@@ -429,6 +445,7 @@ def main():
     manifest_path=args.run_dir/'manifest.json'
     if manifest_path.exists():
         original=active_manifest(args.run_dir)
+        require_round_match(original['manifest'],round_contract)
         if any(original['manifest'].get(key)!=manifest.get(key) for key in (
                 'sourceRevision','configSha256','seed','stage','dependencies','lockHashes','explorationAdoption',*manifest_fields())):
             original=amend_manifest(args.run_dir,manifest,json.loads(args.gate_report.read_text()).get('repair',{}))
@@ -462,6 +479,11 @@ def main():
             runtime.pop('continuationPhase',None)
         if adoption:runtime.update(trainingRecipe=adoption['trainingRecipe'],explorationAdoption=adoption['explorationAdoption'])
         if phase=='canary':runtime.update(deadlineMonotonic=interval['monotonic']+min(600,remaining),deadlineWall=interval['wall']+min(600,remaining))
+        if round_contract is not None:
+            runtime['command']=phase
+            budget=bound_runtime(runtime,budget,round_contract,
+                state=json.loads(Path(round_contract['statePath']).read_text()),wall_now=wall,monotonic_now=now,
+                boot_identity=psutil.boot_time())
         if args.resume:
             metadata=json.loads(args.resume.with_suffix('.json').read_text())
             checkpoint_directory=args.resume.resolve().parent.parent

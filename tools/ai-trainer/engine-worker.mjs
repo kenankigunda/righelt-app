@@ -9,6 +9,7 @@ import { transitionArchivedAction } from './archived-action.mjs';
 import { trainingExplorationOptions } from './exploration-provenance.mjs';
 import { explorationRecord } from './exploration-record.mjs';
 import {encodingHash} from './production-corpus.mjs';
+import {commanderFamily,encodedFamily,encodedDigest} from './evaluation-protection.mjs';
 import { jobBudgetMs } from './worker-budget.mjs';
 import { createHash } from 'node:crypto';
 import { createInitialState, deterministicStateHash, normalizeState, resolveToStability } from '../../packages/game-engine/src/index.ts';
@@ -65,6 +66,12 @@ async function main() {
     !Array.isArray(job.protectedEncodingHashes)||new Set(job.protectedEncodingHashes).size!==job.protectedEncodingHashes.length||
     job.protectedEncodingHashes.some(hash=>typeof hash!=='string'||!/^[a-f0-9]{64}$/.test(hash))))throw Error('Invalid evaluation protection');
   const protectedEncodings=new Set(job.protectedEncodingHashes??[]);
+  if(job.protectedFamilyIds!==undefined&&(job.command!=='generate'||job.partition!=='train'||
+    !Array.isArray(job.protectedFamilyIds)||new Set(job.protectedFamilyIds).size!==job.protectedFamilyIds.length||
+    job.protectedFamilyIds.some(id=>typeof id!=='string'||!/^simple:[a-f0-9]{64}$/.test(id))))throw Error('Invalid family protection');
+  const protectedFamilies=new Set(job.protectedFamilyIds??[]);
+  const protectedState=state=>protectedEncodings.size&&protectedEncodings.has(encodingHash(state))||
+    protectedFamilies.size&&protectedFamilies.has(commanderFamily(state));
   const explorationOptions = trainingExplorationOptions(job);
   const adoption = job.explorationAdoption;
   if (adoption !== undefined && (job.command !== 'generate' || job.partition !== 'train' ||
@@ -147,6 +154,12 @@ async function main() {
       repetitions.set(key, (repetitions.get(key) ?? 0) + 1);
     }
     if (deterministicStateHash(state) !== job.game.finalHash) throw new Error('Replay final hash mismatch');
+    if(job.game.finalTurnIndex!==undefined&&job.game.finalTurnIndex!==state.turnIndex)throw Error('Replay final turn mismatch');
+    if(job.game.finalEncoding!==undefined) {
+      const actual=encodeState(state);
+      if(!Array.isArray(job.game.finalEncoding)||actual.length!==job.game.finalEncoding.length||
+        actual.some((v,i)=>v!==job.game.finalEncoding[i]))throw Error('Replay final encoding mismatch');
+    }
     if (state.outcome.status !== job.game.outcome.status) throw new Error('Replay outcome mismatch');
     if (state.outcome.status === 'ongoing') {
       const reason = job.game.decisions.length >= experimentConfig.training.maxDecisions ? 'decision-cap'
@@ -205,7 +218,7 @@ async function main() {
     }
   }
   const initialState = structuredClone(state), decisions = [], repetitions = new Map();
-  if(protectedEncodings.size && protectedEncodings.has(encodingHash(state))) {
+  if(protectedState(state)) {
     send({type:'unavailable-start',id:job.id,reason:'protected-evaluation-position'});return;
   }
   if (job.command === 'prepare') {
@@ -214,7 +227,7 @@ async function main() {
   let requestId = 0, termination = 'terminal', truncationReason = null;
   try {
     for (let n = 0; state.outcome.status === 'ongoing'; n++) {
-      if(protectedEncodings.size && protectedEncodings.has(encodingHash(state))) {
+      if(protectedState(state)) {
         send({type:'unfinished',id:job.id,reason:'protected-evaluation-position',decisions:decisions.length});return;
       }
       check();
@@ -228,6 +241,8 @@ async function main() {
       const profile=arena ? job.profiles[decisionController] : {simulations:experimentConfig.search.selfPlaySimulations,temperature:1,maxValueGap:.1};
       diagnose(state,'search',n,seed,profile);
       const result = await selectMove({ state, seed, ...searchOptions(profile), ...explorationOptions, deadlineMs: deadline }, async encoded => {
+        if(protectedEncodings.size&&protectedEncodings.has(encodedDigest(encoded))||
+          protectedFamilies.size&&protectedFamilies.has(encodedFamily(encoded)))throw new BudgetExpired('protected-evaluation-position');
         const id = ++requestId;
         send({ type: 'evaluate', id, modelSeat:decisionController, input: Array.from(encoded) });
         const reply = await read();
@@ -261,7 +276,8 @@ async function main() {
     seed: job.seed, modelVersion: job.modelVersion, rootState, warmupActions, initialState, decisions, ...adoptionFields,
     ...(job.productionSource ? {productionSource:job.productionSource} : {}),
     ...(arena ? { modelVersions: job.modelVersions, profileVersions: job.profileVersions } : {}),
-    termination, truncationReason, outcome: state.outcome, finalHash: deterministicStateHash(state) } });
+    termination, truncationReason, outcome: state.outcome, finalHash: deterministicStateHash(state),
+    finalTurnIndex:state.turnIndex,finalEncoding:Array.from(encodeState(state)) } });
 }
 main().catch(error => {
   send({ type: error instanceof BudgetExpired ? 'unfinished' : 'error', message: error.message, ...(error instanceof BudgetExpired ? {reason:error.reason} : {}) });

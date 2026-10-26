@@ -66,5 +66,28 @@ class SequenceTargetsTest(unittest.TestCase):
                        {'values':[float('nan')]*TARGET_COUNT,'mask':[False]*TARGET_COUNT}]:
             with self.assertRaises(ValueError):future_batch([{'futureFacts':target}])
 
+    def test_real_terminal_endpoint_supplies_negative_commander_facts(self):
+        d=decisions([1,1]);end=encoded(False)
+        endpoint={'encoded':end,'turnIndex':1,'terminal':True,'stateHash':d[-1]['afterHash']}
+        targets=observed_future_targets(d,endpoint=endpoint)
+        self.assertTrue(all(targets[0]['mask']))
+        for offset in (0,8,16):self.assertEqual(targets[0]['values'][offset],0.)
+        # A genuinely unfinished game does not become an absorbing terminal.
+        endpoint['terminal']=False
+        self.assertFalse(any(observed_future_targets(d,endpoint=endpoint)[0]['mask']))
+
+    def test_terminal_endpoint_proof_and_empty_material_masks(self):
+        d=decisions([1]);e={'encoded':[0.]*4600,'turnIndex':1,'terminal':True,'stateHash':d[-1]['afterHash']}
+        t=observed_future_targets(d,endpoint=e)[0]
+        self.assertEqual(sum(t['mask']),18)
+        self.assertFalse(any(t['mask'][6:8]))
+        e['stateHash']='wrong'
+        with self.assertRaisesRegex(ValueError,'endpoint'):observed_future_targets(d,endpoint=e)
+
+    def test_protected_future_family_cannot_supply_labels(self):
+        from righelt_training.evaluation_families import commander_family
+        d=decisions([1,2]);family=commander_family(d[1]['encoded'])
+        self.assertFalse(any(observed_future_targets(d,protected_families={family})[0]['mask']))
+
 
 if __name__=='__main__':unittest.main()

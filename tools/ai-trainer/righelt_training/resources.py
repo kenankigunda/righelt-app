@@ -75,7 +75,10 @@ class AdaptivePolicy:
         if coexistence is not None:
             try:
                 age = sample.now - timestamp(coexistence['observedAt'])
-                coexists = (POLICY_ID == 'production-headroom-v3' and fresh
+                exclusive=(coexistence.get('exclusiveVerified')is True
+                    and coexistence.get('foreignRssBytes')==0
+                    and isinstance(coexistence.get('rootGrantId'),str)and bool(coexistence['rootGrantId']))
+                coexists = (POLICY_ID == 'production-headroom-v3' and (fresh or exclusive)
                     and 0 <= age <= LIMITS['sampleSeconds']
                     and coexistence['subject'] == 'model'
                     and coexistence['coexistenceVerified'] is True

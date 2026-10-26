@@ -9,6 +9,7 @@ FACTS=('P1.commanderSupplied','P2.commanderSupplied','P1.unitsSupplied',
        'P1.materialShare','P2.materialShare')
 TARGET_COUNT=len(HORIZONS)*len(FACTS)
 FUTURE_LOSS_WEIGHT=0.1
+TERMINAL_CONVENTION='exact-replayed-absorbing-terminal-v1'
 
 
 def future_batch(positions):
@@ -23,7 +24,7 @@ def future_batch(positions):
     return values,masks
 
 
-def board_facts(encoded):
+def board_facts(encoded,*,allow_empty=False):
     squares=CONFIG['boardSize']**2
     if len(encoded)!=CONFIG['inputPlanes']*squares or any(not math.isfinite(v)for v in encoded):
         raise ValueError('Invalid future-fact encoding')
@@ -44,12 +45,12 @@ def board_facts(encoded):
         commanded.append(sum((a+b)*v for a,b,v in zip(c,u,k))/total if total else 0.)
         material.append(total)
     total=sum(material)
-    if not total:
+    if not total and not allow_empty:
         raise ValueError('Empty future board')
-    return commander+units+commanded+[x/total for x in material]
+    return commander+units+commanded+[x/total if total else 0. for x in material]
 
 
-def observed_future_targets(decisions, *, protected_encodings=()):
+def observed_future_targets(decisions, *, protected_encodings=(),protected_families=(),endpoint=None):
     """Caller must exact-replay the archive first. Missing legacy clocks mask all.
 
     A horizon is the first observed prestate after that many completed turns.
@@ -67,18 +68,30 @@ def observed_future_targets(decisions, *, protected_encodings=()):
             raise ValueError('Mixed or discontinuous future trajectory')
         previous=d
     protected=frozenset(protected_encodings)
-    facts={}
+    if endpoint is not None:
+        if (type(endpoint.get('turnIndex'))is not int or endpoint['turnIndex']<decisions[-1]['turnIndex']
+                or type(endpoint.get('terminal'))is not bool or endpoint.get('stateHash')!=decisions[-1]['afterHash']):
+            raise ValueError('Invalid verified future endpoint')
+        endpoint_facts=board_facts(endpoint['encoded'],allow_empty=endpoint['terminal'])
+    facts={'endpoint':endpoint_facts}if endpoint is not None else{}
     for i,start in enumerate(decisions):
         for offset,horizon in enumerate(HORIZONS):
             target=start['turnIndex']+horizon
             future=next((j for j in range(i+1,len(decisions))if decisions[j]['turnIndex']>=target),None)
-            if future is None or decisions[future]['turnIndex']!=target:
-                continue
-            encoded=decisions[future].get('encoded')
+            if future is not None and decisions[future]['turnIndex']==target:
+                encoded=decisions[future].get('encoded');key=future
+            elif endpoint is not None and (endpoint['turnIndex']==target or endpoint['terminal']and endpoint['turnIndex']<=target):
+                encoded=endpoint['encoded'];key='endpoint'
+            else:continue
             if encoded is None or protected and encoding_hash(encoded)in protected:
                 continue
-            if future not in facts:facts[future]=board_facts(encoded)
+            if protected_families:
+                from .evaluation_families import commander_family
+                if commander_family(encoded)in protected_families:continue
+            if key not in facts:facts[key]=board_facts(encoded)
             begin=offset*len(FACTS)
-            result[i]['values'][begin:begin+len(FACTS)]=facts[future]
-            result[i]['mask'][begin:begin+len(FACTS)]=[True]*len(FACTS)
+            result[i]['values'][begin:begin+len(FACTS)]=facts[key]
+            known=[True]*len(FACTS)
+            if key=='endpoint'and sum(facts[key][-2:])==0:known[-2:]=[False,False]
+            result[i]['mask'][begin:begin+len(FACTS)]=known
     return result

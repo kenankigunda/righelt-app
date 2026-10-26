@@ -24,6 +24,7 @@ from .resource_policy import LIMITS
 from .curriculum import Curriculum
 from .model import model_from_record
 from .architecture import record_architecture
+from .round_contract import validate_round,validate_workload,round_hash
 from .replay import ReplayBuffer, save_game
 from .trainer import make_optimizer, train_round
 from . import fresh_health
@@ -110,6 +111,14 @@ class Runner:
         self.started = self.runtime['startedMonotonic']
         if self.deadline <= self.started or self.deadline <= time.monotonic():
             raise ValueError('expired experiment')
+        contract=self.manifest['manifest'].get('roundContract')
+        if contract:
+            validate_round(contract,read_json(Path(contract['statePath'])),time.time())
+            validate_workload(contract,self.runtime['command'])
+            if (self.runtime.get('roundContractSha256')!=round_hash(contract)
+                    or self.runtime['deadlineWall']>__import__('datetime').datetime.fromisoformat(contract['phaseDeadline']).timestamp()
+                    or self.runtime.get('optimizationAllowed')!=(contract['phase']in ('pilot','main'))):
+                raise ValueError('Runner escaped fixed round contract')
         self.device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
         if record_architecture(self.runtime)!=record_architecture(self.manifest['manifest']):
             raise ValueError('Runner architecture differs from supervised manifest')
@@ -125,7 +134,14 @@ class Runner:
             from .production import protected_encodings
             protected=protected_encodings(corpus_binding)
         else:protected=()
-        self.buffer = ReplayBuffer(protected_encoding_hashes=protected)
+        final_binding=self.manifest['manifest'].get('finalFamilies')
+        families=()
+        if final_binding:
+            from .evaluation_families import read_final_families
+            final=read_final_families(final_binding)
+            families=final['protectedFamilies']
+            protected=set(protected)|{row['encodingHash']for row in final['families']}
+        self.buffer = ReplayBuffer(protected_encoding_hashes=protected,protected_family_ids=families)
         self.state = default_state()
         self.seed = seed
         self.stage = stage
@@ -387,10 +403,18 @@ class Runner:
             job=self.curriculum.job(index,self.model_version)
             protected=getattr(getattr(self,'buffer',None),'protected_encoding_hashes',())
             if protected:job['protectedEncodingHashes']=sorted(protected)
+            families=getattr(getattr(self,'buffer',None),'protected_family_ids',())
+            if families:job['protectedFamilyIds']=sorted(families)
             prefix=getattr(self,'manifest',{}).get('manifest',{}).get('jobPrefix',self.stage)
             job['id']=f"{prefix}-{job['id']}"
             self.state['nextJob']=index+1
             self.state['pendingGenerationJob']=job
+        for field,values in (('protectedEncodingHashes',getattr(getattr(self,'buffer',None),'protected_encoding_hashes',())),
+                             ('protectedFamilyIds',getattr(getattr(self,'buffer',None),'protected_family_ids',()))):
+            if values:
+                expected=sorted(values)
+                if field in job and job[field]!=expected:raise ValueError('Pending generation changed evaluation protection')
+                job[field]=expected
         job=exploration_adoption.authorize_job(job,getattr(self,'training_recipe',recipe_binding()),getattr(self,'exploration_adoption',None))
         self.state['pendingGenerationJob']=job
         bound=admission_estimate(self.state,job['kind'])
@@ -594,6 +618,9 @@ class Runner:
                 self.state['trainingBatch'] = 0
                 self.checkpoint()
             if self.buffer.positions:
+                if self.runtime.get('optimizationAllowed',True)is not True:
+                    self.state['admissionStop']='handoff-proof-no-optimizer'
+                    break
                 result = train_round(self.model, self.optimizer, list(self.buffer.positions), device=self.device,
                                      seed=self.seed + self.state['round'], deadline=self.deadline,
                                      should_pause=lambda: self.allocation()['paused'] or bool(self.handoff_requested()), on_batch=self.record_training_batch,
