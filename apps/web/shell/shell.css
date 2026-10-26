@@ -1390,6 +1390,8 @@ button.button-release-bounce,
   align-items: center;
   justify-content: flex-end;
   justify-self: end;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .home-games-section-header h2,
@@ -1415,6 +1417,10 @@ button.button-release-bounce,
   display: inline-flex;
   align-items: center;
   gap: 0.175rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .home-games-section-controls-footer {
@@ -1425,13 +1431,34 @@ button.button-release-bounce,
 }
 
 .home-games-section-controls > button {
-  min-width: 2.5rem;
+  min-width: max(44px, 2.5rem);
+  min-height: 44px;
   padding-inline: 0.75rem;
 }
 
 .home-games-section-page-label {
-  min-width: 6.5rem;
+  min-width: min(6.5rem, 100%);
   text-align: center;
+}
+
+@media (max-width: 900px) {
+  /* Paging can remain in the header while a resized Home list catches up.
+     Give it a full row, including with enlarged text, rather than an auto
+     grid column whose minimum content width can widen the document. */
+  .home-games-section-header[data-home-header-paging="true"] {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .home-games-section-header[data-home-header-paging="true"] .home-games-section-header-center {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .home-games-section-controls .home-games-section-page-label {
+    order: -1;
+    flex-basis: 100%;
+    min-width: 0;
+  }
 }
 
 .home-games-carousel {

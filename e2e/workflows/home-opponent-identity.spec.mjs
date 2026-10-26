@@ -13,6 +13,9 @@ test('fresh Home cards retain configured computer identity through manual contro
    const response=await fetch(`/api/shell/${path}`,{method:'POST',headers:{'content-type':'application/json',...(generation?{[header]:generation}:{})},body:JSON.stringify({...body,identityId,protocolVersion:2})});
    if(!response.ok)throw Error(`Identity fixture ${path}: ${response.status}`);return (await response.json()).game;
   };
+  // Require real pagination even when this workflow runs against a fresh DB.
+  // Create these first so both identity-proof cards remain on the first page.
+  for(let index=0;index<3;index++)await post('games',{selfPlayMode:false});
   const result=[];
   for(const side of ['p1','p2']){
    let game=await post('games',{computer:{p1:null,p2:null,[side]:'horus'}});
@@ -25,7 +28,7 @@ test('fresh Home cards retain configured computer identity through manual contro
  },STORAGE_GENERATION_HEADER);
  // A fresh page uses the actual Home list projection, not the create response.
  await page.reload();
- for(const width of [390,1440])for(const text of [100,200]){
+ for(const width of [390,900,1440])for(const text of [100,200]){
   await page.setViewportSize({width,height:900});await page.evaluate(text=>document.documentElement.style.fontSize=`${text}%`,text);
   for(const {id,side} of games){
    const card=page.locator(`.mini-board-card-link-surface[data-game-id="${id}"]`),matchup=card.locator('.home-card-matchup');
@@ -69,14 +72,35 @@ test('fresh Home cards retain configured computer identity through manual contro
     }
     suspects.push({index:record(node),ancestry,clips,exposedHorizontal:{left,right,empty:right<=left}});
    }
-   return {documentOverflow,scrollWidth:root.scrollWidth,viewport,scroll:{x:scrollX,y:scrollY},visualViewport:visualViewport?{width:visualViewport.width,height:visualViewport.height,offsetLeft:visualViewport.offsetLeft,offsetTop:visualViewport.offsetTop,scale:visualViewport.scale}:null,
+   const pagination=[...document.querySelectorAll('.home-games-section-controls')].map(controls=>({
+    bounds:rect(controls),
+    label:{text:controls.querySelector('.home-games-section-page-label')?.textContent.trim(),bounds:rect(controls.querySelector('.home-games-section-page-label')),
+     clientWidth:controls.querySelector('.home-games-section-page-label').clientWidth,scrollWidth:controls.querySelector('.home-games-section-page-label').scrollWidth},
+    buttons:[...controls.querySelectorAll('button')].map(button=>({action:button.dataset.action,bounds:rect(button)})),
+   }));
+   return {documentOverflow,scrollWidth:root.scrollWidth,viewport,pagination,scroll:{x:scrollX,y:scrollY},visualViewport:visualViewport?{width:visualViewport.width,height:visualViewport.height,offsetLeft:visualViewport.offsetLeft,offsetTop:visualViewport.offsetTop,scale:visualViewport.scale}:null,
     rootFont:style(root).fontSize,fonts:{status:document.fonts.status,faces:[...document.fonts].map(face=>({family:face.family,status:face.status,weight:face.weight,style:face.style}))},suspects,records};
   });
   const diagnosticPath=info.outputPath(`home-overflow-${info.project.name}-${width}-${text}.json`);
   await mkdir(dirname(diagnosticPath),{recursive:true});await writeFile(diagnosticPath,JSON.stringify(overflow,null,2));
   await info.attach(`home-overflow-${width}-${text}`,{path:diagnosticPath,contentType:'application/json'});
   expect(overflow.documentOverflow).toBeLessThanOrEqual(1);
+  expect(overflow.pagination.length).toBeGreaterThan(0);
+  for(const pagination of overflow.pagination){
+   expect(pagination.label.text).toMatch(/^Page \d+ of \d+$/);
+   expect(pagination.label.scrollWidth).toBeLessThanOrEqual(pagination.label.clientWidth+1);
+   expect(pagination.buttons.map(button=>button.action)).toEqual(['home-page-prev','home-page-next']);
+   for(const item of [pagination.label,...pagination.buttons]){
+    expect(item.bounds.left).toBeGreaterThanOrEqual(-1);
+    expect(item.bounds.right).toBeLessThanOrEqual(width+1);
+   }
+   for(const {bounds} of pagination.buttons){expect(bounds.width).toBeGreaterThanOrEqual(44);expect(bounds.height).toBeGreaterThanOrEqual(44);}
+  }
   await page.locator(`.mini-board-card-link-surface[data-game-id="${games[0].id}"]`).scrollIntoViewIfNeeded();
   await page.screenshot({path:info.outputPath(`home-manual-${width}-${text}.png`)});
+  if(text===200){
+   await page.locator('.home-games-section-controls').first().scrollIntoViewIfNeeded();
+   await page.screenshot({path:info.outputPath(`home-pagination-${width}-${text}.png`)});
+  }
  }
 });
