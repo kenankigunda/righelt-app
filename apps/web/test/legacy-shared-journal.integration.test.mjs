@@ -12,7 +12,12 @@ const until = async predicate => {
   for (let i = 0; i < 300; i++) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)); }
   assert.fail('mixed-client recovery did not converge');
 };
-for (const fault of ['uncommitted', 'delayed-cleanup']) test(`actual150 preserves a newer shared journal during ${fault} and158 resumes it`, async t => {
+const cases = [
+  { fault: 'uncommitted', delayedSetup: false },
+  { fault: 'delayed-cleanup', delayedSetup: false },
+  { fault: 'uncommitted', delayedSetup: true },
+];
+for (const {fault, delayedSetup} of cases) test(`actual150 preserves a newer shared journal during ${fault} and158 resumes it${delayedSetup ? ' with delayed setup response' : ''}`, async t => {
   const fixture = await legacyClientFixture(); const stores = [];
   t.diagnostic(`legacy=${fixture.revision} transportSha256=${fixture.transportHash}`);
   const legacy = await fixture.load('shell/sync-store.js');
@@ -24,7 +29,8 @@ for (const fault of ['uncommitted', 'delayed-cleanup']) test(`actual150 preserve
     setItem: (key, value) => values.set(key, String(value)), removeItem: key => values.delete(key) };
   const indexedDB = new IDBFactory(), journal = createCommandJournal({ indexedDB });
   const env = { DB: createFakeD1() }; env.GAME_ROOMS = createFakeGameRooms(() => env);
-  let held = true, envelope; const legacySends = [], sharedSends = [];
+  let held = true, envelope, delayedResponse = false, setupReconciles = 0, successfulSetupReconciles = 0; const legacySends = [], sharedSends = [], setupSends = [];
+  const delayTimers = new Set();t.after(() => { for (const timer of delayTimers) clearTimeout(timer); });
   const actual = (url, init = {}) => apiWorker.fetch(new Request(`https://test${url}`, init), env);
   const noSockets = () => ({ connectGame() {}, disconnectGame() {}, disconnectAll() {}, getDesiredGameIds: () => [] });
   const make = (factory, old = false) => {
@@ -34,12 +40,25 @@ for (const fault of ['uncommitted', 'delayed-cleanup']) test(`actual150 preserve
       ? Promise.reject(Object.assign(Error('journal_transaction_failed'), { code: 'journal_transaction_failed' })) : remove(command);
     const store = factory({ storage, commandJournal: ownJournal, createSyncClient: noSockets, onError() {},
       timing: { requestTimeoutMs: 20, recoveryPassMs: 60, confirmationBudgetMs: 100, retryDelaysMs: [10], retryJitter: 0 },
-      fetcher: (url, init = {}) => {
+      fetcher: async (url, init = {}) => {
         const body = init.body ? JSON.parse(init.body) : null;
         if (old && body) legacySends.push({ url, body });
+        if (!old && !envelope && url.endsWith('/reconcile')) setupReconciles++;
         if (!old && url.endsWith('/shared')) { envelope ??= structuredClone(body); sharedSends.push(structuredClone(body)); }
-        if (!old && held && fault === 'uncommitted' && (url.endsWith('/shared') || url.endsWith('/reconcile'))) return new Promise(() => {});
-        return actual(url, init);
+        if (!old && envelope && held && fault === 'uncommitted' && (url.endsWith('/shared') || url.endsWith('/reconcile'))) return new Promise(() => {});
+        const response = await actual(url, init);
+        if (!old && !envelope && url.endsWith('/reconcile') && response.ok) successfulSetupReconciles++;
+        if (!old && url.endsWith('/apply')) {
+          setupSends.push(structuredClone(body));
+          if (delayedSetup && !delayedResponse) {
+            delayedResponse = true;
+            // Preserve the real accepted API response but deliver it after the
+            // unchanged20ms request budget. This synthetic latency timer is
+            // unref'd so it cannot accidentally supply the test's liveness.
+            await new Promise(resolve => { const timer = setTimeout(() => { delayTimers.delete(timer);resolve(); }, 40);delayTimers.add(timer);timer.unref?.(); });
+          }
+        }
+        return response;
       } });
     stores.push(store); return store;
   };
@@ -48,6 +67,15 @@ for (const fault of ['uncommitted', 'delayed-cleanup']) test(`actual150 preserve
   const gameId = creation.gameId, initial = current.getGameViewModel(gameId);
   const action = initial.legalActions.find(action => action.type === 'move');
   await (await current.applyGameAction({ gameId, state: initial.board.state, action })).committed;
+  assert.equal(delayedResponse,delayedSetup);
+  const setupState=env.DB.getGameState(gameId);assert.equal(setupState.gameplayRevision,1);assert.equal(setupState.moves.length,1);
+  assert.ok(setupSends.length>=1);assert.equal(new Set(setupSends.map(command=>command.clientCommandId)).size,1);
+  for(const sent of setupSends)assert.deepEqual(sent,setupSends[0]);
+  assert.equal(env.DB.getReceipt(gameId,setupSends[0].clientCommandId).outcome,'accepted');
+  if(delayedSetup){
+    assert.ok(setupReconciles>=1,'A timed-out setup action must reconcile before arming the shared-command fault');
+    assert.ok(successfulSetupReconciles>=1,'Timed-out setup must receive successful actual reconciliation before the shared-command fault');
+  }
   const oldOpen = make(legacy.createSyncStore, true); await oldOpen.loadGame(gameId); oldOpen.setActiveGameId(gameId);
   const targetMoveId = current.getGameViewModel(gameId).moves[0].moveId;
   const handle = current.requestRevertToMove({ gameId, targetMoveId });

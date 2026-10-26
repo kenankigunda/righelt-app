@@ -2,6 +2,7 @@ import {test,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {createGameFromHome,makeAnyLegalMove,openDirectGameLink,requestPlayerJoin,acceptPendingRequest} from '../support/app.mjs';
 import {isOperationRequest} from '../support/shared-request.mjs';
+import {panelGeometrySettledAcrossFrame} from '../support/panel-settlement.mjs';
 
 
 const expectAcceptedShared = async(page,gameId,request)=>{
@@ -26,6 +27,7 @@ const switchPanel = async(page,key)=>{
   await expect(panel(page,key)).not.toHaveAttribute('inert','');
   await expect.poll(()=>panel(page,key).evaluate(el=>el.closest('.game-shell-track').getAnimations().some(animation=>animation.playState==='running'||animation.pending)),{message:'Panel transition must be finished'}).toBe(false);
   await expect.poll(()=>panel(page,key).evaluate(el=>Math.abs(el.getBoundingClientRect().left-el.closest('.game-shell-track-wrap').getBoundingClientRect().left)),{message:'Panel must finish its horizontal transition before interacting or measuring'}).toBeLessThanOrEqual(1);
+  await expect.poll(()=>panel(page,key).evaluate(panelGeometrySettledAcrossFrame),{message:'Panel endpoint and geometry must be committed across a rendered frame'}).toBe(true);
 };
 const readGame = async(page,id)=>page.evaluate(async id=>{
   const identityId=localStorage.getItem('righelt.identity.id.v1');

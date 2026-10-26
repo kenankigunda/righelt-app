@@ -178,7 +178,7 @@
     },
     "browser-integration": {
       "name": "browser-integration / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
-      "runs-on": "ubuntu-latest",
+      "runs-on": "ubuntu-24.04",
       "timeout-minutes": 60,
       "strategy": {
         "fail-fast": false,
@@ -271,7 +271,7 @@
     },
     "e2e": {
       "name": "e2e / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
-      "runs-on": "ubuntu-latest",
+      "runs-on": "ubuntu-24.04",
       "timeout-minutes": 60,
       "strategy": {
         "fail-fast": false,
@@ -395,7 +395,7 @@
     },
     "auth-e2e": {
       "name": "auth-e2e / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
-      "runs-on": "ubuntu-latest",
+      "runs-on": "ubuntu-24.04",
       "timeout-minutes": 60,
       "strategy": {
         "fail-fast": false,
@@ -530,7 +530,7 @@
     },
     "responsive": {
       "name": "responsive / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
-      "runs-on": "ubuntu-latest",
+      "runs-on": "ubuntu-24.04",
       "timeout-minutes": 60,
       "strategy": {
         "fail-fast": false,
@@ -609,7 +609,7 @@
     },
     "tooling": {
       "name": "tooling / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
-      "runs-on": "ubuntu-latest",
+      "runs-on": "ubuntu-24.04",
       "timeout-minutes": 60,
       "strategy": {
         "fail-fast": false,
@@ -695,7 +695,7 @@
     },
     "performance": {
       "name": "performance / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
-      "runs-on": "ubuntu-latest",
+      "runs-on": "ubuntu-24.04",
       "timeout-minutes": 60,
       "strategy": {
         "fail-fast": false,

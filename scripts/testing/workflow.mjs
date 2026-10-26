@@ -34,14 +34,15 @@ export function workflow() {
         project: l.project ?? "",
         artifact: `${name}-${i}`,
       }));
+    const needsBrowser = lanes.some((l) => suiteById(l.suite).browser);
     jobs[name] = {
       name: `${name} / ${expression("matrix.suite")} ${expression("matrix.project")} ${expression("matrix.shard")}`,
-      "runs-on": "ubuntu-latest",
+      "runs-on": needsBrowser ? "ubuntu-24.04" : "ubuntu-latest",
       "timeout-minutes": 60,
       strategy: { "fail-fast": false, matrix: { include: lanes } },
       steps: [
         ...setup,
-        ...(lanes.some((l) => suiteById(l.suite).browser)
+        ...(needsBrowser
           ? [
               {
                 name: "Install browsers",

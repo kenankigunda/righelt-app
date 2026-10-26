@@ -1,5 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
+import {decodeFontBoundarySamples} from './support/font-envelope-codec.mjs';
 const anchors=page=>page.evaluate(()=>window.fontAnchors());
 const sameAnchors=(a,b)=>{for(const target of ['heading','slot','board','panel'])for(const key of ['x','y','width','height'])expect(Math.abs(a[target][key]-b[target][key]),`${target}.${key}`).toBeLessThanOrEqual(.1);};
 for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(`cold and settled-reload message reservation at ${width}px and ${scale}%`,async({page},info)=>{
@@ -70,11 +71,22 @@ test('measured font boundaries keep cold, loaded and settled-reload row envelope
   for(const scale of [100,200]){
    await page.evaluate(scale=>{document.documentElement.style.fontSize=`${scale}%`;},scale);
    const before=await anchors(page);
-   result.push(...await page.evaluate(({scale,bands})=>{
+   const measured=await page.evaluate(({scale,bands})=>{
     const size=parseFloat(getComputedStyle(document.querySelector('.board-message-slot')).fontSize);
     const widths=[...new Set([272,273.59375,280,296,334.375,349.5,355.5,365,365.5,366.8,471.5,491.6,696,699.5,800,...(scale===200?[326.125,326.25,326.5,326.75,327]:[]),...bands.flatMap(([lower,upper])=>[lower*size-.125,lower*size,lower*size+.125,(lower+upper)*size/2,upper*size-.125,upper*size,upper*size+.125])])].filter(width=>width>=8.5*size&&width<=800).sort((a,b)=>a-b);
-    return widths.map(width=>({scale,...window.fontEnvelope(width),intrinsicPrimary:window.fontEnvelope(width,{intrinsic:true}).primary}));
-   },{scale,bands}));
+    let definitions;
+    const samples=widths.map(width=>{
+     const envelope=window.fontEnvelope(width);
+     // Definitions are stable within this page/scale. Transfer them once while
+     // retaining every fresh metric at every boundary, then restore full rows.
+     definitions??=envelope.rows.map(({font,variant,text})=>({font,variant,text}));
+     return {scale,width:envelope.width,primary:envelope.primary,fallback:envelope.fallback,
+      rows:envelope.rows.map(({height,lineHeight,minHeight})=>[height,lineHeight,minHeight]),
+      intrinsicPrimary:window.fontEnvelope(width,{intrinsic:true,primaryOnly:true}).primary};
+    });
+    return {definitions,samples};
+   },{scale,bands});
+   result.push(...decodeFontBoundarySamples(measured));
    sameAnchors(before,await anchors(page));
   }
   return result;
