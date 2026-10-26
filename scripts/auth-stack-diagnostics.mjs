@@ -21,7 +21,7 @@ export function summarizeWranglerLog(raw) {
     bytes: raw.length,
     sha256: createHash("sha256").update(raw).digest("hex"),
     proxyControllerError: text.includes("Error in ProxyController: Error inside ProxyWorker"),
-    networkConnectionLost: text.includes("Network connection lost"),
+    networkConnectionLost: text.includes("Network connection lost") || text.includes("network_connection_lost"),
     connectionRefused: text.includes("ECONNREFUSED"),
     connectionReset: text.includes("ECONNRESET"),
     certificateUnknown: text.includes("SSLV3_ALERT_CERTIFICATE_UNKNOWN"),
