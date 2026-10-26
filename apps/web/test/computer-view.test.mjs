@@ -28,7 +28,7 @@ test('guest debug offers public computer searches without private account tools'
 });
 
 test('computer recovery controls wait for their own phase thresholds', () => {
- const game={id:'g',computer:{seats:{p1:null,p2:'tau'},modelId:'initial-1554',takeoverTurn:null},canControlComputer:true,computerTurn:'tau'};
+ const game={id:'g',computer:{seats:{p1:null,p2:'tau'},modelId:CURRENT_COMPUTER_MODEL.id,takeoverTurn:null},canControlComputer:true,computerTurn:'tau'};
  assert.equal(renderComputerProgress(game,{phase:'looking-ahead',elapsedMs:29999}), '');
  assert.match(renderComputerProgress(game,{phase:'looking-ahead',elapsedMs:30000}), /Interrupt/);
  assert.equal(renderComputerProgress(game,{phase:'saving',elapsedMs:60000,phaseElapsedMs:9999}), '');

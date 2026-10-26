@@ -8,15 +8,24 @@ export const COMPUTER_PROFILES = Object.freeze({
     tau: Object.freeze({ name: 'Tau', version: 'experimental-v1', simulations: 32, temperature: 0.5, maxValueGap: 0.05 }),
     horus: Object.freeze({ name: 'Horus', version: 'experimental-v1', simulations: 128, temperature: 0.1, maxValueGap: 0.01 }),
 });
-export const CURRENT_COMPUTER_MODEL = Object.freeze({
+const LEGACY_COMPUTER_MODEL = Object.freeze({
     id: 'initial-1554', sha256: '748fcc5e7346900ead62a241002c50ca1012ef8857c73c3eb71e308b955d0490', bytes: 411327,
     checkpoint: '04302e437e01868cc48a237df3c3e8621d84dade628511324b6a3e6e438d6291',
     url: '/computer/models/initial-1554.onnx', experimental: true,
+});
+export const CURRENT_COMPUTER_MODEL = Object.freeze({
+    "id": "production-20261026-1100",
+    "sha256": "ecc5b9f180fe5544f64d4cfe83d0562c31ab46f610fbff0215010ce3ee9faf98",
+    "bytes": 322842,
+    "checkpoint": "73184d1acec4646e8b107018afaa39ab9563e8e54bf594a47534549338eeb3ad",
+    "url": "/computer/models/production-20261026-1100.onnx",
+    "experimental": false
 });
 // This historical HTTP default stays fixed when CURRENT changes in a later release.
 const LEGACY_COMPUTER_MODEL_ID = 'initial-1554';
 // Only published compatible models belong here.
 export const COMPUTER_MODELS = Object.freeze({
+    [LEGACY_COMPUTER_MODEL_ID]: LEGACY_COMPUTER_MODEL,
     [CURRENT_COMPUTER_MODEL.id]: CURRENT_COMPUTER_MODEL,
 });
 export const getComputerModel = (id) => Object.hasOwn(COMPUTER_MODELS, id) ? COMPUTER_MODELS[id] : null;
