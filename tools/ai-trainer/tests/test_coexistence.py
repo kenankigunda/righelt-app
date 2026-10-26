@@ -138,6 +138,13 @@ class LeaseTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'withdrawn'):g.observe(sample())
         execute.assert_not_called()
 
+    def test_handoff_request_preserves_active_ownership_until_cleanup(self):
+        g=self.guard();self.grant['handoffRequested']=True;self.write_state()
+        with self.assertRaisesRegex(ValueError,'handoff requested'):g.check()
+        g.request_handoff('requested')
+        self.assertTrue(json.loads(self.state_path.read_text())['followupTraining']['currentResourceGrant']['active'])
+        self.assertEqual(json.loads((self.root/'allocation.json').read_text())['workers'],0)
+
     def test_expiry_reserve_requests_manifest_bound_checkpoint_once(self):
         g=self.guard()
         self.now=1140

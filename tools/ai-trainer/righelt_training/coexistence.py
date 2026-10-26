@@ -90,6 +90,8 @@ class LeaseGuard:
                 or grant.get('maxWorkers') != 2 or grant.get('maxMemoryGiB') != 16
                 or grant.get('rampAuthorized') is not False):
             raise ValueError('Model grant withdrawn or changed')
+        if grant.get('handoffRequested')is True:
+            raise ValueError('Model handoff requested')
         if not timestamp(grant['recordedAt']) <= now < min(timestamp(grant['expiresAt']), self.end):
             raise ValueError('Model lease expired')
         if now >= self.end - 60 or self.monotonic() >= self.monotonic_end - 60:
