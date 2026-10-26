@@ -5618,7 +5618,7 @@ const initialRender = async () => {
   routeHydrated = false;
   render({ animatePanels: false, includeBoard: false });
   try {
-    await account.start();
+    if (!account.snapshot().ready) await account.start();
     void account.activity(true);
   } catch (error) {
     window.__righeltLastError = error.code || error.message;
