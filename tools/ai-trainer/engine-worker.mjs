@@ -1,6 +1,8 @@
+import {validateTeaching,teachingDecision,verifyTeachingDecision}from './training-teaching.mjs';
 // JSON-lines protocol. Parent owns inference, resource allocation and hard process termination.
 import { createInterface } from 'node:readline';
-import { writeFileSync, renameSync } from 'node:fs';
+import { writeFileSync, renameSync,readFileSync } from 'node:fs';
+import {COMPUTER_PROFILES}from '../../packages/shared-types/src/computer-play.ts';
 import { createEngineOperationBudget, EngineExpansionLimit } from './engine-operation-budget.mjs';
 import { searchRecovery } from './search-recovery.mjs';
 import { decisionProvenance } from './decision-provenance.mjs';
@@ -62,6 +64,8 @@ export function ruleFingerprint(state) {
 class BudgetExpired extends Error { constructor(reason='deadline') { super(reason); this.reason=reason; } }
 async function main() {
   const job = await read();
+  const teaching=validateTeaching(job.teaching);
+  if(teaching&&(job.command!=='generate'||job.partition!=='train'))throw Error('Teaching only permitted for training generation');
   if(job.protectedEncodingHashes!==undefined && (job.command!=='generate'||job.partition!=='train'||
     !Array.isArray(job.protectedEncodingHashes)||new Set(job.protectedEncodingHashes).size!==job.protectedEncodingHashes.length||
     job.protectedEncodingHashes.some(hash=>typeof hash!=='string'||!/^[a-f0-9]{64}$/.test(hash))))throw Error('Invalid evaluation protection');
@@ -131,6 +135,8 @@ async function main() {
         indices.some(i => !Number.isSafeInteger(i) || i < 0 || i >= job.game.decisions.length))) {
       throw new Error('Invalid training inventory selection');
     }
+    const replayTeaching=validateTeaching(job.game.teaching);
+    if(replayTeaching&&replayTeaching.models.current!==job.game.modelVersion)throw Error('Game changed current teacher-model provenance');
     const snapshots = [];
     let state = job.game.rootState ?? job.game.initialState;
     for (const action of job.game.warmupActions ?? []) { check(); state = transitionArchivedAction(state, action, bounded); }
@@ -144,6 +150,7 @@ async function main() {
     for (const [index, record] of job.game.decisions.entries()) {
       check();
       const before = state;
+      verifyTeachingDecision(replayTeaching??undefined,record);
       if(record.turnIndex!==undefined && (!Number.isSafeInteger(record.turnIndex)||record.turnIndex!==before.turnIndex)) {
         throw new Error('Replay completed-turn index mismatch');
       }
@@ -191,6 +198,12 @@ async function main() {
   }
   if (job.command === 'fingerprint') { send({ type: 'fingerprint', fingerprint: ruleFingerprint(job.state) }); return; }
   const arena=job.command==='arena';
+  const evaluationProfile=job.evaluationProfile;
+  if(evaluationProfile!==undefined){
+    const expected=COMPUTER_PROFILES[evaluationProfile?.name];
+    const sourceSha=createHash('sha256').update(readFileSync(new URL('../../packages/shared-types/src/computer-play.ts',import.meta.url))).digest('hex');
+    if(!arena||!expected||evaluationProfile.sourceSha256!==sourceSha||!/^[a-f0-9]{64}$/.test(evaluationProfile.artifactSha256??'')||JSON.stringify(canonical(evaluationProfile.definition))!==JSON.stringify(canonical(expected))||['P1','P2'].some(seat=>JSON.stringify(canonical(job.profiles?.[seat]))!==JSON.stringify(canonical(expected))))throw Error('Invalid authoritative evaluation profile');
+  }
   if (arena && ['P1', 'P2'].some(seat => !job.profiles?.[seat] || !job.modelVersions?.[seat] || !job.profileVersions?.[seat])) {
     throw new Error('Arena model and profile identities are required for both seats');
   }
@@ -238,7 +251,7 @@ async function main() {
       }
       const seed = (job.seed + n) >>> 0;
       const decisionController=state.sideToMove;
-      const profile=arena ? job.profiles[decisionController] : {simulations:experimentConfig.search.selfPlaySimulations,temperature:1,maxValueGap:.1};
+      const profile=teaching?teaching.profiles[decisionController]:arena ? job.profiles[decisionController] : {simulations:experimentConfig.search.selfPlaySimulations,temperature:1,maxValueGap:.1};
       diagnose(state,'search',n,seed,profile);
       const result = await selectMove({ state, seed, ...searchOptions(profile), ...explorationOptions, deadlineMs: deadline }, async encoded => {
         if(protectedEncodings.size&&protectedEncodings.has(encodedDigest(encoded))||
@@ -259,6 +272,7 @@ async function main() {
         afterHash: deterministicStateHash(state), seed, legal, encoded,
         modelVersion: arena ? job.modelVersions[controller] : job.modelVersion,
         profileVersion: arena ? job.profileVersions[controller] : `selfplay-${SEARCH_POLICY_VERSION}`,
+        ...(teaching?teachingDecision(teaching,controller):{}),
         ...decisionProvenance(result,SEARCH_POLICY_VERSION), ...adoptionFields });
       const committed=decisions[decisions.length-1];
       send({type:'decision-progress',gameId:job.id,kind:job.kind,decision:{
@@ -275,6 +289,8 @@ async function main() {
   send({ type: 'game', game: { schema: 1, id: job.id, familyId: job.familyId, partition: job.partition, kind: job.kind,
     seed: job.seed, modelVersion: job.modelVersion, rootState, warmupActions, initialState, decisions, ...adoptionFields,
     ...(job.productionSource ? {productionSource:job.productionSource} : {}),
+    ...(teaching?{teaching}:{}),
+    ...(evaluationProfile?{evaluationProfile}:{}),
     ...(arena ? { modelVersions: job.modelVersions, profileVersions: job.profileVersions } : {}),
     termination, truncationReason, outcome: state.outcome, finalHash: deterministicStateHash(state),
     finalTurnIndex:state.turnIndex,finalEncoding:Array.from(encodeState(state)) } });

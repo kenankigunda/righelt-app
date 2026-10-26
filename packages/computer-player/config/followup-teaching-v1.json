@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "kind": "followup-teaching-v1",
+  "maximumPretrainRounds": 32,
+  "curriculum": {
+    "production": 25,
+    "normal": 50,
+    "contact": 25
+  },
+  "profiles": {
+    "exploration": {
+      "simulations": 8,
+      "temperature": 1,
+      "maxValueGap": 0.1
+    },
+    "teacher": {
+      "simulations": 32,
+      "temperature": 1,
+      "maxValueGap": 0.1
+    }
+  },
+  "cycles": [
+    {
+      "roles": {
+        "P1": "current",
+        "P2": "current"
+      },
+      "profile": "exploration"
+    },
+    {
+      "roles": {
+        "P1": "teacher",
+        "P2": "current"
+      },
+      "profile": "teacher"
+    },
+    {
+      "roles": {
+        "P1": "current",
+        "P2": "teacher"
+      },
+      "profile": "teacher"
+    },
+    {
+      "roles": {
+        "P1": "teacher",
+        "P2": "teacher"
+      },
+      "profile": "teacher"
+    }
+  ],
+  "curriculumSlots": [
+    "production",
+    "normal",
+    "normal",
+    "contact"
+  ],
+  "learningRates": {
+    "fresh": 0.001,
+    "continuation": 0.0001
+  }
+}

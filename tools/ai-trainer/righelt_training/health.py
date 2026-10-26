@@ -22,6 +22,7 @@ from . import exploration_adoption
 from .training_recipe import record_recipe
 from .replay import partition_for_family
 from .runner import verify_game
+from .pilot_recipe import finite_new_updates
 
 
 def finite_tree(value):
@@ -169,7 +170,7 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
                 'weightsSha256':weight_digest,'updates':data['updates']})
             if len(weights)>=2:break
         result['distinctRecoverableTrainedCheckpoints']=len(weights)
-        result['finiteNonzeroUpdates']=bool(weights) and state['updates']>0 and state['nonzeroUpdates']==state['updates']
+        result['finiteNonzeroUpdates']=bool(weights) and finite_new_updates(state)
         result['complete']=True
         result['healthy']=(result.get('freshTerminalGames',result['terminalGames'])>=100 and len(weights)>=2 and result['finiteNonzeroUpdates']
                            and (baseline is None or result['freshExamplesUsed'])

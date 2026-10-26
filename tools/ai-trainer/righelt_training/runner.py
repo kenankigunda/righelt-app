@@ -18,13 +18,15 @@ import signal
 import subprocess
 import time
 import torch
-from .checkpoint import atomic_json, save_checkpoint, load_checkpoint
+from .checkpoint import atomic_json, save_checkpoint, load_checkpoint,inspect_checkpoint
 from .config import CONFIG, ROOT
 from .resource_policy import LIMITS
 from .curriculum import Curriculum
 from .model import model_from_record
 from .architecture import record_architecture
 from .round_contract import validate_round,validate_workload,round_hash
+from .pilot_recipe import checked_recipe,teaching_job,DEFINITION
+from .round_data import admit as admit_round_data
 from .replay import ReplayBuffer, save_game
 from .trainer import make_optimizer, train_round
 from . import fresh_health
@@ -101,6 +103,9 @@ class Runner:
             raise ValueError('manifest content mismatch')
         self.continuation = fresh_health.continuation_for(self.directory, self.manifest['manifest'])
         self.training_recipe = record_recipe(self.manifest['manifest'])
+        self.pilot_recipe=checked_recipe(self.manifest['manifest'].get('pilotRecipe'))
+        if self.manifest['manifest'].get('warmStart')and(self.manifest['manifest'].get('replaySeed')or not resume):
+            raise ValueError('Warm weights and fresh replay initialization must be explicit and distinct')
         self.exploration_adoption = exploration_adoption.manifest_binding(self.directory, self.manifest['manifest'], mode='provenance')
         if self.exploration_adoption and (self.runtime.get('explorationAdoption') != self.exploration_adoption
                 or self.runtime.get('trainingRecipe') != self.training_recipe):
@@ -127,6 +132,13 @@ class Runner:
             raise RuntimeError('MPS unavailable; run preflight with Metal access')
         torch.set_num_threads(2)
         torch.manual_seed(seed)
+        if self.pilot_recipe:
+            admit_round_data(self.manifest['manifest']['roundContract'],self.manifest['manifest']['roundDataBinding'],self.manifest_hash,self.manifest['manifest']['sourceRevision'],state_confirmed_at=self.runtime.get('productionFenceCutoff'))
+            marker=self.directory/'candidate-computation-start.json'
+            if not marker.exists():
+                atomic_json(marker,{'observedAt':time.time(),'manifestSha256':self.manifest_hash,'sourceRevision':self.manifest['manifest']['sourceRevision']})
+            elif read_json(marker).get('manifestSha256')!=self.manifest_hash:
+                raise ValueError('Candidate computation marker changed manifest')
         self.model = model_from_record(self.manifest['manifest']).to(self.device)
         self.optimizer = make_optimizer(self.model)
         corpus_binding=self.manifest['manifest'].get('productionCorpus')
@@ -151,12 +163,64 @@ class Runner:
         self.inference_bound = 30.
         if resume:
             self.restore(Path(resume))
+        elif self.manifest['manifest'].get('replaySeed'):
+            self.seed_replay(self.manifest['manifest']['replaySeed'])
+        self.teacher=None
+        if self.pilot_recipe:
+            self.configure_pilot_learning_rate()
+            self.load_teacher()
         restore_observations(self.state,self.directory)
         self.restore_admission_claims()
         self.curriculum = Curriculum(seed, switched=self.state['curriculumSwitched'],
-                                     production_corpus=self.manifest['manifest'].get('productionCorpus'))
+                                     production_corpus=self.manifest['manifest'].get('productionCorpus'),pilot_recipe=self.pilot_recipe)
         self.model.eval()
         self.report_device_memory()
+
+    def seed_replay(self,binding):
+        # Fresh architecture keeps its random weights, new optimizer and RNG.
+        # Only the verified, filtered replay ancestry is imported.
+        if not self.pilot_recipe or self.manifest['manifest'].get('warmStart'):
+            raise ValueError('Fresh replay seed requires an explicit separate initialization')
+        if binding!=self.pilot_recipe['teacher']:
+            raise ValueError('Replay seed differs from frozen teacher')
+        checkpoint=Path(binding['path'])
+        if hashlib.sha256(checkpoint.read_bytes()).hexdigest()!=binding['sha256']:
+            raise ValueError('Fresh replay seed checkpoint changed')
+        with self.operation('fresh-replay-seed',300):
+            data=inspect_checkpoint(checkpoint,manifest_sha256=binding['manifestSha256'],require_recovery=True)
+            for name in data['recovery']['state']['archives']:
+                path=(checkpoint.parent.parent/name).resolve()
+                with gzip.open(path,'rt')as stream:self.buffer.append(json.load(stream))
+                self.state['archives'].append(str(path))
+        if not self.buffer.positions:raise ValueError('Fresh replay seed has no eligible training positions')
+        self.state.update(replaySeed=binding,initialReplayRoundsRemaining=self.pilot_recipe['pretrainRounds'],phase='training')
+
+    def configure_pilot_learning_rate(self):
+        rate=DEFINITION['learningRates']['continuation'if self.manifest['manifest'].get('warmStart')else'fresh']
+        prior=self.state.get('pilotLearningRate')
+        if prior is None:
+            for group in self.optimizer.param_groups:group['lr']=rate
+            self.state['pilotLearningRate']=rate
+        elif prior!=rate or any(group['lr']!=rate for group in self.optimizer.param_groups):
+            raise ValueError('Recovered optimizer changed frozen pilot learning rate')
+
+    def load_teacher(self):
+        binding=self.pilot_recipe['teacher'];checkpoint=Path(binding['path'])
+        if hashlib.sha256(checkpoint.read_bytes()).hexdigest()!=binding['sha256']:
+            raise ValueError('Frozen teacher checkpoint changed')
+        cpu_rng=torch.get_rng_state()
+        mps_rng=torch.mps.get_rng_state()if self.device.type=='mps'else None
+        with self.operation('teacher-load',60):
+            data=inspect_checkpoint(checkpoint,manifest_sha256=binding['manifestSha256'],require_recovery=True)
+            # Teacher construction must not perturb the learner's recovered RNG.
+            with torch.random.fork_rng(devices=[]):
+                metadata=read_json(checkpoint.with_suffix('.json'))
+                self.teacher=model_from_record(metadata).to(self.device)
+                self.teacher.load_state_dict(data['model'])
+            self.teacher.eval();self.teacher.requires_grad_(False)
+        if not torch.equal(cpu_rng,torch.get_rng_state())or(mps_rng is not None and not torch.equal(mps_rng,torch.mps.get_rng_state())):
+            raise ValueError('Teacher loading changed learner RNG')
+        self.event('teacher-loaded',checkpointSha256=binding['sha256'],learnerRngPreserved=True)
 
     def operation(self,name,seconds):
         monitor=getattr(self,'monitor',None)
@@ -335,15 +399,24 @@ class Runner:
         if deadline - time.monotonic() < self.inference_bound:
             return False
         started = time.monotonic()
+        groups={}
+        for worker,message in requests:
+            teaching=worker.get('job',{}).get('teaching')
+            role=teaching['roles'][message['modelSeat']]if teaching else'current'
+            if role not in ('current','teacher')or(role=='teacher'and self.teacher is None):
+                raise ValueError('Unbound inference teacher role')
+            groups.setdefault(role,[]).append((worker,message))
+        outputs={}
         with torch.inference_mode():
-            inputs = torch.tensor([message['input'] for _, message in requests], dtype=torch.float32, device=self.device)
-            inputs = inputs.reshape(len(requests), CONFIG['inputPlanes'], CONFIG['boardSize'], CONFIG['boardSize'])
-            if not torch.isfinite(inputs).all():
-                raise ValueError('nonfinite inference input')
-            policy, value = self.model(inputs)
-            if not torch.isfinite(policy).all() or not torch.isfinite(value).all():
-                raise ValueError('nonfinite inference output')
-            policies, values = policy.cpu().tolist(), value.cpu().tolist()
+            for role,group in groups.items():
+                inputs=torch.tensor([message['input']for _,message in group],dtype=torch.float32,device=self.device)
+                inputs=inputs.reshape(len(group),CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize'])
+                if not torch.isfinite(inputs).all():raise ValueError('nonfinite inference input')
+                policy,value=(self.teacher if role=='teacher'else self.model)(inputs)
+                if not torch.isfinite(policy).all()or not torch.isfinite(value).all():raise ValueError('nonfinite inference output')
+                for (worker,message),logits,scalar in zip(group,policy.cpu().tolist(),value.cpu().tolist()):
+                    outputs[(id(worker),message['id'])]=(logits,scalar)
+        policies,values=zip(*(outputs[(id(worker),message['id'])]for worker,message in requests))
         self.report_device_memory()
         for (worker, message), logits, scalar in zip(requests, policies, values):
             worker['process'].stdin.write((json.dumps({'type': 'evaluation', 'id': message['id'], 'policyLogits': logits, 'value': scalar}) + '\n').encode())
@@ -354,6 +427,8 @@ class Runner:
         return True
 
     def accept_game(self, game, round_deadline, *, job=None):
+        if job is not None and game.get('teaching')!=job.get('teaching'):
+            raise ValueError('Generated game changed teacher provenance')
         if job is not None and game.get('productionSource') != job.get('productionSource'):
             raise ValueError('generated game changed production source provenance')
         self.maybe_checkpoint()
@@ -401,6 +476,7 @@ class Runner:
         if job is None:
             index=ledger.job(self.stage,getattr(self,'seed',self.curriculum.seed),self.state['nextJob'])
             job=self.curriculum.job(index,self.model_version)
+            if self.pilot_recipe:job['teaching']=teaching_job(self.pilot_recipe,index,self.model_version)
             protected=getattr(getattr(self,'buffer',None),'protected_encoding_hashes',())
             if protected:job['protectedEncodingHashes']=sorted(protected)
             families=getattr(getattr(self,'buffer',None),'protected_family_ids',())
@@ -444,6 +520,8 @@ class Runner:
             return None
         if not ledger.launch(job['id'],self.directory):
             raise ValueError('generation identity already launched')
+        if self.pilot_recipe:
+            job['teaching']={**job['teaching'],'models':{**job['teaching']['models'],'current':self.model_version}}
         return {**job,'modelVersion':self.model_version,
                 'budgetMs':max(1,(remaining-bound['replay']-bound['checkpoint'])*1000)}
 
@@ -633,6 +711,13 @@ class Runner:
                     handoff=self.handoff_requested()
                     if handoff:break
                     if result['stopped'] == 'budget': break
+                    continue
+            if self.state.get('initialReplayRoundsRemaining',0)>0:
+                self.state['initialReplayRoundsRemaining']-=1
+                self.state['trainingBatch']=0
+                if self.state['initialReplayRoundsRemaining']>0:
+                    self.state['round']+=1
+                    self.checkpoint()
                     continue
             self.state['phase'] = 'generation'
             self.state['round'] += 1

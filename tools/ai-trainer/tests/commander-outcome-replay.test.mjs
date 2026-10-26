@@ -1,3 +1,6 @@
+import {teachingDecision}from '../training-teaching.mjs';
+import {readFileSync}from 'node:fs';
+import {createHash}from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {deterministicStateHash,listLegalActions} from '../../../packages/game-engine/src/index.ts';
@@ -116,4 +119,18 @@ test('terminal endpoint teaching facts are exact engine facts, never caller inve
  await assert.rejects(replay({...game,finalTurnIndex:game.finalTurnIndex+1}),/final.*turn|turn.*final/i);
  const altered=structuredClone(game);altered.finalEncoding[0]=1-altered.finalEncoding[0];
  await assert.rejects(replay(altered),/final.*encod|encod.*final/i);
+});
+
+test('actual replay rejects stripped or changed teacher envelopes',async()=>{
+ const raw=readFileSync(new URL('../../../packages/computer-player/config/followup-teaching-v1.json',import.meta.url)),definition=JSON.parse(raw),cycle=definition.cycles[1],profile=definition.profiles[cycle.profile];
+ const teaching={schema:1,definitionSha256:createHash('sha256').update(raw).digest('hex'),recipeSha256:'a'.repeat(64),cycle:1,roles:cycle.roles,models:{current:'learner',teacher:'b'.repeat(64)},profiles:{P1:profile,P2:profile}};
+ const source=destroyedCommanderGame(),game={id:'teaching-retained',partition:'train',modelVersion:'learner',teaching,initialState:source.initial,decisions:source.decisions.map(d=>({...d,...teachingDecision(teaching,d.controller)})),finalHash:deterministicStateHash(source.retained),outcome:source.retained.outcome,termination:'terminal'};
+ const replay=g=>new Promise((resolve,reject)=>{
+  const child=execFile(process.execPath,['--import','tsx','tools/ai-trainer/engine-worker.mjs'],{timeout:10000},(error,stdout,stderr)=>error?reject(new Error(`${stderr}\n${stdout}`,{cause:error})):resolve(JSON.parse(stdout.trim())));
+  child.stdin.end(JSON.stringify({command:'replay',game:g,budgetMs:8000})+'\n');
+ });
+ assert.equal((await replay(game)).hash,game.finalHash);
+ const orphan=structuredClone(game);delete orphan.teaching;
+ await assert.rejects(replay(orphan),/Orphaned/);
+ await assert.rejects(replay({...game,modelVersion:'different'}),/current teacher-model provenance/);
 });
