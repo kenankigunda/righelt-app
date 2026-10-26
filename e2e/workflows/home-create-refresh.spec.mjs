@@ -56,40 +56,74 @@ test('early opponent introduction survives initial guest session adoption', asyn
   }
 });
 
-test('early create waits for guest bootstrap without opening account sign-in', async ({ page }) => {
-  let release, entered;
-  const held = new Promise(resolve => { release = resolve; });
-  const intercepted = new Promise(resolve => { entered = resolve; });
+test('logical early-create intent waits for guest bootstrap without opening account sign-in', async ({ page }, info) => {
+  let entered, rejectAdmission;
+  const intercepted = new Promise((resolve, reject) => { entered = resolve; rejectAdmission = reject; });
+  // Observe a route failure immediately, including while navigation is pending.
+  void intercepted.catch(() => {});
   const creates = [];
+  let bootstrapRequests = 0;
   page.on('request', request => {
     if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/shell/games') creates.push(request);
   });
   await page.route('**/api/shell/bootstrap', async route => {
-    const response = await route.fetch();
-    expect(response.ok()).toBe(true);
-    expect((await response.json()).accountsRequired).toBe(false);
-    entered();
-    await held;
-    await route.fulfill({ response });
+    let settled = false;
+    try {
+      bootstrapRequests++;
+      expect(bootstrapRequests, 'Intent must precede the first bootstrap response, not a retry').toBe(1);
+      const response = await route.fetch();
+      expect(response.ok()).toBe(true);
+      expect((await response.json()).accountsRequired).toBe(false);
+      // This case proves logical intent admission. Execute at the actual held
+      // response barrier so pointer scrolling cannot consume the real five-second budget.
+      // Separate pointer journeys retain trusted input and geometry coverage.
+      const admission = await page.evaluate(() => {
+        const button = document.querySelector('[data-testid="home-create-game"]');
+        const visible = element => Boolean(element?.isConnected && element.getClientRects().length
+          && getComputedStyle(element).visibility !== 'hidden' && getComputedStyle(element).display !== 'none');
+        if (!(button instanceof HTMLButtonElement) || !visible(button)
+          || button.matches(':disabled') || button.getAttribute('aria-disabled') === 'true' || button.closest('[inert]'))
+          throw Error('A visible enabled Home create control is required for early intent');
+        const activatedAt = performance.now();
+        button.click();
+        return {kind: 'logical-early-create-intent', activatedAt, target: button.dataset.testid,
+          visible: true, enabled: true, accountDialogVisible: visible(document.querySelector('[data-testid="account-dialog"]'))};
+      });
+      expect(admission.accountDialogVisible).toBe(false);
+      expect(creates).toHaveLength(0);
+      expect(route.request().failure(), 'Initial bootstrap must still be pending at intent admission').toBeNull();
+      await route.fulfill({ response });
+      settled = true;
+      entered(admission);
+    } catch (error) {
+      rejectAdmission(error);
+      if (!settled) {
+        try { await route.abort('failed'); settled = true; } catch { /* Preserve the original admission failure. */ }
+      }
+    }
   });
+  let primaryError;
   try {
-    await page.goto('/');
-    await intercepted;
-    await page.getByTestId('home-create-game').click();
+    const [, admission] = await Promise.all([page.goto('/'), intercepted]);
+    await info.attach('early-create-intent-admission', {body: JSON.stringify(admission), contentType: 'application/json'});
     await expect(page.getByTestId('account-dialog')).not.toBeVisible();
     expect(creates).toHaveLength(0);
     const created = page.waitForResponse(response => response.request().method() === 'POST'
       && new URL(response.url()).pathname === '/api/shell/games');
-    release();
+    await expect(page.getByRole('dialog',{name:'Friend',exact:true})).toBeVisible();
     await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
     expect((await created).ok()).toBe(true);
     await expect(page).toHaveURL(/#\/game\//);
     await expect(page.getByTestId('game-role')).toContainText('Player 1');
     await expect(page.getByTestId('account-dialog')).not.toBeVisible();
     expect(creates).toHaveLength(1);
+    expect(bootstrapRequests).toBe(1);
+  } catch (error) {
+    primaryError = error;
+    throw error;
   } finally {
-    release();
-    await page.unrouteAll({ behavior: 'wait' });
+    try { await page.unrouteAll({ behavior: 'wait' }); }
+    catch (error) { if (!primaryError) throw error; }
   }
 });
 
