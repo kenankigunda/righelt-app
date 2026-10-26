@@ -26,3 +26,17 @@ test('model CI installs pinned pnpm before Node cache discovery and uses the fro
  assert.match(source,/pnpm install --frozen-lockfile\n/);
  assert.doesNotMatch(source,/corepack prepare|frozen-lockfile=false/);
 });
+
+
+test('browser-install jobs pin the Playwright-supported Ubuntu24.04 image',()=>{
+ for(const [name,job]of Object.entries(actual.jobs)){
+  const installsBrowsers=job.steps.some(step=>step.run==='node scripts/testing/install-browsers.mjs');
+  assert.equal(job['runs-on'],installsBrowsers?'ubuntu-24.04':'ubuntu-latest',`${name} runner must match its browser requirement`);
+ }
+ for(const [file,browser]of [['trained-play.yml','chromium'],['webkit-rendering-diagnostic.yml','webkit']]){
+  const source=readFileSync(new URL(`../../../.github/workflows/${file}`,import.meta.url),'utf8');
+  assert.match(source,/runs-on: ubuntu-24\.04(?:\s|$)/);
+  assert.ok(source.includes(`playwright install --with-deps ${browser}`));
+  assert.doesNotMatch(source,/runs-on: ubuntu-latest/);
+ }
+});
