@@ -61,11 +61,12 @@ class Telemetry:
             raise RuntimeError(f'Resource telemetry unavailable: {type(error).__name__}: {error}') from error
 
     def _sample(self):
-        now=time.time();observed=None;active=None
+        now=time.time();observed=None;active=None;ramp=False
         try:
             data=json.loads(self.activity_file.read_text())
             if data.get('schema')==1 and isinstance(data.get('developmentActive'),bool):
                 observed=float(data['observedAt']);active=data['developmentActive']
+                ramp=data.get('rampAuthorized') is True
         except (OSError,ValueError,KeyError,TypeError):pass
         owned_cpu=0.;rss=0
         live=[self.process]+self.process.children(recursive=True)
@@ -96,4 +97,4 @@ class Telemetry:
             swap_used=None
         return Sample(now,observed,active,max(0,psutil.cpu_percent()*psutil.cpu_count()-owned_cpu),pressure,rss,
                       psutil.virtual_memory().available,psutil.disk_usage(self.artifacts).free,size,device_known,
-                      swap_used)
+                      swap_used,ramp)

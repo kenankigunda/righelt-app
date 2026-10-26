@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createComputerControl, changeComputerControl, computerCommandError, computerProfileFor, parseComputerControl } from '../../shared-types/src/computer-play.ts';
+import { CURRENT_COMPUTER_MODEL, COMPUTER_MODELS, getComputerModel, createComputerControl, changeComputerControl, computerCommandError, computerProfileFor, parseComputerControl } from '../../shared-types/src/computer-play.ts';
 import { createInitialGame, withViewModel } from '../src/shell-live-core.ts';
 
 const initial = () => createComputerControl('owner', { p1: 'babs', p2: null });
 const change = (control, action, overrides = {}) => changeComputerControl(control, { ownerId: 'owner', authContextId: 'session', deviceId: 'device-a', generation: control.generation, action, turnIndex: 4, now: 100, ...overrides });
-const proof = (control) => ({ deviceId: 'device-a', generation: control.generation, modelId: 'initial-1554', profile: 'babs', profileVersion: 'experimental-v1', seed: 107, attemptId: 'attempt-one' });
+const proof = (control) => ({ deviceId: 'device-a', generation: control.generation, modelId: control.modelId, profile: 'babs', profileVersion: 'experimental-v1', seed: 107, attemptId: 'attempt-one' });
 const error = (control, overrides = {}) => computerCommandError(control, { ownerId: 'owner', authContextId: 'session', side: 'P1', turnIndex: 4, proof: proof(control), now: 101, ...overrides });
 
 test('lease ownership fences devices and expired or retired sessions', () => {
@@ -68,4 +68,28 @@ test('main game projection keeps computer turns read only until explicit takeove
   assert.equal(withViewModel(game, 'viewer').canControlComputer, false);
   game.computer.takeoverTurn = game.board.state.turnIndex;
   assert.equal(withViewModel(game, 'owner').canRecordMove, true);
+});
+
+test('published model controls retain their pinned identity and generation fences', () => {
+ assert.equal(initial().modelId,CURRENT_COMPUTER_MODEL.id);
+ assert.equal(CURRENT_COMPUTER_MODEL.id,'initial-1554');
+ assert.equal(getComputerModel('production-20261025-99'),null);
+ const old={...initial(),modelId:'initial-1554'};
+ assert.equal(parseComputerControl(JSON.parse(JSON.stringify(old))).modelId,'initial-1554');
+ assert.equal(getComputerModel('initial-1554').sha256,'748fcc5e7346900ead62a241002c50ca1012ef8857c73c3eb71e308b955d0490');
+ const acquired=change(old,'acquire');assert.equal(error(acquired),null);
+ const declined=change(acquired,'decline-upgrade');assert.equal(declined.modelId,'initial-1554');
+ assert.equal(declined.declinedModelId,CURRENT_COMPUTER_MODEL.id);
+ const upgraded=change(declined,'upgrade');assert.equal(upgraded.modelId,CURRENT_COMPUTER_MODEL.id);
+ assert.equal(upgraded.declinedModelId,null);assert.equal(error(upgraded),null);
+ assert.equal(error(upgraded,{proof:proof(acquired)}),'computer_control_changed');
+});
+test('every published compatible model retains its exact downloadable asset', async () => {
+ const {readFile}=await import('node:fs/promises');const {createHash}=await import('node:crypto');
+ for(const [id,model]of Object.entries(COMPUTER_MODELS)){
+  assert.equal(id,model.id);assert.match(model.url,/^\/computer\/models\/[a-zA-Z0-9-]+\.onnx$/);
+  const bytes=await readFile(new URL('../../../apps/web'+model.url,import.meta.url));
+  assert.equal(bytes.byteLength,model.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),model.sha256);
+  assert.match(model.checkpoint,/^[a-f0-9]{64}$/);
+ }
 });

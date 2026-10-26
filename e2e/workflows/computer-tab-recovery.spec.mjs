@@ -27,7 +27,7 @@ test('closing the original tab automatically restores computer play in a new tab
  const game=await projected(next,id);await switchGamePanel(next,'board');
  await submitPlayableAction(next,game.legalActions.find(action=>action.from&&action.to));
  if((await projected(next,id)).canEndTurn)await next.locator('[data-board-preview-action="end-turn"]').click();
- await waitForComputerDecision(next,id,'babs',{guest:true});
+ await waitForComputerDecision(next,id,'babs',{guest:true,modelId:game.computer.modelId});
  const finished=await projected(next,id);expect(finished.moves.some(move=>move.computerProof)).toBe(true);
  expect(new Set(finished.moves.map(move=>move.moveId)).size).toBe(finished.moves.length);
  expect(submissions.length).toBeGreaterThan(0);

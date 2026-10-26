@@ -1,3 +1,4 @@
+import {CURRENT_COMPUTER_MODEL} from '../../shared-types/src/computer-play.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -25,9 +26,16 @@ for (const accounts of [true, false]) test(`native ${accounts ? 'account' : 'gue
     };
     const a = await seed('owner',1), a2 = await seed('owner',2), b = await seed('viewer',3);
     const call = async (route, actor, body) => {
-      const response = await runtime.dispatchFetch(`https://test/api/shell/${route}`, { method: body === undefined ? 'GET' : 'POST', headers: { Origin: 'https://test', 'Content-Type': 'application/json', 'X-Righelt-Auth': '1', 'X-Righelt-Auth-Version': '2', Cookie: `__Host-righelt_session=${actor.token}`, 'X-Righelt-Session': actor.context }, ...(body === undefined ? {} : { body: JSON.stringify({ protocolVersion: 2, identityId: actor.id, ...body }) }) });
+      const query = !accounts && body === undefined ? `?identityId=${encodeURIComponent(actor.id)}` : '';
+      const response = await runtime.dispatchFetch(`https://test/api/shell/${route}${query}`, { method: body === undefined ? 'GET' : 'POST', headers: { Origin: 'https://test', 'Content-Type': 'application/json', 'X-Righelt-Auth': '1', 'X-Righelt-Auth-Version': '2', Cookie: `__Host-righelt_session=${actor.token}`, 'X-Righelt-Session': actor.context }, ...(body === undefined ? {} : { body: JSON.stringify({ protocolVersion: 2, identityId: actor.id, ...body }) }) });
       return { status: response.status, body: await response.json() };
     };
+    for(const [name,modelId]of [['cached',undefined],['explicit-published',CURRENT_COMPUTER_MODEL.id]]){
+      const value=await call('games',a,{gameId:'pin-'+name,computer:{p1:'babs',p2:null},...(modelId===undefined?{}:{computerModelId:modelId})});
+      assert.equal(value.status,200,JSON.stringify(value.body));assert.equal(value.body.game.computer.modelId,modelId??'initial-1554');
+      const reloaded = await call('games/pin-'+name,a);assert.equal(reloaded.status,200,JSON.stringify(reloaded.body));assert.equal(reloaded.body.game.computer.modelId,modelId??'initial-1554');
+    }
+    for(const modelId of ['',null,{},'unknown'])assert.equal((await call('games',a,{gameId:'invalid-'+String(modelId),computer:{p1:'babs',p2:null},computerModelId:modelId})).status,400);
     const created = await call('games',a,{ gameId:'computer-game',computer:{p1:'babs',p2:null} });
     assert.equal(created.status,200,JSON.stringify(created.body)); let game = created.body.game;
     // Exercise the SQLite expression lookup and append-only finalization schema.
@@ -48,7 +56,7 @@ for (const accounts of [true, false]) test(`native ${accounts ? 'account' : 'gue
     assert.equal((await call(route('computer-control'),a2,{action:'acquire',deviceId:'device-b',generation:game.computer.generation})).status,409);
     assert.equal((await call(route('computer-control'),b,{action:'switch',deviceId:'device-b',generation:game.computer.generation})).status,409);
     const action = game.legalActions.find(action => action.from && action.to);
-    const proof = (g, device, id) => ({deviceId:device,generation:g.computer.generation,modelId:'initial-1554',profile:'babs',profileVersion:'experimental-v1',seed:107,attemptId:id});
+    const proof = (g, device, id) => ({deviceId:device,generation:g.computer.generation,modelId:g.computer.modelId,profile:'babs',profileVersion:'experimental-v1',seed:107,attemptId:id});
     const command = async (actor,g,id,p) => {
       const value = { protocolVersion:2,gameId:g.id,identityId:actor.id,authContextId:actor.context,clientCommandId:id,kind:'action',payload:{action,...(p ? {computer:p}: {})},expectedState:g.board.state,expectedGameplayRevision:g.gameplayRevision };
       return {...value,fingerprint:await commandFingerprint(value)};
@@ -64,6 +72,8 @@ for (const accounts of [true, false]) test(`native ${accounts ? 'account' : 'gue
     assert.equal((await call(route('decision-attempt'),a2,{operation:'write',kind:'computer',attemptId:p.attemptId,attempt})).status,200);
     assert.equal((await call(route('decision-attempt'),a2,{operation:'write',kind:'computer',attemptId:p.attemptId,attempt:{...attempt,outcome:'changed'}})).status,409);
     const sent = await command(a2,game,'v2:accepted',p);
+    const changedModelCommand = await command(a2,game,'v2:accepted',{...p,modelId:'test-unpublished-model'});
+    assert.notEqual(changedModelCommand.fingerprint,sent.fingerprint,'Model choice is part of immutable command identity');
     const accepted = await call(route('apply'),a2,sent);
     assert.equal(accepted.body.commandOutcomes[0].outcome,'accepted',JSON.stringify(accepted.body));
     assert.equal((await call(route('apply'),a2,sent)).body.commandOutcomes[0].outcome,'accepted');
@@ -131,5 +141,10 @@ for (const accounts of [true, false]) test(`native ${accounts ? 'account' : 'gue
     assert.deepEqual(branch.body.game.board.state,decision.move.selectionSnapshot);
     assert.equal(branch.body.game.player1,null);assert.equal(branch.body.game.player2.identityId,'viewer');
     assert.equal(branch.body.game.computer,undefined);
+    for(const [name,modelId]of [['cached',undefined],['explicit-published',CURRENT_COMPUTER_MODEL.id]]){
+      const value=await call('history/branch',a,{gameId:'branch-pin-'+name,sourceGameId:game.id,sourceDecisionId:decision.id,computer:{p1:'babs',p2:null},...(modelId===undefined?{}:{computerModelId:modelId})});
+      assert.equal(value.status,200,JSON.stringify(value.body));assert.equal(value.body.game.computer.modelId,modelId??'initial-1554');
+    }
+
   } finally { await runtime.dispose(); }
 });

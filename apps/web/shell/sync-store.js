@@ -1,4 +1,4 @@
-import { createComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
+import { CURRENT_COMPUTER_MODEL, createComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
 import { IDENTITY_KEY } from "./persistence.js";
 import { STORAGE_GENERATION_HEADER, STORAGE_GENERATION_QUERY } from "../generated/packages/shared-types/src/storage-policy.js";
 import { AUTH_PROTOCOL_VERSION, AUTH_PROTOCOL_HEADER, AUTH_REQUEST_HEADER, SESSION_CONTEXT_HEADER } from '../generated/packages/shared-types/src/auth-policy.js';
@@ -1375,7 +1375,7 @@ export const createSyncStore = ({
         throw error;
       }
     },
-    createGame: ({ selfPlayMode = false, creatorSide = "p1", computer } = {}) => {
+    createGame: ({ selfPlayMode = false, creatorSide = "p1", computer, computerModelId = CURRENT_COMPUTER_MODEL.id } = {}) => {
       computer = computer ? {...computer} : computer;
       const gameId = createGameId();
       const createdAt = new Date().toISOString();
@@ -1394,7 +1394,7 @@ export const createSyncStore = ({
         myRole: creatorSide === "p2" && !selfPlayMode ? "Player 2" : "Player 1",
         notifications: ["Game creation pending sync"],
       });
-      if (computer) { stubGame.computer = createComputerControl(identityId, computer); annotateComputerParticipants(stubGame,stubGame.computer.seats); stubGame.awaitingCreation = true; stubGame.canRecordMove = false; stubGame.canEndTurn = false; }
+      if (computer) { stubGame.computer = createComputerControl(identityId, computer, computerModelId); annotateComputerParticipants(stubGame,stubGame.computer.seats); stubGame.awaitingCreation = true; stubGame.canRecordMove = false; stubGame.canEndTurn = false; }
       transport.applyLiveGameUpdate({ game: stubGame });
       savePendingLocalGame(stubGame);
 
@@ -1405,7 +1405,7 @@ export const createSyncStore = ({
       });
 
       void transport
-        .createGame({ selfPlayMode, gameId, creatorSide, computer })
+        .createGame({ selfPlayMode, gameId, creatorSide, computer, computerModelId })
         .then((game) => {
           if (game?.id !== gameId) {
             const mismatchError = createGameIdMismatchError("Game creation", gameId, game?.id ?? "unknown");
@@ -1467,7 +1467,7 @@ export const createSyncStore = ({
     launchHistoryBranch: ({
       sourceGameId,
       sourceMoveIndex,
-      sourceDecisionId = null, sourceGameplayRevision = null, creatorSide = "p1", computer,
+      sourceDecisionId = null, sourceGameplayRevision = null, creatorSide = "p1", computer, computerModelId = CURRENT_COMPUTER_MODEL.id,
       scenario,
       initialSelectionAction,
       participantCopyMode,
@@ -1503,7 +1503,7 @@ export const createSyncStore = ({
         notifications: ["History branch pending sync"],
         initialSelectionAction,
       });
-      if (computer) annotateComputerParticipants(stubGame,createComputerControl(identityId,computer).seats);
+      if (computer) annotateComputerParticipants(stubGame,createComputerControl(identityId,computer,computerModelId).seats);
       // The server derives the branch position. Do not queue moves against a client preview.
       stubGame.awaitingCreation = true; stubGame.canRecordMove = false; stubGame.canEndTurn = false;
       transport.applyLiveGameUpdate({ game: stubGame });
@@ -1520,7 +1520,7 @@ export const createSyncStore = ({
           gameId,
           sourceGameId,
           sourceMoveIndex,
-          sourceDecisionId, sourceGameplayRevision, creatorSide, computer,
+          sourceDecisionId, sourceGameplayRevision, creatorSide, computer, computerModelId,
           scenario,
           initialSelectionAction,
           participantCopyMode,

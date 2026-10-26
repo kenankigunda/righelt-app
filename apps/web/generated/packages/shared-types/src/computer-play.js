@@ -13,9 +13,16 @@ export const CURRENT_COMPUTER_MODEL = Object.freeze({
     checkpoint: '04302e437e01868cc48a237df3c3e8621d84dade628511324b6a3e6e438d6291',
     url: '/computer/models/initial-1554.onnx', experimental: true,
 });
-// Published compatible versions remain addressable. Add a new version without removing old entries.
-export const COMPUTER_MODELS = Object.freeze({ [CURRENT_COMPUTER_MODEL.id]: CURRENT_COMPUTER_MODEL });
+// This historical HTTP default stays fixed when CURRENT changes in a later release.
+const LEGACY_COMPUTER_MODEL_ID = 'initial-1554';
+// Only published compatible models belong here.
+export const COMPUTER_MODELS = Object.freeze({
+    [CURRENT_COMPUTER_MODEL.id]: CURRENT_COMPUTER_MODEL,
+});
 export const getComputerModel = (id) => Object.hasOwn(COMPUTER_MODELS, id) ? COMPUTER_MODELS[id] : null;
+/** Requests from cached clients predate model pinning and know only the original model. */
+export const computerModelForCreation = (value) => value === undefined
+    ? getComputerModel(LEGACY_COMPUTER_MODEL_ID) : typeof value === 'string' ? getComputerModel(value) : null;
 export const isComputerProfile = (value) => typeof value === 'string' && Object.hasOwn(COMPUTER_PROFILES, value);
 export function parseComputerSeats(value) {
     if (!value || typeof value !== 'object')
@@ -25,7 +32,11 @@ export function parseComputerSeats(value) {
         return null;
     return { p1: seats.p1, p2: seats.p2 };
 }
-export const createComputerControl = (ownerId, seats) => ({ ownerId, seats, modelId: CURRENT_COMPUTER_MODEL.id, generation: 0, lease: null, paused: false, singleStep: false, manual: false, takeoverTurn: null, declinedModelId: null });
+export const createComputerControl = (ownerId, seats, modelId = CURRENT_COMPUTER_MODEL.id) => {
+    if (!getComputerModel(modelId))
+        throw new Error('invalid_computer_model');
+    return { ownerId, seats, modelId, generation: 0, lease: null, paused: false, singleStep: false, manual: false, takeoverTurn: null, declinedModelId: null };
+};
 /** Invalid persisted ownership must never turn into an ordinary human game. */
 export function parseComputerControl(value) {
     const control = value;

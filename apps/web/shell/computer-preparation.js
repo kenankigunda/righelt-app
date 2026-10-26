@@ -23,9 +23,9 @@ export function createComputerPreparation({ runtime = new ComputerRuntime(), onC
     state = { state: 'idle', message: 'Preparing your opponent…' }; onChange();
   };
   const start = (requestedOwner, modelId = CURRENT_COMPUTER_MODEL.id) => {
-    if (owner === requestedOwner && (flight || state.state === 'ready')) return flight ?? Promise.resolve(snapshot(owner));
+    if (owner === requestedOwner && state.modelId === modelId && (flight || state.state === 'ready')) return flight ?? Promise.resolve(snapshot(owner));
     cancel(); owner = requestedOwner; const run = ++epoch;
-    state = { state: 'preparing', startedAt: clock(), message: 'Preparing your opponent…', progress: null };
+    state = { state: 'preparing', modelId, startedAt: clock(), message: 'Preparing your opponent…', progress: null };
     timer = timers.setInterval(onChange, 1000); onChange();
     flight = (async () => {
       try {

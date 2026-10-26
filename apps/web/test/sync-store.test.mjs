@@ -1400,3 +1400,25 @@ for (const forced of [false,true]) test(`optimistic undo ${forced?'retains a leg
   assert.equal(game.moves[0].undone,undefined);
   accept(clone(pending));await handle.committed;
 });
+
+for (const operation of ['createGame', 'launchHistoryBranch']) test(`${operation} pins its optimistic computer and request to a retained model`, async () => {
+  const {transport, games} = createTransportHarness();
+  let sent;
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({...transport, [operation]: async payload => {
+      sent = payload;
+      const game = games.get(payload.gameId);
+      return operation === 'createGame' ? game : {game};
+    }}),
+    createSyncClient: () => ({connectGame(){}, disconnectGame(){}, disconnectAll(){}, getDesiredGameIds:()=>[]}),
+  });
+  const handle = store[operation]({computer:{p1:'babs',p2:null}, computerModelId:'initial-1554', sourceGameId:'source', sourceMoveIndex:0});
+  const game = operation === 'createGame' ? handle.result : handle.result.game;
+  if (operation === 'createGame') assert.equal(game.computer.modelId, 'initial-1554');
+  else assert.equal(game.computer, undefined, 'branch control waits for canonical creation');
+  assert.equal(game.awaitingCreation, true);
+  assert.equal(game.canRecordMove, false);
+  await handle.committed;
+  assert.equal(sent.computerModelId, 'initial-1554');
+});

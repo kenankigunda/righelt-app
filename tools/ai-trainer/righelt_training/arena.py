@@ -17,7 +17,7 @@ import torch
 from .config import CONFIG,ROOT,CONFIG_SHA256
 from .checkpoint import atomic_json,load_checkpoint
 from .evaluation import paired_report
-from .model import PolicyValueNet
+from .model import model_from_record
 from .runner import stop_worker,verify_game,engine_command
 from .replay import partition_for_family
 from .curriculum import family_for_root
@@ -237,7 +237,7 @@ def load_frozen_models(plan,paths,device):
         path=Path(paths[who]);digest=hashlib.sha256(path.read_bytes()).hexdigest()
         if digest!=plan[who]['checkpointSha256']:raise ValueError('checkpoint differs from frozen candidate')
         metadata=json.loads(path.with_suffix('.json').read_text())
-        model=PolicyValueNet().to(device)
+        model=model_from_record(metadata).to(device)
         load_checkpoint(path,model,manifest_sha256=metadata['manifestSha256'])
         model.eval();models[who]=model
     return models

@@ -1,4 +1,5 @@
 import {assertReplayIntegrity} from '../support/replay-write-contract.mjs';
+import {CURRENT_COMPUTER_MODEL} from '../../packages/shared-types/src/computer-play.ts';
 import {readFile} from 'node:fs/promises';
 import {isOperationRequest,operationValues} from "../support/shared-request.mjs";
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
@@ -52,10 +53,11 @@ test('guest computer finishes a catalog position and prepares a fresh rematch',a
   },{route,body,header:STORAGE_GENERATION_HEADER});
   const source=(await request('/api/shell/scenarios/import',{scenario})).game;
   const final=source.moves.at(-1);
-  const game=(await request('/api/shell/history/branch',{sourceGameId:source.id,sourceDecisionId:final.moveId,creatorSide:'p2',computer:{p1:'babs',p2:null}})).game;
+  const game=(await request('/api/shell/history/branch',{sourceGameId:source.id,sourceDecisionId:final.moveId,creatorSide:'p2',computer:{p1:'babs',p2:null},computerModelId:CURRENT_COMPUTER_MODEL.id})).game;
   expect(game.board.state).toEqual(final.selectionSnapshot);
+  expect(game.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
   await page.goto(`/#/game/${game.id}`);
-  await waitForComputerDecision(page,game.id,'babs',{guest:true});
+  await waitForComputerDecision(page,game.id,'babs',{guest:true,modelId:game.computer.modelId});
   await expect.poll(async()=>(await projected(page,game.id)).board.state.outcome.status).toBe('p1_win');
   const result=page.getByTestId('game-result');await expect(result).toBeVisible();
   await page.screenshot({path:info.outputPath('guest-computer-finished.png')});
@@ -66,6 +68,7 @@ test('guest computer finishes a catalog position and prepares a fresh rematch',a
   await chooser.getByRole('button',{name:'Start game',exact:true}).click();
   const response=await creation;expect(response.status()).toBe(200);
   const fresh=(await response.json()).game;expect(fresh.id).not.toBe(game.id);
+  expect(response.request().postDataJSON().computerModelId).toBe(CURRENT_COMPUTER_MODEL.id);expect(fresh.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
   expect(fresh.computer.seats).toEqual({p1:null,p2:'babs'});
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',fresh.id);
 });
@@ -114,7 +117,7 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
   await expect.poll(async () => (await projected(page, initial.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-board-preview-action="end-turn"]').click();
-  await waitForComputerDecision(page, initial.id, 'babs', {guest:true});
+  await waitForComputerDecision(page, initial.id, 'babs', {guest:true,modelId:initial.computer.modelId});
   await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible({timeout:30000});
   const geometry=await page.evaluate(()=>{window.boardStatusGeometry.running=false;return window.boardStatusGeometry.samples;});
   expect(geometry.length).toBeGreaterThan(2);
@@ -142,7 +145,8 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
     await page.emulateMedia({reducedMotion:'no-preference'});
   } finally {page.off('request',observeReplay);}
   const saved = (await projected(page, initial.id)).moves.find(move=>move.computerProof);
-  expect(saved.computerProof.modelId).toBe('initial-1554');
+  expect(initial.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
+  expect(saved.computerProof.modelId).toBe(initial.computer.modelId);
   // Serialized seed fields cannot be mutated by either later journey.
   played=Object.freeze({initialJSON:JSON.stringify(initial),savedJSON:JSON.stringify(saved),identityId});
   });

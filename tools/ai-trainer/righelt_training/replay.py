@@ -2,11 +2,16 @@ import gzip
 import hashlib
 import json
 import os
+import struct
 from pathlib import Path
 from collections import deque
 from array import array
 from .config import CONFIG
 from .training_recipe import validate_decision_recipe
+
+
+def encoding_hash(values):
+    return hashlib.sha256(struct.pack('<'+'f'*len(values),*values)).hexdigest()
 
 
 def partition_for_family(family_id):
@@ -29,10 +34,12 @@ def save_game(directory,game):
     return path
 
 class ReplayBuffer:
-    def __init__(self,capacity=None):
+    def __init__(self,capacity=None,*,protected_encoding_hashes=()):
         self.positions=deque(maxlen=capacity or CONFIG['training']['replayCapacity'])
         self.ids=set()
         self.game_ids=[]
+        self.protected_encoding_hashes=frozenset(protected_encoding_hashes)
+        self.protected_exclusions={}
 
     def append(self,game):
         if game['id'] in self.ids:raise ValueError('duplicate replay game')
@@ -43,6 +50,8 @@ class ReplayBuffer:
         # Validate all recipe bindings before mutating the replay buffer.
         for decision in game['decisions']:
             validate_decision_recipe(decision)
+            if self.protected_encoding_hashes and 'encoded' not in decision:
+                raise ValueError('protected replay requires encoded position evidence')
         for decision in game['decisions']:
             position={k:decision[k] for k in ('id','legal','policy','policyMask','fallback','legality','trainingRecipe') if k in decision}
             mask=decision.get('policyMask',True)
@@ -66,6 +75,9 @@ class ReplayBuffer:
                     (not legality['complete'] and (mask or not fallback or fallback.get('reason')!='legality-incomplete'))):
                     raise ValueError('invalid legality evidence')
             if 'encoded' in decision:position['encoded']=array('f',decision['encoded'])
+            if self.protected_encoding_hashes and encoding_hash(position['encoded']) in self.protected_encoding_hashes:
+                self.protected_exclusions[game['id']]=self.protected_exclusions.get(game['id'],0)+1
+                continue
             self.positions.append({**position,'terminalMask':terminal,'terminalValue':value,'gameId':game['id']})
         self.ids.add(game['id'])
         self.game_ids.append(game['id'])

@@ -1,5 +1,55 @@
 # Local trained-play tools
 
+## Incremental production-game rounds
+
+The opt-in `production-headroom-v3` resource policy supports the separately
+authorized October 25 round on a 48-GiB local machine. Historical runs retain
+`adaptive-headroom-v2`. Select the new policy explicitly through
+`RIGHELT_RESOURCE_POLICY=production-headroom-v3`; never alter the frozen model
+configuration to change operational limits.
+
+For this opt-in policy, warning pressure is advisory only at two workers and
+16 GiB, even when an idle ramp was authorized. Low available memory, swap growth
+and the memory ceiling still pause work. Critical or unknown pressure stops it.
+The historical policy retains its existing warning-pause behavior.
+
+`snapshot-production.py` performs SELECT-only exports into a new private
+directory. A revision fence before and after export rejects concurrent changes
+without overwriting earlier snapshots. `production-corpus.mjs` checks snapshot
+checksums and independently replays decisions, turn finalizations and known
+restoration targets. It preserves excluded records and exact historical outcome
+compatibility. Verified positions become new self-play starts, never historical
+policy labels or invented terminal outcomes. Withheld game families and matching
+position hashes cannot enter production-start sampling. A second guard excludes
+unique withheld FP32 input encodings from every learned replay source, including
+ordinary/simple/continuation self-play, inherited archives and later generated
+transpositions. Raw archives remain intact, and excluded example counts stay
+visible. The shared initial position and single-Pass opening prefix are labeled
+separately; their results are not claims about globally unseen positions.
+
+The optional manifest `productionCorpus` binds an absolute path and file SHA256.
+Its curriculum uses a deterministic four-job cycle: two production positions,
+one ordinary start, and one existing simple/continuation start. Production starts
+are balanced by game and continuation category. Generated archives retain their
+source decision and corpus identity. An explicit `warmStart` binds the approved
+checkpoint and its historical manifest, retaining optimizer, RNG and replay
+ancestry while counting this round's new work separately.
+
+`righelt_training.incremental` reuses the native runner, external watchdog,
+checkpoint recovery format and launch-proof checks. Its immutable contract fixes
+a 12-hour end-to-end window from implementation admission, reserving the final
+four hours for evaluation and release. Setup, resource waits and stopped repairs
+cannot move the deadline. Every launch requires a fresh explicit coordinator
+grant and healthy telemetry. Resource stops return control for an explicit
+regrant; this entrypoint never reopens historical allocations or promotes a model.
+No training may coexist with ready or running heavy/browser validation. The
+coordinator must stop admission, checkpoint and verify owned CPU/MPS cleanup
+within 60 seconds before granting another owner the host.
+
+Promotion remains separate: refresh replay, dependency provenance and native/
+browser parity against the actual release source, coordinate one deployment
+owner, preserve production games and leave storage-writer activation unchanged.
+
 T-107 builds on the authoritative TypeScript engine and the versioned configuration in `packages/computer-player/config/experiment-v1.json`. The approved contract and gates live in the shared backlog's `backlog/docs/tickets/t-107/execution-plan.md`.
 
 Controlled root exploration is separately versioned in `packages/computer-player/config/training-recipes-v1.json`. The optional `root-dirichlet-v1` recipe changes only root PUCT priorities after the first raw-prior visit and tactical exclusion. It preserves eligible raw prior mass, uses its own seeded bounded sampler, and records raw/effective priors and the noise digest. Immediate/forced outcomes and fallback paths bypass it. Normal app, arena, diagnostic and export requests omit the option. A worker accepts it only on an explicit training job or development-screen arm, never from an ordinary profile field.

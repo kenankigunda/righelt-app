@@ -1,6 +1,18 @@
 import torch
 from torch import nn
 from .config import CONFIG
+from .architecture import BASELINE, validate_architecture, record_architecture
+
+
+def create_model(binding=None):
+    if binding is None or validate_architecture(binding)['id'] == BASELINE:
+        return PolicyValueNet()
+    from .board_attention import BoardAttentionNet
+    return BoardAttentionNet(binding)
+
+
+def model_from_record(record):
+    return create_model(record_architecture(record))
 
 class ResidualBlock(nn.Module):
     def __init__(self, channels):

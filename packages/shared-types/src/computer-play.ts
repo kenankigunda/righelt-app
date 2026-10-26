@@ -15,9 +15,17 @@ export const CURRENT_COMPUTER_MODEL = Object.freeze({
   checkpoint: '04302e437e01868cc48a237df3c3e8621d84dade628511324b6a3e6e438d6291',
   url: '/computer/models/initial-1554.onnx', experimental: true,
 });
-// Published compatible versions remain addressable. Add a new version without removing old entries.
-export const COMPUTER_MODELS: Readonly<Record<string, typeof CURRENT_COMPUTER_MODEL>> = Object.freeze({ [CURRENT_COMPUTER_MODEL.id]: CURRENT_COMPUTER_MODEL });
+export type ComputerModel = Readonly<{ id: string; sha256: string; bytes: number; checkpoint: string; url: string; experimental: boolean }>;
+// This historical HTTP default stays fixed when CURRENT changes in a later release.
+const LEGACY_COMPUTER_MODEL_ID = 'initial-1554';
+// Only published compatible models belong here.
+export const COMPUTER_MODELS: Readonly<Record<string, ComputerModel>> = Object.freeze({
+  [CURRENT_COMPUTER_MODEL.id]: CURRENT_COMPUTER_MODEL,
+});
 export const getComputerModel = (id: string) => Object.hasOwn(COMPUTER_MODELS, id) ? COMPUTER_MODELS[id] : null;
+/** Requests from cached clients predate model pinning and know only the original model. */
+export const computerModelForCreation = (value: unknown): ComputerModel | null => value === undefined
+  ? getComputerModel(LEGACY_COMPUTER_MODEL_ID) : typeof value === 'string' ? getComputerModel(value) : null;
 export type ComputerSeats = { p1: ComputerProfile | null; p2: ComputerProfile | null };
 export type ComputerControl = {
   ownerId: string; seats: ComputerSeats; modelId: string; generation: number;
@@ -33,7 +41,10 @@ export function parseComputerSeats(value: unknown): ComputerSeats | null {
   if (![seats.p1, seats.p2].every((seat) => seat === null || isComputerProfile(seat)) || (!seats.p1 && !seats.p2)) return null;
   return { p1: seats.p1, p2: seats.p2 };
 }
-export const createComputerControl = (ownerId: string, seats: ComputerSeats): ComputerControl => ({ ownerId, seats, modelId: CURRENT_COMPUTER_MODEL.id, generation: 0, lease: null, paused: false, singleStep: false, manual: false, takeoverTurn: null, declinedModelId: null });
+export const createComputerControl = (ownerId: string, seats: ComputerSeats, modelId: string = CURRENT_COMPUTER_MODEL.id): ComputerControl => {
+  if (!getComputerModel(modelId)) throw new Error('invalid_computer_model');
+  return { ownerId, seats, modelId, generation: 0, lease: null, paused: false, singleStep: false, manual: false, takeoverTurn: null, declinedModelId: null };
+};
 /** Invalid persisted ownership must never turn into an ordinary human game. */
 export function parseComputerControl(value: unknown): ComputerControl {
   const control = value as ComputerControl;
