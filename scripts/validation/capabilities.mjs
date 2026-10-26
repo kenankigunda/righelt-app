@@ -1,6 +1,6 @@
 import {access,readFile} from 'node:fs/promises';
 import path from 'node:path';
-import {sourceFile,stringContract,currentModelContract} from './source-contract.mjs';
+import {sourceFile,stringContract,currentModelContract,historyUndoLabelContract} from './source-contract.mjs';
 // Source capabilities select explicit contracts before tests run. A failed
 // assertion never changes contracts or downgrades account proof to guest proof.
 export async function candidateCapabilities(root) {
@@ -30,10 +30,14 @@ export async function candidateCapabilities(root) {
     usernameOnlySignup=/^export const ACCOUNT_SIGNUP_PROFILE\s*=\s*['"]username-only['"];?$/m.test(dialog);
     separateAccountForms=/^export const ACCOUNT_ENTRY_LAYOUT\s*=\s*['"]separate['"];?$/m.test(dialog);
   } catch(error) { if(error.code!=='ENOENT') throw error; }
+  let historyUndoLabel=null;
+  try { historyUndoLabel=historyUndoLabelContract(await readFile(path.join(root,'apps/web/shell/app.js'),'utf8')); }
+  catch(error) { if(error.code!=='ENOENT') throw error; }
   let currentComputerModel=null;
   if(trainedComputerPlay) currentComputerModel=currentModelContract(await readFile(path.join(root,'packages/shared-types/src/computer-play.ts'),'utf8'));
   return {
     currentComputerModel,
+    historyUndoLabel,
     resultHeadingContract,
     rematchChoicesContract,
     trainedComputerPlay,

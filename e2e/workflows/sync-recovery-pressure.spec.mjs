@@ -39,6 +39,9 @@ async function wire(page) {
   fault.requests++;
   if(fault.legacy && /\/reconcile$/.test(new URL(route.request().url()).pathname)){await route.fulfill({status:404,json:{ok:false,error:"not_found"}});return;}
   if(fault.http || (fault.loseReply && isOperationRequest(route.request(),'reconcile'))){await route.abort();return;}
+  // Keep the browser's Blob beacon body intact. Presence is still blocked by
+  // the explicit HTTP fault above; gameplay and reconciliation stay intercepted.
+  if(route.request().method()==='POST'&&/\/presence$/.test(new URL(route.request().url()).pathname)){await route.continue();return;}
   const mutation=isOperationRequest(route.request(),'apply');
   // Loss of an admitted move begins at submission, not during pointer setup.
   // Otherwise a slow browser can enter recovery and reject the click entirely.
@@ -326,7 +329,23 @@ test(`E05 intentional ${frozenRole} history survives disconnection and home navi
 
 test('E07 old protocol keeps a stable notice until the player refreshes their saved game',async({page},info)=>{
  const {gameId}=await createGameFromHome(page);await makeAnyLegalMove(page);const before=await digest(page);
- const fault=await wire(page);fault.legacy=true;let navigation=0;page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigation++;});
+ const fault=await wire(page);
+ const presenceUrl=new URL(`/api/shell/games/${gameId}/presence`,page.url()).href;
+ // Exercise the application's real JSON Blob beacon before navigation. WebKit
+ // does not expose its body to route.fetch, so reconstructing it loses identity.
+ const presenceResponse=page.waitForResponse(response=>response.url()===presenceUrl&&response.request().method()==='POST');
+ await page.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
+ const presence=await presenceResponse;
+ expect(presence.status(),'The application presence beacon must reach the server with its identity and session').toBe(200);
+ expect(await presence.json()).toMatchObject({ok:true,eventSeq:expect.any(Number)});
+ // Native forwarding must not bypass the fixture's explicit offline fault.
+ fault.http=true;
+ try{
+  const blockedPresence=page.waitForEvent('requestfailed',{predicate:request=>request.url()===presenceUrl&&request.method()==='POST'});
+  await page.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
+  expect((await blockedPresence).failure()).not.toBeNull();
+ }finally{fault.http=false;}
+ fault.legacy=true;let navigation=0;page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigation++;});
  await page.reload();
  const refresh=page.locator('[data-action="refresh-game"]');
  await expect(page.getByTestId('sync-recovery-banner')).toBeVisible();
@@ -343,7 +362,7 @@ test('E07 old protocol keeps a stable notice until the player refreshes their sa
  await expect.poll(()=>navigation).toBe(2);
  await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
  await expect.poll(async()=>JSON.stringify(await digest(page))).toBe(JSON.stringify(before));
- await evidence(info,'upgrade-refresh',start,[fault],{automaticReloads:navigation-2});
+ await evidence(info,'upgrade-refresh',start,[fault],{automaticReloads:navigation-2,presenceBeacon:{acceptedStatus:presence.status(),offlineBlocked:true}});
 });
 
 test('E07 cold invitation keeps upgrade recovery tied to its resolved game', async ({page}, info) => {

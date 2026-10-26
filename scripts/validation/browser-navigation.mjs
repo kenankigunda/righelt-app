@@ -12,9 +12,10 @@ const settled = locator => locator.evaluate(async element => {
 export async function revealGameNavigation(page) {
   const controls=page.locator('[data-mobile-nav-controls]');
   if(await controls.count()) {
-    if(await controls.getAttribute('inert')!==null) {
-      await page.getByRole('button',{name:'Show game navigation',exact:true}).click();
-    }
+    const reveal=page.getByRole('button',{name:'Show game navigation',exact:true});
+    // Refresh the real idle window before a nonselected tab interaction, even
+    // when the controls are still expanded but about to disappear.
+    if(await reveal.count() || await controls.getAttribute('inert')!==null)await reveal.click();
     await expect(controls).not.toHaveAttribute('inert','');
     await settled(controls);
   }
@@ -26,9 +27,11 @@ export async function selectGamePanel(page,key) {
   if(layout==='wide')return;
   const tab=page.locator(`[data-action="switch-game-panel"][data-panel="${key}"]`);
   if(layout!=='narrow'&&!await tab.isVisible())return;
-  await revealGameNavigation(page);
-  await expect(tab).toBeVisible();
-  if(await tab.getAttribute('aria-pressed')!=='true')await tab.click();
+  if(await tab.getAttribute('aria-pressed')!=='true'){
+    await revealGameNavigation(page);
+    await expect(tab).toBeVisible();
+    await tab.click();
+  }
   await expect(tab).toHaveAttribute('aria-pressed','true');
   const panel=page.locator(`[data-mobile-panel="${key}"]`);
   await expect(panel).not.toHaveAttribute('inert','');
@@ -106,4 +109,34 @@ export async function assertRematchSide(dialog, side, {contract='legacy',asserti
   await expect(selected).toHaveAccessibleName(contract==='colors-v1'?color:`Player ${side==='p1'?'1':'2'} · ${color}`,assertionOptions);
   await expect(selected).toBeChecked(assertionOptions);
   await expect(dialog.locator('input[type="radio"][name="rematch-side"]:checked')).toHaveCount(1,assertionOptions);
+}
+
+export async function assertRematchControlTargets(dialog,{contract='legacy',opponent,assertionOptions}={}) {
+  if(!['legacy','colors-v1'].includes(contract))throw Error('Unsupported rematch choices contract');
+  // Side controls keep their existing native-radio geometry contract. The
+  // opponent cards have smaller glyphs inside separate full-size click targets.
+  const sides=dialog.getByRole('group',{name:'Your side',exact:true}).getByRole('radio');
+  await expect(sides).toHaveCount(2,assertionOptions);
+  for(const side of await sides.all()){
+    const box=await side.boundingBox();expect(box).not.toBeNull();
+    expect(box.width).toBeGreaterThanOrEqual(16);expect(box.width).toBeLessThanOrEqual(24);
+    expect(box.height).toBeGreaterThanOrEqual(16);expect(box.height).toBeLessThanOrEqual(24);
+  }
+  if(contract==='legacy')return;
+  const group=dialog.getByRole('group',{name:'Opponent',exact:true});
+  await expect(group.getByRole('radio')).toHaveCount(5,assertionOptions);
+  const choices=['babs','tau','horus','friend','self'];
+  if(!choices.includes(opponent))throw Error('Expected opponent must identify a native rematch choice');
+  const labelFor=value=>group.locator('label').filter({has:dialog.page().locator(`input[type="radio"][name="rematch-opponent"][value="${value}"]`)});
+  for(const value of choices){
+    const label=labelFor(value);await expect(label).toHaveCount(1,assertionOptions);
+    expect(await label.evaluate((element,value)=>element.control?.name==='rematch-opponent'&&element.control.value===value,value)).toBe(true);
+    const box=await label.boundingBox();expect(box).not.toBeNull();
+    expect(box.width).toBeGreaterThanOrEqual(44);expect(box.height).toBeGreaterThanOrEqual(44);
+    await label.click();
+    await assertOpponentChoice(dialog,value,{contract,assertionOptions});
+  }
+  // Preserve the caller's intended rematch instead of starting the last tested choice.
+  await labelFor(opponent).click();
+  await assertOpponentChoice(dialog,opponent,{contract,assertionOptions});
 }

@@ -94,6 +94,28 @@ test('wide candidates do not receive narrow navigation actions',async({page})=>{
   await mountNavigation(page,{wide:true});await selectGamePanel(page,'history');
   expect(await page.evaluate(()=>window.panelClicks)).toBe(0);
 });
+test('already selected panels remain inspectable while compact controls are hidden',async({page})=>{
+  await mountNavigation(page,{collapsed:true});
+  await page.locator('#reveal').evaluate(element=>element.remove());
+  await selectGamePanel(page,'players');
+  expect(await page.evaluate(()=>({clicks:window.panelClicks,reveals:window.reveals}))).toEqual({clicks:0,reveals:0});
+});
+test('expanded compact navigation refreshes its real reveal before the idle boundary',async({page})=>{
+  await mountNavigation(page,{collapsed:true});
+  await page.evaluate(()=>{
+    const controls=document.querySelector('[data-mobile-nav-controls]');controls.inert=false;
+    window.refreshed=false;
+    document.querySelector('#reveal').addEventListener('click',()=>{window.refreshed=true;});
+    const original=controls.getAttribute.bind(controls);
+    controls.getAttribute=name=>{
+      const value=original(name);
+      if(name==='inert'&&!window.refreshed)queueMicrotask(()=>{controls.inert=true;});
+      return value;
+    };
+  });
+  await selectGamePanel(page,'history');
+  expect(await page.evaluate(()=>({clicks:window.panelClicks,reveals:window.reveals,refreshed:window.refreshed}))).toEqual({clicks:1,reveals:1,refreshed:true});
+});
 test('a collapsed candidate without its accessible reveal control fails without clicking hidden tabs',async({page})=>{
   await mountNavigation(page,{collapsed:true});await page.locator('#reveal').evaluate(element=>element.remove());
   page.setDefaultTimeout(150);

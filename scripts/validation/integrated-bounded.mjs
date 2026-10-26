@@ -1,5 +1,6 @@
 import path from 'node:path';
-import {mkdir,cp} from 'node:fs/promises';
+import os from 'node:os';
+import {mkdir,cp,mkdtemp,rm,realpath} from 'node:fs/promises';
 import {command,git,readJSON,saveJSON} from './io.mjs';
 import {hash} from './model.mjs';
 import {validatePlan,stagePolicy} from './plan.mjs';
@@ -8,6 +9,7 @@ import {candidateCapabilities} from './capabilities.mjs';
 import {ensureInstallation} from './execution.mjs';
 import {loadSuccessfulEvidence,saveSuccessfulEvidence} from './reuse.mjs';
 import {restoreRetainedInput,assertRetainedOutput} from './retained-input.mjs';
+import {requireRetainedResumeBaseline} from './retained-resume.mjs';
 import {createCheckpoint,restoreCheckpoint} from './checkpoints.mjs';
 import {renderReport} from './report.mjs';
 import {publish} from './publish.mjs';
@@ -37,13 +39,19 @@ export async function boundedIntegratedRun({spec,cwd=process.cwd(),dir,resume=fa
   prs.push({...input,title:p.title,url:p.url,head:p.headRefOid,branch:p.headRefName,base:p.baseRefName,inputBaseSha:p.baseRefOid,open:true,draft:p.isDraft,...(old?.authorization?{authorization:{...old.authorization,state:old.base===p.baseRefName?old.authorization.state:'suspended'}}:{})});
  }
  const harnessRevision=await git(['rev-parse','HEAD'],harnessRoot),harnessFingerprint=await fingerprint(harnessRoot);
+ if(previous?.retainedTransfer)await requireRetainedResumeBaseline({previous,base,tree:await git(['rev-parse',`${base}^{tree}`],cwd),harnessFingerprint,spec,verify:async(prior,provenance)=>{
+  if(!await loadSuccessfulEvidence(prior.evidenceReceipt,provenance))throw Error('Prior baseline evidence no longer verifies');
+  const scratch=await realpath(await mkdtemp(path.join(os.tmpdir(),'righelt-retained-resume-')));
+  try{await restoreCheckpoint({checkpoint:prior.checkpoint,destination:path.join(scratch,'state'),provenance,assertStopped:stopped});return true;}
+  finally{await rm(scratch,{recursive:true,force:true});}
+ }});
  const attempt=Date.now(),attemptDir=path.join(dir,'attempts',String(attempt));
  if(retainedInput){await mkdir(path.dirname(attemptDir),{recursive:true});await mkdir(attemptDir,{mode:0o700});}else await mkdir(attemptDir,{recursive:true});
  const run={version:2,id:previous?.id??`integrated-${attempt}`,mode:'integrated',repository:spec.repository,startedAt:previous?.startedAt??new Date().toISOString(),base,prs,stages:[],risks:[],findings:[],mergeMethod:spec.mergeMethod??'squash',complete:false,harnessRevision,harnessFingerprint,plan:spec,publication:{status:'pending'},emailThreads:previous?.emailThreads??[],notifications:previous?.notifications??[],attempts:previous?[...(previous.attempts??[]),{id:previous.attempt,base:previous.base,stages:previous.stages,risks:previous.risks,publication:previous.publication,...(previous.retainedTransfer?{retainedTransfer:previous.retainedTransfer}:{})}]:[],attempt};
  if(previous?.retainedTransfer)run.retainedTransfer=structuredClone(previous.retainedTransfer);
  const root=path.join(path.dirname(cwd),`righelt-validation-${attempt}`);await git(['worktree','add','--detach',root,base],cwd);run.worktree=root;await saveJSON(file,run);
  let state=path.join(attemptDir,'state'),continuity,accountContinuity,legacyContinuity,canReuse=!retainedInput;
- if(!retainedInput)await mkdir(state,{recursive:true,mode:0o700});
+ if(!retainedInput&&!previous?.retainedTransfer)await mkdir(state,{recursive:true,mode:0o700});
  try{
   if(retainedInput){
    const restored=await restoreRetainedInput({input:retainedInput,repository:spec.repository,baseBranch:spec.base,baseline:base,cwd, destination:state,targetRunDir:dir,assertStopped:stopped});
@@ -62,7 +70,9 @@ export async function boundedIntegratedRun({spec,cwd=process.cwd(),dir,resume=fa
    const policy=stagePolicy(spec,index,{accounts:capabilities.accounts,changed});
    const provenance=JSON.parse(JSON.stringify({version:2,base,tree,prefix:prs.slice(0,index).map(p=>({number:p.number,head:p.head})),policy,harnessFingerprint,node:process.version,platform:process.platform,arch:process.arch}));
    const prior=previous?.stages?.find(s=>s.index===index);
-   if(canReuse&&prior?.status==='passed'&&prior.checkpoint&&prior.checkpointProvenance&&hash(prior.checkpointProvenance)===hash(provenance)){
+   const reusable=canReuse&&prior?.status==='passed'&&prior.checkpoint&&prior.checkpointProvenance&&hash(prior.checkpointProvenance)===hash(provenance);
+   if(previous?.retainedTransfer&&index===0&&!reusable)throw Error('Retained resume baseline no longer matches; refusing fresh state');
+   if(reusable){
     const restored=path.join(attemptDir,`restored-${index}`);
     try{
      const verified=prior.evidenceReceipt&&await loadSuccessfulEvidence(prior.evidenceReceipt,provenance);
@@ -72,7 +82,10 @@ export async function boundedIntegratedRun({spec,cwd=process.cwd(),dir,resume=fa
      continuity=recovered.continuity?path.join(state,recovered.continuity):undefined;accountContinuity=recovered.accountContinuity?path.join(state,recovered.accountContinuity):undefined;legacyContinuity=recovered.legacyContinuity?path.join(state,recovered.legacyContinuity):undefined;
      await cp(path.join(prior.artifactDir,'site'),path.join(dir,'site'),{recursive:true});
      run.stages.push({...structuredClone(verified),evidenceReceipt:prior.evidenceReceipt,reusedFrom:{attempt:previous.attempt,head:prior.head}});await saveJSON(file,run);continue;
-    }catch(error){run.findings.push(`Stage ${index} checkpoint unavailable; regenerate this boundary and descendants.`);}
+    }catch(error){
+     if(previous?.retainedTransfer&&index===0)throw Error('Retained resume baseline restore failed; refusing fresh state',{cause:error});
+     run.findings.push(`Stage ${index} checkpoint unavailable; regenerate this boundary and descendants.`);
+    }
    }
    canReuse=false;
    await ensureInstallation(root,{log:path.join(attemptDir,`install-${index}.log`)});

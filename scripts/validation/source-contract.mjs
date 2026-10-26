@@ -37,3 +37,35 @@ export function currentModelContract(text) {
       || model.url !== `/computer/models/${model.id}.onnx` || typeof model.experimental !== 'boolean') return fail();
   return Object.freeze(model);
 }
+
+// Inspect the actual history-row template, never candidate code execution or comments.
+export function historyUndoLabelContract(text) {
+ const source=sourceFile('app.js',text),rows=[],matches=[];
+ const findRows=node=>{
+  if(ts.isVariableDeclaration(node)&&ts.isIdentifier(node.name)&&node.name.text==='revertButton')rows.push(node);
+  ts.forEachChild(node,findRows);
+ };
+ findRows(source);
+ const fail=()=>{throw Error('Unsupported history undo row label contract');};
+ if(rows.length!==1||!rows[0].initializer)return fail();
+ const visit=node=>{
+  if(ts.isTemplateExpression(node)&&node.head.text.includes('data-action="revert-to-move"'))matches.push(node);
+  else if(ts.isNoSubstitutionTemplateLiteral(node)&&node.text.includes('data-action="revert-to-move"'))matches.push(node);
+  ts.forEachChild(node,visit);
+ };
+ visit(rows[0].initializer);
+ if(matches.length!==1)return fail();
+ const template=matches[0],expressions=ts.isTemplateExpression(template)?template.templateSpans.map(span=>span.expression):[];
+ const rendered=ts.isTemplateExpression(template)?template.head.text+template.templateSpans.map((span,index)=>`__EXPR_${index}__${span.literal.text}`).join(''):template.text;
+ const button=rendered.match(/^<button\b[^>]*data-action="revert-to-move"[^>]*>(.*?)<\/button>$/s);
+ if(!button)return fail();
+ let label=button[1];
+ const icon=label.match(/^__EXPR_(\d+)__/);
+ if(icon){
+  const expression=expressions[Number(icon[1])];
+  if(!expression||!ts.isCallExpression(expression)||!ts.isIdentifier(expression.expression)||expression.expression.text!=='icon'||expression.arguments.length!==1||!ts.isStringLiteral(expression.arguments[0])||expression.arguments[0].text!=='back')return fail();
+  label=label.slice(icon[0].length);
+ }
+ if(!['Undo back to this move','Undo before this move'].includes(label))return fail();
+ return label;
+}
