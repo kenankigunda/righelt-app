@@ -28,8 +28,9 @@ for(const mutation of ['small-side','small-card','blocked-native-choice'])test(`
  await assert.rejects(()=>assertRematchControlTargets(page.getByRole('dialog'),{contract:'colors-v1',opponent:'friend',assertionOptions:{timeout:100}}));
 });
 
-async function mountUndoFixture(page,{transport='shared-http',mutate}={}){
+async function mountUndoFixture(page,{transport='shared-http',mutate,undoLabel='Undo before this move'}={}){
  const shared=transport!=='legacy';
+ const undoIcon=undoLabel==='Undo before this move'?'<svg aria-hidden="true" width="16" height="16"><path d="M12 4L4 8l8 4"/></svg>':'';
  const state={turnIndex:1,pieces:[{id:'human'}]},requests=[],reads=[];
  const envelope=shared?{protocolVersion:2,gameId:'game-1',identityId:'human-account',kind:'shared',clientCommandId:'v2:undo-1',expectedState:{turnIndex:3},expectedGameplayRevision:2,payload:{operation:'revert-request',values:{targetMoveId:'human-1'}}}:{identityId:'human-account',targetMoveId:'human-1'};
  if(mutate)mutate(envelope);
@@ -38,7 +39,7 @@ async function mountUndoFixture(page,{transport='shared-http',mutate}={}){
  const body={ok:true,autoApproved:true,accepted:true,protocolVersion:2,gameId:'game-1',eventSeq:10,gameplayRevision:acceptedRevision,clientCommandId:envelope.clientCommandId,commandOutcomes:[{gameId:'game-1',identityId:'human-account',clientCommandId:'v2:undo-1',fingerprint:envelope.fingerprint,outcome:'accepted',reason:null,eventSeq:10,gameplayRevision:acceptedRevision}],game:{id:'game-1',gameplayRevision:acceptedRevision,lastRestoration:{decisionId:'human-1'},board:{state},moves:[{moveId:'human-1',undone:true},{moveId:'computer-1',undone:true}]}};
  const reconcileBody={...body};delete reconcileBody.accepted;delete reconcileBody.clientCommandId;
  await page.unroute('**/undo-fixture');await page.unroute('**/api/shell/games/game-1/*');
- await page.route('**/undo-fixture',route=>route.fulfill({contentType:'text/html',body:`<div id="app" data-shell-layout-mode="wide">${['computer-1','human-1'].map(id=>`<div data-testid="history-move-item" data-move-id="${id}"><button class="history-item-info">${id}</button><button hidden data-action="revert-to-move" data-game-id="game-1" data-move-id="${id}">Undo before this move</button></div>`).join('')}</div>`}));
+ await page.route('**/undo-fixture',route=>route.fulfill({contentType:'text/html',body:`<div id="app" data-shell-layout-mode="wide">${['computer-1','human-1'].map(id=>`<div data-testid="history-move-item" data-move-id="${id}"><button class="history-item-info">${id}</button><button hidden data-action="revert-to-move" data-game-id="game-1" data-move-id="${id}">${undoIcon}${undoLabel}</button></div>`).join('')}</div>`}));
  await page.route('**/api/shell/games/game-1/*',async route=>{
   const receiptRead=new URL(route.request().url()).pathname.endsWith('/reconcile');
   if(receiptRead)reads.push(route.request().postDataJSON());else requests.push(route.request().postDataJSON());
@@ -59,11 +60,11 @@ async function mountUndoFixture(page,{transport='shared-http',mutate}={}){
    row.querySelector('[data-action]').onclick=()=>fetch(`/api/shell/games/game-1/${shared?'shared':'revert-request'}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(envelope)}).catch(()=>{});
   }
  },{shared,envelope});
- return {shared,state,requests,reads,envelope,options:{gameId:'game-1',moveId:'human-1',identityId:'human-account',initialState:state,beforeState:{turnIndex:3},beforeRevision:2}};
+ return {shared,state,requests,reads,envelope,options:{undoLabel,gameId:'game-1',moveId:'human-1',identityId:'human-account',initialState:state,beforeState:{turnIndex:3},beforeRevision:2}};
 }
 
-for(const transport of ['legacy','shared-http','shared-aborted-http'])test(`ordinary undo uses the immutable human row and ${transport}`,async({page})=>{
- const fixture=await mountUndoFixture(page,{transport});
+for(const undoLabel of ['Undo back to this move','Undo before this move'])for(const transport of ['legacy','shared-http','shared-aborted-http'])test(`ordinary undo uses the immutable human row and ${transport} with ${undoLabel}`,async({page})=>{
+ const fixture=await mountUndoFixture(page,{transport,undoLabel});
  await undoBeforeHumanMove(page,fixture.options);
  expect(fixture.requests).toEqual([fixture.envelope]);expect(await page.evaluate(()=>window.selectedRows)).toEqual(['human-1']);
  expect(fixture.reads).toEqual(fixture.shared?[{protocolVersion:2,identityId:fixture.envelope.identityId,knownSnapshotEventSeq:0,commands:[fixture.envelope]}]:[]);

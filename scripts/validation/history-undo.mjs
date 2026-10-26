@@ -48,7 +48,8 @@ export async function assertUndoReceipt(body,envelope,{gameId,moveId,identityId,
  assert.equal(body.game.moves.filter(move=>!move.undone).length,0);
 }
 
-export async function undoBeforeHumanMove(page,{gameId,moveId,identityId,initialState,beforeState,beforeRevision}){
+export async function undoBeforeHumanMove(page,{gameId,moveId,identityId,initialState,beforeState,beforeRevision,undoLabel}){
+ assert.ok(['Undo back to this move','Undo before this move'].includes(undoLabel),'An explicit supported source-selected undo label is required');
  assert.ok(typeof gameId==='string'&&gameId.trim().length,'Game ID is required before browser activity');
  assert.ok(typeof moveId==='string'&&moveId.length,'Human decision ID is required before browser activity');
  assert.ok(typeof identityId==='string'&&identityId.trim().length,'Human identity is required before browser activity');
@@ -60,7 +61,7 @@ export async function undoBeforeHumanMove(page,{gameId,moveId,identityId,initial
  await expect(control).toHaveCount(1);
  await expect(control).toHaveAttribute('data-game-id',gameId);
  await expect(control).toHaveAttribute('data-move-id',moveId);
- await expect(control).toHaveAccessibleName('Undo before this move');
+ await expect(control).toHaveAccessibleName(undoLabel);
  await expect(control).toBeVisible();await expect(control).toBeEnabled();
  const requests=[],responses=[];
  const isUndoRequest=request=>{

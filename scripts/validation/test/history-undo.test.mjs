@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {humanMoveForUndo,assertUndoReceipt} from '../history-undo.mjs';
+import {humanMoveForUndo,assertUndoReceipt,undoBeforeHumanMove} from '../history-undo.mjs';
 import {commandFingerprint} from '../../../packages/shared-types/src/sync-protocol.ts';
 
 const state={turnIndex:1,pieces:[{id:'human'}]};
@@ -60,4 +60,9 @@ for(const mutation of ['wrongTarget','rejected','missingOwnReceipt','wrongGame',
   }
  }
  await assert.rejects(()=>assertUndoReceipt(body,envelope,expected));
+});
+
+
+test('undo requires its explicit supported source label before any browser activity',async()=>{
+ for(const undoLabel of [undefined,'','Undo anything'])await assert.rejects(()=>undoBeforeHumanMove(null,{undoLabel}),/explicit supported source-selected undo label/);
 });
