@@ -9,7 +9,7 @@ const reporter = process.env.CI
   ? [["github"], ["line"], ["junit", { outputFile: junitOutputFile }]]
   : [["list"]];
 
-export default defineConfig({
+const config = defineConfig({
   testDir: "./e2e",
   testIgnore: "**/auth/**",
   fullyParallel: false,
@@ -35,7 +35,7 @@ export default defineConfig({
     },
     ...["firefox", "webkit"].map(name => ({
       name,
-      testMatch: /(named-observer-result|desktop-board-fit|home-opponent-identity|opponent-invite-polish|destruction-sound|human-opponent-replay|computer-feedback|mobile-board-history|sync-recovery-(pressure|ux)|recovery-freeze-regression|browser-move-input|home-create-refresh|guest-computer-play|computer-tab-recovery|storage-lifecycle|destruction-lifecycle|completion-preserving-retreat)\.spec\.mjs/,
+      testMatch: /(named-observer-result|desktop-board-fit|home-opponent-identity|opponent-invite-polish|destruction-sound|human-opponent-replay|computer-feedback|mobile-board-history|sync-recovery-(pressure|ux)|recovery-freeze-regression|browser-move-input|home-create-refresh|guest-computer-play|computer-tab-recovery|storage-lifecycle|destruction-lifecycle)\.spec\.mjs/,
       use: { ...devices[name === "firefox" ? "Desktop Firefox" : "Desktop Safari"],
         launchOptions: browserLaunchOptions(name) },
     })),
@@ -50,3 +50,11 @@ export default defineConfig({
     timeout: 180_000,
   },
 });
+
+for (const project of config.projects) {
+  if (project.name === "firefox" || project.name === "webkit") {
+    project.testMatch = [project.testMatch, "**/completion-preserving-retreat.spec.mjs"];
+  }
+}
+
+export default config;
