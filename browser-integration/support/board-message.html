@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Board message touch targets</title>
+<link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"><link rel="stylesheet" href="/apps/web/shell/loading.css">
+<style>body{margin:0;padding:12px}main{width:min(100%,560px);margin:auto}.board-wrap{padding-bottom:0!important}.board{width:100%}#lines{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}</style></head>
+<body><div id="app" data-shell-route="game" data-shell-layout-mode="narrow"><main data-shell-panel="board"><h2>Player 1 to play</h2><div id="message-slot"></div><div class="board-wrap"><div id="board" class="board"></div><svg id="lines"></svg></div></main></div><script type="module">
+import {renderBoardMessageSlot,updateComputerBoardLoading} from "/apps/web/shell/board-message-layout.js";
+document.querySelector("#message-slot").outerHTML=renderBoardMessageSlot({id:"preview"});
+import {mountLoadingFeedback} from "/apps/web/shell/loading.js";
+mountLoadingFeedback(document);
+window.updateComputerBoardLoading=updateComputerBoardLoading;
+await import("/browser-integration/support/board.mjs");
+</script></body></html>

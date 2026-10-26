@@ -7,6 +7,18 @@ import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { browserLaunchOptions } from "../../../scripts/playwright-launch-options.mjs";
 
+test("Linux CI Firefox retains native audio logs without changing browser policy", () => {
+  const env = { CI:"true", FORWARD_MARKER:"retained" };
+  const options=browserLaunchOptions("firefox",{platform:"linux",env});
+  assert.deepEqual(options,{executablePath:undefined,env:{...env,
+    MOZ_LOG:"timestamp,cubeb:5,AudioStream:5,MediaTrackGraph:2,rotate:4",
+    MOZ_LOG_FILE:path.resolve("test-results/firefox-native-audio.log"),
+  }});
+  assert.deepEqual(browserLaunchOptions("firefox",{platform:"linux",env:{...env,MOZ_LOG:"custom:3",MOZ_LOG_FILE:"/custom/log"}}),
+    {executablePath:undefined,env:{...env,MOZ_LOG:"custom:3",MOZ_LOG_FILE:"/custom/log"}});
+  assert.deepEqual(env,{CI:"true",FORWARD_MARKER:"retained"});
+});
+
 for (const platform of ["darwin", "linux", "win32"]) {
   for (const name of ["chromium", "firefox", "webkit"]) {
     test(`browser launcher scope: ${platform}/${name}`, () => {

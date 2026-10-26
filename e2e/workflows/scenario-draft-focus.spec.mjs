@@ -40,8 +40,8 @@ for(const size of viewports)test.describe(`scenario live draft / ${size.name}`,(
  for(const field of ['title','description'])test(`${field} keeps focus and selection during a live game update`,async({page},info)=>{
   const {gameHash}=await createGameFromHome(page);
   const players=page.locator('[data-action="switch-game-panel"][data-panel="players"]');if(await players.isVisible())await players.click();
-  await page.getByRole('button',{name:'Play as both players',exact:true}).click();
-  await expect(page.getByRole('button',{name:'Play as both players',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Play both sides',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Play both sides',exact:true})).toHaveCount(0);
   await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
   const other=await page.context().newPage();
   try{

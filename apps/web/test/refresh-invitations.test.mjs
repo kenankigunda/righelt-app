@@ -12,3 +12,23 @@ test('invitation intent survives arrival without replacing token authorization',
 });
 
 test('normalizing an invitation preserves recipient intent',()=>{for(const role of ['red','blue','viewer']){const parsed=parseRouteFromHash(`#/invite/token?as=${role}`);assert.deepEqual(parseRouteFromHash(buildHashForRoute(parsed)),parsed);}});
+
+test('initial invitation settles only its captured vacant seat in the same authority scope',async()=>{
+ const {createHostInvitation,hostInvitationSettled}=await import('../shell/invitations.js');
+ for(const side of ['player1','player2']){
+  const other=side==='player1'?'player2':'player1';const game={id:'g',[side]:null,[other]:{identityId:'host'}};
+  const invite=createHostInvitation(game,3);assert.equal(invite.seat,side);
+  assert.equal(hostInvitationSettled(invite,{...game,viewers:[{identityId:'viewer'}],pendingJoinRequests:[{identityId:'friend'}]},3),false);
+  const joined={...game,[side]:{identityId:'friend',connected:false}};
+  assert.equal(hostInvitationSettled(invite,joined,3),true);
+  assert.equal(hostInvitationSettled(invite,joined,4),false);assert.equal(hostInvitationSettled(invite,{...joined,id:'other'},3),false);
+ }
+ assert.equal(hostInvitationSettled(createHostInvitation(null,3),{id:'g',player1:{identityId:'host'}},3),false);
+});
+
+
+test('self-play invitations expose viewing only even with an unfilled optimistic seat',()=>{
+ const game={id:'self',selfPlayMode:true,player1:{identityId:'owner'},player2:null,inviteToken:'private-player',inviteTokens:{viewer:'public-viewer'}};
+ assert.deepEqual(invitationOptions(game),[{role:'viewer',label:'Invite someone to view',token:'public-viewer'}]);
+ assert.equal(game.inviteToken,'private-player','presentation does not change server permissions');
+});

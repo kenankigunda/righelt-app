@@ -43,6 +43,20 @@ test('temporary takeover follows the nominal turn through changing controllers',
 test('malformed durable computer control never downgrades into human control', () => {
   for (const value of [null, {}, { ...initial(), generation: -1 }, { ...initial(), seats: { p1: 'unknown', p2: null } }, { ...initial(), lease: {} }]) assert.throws(() => parseComputerControl(value), /invalid_computer_control/);
 });
+test('resume here atomically moves control and clears overrides while preserving the opponent and model', () => {
+  const previous = change(initial(), 'acquire');
+  Object.assign(previous, {paused:true,singleStep:true,manual:true,takeoverTurn:4});
+  const resumed = change(previous, 'resume-here', {deviceId:'device-b',authContextId:'session-b'});
+  assert.equal(resumed.lease.deviceId,'device-b');
+  assert.equal(resumed.lease.authContextId,'session-b');
+  assert.equal(resumed.generation,previous.generation+1);
+  assert.deepEqual([resumed.paused,resumed.singleStep,resumed.manual,resumed.takeoverTurn],[false,false,false,null]);
+  assert.deepEqual(resumed.seats,previous.seats);assert.equal(resumed.modelId,previous.modelId);
+  assert.equal(error(resumed,{proof:proof(previous)}),'computer_control_changed');
+  assert.throws(()=>change(previous,'resume-here',{ownerId:'viewer'}),/computer_owner_required/);
+  assert.throws(()=>change(resumed,'resume-here',{generation:previous.generation}),/computer_control_changed/);
+  assert.equal(change(resumed,'resume-here',{deviceId:'device-b',authContextId:'session-b'}).generation,resumed.generation+1);
+});
 test('main game projection keeps computer turns read only until explicit takeover', () => {
   const game = createInitialGame({ gameId: 'g', identityId: 'owner', selfPlayMode: true });
   game.computer = initial();

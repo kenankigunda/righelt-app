@@ -21,6 +21,16 @@ test('watched games and genuine self-play remain distinct', () => {
   assert.equal(normalizeStaticGameCard({player1:{identityId:'owner',computerProfile:'invalid'}}).player1.computerProfile, null);
 });
 
+test('explicit human configuration clears a stale computer identity without copying control state',()=>{
+  const input={player1:{identityId:'owner',computerProfile:'horus'},computer:{manual:true,ownerIdentityId:'private-owner',seats:{p1:null,p2:null}}};
+  for(const card of [normalizeStaticGameCard(input),buildStaticGameCardFromGame(input)]){
+    assert.equal(card.player1.computerProfile,null);
+    assert.equal(computerOpponentLabel(card),null);
+    assert.equal(card.computer,undefined);
+    assert(!JSON.stringify(card).includes('private-owner'));
+  }
+});
+
 test("static game cards normalize list payloads without requiring full game state", () => {
   const card = normalizeStaticGameCard({
     id: "game-card-1",

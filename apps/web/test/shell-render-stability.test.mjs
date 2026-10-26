@@ -19,7 +19,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const GAME_ENTRY_ROUTE_TRANSITION_COVER_MS = 160;/);
   assert.match(source, /const GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS = 200;/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", "narrow"\);/);
-  assert.match(source, /const renderGameShellFrame = \(game\) =>/);
+  assert.match(source, /const renderGameShellFrame = \(game, \{ loading = false \} = \{\}\) =>/);
   assert.match(source, /const renderScenarioFlyout = \(\) =>/);
   assert.match(source, /const renderDebugFlyout = \(\) =>/);
   assert.match(source, /<section class="panel debug-panel scenario-panel scenario-panel-load">/);
@@ -49,7 +49,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /: isActive\s*\? 'tabindex="-1"'/);
   assert.match(source, /: 'aria-hidden="true" tabindex="-1" inert'/);
   assert.match(source, /const viewedGameId = getCurrentViewedGameId\(\);/);
-  assert.match(source, /data-shell-alert-zone="\$\{gameAlerts \? "active" : "idle"\}"/);
+  assert.match(source, /data-shell-alert-zone="\$\{gameAlerts \|\| startupStatus \? "active" : "idle"\}"/);
   assert.match(source, /data-action="toggle-header-menu"/);
   assert.match(source, /data-header-menu-open="\$\{headerMenuOpen \? "true" : "false"\}"/);
   assert.match(source, /const menuId = "shell-header-menu";/);
@@ -73,9 +73,9 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /if \(!isBuildingGameAlerts\) \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
   assert.doesNotMatch(source, /failedOperations\.length === 0 && game\.rollbackNotice/);
   assert.doesNotMatch(source, /rollbackNotice: game\.rollbackNotice/);
-  assert.match(source, /const orderedItems = notificationStack\.order\(game\.id, items\);/);
+  assert.match(source, /const items = getHeaderAlertItems\(game\);\s*const scope=game\?\.id \?\? `loading:\$\{loadingContextScope\(\)\}`;\s*const orderedItems = notificationStack\.order\(scope, items\);/);
   assert.match(source, /renderGameAlertStackCard\(\{/);
-  assert.match(source, /<div class="shell-header-status" data-shell-alert-zone="\$\{gameAlerts \? "active" : "idle"\}">/);
+  assert.match(source, /<div class="shell-header-status" data-shell-alert-zone="\$\{gameAlerts \|\| startupStatus \? "active" : "idle"\}">/);
   assert.match(source, /id="shell-game-alerts"/);
   assert.match(source, /data-game-shell-root data-game-id=/);
   assert.match(source, /data-game-shell-track/);
@@ -279,33 +279,32 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /const branchButton = game\.inHistoryMode && game\.historyIndex === move\.index && move\.undone !== true/);
   assert.match(source, /const revertButton = game\.inHistoryMode && game\.historyIndex === move\.index && move\.undone !== true/);
   assert.match(source, /data-action="revert-to-move"/);
-  assert.match(source, /data-action="undo-last-move"/);
+  assert.doesNotMatch(source, /data-action="undo-last-move"/);
   assert.match(source, /class="history-item history-item-pending/);
   assert.match(source, /data-testid="history-pending-move-item"/);
   assert.match(source, /aria-busy="true"/);
   assert.match(source, /Pending<\/span>/);
-  assert.match(source, /const liveContinuationText =[\s\S]*Live: Waiting for \$\{controlSeat \|\| "next player"\} to continue/s);
-  assert.match(source, /const liveWaitingText =[\s\S]*Live: Waiting on \$\{activeTurn\.playerSeat \|\| "next player"\} to move/s);
+  assert.match(source, /const liveContinuationText =[\s\S]*liveHistoryLabel\(game,liveState,\{identityId:transport\.getIdentityId\(\)\}\)/s);
+  assert.match(source, /const liveWaitingText =[\s\S]*liveHistoryLabel\(game,liveState,\{identityId:transport\.getIdentityId\(\)\}\)/s);
   assert.match(source, /const liveStatusText = liveContinuationText \?\? liveWaitingText;/);
   assert.match(source, /class="history-item history-item-waiting history-empty-line/);
   assert.match(source, /return `\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
   assert.doesNotMatch(source, /if \(game\.inHistoryMode && activeTurn\.moveIndexes\.length > 0\) \{/);
   assert.match(source, /if \(!game\.inHistoryMode && !liveStatusItem && activeTurn\.moveIndexes\.length > 0\) \{\s*return `\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;\s*\}/s);
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
-  assert.match(source, /return `\$\{emptyTurnItem\}\$\{undoLastMoveItem\}\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
-  assert.match(source, /const hasHistoryMoves = Array\.isArray\(game\.moves\) && game\.moves\.length > 0;/);
+  assert.match(source, /return `\$\{emptyTurnItem\}\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
   assert.match(source, /data-action="launch-history-branch"/);
-  assert.match(source, /Create new game at this move/);
-  assert.match(source, /Incoming live moves will appear at top\./);
-  assert.match(source, /: hasHistoryMoves\s*\? '<p class="small">You are on the live view\.<\/p><p class="small">Click moves below to see historical state\.<\/p>'\s*: '<p class="small">You are on the live view\.<\/p>'/);
+  assert.match(source, /New game before this move/);
 });
 
 test("transport subscriptions drive immediate game-shell updates", () => {
-  assert.match(source, /transport\.subscribe\(\(change\) => \{[\s\S]*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);[\s\S]*boardRuntime\?\.showRemovalEffects\(transition\.effects, null\);\s*\}\);/s);
+  const start=source.indexOf("const subscribeToTransport ="),end=source.indexOf("\nsubscribeToTransport();",start);
+  assert.ok(start>=0&&end>start);
+  assert.match(source.slice(start,end), /transport\.subscribe\(\(change\) => \{[\s\S]*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);[\s\S]*boardRuntime\?\.showRemovalEffects\(transition\.effects, null\);/s);
   assert.match(source, /const canHydrateRouteFromLocalState = \(route = currentRoute\) => \{/);
   assert.match(source, /return Boolean\(transport\.getGameViewModel\(route\.gameId\)\);/);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
-  assert.match(source, /return !game\.pendingPlayerRequestSeat && activeResultGameId !== game\.id && hostInvite\?\.gameId !== game\.id && !getActiveApprovalRequest\(game\) && !getActiveRevertRequest\(game\) && !getActivePendingRevertRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
+  assert.match(source, /return !game\.pendingPlayerRequestSeat && activeResultGameId !== game\.id && hostInvite\?\.gameId !== game\.id && !getActiveApprovalRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
   assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),[\s\S]*includeBoard,\s*animatePanels,\s*\}\);/s);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*(?:if \()?updateMountedGameShell\(\{/s);
   assert.match(source, /if \(!routeHydrated && !game\) \{\s*return renderGameViewSkeleton\(\);/s);
@@ -373,11 +372,12 @@ test("history navigation stays local-first without the removed global busy wrapp
 
 test("shell renders durable browser E2E selectors for core workflow surfaces", () => {
   assert.match(source, /data-testid="home-create-game"/);
-  assert.match(source, /data-testid="game-role"/);
+  assert.match(readFileSync(join(testDir,"..","shell","panel-loading.js"),"utf8"), /data-testid="game-role"/);
   assert.match(source, /data-testid="copy-invite"/);
-  assert.match(source, /data-testid="participants-list"/);
+  assert.match(source, /renderPlayersPanel\(game,/);
+  assert.match(readFileSync(join(testDir, "..", "shell", "players-panel.js"), "utf8"), /data-testid="participants-list"/);
   assert.match(source, /data-testid="game-board"/);
-  assert.match(source, /data-testid="history-list"/);
+  assert.match(readFileSync(join(testDir,"..","shell","panel-loading.js"),"utf8"), /data-testid="history-list"/);
   assert.match(source, /data-testid="history-move-item"/);
   assert.match(source, /data-testid="history-pending-move-item"/);
   assert.match(source, /data-testid="history-destruction-item"/);
@@ -385,7 +385,7 @@ test("shell renders durable browser E2E selectors for core workflow surfaces", (
   assert.match(source, /data-testid="approval-gate"/);
   assert.match(source, /data-testid="accept-request"/);
   assert.match(source, /data-testid="ignore-request"/);
-  assert.match(source, /data-testid="invite-gate"/);
+  assert.match(source, /testId:approval\?'undo-approval-notice':'undo-waiting-notice'/);
   assert.match(source, /data-testid="invite-join-player"/);
   assert.match(source, /data-testid="invite-join-viewer"/);
 });
@@ -412,24 +412,11 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /const isDualSeatIdentity = \(game\) =>/);
   assert.match(source, /return '<strong class="player-tone-both">both players<\/strong>';/);
   assert.match(source, /const renderConnectionStatusIcon = \(status, label\) =>/);
-  assert.match(source, /const renderPlayerSlotStatus = \(seat, participant, \{ verbose = false \} = \{\}\) =>/);
-  assert.match(source, /return `<span class="mini-board-card-connection-item">\$\{renderSeatLabel\(seat\)\}\$\{renderConnectionStatusIcon\(\s*"open",\s*statusLabel,\s*\)\}<\/span>`;/s);
-  assert.match(source, /const shouldUseVerboseHomeConnectionCopy = \(game\) =>/);
-  assert.match(source, /const renderHomeRoleLine = \(game\) =>/);
-  assert.doesNotMatch(source, /renderConnectionStatusIcon\(Boolean\(game\?\.myConnectionConnected\),/);
-  assert.match(source, /if \(game\?\.myRole === "Guest"\) \{\s*return game\?\.canJoinAsPlayer \? "Open to join as player" : "Open to view";\s*\}/);
-  assert.match(source, /const renderHomeSeatConnectionLine = \(game\) =>/);
-  assert.match(source, /return `<p class="small mini-board-card-connection-line">\$\{connectionSummary\}<\/p>`;/);
-  assert.match(source, /return '<p class="small mini-board-card-connection-line is-placeholder" aria-hidden="true"><span>&nbsp;<\/span><\/p>';/);
-  assert.doesNotMatch(source, /You are connected here|You are not connected here/);
-  assert.match(source, /const seatConnectionLine = renderHomeSeatConnectionLine\(game\);/);
-  assert.match(source, /const renderHomeConnectionSummary = \(game\) =>/);
-  assert.match(source, /const filteredSlots = isDualSeatIdentity\(game\) && isPlayerRole\(game\?\.myRole\)/);
-  assert.match(source, /renderPlayerSlotStatus\(entry\.seat, entry\.participant, \{ verbose: shouldUseVerboseHomeConnectionCopy\(game\) \}\)/);
+  assert.match(source, /import \{ renderHomeCardIdentity \} from "\.\/home-card-identity\.js"/);
+  assert.match(source, /renderHomeCardIdentity\(game, \{identityId: transport\.getIdentityId\(\)\}\)/);
+  assert.doesNotMatch(source, /renderHomeSeatConnectionLine|renderHomeConnectionSummary|renderHomeRoleLine/);
   assert.match(source, /<div class="mini-board-card-copy">/);
   assert.match(source, /<div class="mini-board-card-meta mini-board-card-meta-primary">/);
-  assert.match(source, /<span>\$\{renderHomeRoleLine\(game\)\}<\/span>/);
-  assert.match(source, /\$\{seatConnectionLine\}/);
   assert.match(source, /const moveLabel = `Move \$\{game\.moveCount \+ 1\}`;/);
   assert.match(source, /reconcileMiniBoardPreviews\(\);\s*syncMountedGameShellPanelUi\(shellRoot\);\s*scheduleGameShellStickyLayout\(\);/);
 });
@@ -437,6 +424,12 @@ test("shell renders and reconciles mini board previews for home and debug surfac
 test("app uses route skeleton sync and localized loading instead of a global busy wrapper", () => {
   assert.doesNotMatch(source, /const withBusy = async/);
   assert.doesNotMatch(source, /let busy = false;/);
+  const mount=source.slice(source.indexOf('mountLoadingFeedback(document,{'),source.indexOf('const currentReplayContext ='));
+  assert.match(mount,/getScope:loadingContextScope/);
+  assert.match(mount,/onContextsChange:contexts=>\{\s*slowLoadingContexts=contexts;/);
+  assert.match(mount,/if\(updateMountedHeader\(\)\)syncRenderedMarkupSnapshot\(\);/);
+  assert.doesNotMatch(mount,/\brender\(/);
+  assert.ok(source.indexOf('mountLoadingFeedback(document,{')>source.indexOf('let transport = syncStore;'),'Loading callbacks mount after authoritative scope initialization');
   assert.match(source, /const pendingHomeSectionKeys = new Set\(\);/);
   assert.match(source, /const SCENARIO_LOAD_PENDING_KEY = "scenario:load";/);
   assert.match(source, /const startRouteSync = \(\{ renderStart = true \} = \{\}\) => \{/);
@@ -468,7 +461,7 @@ test("app uses route skeleton sync and localized loading instead of a global bus
   );
   assert.match(
     source,
-    /const cycleGameAlertStack = \(gameId, actionEl = null\) => \{[\s\S]*const items = getGameAlertItems\(game\);[\s\S]*refreshMountedAlertHeader\(gameId, actionEl\);/s,
+    /const cycleGameAlertStack = \(gameId, actionEl = null\) => \{[\s\S]*if\(gameId!==scope\)return;\s*const items = getHeaderAlertItems\(game\);[\s\S]*notificationStack\.advance\(scope, items\)[\s\S]*refreshMountedAlertHeader\(gameId, actionEl\);/s,
   );
   assert.match(
     source,
@@ -510,8 +503,40 @@ test("history navigation uses pointer-down press state with a single mouseup rel
 });
 
 test("upgrade fencing keeps a static recovery notice without discarding viewing context", () => {
-  const subscriber = source.slice(source.indexOf('const subscribeToTransport'), source.indexOf('subscribeToTransport();'));
-  assert.doesNotMatch(subscriber, /location\.reload|sync-v2-refresh/);
-  assert.match(source, /game\.upgradeRequired \? `<button class="secondary(?: mini-button)?" data-action="refresh-game"/);
-  assert.match(source, /if \(!game && transport\.isUpgradeRequired\?\.\(gameId\)\) \{\s*return `<section[^`]+data-action="refresh-game"/);
+ const subscriber=source.slice(source.indexOf('const subscribeToTransport'),source.indexOf('subscribeToTransport();'));
+ assert.doesNotMatch(subscriber,/location\.reload|sync-v2-refresh/);
+ assert.match(source,/game\.upgradeRequired \? `<button class="secondary[^"\n]*" data-action="refresh-game"/);
+ assert.match(source,/if \(!game && transport\.isUpgradeRequired\?\.\(gameId\)\) \{\s*return `<section[^`]+data-action="refresh-game"/);
+});
+
+test("loading frames and guest invitation surfaces never enter the loaded-shell patch path", () => {
+ const gate=source.slice(source.indexOf('const shouldUseIncrementalGameShell'),source.indexOf('const renderGameContent'));
+ assert.match(gate,/\[data-game-shell-root\]\[data-testid="game-shell"\]/);
+ assert.match(gate,/getInviteContextForGame\(game, "game"\)\) return false/);
+ assert.doesNotMatch(gate,/game-loading-shell/);
+});
+
+
+test('startup progress and bootstrap retry stay in the out-of-flow header status zone',()=>{
+ const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
+ const zone=source.slice(source.indexOf('const renderHeaderAlertZone ='),source.indexOf('const syncShellLayoutMode ='));
+ const header=source.slice(source.indexOf('const renderHeader ='),source.indexOf('const setSelectedScenarioFeedback ='));
+ assert.match(zone,/loadingAttributes\("account-startup"/);assert.match(zone,/role="status">Connecting/);assert.match(zone,/role="alert"/);assert.match(zone,/data-action="retry-account-startup"/);assert.match(zone,/\$\{startupStatus\}/);
+ assert.doesNotMatch(header,/loadingAttributes\("account-startup"|data-action="retry-account-startup"/);
+});
+
+test('home loading metadata matches the consolidated identity title without an obsolete presence row',()=>{
+ const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');const skeleton=source.slice(source.indexOf('const renderHomeCardSkeleton ='),source.indexOf('const renderHomeSectionSkeleton ='));
+ assert.match(skeleton,/mini-board-card-meta mini-board-card-meta-primary/);assert.doesNotMatch(skeleton,/mini-board-card-connection-line/);
+ assert.match(skeleton,/length:100/);assert.match(skeleton,/mini-board-preview-status/);
+});
+
+
+test('all history undo/create actions belong to moves and the top keeps only Return to live',()=>{
+ const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');const panel=source.slice(source.indexOf('const renderHistoryPanel ='),source.indexOf('const renderBoardPanel ='));
+ assert.doesNotMatch(panel,/data-action="(?:launch-history-branch|revert-to-move|undo-last-move)"/);
+ assert.doesNotMatch(source,/data-action="undo-last-move"/);
+ const moves=source.slice(source.indexOf('const renderTurnHistory ='),source.indexOf('const renderHeader ='));
+ assert.match(moves,/history-item-actions/);assert.match(moves,/data-action="launch-history-branch"/);assert.match(moves,/data-action="revert-to-move"/);assert.match(moves,/data-testid="history-return-live"/);
+ const css=readFileSync(new URL('../shell/shell.css',import.meta.url),'utf8');assert.match(css,/\.shell-header-menu-button \{\s*display: flex;\s*align-items: center;\s*justify-content: center;/);
 });

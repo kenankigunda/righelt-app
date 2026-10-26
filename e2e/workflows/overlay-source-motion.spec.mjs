@@ -1,20 +1,29 @@
 import {test,expect} from '@playwright/test';
 
-for(const reduced of [false,true]) test(`story motion follows its source card with reduced motion ${reduced}`,async({page})=>{
- await page.emulateMedia({reducedMotion:reduced?'reduce':'no-preference'});
- await page.addInitScript(()=>{
+const observeOverlayMotion=()=>{
   window.overlayMotions=[];
   const animate=Element.prototype.animate;
   Element.prototype.animate=function(frames,options){
    if(this.matches('.opponent-story-modal') && Array.isArray(frames) && frames.some(frame=>frame.transform?.includes('scale('))) window.overlayMotions.push({exit:this.classList.contains('overlay-exit-copy'),frames,surface:this.getBoundingClientRect().toJSON(),source:document.querySelector('button[data-opponent="babs"]').getBoundingClientRect().toJSON()});
    return animate.call(this,frames,options);
   };
- });
+};
+const openLoadedStory=async page=>{
  const homeLoaded=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games' && response.ok());
  await page.goto('/');await (await homeLoaded).finished();
+ // One section response can precede removal of another section's placeholders.
+ // This case requires a stable, visible return target, not a moving Home card.
+ await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+ await page.evaluate(()=>document.fonts.ready);
  const source=page.locator('button[data-opponent="babs"]');await source.click();
  const dialog=page.getByRole('dialog',{name:'Babs',exact:true});await expect(dialog).toBeVisible();
  await expect.poll(()=>dialog.evaluate(el=>el.getAnimations().filter(a=>a.playState==='running').length)).toBe(0);
+ return {source,dialog};
+};
+for(const reduced of [false,true]) test(`story motion follows its source card with reduced motion ${reduced}`,async({page})=>{
+ await page.emulateMedia({reducedMotion:reduced?'reduce':'no-preference'});
+ await page.addInitScript(observeOverlayMotion);
+ const {source,dialog}=await openLoadedStory(page);
  await dialog.getByRole('button',{name:'Close opponent story'}).click();await expect(dialog).not.toBeVisible();await expect(source).toBeFocused();
  const motions=await page.evaluate(()=>window.overlayMotions);
  if(reduced)expect(motions).toEqual([]);
@@ -29,6 +38,24 @@ for(const reduced of [false,true]) test(`story motion follows its source card wi
    expect(scale).toBeLessThan(1);expect(scale).toBeGreaterThan(0);
   }
  }
+ await expect(page.locator('.overlay-exit-copy')).toHaveCount(0);
+ expect(await page.evaluate(()=>document.documentElement.style.overflow)).not.toBe('hidden');
+});
+
+test('story dismissal does not invent an exit origin when its source moves offscreen',async({page})=>{
+ await page.emulateMedia({reducedMotion:'no-preference'});
+ await page.addInitScript(observeOverlayMotion);
+ const {source,dialog}=await openLoadedStory(page);
+ const offscreen=await page.evaluate(()=>{
+  const source=document.querySelector('button[data-opponent="babs"]');
+  source.closest('.home-start').style.transform='translateY(-200vh)';
+  return source.getBoundingClientRect().bottom<0;
+ });
+ expect(offscreen).toBe(true);
+ await dialog.getByRole('button',{name:'Close opponent story'}).click();
+ await expect(dialog).not.toBeVisible();await expect(source).toBeFocused();
+ const motions=await page.evaluate(()=>window.overlayMotions);
+ expect(motions).toHaveLength(1);expect(motions[0].exit).toBe(false);
  await expect(page.locator('.overlay-exit-copy')).toHaveCount(0);
  expect(await page.evaluate(()=>document.documentElement.style.overflow)).not.toBe('hidden');
 });

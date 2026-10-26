@@ -57,7 +57,7 @@ const deferRequest = async (context, predicate) => {
 
 test("game route shows a skeleton while the initial game load is still in flight", async ({ browser, baseURL }) => {
   const { context: ownerContext, page } = await createIsolatedPage(browser);
-  let delayedContext = null;
+  let delayedContext = null, deferredRequest = null, releaseSnapshot = null, closing = false;
 
   try {
     const [gameId] = await createGamesViaApi(page, 1);
@@ -65,17 +65,16 @@ test("game route shows a skeleton while the initial game load is still in flight
     await closeContextQuietly(ownerContext);
     delayedContext = await browser.newContext();
     const delayedPage = await delayedContext.newPage();
-    const deferredRequest = await deferRequest(
+    deferredRequest = await deferRequest(
       delayedContext,
       ({ method, url }) => method === "GET" && url.pathname === `/api/shell/games/${gameId}`,
     );
 
-    let releaseSnapshot;
     let snapshotSeen = false;
     const initialSnapshot = new Promise(resolve => { releaseSnapshot = resolve; });
     await delayedPage.routeWebSocket(new RegExp(`/api/shell/games/${gameId}/ws`), socket => {
       const server = socket.connectToServer();
-      server.onMessage(async message => { snapshotSeen = true; await initialSnapshot; socket.send(message); });
+      server.onMessage(async message => { snapshotSeen = true; await initialSnapshot; if (!closing) socket.send(message); });
     });
     const navigation = delayedPage.goto(buildAppUrl(baseURL, gameHash));
     await delayedPage.waitForLoadState("domcontentloaded");
@@ -93,6 +92,10 @@ test("game route shows a skeleton while the initial game load is still in flight
     await navigation;
     await expectInviteLanding(delayedPage);
   } finally {
+    closing = true;
+    deferredRequest?.release();
+    releaseSnapshot?.();
+    await delayedContext?.unrouteAll({ behavior: "wait" });
     await closeContextQuietly(delayedContext);
     await closeContextQuietly(ownerContext);
   }

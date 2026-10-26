@@ -4,6 +4,61 @@ import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 
 const noop = () => {};
 
+test('turn indicator accepts host perspective text while preserving actual actor color',async()=>{
+ const tones=new Set();
+ const indicator={textContent:'',classList:{remove:(...values)=>values.forEach(value=>tones.delete(value)),add:value=>tones.add(value)}};
+ let current={text:'Opponent to play',side:'P2'};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getSelectedPieceSummary:()=>null},host:{canInteract:()=>false},controls:{getTurnIndicator:()=>current}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null,boardTurnIndicatorEl:indicator});
+ await runtime.loadSnapshot({sideToMove:'P1',pieces:[],outcome:{status:'ongoing'}},{legalActions:[]});
+ assert.equal(indicator.textContent,'Opponent to play');assert(tones.has('player-tone-p2'));assert(!tones.has('player-tone-p1'));
+ current={text:'Your turn to play',side:'P1'};runtime.refreshStatus();
+ assert.equal(indicator.textContent,'Your turn to play');assert(tones.has('player-tone-p1'));assert(!tones.has('player-tone-p2'));
+});
+
+test('generic turn indicator uses color names without game identity',async()=>{
+ const indicator={textContent:'',classList:{remove:noop,add:noop}};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getSelectedPieceSummary:()=>null},host:{canInteract:()=>false}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null,boardTurnIndicatorEl:indicator});
+ for(const [side,text] of [['P1','Red to play'],['P2','Blue to play']]){
+  await runtime.loadSnapshot({sideToMove:side,pieces:[],outcome:{status:'ongoing'}},{legalActions:[]});assert.equal(indicator.textContent,text);
+ }
+});
+
+test('board status updates keep matching message controls and safely replace changed actions',async()=>{
+ const text={nodeType:3,nodeValue:'Replay · 1 of 3 '};
+ const stopLabel={textContent:'Stop replay'},stopSvg={},stop={dataset:{boardMessageAction:'replay-stop'},children:[stopSvg,stopLabel],querySelector:()=>stopLabel};
+ let html='',writes=0,message={text:'Replay · 2 of 3',actions:[{id:'replay-stop',label:'Stop replay'}]};
+ const label={firstChild:text,childNodes:[text,stop],querySelectorAll:()=>[stop],addEventListener:noop,removeEventListener:noop,
+  get innerHTML(){return html;},set innerHTML(value){writes++;html=value;}};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getSelectedPieceSummary:()=>null},host:{canInteract:()=>false},controls:{getBoardMessage:()=>message}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ await runtime.loadSnapshot({sideToMove:'P1',turnIndex:0,pieces:[],outcome:{status:'ongoing'}},{legalActions:[]});
+ assert.equal(writes,0);assert.equal(text.nodeValue,'Replay · 2 of 3 ');assert.equal(stopLabel.textContent,'Stop replay');
+ message={text:'Replay · 3 of 3',actions:[{id:'replay-stop',label:'Stop'}]};runtime.refreshStatus();
+ assert.equal(writes,0);assert.equal(text.nodeValue,'Replay · 3 of 3 ');assert.equal(stopLabel.textContent,'Stop');
+ message={text:'Finished <safely>',action:{id:'replay"next',label:'<Next>'}};runtime.refreshStatus();
+ assert.equal(writes,1);assert.match(html,/Finished &lt;safely&gt;/);assert.match(html,/data-board-message-action="replay&quot;next"/);assert.match(html,/&lt;Next&gt;/);
+ assert.doesNotMatch(html,/<safely>|<Next>|data-board-message-action="replay-stop"/);
+});
+
+test('named board messages update suffix and controls in place without replacing action nodes',async()=>{
+ const name={nodeName:'BDI',classList:{contains:value=>value==='board-message-name'},textContent:'Old name',title:'Old name'};
+ const buttonLabel={textContent:'Show me again'},buttonSvg={};
+ const suffix={nodeType:3,nodeValue:' moved '},button={dataset:{boardMessageAction:'replay-computer'},children:[buttonSvg,buttonLabel],querySelector:()=>buttonLabel};
+ let writes=0,html='',message={actorName:'משחק 星',text:'משחק 星 rushed from (1, 2) to (3, 4)',action:{id:'replay-computer',label:'Show me again'}};
+ const label={firstChild:name,childNodes:[name,suffix,button],querySelectorAll:()=>[button],addEventListener:noop,removeEventListener:noop,
+  get innerHTML(){return html;},set innerHTML(value){writes++;html=value;}};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getSelectedPieceSummary:()=>null},host:{canInteract:()=>false},controls:{getBoardMessage:()=>message}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ await runtime.loadSnapshot({sideToMove:'P1',turnIndex:0,pieces:[],outcome:{status:'ongoing'}},{legalActions:[]});
+ assert.equal(writes,0);assert.equal(name.textContent,'משחק 星');assert.equal(name.title,'משחק 星');assert.equal(suffix.nodeValue,' rushed from (1, 2) to (3, 4) ');assert.equal(label.childNodes[2],button);
+ message={...message,text:'משחק 星 followed from (3, 4) to (5, 6)',action:{id:'replay-computer',label:'Replay'}};runtime.refreshStatus();
+ assert.equal(writes,0);assert.equal(suffix.nodeValue,' followed from (3, 4) to (5, 6) ');assert.equal(buttonLabel.textContent,'Replay');assert.equal(label.firstChild,name);assert.equal(label.childNodes[2],button);assert.equal(button.children[0],buttonSvg);assert.equal(button.children[1],buttonLabel);
+ message={actorName:'mismatch',text:'Ordinary <safe>',action:{id:'replay-computer',label:'Replay'}};runtime.refreshStatus();
+ assert.equal(writes,1);assert.match(html,/Ordinary &lt;safe&gt;/);assert.doesNotMatch(html,/<bdi/);
+});
+
 test("board runtime keeps internal action type when external controls are absent", () => {
   const runtime = createBoardRuntime({
     boardAdapter: {
@@ -3393,4 +3448,20 @@ test('read-only selected pieces remain informational during rush, follow and ret
   assert.match(html,/Piece at/);assert.match(html,/4/);assert.match(html,/2/);assert.doesNotMatch(html,/data-board-preview-action|Select a rush|End Turn|Retreat|Follow/);
   runtime.setInspection({kind:'command',pieceId:'A'});assert.match(html,/command connection|Command lines/);assert.doesNotMatch(html,/data-board-preview-action/);
  }
+});
+
+test('message and ordinary Pass share one guarded admission with stale-state and inspection fences',async()=>{
+ let click,canInteract=true,release;const applied=[],external=[];
+ const label={innerHTML:'',textContent:'',addEventListener:(kind,callback)=>{if(kind==='click')click=callback},removeEventListener:noop};
+ const state={sideToMove:'P1',turnIndex:0,continuation:null,pieces:[]};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getSelectedPieceSummary:()=>null},host:{canInteract:()=>canInteract,applyAction:async(_state,action)=>{applied.push(action);return new Promise(resolve=>{release=()=>resolve({accepted:true,state:{...state,turnIndex:1},legalActions:[]})})}},controls:{onBoardMessageAction:id=>external.push(id)}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});await runtime.loadSnapshot(state,{legalActions:[{type:'pass'}]});
+ const fire=(message=true)=>click({target:{closest:selector=>selector===(message?'[data-board-message-action]':'[data-board-preview-action]')?{getAttribute:()=> 'pass'}:null}});
+ runtime.setInteractionBlocked(true);fire();assert.equal(applied.length,0);runtime.setInteractionBlocked(false);
+ canInteract=false;fire();assert.equal(applied.length,0);canInteract=true;
+ runtime.setInspection({kind:'supply',owner:'P1'});fire();assert.equal(applied.length,0);runtime.clearInspection();
+ await runtime.loadSnapshot({...state,continuation:{type:'rush'}},{legalActions:[{type:'pass'}]});fire();assert.equal(applied.length,0);
+ await runtime.loadSnapshot(state,{legalActions:[]});fire();assert.equal(applied.length,0);
+ await runtime.loadSnapshot(state,{legalActions:[{type:'pass'}]});fire();fire(false);assert.deepEqual(applied,[{type:'pass'}]);assert.deepEqual(external,[]);
+ release();await new Promise(resolve=>setTimeout(resolve,0));fire();assert.equal(applied.length,1);
 });

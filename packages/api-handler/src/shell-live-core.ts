@@ -834,8 +834,8 @@ export const toStaticGameCard = (
     previewSelection: game.pendingScenarioSelection ?? null,
     myRole,
     canJoinAsPlayer,
-    player1: game.player1 ? { ...game.player1, ...(game.computer && !game.computer.manual ? { computerProfile: game.computer.seats.p1 } : {}) } : null,
-    player2: game.player2 ? { ...game.player2, ...(game.computer && !game.computer.manual ? { computerProfile: game.computer.seats.p2 } : {}) } : null,
+    player1: game.player1 ? { ...game.player1, ...(game.computer ? { computerProfile: game.computer.seats.p1 } : {}) } : null,
+    player2: game.player2 ? { ...game.player2, ...(game.computer ? { computerProfile: game.computer.seats.p2 } : {}) } : null,
   };
 };
 

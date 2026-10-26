@@ -28,6 +28,7 @@ Useful variants:
 - `pnpm dev:web` starts only the web app.
 - `pnpm dev:api` starts only the API worker.
 - `pnpm test:unit`, `pnpm test:integration`, and `pnpm test:e2e` run individual test lanes.
+- Hosted Linux Firefox E2E jobs install PulseAudio and run an owned foreground null sink through `pnpm test:e2e --project=firefox`. This supplies native WebAudio without a sound card. The existing supervisor owns the audio process and test runner, and the audio sink stops when the runner finishes. Direct Playwright invocation skips this CI setup. Native audio-clock and receipt checks remain strict.
 - `pnpm setup:workspace -- --clone-backlog` also clones the sibling `righelt-backlog` repo when it is missing.
 - For local HTTPS without browser warnings, follow [Trusted local HTTPS](docs/LOCAL_HTTPS.md). `pnpm setup:https --all-worktrees` shares one development certificate across local checkouts and ports.
 

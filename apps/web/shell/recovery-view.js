@@ -1,4 +1,4 @@
-import { computerProfileFor } from '../generated/packages/shared-types/src/computer-play.js';
+import { COMPUTER_TIMING, computerProfileFor } from '../generated/packages/shared-types/src/computer-play.js';
 import { SYNC_TIMING } from "../generated/packages/shared-types/src/sync-protocol.js";
 // Personal viewing intent is local to a tab; snapshots cannot move a reader's selection.
 export const historyMoveKey = (move) => move.moveId ?? (move.clientCommandId ? `pending:${move.clientCommandId}` : null);
@@ -60,19 +60,36 @@ export const applyHistoryIntent = (game, intent, identityId) => {
 };
 
 export const isBoardRecoveryPending = game => Boolean(game?.sharedMutationsBlocked
+  && game.pendingComputerSaveStartedAt == null
   && !game.inHistoryMode && !game.storageBlocked && !game.upgradeRequired
   && !["session_changed", "invalid_credentials"].includes(game.recoveryIssue)
   && (game.recovering || game.syncStatus === "confirming"));
 
-export const recoveryMessage = (game, now = Date.now()) => {
+const recoveryWaitMs = (game, now) => {
+  const starts = [game.recoveryStartedAt, game.pendingComputerSaveStartedAt].filter(Number.isFinite);
+  return starts.length ? Math.max(0, now - Math.min(...starts)) : 0;
+};
+export const needsRecoveryAction = (game, now = Date.now()) => Boolean(game.storageBlocked || game.upgradeRequired
+  || ["session_changed", "invalid_credentials", "invalid_response"].includes(game.recoveryIssue)
+  || game.confirmationOverdue || recoveryWaitMs(game, now) >= SYNC_TIMING.confirmationBudgetMs);
+
+export const recoveryMessage = (game, now = Date.now(), { computerSaveActive = false } = {}) => {
   if (game.upgradeRequired) return "Righelt has an update. Refresh to keep playing.";
   if (game.storageBlocked) return game.storageLimitReached
     ? "Still recording earlier moves. Please wait before making another."
     : game.unsavedCommand ? "We couldn’t save your move. Please try again."
       : "We’re having trouble saving. Please try again.";
-  if (!game.recovering && game.syncStatus !== "confirming" && !game.confirmationOverdue) return "";
   if (["session_changed", "invalid_credentials"].includes(game.recoveryIssue)) return "Please sign in again to continue.";
-  const elapsed = game.recoveryStartedAt ? Math.max(0, now - game.recoveryStartedAt) : 0;
+  if (game.recoveryIssue === "invalid_response") return "We couldn’t record your move. Please reconnect.";
+  if (!game.recovering && game.syncStatus !== "confirming" && !game.confirmationOverdue) return "";
+  const elapsed = recoveryWaitMs(game, now);
+  if (game.pendingComputerSaveStartedAt != null) {
+    if (!needsRecoveryAction(game, now)) {
+      if (computerSaveActive || elapsed < COMPUTER_TIMING.saveNoticeAfterMs) return "";
+      return "Saving the computer’s move is taking longer than usual";
+    }
+    return "Still checking your move. You can retry or view details.";
+  }
   if (elapsed < SYNC_TIMING.reconnectAlertMs && !game.confirmationOverdue) return "";
   if (elapsed < SYNC_TIMING.confirmationBudgetMs && !game.confirmationOverdue) return game.pendingCommandCount > 0 ? "Recording your move" : "Reconnecting";
   return game.pendingCommandCount > 0 ? "Still checking your move. You can retry or view details." : "Still reconnecting. You can retry or view details.";

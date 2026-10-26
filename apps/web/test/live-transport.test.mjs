@@ -1805,6 +1805,77 @@ test('Retry-After delays command and lifecycle reconciliation through the same r
  assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);
 });
 
+for(const status of [404,405]) test(`missing reconciliation endpoint ${status} establishes legacy version with one bounded read`,async(t)=>{
+ const baseGame=buildLiveGame();let reads=0,reconciles=0;
+ const store=createLiveTransportStore({storage:createMemoryStorage(),commandJournal:{list:async()=>[]},beforeReconcile:async()=>true,
+   fetcher:async(url,init)=>{
+    if(url.endsWith('/reconcile')){reconciles++;return Response.json({error:'not_found'},{status});}
+    reads++;assert.equal(init.method,'GET');return Response.json({protocolVersion:1,ok:true,game:baseGame,eventSeq:1});
+   }});
+ t.after(()=>store.retire());
+ await assert.rejects(store.loadGame(baseGame.id),error=>error.code==='upgrade_required');
+ assert.equal(reconciles,1);assert.equal(reads,1);
+ assert.equal(store.isUpgradeRequired(baseGame.id),true);
+ assert.equal(store.getGameViewModel(baseGame.id),null,'unsupported snapshots cannot populate the board');
+});
+
+for(const status of [404,405]) test(`known incompatibility during reconciliation ${status} stops the legacy discovery read`,async t=>{
+ const game=buildLiveGame();let finish,reads=0,reconciles=0;
+ const store=createLiveTransportStore({storage:createMemoryStorage(),commandJournal:{list:async()=>[]},beforeReconcile:async()=>true,
+  fetcher:async(url,init)=>{
+   if(url.endsWith('/reconcile')){reconciles++;return new Promise(resolve=>{finish=resolve;});}
+   reads++;assert.equal(init.method,'GET');return Response.json({protocolVersion:2,ok:true,game,eventSeq:1});
+  }});
+ t.after(()=>store.retire());const loading=store.loadGame(game.id);
+ while(!finish)await Promise.resolve();
+ store.markUpgradeRequired(game.id);finish(Response.json({error:'not_found'},{status}));
+ await assert.rejects(loading,error=>error.code==='upgrade_required');
+ assert.equal(reconciles,1);assert.equal(reads,0);assert.equal(store.getGameViewModel(game.id),null);
+});
+
+for (const accepted of [true,false]) test(`validated unknown receipts stay pending through the original budget and settle ${accepted?'accepted':'rejected'} once`,async t=>{
+ const game=buildLiveGame(),storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
+ const action=game.legalActions[0],saved=new Map(),removed=[],envelopes=[];
+ let settle=false,unknownReplies=0;
+ const store=createLiveTransportStore({storage,
+  commandJournal:{list:async()=>[...saved.values()],admit:async e=>saved.set(e.clientCommandId,clone(e)),remove:async e=>{removed.push(e.clientCommandId);saved.delete(e.clientCommandId);},close:async()=>{}},
+  timing:{requestTimeoutMs:500,confirmationBudgetMs:120,retryDelaysMs:[10],retryJitter:0},
+  fetcher:async(url,init)=>{
+   const payload=JSON.parse(init.body),commands=payload.commands??[payload];
+   for(const command of commands)envelopes.push(clone(command));
+   if(settle){const command=commands[0];return commandResponse({ok:true,accepted,game:accepted?buildAcknowledgedGame(game,action):game,eventSeq:2,clientCommandId:command.clientCommandId});}
+   unknownReplies++;
+   return Response.json({protocolVersion:2,gameId:game.id,eventSeq:1,gameplayRevision:0,game,
+    commandOutcomes:commands.map(e=>({gameId:game.id,identityId:e.identityId,clientCommandId:e.clientCommandId,fingerprint:e.fingerprint,outcome:'unknown',reason:null,eventSeq:1,gameplayRevision:0}))});
+  }});
+ t.after(()=>store.retire());store.applyLiveGameUpdate({game,eventSeq:1});
+ await store.applyGameAction({gameId:game.id,state:game.board.state,action});
+ for(let i=0;i<20&&unknownReplies<3;i++)await new Promise(r=>setTimeout(r,5));
+ assert.ok(unknownReplies>=3,'multiple validated replies exercise retry ownership');
+ const original=clone(envelopes[0]),pending=store.getGameViewModel(game.id);
+ assert.equal(pending.pendingCommandCount,1);assert.equal(pending.sharedMutationsBlocked,true);assert.equal(pending.recoveryIssue,null);
+ assert.equal(pending.pendingActorSide,'P1');assert.equal(pending.incidentId,null,'unresolved receipts are not unavailable incidents');
+ assert.equal(saved.size,1);assert.equal(removed.length,0);
+ for(let i=0;i<40&&!store.getGameViewModel(game.id).confirmationOverdue;i++)await new Promise(r=>setTimeout(r,5));
+ const overdue=store.getGameViewModel(game.id);assert.equal(overdue.confirmationOverdue,true,'retries do not reset original deadline');
+ assert.equal(overdue.recoveryIssue,null);assert.equal(overdue.pendingCommandCount,1);assert.equal(overdue.sharedMutationsBlocked,true);
+ assert.ok(envelopes.every(e=>JSON.stringify(e)===JSON.stringify(original)),'only original immutable envelope is retried');
+ settle=true;
+ for(let i=0;i<40&&store.getGameViewModel(game.id).pendingCommandCount;i++)await new Promise(r=>setTimeout(r,5));
+ assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);assert.equal(saved.size,0);assert.deepEqual(removed,[original.clientCommandId]);
+ assert.equal(store.getAuthoritativeGame(game.id).moves.length,game.moves.length+(accepted?1:0));
+});
+
+test('external errors cannot impersonate the private unresolved receipt signal',async t=>{
+ const game=buildLiveGame(),storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
+ const store=createLiveTransportStore({storage,commandJournal:{list:async()=>[],admit:async()=>{},remove:async()=>{},close:async()=>{}},
+  timing:{retryDelaysMs:[1000],retryJitter:0},fetcher:async()=>{throw Error('outcome_unknown');}});
+ t.after(()=>store.retire());store.applyLiveGameUpdate({game,eventSeq:1});
+ await store.applyGameAction({gameId:game.id,state:game.board.state,action:game.legalActions[0]});
+ for(let i=0;i<20&&!store.getGameViewModel(game.id).recoveryIssue;i++)await tick();
+ const pending=store.getGameViewModel(game.id);
+ assert.equal(pending.recoveryIssue,'unavailable');assert.ok(pending.incidentId);assert.equal(pending.pendingCommandCount,1);assert.equal(pending.sharedMutationsBlocked,true);
+});
 
 for (const operation of ["computer-control", "revert-request"]) for(const accepted of [true,false]) for(const repair of [null,"connection","snapshot"]) test(`socket ${accepted ? "acceptance" : "rejection"} completes ${operation} while preserving ${repair ?? "no newer"} recovery`,async()=>{
  const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,"id-live");

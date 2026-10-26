@@ -13,10 +13,15 @@ const createReplayPreview = ({rootEl, createAdapter, preview}) => {
 export const COMPUTER_REPLAY_TIMING = Object.freeze({motion: 520, pause: 360});
 
 /** Frames come from acknowledged active-lineage decisions, never engine simulation. */
-export function buildComputerTurnReplay({moves, completedTurnIndex, gameId, revision, lineageHead, finalSnapshot = null}) {
+export function buildComputerTurnReplay(options) {
+  if (!(options.moves ?? []).some(move => !move.undone && move.turnIndex === options.completedTurnIndex && move.computerProof)) return null;
+  return buildTurnReplay(options);
+}
+
+export function buildTurnReplay({moves, completedTurnIndex, gameId, revision, lineageHead, finalSnapshot = null}) {
   if (!Number.isInteger(completedTurnIndex)) return null;
   const turn = (moves ?? []).filter(move => !move.undone && move.turnIndex === completedTurnIndex && move.action?.type !== 'end_turn');
-  if (!turn.length || !turn.some(move => move.computerProof)) return null;
+  if (!turn.length) return null;
   if (turn.some((move, index) => !move.moveId || !move.selectionSnapshot || !move.snapshot || move.turnMoveIndex !== index)) return null;
   const frames = turn.map(move => ({decisionId: move.moveId, action: move.action, before: move.selectionSnapshot, after: move.snapshot, destroyedPieces: move.destroyedPieces ?? []}));
   if (finalSnapshot && JSON.stringify(finalSnapshot) !== JSON.stringify(frames.at(-1).after)) {

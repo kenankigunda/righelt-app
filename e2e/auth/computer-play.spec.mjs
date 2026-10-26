@@ -1,12 +1,42 @@
 import { test, expect } from '@playwright/test';
-import { submitPlayableAction } from '../support/app.mjs';
+import { submitPlayableAction, switchGamePanel } from '../support/app.mjs';
 import { AUTH_CONTROL_ORIGIN } from './fixture.mjs';
 import { readProjectedGame, waitForComputerDecision } from '../support/computer-projection.mjs';
 import { isOperationRequest, operationValues } from '../support/shared-request.mjs';
+import { attachFailureAndRethrow } from '../support/failure-evidence.mjs';
 import { waitForPlayableBoard } from '../../scripts/validation/browser-navigation.mjs';
 import {installPassiveCommandObservations,attachCommandObservations} from '../support/command-observations.mjs';
 
 const projected = (page, id) => page.evaluate(readProjectedGame, { id });
+
+function captureInitialComputerControl(page) {
+  const acquisition = page.waitForRequest(request => isOperationRequest(request, 'computer-control') && operationValues(request)?.action === 'acquire');
+  acquisition.catch(() => {});
+  return acquisition;
+}
+
+async function waitForInitialComputerControl(page, initial, acquisition) {
+  const request = await acquisition;
+  const command = request.postDataJSON(), values = operationValues(request);
+  expect(command.kind).toBe('shared');
+  expect(command.gameId).toBe(initial.id);
+  expect(command.clientCommandId).toMatch(/^v2:/);
+  expect(values.generation).toBe(initial.computer.generation);
+  expect(typeof values.deviceId).toBe('string');
+  expect(values.deviceId.length).toBeGreaterThan(0);
+  const acceptedGeneration = initial.computer.generation + 1;
+  await expect.poll(async () => {
+    const game = await projected(page, initial.id);
+    return { deviceId: game.computer.lease?.deviceId ?? null,
+      generation: game.computer.generation, canRecordMove: game.canRecordMove };
+  }, { message: 'Initial computer control must be acknowledged before the first human action' }).toEqual({
+    deviceId: values.deviceId, generation: acceptedGeneration, canRecordMove: true,
+  });
+  await waitForPlayableBoard(page);
+  await test.info().attach('initial-computer-control-readiness', { contentType: 'application/json',
+    body: JSON.stringify({ gameId: initial.id, clientCommandId: command.clientCommandId,
+      deviceId: values.deviceId, submittedGeneration: values.generation, acceptedGeneration }) });
+}
 
 async function registerComputerTester(page, { home = true } = {}) {
   expect((await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`, { method: 'POST' })).ok).toBe(true);
@@ -32,6 +62,7 @@ test('ordinary computer play records real worker evidence, preserves private not
   await registerComputerTester(page);
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
   const create = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST' && response.request().postDataJSON()?.computer?.p2 === 'babs');
+  const initialControl = captureInitialComputerControl(page);
   await page.getByRole('button', { name: 'Play Babs', exact: true }).click();
   const createResponse = await create;
   expect(createResponse.status(), `Computer game creation failed (request ${createResponse.headers()['x-righelt-request-id'] || 'unavailable'})`).toBe(200);
@@ -40,20 +71,20 @@ test('ordinary computer play records real worker evidence, preserves private not
   expect(created.computer.modelId).toBe('initial-1554');
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
   await expect(page.getByTestId('game-role')).toContainText('Player 1');
-  await waitForPlayableBoard(page);
+  await waitForInitialComputerControl(page, created, initialControl);
   const humanAction = created.legalActions.find(action => action.from && action.to);
   await submitPlayableAction(page, humanAction);
   await expect.poll(async () => (await projected(page, created.id)).moves.length).toBeGreaterThan(0);
   const afterHuman = await projected(page, created.id);
   if (afterHuman.canEndTurn) await page.locator('[data-action="end-turn"]').click();
+  let lastVerifiedGame=afterHuman;
   try { await expect.poll(async () => {
     const game = await projected(page, created.id);
+    lastVerifiedGame=game;
     return game.moves.some(move => move.computerProof?.modelId === 'initial-1554');
   }, { timeout: 100000, message: 'The production worker must submit a real trained-computer decision' }).toBe(true);
   } catch (error) {
-    const game = await projected(page, created.id);
-    await testInfo.attach('computer-failure-state', { contentType: 'application/json', body: JSON.stringify({ computer: game.computer, revision: game.gameplayRevision, state: game.board.state, currentTurn: game.currentTurn, moves: game.moves, status: await page.locator('[data-computer-status]').innerText(), errors }) });
-    throw error;
+    await attachFailureAndRethrow(error,{page,testInfo,lastVerifiedProjection:lastVerifiedGame,details:{journeyPhase,errors}});
   }
   const navigation = page.getByRole('button', { name: 'Open navigation menu', exact: true });
   if (await navigation.isVisible()) await navigation.click();
@@ -105,10 +136,10 @@ test('ordinary computer play records real worker evidence, preserves private not
   const branchResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/history/branch');
   await decision.getByRole('button', { name: 'Create a new game before this decision' }).click();
   const chooser = page.getByRole('dialog', { name: 'Create a new game here' });
-  await expect(chooser.locator('[data-rematch-friend-help]')).toBeHidden();
-  await chooser.getByLabel('Opponent').selectOption('friend');
-  await expect(chooser.locator('[data-rematch-friend-help]')).toBeVisible();
-  await chooser.getByRole('radio', { name: 'Player 2 · Blue' }).check();
+  await expect(chooser.locator('[data-rematch-friend-help]')).toHaveCount(0);
+  await chooser.getByRole('group', { name: 'Opponent', exact: true }).getByRole('radio', { name: 'Friend', exact: true }).check();
+  await expect(chooser.locator('[data-rematch-friend-help]')).toHaveCount(0);
+  await chooser.getByRole('radio', { name: 'Blue', exact: true }).check();
   await chooser.evaluate(async element => {
     await Promise.all(element.getAnimations({ subtree: true }).filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime)).map(animation => animation.finished.catch(() => {})));
   });
@@ -134,13 +165,14 @@ test('ordinary computer undo restores the human turn and resumes computer contro
   await registerComputerTester(page);
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
   const creation = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST' && response.request().postDataJSON()?.computer?.p2 === 'babs');
+  const initialControl = captureInitialComputerControl(page);
   await page.getByRole('button', { name: 'Play Babs', exact: true }).click();
   const response = await creation;
   expect(response.ok()).toBe(true);
   const initial = (await response.json()).game;
   expect(initial.computer.seats).toEqual({ p1: null, p2: 'babs' });
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
-  await waitForPlayableBoard(page);
+  await waitForInitialComputerControl(page, initial, initialControl);
   await page.evaluate(()=>window.commandObservationCheckpoint('before-first-human-action'));
   await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
   await page.evaluate(()=>window.commandObservationCheckpoint('after-first-human-confirmation'));
@@ -154,15 +186,17 @@ test('ordinary computer undo restores the human turn and resumes computer contro
   };
   page.on('request', observe);
   try {
-    const history = page.locator('[data-action="switch-game-panel"][data-panel="history"]');
-    if (await history.isVisible()) await history.click();
-    await page.locator('[data-action="undo-last-move"]').click();
+    await switchGamePanel(page,'history');
+    const firstMove=(await projected(page,initial.id)).moves.find(move=>!move.undone);
+    expect(firstMove?.moveId).toBeTruthy();
+    const row=page.locator(`[data-testid="history-move-item"][data-move-id="${firstMove.moveId}"]`);
+    await row.locator('.history-item-info').click();
+    await row.getByRole('button',{name:'Undo before this move',exact:true}).click();
     await expect.poll(async () => {
       const game = await projected(page, initial.id);
       return { activeMoves: game.moves.filter(move => !move.undone).length, paused: game.computer.paused, state: game.board.state };
     }).toEqual({ activeMoves: 0, paused: false, state: initial.board.state });
-    const board = page.locator('[data-action="switch-game-panel"][data-panel="board"]');
-    if (await board.isVisible()) await board.click();
+    await switchGamePanel(page,'board');
     await expect(page.locator('[data-computer-status]')).toBeHidden();
     await expect.poll(() => controls.filter(control => control.action === 'resume').length).toBeGreaterThan(0);
     const resumes = controls.filter(control => control.action === 'resume');
@@ -196,13 +230,14 @@ test(`${profile} prepares and plays as Player 2 with the production model`, asyn
   await story.locator('[data-story-play]').click({ trial: true });
   await expect(story.locator('[data-story-readiness]')).toContainText('Ready to play');
   const create = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST' && response.request().postDataJSON()?.computer?.p2 === profile);
+  const initialControl = captureInitialComputerControl(page);
   await story.locator('[data-story-play]').click();
   const createResponse = await create;
   expect(createResponse.status(), `Computer game creation failed (request ${createResponse.headers()['x-righelt-request-id'] || 'unavailable'})`).toBe(200);
   const created = (await createResponse.json()).game;
   expect(created.computer.seats).toEqual({ p1: null, p2: profile });
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
-  await waitForPlayableBoard(page);
+  await waitForInitialComputerControl(page, created, initialControl);
   await submitPlayableAction(page, created.legalActions.find(action => action.from && action.to));
   await expect.poll(async () => (await projected(page, created.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, created.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();
@@ -224,10 +259,11 @@ test(`${profile} branches from a human decision and plays as Player 1 with the p
   await historyRow.click();
   await historyRow.locator('[data-action="launch-history-branch"]').click();
   const chooser = page.getByRole('dialog', { name: 'Create a new game here', exact: true });
-  await chooser.getByRole('combobox', { name: 'Opponent', exact: true }).selectOption(profile);
-  await chooser.getByRole('radio', { name: 'Player 2 · Blue', exact: true }).check();
+  await chooser.getByRole('group', { name: 'Opponent', exact: true }).locator(`input[value="${profile}"]`).check();
+  await chooser.getByRole('radio', { name: 'Blue', exact: true }).check();
   // Real model preparation uses the remaining test budget, as story entry does.
   await chooser.getByRole('button', { name: 'Start game', exact: true }).click({ trial: true });
+  await expect(chooser.getByRole('button', { name: 'Start game', exact: true })).toBeEnabled();
   const branchResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/history/branch');
   const popupPromise = page.waitForEvent('popup');
   await chooser.getByRole('button', { name: 'Start game', exact: true }).click();

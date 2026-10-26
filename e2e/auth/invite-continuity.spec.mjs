@@ -1,7 +1,7 @@
 import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 import { test, expect } from "@playwright/test";
-import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
+import { getHistoryMoveCount, submitPlayableAction, switchGamePanel } from "../support/app.mjs";
 import { AUTH_REQUEST_HEADER, AUTH_PROTOCOL_HEADER, AUTH_PROTOCOL_VERSION, SESSION_CONTEXT_HEADER } from "../../packages/shared-types/src/auth-policy.js";
 
 const password = "A long invite test password 482";
@@ -62,8 +62,7 @@ async function signOut(page) {
 async function sharedInvite(host) {
   await register(host, uniqueName(), true);
   const gameUrl = host.url();
-  const players = host.getByRole("button", { name: "Players", exact: true });
-  if (await players.isVisible()) await players.click();
+  await switchGamePanel(host, "players");
   const invite = host.getByTestId("copy-invite");
   await expect(invite).toBeEnabled();
   // Exercise the share action: it waits for an optimistic game's real invite
@@ -82,8 +81,7 @@ async function sharedInvite(host) {
 }
 
 async function playHostMove(host) {
-  const boardTab = host.getByRole("button", { name: "Board", exact: true });
-  if (await boardTab.isVisible()) await boardTab.click();
+  await switchGamePanel(host, "board");
   const action = await host.evaluate(async () => {
     const session = await (await fetch("/api/auth/session")).json();
     const gameId = decodeURIComponent(location.hash.match(/^#\/game\/([^?]+)/)[1]);

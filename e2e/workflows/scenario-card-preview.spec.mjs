@@ -79,7 +79,7 @@ test("scenario flyout selected card renders history-style recorded action previe
     const sourceCell = cellLocator(previewRoot, projectAction.from);
 
     await expect(previewRoot).toBeVisible();
-    await expect(scenarioCard.locator(".mini-board-preview-status")).toContainText("Player 2 to play");
+    await expect(scenarioCard.locator(".mini-board-preview-status")).toContainText("Blue to play");
     await expect.poll(() => locatorHasClass(sourceCell, "selected-piece")).toBe(false);
     await expect
       .poll(() => locatorHasDescendant(cellLocator(previewRoot, projectAction.to), ".preview-created"))
@@ -116,7 +116,7 @@ test("scenario flyout selected card keeps source-only selections in interactive 
     const sourceCell = cellLocator(previewRoot, projectAction.from);
 
     await expect(previewRoot).toBeVisible();
-    await expect(scenarioCard.locator(".mini-board-preview-status")).toContainText("Player 1 to play");
+    await expect(scenarioCard.locator(".mini-board-preview-status")).toContainText("Red to play");
     await expect.poll(() => locatorHasClass(sourceCell, "selected-piece")).toBe(true);
     await expect
       .poll(() => locatorHasDescendant(previewRoot, ".recorded-action-source-piece"))

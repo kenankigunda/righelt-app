@@ -1,4 +1,3 @@
-import {selectGamePanel} from '../../scripts/validation/browser-navigation.mjs';
 import {readPlayableAction} from "./read-playable-action.mjs";
 import { expect, test } from "@playwright/test";
 
@@ -29,6 +28,22 @@ const getVisibleJoinSurface = async (page) => {
   }
 
   return null;
+};
+
+export const switchGamePanel = async (page, key) => {
+  if (await page.locator('#app').getAttribute('data-shell-layout-mode') !== 'narrow') return;
+  const tab = page.locator(`[data-action="switch-game-panel"][data-panel="${key}"]`);
+  // An already selected panel needs no navigation click. The controls can be
+  // collapsed while the current panel stays visible and ready.
+  if (await tab.getAttribute('aria-pressed') !== 'true') {
+    const reveal = page.getByRole('button',{name:'Show game navigation',exact:true});
+    // Refresh the idle window even when the bar is about to hide.
+    if (await reveal.count()) await reveal.click();
+    await tab.click();
+  }
+  await expect(tab).toHaveAttribute('aria-pressed','true');
+  await expect.poll(()=>page.locator(`[data-mobile-panel="${key}"]`).evaluate(el=>el.closest('.game-shell-track').getAnimations().some(animation=>animation.playState==='running'||animation.pending)),{message:'Expected the panel transition to finish'}).toBe(false);
+  await expect.poll(()=>page.locator(`[data-mobile-panel="${key}"]`).evaluate(el=>Math.abs(el.getBoundingClientRect().left-el.closest('.game-shell-track-wrap').getBoundingClientRect().left)),{message:'Expected the selected panel to finish its horizontal transition'}).toBeLessThanOrEqual(1);
 };
 
 export const buildAppUrl = (baseURL, hash = "#/") => `${baseURL}${hash}`;
@@ -247,7 +262,7 @@ export const selectPlayableAction = async (page, action) => {
   const source = cell(action.from);
   // Continuations select their required actor automatically. Clicking it again
   // cycles the overlay away from action previews instead of selecting a move.
-  if (!await source.evaluate(el => el.classList.contains("source"))) await source.click();
+  if (!["retreat", "follow"].includes(action.type) && !await source.evaluate(el => el.classList.contains("source"))) await source.click();
   const supportsHover = await page.locator('html').getAttribute('data-hover-capability') === 'hover';
   // A single forced follow can already select its destination. Its next tap
   // confirms the move, so do not submit it while trying to select it.
@@ -283,7 +298,7 @@ export const makeAnyLegalMove = async (page, ownerClass = "p1") => {
 
   // Read the actual client: describe-level and popup settings can differ from the project defaults.
   if (await page.evaluate(() => navigator.maxTouchPoints > 0)) {
-    await selectGamePanel(page,'board');
+    await switchGamePanel(page, "board");
     await sourceCell.tap();
     await expect(sourceCell).toHaveClass(/selected-piece/);
     await expect(targetCell.locator('.move-ghost')).toBeVisible();
@@ -312,7 +327,7 @@ export const openHistoryMode = async (page, moveIndex = 0) => {
   // Deliberately reveal the panel instead of scrolling a transformed offscreen pane.
   await expect(page.locator("#app")).toHaveAttribute("data-shell-layout-mode", /^(narrow|wide)$/);
   if (await page.locator("#app").getAttribute("data-shell-layout-mode") === "narrow") {
-    await selectGamePanel(page,'history');
+    await switchGamePanel(page, "history");
   }
   await expect(historyMoveItems(page).nth(moveIndex)).toBeVisible();
   await historyMoveItems(page).nth(moveIndex).click();

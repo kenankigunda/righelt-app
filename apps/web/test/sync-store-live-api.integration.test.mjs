@@ -604,6 +604,9 @@ test("integration sync store keeps optimistic revert request ids aligned through
   assert.match(optimisticRequestId, /^revert-/);
   assert.equal(store.getGameViewModel(createdGame.id).pendingRevertRequest, null);
   assert.equal(store.getGameViewModel(createdGame.id).moves.at(-1)?.undone, true);
+  assert.equal(store.getGameViewModel(createdGame.id).board.state.continuation, null);
+  assert.equal(store.getGameViewModel(createdGame.id).initialSelectionAction, null, 'The ordinary undone target never flashes while the real API reply is held');
+  assert.equal(store.getGameViewModel(createdGame.id).pendingScenarioSelection, null);
 
   releaseRevertRequest();
   const committedGame = await revertHandle.committed;

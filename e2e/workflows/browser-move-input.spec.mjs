@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { createGameFromHome, makeAnyLegalMove } from '../support/app.mjs';
+import { createGameFromHome, makeAnyLegalMove, switchGamePanel } from '../support/app.mjs';
+import { waitForPlayableBoard } from '../../scripts/validation/browser-navigation.mjs';
 
 test('phone instructions keep the board stationary during source and hover selection', async ({page}) => {
   await page.setViewportSize({width:390,height:844});
@@ -12,8 +13,8 @@ test('phone instructions keep the board stationary during source and hover selec
     };
   });
   const {gameId} = await createGameFromHome(page);
-  const boardTab = page.getByRole('button', {name:'Board',exact:true});
-  if (await boardTab.isVisible()) await boardTab.click();
+  await switchGamePanel(page, 'board');
+  await waitForPlayableBoard(page);
   const action = await page.evaluate(async id => {
     const identityId = localStorage.getItem('righelt.identity.id.v1');
     const {game} = await (await fetch(`/api/shell/games/${id}?identityId=${identityId}`)).json();

@@ -8,16 +8,24 @@ export const loadingCue = () => '<span class="loading-pieces" aria-hidden="true"
 
 // Tracks continuous operations through synchronous DOM patches without restarting
 // their clocks. A removed operation is retired, not replayed when revisited.
-export function mountLoadingFeedback(document, { now = () => performance.now(), setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+export function mountLoadingFeedback(document, { now = () => performance.now(), setTimer = setTimeout, clearTimer = clearTimeout, getScope = () => '', onContextsChange = null } = {}) {
   const selector = '[data-loading-key], [data-loading-state]';
   const episodes = new Map();
   const contexts = new Map();
-  let timer = null, destroyed = false;
+  let timer = null, destroyed = false, scope = null, published = '[]', serial = 0;
+  const sourceIds = new WeakMap();
+  const publish = descriptors => {
+    const ordered=descriptors.sort((a,b)=>a.key.localeCompare(b.key)),signature=JSON.stringify(ordered);
+    if(signature===published)return;published=signature;onContextsChange?.(ordered);
+  };
   const window = document.defaultView;
   const sync = () => {
     if (destroyed) return;
     if (timer !== null) clearTimer(timer);
     timer = null;
+    const nextScope=String(getScope());
+    if(nextScope!==scope){for(const status of contexts.values())status.remove();contexts.clear();episodes.clear();scope=nextScope;}
+    const slowContexts=new Map();
     const active = new Set();
     let next = Infinity;
     for (const element of document.querySelectorAll(selector)) {
@@ -37,7 +45,7 @@ export function mountLoadingFeedback(document, { now = () => performance.now(), 
       }
       const pending = element.dataset.loadingState === 'pending' || element.dataset.pending === 'true';
       const key = element.dataset.loadingKey || element;
-      if (!pending || element.closest('dialog:not([open]), [hidden], [inert]')) {
+      if (!pending || element.closest('dialog:not([open]), [hidden], [inert]') || (!isButton && typeof onContextsChange==='function' && element.getClientRects().length===0)) {
         element.removeAttribute('data-loading-phase');
         cueHost.querySelector(':scope > .loading-pieces')?.remove();
         element.querySelector(':scope > .loading-context')?.remove();
@@ -47,6 +55,10 @@ export function mountLoadingFeedback(document, { now = () => performance.now(), 
       if (!episodes.has(key)) episodes.set(key, now());
       const elapsed = now() - episodes.get(key);
       const phase = loadingPhase(elapsed);
+      if(element.dataset.loadingContext==='external'){
+        element.querySelector(':scope > .loading-context')?.remove();
+        contexts.get(key)?.remove();contexts.delete(key);
+      }
       if (isButton && phase === 'slow' && element.dataset.loadingContext !== 'external') {
         let status = contexts.get(key);
         if (!status?.isConnected) {
@@ -59,7 +71,17 @@ export function mountLoadingFeedback(document, { now = () => performance.now(), 
       if (element.dataset.loadingPhase !== phase) element.dataset.loadingPhase = phase;
       if (!cueHost.querySelector(':scope > .loading-pieces')) cueHost.insertAdjacentHTML('beforeend', loadingCue());
       // The label remains unchanged. Status has no role in accessible button names.
-      if (!isButton && element.dataset.loadingContext !== 'external' && phase === 'slow' && !element.querySelector(':scope > .loading-context')) {
+      // Actual dialogs keep foreground-owned context. Ordinary regions send
+      // their visible slow notice to the shell's existing recovery space.
+      const publishOutside = !isButton && typeof onContextsChange==='function' && !element.closest('dialog[open], [aria-modal="true"]');
+      if(publishOutside && element.dataset.loadingContext !== 'external' && phase==='slow'){
+        if(!sourceIds.has(element))sourceIds.set(element,++serial);
+        const sourceKey=element.dataset.loadingKey || `source-${sourceIds.get(element)}`;
+        slowContexts.set(key,{key:`loading:${scope}:${sourceKey}`,scope,message:element.dataset.loadingMessage || 'This is taking a little longer than usual.'});
+        element.querySelector(':scope > .loading-context')?.remove();
+        contexts.get(key)?.remove();contexts.delete(key);
+      }
+      if (!publishOutside && !isButton && element.dataset.loadingContext !== 'external' && phase === 'slow' && !element.querySelector(':scope > .loading-context')) {
         const status = document.createElement('span');
         status.className = 'loading-context';
         status.textContent = element.dataset.loadingMessage || "This is taking a little longer than usual.";
@@ -79,12 +101,14 @@ export function mountLoadingFeedback(document, { now = () => performance.now(), 
       else if (elapsed < LOADING_CONTEXT_DELAY_MS) next = Math.min(next, LOADING_CONTEXT_DELAY_MS - elapsed);
     }
     for (const key of episodes.keys()) if (!active.has(key)) { episodes.delete(key); contexts.get(key)?.remove(); contexts.delete(key); }
+    publish([...slowContexts.values()]);
     if (Number.isFinite(next)) timer = setTimer(sync, Math.max(1,next));
   };
   const visibility = () => document.documentElement.toggleAttribute('data-loading-hidden',document.hidden);
   const observer = new window.MutationObserver(sync);
-  observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['data-loading-state','data-loading-key','data-pending','open','hidden','inert']});
+  observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['data-loading-state','data-loading-key','data-pending','data-loading-context','data-loading-message','open','hidden','inert']});
   document.addEventListener('visibilitychange',visibility);
+  window.addEventListener('hashchange',sync);
   visibility(); sync();
-  return () => { destroyed=true;observer.disconnect();if(timer!==null)clearTimer(timer);episodes.clear();for(const status of contexts.values())status.remove();contexts.clear();document.removeEventListener('visibilitychange',visibility); };
+  return () => { destroyed=true;observer.disconnect();if(timer!==null)clearTimer(timer);episodes.clear();for(const status of contexts.values())status.remove();contexts.clear();publish([]);window.removeEventListener('hashchange',sync);document.removeEventListener('visibilitychange',visibility); };
 }

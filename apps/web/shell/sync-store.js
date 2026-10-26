@@ -7,7 +7,7 @@ import { buildLocalApiWsHost, isLocalDevHost } from "../local-dev-ports.js";
 import { createLiveTransportStore, validSyncSnapshot } from "./live-transport.js";
 import { createOperationManager } from "./operation-manager.js";
 
-import { LIVE_HISTORY, SYNC_TIMING, isSyncRevision } from "../generated/packages/shared-types/src/sync-protocol.js";
+import { LIVE_HISTORY, SYNC_PROTOCOL_VERSION, SYNC_TIMING, isSyncRevision } from "../generated/packages/shared-types/src/sync-protocol.js";
 
 const PENDING_LOCAL_GAMES_KEY = "righelt.pendingLocalGames";
 const WS_RECONNECT_BASE_MS = SYNC_TIMING.retryDelaysMs[0];
@@ -109,6 +109,7 @@ export const createLiveSyncClient = ({
   onRecovery = () => {},
   onReconcile = async () => {},
   onReady = async () => {},
+  onUnsupportedProtocol = () => {},
   degradedPollMs = SYNC_TIMING.degradedPollMs,
   degradedSlowPollMs = SYNC_TIMING.degradedSlowPollMs,
   degradedSlowAfterMs = SYNC_TIMING.degradedSlowAfterMs,
@@ -126,6 +127,7 @@ export const createLiveSyncClient = ({
   const generations = new Map();
   const connectionState = new Map();
   const repairOwners = new Map();
+  const unsupportedProtocols = new Map();
   const httpRecoveredGames = new Set();
   const pollTimers = new Map();
   const degradedStartedAt = new Map();
@@ -211,7 +213,7 @@ export const createLiveSyncClient = ({
     }
   };
 
-  const cleanupSocket = (gameId, { closeReason = "intentional_disconnect", emitDisconnected = false } = {}) => {
+  const cleanupSocket = (gameId, { closeReason = "intentional_disconnect", emitDisconnected = false, initialResult } = {}) => {
     clearHeartbeat(gameId);
     const socket = sockets.get(gameId) ?? null;
     if (!socket) {
@@ -231,7 +233,7 @@ export const createLiveSyncClient = ({
     sockets.delete(gameId);
     generations.set(gameId, (generations.get(gameId) ?? 0) + 1);
     const connection = connectionState.get(gameId);
-    if (connection) { clearTimeout(connection.initialTimer); clearTimeout(connection.watchdog); connection.resolveInitial(); connectionState.delete(gameId); }
+    if (connection) { clearTimeout(connection.initialTimer); clearTimeout(connection.watchdog); connection.resolveInitial(initialResult); connectionState.delete(gameId); }
     closeReasonBySocket.set(socket, closeReason);
     try {
       socket.close();
@@ -358,7 +360,7 @@ export const createLiveSyncClient = ({
   };
 
   const repair = (gameId, reason, evidence = {}) => {
-    if (!desiredGameIds.has(gameId)) return Promise.resolve();
+    if (unsupportedProtocols.has(gameId) || !desiredGameIds.has(gameId)) return Promise.resolve();
     // Once HTTP restores authority, an unready replacement socket has no new
     // state to invalidate. Keep repairing it without interrupting board input.
     const background = httpRecoveredGames.has(gameId)
@@ -401,7 +403,7 @@ export const createLiveSyncClient = ({
   };
 
   const connect = (gameId) => {
-    if (retired) return;
+    if (retired || unsupportedProtocols.has(gameId)) return;
     if (!gameId) {
       return;
     }
@@ -440,7 +442,7 @@ export const createLiveSyncClient = ({
     connection.initial = new Promise((resolve) => { connection.resolveInitial = resolve; });
     connectionState.set(gameId, connection);
     const reconnectGate = reconnectGates.get(gameId);
-    if (reconnectGate) void connection.initial.then(() => { reconnectGate.resolve(); if (reconnectGates.get(gameId) === reconnectGate) reconnectGates.delete(gameId); });
+    if (reconnectGate) void connection.initial.then(result => { reconnectGate.resolve(result); if (reconnectGates.get(gameId) === reconnectGate) reconnectGates.delete(gameId); });
     connection.initialTimer = setTimeout(() => { if (current()) void repair(gameId, "initial_snapshot_timeout"); }, initialSnapshotTimeoutMs);
     connection.initialTimer.unref?.();
     const refreshWatchdog = () => {
@@ -473,6 +475,19 @@ export const createLiveSyncClient = ({
       try {
         const payload = JSON.parse(typeof event.data === "string" ? event.data : "{}");
         if (auth?.storageGeneration && payload.storageGeneration !== auth.storageGeneration) throw new Error("storage_reset");
+        // Only a recognized frame from this current connection can establish
+        // incompatibility. No snapshot is accepted here, including an old
+        // server's missing auth marker. Storage authority remains fenced first.
+        if (Number.isSafeInteger(payload.protocolVersion) && payload.protocolVersion > 0 && payload.protocolVersion !== SYNC_PROTOCOL_VERSION
+          && payload.gameId === gameId && isSyncRevision(payload.eventSeq)
+          && (payload.type === "heartbeat_ack" || (isAuthoritativeSyncEvent(payload) && validSyncSnapshot(payload.game, gameId)))) {
+          const result = { upgradeRequired: true, protocolVersion: payload.protocolVersion };
+          unsupportedProtocols.set(gameId, result);
+          clearReconnect(gameId); clearPoll(gameId); repairOwners.delete(gameId);
+          cleanupSocket(gameId, { closeReason: "upgrade_required", initialResult: result });
+          onUnsupportedProtocol({ gameId, ...result, socketGeneration: generation });
+          return;
+        }
         if (auth?.enabled && payload.authProtocolVersion !== AUTH_PROTOCOL_VERSION) throw new Error("upgrade_required");
         if (payload.protocolVersion !== 2 || payload.gameId !== gameId || !isSyncRevision(payload.eventSeq)) throw new Error("invalid_socket_event");
         if (payload.type === "heartbeat_ack") {
@@ -628,10 +643,11 @@ export const createLiveSyncClient = ({
     connectGame: (gameId) => connect(gameId),
     waitForInitialSnapshot,
     prepareInitialLoad: async (gameId) => {
+      if (unsupportedProtocols.has(gameId)) return unsupportedProtocols.get(gameId);
       if (!desiredGameIds.has(gameId)) return false;
       try { await waitForInitialSnapshot(gameId); }
       catch { await repair(gameId, "initial_load_fallback"); }
-      return true;
+      return unsupportedProtocols.get(gameId) ?? true;
     },
     getAdvertisedEventSeq: (gameId) => advertisedEventSeqByGameId.get(gameId) ?? 0,
     disconnectGame,
@@ -687,6 +703,14 @@ const createParticipant = (identityId, at) => ({
   lastHeartbeatAt: at,
   sessionCount: 1,
 });
+
+// Only presentation metadata is copied to optimistic seats. Branch control
+// authority remains unavailable until the canonical creation response arrives.
+const annotateComputerParticipants = (game, seats) => {
+  for (const [side, seat] of [['p1','player1'],['p2','player2']]) {
+    if (seats[side] && game[seat]) game[seat].computerProfile = seats[side];
+  }
+};
 
 const buildLocalGameView = ({
   gameId,
@@ -880,7 +904,9 @@ const buildOptimisticApprovedRevertGame = ({
     currentTurn,
     turns,
     historySelectionAction: null,
-    initialSelectionAction: targetMove.action ? clone(targetMove.action) : null,
+    // Do not flash the undone ordinary target while acceptance is pending.
+    // A forced sequence retains its legal continuation preview.
+    initialSelectionAction: stableState.continuation && targetMove.action ? clone(targetMove.action) : null,
     turnOwnerSeat,
     controlSeat,
     control: controlSeat === turnOwnerSeat ? "turn-owner" : "opponent",
@@ -963,6 +989,15 @@ export const createSyncStore = ({
   createSyncClient = createLiveSyncClient,
 } = {}) => {
   let active = true;
+  // Capture this store's authenticated public identity, never a later global
+  // account. It may seed only seats owned by the same transport identity.
+  const account = auth?.enabled && auth.session?.authenticated ? auth.session.account : null;
+  const capturedProfile = account && typeof account.id === 'string' && typeof account.username === 'string'
+    ? {id:account.id,username:account.username,displayName:account.displayName || account.username} : null;
+  const createKnownParticipant = (identityId, at) => ({
+    ...createParticipant(identityId, at),
+    ...(capturedProfile?.id === identityId ? {profile:{username:capturedProfile.username,displayName:capturedProfile.displayName}} : {}),
+  });
   if (auth?.enabled || auth?.storageGeneration) {
     const base = storage, prefix = `${auth?.storageGeneration ? `righelt.storage.${auth.storageGeneration}.` : ""}${auth?.enabled ? `righelt.account.${auth.session.contextId || "anonymous"}.` : ""}`;
     const scopedKey=key=>!auth?.enabled && key===IDENTITY_KEY ? key : prefix+key;
@@ -1217,6 +1252,7 @@ export const createSyncStore = ({
       if (isCurrent()) transport.setConnectionRecovering?.(gameId, false);
     },
     getLastEventSeq: (gameId) => (gameId ? transport.getLastEventSeq(gameId) : 0),
+    onUnsupportedProtocol: ({ gameId }) => { if (active) transport.markUpgradeRequired?.(gameId); },
     onEvent: (payload, context = {}) => {
       if (!active) return false;
       if (isAuthoritativeSyncEvent(payload)) {
@@ -1340,11 +1376,12 @@ export const createSyncStore = ({
       }
     },
     createGame: ({ selfPlayMode = false, creatorSide = "p1", computer } = {}) => {
+      computer = computer ? {...computer} : computer;
       const gameId = createGameId();
       const createdAt = new Date().toISOString();
       const identityId = transport.getIdentityId();
-      const player1 = selfPlayMode || creatorSide === "p1" ? createParticipant(identityId, createdAt) : null;
-      const player2 = selfPlayMode || creatorSide === "p2" ? createParticipant(identityId, createdAt) : null;
+      const player1 = selfPlayMode || creatorSide === "p1" ? createKnownParticipant(identityId, createdAt) : null;
+      const player2 = selfPlayMode || creatorSide === "p2" ? createKnownParticipant(identityId, createdAt) : null;
       const stubGame = buildLocalGameView({
         gameId,
         identityId,
@@ -1357,7 +1394,7 @@ export const createSyncStore = ({
         myRole: creatorSide === "p2" && !selfPlayMode ? "Player 2" : "Player 1",
         notifications: ["Game creation pending sync"],
       });
-      if (computer) { stubGame.computer = createComputerControl(identityId, computer); stubGame.awaitingCreation = true; stubGame.canRecordMove = false; stubGame.canEndTurn = false; }
+      if (computer) { stubGame.computer = createComputerControl(identityId, computer); annotateComputerParticipants(stubGame,stubGame.computer.seats); stubGame.awaitingCreation = true; stubGame.canRecordMove = false; stubGame.canEndTurn = false; }
       transport.applyLiveGameUpdate({ game: stubGame });
       savePendingLocalGame(stubGame);
 
@@ -1436,6 +1473,7 @@ export const createSyncStore = ({
       participantCopyMode,
       selfPlayMode = false,
     } = {}) => {
+      computer = computer ? {...computer} : computer;
       const gameId = createGameId();
       const createdAt = new Date().toISOString();
       const identityId = transport.getIdentityId();
@@ -1448,9 +1486,9 @@ export const createSyncStore = ({
       let myRole = sideToMoveSeat;
 
       myRole = creatorSide === 'p2' ? 'Player 2' : 'Player 1';
-      if (creatorSide === 'p2') player2 = createParticipant(identityId, createdAt);
-      else player1 = createParticipant(identityId, createdAt);
-      if (selfPlayMode || computer) { player1 = createParticipant(identityId, createdAt); player2 = clone(player1); }
+      if (creatorSide === 'p2') player2 = createKnownParticipant(identityId, createdAt);
+      else player1 = createKnownParticipant(identityId, createdAt);
+      if (selfPlayMode || computer) { player1 = createKnownParticipant(identityId, createdAt); player2 = clone(player1); }
 
       const stubGame = buildLocalGameView({
         gameId,
@@ -1465,6 +1503,7 @@ export const createSyncStore = ({
         notifications: ["History branch pending sync"],
         initialSelectionAction,
       });
+      if (computer) annotateComputerParticipants(stubGame,createComputerControl(identityId,computer).seats);
       // The server derives the branch position. Do not queue moves against a client preview.
       stubGame.awaitingCreation = true; stubGame.canRecordMove = false; stubGame.canEndTurn = false;
       transport.applyLiveGameUpdate({ game: stubGame });

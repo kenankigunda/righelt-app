@@ -2,16 +2,19 @@ import { createBoardRuntime } from "/apps/web/board/runtime/board-runtime.js";
 import { createEngineBoardAdapter } from "/apps/web/board-adapters/engine-board-adapter.js";
 import { buildPieceMoveResponse } from "/apps/web/board/client-move-generation.js";
 
-let state, actions, runtime, applied = [], pending = null, canInteract = true;
+let state, actions, runtime, applied = [], pending = null, canInteract = true, message = null, messageActions = [];
 const coord = (row, col) => ({ row, col });
 const setup = async (type = "rush", hover = true) => {
+  runtime?.destroy();
+  canInteract = true;
+  message = null; messageActions = [];
   state = { boardSize: 10, sideToMove: "P1", turnIndex: 0, continuation: null, outcome: { status: "ongoing" },
     pieces: [{ id: "A", owner: "P1", kind: "unit", position: coord(4, 2), supplied: true, commanded: true }] };
   if (type === "retreat") state.continuation = { type: "push", phase: "retreat", pushedPieceId: "A" };
   if (type === "follow") state.continuation = { type: "push", phase: "follow", followGroupPieceIds: ["A"] };
-  actions = [coord(4, 3), coord(5, 2)].map(to => ({ type, actorId: "A", from: coord(4, 2), to }));
+  actions = type === "pass" ? [{type:"pass"}] : [coord(4, 3), coord(5, 2)].map(to => ({ type, actorId: "A", from: coord(4, 2), to }));
   applied = [];
-  runtime = createBoardRuntime({ boardAdapter: createEngineBoardAdapter(), controls: { getSupportsHover: () => hover }, host: {
+  runtime = createBoardRuntime({ boardAdapter: createEngineBoardAdapter(), controls: { getSupportsHover: () => hover, getBoardMessage: () => message, onBoardMessageAction: action => messageActions.push(action) }, host: {
     canInteract: () => canInteract,
     loadPieceMoves: async (_state, pieceId) => buildPieceMoveResponse({ state, legalActions: actions, pieceId }),
     loadLegalActions: async () => ({ state, legalActions: actions }),
@@ -26,8 +29,17 @@ const setup = async (type = "rush", hover = true) => {
 };
 window.boardFixture = {
   setup,
+  configure: async (snapshot, legalActions, {selectionState, interactive = true} = {}) => {
+    state = snapshot;
+    actions = legalActions;
+    canInteract = interactive;
+    await runtime.loadSnapshot(state, {legalActions: actions, selectionState});
+  },
+  inspect: value => runtime.setInspection(value),
   selection: () => runtime.getSelection(),
   applied: () => applied,
+  message: value => { message = value; runtime.refreshStatus(); },
+  messageActions: () => messageActions,
   refresh: async () => {
     // A recovery/control gate can reject hover events during hydration. The
     // pointer remains over a legal preview when interaction becomes available.

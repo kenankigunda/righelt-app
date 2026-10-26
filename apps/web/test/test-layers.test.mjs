@@ -25,5 +25,6 @@ test("web test layers classify every test file exactly once", () => {
 
 test("web test layer classification reserves integration for workflow-level coverage", () => {
   assert.equal(classifyWebTestFile("game-flow.integration.test.mjs"), "integration");
+  assert.equal(classifyWebTestFile("additional-history-access.integration.test.mjs"), "integration");
   assert.equal(classifyWebTestFile("routing.test.mjs"), "unit");
 });
