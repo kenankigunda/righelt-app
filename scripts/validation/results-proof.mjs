@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {assertRematchSide,assertOpponentChoice,selectGamePanel} from './browser-navigation.mjs';
+import {assertRematchSide,assertOpponentChoice,assertRematchControlTargets,selectGamePanel} from './browser-navigation.mjs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
@@ -78,11 +78,7 @@ export async function proveResultsRematch({ page, info, root }) {
       animation.effect?.getKeyframes().some(frame=>typeof frame.transform==='string'&&frame.transform.includes('scale('))
     ).map(animation=>animation.finished.catch(()=>{})));
   });
-  for(const side of await rematch.getByRole('radio').all()){
-    const box=await side.boundingBox();
-    expect(box.width).toBeGreaterThanOrEqual(16);expect(box.width).toBeLessThanOrEqual(24);
-    expect(box.height).toBeGreaterThanOrEqual(16);expect(box.height).toBeLessThanOrEqual(24);
-  }
+  await assertRematchControlTargets(rematch,{contract:capabilities.rematchChoicesContract,opponent:'friend'});
   await proof(page, info, 'friend-rematch-choice', rematch);
   let requests = 0;
   const observesCreate = event => { if (event.method() === 'POST' && new URL(event.url()).pathname === '/api/shell/games') requests++; };

@@ -7,6 +7,7 @@ import { proof } from './proof.mjs';
 import {candidateCapabilities} from './capabilities.mjs';
 import {assertResultHeading} from './result-heading.mjs';
 import { request as accountRequest, selectTerminalScenario } from './results-proof.mjs';
+import {humanMoveForUndo,undoBeforeHumanMove} from './history-undo.mjs';
 
 export async function request(page, route, body) {
   const response = await accountRequest(page, route, body === undefined ? undefined : { ...body, protocolVersion: 2 }, 2);
@@ -45,7 +46,9 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     assert.deepEqual(initial.computer.seats, { p1: null, p2: 'babs' });
     await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
     await waitForPlayableBoard(page);
-    await submitPlayableAction(initial.legalActions.find(action => action.from && action.to));
+    const humanAction=initial.legalActions.find(action => action.from && action.to);
+    assert.ok(humanAction,'The fresh human turn must expose a playable action');
+    await submitPlayableAction(humanAction);
     if ((await gameAt(page, initial.id)).canEndTurn) await page.locator('[data-action="end-turn"], [data-board-preview-action="end-turn"]').filter({visible:true}).click();
     await expect.poll(async () => (await gameAt(page, initial.id)).moves.some(move => move.computerProof?.modelId === initial.computer.modelId), { message: 'A real model decision must be accepted' }).toBe(true);
     const accepted = await gameAt(page, initial.id), decision = accepted.moves.find(move => move.computerProof);
@@ -56,8 +59,8 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     const archive = await request(page, `/api/shell/games/${initial.id}/decision-history`, {});
     assert.ok(archive.items.some(item => item.id === decision.moveId), 'Accepted model decision must be durable');
     await proof(page, info, 'computer-accepted-play', page.getByTestId('game-board'));
-    await selectGamePanel(page,'history');
-    await page.locator('[data-action="undo-last-move"]').click();
+    const human=humanMoveForUndo(initial,accepted,humanAction);
+    await undoBeforeHumanMove(page,{gameId:initial.id,moveId:human.moveId,identityId:initial.player1.identityId,initialState:initial.board.state});
     await expect.poll(async () => (await gameAt(page, initial.id)).moves.filter(move => !move.undone).length).toBe(0);
     assert.deepEqual((await gameAt(page, initial.id)).board.state, initial.board.state);
     const retained = await request(page, `/api/shell/games/${initial.id}/decision-history`, {});
