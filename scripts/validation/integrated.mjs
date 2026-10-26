@@ -11,9 +11,10 @@ export function validateManifest(m){
  const seen=new Set();for(const p of m.prs){if(!Number.isSafeInteger(p.number)||p.number<1||seen.has(p.number))throw Error('PR numbers must be positive and unique');for(const dep of p.dependsOn??[])if(!seen.has(dep))throw Error('Dependencies must occur earlier in merge order');seen.add(p.number);}return m;
 }
 export function inputSignature(repository,base,prs,harnessRevision,harnessFingerprint){return hash({repository,base,prs:prs.map(p=>({number:p.number,head:p.head,base:p.base,dependsOn:p.dependsOn??[]})),harnessRevision,harnessFingerprint});}
-export async function integratedRun({manifest,cwd=process.cwd(),dir,resume=false,config,publishReport=config?.publicationEnabled===true,ciEvidence}){
+export async function integratedRun({manifest,cwd=process.cwd(),dir,resume=false,config,publishReport=config?.publicationEnabled===true,ciEvidence,retainedInput}){
  const spec=validateManifest(await readJSON(manifest));
- if(spec.version===2){const {boundedIntegratedRun}=await import('./integrated-bounded.mjs');return boundedIntegratedRun({spec,cwd,dir,resume,config,publishReport,ciEvidence});}
+ if(retainedInput&&(spec.version!==2||resume))throw Error('Retained input requires a new integrated v2 run');
+ if(spec.version===2){const {boundedIntegratedRun}=await import('./integrated-bounded.mjs');return boundedIntegratedRun({spec,cwd,dir,resume,config,publishReport,ciEvidence,retainedInput});}
  await command(['git','fetch','origin',spec.base],{cwd});const base=await git(['rev-parse','FETCH_HEAD'],cwd);
  const prs=[];for(const input of spec.prs){const response=await command(['gh','pr','view',String(input.number),'--repo',spec.repository,'--json','number,title,url,headRefOid,headRefName,baseRefName,state,isDraft'],{cwd});const p=JSON.parse(response.output);if(p.state!=='OPEN')throw Error(`PR ${p.number} is not open`);await command(['git','fetch','origin',`pull/${p.number}/head`],{cwd});if(await git(['rev-parse','FETCH_HEAD'],cwd)!==p.headRefOid)throw Error('PR changed during fetch; retry');prs.push({...input,title:p.title,url:p.url,head:p.headRefOid,branch:p.headRefName,base:p.baseRefName,open:true,draft:p.isDraft});}
  dir=path.resolve(dir??path.join(cwd,'test-results','validation',`integrated-${Date.now()}`));await mkdir(dir,{recursive:true});const file=path.join(dir,'run.json');

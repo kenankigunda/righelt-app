@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createLiveSyncClient } from "../shell/sync-store.js";
+import { socketEnvironment } from './support/socket-environment.mjs';
 
 class MockSocket {
   constructor(url) {
@@ -776,4 +777,52 @@ test("blocked sockets keep polling HTTP without reopening recovery and stop on d
  assert.equal(recoveries.filter(e=>!e.background).length,1);
  client.disconnectGame("g");const before=reads;
  await flushAsync(45);assert.equal(reads,before);
+});
+
+for(const [version,kind] of [[1,'snapshot'],[3,'snapshot'],[1,'heartbeat']])test(`current unsupported protocol ${version} ${kind} resolves the cold gate once and stops only its own connection`,async t=>{
+ const env=socketEnvironment(t),unsupported=[],events=[],repairs=[];
+ const client=env.own(createLiveSyncClient({identityId:'id-a',presenceFetcher:async()=>Response.json({ok:true}),onEvent:event=>events.push(event),onReconcile:value=>{repairs.push(value);},onUnsupportedProtocol:value=>unsupported.push(value),reconnectBaseMs:1,reconnectMaxMs:1,degradedPollMs:1}));
+ client.connectGame('g');const ws=env.sockets[0];ws.emit('open');
+ const initial=client.waitForInitialSnapshot('g');let resolved=0;void initial.then(()=>resolved++);
+ const value=kind==='heartbeat'?{type:'heartbeat_ack',gameId:'g',eventSeq:8,protocolVersion:version}:{...snapshot('g'),protocolVersion:version};
+ ws.emit('message',{data:JSON.stringify(value)});
+ assert.deepEqual(await initial,{upgradeRequired:true,protocolVersion:version});
+ assert.deepEqual(await client.prepareInitialLoad('g'),{upgradeRequired:true,protocolVersion:version});
+ assert.equal(unsupported.length,1);assert.equal(unsupported[0].gameId,'g');assert.equal(events.length,0);assert.equal(ws.readyState,3);
+ ws.emit('message',{data:JSON.stringify({...snapshot('g'),protocolVersion:version})});client.connectGame('g');
+ env.window.dispatchEvent(new Event('online'));env.window.dispatchEvent(new Event('pageshow'));await flushAsync(15);
+ assert.equal(resolved,1);assert.equal(unsupported.length,1);assert.equal(env.sockets.length,1);assert.equal(repairs.length,0);
+ client.connectGame('other');const other=env.sockets[1];other.emit('open');other.emit('message',{data:JSON.stringify(snapshot('other'))});
+ await client.waitForInitialSnapshot('other');assert.equal(events.length,1);assert.equal(events[0].gameId,'other');
+});
+
+test('a stale socket cannot mark its replacement incompatible',async t=>{
+ const env=socketEnvironment(t),unsupported=[],events=[];
+ const client=env.own(createLiveSyncClient({identityId:'id-a',presenceFetcher:async()=>Response.json({ok:true}),onEvent:value=>events.push(value),onUnsupportedProtocol:value=>unsupported.push(value)}));
+ client.connectGame('g');const old=env.sockets[0];old.emit('open');client.disconnectGame('g');client.connectGame('g');
+ const current=env.sockets[1];current.emit('open');old.emit('message',{data:JSON.stringify({...snapshot('g'),protocolVersion:1})});
+ current.emit('message',{data:JSON.stringify(snapshot('g'))});await client.waitForInitialSnapshot('g');
+ assert.equal(unsupported.length,0);assert.equal(events.length,1);assert.equal(current.readyState,1);
+});
+
+for(const change of [value=>{delete value.protocolVersion;},value=>{value.protocolVersion=0;},value=>{value.protocolVersion=-1;},value=>{value.protocolVersion=Number.MAX_SAFE_INTEGER+1;},value=>{value.protocolVersion=1;value.gameId='wrong';},value=>{value.protocolVersion=1;delete value.game.board;},value=>{value.protocolVersion=1;value.eventSeq=-1;}])test('malformed or unrelated frames recover without a terminal compatibility decision',async t=>{
+ const env=socketEnvironment(t),unsupported=[],repairs=[];
+ const client=env.own(createLiveSyncClient({identityId:'id-a',presenceFetcher:async()=>Response.json({ok:true}),onEvent:()=>{},onReconcile:value=>{repairs.push(value);},onUnsupportedProtocol:value=>unsupported.push(value)}));
+ client.connectGame('g');const ws=env.sockets[0];ws.emit('open');const value=snapshot('g');change(value);ws.emit('message',{data:JSON.stringify(value)});await Promise.resolve();await Promise.resolve();
+ assert.equal(unsupported.length,0);assert.equal(repairs.length,1);assert.equal(repairs[0].reason,'invalid_socket_event');
+});
+
+for(const storageGeneration of [undefined,'old'])test(`a V1 frame with ${storageGeneration?'stale':'missing'} storage authority cannot declare compatibility`,async t=>{
+ const env=socketEnvironment(t),unsupported=[],repairs=[];
+ const client=env.own(createLiveSyncClient({identityId:'id-a',auth:{enabled:true,storageGeneration:'current',session:{contextId:'context'}},presenceFetcher:async()=>Response.json({ok:true}),onEvent:()=>{},onReconcile:value=>{repairs.push(value);},onUnsupportedProtocol:value=>unsupported.push(value)}));
+ client.connectGame('g');const ws=env.sockets[0];ws.emit('open');ws.emit('message',{data:JSON.stringify({...snapshot('g'),protocolVersion:1,authProtocolVersion:2,storageGeneration})});await Promise.resolve();await Promise.resolve();
+ assert.equal(unsupported.length,0);assert.equal(repairs.length,1);
+});
+
+for(const authProtocolVersion of [undefined,1,2])test(`known V1 with current storage and auth marker ${authProtocolVersion??'missing'} fails closed without applying its game`,async t=>{
+ const env=socketEnvironment(t),unsupported=[],events=[],repairs=[];
+ const client=env.own(createLiveSyncClient({identityId:'id-a',auth:{enabled:true,storageGeneration:'current',session:{contextId:'context'}},presenceFetcher:async()=>Response.json({ok:true}),onEvent:value=>events.push(value),onReconcile:value=>{repairs.push(value);},onUnsupportedProtocol:value=>unsupported.push(value)}));
+ client.connectGame('g');const ws=env.sockets[0];ws.emit('open');const initial=client.prepareInitialLoad('g');
+ ws.emit('message',{data:JSON.stringify({...snapshot('g'),protocolVersion:1,storageGeneration:'current',authProtocolVersion})});
+ assert.deepEqual(await initial,{upgradeRequired:true,protocolVersion:1});assert.equal(unsupported.length,1);assert.equal(events.length,0);assert.equal(repairs.length,0);assert.equal(ws.readyState,3);
 });

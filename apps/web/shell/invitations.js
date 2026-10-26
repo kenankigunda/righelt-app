@@ -2,10 +2,22 @@
 export const invitationOptions = (game) => {
   const seat = !game?.player1 ? 'red' : !game?.player2 ? 'blue' : null;
   const options = [];
-  if (seat) options.push({ role: seat, label: `Invite someone to play as ${seat}`, token: game.inviteToken || game.id });
+  if (seat && !game?.selfPlayMode) options.push({ role: seat, label: `Invite someone to play as ${seat}`, token: game.inviteToken || game.id });
   options.push({role:'viewer', label:'Invite someone to view', token:game?.inviteTokens?.viewer || game?.id});
   return options;
 };
+
+export const createHostInvitation = (game, generation) => ({
+  gameId: game?.id,
+  generation,
+  seat: !game ? null : !game.player1 ? 'player1' : !game.player2 ? 'player2' : null,
+});
+
+// Presence and viewer arrivals do not settle the invitation's vacant seat.
+export const hostInvitationSettled = (invite, game, generation) => Boolean(
+  invite?.seat && game?.id === invite.gameId && generation === invite.generation
+  && game[invite.seat]?.identityId,
+);
 
 // The host sharing links and the arriving guest use the same top-of-game surface.
 // Callers provide trusted, escaped markup. Only the board region is inert.

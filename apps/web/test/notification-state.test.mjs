@@ -40,3 +40,21 @@ test('a known incident becoming blocking takes precedence once', () => {
   stack.advance('game',[notice('progress'),notice('recovery','urgent')]);
   assert.equal(stack.order('game',[notice('progress'),notice('recovery','urgent')])[0].key,'progress');
 });
+
+test('urgent arrivals preserve active interaction and become active after it ends', () => {
+  let held='progress';
+  const stack=createNotificationStack({getInteractionKey:()=>held});
+  stack.order('game',[notice('progress')]);
+  const items=[notice('progress'),notice('failed','urgent')];
+  assert.equal(stack.order('game',items)[0].key,'progress');
+  assert.equal(stack.order('game',items)[1].key,'failed');
+  held=null;
+  assert.equal(stack.order('game',items)[0].key,'failed');
+});
+test('explicit stack cycling wins over focus held in the outgoing card', () => {
+  const stack=createNotificationStack({getInteractionKey:()=> 'progress'});
+  const items=[notice('progress'),notice('failed','urgent')];
+  stack.order('game',items);
+  assert.equal(stack.advance('game',items),true);
+  assert.equal(stack.order('game',items)[0].key,'failed');
+});

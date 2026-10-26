@@ -1,7 +1,11 @@
+import {boardMessagePresentation,renderBoardMessageHtml,renderBoardInlineAction,updateBoardInlineActionLabel} from '../message-presentation.js';
 import { inspectionPaths, supplyOwnerAt } from "../inspection.js";
+import {renderCoordinateChip} from '../coordinate-chip.js';
+import {SELECTED_CONTINUATION_LABELS} from '../piece-explanations.js';
 import { REMOVAL_EFFECT_DURATION_MS } from "../removal-timing.js";
 import {
   getBlockedPreviewLabel,
+  getBlockedMoveExplanation,
   buildActionPayload,
   deriveContinuationHighlightByPieceId,
   deriveAutoSelectedTarget,
@@ -366,7 +370,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return "";
     }
     const chipClass = getBoardPreviewCoordinateChipClass(coord);
-    return `<span class="board-preview-coordinate-chip ${chipClass}">${escapeHtml(`${coord.row},${coord.col}`)}</span>`;
+    return renderCoordinateChip(coord,chipClass);
   };
 
   const setBoardPreviewAction = (text) => {
@@ -400,7 +404,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
     const endTurnLabel = "End Turn";
     setBoardPreviewPromptHtml(
-      `Select a rush or <button type="button" class="board-preview-inline-button" data-board-preview-action="end-turn">${endTurnLabel}</button>`,
+      `Select a rush or ${renderBoardInlineAction({id:"end-turn",label:endTurnLabel},{preview:true})}`,
     );
   };
 
@@ -462,8 +466,15 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
 
     if (elements.boardTurnIndicatorEl) {
-      elements.boardTurnIndicatorEl.textContent = state.sideToMove === "P1" ? "Player 1 to play" : "Player 2 to play";
-      setPlayerTone(elements.boardTurnIndicatorEl, state.sideToMove);
+      const turnIndicator = controls.getTurnIndicator?.(state);
+      elements.boardTurnIndicatorEl.textContent = turnIndicator?.text ?? (state.sideToMove === "P1" ? "Red to play" : "Blue to play");
+      if(turnIndicator?.name && elements.boardTurnIndicatorEl.ownerDocument){
+        const name=elements.boardTurnIndicatorEl.ownerDocument.createElement('span');
+        name.className='board-turn-name';name.dir='auto';name.textContent=turnIndicator.name;name.title=turnIndicator.name;
+        const suffix=elements.boardTurnIndicatorEl.ownerDocument.createElement('span');suffix.textContent=turnIndicator.suffix??'';
+        elements.boardTurnIndicatorEl.replaceChildren(name,suffix);
+      }
+      setPlayerTone(elements.boardTurnIndicatorEl, turnIndicator?.side ?? state.sideToMove);
     }
 
     const pieceSummary =
@@ -493,13 +504,62 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const externalMessage = controls.getBoardMessage?.({state, selectedPieceId, inspection});
     if (externalMessage) {
       const message = typeof externalMessage === "string" ? {text: externalMessage} : externalMessage;
-      const actions = Array.isArray(message.actions) ? message.actions : message.action ? [message.action] : [];
-      setBoardPreviewPromptHtml(`${escapeHtml(message.text ?? "")}${actions.map(action => ` <button type="button" class="board-preview-inline-button" data-board-message-action="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>`).join("")}`);
+      const {actorName,rest,actions} = boardMessagePresentation(message);
+      const label = elements.boardPreviewLabelEl;
+      const buttons = Array.from(label?.querySelectorAll?.(':scope > button[data-board-message-action]') ?? []);
+      // A replay counter changes while its controls stay the same. Patch the
+      // text in place so a focused Next/Stop button remains usable across steps.
+      if (!actorName && actions.length && label?.firstChild?.nodeType === 3 && label.childNodes.length === actions.length * 2
+        && buttons.length === actions.length && buttons.every((button, index) => button.dataset.boardMessageAction === String(actions[index].id))) {
+        const text = `${message.text ?? ""} `;
+        if (label.firstChild.nodeValue !== text) label.firstChild.nodeValue = text;
+        buttons.forEach((button, index) => {
+          const text = String(actions[index].label);
+          updateBoardInlineActionLabel(button,text);
+        });
+        return;
+      }
+      const name = label?.firstChild;
+      if (actorName && name?.nodeName === 'BDI' && name.classList?.contains('board-message-name')
+        && label.childNodes[1]?.nodeType === 3 && label.childNodes.length === Math.max(2, actions.length * 2 + 1)
+        && buttons.length === actions.length && buttons.every((button, index) => button.dataset.boardMessageAction === String(actions[index].id))) {
+        if (name.textContent !== actorName) name.textContent = actorName;
+        if (name.title !== actorName) name.title = actorName;
+        const suffix = `${rest}${actions.length ? " " : ""}`;
+        if (label.childNodes[1].nodeValue !== suffix) label.childNodes[1].nodeValue = suffix;
+        buttons.forEach((button, index) => { const text=String(actions[index].label); updateBoardInlineActionLabel(button,text); });
+        return;
+      }
+      setBoardPreviewPromptHtml(renderBoardMessageHtml(message));
       return;
     }
+    const explanation = pieceSummary?.details?.explanation;
+    const setPieceExplanation = () => {
+      const text = selectedSource ? `Piece at ${renderBoardPreviewCoordinate(selectedSource)} – ${escapeHtml(explanation)}` : escapeHtml(explanation);
+      let continuation = "";
+      if (host.canInteract?.(state) !== false) {
+        if (state.continuation?.type === "rush") {
+          const blocker = !canCloseContinuationNow(state) && getRushContinuationBlockingPiece(state);
+          if (blocker && blocker.id !== selectedPieceId) continuation = ` · ${SELECTED_CONTINUATION_LABELS.rushBlocker} ${renderBoardPreviewCoordinate(blocker.position)}`;
+        } else if (state.continuation?.type === "push") {
+          continuation = ` · ${state.continuation.phase === "retreat" ? SELECTED_CONTINUATION_LABELS.retreat : SELECTED_CONTINUATION_LABELS.follow}`;
+        }
+        if (state.continuation && legalActions.some(action => action.type === "end_turn")) continuation += ` ${renderBoardInlineAction({id:'end-turn',label:'End Turn'},{preview:true})}`;
+      }
+      setBoardPreviewPromptHtml(text + continuation);
+    };
     if (inspection) {
+      if (explanation && inspection.pieceId === selectedPieceId) {
+        setPieceExplanation();
+        return;
+      }
       const label = inspection.kind === "combined" ? "Supply and command lines" : inspection.kind === "command" ? "Command lines" : "Supply lines";
       setBoardPreviewPrompt(inspectionPaths(state, inspection).length ? label : inspection.kind === "command" ? "No command connection" : inspection.kind === "supply" ? "No supply connection" : "No connection");
+      return;
+    }
+
+    if (explanation && !selectedTarget) {
+      setPieceExplanation();
       return;
     }
     if (overlayMode === OVERLAY_MODE.RECORDED_ACTION) {
@@ -526,7 +586,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         setPushFollowContinuationPrompt(state.sideToMove);
       } else {
         const canPass = !selectedPieceId && !state.continuation && host.canInteract?.(state) !== false && legalActions.some(action => action.type === "pass");
-        if (canPass) setBoardPreviewPromptHtml('Select a piece <button type="button" class="board-preview-inline-button" data-board-preview-action="pass">Pass</button>');
+        if (canPass) setBoardPreviewPromptHtml(`Select a piece ${renderBoardInlineAction({id:'pass',label:'Pass'},{preview:true})}`);
         else setBoardPreviewPrompt("Select a piece");
       }
       return;
@@ -584,6 +644,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const preferredPreview = previewsAtTarget.find((action) => action.type === getActionType()) ?? previewsAtTarget[0] ?? null;
 
     if (!preferredPreview || preferredPreview.legal === false) {
+      if (preferredPreview?.legal === false) {
+        setBoardPreviewPromptHtml(`Piece at ${renderBoardPreviewCoordinate(selectedSource)} – ${escapeHtml(getBlockedMoveExplanation(preferredPreview.blockedReason))}`);
+        return;
+      }
       if (canOverlayToggle && selectedPieceOverlayPhase === "supplyCommand" && selectedSource) {
         setBoardPreviewPromptHtml(
           `Piece at ${renderBoardPreviewCoordinate(selectedSource)} – Supply and command lines`,
@@ -720,9 +784,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
   };
 
-  const applyForcedContinuationSelection = () => {
+  const applyForcedContinuationSelection = ({requireLegalAction=false}={}) => {
     const forcedSelection = deriveForcedContinuationSelection(state, legalActions);
-    if (!forcedSelection) {
+    if (!forcedSelection || (requireLegalAction && !legalActions.some(action=>action.type===forcedSelection.actionType && action.actorId===forcedSelection.selectedPieceId))) {
       return false;
     }
 
@@ -1165,9 +1229,19 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     void submitCurrentAction();
   };
 
+  const submitPass = () => {
+    if (interactionBlocked || selectedPieceId || inspection || state?.continuation || host.canInteract?.(state) === false || !legalActions.some(action => action.type === "pass")) return;
+    void submitCurrentAction({type:"pass"});
+  };
+
   const handleBoardPreviewClick = (event) => {
     const externalAction = event.target.closest("[data-board-message-action]");
-    if (externalAction) { controls.onBoardMessageAction?.(externalAction.getAttribute("data-board-message-action")); return; }
+    if (externalAction) {
+      const action=externalAction.getAttribute("data-board-message-action");
+      if (action === "pass") submitPass();
+      else controls.onBoardMessageAction?.(action);
+      return;
+    }
     if (interactionBlocked) return;
     const actionButton = event.target.closest("[data-board-preview-action]");
     if (!actionButton) {
@@ -1175,7 +1249,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
     const previewAction = actionButton.getAttribute("data-board-preview-action");
     if (previewAction === "pass") {
-      if (!selectedPieceId && !state?.continuation && legalActions.some(action => action.type === "pass")) void submitCurrentAction({type: "pass"});
+      submitPass();
       return;
     }
     if (previewAction === "end-turn") {
@@ -1460,7 +1534,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     clearInspection,
     getInspection: () => inspection ? structuredClone(inspection) : null,
     setInteractionBlocked: value => { interactionBlocked = Boolean(value); if (interactionBlocked) clearHoveredTarget(); },
-    refreshStatus: renderStatus,
+    refreshStatus: () => {
+      // A blocked board still permits inspection. Empty-square clicks can clear
+      // its forced actor, so restore that actor from current legal actions only
+      // after admission returns. Preserve deliberate inspections and selections.
+      if (!selectedPieceId && !inspection && host.canInteract?.(state) !== false && applyForcedContinuationSelection({requireLegalAction:true})) renderBoard();
+      renderStatus();
+    },
+    refreshVisuals: () => { if (!destroyed) renderBoard(); },
     destroy,
     bindElements,
     submitCurrentAction,

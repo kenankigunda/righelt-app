@@ -9,7 +9,21 @@ import {
   makeAnyLegalMove,
   openDirectGameLink,
   requestPlayerJoin,
+  switchGamePanel,
 } from "../support/app.mjs";
+
+import {readProjectedGame} from '../support/computer-projection.mjs';
+
+const selectOnlyMoveUndo = async(page,gameId)=>{
+  const moves=(await page.evaluate(readProjectedGame,{id:gameId,guest:true})).moves.filter(move=>!move.undone);
+  expect(moves).toHaveLength(1);expect(moves[0].moveId).toBeTruthy();
+  await switchGamePanel(page,'history');
+  const row=page.locator(`[data-testid="history-move-item"][data-move-id="${moves[0].moveId}"]`);
+  await row.locator('.history-item-info').click();
+  const undo=row.getByRole('button',{name:'Undo before this move',exact:true});
+  await expect(undo).toBeVisible();await undo.click();
+  return moves[0].moveId;
+};
 
 test("undo-last-move applies optimistically before the revert request response returns", async ({ browser }) => {
   const { context, page } = await createIsolatedPage(browser);
@@ -29,8 +43,7 @@ test("undo-last-move applies optimistically before the revert request response r
     const {gameId}=await createGameFromHome(page);
     await makeAnyLegalMove(page);
 
-    await expect(page.locator('[data-action="undo-last-move"]')).toBeVisible();
-    await page.locator('[data-action="undo-last-move"]').click();
+    await selectOnlyMoveUndo(page,gameId);
 
     await expect(page.getByText("Latest: Move undone")).toBeVisible({ timeout: 700 });
 
@@ -38,7 +51,7 @@ test("undo-last-move applies optimistically before the revert request response r
     await expect.poll(()=>page.evaluate(async gameId=>{const identity=localStorage.getItem("righelt.identity.id.v1");const body=await(await fetch(`/api/shell/games/${gameId}?identityId=${identity}`)).json();return body.game.moves.every(move=>move.undone);},gameId)).toBe(true);
     await expect(page.getByTestId("game-board-wrap")).toHaveAttribute("data-reconnecting","false");
     await expect(page.getByText(/Latest: (Move undone|Undo request accepted)/)).toBeVisible();
-    await expect(page.locator('[data-action="undo-last-move"]')).toHaveCount(0);
+    await expect(page.locator('[data-action="revert-to-move"]')).toHaveCount(0);
   } finally {
     await closeContextQuietly(context);
   }
@@ -76,14 +89,14 @@ test("undo-last-move keeps the optimistic revert request id aligned when approva
       return isOperationRequest(request,"revert-request");
     });
 
-    await expect(owner.page.locator('[data-action="undo-last-move"]')).toBeVisible();
-    await owner.page.locator('[data-action="undo-last-move"]').click();
+    const targetMoveId=await selectOnlyMoveUndo(owner.page,created.gameId);
 
     const rescindButton = owner.page.locator('[data-action="rescind-revert-request"]');
     await expect(rescindButton).toBeVisible({ timeout: 700 });
     await expect(owner.page.getByText("Latest: Undo request pending approval")).toBeVisible({ timeout: 700 });
 
     const revertRequest = await revertRequestPromise;
+    expect(operationValues(revertRequest)?.targetMoveId).toBe(targetMoveId);
     const requestId = operationValues(revertRequest)?.requestId;
     expect(requestId).toMatch(/^revert-/);
     await expect.poll(async () => rescindButton.getAttribute("data-request-id")).toBe(requestId);

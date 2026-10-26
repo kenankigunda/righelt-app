@@ -27,7 +27,7 @@ test("home pagination refreshes correctly when a moved game reorders onto an ear
 
     await pageTwoCard.click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
-    await page.getByRole("button", {name:"Play as both players",exact:true}).click();
+    await page.getByRole("button", {name:"Play both sides",exact:true}).click();
     const initialHistoryCount = await getHistoryMoveCount(page);
     await makeAnyLegalMove(page, "p1");
     await expect
@@ -45,7 +45,7 @@ test("home pagination refreshes correctly when a moved game reorders onto an ear
     const reorderedCard = page.locator(`[data-game-id="${oldestGameId}"]`).first();
     await expect(reorderedCard).toBeVisible();
     await expect(reorderedCard).toContainText("Move 2");
-    await expect(reorderedCard.locator(".mini-board-preview-status")).toContainText("Player 2 to play");
+    await expect(reorderedCard.locator(".mini-board-preview-status")).toContainText("Blue to play");
   } finally {
     await closeContextQuietly(context);
   }

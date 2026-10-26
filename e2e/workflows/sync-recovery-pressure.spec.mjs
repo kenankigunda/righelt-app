@@ -2,6 +2,7 @@ import {e2eControlPort} from '../../scripts/e2e-control.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {test as base, expect} from '@playwright/test';
 import {createFaultLifecycle, fetchFaultResponse, disposeFaultContexts as cleanup} from '../support/fault-lifecycle.mjs';
+import {isOperationRequest} from '../support/shared-request.mjs';
 const owned = new WeakMap();
 const test = base.extend({
  faultCleanup: [async ({context}, use, info) => {
@@ -37,8 +38,11 @@ async function wire(page) {
  await page.route('**/api/shell/games/**',route=>lifecycle.run(async()=>{
   fault.requests++;
   if(fault.legacy && /\/reconcile$/.test(new URL(route.request().url()).pathname)){await route.fulfill({status:404,json:{ok:false,error:"not_found"}});return;}
-  if(fault.http || (fault.loseReply && /\/reconcile$/.test(new URL(route.request().url()).pathname))){await route.abort();return;}
-  const mutation=route.request().method()==='POST'&&/\/apply$/.test(new URL(route.request().url()).pathname);
+  if(fault.http || (fault.loseReply && isOperationRequest(route.request(),'reconcile'))){await route.abort();return;}
+  // Keep the browser's Blob beacon body intact. Presence is still blocked by
+  // the explicit HTTP fault above; gameplay and reconciliation stay intercepted.
+  if(route.request().method()==='POST'&&/\/presence$/.test(new URL(route.request().url()).pathname)){await route.continue();return;}
+  const mutation=isOperationRequest(route.request(),'apply');
   // Loss of an admitted move begins at submission, not during pointer setup.
   // Otherwise a slow browser can enter recovery and reject the click entirely.
   if(mutation&&fault.loseAtApply){fault.loseAtApply=false;fault.receive=true;fault.loseReply=true;}
@@ -52,7 +56,7 @@ async function wire(page) {
   if(fault.legacy){try{const parsed=JSON.parse(body);if(parsed.game){parsed.protocolVersion=1;body=Buffer.from(JSON.stringify(parsed));}}catch{}}
   fault.bytes+=body.length;
   try{const parsed=JSON.parse(body);if(parsed.game)fault.snapshots++;if(mutation)fault.outcomes.push(...(parsed.commandOutcomes??[]));}catch{}
-  if(fault.interruptNextRecovery && /\/reconcile$/.test(new URL(route.request().url()).pathname)){
+  if(fault.interruptNextRecovery && isOperationRequest(route.request(),'reconcile')){
    fault.interruptNextRecovery=false;fault.interruptedRecoveries=(fault.interruptedRecoveries||0)+1;fault.http=true;await route.abort();return;
   }
   if(mutation&&fault.loseReply){await route.abort();return;}
@@ -97,18 +101,49 @@ async function move(page,gameId) {
  await submitPlayableAction(page,current.action);
 }
 async function digest(page) {
- return page.evaluate(()=>({
-  board:[...document.querySelectorAll('[data-testid="game-board"] .cell')].map(e=>({r:e.dataset.row,c:e.dataset.col,p:[...e.querySelectorAll('.piece-token')].map(p=>({class:p.className,text:p.textContent}))})),
-  history:[...document.querySelectorAll('[data-testid="history-move-item"]')].map(e=>({id:e.dataset.moveId,text:e.querySelector('.history-move-line')?.textContent,undone:e.classList.contains('is-undone')})),
-  active:document.querySelector('[data-testid="active-turn-label"]')?.textContent,
- }));
+ return page.evaluate(()=>{
+  const indicator=document.querySelector('#shell-board-turn-indicator');
+  const history=[...document.querySelectorAll('[data-testid="history-move-item"]')].map(e=>{
+   const line=e.querySelector('.history-move-line'),copy=line?.cloneNode(true);copy?.querySelector('.history-actor')?.remove();
+   return {id:e.dataset.moveId,notation:copy?.textContent,undone:e.classList.contains('is-undone')};
+  });
+  return {
+   board:[...document.querySelectorAll('[data-testid="game-board"] .cell')].map(e=>({r:e.dataset.row,c:e.dataset.col,p:[...e.querySelectorAll('.piece-token:not(.ghost)')].map(p=>({id:p.dataset.pieceId,owner:p.classList.contains('p1')?'P1':'P2',kind:p.classList.contains('commander')?'commander':'unit',inactive:p.classList.contains('inactive'),pushed:p.classList.contains('pushed-piece')}))})),
+   history,
+   presentation:{active:document.querySelector('[data-testid="active-turn-label"]')?.textContent,
+    heading:indicator?.textContent,actor:indicator?.classList.contains('player-tone-p1')?'P1':indicator?.classList.contains('player-tone-p2')?'P2':null,
+    live:document.querySelector('.history-item-waiting .history-move-line')?.textContent,
+    actors:[...document.querySelectorAll('[data-testid="history-move-item"]')].map(e=>({side:e.classList.contains('player-tone-p1')?'P1':'P2',text:e.querySelector('.history-actor')?.textContent}))},
+  };
+ });
+}
+const semanticDigest=value=>({board:value.board,history:value.history,activeTurn:value.presentation.active,actor:value.presentation.actor});
+function expectPerspective(value,index) {
+ const own=index===0?'P1':index===1?'P2':null;
+ const label=side=>own?(side===own?'You':'Opponent'):`Guest ${side==='P1'?1:2}`;
+ const actor=label(value.presentation.actor);
+ expect(value.presentation.heading).toBe(actor==='You'?'Your turn to play':`${actor} to play`);
+ if(value.presentation.live)expect(value.presentation.live).toBe(`Live · Waiting on ${actor==='You'?'you':actor==='Opponent'?'opponent':actor} to move`);
+ for(const entry of value.presentation.actors)expect(entry.text).toBe(label(entry.side));
 }
 async function converged(pages) {
  for(const page of pages)await expect(page.getByTestId("game-board")).toBeVisible();
- const current=await digest(pages[0]);expect(current.board.length).toBe(100);expect(current.board.some(c=>c.p.length)).toBe(true);
+ // Canonical tokens/decision IDs converge across identities. Their visible
+ // You/Opponent/Guest labels intentionally differ and are checked separately.
  await expect.poll(async()=>{
-  const values=await Promise.all(pages.map(digest));values.forEach(v=>{expect(v.board.length).toBe(100);expect(v.board.some(c=>c.p.length)).toBe(true);expect(v.active).toBeTruthy();v.history.forEach(m=>expect(m.id).toBeTruthy());});return values.every(v=>JSON.stringify(v)===JSON.stringify(values[0]));
- },{timeout:25000}).toBe(true);
+  const values=await Promise.all(pages.map(digest));
+  return {
+   boardsComplete:values.every(v=>v.board.length===100),
+   boardsPopulated:values.every(v=>v.board.some(c=>c.p.length)),
+   pieceIdsReady:values.every(v=>v.board.every(c=>c.p.every(piece=>typeof piece.id==='string'&&piece.id.length>0))),
+   activeLabelsReady:values.every(v=>typeof v.presentation.active==='string'&&v.presentation.active.trim().length>0&&Boolean(v.presentation.actor)),
+   historyIdsReady:values.every(v=>v.history.every(m=>typeof m.id==='string'&&m.id.length>0)),
+   snapshotsEqual:values.every(v=>JSON.stringify(semanticDigest(v))===JSON.stringify(semanticDigest(values[0]))),
+  };
+ },{timeout:25000}).toEqual({boardsComplete:true,boardsPopulated:true,pieceIdsReady:true,activeLabelsReady:true,historyIdsReady:true,snapshotsEqual:true});
+ const values=await Promise.all(pages.map(digest));
+ values.forEach((v,index)=>{expect(v.board).toHaveLength(100);expect(v.board.some(c=>c.p.length)).toBe(true);v.history.forEach(m=>expect(m.id).toBeTruthy());v.board.forEach(cell=>cell.p.forEach(piece=>expect(piece.id).toBeTruthy()));expectPerspective(v,index);});
+ values.forEach(v=>expect(semanticDigest(v)).toEqual(semanticDigest(values[0])));
  for(let i=0;i<pages.length;i++){
   await expect(pages[i].getByTestId('game-role')).toContainText(['Player 1','Player 2','Viewer'][i]);
   await expect(pages[i].getByTestId('sync-recovery-banner')).toHaveCount(0,{timeout:25000});
@@ -122,6 +157,15 @@ async function evidence(info, name, start, faults, extra={}) {
  await mkdir("test-results/sync-recovery",{recursive:true});
  await writeFile(`test-results/sync-recovery/${info.project.name}-${name}.json`,JSON.stringify(result,null,2));
  await info.attach(`recovery-${name}`,{body:JSON.stringify(result,null,2),contentType:'application/json'});
+}
+
+// Aborted HTTP remains a static transport incident. Its retained command
+// still follows the quiet initial interval and delayed recovery action budget.
+async function unavailableNotice(page) {
+ const notice=page.getByTestId('sync-recovery-banner');
+ await expect(notice).toHaveText('Recording your move');
+ await expect(notice.getByRole('button',{name:'Reload game',exact:true})).toHaveCount(0);
+ await expect(notice).toHaveAttribute('data-notification-activity','static');
 }
 
 test('E01 lost committed response and socket receipt converge automatically',async({browser,baseURL},info)=>{
@@ -142,14 +186,16 @@ test('E02 silent online receive loss triggers watchdog and survives interrupted 
   expect(await p.pages[1].evaluate(()=>navigator.onLine)).toBe(true);
   await p.pages[1].evaluate(()=>{
    window.recoveryDetectedAt=null;
-   const observer=new MutationObserver(()=>{if(document.querySelector('[data-testid="sync-recovery-banner"]')?.textContent.includes('Reconnecting')){window.recoveryDetectedAt=Date.now();observer.disconnect();}});
-   observer.observe(document.body,{subtree:true,childList:true,characterData:true});
+   const detect=()=>{if(document.querySelector('.board-wrap[data-reconnecting="true"]')){window.recoveryDetectedAt=Date.now();observer.disconnect();}};
+   const observer=new MutationObserver(detect);
+   observer.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:["data-reconnecting"]});
+   detect();
   });
   await move(p.pages[0],p.gameId);
-  await expect(p.pages[1].getByTestId('sync-recovery-banner')).toContainText('Reconnecting',{timeout:22000});
+  await expect(p.pages[1].locator('.board-wrap[data-reconnecting="true"]')).toBeVisible({timeout:17000});
   const detectedAt=await p.pages[1].evaluate(()=>window.recoveryDetectedAt);
   expect(Number.isFinite(detectedAt)).toBe(true);expect(detectedAt).toBeGreaterThan(0);
-  const detectionMs=detectedAt-p.faults[1].lastInbound;expect(detectionMs).toBeGreaterThanOrEqual(0);expect(detectionMs).toBeLessThanOrEqual(21000);
+  const detectionMs=detectedAt-p.faults[1].lastInbound;expect(detectionMs).toBeGreaterThanOrEqual(0);expect(detectionMs).toBeLessThanOrEqual(16000);
   p.faults[1].interruptNextRecovery=true;p.faults[1].http=false;
   await expect.poll(()=>p.faults[1].interruptedRecoveries||0,{timeout:10000}).toBe(1);
   await p.pages[1].waitForTimeout(1000);
@@ -283,10 +329,30 @@ test(`E05 intentional ${frozenRole} history survives disconnection and home navi
 
 test('E07 old protocol keeps a stable notice until the player refreshes their saved game',async({page},info)=>{
  const {gameId}=await createGameFromHome(page);await makeAnyLegalMove(page);const before=await digest(page);
- const fault=await wire(page);fault.legacy=true;let navigation=0;page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigation++;});
+ const fault=await wire(page);
+ const presenceUrl=new URL(`/api/shell/games/${gameId}/presence`,page.url()).href;
+ // Exercise the application's real JSON Blob beacon before navigation. WebKit
+ // does not expose its body to route.fetch, so reconstructing it loses identity.
+ const presenceResponse=page.waitForResponse(response=>response.url()===presenceUrl&&response.request().method()==='POST');
+ await page.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
+ const presence=await presenceResponse;
+ expect(presence.status(),'The application presence beacon must reach the server with its identity and session').toBe(200);
+ expect(await presence.json()).toMatchObject({ok:true,eventSeq:expect.any(Number)});
+ // Native forwarding must not bypass the fixture's explicit offline fault.
+ fault.http=true;
+ try{
+  const blockedPresence=page.waitForEvent('requestfailed',{predicate:request=>request.url()===presenceUrl&&request.method()==='POST'});
+  await page.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
+  expect((await blockedPresence).failure()).not.toBeNull();
+ }finally{fault.http=false;}
+ fault.legacy=true;let navigation=0;page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigation++;});
  await page.reload();
  const refresh=page.locator('[data-action="refresh-game"]');
  await expect(page.getByTestId('sync-recovery-banner')).toBeVisible();
+ await expect(refresh).toHaveAccessibleName('Reload game');
+ await expect(refresh.locator('svg')).toHaveAttribute('aria-hidden','true');
+ const home=page.getByTestId('sync-recovery-banner').getByRole('link',{name:'Home',exact:true});
+ await expect(home).toHaveAttribute('href','#/');await expect(home.locator('svg')).toHaveAttribute('aria-hidden','true');
  await refresh.focus();
  await expect(refresh).toBeFocused();
  expect(navigation).toBe(1);
@@ -296,7 +362,7 @@ test('E07 old protocol keeps a stable notice until the player refreshes their sa
  await expect.poll(()=>navigation).toBe(2);
  await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
  await expect.poll(async()=>JSON.stringify(await digest(page))).toBe(JSON.stringify(before));
- await evidence(info,'upgrade-refresh',start,[fault],{automaticReloads:navigation-2});
+ await evidence(info,'upgrade-refresh',start,[fault],{automaticReloads:navigation-2,presenceBeacon:{acceptedStatus:presence.status(),offlineBlocked:true}});
 });
 
 test('E07 cold invitation keeps upgrade recovery tied to its resolved game', async ({page}, info) => {
@@ -312,6 +378,10 @@ test('E07 cold invitation keeps upgrade recovery tied to its resolved game', asy
  await page.goto(`${origin}/#/invite/${encodeURIComponent(token)}`);
  const refresh=page.locator('[data-action="refresh-game"]');
  await expect(page.getByTestId('sync-recovery-banner')).toBeVisible();
+ await expect(refresh).toHaveAccessibleName('Reload game');
+ await expect(refresh.locator('svg')).toHaveAttribute('aria-hidden','true');
+ const home=page.getByTestId('sync-recovery-banner').getByRole('link',{name:'Home',exact:true});
+ await expect(home).toHaveAttribute('href','#/');await expect(home.locator('svg')).toHaveAttribute('aria-hidden','true');
  await expect(page.getByTestId('game-board')).toHaveCount(0);
  await refresh.focus();await expect(refresh).toBeFocused();
  expect(fault.commands).toHaveLength(0);
@@ -324,8 +394,8 @@ test('E07 cold invitation keeps upgrade recovery tied to its resolved game', asy
 test('I10 browser reconnect transfers one current snapshot after205 moves and30 duplicate submissions',async({page},info)=>{
  test.skip(info.project.name!=='chromium');test.setTimeout(120000);
  const {gameId}=await createGameFromHome(page);
- await page.getByRole('button',{name:'Play as both players',exact:true}).click();
- await expect(page.getByRole('button',{name:'Play as both players',exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'Play both sides',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Play both sides',exact:true})).toHaveCount(0);
  const result=await page.evaluate(async gameId=>{
   const {commandFingerprint}=await import('/generated/packages/shared-types/src/sync-protocol.js');
   const identityId=localStorage.getItem('righelt.identity.id.v1');

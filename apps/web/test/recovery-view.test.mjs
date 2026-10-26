@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { recoveryMessage, isBoardRecoveryPending } from "../shell/recovery-view.js";
+import { recoveryMessage, needsRecoveryAction, isBoardRecoveryPending } from "../shell/recovery-view.js";
 import { createLiveTransportStore } from "../shell/live-transport.js";
 import { beginScenarioCapture } from '../shell/scenario-capture.js';
 import { resolveHistoryScenarioExportContext } from '../shell/scenarios.js';
@@ -41,6 +41,7 @@ test("live board loading follows blocked recovery without requiring a reconnect 
  assert.equal(isBoardRecoveryPending({...pending,syncStatus:"ready"}),false);
  for (const flags of [{inHistoryMode:true},{storageBlocked:true},{upgradeRequired:true},{recoveryIssue:"session_changed"},{recoveryIssue:"invalid_credentials"}])
   assert.equal(isBoardRecoveryPending({...pending,...flags}),false);
+ assert.equal(isBoardRecoveryPending({...pending,pendingComputerSaveStartedAt:1000}),false);
  assert.equal(isBoardRecoveryPending(null),false);
 });
 
@@ -244,7 +245,6 @@ test("accepting two commands preserves the first inspected pending board when it
  t.retire();
 });
 
-
 test("returning to live never restores End Turn from move count without authoritative legality", () => {
  for (const [legalActions,expected] of [[[{type:'pass'},{type:'move'}],false],[[{type:'rush'}],false],[[{type:'follow'}],false],[[{type:'end_turn'},{type:'rush'}],true]]) {
   const t=store(),game=fixture();
@@ -265,4 +265,43 @@ test('live return keeps legal End Turn available for captured continuations with
  game.turns=[{index:9,playerSeat:'Player 1',moveIndexes:[]}];game.legalActions=[{type:'end_turn'}];
  t.applyLiveGameUpdate({game});t.selectHistoryMove({gameId:'history',moveIndex:0});t.returnToLive({gameId:'history'});
  assert.equal(t.getGameViewModel('history').canEndTurn,true);t.retire();
+});
+
+test("computer saves remain quiet until slow and never hide failures", () => {
+ const saving={recovering:true,pendingCommandCount:1,pendingComputerSaveStartedAt:1000};
+ assert.equal(recoveryMessage(saving,10999),"");
+ assert.match(recoveryMessage(saving,11000),/computer’s move/);
+ assert.equal(recoveryMessage(saving,12000,{computerSaveActive:true}),"");
+ assert.match(recoveryMessage({...saving,storageBlocked:true},1001),/trouble saving/);
+ assert.match(recoveryMessage({...saving,recoveryIssue:"invalid_response"},1001),/reconnect/);
+ assert.match(recoveryMessage({...saving,upgradeRequired:true},1001),/Refresh/);
+});
+
+test('an active uncertain computer save becomes actionable by the earliest fifteen-second deadline',()=>{
+ const game={recovering:true,pendingCommandCount:1,pendingComputerSaveStartedAt:0,recoveryStartedAt:5000};
+ assert.equal(recoveryMessage(game,9999,{computerSaveActive:true}),'');
+ assert.equal(needsRecoveryAction(game,14999),false);
+ assert.equal(recoveryMessage(game,14999,{computerSaveActive:true}),'');
+ assert.equal(needsRecoveryAction(game,15000),true);
+ assert.match(recoveryMessage(game,15000,{computerSaveActive:true}),/retry or view details/);
+ assert.equal(needsRecoveryAction({...game,recoveryStartedAt:14000},15000),true);
+ assert.match(recoveryMessage({...game,confirmationOverdue:true},100,{computerSaveActive:true}),/retry or view details/);
+ for(const recoveryIssue of ['session_changed','invalid_credentials','invalid_response'])assert.equal(needsRecoveryAction({...game,recoveryIssue},1),true);
+});
+
+test('recovery uses finite earliest clocks and never postpones explicit failures',()=>{
+ const game={recovering:true,pendingCommandCount:1,pendingComputerSaveStartedAt:5000,recoveryStartedAt:0};
+ assert.equal(recoveryMessage(game,9999),'');
+ assert.match(recoveryMessage(game,10000),/computer’s move/);
+ assert.equal(needsRecoveryAction(game,14999),false);
+ assert.equal(needsRecoveryAction(game,15000),true);
+ for(const starts of [{recoveryStartedAt:null,pendingComputerSaveStartedAt:0},{recoveryStartedAt:NaN,pendingComputerSaveStartedAt:0},{recoveryStartedAt:0,pendingComputerSaveStartedAt:Infinity}])assert.equal(needsRecoveryAction({...game,...starts},15000),true);
+ assert.equal(needsRecoveryAction({recovering:true,recoveryStartedAt:NaN,pendingComputerSaveStartedAt:null},999999),false);
+ for(const issue of [{storageBlocked:true},{upgradeRequired:true},{recoveryIssue:'session_changed'},{recoveryIssue:'invalid_credentials'},{recoveryIssue:'invalid_response'}]){
+  const pending={...game,...issue,recovering:false,syncStatus:'ready'};
+  assert.equal(needsRecoveryAction(pending,1),true);assert.notEqual(recoveryMessage(pending,1,{computerSaveActive:true}),'');
+ }
+ assert.equal(needsRecoveryAction({...game,confirmationOverdue:true},1),true);
+ assert.match(recoveryMessage({...game,confirmationOverdue:true},1,{computerSaveActive:true}),/retry or view details/);
+ assert.equal(recoveryMessage({...game,recoveryIssue:'unavailable'},9999,{computerSaveActive:true}),'');
 });

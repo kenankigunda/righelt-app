@@ -1,4 +1,5 @@
 @import "./loading.css";
+@import "./panel-loading.css";
 @import "./notification-motion.css";
 :root {
   --bg: #f4f1e8;
@@ -140,6 +141,14 @@ body {
 .shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-swipe {
   transform: translateX(10%) skewX(-12deg);
 }
+
+.shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-swipe::before,
+.shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-swipe::after {
+  animation: shell-held-facet-pulse 2.4s ease-in-out infinite;
+}
+@keyframes shell-held-facet-pulse { 0%,100% { opacity:.55; } 50% { opacity:1; } }
+[data-loading-hidden] .shell-route-transition-layer-swipe::before,
+[data-loading-hidden] .shell-route-transition-layer-swipe::after { animation-play-state:paused!important; }
 
 .shell-route-transition-layer[data-phase="revealing"] .shell-route-transition-layer-swipe {
   animation: shell-game-entry-swipe-out var(--shell-game-entry-reveal-ms, 200ms) var(--shell-game-entry-easing) forwards;
@@ -310,6 +319,9 @@ body {
 }
 
 .shell-header-menu-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-width: 3rem;
   min-height: 3rem;
   padding: 0.55rem;
@@ -860,7 +872,7 @@ button.secondary:disabled {
   min-width: 0;
 }
 
-.shell-game-alert-actions > button {
+.shell-game-alert-actions > :is(button,.button-link) {
   min-height: 44px;
   min-width: 44px;
   margin: 0;
@@ -1378,6 +1390,8 @@ button.button-release-bounce,
   align-items: center;
   justify-content: flex-end;
   justify-self: end;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .home-games-section-header h2,
@@ -1403,6 +1417,10 @@ button.button-release-bounce,
   display: inline-flex;
   align-items: center;
   gap: 0.175rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .home-games-section-controls-footer {
@@ -1413,13 +1431,34 @@ button.button-release-bounce,
 }
 
 .home-games-section-controls > button {
-  min-width: 2.5rem;
+  min-width: max(44px, 2.5rem);
+  min-height: 44px;
   padding-inline: 0.75rem;
 }
 
 .home-games-section-page-label {
-  min-width: 6.5rem;
+  min-width: min(6.5rem, 100%);
   text-align: center;
+}
+
+@media (max-width: 900px) {
+  /* Paging can remain in the header while a resized Home list catches up.
+     Give it a full row, including with enlarged text, rather than an auto
+     grid column whose minimum content width can widen the document. */
+  .home-games-section-header[data-home-header-paging="true"] {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .home-games-section-header[data-home-header-paging="true"] .home-games-section-header-center {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .home-games-section-controls .home-games-section-page-label {
+    order: -1;
+    flex-basis: 100%;
+    min-width: 0;
+  }
 }
 
 .home-games-carousel {
@@ -1931,6 +1970,8 @@ textarea:focus-visible {
   .shell-route-transition-layer {
     display: none;
   }
+  .shell-route-transition-layer-swipe::before,
+  .shell-route-transition-layer-swipe::after { animation:none!important; }
 }
 
 .invite-gate {
@@ -2151,13 +2192,13 @@ textarea:focus-visible {
   bottom: 0;
   left: -35%;
   width: 17.5%;
-  background: color-mix(in srgb,var(--player-p1) 18%,transparent);
+  background: color-mix(in srgb,var(--activity-color,var(--player-p1)) 18%,transparent);
   clip-path: polygon(50% 0,100% 0,50% 100%,0 100%);
   animation: reconnect-sweep 2.4s ease-in-out infinite;
 }
 .reconnect-background::after {
   left: -26.25%;
-  background: color-mix(in srgb,var(--player-p2) 22%,transparent);
+  background: color-mix(in srgb,var(--activity-color,var(--player-p2)) 22%,transparent);
 }
 @keyframes reconnect-sweep { from { transform: translateX(0); } to { transform: translateX(800%); } }
 [data-loading-hidden] .reconnect-background::before,
@@ -2179,3 +2220,14 @@ textarea:focus-visible {
 }
 
 .board-wrap > .loading-pieces { display: none; }
+
+/* Archived rows retain native button access without gaining action-button chrome. */
+[data-testid="additional-history"] .history-archive-select {
+  min-height:44px; padding:0; border:0; border-radius:0; background:none;
+  color:inherit; font:inherit; text-align:left; clip-path:none;
+}
+
+/* Home identity names and their presence mark share one compact, wrapping title. */
+.home-card-matchup {display:inline-flex;align-items:center;flex-wrap:wrap;gap:.3rem;max-width:100%;min-width:0;overflow-wrap:anywhere;}
+.home-card-matchup .mini-board-card-connection-item {max-width:100%;min-width:0;}
+.home-card-matchup strong {min-width:0;}

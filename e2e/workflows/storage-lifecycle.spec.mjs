@@ -11,8 +11,8 @@ const control=async(request,baseURL,route,body)=>{
 test('archive preserves browser history, direct links and exactly-once resumed play',async({page,request,baseURL},info)=>{
  test.setTimeout(120000);
  const {gameId,gameHash}=await createGameFromHome(page);
- await page.getByRole('button',{name:'Play as both players',exact:true}).click();
- await expect(page.getByRole('button',{name:'Play as both players',exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'Play both sides',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Play both sides',exact:true})).toHaveCount(0);
  await makeAnyLegalMove(page);
  const count=await getHistoryMoveCount(page);
  await control(request,baseURL,'/storage',{action:'age',gameId});

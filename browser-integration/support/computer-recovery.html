@@ -1,0 +1,34 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Computer recovery</title><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><style>body{margin:0;padding:12px}main{max-width:620px;margin:auto}#board{height:320px;border:1px solid var(--divider);margin-block:16px}.controls{display:flex;gap:6px;flex-wrap:wrap}</style></head><body><main><section class="panel" id="players"></section><section class="panel" id="board">Board geometry reference</section><section id="notice"></section><div class="controls"><button data-state="elsewhere">Other tab</button><button data-state="paused">Paused</button><button data-state="manual">Manual</button><button data-state="waiting">No control</button><button data-state="here">Active here</button><button data-state="viewer">Viewer</button><button data-state="finished">Finished</button><button id="advance">Advance 29 seconds</button><button id="threshold">Advance one second</button><button id="complete">Complete resume</button></div></main><script type="module">
+import {renderPlayersPanel} from '/apps/web/shell/players-panel.js';
+import {renderComputerProgress} from '/apps/web/shell/computer-view.js';
+import {computerActivity} from '/apps/web/shell/computer-activity.js';
+import {patchSectionContent} from '/apps/web/shell/dom-patch.js';
+import {createComputerControl} from '/apps/web/generated/packages/shared-types/src/computer-play.js';
+const control=createComputerControl('owner',{p1:null,p2:'horus'});
+let now=100,wait=0,identityId='owner',resuming=false,expanded=new Set(),game;
+function setState(state){
+ identityId=state==='viewer'?'viewer':'owner';resuming=false;wait=0;now=100;
+ game={id:'fixture',canControlComputer:identityId==='owner',computer:structuredClone(control),computerTurn:'horus',player1:{identityId:'owner'},player2:{identityId:'owner',computerProfile:'horus'},viewers:[],board:{state:{outcome:{status:state==='finished'?'p1_win':'ongoing'},sideToMove:'P2',turnIndex:0}}};
+ if(state==='here'||state==='paused'||state==='manual')game.computer.lease={deviceId:'here',expiresAt:1000000};
+ if(state==='elsewhere')game.computer.lease={deviceId:'other',expiresAt:1000000};
+ game.computer.paused=state==='paused';game.computer.manual=state==='manual';if(state==='manual')game.player2.computerProfile=null;render();
+}
+function patch(root,html){const next=root.cloneNode(false);next.innerHTML=html;patchSectionContent(root,next);}
+function render(){
+ const activity=computerActivity({game,identityId,deviceId:'here',authenticated:true,visible:true,status:{phase:'idle'},projection:{},now,resuming,waitingMs:wait});
+ const root=document.querySelector('#players'),focused=document.activeElement,restore=root.contains(focused)&&focused.dataset.control==='resume-here';
+ patch(root,renderPlayersPanel(game,{identityId,computerActivity:activity,expandedComputers:expanded}));
+ if(restore&&(!focused.isConnected||focused.disabled))root.querySelector('[data-action="toggle-computer-card"]')?.focus();
+ patch(document.querySelector('#notice'),renderComputerProgress(game,{phase:'idle',activity}));
+}
+document.addEventListener('click',event=>{
+ const button=event.target.closest('button');if(!button)return;
+ if(button.dataset.state){setState(button.dataset.state);return;}
+ if(button.dataset.action==='toggle-computer-card'){expanded.has('P2')?expanded.delete('P2'):expanded.add('P2');render();}
+ if(button.dataset.control==='resume-here'){resuming=true;render();}
+ if(button.id==='complete'){resuming=false;game.computer.lease={deviceId:'here',expiresAt:now+15000};game.computer.paused=false;game.computer.manual=false;render();}
+ if(button.id==='advance'){now+=29000;wait+=29000;render();}
+ if(button.id==='threshold'){now+=1000;wait+=1000;render();}
+});
+window.fixtureRefresh=render;setState('elsewhere');await document.fonts.ready;window.fixtureReady=true;
+</script></body></html>

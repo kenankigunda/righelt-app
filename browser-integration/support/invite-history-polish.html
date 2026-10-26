@@ -1,0 +1,77 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Invitation and history contracts</title>
+<link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"><link rel="stylesheet" href="/apps/web/shell/computer-replay.css">
+</head><body><main id="app" class="app-root" data-action-affiliation="red"></main><div id="p1" style="background:var(--player-p1)"></div><div id="p2" style="background:var(--player-p2)"></div>
+<script type="module">
+import {syncMiniBoardPreviews} from '/apps/web/board/mini-board-preview.js';
+import {createEngineBoardAdapter,createInitialBoardSnapshot} from '/apps/web/board-adapters/engine-board-adapter.js';
+import {icon} from '/apps/web/shell/ui.js';
+import {renderInvitationSurface} from '/apps/web/shell/invitations.js';
+import {createAdditionalHistory,canReadAdditionalHistory} from '/apps/web/shell/additional-history.js';
+import {patchSectionContent} from '/apps/web/shell/dom-patch.js';
+import {mountLoadingFeedback,loadingAttributes} from '/apps/web/shell/loading.js';
+import {mountLoadingEdges} from '/apps/web/shell/loading-edge.js';
+import {renderSummaryLoading} from '/apps/web/shell/panel-loading.js';
+import {renderGameAlertCard} from '/apps/web/shell/game-alert.js';
+import {createNotificationStack} from '/apps/web/shell/notification-state.js';
+import {patchNotificationTree} from '/apps/web/shell/notification-dom.js';
+import {mountRecoverySpace} from '/apps/web/shell/recovery-space.js';
+import {sideColorName,historyActorLabel} from '/apps/web/shell/perspective-labels.js';
+const source=await(await fetch('/apps/web/shell/app.js')).text(),root=document.querySelector('#app');
+const extract=(start,end)=>{const a=source.indexOf(start),b=source.indexOf(end,a);if(a<0||b<=a)throw Error(`Missing actual template ${start}`);return source.slice(a,b);};
+const escapeHtml=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const seatHelpers=Function('escapeHtml',`${extract('const playerToneClassForSeat =','const isDualSeatIdentity =')};return {playerToneClassForSeat,renderSeatLabel};`)(escapeHtml);
+const attrs=Function('isButtonPending','escapeHtml',`${extract('const renderButtonStateAttributes =','const renderPendingStateAttributes =')};return renderButtonStateAttributes;`)(()=>false,escapeHtml);
+window.renderInvite=(role='blue',extra={})=>{
+ const game={id:'g',player1:{identityId:'host'},player2:null,canJoinAsPlayer:true,showJoinActions:true,canJoinAsViewer:true,...extra};
+ const context={gameId:'g',inviteType:'player',intendedRole:role};
+ const deps={joinFeedback:{message:()=>extra.joinFailure||null},routeHydrated:true,transport:{getGameViewModel:()=>game},renderGameContent:()=>'<section class="panel">Live board</section>',renderInvitationSurface,...seatHelpers,sideColorName,account:{snapshot:()=>({enabled:false})},currentRoute:{name:'invite'},escapeHtml,colorizePlayerReferences:escapeHtml,getJoinButtonKey:()=> 'join',buildHomeHash:()=> '#/',getCurrentFlyoutState:()=>({}),renderButtonStateAttributes:attrs,icon};
+ root.innerHTML=Function(...Object.keys(deps),'context',`${extract('const renderInviteLanding =','const renderTutorial =')};return renderInviteLanding(context);`)(...Object.values(deps),context);
+};
+window.historyRequests=[];let revision=7;
+const owner={};
+const history=createAdditionalHistory({getScope:gameId=>({gameId,owner,generation:1,revision}),load:(scope,values)=>new Promise((resolve,reject)=>window.historyRequests.push({values,resolve:body=>resolve({gameplayRevision:revision,partial:false,...body}),reject})),onChange:()=>drawHistory()});
+const renderedMiniBoardPreviewPayloads=new Map(),registry=new Map();let inspectedDecision=null;
+const renderMini=Function('renderedMiniBoardPreviewPayloads','escapeHtml',`${extract('const registerMiniBoardPreview =','const formatOutcomeStatus =')};return renderMiniBoardPreviewRoot;`)(renderedMiniBoardPreviewPayloads,escapeHtml);
+const archiveGame={id:'g',myRole:'Viewer',player1:{identityId:'red'},player2:{identityId:'blue'}};
+const historyDeps={canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},getShellLayoutMode:()=> 'narrow',renderMiniBoardPreviewRoot:renderMini,toStableKey:JSON.stringify,additionalHistory:history,escapeHtml,formatClientDateTime:()=> 'Jan 1',icon,historyActorLabel,transport:{getIdentityId:()=> 'viewer'}};
+const renderHistory=Function(...Object.keys(historyDeps),`${extract('const renderAdditionalHistory =','const renderHistoryPanel =')};return renderAdditionalHistory;`)(...Object.values(historyDeps));
+function drawHistory(){root.classList.add("panel");const next=root.cloneNode(false);next.innerHTML=renderHistory({...archiveGame,inHistoryMode:Boolean(inspectedDecision),inspectedDecision});patchSectionContent(root,next);syncMiniBoardPreviews({previews:[...root.querySelectorAll('[data-mini-board-preview]')].map(rootEl=>({rootEl,...renderedMiniBoardPreviewPayloads.get(rootEl.dataset.previewId)})),registry,createAdapter:()=>createEngineBoardAdapter()});}
+root.addEventListener('click',event=>{const action=event.target.closest('[data-action]')?.dataset.action;if(action==='inspect-history-archive'){const id=event.target.closest('[data-action]').dataset.decisionId;inspectedDecision={...history.snapshot('g').items.find(entry=>entry.id===id).move,moveId:id};drawHistory();}if(action==='load-history-archive'){void history.more('g');drawHistory();}if(action==='retry-history-archive'){void history.retry('g');drawHistory();}});
+window.renderHistory=drawHistory;window.archiveSnapshot=createInitialBoardSnapshot();window.returnArchiveLive=()=>{inspectedDecision=null;drawHistory();};window.nextHistoryRevision=()=>{revision++;drawHistory();};
+const makeLayer=Function(`${extract('const ensureRouteTransitionLayer =','\nensureShellStylesheet();')};return ensureRouteTransitionLayer;`)();
+const renderHomeLoading=Function('loadingAttributes','escapeHtml','getHomeSectionColumnCount','renderHomeStartButton',`${extract('const renderHomeCardSkeleton =','const renderBoardLoadingPreview =')};return renderHomeSectionSkeleton;`)(loadingAttributes,escapeHtml,()=>1,()=> '');
+// Actual alert mapping/stack/zone share the same keyed header space as the app.
+let urgentFixtureItems=[];
+const loadingScope=()=>`fixture:${root.dataset.shellRoute??'empty'}`;
+const alertSource=extract('const getHeaderAlertItems =','const renderHomeCardSkeleton =');
+const stackSource=extract('const renderGameAlertStackCard =','const renderTurnHistory =');
+const zoneSource=extract('const renderHeaderAlertZone =','const syncShellLayoutMode =');
+const alertFactory=Function('loadingContextScope','getGameAlertItems','notificationStack','renderGameAlertCard','escapeHtml','getCurrentViewedGameId','transport','account','loadingAttributes',`let slowLoadingContexts=[],isBuildingGameAlerts=false;const accountStartupError=null;${alertSource}${stackSource}${zoneSource};return {update(contexts){slowLoadingContexts=contexts;},render:renderHeaderAlertZone};`)(loadingScope,()=>urgentFixtureItems,createNotificationStack(),renderGameAlertCard,escapeHtml,()=> 'fixture',{getGameViewModel:()=>({id:'fixture'})},{snapshot:()=>({ready:true})},loadingAttributes);
+function patchLoadingHeader(){const header=root.querySelector('.shell-header');if(!header)return;const next=document.createElement('header');next.innerHTML=alertFactory.render();const current=header.querySelector('.shell-header-status');if(current)patchNotificationTree(current,next.firstElementChild);else header.append(next.firstElementChild);}
+window.holdUrgentLoadingNotice=active=>{urgentFixtureItems=active?[{key:'actual-error',priority:'urgent',html:renderGameAlertCard({tone:'danger',body:'Recovery needs attention',testId:'urgent-loading-test'})}]:[];patchLoadingHeader();};
+mountRecoverySpace(root);
+window.heldFontSnapshot=()=>{
+ const nodes=[...root.querySelectorAll('h1,h2,h3,p,span,button,a')].filter(node=>node.getClientRects().length);
+ const runs=nodes.map(node=>{const style=getComputedStyle(node),font=`${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`,text=node.textContent.trim();return {tag:node.tagName,font,family:style.fontFamily,weight:style.fontWeight,size:style.fontSize,text,ready:document.fonts.check(font,text||' ')};});
+ return {status:document.fonts.status,faces:[...document.fonts].map(face=>({family:face.family,weight:face.weight,status:face.status})),runs,cards:[...root.querySelectorAll('section.panel')].map(node=>node.getBoundingClientRect().toJSON())};
+};
+window.holdSweep=async route=>{
+ window.heldOperationStartedAt=performance.now();
+ root.dataset.shellRoute=route;root.dataset.shellTransitionActive='true';root.dataset.shellTransition='game-entry';root.dataset.shellTransitionPhase='covered';
+ if(route==='invite')window.renderInvite('blue');
+ else root.innerHTML=route==='home'?`<div class="home-refresh">${renderHomeLoading('Continue playing')}</div>`:`<div class="game-shell-frame"><section class="panel">${renderSummaryLoading('Game g')}</section></div>`;
+ const main=document.createElement('div');main.className='shell-main-content';main.append(...root.childNodes);root.append(main);
+ const header=document.createElement('header');header.className='shell-header';header.innerHTML='<div class="shell-header-main">Righelt</div>';root.prepend(header);patchLoadingHeader();
+ const layer=makeLayer();layer.dataset.active='true';layer.dataset.transition='game-entry';layer.dataset.phase='covered';
+ // Newly inserted home typography initiates font requests only now. Settling
+ // the empty fixture's earlier fonts.ready cannot establish this baseline.
+ const before=window.heldFontSnapshot();
+ const requests=new Map(before.runs.map(run=>[run.font,run.text||' ']));
+ await Promise.all([...requests].map(([font,text])=>document.fonts.load(font,text)));
+ await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+ return {before,after:window.heldFontSnapshot()};
+};
+window.finishSweep=()=>{document.querySelector('#shell-route-transition-layer').dataset.phase='idle';document.querySelector('#shell-route-transition-layer').dataset.active='false';root.dataset.shellTransitionActive='false';root.dataset.shellTransitionPhase='idle';root.querySelectorAll('[data-loading-state="pending"]').forEach(node=>node.dataset.loadingState='idle');};
+mountLoadingEdges(document);
+mountLoadingFeedback(document,{getScope:loadingScope,onContextsChange:contexts=>{alertFactory.update(contexts);patchLoadingHeader();}});await document.fonts.ready;window.fixtureReady=true;
+</script></body></html>

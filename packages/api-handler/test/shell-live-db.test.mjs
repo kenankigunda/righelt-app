@@ -309,3 +309,19 @@ test('home listing round-trips mixed human and experimental computer games', asy
   assert.equal(botCard.player2.computerProfile, 'babs');
   assert.equal('computer' in botCard, false, 'Home cards do not expose private lease state');
 });
+
+
+for(const accountMode of [false,true]) test(`missing current ownership schema fails without a fallback query (accounts ${accountMode})`,async()=>{
+  const queries=[];
+  const DB={prepare:sql=>{queries.push(sql);return {bind:()=>({first:async()=>{throw Error('no such column: ownership_mode')}})}}};
+  await assert.rejects(loadGameProjection({DB,AUTH_ENABLED:String(accountMode)},'missing-schema'),/no such column: ownership_mode/);
+  assert.equal(queries.length,1);
+  assert.match(queries[0],/gameplay_revision, ownership_mode/);
+});
+
+test('ordinary database read failures propagate without a second projection query',async()=>{
+ const queries=[];const failure=new Error('database unavailable');
+ const DB={prepare:sql=>{queries.push(sql);return {bind:()=>({first:async()=>{throw failure}})}}};
+ await assert.rejects(loadGameProjection({DB},'unavailable'),error=>error===failure);
+ assert.equal(queries.length,1);
+});

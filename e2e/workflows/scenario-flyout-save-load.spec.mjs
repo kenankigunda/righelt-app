@@ -300,7 +300,8 @@ test("scenario flyout round-trips a settled post-rush board state after ending t
     })).toEqual({background:'rgba(37, 43, 45, 0.06)',color:'rgb(37, 43, 45)',shadow:'none'});
     await endTurn.click();
 
-    await expect(page.locator("#shell-board-turn-indicator")).toContainText("Player 1 to play");
+    await expect(page.locator("#shell-board-turn-indicator")).toHaveText("Your turn to play");
+    await expect(page.locator("#shell-board-turn-indicator")).toHaveClass(/player-tone-p1/);
     await expect(page.locator('[data-board-preview-action="end-turn"]')).toHaveCount(0);
     await expect(page.locator("#shell-board-preview-label")).not.toContainText("Select a rush");
 
@@ -367,7 +368,8 @@ test("scenario flyout round-trips a settled post-rush board state after ending t
     await page.locator('[data-action="load-scenario"]').click();
 
     await expect(page.locator('[data-testid="scenario-load-skeleton"]')).toHaveCount(0);
-    await expect(page.locator("#shell-board-turn-indicator")).toContainText("Player 1 to play");
+    await expect(page.locator("#shell-board-turn-indicator")).toHaveText("Your turn to play");
+    await expect(page.locator("#shell-board-turn-indicator")).toHaveClass(/player-tone-p1/);
     await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 7,4");
     await expect(page.locator("#shell-board-preview-label")).not.toContainText("Select a rush");
     await expect
@@ -467,7 +469,8 @@ test("scenario flyout saves history-authored scenarios from the selected pre-mov
     await page.locator('[data-action="load-scenario"]').click();
 
     await expect(page.locator('[data-testid="scenario-load-skeleton"]')).toHaveCount(0);
-    await expect(page.locator("#shell-board-turn-indicator")).toContainText("Player 1 to play");
+    await expect(page.locator("#shell-board-turn-indicator")).toHaveText("Your turn to play");
+    await expect(page.locator("#shell-board-turn-indicator")).toHaveClass(/player-tone-p1/);
     await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 5,4");
     await expect
       .poll(async () => getHistoryMoveCount(page), {
@@ -571,7 +574,8 @@ test("scenario flyout updates an existing scenario from the selected history pre
     await page.locator('[data-action="load-scenario"]').click();
 
     await expect(page.locator('[data-testid="scenario-load-skeleton"]')).toHaveCount(0);
-    await expect(page.locator("#shell-board-turn-indicator")).toContainText("Player 1 to play");
+    await expect(page.locator("#shell-board-turn-indicator")).toHaveText("Your turn to play");
+    await expect(page.locator("#shell-board-turn-indicator")).toHaveClass(/player-tone-p1/);
     await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 5,4");
     await expect
       .poll(async () => getHistoryMoveCount(page), {

@@ -11,7 +11,7 @@ const playwrightConfigSource = readFileSync(path.join(repoRoot, "playwright.conf
 test("root scripts expose layered E2E commands", () => {
   assert.equal(packageJson.scripts["e2e:install"], "playwright install chromium firefox webkit");
   assert.equal("test:e2e:smoke" in packageJson.scripts, false);
-  assert.equal(packageJson.scripts["test:e2e"], "node scripts/resources/cli.mjs run --kind heavy -- playwright test");
+  assert.equal(packageJson.scripts["test:e2e"], "node scripts/resources/cli.mjs run --kind heavy -- node scripts/playwright-e2e.mjs");
   assert.equal(packageJson.scripts["test:e2e:headed"], "node scripts/resources/cli.mjs run --kind heavy -- playwright test --headed");
   assert.ok(packageJson.scripts["test:e2e:auth"].includes("test:e2e:auth:journeys"));
   assert.ok(packageJson.scripts["test:e2e:auth"].includes("test:e2e:auth:controls"));

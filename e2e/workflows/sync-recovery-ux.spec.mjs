@@ -1,9 +1,10 @@
 import {mkdir,writeFile} from "node:fs/promises";
 import { test, expect } from "@playwright/test";
 import { runScopedAxeScan } from "../support/ux.mjs";
-import { createGameFromHome, makeAnyLegalMove, submitPlayableAction, selectPlayableAction } from "../support/app.mjs";
+import { createGameFromHome, makeAnyLegalMove, submitPlayableAction, selectPlayableAction, switchGamePanel } from "../support/app.mjs";
+import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
 
-for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gate at ${width}px`, async ({page},info) => {
+for (const width of [933, 932, 901, 900, 899, 390]) test(`recovery overlay and storage gate at ${width}px`, async ({page},info) => {
  const metrics={requests:0,snapshots:0,applicationPayloadBytes:0};
  page.on('request',request=>{if(request.url().includes('/api/shell/'))metrics.requests++;});
  page.on('response',async response=>{if(!response.url().includes('/api/shell/'))return;try{const body=await response.body();metrics.applicationPayloadBytes+=body.length;if(JSON.parse(body)?.game)metrics.snapshots++;}catch{}});
@@ -11,11 +12,10 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
  await page.setViewportSize({width,height:1000});
  await page.emulateMedia({reducedMotion:"reduce"});
  const {gameId}=await createGameFromHome(page);
- const useTabs=await page.getByRole("button",{name:"Players",exact:true}).isVisible();
- if(useTabs) await page.getByRole("button",{name:"Players",exact:true}).click();
- await page.getByRole("button",{name:"Play as both players",exact:true}).click();
- await expect(page.getByRole("button",{name:"Play as both players",exact:true})).toHaveCount(0);
- if(useTabs) await page.getByRole("button",{name:"Board",exact:true}).click();
+ await switchGamePanel(page,"players");
+ await page.getByRole("button",{name:"Play both sides",exact:true}).click();
+ await expect(page.getByRole("button",{name:"Play both sides",exact:true})).toHaveCount(0);
+ await switchGamePanel(page,"board");
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  await makeAnyLegalMove(page);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
@@ -30,10 +30,10 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
    new MutationObserver(()=>window.announcements.push(window.announcementNode.textContent)).observe(window.announcementNode,{childList:true,subtree:true,characterData:true});
  });
  // Choose a legal action through the real board without waiting for rejected optimistic publication.
- const action=await page.evaluate(async gameId=>{
+ const {action,revisionBeforeRejectedMove}=await page.evaluate(async gameId=>{
    const identityId=localStorage.getItem("righelt.identity.id.v1");
    const body=await (await fetch(`/api/shell/games/${gameId}?identityId=${identityId}`)).json();
-   return body.game.legalActions.find(a=>a.from&&a.to);
+   return {action:body.game.legalActions.find(a=>a.from&&a.to),revisionBeforeRejectedMove:body.game.gameplayRevision};
  },gameId);
  expect(action).toBeTruthy();
  const to=await selectPlayableAction(page,action);
@@ -64,7 +64,8 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
   await caret.click();await expect(caret).toHaveAttribute("aria-expanded","false");
  }
  const placement=await page.locator('[data-shell-alert-zone]').evaluate(el=>getComputedStyle(el).position);
- expect(placement).toBe(width<=900?"fixed":"absolute");
+ await expect(page.locator("#app")).toHaveAttribute("data-shell-layout-mode",width<933?"narrow":"wide");
+ expect(placement).toBe(width<933?"fixed":"absolute");
  await page.getByRole("button",{name:"Dismiss",exact:true}).click();
  await expect(page.getByRole("button",{name:"Retry saving"})).toBeVisible();
  await expect(page.getByTestId("sync-recovery-banner")).toContainText("Saving is paused.");
@@ -79,6 +80,14 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
  const announcements=await page.evaluate(()=>window.announcements.filter(Boolean));
  expect(announcements.filter(x=>x.includes("We couldn’t save your move")).length).toBe(1);
  if(await gated.count()) await expect(gated).toBeEnabled();
+ // The next helper chooses from the server's legal actions. Wait for the retried
+ // original move to reach that authority instead of reading its old position
+ // while the healthy client already displays the optimistic next position.
+ await expect.poll(()=>page.evaluate(async({gameId})=>{
+  const identityId=localStorage.getItem("righelt.identity.id.v1");
+  const {game}=await (await fetch(`/api/shell/games/${gameId}?identityId=${identityId}`)).json();
+  return {revision:game.gameplayRevision,action:game.moves.at(-1)?.action};
+ },{gameId})).toEqual({revision:revisionBeforeRejectedMove+1,action});
  await makeAnyLegalMove(page);
  const result={fault:`storage-${width}px`,restoredAt:new Date(restoredAt).toISOString(),convergenceMs:Date.now()-restoredAt,...metrics};
  expect(result.convergenceMs).toBeLessThanOrEqual(25000);
@@ -91,16 +100,20 @@ test("pending feedback reaches overdue once, then clears or explains definitive 
  await page.setViewportSize({width:1440,height:1100});
  const {gameId}=await createGameFromHome(page);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
- let mode="hold";
- await page.route(`**/api/shell/games/${gameId}/apply`,async route=>{
-  if(mode==="hold"){await route.abort();return;}
+ let mode="hold", unknownResponses=0;
+ // A transport failure must show its error immediately. To exercise genuinely
+ // pending work instead, return valid unknown receipts without applying it.
+ await page.route(`**/api/shell/games/${gameId}/**`,async route=>{
+  if(!isOperationRequest(route.request(),'apply')&&!isOperationRequest(route.request(),'reconcile')){await route.continue();return;}
   if(mode==="accept"){await route.continue();return;}
-  const command=route.request().postDataJSON();
-  const response=await page.request.get(`/api/shell/games/${gameId}?identityId=${command.identityId}`);
+  const payload=route.request().postDataJSON();
+  const commands=operationValues(route.request()).commands??[payload];
+  const response=await page.request.get(`/api/shell/games/${gameId}?identityId=${payload.identityId}`);
   const current=await response.json();
+  if(mode==="hold")unknownResponses++;
   await route.fulfill({json:{...current,protocolVersion:2,gameId,gameplayRevision:current.game.gameplayRevision,
-   commandOutcomes:[{gameId,identityId:command.identityId,clientCommandId:command.clientCommandId,fingerprint:command.fingerprint,
-    outcome:"rejected",reason:"stale_state",eventSeq:current.eventSeq,gameplayRevision:current.game.gameplayRevision}]}});
+   commandOutcomes:commands.map(command=>({gameId,identityId:command.identityId,clientCommandId:command.clientCommandId,fingerprint:command.fingerprint,
+    outcome:mode==="hold"?"unknown":"rejected",reason:mode==="hold"?null:"stale_state",eventSeq:current.eventSeq,gameplayRevision:current.game.gameplayRevision}))}});
  });
  const action=await page.evaluate(async gameId=>{
    const identityId=localStorage.getItem("righelt.identity.id.v1");
@@ -109,7 +122,10 @@ test("pending feedback reaches overdue once, then clears or explains definitive 
  },gameId);
  await submitPlayableAction(page,action);
  await expect(page.getByTestId("sync-recovery-banner")).toContainText("Recording your move");
+ await expect(page.getByTestId("sync-recovery-banner").getByRole("button",{name:"Reload game",exact:true})).toHaveCount(0);
  await expect(page.getByTestId("sync-recovery-banner")).toContainText("Still checking your move. You can retry or view details.",{timeout:20000});
+ await expect(page.getByTestId("sync-recovery-banner").getByRole("button",{name:"Reload game",exact:true})).toBeVisible();
+ expect(unknownResponses).toBeGreaterThan(0);
  const board=await page.getByTestId("game-board").innerHTML();
  mode="reject";
  await expect(page.getByTestId("sync-failure-banner")).toContainText("Board changed before your move was recorded. Check it and try again.",{timeout:10000});
@@ -133,7 +149,8 @@ test('healthy optimistic confirmation adds no recovery announcement',async({page
  let completed,failed;
  const applied=new Promise((resolve,reject)=>{completed=resolve;failed=reject;});
  void applied.catch(()=>{});
- await page.route(`**/api/shell/games/${gameId}/apply`,async route=>{
+ await page.route(`**/api/shell/games/${gameId}/**`,async route=>{
+  if(!isOperationRequest(route.request(),'apply')){await route.continue();return;}
   try {
    const response=await route.fetch();await new Promise(resolve=>setTimeout(resolve,500));await route.fulfill({response});
    completed();

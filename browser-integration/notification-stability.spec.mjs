@@ -38,20 +38,20 @@ test('stack changes and content replacement preserve an existing active notice',
 
 test('a tall inactive notice exposes only its surface behind a short active notice',async({page},info)=>{
   await page.setViewportSize({width:390,height:740});await open(page);
-  const items=[{key:'tall',body:'<p>Recovery needs attention</p><p>Earlier saved details remain available</p><p>One more line of recovery context</p>',action:'<button>Reload now</button>'},{key:'short',body:'Saving the move is taking longer than usual',activity:'static',action:''}];
+  const items=[{key:'tall',body:'<p>Recovery needs attention</p><p>Earlier saved details remain available</p><p>One more line of recovery context</p>',action:'<button>Reload game</button>'},{key:'short',body:'Saving the move is taking longer than usual',activity:'static',action:''}];
   await page.evaluate(items=>{window.update(items);window.savedTall=document.querySelector('[data-key="tall"]');window.savedButton=window.savedTall.querySelector('button');window.savedPulse=window.savedTall.querySelector('.shell-game-alert').getAnimations({subtree:true}).find(a=>a.animationName==='notification-processing');},items);
   const tall=page.locator('[data-key="tall"]'),short=page.locator('[data-key="short"]');
   await expect(tall).toHaveClass(/is-active/);
   await page.evaluate(items=>window.cycle(items),items);
   await expect(short).toHaveClass(/is-active/);
-  await expect(tall.getByRole('button',{name:'Reload now',includeHidden:true})).toBeHidden();
+  await expect(tall.getByRole('button',{name:'Reload game',includeHidden:true})).toBeHidden();
   await expect(tall.locator('.shell-game-alert-copy')).toBeHidden();
   const clipped=await tall.evaluate(el=>({overflow:getComputedStyle(el).overflow,height:el.clientHeight,activeHeight:el.parentElement.querySelector('.is-active').clientHeight}));
   expect(clipped.overflow).toBe('hidden');expect(clipped.height).toBeLessThanOrEqual(clipped.activeHeight+1);
   await page.evaluate(()=>Promise.all(document.getAnimations().filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime)).map(animation=>animation.finished.catch(()=>{}))));
   await page.screenshot({path:info.outputPath('short-active-tall-inactive.png')});
   await page.evaluate(items=>window.cycle(items),items);
-  await expect(tall.getByRole('button',{name:'Reload now'})).toBeVisible();
+  await expect(tall.getByRole('button',{name:'Reload game'})).toBeVisible();
   expect(await page.evaluate(()=>window.savedTall===document.querySelector('[data-key="tall"]')&&window.savedButton===window.savedTall.querySelector('button')&&window.savedTall.querySelector('.shell-game-alert').getAnimations({subtree:true}).includes(window.savedPulse))).toBe(true);
 });
 
@@ -91,4 +91,24 @@ test('record a complete processing and waiting pulse for visual review',async({p
   await page.waitForTimeout(2000);
   await page.screenshot({path:info.outputPath('waiting-peak.png')});
   await page.waitForTimeout(2000);
+});
+
+test('an urgent arrival cannot make focused or expanded notification controls inert',async({page})=>{
+  await open(page);
+  await page.evaluate(()=>{
+    const card=document.querySelector('[data-key="processing"]');
+    card.querySelector('button').focus();
+    window.focusedNotice=card;window.focusedControl=document.activeElement;
+    window.update([{key:'urgent',priority:'urgent',activity:'static',body:'Recording failed'},{key:'processing'}]);
+  });
+  await expect(page.locator('[data-key="processing"]')).toHaveClass(/is-active/);
+  expect(await page.evaluate(()=>document.activeElement===window.focusedControl&&!window.focusedControl.closest('[inert]'))).toBe(true);
+  await expect(page.locator('[data-key="urgent"]')).toBeAttached();
+  await page.evaluate(()=>{
+    document.activeElement.blur();
+    document.querySelector('[data-key="processing"] details').open=false;
+    window.update([{key:'urgent',priority:'urgent',activity:'static',body:'Recording failed'},{key:'processing'}]);
+  });
+  await expect(page.locator('[data-key="urgent"]')).toHaveClass(/is-active/);
+  expect(await page.evaluate(()=>window.focusedNotice===document.querySelector('[data-key="processing"]'))).toBe(true);
 });

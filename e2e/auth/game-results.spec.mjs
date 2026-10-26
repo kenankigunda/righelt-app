@@ -1,3 +1,4 @@
+import {switchGamePanel} from '../support/app.mjs';
 import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
@@ -69,7 +70,7 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   await page.reload();
   await expect(page.getByTestId("game-shell")).toBeVisible();
   await expect(page.getByTestId("game-result")).toHaveCount(0);
-  await page.getByRole("button", { name: "History", exact: true }).click();
+  await switchGamePanel(page,'history');
   await page.getByRole("button", { name: "View result" }).click();
   expect(await page.getByTestId('game-result').evaluate(element=>element.getAnimations({subtree:true}).filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime)).length)).toBe(0);
   for (let cycle = 0; cycle < 2; cycle++) {
@@ -97,9 +98,9 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
     expect(projected.status).toBe(200);
     if (opponent === "self") expect(projected.body.game.selfPlayStartSide).toBe("p1");
     if (cycle === 0) {
-      await page.getByRole("button", { name: "Board", exact: true }).click();
+      await switchGamePanel(page,'board');
       await expect(page).not.toHaveURL(/panel=history/);
-      await page.getByRole("button", { name: "History", exact: true }).click();
+      await switchGamePanel(page,'history');
     }
     await page.getByRole("button", { name: "View result" }).click();
     await expect(page.getByTestId("game-result").getByRole("heading", { name: "You won" })).toBeVisible();
@@ -107,8 +108,8 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   }
   await page.getByRole("button", { name: "Play again" }).click();
   const rematch = page.getByRole("dialog", { name: "Play again" });
-  await expect(rematch.getByLabel("Opponent")).toHaveValue(opponent);
-  await expect(rematch.getByRole("radio", { name: "Player 2 · Blue" })).toBeChecked();
+  await expect(rematch.getByRole("group",{name:"Opponent",exact:true}).locator(`input[value="${opponent}"]`)).toBeChecked();
+  await expect(rematch.getByRole("radio", { name: "Blue", exact: true })).toBeChecked();
   for (const width of [375, 1100, 1600]) {
     await page.setViewportSize({ width, height: 900 });
     await expectRematchRadioGeometry(rematch);
@@ -144,7 +145,7 @@ test('a retained legacy commander destruction explains the actual cause without 
   return{status:response.status,body:await response.json()};
  },{gameId,scenario,terminal,headers});
  expect(imported.status,JSON.stringify(imported.body)).toBe(200);expect(imported.body.game.board.state.outcome.reason).toBe('p2_commander_unsupplied');expect(imported.body.game.moves).toHaveLength(0);
- const result=page.getByTestId('game-result');await expect(result.getByRole('heading',{name:'You won',exact:true})).toBeVisible();await expect(result).toContainText('Your opponent’s commander was destroyed.');await expect(result).not.toContainText('lost its supply');
+ const result=page.getByTestId('game-result');await expect(result.getByRole('heading',{name:'You won',exact:true})).toBeVisible();await expect(result).toContainText('Your Blue commander was destroyed.');await expect(result).not.toContainText('lost its supply');
  await page.reload();await expect(page.getByTestId('game-shell')).toBeVisible();await expect(result).toHaveCount(0);
  await page.goto(`/#/game/${gameId}?panel=history`);await page.getByRole('button',{name:'View result',exact:true}).click();
  await expect(result.getByRole('heading',{name:'You won',exact:true})).toBeVisible();expect(await result.locator('[data-result-mark]').evaluate(el=>el.getAnimations({subtree:true}).length)).toBe(0);

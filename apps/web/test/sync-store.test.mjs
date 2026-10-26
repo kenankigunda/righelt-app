@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createSyncStore } from "../shell/sync-store.js";
+import {participantButton} from "../shell/public-profile.js";
+import { listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
 
 const clone = (value) => structuredClone(value);
 
@@ -1333,4 +1335,68 @@ test('archived undo reaches the server without fabricating an optimistic restore
   assert.deepEqual(handle.result.board, game.board);
   await handle.committed;
   assert.equal(payload.targetMoveId, 'evicted-1');
+});
+
+test('optimistic account seats use only the captured authenticated owner public profile',async()=>{
+ const harness=createTransportHarness();let release;
+ const pending=new Promise(resolve=>release=resolve);
+ const auth={enabled:true,session:{authenticated:true,contextId:'first',account:{id:'id-test',username:'First',displayName:'First name'}}};
+ const make=source=>createSyncStore({storage:createMemoryStorage(),auth:source,createTransportStore:()=>({...harness.transport,createGame:async payload=>{await pending;return harness.games.get(payload.gameId);}}),createSyncClient:()=>({connectGame(){},disconnectGame(){},disconnectAll(){},getDesiredGameIds:()=>[]})});
+ const store=make(auth);
+ auth.session={authenticated:true,contextId:'second',account:{id:'other-owner',username:'Second',displayName:'Second name'}};
+ const handle=store.createGame({selfPlayMode:true});
+ try{
+  assert.deepEqual(handle.result.player1.profile,{username:'First',displayName:'First name'});
+  assert.deepEqual(handle.result.player2.profile,handle.result.player1.profile);
+  assert.notEqual(handle.result.player1.profile,handle.result.player2.profile);
+  assert.equal(handle.result.player1.profile.id,undefined);
+  const mismatched=make(auth).createGame();assert.equal(mismatched.result.player1.profile,undefined);
+  const legacy=make(null).createGame();assert.equal(legacy.result.player1.profile,undefined);
+  release();await Promise.all([handle.committed,mismatched.committed,legacy.committed]);
+ }finally{release();}
+});
+
+for(const operation of ['create','branch'])for(const seats of [{p1:null,p2:'babs'},{p1:'tau',p2:null},{p1:'horus',p2:'tau'}])test(`optimistic ${operation} participant renderer uses captured computer seats ${JSON.stringify(seats)}`,async()=>{
+ const {transport,games}=createTransportHarness();let submitted;
+ const store=createSyncStore({storage:createMemoryStorage(),auth:{enabled:true,session:{authenticated:true,contextId:'owner',account:{id:'id-test',username:'HumanOwner',displayName:'Human Owner'}}},createTransportStore:()=>({...transport,createGame:async payload=>{submitted=payload;return games.get(payload.gameId);},launchHistoryBranch:async payload=>{submitted=payload;return {game:games.get(payload.gameId)};}}),createSyncClient:()=>({connectGame(){},disconnectGame(){},disconnectAll(){},getDesiredGameIds:()=>[]})});
+ const assignment={...seats};
+ const handle=operation==='create'?store.createGame({selfPlayMode:true,computer:assignment}):store.launchHistoryBranch({sourceGameId:'source',selfPlayMode:true,computer:assignment});
+ const game=operation==='create'?handle.result:handle.result.game;
+ assignment.p1='babs';assignment.p2='horus';
+ for(const [side,seat] of [['p1','player1'],['p2','player2']]){
+  const markup=participantButton(game[seat]);
+  if(seats[side]){assert.match(markup,new RegExp({babs:'Babs',tau:'Tau',horus:'Horus'}[seats[side]]));assert.doesNotMatch(markup,/Human Owner|public-profile|guest-profile/);}
+  else{assert.match(markup,/Human Owner/);assert.match(markup,/data-action="public-profile"/);}
+ }
+ assert.deepEqual(submitted.computer,seats,'outbound creation keeps the same captured computer assignment');
+ if(operation==='create')assert.deepEqual(game.computer.seats,seats);else assert.equal(game.computer,undefined,'branch control cannot start before its canonical creation');assert.equal(game.canRecordMove,false);assert.equal(game.canEndTurn,false);assert.equal(game.awaitingCreation,true);
+ await handle.committed;
+});
+
+for (const forced of [false,true]) test(`optimistic undo ${forced?'retains a legal rush continuation':'never flashes the undone ordinary target'} before acknowledgement`,async()=>{
+  const pieces=[
+    {id:'C1',owner:'P1',kind:'commander',position:{row:3,col:6},supplied:true,commanded:true},
+    {id:'C2',owner:'P2',kind:'commander',position:{row:6,col:3},supplied:true,commanded:true},
+    {id:'U1a',owner:'P1',kind:'unit',position:{row:4,col:4},supplied:true,commanded:true},
+    {id:'U2a',owner:'P2',kind:'unit',position:{row:4,col:6},supplied:true,commanded:true},
+  ];
+  const restored=resolveToStability({boardSize:10,sideToMove:'P1',turnIndex:0,pieces,
+    continuation:forced?{type:'rush',owner:'P1',chainLength:1}:null,outcome:{status:'ongoing'}},{artifactMode:'full'});
+  assert.equal(restored.continuation?.type??null,forced?'rush':null);
+  const action=listLegalActions(restored).find(action=>action.type===(forced?'rush':'move'));
+  assert.ok(action,'The restored preview action must actually be legal');
+  const game=createRevertReadyGame();game.player2=null;
+  game.moves[0].selectionSnapshot=restored;game.moves[0].action=action;game.moves[0].actorSide='P1';
+  const {transport,games}=createTransportHarness();games.set(game.id,game);
+  let accept;const committed=new Promise(resolve=>{accept=resolve;});
+  const store=createSyncStore({storage:createMemoryStorage(),createTransportStore:()=>({...transport,requestRevertToMove:()=>committed}),
+    createSyncClient:()=>({connectGame(){},disconnectGame(){},disconnectAll(){},getDesiredGameIds:()=>[]})});
+  const handle=store.requestRevertToMove({gameId:game.id,targetMoveId:'move-1'});
+  const pending=store.getGameViewModel(game.id);
+  assert.equal(handle.status,'pending');assert.equal(pending.moves[0].undone,true);
+  assert.equal(pending.pendingScenarioSelection,null);
+  assert.deepEqual(pending.initialSelectionAction,forced?action:null);
+  assert.deepEqual(game.moves[0].action,action,'The retained record is never rewritten');
+  assert.equal(game.moves[0].undone,undefined);
+  accept(clone(pending));await handle.committed;
 });

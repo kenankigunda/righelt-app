@@ -349,3 +349,7 @@ test("deriveContinuationHighlightByPieceId ignores follow actions from outside t
   assert.deepEqual([...result.groupMemberPieceIds].sort(), ["A1", "A2"]);
   assert.deepEqual([...result.pendingPieceIds].sort(), ["A2"]);
 });
+
+test("End Turn payload omits selected piece geometry", () => {
+  assert.deepEqual(buildActionPayload("end_turn", { row: 3, col: 6 }, { row: 3, col: 7 }, "C1"), { type: "end_turn" });
+});

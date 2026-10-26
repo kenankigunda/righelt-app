@@ -4,7 +4,7 @@ import { profileLayoutDisplayName, sampleParticipantGeometry } from "../support/
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { AUTH_REQUEST_HEADER, AUTH_PROTOCOL_HEADER, AUTH_PROTOCOL_VERSION, SESSION_CONTEXT_HEADER } from "../../packages/shared-types/src/auth-policy.js";
-import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
+import { getHistoryMoveCount, submitPlayableAction, switchGamePanel } from "../support/app.mjs";
 
 const password = "A long browser test password 482";
 const replacement = "A different browser test password 963";
@@ -525,20 +525,23 @@ test("current public names follow the account across browsers through the minima
     await expect(dialog(other).getByLabel("Display name", { exact: true })).toHaveValue("Étoile 🌟");
     await dialog(other).getByRole("button", { name: "Close", exact: true }).click();
     await other.reload();
-    await expect(other.getByTestId("participant-player-1")).toContainText("Étoile 🌟");
-    await expect(other.getByTestId("participant-player-1")).toContainText(`@${username}`);
-    await expect(other.getByTestId("history-player-names")).toContainText("Étoile 🌟");
+    await switchGamePanel(other,"players");
+    const ownPlayer=other.getByTestId("participant-player-1").getByRole("button");
+    await expect(ownPlayer).toContainText("You");
+    await expect(ownPlayer).toHaveAttribute("data-username",username);
+    await expect(other.getByTestId("history-player-names")).toHaveCount(0);
     const spectator = await browser.newContext({ ignoreHTTPSErrors: true });
     try {
       const guest = await spectator.newPage();
       await guest.goto(gameUrl);
+      await switchGamePanel(guest,"players");
       const person = guest.getByTestId("participant-player-1").getByRole("button");
       await expect(person).toContainText("Étoile 🌟");
       await person.click();
       const profileDialog = guest.getByTestId("public-profile");
       await expect(profileDialog).toContainText("Joined");
       await expect(person).toHaveAttribute("aria-expanded","true");
-      await expect(person).toContainText(`@${username}`);
+      await expect(person).toHaveAttribute("data-username",username);
       // Safari pointer clicks need not focus buttons. Exercise keyboard
       // collapse explicitly to verify the focus-preservation contract.
       await person.focus();
@@ -946,7 +949,7 @@ test('a failed continuation read preserves the play choice for explicit retry', 
   expect(creates).toBe(1);
 });
 
-test("long profile names wrap inside participants without covering the board", async ({ page }) => {
+test("long profile names remain accessible to observers without covering the board", async ({ page, browser }) => {
   await page.setViewportSize({ width: 1366, height: 900 });
   await register(page, uniqueName(), { gate: true });
   await account(page);
@@ -954,19 +957,29 @@ test("long profile names wrap inside participants without covering the board", a
   await dialog(page).getByLabel("Display name", { exact: true }).fill(displayName);
   await expect(dialog(page).locator("[data-autosave-status]")).toHaveText("Saved");
   await dialog(page).getByRole("button", { name: "Close", exact: true }).click();
-  const profile = page.getByTestId("participant-player-1").getByRole("button");
-  await expect(profile).toContainText(displayName);
-  let geometry;
-  await expect.poll(async () => {
-    geometry = await page.evaluate(sampleParticipantGeometry);
-    return geometry !== null;
-  }).toBe(true);
-  expect(geometry.x).toBeGreaterThanOrEqual(geometry.panelX);
-  expect(geometry.x + geometry.width).toBeLessThanOrEqual(geometry.panelX + geometry.panelWidth);
-  expect(geometry.scrollWidth <= geometry.clientWidth + 1).toBe(true);
-  await profile.click();
-  await expect(page.getByTestId("public-profile")).toContainText("Joined");
-  await expect(profile).toContainText(displayName);
+  const owner = page.getByTestId("participant-player-1").getByRole("button");
+  await expect(owner).toHaveText('You');
+  const username=await owner.getAttribute('data-username');expect(username).toBeTruthy();
+  await owner.focus();await owner.press('Enter');await expect(page.getByTestId('public-profile')).toContainText('Joined');
+  await expect(owner).toHaveAttribute('aria-expanded','true');await expect(owner).toBeFocused();await expect(owner).toHaveText('You');
+  // The owner sees You. A separate public observer must still receive the full
+  // saved name, accessible identity and real profile control at the same width.
+  const observerContext=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1366,height:900}});
+  try{
+    const observer=await observerContext.newPage();await observer.goto(page.url());
+    await expect(observer.getByTestId('game-board')).toBeVisible();await switchGamePanel(observer,'players');
+    const profile=observer.getByTestId('participant-player-1').getByRole('button');
+    await expect(profile).toHaveText(displayName);await expect(profile).toHaveAttribute('data-username',username);
+    await expect(profile).toHaveAccessibleName(`${displayName}, Red, Connected`);
+    let geometry;
+    await expect.poll(async()=>{geometry=await observer.evaluate(sampleParticipantGeometry);return geometry!==null;}).toBe(true);
+    expect(geometry.x).toBeGreaterThanOrEqual(geometry.panelX);
+    expect(geometry.x+geometry.width).toBeLessThanOrEqual(geometry.panelX+geometry.panelWidth);
+    expect(geometry.scrollWidth<=geometry.clientWidth+1).toBe(true);
+    await profile.focus();await profile.press('Enter');await expect(observer.getByTestId('public-profile')).toContainText('Joined');
+    await expect(profile).toHaveAttribute('aria-expanded','true');await expect(profile).toBeFocused();
+    await expect(profile).toHaveText(displayName);await expect(profile).toHaveAttribute('data-username',username);
+  }finally{await observerContext.close();}
 });
 
  test("username lookup diagnostics redact entries and dismiss resolved details with stable focus", async ({ page }) => {

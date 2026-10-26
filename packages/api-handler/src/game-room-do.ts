@@ -1,7 +1,7 @@
 import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, canonicalCommandJson } from '../../shared-types/src/sync-protocol';
-import { archiveStatements, readDecision, readDecisionPage, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
+import { archiveStatements, readDecision, readDecisionPage, readAdditionalDecisionPage, parseHistoryCursor, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
 import { StorageWriteLimitError } from './storage-codec';
-import { COMPUTER_LIMITS, changeComputerControl, computerCommandError, createComputerControl, parseComputerSeats, type ComputerProof } from '../../shared-types/src/computer-play';
+import { COMPUTER_CAPABILITIES, COMPUTER_LIMITS, changeComputerControl, computerCommandError, createComputerControl, parseComputerSeats, type ComputerProof } from '../../shared-types/src/computer-play';
 import { STORAGE_POLICY, STORAGE_GENERATION_HEADER } from "../../shared-types/src/storage-policy";
 import { storageRoomName } from "./storage-generation";
 import { archiveRow, beginArchive, captureArchiveStep, pruneArchivedEvidence, restoreArchiveStep, saveArchivedView } from "./storage-archive";
@@ -181,7 +181,7 @@ export const compactHistoryResponse = (body: Record<string, unknown>): Record<st
   const game = body.game as Record<string, unknown> | undefined;
   if (!game || !Array.isArray(game.moves)) return body;
   const last = game.moves.length - 1;
-  return { ...body, game: { ...game, historyProjection: LIVE_HISTORY.snapshotValue, sharedReceipts: true, moves: game.moves.map((move, index) => {
+  return { ...body, game: { ...game, historyProjection: LIVE_HISTORY.snapshotValue, sharedReceipts: true, computerCapabilities: COMPUTER_CAPABILITIES, moves: game.moves.map((move, index) => {
     if (index === last) return move;
     const { snapshot: _snapshot, selectionSnapshot: _selection, ...summary } = move;
     return index === 0 ? {...summary,selectionSnapshot:_selection} : summary;
@@ -194,7 +194,7 @@ const eventForSession = (event: ServerEvent, identityId: string) => {
   }
   return {
     ...event,
-    game: { ...withViewModel(event.game as LiveGame, identityId), sharedReceipts: true },
+    game: { ...withViewModel(event.game as LiveGame, identityId), sharedReceipts: true, computerCapabilities: COMPUTER_CAPABILITIES },
   };
 };
 
@@ -503,6 +503,16 @@ export class GameRoomDO {
     }
 
     if (request.method === 'POST' && path === '/decision-history') {
+      if(body.mode==='additional') {
+        if(body.historyRevision!==game.gameplayRevision)return json({ok:false,error:'history_changed',gameplayRevision:game.gameplayRevision},409);
+        const partial=(game.archiveStartRevision??1)>0;
+        if(game.archiveStartRevision===undefined) {
+          try { parseHistoryCursor(body.cursor); } catch { return json({ok:false,error:'invalid_history_cursor'},400); }
+          return json({ok:true,gameplayRevision:game.gameplayRevision,partial,available:false,items:[],nextCursor:null});
+        }
+        try{return json({ok:true,gameplayRevision:game.gameplayRevision,partial,...await readAdditionalDecisionPage(this.env,game,body.cursor,body.metadataOnly===true)});}
+        catch(error){if((error as Error).message==='invalid_history_cursor')return json({ok:false,error:'invalid_history_cursor'},400);throw error;}
+      }
       if (game.archiveStartRevision === undefined) {
         const cursor = body.cursor as { eventSeq?: unknown; ordinal?: unknown } | null;
         const after = cursor?.ordinal ?? -1;
@@ -555,6 +565,7 @@ export class GameRoomDO {
 
     if (request.method === "POST" && path === "/computer-control") {
       if (!game.computer) return json({ ok: false, error: "not_computer_game" }, 409);
+      if (body.action === 'resume-here' && game.board.state.outcome.status !== 'ongoing') return json({ok:false,error:'game_finished'},409);
       try {
         game.computer = changeComputerControl(game.computer, { ownerId: identityId, authContextId: this.requestAuthority?.contextId ?? '', deviceId: body.deviceId, generation: body.generation, action: body.action, turnIndex: getActiveTurn(game)?.index ?? game.board.state.turnIndex ?? 0, now: Date.now() });
       } catch (error) { return json({ ok: false, error: (error as Error).message }, 409); }

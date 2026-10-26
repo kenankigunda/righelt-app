@@ -1,0 +1,21 @@
+/* Color belongs to a two-pixel band outside the existing stone face.
+   SVG masks also exclude content and axis labels with two pixels of clearance. */
+.loading-edge-layer {position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:8;}
+.loading-edge-frame {position:absolute;overflow:visible;pointer-events:none;}
+.loading-edge-p1,.loading-edge-p2 {stroke-dasharray:440 560;animation:righelt-edge-cut 2.4s ease-in-out infinite;}
+.loading-edge-p1 {stroke:var(--player-p1);--edge-offset:0px;}
+.loading-edge-p2 {stroke:var(--player-p2);--edge-offset:500px;}
+@keyframes righelt-edge-cut {from {stroke-dashoffset:var(--edge-offset);}to {stroke-dashoffset:calc(var(--edge-offset) - 1000px);}}
+[data-loading-hidden] .loading-edge-frame polygon {animation-play-state:paused;}
+@media(prefers-reduced-motion:reduce){.loading-edge-frame polygon {animation:none;stroke-dashoffset:var(--edge-offset);}}
+/* Retain the route timing contract while replacing its old full-content wash. */
+.shell-route-transition-layer-backdrop,.shell-route-transition-layer-swipe {display:none;}
+#app[data-shell-transition-active="true"][data-shell-transition="game-entry"][data-shell-transition-phase="revealing"][data-shell-route="game"] :is(.shell-main-content,.game-shell-frame,.layout-grid,.invite-gate) {animation:none;}
+.board-wrap[data-reconnecting="true"]:is([data-loading-phase="visible"],[data-loading-phase="slow"]) > :is(.board,.overlay-lines) {opacity:1;}
+.board-wrap[data-reconnecting="true"] .reconnect-background {display:none!important;}
+
+/* Navigation moves on the compositor. Hide only the decorative portal before
+   the first paint; native motion keeps it quiet if the UI timer ends early.
+   Visibility preserves the existing stroke nodes and animation clocks. */
+body:has(#app[data-shell-layout-mode="narrow"] [data-game-shell-track]:is([data-transition-state="forward"],[data-transition-state="backward"])) .loading-edge-layer,
+.loading-edge-frame[data-edge-moving] {visibility:hidden;}

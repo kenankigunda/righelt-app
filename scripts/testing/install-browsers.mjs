@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import {usesFirefoxCiAudio} from './linux-audio.mjs';
 
 export function ubuntuArchiveMirrors(source) {
   const lines = source.split(/\r?\n/);
@@ -30,6 +31,10 @@ export function installBrowsers({ env = process.env, platform = process.platform
     }
   }
   const result = spawn("pnpm", ["exec", "playwright", "install", "--with-deps", ...browsers], { stdio: "inherit" });
+  if(result.status===0 && usesFirefoxCiAudio(env.PROJECT,{env,platform})){
+    const audio=spawn('sudo',['apt-get','install','--yes','--no-install-recommends','pulseaudio','pulseaudio-utils'],{stdio:'inherit'});
+    return audio.status??1;
+  }
   return result.status ?? 1;
 }
 

@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test';
-import {waitForAccountStartup} from './helpers.mjs';
+import {waitForAccountStartup,revealAccountEntry} from './helpers.mjs';
 import {AUTH_CONTROL_ORIGIN} from './fixture.mjs';
 
 test.beforeEach(async () => {
@@ -40,9 +40,10 @@ test('Account stays beside sound and switches with shared utility rails without 
  await page.screenshot({path:test.info().outputPath('utility-medium.png')});
 });
 
-test('signed-out Account remains visible on phone and opens sign-in',async({page})=>{
+test('signed-out Account stays available in the phone menu and opens sign-in',async({page})=>{
  await page.setViewportSize({width:375,height:667});await page.goto('/');await waitForAccountStartup(page);
- const account=page.getByTestId('account-open');await expect(account).toBeVisible();await expect(account).toHaveAttribute('data-authenticated','false');
+ await expect(page.getByRole('button',{name:'Account',exact:true})).toHaveCount(0);
+ const account=await revealAccountEntry(page);await expect(account).toHaveAttribute('data-authenticated','false');
  await account.click();await expect(page.getByTestId('account-dialog')).toHaveAttribute('data-presentation','modal');
  await expect(page.getByLabel('Username',{exact:true})).toBeVisible();
 });
