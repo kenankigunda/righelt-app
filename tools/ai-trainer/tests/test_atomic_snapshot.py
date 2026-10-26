@@ -139,4 +139,13 @@ class AtomicSnapshotTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'Incomplete atomic'):snapshot.atomic_snapshot(output,self.owner,query)
             self.assertFalse((output/'manifest.json').exists())
 
+    def test_low_compound_select_limit_keeps_one_atomic_data_read(self):
+        self.db.setlimit(sqlite3.SQLITE_LIMIT_COMPOUND_SELECT,10)
+        self.payload()
+        with tempfile.TemporaryDirectory()as folder:
+            output=Path(folder)/'cut';manifest=snapshot.atomic_snapshot(output,self.owner,self.query)
+            self.assertEqual(manifest['files']['games']['rows'],1)
+            self.assertEqual(manifest['files']['payloads']['rows'],1)
+            self.assertEqual(len([q for q in self.queries if q.startswith('WITH RECURSIVE owned')]),1)
+
 if __name__=='__main__':unittest.main()
