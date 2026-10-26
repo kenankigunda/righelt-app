@@ -82,12 +82,6 @@ def hydrate_payloads(data,identity,limits):
             'catalogStateSha256':before,'hydratedStateSha256':hashlib.sha256(row['state_json'].encode()).hexdigest()}
     return provenance
 
-def bounded_union(statements):
-    """Keep every compound SELECT below the remote engine's term limit."""
-    groups=[' UNION ALL '.join(statements[offset:offset+8]) for offset in range(0,len(statements),8)]
-    if len(groups)==1:return groups[0]
-    return bounded_union([f'SELECT * FROM ({group})' for group in groups])
-
 def atomic_snapshot(directory,identity,query):
     """One SELECT statement reads every retained row and its counts/cutoff."""
     directory=Path(directory);directory.mkdir(mode=0o700,parents=True,exist_ok=False)
@@ -99,14 +93,16 @@ def atomic_snapshot(directory,identity,query):
             'archive_views':('game_archive_views','v'),'restore_receipts':('game_restore_receipts','u'),
             'restore_reservations':('storage_restore_reservations','s'),
             'tombstones':('live_legacy_command_tombstones','t')}
-    schema_query=bounded_union([f"SELECT '{kind}' AS kind,name,cid FROM pragma_table_info('{table}')"for kind,(table,_)in tables.items()])
+    mapping=json.dumps(list((kind,table) for kind,(table,_) in tables.items())).replace("'","''")
+    schema_query=("SELECT json_extract(k.value,'$[0]') AS kind,p.name,p.cid "
+                  f"FROM json_each('{mapping}') k JOIN pragma_table_info(json_extract(k.value,'$[1]')) p")
     discovered=query(schema_query);columns={}
     for kind in tables:
         names=[row['name']for row in sorted((row for row in discovered if row['kind']==kind),key=lambda row:row['cid'])]
         if not names or len(names)!=len(set(names))or 'game_id'not in names:raise ValueError('Incomplete production table schema')
         columns[kind]=names
     def quoted(name):return '"'+name.replace('"','""')+'"'
-    statements=[];counts=[]
+    branches=[];joins=[];present=[];counts=[]
     for kind,(table,alias)in tables.items():
         condition=f"{alias}.game_id IN (SELECT game_id FROM owned)"
         if kind=='attempts':condition+=f" AND {alias}.kind='computer'"
@@ -121,15 +117,25 @@ def atomic_snapshot(directory,identity,query):
         payload="'{}'"
         # D1 permits32arguments perfunction: at most15path/value pairs plusbase.
         for offset in range(0,len(fields),30):payload=f"json_set({payload},{','.join(fields[offset:offset+30])})"
-        statements.append(f"SELECT '{kind}' AS kind,{payload} AS payload FROM {table} {alias} WHERE {condition}")
+        branches.append(f"WHEN '{kind}' THEN {payload}")
+        # Exactly one source table can match each selector. Empty sources produce
+        # a NULL join row that is removed below, rather than an invented record.
+        joins.append(f"LEFT JOIN {table} {alias} ON k.value='{kind}' AND {condition}")
+        present.append(f"(k.value='{kind}' AND {alias}.game_id IS NOT NULL)")
         counts.extend(["'"+kind+"'",f"(SELECT COUNT(*) FROM {table} {alias} WHERE {condition})"])
     schema_fields=[]
     for kind,(table,_)in tables.items():
         schema_fields.extend(["'"+kind+"'",f"json((SELECT json_group_array(name) FROM (SELECT name FROM pragma_table_info('{table}') ORDER BY cid)))"])
-    meta="SELECT 'meta' AS kind,json_object('cutoff',strftime('%Y-%m-%dT%H:%M:%fZ','now'),'counts',json_object("+','.join(counts)+"),'columns',json_object("+','.join(schema_fields)+")) AS payload"
-    statements.append("SELECT 'payload_blob_chunks' AS kind,json_object('game_id',p.game_id,'offset',b.n,'hex',hex(substr(p.state_blob,b.n+1,262144))) AS payload FROM game_payloads p JOIN blob_offsets b WHERE p.game_id IN(SELECT game_id FROM owned) AND typeof(p.state_blob)='blob' AND b.n<length(p.state_blob)")
+    meta="json_object('cutoff',strftime('%Y-%m-%dT%H:%M:%fZ','now'),'counts',json_object("+','.join(counts)+"),'columns',json_object("+','.join(schema_fields)+"))"
+    branches.append(f"WHEN 'meta' THEN {meta}")
+    joins.append("LEFT JOIN game_payloads bp ON k.value='payload_blob_chunks' AND bp.game_id IN(SELECT game_id FROM owned) AND typeof(bp.state_blob)='blob'")
+    joins.append("LEFT JOIN blob_offsets b ON k.value='payload_blob_chunks' AND b.n<length(bp.state_blob)")
+    branches.append("WHEN 'payload_blob_chunks' THEN json_object('game_id',bp.game_id,'offset',b.n,'hex',hex(substr(bp.state_blob,b.n+1,262144)))")
+    present.extend(["k.value='meta'","(k.value='payload_blob_chunks' AND bp.game_id IS NOT NULL AND b.n IS NOT NULL)"])
+    kinds=json.dumps([*tables,'payload_blob_chunks','meta'])
     sql=("WITH RECURSIVE owned AS (SELECT g.game_id FROM live_games g WHERE "
-         f"json_extract(g.state_json,'$.computer.ownerId')='{escaped}'), blob_offsets(n) AS (SELECT 0 UNION ALL SELECT n+262144 FROM blob_offsets WHERE n+262144<(SELECT COALESCE(MAX(length(state_blob)),0)FROM game_payloads WHERE game_id IN(SELECT game_id FROM owned))) "+bounded_union([*statements,meta]))
+         f"json_extract(g.state_json,'$.computer.ownerId')='{escaped}'), blob_offsets(n) AS (SELECT 0 UNION ALL SELECT n+262144 FROM blob_offsets WHERE n+262144<(SELECT COALESCE(MAX(length(state_blob)),0)FROM game_payloads WHERE game_id IN(SELECT game_id FROM owned))) "
+         +"SELECT k.value AS kind,CASE k.value "+' '.join(branches)+f" END AS payload FROM json_each('{kinds}') k "+' '.join(joins)+' WHERE '+' OR '.join(present))
     started=datetime.datetime.now(datetime.timezone.utc).isoformat()
     exported=query(sql)
     raw_export=(json.dumps(exported,ensure_ascii=False,indent=2)+'\n').encode()

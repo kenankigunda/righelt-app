@@ -140,12 +140,16 @@ class AtomicSnapshotTest(unittest.TestCase):
             self.assertFalse((output/'manifest.json').exists())
 
     def test_low_compound_select_limit_keeps_one_atomic_data_read(self):
-        self.db.setlimit(sqlite3.SQLITE_LIMIT_COMPOUND_SELECT,10)
+        self.db.setlimit(sqlite3.SQLITE_LIMIT_COMPOUND_SELECT,2)
         self.payload()
+        def query(sql):
+            self.db.setlimit(sqlite3.SQLITE_LIMIT_COMPOUND_SELECT,2 if sql.startswith('WITH RECURSIVE owned') else 1)
+            return self.query(sql)
         with tempfile.TemporaryDirectory()as folder:
-            output=Path(folder)/'cut';manifest=snapshot.atomic_snapshot(output,self.owner,self.query)
+            output=Path(folder)/'cut';manifest=snapshot.atomic_snapshot(output,self.owner,query)
             self.assertEqual(manifest['files']['games']['rows'],1)
             self.assertEqual(manifest['files']['payloads']['rows'],1)
             self.assertEqual(len([q for q in self.queries if q.startswith('WITH RECURSIVE owned')]),1)
+            self.assertEqual(sum(q.count('UNION ALL') for q in self.queries),1)
 
 if __name__=='__main__':unittest.main()
