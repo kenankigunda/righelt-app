@@ -12,8 +12,66 @@ import {validatePlan,stagePolicy} from '../plan.mjs';
 import {restoreCheckpoint} from '../checkpoints.mjs';
 import {loadSuccessfulEvidence} from '../reuse.mjs';
 import {publicRun} from '../model.mjs';
+import {requireRetainedResumeBaseline} from '../retained-resume.mjs';
+import {readdir} from 'node:fs/promises';
 
 const sha=digit=>digit.repeat(40),stopped=async()=>true;
+
+async function retainedResumeFailureFixture(t) {
+ const root=await realpath(await mkdtemp(path.join(os.tmpdir(),'righelt-retained-resume-negative-')));
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ const candidate=path.join(root,'candidate'),out=path.join(root,'receiving'),harnessRoot=path.join(root,'harness');
+ for(const p of [candidate,out,harnessRoot])await mkdir(p);
+ const spec={version:2,repository:'owner/repo',base:'main',prs:[{number:2}],questions:[{id:'retained',description:'Retained data must remain retained',paths:['apps/'],checks:['Responsive proof']}]};
+ const provenance=JSON.parse(JSON.stringify({version:2,base:sha('5'),tree:sha('9'),prefix:[],policy:stagePolicy(spec,0,{accounts:true,changed:[]}),harnessFingerprint:'receiving-harness',node:process.version,platform:process.platform,arch:process.arch}));
+ const state=path.join(out,'original-state');await mkdir(state);await writeFile(path.join(state,'identity.txt'),'original retained identity');
+ const checkpoint=path.join(out,'original-checkpoint');await createCheckpoint({root:state,destination:checkpoint,provenance,expiresAt:new Date(Date.now()+3600000).toISOString(),assertStopped:stopped});
+ const evidenceReceipt=path.join(out,'baseline-evidence.json');
+ const stage={id:'stage-0',index:0,status:'passed',checkpoint,checkpointProvenance:provenance,evidenceReceipt};
+ await saveSuccessfulEvidence(evidenceReceipt,{provenance,result:stage,expiresAt:new Date(Date.now()+3600000).toISOString()});
+ const previous={id:'original-retained-run',base:sha('5'),attempt:1,retainedTransfer:{kind:'retained-data-transfer',checkCredit:false,sourceRun:'original154/run.json'},stages:[stage]};
+ const file=path.join(out,'run.json');
+ const calls={worktree:0,install:0,local:0,writes:0,restores:0};
+ const git=async args=>{
+  if(args[0]==='fetch')return '';
+  if(args[0]==='rev-parse')return args[1]===`${sha('5')}^{tree}`?sha('9'):args[1]==='HEAD'?sha('8'):sha('5');
+  if(args[0]==='worktree'){calls.worktree++;throw Error('A failing preflight must not create a worktree');}
+  throw Error(`Unexpected Git call ${args[0]}`);
+ };
+ const command=async args=>args[0]==='lsof'?{code:1,output:''}:{code:0,output:JSON.stringify({number:2,title:'Next',url:'https://github.com/owner/repo/pull/2',headRefOid:sha('5'),headRefName:'feature',baseRefName:'main',baseRefOid:sha('5'),state:'OPEN',isDraft:false})};
+ const code=(await readFile(new URL('../integrated-bounded.mjs',import.meta.url),'utf8')).replace(/^import .*;\n/gm,'').replaceAll('export async function ','async function ').replaceAll('export function ','function ');
+ const context={path,os,mkdir,cp,mkdtemp,rm,realpath,requireRetainedResumeBaseline,assertRetainedOutput,command,git,readJSON,
+  saveJSON:async(...args)=>{calls.writes++;return saveJSON(...args);},hash:JSON.stringify,validatePlan,stagePolicy,
+  localRun:async()=>{calls.local++;throw Error('Must not start fresh local validation');},harnessRoot,fingerprint:async()=> 'receiving-harness',
+  candidateCapabilities:async()=>({accounts:true}),ensureInstallation:async()=>{calls.install++;},loadSuccessfulEvidence,saveSuccessfulEvidence,createCheckpoint,
+  restoreCheckpoint:async options=>{calls.restores++;return restoreCheckpoint(options);},restoreRetainedInput,renderReport:async()=>{},publish:async()=>{},Date,JSON,process,structuredClone};
+ runInNewContext(`${code};globalThis.execute=boundedIntegratedRun;`,context);
+ const snapshot=async()=>{
+  const files={};
+  const walk=async dir=>{for(const entry of await readdir(dir,{withFileTypes:true})){const p=path.join(dir,entry.name);if(entry.isDirectory())await walk(p);else files[path.relative(out,p)]=await fileDigest(p);}};
+  await walk(out);return files;
+ };
+ return {out,file,checkpoint,previous,calls,snapshot,execute:()=>context.execute({spec,cwd:candidate,dir:out,config:{},resume:true})};
+}
+
+test('retained-transfer resume rejects missing or failed baseline before mutating the original run',async t=>{
+ for(const kind of ['missing','failed']){
+  const f=await retainedResumeFailureFixture(t);
+  if(kind==='missing')f.previous.stages=[];else f.previous.stages[0].status='failed';
+  await saveJSON(f.file,f.previous);const original=await f.snapshot();
+  await assert.rejects(f.execute,/Retained resume requires a passed baseline/);
+  assert.deepEqual(await f.snapshot(),original,'Original run, evidence and checkpoint bytes must remain unchanged');
+  assert.deepEqual(f.calls,{worktree:0,install:0,local:0,writes:0,restores:0});
+ }
+});
+
+test('nominal retained-transfer baseline with failed checkpoint verification cannot fall through to fresh seeds',async t=>{
+ const f=await retainedResumeFailureFixture(t);await saveJSON(f.file,f.previous);
+ await writeFile(path.join(f.checkpoint,'state','identity.txt'),'corrupted retained identity');const original=await f.snapshot();
+ await assert.rejects(f.execute,error=>/Retained resume baseline cannot be restored/.test(error.message)&&/integrity/.test(error.cause?.message));
+ assert.deepEqual(await f.snapshot(),original,'Verification failure must preserve the original failed run and checkpoint bytes');
+ assert.deepEqual(f.calls,{worktree:0,install:0,local:0,writes:0,restores:1});
+});
 const history={version:1,gameId:'retained',moves:[{moveId:'original-move',action:{type:'pass'},selectionSnapshot:{turnIndex:0},snapshot:{turnIndex:1}}],turns:[{index:0}],board:{state:{turnIndex:1}}};
 const storage={cookies:[{name:'session',value:'private-cookie',expires:-1}],origins:[{origin:'http://127.0.0.1:9888',localStorage:[{name:'righelt.identity.id.v1',value:'original-owner'}]}]};
 const fixtureJSON={version:2,hash:'#/game/retained',count:1,role:'Both Players',history,storage};
@@ -107,7 +165,7 @@ for(const invalid of [false,true])test(`actual bounded orchestration ${invalid?'
   let fetched=sha('5');
   const git=async(args,cwd)=>{
    if(args[0]==='fetch'){fetched=args[2].startsWith('pull/')?sha('7'):sha('5');return '';}
-   if(args[0]==='rev-parse')return args[1]==='HEAD^{tree}'?sha('9'):cwd===harnessRoot?sha('8'):args[1]==='FETCH_HEAD'?fetched:sha('5');
+   if(args[0]==='rev-parse')return args[1]==='HEAD^{tree}'||args[1]===`${sha('5')}^{tree}`?sha('9'):cwd===harnessRoot?sha('8'):args[1]==='FETCH_HEAD'?fetched:sha('5');
    if(args[0]==='worktree'){await mkdir(args.at(-2),{recursive:true});return '';}
    if(args[0]==='merge')return '';
    if(args[0]==='diff')return 'apps/web/change.js';
@@ -125,7 +183,7 @@ for(const invalid of [false,true])test(`actual bounded orchestration ${invalid?'
    await mkdir(path.join(options.dir,'site'),{recursive:true});
    return{run:{risks:[]},stage:{id:`stage-${options.stageIndex}`,index:options.stageIndex,status:'passed',head:sha('5'),checks:[{name:'New baseline retained proof',status:'passed'}],items:[]}};
   };
-  const context={path,mkdir,cp,assertRetainedOutput,command,git,readJSON,saveJSON,hash:JSON.stringify,validatePlan,stagePolicy,localRun,harnessRoot,fingerprint:async()=> 'receiving-harness',candidateCapabilities:async()=>({accounts:true}),ensureInstallation:async()=>{},loadSuccessfulEvidence,saveSuccessfulEvidence,createCheckpoint,restoreCheckpoint,restoreRetainedInput:options=>restoreRetainedInput({...options,treeOf:f.options.treeOf,isAncestor:f.options.isAncestor,resolveMerge:f.options.resolveMerge}),renderReport:async()=>{},publish:async()=>{},Date,JSON,process,structuredClone};
+  const context={path,os,mkdir,cp,mkdtemp,rm,realpath,requireRetainedResumeBaseline,assertRetainedOutput,command,git,readJSON,saveJSON,hash:JSON.stringify,validatePlan,stagePolicy,localRun,harnessRoot,fingerprint:async()=> 'receiving-harness',candidateCapabilities:async()=>({accounts:true}),ensureInstallation:async()=>{},loadSuccessfulEvidence,saveSuccessfulEvidence,createCheckpoint,restoreCheckpoint,restoreRetainedInput:options=>restoreRetainedInput({...options,treeOf:f.options.treeOf,isAncestor:f.options.isAncestor,resolveMerge:f.options.resolveMerge}),renderReport:async()=>{},publish:async()=>{},Date,JSON,process,structuredClone};
   runInNewContext(`${code};globalThis.execute=boundedIntegratedRun;`,context);
   const result=await context.execute({spec:{version:2,repository:'owner/repo',base:'main',prs:[{number:2}],questions:[{id:'next',description:'Next retained contract',paths:['apps/'],checks:['Responsive proof']}]},cwd:candidate,dir:out,config:{},retainedInput:{...f.options.input,...(invalid?{stageId:'stage-99'}:{})}});
   if(invalid){assert.equal(result.run.complete,false);assert.equal(result.run.orchestration,'failed');assert.equal(calls.length,0);}

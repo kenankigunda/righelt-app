@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {candidateCapabilities} from '../capabilities.mjs';
@@ -138,4 +138,47 @@ test('trained-enabled candidate requires an explicit valid authoritative model c
    await assert.rejects(()=>candidateCapabilities(root),/Unsupported current computer model contract/);
   }
  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+
+test('history undo selects exactly the supported source row label without evaluating candidate code',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'history-label-capability-'));
+ try{
+  const directory=path.join(root,'apps/web/shell');await mkdir(directory,{recursive:true});
+  const file=path.join(directory,'app.js');
+  assert.equal((await candidateCapabilities(root)).historyUndoLabel,null);
+  for(const [label,icon]of [['Undo back to this move',''],['Undo before this move','${icon("back")}']]){
+   const template='<button data-action="revert-to-move" data-game-id="${escapeHtml(game.id)}" data-move-id="${escapeHtml(move.moveId)}">'+icon+label+'</button>';
+   await writeFile(file,'// `<button data-action="revert-to-move">Unknown</button>`\nconst revertButton=`'+template+'`; const inspector=`<button data-action="revert-to-move">Undo before this decision</button>`; throw Error("Never evaluate candidate source");');
+   assert.equal((await candidateCapabilities(root)).historyUndoLabel,label);
+  }
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('history undo source label rejects missing, ambiguous, unknown and dynamic templates',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'history-label-negative-'));
+ try{
+  const directory=path.join(root,'apps/web/shell');await mkdir(directory,{recursive:true});
+  const file=path.join(directory,'app.js'),row='<button data-action="revert-to-move">Undo before this move</button>';
+  for(const source of [
+   '// `'+row+'`',
+   'const revertButton=`'+row+'`; function duplicateScope(){const revertButton=`'+row+'`;} ',
+   'const revertButton=`<button data-action="revert-to-move">Undo something else</button>`;',
+   'const revertButton=`<button data-action="revert-to-move">${label}</button>`;',
+   'const revertButton=`<button data-action="revert-to-move">${icon("future")}Undo before this move</button>`;',
+   'const revertButton=`<button data-action="revert-to-move">${arbitrary()}Undo before this move</button>`;',
+  ]){
+   await writeFile(file,source);
+   await assert.rejects(()=>candidateCapabilities(root),/Unsupported history undo row label contract/);
+  }
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+
+test('actual tracked app history row selects a literal supported label without importing candidate code',async()=>{
+ const root=path.resolve(import.meta.dirname,'../../..');
+ const source=await readFile(path.join(root,'apps/web/shell/app.js'),'utf8');
+ const selected=(await candidateCapabilities(root)).historyUndoLabel;
+ assert.ok(['Undo back to this move','Undo before this move'].includes(selected));
+ assert.ok(source.includes(selected+'</button>'),'Chosen row label is literally present in actual candidate source');
 });
