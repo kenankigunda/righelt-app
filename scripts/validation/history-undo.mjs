@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {expect} from '@playwright/test';
 import {isOperationRequest,operationValues} from '../../e2e/support/shared-request.mjs';
 import {selectGamePanel} from './browser-navigation.mjs';
-import {ACTION_CONTRACT_VERSION,isSyncCommand,isCommandOutcome,isReconcileResponse,commandFingerprint} from '../../packages/shared-types/src/sync-protocol.ts';
+import {isSyncCommand,isCommandOutcome,isReconcileResponse,commandFingerprint} from '../../packages/shared-types/src/sync-protocol.ts';
 
 export function humanMoveForUndo(initial,accepted,action){
  const existing=new Set(initial.moves.map(move=>move.moveId));
@@ -14,14 +14,15 @@ export function humanMoveForUndo(initial,accepted,action){
  return human[0];
 }
 
-async function assertUndoIntent(envelope,{gameId,moveId,identityId,beforeState,beforeRevision}){
+async function assertUndoIntent(envelope,{gameId,moveId,identityId,beforeState,beforeRevision,actionContractVersion}){
  assert.ok(typeof identityId==='string'&&identityId.trim().length,'Expected human identity is required');
  assert.equal(envelope.identityId,identityId,'Undo must be submitted by the expected human');
  assert.equal(operationValues({postDataJSON:()=>envelope}).targetMoveId,moveId,'Undo must target the selected human decision');
  if(envelope.kind==='shared'){
   assert.equal(isSyncCommand(envelope),true,'Captured undo must be a valid immutable command');
   assert.equal(envelope.gameId,gameId);assert.equal(envelope.payload.operation,'revert-request');
-  assert.ok(envelope.actionContractVersion===undefined||envelope.actionContractVersion===ACTION_CONTRACT_VERSION,'Undo action contract must be current or legacy-valid');
+  assert.ok(actionContractVersion===null||[2,3].includes(actionContractVersion),'An explicit supported source-selected action version is required');
+  assert.equal(envelope.actionContractVersion,actionContractVersion===null?undefined:actionContractVersion,'Undo action contract must match the candidate source');
   assert.equal(envelope.predecessor,undefined,'Current UI shared commands must not introduce an unverified dependency');
   assert.equal(envelope.payload.action,undefined,'Shared undo must not carry a gameplay action');
   assert.ok(Number.isSafeInteger(beforeRevision)&&beforeRevision>=0,'Pre-undo authoritative revision is required');
@@ -31,8 +32,8 @@ async function assertUndoIntent(envelope,{gameId,moveId,identityId,beforeState,b
  }else assert.equal(envelope.kind,undefined);
 }
 
-export async function assertUndoReceipt(body,envelope,{gameId,moveId,identityId,initialState,beforeState,beforeRevision}){
- await assertUndoIntent(envelope,{gameId,moveId,identityId,beforeState,beforeRevision});
+export async function assertUndoReceipt(body,envelope,{gameId,moveId,identityId,initialState,beforeState,beforeRevision,actionContractVersion}){
+ await assertUndoIntent(envelope,{gameId,moveId,identityId,beforeState,beforeRevision,actionContractVersion});
  assert.equal(body.ok,true);
  if(envelope.kind==='shared'){
   assert.equal(isReconcileResponse(body,gameId,[envelope]),true,'Undo acknowledgement must bind the captured command');
@@ -48,7 +49,8 @@ export async function assertUndoReceipt(body,envelope,{gameId,moveId,identityId,
  assert.equal(body.game.moves.filter(move=>!move.undone).length,0);
 }
 
-export async function undoBeforeHumanMove(page,{gameId,moveId,identityId,initialState,beforeState,beforeRevision,undoLabel}){
+export async function undoBeforeHumanMove(page,{gameId,moveId,identityId,initialState,beforeState,beforeRevision,undoLabel,actionContractVersion}){
+ assert.ok(actionContractVersion===null||[2,3].includes(actionContractVersion),'An explicit supported source-selected action version is required');
  assert.ok(['Undo back to this move','Undo before this move'].includes(undoLabel),'An explicit supported source-selected undo label is required');
  assert.ok(typeof gameId==='string'&&gameId.trim().length,'Game ID is required before browser activity');
  assert.ok(typeof moveId==='string'&&moveId.length,'Human decision ID is required before browser activity');
@@ -78,7 +80,7 @@ export async function undoBeforeHumanMove(page,{gameId,moveId,identityId,initial
   await expect.poll(()=>requests.length,{message:'The selected row must submit its own undo command'}).toBe(1);
   const submitted=requests[0],envelope=submitted.postDataJSON();
   if(new URL(submitted.url()).pathname.endsWith('/shared'))assert.equal(envelope.kind,'shared');
-  await assertUndoIntent(envelope,{gameId,moveId,identityId,beforeState,beforeRevision});
+  await assertUndoIntent(envelope,{gameId,moveId,identityId,beforeState,beforeRevision,actionContractVersion});
   let body;
   if(envelope.kind==='shared'){
    // Live receipts legitimately cancel the original HTTP response. Always use
@@ -99,6 +101,6 @@ export async function undoBeforeHumanMove(page,{gameId,moveId,identityId,initial
    await expect.poll(()=>responses.length,{message:'Legacy undo must receive its explicit server approval'}).toBe(1);
    assert.equal(responses[0].status(),200);body=await responses[0].json();
   }
-  await assertUndoReceipt(body,envelope,{gameId,moveId,identityId,initialState,beforeState,beforeRevision});
+  await assertUndoReceipt(body,envelope,{gameId,moveId,identityId,initialState,beforeState,beforeRevision,actionContractVersion});
  }finally{page.off('request',observeRequest);page.off('response',observe);}
 }

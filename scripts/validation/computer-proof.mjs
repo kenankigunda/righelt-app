@@ -61,7 +61,7 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     assert.ok(archive.items.some(item => item.id === decision.moveId), 'Accepted model decision must be durable');
     await proof(page, info, 'computer-accepted-play', page.getByTestId('game-board'));
     const human=humanMoveForUndo(initial,accepted,humanAction);
-    await undoBeforeHumanMove(page,{undoLabel:capabilities.historyUndoLabel,gameId:initial.id,moveId:human.moveId,identityId:initial.player1.identityId,initialState:initial.board.state,beforeState:accepted.board.state,beforeRevision:accepted.gameplayRevision});
+    await undoBeforeHumanMove(page,{undoLabel:capabilities.historyUndoLabel,actionContractVersion:capabilities.actionContractVersion,gameId:initial.id,moveId:human.moveId,identityId:initial.player1.identityId,initialState:initial.board.state,beforeState:accepted.board.state,beforeRevision:accepted.gameplayRevision});
     await expect.poll(async () => (await gameAt(page, initial.id)).moves.filter(move => !move.undone).length).toBe(0);
     assert.deepEqual((await gameAt(page, initial.id)).board.state, initial.board.state);
     const retained = await request(page, `/api/shell/games/${initial.id}/decision-history`, {});

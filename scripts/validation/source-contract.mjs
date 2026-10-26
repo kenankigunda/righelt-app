@@ -69,3 +69,12 @@ export function historyUndoLabelContract(text) {
  if(!['Undo back to this move','Undo before this move'].includes(label))return fail();
  return label;
 }
+
+// Bind protocol assertions to a supported literal from the candidate before browser activity.
+export function actionVersionContract(text) {
+ let value = exportedConstant(sourceFile('sync-protocol.ts', text), 'ACTION_CONTRACT_VERSION', 'action version');
+ if (!value) return null;
+ if (ts.isAsExpression(value) && ts.isTypeReferenceNode(value.type) && ts.isIdentifier(value.type.typeName) && value.type.typeName.text==='const' && !value.type.typeArguments) value=value.expression;
+ if (!ts.isNumericLiteral(value) || ![2,3].includes(Number(value.text))) throw Error('Unsupported action version contract declaration');
+ return Number(value.text);
+}

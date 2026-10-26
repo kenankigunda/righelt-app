@@ -182,3 +182,26 @@ test('actual tracked app history row selects a literal supported label without i
  assert.ok(['Undo back to this move','Undo before this move'].includes(selected));
  assert.ok(source.includes(selected+'</button>'),'Chosen row label is literally present in actual candidate source');
 });
+
+test('candidate action version is selected from a supported literal without evaluating source',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'righelt-action-contract-'));
+ try{
+  assert.equal((await candidateCapabilities(root)).actionContractVersion,null);
+  const dir=path.join(root,'packages/shared-types/src');await mkdir(dir,{recursive:true});
+  const file=path.join(dir,'sync-protocol.ts');
+  for(const version of [2,3])for(const assertion of ['', ' as const']){await writeFile(file,`export const ACTION_CONTRACT_VERSION = ${version}${assertion};`);assert.equal((await candidateCapabilities(root)).actionContractVersion,version);}
+  const tracked=await readFile(new URL('../../../packages/shared-types/src/sync-protocol.ts',import.meta.url),'utf8');
+  await writeFile(file,tracked);assert.equal((await candidateCapabilities(root)).actionContractVersion,2);
+  for(const invalid of [
+   'export let ACTION_CONTRACT_VERSION=3;',
+   'export const ACTION_CONTRACT_VERSION=999;',
+   'export const ACTION_CONTRACT_VERSION="3";',
+   'export const ACTION_CONTRACT_VERSION=1+2;',
+   'export const ACTION_CONTRACT_VERSION=3 as number;',
+   'export const ACTION_CONTRACT_VERSION=(1+2) as const;',
+   'export const ACTION_CONTRACT_VERSION=3; export const ACTION_CONTRACT_VERSION=2;',
+   'export const ACTION_CONTRACT_VERSION=(()=>{throw Error("must not execute")})();',
+  ]){await writeFile(file,invalid);await assert.rejects(()=>candidateCapabilities(root),/Unsupported action version contract/);}
+  await writeFile(file,'// export const ACTION_CONTRACT_VERSION=999;');assert.equal((await candidateCapabilities(root)).actionContractVersion,null);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
