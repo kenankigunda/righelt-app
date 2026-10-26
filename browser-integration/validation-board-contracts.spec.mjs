@@ -28,11 +28,11 @@ for(const mutation of ['small-side','small-card','blocked-native-choice'])test(`
  await assert.rejects(()=>assertRematchControlTargets(page.getByRole('dialog'),{contract:'colors-v1',opponent:'friend',assertionOptions:{timeout:100}}));
 });
 
-async function mountUndoFixture(page,{transport='shared-http',mutate,undoLabel='Undo before this move'}={}){
+async function mountUndoFixture(page,{transport='shared-http',mutate,undoLabel='Undo before this move',actionContractVersion=transport==='legacy'?null:2}={}){
  const shared=transport!=='legacy';
  const undoIcon=undoLabel==='Undo before this move'?'<svg aria-hidden="true" width="16" height="16"><path d="M12 4L4 8l8 4"/></svg>':'';
  const state={turnIndex:1,pieces:[{id:'human'}]},requests=[],reads=[];
- const envelope=shared?{protocolVersion:2,gameId:'game-1',identityId:'human-account',kind:'shared',clientCommandId:'v2:undo-1',expectedState:{turnIndex:3},expectedGameplayRevision:2,payload:{operation:'revert-request',values:{targetMoveId:'human-1'}}}:{identityId:'human-account',targetMoveId:'human-1'};
+ const envelope=shared?{protocolVersion:2,...(actionContractVersion===null?{}:{actionContractVersion}),gameId:'game-1',identityId:'human-account',kind:'shared',clientCommandId:'v2:undo-1',expectedState:{turnIndex:3},expectedGameplayRevision:2,payload:{operation:'revert-request',values:{targetMoveId:'human-1'}}}:{identityId:'human-account',targetMoveId:'human-1'};
  if(mutate)mutate(envelope);
  if(shared)envelope.fingerprint=await commandFingerprint(envelope);
  const acceptedRevision=Math.max(2,envelope.expectedGameplayRevision??2);
@@ -60,11 +60,11 @@ async function mountUndoFixture(page,{transport='shared-http',mutate,undoLabel='
    row.querySelector('[data-action]').onclick=()=>fetch(`/api/shell/games/game-1/${shared?'shared':'revert-request'}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(envelope)}).catch(()=>{});
   }
  },{shared,envelope});
- return {shared,state,requests,reads,envelope,options:{undoLabel,gameId:'game-1',moveId:'human-1',identityId:'human-account',initialState:state,beforeState:{turnIndex:3},beforeRevision:2}};
+ return {shared,state,requests,reads,envelope,options:{undoLabel,actionContractVersion,gameId:'game-1',moveId:'human-1',identityId:'human-account',initialState:state,beforeState:{turnIndex:3},beforeRevision:2}};
 }
 
-for(const undoLabel of ['Undo back to this move','Undo before this move'])for(const transport of ['legacy','shared-http','shared-aborted-http'])test(`ordinary undo uses the immutable human row and ${transport} with ${undoLabel}`,async({page})=>{
- const fixture=await mountUndoFixture(page,{transport,undoLabel});
+for(const undoLabel of ['Undo back to this move','Undo before this move'])for(const transport of ['legacy','shared-http','shared-aborted-http'])for(const actionContractVersion of transport==='legacy'?[null]:[null,2,3])test(`ordinary undo uses the immutable human row and ${transport} version ${actionContractVersion} with ${undoLabel}`,async({page})=>{
+ const fixture=await mountUndoFixture(page,{transport,undoLabel,actionContractVersion});
  await undoBeforeHumanMove(page,fixture.options);
  expect(fixture.requests).toEqual([fixture.envelope]);expect(await page.evaluate(()=>window.selectedRows)).toEqual(['human-1']);
  expect(fixture.reads).toEqual(fixture.shared?[{protocolVersion:2,identityId:fixture.envelope.identityId,knownSnapshotEventSeq:0,commands:[fixture.envelope]}]:[]);
@@ -74,6 +74,8 @@ for(const undoLabel of ['Undo back to this move','Undo before this move'])for(co
 test('unsafe undo intents with genuine fingerprints fail before any receipt lookup',async({page})=>{
  const mutations=[
   [envelope=>{envelope.actionContractVersion=999;},/action contract/],
+  [envelope=>{envelope.actionContractVersion=3;},/action contract/],
+  [envelope=>{delete envelope.actionContractVersion;},/action contract/],
   [envelope=>{envelope.predecessor={clientCommandId:'v2:unverified',fingerprint:'a'.repeat(64)};},/unverified dependency/],
   [envelope=>{envelope.expectedGameplayRevision=3;},/observed authoritative revision/],
   [envelope=>{envelope.payload.action={type:'pass'};},/gameplay action/],
