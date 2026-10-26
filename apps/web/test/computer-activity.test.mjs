@@ -61,3 +61,12 @@ test('a terminal protocol mismatch exposes disabled card recovery with a reload 
   assert.match(result.disabledReason,/Reload the game/);assert.equal(result.showRecoveryNotice,false);
  }
 });
+
+test('intentional background inactivity and an unclaimed human turn remain quiet',()=>{
+ const c=context();c.game.computer.lease=null;c.visible=false;
+ assert.equal(computerActivity(c).label,'Inactive in this tab');assert.equal(computerActivity(c).showRecoveryNotice,false);
+ c.visible=true;c.game.board.state.sideToMove='P1';
+ assert.equal(computerActivity(c).label,'Waiting for a turn');assert.equal(computerActivity(c).showResume,true);assert.equal(computerActivity(c).showRecoveryNotice,false);
+ c.game.board.state.sideToMove='P2';assert.equal(computerActivity(c).label,'Needs attention');assert.equal(computerActivity(c).showRecoveryNotice,true);
+ c.game.board.state.sideToMove='P1';c.lastAcquisitionFailure={code:'session_changed'};assert.equal(computerActivity(c).label,'Needs attention');
+});

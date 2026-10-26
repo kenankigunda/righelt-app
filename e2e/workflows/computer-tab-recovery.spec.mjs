@@ -2,7 +2,7 @@ import {test,expect,chromium} from '@playwright/test';
 import {browserLaunchOptions} from '../../scripts/playwright-launch-options.mjs';
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {submitPlayableAction,switchGamePanel} from '../support/app.mjs';
-import {readProjectedGame,waitForComputerDecision} from '../support/computer-projection.mjs';
+import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
 
 const guestRequest=(page,route,body)=>page.evaluate(async({route,body,header})=>{
  const bootstrap=await fetch('/api/shell/bootstrap');const generation=bootstrap.headers.get(header);
@@ -117,4 +117,80 @@ test('a suspended JavaScript renderer reacquires authority when resumed',async({
  await expect(page.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:10000});
  await expect.poll(async()=>(await read()).computer.lease.expiresAt,{timeout:10000}).toBeGreaterThan(before.computer.lease.expiresAt);
  expect((await read()).gameplayRevision).toBe(initial.gameplayRevision);
+});
+
+// The fault holds admitted delivery BEFORE backend acceptance. It does not
+// pretend the server has committed the control or lost an acknowledgement.
+test('Home reuse starts Tau while the previous admitted control delivery is unresolved',async({page},info)=>{
+ const oldId=await createComputer(page);
+ let release,originalEnvelope,originalHeaders,released=false;const deliveries=[];
+ const held=new Promise(resolve=>{release=()=>{released=true;resolve();};});
+ const pattern=`**/api/shell/games/${oldId}/**`;
+ const journalRecord=()=>page.evaluate(envelope=>new Promise((resolve,reject)=>{
+  const open=indexedDB.open('righelt.online-commands.v2');open.onerror=()=>reject(open.error);
+  open.onsuccess=()=>{
+   const db=open.result,tx=db.transaction('commands'),read=tx.objectStore('commands').get([envelope.identityId,envelope.gameId,envelope.clientCommandId]);
+   read.onerror=()=>{db.close();reject(read.error);};read.onsuccess=()=>{const record=read.result;db.close();resolve(record??null);};
+  };
+ }),originalEnvelope);
+ const readOriginalOutcome=async()=>{
+  const response=await page.request.post(`/api/shell/games/${oldId}/reconcile`,{headers:originalHeaders,
+   data:{protocolVersion:2,identityId:originalEnvelope.identityId,knownSnapshotEventSeq:0,commands:[originalEnvelope]}});
+  expect(response.ok()).toBe(true);const body=await response.json();
+  const outcomes=body.commandOutcomes.filter(outcome=>outcome.clientCommandId===originalEnvelope.clientCommandId);
+  expect(outcomes).toHaveLength(1);expect(outcomes[0].fingerprint).toBe(originalEnvelope.fingerprint);return outcomes[0];
+ };
+ const expectOriginalUnresolved=async()=>{
+  expect(released).toBe(false);expect(await journalRecord()).toEqual(originalEnvelope);
+  expect((await readOriginalOutcome()).outcome).toBe('unknown');
+  for(const envelope of deliveries)expect(envelope).toEqual(originalEnvelope);
+ };
+ await page.route(pattern,async route=>{
+  const request=route.request(),pathname=new URL(request.url()).pathname;let control=false;
+  if(request.method()==='POST'&&pathname.endsWith('/shared')){
+   const envelope=request.postDataJSON();control=envelope.payload?.operation==='computer-control';
+   if(control){
+    deliveries.push(envelope);
+    if(!originalEnvelope&&envelope.payload.values?.action==='renew'){
+     originalEnvelope=envelope;
+     originalHeaders=Object.fromEntries(Object.entries(request.headers()).filter(([name])=>name==='content-type'||name.startsWith('x-righelt-')));
+    }
+   }
+  }
+  if(originalEnvelope&&(control||pathname.endsWith('/reconcile')))await held;
+  await route.continue();
+ });
+ try{
+  await page.waitForRequest(request=>{
+   if(request.method()!=='POST'||!request.url().endsWith(`/games/${oldId}/shared`))return false;
+   return request.postDataJSON().payload?.values?.action==='renew';
+  });
+  await expect.poll(()=>Boolean(originalEnvelope)).toBe(true);await expectOriginalUnresolved();
+  await page.locator('.shell-header-title-link').click();await expect(page.getByTestId('home-create-game')).toBeVisible();
+  await page.locator('[data-action="opponent-story"][data-opponent="tau"]').click();await waitForOpponentReady(page);
+  const creation=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');
+  await page.getByRole('button',{name:'Play Tau',exact:true}).click();
+  const response=await creation;expect(response.ok()).toBe(true);const game=(await response.json()).game;
+  expect(game.id).not.toBe(oldId);expect(game.computer.seats).toEqual({p1:null,p2:'tau'});
+  await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',game.id);await switchGamePanel(page,'players');
+  await expect(page.getByRole('button',{name:'Tau, Blue, Active here',exact:true})).toBeVisible();await expectOriginalUnresolved();
+  await switchGamePanel(page,'board');const playable=await projected(page,game.id);
+  await submitPlayableAction(page,playable.legalActions.find(action=>action.from&&action.to));
+  if((await projected(page,game.id)).canEndTurn)await page.locator('[data-board-preview-action="end-turn"]').click();
+  await waitForComputerDecision(page,game.id,'tau',{guest:true,modelId:game.computer.modelId});await expectOriginalUnresolved();
+  expect((await projected(page,game.id)).moves.some(move=>move.computerProof?.profile==='tau')).toBe(true);
+  // Submit the original envelope once via the native request context. Browser
+  // delivery remains held. An expired old lease may explicitly reject renew;
+  // that terminal outcome must be shown honestly, never silently discarded.
+  const settlement=await page.request.post(`/api/shell/games/${oldId}/shared`,{headers:originalHeaders,data:originalEnvelope});
+  expect(settlement.ok()).toBe(true);const body=await settlement.json();
+  const outcomes=body.commandOutcomes.filter(outcome=>outcome.clientCommandId===originalEnvelope.clientCommandId);
+  expect(outcomes).toHaveLength(1);const terminal=outcomes[0];
+  expect(terminal.fingerprint).toBe(originalEnvelope.fingerprint);expect(['accepted','rejected']).toContain(terminal.outcome);
+  if(terminal.outcome==='rejected')expect(terminal.reason).toBe('computer_control_changed');
+  await info.attach('original-control-terminal-outcome',{contentType:'application/json',body:JSON.stringify({clientCommandId:terminal.clientCommandId,fingerprint:terminal.fingerprint,outcome:terminal.outcome,reason:terminal.reason})});
+  release();await expect.poll(journalRecord).toBe(null);
+  expect(await readOriginalOutcome()).toEqual(terminal);
+  for(const envelope of deliveries)expect(envelope).toEqual(originalEnvelope);
+ }finally{release();await page.unrouteAll({behavior:'wait'});}
 });

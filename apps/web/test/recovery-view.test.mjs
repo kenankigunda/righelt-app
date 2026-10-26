@@ -305,3 +305,11 @@ test('recovery uses finite earliest clocks and never postpones explicit failures
  assert.match(recoveryMessage({...game,confirmationOverdue:true},1,{computerSaveActive:true}),/retry or view details/);
  assert.equal(recoveryMessage({...game,recoveryIssue:'unavailable'},9999,{computerSaveActive:true}),'');
 });
+
+test('control receipt recovery uses operation-aware copy at the existing notice boundaries',()=>{
+ const g={recovering:true,syncStatus:'confirming',pendingCommandCount:1,pendingComputerControl:true,recoveryStartedAt:1000};
+ assert.equal(recoveryMessage(g,4999),'');assert.equal(recoveryMessage(g,5000),'Updating computer play');
+ assert.equal(recoveryMessage(g,16000),'Still updating computer play. You can retry or view details.');
+ assert.equal(needsRecoveryAction(g,16000),true);
+ g.pendingComputerControl=false;assert.equal(recoveryMessage(g,16000),'Still checking your move. You can retry or view details.');
+});
