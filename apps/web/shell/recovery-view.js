@@ -59,7 +59,8 @@ export const applyHistoryIntent = (game, intent, identityId) => {
   return game;
 };
 
-export const isBoardRecoveryPending = game => Boolean(game?.sharedMutationsBlocked
+export const isBoardRecoveryPending = (game, { quietComputerRenewal = false, now = Date.now() } = {}) => Boolean(game?.sharedMutationsBlocked
+  && !(quietComputerRenewal && !needsRecoveryAction(game, now))
   && game.pendingComputerSaveStartedAt == null
   && !game.inHistoryMode && !game.storageBlocked && !game.upgradeRequired
   && !["session_changed", "invalid_credentials"].includes(game.recoveryIssue)
@@ -73,7 +74,7 @@ export const needsRecoveryAction = (game, now = Date.now()) => Boolean(game.stor
   || ["session_changed", "invalid_credentials", "invalid_response"].includes(game.recoveryIssue)
   || game.confirmationOverdue || recoveryWaitMs(game, now) >= SYNC_TIMING.confirmationBudgetMs);
 
-export const recoveryMessage = (game, now = Date.now(), { computerSaveActive = false } = {}) => {
+export const recoveryMessage = (game, now = Date.now(), { computerSaveActive = false, quietComputerRenewal = false } = {}) => {
   if (game.upgradeRequired) return "Righelt has an update. Refresh to keep playing.";
   if (game.storageBlocked) return game.storageLimitReached
     ? "Still recording earlier moves. Please wait before making another."
@@ -84,6 +85,7 @@ export const recoveryMessage = (game, now = Date.now(), { computerSaveActive = f
   if (!game.recovering && game.syncStatus !== "confirming" && !game.confirmationOverdue) return "";
   const elapsed = recoveryWaitMs(game, now);
   if (game.pendingComputerControl) {
+    if (quietComputerRenewal && !needsRecoveryAction(game, now)) return '';
     if (elapsed < SYNC_TIMING.reconnectAlertMs && !game.confirmationOverdue) return '';
     return needsRecoveryAction(game, now) ? 'Still updating computer play. You can retry or view details.' : 'Updating computer play';
   }

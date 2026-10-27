@@ -248,3 +248,99 @@ test('Home reuse starts Tau while the previous admitted control delivery is unre
   for(const envelope of deliveries)expect(envelope).toEqual(originalEnvelope);
  }finally{release();await page.unrouteAll({behavior:'wait'});}
 });
+
+// Observe before admission so renewal-onset flashes cannot hide behind the hold.
+// The >=4s copy/deadline boundaries are deterministic CPU cases, not a native race.
+test('a routine human-turn renewal stays quiet until real control becomes uncertain',async({page},info)=>{
+ const id=await createComputer(page);await switchGamePanel(page,'board');
+ const initial=await projected(page,id);expect(initial.computer.modelId).toBe('initial-1554');
+ await submitPlayableAction(page,initial.legalActions.find(action=>action.from&&action.to));
+ if((await projected(page,id)).canEndTurn)await page.locator('[data-board-preview-action="end-turn"]').click();
+ await waitForComputerDecision(page,id,'babs',{guest:true,modelId:'initial-1554'});
+ await expect.poll(async()=>{const g=await projected(page,id);return g.board.state.sideToMove==='P1'&&!g.board.state.continuation;}).toBe(true);
+ const before=await projected(page,id);expect(before.legalActions.some(action=>action.type==='pass')).toBe(true);
+ const pass=page.locator('#shell-board-preview-label [data-board-message-action="pass"], #shell-board-preview-label [data-board-preview-action="pass"]');
+ await expect(page.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible();await expect(pass).toBeVisible();
+ expect(before.computer.lease.expiresAt).toBeGreaterThan(Date.now());
+ let release,original,originalHeaders,observerReadyAt=null;const deliveries=[],writes=[],samples=[];
+ const held=new Promise(resolve=>{release=resolve;});const pattern=`**/api/shell/games/${id}/**`;
+ const journalRecord=()=>page.evaluate(envelope=>new Promise((resolve,reject)=>{
+  const open=indexedDB.open('righelt.online-commands.v2');open.onerror=()=>reject(open.error);
+  open.onsuccess=()=>{const db=open.result,read=db.transaction('commands').objectStore('commands').get([envelope.identityId,envelope.gameId,envelope.clientCommandId]);read.onerror=()=>{db.close();reject(read.error);};read.onsuccess=()=>{db.close();resolve(read.result??null);};};
+ }),original);
+ const prefix='quiet-renew-readonly:';
+ const consoleSample=message=>{if(message.text().startsWith(prefix))samples.push(JSON.parse(message.text().slice(prefix.length)));};
+ const observeWrite=request=>{if(request.method()==='POST'&&new RegExp(`/games/${id}/(apply|end-turn)$`).test(new URL(request.url()).pathname))writes.push(request.postDataJSON());};
+ page.on('console',consoleSample);page.on('request',observeWrite);
+ await page.route(pattern,async route=>{
+  const request=route.request(),pathname=new URL(request.url()).pathname;let renewal=false;
+  if(request.method()==='POST'&&pathname.endsWith('/shared')){
+   const envelope=request.postDataJSON();renewal=envelope.payload?.operation==='computer-control'&&envelope.payload.values?.action==='renew';
+   if(renewal&&observerReadyAt!==null&&envelope.submittedAt>=observerReadyAt){
+    if(!original){original=envelope;originalHeaders=Object.fromEntries(Object.entries(request.headers()).filter(([name])=>name==='content-type'||name.startsWith('x-righelt-')));}
+    deliveries.push(envelope);await held;
+   }
+  }else if(original&&pathname.endsWith('/reconcile'))await held;
+  try{await route.continue();}catch(error){if(!request.failure())throw error;}
+ });
+ try{
+  // Read-only observer persists in its closure, not in app state or a test hook.
+  // Console samples are raw synchronous DOM reads, including the admission onset.
+  observerReadyAt=await page.evaluate(({prefix,id})=>{
+   const read=()=>{
+    const label=document.querySelector('#shell-board-preview-label'),card=document.querySelector('[data-computer-activity]'),wrap=document.querySelector('[data-testid="game-board-wrap"]');
+    return {at:Date.now(),gameId:document.querySelector('[data-testid="game-shell"]')?.getAttribute('data-game-id'),
+     narration:label?[...label.childNodes].filter(node=>node.nodeType!==1||node.tagName!=='BUTTON').map(node=>node.textContent).join('').trim():'',
+     activity:card?.getAttribute('data-computer-activity'),activityText:card?.textContent.trim(),connected:!!card?.querySelector('.is-connected'),
+     announcement:document.querySelector('#shell-sync-announcement')?.textContent??'',
+     reconnecting:wrap?.getAttribute('data-reconnecting'),busy:wrap?.getAttribute('aria-busy'),
+     recovery:[...document.querySelectorAll('[data-testid="sync-recovery-banner"]')].map(node=>node.textContent),
+     pass:!!label?.querySelector('[data-board-message-action="pass"], [data-board-preview-action="pass"]')};
+   };
+   let last='',count=0;const emit=()=>{const value=read(),key=JSON.stringify({...value,at:0});if(key!==last){last=key;count++;console.debug(prefix+JSON.stringify(count<=500?value:{at:Date.now(),overflow:true}));}};
+   const observer=new MutationObserver(emit);observer.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true});emit();
+   // This owned passive observer expires even if an assertion fails; closing the
+   // test page also disposes it. It never changes DOM, clock or app authority.
+   setTimeout(()=>observer.disconnect(),25000);
+   if(read().gameId!==id)throw Error('Observer armed on the wrong game');return Date.now();
+  },{prefix,id});
+  await expect.poll(()=>Boolean(original)).toBe(true);expect(original.submittedAt).toBeGreaterThanOrEqual(observerReadyAt);
+  expect(await journalRecord()).toEqual(original);expect(original.payload.values.action).toBe('renew');
+  expect(original.expectedGameplayRevision).toBe(before.gameplayRevision);expect(original.expectedState).toEqual(before.board.state);
+  const heldAuthority=await projected(page,id);expect(heldAuthority.computer.generation).toBe(original.payload.values.generation);
+  expect(heldAuthority.computer.lease.deviceId).toBe(original.payload.values.deviceId);expect(heldAuthority.computer.lease.expiresAt).toBeGreaterThan(Date.now());
+  // One comfortably short first-send interval, not the 4..5s native timing race.
+  const sampledAt=await page.evaluate(submittedAt=>new Promise(resolve=>setTimeout(()=>resolve(Date.now()),Math.max(0,submittedAt+1000-Date.now()))),original.submittedAt);
+  expect(sampledAt-original.submittedAt).toBeLessThan(5000);
+  await expect(pass).toHaveCount(0);expect(await journalRecord()).toEqual(original);
+  const early=samples.filter(sample=>sample.at>=original.submittedAt&&sample.at<=sampledAt);
+  expect(early.length).toBeGreaterThan(0);expect(samples.some(sample=>sample.overflow)).toBe(false);
+  const narration=samples[0].narration;expect(narration).toMatch(/Babs /);
+  for(const sample of early){
+   expect(sample.gameId).toBe(id);expect(sample.narration).toBe(narration);expect(sample.activity).toBe('here');expect(sample.activityText).toBe('Active here');expect(sample.connected).toBe(true);
+   expect(sample.announcement).not.toMatch(/Updating computer play|Needs attention|Reconnecting|Saving/);
+   expect(sample.recovery.join(' ')).not.toMatch(/Updating computer play|Needs attention/);expect(sample.reconnecting).not.toBe('true');expect(sample.busy).not.toBe('true');
+  }
+  await info.attach('quiet-renew-first-send',{contentType:'image/png',body:await page.screenshot()});
+  // Real request timeout and real server lease expiry must restore attention.
+  await expect(page.getByRole('button',{name:'Babs, Blue, Needs attention',exact:true})).toBeVisible();
+  await expect(page.getByTestId('sync-recovery-banner')).toContainText(/updating computer play|retry|details/i);
+  await expect.poll(()=>Date.now()).toBeGreaterThanOrEqual(heldAuthority.computer.lease.expiresAt);
+  await expect(page.getByRole('button',{name:'Babs, Blue, Needs attention',exact:true})).toBeVisible();
+  await info.attach('quiet-renew-expired-lease',{contentType:'image/png',body:await page.screenshot()});
+  expect(await journalRecord()).toEqual(original);expect(writes).toEqual([]);
+  const fenced=await projected(page,id);expect(fenced.board).toEqual(before.board);expect(fenced.moves).toEqual(before.moves);expect(fenced.gameplayRevision).toBe(before.gameplayRevision);
+  for(const envelope of deliveries)expect(envelope).toEqual(original);
+  release();
+  // The first delivery may now have timed out. Submit the exact admitted intent
+  // through the existing native request context, never a fresh command ID.
+  const response=await page.request.post(`/api/shell/games/${id}/shared`,{headers:originalHeaders,data:original});expect(response.ok()).toBe(true);
+  const body=await response.json(),outcomes=body.commandOutcomes.filter(outcome=>outcome.clientCommandId===original.clientCommandId);
+  expect(outcomes).toHaveLength(1);expect(outcomes[0]).toMatchObject({outcome:'rejected',reason:'computer_control_changed',fingerprint:original.fingerprint,gameplayRevision:before.gameplayRevision});
+  await expect.poll(journalRecord).toBe(null);await expect(pass).toBeVisible();
+  const after=await projected(page,id);expect(after.board).toEqual(before.board);expect(after.moves).toEqual(before.moves);expect(after.gameplayRevision).toBe(before.gameplayRevision);expect(writes).toEqual([]);
+  await info.attach('quiet-renew-real-journey',{contentType:'application/json',body:JSON.stringify({observerReadyAt,original,sampledAt,samples,outcome:outcomes[0],writes},null,2)});
+ }finally{
+  try{await info.attach('quiet-renew-raw-samples',{contentType:'application/json',body:JSON.stringify({observerReadyAt,original,samples},null,2)});}catch{}
+  release();page.off('console',consoleSample);page.off('request',observeWrite);await page.unrouteAll({behavior:'wait'});}
+});

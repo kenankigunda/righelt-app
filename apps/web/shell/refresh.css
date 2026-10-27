@@ -388,7 +388,8 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .panel .participant-identity .participant-profile {display:inline-flex;align-items:center;justify-content:flex-start;gap:var(--identity-gap,10px);background:transparent;color:var(--ink);border:0;border-radius:0;padding:5px 0;box-shadow:none;max-width:100%;text-align:left;}
 [data-hover-capability="hover"] .panel .participant-identity button.participant-profile:not(:disabled):hover {background:transparent;box-shadow:none;transform:none;filter:none;}
 [data-hover-capability="hover"] button.participant-profile:hover .player-name {text-decoration:underline;text-underline-offset:3px;}
-.participant-computer .player-name-stack {display:flex;align-items:center;gap:.45em;}
+.participant-computer .player-name-stack {display:flex;flex-wrap:wrap;align-items:center;column-gap:.45em;row-gap:2px;}
+.participant-computer .player-name {min-width:0;}
 .player-kind-badge {font-size:.65em;font-weight:400;line-height:1.4;color:var(--muted);flex:none;}
 .player-profile-details {display:block;overflow:hidden;font-size:.85rem;color:var(--muted);}
 .player-profile-details > span {display:block;padding:6px 0 8px 44px;}
@@ -411,18 +412,19 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 [data-testid="participants-list"] > li > :first-child {grid-column:1;grid-row:1;font-size:.9rem;align-self:start;line-height:44px;}
 [data-testid="participants-list"] .participant-identity {display:grid;grid-column:2;min-width:0;}
 [data-testid="participants-list"] .participant-profile {min-width:0;justify-self:start;gap:var(--identity-gap);}
+[data-testid="participants-list"] .participant-computer {flex-wrap:wrap;}
+[data-testid="participants-list"] .participant-computer .player-name-stack {max-width:calc(100% - var(--identity-icon-size) - var(--identity-gap));}
 [data-testid="participants-list"] .participant-profile .connection-status-icon {flex:none;margin:0;align-self:center;}
 [data-testid="participants-list"] .player-profile-details:empty {display:none;}
 [data-testid="participants-list"] .player-profile-details > span {padding-left:calc(var(--identity-icon-size) + var(--identity-gap));}
 [data-testid="participants-list"] .player-name-stack {overflow:hidden;}
 [data-testid="participants-list"] :is(.player-name,.player-username,.player-name-stack > bdi) {display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+[data-testid="participants-list"] .participant-profile .player-name {white-space:normal;overflow-wrap:anywhere;}
 [data-testid="participants-list"] .player-emblem {width:var(--identity-icon-size);height:var(--identity-icon-size);flex-shrink:0;}
 [data-testid="participants-list"] .participant-empty {grid-column:2;padding-left:calc(var(--identity-icon-size) + var(--identity-gap));font-size:1rem;min-height:44px;display:flex;align-items:center;}
 
 /* Large text must leave room for the identity, rather than clipping its badge. */
 @container participants (max-width:12em) {
-  .participant-computer .player-name-stack {flex-wrap:wrap;row-gap:2px;}
-  .participant-computer .player-name {flex:none;}
   [data-testid="participants-list"] > li {grid-template-columns:minmax(0,1fr);row-gap:2px;}
   [data-testid="participants-list"] > li > :first-child {grid-column:1;grid-row:1;line-height:1.4;}
   [data-testid="participants-list"] .participant-identity,
@@ -591,11 +593,8 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 #app[data-flyout-overlay="true"]:not([data-flyout-count="0"]) .shell-header-actions .nav-row {flex-wrap:nowrap;width:auto;}
 
 }
-.computer-tab-status { display:flex; align-items:center; gap:.4rem; margin-inline-start:auto; font-size:.75rem; text-align:start; }
+.computer-tab-status { display:flex; flex:none; align-items:center; gap:.4rem; margin-inline-start:auto; font-size:.75rem; text-align:start; white-space:nowrap; overflow-wrap:normal; word-break:normal; }
 .computer-tab-status .connection-status-icon { flex:none; }
-@container participants (max-width:20em) {
-  .participant-computer .player-name-stack {flex-direction:column;align-items:flex-start;gap:0;flex-shrink:0;}
-}
 .computer-player-details:not([hidden]) { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; }
 .computer-player-details[hidden] { display:none; }
 .computer-player-details:empty { display:none; }

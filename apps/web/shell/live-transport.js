@@ -256,6 +256,10 @@ export const createLiveTransportStore = ({
     next.pendingMoves = Array.isArray(next.pendingMoves) ? next.pendingMoves : [];
     next.pendingCommandCount = optimistic.pendingCommands.length;
     next.pendingComputerControl = optimistic.pendingCommands.length > 0 && optimistic.pendingCommands.every(command => command.kind === 'shared' && command.envelope?.payload?.operation === 'computer-control');
+    const pendingControl = next.pendingComputerControl && optimistic.pendingCommands.length === 1 ? optimistic.pendingCommands[0].envelope : null;
+    const controlValues = pendingControl?.payload?.values;
+    // Read-only presentation metadata. The durable envelope and all sync gates stay authoritative.
+    next.pendingComputerControlRequest = pendingControl ? { action: controlValues?.action, deviceId: controlValues?.deviceId, generation: controlValues?.generation, submittedAt: pendingControl.submittedAt } : null;
     const historyLoad = historyLoads.get(gameId);
     next.historyLoading = Boolean(historyLoad?.loading);
     next.historyLoadError = historyLoad?.error ?? null;
