@@ -265,8 +265,13 @@ test('game sections share heading weight and compact player presence',async({pag
  await page.setViewportSize({width:1440,height:1100});await page.goto('/');
  await page.getByTestId('home-create-game').click();await page.getByRole('button',{name:'Start a friend game',exact:true}).click();await page.getByRole('button',{name:'Close invite',exact:true}).click();
  const row=page.getByTestId('participant-player-1');await expect(row.getByRole('img',{name:'Connected',exact:true})).toBeVisible();
- const weights=await page.locator('.panel h2').evaluateAll(items=>items.map(el=>getComputedStyle(el).fontWeight));
- expect(weights.length).toBeGreaterThan(2);expect(new Set(weights).size).toBe(1);
+ // Query and sample in one browser turn: a live update can replace a heading
+ // between Playwright's array-handle query and its later evaluateAll callback.
+ const headings=await page.evaluate(()=>[...document.querySelectorAll('.panel h2')].map(el=>({text:el.textContent.trim(),isConnected:el.isConnected,weight:getComputedStyle(el).fontWeight})));
+ const snapshot=JSON.stringify(headings);
+ expect(headings.length,snapshot).toBeGreaterThan(2);
+ expect(headings.every(heading=>heading.isConnected&&heading.weight.length>0),snapshot).toBe(true);
+ expect(new Set(headings.map(heading=>heading.weight)).size,snapshot).toBe(1);
  await page.evaluate(()=>document.fonts.ready);
  await expect.poll(()=>page.locator('.panel').evaluateAll(items=>items.reduce((sum,el)=>sum+el.getAnimations().length,0))).toBe(0);
  await page.screenshot({path:test.info().outputPath('game-refined-desktop.png')});
