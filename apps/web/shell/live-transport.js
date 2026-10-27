@@ -253,6 +253,7 @@ export const createLiveTransportStore = ({
     const next = clone(game);
     next.pendingMoves = Array.isArray(next.pendingMoves) ? next.pendingMoves : [];
     next.pendingCommandCount = optimistic.pendingCommands.length;
+    next.pendingComputerControl = optimistic.pendingCommands.length > 0 && optimistic.pendingCommands.every(command => command.kind === 'shared' && command.envelope?.payload?.operation === 'computer-control');
     const historyLoad = historyLoads.get(gameId);
     next.historyLoading = Boolean(historyLoad?.loading);
     next.historyLoadError = historyLoad?.error ?? null;

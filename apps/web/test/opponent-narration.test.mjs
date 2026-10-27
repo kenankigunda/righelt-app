@@ -52,7 +52,7 @@ test('local rush, follow and forced retreat keep their real action prompts witho
   g.computer={seats:{p1:'tau'}};assert.equal(opponentBoardMessage(g,{}, {},{canInteract:true}),null);
  }
  const g=game();g.computer={seats:{p1:'tau'}};g.computerTurn='tau';g.board.state.continuation={type:'rush'};
- assert.equal(opponentBoardMessage(g,{}, {},{canInteract:false}),'Tau is thinking');
+ assert.equal(opponentBoardMessage(g,{phase:'looking-ahead'}, {},{canInteract:false}),'Tau is thinking');
 });
 test('spectators can replay named guest completed turns only before the next acknowledged action',()=>{
  for(const side of ['P1','P2']){
@@ -88,4 +88,10 @@ test('spectator narration uses participant names and preserves owned relative wo
  assert.equal(opponentBoardMessage(g,{}, {},{identityId:'me'}),'Your turn');
  g.controlSeat='Player 1';assert.equal(opponentBoardMessage(g,{}, {},{identityId:'me'}),'Waiting for your opponent');
  const actorSides=g.moves.map(move=>move.actorSide);assert.deepEqual(actorSides,['P1','P1']);
+});
+
+test('a pending computer control is not described as saving a human move',()=>{
+ const g={...game(),pendingCommandCount:1,pendingComputerControl:true};
+ assert.equal(opponentBoardMessage(g,{}),'Updating computer play');
+ g.pendingComputerControl=false;assert.equal(opponentBoardMessage(g,{}),'Saving your move');
 });

@@ -35,6 +35,7 @@ export function opponentBoardMessage(game, status, selection = {}, {canInteract 
     ? {...message, actions:[{id:'pass',label:'Pass'}, ...(message.actions ?? (message.action ? [message.action] : []))]} : message;
   const own = roles(game, identityId);
   if (!canInteract) {
+    if (game.pendingComputerControl) return 'Updating computer play';
     if (game.pendingCommandCount > 0) return 'Saving your move';
     if (game.sharedMutationsBlocked || game.recovering || game.syncStatus === 'confirming') return 'Waiting for the game';
     const actor = normalizeActivitySide(game.controlSeat) ?? activityStateActorSide(game.board?.state);
