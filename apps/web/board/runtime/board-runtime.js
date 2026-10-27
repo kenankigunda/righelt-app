@@ -84,6 +84,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let internalActionType = defaultActionType;
   let overlayMode = OVERLAY_MODE.INTERACTIVE;
   let lastUsesHoverTargetSelection = null;
+  let lastRenderedCanInteract = null;
   let recordedAction = null;
   let recordedActionStartPiece = null;
   /** @type {Array<{row: number, col: number, ownerSeat?: "p1" | "p2" | null, kind?: "unit" | "commander" | null, piece?: unknown | null}>} */
@@ -440,6 +441,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return;
     }
     const effectiveMoves = getEffectiveSelectedPieceMovesForBoard();
+    const canInteract = host.canInteract?.(state) !== false;
     boardAdapter.render({
       snapshot: state,
       selection: getCurrentSelection(),
@@ -450,8 +452,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       removalEffects,
       allowFreeSelection: getAllowFreeSelection(),
       currentActionType: getActionType(),
-      selectedPieceOverlayPhase: host.canInteract?.(state) === false ? "supplyCommand" : selectedPieceOverlayPhase,
+      selectedPieceOverlayPhase: canInteract ? selectedPieceOverlayPhase : "supplyCommand",
     });
+    lastRenderedCanInteract = canInteract;
     controls.onVisualsUpdated?.({
       command: Boolean(elements.overlayLinesEl?.querySelector('[data-legend-kind="command"]')),
       supply: Boolean(elements.overlayLinesEl?.querySelector('[data-legend-kind="supply"]')),
@@ -1080,6 +1083,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const clickedPiece = boardAdapter.getPieceAt(state, clickedCoord);
     const ownerAtPoint = supplyOwnerAt(clickedCoord);
     const legalTarget = [...selectedPieceMoves, ...selectedPieceMovePreviews.filter(action => action.legal !== false)].some(action => sameCoordinate(action.to, clickedCoord));
+    // A transient shared-command fence hides actionable previews, but a click
+    // on the prepared destination must not become a blank-square deselection.
+    // Authority is checked again on a later explicit confirmation; never queue it.
+    if (selectedSource && !inspection && selectedPieceOverlayPhase === "actionPreviews" && legalTarget && host.canInteract?.(state) === false) return;
     if (!clickedPiece && ownerAtPoint && !legalTarget) {
       setInspection({kind: "supply", owner: ownerAtPoint, point: clickedCoord});
       return;
@@ -1539,6 +1546,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       // its forced actor, so restore that actor from current legal actions only
       // after admission returns. Preserve deliberate inspections and selections.
       if (!selectedPieceId && !inspection && host.canInteract?.(state) !== false && applyForcedContinuationSelection({requireLegalAction:true})) renderBoard();
+      // Routine control fences do not repaint action ghosts as inspection lines.
+      // Restore admission styling only if a real render showed the blocked state.
+      else if (host.canInteract?.(state) !== false && lastRenderedCanInteract === false) renderBoard();
       renderStatus();
     },
     refreshVisuals: () => { if (!destroyed) renderBoard(); },

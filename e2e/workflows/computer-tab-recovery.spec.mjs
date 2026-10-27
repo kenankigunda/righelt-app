@@ -1,7 +1,7 @@
 import {test,expect,chromium} from '@playwright/test';
 import {browserLaunchOptions} from '../../scripts/playwright-launch-options.mjs';
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
-import {submitPlayableAction,switchGamePanel} from '../support/app.mjs';
+import {selectPlayableAction,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
 import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
 
 const guestRequest=(page,route,body)=>page.evaluate(async({route,body,header})=>{
@@ -18,6 +18,60 @@ const createComputer=async page=>{
  await page.goto(`/#/game/${game.id}`);await switchGamePanel(page,'players');
  await expect(page.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:20000});return game.id;
 };
+
+test('a human destination survives a real pending renewal and needs a fresh confirmation',async({page},info)=>{
+ const id=await createComputer(page);await switchGamePanel(page,'board');
+ const before=await projected(page,id),action=before.legalActions.find(value=>value.from&&value.to);
+ expect(action).toBeTruthy();const target=await selectPlayableAction(page,action);
+ const source=page.locator(`[data-testid="game-board"] .cell[data-row="${action.from.row}"][data-col="${action.from.col}"]`);
+ let release,original,originalHeaders;const deliveries=[],applies=[];
+ const held=new Promise(resolve=>{release=resolve;});
+ const pattern=`**/api/shell/games/${id}/**`;
+ const readJournal=()=>page.evaluate(envelope=>new Promise((resolve,reject)=>{
+  const open=indexedDB.open('righelt.online-commands.v2');open.onerror=()=>reject(open.error);
+  open.onsuccess=()=>{const db=open.result,read=db.transaction('commands').objectStore('commands').get([envelope.identityId,envelope.gameId,envelope.clientCommandId]);read.onerror=()=>{db.close();reject(read.error);};read.onsuccess=()=>{db.close();resolve(read.result??null);};};
+ }),original);
+ const observe=request=>{if(request.method()==='POST'&&new URL(request.url()).pathname===`/api/shell/games/${id}/apply`){const envelope=request.postDataJSON();if(!envelope.payload?.computer)applies.push(envelope);}};
+ page.on('request',observe);
+ await page.route(pattern,async route=>{
+  const request=route.request(),path=new URL(request.url()).pathname;
+  if(request.method()==='POST'&&path.endsWith('/shared')){
+   const envelope=request.postDataJSON();
+   if(envelope.payload?.operation==='computer-control'&&envelope.payload.values?.action==='renew'){
+    if(!original){original=envelope;originalHeaders=Object.fromEntries(Object.entries(request.headers()).filter(([name])=>name==='content-type'||name.startsWith('x-righelt-')));}
+    deliveries.push(envelope);await held;
+   }
+  }else if(original&&path.endsWith('/reconcile'))await held;
+  await route.continue();
+ });
+ try{
+  await expect.poll(()=>Boolean(original)).toBe(true);
+  expect(await readJournal()).toEqual(original);
+  expect(original.expectedState).toEqual(before.board.state);expect(original.expectedGameplayRevision).toBe(before.gameplayRevision);
+  const preClickClasses={source:await source.getAttribute('class'),target:await target.getAttribute('class')};
+  await info.attach('held-control-preclick-classes',{contentType:'application/json',body:JSON.stringify(preClickClasses)});
+  const fenced=await projected(page,id);expect(fenced.board).toEqual(before.board);expect(fenced.moves).toEqual(before.moves);expect(fenced.gameplayRevision).toBe(before.gameplayRevision);
+  expect(applies).toEqual([]);
+  await target.click();
+  await expect(source).toHaveClass(/(?:^|\s)source(?:\s|$)/);
+  await expect(target).toHaveClass(/(?:^|\s)target(?:\s|$)/);
+  expect(applies).toEqual([]);expect(await readJournal()).toEqual(original);
+  const blocked=await projected(page,id);expect(blocked.board).toEqual(before.board);expect(blocked.moves).toEqual(before.moves);expect(blocked.gameplayRevision).toBe(before.gameplayRevision);
+  release();await expect.poll(readJournal).toBe(null);
+  const response=await page.request.post(`/api/shell/games/${id}/reconcile`,{headers:originalHeaders,data:{protocolVersion:2,identityId:original.identityId,knownSnapshotEventSeq:0,commands:[original]}});
+  expect(response.ok()).toBe(true);const body=await response.json(),outcomes=body.commandOutcomes.filter(value=>value.clientCommandId===original.clientCommandId);
+  expect(outcomes).toHaveLength(1);expect(outcomes[0]).toMatchObject({outcome:'accepted',fingerprint:original.fingerprint,gameplayRevision:before.gameplayRevision});
+  expect(applies).toEqual([],'settlement must not replay the blocked click');
+  await expect(source).toHaveClass(/(?:^|\s)source(?:\s|$)/);await expect(target).toHaveClass(/(?:^|\s)target(?:\s|$)/);await expect(target).not.toHaveClass(/unselectable/);
+  await target.click();
+  await expect.poll(()=>applies.length).toBe(1);expect(applies[0].payload.action).toEqual(action);
+  await expect.poll(async()=>(await projected(page,id)).moves.filter(move=>move.clientCommandId===applies[0].clientCommandId).length).toBe(1);
+  const after=await projected(page,id),human=after.moves.filter(move=>move.clientCommandId===applies[0].clientCommandId);
+  expect(human).toHaveLength(1);expect(human[0].action).toEqual(action);expect(after.gameplayRevision).toBeGreaterThanOrEqual(before.gameplayRevision+1);
+  expect(applies).toHaveLength(1);for(const envelope of deliveries)expect(envelope).toEqual(original);
+  await info.attach('blocked-renewal-and-explicit-confirmation',{contentType:'application/json',body:JSON.stringify({original,outcome:outcomes[0],action,submitted:applies[0]},null,2)});
+ }finally{release();page.off('request',observe);await page.unrouteAll({behavior:'wait'});}
+});
 
 test('closing the original tab automatically restores computer play in a new tab with the same owner',async({page,context},info)=>{
  const id=await createComputer(page);const next=await context.newPage();await page.close();
