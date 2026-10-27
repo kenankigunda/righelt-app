@@ -42,8 +42,11 @@ export function computerBoardMessage(game, status, { selectedPieceId } = {}) {
     if (status?.phase === 'recovery') return `${name} needs a hand`;
     if (status?.phase === 'other-device') return `${name} is thinking`;
     if (status?.phase === 'paused') return `${name} is paused`;
+    if (game.pendingComputerControl) return 'Updating computer play';
+    if (status?.phase === 'resuming') return `Resuming ${name}`;
     if (game.pendingComputerSaveStartedAt != null) return phase.phaseElapsedMs >= COMPUTER_TIMING.phaseLabelAfterMs ? `${name} is saving their move` : `${name} is thinking`;
     if (game.computer.paused) return `${name} is paused`;
+    if (!phase.phase || phase.phase === 'idle') return status?.activity?.showRecoveryNotice ? `${name} needs a hand` : `Waiting for ${name}`;
     if (['preparing','initializing-verified-runtime'].includes(status?.phase)) return `Preparing ${name}`;
     if (phase.phaseElapsedMs >= COMPUTER_TIMING.phaseLabelAfterMs) {
       if (phase.phase === 'saving') return `${name} is saving their move`;

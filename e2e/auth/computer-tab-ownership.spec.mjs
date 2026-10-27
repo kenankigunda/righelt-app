@@ -36,6 +36,11 @@ test('same-tab relogin cannot reuse the old lease and Resume here acknowledges f
   if(isOperationRequest(route.request(),'computer-control')&&operationValues(route.request())?.action==='release')return route.abort();
   return route.continue();
  });
+ let computerSubmissions=0;
+ const observeComputerSubmission=request=>{
+  if(request.method()==='POST'&&/\/(apply|end-turn)$/.test(new URL(request.url()).pathname)&&request.postDataJSON()?.payload?.computer)computerSubmissions++;
+ };
+ page.on('request',observeComputerSubmission);
  try{
   await page.getByTestId('account-open').click();
   await expect.poll(async()=>{const current=await projected(page,game.id);return current.computer.lease.expiresAt-Date.now();}).toBeGreaterThan(10000);
@@ -50,8 +55,10 @@ test('same-tab relogin cannot reuse the old lease and Resume here acknowledges f
   const retained=await projected(page,game.id);
   expect(retained.computer.generation).toBe(before.computer.generation);expect(retained.computer.lease.deviceId).toBe(before.computer.lease.deviceId);
   expect(retained.computer.lease.expiresAt).toBeGreaterThan(Date.now());expect(retained.computer.lease).not.toHaveProperty('authContextId');
-  await expect(card('Needs attention')).toBeVisible();await expect(card('Active here')).toHaveCount(0);
-  await card('Needs attention').press('Enter');const resume=page.getByRole('button',{name:'Resume here',exact:true});await expect(resume).toBeEnabled();
+  expect(retained.gameplayRevision).toBe(before.gameplayRevision);expect(retained.moves).toEqual(before.moves);
+  expect(computerSubmissions).toBe(0);
+  await expect(card('Waiting for a turn')).toBeVisible();await expect(card('Active here')).toHaveCount(0);
+  await card('Waiting for a turn').press('Enter');const resume=page.getByRole('button',{name:'Resume here',exact:true});await expect(resume).toBeEnabled();
   const resumeRequest=page.waitForRequest(request=>isOperationRequest(request,'computer-control')&&operationValues(request)?.action==='resume-here');
   await resume.focus();await resume.press('Enter');const command=(await resumeRequest).postDataJSON();expect(command.kind).toBe('shared');
   await expect(card('Active here')).toBeVisible();await expect(card('Active here')).toHaveAttribute('aria-expanded','true');await expect(card('Active here')).toBeFocused();await expect(resume).toHaveCount(0);
@@ -59,6 +66,7 @@ test('same-tab relogin cannot reuse the old lease and Resume here acknowledges f
   expect(after.computer.generation).toBeGreaterThan(before.computer.generation);expect(after.computer.lease.deviceId).toBe(before.computer.lease.deviceId);
   expect(after.computer.seats).toEqual(before.computer.seats);expect(after.computer.modelId).toBe(before.computer.modelId);
   expect(after.gameplayRevision).toBe(before.gameplayRevision);expect(after.moves).toEqual(before.moves);
+  expect(computerSubmissions).toBe(0);
   await page.screenshot({path:info.outputPath('computer-current-session-active.png')});
- }finally{await context.unrouteAll({behavior:'wait'});}
+ }finally{page.off('request',observeComputerSubmission);await context.unrouteAll({behavior:'wait'});}
 });

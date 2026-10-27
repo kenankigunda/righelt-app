@@ -61,3 +61,20 @@ test('a terminal protocol mismatch exposes disabled card recovery with a reload 
   assert.match(result.disabledReason,/Reload the game/);assert.equal(result.showRecoveryNotice,false);
  }
 });
+
+test('intentional background inactivity and an unclaimed human turn remain quiet',()=>{
+ const c=context();c.game.computer.lease=null;c.visible=false;
+ assert.equal(computerActivity(c).label,'Inactive in this tab');assert.equal(computerActivity(c).showRecoveryNotice,false);
+ c.visible=true;c.game.board.state.sideToMove='P1';
+ assert.equal(computerActivity(c).label,'Waiting for a turn');assert.equal(computerActivity(c).showResume,true);assert.equal(computerActivity(c).showRecoveryNotice,false);
+ c.game.board.state.sideToMove='P2';assert.equal(computerActivity(c).label,'Needs attention');assert.equal(computerActivity(c).showRecoveryNotice,true);
+ c.game.board.state.sideToMove='P1';c.lastAcquisitionFailure={code:'session_changed'};assert.equal(computerActivity(c).label,'Needs attention');
+});
+
+test('a retained unacknowledged lease stays quiet on the human turn without claiming local authority',()=>{
+ const c=context();c.controlAcknowledged=false;c.game.board.state.sideToMove='P1';
+ const human=computerActivity(c);
+ assert.equal(human.label,'Waiting for a turn');assert.equal(human.activeHere,false);assert.equal(human.showResume,true);assert.equal(human.disabledReason,null);assert.equal(human.showRecoveryNotice,false);
+ c.game.board.state.sideToMove='P2';const computer=computerActivity(c);
+ assert.equal(computer.label,'Needs attention');assert.equal(computer.activeHere,false);assert.equal(computer.showResume,true);assert.equal(computer.showRecoveryNotice,false,'a still-live unacknowledged lease does not bypass the existing delayed recovery gate');
+});
