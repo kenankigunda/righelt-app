@@ -2231,3 +2231,18 @@ textarea:focus-visible {
 .home-card-matchup {display:inline-flex;align-items:center;flex-wrap:wrap;gap:.3rem;max-width:100%;min-width:0;overflow-wrap:anywhere;}
 .home-card-matchup .mini-board-card-connection-item {max-width:100%;min-width:0;}
 .home-card-matchup strong {min-width:0;}
+
+/* Keep invitation recovery actions usable with enlarged text and narrow cards. */
+.invite-load-recovery {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.invite-load-recovery .invite-choice-row > :is(button, .button-link) {
+  min-height: 44px;
+  max-width: 100%;
+  white-space: normal;
+}
+
+.invite-load-status { display: grid; }
+.invite-load-status > p { grid-area: 1 / 1; }
+.invite-load-status-sizing { visibility: hidden; pointer-events: none; }

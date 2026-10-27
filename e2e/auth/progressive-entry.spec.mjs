@@ -302,6 +302,12 @@ test("sign-in creation hint waits five seconds after username blur without routi
   await page.clock.resume();
   await dialog(page).getByRole("link", { name: "Create a new account.", exact: true }).click();
   await expect(dialog(page).getByRole("heading", { name: "Create account", exact: true })).toBeVisible();
+  // Explicit creation starts a real debounced lookup. Join its successful UI
+  // result before teardown closes the page that owns the request.
+  await expect(username).toHaveValue("NewPlayer");
+  await expect(dialog(page).locator("form")).toHaveAttribute("data-lookup-state", /^(available|taken)$/);
+  await expect(dialog(page).locator("[data-username-status]")).toHaveAttribute("data-loading-state", "idle");
+  expect(lookups).toBe(1);
 });
 
 test("password input, username edits and refocus cancel the delayed sign-in hint", async ({ page }) => {

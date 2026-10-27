@@ -3,6 +3,43 @@ import { ensureActionActorSelected } from "../e2e/support/app.mjs";
 
 const cell = (page, row, col) => page.locator(`.cell[data-row="${row}"][data-col="${col}"]`);
 
+test('a pending control preserves a prepared destination until a fresh native confirmation', async ({ page }) => {
+  await page.goto('/browser-integration/support/board.html');
+  await page.waitForFunction(() => window.fixtureReady);
+  await page.evaluate(() => window.boardFixture.setup('move'));
+  await cell(page, 4, 2).click(); await cell(page, 4, 3).hover();
+  const prepared = await page.evaluate(() => window.boardFixture.selection());
+  expect(prepared).toEqual({selectedPieceId:'A',source:{row:4,col:2},target:{row:4,col:3}});
+  await page.evaluate(() => window.boardFixture.gateInteraction(true));
+  await expect(cell(page, 4, 3)).toHaveClass(/unselectable/);
+  await cell(page, 4, 3).click();
+  expect(await page.evaluate(() => window.boardFixture.selection())).toEqual(prepared);
+  expect(await page.evaluate(() => window.boardFixture.applied())).toEqual([]);
+  await page.evaluate(() => window.boardFixture.gateInteraction(false));
+  expect(await page.evaluate(() => window.boardFixture.selection())).toEqual(prepared);
+  expect(await page.evaluate(() => window.boardFixture.applied())).toEqual([]);
+  await cell(page, 4, 3).click();
+  await expect.poll(() => page.evaluate(() => window.boardFixture.applied())).toEqual([
+    {type:'move',actorId:'A',from:{row:4,col:2},to:{row:4,col:3}},
+  ]);
+});
+
+test('status-only control settlement restores actionable destination styling without pointer movement', async ({ page }) => {
+  await page.goto('/browser-integration/support/board.html');
+  await page.waitForFunction(() => window.fixtureReady);
+  await page.evaluate(() => window.boardFixture.setup('move'));
+  await cell(page, 4, 2).click(); await cell(page, 4, 3).hover();
+  const prepared = await page.evaluate(() => window.boardFixture.selection());
+  await page.evaluate(() => window.boardFixture.gateInteraction(true));
+  await expect(cell(page, 4, 3)).toHaveClass(/unselectable/);
+  await page.evaluate(() => window.boardFixture.gateInteraction(false));
+  await expect(cell(page, 4, 3)).not.toHaveClass(/unselectable/);
+  await expect(cell(page, 4, 3)).toHaveClass(/(?:^|\s)target(?:\s|$)/);
+  expect(await page.evaluate(() => window.boardFixture.selection())).toEqual(prepared);
+  expect(await page.evaluate(() => window.boardFixture.applied())).toEqual([]);
+});
+
+
 for (const lateSnapshot of [false, true]) {
   test(`mandatory actor preparation preserves native previews with ${lateSnapshot ? "a late restored selection" : "a cleared selection"}`, async ({ page }) => {
     await page.goto("/browser-integration/support/board.html");

@@ -27,6 +27,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "viewer-summary.test.mjs",
   "players-panel.test.mjs",
   "panel-loading.test.mjs",
+  "invite-load-recovery.test.mjs",
   "desktop-board-fit.test.mjs",
   "board-visual-refresh.test.mjs",
   "event-labels.test.mjs",

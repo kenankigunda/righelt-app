@@ -1,8 +1,8 @@
 import {writeFile} from 'node:fs/promises';
 import {test,expect} from '@playwright/test';
 const ready=async page=>{await page.goto('/browser-integration/support/loading-edge.html');await page.waitForFunction(()=>window.edgeReady);await expect(page.locator('.loading-edge-frame')).toHaveCount(1);};
-test('edge cut protects real labels, axes, controls and grid at every board format',async({page},info)=>{
- for(const [width,scale] of [[320,100],[320,200],[390,200],[768,100],[932,100],[933,100],[944,200],[1440,100]]){
+for(const [width,scale] of [[320,100],[320,200],[390,200],[768,100],[932,100],[933,100],[944,200],[1440,100]])
+test(`edge cut protects real labels, axes, controls and grid at every board format: ${width}px at ${scale}%`,async({page},info)=>{
   await page.setViewportSize({width,height:800});await ready(page);
   const rect=()=>page.locator('[data-shell-panel="board"]').evaluate(node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};});
   await page.evaluate(scale=>document.documentElement.style.fontSize=`${scale}%`,scale);await page.evaluate(()=>{document.fonts.dispatchEvent(new Event('loadingdone'));return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
@@ -22,7 +22,6 @@ test('edge cut protects real labels, axes, controls and grid at every board form
   expect(await rect()).toEqual(before);
   if((width===390&&info.project.name==='webkit')||(width===1440&&info.project.name==='chromium'))await page.screenshot({path:info.outputPath(`edge-${width}-${scale}.png`),fullPage:true});
   await page.evaluate(()=>document.querySelector('.board-wrap').dataset.loadingState='idle');await expect(page.locator('.loading-edge-frame')).toHaveCount(0);expect(await rect()).toEqual(before);
- }
 });
 test('edge lifecycle removes stale geometry and preserves static reduced-motion feedback',async({page})=>{
  await ready(page);
