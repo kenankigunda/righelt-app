@@ -313,3 +313,17 @@ test('control receipt recovery uses operation-aware copy at the existing notice 
  assert.equal(needsRecoveryAction(g,16000),true);
  g.pendingComputerControl=false;assert.equal(recoveryMessage(g,16000),'Still checking your move. You can retry or view details.');
 });
+
+
+test('quiet renewal presentation does not replace human-turn narration with routine recovery copy', () => {
+ const game={recovering:true,syncStatus:'applying-update',pendingCommandCount:1,pendingComputerControl:true,sharedMutationsBlocked:true,recoveryStartedAt:1000};
+ assert.equal(recoveryMessage(game,6000,{quietComputerRenewal:true}),'');
+ assert.equal(isBoardRecoveryPending(game,{quietComputerRenewal:true,now:6000}),false);
+ assert.equal(game.sharedMutationsBlocked,true);assert.equal(game.pendingCommandCount,1);
+ assert.equal(recoveryMessage(game,6000),'Updating computer play');
+ for(const change of [{confirmationOverdue:true},{storageBlocked:true},{upgradeRequired:true},{recoveryIssue:'invalid_credentials'},{recoveryIssue:'invalid_response'}]){
+  const failed={...game,...change};assert.notEqual(recoveryMessage(failed,6000,{quietComputerRenewal:true}),'');
+ }
+ assert.match(recoveryMessage(game,16000,{quietComputerRenewal:true}),/retry or view details/);
+ assert.equal(isBoardRecoveryPending(game,{quietComputerRenewal:true,now:16000}),true);
+});

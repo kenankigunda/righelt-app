@@ -78,3 +78,38 @@ test('a retained unacknowledged lease stays quiet on the human turn without clai
  c.game.board.state.sideToMove='P2';const computer=computerActivity(c);
  assert.equal(computer.label,'Needs attention');assert.equal(computer.activeHere,false);assert.equal(computer.showResume,true);assert.equal(computer.showRecoveryNotice,false,'a still-live unacknowledged lease does not bypass the existing delayed recovery gate');
 });
+
+function freshRenewal() {
+  const c = context(); c.game.board.state.sideToMove = 'P1'; c.game.computer.generation = 3; c.renewing = true;
+  c.projection = { pendingCommandCount: 1, pendingComputerControl: true, sharedMutationsBlocked: true, syncStatus: 'applying-update',
+    pendingComputerControlRequest: { action: 'renew', deviceId: c.deviceId, generation: 3, submittedAt: c.now - 5000 } };
+  return c;
+}
+
+test('quiet renewal preserves acknowledged human-turn activity without changing uncertainty', () => {
+  const c = freshRenewal(), original = structuredClone(c);
+  assert.equal(computerActivity(c).label, 'Active here');
+  assert.equal(computerActivity(c).quietRenewal, true); assert.equal(computerActivity(c).showResume, false);
+  assert.deepEqual(c, original, 'presentation must not relax or rewrite the pending projection');
+});
+
+test('quiet renewal ends at lease expiry and rejects unknown, stale, manual and failed work', () => {
+  const changes = [
+    c => c.renewing = false, c => c.visible = false, c => c.authenticated = false,
+    c => c.controlAcknowledged = false, c => c.identityId = 'other-owner', c => c.game.canControlComputer = false,
+    c => c.game.computer.lease.expiresAt = c.now, c => c.game.computer.lease.deviceId = 'elsewhere',
+    c => c.game.board.state.sideToMove = 'P2', c => c.game.board.state.outcome.status = 'won', c => c.game.inHistoryMode = true, c => c.projection.inHistoryMode = true,
+    c => c.game.computer.paused = true, c => c.game.computer.manual = true, c => c.game.computer.takeoverTurn = 35,
+    c => c.resuming = true, c => c.lastAcquisitionFailure = { code: 'request_timeout' }, c => c.status.phase = 'recovery',
+    c => c.projection.pendingCommandCount = 2, c => c.projection.pendingComputerControl = false,
+    c => c.projection.syncStatus = 'confirming', c => c.projection.confirmationOverdue = true,
+    c => c.projection.recoveryIssue = 'unavailable', c => c.projection.storageBlocked = true,
+    c => c.projection.upgradeRequired = true, c => c.projection.unsavedCommand = true,
+    c => c.projection.pendingComputerControlRequest.action = 'pause', c => c.projection.pendingComputerControlRequest.action = 'resume-here',
+    c => c.projection.pendingComputerControlRequest.deviceId = 'old-device', c => c.projection.pendingComputerControlRequest.generation--,
+    c => c.projection.pendingComputerControlRequest.submittedAt = c.now + 1,
+    c => c.projection.pendingComputerControlRequest.submittedAt = c.now - 15000,
+    c => c.projection.pendingComputerControlRequest = null,
+  ];
+  for (const change of changes) { const c = freshRenewal(); change(c); assert.equal(computerActivity(c).quietRenewal, false, change.toString()); }
+});

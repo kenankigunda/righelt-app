@@ -123,7 +123,8 @@ syncAnnouncement.setAttribute("role", "status");
 syncAnnouncement.setAttribute("aria-live", "polite");
 syncAnnouncement.setAttribute("aria-atomic", "true");
 document.body.appendChild(syncAnnouncement);
-const presentedRecoveryMessage = game => recoveryMessage(game, Date.now(), { computerSaveActive: game?.id === getCurrentViewedGameId() && computerSession?.snapshot().phase === "saving" });
+const quietComputerRenewal = game => Boolean(game?.id === getCurrentViewedGameId() && computerSession?.snapshot().activity?.quietRenewal);
+const presentedRecoveryMessage = game => recoveryMessage(game, Date.now(), { computerSaveActive: game?.id === getCurrentViewedGameId() && computerSession?.snapshot().phase === "saving", quietComputerRenewal: quietComputerRenewal(game) });
 const updateRecoveryAnnouncement = (game) => {
   const failures = game ? [...new Set((transport.getFailedOperations?.(game.id) ?? []).map((operation) => operation.error?.message).filter(Boolean))] : [];
   const text = game ? [presentedRecoveryMessage(game), game.historyNotice, ...failures].filter(Boolean).join(" ") : "";
@@ -3299,7 +3300,7 @@ const getHistoryRecordedActionStartPiece = (game) => {
 let reconnectPresentationTimer;
 const updateReconnectPresentation = game => {
   const wrap = document.querySelector('[data-testid="game-board-wrap"]');
-  const recovering = isBoardRecoveryPending(game);
+  const recovering = isBoardRecoveryPending(game, { quietComputerRenewal: quietComputerRenewal(game) });
   if (wrap) {
     setActivityActor(wrap, activityActorSide(game));
     wrap.dataset.reconnecting = String(recovering);
