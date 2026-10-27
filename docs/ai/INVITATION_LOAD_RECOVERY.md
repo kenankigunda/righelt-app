@@ -1,0 +1,16 @@
+# Invitation load recovery
+
+A failed invitation lookup previously completed route hydration without an invitation or an explicit error. The renderer could then fall through to the generic game preview. This is a source finding. The retained CI169 trace proves a read exceeded its unchanged five-second deadline, but does not contain the final DOM needed to establish that this happened in production.
+
+The invitation now shows a concise failure in the existing invitation card, with Retry and Home. A manual retry uses the same route hydration function and performs one fresh lookup. Its button stays disabled while pending, Home remains available, and reserved status text keeps the recovery card stable with enlarged text. There is no retry timer or request-budget change. Confirmed missing, invalid or expired links show Home without Retry. A validated route that needs a protocol upgrade retains the existing upgrade recovery behavior.
+
+The canonical route hydration owns one route and authority epoch, and supplies the current-flight predicate. Semantic route changes retire pending work even when a cached game skips its data read. Only utility query parameters are excluded from the route key; token, role, game, account generation, transport and other query inputs remain fenced. The final presentation shares the captured read and request ID. Opening or dismissing Debug and other utilities, including passive replacement and resize normalization, preserves both settled errors and pending same-invitation reads without another lookup. No token, account identity or whole request is added to diagnostics.
+
+Validation is prepared at four layers:
+
+- Unit: transient versus terminal classification, concise recovery markup, pending and Home actions, escaped links, and canonical flight lifetime.
+- Integration: extract the actual route loader, completion, retry action and invite-render branch. Use the real hydration and diagnostic helpers with controlled network-boundary promises. Cover failed read → rapid Retry → success, terminal links, Home, changed token/game, A → B → A, account generation and transport separately, upgrade recovery, cached-game navigation, and the actual hashchange, passive dismissal and resize handlers. The failing-first surface test starts without stale metadata; stale metadata has a separate assertion.
+- Component: native DOM with the existing invitation fixture, production styles and loading scanner. Check icons, 44px targets, keyboard focus, overflow and unchanged error/retry card geometry at 320, 390 and 900px with 100% and 200% text.
+- Native local E2E: keep the real five-second transport deadline, hold one invitation GET, verify Retry/Home and one fresh lookup after a rapid double click, then join as viewer. Also cover a real missing invitation and a delayed successful response superseded by a different current invitation.
+
+No tests, dependency installation, build, generation or browser run is authorized until the Root validation window. Required commands and actual results belong in the private stream checkpoint. All fixtures use local synthetic games. Production games, histories, receipts, account activation and model configuration are outside this change.

@@ -6,6 +6,7 @@ import {syncMiniBoardPreviews} from '/apps/web/board/mini-board-preview.js';
 import {createEngineBoardAdapter,createInitialBoardSnapshot} from '/apps/web/board-adapters/engine-board-adapter.js';
 import {icon} from '/apps/web/shell/ui.js';
 import {renderInvitationSurface} from '/apps/web/shell/invitations.js';
+import {renderInviteLoadRecovery} from '/apps/web/shell/invite-load-recovery.js';
 import {createAdditionalHistory,canReadAdditionalHistory} from '/apps/web/shell/additional-history.js';
 import {patchSectionContent} from '/apps/web/shell/dom-patch.js';
 import {mountLoadingFeedback,loadingAttributes} from '/apps/web/shell/loading.js';
@@ -27,6 +28,7 @@ window.renderInvite=(role='blue',extra={})=>{
  const deps={joinFeedback:{message:()=>extra.joinFailure||null},routeHydrated:true,transport:{getGameViewModel:()=>game},renderGameContent:()=>'<section class="panel">Live board</section>',renderInvitationSurface,...seatHelpers,sideColorName,account:{snapshot:()=>({enabled:false})},currentRoute:{name:'invite'},escapeHtml,colorizePlayerReferences:escapeHtml,getJoinButtonKey:()=> 'join',buildHomeHash:()=> '#/',getCurrentFlyoutState:()=>({}),renderButtonStateAttributes:attrs,icon};
  root.innerHTML=Function(...Object.keys(deps),'context',`${extract('const renderInviteLanding =','const renderTutorial =')};return renderInviteLanding(context);`)(...Object.values(deps),context);
 };
+window.renderInviteRecovery=options=>{root.innerHTML=renderInvitationSurface({content:renderInviteLoadRecovery(options),background:'<section class="panel">Live board</section>'});};
 window.historyRequests=[];let revision=7;
 const owner={};
 const history=createAdditionalHistory({getScope:gameId=>({gameId,owner,generation:1,revision}),load:(scope,values)=>new Promise((resolve,reject)=>window.historyRequests.push({values,resolve:body=>resolve({gameplayRevision:revision,partial:false,...body}),reject})),onChange:()=>drawHistory()});

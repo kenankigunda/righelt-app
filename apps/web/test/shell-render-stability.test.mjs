@@ -207,7 +207,11 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /window\.addEventListener\("load", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
   assert.match(source, /syncFlyoutRenderOrder\(currentRoute\);/);
   assert.match(source, /if \(isFlyoutOnlyRouteChange\(previousRoute, nextRoute\)\) \{[\s\S]*render\(\);\s*return;\s*\}/s);
-  assert.match(source, /if \(isFlyoutOnlyRouteChange\(previousRoute, currentRoute\)\) \{[\s\S]*render\(\);\s*return;\s*\}/s);
+  assert.match(source, /if \(!routeReadChanged && isFlyoutOnlyRouteChange\(previousRoute, currentRoute\)\) \{[\s\S]*render\(\);\s*return;\s*\}/s);
+  const routeChange = source.slice(source.indexOf('window.addEventListener("hashchange"'), source.indexOf('let previousLayoutMode ='));
+  assert.match(routeChange, /const previousRouteEpoch = hydrateRoute\.currentEpoch\(\);\s*const routeReadChanged = captureRouteRead\(\)\.epoch !== previousRouteEpoch;/);
+  assert.ok(routeChange.indexOf('const routeReadChanged =') < routeChange.indexOf('const normalizedHash ='), 'Observe the route before normalization can skip hydration');
+  assert.ok(routeChange.indexOf('const routeReadChanged =') < routeChange.indexOf('if (canHydrateRouteFromLocalState(currentRoute))'), 'Observe the route before cached games can skip hydration');
   assert.match(source, /setFlyoutOpenState\("debug", true\);/);
   assert.match(source, /setFlyoutOpenState\("scenarios", true\);/);
   assert.match(source, /const animateFlyoutClose = async \(flyoutKey, closeFlyout\) => \{/);
@@ -438,10 +442,9 @@ test("app uses route skeleton sync and localized loading instead of a global bus
   assert.match(source, /startRouteSync\(\{ renderStart: false \}\);/);
   assert.match(source, /renderGameViewSkeleton\(\)/);
   assert.match(source, /renderInvitePageSkeleton\(\)/);
-  assert.match(
-    source,
-    /else if \(currentRoute\.name === "invite"\) \{\s*if \(!routeHydrated\) \{\s*body = renderInvitePageSkeleton\(\);/s,
-  );
+  const inviteRender = source.slice(source.indexOf('  } else if (currentRoute.name === "invite") {'), source.indexOf('  } else if (currentRoute.name === "tutorial") {'));
+  assert.match(inviteRender, /if \(inviteLoadState && routeReadIsCurrent\(inviteLoadState\.read\) && \(inviteLoadState\.status === "error" \|\| inviteLoadState\.retrying\)\) \{/);
+  assert.match(inviteRender, /body = renderInvitationSurface\(\{\s*content: renderInviteLoadRecovery\([\s\S]*?background: renderGameViewSkeleton\(\),\s*\}\);\s*\} else if \(!routeHydrated\) \{\s*body = renderInvitePageSkeleton\(\);/s);
   assert.match(source, /renderHomeSectionSkeleton/);
   assert.match(
     source,
