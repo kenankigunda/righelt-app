@@ -1,6 +1,7 @@
 import test, { beforeEach } from "node:test";
 import { IDBFactory } from "fake-indexeddb";
 import assert from "node:assert/strict";
+import { writeSync as writeCleanupFailure } from "node:fs";
 import { createLiveTransportStore as createActualTransportStore } from "../shell/live-transport.js";
 import { createCommandJournal } from '../shell/command-journal.js';
 import { issueDiagnostics } from '../shell/issue-diagnostics.js';
@@ -1996,10 +1997,30 @@ for(const status of [404,405])for(const protocolVersion of [1,2]) test(`missing 
 // the unobserved cause of WebKit's IndexedDB delay. All durable rows and later
 // successful operations use the real journal and its committed transactions.
 const cleanupTimeout = () => Object.assign(new Error('journal_timeout'), {code:'journal_timeout'});
-const drainCleanupEvents = async () => {
-  // fake-indexeddb delivers real request/transaction events on setImmediate;
-  // the mocked retry clock must not substitute for those commit events.
-  for(let i=0;i<32;i++)await new Promise(resolve=>setImmediate(resolve));
+// Record actual fixture operations and public transport events. A fixed number
+// of event-loop turns cannot establish IndexedDB or async fingerprint completion.
+const cleanupRealSetTimeout=globalThis.setTimeout,cleanupRealClearTimeout=globalThis.clearTimeout;
+const cleanupGatesByTest=new WeakMap();
+const stopIncompleteCleanupWorker = error => {
+  // Only this node:test file worker exits: pending old mock-clock callbacks must
+  // never survive into another fixture after a failed owned cleanup.
+  try{writeCleanupFailure(2,`Cleanup fixture did not settle; stopping its test worker: ${error?.stack??error}\n`);}
+  finally{process.exit(1);}
+};
+const cleanupPhaseLog = t => {
+  const entries=[],listeners=new Set(),deadlines=new Set();
+  t.after(()=>{for(const timer of deadlines)cleanupRealClearTimeout(timer);deadlines.clear();listeners.clear();});
+  return {
+    record(type,detail){const entry={type,...detail};entries.push(entry);for(const check of [...listeners])check();},
+    wait(type,ordinal=1,match=()=>true){
+      return new Promise((resolve,reject)=>{
+        const timer=cleanupRealSetTimeout(()=>{deadlines.delete(timer);listeners.delete(check);reject(new Error(`Missing cleanup phase ${type} #${ordinal}`));},5000);
+        deadlines.add(timer);
+        const check=()=>{const entry=entries.filter(value=>value.type===type&&match(value))[ordinal-1];if(entry){listeners.delete(check);cleanupRealClearTimeout(timer);deadlines.delete(timer);resolve(entry);}};
+        listeners.add(check);check();
+      });
+    },
+  };
 };
 const terminalCleanupStore = async (t,label,{auth=null,accepted=true}={}) => {
   t.mock.timers.enable({apis:['setTimeout','Date'],now:Date.now()});
@@ -2007,14 +2028,22 @@ const terminalCleanupStore = async (t,label,{auth=null,accepted=true}={}) => {
   let game=buildLiveGame();game.id=`game-cleanup-${label}`;game.sharedReceipts=true;
   if(auth?.enabled)game.ownershipMode='account_v1';
   const indexedDB=new IDBFactory(),durable=createCommandJournal({indexedDB});
-  const calls={admit:[],list:[],remove:[],network:[]},completions=[];let eventSeq=1;
+  const calls={admit:[],list:[],remove:[],network:[]},completions=[],journalSettlements=[],ownedGates=new Set(),phases=cleanupPhaseLog(t);let eventSeq=1;
+  cleanupGatesByTest.set(t,ownedGates);
+  const operation=(kind,detail,run)=>{
+    const completion=(async()=>run())();
+    // Keep an always-settled observation separate from the real rejection path.
+    const settled=completion.then(value=>({ok:true,value}),error=>({ok:false,error}));
+    journalSettlements.push(settled);
+    phases.record(kind,{...detail,settled});return completion;
+  };
   const hooks={remove:async(_envelope,remove,count)=>{if(count===1)throw cleanupTimeout();return remove();}};
   const journal={
-    admit:async envelope=>{calls.admit.push(clone(envelope));return hooks.admit?hooks.admit(envelope,()=>durable.admit(envelope),calls.admit.length):durable.admit(envelope);},
-    list:async(...args)=>{calls.list.push(clone(args));return hooks.list?hooks.list(args,()=>durable.list(...args),calls.list.length):durable.list(...args);},
-    remove:async envelope=>{
-      calls.remove.push(clone(envelope));
-      return hooks.remove?hooks.remove(envelope,()=>durable.remove(envelope),calls.remove.length):durable.remove(envelope);
+    admit:envelope=>{calls.admit.push(clone(envelope));const count=calls.admit.length;return operation('admit',{envelope:clone(envelope),count},()=>hooks.admit?hooks.admit(envelope,()=>durable.admit(envelope),count):durable.admit(envelope));},
+    list:(...args)=>{calls.list.push(clone(args));const count=calls.list.length;return operation('list',{args:clone(args),count},()=>hooks.list?hooks.list(args,()=>durable.list(...args),count):durable.list(...args));},
+    remove:envelope=>{
+      calls.remove.push(clone(envelope));const count=calls.remove.length;
+      return operation('remove',{envelope:clone(envelope),count},()=>hooks.remove?hooks.remove(envelope,()=>durable.remove(envelope),count):durable.remove(envelope));
     },
     close:()=>durable.close(),
   };
@@ -2027,6 +2056,7 @@ const terminalCleanupStore = async (t,label,{auth=null,accepted=true}={}) => {
       }
       const body=JSON.parse(init.body);calls.network.push({url,body:clone(body)});
       const shared=String(url).endsWith('/shared'),apply=String(url).endsWith('/apply');
+      if(shared)phases.record('shared-request',{envelope:clone(body)});
       if(shared&&hooks.sharedResponse)await hooks.sharedResponse(body);
       if(apply)game=buildAcknowledgedGame(game,body.payload.action);
       if(apply)game.gameplayRevision=body.expectedGameplayRevision+1;
@@ -2046,7 +2076,20 @@ const terminalCleanupStore = async (t,label,{auth=null,accepted=true}={}) => {
         eventSeq,gameplayRevision:game.gameplayRevision,commandOutcomes},{headers:{[ACTION_CONTRACT_HEADER]:String(ACTION_CONTRACT_VERSION),...(auth?.storageGeneration?{[STORAGE_GENERATION_HEADER]:auth.storageGeneration}:{})}});
     },
   });
-  t.after(async()=>{store.retire();await Promise.allSettled(completions);await durable.close();t.mock.timers.reset();});
+  t.after(store.subscribe(change=>{if(change.gameId===game.id)phases.record('change',{change});}));
+  t.after(async()=>{
+    const deadline=cleanupRealSetTimeout(()=>stopIncompleteCleanupWorker(new Error('Cleanup fixture journal settlement timed out')),5000);
+    try{
+      store.retire();
+      // Cancel only fixture-owned holds, never invent a successful transaction.
+      for(const gate of ownedGates)gate.reject(Object.assign(new Error('fixture_retired'),{code:'session_changed'}));
+      await Promise.allSettled([...completions,...journalSettlements]);
+      await durable.close();
+    }catch(error){stopIncompleteCleanupWorker(error);}
+    cleanupRealClearTimeout(deadline);ownedGates.clear();cleanupGatesByTest.delete(t);
+    // Reached only after real settlement and close, never on cleanup timeout.
+    t.mock.timers.reset();
+  });
   store.applyLiveGameUpdate({game,eventSeq});
   // Complete genuine initial journal hydration so later network catch-up cannot
   // itself retry storage cleanup as a side effect of initial hydration.
@@ -2054,12 +2097,15 @@ const terminalCleanupStore = async (t,label,{auth=null,accepted=true}={}) => {
   return {store,durable,indexedDB,game,calls,hooks,view:()=>store.getGameViewModel(game.id),
     control:()=>{const completion=store.computerControl(game.id,{action:'renew',deviceId:'cleanup-device',generation:1}).then(value=>({ok:true,value}),error=>({ok:false,error}));completions.push(completion);return completion;},
     replaceGame:next=>{game=next;store.applyLiveGameUpdate({game,eventSeq:++eventSeq});},
-    advance:async ms=>{t.mock.timers.tick(ms);await drainCleanupEvents();}};
+    phase:phases.wait,
+    change:(type,ordinal=1,code=null)=>phases.wait('change',ordinal,entry=>entry.change.type===type&&(!code||entry.change.error?.code===code)),
+    settled:async(kind,ordinal)=>{const entry=await phases.wait(kind,ordinal);return entry.settled;},
+    advance:async ms=>{t.mock.timers.tick(ms);}};
 };
 const terminalCleanupFixture = async (t,label,options) => {
   const h=await terminalCleanupStore(t,label,options),{store,durable,game,calls}=h;
   const result=await h.control();assert.equal(result.ok,options?.accepted!==false);
-  await drainCleanupEvents();
+  await h.change('journal_blocked',1,'journal_timeout');
   const command=calls.network.find(entry=>String(entry.url).endsWith('/shared')).body;
   assert.equal(command.payload.operation,'computer-control');
   assert.equal(store.getCommandOutcome(game.id,command.clientCommandId).outcome,options?.accepted===false?'rejected':'accepted');
@@ -2070,11 +2116,11 @@ const terminalCleanupFixture = async (t,label,options) => {
   return {...h,command};
 };
 
-test('terminal receipt cleanup recovers after a timeout using only its original durable envelope',async t=>{
+test('terminal receipt cleanup recovers after a timeout using only its original durable envelope',{timeout:5000},async t=>{
   const h=await terminalCleanupFixture(t,'recovers');
   const before=clone(h.store.getAuthoritativeGame(h.game.id)),networkBefore=clone(h.calls.network),listCallsBefore=h.calls.list.length;
   await h.advance(499);assert.equal(h.calls.remove.length,1,'no retry before the existing first delay');
-  await h.advance(1);
+  await h.advance(1);await h.change('journal_cleanup_recovered');
   assert.equal(h.view().storageBlocked,false,'verified local cleanup should release its own storage fence');
   assert.equal(h.view().sharedMutationsBlocked,false);
   assert.deepEqual(h.calls.remove,[h.command,h.command],'cleanup retries the exact original envelope once');
@@ -2085,7 +2131,7 @@ test('terminal receipt cleanup recovers after a timeout using only its original 
   assert.deepEqual(h.calls.admit,[h.command],'cleanup must not create or admit a new command');
 });
 
-test('terminal receipt cleanup diagnostic remains open until storage is verified despite network recovery',async t=>{
+test('terminal receipt cleanup diagnostic remains open until storage is verified despite network recovery',{timeout:5000},async t=>{
   const h=await terminalCleanupFixture(t,'diagnostic');
   const incidentId=h.view().incidentId;assert.ok(incidentId);
   assert.equal(issueDiagnostics.get(incidentId).initial.stage,'journal_cleanup');
@@ -2097,111 +2143,118 @@ test('terminal receipt cleanup diagnostic remains open until storage is verified
   assert.deepEqual(await h.durable.list('id-a',h.game.id),[h.command]);
   const incident=issueDiagnostics.get(incidentId);assert.ok(incident);
   assert.equal(incident.resolvedAt==null,true,'an outstanding storage fence must keep its incident open');
-  await h.advance(500);
+  await h.advance(500);await h.change('journal_cleanup_recovered');
   assert.equal(h.view().storageBlocked,false);
   assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
   assert.ok(issueDiagnostics.get(incidentId).resolvedAt,'verified cleanup and completed network recovery may resolve the incident');
 });
 
-const cleanupDeferred = () => {
-  let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});
-  return {promise,resolve,reject};
+const cleanupDeferred = t => {
+  let resolve,reject,settled=false;
+  const promise=new Promise((yes,no)=>{
+    resolve=value=>{if(!settled){settled=true;yes(value);}};
+    reject=error=>{if(!settled){settled=true;no(error);}};
+  });
+  // Failure teardown may cancel a hold before its assertion reaches the await.
+  void promise.catch(()=>{});
+  const gate={promise,resolve,reject};cleanupGatesByTest.get(t)?.add(gate);return gate;
 };
 const cleanupScope = () => ({enabled:true,storageGeneration:'cleanup-storage',session:{authenticated:true,contextId:'a'.repeat(64),account:{id:'id-a'}}});
 
-test('terminal receipt cleanup also recovers an exact rejected receipt',async t=>{
+test('terminal receipt cleanup also recovers an exact rejected receipt',{timeout:5000},async t=>{
   const h=await terminalCleanupFixture(t,'rejected',{accepted:false});
-  await h.advance(500);
+  await h.advance(500);await h.change('journal_cleanup_recovered');
   assert.equal(h.view().storageBlocked,false);assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
   assert.deepEqual(h.calls.remove,[h.command,h.command]);
   assert.equal(h.calls.network.filter(entry=>String(entry.url).endsWith('/shared')).length,1);
 });
 
-test('terminal receipt cleanup remains safe after legitimate role and lease changes',async t=>{
+test('terminal receipt cleanup remains safe after legitimate role and lease changes',{timeout:5000},async t=>{
   const h=await terminalCleanupFixture(t,'role-change');
   h.replaceGame({...h.game,myRole:'Viewer',canRecordMove:false,canEndTurn:false,
     computerControl:{ownerIdentityId:'id-b',ownerDeviceId:'other-device',generation:9,expiresAt:Date.now()+10000}});
-  await h.advance(500);
+  await h.advance(500);await h.change('journal_cleanup_recovered');
   assert.equal(h.view().storageBlocked,false);assert.equal(h.view().myRole,'Viewer');assert.equal(h.view().canRecordMove,false);
   assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);assert.deepEqual(h.calls.remove,[h.command,h.command]);
 });
 
-test('terminal receipt cleanup retries readback timeout after removal committed without orphaning its reason',async t=>{
+test('terminal receipt cleanup retries readback timeout after removal committed without orphaning its reason',{timeout:5000},async t=>{
   const h=await terminalCleanupFixture(t,'readback');let failedRead=false;
   h.hooks.list=async(_args,read)=>{if(!failedRead){failedRead=true;throw cleanupTimeout();}return read();};
   const network=clone(h.calls.network);
-  await h.advance(500);
+  await h.advance(500);await h.change('journal_blocked',2,'journal_timeout');
   assert.deepEqual(await h.durable.list('id-a',h.game.id),[],'the removal actually committed before readback failed');
   assert.equal(h.view().storageBlocked,true);assert.equal(h.calls.remove.length,2);
-  await h.advance(1000);
+  await h.advance(1000);await h.change('journal_cleanup_recovered');
   assert.equal(h.view().storageBlocked,false);assert.equal(h.calls.remove.length,3);
   assert.deepEqual(h.calls.remove,[h.command,h.command,h.command]);assert.deepEqual(h.calls.network,network);
 });
 
-test('terminal receipt cleanup stops after two local timeout retries and remains manually recoverable',async t=>{
+test('terminal receipt cleanup stops after two local timeout retries and remains manually recoverable',{timeout:5000},async t=>{
   const h=await terminalCleanupFixture(t,'permanent');h.hooks.remove=async()=>{throw cleanupTimeout();};
   const network=clone(h.calls.network);
-  await h.advance(500);await h.advance(1000);await h.advance(60000);
+  await h.advance(500);await h.change('journal_blocked',2,'journal_timeout');
+  await h.advance(1000);await h.change('journal_blocked',3,'journal_timeout');await h.advance(60000);
   assert.equal(h.calls.remove.length,3);assert.equal(h.view().storageBlocked,true);
   assert.deepEqual(await h.durable.list('id-a',h.game.id),[h.command]);assert.deepEqual(h.calls.network,network);
-  h.hooks.remove=null;await h.store.retrySaving(h.game.id);await drainCleanupEvents();
+  h.hooks.remove=null;await h.store.retrySaving(h.game.id);
   assert.equal(h.view().storageBlocked,false);assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
 });
 
-for(const invalid of ['unknown','unavailable','fingerprint'])test(`terminal receipt cleanup never deletes a command with ${invalid} receipt`,async t=>{
+for(const invalid of ['unknown','unavailable','fingerprint'])test(`terminal receipt cleanup never deletes a command with ${invalid} receipt`,{timeout:5000},async t=>{
   const h=await terminalCleanupStore(t,`receipt-${invalid}`);
   h.hooks.receipt=outcome=>{if(invalid==='fingerprint')outcome.fingerprint='f'.repeat(64);else outcome.outcome=invalid;};
-  void h.control();await drainCleanupEvents();
+  void h.control();await h.change('optimistic_confirming');
   const command=h.calls.network.find(entry=>String(entry.url).endsWith('/shared'))?.body;assert.ok(command);
   assert.equal(h.calls.remove.length,0);assert.equal(h.view().pendingCommandCount,1);assert.equal(h.view().sharedMutationsBlocked,true);
   assert.deepEqual(await h.durable.list('id-a',h.game.id),[command]);
   assert.equal(h.store.getCommandOutcome(h.game.id,command.clientCommandId),null);
 });
 
-test('terminal receipt cleanup cannot remove a conflicting replacement record',async t=>{
+test('terminal receipt cleanup cannot remove a conflicting replacement record',{timeout:5000},async t=>{
   const h=await terminalCleanupFixture(t,'replacement');
   await h.durable.remove(h.command);
   const replacement=clone(h.command);replacement.payload.values.generation=2;replacement.fingerprint=await commandFingerprint(replacement);
   await h.durable.admit(replacement);
-  await h.advance(500);await h.advance(1000);
+  await h.advance(500);await h.change('journal_blocked',1,'command_id_conflict');await h.advance(1000);
   assert.equal(h.calls.remove.length,2,'a conflict is not an eligible timeout retry');assert.equal(h.view().storageBlocked,true);
   assert.deepEqual(await h.durable.list('id-a',h.game.id),[replacement]);
 });
 
-test('terminal receipt cleanup keeps two failed cleanup owners independent',async t=>{
-  const h=await terminalCleanupStore(t,'two-owners'),gates=[cleanupDeferred(),cleanupDeferred()];
+test('terminal receipt cleanup keeps two failed cleanup owners independent',{timeout:5000},async t=>{
+  const h=await terminalCleanupStore(t,'two-owners'),gates=[cleanupDeferred(t),cleanupDeferred(t)];
   h.hooks.remove=async(_envelope,remove,count)=>count<=2?gates[count-1].promise:remove();
   assert.equal((await h.control()).ok,true);assert.equal((await h.control()).ok,true);
   const [first,second]=h.calls.remove;assert.ok(first&&second);assert.notEqual(first.clientCommandId,second.clientCommandId);
-  gates.forEach(gate=>gate.reject(cleanupTimeout()));await drainCleanupEvents();
+  gates.forEach(gate=>gate.reject(cleanupTimeout()));await h.change('journal_blocked',2,'journal_timeout');
   h.hooks.remove=async(envelope,remove)=>{if(envelope.clientCommandId===second.clientCommandId)throw cleanupTimeout();return remove();};
-  await h.advance(500);
+  await h.advance(500);await h.change('journal_cleanup_recovered');await h.change('journal_blocked',3,'journal_timeout');
   assert.equal(h.view().storageBlocked,true);assert.deepEqual(await h.durable.list('id-a',h.game.id),[second]);
-  h.hooks.remove=null;await h.advance(1000);
+  h.hooks.remove=null;await h.advance(1000);await h.change('journal_cleanup_recovered',2);
   assert.equal(h.view().storageBlocked,false);assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
   assert.equal(h.calls.network.filter(entry=>String(entry.url).endsWith('/shared')).length,2);
 });
 
-test('terminal receipt cleanup preserves an already tracked valid durable pending command',async t=>{
-  const h=await terminalCleanupStore(t,'tracked-pending'),initial=cleanupDeferred(),pendingResponse=cleanupDeferred();
+test('terminal receipt cleanup preserves an already tracked valid durable pending command',{timeout:5000},async t=>{
+  const h=await terminalCleanupStore(t,'tracked-pending'),initial=cleanupDeferred(t),pendingResponse=cleanupDeferred(t);
   h.hooks.remove=async(_envelope,remove,count)=>count===1?initial.promise:remove();await h.control();
-  h.hooks.sharedResponse=()=>pendingResponse.promise;const completion=h.control();await drainCleanupEvents();
+  h.hooks.sharedResponse=()=>pendingResponse.promise;const completion=h.control();await h.phase('shared-request',2);
   const second=h.calls.network.filter(entry=>String(entry.url).endsWith('/shared')).at(-1).body;
-  assert.equal(h.view().pendingCommandCount,1);initial.reject(cleanupTimeout());await drainCleanupEvents();await h.advance(500);
+  assert.equal(h.view().pendingCommandCount,1);initial.reject(cleanupTimeout());await h.change('journal_blocked',1,'journal_timeout');await h.advance(500);await h.change('journal_cleanup_recovered');
   assert.equal(h.view().storageBlocked,false,'a legitimate tracked queue is not an unaccounted storage failure');
   assert.equal(h.view().sharedMutationsBlocked,true);assert.deepEqual(await h.durable.list('id-a',h.game.id),[second]);
-  pendingResponse.resolve();assert.equal((await completion).ok,true);await drainCleanupEvents();
+  pendingResponse.resolve();assert.equal((await completion).ok,true);assert.equal((await h.settled('remove',3)).ok,true);
   assert.equal(h.view().sharedMutationsBlocked,false);assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
 });
 
-test('terminal receipt cleanup successful initial commit does not manufacture a bulk hydration failure',async t=>{
-  const h=await terminalCleanupStore(t,'normal-bulk'),response=cleanupDeferred();
+test('terminal receipt cleanup successful initial commit does not manufacture a bulk hydration failure',{timeout:5000},async t=>{
+  const h=await terminalCleanupStore(t,'normal-bulk'),response=cleanupDeferred(t);
   h.hooks.remove=null;h.hooks.sharedResponse=()=>response.promise;
-  const completion=h.control();await drainCleanupEvents();
+  const completion=h.control();await h.phase('shared-request');
   const original=h.calls.admit[0];assert.ok(original);assert.equal(h.view().pendingCommandCount,1);
   const untracked={...clone(original),clientCommandId:'v2:bulk-pending'};untracked.fingerprint=await commandFingerprint(untracked);
   await h.durable.admit(untracked);
-  response.resolve();assert.equal((await completion).ok,true);await drainCleanupEvents();
+  response.resolve();assert.equal((await completion).ok,true);assert.equal((await h.settled('remove',1)).ok,true);
   assert.equal(h.view().storageBlocked,false,'a normal committed deletion must not create an unrelated recovery failure');
   assert.equal(h.view().pendingCommandCount,0);assert.deepEqual(await h.durable.list('id-a',h.game.id),[untracked]);
   assert.deepEqual(h.calls.remove,[original]);assert.deepEqual(h.calls.admit,[original]);
@@ -2209,8 +2262,8 @@ test('terminal receipt cleanup successful initial commit does not manufacture a 
 });
 
 test('terminal receipt cleanup retry accepts a known terminal row snapshot after its other job retires',{timeout:5000},async t=>{
-  const h=await terminalCleanupStore(t,'terminal-snapshot'),first=cleanupDeferred(),second=cleanupDeferred(),secondCommitted=cleanupDeferred();
-  const recovered=cleanupDeferred();
+  const h=await terminalCleanupStore(t,'terminal-snapshot'),first=cleanupDeferred(t),second=cleanupDeferred(t),secondCommitted=cleanupDeferred(t);
+  const recovered=cleanupDeferred(t);
   t.after(h.store.subscribe(change=>{if(change.gameId===h.game.id&&change.type==='journal_cleanup_recovered')recovered.resolve();}));
   let secondId,captured=false,snapshot;
   h.hooks.remove=async(envelope,remove,count)=>{
@@ -2222,11 +2275,11 @@ test('terminal receipt cleanup retry accepts a known terminal row snapshot after
   h.hooks.list=async(args,read)=>{
     const saved=await read();
     if(!captured&&args[1]===h.game.id&&saved.some(envelope=>envelope.clientCommandId===secondId)){
-      captured=true;snapshot=clone(saved);second.resolve();await secondCommitted.promise;await drainCleanupEvents();
+      captured=true;snapshot=clone(saved);second.resolve();await secondCommitted.promise;assert.equal((await h.settled('remove',2)).ok,true);
     }
     return saved;
   };
-  first.reject(cleanupTimeout());await drainCleanupEvents();await h.advance(500);
+  first.reject(cleanupTimeout());await h.change('journal_blocked',1,'journal_timeout');await h.advance(500);
   await recovered.promise;
   assert.equal(captured,true,'readback captured the second row before its real committed deletion');
   assert.equal(snapshot.length,1);assert.equal(snapshot[0].clientCommandId,secondId);
@@ -2235,36 +2288,36 @@ test('terminal receipt cleanup retry accepts a known terminal row snapshot after
   assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);assert.equal(h.calls.remove.length,3);
 });
 
-test('terminal receipt cleanup preserves a newer admission failure and restores only the original unsaved command manually',async t=>{
-  const h=await terminalCleanupStore(t,'new-admission'),initial=cleanupDeferred();
+test('terminal receipt cleanup preserves a newer admission failure and restores only the original unsaved command manually',{timeout:5000},async t=>{
+  const h=await terminalCleanupStore(t,'new-admission'),initial=cleanupDeferred(t);
   h.hooks.remove=async(_envelope,remove,count)=>count===1?initial.promise:remove();
   await h.control();
   h.hooks.admit=async(_envelope,admit,count)=>{if(count===2)throw Object.assign(new Error('journal_limit'),{code:'journal_limit'});return admit();};
   await assert.rejects(h.store.applyGameAction({gameId:h.game.id,state:h.game.board.state,action:h.game.legalActions[0]}),{code:'journal_limit'});
-  const unsaved=clone(h.calls.admit.at(-1));initial.reject(cleanupTimeout());await drainCleanupEvents();await h.advance(500);
+  const unsaved=clone(h.calls.admit.at(-1));initial.reject(cleanupTimeout());await h.change('journal_blocked',1,'journal_timeout');await h.advance(500);await h.change('journal_cleanup_recovered');
   assert.equal(h.view().storageBlocked,true);assert.equal(h.view().unsavedCommand,true);assert.equal(h.view().storageLimitReached,true);
   assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
   assert.equal(h.calls.network.some(entry=>String(entry.url).endsWith('/apply')),false);
-  await h.store.retrySaving(h.game.id);await drainCleanupEvents();
+  await h.store.retrySaving(h.game.id);
   assert.equal(h.view().storageBlocked,false);assert.equal(h.view().unsavedCommand,false);
   const applies=h.calls.network.filter(entry=>String(entry.url).endsWith('/apply'));
   assert.equal(applies.length,1);assert.deepEqual(applies[0].body,unsaved);
   assert.deepEqual(h.calls.admit.at(-1),unsaved,'manual recovery admits the existing envelope, not a new ID');
 });
 
-test('terminal receipt cleanup preserves a newer home hydration read failure',async t=>{
-  const h=await terminalCleanupStore(t,'new-hydration'),initial=cleanupDeferred();
+test('terminal receipt cleanup preserves a newer home hydration read failure',{timeout:5000},async t=>{
+  const h=await terminalCleanupStore(t,'new-hydration'),initial=cleanupDeferred(t);
   h.hooks.remove=async(_envelope,remove,count)=>count===1?initial.promise:remove();await h.control();
   h.hooks.list=async()=>{throw Object.assign(new Error('journal_open_failed'),{code:'journal_open_failed'});};
   await h.store.loadGamesPage({section:'my'});assert.equal(h.view().storageBlocked,true);
-  h.hooks.list=null;initial.reject(cleanupTimeout());await drainCleanupEvents();await h.advance(500);
+  h.hooks.list=null;initial.reject(cleanupTimeout());await h.change('journal_blocked',1,'journal_timeout');await h.advance(500);await h.change('journal_cleanup_recovered');
   assert.equal(h.view().storageBlocked,true,'an older cleanup cannot clear the hydration failure');
   assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
   const incident=issueDiagnostics.get(h.view().incidentId);assert.ok(incident);assert.equal(incident.resolvedAt==null,true);
 });
 
-test('terminal receipt cleanup does not clear another game identity-cap admission fence',async t=>{
-  const h=await terminalCleanupStore(t,'identity-cap'),initial=cleanupDeferred();
+test('terminal receipt cleanup does not clear another game identity-cap admission fence',{timeout:5000},async t=>{
+  const h=await terminalCleanupStore(t,'identity-cap'),initial=cleanupDeferred(t);
   h.hooks.remove=async(_envelope,remove,count)=>count===1?initial.promise:remove();await h.control();
   const original=h.calls.remove[0];
   for(let i=0;i<127;i++){
@@ -2274,22 +2327,22 @@ test('terminal receipt cleanup does not clear another game identity-cap admissio
   assert.equal((await h.durable.list('id-a')).length,128,'the real journal identity cap is full');
   const other={...clone(h.game),id:'other-cap-admission'};h.store.applyLiveGameUpdate({game:other,eventSeq:1});
   await assert.rejects(h.store.applyGameAction({gameId:other.id,state:other.board.state,action:other.legalActions[0]}),{code:'journal_limit'});
-  initial.reject(cleanupTimeout());await drainCleanupEvents();await h.advance(500);
+  initial.reject(cleanupTimeout());await h.change('journal_blocked',1,'journal_timeout');await h.advance(500);await h.change('journal_cleanup_recovered');
   assert.equal(h.view().storageBlocked,false);
   const blocked=h.store.getGameViewModel(other.id);assert.equal(blocked.storageBlocked,true);assert.equal(blocked.unsavedCommand,true);assert.equal(blocked.storageLimitReached,true);
   assert.equal((await h.durable.list('id-a')).length,127,'only the known terminal row was removed');
 });
 
-for(const foreign of [false,true])test(`terminal receipt cleanup preserves untracked stored intent foreign=${foreign}`,async t=>{
+for(const foreign of [false,true])test(`terminal receipt cleanup preserves untracked stored intent foreign=${foreign}`,{timeout:5000},async t=>{
   const h=await terminalCleanupFixture(t,`untracked-${foreign}`);
   const unknown={...clone(h.command),clientCommandId:'v2:untracked',...(foreign?{authContextId:'c'.repeat(64)}:{})};
   unknown.fingerprint=await commandFingerprint(unknown);await h.durable.admit(unknown);
-  await h.advance(500);await h.advance(1000);
+  await h.advance(500);await h.change('journal_blocked',1,foreign?'invalid_saved_command':'untracked_saved_command');await h.advance(1000);
   assert.equal(h.view().storageBlocked,true);assert.deepEqual(await h.durable.list('id-a',h.game.id),[unknown]);
   assert.equal(h.calls.remove.some(envelope=>envelope.clientCommandId===unknown.clientCommandId),false);
 });
 
-test('terminal receipt cleanup preserves a malformed durable record and keeps a separate fence',async t=>{
+test('terminal receipt cleanup preserves a malformed durable record and keeps a separate fence',{timeout:5000},async t=>{
   const h=await terminalCleanupFixture(t,'malformed');
   const malformed={identityId:'id-a',gameId:h.game.id,clientCommandId:'v2:malformed',fingerprint:'bad'};
   await new Promise((resolve,reject)=>{
@@ -2297,12 +2350,12 @@ test('terminal receipt cleanup preserves a malformed durable record and keeps a 
     request.onsuccess=()=>{const db=request.result,tx=db.transaction('commands','readwrite');
       tx.objectStore('commands').add(malformed);tx.oncomplete=()=>{db.close();resolve();};tx.onabort=()=>{db.close();reject(tx.error);};};
   });
-  await h.advance(500);assert.equal(h.view().storageBlocked,true);
+  await h.advance(500);await h.change('journal_blocked',1,'invalid_saved_command');assert.equal(h.view().storageBlocked,true);
   assert.deepEqual(await h.durable.list('id-a',h.game.id),[malformed]);
   assert.equal(h.calls.remove.some(envelope=>envelope.clientCommandId===malformed.clientCommandId),false);
 });
 
-for(const change of ['retire','account','storage-generation'])test(`terminal receipt cleanup stops new work after ${change}`,async t=>{
+for(const change of ['retire','account','storage-generation'])test(`terminal receipt cleanup stops new work after ${change}`,{timeout:5000},async t=>{
   const auth=cleanupScope(),h=await terminalCleanupFixture(t,`retired-${change}`,{auth});
   if(change==='retire')h.store.retire();else if(change==='account')auth.session.contextId='b'.repeat(64);else auth.storageGeneration='replacement-storage';
   const view=clone(h.view()),calls=h.calls.remove.length;await h.advance(60000);
@@ -2310,36 +2363,36 @@ for(const change of ['retire','account','storage-generation'])test(`terminal rec
   assert.deepEqual(await h.durable.list('id-a',h.game.id),[h.command]);
 });
 
-test('terminal receipt cleanup retirement ignores late completion of an already committed removal',async t=>{
-  const h=await terminalCleanupFixture(t,'late-retire'),completion=cleanupDeferred();
-  h.hooks.remove=async(_envelope,remove)=>{await remove();return completion.promise;};
-  await h.advance(500);assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
+test('terminal receipt cleanup retirement ignores late completion of an already committed removal',{timeout:5000},async t=>{
+  const h=await terminalCleanupFixture(t,'late-retire'),completion=cleanupDeferred(t),committed=cleanupDeferred(t);
+  h.hooks.remove=async(_envelope,remove)=>{await remove();committed.resolve();return completion.promise;};
+  await h.advance(500);await committed.promise;assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
   h.store.retire();const view=clone(h.view()),calls=h.calls.remove.length;
-  completion.resolve();await h.advance(60000);
+  completion.resolve();await h.settled('remove',2);await h.advance(60000);
   assert.equal(h.calls.remove.length,calls);assert.deepEqual(h.view(),view,'retirement does not promise rollback of an issued IDB commit');
 });
 
-test('terminal receipt cleanup manual success retires the original pending job before its late timeout',async t=>{
-  const h=await terminalCleanupStore(t,'manual-late-timeout'),initial=cleanupDeferred();
+test('terminal receipt cleanup manual success retires the original pending job before its late timeout',{timeout:5000},async t=>{
+  const h=await terminalCleanupStore(t,'manual-late-timeout'),initial=cleanupDeferred(t);
   h.hooks.remove=async(_envelope,remove,count)=>count===1?initial.promise:remove();await h.control();
   const original=clone(h.calls.remove[0]);assert.deepEqual(await h.durable.list('id-a',h.game.id),[original]);
   await h.store.retrySaving(h.game.id);assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
-  initial.reject(cleanupTimeout());await h.advance(60000);
+  initial.reject(cleanupTimeout());await h.settled('remove',1);await h.advance(60000);
   assert.equal(h.view().storageBlocked,false);assert.equal(h.calls.remove.length,2,'the obsolete first job must not retry or resurrect a reason');
 });
 
-test('terminal receipt cleanup late original success cannot clear a newer manual failure for the same key',async t=>{
-  const h=await terminalCleanupStore(t,'manual-replacement'),initial=cleanupDeferred();
+test('terminal receipt cleanup late original success cannot clear a newer manual failure for the same key',{timeout:5000},async t=>{
+  const h=await terminalCleanupStore(t,'manual-replacement'),initial=cleanupDeferred(t);
   h.hooks.remove=async(_envelope,remove,count)=>count===1?initial.promise:remove();await h.control();
   const original=clone(h.calls.remove[0]);await h.store.retrySaving(h.game.id);
   await h.durable.admit(original);h.hooks.remove=async()=>{throw cleanupTimeout();};
   await assert.rejects(h.store.retrySaving(h.game.id),{code:'journal_timeout'});
-  initial.resolve();await h.advance(60000);
+  initial.resolve();await h.settled('remove',1);await h.advance(60000);
   assert.equal(h.view().storageBlocked,true);assert.deepEqual(await h.durable.list('id-a',h.game.id),[original]);
   assert.equal(h.calls.remove.length,3,'the old completion cannot acquire the newer manual failure');
 });
 
-test('terminal receipt cleanup rehydration cannot delete a concurrent conflicting replacement with a known command ID',async t=>{
+test('terminal receipt cleanup rehydration cannot delete a concurrent conflicting replacement with a known command ID',{timeout:5000},async t=>{
   const h=await terminalCleanupFixture(t,'rehydrate-replacement');
   const replacement=clone(h.command);replacement.payload.values.generation=2;replacement.fingerprint=await commandFingerprint(replacement);
   let verifiedAbsence=false,inserted=false;
@@ -2356,16 +2409,16 @@ test('terminal receipt cleanup rehydration cannot delete a concurrent conflictin
   assert.deepEqual(h.calls.remove,[h.command,h.command],'a matching command ID alone cannot authorize deleting the replacement');
 });
 
-for(const change of ['account','storage-generation'])test(`terminal receipt cleanup manual storage handoff rejects a changed ${change} scope`,async t=>{
-  const auth=cleanupScope(),h=await terminalCleanupFixture(t,`manual-scope-${change}`,{auth}),handoff=cleanupDeferred();
+for(const change of ['account','storage-generation'])test(`terminal receipt cleanup manual storage handoff rejects a changed ${change} scope`,{timeout:5000},async t=>{
+  const auth=cleanupScope(),h=await terminalCleanupFixture(t,`manual-scope-${change}`,{auth}),handoff=cleanupDeferred(t),capturedRead=cleanupDeferred(t);
   let captured=false;
   h.hooks.list=async(args,read)=>{
     const saved=await read();
-    if(args[1]===h.game.id&&!captured){captured=true;await handoff.promise;}
+    if(args[1]===h.game.id&&!captured){captured=true;capturedRead.resolve();await handoff.promise;}
     return saved;
   };
   const manual=h.store.retrySaving(h.game.id).then(value=>({ok:true,value}),error=>({ok:false,error}));
-  await drainCleanupEvents();assert.equal(captured,true,'manual recovery is waiting on an actual completed journal read');
+  await capturedRead.promise;assert.equal(captured,true,'manual recovery is waiting on an actual completed journal read');
   const view=clone(h.view());
   if(change==='account')auth.session.contextId='b'.repeat(64);else auth.storageGeneration='replacement-storage';
   handoff.resolve();const result=await manual;assert.equal(result.ok,false);assert.equal(result.error.code,'session_changed');
@@ -2374,12 +2427,12 @@ for(const change of ['account','storage-generation'])test(`terminal receipt clea
   assert.deepEqual(await h.durable.list('id-a',h.game.id),[h.command]);assert.deepEqual(h.view(),view);
 });
 
-test('terminal receipt cleanup keeps private timers and promises out of projected games',async t=>{
+test('terminal receipt cleanup keeps private timers and promises out of projected games',{timeout:5000},async t=>{
   const h=await terminalCleanupFixture(t,'projection'),view=h.view();
   assert.deepEqual(structuredClone(view),view);assert.equal(typeof JSON.stringify(view),'string');
   for(const field of ['jobs','reasons','promise','timer'])assert.equal(Object.hasOwn(view,field),false);
-  const readback=cleanupDeferred();h.hooks.list=async(_args,read)=>{await read();await readback.promise;return read();};
-  await h.advance(500);assert.deepEqual(structuredClone(h.view()),h.view());
+  const readback=cleanupDeferred(t),readStarted=cleanupDeferred(t);h.hooks.list=async(_args,read)=>{await read();readStarted.resolve();await readback.promise;return read();};
+  await h.advance(500);await readStarted.promise;assert.deepEqual(structuredClone(h.view()),h.view());
   assert.equal(h.view().storageBlocked,true,'the private readback promise is still pending');
-  readback.resolve();await h.advance(0);assert.equal(h.view().storageBlocked,false);
+  readback.resolve();await h.change('journal_cleanup_recovered');assert.equal(h.view().storageBlocked,false);
 });
