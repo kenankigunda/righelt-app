@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
+import { ensureActionActorSelected } from "../e2e/support/app.mjs";
 
 const cell = (page, row, col) => page.locator(`.cell[data-row="${row}"][data-col="${col}"]`);
+
 test('a pending control preserves a prepared destination until a fresh native confirmation', async ({ page }) => {
   await page.goto('/browser-integration/support/board.html');
   await page.waitForFunction(() => window.fixtureReady);
@@ -36,6 +38,50 @@ test('status-only control settlement restores actionable destination styling wit
   expect(await page.evaluate(() => window.boardFixture.selection())).toEqual(prepared);
   expect(await page.evaluate(() => window.boardFixture.applied())).toEqual([]);
 });
+
+
+for (const lateSnapshot of [false, true]) {
+  test(`mandatory actor preparation preserves native previews with ${lateSnapshot ? "a late restored selection" : "a cleared selection"}`, async ({ page }) => {
+    await page.goto("/browser-integration/support/board.html");
+    await page.waitForFunction(() => window.fixtureReady);
+    await page.evaluate(() => window.boardFixture.setup("retreat"));
+    const source = cell(page, 4, 2), target = cell(page, 4, 3);
+    await expect(source).toHaveClass(/(?:^|\s)source(?:\s|$)/);
+    // Real invalid native input clears the actor. Do not alter classes or
+    // assign runtime selection to create either side of the race.
+    await cell(page, 2, 2).click();
+    await expect(source).not.toHaveClass(/(?:^|\s)source(?:\s|$)/);
+    expect(await page.evaluate(() => window.boardFixture.applied())).toEqual([]);
+    if (lateSnapshot) {
+      await page.evaluate(() => window.boardFixture.rehydrateCurrent());
+      await expect(source).toHaveClass(/(?:^|\s)source(?:\s|$)/);
+    }
+    await page.evaluate(() => {
+      window.actorPresses = 0;
+      document.querySelector("#board").addEventListener("mousedown", event => {
+        if (event.target.closest('.cell[data-row="4"][data-col="2"]')) window.actorPresses++;
+      });
+    });
+    await ensureActionActorSelected(source);
+    await target.hover();
+    await expect(target, "Preparation must retain the real runtime's legal action preview").toHaveClass(/(?:^|\s)target(?:\s|$)/);
+    expect(await page.evaluate(() => window.actorPresses)).toBe(lateSnapshot ? 0 : 1);
+    expect(await page.evaluate(() => window.boardFixture.applied())).toEqual([]);
+    // Intentional user reclicks must still toggle away and back. The repair
+    // belongs to the test preparation, not to the product's reclick behavior.
+    await source.click();
+    await target.hover();
+    await expect(target).toHaveClass(/(?:^|\s)unselectable(?:\s|$)/);
+    await source.click();
+    await target.hover();
+    await expect(target).toHaveClass(/(?:^|\s)target(?:\s|$)/);
+    await target.click();
+    await expect.poll(() => page.evaluate(() => window.boardFixture.applied())).toEqual([
+      {type: "retreat", actorId: "A", from: {row: 4, col: 2}, to: {row: 4, col: 3}},
+    ]);
+    expect(await page.evaluate(() => window.actorPresses)).toBe(lateSnapshot ? 2 : 3);
+  });
+}
 
 for (const type of ["rush", "retreat", "follow"]) {
   test(`${type} preview remains clickable after refresh under a stationary pointer`, async ({ page }) => {

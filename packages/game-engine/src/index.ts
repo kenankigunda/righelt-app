@@ -14,3 +14,5 @@ export * from "./computation-guard";
 
 export * from "./decision-cache";
 export * from "./removals";
+
+export * from '../../shared-types/src/retreat-rules';

@@ -1,3 +1,4 @@
+import {CURRENT_RETREAT_SEMANTICS,archivedRetreatSemantics,type RetreatSemantics} from '../../shared-types/src/retreat-rules';
 import { computerProfileFor, type ComputerControl, type ComputerProfile, type ComputerProof } from '../../shared-types/src/computer-play';
 import { destructionRecords, removalNotices, type RemovalEvent } from "../../game-engine/src/removals";
 export { collectDestroyedPieceRecords } from "../../game-engine/src/removals";
@@ -45,6 +46,8 @@ export type MoveEntry = {
   at: string;
   notation: string;
   action: Action;
+  /** Exact mask/action semantics for retained replay; missing historical values are geometric-v1. */
+  retreatSemantics?: RetreatSemantics;
   clientCommandId?: string | null;
   computerProof?: ComputerProof;
   undone?: boolean;
@@ -68,6 +71,7 @@ export type RevertRequest = {
 };
 
 export type ScenarioMoveEntry = {
+  retreatSemantics?: RetreatSemantics;
   turnIndex: number;
   turnMoveIndex: number;
   actorSide: "P1" | "P2";
@@ -277,6 +281,8 @@ export const asScenarioRecord = (value: unknown): ScenarioRecord | null => {
     }
     const move = entry as Record<string, unknown>;
     const action = asAction(move.action);
+    let retreatSemantics: RetreatSemantics;
+    try { retreatSemantics = archivedRetreatSemantics(move.retreatSemantics); } catch { return null; }
     if (
       !action ||
       typeof move.turnIndex !== "number" ||
@@ -292,6 +298,7 @@ export const asScenarioRecord = (value: unknown): ScenarioRecord | null => {
       actorSide: move.actorSide,
       notation: move.notation,
       action,
+      ...(move.retreatSemantics === undefined ? {} : { retreatSemantics }),
     } satisfies ScenarioMoveEntry;
   });
   if (moves.some((move) => move === null)) {
@@ -468,6 +475,7 @@ export const exportScenarioFromGame = (
       actorSide: move.actorSide,
       notation: move.notation,
       action: clone(move.action),
+      ...(move.retreatSemantics === undefined ? {} : { retreatSemantics: move.retreatSemantics }),
     })),
     resultingState: clone(resultingState),
     expectedFinalStateHash: "",
@@ -513,7 +521,7 @@ export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) =>
         throw new Error(ended.error);
       }
     }
-    const moved = applyServerAction(game, scenarioMove.action, scenarioMove.notation, null);
+    const moved = applyServerActionForImport(game, scenarioMove.action, scenarioMove.notation, archivedRetreatSemantics(scenarioMove.retreatSemantics));
     if (!moved.ok) {
       throw new Error(moved.error || "scenario_apply_failed");
     }
@@ -1103,12 +1111,25 @@ export const applyServerAction = (game: LiveGame, action: Action, notation?: str
   return applyServerActionWithExpectedState(game, action, null, notation, clientCommandId);
 };
 
+// Import-only adapter: HTTP/live callers always enter the current-rule wrapper.
+const applyServerActionForImport = (game: LiveGame, action: Action, notation: string, retreatSemantics: RetreatSemantics) =>
+  applyServerActionInternal(game, action, null, notation, null, retreatSemantics);
+
 export const applyServerActionWithExpectedState = (
   game: LiveGame,
   action: Action,
   expectedState: GameState | null,
   notation?: string,
   clientCommandId?: string | null,
+) => applyServerActionInternal(game, action, expectedState, notation, clientCommandId, CURRENT_RETREAT_SEMANTICS);
+
+const applyServerActionInternal = (
+  game: LiveGame,
+  action: Action,
+  expectedState: GameState | null,
+  notation: string | undefined,
+  clientCommandId: string | null | undefined,
+  retreatSemantics: RetreatSemantics,
 ) => {
   if (clientCommandId) {
     const existingMove = game.moves.find((entry) => !isMoveUndone(entry) && entry.clientCommandId === clientCommandId);
@@ -1139,7 +1160,7 @@ export const applyServerActionWithExpectedState = (
       };
     }
   }
-  const validation = validateAction(stable, action);
+  const validation = validateAction(stable, action, { retreatSemantics });
   if (!validation.ok) {
     return { ok: false as const, error: validation.code || "invalid_action", validation, state: stable };
   }
@@ -1147,7 +1168,7 @@ export const applyServerActionWithExpectedState = (
   const moveIdForEffects = nextMoveId();
   const events: RemovalEvent[] = [];
   const onRemoval = (event: RemovalEvent) => events.push(event);
-  const applied = applyAction(stable, action, { onRemoval });
+  const applied = applyAction(stable, action, { onRemoval, retreatSemantics });
   const next = resolveToStability(applied.state, { artifactMode: "full", onRemoval });
   const destroyedPieces = destructionRecords(events, clientCommandId ?? moveIdForEffects);
   next.sideToMove = getSideForSeat(getControlSeatForTurn(next, activeTurn.playerSeat));
@@ -1163,6 +1184,7 @@ export const applyServerActionWithExpectedState = (
     at: now(),
     notation: notation || defaultNotationForAction(action),
     action: clone(action),
+    retreatSemantics,
     clientCommandId: clientCommandId ?? null,
     selectionSnapshot: stable,
     snapshot: clone(next),

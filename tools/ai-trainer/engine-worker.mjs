@@ -1,3 +1,4 @@
+import {CURRENT_RETREAT_SEMANTICS,archivedRetreatSemantics} from '../../packages/shared-types/src/retreat-rules.ts';
 // JSON-lines protocol. Parent owns inference, resource allocation and hard process termination.
 import { createInterface } from 'node:readline';
 import { writeFileSync, renameSync } from 'node:fs';
@@ -118,6 +119,7 @@ async function main() {
   }
   if (job.command === 'replay' || job.command === 'inventory') {
     const inventory = job.command === 'inventory';
+    const retreatSemantics = archivedRetreatSemantics(job.game.retreatSemantics);
     const indices = inventory ? job.indices : [];
     if (inventory && (job.game.partition !== 'train' || !Array.isArray(indices) ||
         !indices.length || indices.length > 32 || new Set(indices).size !== indices.length ||
@@ -126,7 +128,7 @@ async function main() {
     }
     const snapshots = [];
     let state = job.game.rootState ?? job.game.initialState;
-    for (const action of job.game.warmupActions ?? []) { check(); state = transitionArchivedAction(state, action, bounded); }
+    for (const action of job.game.warmupActions ?? []) { check(); state = transitionArchivedAction(state, action, bounded,retreatSemantics); }
     const initialHash = deterministicStateHash(job.game.initialState);
     if (deterministicStateHash(state) !== initialHash) {
       const retained = legacyCommanderReplayState(state, initialHash);
@@ -206,7 +208,7 @@ async function main() {
     send({type:'unavailable-start',id:job.id,reason:'protected-evaluation-position'});return;
   }
   if (job.command === 'prepare') {
-    send({ type: 'prepared', rootState, warmupActions, initialState }); return;
+    send({ type: 'prepared', retreatSemantics:CURRENT_RETREAT_SEMANTICS,rootState, warmupActions, initialState }); return;
   }
   let requestId = 0, termination = 'terminal', truncationReason = null;
   try {
@@ -245,7 +247,7 @@ async function main() {
       const committed=decisions[decisions.length-1];
       send({type:'decision-progress',gameId:job.id,kind:job.kind,decision:{
         id:committed.id,controller,action:committed.action,beforeHash,afterHash:committed.afterHash,
-        seed,modelVersion:committed.modelVersion,profileVersion:committed.profileVersion,
+        seed,retreatSemantics:committed.retreatSemantics,modelVersion:committed.modelVersion,profileVersion:committed.profileVersion,
         searchPolicyVersion:SEARCH_POLICY_VERSION,policyMask:committed.policyMask,fallback:committed.fallback,legality:committed.legality,
         trainingRecipe:committed.trainingRecipe,rootExploration:committed.rootExploration,explorationAdoption:committed.explorationAdoption,
         search:{...committed.search,actions:committed.fallback?committed.search.actions:undefined}}});
@@ -254,7 +256,7 @@ async function main() {
     if (!(error instanceof BudgetExpired)) throw error;
     send({ type: 'unfinished', id: job.id, reason: error.reason, decisions: decisions.length }); return;
   }
-  send({ type: 'game', game: { schema: 1, id: job.id, familyId: job.familyId, partition: job.partition, kind: job.kind,
+  send({ type: 'game', game: { schema: 1,retreatSemantics:CURRENT_RETREAT_SEMANTICS, id: job.id, familyId: job.familyId, partition: job.partition, kind: job.kind,
     seed: job.seed, modelVersion: job.modelVersion, rootState, warmupActions, initialState, decisions, ...adoptionFields,
     ...(job.productionSource ? {productionSource:job.productionSource} : {}),
     ...(arena ? { modelVersions: job.modelVersions, profileVersions: job.profileVersions } : {}),

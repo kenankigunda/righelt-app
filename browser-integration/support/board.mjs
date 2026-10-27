@@ -38,6 +38,9 @@ window.boardFixture = {
     await runtime.loadSnapshot(state, {legalActions: actions, selectionState});
   },
   inspect: value => runtime.setInspection(value),
+  // Deliver a normal host snapshot after native input has cleared selection.
+  // The real runtime chooses any mandatory actor without a supplied selection.
+  rehydrateCurrent: async () => runtime.loadSnapshot(state, { legalActions: actions }),
   selection: () => runtime.getSelection(),
   applied: () => applied,
   gateInteraction: blocked => {

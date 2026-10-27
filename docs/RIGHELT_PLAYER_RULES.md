@@ -95,7 +95,7 @@ Push lets you displace an enemy piece, but only if your local formation is stron
 - The enemy piece you push must be directly orthogonally adjacent to the pushing piece.
 - You can push only if your local **group strength** is greater than the defender’s.
 - If legal, your piece advances into the enemy piece’s square and the enemy piece is temporarily stacked there as a pushed piece.
-- The push must still be completable so your pushing group ends supplied when the push sequence closes.
+- The push must still be completable so your pushing group ends supplied when the push sequence closes. If the defender has retreat squares, at least one must allow that completion.
 - The pushed piece’s owner must then resolve a forced retreat.
 - After that retreat, the pushing player completes any required **follow** moves through the vacated trail.
 - During that push continuation, the display can show that some of the attacker's pieces would now be inactive if play stopped immediately, but pieces that were still entitled to continue from the start of the push remain usable until the push sequence finishes.
@@ -120,9 +120,10 @@ A pushed piece must retreat to an adjacent orthogonal empty square.
 - During that brief retreat step, retreat is the only action they may take.
 - They may still inspect other pieces, but no other actions are legal.
 - The vacated follow trail square is reserved for the follow sequence and is not a legal retreat destination.
+- A retreat destination is legal only if the pushing player can still complete the follow sequence with the pushing group supplied.
 - The retreating piece may be temporarily unsupplied.
 - If there is only one retreat square, that retreat is effectively forced.
-- If there is no legal retreat square, the pushed piece is destroyed immediately.
+- If there is no adjacent empty retreat square other than the reserved follow square, the pushed piece is destroyed immediately. Completion filtering does not turn an otherwise available square into a capture.
 - If the pushed piece is destroyed because there is no retreat square, play does not pause for a retreat step and stays with the pushing player for follow completion.
 - The attacker is never required to resupply that retreated enemy piece; if it is still unsupplied when the push sequence ends, it is destroyed then.
 

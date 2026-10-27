@@ -1324,8 +1324,10 @@ export class GameRoomDO {
     // Previously accepted receipts remain authoritative across contract upgrades.
     const action = asAction(command.payload.action);
     const oldContinuationPass = action?.type === "pass" && Boolean(asGameState(command.expectedState)?.continuation);
+    const retreatWithoutCurrentContract = action?.type === "retreat" && command.actionContractVersion !== ACTION_CONTRACT_VERSION;
     if (command.actionContractVersion !== undefined && command.actionContractVersion !== ACTION_CONTRACT_VERSION
-      || oldContinuationPass && command.actionContractVersion !== ACTION_CONTRACT_VERSION) return reject("upgrade_required");
+      || oldContinuationPass && command.actionContractVersion !== ACTION_CONTRACT_VERSION
+      || retreatWithoutCurrentContract) return reject("upgrade_required");
     if (command.predecessor) {
       const parent = await loadCommandReceipt(this.env, game.id, command.predecessor.clientCommandId);
       if (!parent) return outcome("unknown", "dependency_pending");

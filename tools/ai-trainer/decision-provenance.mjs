@@ -1,9 +1,11 @@
+import {CURRENT_RETREAT_SEMANTICS,archivedRetreatSemantics} from '../../packages/shared-types/src/retreat-rules.ts';
 import experimentConfig from '../../packages/computer-player/config/experiment-v1.json' with { type: 'json' };
 import { trainingRecipe } from '../../packages/computer-player/src/exploration.ts';
 import { validateExplorationProvenance } from './exploration-provenance.mjs';
 // Search diagnostics are evidence, not a substitute for genuine policy targets.
 export function validateDecisionProvenance(record) {
   validateExplorationProvenance(record);
+  archivedRetreatSemantics(record.retreatSemantics);
   const mask = record.policyMask ?? true;
   if (typeof mask !== 'boolean') throw new Error('Invalid policy mask');
   const fallback = record.fallback ?? null;
@@ -35,6 +37,7 @@ export function validateDecisionProvenance(record) {
 
 export function decisionProvenance(result, searchPolicyVersion) {
   const record = {
+    retreatSemantics:CURRENT_RETREAT_SEMANTICS,
     seed: result.seed,
     trainingRecipe: result.rootExploration?.recipe ?? trainingRecipe(),
     ...(result.rootExploration ? { rootExploration: result.rootExploration } : {}),

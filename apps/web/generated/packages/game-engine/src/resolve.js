@@ -1,6 +1,6 @@
 import { reportRemoval } from "./removals.js";
 import { commanderOutcome } from "../../shared-types/src/commander-outcome.js";
-import { canCloseContinuationNow } from "./continuation.js";
+import { buildPushRetreatSuccessorActions, canCloseContinuationNow } from "./continuation.js";
 import { SUPPLY_POINTS } from "./deterministic.js";
 import { validateAction } from "./legal.js";
 const MAX_RESOLVE_PASSES = 64;
@@ -582,17 +582,7 @@ function applyContinuationPhase(state, onRemoval) {
                 state.sideToMove = attackerOwner;
                 return true;
             }
-            const retreatCandidates = [
-                { row: pushedPiece.position.row - 1, col: pushedPiece.position.col },
-                { row: pushedPiece.position.row + 1, col: pushedPiece.position.col },
-                { row: pushedPiece.position.row, col: pushedPiece.position.col - 1 },
-                { row: pushedPiece.position.row, col: pushedPiece.position.col + 1 },
-            ].filter((to) => validateAction(state, {
-                type: "retreat",
-                actorId: pushedPiece.id,
-                from: pushedPiece.position,
-                to,
-            }).ok);
+            const retreatCandidates = buildPushRetreatSuccessorActions(state);
             if (retreatCandidates.length === 0) {
                 reportRemoval(pushedPiece, "no_retreat", onRemoval);
                 state.pieces = state.pieces.filter((piece) => piece.id !== pushedPiece.id);

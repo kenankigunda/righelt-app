@@ -1,5 +1,5 @@
 import { reportRemoval } from "./removals.js";
-import { getRushChainMembers } from "./continuation.js";
+import { buildPushRetreatSuccessorActions, getRushChainMembers } from "./continuation.js";
 import { BOARD_SIZE, normalizeState } from "./deterministic.js";
 import { localGroupMembers, validateAction } from "./legal.js";
 function isEmptySquare(state, row, col) {
@@ -53,7 +53,7 @@ function captureFrozenPieceStates(state, owner) {
     ]));
 }
 export function applyAction(state, action, options) {
-    const validation = validateAction(state, action);
+    const validation = validateAction(state, action, options);
     if (!validation.ok) {
         throw new Error(`Cannot apply invalid action: ${validation.code}`);
     }
@@ -138,17 +138,7 @@ export function applyAction(state, action, options) {
             chainLength: 1,
         };
         next.sideToMove = defender.owner;
-        const retreatSquares = [
-            { row: defender.position.row - 1, col: defender.position.col },
-            { row: defender.position.row + 1, col: defender.position.col },
-            { row: defender.position.row, col: defender.position.col - 1 },
-            { row: defender.position.row, col: defender.position.col + 1 },
-        ].filter((to) => validateAction(next, {
-            type: "retreat",
-            actorId: defender.id,
-            from: defender.position,
-            to,
-        }).ok);
+        const retreatSquares = buildPushRetreatSuccessorActions(next);
         if (retreatSquares.length === 0) {
             reportRemoval(defender, "no_retreat", options?.onRemoval);
             next.pieces = next.pieces.filter((piece) => piece.id !== defender.id);

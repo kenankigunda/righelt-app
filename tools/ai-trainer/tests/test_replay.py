@@ -21,6 +21,14 @@ class ReplayTest(unittest.TestCase):
         self.assertEqual(b.positions[0]['encoded'].itemsize,4)
         self.assertEqual(b.game_ids,['game-1'])
 
+    def test_retreat_mask_provenance_is_retained_without_relabeling_historical_positions(self):
+        for version in (None, 'geometric-retreat-v1', 'completion-preserving-retreat-v2'):
+            g=self.game()
+            if version is not None:g['decisions'][0]['retreatSemantics']=version
+            b=ReplayBuffer();b.append(g)
+            if version is None:self.assertNotIn('retreatSemantics',b.positions[0])
+            else:self.assertEqual(b.positions[0]['retreatSemantics'],version)
+
     def test_sealed_families_and_duplicate_games_rejected(self):
         b=ReplayBuffer()
         for partition in ['validation','final']:

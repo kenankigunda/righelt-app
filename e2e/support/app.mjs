@@ -256,6 +256,13 @@ export const expectHistoryMoveCountToEqualOrExceed = async (page, expectedCount)
 
 const getFirstPlayableAction = async (page) => page.evaluate(readPlayableAction);
 
+export const ensureActionActorSelected = async (source) => {
+  // A late authoritative snapshot can restore a mandatory actor after a blank
+  // square cleared it. Clicking that selected piece again toggles its overlay.
+  if (!await source.evaluate(element => element.classList.contains("source"))) await source.click();
+  await expect(source).toHaveClass(/(?:^|\s)source(?:\s|$)/);
+};
+
 export const selectPlayableAction = async (page, action) => {
   const cell = position => page.locator(`[data-testid="game-board"] .cell[data-row="${position.row}"][data-col="${position.col}"]`);
   const target = cell(action.to);
