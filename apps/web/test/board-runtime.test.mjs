@@ -3,6 +3,16 @@ import assert from "node:assert/strict";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 
 const noop = () => {};
+const destroyUninitializedNodeRuntime = runtime => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  try {
+    Object.defineProperty(globalThis, 'document', {configurable:true,value:{removeEventListener:noop}});
+    runtime.destroy();
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, 'document', descriptor);
+    else delete globalThis.document;
+  }
+};
 
 test('turn indicator accepts host perspective text while preserving actual actor color',async()=>{
  const tones=new Set();
@@ -3435,6 +3445,54 @@ test("board runtime refreshes a preserved branch selection from the new legal ac
   click(action.to);
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(submitted.length, 1, "late moves from the previous snapshot cannot revive a removed action");
+});
+
+test('a transient control fence preserves a prepared legal destination without deferred submission',async()=>{
+ const action={type:'move',actorId:'A',from:{row:4,col:2},to:{row:4,col:3}};
+ const state={sideToMove:'P1',turnIndex:0,continuation:null,outcome:null,pieces:[{id:'A',owner:'P1',kind:'unit',position:action.from,supplied:true,commanded:true}]};
+ let click,interactive=true;const applied=[];
+ const runtime=createBoardRuntime({boardAdapter:{
+  mount:({onCellClick})=>{click=onCellClick;},render:noop,
+  getPieceAt:(snapshot,at)=>snapshot.pieces.find(piece=>piece.position.row===at.row&&piece.position.col===at.col),
+  getPieceById:(snapshot,id)=>snapshot.pieces.find(piece=>piece.id===id),
+  getSelectedPieceSummary:({selectedPieceId})=>selectedPieceId?{details:{owner:'P1'}}:null,
+ },host:{canSelect:()=>true,canInteract:()=>interactive,applyAction:async(_state,value)=>{applied.push(value);return {accepted:false};}}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null,boardTurnIndicatorEl:null});
+ await runtime.loadSnapshot(state,{legalActions:[action],selectionAction:action});
+ const prepared=structuredClone(runtime.getSelection());
+ interactive=false;runtime.refreshStatus();click(action.to);
+ assert.deepEqual(runtime.getSelection(),prepared,'a known destination click during the fence must not become a blank-square deselection');
+ assert.deepEqual(applied,[]);assert.deepEqual(runtime.getState(),state);
+ interactive=true;runtime.refreshStatus();await Promise.resolve();
+ assert.deepEqual(applied,[],'settlement must never queue or replay the blocked click');
+ assert.deepEqual(runtime.getSelection(),prepared);
+ click(action.to);await Promise.resolve();
+ assert.deepEqual(applied,[action],'only a fresh explicit confirmation submits the exact prepared action');
+ destroyUninitializedNodeRuntime(runtime);
+});
+
+test('status refresh redraws admission changes without losing the selected move',async()=>{
+ const action={type:'move',actorId:'A',from:{row:4,col:2},to:{row:4,col:3}};
+ const state={sideToMove:'P1',turnIndex:0,pieces:[{id:'A',owner:'P1',kind:'unit',position:action.from,supplied:true,commanded:true}]};
+ let interactive=true;const renders=[];
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:value=>renders.push(value),getPieceById:(snapshot,id)=>snapshot.pieces.find(piece=>piece.id===id),getSelectedPieceSummary:({selectedPieceId})=>selectedPieceId?{details:{owner:'P1'}}:null},host:{canSelect:()=>true,canInteract:()=>interactive}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null,boardTurnIndicatorEl:null});
+ await runtime.loadSnapshot(state,{legalActions:[action],selectionAction:action});
+ const prepared=structuredClone(runtime.getSelection());
+ const beforeFence=renders.length;
+ interactive=false;runtime.refreshStatus();
+ assert.equal(renders.length,beforeFence,'a brief status-only fence must not replace action previews with inspection lines');
+ assert.deepEqual(renders.at(-1).selectedPieceMoves,[action]);
+ interactive=true;runtime.refreshStatus();
+ assert.equal(renders.length,beforeFence,'an unpainted fence must not cause a settlement redraw');
+ interactive=false;runtime.refreshVisuals();runtime.refreshStatus();
+ assert.deepEqual(renders.at(-1).selectedPieceMoves,[]);
+ interactive=true;runtime.refreshStatus();
+ assert.deepEqual(renders.at(-1).selectedPieceMoves,[action],'status-only settlement must repaint actual actionable moves');
+ assert.deepEqual(runtime.getSelection(),prepared);
+ const count=renders.length;runtime.refreshStatus();
+ assert.equal(renders.length,count,'unchanged admission must not cause an unconditional board redraw');
+ destroyUninitializedNodeRuntime(runtime);
 });
 
 test('read-only selected pieces remain informational during rush, follow and retreat',async()=>{

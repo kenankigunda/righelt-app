@@ -1877,6 +1877,34 @@ test('external errors cannot impersonate the private unresolved receipt signal',
  assert.equal(pending.recoveryIssue,'unavailable');assert.ok(pending.incidentId);assert.equal(pending.pendingCommandCount,1);assert.equal(pending.sharedMutationsBlocked,true);
 });
 
+test('a held computer control fences human submission without changing its board or journal identity',async t=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
+ const game=buildLiveGame();game.sharedReceipts=true;
+ const saved=new Map(),requests=[];let envelope,release;
+ const store=createLiveTransportStore({storage,
+  commandJournal:{list:async()=>[...saved.values()],admit:async value=>saved.set(value.clientCommandId,clone(value)),remove:async value=>saved.delete(value.clientCommandId),close:async()=>{}},
+  fetcher:(url,init)=>{requests.push({url,body:JSON.parse(init.body)});envelope=JSON.parse(init.body);return new Promise(resolve=>{release=resolve;});},
+ });
+ store.applyLiveGameUpdate({game,eventSeq:1});
+ const before=clone(store.getAuthoritativeGame(game.id));
+ const completion=store.computerControl(game.id,{action:'renew',deviceId:'device',generation:1}).then(value=>({ok:true,value}),error=>({ok:false,error}));
+ try{
+ for(let i=0;i<50&&!envelope;i++)await tick();assert.ok(envelope);
+ const original=clone(envelope),pending=store.getGameViewModel(game.id);
+ assert.equal(pending.pendingComputerControl,true);assert.equal(pending.sharedMutationsBlocked,true);assert.equal(pending.canRecordMove,false);
+ assert.deepEqual(saved.get(original.clientCommandId),original);assert.deepEqual(original.expectedState,before.board.state);assert.equal(original.expectedGameplayRevision,before.gameplayRevision);
+ await assert.rejects(store.applyGameAction({gameId:game.id,state:before.board.state,action:game.legalActions[0]}),{code:'sync_recovering'});
+ assert.equal(requests.length,1,'the blocked action must not become a second request');
+ assert.deepEqual(store.getAuthoritativeGame(game.id),before);assert.deepEqual(saved.get(original.clientCommandId),original);
+ const outcome={gameId:game.id,identityId:original.identityId,clientCommandId:original.clientCommandId,fingerprint:original.fingerprint,outcome:'accepted',reason:null,eventSeq:2,gameplayRevision:before.gameplayRevision};
+ release(Response.json({ok:true,accepted:true,protocolVersion:2,gameId:game.id,game:before,eventSeq:2,gameplayRevision:before.gameplayRevision,commandOutcomes:[outcome]}));
+ const settled=await completion;assert.equal(settled.ok,true,'the original held control must actually fulfill after release');
+ assert.equal(store.getGameViewModel(game.id).sharedMutationsBlocked,false);assert.equal(store.getGameViewModel(game.id).pendingComputerControl,false);
+ assert.equal(saved.size,0);assert.deepEqual(store.getAuthoritativeGame(game.id),before);assert.deepEqual(envelope,original);
+ await tick();assert.equal(requests.length,1,'settling the fence must not automatically resubmit the rejected human intent');
+ }finally{store.retire();await completion;}
+});
+
 for (const operation of ["computer-control", "revert-request"]) for(const accepted of [true,false]) for(const repair of [null,"connection","snapshot"]) test(`socket ${accepted ? "acceptance" : "rejection"} completes ${operation} while preserving ${repair ?? "no newer"} recovery`,async()=>{
  const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,"id-live");
  let envelope,signal;
