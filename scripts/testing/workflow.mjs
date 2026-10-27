@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { fullLanes, suiteById } from "./catalog.mjs";
 const expression = (value) => "${{ " + value + " }}";
+const CI_NODE_VERSION = "22.23.4";
 const setup = [
   { name: "Checkout", uses: "actions/checkout@v5", with: { "fetch-depth": 0, ref: expression("github.event.pull_request.head.sha || github.sha") } },
   {
@@ -12,7 +13,7 @@ const setup = [
   {
     name: "Setup Node",
     uses: "actions/setup-node@v5",
-    with: { "node-version": "22", cache: "pnpm" },
+    with: { "node-version": CI_NODE_VERSION, cache: "pnpm" },
   },
   { name: "Install dependencies", run: "pnpm install --frozen-lockfile" },
 ];
