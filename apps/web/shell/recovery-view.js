@@ -83,6 +83,10 @@ export const recoveryMessage = (game, now = Date.now(), { computerSaveActive = f
   if (game.recoveryIssue === "invalid_response") return "We couldn’t record your move. Please reconnect.";
   if (!game.recovering && game.syncStatus !== "confirming" && !game.confirmationOverdue) return "";
   const elapsed = recoveryWaitMs(game, now);
+  if (game.pendingComputerControl) {
+    if (elapsed < SYNC_TIMING.reconnectAlertMs && !game.confirmationOverdue) return '';
+    return needsRecoveryAction(game, now) ? 'Still updating computer play. You can retry or view details.' : 'Updating computer play';
+  }
   if (game.pendingComputerSaveStartedAt != null) {
     if (!needsRecoveryAction(game, now)) {
       if (computerSaveActive || elapsed < COMPUTER_TIMING.saveNoticeAfterMs) return "";

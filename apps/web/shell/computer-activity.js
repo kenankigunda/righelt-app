@@ -14,18 +14,19 @@ export function computerActivity({ game, identityId, deviceId, authenticated, vi
   const localLease = liveLease && control.lease.deviceId === deviceId;
   const uncertain = Boolean(projection.sharedMutationsBlocked || projection.pendingCommandCount > 0 || projection.upgradeRequired);
   const activeHere = Boolean(owner && authenticated && visible && ongoing && localLease && controlAcknowledged && !override && !uncertain && !resuming && !lastAcquisitionFailure && !['recovery', 'other-device'].includes(status.phase));
+  const computerTurn = computerProfileFor(control, game.board?.state?.sideToMove, turnIndex);
   let state = 'attention', label = 'Needs attention';
   if (resuming) { state = 'resuming'; label = 'Resuming'; }
   else if (override) { state = 'paused'; label = 'Paused'; }
   else if (activeHere) { state = 'here'; label = 'Active here'; }
   else if (liveLease && !localLease) { state = 'elsewhere'; label = 'Active in another tab'; }
+  else if (!uncertain && !lastAcquisitionFailure && status.phase !== 'recovery' && owner && authenticated && ongoing && (!visible || !computerTurn)) { state = 'idle'; label = visible ? 'Waiting for a turn' : 'Inactive in this tab'; }
   let disabledReason = null;
   if (!owner || !authenticated) disabledReason = 'Only the game owner can resume computer play.';
   else if (!ongoing) disabledReason = 'This game has finished.';
   else if (projection.upgradeRequired) disabledReason = 'Reload the game to resume computer play here.';
   else if (!resumeSupported) disabledReason = 'Refresh after the server update to resume computer play here.';
   else if (resuming) disabledReason = 'Resuming computer play…';
-  const computerTurn = computerProfileFor(control, game.board?.state?.sideToMove, turnIndex);
   const showRecoveryNotice = Boolean(resumeSupported && owner && authenticated && visible && ongoing && computerTurn && !override && !uncertain && !resuming && !activeHere && !liveLease && !workingPhases.has(status.phase) && status.phase !== 'recovery' && waitingMs >= COMPUTER_TIMING.stalledAfterMs);
   return { state, label, activeHere, showResume: !activeHere, disabledReason, showRecoveryNotice, waitingMs, lastAcquisitionFailure };
 }

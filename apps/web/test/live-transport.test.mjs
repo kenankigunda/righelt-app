@@ -1890,6 +1890,7 @@ for (const operation of ["computer-control", "revert-request"]) for(const accept
  const settled=completion.then(()=>({ok:true}),error=>({ok:false,error}));
  for(let i=0;i<50&&!envelope;i++)await tick();
  assert.ok(envelope);
+ assert.equal(store.getGameViewModel(game.id).pendingComputerControl,operation==="computer-control");
  assert.equal(store.getGameViewModel(game.id).sharedMutationsBlocked,true);
  if(repair==="connection")store.setConnectionRecovering(game.id,true);
  if(repair==="snapshot")store.prepareSafeReconnect(game.id);
@@ -1898,6 +1899,7 @@ for (const operation of ["computer-control", "revert-request"]) for(const accept
  assert.equal((await settled).ok,accepted);
  assert.equal(signal.aborted,true,"socket confirmation retires the HTTP request");
  assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);
+ assert.equal(store.getGameViewModel(game.id).pendingComputerControl,false);
  assert.equal(store.getGameViewModel(game.id).recovering,Boolean(repair));
  assert.equal(store.getGameViewModel(game.id).sharedMutationsBlocked,Boolean(repair));
  if(repair)store.setConnectionRecovering(game.id,false);

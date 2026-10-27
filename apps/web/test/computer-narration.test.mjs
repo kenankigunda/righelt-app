@@ -62,3 +62,13 @@ test('pending journal timestamps do not conceal recovery, and same-scope capture
  delete g.pendingComputerProfile;
  assert.equal(computerBoardMessage(g,{phase:'saving',profile:'tau',observedAt:60000}), 'Tau is saving their move');
 });
+
+test('an idle unacquired runner never claims it is thinking, including delayed recovery',()=>{
+ const g={...game(),computerTurn:'tau'};
+ assert.equal(computerBoardMessage(g,{phase:'idle',activity:{activeHere:false,showRecoveryNotice:false}}),'Waiting for Tau');
+ assert.equal(computerBoardMessage(g,{phase:'idle',activity:{activeHere:false,showRecoveryNotice:true}}),'Tau needs a hand');
+ assert.equal(computerBoardMessage(g,{phase:'resuming'}),'Resuming Tau');
+ assert.equal(computerBoardMessage(g,{phase:'looking-ahead'}),'Tau is thinking');
+ g.computer.paused=true;assert.equal(computerBoardMessage(g,{phase:'idle'}),'Tau is paused');
+ g.computer.paused=false;g.pendingComputerControl=true;assert.equal(computerBoardMessage(g,{phase:'idle'}),'Updating computer play');
+});
