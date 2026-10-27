@@ -18,6 +18,26 @@ const capturedHash=state=>{
 };
 const board=page=>page.getByTestId('game-board');
 const cell=(page,at)=>board(page).locator(`.cell[data-row="${at.row}"][data-col="${at.col}"]`);
+test.afterEach(async({page},info)=>{
+ if(info.status===info.expectedStatus||!['failed','timedOut','interrupted'].includes(info.status))return;
+ let snapshot,diagnosticTimer;
+ try{
+  snapshot=page.isClosed()?{available:false,reason:'page-closed'}:await Promise.race([page.evaluate(async()=>{
+   const match=location.hash.match(/^#\/game\/([^?#/]+)/);
+   if(!match)return{available:false,reason:'current-game-id-unavailable'};
+   const gameId=decodeURIComponent(match[1]);
+   // Live transport already imports this exact module. Read its current
+   // in-memory incidents rather than waiting for localStorage persistence.
+   const {issueDiagnostics}=await import('/shell/issue-diagnostics.js');
+   const fields=['stage','code','operation','receipt','pendingCount','gameplayRevision','appliedEventSeq','advertisedEventSeq','at','generation','elapsedMs','deadlineMs'];
+   const pick=value=>Object.fromEntries(fields.filter(key=>Object.hasOwn(value??{},key)).map(key=>[key,value[key]]));
+   return{available:true,gameId,reports:issueDiagnostics.list().filter(report=>report.schemaVersion===1&&report.key===`recovery:${gameId}`).map(report=>({schemaVersion:1,startedAt:report.startedAt,resolvedAt:report.resolvedAt,initial:pick(report.initial),events:report.events.map(pick)}))};
+  }),new Promise(resolve=>{diagnosticTimer=setTimeout(()=>resolve({available:false,reason:'diagnostic-read-timeout'}),2000);})]);
+ }catch(error){snapshot={available:false,reason:'diagnostic-read-unavailable',errorKind:String(error?.name??'Error').slice(0,80)};}
+ finally{clearTimeout(diagnosticTimer);}
+ try{await info.attach('local-recovery-incidents',{contentType:'application/json',body:JSON.stringify(snapshot)});}
+ catch{console.warn('[retreat-diagnostic] Diagnostic attachment unavailable; original test failure retained.');}
+});
 async function request(page,route,body){
  const result=await page.evaluate(async({route,body,header,version})=>{
   const identityId=localStorage.getItem('righelt.identity.id.v1');if(!identityId)throw Error('Native fixture identity missing');
