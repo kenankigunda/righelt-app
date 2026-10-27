@@ -26,8 +26,13 @@ test('an invitation lookup timeout exposes Retry and Home, then one manual retry
   });
   try{
     await viewer.goto(`/#/invite/${encodeURIComponent(invite.viewer)}?as=viewer`);
-    // The real transport keeps its existing five-second deadline. This new
-    // assertion allows that deadline plus ordinary startup/render delivery.
+    // Bootstrap precedes the invitation read. Start observing recovery only
+    // after the real first lookup reaches this test's held fault boundary.
+    await expect.poll(()=>typeof releaseFirst==='function',{
+      message:'The first invitation lookup must reach the held fault boundary',
+    }).toBe(true);
+    // Keep the real five-second transport deadline and existing ten-second
+    // recovery assertion; neither measures unrelated bootstrap admission.
     const recovery=viewer.getByTestId('invite-load-recovery');await expect(recovery).toBeVisible({timeout:10000});
     expect(reads).toBe(1);await expect(recovery.getByRole('status')).toHaveText('We couldn’t load your invitation');
     await expect(recovery).not.toContainText(/request_timeout|HTTP|network/);
