@@ -95,3 +95,16 @@ test('a pending computer control is not described as saving a human move',()=>{
  assert.equal(opponentBoardMessage(g,{}),'Updating computer play');
  g.pendingComputerControl=false;assert.equal(opponentBoardMessage(g,{}),'Saving your move');
 });
+
+
+test('quiet renewal keeps actual opponent narration and replay while the interaction fence removes Pass',()=>{
+ const g=game();g.computer={seats:{p1:'babs',p2:null}};g.moves[0].computerProof={profile:'babs'};g.legalActions=[{type:'pass'}];
+ const status={phase:'idle',activity:{quietRenewal:true}},options={canInteract:true,identityId:'me'};
+ const before=opponentBoardMessage(g,status,{},options);assert.match(before.text,/Babs rushed/);assert.equal(before.actions[0].id,'pass');
+ g.pendingComputerControl=true;g.pendingCommandCount=1;g.sharedMutationsBlocked=true;options.canInteract=false;
+ const held=opponentBoardMessage(g,status,{},options);
+ assert.equal(typeof held==='string'?held:held.text,before.text);assert.deepEqual(held.action,{id:'replay-computer',label:'Show me again'});
+ assert.equal((held.actions??[]).some(action=>action.id==='pass'),false);assert.equal(g.sharedMutationsBlocked,true);
+ assert.equal(opponentBoardMessage(g,{phase:'idle',activity:{quietRenewal:false}},{},options),'Updating computer play');
+ g.moves=[];g.turns=[];assert.equal(opponentBoardMessage(g,status,{},options),'Your turn','no completed turn uses the normal human-turn fallback');
+});

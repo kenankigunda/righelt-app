@@ -4,7 +4,7 @@ import {IDBFactory} from 'fake-indexeddb';
 import {createCommandJournal} from '../shell/command-journal.js';
 import {createLiveTransportStore} from '../shell/live-transport.js';
 import {createComputerSession} from '../shell/computer-session.js';
-import {computerBoardMessage} from '../shell/computer-narration.js';
+import {opponentBoardMessage} from '../shell/opponent-narration.js';
 import {recoveryMessage,isBoardRecoveryPending} from '../shell/recovery-view.js';
 import {IDENTITY_KEY} from '../shell/persistence.js';
 import {createInitialState,resolveToStability,listLegalActions} from '../generated/packages/game-engine/src/index.js';
@@ -46,7 +46,9 @@ test('quiet renewal keeps the durable envelope and human-turn fences through acc
  await transport.loadGame(game.id);await session.tick();
  assert.equal(session.snapshot().activity.label,'Active here');assert.deepEqual(await journal.list('owner',game.id),[]);
  assert.equal(transport.getGameViewModel(game.id).sharedMutationsBlocked,false);
- const narration=computerBoardMessage(transport.getGameViewModel(game.id),session.snapshot());assert.match(narration.text,/Babs projected/);
+ const boardMessage=view=>opponentBoardMessage(view,session.snapshot(),{},{canInteract:view.canRecordMove,identityId:'owner'});
+ const hasPass=message=>(message.actions??(message.action?[message.action]:[])).some(action=>action.id==='pass');
+ const narration=boardMessage(transport.getGameViewModel(game.id));assert.match(narration.text,/Babs projected/);assert.equal(hasPass(narration),true);
  now+=COMPUTER_TIMING.renewAfterMs;await session.tick();await microtasks(()=>held);
  const original=structuredClone(held),view=transport.getGameViewModel(game.id);
  assert.equal(view.pendingCommandCount,1);assert.equal(view.sharedMutationsBlocked,true);assert.equal(view.canRecordMove,false);
@@ -56,7 +58,7 @@ test('quiet renewal keeps the durable envelope and human-turn fences through acc
  assert.equal(activity.label,'Active here');assert.equal(activity.quietRenewal,true);
  assert.equal(recoveryMessage(view,now,{quietComputerRenewal:activity.quietRenewal}),'');
  assert.equal(isBoardRecoveryPending(view,{quietComputerRenewal:activity.quietRenewal,now}),false);
- assert.deepEqual(computerBoardMessage(view,session.snapshot()),narration);
+ const heldMessage=boardMessage(view);assert.equal(heldMessage.text,narration.text);assert.deepEqual(heldMessage.action,{id:'replay-computer',label:'Show me again'});assert.equal(hasPass(heldMessage),false);
  transport.selectHistoryMove({gameId:game.id,moveIndex:0});
  assert.equal(transport.getGameViewModel(game.id).inHistoryMode,true);
  assert.notEqual(transport.getAuthoritativeGame(game.id).inHistoryMode,true,'actual session context remains authoritative, not the history projection');
@@ -78,5 +80,5 @@ test('quiet renewal keeps the durable envelope and human-turn fences through acc
  const final=transport.getGameViewModel(game.id);
  assert.equal(final.sharedMutationsBlocked,false);assert.equal(final.canRecordMove,true);assert.equal(final.pendingComputerControlRequest,null);
  assert.equal(final.moves.length,1);assert.deepEqual(final.moves,game.moves);assert.equal(computations,0);
- assert.deepEqual(computerBoardMessage(final,session.snapshot()),narration);
+ const finalMessage=boardMessage(final);assert.equal(finalMessage.text,narration.text);assert.equal(hasPass(finalMessage),true);
 });

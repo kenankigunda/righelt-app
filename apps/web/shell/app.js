@@ -4256,6 +4256,11 @@ const startComputerReplay = async () => {
 const updateComputerUi = () => {
   boardRuntime?.refreshStatus?.();
   const gameId = getCurrentViewedGameId(), game = gameId ? transport.getGameViewModel(gameId) : null;
+  const mountedGameId = appEl.querySelector('[data-testid="game-shell"]')?.getAttribute('data-game-id');
+  if (game && mountedGameId === game.id) {
+    updateReconnectPresentation(game);
+    updateRecoveryAnnouncement(game);
+  }
   updateParticipantCards(game);
   const alerts=appEl.querySelector('#shell-game-alerts');
   if(alerts && game) {
