@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {createBoardRuntime} from '../board/runtime/board-runtime.js';
 import {createEngineBoardAdapter} from '../board-adapters/engine-board-adapter.js';
 import {updateComputerBoardLoading} from '../shell/board-message-layout.js';
+import {supplyOwnerAt} from '../board/inspection.js';
 
 const noop=()=>{};
 const preview=()=>({value:'',get innerHTML(){return this.value;},set innerHTML(value){this.value=value;},get textContent(){return this.value;},set textContent(value){this.value=value;},querySelectorAll:()=>[],addEventListener:noop,removeEventListener:noop});
@@ -65,7 +66,15 @@ test('a required defender retains legal retreat previews across a temporary reco
  runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
  await runtime.loadSnapshot(snapshot,{legalActions:[retreat,other]});
  assert.equal(runtime.getSelection().selectedPieceId,'D1');
+ const prepared=structuredClone(runtime.getSelection());
  click(retreat.to);click(retreat.to);
+ assert.deepEqual(runtime.getSelection(),prepared,'blocked clicks on a known legal retreat preserve the prepared defender');
+ assert.equal(submissions,0,'a blocked legal target must never submit or queue an action');
+ const blank={row:9,col:9};
+ assert.equal(snapshot.pieces.some(piece=>piece.position.row===blank.row&&piece.position.col===blank.col),false);
+ assert.equal([retreat,other].some(action=>action.to.row===blank.row&&action.to.col===blank.col),false);
+ assert.equal(supplyOwnerAt(blank),null);
+ click(blank);
  assert.equal(runtime.getSelection().selectedPieceId,null,'blocked empty-square inspection clears the forced selection');
  assert.equal(submissions,0,'uncertain delivery cannot submit the next action');
  blocked=false;runtime.refreshStatus();hover(retreat.to);
