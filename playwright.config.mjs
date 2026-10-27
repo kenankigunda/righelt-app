@@ -9,7 +9,7 @@ const reporter = process.env.CI
   ? [["github"], ["line"], ["junit", { outputFile: junitOutputFile }]]
   : [["list"]];
 
-export default defineConfig({
+const config = defineConfig({
   testDir: "./e2e",
   testIgnore: "**/auth/**",
   fullyParallel: false,
@@ -50,3 +50,11 @@ export default defineConfig({
     timeout: 180_000,
   },
 });
+
+for (const project of config.projects) {
+  if (project.name === "firefox" || project.name === "webkit") {
+    project.testMatch = [project.testMatch, "**/completion-preserving-retreat.spec.mjs"];
+  }
+}
+
+export default config;

@@ -1,3 +1,4 @@
+import {archivedRetreatSemantics} from '../../packages/shared-types/src/retreat-rules.ts';
 import { deterministicStateHash } from '../../packages/game-engine/src/index.ts';
 import { encodeAction, encodeState, legalActionMap, verifyLegalSubset } from '../../packages/computer-player/src/index.ts';
 import { validateDecisionProvenance } from './decision-provenance.mjs';
@@ -23,13 +24,14 @@ export function legacyCommanderReplayState(next, expectedHash) {
 // next state is never accepted as proof, and partial masks never become targets.
 export function replayDecision(state, record, bounded) {
   validateDecisionProvenance(record);
+  const retreatRules={retreatSemantics:archivedRetreatSemantics(record.retreatSemantics)};
   if (deterministicStateHash(state) !== record.beforeHash) throw new Error('Replay before-state mismatch');
   if (state.sideToMove !== record.controller) throw new Error('Replay controller mismatch');
   if (record.encoded && JSON.stringify(Array.from(encodeState(state))) !== JSON.stringify(record.encoded)) throw new Error('Replay encoding mismatch');
   if (record.legality?.complete === false) {
-    bounded(() => verifyLegalSubset(state, record.legal));
+    bounded(() => verifyLegalSubset(state, record.legal, retreatRules));
     if (!record.legal.includes(encodeAction(record.action))) throw new Error('Partial replay selected action missing');
-  } else if (record.legal && JSON.stringify([...bounded(() => legalActionMap(state)).keys()]) !== JSON.stringify(record.legal)) {
+  } else if (record.legal && JSON.stringify([...bounded(() => legalActionMap(state, retreatRules)).keys()]) !== JSON.stringify(record.legal)) {
     throw new Error('Replay legal mask mismatch');
   }
   if ((record.policyMask ?? true) && record.policy !== undefined) {
@@ -44,7 +46,7 @@ export function replayDecision(state, record, bounded) {
           record.policy.some((item, i) => Math.abs(item.probability - visits[i] / total) > 1e-10)) throw new Error('Replay policy visits mismatch');
     }
   }
-  const next = transitionArchivedAction(state, record.action, bounded);
+  const next = transitionArchivedAction(state, record.action, bounded,retreatRules.retreatSemantics);
   if (deterministicStateHash(next) !== record.afterHash) {
     const retained = legacyCommanderReplayState(next, record.afterHash);
     if (!retained) throw new Error('Replay after-state mismatch');

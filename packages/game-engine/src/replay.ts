@@ -1,3 +1,4 @@
+import { liveRetreatSemantics } from "../../shared-types/src/retreat-rules";
 import { applyAction } from "./apply";
 import { normalizeState } from "./deterministic";
 import { validateAction } from "./legal";
@@ -9,6 +10,7 @@ export function replayActions(
   actions: Action[],
   options?: ReplayOptions,
 ): ReplayResult {
+  liveRetreatSemantics(options);
   const includeTrace = options?.includeTrace ?? true;
   const artifactMode = options?.artifactMode ?? "minimal";
 
@@ -19,7 +21,7 @@ export function replayActions(
 
   for (let i = 0; i < actions.length; i += 1) {
     const action = actions[i];
-    const validation = validateAction(current, action);
+    const validation = validateAction(current, action, options);
 
     if (!validation.ok) {
       return {
@@ -33,7 +35,7 @@ export function replayActions(
       };
     }
 
-    const result = applyAction(current, action);
+    const result = applyAction(current, action, options);
     current = resolveToStability(normalizeState(result.state), {
       artifactMode,
     });

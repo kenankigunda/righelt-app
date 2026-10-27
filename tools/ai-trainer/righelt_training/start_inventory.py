@@ -93,6 +93,7 @@ def verify_inventory(inventory, archives, seconds, *, engine=None, clock=time.mo
             verified.append({**row, 'state': state['state'], 'verification': 'authoritative-full-game-replay',
                              'rootState': archive['game'].get('rootState', archive['game']['initialState']),
                              'warmupActions': archive['game'].get('warmupActions', []),
+                             **({'retreatSemantics': archive['game']['retreatSemantics']} if 'retreatSemantics' in archive['game'] else {}),
                              'ancestorDecisionCount': row['index']})
         attempts.append({'archive': path, 'status': 'verified', 'states': len(requested)})
     if source_snapshot() != dependencies: raise ValueError('inventory source changed during replay')

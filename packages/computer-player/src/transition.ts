@@ -1,10 +1,11 @@
+import type { RetreatRuleOptions } from '../../shared-types/src/retreat-rules';
 import { applyAction, normalizeState, resolveToStability } from "../../game-engine/src/index";
 import type { Action, GameState } from "../../shared-types/src/engine";
 import { clearTransientTurnFlags } from "../../shared-types/src/shell-live-turn.js";
 
 /** The engine owns controller changes, continuation closure and terminal truth. */
-export function transition(state: GameState, action: Action): GameState {
-  const next = resolveToStability(applyAction(normalizeState(state), action).state, { artifactMode: "minimal" });
+export function transition(state: GameState, action: Action, options?: RetreatRuleOptions): GameState {
+  const next = resolveToStability(applyAction(normalizeState(state), action, options).state, { artifactMode: "minimal" });
   // Match the shared shell's canonical turn boundary, including explicit false
   // flags. IDs and counters must replay identically to committed server state.
   if (!next.continuation) {

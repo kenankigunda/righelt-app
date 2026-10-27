@@ -52,8 +52,16 @@ for (const fault of ['uncommitted', 'delayed-cleanup']) test(`actual150 browser 
       return isSyncCommand({ protocolVersion: 2, kind: 'shared', gameId: 'g', identityId: 'i',
         clientCommandId: 'v2:probe', fingerprint: 'a'.repeat(64), payload: {}, expectedState: {}, expectedGameplayRevision: 0 });
     })).toBe(false);
-    let allow = false, envelope; const sends = [];
-    await page.route(`**/api/shell/games/${gameId}/reconcile`, route => allow ? route.continue() : route.abort());
+    let allow = false, envelope, successfulSetupReconciles = 0; const sends = [], setupReconcileRequests = new Set();
+    page.on('response', response => {
+      if (!envelope && setupReconcileRequests.has(response.request()) && response.ok()) successfulSetupReconciles++;
+    });
+    await page.route(`**/api/shell/games/${gameId}/reconcile`, route => {
+      if (!envelope) setupReconcileRequests.add(route.request());
+      // Hold receipt recovery only after the shared command exists. An HTTP
+      // catch-up during old-client preparation must still restore authority.
+      return allow || !envelope ? route.continue() : route.abort();
+    });
     await page.route(`**/api/shell/games/${gameId}/shared`, route => {
       const command = route.request().postDataJSON(); envelope ??= command; sends.push(command);
       return fault === 'uncommitted' && !allow ? route.abort() : route.continue();
@@ -61,12 +69,24 @@ for (const fault of ['uncommitted', 'delayed-cleanup']) test(`actual150 browser 
     if (fault === 'delayed-cleanup') await page.evaluate(() => sessionStorage.setItem('mixed.hold-cleanup', 'true'));
     // This fixture has exactly one accepted move: undo before that immutable
     // boundary must restore the original board, independent of history ordering.
-    const activeMoves=(await page.evaluate(readProjectedGame,{id:gameId,guest:true})).moves.filter(move=>!move.undone);
+    // Exercise actual runtime catch-up after the faults are installed, before
+    // admitting Undo. This boundary must also work when preparation is late.
+    await page.bringToFront();
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await expect.poll(() => successfulSetupReconciles).toBeGreaterThan(0);
+    const preparedGame = await page.evaluate(readProjectedGame,{id:gameId,guest:true});
+    expect(preparedGame.gameplayRevision).toBe(1);
+    expect(preparedGame.myRoles).toEqual(['Player 1', 'Player 2']);
+    expect(preparedGame.canUndoLastMove).toBe(true);
+    expect(await journalRecords(page)).toEqual([]);
+    const activeMoves=preparedGame.moves.filter(move=>!move.undone);
     expect(activeMoves).toHaveLength(1);expect(activeMoves[0].moveId).toBeTruthy();
     await switchGamePanel(page,'history');
     const undoRow=page.locator(`[data-testid="history-move-item"][data-move-id="${activeMoves[0].moveId}"]`);
     await undoRow.locator('.history-item-info').click();
-    await undoRow.getByRole('button',{name:'Undo before this move',exact:true}).click();
+    const undo = undoRow.getByRole('button',{name:'Undo before this move',exact:true});
+    await expect(undo).toBeEnabled();
+    await undo.click();
     await expect.poll(() => envelope?.kind).toBe('shared');
     expect(envelope.payload.values.targetMoveId).toBe(activeMoves[0].moveId);
     if (fault === 'delayed-cleanup') await expect(page.getByTestId('sync-recovery-banner')).toContainText(/saving|save/i);
@@ -100,6 +120,6 @@ for (const fault of ['uncommitted', 'delayed-cleanup']) test(`actual150 browser 
     if (fault === 'delayed-cleanup') expect(sends).toHaveLength(1);
     await info.attach('mixed-client-proof', { contentType: 'application/json', body: JSON.stringify({ legacyRevision: fixture.revision,
       legacyTransportHash: fixture.transportHash, fault, clientCommandId: envelope.clientCommandId, fingerprint: envelope.fingerprint,
-      outcome: proof.commandOutcomes[0], oldTabSharedSends: 0, sharedAttempts: sends.length, gameHash }) });
+      outcome: proof.commandOutcomes[0], successfulSetupReconciles, oldTabSharedSends: 0, sharedAttempts: sends.length, gameHash }) });
   } finally { await old?.close(); await fixture.close(); }
 });

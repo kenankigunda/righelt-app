@@ -1,3 +1,4 @@
+import { archivedRetreatSemantics } from "../apps/web/generated/packages/shared-types/src/retreat-rules.js";
 import { localHttpsEnvironment } from './local-https.mjs';
 import { supervise } from './resources/supervisor.mjs';
 import { spawn } from "node:child_process";
@@ -72,6 +73,9 @@ export const isValidScenarioShape = (scenario) => {
   if (!scenario || typeof scenario !== "object") {
     return false;
   }
+  if (scenario.moves !== undefined && !Array.isArray(scenario.moves)) return false;
+  try { for (const move of scenario.moves ?? []) archivedRetreatSemantics(move?.retreatSemantics); }
+  catch { return false; }
   const scenarioId = typeof scenario.id === "string" ? scenario.id : "";
   const title = typeof scenario.title === "string" ? scenario.title.trim() : "";
   const description = typeof scenario.description === "string" ? scenario.description.trim() : "";

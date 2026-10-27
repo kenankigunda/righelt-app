@@ -530,7 +530,9 @@ function buildRushSuccessorActions(state: GameState): Action[] {
     });
 }
 
-function buildPushRetreatSuccessorActions(state: GameState): Action[] {
+/** Geometric candidates only: live legality also requires a completable Follow.
+ * Keep capture/removal separate from completion filtering, especially for retained positions. */
+export function buildPushRetreatSuccessorActions(state: GameState): Action[] {
   if (!state.continuation || state.continuation.type !== "push" || state.continuation.phase !== "retreat") {
     return [];
   }

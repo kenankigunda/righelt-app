@@ -1,7 +1,7 @@
 import { reportRemoval, type RemovalCollector } from "./removals";
 import { commanderOutcome } from "../../shared-types/src/commander-outcome.js";
 import type { ArtifactContractV1, ArtifactMode, GameState, ResolveArtifacts } from "./types";
-import { canCloseContinuationNow } from "./continuation";
+import { buildPushRetreatSuccessorActions, canCloseContinuationNow } from "./continuation";
 import { SUPPLY_POINTS } from "./deterministic";
 import { validateAction } from "./legal";
 
@@ -726,19 +726,7 @@ function applyContinuationPhase(state: GameState, onRemoval?: RemovalCollector):
         return true;
       }
 
-      const retreatCandidates = [
-        { row: pushedPiece.position.row - 1, col: pushedPiece.position.col },
-        { row: pushedPiece.position.row + 1, col: pushedPiece.position.col },
-        { row: pushedPiece.position.row, col: pushedPiece.position.col - 1 },
-        { row: pushedPiece.position.row, col: pushedPiece.position.col + 1 },
-      ].filter((to) =>
-        validateAction(state, {
-          type: "retreat",
-          actorId: pushedPiece.id,
-          from: pushedPiece.position,
-          to,
-        }).ok,
-      );
+      const retreatCandidates = buildPushRetreatSuccessorActions(state);
 
       if (retreatCandidates.length === 0) {
         reportRemoval(pushedPiece, "no_retreat", onRemoval);
