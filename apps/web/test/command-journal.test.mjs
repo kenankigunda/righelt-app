@@ -79,3 +79,28 @@ test("stalled journal transactions abort at the deadline and ignore late complet
   tx.oncomplete();await journal.close();
  }
 });
+
+test("expired journal reads cannot add or delete through late success callbacks", async t => {
+ for (const operation of ["admit", "remove"]) {
+  await t.test(operation,async()=>{
+  const envelope=await command(`late-${operation}`);
+  let read,writes=0,aborted=false;
+  const journal=createCommandJournal({timeoutMs:10,indexedDB:{open(){
+   const request={};queueMicrotask(()=>{
+    request.result={transaction(){return {
+     objectStore(){return {
+      getAll(){return read={result:[]};},get(){return read={result:envelope};},
+      add(){writes++;throw new DOMException('Transaction inactive','TransactionInactiveError');},
+      delete(){writes++;throw new DOMException('Transaction inactive','TransactionInactiveError');},
+     };},abort(){aborted=true;},
+    };},close(){}};request.onsuccess();
+   });return request;
+  }}});
+  await assert.rejects(journal[operation](envelope),{code:'journal_timeout'});
+  assert.equal(aborted,true);
+  assert.doesNotThrow(()=>read.onsuccess());
+  assert.equal(writes,0,'an expired request must not attempt a new native write');
+  await journal.close();
+  });
+ }
+});

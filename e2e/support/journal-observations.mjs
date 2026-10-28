@@ -4,7 +4,14 @@ export function installJournalObservations() {
  const records=[],ids=new WeakMap();let sequence=0,dropped=0;
  const id=value=>{if(!ids.has(value))ids.set(value,++sequence);return ids.get(value);};
  const record=(event,details)=>{try{if(records.length<1024)records.push({at:Date.now(),elapsed:performance.now(),event,...details});else dropped++;}catch{}};
- window.retreatJournalObservations={records,get dropped(){return dropped;}};
+ let eventLoopTicks=0,lastTick=performance.now();
+ // Distinguish delayed browser-task delivery from an IndexedDB backend stall.
+ // This observes scheduling only. Context teardown retires the owned timer.
+ setInterval(()=>{
+  const now=performance.now(),gapMs=now-lastTick;lastTick=now;eventLoopTicks++;
+  if(gapMs>500)record('event-loop-gap',{gapMs});
+ },100);
+ window.retreatJournalObservations={records,get dropped(){return dropped;},get eventLoopTicks(){return eventLoopTicks;}};
  const relevant=name=>typeof name==='string'&&name.startsWith('righelt.online-commands');
  const errorName=value=>{try{return value.error?.name;}catch{return undefined;}};
  const open=IDBFactory.prototype.open;

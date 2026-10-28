@@ -33,16 +33,18 @@ export const createCommandJournal = ({ indexedDB = globalThis.indexedDB, databas
     if (!isCurrent()) throw journalError("session_changed");
     return new Promise((resolve, reject) => {
       const tx = db.transaction("commands", mode);
-      let value, failure, expired = false;
+      let value, failure, expired = false, finished = false;
       const timer = setTimeout(() => {
         expired = true; failure = journalError("journal_timeout");
         try { tx.abort(); } catch {}
         reject(failure);
       }, timeoutMs);
-      tx.oncomplete = () => { clearTimeout(timer); if (!expired && isCurrent()) resolve(value); else reject(journalError("session_changed")); };
-      tx.onabort = () => { clearTimeout(timer); reject(failure || journalError("journal_transaction_failed", tx.error)); };
+      tx.oncomplete = () => { finished = true; clearTimeout(timer); if (!expired && isCurrent()) resolve(value); else reject(journalError("session_changed")); };
+      tx.onabort = () => { finished = true; clearTimeout(timer); reject(failure || journalError("journal_transaction_failed", tx.error)); };
       tx.onerror = () => {}; // abort is the terminal event; a successful request is not a commit.
-      try { work(tx.objectStore("commands"), (result) => { value = result; }, (error) => { failure = error; tx.abort(); }); }
+      // An already queued success event can arrive after timeout/abort. Its
+      // callback must not enqueue a write on that expired transaction.
+      try { work(tx.objectStore("commands"), (result) => { value = result; }, (error) => { failure = error; tx.abort(); }, () => !expired && !finished); }
       catch (error) { failure = error; tx.abort(); }
     });
   };
@@ -50,9 +52,10 @@ export const createCommandJournal = ({ indexedDB = globalThis.indexedDB, databas
     admit: (input) => {
       const command = structuredClone(input);
       if (!isSyncCommand(command)) return Promise.reject(journalError("invalid_command"));
-      return transaction("readwrite", (store, done, abort) => {
+      return transaction("readwrite", (store, done, abort, pending) => {
         const read = store.getAll();
         read.onsuccess = () => {
+          if (!pending()) return;
           if (!isCurrent()) { abort(journalError("session_changed")); return; }
           const records = read.result.filter((entry) => entry.identityId === command.identityId);
           const existing = records.find((entry) => entry.gameId === command.gameId && entry.clientCommandId === command.clientCommandId);
@@ -67,14 +70,15 @@ export const createCommandJournal = ({ indexedDB = globalThis.indexedDB, databas
         };
       });
     },
-    list: (identityId, gameId) => transaction("readonly", (store, done) => {
+    list: (identityId, gameId) => transaction("readonly", (store, done, _abort, pending) => {
       const read = store.getAll();
-      read.onsuccess = () => done(isCurrent() ? read.result.filter((entry) => entry.identityId === identityId && (gameId == null || entry.gameId === gameId)) : []);
+      read.onsuccess = () => { if (pending()) done(isCurrent() ? read.result.filter((entry) => entry.identityId === identityId && (gameId == null || entry.gameId === gameId)) : []); };
     }),
-    remove: (command) => transaction("readwrite", (store, done, abort) => {
+    remove: (command) => transaction("readwrite", (store, done, abort, pending) => {
       const key = keyOf(command);
       const read = store.get(key);
       read.onsuccess = () => {
+        if (!pending()) return;
         if (!isCurrent()) { abort(journalError("session_changed")); return; }
         // A stale tab cannot remove another identity's record or a conflicting replacement.
         if (read.result && read.result.fingerprint !== command.fingerprint) { abort(journalError("command_id_conflict")); return; }
