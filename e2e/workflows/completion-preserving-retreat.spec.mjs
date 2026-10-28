@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {deterministicStateHash,resolveToStability,serializeState} from '../../apps/web/generated/packages/game-engine/src/index.js';
 import {ACTION_CONTRACT_HEADER,ACTION_CONTRACT_VERSION,commandFingerprint,isSyncCommand,isReconcileResponse,isCommandOutcome} from '../../apps/web/generated/packages/shared-types/src/sync-protocol.js';
 import {importScenarioGame,submitPlayableAction,switchGamePanel,ensureActionActorSelected} from '../support/app.mjs';
-import {waitForOpponentReady,waitForComputerDecision} from '../support/computer-projection.mjs';
+import {waitForComputerDecision} from '../support/computer-projection.mjs';
 import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
 import {makeRetreatScenario,readRetreatCapture,FOLLOW_ACTION,RETREAT_CAPTURE_SHA256} from '../support/retreat-completion-fixture.mjs';
 
@@ -121,7 +121,8 @@ test('human retreat excludes the stranded square and completes the native Follow
 });
 
 test('the real computer defender records only the completion-preserving retreat',async({page,baseURL},info)=>{
- await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);await page.keyboard.press('Escape');
+ // Gameplay prepares its own real runtime. A dismissed introduction creates
+ // and retires another runtime before this workflow without exercising the retreat.
  const {gameId:sourceId}=await importScenarioGame(page,makeRetreatScenario('computer'),baseURL);
  const source=await current(page,sourceId);expect(capturedHash(source.board.state)).toBe(safe.stateHash);
  const sourceDecisionId=source.moves.at(-1).moveId;
