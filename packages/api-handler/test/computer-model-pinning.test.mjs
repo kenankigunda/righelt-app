@@ -16,13 +16,18 @@ function fixture(){
  };
  return {env,call};
 }
-for(const [name,requested,expected]of [['legacy omission',undefined,'initial-1554'],['explicit published',CURRENT_COMPUTER_MODEL.id,CURRENT_COMPUTER_MODEL.id]]){
+for(const [name,requested,expected]of [['legacy omission',undefined,'initial-1554'],['explicit retained','initial-1554','initial-1554'],['explicit published',CURRENT_COMPUTER_MODEL.id,CURRENT_COMPUTER_MODEL.id]]){
  test(`creation preserves ${name} prepared model across durable reload and conflicting recreation`,async()=>{
   const {env,call}=fixture();const created=await call('games',{gameId:'pinned',computer:seats,...(requested===undefined?{}:{computerModelId:requested})});
   assert.equal(created.status,200,JSON.stringify(created.body));assert.equal(created.body.game.computer.modelId,expected);
   env.GAME_ROOMS.restart('pinned');const loaded=await call('games/pinned');assert.equal(loaded.body.game.computer.modelId,expected);
   assert.equal((await call('games',{gameId:'pinned',computer:{p1:null,p2:'horus'},computerModelId:CURRENT_COMPUTER_MODEL.id})).status,409);
-  const unchanged=(await call('games/pinned')).body.game.computer;assert.equal(unchanged.modelId,expected);assert.deepEqual(unchanged.seats,seats);
+  const otherModel=expected==='initial-1554'?CURRENT_COMPUTER_MODEL.id:'initial-1554';
+  assert.notEqual(otherModel,expected,'Promotion needs two published model identities');
+  const modelOnlyConflict=await call('games',{gameId:'pinned',computer:seats,computerModelId:otherModel});
+  assert.equal(modelOnlyConflict.status,409);assert.equal(modelOnlyConflict.body.error,'game_already_exists');
+  env.GAME_ROOMS.restart('pinned');
+  const unchanged=(await call('games/pinned')).body.game.computer;assert.deepEqual(unchanged,loaded.body.game.computer);assert.equal(unchanged.modelId,expected);assert.deepEqual(unchanged.seats,seats);
  });
  test(`history branch preserves ${name} prepared model without changing source`,async()=>{
   const {env,call}=fixture();const source=createInitialGame({gameId:'source',identityId:'owner',selfPlayMode:true});

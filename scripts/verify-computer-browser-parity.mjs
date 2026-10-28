@@ -1,19 +1,21 @@
 // Read-only correctness proof for the exact production worker and model asset.
-// Run under resources:run with --corpus FILE --reference FILE --out FILE.
+// Run under resources:run with --corpus FILE --reference FILE --out FILE [--model-id PUBLISHED_ID].
 import { createServer } from 'node:http';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { chromium, firefox, webkit } from '@playwright/test';
-import { CURRENT_COMPUTER_MODEL } from '../apps/web/generated/packages/shared-types/src/computer-play.js';
+import { CURRENT_COMPUTER_MODEL, COMPUTER_MODELS } from '../apps/web/generated/packages/shared-types/src/computer-play.js';
+import { selectBrowserParityModel } from './computer-browser-parity-options.mjs';
+const model = selectBrowserParityModel(process.argv.slice(2), {current: CURRENT_COMPUTER_MODEL, models: COMPUTER_MODELS});
 const option = name => process.argv[process.argv.indexOf(name) + 1];
 for (const name of ['--corpus', '--reference', '--out']) if (!process.argv.includes(name)) throw Error(`Missing ${name}`);
 const root = path.resolve(import.meta.dirname, '../apps/web');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const corpusBytes = await readFile(option('--corpus')), corpus = JSON.parse(corpusBytes);
 const referenceBytes = await readFile(option('--reference')), reference = JSON.parse(referenceBytes);
-const modelBytes = await readFile(path.join(root, CURRENT_COMPUTER_MODEL.url));
-if (digest(modelBytes) !== CURRENT_COMPUTER_MODEL.sha256 || reference.modelSha256 !== CURRENT_COMPUTER_MODEL.sha256 ||
+const modelBytes = await readFile(path.join(root, model.url));
+if (digest(modelBytes) !== model.sha256 || reference.modelSha256 !== model.sha256 ||
     reference.corpusSha256 !== digest(corpusBytes) || reference.states.length !== corpus.states.length || corpus.states.length < 1000) throw Error('Parity input provenance mismatch');
 const server = createServer(async (request, response) => {
   try {
@@ -26,7 +28,7 @@ const server = createServer(async (request, response) => {
   } catch { response.writeHead(404); response.end(); }
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-const report = { schema: 1, modelId: CURRENT_COMPUTER_MODEL.id, modelSha256: digest(modelBytes), corpusSha256: digest(corpusBytes),
+const report = { schema: 1, modelId: model.id, modelSha256: digest(modelBytes), corpusSha256: digest(corpusBytes),
   referenceSha256: digest(referenceBytes), referenceDevice: reference.referenceDevice, atol: 1e-5, rtol: 1e-4, states: corpus.states.length,
   workerManifestSha256: digest(await readFile(path.join(root, 'computer/runtime/manifest.json'))), browsers: [], passed: false, strengthClaim: false };
 try {
@@ -39,7 +41,7 @@ try {
       await page.evaluate(async id => {
         const { ComputerRuntime } = await import('/shell/computer-runtime.js');
         window.parityRuntime = new ComputerRuntime(); await window.parityRuntime.prepare(id);
-      }, CURRENT_COMPUTER_MODEL.id);
+      }, model.id);
       const result = { name, version: browser.version(), checked: 0, policyMaxAbsoluteError: 0, valueMaxAbsoluteError: 0, legalMasksEqual: true };
       for (let offset = 0; offset < corpus.states.length; offset += 32) {
         const rows = corpus.states.slice(offset, offset + 32);
@@ -47,7 +49,7 @@ try {
           const { deterministicStateHash } = await import('/generated/packages/game-engine/src/hash.js');
           return (await window.parityRuntime.request({ type: 'evaluateBatch', states: rows.map(row => ({ id: row.id, state: row.state, fingerprint: deterministicStateHash(row.state) })),
             metadata: { gameId: 'numeric-parity', gameplayRevision: 0, fingerprint: 'batch', modelVersion: sha, profileVersion: 'parity', seed: 107 } })).results;
-        }, { rows: rows.map(({ id, state }) => ({ id, state })), sha: CURRENT_COMPUTER_MODEL.sha256 });
+        }, { rows: rows.map(({ id, state }) => ({ id, state })), sha: model.sha256 });
         if (actual.length !== rows.length) throw Error(`Incomplete evaluation batch: ${name} ${offset}`);
         for (let i = 0; i < actual.length; i++) {
           const expected = reference.states[offset + i], row = actual[i];
