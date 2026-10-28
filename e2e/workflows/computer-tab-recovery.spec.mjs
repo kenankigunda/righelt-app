@@ -39,6 +39,10 @@ test('a human destination survives a real pending renewal and needs a fresh conf
    const envelope=request.postDataJSON();
    if(envelope.payload?.operation==='computer-control'&&envelope.payload.values?.action==='renew'){
     if(!original){original=envelope;originalHeaders=Object.fromEntries(Object.entries(request.headers()).filter(([name])=>name==='content-type'||name.startsWith('x-righelt-')));}
+    // Later lease periods may create new commands after this one settles.
+    // While the original remains in the journal, every retry must retain it.
+    if(envelope.clientCommandId===original.clientCommandId)expect(envelope).toEqual(original);
+    else expect(await readJournal(),'A new renewal must wait for the original journal settlement').toBe(null);
     deliveries.push(envelope);await held;
    }
   }else if(original&&path.endsWith('/reconcile'))await held;
@@ -57,6 +61,7 @@ test('a human destination survives a real pending renewal and needs a fresh conf
   await expect(target).toHaveClass(/(?:^|\s)target(?:\s|$)/);
   expect(applies).toEqual([]);expect(await readJournal()).toEqual(original);
   const blocked=await projected(page,id);expect(blocked.board).toEqual(before.board);expect(blocked.moves).toEqual(before.moves);expect(blocked.gameplayRevision).toBe(before.gameplayRevision);
+  for(const envelope of deliveries)expect(envelope).toEqual(original);
   release();await expect.poll(readJournal).toBe(null);
   const response=await page.request.post(`/api/shell/games/${id}/reconcile`,{headers:originalHeaders,data:{protocolVersion:2,identityId:original.identityId,knownSnapshotEventSeq:0,commands:[original]}});
   expect(response.ok()).toBe(true);const body=await response.json(),outcomes=body.commandOutcomes.filter(value=>value.clientCommandId===original.clientCommandId);
@@ -68,7 +73,9 @@ test('a human destination survives a real pending renewal and needs a fresh conf
   await expect.poll(async()=>(await projected(page,id)).moves.filter(move=>move.clientCommandId===applies[0].clientCommandId).length).toBe(1);
   const after=await projected(page,id),human=after.moves.filter(move=>move.clientCommandId===applies[0].clientCommandId);
   expect(human).toHaveLength(1);expect(human[0].action).toEqual(action);expect(after.gameplayRevision).toBeGreaterThanOrEqual(before.gameplayRevision+1);
-  expect(applies).toHaveLength(1);for(const envelope of deliveries)expect(envelope).toEqual(original);
+  expect(applies).toHaveLength(1);
+  const renewalById=new Map();
+  for(const envelope of deliveries){const first=renewalById.get(envelope.clientCommandId);if(first)expect(envelope).toEqual(first);else renewalById.set(envelope.clientCommandId,envelope);}
   await info.attach('blocked-renewal-and-explicit-confirmation',{contentType:'application/json',body:JSON.stringify({original,outcome:outcomes[0],action,submitted:applies[0]},null,2)});
  }finally{release();page.off('request',observe);await page.unrouteAll({behavior:'wait'});}
 });
