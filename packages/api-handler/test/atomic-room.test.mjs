@@ -80,7 +80,7 @@ test("I-03 presence, history and send-failure cleanup use ordered revisions with
   const first = (await (await call("history", { moveIndex: 0 })).json()).eventSeq;
   const second = (await (await call("live")).json()).eventSeq;
   assert.equal(second, first + 1);
-  const socket = { serializeAttachment() {}, send() { throw new Error("closed"); } };
+  const socket = { serializeAttachment() {}, close() {}, send() { throw new Error("closed"); } };
   room.sessions.set(socket, { socket, gameId: "g", identityId: "actor", sessionId: "session", status: "active", lastSeenAt: Date.now(), lastEventSeq: second });
   await room.webSocketMessage(socket, JSON.stringify({ type: "heartbeat", identityId: "actor", sessionId: "session", lastEventSeq: second }));
   // The failed broadcast queues cleanup after the current mutation, without deadlock.

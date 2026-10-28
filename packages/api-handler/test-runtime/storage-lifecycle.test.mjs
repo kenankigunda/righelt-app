@@ -513,3 +513,24 @@ test("scoped writers retain metadata bytes and large-command receipts when the c
   assert.deepEqual(after.board,retained.board);assert.deepEqual(after.moves,retained.moves);
  }finally{await h.close();}
 });
+
+test("hibernating sockets complete a clean peer close on the pinned compatibility date",{timeout:20000},async()=>{
+ const h=await harness();let socket;
+ try{
+  assert.equal((await h.call("create",{gameId:"g",selfPlayMode:true})).status,200);
+  const before=await h.current();const url=new URL('/api/shell/games/g/ws?identityId=actor&sessionId=close-handshake&lastEventSeq=0',await h.runtime.ready);url.protocol='ws:';
+  socket=new WebSocket(url);
+  await new Promise((resolve,reject)=>{
+   const timer=setTimeout(()=>reject(Error('Initial socket snapshot missing')),3000);
+   socket.addEventListener('error',()=>{clearTimeout(timer);reject(Error('Socket failed'));},{once:true});
+   socket.addEventListener('message',event=>{const frame=JSON.parse(event.data);if(frame.game){clearTimeout(timer);assert.deepEqual(frame.game.board,before.game.board);resolve();}},{once:true});
+  });
+  const closed=new Promise((resolve,reject)=>{
+   const timer=setTimeout(()=>reject(Error('Reciprocal close handshake missing')),1000);
+   socket.addEventListener('close',event=>{clearTimeout(timer);resolve(event);},{once:true});
+  });
+  socket.close(1000,'probe complete');const event=await closed;
+  assert.equal(event.code,1000);assert.equal(event.wasClean,true);
+  const after=await h.current();assert.deepEqual(after.game.board,before.game.board);assert.deepEqual(after.game.moves,before.game.moves);
+ }finally{socket?.close();await h.close();}
+});

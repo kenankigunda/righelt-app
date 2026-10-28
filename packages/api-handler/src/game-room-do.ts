@@ -1070,7 +1070,11 @@ export class GameRoomDO {
     if (payload.type === "heartbeat") await this.send(socket, { type: "heartbeat_ack", protocolVersion: 2, gameId: current.gameId, eventSeq: this.eventSeq });
   }
 
-  async webSocketClose(socket: WebSocket) {
+  async webSocketClose(socket: WebSocket, code = 1000) {
+    // The pinned compatibility date requires a reciprocal Close frame. Reply
+    // before queued presence work, which may be blocked or fail independently.
+    // These reserved observation codes cannot be sent in a Close frame.
+    socket.close([1005, 1006, 1015].includes(code) ? 1000 : code);
     return this.enqueue(() => this.webSocketCloseQueued(socket));
   }
 
