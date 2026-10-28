@@ -1,10 +1,12 @@
 import {test,expect} from '@playwright/test';
+import {writeFile} from 'node:fs/promises';
 import {deterministicStateHash,resolveToStability,serializeState} from '../../apps/web/generated/packages/game-engine/src/index.js';
 import {ACTION_CONTRACT_HEADER,ACTION_CONTRACT_VERSION,commandFingerprint,isSyncCommand,isReconcileResponse,isCommandOutcome} from '../../apps/web/generated/packages/shared-types/src/sync-protocol.js';
 import {importScenarioGame,submitPlayableAction,switchGamePanel,ensureActionActorSelected} from '../support/app.mjs';
-import {waitForOpponentReady,waitForComputerDecision} from '../support/computer-projection.mjs';
+import {waitForComputerDecision} from '../support/computer-projection.mjs';
 import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
 import {makeRetreatScenario,readRetreatCapture,FOLLOW_ACTION,RETREAT_CAPTURE_SHA256} from '../support/retreat-completion-fixture.mjs';
+import {installJournalObservations} from '../support/journal-observations.mjs';
 
 const f=readRetreatCapture(),safe=f.alternatives.find(row=>row.completable);
 // Capture identity is explicitly minimal-artifact. Search and command
@@ -18,8 +20,20 @@ const capturedHash=state=>{
 };
 const board=page=>page.getByTestId('game-board');
 const cell=(page,at)=>board(page).locator(`.cell[data-row="${at.row}"][data-col="${at.col}"]`);
+test.beforeEach(async({page})=>{await page.addInitScript(installJournalObservations);});
 test.afterEach(async({page},info)=>{
- if(info.status===info.expectedStatus||!['failed','timedOut','interrupted'].includes(info.status))return;
+ if(info.status===info.expectedStatus){
+  let timer;
+  try{
+   const journal=await Promise.race([page.evaluate(()=>window.retreatJournalObservations),new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
+   const path=info.outputPath('native-journal-lifecycle.json');
+   await writeFile(path,JSON.stringify(journal??{unavailable:'not-installed'}));
+   await info.attach('native-journal-lifecycle',{contentType:'application/json',path});
+  }catch{console.warn('[retreat-diagnostic] Journal lifecycle attachment unavailable.');}
+  finally{clearTimeout(timer);}
+  return;
+ }
+ if(!['failed','timedOut','interrupted'].includes(info.status))return;
  let snapshot,diagnosticTimer;
  try{
   snapshot=page.isClosed()?{available:false,reason:'page-closed'}:await Promise.race([page.evaluate(async()=>{
@@ -31,11 +45,14 @@ test.afterEach(async({page},info)=>{
    const {issueDiagnostics}=await import('/shell/issue-diagnostics.js');
    const fields=['stage','code','operation','receipt','pendingCount','gameplayRevision','appliedEventSeq','advertisedEventSeq','at','generation','elapsedMs','deadlineMs'];
    const pick=value=>Object.fromEntries(fields.filter(key=>Object.hasOwn(value??{},key)).map(key=>[key,value[key]]));
-   return{available:true,gameId,reports:issueDiagnostics.list().filter(report=>report.schemaVersion===1&&report.key===`recovery:${gameId}`).map(report=>({schemaVersion:1,startedAt:report.startedAt,resolvedAt:report.resolvedAt,initial:pick(report.initial),events:report.events.map(pick)}))};
+   return{available:true,gameId,journal:window.retreatJournalObservations,reports:issueDiagnostics.list().filter(report=>report.schemaVersion===1&&report.key===`recovery:${gameId}`).map(report=>({schemaVersion:1,startedAt:report.startedAt,resolvedAt:report.resolvedAt,initial:pick(report.initial),events:report.events.map(pick)}))};
   }),new Promise(resolve=>{diagnosticTimer=setTimeout(()=>resolve({available:false,reason:'diagnostic-read-timeout'}),2000);})]);
  }catch(error){snapshot={available:false,reason:'diagnostic-read-unavailable',errorKind:String(error?.name??'Error').slice(0,80)};}
  finally{clearTimeout(diagnosticTimer);}
- try{await info.attach('local-recovery-incidents',{contentType:'application/json',body:JSON.stringify(snapshot)});}
+ try{
+  const path=info.outputPath('local-recovery-incidents.json');await writeFile(path,JSON.stringify(snapshot));
+  await info.attach('local-recovery-incidents',{contentType:'application/json',path});
+ }
  catch{console.warn('[retreat-diagnostic] Diagnostic attachment unavailable; original test failure retained.');}
 });
 async function request(page,route,body){
@@ -121,7 +138,8 @@ test('human retreat excludes the stranded square and completes the native Follow
 });
 
 test('the real computer defender records only the completion-preserving retreat',async({page,baseURL},info)=>{
- await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);await page.keyboard.press('Escape');
+ // Gameplay prepares its own real runtime. A dismissed introduction creates
+ // and retires another runtime before this workflow without exercising the retreat.
  const {gameId:sourceId}=await importScenarioGame(page,makeRetreatScenario('computer'),baseURL);
  const source=await current(page,sourceId);expect(capturedHash(source.board.state)).toBe(safe.stateHash);
  const sourceDecisionId=source.moves.at(-1).moveId;
