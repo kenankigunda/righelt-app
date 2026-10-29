@@ -16,8 +16,8 @@ const heldRules = () => {
     cancelAll() { for(const scope of [...jobs.keys()])this.cancel(scope); },
   };
 };
-const fixture = async t => {
-  const rules=heldRules(), state=resolveToStability(createInitialState(),{artifactMode:'full'});
+const fixture = async (t, transformState = state => state) => {
+  const rules=heldRules(), state=transformState(resolveToStability(createInitialState(),{artifactMode:'full'}));
   const game={id:'async-game',createdAt:'2026-10-29T00:00:00Z',updatedAt:'2026-10-29T00:00:00Z',gameplayRevision:0,
     myRole:'Player 1',player1:{identityId:'owner'},player2:{identityId:'owner'},selfPlayMode:true,
     board:{state},currentSnapshot:state,legalActions:listLegalActions(state),canRecordMove:true,
@@ -85,4 +85,57 @@ test('confirmation recovery retains an already published tentative board while r
   assert.deepEqual(f.store.getGameViewModel(f.game.id).board.state,tentative);
   assert.equal(f.store.getGameViewModel(f.game.id).pendingCommandCount,1);
   assert.equal(f.saved.length,1);assert.equal(f.rules.calls.length,1);
+});
+
+test('same-revision read-only refresh during checking preserves the action and fresh participant metadata',async t=>{
+ const f=await fixture(t),operation=f.move();const job=await f.waitForJob();
+ f.store.applyLiveGameUpdate({game:{...structuredClone(f.game),player1:{...f.game.player1,connected:false}},eventSeq:2});
+ job.resolve();const result=await operation;
+ assert.equal(result.accepted,true);assert.equal(f.saved.length,1);assert.equal(f.rules.calls.length,1);
+ assert.equal(result.game.player1.connected,false);
+});
+
+for(const [label,patch] of [
+ ['seat ownership',{player1:{identityId:'other'}}],
+ ['viewer role',{myRole:'Viewer'}],
+ ['history intent',{inHistoryMode:true,historyIndex:0}],
+ ['computer control',{computer:{ownerId:'owner',generation:2,seats:{p1:'horus',p2:null},modelId:'initial-1554'}}],
+])test(`same-board ${label} change still fences an unfinished action`,async t=>{
+ const f=await fixture(t),operation=f.move();const rejected=assert.rejects(operation,{code:'stale_state'});
+ const job=await f.waitForJob();f.store.applyLiveGameUpdate({game:{...structuredClone(f.game),...patch},eventSeq:2});job.resolve();await rejected;
+ assert.equal(f.saved.length,0);
+});
+test('same-generation lease renewal during checking preserves the action and latest expiry',async t=>{
+ const f=await fixture(t);const computer={ownerId:'owner',generation:2,seats:{p1:null,p2:'horus'},modelId:'initial-1554',manual:true,
+   lease:{deviceId:'device',authContextId:'context',expiresAt:100}};
+ f.store.applyLiveGameUpdate({game:{...structuredClone(f.game),computer},eventSeq:2});
+ const operation=f.move(),job=await f.waitForJob();
+ f.store.applyLiveGameUpdate({game:{...structuredClone(f.game),computer:{...computer,lease:{...computer.lease,expiresAt:200}}},eventSeq:3});
+ job.resolve();const result=await operation;assert.equal(result.accepted,true);assert.equal(f.saved.length,1);
+ assert.equal(result.game.computer.lease.expiresAt,200);
+});
+
+// Resolving this display-only difference would make the boards equivalent. The
+// admission fence must compare saved snapshots without entering the rule solver.
+test('authority fence does not resolve snapshots on the caller thread',async t=>{
+  const f=await fixture(t,state=>{state.pieces[0].displaySupplied=!state.pieces[0].supplied;return state;});
+  const operation=f.move(), rejected=assert.rejects(operation,{code:'stale_state'}), job=await f.waitForJob();
+  const refreshed=structuredClone(f.game); refreshed.board.state=resolveToStability(refreshed.board.state,{artifactMode:'full'});
+  assert.notDeepEqual(refreshed.board.state,f.game.board.state);
+  f.store.applyLiveGameUpdate({game:refreshed,eventSeq:2});job.resolve();await rejected;assert.equal(f.saved.length,0);
+});
+
+test('reload compares nonidentical saved boards off-thread and cancels on navigation',async t=>{
+  const f=await fixture(t), operation=f.move();(await f.waitForJob()).resolve();await operation;
+  const rules=heldRules(), current=structuredClone(f.game);delete current.board.state.artifacts;
+  let check,release;const sent=[];
+  rules.equivalent=(scope,input)=>new Promise((resolve,reject)=>{check={scope,input};release=resolve;rules.jobs.set(scope,{reject});});
+  const reloaded=createLiveTransportStore({storage:f.storage,commandJournal:f.journal,rulesExecutor:rules,shouldDeferCommandSend:()=>false,
+    fetcher:async(url,init)=>{if(init.method==='POST'&&!url.endsWith('/reconcile'))sent.push(url);
+      return Response.json({ok:true,protocolVersion:2,gameId:current.id,eventSeq:1,gameplayRevision:0,game:current,
+        commandOutcomes:url.endsWith('/reconcile')?JSON.parse(init.body).commands.map(e=>({gameId:current.id,identityId:e.identityId,clientCommandId:e.clientCommandId,fingerprint:e.fingerprint,outcome:'unknown',reason:null,eventSeq:1,gameplayRevision:0})):[]},
+        {headers:{[ACTION_CONTRACT_HEADER]:String(ACTION_CONTRACT_VERSION)}});}});
+  t.after(()=>reloaded.retire());reloaded.setRulesActiveGame(current.id);await reloaded.loadGame(current.id);
+  for(let i=0;i<100&&!check;i++)await tick();assert.ok(check);assert.deepEqual(sent,[]);
+  reloaded.setRulesActiveGame(null);release(true);await tick();await tick();assert.deepEqual(sent,[]);assert.equal(f.saved.length,1);
 });

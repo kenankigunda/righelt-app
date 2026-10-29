@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { RulesRuntime } from '../board/rules-runtime.js';
 import { projectOptimisticGame } from '../shell/optimistic-live.js';
 import { buildPieceMoveResponse } from '../board/client-move-generation.js';
-import { createInitialState, resolveToStability, listLegalActions } from '../generated/packages/game-engine/src/index.js';
+import { createInitialState, resolveToStability, listLegalActions, equivalentGameStates } from '../generated/packages/game-engine/src/index.js';
 
 const workerFactory = () => {
   const worker = new Worker(`import {parentPort} from 'node:worker_threads';
@@ -36,4 +36,11 @@ test('real preview worker preserves legal and blocked move explanations', async 
   const state = resolveToStability(createInitialState(), { artifactMode: 'full' });
   const input = { state, legalActions: listLegalActions(state), pieceId: 'C1' };
   assert.deepEqual(await runtime.previews('C1', input), buildPieceMoveResponse(input));
+});
+
+test('real recovery worker preserves semantic comparison for retained snapshots',async t=>{
+  const runtime=new RulesRuntime({workerFactory});t.after(()=>runtime.cancelAll());
+  const left=resolveToStability(createInitialState(),{artifactMode:'full'}),right=structuredClone(left);delete right.artifacts;
+  assert.equal(await runtime.equivalent('retained',{left,right}),equivalentGameStates(left,right));
+  right.pieces.pop();assert.equal(await runtime.equivalent('changed',{left,right}),equivalentGameStates(left,right));
 });

@@ -433,7 +433,7 @@ test('commander windows mask paths and center dots in real and ghost states',asy
  const source=page.locator('#shell-board .cell:has(.piece-token.p1.commander:not(.ghost))').first();await source.click();
  await expect(page.locator('#shell-board .commander.move-ghost').first()).toBeVisible();
  await expect.poll(()=>page.locator('#shell-board .cell').evaluateAll(cells=>cells.flatMap(el=>el.getAnimations()).filter(a=>a.playState==='running').length)).toBe(0);
- const states=await page.locator('#shell-board .commander').evaluateAll(tokens=>tokens.map(token=>{
+ const states=await page.evaluate(()=>[...document.querySelectorAll('#shell-board .commander')].map(token=>{
   const cutout=token.querySelector('.commander-cutout'),cell=token.closest('.cell');
   const ctx=document.createElement('canvas').getContext('2d');
   const rgba=color=>{ctx.clearRect(0,0,1,1);ctx.fillStyle=color;ctx.fillRect(0,0,1,1);return [...ctx.getImageData(0,0,1,1).data];};

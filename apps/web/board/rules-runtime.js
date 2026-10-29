@@ -1,3 +1,4 @@
+import { equivalentGameStates } from '../generated/packages/game-engine/src/index.js';
 import { projectOptimisticGame } from '../shell/optimistic-live.js';
 import { buildPieceMoveResponse } from './client-move-generation.js';
 
@@ -13,6 +14,7 @@ export class RulesRuntime {
     this.running = null;
   }
   project(scope, input) { return this.request(scope, 'project', input); }
+  equivalent(scope, input) { return this.request(scope, 'equivalent', input); }
   previews(scope, input) { return this.request(scope, 'previews', input); }
   request(scope, type, input) {
     this.cancel(scope);
@@ -67,6 +69,7 @@ export const createRulesExecutor = () => typeof Worker === 'function' ? new Rule
   // browser worker failure, which would put the blocked work back on the UI.
   asynchronous: false,
   project: (_scope, input) => projectOptimisticGame(input),
+  equivalent: (_scope, input) => equivalentGameStates(input.left, input.right),
   previews: (_scope, input) => buildPieceMoveResponse(input),
   cancel() {}, cancelAll() {},
 };

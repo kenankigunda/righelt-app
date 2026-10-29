@@ -18,6 +18,21 @@ const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
 const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
 const getSeatIdentity = (game, seat) => (seat === "Player 1" ? game.player1?.identityId ?? null : game.player2?.identityId ?? null);
 
+// These are the fields this projector changes. Fresh read-only metadata stays
+// current when an equivalent authority snapshot arrives during worker execution.
+const PROJECTED_GAME_FIELDS = Object.freeze([
+  'board', 'moves', 'turns', 'updatedAt', 'lastMoveAt', 'currentTurn',
+  'turnOwnerSeat', 'controlSeat', 'control', 'legalActions', 'pendingMoves',
+  'pendingCommandCount', 'liveCurrentSnapshot', 'currentSnapshot', 'computerTurn',
+  'canRecordMove', 'canEndTurn', 'sharedMutationsBlocked',
+]);
+export const rebaseProjectedMetadata = (projection, authoritativeGame) => ({
+  ...projection,
+  game: Object.assign(clone(authoritativeGame), Object.fromEntries(
+    PROJECTED_GAME_FIELDS.filter(key => key in projection.game).map(key => [key, projection.game[key]]),
+  )),
+});
+
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "(?,?)");
 
 export const defaultNotationForAction = (action) => {
