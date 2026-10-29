@@ -2056,6 +2056,10 @@ const terminalCleanupStore = async (t,label,{auth=null,accepted=true}={}) => {
       }
       const body=JSON.parse(init.body);calls.network.push({url,body:clone(body)});
       const shared=String(url).endsWith('/shared'),apply=String(url).endsWith('/apply');
+      if(String(url).endsWith('/reconcile')){
+        phases.record('reconcile-request',{body:clone(body)});
+        if(hooks.reconcileResponse)await hooks.reconcileResponse(body);
+      }
       if(shared)phases.record('shared-request',{envelope:clone(body)});
       if(shared&&hooks.sharedResponse)await hooks.sharedResponse(body);
       if(apply)game=buildAcknowledgedGame(game,body.payload.action);
@@ -2522,6 +2526,26 @@ for(const action of ['pause','manual','takeover','release','upgrade'])for(const 
  assert.equal(h.calls.admit.length,1,'manual recovery never invents the missing shared intent');
  if(lateCommit){await h.phase('shared-request');const removal=await h.phase('remove');assert.equal((await removal.settled).ok,true);}
  else assert.equal(h.calls.network.filter(x=>String(x.url).endsWith('/shared')).length,0);
+});
+
+test('a validated empty reconciliation drains a shared command admitted while it was in flight',{timeout:10000},async t=>{
+ const h=await terminalCleanupStore(t,'reconcile-drain');h.hooks.remove=null;
+ const gate=cleanupDeferred(t);h.hooks.reconcileResponse=()=>gate.promise;
+ const reconcile=h.store.reconcileGame(h.game.id);await h.phase('reconcile-request',2);
+ const control=h.control();const admission=await h.phase('admit');assert.equal((await admission.settled).ok,true);
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(h.calls.network.filter(x=>String(x.url).endsWith('/shared')).length,0);
+ gate.resolve();await reconcile;await h.phase('shared-request');assert.equal((await control).ok,true);
+ const requests=h.calls.network.filter(x=>String(x.url).endsWith('/shared'));assert.equal(requests.length,1);assert.deepEqual(requests[0].body,h.calls.admit[0]);
+});
+
+for(const stale of [false,true])test(`a ${stale?'retired':'failed'} empty reconciliation cannot drain a newly admitted shared command`,{timeout:10000},async t=>{
+ const h=await terminalCleanupStore(t,`reconcile-no-drain-${stale}`);h.hooks.remove=null;
+ const gate=cleanupDeferred(t);h.hooks.reconcileResponse=async()=>{await gate.promise;if(!stale)throw Object.assign(Error('invalid_response'),{code:'invalid_response'});};
+ const reconcile=h.store.reconcileGame(h.game.id).then(value=>({ok:true,value}),error=>({ok:false,error}));await h.phase('reconcile-request',2);
+ const control=h.control();const admission=await h.phase('admit');assert.equal((await admission.settled).ok,true);await new Promise(resolve=>setImmediate(resolve));
+ if(stale)h.store.retire();gate.resolve();await reconcile;await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(h.calls.network.filter(x=>String(x.url).endsWith('/shared')).length,0);assert.equal(h.calls.admit.length,1);
+ h.store.retire();assert.equal((await control).ok,false);
 });
 
 test('an in-flight automatic journal read cannot act after a conflicting storage failure',{timeout:10000},async t=>{

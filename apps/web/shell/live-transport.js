@@ -925,8 +925,17 @@ export const createLiveTransportStore = ({
         const attempt = { commandId: null, controller: new AbortController() };
         attempt.done = new Promise(resolve => { attempt.finish = resolve; });
         optimistic.attempt = attempt;
-        try { await reconcileRequest(gameId, attempt.controller, () => current() && optimistic.attempt === attempt); }
-        finally { if (optimistic.attempt === attempt) optimistic.attempt = null; attempt.finish(); }
+        let reconciled = false;
+        try { reconciled = Boolean(await reconcileRequest(gameId, attempt.controller, () => current() && optimistic.attempt === attempt)); }
+        finally {
+          const owned = optimistic.attempt === attempt;
+          if (owned) optimistic.attempt = null;
+          attempt.finish();
+          // Admission may commit while this read occupies the send slot. Its
+          // first send and processResponse's send both defer to that slot.
+          // Wake only after a validated, still-current read releases it.
+          if (owned && reconciled && current()) void sendNextPendingCommand(gameId);
+        }
       }
       if (optimistic.upgradeRequired) return;
       if (current() && optimistic.forceSnapshot) throw Object.assign(new Error("snapshot_required"), { code: "invalid_response" });
