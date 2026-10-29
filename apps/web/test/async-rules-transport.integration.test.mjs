@@ -8,9 +8,10 @@ import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION } from '../generated/pa
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const heldRules = () => {
   const jobs = new Map(), calls = [];
-  return { asynchronous: true, calls, jobs,
+  let signalStarted;const started=new Promise(resolve=>{signalStarted=resolve;});
+  return { asynchronous: true, calls, jobs, started,
     project(scope, input) {
-      return new Promise((resolve,reject) => { const job = {scope,input,resolve:()=>{jobs.delete(scope);resolve(projectOptimisticGame(input));},reject}; calls.push(job); jobs.set(scope,job); });
+      return new Promise((resolve,reject) => { const job = {scope,input,resolve:()=>{jobs.delete(scope);resolve(projectOptimisticGame(input));},reject}; calls.push(job); jobs.set(scope,job);signalStarted(job); });
     },
     cancel(scope) { const job=jobs.get(scope); if(job){jobs.delete(scope);job.reject(Object.assign(Error('cancelled'),{code:'rules_cancelled'}));} },
     cancelAll() { for(const scope of [...jobs.keys()])this.cancel(scope); },
@@ -29,7 +30,7 @@ const fixture = async (t, transformState = state => state) => {
     fetcher:async(url,init)=>{requests.push({url,init});if(failWrites&&init.method==='POST')throw Error('lost response');return Response.json({ok:true,protocolVersion:2,game,eventSeq:1},{headers:{[ACTION_CONTRACT_HEADER]:String(ACTION_CONTRACT_VERSION)}});}});
   t.after(()=>store.retire()); store.setRulesActiveGame(game.id); await store.loadGame(game.id);
   const move=()=>store.applyGameAction({gameId:game.id,state,action:game.legalActions.find(a=>a.type==='move')});
-  const waitForJob=async()=>{for(let i=0;i<100&&!rules.calls.length;i++)await tick();assert.equal(rules.calls.length,1);return rules.calls[0];};
+  const waitForJob=async()=>{const job=await rules.started;assert.equal(rules.calls.length,1);return job;};
   return {rules,game,store,saved,requests,move,waitForJob,journal,storage,allowFailedSends:()=>{defer=false;failWrites=true;}};
 };
 test('navigation cancels unfinished projection without admitting or sending a command',async t=>{
@@ -128,14 +129,14 @@ test('authority fence does not resolve snapshots on the caller thread',async t=>
 test('reload compares nonidentical saved boards off-thread and cancels on navigation',async t=>{
   const f=await fixture(t), operation=f.move();(await f.waitForJob()).resolve();await operation;
   const rules=heldRules(), current=structuredClone(f.game);delete current.board.state.artifacts;
-  let check,release;const sent=[];
-  rules.equivalent=(scope,input)=>new Promise((resolve,reject)=>{check={scope,input};release=resolve;rules.jobs.set(scope,{reject});});
+  let check,release,signalCheck;const checkStarted=new Promise(resolve=>{signalCheck=resolve;});const sent=[];
+  rules.equivalent=(scope,input)=>new Promise((resolve,reject)=>{check={scope,input};release=resolve;rules.jobs.set(scope,{reject});signalCheck();});
   const reloaded=createLiveTransportStore({storage:f.storage,commandJournal:f.journal,rulesExecutor:rules,shouldDeferCommandSend:()=>false,
     fetcher:async(url,init)=>{if(init.method==='POST'&&!url.endsWith('/reconcile'))sent.push(url);
       return Response.json({ok:true,protocolVersion:2,gameId:current.id,eventSeq:1,gameplayRevision:0,game:current,
         commandOutcomes:url.endsWith('/reconcile')?JSON.parse(init.body).commands.map(e=>({gameId:current.id,identityId:e.identityId,clientCommandId:e.clientCommandId,fingerprint:e.fingerprint,outcome:'unknown',reason:null,eventSeq:1,gameplayRevision:0})):[]},
         {headers:{[ACTION_CONTRACT_HEADER]:String(ACTION_CONTRACT_VERSION)}});}});
   t.after(()=>reloaded.retire());reloaded.setRulesActiveGame(current.id);await reloaded.loadGame(current.id);
-  for(let i=0;i<100&&!check;i++)await tick();assert.ok(check);assert.deepEqual(sent,[]);
+  await checkStarted;assert.ok(check);assert.deepEqual(sent,[]);
   reloaded.setRulesActiveGame(null);release(true);await tick();await tick();assert.deepEqual(sent,[]);assert.equal(f.saved.length,1);
 });
