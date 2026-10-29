@@ -72,7 +72,7 @@ test('main game projection keeps computer turns read only until explicit takeove
 
 test('published model controls retain their pinned identity and generation fences', () => {
  assert.equal(initial().modelId,CURRENT_COMPUTER_MODEL.id);
- assert.equal(CURRENT_COMPUTER_MODEL.id,'initial-1554');
+ assert.equal(getComputerModel(CURRENT_COMPUTER_MODEL.id),CURRENT_COMPUTER_MODEL);
  assert.equal(getComputerModel('production-20261025-99'),null);
  const old={...initial(),modelId:'initial-1554'};
  assert.equal(parseComputerControl(JSON.parse(JSON.stringify(old))).modelId,'initial-1554');

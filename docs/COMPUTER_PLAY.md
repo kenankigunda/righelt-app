@@ -23,3 +23,13 @@ Action contract version 2 is separate from sync protocol version 2. API response
 Deploy the API before the web client. The client checks the server contract before optimistically admitting End Turn. An unsupported pair enters the existing static upgrade state and waits for user-controlled refresh. It never loops automatic reloads. Old continuation Pass requests receive `upgrade_required` rather than being reinterpreted. Existing accepted receipts are reconciled before contract fencing, so lost acknowledgments remain recoverable.
 
 Current snapshots and receipts remain supported. Historical continuation Pass rows remain invalid live engine inputs. The isolated trainer replay adapter preserves valid old rush-closure records without relaxing current legality or full-state hashes. Keep every production game, including synthetic smoke games, its history, receipts and model provenance for training; no hosted deletion, reset, retention cleanup or destructive migration is authorized in this program. Preserve accounts, model assets, accepted receipts, archived tombstones and uncertain-command safeguards. Document and prove stale-client and pending-command fencing before such a reset.
+
+## October 29 experimental model release
+
+New games use `trained-20261029-1086`, a continuation-trained attention model. Existing games retain `initial-1554` until their owner explicitly chooses Update opponent. Cached clients that omit a model identity also retain the original default. The original model asset stays available. Public profile settings and search budgets are unchanged.
+
+The fixed ONNX export has SHA-256 `f5b0f38763f290eaecf7f1958738342bb327f42efe95b5021b1f59b2b78f8a0f`. It passed native-to-ONNX numeric checks on 1,000 validation states and numeric plus full legal-mask checks in Chromium, Firefox and WebKit. These establish export compatibility, not playing strength.
+
+The frozen 54-game comparison completed all attempts, with 40 terminal results and 14 nonterminal results. Only 9 of 18 groups finished all three games, and the conservative trajectory deduplication rule left 3 complete unique groups. Strength and regression assessment remain inconclusive. On October 29, the owner explicitly authorized a best-effort production release for additional manual testing despite this coverage gap. The model remains experimental. This decision does not change the historical evaluation results.
+
+Rollback means restoring the previous current-model catalog entry while preserving both assets and already pinned game identities. Do not delete accepted games, history or model provenance.

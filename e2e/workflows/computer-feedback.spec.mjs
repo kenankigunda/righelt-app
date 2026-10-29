@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {CURRENT_COMPUTER_MODEL} from '../../packages/shared-types/src/computer-play.ts';
 import {ACTION_CONTRACT_HEADER,ACTION_CONTRACT_VERSION} from '../../apps/web/generated/packages/shared-types/src/sync-protocol.js';
 import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
 
@@ -13,6 +14,8 @@ async function createBabs(page){
   await page.getByRole('button',{name:'Play Babs',exact:true}).click();
   const response=await creation;expect(response.ok()).toBe(true);
   const game=(await response.json()).game;
+  expect(response.request().postDataJSON().computerModelId).toBe(CURRENT_COMPUTER_MODEL.id);
+  expect(game.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',game.id);
   await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
   return game;
@@ -56,11 +59,11 @@ test('computer save failures take priority while the delayed saving notice stays
     // The original command can be durably rejected after its lease expires.
     // Allow automatic reacquisition to settle before judging the final result.
     // A transient recovery card here does not establish a terminal failure.
-    await expect.poll(()=>page.evaluate(readProjectedGame,{id:game.id,guest:true,expectedComputer:{modelId:'initial-1554',profile:'babs'}}),{timeout:30000}).toBeTruthy();
+    await expect.poll(()=>page.evaluate(readProjectedGame,{id:game.id,guest:true,expectedComputer:{modelId:game.computer.modelId,profile:'babs'}}),{timeout:30000}).toBeTruthy();
     await expect(notice(page)).toHaveCount(0);
     expect(await geometry(page)).toEqual(before);
     const saved=await page.evaluate(readProjectedGame,{id:game.id,guest:true});
-    const committed=saved.moves.filter(move=>move.computerProof?.modelId==='initial-1554');
+    const committed=saved.moves.filter(move=>move.computerProof?.modelId===game.computer.modelId);
     expect(committed).toHaveLength(1);
     expect(saved.computer.generation).toBeGreaterThan(originalCommand.payload.computer.generation);
     expect(committed[0].clientCommandId).not.toBe(originalCommand.clientCommandId);
