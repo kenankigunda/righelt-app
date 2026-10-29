@@ -139,6 +139,24 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     recovery = null; lastPositionRevision = null; repetitions.clear();
     publish({ phase: action === 'pause' ? 'paused' : 'idle', message: null }, context);
   });
+  const renewWhenDue = context => {
+    const latest = current();
+    if (destroyed || !latest.visible || !latest.authenticated || latest.key !== context.key || !sameOwnerScope(ownerScope(context), latest)) return;
+    const game = context.game, work = workFor(context);
+    const projection = context.transport.getGameViewModel(game.id);
+    if (work.leaseWork || work.controlWork || work.resumeWork || projection?.sharedMutationsBlocked || projection?.pendingCommandCount > 0
+      || !ownLease(game) || clock() - renewedAt < COMPUTER_TIMING.renewAfterMs) return;
+    return startLeaseWork(async () => {
+      try { await control(context, 'renew'); if (recoveryScopeIsCurrent(context)) renewedAt = clock(); }
+      catch {
+        if (!recoveryScopeIsCurrent(context)) return;
+        renewedAt = clock();
+        await context.transport.loadGame(game.id).catch(() => {});
+        const latest = current();
+        if (recoveryScopeIsCurrent(context) && (!ownLease(latest.game) || latest.game.computer.generation !== game.computer.generation)) cancelWork('lease-lost');
+      }
+    }, 'renew', context);
+  };
   async function tick() {
     if (destroyed) return;
     const context = current(), game = context.game, work = workFor(context);
@@ -204,18 +222,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       await work.leaseWork;
       return;
     }
-    if (!work.leaseWork && clock() - renewedAt >= COMPUTER_TIMING.renewAfterMs) {
-      void startLeaseWork(async () => {
-        try { await control(context, 'renew'); if (recoveryScopeIsCurrent(context)) renewedAt = clock(); }
-        catch {
-          if (!recoveryScopeIsCurrent(context)) return;
-          renewedAt = clock();
-          await context.transport.loadGame(game.id).catch(() => {});
-          const latest = current();
-          if (recoveryScopeIsCurrent(context) && (!ownLease(latest.game) || latest.game.computer.generation !== game.computer.generation)) cancelWork('lease-lost');
-        }
-      }, 'renew');
-    }
+    void renewWhenDue(context);
     const profile = computerProfileFor(game.computer, game.board.state.sideToMove, game.currentTurn?.index ?? game.board.state.turnIndex ?? 0);
     if (game.computer.paused || !profile || game.board.state.outcome?.status !== 'ongoing') {
       if (!busy && status.phase !== (game.computer.paused ? 'paused' : 'idle')) publish({ phase: game.computer.paused ? 'paused' : 'idle', message: null });
@@ -242,6 +249,9 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       // Proof persistence is part of saving; a slow evidence write deserves the
       // same delayed feedback as a slow gameplay command.
       publish({ phase: 'saving', progress: null }, context);
+      // Cold preparation can delay interval ticks. Start the same guarded
+      // renewal before persisting evidence, then await its receipt below.
+      void renewWhenDue(context);
       await context.transport.decisionAttempt(game.id, { operation: 'write', kind: 'computer', attemptId, attempt }); saved = true;
       if (run !== epoch || current().key !== context.key || !sameOwnerScope(ownerScope(context), current())) return;
       if (response.result.status !== 'ready') throw new Error(response.result.reason);
@@ -254,6 +264,13 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       // Recovery can begin during calculation or evidence persistence. Keep the
       // completed evidence, then calculate again from settled authority later.
       if (context.transport.getGameViewModel(game.id)?.sharedMutationsBlocked) {
+        publish({ phase: 'idle', message: null }, context);
+        return;
+      }
+      // Evidence does not extend control authority. An expired lease leaves
+      // this attempt unsubmitted; the normal tick must acquire fresh control
+      // and calculate a new proof. Never replay an admitted gameplay command.
+      if (!ownLease(current().game)) {
         publish({ phase: 'idle', message: null }, context);
         return;
       }
