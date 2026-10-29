@@ -464,7 +464,25 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     });
   };
 
-  const renderStatus = () => {
+  const disabledInlineActions = new Set();
+  const restoreInlineActionAvailability = () => {
+    for (const button of disabledInlineActions) button.disabled = false;
+    disabledInlineActions.clear();
+  };
+  const syncInlineActionAvailability = () => {
+    if (!submitting) return;
+    for (const button of elements.boardPreviewLabelEl?.querySelectorAll?.('[data-board-preview-action="pass"], [data-board-preview-action="end-turn"], [data-board-message-action="pass"], [data-board-message-action="end-turn"]') ?? []) {
+      if (!button.disabled) { button.disabled = true; disabledInlineActions.add(button); }
+    }
+  };
+  const setSubmitting = value => {
+    submitting = value;
+    restoreInlineActionAvailability();
+    syncInlineActionAvailability();
+    controls.onSubmitting?.(value);
+  };
+
+  const renderStatusContent = () => {
     if (!state) {
       return;
     }
@@ -676,6 +694,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
 
     setBoardPreviewAction(actionPreviewLabel(preferredPreview.type, state, selectedTarget));
+  };
+
+  const renderStatus = () => {
+    // Remove only our temporary disabled attributes before comparing HTML. This
+    // keeps unchanged buttons and their focus stable through status refreshes.
+    restoreInlineActionAvailability();
+    try { renderStatusContent(); }
+    finally { syncInlineActionAvailability(); }
   };
 
   const refreshSelectionLabels = () => {
@@ -965,9 +991,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const previousState = state;
     let revision = snapshotRevision;
 
-    submitting = true;
+    setSubmitting(true);
     legalActionsRequestId += 1;
-    controls.onSubmitting?.(true);
     setResult("Applying action...");
 
     try {
@@ -1023,8 +1048,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     } catch (error) {
       if (!destroyed && revision === snapshotRevision) setResult({ ok: false, error: "request_failed", message: error instanceof Error ? error.message : "Unknown error" });
     } finally {
-      submitting = false;
-      controls.onSubmitting?.(false);
+      setSubmitting(false);
+      if (!destroyed) renderStatus();
     }
   };
 
@@ -1294,9 +1319,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return;
     }
     const revision = snapshotRevision;
-    submitting = true;
+    setSubmitting(true);
     legalActionsRequestId += 1;
-    controls.onSubmitting?.(true);
     try {
       const result = await host.endTurn(state);
       if (destroyed || revision !== snapshotRevision) return;
@@ -1316,8 +1340,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     } catch (error) {
       if (!destroyed && revision === snapshotRevision) setResult({ ok: false, error: "end_turn_failed", message: error instanceof Error ? error.message : "Unknown error" });
     } finally {
-      submitting = false;
-      controls.onSubmitting?.(false);
+      setSubmitting(false);
+      if (!destroyed) renderStatus();
     }
   };
 

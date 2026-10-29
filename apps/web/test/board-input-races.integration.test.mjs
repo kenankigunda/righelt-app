@@ -17,7 +17,7 @@ const deferred = () => {
 };
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
-async function fixture({ actions = [action(), action("rush", coord(4, 2), coord(5, 2))], state = snapshot(), hover = true, host = {}, controls = {} } = {}) {
+async function fixture({ actions = [action(), action("rush", coord(4, 2), coord(5, 2))], state = snapshot(), hover = true, host = {}, controls = {}, previewLabel = {} } = {}) {
   let handlers, rendered, previewClick;
   const applied = [];
   const runtime = createBoardRuntime({
@@ -32,7 +32,7 @@ async function fixture({ actions = [action(), action("rush", coord(4, 2), coord(
     controls: { getSupportsHover: () => hover, ...controls },
   });
   runtime.bindElements({ boardEl: {}, overlayLinesEl: {}, boardPreviewLabelEl: {
-    addEventListener: (_name, handler) => { previewClick = handler; }, removeEventListener: () => {},
+    addEventListener: (_name, handler) => { previewClick = handler; }, removeEventListener: () => {}, ...previewLabel,
   } });
   await runtime.loadSnapshot(state, { legalActions: actions });
   handlers.onCellClick(state.pieces[0].position);
@@ -288,4 +288,19 @@ test("an older legal query cannot cancel an accepted pending end-turn", async ()
   ending.resolve({ accepted: true, state: { ...snapshot(), sideToMove: "P2", turnIndex: 1 }, legalActions: [] });
   await settle();
   assert.equal(f.runtime.getState().turnIndex, 1);
+});
+
+test('published continuation controls stay natively disabled until local admission finishes',async()=>{
+  const pending=deferred(),button={disabled:false},calls=[];
+  const previewLabel={innerHTML:'',querySelectorAll:()=>[button]};
+  const f=await fixture({previewLabel,controls:{getBoardMessage:()=>({text:'Finish the turn',action:{id:'end-turn',label:'End Turn'}})},host:{
+    applyAction:()=>pending.promise,endTurn:async()=>{calls.push('end');return {accepted:false};},
+  }});
+  f.hover(coord(4,3));f.click(coord(4,3));
+  assert.equal(button.disabled,true,'a visible inline control must not accept a click the runtime will discard');
+  await f.runtime.loadSnapshot(snapshot(coord(4,3)),{legalActions:[{type:'end_turn'}]});
+  assert.equal(button.disabled,true,'a published snapshot must not enable the next action during admission');
+  f.endTurn();assert.deepEqual(calls,[]);
+  pending.resolve({accepted:true,state:snapshot(coord(4,3)),legalActions:[{type:'end_turn'}]});await settle();
+  assert.equal(button.disabled,false);f.endTurn();await settle();assert.deepEqual(calls,['end']);
 });
