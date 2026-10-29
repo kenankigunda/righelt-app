@@ -442,11 +442,11 @@ export const createLiveTransportStore = ({
     if (!job) return;
     clearTimeout(job.timer); job.retired = true; owner.automaticRecovery = null;
   };
-  const onlyJournalTimeouts = owner => [...owner.reasons.values()].every(reason => reason.error?.code === 'journal_timeout');
+  const automaticJournalRecoveryAllowed = owner => [...owner.reasons.values()].every(reason => reason.error?.code === 'journal_timeout' && reason.automaticRecoveryAllowed !== false);
   const scheduleJournalRecovery = (gameId, optimistic, owner) => {
     if (!currentJournalOwner(gameId, optimistic, owner)) return;
     const failures = [...owner.reasons.values()].filter(reason => !reason.job);
-    if (!onlyJournalTimeouts(owner)) { retireJournalRecovery(owner); return; }
+    if (!automaticJournalRecoveryAllowed(owner)) { retireJournalRecovery(owner); return; }
     if (!failures.length) return;
     const job = owner.automaticRecovery ??= { attempts: 0, timer: null, promise: null, retired: false };
     const delays = journalRetryDelays();
@@ -456,12 +456,12 @@ export const createLiveTransportStore = ({
       job.timer = null;
       if (!current()) return;
       if (!optimistic.storageBlocked) { retireJournalRecovery(owner); return; }
-      if (!onlyJournalTimeouts(owner) || ![...owner.reasons.values()].some(reason => !reason.job)) { retireJournalRecovery(owner); return; }
+      if (!automaticJournalRecoveryAllowed(owner) || ![...owner.reasons.values()].some(reason => !reason.job)) { retireJournalRecovery(owner); return; }
       job.attempts++;
       // A timeout does not prove absence. Reuse the manual recovery path:
       // validate stored intent, reconcile exact receipts and prove readback.
       // Never construct a replacement shared command when no row exists.
-      const recovery = retrySaving(gameId, () => current() && onlyJournalTimeouts(owner)); job.promise = recovery;
+      const recovery = retrySaving(gameId, () => current() && automaticJournalRecoveryAllowed(owner)); job.promise = recovery;
       const settled = () => {
         if (job.promise === recovery) job.promise = null;
         if (current() && optimistic.storageBlocked) scheduleJournalRecovery(gameId, optimistic, owner);
@@ -495,18 +495,18 @@ export const createLiveTransportStore = ({
     job.owner.jobs.delete(job.key);
     if (verified) job.owner.reasons.delete(job.token);
   };
-  const blockStorage = (gameId, error, settledCommand = null, cleanupJob = null) => {
+  const blockStorage = (gameId, error, settledCommand = null, cleanupJob = null, automaticRecoveryAllowed = true) => {
     if (!active || cleanupJob && !currentCleanupJob(cleanupJob)) return;
     const optimistic = getOptimisticState(gameId);
     const owner = journalRecoveryState(optimistic);
     if (!currentJournalOwner(gameId, optimistic, owner)) return;
     const token = cleanupJob?.token ?? Symbol('storage-failure');
-    owner.reasons.set(token, { error, job: cleanupJob });
+    owner.reasons.set(token, { error, job: cleanupJob, automaticRecoveryAllowed });
     captureRecoveryIssue(gameId, settledCommand ? "journal_cleanup" : "journal", error, settledCommand);
     refreshStorageReasons(optimistic, owner);
     recalculateOptimisticGame(gameId);
     emitChange({ type: "journal_blocked", gameId, error });
-    if (error?.code !== 'journal_timeout') retireJournalRecovery(owner);
+    if (error?.code !== 'journal_timeout' || !automaticRecoveryAllowed) retireJournalRecovery(owner);
     else if (!cleanupJob) scheduleJournalRecovery(gameId, optimistic, owner);
   };
   const sameTerminalOwner = (gameId, optimistic, owner, envelope, outcome) => {
@@ -1429,7 +1429,12 @@ export const createLiveTransportStore = ({
       const envelope={protocolVersion:2,gameId,identityId,clientCommandId:createClientCommandId({gameId,identityId,random}),submittedAt:Date.now(),kind:"shared",
         ...(auth?.enabled?{authContextId:auth.session.contextId}:{}),payload:{operation:url.split("/").at(-1),values:JSON.parse(init.body)},expectedState:clone(current.board.state),expectedGameplayRevision:current.gameplayRevision};
       envelope.fingerprint=await commandFingerprint(envelope);
-      try{await commandJournal.admit(envelope);}catch(error){blockStorage(gameId,error);throw error;}
+      try{await commandJournal.admit(envelope);}catch(error){
+        // Readable storage cannot prove a missing user stop/switch intent was
+        // fulfilled. Only maintenance lease acquisition/renewal may self-recover.
+        const automaticRecoveryAllowed=envelope.payload.operation==='computer-control'&&['acquire','renew'].includes(envelope.payload.values?.action);
+        blockStorage(gameId,error,null,null,automaticRecoveryAllowed);throw error;
+      }
       assertActive();
       const completion=new Promise((resolve,reject)=>sharedWaiters.set(envelope.clientCommandId,{resolve,reject}));
       const pending = internalCommand(envelope);

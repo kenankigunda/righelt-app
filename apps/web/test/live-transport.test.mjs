@@ -2512,6 +2512,18 @@ for(const code of ['journal_limit','journal_unavailable','command_id_conflict','
  const before=clone(h.calls);await h.advance(60000);await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(h.calls,before);assert.equal(h.view().storageBlocked,true);
 });
 
+for(const action of ['pause','manual','takeover','release','upgrade'])for(const lateCommit of [false,true])test(`failed ${action} admission requires manual recovery (lateCommit=${lateCommit})`,{timeout:10000},async t=>{
+ const h=await terminalCleanupStore(t,`manual-intent-${action}-${lateCommit}`);h.hooks.remove=null;
+ h.hooks.admit=async(_envelope,admit)=>{if(lateCommit)await admit();throw cleanupTimeout();};
+ await assert.rejects(h.store.computerControl(h.game.id,{action,deviceId:'cleanup-device',generation:1}),{code:'journal_timeout'});
+ const before=clone(h.calls);await h.advance(60000);await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(h.calls,before);assert.equal(h.view().storageBlocked,true);
+ h.hooks.admit=null;await h.store.retrySaving(h.game.id);assert.equal(h.view().storageBlocked,false);
+ assert.equal(h.calls.admit.length,1,'manual recovery never invents the missing shared intent');
+ if(lateCommit){await h.phase('shared-request');const removal=await h.phase('remove');assert.equal((await removal.settled).ok,true);}
+ else assert.equal(h.calls.network.filter(x=>String(x.url).endsWith('/shared')).length,0);
+});
+
 test('an in-flight automatic journal read cannot act after a conflicting storage failure',{timeout:10000},async t=>{
  const h=await terminalCleanupStore(t,'auto-read-invalidated');h.hooks.remove=null;h.hooks.admit=async()=>{throw cleanupTimeout();};await h.control();
  const gate=cleanupDeferred(t),held=h.calls.list.length+1;
