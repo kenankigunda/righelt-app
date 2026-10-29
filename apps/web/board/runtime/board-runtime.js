@@ -80,6 +80,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let autoTargetSuppressed = false;
   let selectedPieceMovesRequestId = 0;
   let mounted = false;
+  let previewsSuspended = Boolean(globalThis.document?.hidden);
   let removalEffectsTimer = null;
   let internalActionType = defaultActionType;
   let overlayMode = OVERLAY_MODE.INTERACTIVE;
@@ -789,7 +790,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
     maybeAutoSelectTarget(selectedPieceMoves);
     syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
-    if (load && host.asyncPieceMoves && !globalThis.document?.hidden) {
+    if (load && host.asyncPieceMoves && !previewsSuspended) {
       void reloadSelectedPieceMoves().catch(error => {
         if (error.code !== 'rules_cancelled') setResult({ ok: false, error: 'piece_moves_load_failed', message: error.message });
       });
@@ -816,7 +817,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const requestId = ++selectedPieceMovesRequestId;
     const revision = snapshotRevision;
     selectedPieceMovesLoading = false;
-    if (destroyed) return;
+    if (destroyed || previewsSuspended) return;
     const selectedPiece = getBoardPieceById(selectedPieceId);
     if (!state || !selectedPiece) {
       selectedPieceMoves = [];
@@ -1505,12 +1506,13 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const onPreviewVisibility = () => {
-    if (document.hidden) invalidateSelectedPieceMovesRequests();
+    previewsSuspended = Boolean(document.hidden);
+    if (previewsSuspended) invalidateSelectedPieceMovesRequests();
     else if (!destroyed && selectedPieceId) void reloadSelectedPieceMoves().catch(error => {
       setResult({ ok: false, error: 'piece_moves_load_failed', message: error.message });
     });
   };
-  const onPreviewPageHide = () => invalidateSelectedPieceMovesRequests();
+  const onPreviewPageHide = () => { previewsSuspended = true; invalidateSelectedPieceMovesRequests(); };
   let previewLifecycleBound = false;
   const bindPreviewLifecycle = () => {
     if (previewLifecycleBound) return;
