@@ -2436,3 +2436,87 @@ test('terminal receipt cleanup keeps private timers and promises out of projecte
   assert.equal(h.view().storageBlocked,true,'the private readback promise is still pending');
   readback.resolve();await h.change('journal_cleanup_recovered');assert.equal(h.view().storageBlocked,false);
 });
+
+for(const lateCommit of [false,true])test(`timed-out shared admission automatically verifies ${lateCommit?'its original durable command':'an empty journal without inventing another command'}`,{timeout:10000},async t=>{
+ const h=await terminalCleanupStore(t,`automatic-admission-${lateCommit}`);h.hooks.remove=null;
+ h.hooks.admit=async(_envelope,admit,count)=>{if(count===1){if(lateCommit)await admit();throw cleanupTimeout();}return admit();};
+ const failed=await h.control();assert.equal(failed.ok,false);assert.equal(failed.error.code,'journal_timeout');
+ const original=clone(h.calls.admit[0]);assert.equal(h.view().storageBlocked,true);assert.equal(h.calls.network.filter(x=>String(x.url).endsWith('/shared')).length,0);
+ await h.advance(499);assert.equal(h.calls.admit.length,1);assert.equal(h.view().storageBlocked,true);
+ await h.advance(1);await h.change('journal_recovered');
+ if(lateCommit){
+  await h.phase('change',1,e=>e.change.type==='authoritative_update'&&e.change.clientCommandId===original.clientCommandId);
+  const removal=await h.phase('remove',1);assert.equal((await removal.settled).ok,true);
+  const requests=h.calls.network.filter(x=>String(x.url).endsWith('/shared'));assert.equal(requests.length,1);assert.deepEqual(requests[0].body,original);
+ }else assert.equal(h.calls.network.filter(x=>String(x.url).endsWith('/shared')).length,0);
+ assert.equal(h.calls.admit.length,1,'recovery never invents or readmits a missing shared intent');
+ assert.equal(h.view().storageBlocked,false);assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
+});
+
+for(const lateCommit of [false,true])test(`automatic journal repair preserves an uncertain gameplay envelope (lateCommit=${lateCommit})`,{timeout:10000},async t=>{
+ const h=await terminalCleanupStore(t,`auto-gameplay-${lateCommit}`);h.hooks.remove=null;
+ h.hooks.admit=async(_envelope,admit,count)=>{if(count===1){if(lateCommit)await admit();throw cleanupTimeout();}return admit();};
+ await assert.rejects(h.store.applyGameAction({gameId:h.game.id,state:h.game.board.state,action:h.game.legalActions[0]}),{code:'journal_timeout'});
+ const original=clone(h.calls.admit[0]);assert.equal(h.view().storageBlocked,true);
+ await h.advance(500);await h.change('journal_recovered');
+ await h.phase('change',1,e=>e.change.type==='authoritative_update'&&e.change.clientCommandId===original.clientCommandId);
+ const removal=await h.phase('remove',1);assert.equal((await removal.settled).ok,true);
+ const requests=h.calls.network.filter(x=>String(x.url).endsWith('/apply'));assert.equal(requests.length,1);assert.deepEqual(requests[0].body,original);
+ for(const envelope of h.calls.admit)assert.deepEqual(envelope,original);
+ assert.equal(h.view().storageBlocked,false);assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
+});
+
+test('automatic journal repair stops after two failed recovery passes and retains the fence',{timeout:10000},async t=>{
+ const h=await terminalCleanupStore(t,'auto-cap');h.hooks.remove=null;h.hooks.admit=async()=>{throw cleanupTimeout();};
+ await h.control();h.hooks.list=async()=>{throw cleanupTimeout();};
+ await h.advance(500);await h.change('journal_blocked',2);await new Promise(resolve=>setImmediate(resolve));
+ await h.advance(1000);await h.change('journal_blocked',3);await new Promise(resolve=>setImmediate(resolve));
+ const calls=clone(h.calls);await h.advance(60000);assert.deepEqual(h.calls,calls);assert.equal(h.view().storageBlocked,true);
+ h.hooks.list=null;await h.store.retrySaving(h.game.id);assert.equal(h.view().storageBlocked,false);
+});
+
+for(const code of ['journal_limit','journal_unavailable','command_id_conflict','invalid_saved_command'])test(`automatic journal repair does not retry ${code}`,{timeout:10000},async t=>{
+ const h=await terminalCleanupStore(t,`auto-no-${code}`);h.hooks.remove=null;h.hooks.admit=async()=>{throw Object.assign(Error(code),{code});};
+ await h.control();const calls=clone(h.calls);await h.advance(60000);assert.deepEqual(h.calls,calls);assert.equal(h.view().storageBlocked,true);
+});
+
+for(const change of ['retire','account','storage generation'])test(`automatic journal repair timer is fenced by ${change}`,{timeout:10000},async t=>{
+ const scope=cleanupScope(),h=await terminalCleanupStore(t,`auto-fence-${change}`,{auth:scope});h.hooks.remove=null;h.hooks.admit=async()=>{throw cleanupTimeout();};
+ await h.control();const before=clone(h.calls);
+ if(change==='retire')h.store.retire();else if(change==='account')scope.session.contextId='b'.repeat(64);else scope.storageGeneration='replacement-storage';
+ await h.advance(60000);assert.deepEqual(h.calls,before);
+});
+
+for(const change of ['retire','account','storage generation'])test(`automatic journal repair read cannot act after ${change}`,{timeout:10000},async t=>{
+ const scope=cleanupScope(),h=await terminalCleanupStore(t,`auto-read-fence-${change}`,{auth:scope});h.hooks.remove=null;h.hooks.admit=async()=>{throw cleanupTimeout();};
+ await h.control();const gate=cleanupDeferred(t),next=h.calls.list.length+1;h.hooks.list=async(_args,list)=>{await gate.promise;return list();};
+ await h.advance(500);await h.phase('list',next);const network=clone(h.calls.network);
+ if(change==='retire')h.store.retire();else if(change==='account')scope.session.contextId='b'.repeat(64);else scope.storageGeneration='replacement-storage';
+ gate.resolve();assert.equal((await h.settled('list',next)).ok,true);await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(h.calls.network,network);assert.equal(h.calls.admit.length,1);
+});
+
+test('manual and automatic journal repair share one recovery flight',{timeout:10000},async t=>{
+ const h=await terminalCleanupStore(t,'auto-single');h.hooks.remove=null;h.hooks.admit=async()=>{throw cleanupTimeout();};await h.control();
+ const gate=cleanupDeferred(t),next=h.calls.list.length+1,base=h.calls.list.filter(args=>args.length===1).length;
+ h.hooks.list=async(_args,list,count)=>{if(count===next)await gate.promise;return list();};
+ const manual=h.store.retrySaving(h.game.id);await h.phase('list',next);
+ await h.advance(500);assert.equal(h.calls.list.length,next);
+ gate.resolve();await manual;await h.change('journal_recovered');
+ assert.equal(h.calls.list.filter(args=>args.length===1).length-base,1);assert.equal(h.view().storageBlocked,false);
+});
+
+for(const code of ['journal_limit','journal_unavailable','command_id_conflict','invalid_saved_command'])test(`a scheduled journal retry is cancelled when ${code} arrives`,{timeout:10000},async t=>{
+ const h=await terminalCleanupStore(t,`auto-new-failure-${code}`);h.hooks.remove=null;h.hooks.admit=async()=>{throw cleanupTimeout();};await h.control();
+ h.hooks.list=async()=>{throw Object.assign(Error(code),{code});};await assert.rejects(h.store.retrySaving(h.game.id),{code});
+ const before=clone(h.calls);await h.advance(60000);await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(h.calls,before);assert.equal(h.view().storageBlocked,true);
+});
+
+test('an in-flight automatic journal read cannot act after a conflicting storage failure',{timeout:10000},async t=>{
+ const h=await terminalCleanupStore(t,'auto-read-invalidated');h.hooks.remove=null;h.hooks.admit=async()=>{throw cleanupTimeout();};await h.control();
+ const gate=cleanupDeferred(t),held=h.calls.list.length+1;
+ h.hooks.list=async(_args,list,count)=>{if(count===held){await gate.promise;return list();}throw Object.assign(Error('command_id_conflict'),{code:'command_id_conflict'});};
+ await h.advance(500);await h.phase('list',held);await h.store.loadGamesPage();const network=clone(h.calls.network);
+ gate.resolve();assert.equal((await h.settled('list',held)).ok,true);await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(h.calls.network,network);assert.equal(h.calls.admit.length,1);assert.equal(h.view().storageBlocked,true);
+});

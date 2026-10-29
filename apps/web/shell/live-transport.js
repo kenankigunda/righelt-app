@@ -422,6 +422,7 @@ export const createLiveTransportStore = ({
   const journalRecoveryState = (optimistic) => {
     if (!journalRecoveryByOwner.has(optimistic)) journalRecoveryByOwner.set(optimistic, {
       reasons: new Map(), jobs: new Map(),
+      automaticRecovery: null, repairPromise: null,
       identityId, authEnabled: Boolean(auth?.enabled),
       contextId: auth?.enabled ? auth.session.contextId : null,
       storageGeneration: auth?.storageGeneration ?? null,
@@ -435,12 +436,47 @@ export const createLiveTransportStore = ({
     && owner.contextId === (auth?.enabled ? auth.session.contextId : null)
     && owner.storageGeneration === (auth?.storageGeneration ?? null)
     && (!auth?.enabled || (auth.session.authenticated && auth.session.account?.id === identityId));
+  const journalRetryDelays = () => (timing.retryDelaysMs ?? SYNC_TIMING.retryDelaysMs).slice(0, 2);
+  const retireJournalRecovery = owner => {
+    const job = owner.automaticRecovery;
+    if (!job) return;
+    clearTimeout(job.timer); job.retired = true; owner.automaticRecovery = null;
+  };
+  const onlyJournalTimeouts = owner => [...owner.reasons.values()].every(reason => reason.error?.code === 'journal_timeout');
+  const scheduleJournalRecovery = (gameId, optimistic, owner) => {
+    if (!currentJournalOwner(gameId, optimistic, owner)) return;
+    const failures = [...owner.reasons.values()].filter(reason => !reason.job);
+    if (!onlyJournalTimeouts(owner)) { retireJournalRecovery(owner); return; }
+    if (!failures.length) return;
+    const job = owner.automaticRecovery ??= { attempts: 0, timer: null, promise: null, retired: false };
+    const delays = journalRetryDelays();
+    if (job.retired || job.timer || job.promise || job.attempts >= delays.length) return;
+    const current = () => !job.retired && owner.automaticRecovery === job && currentJournalOwner(gameId, optimistic, owner);
+    job.timer = setTimeout(() => {
+      job.timer = null;
+      if (!current()) return;
+      if (!optimistic.storageBlocked) { retireJournalRecovery(owner); return; }
+      if (!onlyJournalTimeouts(owner) || ![...owner.reasons.values()].some(reason => !reason.job)) { retireJournalRecovery(owner); return; }
+      job.attempts++;
+      // A timeout does not prove absence. Reuse the manual recovery path:
+      // validate stored intent, reconcile exact receipts and prove readback.
+      // Never construct a replacement shared command when no row exists.
+      const recovery = retrySaving(gameId, () => current() && onlyJournalTimeouts(owner)); job.promise = recovery;
+      const settled = () => {
+        if (job.promise === recovery) job.promise = null;
+        if (current() && optimistic.storageBlocked) scheduleJournalRecovery(gameId, optimistic, owner);
+      };
+      void recovery.then(settled, settled);
+    }, delays[job.attempts]);
+    job.timer.unref?.();
+  };
   const refreshStorageReasons = (optimistic, owner) => {
     const reasons = [...owner.reasons.values()];
     // A cleanup retry must not replace an admission/cap/hydration explanation.
     const reason = reasons.filter(entry => !entry.job).at(-1) ?? reasons.at(-1);
     optimistic.storageBlocked = reasons.length > 0 || Boolean(optimistic.unsavedCommand);
     optimistic.storageError = reason?.error ?? null;
+    if (!optimistic.storageBlocked && !owner.repairPromise) retireJournalRecovery(owner);
   };
   const resolveRecoveryIfClear = (gameId, optimistic) => {
     if (optimistic.storageBlocked || optimistic.unsavedCommand || optimistic.connectionRecovering
@@ -470,6 +506,8 @@ export const createLiveTransportStore = ({
     refreshStorageReasons(optimistic, owner);
     recalculateOptimisticGame(gameId);
     emitChange({ type: "journal_blocked", gameId, error });
+    if (error?.code !== 'journal_timeout') retireJournalRecovery(owner);
+    else if (!cleanupJob) scheduleJournalRecovery(gameId, optimistic, owner);
   };
   const sameTerminalOwner = (gameId, optimistic, owner, envelope, outcome) => {
     if (!currentJournalOwner(gameId, optimistic, owner) || envelope.identityId !== identityId || envelope.gameId !== gameId
@@ -542,7 +580,7 @@ export const createLiveTransportStore = ({
           return;
         }
         blockStorage(gameId, error, command, job);
-        const delays = (timing.retryDelaysMs ?? SYNC_TIMING.retryDelaysMs).slice(0, 2);
+        const delays = journalRetryDelays();
         if (error.code === "journal_timeout" && job.retries < delays.length) {
           const delay = delays[job.retries++];
           job.timer = setTimeout(() => { job.timer = null; job.promise = attempt(); }, delay);
@@ -924,24 +962,37 @@ export const createLiveTransportStore = ({
     });
     optimistic.recoveryPromise = promise; return promise;
   };
-  const retrySaving = async (gameId) => {
-    const optimistic = getOptimisticState(gameId);
-    const owner = journalRecoveryState(optimistic);
+  const retrySavingOnce = async (gameId, optimistic, owner, mayRecover) => {
     const reasons = [...owner.reasons.keys()], jobs = [...owner.jobs.values()];
-    const current = () => currentJournalOwner(gameId, optimistic, owner);
+    const current = () => currentJournalOwner(gameId, optimistic, owner) && mayRecover();
     const assertCurrent = () => { if (!current()) throw Object.assign(new Error("session_changed"), { code: "session_changed" }); };
     try {
+      assertCurrent();
       // Admission failures must not block recovery of already durable commands.
       // Reconcile other games too: their receipts may release the identity-wide cap.
       const outstanding = await commandJournal.list(identityId);
-      await Promise.allSettled([...new Set(outstanding.map((entry) => entry.gameId))].map((pendingGameId) => reconcileGame(pendingGameId)));
+      assertCurrent();
+      for (const envelope of outstanding) {
+        if (!isSyncCommand(envelope) || envelope.identityId !== owner.identityId
+          || (owner.authEnabled ? envelope.authContextId !== owner.contextId : envelope.authContextId !== undefined)
+          || envelope.fingerprint !== await commandFingerprint(envelope)) throw new Error('invalid_saved_command');
+        assertCurrent();
+      }
+      await Promise.allSettled([...new Set(outstanding.map((entry) => entry.gameId))].map(async pendingGameId => {
+        assertCurrent(); await reconcileGame(pendingGameId); assertCurrent();
+      }));
+      assertCurrent();
       // Retry cleanup by exact receipt identity, retaining unresolved records.
       const saved = await commandJournal.list(identityId, gameId);
       assertCurrent();
-      for (const envelope of saved) if (!isSyncCommand(envelope) || envelope.identityId !== identityId || envelope.gameId !== gameId
-        || (auth?.enabled ? envelope.authContextId !== owner.contextId : envelope.authContextId !== undefined)
-        || envelope.fingerprint !== await commandFingerprint(envelope)) throw new Error("invalid_saved_command");
       for (const envelope of saved) {
+        if (!isSyncCommand(envelope) || envelope.identityId !== identityId || envelope.gameId !== gameId
+          || (auth?.enabled ? envelope.authContextId !== owner.contextId : envelope.authContextId !== undefined)
+          || envelope.fingerprint !== await commandFingerprint(envelope)) throw new Error("invalid_saved_command");
+        assertCurrent();
+      }
+      for (const envelope of saved) {
+        assertCurrent();
         const outcome = optimistic.outcomes.get(envelope.clientCommandId);
         if (!outcome) continue;
         if (!await validTerminalCleanup(gameId, optimistic, owner, envelope, outcome)) throw new Error("invalid_cleanup_receipt");
@@ -955,6 +1006,7 @@ export const createLiveTransportStore = ({
       const remaining = await commandJournal.list(identityId, gameId);
       assertCurrent();
       for (const job of jobs) {
+        assertCurrent();
         if (owner.jobs.get(job.key) !== job) continue;
         if (!await validTerminalCleanup(gameId, optimistic, owner, job.envelope, job.receipt)
           || remaining.some(envelope => envelope.identityId === job.envelope.identityId && envelope.gameId === job.gameId && envelope.clientCommandId === job.envelope.clientCommandId)) throw new Error("cleanup_unverified");
@@ -962,6 +1014,7 @@ export const createLiveTransportStore = ({
         retireCleanupJob(job, { verified: true });
       }
       if (optimistic.unsavedCommand) {
+        assertCurrent();
         const command = optimistic.unsavedCommand;
         const outcome = optimistic.outcomes.get(command.clientCommandId);
         if (!outcome) {
@@ -974,7 +1027,7 @@ export const createLiveTransportStore = ({
         if (optimistic.unsavedCommand === command) optimistic.unsavedCommand = null;
       }
       optimistic.hydrated = false;
-      await hydrateJournal(gameId);
+      await hydrateJournal(gameId, current);
       assertCurrent();
       for (const token of reasons) {
         const reason = owner.reasons.get(token);
@@ -983,8 +1036,24 @@ export const createLiveTransportStore = ({
       refreshStorageReasons(optimistic, owner);
       resolveRecoveryIfClear(gameId, optimistic);
       recalculateOptimisticGame(gameId);
-      return reconcileGame(gameId);
+      if (reasons.length && !optimistic.storageBlocked) emitChange({ type: 'journal_recovered', gameId });
+      assertCurrent();
+      const result = await reconcileGame(gameId);
+      assertCurrent(); return result;
     } catch (error) { if (current()) blockStorage(gameId, error); throw error; }
+  };
+  const retrySaving = (gameId, mayRecover = () => true) => {
+    const optimistic = getOptimisticState(gameId), owner = journalRecoveryState(optimistic);
+    if (owner.repairPromise) return owner.repairPromise;
+    const work = Promise.resolve().then(() => retrySavingOnce(gameId, optimistic, owner, mayRecover));
+    owner.repairPromise = work;
+    const settled = () => {
+      if (owner.repairPromise !== work) return;
+      owner.repairPromise = null;
+      if (!optimistic.storageBlocked) retireJournalRecovery(owner);
+    };
+    void work.then(settled, settled);
+    return work;
   };
 
   const loadGamesPage = async ({ section, page = 0, pageSize = 6, debug = false } = {}) => {
@@ -1570,7 +1639,10 @@ export const createLiveTransportStore = ({
       listeners.clear();
       for (const optimistic of optimisticStateByGameId.values()) {
         const journalOwner = journalRecoveryByOwner.get(optimistic);
-        if (journalOwner) for (const job of [...journalOwner.jobs.values()]) retireCleanupJob(job);
+        if (journalOwner) {
+          retireJournalRecovery(journalOwner);
+          for (const job of [...journalOwner.jobs.values()]) retireCleanupJob(job);
+        }
         clearTimeout(optimistic.retryTimer); clearTimeout(optimistic.recoveryRetryTimer); clearTimeout(optimistic.mutationRecoveryTimer); clearTimeout(optimistic.budgetTimer);
         optimistic.recoveryOwner?.reject?.(Object.assign(new Error("session_changed"), { code: "session_changed" }));
         optimistic.recoveryOwner = null;

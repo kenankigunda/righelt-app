@@ -35,3 +35,5 @@ The frozen 54-game comparison completed all attempts, with 40 terminal results a
 Rollback means restoring the previous current-model catalog entry while preserving both assets and already pinned game identities. Do not delete accepted games, history or model provenance.
 
 The release also hardens a slow-computer save boundary. Completed calculations share the existing guarded control renewal before evidence saving, then recheck the acknowledged lease before gameplay admission. If evidence saving outlasts that lease, the result stays recorded but unsubmitted. Fresh control requires a fresh calculation and proof. Already admitted commands retain their original durable outcome.
+
+A command-journal timeout keeps gameplay fenced while at most two owner-scoped recovery passes inspect actual stored commands, reconcile their original receipts and verify storage. They retain exact command IDs and fingerprints. Missing shared-control intent is not recreated. Invalid records, conflicts, unavailable storage and exhausted recovery continue to require explicit attention. Owner/account/storage-generation changes cancel stale recovery. The transaction deadline is unchanged.
