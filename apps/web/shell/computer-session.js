@@ -5,6 +5,8 @@ import { createComputerControlWork } from './computer-control-work.js';
 import { deterministicStateHash } from '../generated/packages/game-engine/src/hash.js';
 import { ComputerRuntime } from './computer-runtime.js';
 
+export const COMPUTER_PRESENTATION = Object.freeze({ immediate: 'immediate', progress: 'progress' });
+
 export function createComputerSession({ getContext, onChange = () => {}, runtime = new ComputerRuntime(), analysisRuntime = new ComputerRuntime(), clock = () => Date.now(), timers = globalThis, deviceId = crypto.randomUUID() }) {
   let status = { phase: 'idle' }, statusScope = null, epoch = 0, active = null, busy = false, renewedAt = 0, recovery = null, pendingSubmission = null, pendingSubmissionScope = null;
   let analysis = null, analysisContext = null, analysisEpoch = 0, lastPositionRevision = null, destroyed = false;
@@ -50,12 +52,13 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   };
   const ownerScope = context => ({gameId:context.game?.id, transport:context.transport, accountGeneration:context.accountGeneration});
   const sameOwnerScope = (scope, context) => scope?.gameId === context.game?.id && scope?.transport === context.transport && scope?.accountGeneration === context.accountGeneration;
-  const publish = (next, context = current()) => {
+  const publish = (next, context = current(), presentation = COMPUTER_PRESENTATION.immediate) => {
     if (destroyed || !sameOwnerScope(ownerScope(context), current())) return;
     if (!sameOwnerScope(statusScope, context)) status = {phase:'idle'};
-    const phaseStartedAt = next.phase !== undefined && next.phase !== status.phase ? clock() : status.phaseStartedAt;
+    const phaseChanged = next.phase !== undefined && next.phase !== status.phase;
+    const phaseStartedAt = phaseChanged ? clock() : status.phaseStartedAt;
     statusScope = ownerScope(context);
-    status = { ...status, ...next, phaseStartedAt }; schedulePhaseLabel(); onChange();
+    status = { ...status, ...next, phaseStartedAt }; schedulePhaseLabel(); onChange({ presentation: phaseChanged ? COMPUTER_PRESENTATION.immediate : presentation });
   };
   const keyFor = ({ game, accountGeneration }) => game ? `${accountGeneration}:${game.id}:${game.gameplayRevision}:${game.computer?.generation}:${game.computer?.modelId}` : null;
   const current = () => { const context = getContext(); return { ...context, key: keyFor(context) }; };
@@ -243,7 +246,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     let saved = false;
     publish({ phase: 'preparing', startedAt, profile, attemptId, progress: null, message: null });
     try {
-      const response = await runtime.compute({ gameId: game.id, gameplayRevision: game.gameplayRevision, state: game.board.state, modelId: game.computer.modelId, profile, seed, controlGeneration: game.computer.generation }, progress => { if (run === epoch && sameOwnerScope(ownerScope(context), current())) { noteProgress(context, progress); publish({ phase: progress.phase, progress }, context); } });
+      const response = await runtime.compute({ gameId: game.id, gameplayRevision: game.gameplayRevision, state: game.board.state, modelId: game.computer.modelId, profile, seed, controlGeneration: game.computer.generation }, progress => { if (run === epoch && sameOwnerScope(ownerScope(context), current())) { noteProgress(context, progress); publish({ phase: progress.phase, progress }, context, COMPUTER_PRESENTATION.progress); } });
       if (run !== epoch || current().key !== context.key || !sameOwnerScope(ownerScope(context), current())) return;
       const attempt = { ...base, completedAt: clock(), outcome: response.result.status, result: response.result, cacheAvailable: runtime.cacheAvailable, evidenceSource: 'client-reported' };
       // Proof persistence is part of saving; a slow evidence write deserves the

@@ -20,6 +20,15 @@ function fixture({canAnalyze = true, timers = {setInterval(){return 1;},clearInt
   return { session, controls, relogin: () => {generation++;authContextId=`session-${generation}`;transport={...transport};}, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { unresolved=false; game = { ...game, id: 'other-game' }; }, unresolvedGame: () => { unresolved=true; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, show: () => {visible = true;}, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelCount };
 }
 
+test('only repeated raw progress may defer presentation while phase and authority notifications remain immediate',async t=>{
+ const events=[],f=fixture({onChange:event=>events.push(event)});t.after(()=>f.session.destroy());await f.session.tick();
+ const work=f.session.tick();events.length=0;
+ f.progress({phase:'computing',work:1});assert.equal(events.at(-1).presentation,'immediate');assert.equal(f.session.snapshot().phase,'computing');
+ f.progress({phase:'computing',work:2});assert.equal(events.at(-1).presentation,'progress');assert.equal(f.session.snapshot().progress.work,2,'progress state is published synchronously');
+ f.progress({phase:'checking',work:3});assert.equal(events.at(-1).presentation,'immediate');assert.equal(f.session.snapshot().phase,'checking');
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;assert.equal(events.at(-1).presentation,'immediate');assert.equal(f.session.snapshot().phase,'idle');assert.equal(f.submissions(),1);
+});
+
 test('connection recovery defers computer work before calculation without saving or submitting', async t => {
   const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
   f.setBlocked(true); const waiting = f.session.tick(), computationsBeforeReady = f.computations();

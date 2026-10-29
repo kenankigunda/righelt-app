@@ -15,7 +15,7 @@ import { createAdditionalHistory, canReadAdditionalHistory } from './additional-
 import { createJoinFeedback } from './join-feedback.js';
 import { beginScenarioCapture, scenarioCapturePosition, canLoadScenarioInPlace } from './scenario-capture.js';
 import { createComputerPreparation } from './computer-preparation.js';
-import { createComputerSession } from './computer-session.js';
+import { createComputerSession, COMPUTER_PRESENTATION } from './computer-session.js';
 import { createFramePresentation, COMPUTER_UI_FRAME_MEASURE } from './frame-presentation.js';
 import { renderComputerProgress, renderDecisionDebug } from './computer-view.js';
 import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
@@ -4276,7 +4276,10 @@ const computerUiPresentation = createFramePresentation({ render: updateComputerU
 computerSession = createComputerSession({ getContext: () => {
   const state = account.snapshot(), gameId = currentRoute.name === 'game' ? currentRoute.gameId : null;
   return { transport, game: gameId ? transport.getAuthoritativeGame(gameId) : null, accountGeneration: state.generation, authenticated: account.canPlay(), canAnalyze: state.session.authenticated, visible: !document.hidden && Boolean(gameId) };
-}, onChange: computerUiPresentation.schedule });
+}, onChange: ({ presentation } = {}) => {
+  if (presentation === COMPUTER_PRESENTATION.progress) computerUiPresentation.schedule();
+  else { computerUiPresentation.cancel(); updateComputerUi(); }
+} });
 document.addEventListener('visibilitychange', () => {
   if(document.hidden) { replayRequests.cancel(); computerUiPresentation.cancel(); }
   else computerUiPresentation.schedule();
