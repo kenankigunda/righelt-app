@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createComputerSession } from '../shell/computer-session.js';
 import { renderComputerProgress } from '../shell/computer-view.js';
-import { COMPUTER_CAPABILITIES, createComputerControl, changeComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
+import { COMPUTER_CAPABILITIES, COMPUTER_TIMING, createComputerControl, changeComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
 import { createInitialState } from '../generated/packages/game-engine/src/state.js';
 
 function fixture({canAnalyze = true, timers = {setInterval(){return 1;},clearInterval(){}}, onChange = () => {}} = {}) {
@@ -27,6 +27,19 @@ test('only repeated raw progress may defer presentation while phase and authorit
  f.progress({phase:'computing',work:2});assert.equal(events.at(-1).presentation,'progress');assert.equal(f.session.snapshot().progress.work,2,'progress state is published synchronously');
  f.progress({phase:'checking',work:3});assert.equal(events.at(-1).presentation,'immediate');assert.equal(f.session.snapshot().phase,'checking');
  f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;assert.equal(events.at(-1).presentation,'immediate');assert.equal(f.session.snapshot().phase,'idle');assert.equal(f.submissions(),1);
+});
+
+test('an unchanged busy tick renders elapsed state once without suppressing authority work',async t=>{
+ const events=[],f=fixture({onChange:event=>events.push(event)});t.after(()=>f.session.destroy());await f.session.tick();
+ const work=f.session.tick();
+ // Settle a genuine renewal first, keeping the observed tick free of new
+ // control work while computation remains pending beyond the detail boundary.
+ f.setTime(100+COMPUTER_TIMING.detailAfterMs+1);await f.session.tick();await new Promise(resolve=>setImmediate(resolve));
+ const controls=f.controls.length;events.length=0;
+ f.setTime(100+COMPUTER_TIMING.detailAfterMs+2);await f.session.tick();
+ assert.equal(f.controls.length,controls);assert.equal(events.length,1);assert.notEqual(events[0]?.presentation,'progress');
+ assert.ok(f.session.snapshot().elapsedMs>COMPUTER_TIMING.detailAfterMs);
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;assert.equal(f.submissions(),1);
 });
 
 test('connection recovery defers computer work before calculation without saving or submitting', async t => {

@@ -182,6 +182,8 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       publish({phase:'idle'}, context);
     }
     active = context;
+    // This synchronous notification includes current elapsed and analysis state.
+    // Repeating it below would repaint the same state during expensive work.
     onChange();
     // A control can advance the server generation before its response is applied.
     // Do not renew or start computation with the previous client generation.
@@ -190,8 +192,6 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     // The durable transport owns unsettled commands. Automatic lease work must
     // not start a second retry loop while that authority is being reconciled.
     if (projection?.sharedMutationsBlocked || projection?.pendingCommandCount > 0) return;
-    if (analysis?.phase === 'computing' && clock() - analysis.startedAt >= COMPUTER_TIMING.detailAfterMs) onChange();
-    if (busy && status.startedAt !== undefined && clock() - status.startedAt >= COMPUTER_TIMING.detailAfterMs) onChange();
     if (!ownLease(game)) {
       cancelWork('other-device');
       if (game.computer.lease?.expiresAt > clock()) { if (status.phase !== 'other-device') publish({ phase: 'other-device' }); return; }
