@@ -22,15 +22,15 @@ const fixture = async t => {
     myRole:'Player 1',player1:{identityId:'owner'},player2:{identityId:'owner'},selfPlayMode:true,
     board:{state},currentSnapshot:state,legalActions:listLegalActions(state),canRecordMove:true,
     turns:[{index:0,playerSeat:'Player 1',moveIndexes:[],status:'active'}],moves:[],viewers:[]};
-  const saved=[], requests=[];
+  const saved=[], requests=[];let defer=true,failWrites=false;
   const journal={list:async()=>saved,admit:async e=>{saved.push(e);},close(){},remove:async()=>{}};
   const storage={getItem:()=> 'owner',setItem(){}};
-  const store=createLiveTransportStore({storage,commandJournal:journal,rulesExecutor:rules,shouldDeferCommandSend:()=>true,
-    fetcher:async(url,init)=>{requests.push({url,init});return Response.json({ok:true,protocolVersion:2,game,eventSeq:1},{headers:{[ACTION_CONTRACT_HEADER]:String(ACTION_CONTRACT_VERSION)}});}});
+  const store=createLiveTransportStore({storage,commandJournal:journal,rulesExecutor:rules,shouldDeferCommandSend:()=>defer,
+    fetcher:async(url,init)=>{requests.push({url,init});if(failWrites&&init.method==='POST')throw Error('lost response');return Response.json({ok:true,protocolVersion:2,game,eventSeq:1},{headers:{[ACTION_CONTRACT_HEADER]:String(ACTION_CONTRACT_VERSION)}});}});
   t.after(()=>store.retire()); store.setRulesActiveGame(game.id); await store.loadGame(game.id);
   const move=()=>store.applyGameAction({gameId:game.id,state,action:game.legalActions.find(a=>a.type==='move')});
   const waitForJob=async()=>{for(let i=0;i<100&&!rules.calls.length;i++)await tick();assert.equal(rules.calls.length,1);return rules.calls[0];};
-  return {rules,game,store,saved,requests,move,waitForJob,journal,storage};
+  return {rules,game,store,saved,requests,move,waitForJob,journal,storage,allowFailedSends:()=>{defer=false;failWrites=true;}};
 };
 test('navigation cancels unfinished projection without admitting or sending a command',async t=>{
   const f=await fixture(t), operation=f.move(); const rejected=assert.rejects(operation,{code:'rules_cancelled'});
@@ -73,4 +73,16 @@ test('a second admission waiting on its predecessor cannot restart after pagehid
   await f.waitForJob();const second=f.move();const secondRejected=assert.rejects(second,{code:'rules_cancelled'});
   f.store.setRulesActiveGame(f.game.id,false);await Promise.all([firstRejected,secondRejected]);
   assert.equal(f.rules.calls.length,1);assert.equal(f.saved.length,0);
+});
+
+test('confirmation recovery retains an already published tentative board while reload still starts authoritative',async t=>{
+  const f=await fixture(t), operation=f.move();(await f.waitForJob()).resolve();const result=await operation;
+  const tentative=structuredClone(result.game.board.state);
+  assert.notDeepEqual(tentative,f.game.board.state);
+  f.allowFailedSends();f.store.flushPendingCommands(f.game.id);
+  for(let i=0;i<100&&f.store.getGameViewModel(f.game.id).syncStatus!=='confirming';i++)await tick();
+  assert.equal(f.store.getGameViewModel(f.game.id).syncStatus,'confirming');
+  assert.deepEqual(f.store.getGameViewModel(f.game.id).board.state,tentative);
+  assert.equal(f.store.getGameViewModel(f.game.id).pendingCommandCount,1);
+  assert.equal(f.saved.length,1);assert.equal(f.rules.calls.length,1);
 });

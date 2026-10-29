@@ -322,12 +322,13 @@ export const createLiveTransportStore = ({
       return { ok: true, game: optimistic.derivedGame };
     }
 
-    // Recovery owns saved intent. Reconcile its receipts before doing any
-    // speculative work, and keep inactive/hidden games on their saved board.
+    // Recovery owns saved intent. A fresh load starts with authority, while an
+    // already-published tentative board must survive unknown receipts. Neither
+    // case needs speculative recomputation while hidden or confirming.
     if (rulesExecutor.asynchronous && (optimistic.syncStatus === "confirming" || !rulesVisible || gameId !== rulesGameId)) {
       rulesExecutor.cancel(`project:${gameId}`);
       optimistic.projectionJob = null;
-      optimistic.derivedGame = decorateGameWithSync(authoritativeGame, gameId);
+      optimistic.derivedGame = decorateGameWithSync(optimistic.derivedGame ?? authoritativeGame, gameId);
       homeGameCardById.set(gameId, buildStaticGameCardFromGame(optimistic.derivedGame));
       return { ok: true, game: optimistic.derivedGame };
     }
