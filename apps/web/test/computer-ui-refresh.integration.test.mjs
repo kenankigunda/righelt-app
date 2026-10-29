@@ -5,6 +5,8 @@ import vm from 'node:vm';
 import {computerActivity} from '../shell/computer-activity.js';
 import {recoveryMessage,needsRecoveryAction,isBoardRecoveryPending} from '../shell/recovery-view.js';
 import {SYNC_TIMING} from '../generated/packages/shared-types/src/sync-protocol.js';
+import {createFramePresentation,COMPUTER_UI_FRAME_MEASURE} from '../shell/frame-presentation.js';
+import {COMPUTER_PRESENTATION} from '../shell/computer-session.js';
 
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const slice=(start,end)=>{
@@ -15,7 +17,7 @@ const slice=(start,end)=>{
 const script=new vm.Script([
  slice('const quietComputerRenewal =','const applySharedMutationGates ='),
  slice('let reconnectPresentationTimer;','const mountBoardForGame ='),
- slice('const updateComputerUi =','computerSession = createComputerSession'),
+ slice('const updateComputerUi =','const computerUiPresentation ='),
  'updateComputerUi',
 ].join('\n'));
 
@@ -45,4 +47,20 @@ test('quiet renewal mounted UI refresh clears stale loading and announcement onl
  assert.equal(view.sharedMutationsBlocked,true);assert.equal(view.pendingCommandCount,1);
  const reads=wrapReads;viewedId=null;update();assert.equal(wrapReads,reads,'Home must not refresh a stale game wrap');
  viewedId=game.id;mountedId='other-mounted-game';update();assert.equal(wrapReads,reads,'route replacement must not touch another mounted game');
+});
+
+test('actual app wiring batches only raw progress and renders control notifications synchronously',()=>{
+ let notify,state='before';const rendered=[],frames=new Map(),cancelled=[];let id=0;
+ const context=vm.createContext({
+  computerSession:null,COMPUTER_UI_FRAME_MEASURE,COMPUTER_PRESENTATION,
+  updateComputerUi:()=>rendered.push(state),
+  createFramePresentation:options=>createFramePresentation({...options,visible:()=>true,requestFrame:callback=>{const next=id++;frames.set(next,callback);return next;},cancelFrame:id=>cancelled.push(id)}),
+  createComputerSession:options=>{notify=options.onChange;return{tick(){},suspend(){}};},
+  document:{addEventListener(){}},window:{addEventListener(){}},
+ });
+ new vm.Script(slice('const computerUiPresentation =',"window.addEventListener('hashchange'")).runInContext(context);
+ notify({presentation:'progress'});notify({presentation:'progress'});assert.equal(frames.size,1);assert.deepEqual(rendered,[]);
+ state='control';notify();assert.deepEqual(rendered,['control'],'control presentation cannot wait behind a frame');assert.deepEqual(cancelled,[0]);
+ frames.get(0)();assert.deepEqual(rendered,['control'],'cancelled progress cannot repaint a transition');
+ notify({presentation:'progress'});state='latest';frames.get(1)();assert.deepEqual(rendered,['control','latest']);
 });
