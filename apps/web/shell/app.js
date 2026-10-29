@@ -16,6 +16,7 @@ import { createJoinFeedback } from './join-feedback.js';
 import { beginScenarioCapture, scenarioCapturePosition, canLoadScenarioInPlace } from './scenario-capture.js';
 import { createComputerPreparation } from './computer-preparation.js';
 import { createComputerSession } from './computer-session.js';
+import { createFramePresentation, COMPUTER_UI_FRAME_MEASURE } from './frame-presentation.js';
 import { renderComputerProgress, renderDecisionDebug } from './computer-view.js';
 import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
 let computerSession = null;
@@ -4271,12 +4272,17 @@ const updateComputerUi = () => {
   const debug = appEl.querySelector('[data-flyout="debug"] .shell-flyout-scroll');
   if (debug) patchToolHtml(debug, renderDebugContent());
 };
+const computerUiPresentation = createFramePresentation({ render: updateComputerUi, measurementName: COMPUTER_UI_FRAME_MEASURE });
 computerSession = createComputerSession({ getContext: () => {
   const state = account.snapshot(), gameId = currentRoute.name === 'game' ? currentRoute.gameId : null;
   return { transport, game: gameId ? transport.getAuthoritativeGame(gameId) : null, accountGeneration: state.generation, authenticated: account.canPlay(), canAnalyze: state.session.authenticated, visible: !document.hidden && Boolean(gameId) };
-}, onChange: updateComputerUi });
-document.addEventListener('visibilitychange', () => { if(document.hidden) replayRequests.cancel(); void computerSession.tick(); });
-window.addEventListener('pagehide', () => { computerSession.suspend(); });
+}, onChange: computerUiPresentation.schedule });
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden) { replayRequests.cancel(); computerUiPresentation.cancel(); }
+  else computerUiPresentation.schedule();
+  void computerSession.tick();
+});
+window.addEventListener('pagehide', () => { computerSession.suspend(); computerUiPresentation.cancel(); });
 window.addEventListener('hashchange', () => { queueMicrotask(() => { void computerSession.tick(); }); });
 
 const closeFriendInvite = () => {

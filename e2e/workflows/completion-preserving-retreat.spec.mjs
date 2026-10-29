@@ -7,11 +7,12 @@ import {waitForComputerDecision} from '../support/computer-projection.mjs';
 import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
 import {makeRetreatScenario,readRetreatCapture,FOLLOW_ACTION,RETREAT_CAPTURE_SHA256} from '../support/retreat-completion-fixture.mjs';
 import {installJournalObservations} from '../support/journal-observations.mjs';
+import {COMPUTER_UI_FRAME_MEASURE} from '../../apps/web/shell/frame-presentation.js';
 
 const f=readRetreatCapture(),safe=f.alternatives.find(row=>row.completable);
 const computerRetreatWorkflow='the real computer defender records only the completion-preserving retreat';
 // Read existing recorder and DOM only. Never drive recovery or submit work.
-async function readRetreatDiagnostics(){
+async function readRetreatDiagnostics(measurementName){
    const match=location.hash.match(/^#\/game\/([^?#/]+)/);
    if(!match)return{available:false,reason:'current-game-id-unavailable'};
    const gameId=decodeURIComponent(match[1]);
@@ -20,7 +21,7 @@ async function readRetreatDiagnostics(){
    const {issueDiagnostics}=await import('/shell/issue-diagnostics.js');
    const fields=['stage','code','operation','receipt','pendingCount','gameplayRevision','appliedEventSeq','advertisedEventSeq','at','generation','elapsedMs','deadlineMs'];
    const pick=value=>Object.fromEntries(fields.filter(key=>Object.hasOwn(value??{},key)).map(key=>[key,value[key]]));
-   return{available:true,gameId,journal:window.retreatJournalObservations,historyRows:document.querySelectorAll('[data-testid="history-move-item"]').length,reports:issueDiagnostics.list().filter(report=>report.schemaVersion===1&&report.key===`recovery:${gameId}`).map(report=>({schemaVersion:1,startedAt:report.startedAt,resolvedAt:report.resolvedAt,initial:pick(report.initial),events:report.events.map(pick)}))};
+   return{available:true,gameId,journal:window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,historyRows:document.querySelectorAll('[data-testid="history-move-item"]').length,reports:issueDiagnostics.list().filter(report=>report.schemaVersion===1&&report.key===`recovery:${gameId}`).map(report=>({schemaVersion:1,startedAt:report.startedAt,resolvedAt:report.resolvedAt,initial:pick(report.initial),events:report.events.map(pick)}))};
 }
 
 // Capture identity is explicitly minimal-artifact. Search and command
@@ -39,7 +40,7 @@ test.afterEach(async({page},info)=>{
  if(info.status===info.expectedStatus){
   let timer;
   try{
-   const journal=await Promise.race([page.evaluate(()=>window.retreatJournalObservations),new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
+   const journal=await Promise.race([page.evaluate(measurementName=>({...window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null}),COMPUTER_UI_FRAME_MEASURE),new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
    const path=info.outputPath('native-journal-lifecycle.json');
    await writeFile(path,JSON.stringify(journal??{unavailable:'not-installed'}));
    await info.attach('native-journal-lifecycle',{contentType:'application/json',path});
@@ -50,7 +51,7 @@ test.afterEach(async({page},info)=>{
  if(!['failed','timedOut','interrupted'].includes(info.status))return;
  let snapshot,diagnosticTimer;
  try{
-  snapshot=page.isClosed()?{available:false,reason:'page-closed'}:await Promise.race([page.evaluate(readRetreatDiagnostics),new Promise(resolve=>{diagnosticTimer=setTimeout(()=>resolve({available:false,reason:'diagnostic-read-timeout'}),2000);})]);
+  snapshot=page.isClosed()?{available:false,reason:'page-closed'}:await Promise.race([page.evaluate(readRetreatDiagnostics,COMPUTER_UI_FRAME_MEASURE),new Promise(resolve=>{diagnosticTimer=setTimeout(()=>resolve({available:false,reason:'diagnostic-read-timeout'}),2000);})]);
  }catch(error){snapshot={available:false,reason:'diagnostic-read-unavailable',errorKind:String(error?.name??'Error').slice(0,80)};}
  finally{clearTimeout(diagnosticTimer);}
  try{
@@ -64,7 +65,7 @@ test.afterEach(async({page},info)=>{
   let timer;
   try{
    const sample=await Promise.race([
-    page.evaluate(readRetreatDiagnostics).then(value=>({ok:true,value}),()=>({ok:false,reason:'diagnostic-read-unavailable'})),
+    page.evaluate(readRetreatDiagnostics,COMPUTER_UI_FRAME_MEASURE).then(value=>({ok:true,value}),()=>({ok:false,reason:'diagnostic-read-unavailable'})),
     new Promise(resolve=>{timer=setTimeout(()=>resolve({ok:false,reason:'diagnostic-read-timeout'}),Math.min(2000,maximumDrainMs-(Date.now()-started)));}),
    ]);
    samples.push({elapsedMs:Date.now()-started,...sample});

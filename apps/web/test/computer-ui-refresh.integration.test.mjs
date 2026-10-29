@@ -15,7 +15,7 @@ const slice=(start,end)=>{
 const script=new vm.Script([
  slice('const quietComputerRenewal =','const applySharedMutationGates ='),
  slice('let reconnectPresentationTimer;','const mountBoardForGame ='),
- slice('const updateComputerUi =','computerSession = createComputerSession'),
+ slice('const updateComputerUi =','const computerUiPresentation ='),
  'updateComputerUi',
 ].join('\n'));
 
