@@ -55,3 +55,19 @@ test('complete action ordering agrees with brute enumeration throughout catalog 
     assert.deepEqual(listLegalActions(state),bruteLegalActions(state),scenario.title);
   }
 });
+
+// Production game game-6a7fa3, revision 51, reduced to rules inputs only.
+test('mobile End Turn enumerates the complete next turn without exploring a trapped rush', () => {
+  const saved = JSON.parse(readFileSync('packages/game-engine/test/fixtures/mobile-end-turn-rush.json', 'utf8'));
+  let expansions = 0;
+  const next = resolveToStability(applyAction(saved, { type: 'end_turn' }).state);
+  const actions = withEngineComputationGuard(expansion => {
+    if (expansion && ++expansions > 1000) throw new Error('trapped rush search regressed');
+  }, () => listLegalActions(next));
+  assert.equal(next.sideToMove, 'P1');
+  assert.equal(next.turnIndex, 30);
+  assert.equal(next.continuation, null);
+  assert.equal(actions.length, 46);
+  assert.ok(!actions.some(a => a.type === 'rush' && a.actorId === 'U1-7' && a.to.row === 9 && a.to.col === 0));
+  assert.deepEqual(actions, bruteLegalActions(next));
+});

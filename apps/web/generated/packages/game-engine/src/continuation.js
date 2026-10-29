@@ -665,7 +665,33 @@ export function isContinuationCompletable(state, memo) {
         return solveContinuation(state, memo);
     return completedDecisionRule("continuation-v1", state, () => solveContinuation(state, new Map()));
 }
-function solveContinuation(state, memo) {
+// During a rush enemies stay put and friendly pieces never obstruct their own
+// supply. Ignoring every enemy command edge gives an optimistic supply region.
+// A required piece that has already rushed cannot escape outside this region.
+function optimisticRushSupplyRegion(state) {
+    const owner = obligationOwner(state);
+    const blocked = new Set(buildSupplyCheckPieces(state)
+        .filter(piece => piece.owner !== owner)
+        .map(piece => coordinateKey(piece.position.row, piece.position.col)));
+    const point = SUPPLY_POINTS[owner];
+    const visited = new Set();
+    const queue = [point];
+    if (blocked.has(coordinateKey(point.row, point.col)))
+        return visited;
+    visited.add(coordinateKey(point.row, point.col));
+    for (let index = 0; index < queue.length; index++) {
+        checkEngineComputation();
+        for (const next of sortedOrthogonalNeighbors(queue[index].row, queue[index].col)) {
+            const key = coordinateKey(next.row, next.col);
+            if (!blocked.has(key) && !visited.has(key)) {
+                visited.add(key);
+                queue.push(next);
+            }
+        }
+    }
+    return visited;
+}
+function solveContinuation(state, memo, rushSupplyRegion) {
     checkEngineComputation(Boolean(state.continuation));
     if (!state.continuation) {
         return true;
@@ -689,8 +715,18 @@ function solveContinuation(state, memo) {
             memo.set(key, "success");
             return true;
         }
+        if (normalized.continuation?.type === "rush") {
+            rushSupplyRegion ??= optimisticRushSupplyRegion(normalized);
+            const required = new Set(obligationPieceIdsForContinuation(normalized));
+            const moved = new Set(normalized.continuation.rushedPieceIds ?? []);
+            if (normalized.pieces.some(piece => required.has(piece.id) && moved.has(piece.id)
+                && !rushSupplyRegion.has(coordinateKey(piece.position.row, piece.position.col)))) {
+                memo.set(key, "failure");
+                return false;
+            }
+        }
         for (const successor of buildSuccessorStates(normalized)) {
-            if (solveContinuation(successor, memo)) {
+            if (solveContinuation(successor, memo, rushSupplyRegion)) {
                 memo.set(key, "success");
                 return true;
             }

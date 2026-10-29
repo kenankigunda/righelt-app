@@ -1622,6 +1622,7 @@ export const createSyncStore = ({
       }),
     setActiveGameId: (gameId) => {
       activeGameId = gameId || null;
+      transport.setRulesActiveGame?.(activeGameId);
       syncActiveGame();
     },
     getActiveGameId: () => activeGameId,
