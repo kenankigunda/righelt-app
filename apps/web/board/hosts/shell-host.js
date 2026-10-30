@@ -1,4 +1,4 @@
-import { buildPieceMoveResponse } from "../client-move-generation.js";
+import { createRulesExecutor } from "../rules-runtime.js";
 
 const getControlLabel = ({ state, currentTurn }) => {
   if (!state || !currentTurn) {
@@ -19,7 +19,9 @@ const unwrapOperationResult = async (value) => {
   return resolved;
 };
 
-export const createShellBoardHost = ({ transport, gameId, canInteract, canSelect, getInspectionSnapshot = () => null, getGameView = () => transport.getGameViewModel(gameId) }) => ({
+export const createShellBoardHost = ({ transport, gameId, canInteract, canSelect, getInspectionSnapshot = () => null, getGameView = () => transport.getGameViewModel(gameId), rulesExecutor = createRulesExecutor() }) => ({
+  asyncPieceMoves: rulesExecutor.asynchronous,
+  cancelPieceMoves: () => rulesExecutor.cancelAll(),
   async loadInitialState() {
     const game = getGameView();
     const legalActions = Array.isArray(game?.legalActions) ? game.legalActions : [];
@@ -40,11 +42,11 @@ export const createShellBoardHost = ({ transport, gameId, canInteract, canSelect
   },
   async loadPieceMoves(state, pieceId) {
     const inspection = getInspectionSnapshot();
-    if (inspection) return buildPieceMoveResponse({ state: inspection, legalActions: [], pieceId });
+    if (inspection) return rulesExecutor.previews("piece", { state: inspection, legalActions: [], pieceId });
     const game = getGameView();
     const snapshot = game?.currentSnapshot ?? state;
     const legalActions = Array.isArray(game?.legalActions) ? game.legalActions : [];
-    return buildPieceMoveResponse({ state: snapshot, legalActions, pieceId });
+    return rulesExecutor.previews("piece", { state: snapshot, legalActions, pieceId });
   },
   async applyAction(state, action) {
     if (getInspectionSnapshot()) return { accepted: false, validation: { code: 'inspection_only' }, state, legalActions: [] };

@@ -126,6 +126,7 @@ test.describe('narrow board and history',()=>{
       await other.goto(page.url().replace(/([?&])panel=history/,'$1panel=board'));
       await expect(other.getByTestId('game-shell')).toBeVisible();
       await makeAnyLegalMove(other,'p2');
+      await expect.poll(async()=>(await readGame(other,gameId)).moves.length,{message:'The second move must be acknowledged before capturing live truth'}).toBe(2);
       const live=await readGame(other,gameId);
       await expect(page.getByTestId('history-move-item')).toHaveCount(2);
       await expect.poll(()=>renderedPieces(board(page))).toEqual(expectedPieces(live.board.state));

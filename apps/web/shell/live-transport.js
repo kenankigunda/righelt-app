@@ -1,9 +1,10 @@
+import { createRulesExecutor } from '../board/rules-runtime.js';
 import { CURRENT_COMPUTER_MODEL } from '../generated/packages/shared-types/src/computer-play.js';
 import { STORAGE_GENERATION_HEADER } from "../generated/packages/shared-types/src/storage-policy.js";
 import { issueDiagnostics } from "./issue-diagnostics.js";
-import { equivalentGameStates, listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
+import { serializeState, listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
 import { loadIdentity, saveIdentity } from "./persistence.js";
-import { defaultNotationForAction, projectOptimisticGame } from "./optimistic-live.js";
+import { defaultNotationForAction, rebaseProjectedMetadata } from "./optimistic-live.js";
 import { buildStaticGameCardFromGame, normalizeStaticGameCard } from "./static-game-cards.js";
 import { createCommandJournal } from "./command-journal.js";
 import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, SYNC_PROTOCOL_VERSION, SYNC_TIMING, SYNC_LIMITS, LIVE_HISTORY, SHARED_OPERATIONS, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
@@ -12,6 +13,21 @@ import { applyHistoryIntent, historyMoveKey } from "./recovery-view.js";
 import { activityStateActorSide } from "./activity-affiliation.js";
 
 const clone = (value) => structuredClone(value);
+const projectionControlKey = game => JSON.stringify({
+  ownershipMode: game?.ownershipMode, selfPlayMode: game?.selfPlayMode,
+  p1: game?.player1?.identityId, p2: game?.player2?.identityId,
+  myRole: game?.myRole, myRoles: game?.myRoles,
+  inHistoryMode: game?.inHistoryMode, historyIndex: game?.historyIndex,
+  // A renewal changes expiry, not authority. Generation/device/owner changes
+  // must still fence work, even if the board and gameplay revision stay put.
+  computer: game?.computer ? { ...game.computer,
+    lease: game.computer.lease ? { ...game.computer.lease, expiresAt: undefined } : null,
+  } : null,
+});
+const sameProjectionAuthority = (left, right) => Boolean(left && right
+  && left.gameplayRevision === right.gameplayRevision
+  && serializeState(left.board.state) === serializeState(right.board.state)
+  && projectionControlKey(left) === projectionControlKey(right));
 // A validated, unresolved receipt is pending durable intent, not a failed
 // request. Private identity prevents external error messages impersonating it.
 const unresolvedCommandOutcome = Symbol('unresolved-command-outcome');
@@ -98,8 +114,17 @@ export const createLiveTransportStore = ({
   auth = null,
   timing = SYNC_TIMING,
   beforeReconcile = async () => {},
+  rulesExecutor = createRulesExecutor(),
 } = {}) => {
   let active = true;
+  let rulesGameId = null;
+  let rulesVisible = !globalThis.document?.hidden;
+  let rulesEpoch = 0;
+  const assertRulesContext = (epoch, gameId) => {
+    if (rulesExecutor.asynchronous && (rulesEpoch !== epoch || rulesGameId !== gameId || !rulesVisible)) {
+      throw Object.assign(new Error("rules_cancelled"), { code: "rules_cancelled" });
+    }
+  };
   const assertActive = () => { if (!active) throw Object.assign(new Error("session_changed"), { code: "session_changed" }); };
   commandJournal ??= createCommandJournal({
     ...(auth?.storageGeneration ? { databaseName: `righelt.online-commands.storage.${auth.storageGeneration}.${auth?.enabled ? auth.session.contextId || "anonymous" : "guest"}` } : auth?.enabled ? { databaseName: `righelt.online-commands.account-v1.${auth.session.contextId || "anonymous"}` } : {}),
@@ -284,7 +309,8 @@ export const createLiveTransportStore = ({
     next.recovering = optimistic.connectionRecovering === true || optimistic.syncStatus === "confirming" || next.confirmationOverdue;
     next.upgradeRequired = optimistic.upgradeRequired === true;
     next.storageLimitReached = optimistic.storageError?.code === "command_limit_reached" || /limit/.test(optimistic.storageError?.message ?? "");
-    next.sharedMutationsBlocked = optimistic.storageBlocked || next.recovering || next.upgradeRequired || optimistic.pendingCommands.some(command=>command.kind === "shared");
+    next.rulesChecking = Boolean(optimistic.admissionProjection || optimistic.projectionJob?.pending);
+    next.sharedMutationsBlocked = next.rulesChecking || optimistic.storageBlocked || next.recovering || next.upgradeRequired || optimistic.pendingCommands.some(command=>command.kind === "shared");
     applyHistoryIntent(next, historyIntentByGameId.get(gameId), identityId);
     if (next.sharedMutationsBlocked) {
       next.canRecordMove = false;
@@ -304,23 +330,57 @@ export const createLiveTransportStore = ({
     }
 
     if (optimistic.pendingCommands.length === 0) {
+      rulesExecutor.cancel(`project:${gameId}`);
+      optimistic.projectionJob = null;
       optimistic.derivedGame = decorateGameWithSync(authoritativeGame, gameId);
       homeGameCardById.set(gameId, buildStaticGameCardFromGame(optimistic.derivedGame));
       return { ok: true, game: optimistic.derivedGame };
     }
 
-    const projection = projectOptimisticGame({
-      authoritativeGame,
-      identityId,
-      queue: optimistic.pendingCommands.filter(command=>command.kind !== "shared"),
-    });
-    if (!projection.ok) {
-      // Unknown commands retain the last tentative board until receipt reconciliation.
+    // Recovery owns saved intent. A fresh load starts with authority, while an
+    // already-published tentative board must survive unknown receipts. Neither
+    // case needs speculative recomputation while hidden or confirming.
+    if (rulesExecutor.asynchronous && (optimistic.syncStatus === "confirming" || !rulesVisible || gameId !== rulesGameId)) {
+      rulesExecutor.cancel(`project:${gameId}`);
+      optimistic.projectionJob = null;
       optimistic.derivedGame = decorateGameWithSync(optimistic.derivedGame ?? authoritativeGame, gameId);
       homeGameCardById.set(gameId, buildStaticGameCardFromGame(optimistic.derivedGame));
+      return { ok: true, game: optimistic.derivedGame };
+    }
+    if (optimistic.admissionProjection) return { ok: true, game: optimistic.derivedGame };
+    const queue = optimistic.pendingCommands.filter(command => command.kind !== "shared");
+    const signature = queue.map(command => command.clientCommandId).join("|");
+    const previous = optimistic.projectionJob;
+    if (previous?.base === authoritativeGame && previous.signature === signature) {
+      if (previous.result) return installProjection(gameId, previous.result);
+      optimistic.derivedGame = decorateGameWithSync(optimistic.derivedGame ?? authoritativeGame, gameId);
+      return { ok: true, game: optimistic.derivedGame };
+    }
+    const job = optimistic.projectionJob = { base: authoritativeGame, signature, pending: true };
+    const projection = rulesExecutor.project(`project:${gameId}`, { authoritativeGame, identityId, queue });
+    if (!projection?.then) { job.pending = false; job.result = projection; return installProjection(gameId, projection); }
+    job.promise = projection.then(result => {
+      if (!active || optimistic.projectionJob !== job) return;
+      job.pending = false; job.result = result;
+      installProjection(gameId, result);
+      emitChange({ type: "rules_projected", gameId });
+    }).catch(error => {
+      if (!active || optimistic.projectionJob !== job) return;
+      job.pending = false;
+      if (error.code !== "rules_cancelled") logDiagnostic("error", "rules_projection_failed", { gameId, message: error.message });
+      optimistic.derivedGame = decorateGameWithSync(optimistic.derivedGame ?? authoritativeGame, gameId);
+      emitChange({ type: "rules_projection_stopped", gameId });
+    });
+    optimistic.derivedGame = decorateGameWithSync(optimistic.derivedGame ?? authoritativeGame, gameId);
+    return { ok: true, game: optimistic.derivedGame };
+  };
+
+  const installProjection = (gameId, projection) => {
+    const optimistic = getOptimisticState(gameId);
+    if (!projection.ok) {
+      optimistic.derivedGame = decorateGameWithSync(optimistic.derivedGame ?? gameById.get(gameId), gameId);
       return projection;
     }
-
     optimistic.commandResults = projection.commandResults;
     optimistic.derivedGame = decorateGameWithSync(projection.game, gameId);
     homeGameCardById.set(gameId, buildStaticGameCardFromGame(optimistic.derivedGame));
@@ -769,7 +829,20 @@ export const createLiveTransportStore = ({
         if (optimistic.attempt !== attempt || optimistic.upgradeRequired) return;
         const own = response.commandOutcomes.find((entry) => entry.clientCommandId === command.clientCommandId);
         const current = gameById.get(gameId);
-        if (!own || own.outcome !== "unknown" || own.reason === "dependency_pending" || own.reason === "legacy_evidence" || (command.kind !== "shared" && (current?.gameplayRevision !== command.envelope.expectedGameplayRevision || !equivalentGameStates(current.board.state, command.envelope.expectedState)))) throw unresolvedCommandOutcome;
+        if (!own || own.outcome !== "unknown" || own.reason === "dependency_pending" || own.reason === "legacy_evidence") throw unresolvedCommandOutcome;
+        if (command.kind !== "shared") {
+          if (current?.gameplayRevision !== command.envelope.expectedGameplayRevision) throw unresolvedCommandOutcome;
+          // Most saved envelopes match exactly. Older snapshots may need semantic
+          // resolution, which must remain off the browser thread during recovery.
+          if (serializeState(current.board.state) !== serializeState(command.envelope.expectedState)) {
+            const epoch = rulesEpoch;
+            assertRulesContext(epoch, gameId);
+            const equivalent = await rulesExecutor.equivalent(`reconcile:${gameId}`, { left: current.board.state, right: command.envelope.expectedState });
+            if (!active || optimistic.attempt !== attempt || optimistic.upgradeRequired) return;
+            assertRulesContext(epoch, gameId);
+            if (gameById.get(gameId) !== current || !equivalent) throw unresolvedCommandOutcome;
+          }
+        }
       }
       if (optimistic.upgradeRequired) return;
       const body = await boundedRequest(`/api/shell/games/${encodeURIComponent(gameId)}/${command.kind === "shared" ? "shared" : command.kind === "apply" ? "apply" : "end-turn"}`, {
@@ -847,9 +920,11 @@ export const createLiveTransportStore = ({
   };
 
   const enqueueOptimisticCommand = async ({ gameId, command }) => {
+    const contextEpoch = rulesEpoch;
     const optimistic = getOptimisticState(gameId);
     const admission = optimistic.admission.catch(() => {}).then(async () => {
       assertActive();
+      assertRulesContext(contextEpoch, gameId);
       if (auth?.enabled && (!auth.session.authenticated)) throw Object.assign(new Error("invalid_credentials"), { code: "invalid_credentials" });
       const current = getGameViewModel(gameId);
       if (current?.sharedMutationsBlocked) throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
@@ -868,19 +943,38 @@ export const createLiveTransportStore = ({
       };
       envelope.fingerprint = await commandFingerprint(envelope);
       assertActive();
+      assertRulesContext(contextEpoch, gameId);
       command.envelope = envelope;
-      const projection = projectOptimisticGame({ authoritativeGame: gameById.get(gameId), identityId, queue: [...optimistic.pendingCommands, command] });
-      if (!projection.ok) return projection;
-      try { await commandJournal.admit(envelope); }
-      catch (error) { optimistic.unsavedCommand = command; blockStorage(gameId, error); throw error; }
-      assertActive();
-      optimistic.pendingCommands.push(command);
-      optimistic.syncStatus = "applying-update";
-      recalculateOptimisticGame(gameId);
-      emitChange({ type: "optimistic_enqueue", gameId, clientCommandId: command.clientCommandId });
-      // Let the operation owner receive its handle before an immediate response can settle it.
-      void sendNextPendingCommand(gameId);
-      return { ok: true, result: optimistic.commandResults.get(command.clientCommandId), game: optimistic.derivedGame };
+      const base = gameById.get(gameId);
+      const pendingIds = optimistic.pendingCommands.map(entry => entry.clientCommandId).join("|");
+      rulesExecutor.cancel(`project:${gameId}`);
+      optimistic.projectionJob = null;
+      optimistic.admissionProjection = true;
+      try {
+        let projection = await rulesExecutor.project(`admit:${gameId}`, { authoritativeGame: base, identityId, queue: [...optimistic.pendingCommands.filter(entry => entry.kind !== "shared"), command] });
+        assertActive();
+        assertRulesContext(contextEpoch, gameId);
+        const latest = gameById.get(gameId);
+        if (!sameProjectionAuthority(base, latest) || optimistic.pendingCommands.map(entry => entry.clientCommandId).join("|") !== pendingIds) {
+          throw Object.assign(new Error("stale_state"), { code: "stale_state" });
+        }
+        if (!projection.ok) return projection;
+        if (latest !== base) projection = rebaseProjectedMetadata(projection, latest);
+        try { await commandJournal.admit(envelope); }
+        catch (error) { optimistic.unsavedCommand = command; blockStorage(gameId, error); throw error; }
+        assertActive();
+        optimistic.pendingCommands.push(command);
+        optimistic.syncStatus = "applying-update";
+        optimistic.admissionProjection = false;
+        if (gameById.get(gameId) === latest) {
+          optimistic.projectionJob = { base: latest, signature: optimistic.pendingCommands.filter(entry => entry.kind !== "shared").map(entry => entry.clientCommandId).join("|"), result: projection, pending: false };
+          installProjection(gameId, projection);
+        } else recalculateOptimisticGame(gameId);
+        emitChange({ type: "optimistic_enqueue", gameId, clientCommandId: command.clientCommandId });
+        // An admitted command belongs to durable recovery, including after navigation.
+        void sendNextPendingCommand(gameId);
+        return { ok: true, result: projection.commandResults.get(command.clientCommandId), game: optimistic.derivedGame };
+      } finally { optimistic.admissionProjection = false; }
     });
     optimistic.admission = admission;
     return admission;
@@ -1575,7 +1669,22 @@ export const createLiveTransportStore = ({
     });
   };
 
+  const setRulesActiveGame = (gameId, visible = rulesVisible) => {
+    if (rulesGameId === gameId && rulesVisible === visible) return;
+    rulesGameId = gameId; rulesVisible = visible; rulesEpoch++;
+    rulesExecutor.cancelAll();
+    for (const optimistic of optimisticStateByGameId.values()) optimistic.projectionJob = null;
+    if (gameId) recalculateOptimisticGame(gameId);
+  };
+  const onRulesVisibility = () => setRulesActiveGame(rulesGameId, !document.hidden);
+  const onRulesPageHide = () => setRulesActiveGame(rulesGameId, false);
+  const onRulesPageShow = () => setRulesActiveGame(rulesGameId, !globalThis.document?.hidden);
+  globalThis.document?.addEventListener?.("visibilitychange", onRulesVisibility);
+  globalThis.window?.addEventListener?.("pagehide", onRulesPageHide);
+  globalThis.window?.addEventListener?.("pageshow", onRulesPageShow);
+
   return {
+    setRulesActiveGame,
     loadGamesPage,
     loadGame,
     resolveInvite,
@@ -1647,6 +1756,10 @@ export const createLiveTransportStore = ({
     unsubscribe,
     retire() {
       active = false;
+      rulesExecutor.cancelAll();
+      globalThis.document?.removeEventListener?.("visibilitychange", onRulesVisibility);
+      globalThis.window?.removeEventListener?.("pagehide", onRulesPageHide);
+      globalThis.window?.removeEventListener?.("pageshow", onRulesPageShow);
       historyLoads.clear();historyCache.clear();
       for(const waiter of sharedWaiters.values())waiter.reject(Object.assign(new Error("session_changed"),{code:"session_changed"}));
       sharedWaiters.clear();

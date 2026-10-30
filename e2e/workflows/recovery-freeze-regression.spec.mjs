@@ -1,6 +1,8 @@
+import {waitForOpponentReady,waitForComputerDecision} from '../support/computer-projection.mjs';
+import { readFileSync } from 'node:fs';
 import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
 import {test,expect} from "@playwright/test";
-import {createGameFromHome,importScenarioGame,submitPlayableAction,switchGamePanel} from "../support/app.mjs";
+import {createGameFromHome,importScenarioGame,submitPlayableAction,switchGamePanel,waitForLegacyIdentity} from "../support/app.mjs";
 
 const currentGame=(page,gameId)=>page.evaluate(async id=>{
  const identityId=localStorage.getItem("righelt.identity.id.v1");return (await (await fetch(`/api/shell/games/${id}?identityId=${identityId}`)).json()).game;
@@ -257,4 +259,104 @@ test('branch chooser waits for this page recovery before creating exactly one or
   await expect(page.getByTestId('history-move-item')).toHaveCount(original.moves.length);
   await popup.close();
  }finally{hold=false;release();await page.context().unrouteAll({behavior:'wait'});await page.unrouteAll({behavior:'wait'});}
+});
+
+
+test.describe('mobile rules workers', () => {
+ test.use({hasTouch:true});
+
+test('mobile production rush ends once and reloads the same tab with complete legal actions', async ({page,baseURL},info) => {
+  await page.setViewportSize({width:390,height:844});
+  const state=JSON.parse(readFileSync('packages/game-engine/test/fixtures/mobile-end-turn-rush.json','utf8'));
+  const fixture={formatVersion:2,id:'50d3b5ac-5741-45f4-9559-cdcd677cadc1',title:'Mobile End Turn regression',description:'Reduced production rules position',incorrect:false,
+    initialState:state,resultingState:state,moves:[],expectedFinalStateHash:'hash-placeholder',expectedOutcome:'ongoing',savedSelection:null};
+  const {gameId}=await importScenarioGame(page,fixture,baseURL);
+  await switchGamePanel(page,'players');
+  const both=page.getByRole('button',{name:'Play both sides',exact:true});
+  if(await both.isVisible())await both.click();
+  await switchGamePanel(page,'board');
+  await expect.poll(async()=>(await currentGame(page,gameId)).canEndTurn).toBe(true);
+  const before=await currentGame(page,gameId);
+  const submitted=[];
+  page.on('request',request=>{if(isOperationRequest(request,'end-turn'))submitted.push(request.postDataJSON());});
+  await page.locator('[data-board-preview-action="end-turn"]').click();
+  await expect.poll(async()=>(await currentGame(page,gameId)).board.state.continuation).toBeNull();
+  const ended=await currentGame(page,gameId);
+  expect(ended.board.state.turnIndex).toBe(before.board.state.turnIndex+1);
+  expect(ended.legalActions).toHaveLength(46);
+  expect(new Set(submitted.map(command=>command.clientCommandId)).size).toBe(1);
+  await page.reload();
+  await expect(page.getByTestId('game-board')).toBeVisible();
+  const reloaded=await currentGame(page,gameId);
+  expect(reloaded.gameplayRevision).toBe(ended.gameplayRevision);
+  expect(reloaded.board.state).toEqual(ended.board.state);
+  expect(reloaded.legalActions).toEqual(ended.legalActions);
+  await page.screenshot({path:info.outputPath('mobile-end-turn-reloaded.png')});
+});
+
+test('slow rules worker leaves mobile navigation responsive and stops when leaving the game', async ({page,baseURL}) => {
+  await page.setViewportSize({width:390,height:844});
+  // Hold actual worker execution at its module boundary, without blocking UI JS.
+  let release;
+  const gate=new Promise(resolve=>release=resolve);
+  await page.route('**/board/rules-worker.js',async route=>{await gate;await route.continue().catch(()=>{});});
+  try {
+    await createGameFromHome(page);
+    await page.evaluate(()=>{
+      window.rulesWorkers=[];
+      const NativeWorker=window.Worker;
+      window.Worker=class extends NativeWorker {
+        constructor(url,options){super(url,options);if(String(url).includes('rules-worker'))window.rulesWorkers.push(this);}
+        terminate(){this.wasTerminated=true;super.terminate();}
+      };
+    });
+    await page.locator('[data-testid="game-board"] .cell[data-row="3"][data-col="6"]').click();
+    await expect.poll(()=>page.evaluate(()=>window.rulesWorkers.length)).toBeGreaterThan(0);
+    await switchGamePanel(page,'players');
+    await expect(page.getByTestId('game-shell')).toBeVisible();
+    // Production mounts through bindElements/loadSnapshot, not initialize().
+    await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pagehide')));
+    await expect.poll(()=>page.evaluate(()=>window.rulesWorkers.every(worker=>worker.wasTerminated))).toBe(true);
+    await page.getByRole('link',{name:'Righelt',exact:true}).click();
+    await expect(page.getByTestId('home-create-game')).toBeVisible();
+    expect(await page.evaluate(()=>window.rulesWorkers.every(worker=>worker.wasTerminated))).toBe(true);
+  } finally {release();await page.unrouteAll({behavior:'wait'});}
+});
+
+
+test('Horus finishes a real turn and releases its worker before self-play and reload', async ({page},info) => {
+  await page.setViewportSize({width:390,height:844});
+  await page.addInitScript(()=>{
+    window.ownedGameWorkers=[];
+    const NativeWorker=window.Worker;
+    window.Worker=class extends NativeWorker {
+      constructor(url,options){super(url,options);window.ownedGameWorkers.push(this);}
+      terminate(){this.wasTerminated=true;super.terminate();}
+    };
+  });
+  await page.goto('/');await waitForLegacyIdentity(page);
+  await page.locator('[data-action="opponent-story"][data-opponent="horus"]').click();
+  await waitForOpponentReady(page);
+  const created=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');
+  await page.getByRole('button',{name:'Play Horus',exact:true}).click();
+  const initial=(await (await created).json()).game;
+  await expect(page.getByTestId('game-board')).toBeVisible();
+  await submitPlayableAction(page,initial.legalActions.find(action=>action.type==='move'));
+  await waitForComputerDecision(page,initial.id,'horus',{guest:true,modelId:initial.computer.modelId});
+  await expect.poll(async()=>(await currentGame(page,initial.id)).computerTurn,{timeout:30000}).toBeNull();
+  await page.getByRole('link',{name:'Righelt',exact:true}).click();
+  await expect(page.getByTestId('home-create-game')).toBeVisible();
+  await expect.poll(()=>page.evaluate(()=>window.ownedGameWorkers.every(worker=>worker.wasTerminated))).toBe(true);
+  const selfCreated=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');
+  await page.locator('[data-action="create-self-play"]').click();
+  const self=(await (await selfCreated).json()).game;
+  await expect(page.getByTestId('game-board')).toBeVisible();
+  await submitPlayableAction(page,self.legalActions.find(action=>action.type==='move'));
+  await expect.poll(async()=>(await currentGame(page,self.id)).moves.length).toBe(1);
+  const saved=await currentGame(page,self.id);
+  await page.reload();await expect(page.getByTestId('game-board')).toBeVisible();
+  const reloaded=await currentGame(page,self.id);
+  expect(reloaded.gameplayRevision).toBe(saved.gameplayRevision);expect(reloaded.board.state).toEqual(saved.board.state);
+  await page.screenshot({path:info.outputPath('horus-to-self-play-reloaded.png')});
+});
 });

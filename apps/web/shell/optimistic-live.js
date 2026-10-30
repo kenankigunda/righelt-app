@@ -18,6 +18,21 @@ const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
 const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
 const getSeatIdentity = (game, seat) => (seat === "Player 1" ? game.player1?.identityId ?? null : game.player2?.identityId ?? null);
 
+// These are the fields this projector changes. Fresh read-only metadata stays
+// current when an equivalent authority snapshot arrives during worker execution.
+const PROJECTED_GAME_FIELDS = Object.freeze([
+  'board', 'moves', 'turns', 'updatedAt', 'lastMoveAt', 'currentTurn',
+  'turnOwnerSeat', 'controlSeat', 'control', 'legalActions', 'pendingMoves',
+  'pendingCommandCount', 'liveCurrentSnapshot', 'currentSnapshot', 'computerTurn',
+  'canRecordMove', 'canEndTurn', 'sharedMutationsBlocked',
+]);
+export const rebaseProjectedMetadata = (projection, authoritativeGame) => ({
+  ...projection,
+  game: Object.assign(clone(authoritativeGame), Object.fromEntries(
+    PROJECTED_GAME_FIELDS.filter(key => key in projection.game).map(key => [key, projection.game[key]]),
+  )),
+});
+
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "(?,?)");
 
 export const defaultNotationForAction = (action) => {
@@ -76,14 +91,13 @@ const buildPendingMoveEntry = ({ command, selectionSnapshot, snapshot, activeTur
   pending: true,
 });
 
-const finalizeProjectedView = ({ authoritativeGame, workingGame, identityId, queue, pendingMoves }) => {
+const finalizeProjectedView = ({ authoritativeGame, workingGame, identityId, queue, pendingMoves, liveLegalActions }) => {
   const next = clone(workingGame);
   const activeTurn = getActiveTurn(next);
   const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(next);
   const controlSeat = getControlSeatForTurn(next.board.state, turnOwnerSeat);
   const controlIdentity = getSeatIdentity(next, controlSeat);
   const turnOwnerIdentity = getSeatIdentity(next, turnOwnerSeat);
-  const liveLegalActions = listLegalActions(next.board.state);
   const isPlayer = next.myRole === "Player 1" || next.myRole === "Player 2";
 
   next.turnOwnerSeat = turnOwnerSeat;
@@ -116,6 +130,7 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
 
   const pendingMoves = [];
   const commandResults = new Map();
+  let liveLegalActions;
 
   for (const command of queue) {
     if (command.kind === "apply" && command.action?.type !== "end_turn") {
@@ -175,10 +190,11 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
       });
       pendingMove.destroyedPieces = destructionRecords(events, command.clientCommandId);
       pendingMoves.push(pendingMove);
+      liveLegalActions = listLegalActions(settledState);
       commandResults.set(command.clientCommandId, {
         accepted: true,
         state: clone(settledState),
-        legalActions: listLegalActions(settledState),
+        legalActions: liveLegalActions,
         removedPieces: removalNotices(events, command.clientCommandId),
         destroyedPieces: destructionRecords(events, command.clientCommandId),
         outcome: settledState.outcome ?? null,
@@ -190,19 +206,21 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
     if (!ended.ok) {
       return { ok: false, error: ended.error, clientCommandId: command.clientCommandId };
     }
+    liveLegalActions = listLegalActions(workingGame.board.state);
     commandResults.set(command.clientCommandId, {
       accepted: true,
       removedPieces: removalNotices(ended.events, command.clientCommandId),
       destroyedPieces: destructionRecords(ended.events, command.clientCommandId),
       state: clone(workingGame.board.state),
-      legalActions: listLegalActions(workingGame.board.state),
+      legalActions: liveLegalActions,
       outcome: workingGame.board.state.outcome ?? null,
     });
   }
 
   return {
     ok: true,
-    game: finalizeProjectedView({ authoritativeGame, workingGame, identityId, queue, pendingMoves }),
+    game: finalizeProjectedView({ authoritativeGame, workingGame, identityId, queue, pendingMoves,
+      liveLegalActions: liveLegalActions ?? listLegalActions(workingGame.board.state) }),
     commandResults,
   };
 };

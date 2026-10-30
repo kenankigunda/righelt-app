@@ -3523,3 +3523,41 @@ test('message and ordinary Pass share one guarded admission with stale-state and
  await runtime.loadSnapshot(state,{legalActions:[{type:'pass'}]});fire();fire(false);assert.deepEqual(applied,[{type:'pass'}]);assert.deepEqual(external,[]);
  release();await new Promise(resolve=>setTimeout(resolve,0));fire();assert.equal(applied.length,1);
 });
+
+test('complete asynchronous blocked-only previews initialize the action layer',async()=>{
+ let complete, phase;
+ const pending=new Promise(resolve=>complete=resolve);
+ const piece={id:'A',owner:'P1',kind:'unit',position:{row:4,col:4},supplied:true,commanded:true};
+ const state={boardSize:10,sideToMove:'P1',turnIndex:0,continuation:null,outcome:{status:'ongoing'},pieces:[piece]};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:view=>phase=view.selectedPieceOverlayPhase,getPieceById:(state,id)=>state.pieces.find(p=>p.id===id),getSelectedPieceSummary:()=>null},
+   host:{asyncPieceMoves:true,canInteract:()=>true,loadPieceMoves:()=>pending}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null});
+ const loading=runtime.loadSnapshot(state,{legalActions:[],selectionState:{selectedPieceId:'A',source:piece.position,target:null}});
+ const blocked={type:'rush',actorId:'A',from:piece.position,to:{row:4,col:5},legal:false,blockedReason:'SUPPLY_DESTINATION_UNSUPPLIED'};
+ complete({state,actions:[],previewActions:[blocked]});await loading;
+ assert.equal(phase,'actionPreviews');
+ destroyUninitializedNodeRuntime(runtime);
+});
+
+test('production bind path suspends new preview requests until pageshow',async()=>{
+ const savedDocument=Object.getOwnPropertyDescriptor(globalThis,'document'),savedWindow=Object.getOwnPropertyDescriptor(globalThis,'window');
+ const windowListeners=new Map();let queries=0;
+ try{
+  Object.defineProperty(globalThis,'document',{configurable:true,value:{hidden:false,addEventListener:noop,removeEventListener:noop}});
+  Object.defineProperty(globalThis,'window',{configurable:true,value:{addEventListener:(name,fn)=>windowListeners.set(name,fn),removeEventListener:noop}});
+  const piece={id:'A',owner:'P1',kind:'unit',position:{row:4,col:4},supplied:true,commanded:true};
+  const state={boardSize:10,sideToMove:'P1',turnIndex:0,continuation:null,outcome:{status:'ongoing'},pieces:[piece]};
+  const options={legalActions:[],selectionState:{selectedPieceId:'A',source:piece.position,target:null}};
+  const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getPieceById:(s,id)=>s.pieces.find(p=>p.id===id),getSelectedPieceSummary:()=>null},
+   host:{asyncPieceMoves:true,canInteract:()=>true,loadPieceMoves:async()=>{queries++;return {state,actions:[],previewActions:[]};}}});
+  runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null});await runtime.loadSnapshot(state,options);
+  const before=queries;assert.ok(before>0);
+  windowListeners.get('pagehide')();
+  await runtime.loadSnapshot(state,options);await runtime.reloadSelectedPieceMoves();assert.equal(queries,before);
+  windowListeners.get('pageshow')();await Promise.resolve();await Promise.resolve();assert.ok(queries>before);
+  runtime.destroy();
+ }finally{
+  if(savedDocument)Object.defineProperty(globalThis,'document',savedDocument);else delete globalThis.document;
+  if(savedWindow)Object.defineProperty(globalThis,'window',savedWindow);else delete globalThis.window;
+ }
+});

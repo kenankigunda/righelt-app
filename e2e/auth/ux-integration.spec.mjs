@@ -92,6 +92,7 @@ test('a held account game creation shows its captured owner profile before any a
   const owner=page.getByTestId('participant-player-1').getByRole('button'),other=page.getByTestId('participant-player-2').getByRole('button');
   for(const button of [owner,other]){await expect(button).toHaveAttribute('data-action','public-profile');await expect(button).toHaveAttribute('data-username',account.username);}
   expect(await page.evaluate(()=>window.__guestSeatFlashes)).toEqual([]);
+  await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
   await owner.focus();await owner.press('Enter');await expect(page.getByTestId('public-profile')).toContainText('Joined');await expect(owner).toHaveAttribute('aria-expanded','true');await expect(owner).toBeFocused();
   await page.screenshot({path:info.outputPath('held-account-profile.png')});
   const committed=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');release();

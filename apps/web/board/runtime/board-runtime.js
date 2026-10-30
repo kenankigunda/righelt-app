@@ -19,7 +19,7 @@ import {
   canCloseContinuationNow,
   getRushContinuationBlockingPiece,
 } from "../../generated/packages/game-engine/src/continuation.js";
-import { buildPieceMoveResponse } from "../client-move-generation.js";
+import { buildPieceMoveResponse, listPieceMovesFromLegalActions } from "../client-move-generation.js";
 
 const PLAYER_TONE_CLASSES = ["player-tone-p1", "player-tone-p2", "player-tone-both", "player-tone-neutral"];
 
@@ -80,6 +80,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let autoTargetSuppressed = false;
   let selectedPieceMovesRequestId = 0;
   let mounted = false;
+  let previewsSuspended = Boolean(globalThis.document?.hidden);
   let removalEffectsTimer = null;
   let internalActionType = defaultActionType;
   let overlayMode = OVERLAY_MODE.INTERACTIVE;
@@ -463,7 +464,25 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     });
   };
 
-  const renderStatus = () => {
+  const disabledInlineActions = new Set();
+  const restoreInlineActionAvailability = () => {
+    for (const button of disabledInlineActions) button.disabled = false;
+    disabledInlineActions.clear();
+  };
+  const syncInlineActionAvailability = () => {
+    if (!submitting) return;
+    for (const button of elements.boardPreviewLabelEl?.querySelectorAll?.('[data-board-preview-action="pass"], [data-board-preview-action="end-turn"], [data-board-message-action="pass"], [data-board-message-action="end-turn"]') ?? []) {
+      if (!button.disabled) { button.disabled = true; disabledInlineActions.add(button); }
+    }
+  };
+  const setSubmitting = value => {
+    submitting = value;
+    restoreInlineActionAvailability();
+    syncInlineActionAvailability();
+    controls.onSubmitting?.(value);
+  };
+
+  const renderStatusContent = () => {
     if (!state) {
       return;
     }
@@ -677,6 +696,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     setBoardPreviewAction(actionPreviewLabel(preferredPreview.type, state, selectedTarget));
   };
 
+  const renderStatus = () => {
+    // Remove only our temporary disabled attributes before comparing HTML. This
+    // keeps unchanged buttons and their focus stable through status refreshes.
+    restoreInlineActionAvailability();
+    try { renderStatusContent(); }
+    finally { syncInlineActionAvailability(); }
+  };
+
   const refreshSelectionLabels = () => {
     controls.onSelectionUpdated?.({
       selectedSource,
@@ -688,6 +715,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
   const invalidateSelectedPieceMovesRequests = () => {
     selectedPieceMovesRequestId += 1;
+    host.cancelPieceMoves?.();
+    elements.boardPreviewLabelEl?.removeAttribute?.('data-loading-key');
+    elements.boardPreviewLabelEl?.removeAttribute?.('data-loading-state');
+    elements.boardPreviewLabelEl?.removeAttribute?.('aria-busy');
     selectedPieceMovesLoading = false;
   };
 
@@ -763,7 +794,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     await refreshLegalActions();
   };
 
-  const primeSelectedPieceMovesFromLegalActions = () => {
+  const primeSelectedPieceMovesFromLegalActions = (load = true) => {
     reconcileSelectedPiece();
     if (!state || !selectedPieceId) {
       selectedPieceMoves = [];
@@ -772,19 +803,24 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return;
     }
 
-    const body = buildPieceMoveResponse({
-      state,
-      legalActions,
-      pieceId: selectedPieceId,
-    });
+    const input = { state, legalActions, pieceId: selectedPieceId };
+    const actions = host.asyncPieceMoves ? listPieceMovesFromLegalActions(input) : null;
+    const body = actions ? { actions, previewActions: actions } : buildPieceMoveResponse(input);
     selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
     selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
     if (selectedPieceId !== lastPhaseInitializedForPieceId) {
       selectedPieceOverlayPhase = defaultOverlayPhaseForSelection();
-      lastPhaseInitializedForPieceId = selectedPieceId;
+      // Blocked-only previews arrive asynchronously. Their complete result,
+      // rather than an empty legal subset, determines the initial layer.
+      if (!host.asyncPieceMoves || selectedPieceMoves.length) lastPhaseInitializedForPieceId = selectedPieceId;
     }
     maybeAutoSelectTarget(selectedPieceMoves);
     syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
+    if (load && host.asyncPieceMoves && !previewsSuspended) {
+      void reloadSelectedPieceMoves().catch(error => {
+        if (error.code !== 'rules_cancelled') setResult({ ok: false, error: 'piece_moves_load_failed', message: error.message });
+      });
+    }
   };
 
   const applyForcedContinuationSelection = ({requireLegalAction=false}={}) => {
@@ -807,7 +843,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const requestId = ++selectedPieceMovesRequestId;
     const revision = snapshotRevision;
     selectedPieceMovesLoading = false;
-    if (destroyed) return;
+    if (destroyed || previewsSuspended) return;
     const selectedPiece = getBoardPieceById(selectedPieceId);
     if (!state || !selectedPiece) {
       selectedPieceMoves = [];
@@ -818,13 +854,17 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return;
     }
 
-    primeSelectedPieceMovesFromLegalActions();
+    primeSelectedPieceMovesFromLegalActions(false);
     renderBoard();
     renderStatus();
 
     const requestedPieceId = selectedPiece.id;
     const requestedSnapshot = JSON.stringify(state);
     selectedPieceMovesLoading = true;
+    elements.boardPreviewLabelEl?.setAttribute?.('data-loading-key', `piece-rules:${requestedPieceId}:${requestId}`);
+    elements.boardPreviewLabelEl?.setAttribute?.('data-loading-state', 'pending');
+    elements.boardPreviewLabelEl?.setAttribute?.('data-loading-message', 'Still checking the complete set of moves.');
+    elements.boardPreviewLabelEl?.setAttribute?.('aria-busy', 'true');
     try {
       const body = await host.loadPieceMoves(state, selectedPiece.id);
       if (destroyed || revision !== snapshotRevision || requestId !== selectedPieceMovesRequestId || selectedPieceId !== requestedPieceId) return;
@@ -832,14 +872,23 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       // Move queries describe their input snapshot. They must not replace live state.
       selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
       selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
+      if (selectedPieceId !== lastPhaseInitializedForPieceId) {
+        selectedPieceOverlayPhase = defaultOverlayPhaseForSelection();
+        lastPhaseInitializedForPieceId = selectedPieceId;
+      }
       maybeAutoSelectTarget(selectedPieceMoves);
       syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
       renderBoard();
       renderStatus();
     } catch (error) {
-      if (!destroyed && revision === snapshotRevision && requestId === selectedPieceMovesRequestId) throw error;
+      if (error.code !== 'rules_cancelled' && !destroyed && revision === snapshotRevision && requestId === selectedPieceMovesRequestId) throw error;
     } finally {
-      if (requestId === selectedPieceMovesRequestId) selectedPieceMovesLoading = false;
+      if (requestId === selectedPieceMovesRequestId) {
+        selectedPieceMovesLoading = false;
+        elements.boardPreviewLabelEl?.removeAttribute?.('data-loading-key');
+        elements.boardPreviewLabelEl?.removeAttribute?.('data-loading-state');
+        elements.boardPreviewLabelEl?.removeAttribute?.('aria-busy');
+      }
     }
   };
 
@@ -942,9 +991,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const previousState = state;
     let revision = snapshotRevision;
 
-    submitting = true;
+    setSubmitting(true);
     legalActionsRequestId += 1;
-    controls.onSubmitting?.(true);
     setResult("Applying action...");
 
     try {
@@ -1000,8 +1048,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     } catch (error) {
       if (!destroyed && revision === snapshotRevision) setResult({ ok: false, error: "request_failed", message: error instanceof Error ? error.message : "Unknown error" });
     } finally {
-      submitting = false;
-      controls.onSubmitting?.(false);
+      setSubmitting(false);
+      if (!destroyed) renderStatus();
     }
   };
 
@@ -1081,6 +1129,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const allowFreeSelection = getAllowFreeSelection();
     const usesHoverTargetSelection = getUsesHoverTargetSelection();
     const clickedPiece = boardAdapter.getPieceAt(state, clickedCoord);
+    if (clickedPiece?.id === selectedPieceId) lastPhaseInitializedForPieceId = selectedPieceId;
     const ownerAtPoint = supplyOwnerAt(clickedCoord);
     const legalTarget = [...selectedPieceMoves, ...selectedPieceMovePreviews.filter(action => action.legal !== false)].some(action => sameCoordinate(action.to, clickedCoord));
     // A transient shared-command fence hides actionable previews, but a click
@@ -1270,9 +1319,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return;
     }
     const revision = snapshotRevision;
-    submitting = true;
+    setSubmitting(true);
     legalActionsRequestId += 1;
-    controls.onSubmitting?.(true);
     try {
       const result = await host.endTurn(state);
       if (destroyed || revision !== snapshotRevision) return;
@@ -1292,12 +1340,13 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     } catch (error) {
       if (!destroyed && revision === snapshotRevision) setResult({ ok: false, error: "end_turn_failed", message: error instanceof Error ? error.message : "Unknown error" });
     } finally {
-      submitting = false;
-      controls.onSubmitting?.(false);
+      setSubmitting(false);
+      if (!destroyed) renderStatus();
     }
   };
 
   const bindElements = (nextElements) => {
+    bindPreviewLifecycle();
     const hadPreview = elements.boardPreviewLabelEl;
     const sameNodes =
       elements.boardEl === nextElements.boardEl &&
@@ -1480,7 +1529,24 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     await reloadSelectedPieceMoves();
   };
 
+  const onPreviewVisibility = () => {
+    previewsSuspended = Boolean(document.hidden);
+    if (previewsSuspended) invalidateSelectedPieceMovesRequests();
+    else if (!destroyed && selectedPieceId) void reloadSelectedPieceMoves().catch(error => {
+      setResult({ ok: false, error: 'piece_moves_load_failed', message: error.message });
+    });
+  };
+  const onPreviewPageHide = () => { previewsSuspended = true; invalidateSelectedPieceMovesRequests(); };
+  let previewLifecycleBound = false;
+  const bindPreviewLifecycle = () => {
+    if (previewLifecycleBound) return;
+    previewLifecycleBound = true;
+    globalThis.document?.addEventListener?.('visibilitychange', onPreviewVisibility);
+    globalThis.window?.addEventListener?.('pagehide', onPreviewPageHide);
+    globalThis.window?.addEventListener?.('pageshow', onPreviewVisibility);
+  };
   const initialize = async () => {
+    bindPreviewLifecycle();
     document.addEventListener("click", handleDocumentClick);
     document.addEventListener("keydown", handleDocumentKeydown);
 
@@ -1494,6 +1560,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     invalidateSelectedPieceMovesRequests();
     boardAdapter.unmount?.();
     controls.onInteractionSound?.({kind:'preview-leave'});
+    document.removeEventListener('visibilitychange', onPreviewVisibility);
+    globalThis.window?.removeEventListener?.('pagehide', onPreviewPageHide);
+    globalThis.window?.removeEventListener?.('pageshow', onPreviewVisibility);
     document.removeEventListener("click", handleDocumentClick);
     document.removeEventListener("keydown", handleDocumentKeydown);
     if (elements.boardPreviewLabelEl) {
