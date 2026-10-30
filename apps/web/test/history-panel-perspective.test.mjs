@@ -1,4 +1,5 @@
 import {renderHistoryResult} from '../shell/game-result.js';
+import {historyTurnSide} from '../shell/history-preview.js';
 import {icon} from '../shell/ui.js';
 import {renderHistorySlots} from '../shell/panel-loading.js';
 import test from 'node:test';
@@ -26,7 +27,7 @@ test('history hydration retains the selected view and exposes scoped retry befor
  assert.match(loading,/Loading this move/);assert.doesNotMatch(loading,/data-action="jump-history"/);
  const failed=context.render({id:'game',historyLoadError:'unavailable',historyLoadIndex:3});
  assert.match(failed,/Your current view is still available/);
- assert.match(failed,/data-action="jump-history" data-game-id="game" data-move-index="3"/);
+ assert.match(failed,/data-action="jump-history" data-move-index="3" data-game-id="game"/);
  assert(failed.indexOf('history-load-status')<failed.indexOf('<ol'));
  assert.match(failed,/<li>Selected move<\/li>/);
  assert.doesNotMatch(context.render({id:'game'}),/history-load-status|data-action="jump-history"/);
@@ -34,7 +35,7 @@ test('history hydration retains the selected view and exposes scoped retry befor
 
 test('actual history action icons preserve labels, selected-move guards and viewer permissions',()=>{
  const context={renderHistoryResult,icon,escapeHtml:String,getControlSeatForTurn:(_state,seat)=>seat,
-  playerToneClassForSide:()=>'',playerToneClassForSeat:()=>'',formatClientDateTime:String,
+  renderHistoryPreview:()=>'',buildMovePreview:()=>({}),buildTurnPreview:()=>({}),historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:()=> 'You',playerToneClassForSide:()=>'',playerToneClassForSeat:()=>'',formatClientDateTime:String,
   expandedUndoneGroups:new Set(),historyActorLabel:()=> 'You',transport:{getIdentityId:()=> 'me'},getShellLayoutMode:()=> 'wide'};
  const declaration=source.slice(source.indexOf('const renderTurnHistory ='),source.indexOf('const renderHeader ='));
  vm.runInNewContext(`${declaration};globalThis.history=renderTurnHistory;`,context);

@@ -1225,3 +1225,26 @@ test('combined explicit inspection keeps overlapping supply and command strokes 
     adapter.unmount();
   });
 });
+
+test('turn summaries show owner routes, source ghosts and destruction without selection rings or axes',async()=>{
+ await withFakeDocument(()=>{
+  const {adapter,boardEl,overlayLinesEl}=createMountedAdapter();
+  const a={id:'a',owner:'P1',kind:'unit',position:{row:4,col:2},supplied:true,commanded:true};
+  const b={id:'b',owner:'P2',kind:'unit',position:{row:5,col:3},supplied:true,commanded:true};
+  const snapshot={sideToMove:'P1',pieces:[{...a,position:{row:4,col:3}},{...b,position:{row:5,col:4}}]};
+  adapter.render({snapshot,selection:{selectedPieceId:'a',source:a.position,target:{row:4,col:3}},overlay:{mode:'recorded-turn',recordedActions:[
+   {recordedAction:{type:'move',actorId:'a',from:a.position,to:{row:4,col:3}},recordedActionStartPiece:a},
+   {recordedAction:{type:'retreat',actorId:'b',from:b.position,to:{row:5,col:4}},recordedActionStartPiece:b},
+  ],destroyedPieces:[{row:6,col:4,ownerSeat:'p2',kind:'unit'}]},legalActions:[],selectedPieceMoves:[],interactionMode:'static'});
+  const lines=overlayLinesEl.children.filter(child=>child.tagName==='LINE');
+  assert.equal(lines.length,2);assert.notEqual(lines[0].getAttribute('stroke'),lines[1].getAttribute('stroke'));
+  for(const cell of boardEl.children){
+   assert.equal(cell.classList.contains('source'),false);assert.equal(cell.classList.contains('target'),false);
+   assert.equal(cell.classList.contains('selected-piece'),false);
+   for(const child of cell.children){assert.equal(child.classList.contains('axis-strong'),false);assert.equal(child.classList.contains('axis-medium'),false);}
+  }
+  assert.equal(getCell(boardEl,4,2).querySelectorAll('.recorded-action-source-piece').length,1);
+  assert.equal(getCell(boardEl,6,4).querySelectorAll('.history-destruction-piece').length,1);
+  adapter.unmount();
+ });
+});
