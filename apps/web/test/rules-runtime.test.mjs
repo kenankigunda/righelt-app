@@ -19,6 +19,15 @@ test('rules results cross the worker boundary completely, including Maps', async
   assert.deepEqual(await pending, result);
   assert.equal(f.workers[0].terminated, true);
 });
+test('identical pending preview inputs share one worker and cancellation fences reuse',async()=>{
+ const f=fixture(),input={state:{turnIndex:1},legalActions:[],pieceId:'A'};
+ const first=f.runtime.previews('piece',input);first.catch(()=>{});
+ const repeated=f.runtime.previews('piece',structuredClone(input));repeated.catch(()=>{});
+ assert.equal(f.workers.length,1);assert.equal(repeated,first);
+ f.runtime.cancelAll();await assert.rejects(first,{code:'rules_cancelled'});
+ const next=f.runtime.previews('piece',input);assert.equal(f.workers.length,2);
+ f.reply(f.workers[1],{actions:[]});assert.deepEqual(await next,{actions:[]});
+});
 test('replacing a scope terminates blocked rules and ignores its late reply', async () => {
   const f = fixture(), first = f.runtime.previews('piece', { pieceId: 'A' });
   const rejected = assert.rejects(first, { code: 'rules_cancelled' });

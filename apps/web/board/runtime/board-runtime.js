@@ -67,6 +67,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let selectedPieceMoves = [];
   let selectedPieceMovePreviews = [];
   let selectedPieceMovesLoading = false;
+  let selectedPieceMovesKnown = false;
+  let pendingPieceMoves = null;
+  const pieceMoveCache = new Map();
   let removalEffects = [];
   const playedRemovalEvents = new Set();
   let selectedPieceId = null;
@@ -142,7 +145,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!selectedPiece || selectedPiece.owner !== state.sideToMove) {
       return false;
     }
-    return hasActionLayer(selectedPieceMoves, selectedPieceMovePreviews);
+    return !selectedPieceMovesKnown || hasActionLayer(selectedPieceMoves, selectedPieceMovePreviews);
   };
 
   const defaultOverlayPhaseForSelection = () => {
@@ -155,7 +158,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!selectedPiece || selectedPiece.owner !== state.sideToMove) {
       return "supplyCommand";
     }
-    return hasActionLayer(selectedPieceMoves, selectedPieceMovePreviews) ? "actionPreviews" : "supplyCommand";
+    return "actionPreviews";
   };
 
   const getEffectiveSelectedPieceMovesForBoard = () => {
@@ -617,7 +620,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
 
     const canOverlayToggle =
-      pieceSummary.details.owner === state.sideToMove && hasActionLayer(selectedPieceMoves, selectedPieceMovePreviews);
+      pieceSummary.details.owner === state.sideToMove && canToggleSelectedPieceOverlay();
 
     if (!selectedTarget) {
       const pushRetreatPrompt = getPushRetreatPrompt(state, selectedPieceId);
@@ -631,7 +634,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         } else {
           setBoardPreviewPrompt("Opponent piece");
         }
-      } else if (!canOverlayToggle) {
+      } else if (!canOverlayToggle && selectedPieceMovesKnown && selectedPieceOverlayPhase !== "supplyCommand") {
         if (state.continuation?.type === "rush") {
           setRushContinuationPrompt(state, state.sideToMove);
         } else if (selectedSource) {
@@ -715,8 +718,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     });
   };
 
-  const invalidateSelectedPieceMovesRequests = () => {
+  const invalidateSelectedPieceMovesRequests = ({clearCache = false} = {}) => {
     selectedPieceMovesRequestId += 1;
+    pendingPieceMoves = null;
+    selectedPieceMovesKnown = false;
+    if (clearCache) pieceMoveCache.clear();
     host.cancelPieceMoves?.();
     elements.boardPreviewLabelEl?.removeAttribute?.('data-loading-key');
     elements.boardPreviewLabelEl?.removeAttribute?.('data-loading-state');
@@ -781,11 +787,18 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const requestId = ++legalActionsRequestId;
     const body = await host.loadLegalActions(state);
     if (destroyed || revision !== snapshotRevision || requestId !== legalActionsRequestId) return;
-    snapshotRevision += 1;
-    invalidateSelectedPieceMovesRequests();
-    state = body.state ?? state;
-    legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
-    if (!applyForcedContinuationSelection()) primeSelectedPieceMovesFromLegalActions();
+    const nextState = body.state ?? state;
+    const nextLegalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
+    const changed = JSON.stringify([state,legalActions]) !== JSON.stringify([nextState,nextLegalActions]);
+    if (changed) {
+      snapshotRevision += 1;
+      invalidateSelectedPieceMovesRequests({clearCache:true});
+    }
+    state = nextState;
+    legalActions = nextLegalActions;
+    if (changed || !selectedPieceId || (!selectedPieceMovesKnown && !pendingPieceMoves)) {
+      if (!applyForcedContinuationSelection()) primeSelectedPieceMovesFromLegalActions();
+    }
     refreshSelectionLabels();
     renderBoard();
     renderStatus();
@@ -810,11 +823,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const body = actions ? { actions, previewActions: actions } : buildPieceMoveResponse(input);
     selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
     selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
+    selectedPieceMovesKnown = !host.asyncPieceMoves;
     if (selectedPieceId !== lastPhaseInitializedForPieceId) {
       selectedPieceOverlayPhase = defaultOverlayPhaseForSelection();
-      // Blocked-only previews arrive asynchronously. Their complete result,
-      // rather than an empty legal subset, determines the initial layer.
-      if (!host.asyncPieceMoves || selectedPieceMoves.length) lastPhaseInitializedForPieceId = selectedPieceId;
+      // Choosing a layer is user intent. Results can fill it, never choose it.
+      lastPhaseInitializedForPieceId = selectedPieceId;
     }
     maybeAutoSelectTarget(selectedPieceMoves);
     syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
@@ -841,7 +854,33 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     return true;
   };
 
-  const reloadSelectedPieceMoves = async () => {
+  const reloadSelectedPieceMoves = () => {
+    if (destroyed || previewsSuspended) return Promise.resolve();
+    // Full authoritative inputs, including the legal subset, fence
+    // both in-flight reuse and this runtime's bounded read-only preview cache.
+    const key = JSON.stringify([state, legalActions, selectedPieceId]);
+    if (pendingPieceMoves?.key === key) return pendingPieceMoves.promise;
+    const pending = {key, promise: null};
+    pending.promise = loadSelectedPieceMoves(key).finally(() => {
+      if (pendingPieceMoves === pending) pendingPieceMoves = null;
+    });
+    pendingPieceMoves = pending;
+    return pending.promise;
+  };
+
+  const applyPieceMoveResponse = body => {
+    selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
+    selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
+    selectedPieceMovesKnown = true;
+    // A late ordinary result fills choices; it cannot make a target choice.
+    // Initial synchronous priming and mandatory continuations retain their rules.
+    if (state?.continuation) maybeAutoSelectTarget(selectedPieceMoves);
+    syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
+    renderBoard();
+    renderStatus();
+  };
+
+  const loadSelectedPieceMoves = async key => {
     const requestId = ++selectedPieceMovesRequestId;
     const revision = snapshotRevision;
     selectedPieceMovesLoading = false;
@@ -853,6 +892,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       selectedPieceMovesLoading = false;
       renderBoard();
       renderStatus();
+      return;
+    }
+
+    if (pieceMoveCache.has(key)) {
+      applyPieceMoveResponse(structuredClone(pieceMoveCache.get(key)));
       return;
     }
 
@@ -872,16 +916,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       if (destroyed || revision !== snapshotRevision || requestId !== selectedPieceMovesRequestId || selectedPieceId !== requestedPieceId) return;
       if (body.state && JSON.stringify(body.state) !== requestedSnapshot) return;
       // Move queries describe their input snapshot. They must not replace live state.
-      selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
-      selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
-      if (selectedPieceId !== lastPhaseInitializedForPieceId) {
-        selectedPieceOverlayPhase = defaultOverlayPhaseForSelection();
-        lastPhaseInitializedForPieceId = selectedPieceId;
-      }
-      maybeAutoSelectTarget(selectedPieceMoves);
-      syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
-      renderBoard();
-      renderStatus();
+      const cached = {actions: body.actions ?? [], previewActions: body.previewActions ?? body.actions ?? []};
+      pieceMoveCache.set(key, structuredClone(cached));
+      if (pieceMoveCache.size > 8) pieceMoveCache.delete(pieceMoveCache.keys().next().value);
+      applyPieceMoveResponse(body);
     } catch (error) {
       if (error.code !== 'rules_cancelled' && !destroyed && revision === snapshotRevision && requestId === selectedPieceMovesRequestId) throw error;
     } finally {
@@ -1004,7 +1042,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       if (body.accepted) {
         snapshotRevision += 1;
         revision = snapshotRevision;
-        invalidateSelectedPieceMovesRequests();
+        invalidateSelectedPieceMovesRequests({clearCache:true});
         state = body.state;
         legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
         selectedPieceMoves = [];
@@ -1042,7 +1080,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       state = body.state ?? state;
       snapshotRevision += 1;
       revision = snapshotRevision;
-      invalidateSelectedPieceMovesRequests();
+      invalidateSelectedPieceMovesRequests({clearCache:true});
       selectedPieceMoves = [];
       selectedPieceMovePreviews = [];
       setResult({ accepted: false, validation: body.validation });
@@ -1144,7 +1182,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
     if (inspection && legalTarget) { inspection = null; selectedPieceOverlayPhase = "actionPreviews"; }
     if (clickedPiece?.id === selectedPieceId && clickedPiece.kind === "commander") {
-      const canPreview = hasActionLayer(selectedPieceMoves, selectedPieceMovePreviews) && host.canPresentActions?.(state) !== false;
+      const canPreview = clickedPiece.owner === state.sideToMove && host.canPresentActions?.(state) !== false;
       if (inspection?.kind === "command" && !inspection.pieceId) {
         inspection = canPreview ? null : {kind: "combined", pieceId: clickedPiece.id};
         selectedPieceOverlayPhase = canPreview ? "actionPreviews" : "supplyCommand";
@@ -1333,6 +1371,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       }
       state = result.state ?? state;
       snapshotRevision += 1;
+      pieceMoveCache.clear();
       legalActions = Array.isArray(result.legalActions) ? result.legalActions : legalActions;
       clearSelection();
       refreshSelectionLabels();
@@ -1438,7 +1477,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (destroyed) return;
     const previousInspection = inspection;
     const positionChanged = JSON.stringify(state) !== JSON.stringify(snapshot);
-    snapshotRevision += 1;
+    const preservePiecePreviews = !resetSelection && !selectionAction && !positionChanged &&
+      Array.isArray(incomingLegalActions) && JSON.stringify(legalActions) === JSON.stringify(incomingLegalActions) &&
+      nextOverlayMode === overlayMode && (!selectionState || JSON.stringify({selectedPieceId:selectionState.selectedPieceId,source:selectionState.source??null,target:selectionState.target??null}) === JSON.stringify(getCurrentSelection()));
+    if (!preservePiecePreviews) snapshotRevision += 1;
     controls.onInteractionSound?.({kind:'preview-leave'});
     state = structuredClone(snapshot);
     legalActions = Array.isArray(incomingLegalActions) ? incomingLegalActions : [];
@@ -1460,13 +1502,16 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
     if (resetSelection) {
       clearSelection();
-    } else {
+    } else if (!preservePiecePreviews) {
       // A response calculated for the previous snapshot cannot refill this selection.
       invalidateSelectedPieceMovesRequests();
     }
-    selectedPieceMoves = [];
-    selectedPieceMovePreviews = [];
-    if (overlayMode === OVERLAY_MODE.INTERACTIVE) {
+    if (!preservePiecePreviews) {
+      pieceMoveCache.clear();
+      selectedPieceMoves = [];
+      selectedPieceMovePreviews = [];
+    }
+    if (!preservePiecePreviews && overlayMode === OVERLAY_MODE.INTERACTIVE) {
       if (selectionState) {
         applySelectionState(selectionState);
       } else {
@@ -1479,7 +1524,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       selectedPieceMovePreviews = [structuredClone(selectionAction)];
       lastPhaseInitializedForPieceId = selectedPieceId;
       selectedPieceOverlayPhase = defaultOverlayPhaseForSelection();
-    } else if (!resetSelection && !selectionState && overlayMode === OVERLAY_MODE.INTERACTIVE) {
+    } else if (!preservePiecePreviews && !resetSelection && !selectionState && overlayMode === OVERLAY_MODE.INTERACTIVE) {
       // Branch hydration and other refreshes preserve selection, not stale move data.
       primeSelectedPieceMovesFromLegalActions();
       if (positionChanged && selectedTarget && !selectedPieceMoves.some(action => sameCoordinate(action.to, selectedTarget))) {
@@ -1566,7 +1611,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   const destroy = () => {
     destroyed = true;
     snapshotRevision += 1;
-    invalidateSelectedPieceMovesRequests();
+    invalidateSelectedPieceMovesRequests({clearCache:true});
     boardAdapter.unmount?.();
     controls.onInteractionSound?.({kind:'preview-leave'});
     document.removeEventListener('visibilitychange', onPreviewVisibility);

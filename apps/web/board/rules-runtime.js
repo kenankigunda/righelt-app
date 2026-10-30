@@ -17,11 +17,18 @@ export class RulesRuntime {
   equivalent(scope, input) { return this.request(scope, 'equivalent', input); }
   previews(scope, input) { return this.request(scope, 'previews', input); }
   request(scope, type, input) {
+    const inputKey = type === 'previews' ? JSON.stringify(input) : null;
+    const current = this.jobs.get(scope);
+    if (type === 'previews' && current?.type === type && current.inputKey === inputKey) return current.promise;
     this.cancel(scope);
-    return new Promise((resolve, reject) => {
-      this.jobs.set(scope, { id: ++this.sequence, scope, type, input, resolve, reject });
-      this.drain();
+    let job;
+    const promise = new Promise((resolve, reject) => {
+      job = { id: ++this.sequence, scope, type, input, inputKey, resolve, reject };
     });
+    job.promise = promise;
+    this.jobs.set(scope, job);
+    this.drain();
+    return promise;
   }
   drain() {
     if (this.running || !this.jobs.size) return;
