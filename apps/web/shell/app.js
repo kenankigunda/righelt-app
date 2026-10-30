@@ -5,7 +5,7 @@ import { createDesktopBoardFit } from './desktop-board-fit.js';
 import { buildTurnReplay, createComputerReplay } from './computer-replay.js';
 import { deriveBoardView, createViewingIntent } from './viewing-state.js';
 import { mountMobileNavigation } from './mobile-navigation.js';
-import { opponentBoardMessage, latestOpponentTurn } from './opponent-narration.js';
+import { opponentBoardMessage, latestOpponentTurn, ownsBoardActor } from './opponent-narration.js';
 import { renderBoardHeadingSlot, renderBoardMessageSlot, updateComputerBoardLoading } from './board-message-layout.js';
 import { activityActorSide, activityStateActorSide, setActivityActor, undoApprovalActorSide } from './activity-affiliation.js';
 import { applyDecisionNotes } from './decision-notes.js';
@@ -88,7 +88,7 @@ import {
 } from "./scenarios.js";
 import { renderHomeCardIdentity } from "./home-card-identity.js";
 import { buildStaticGameCardFromScenario } from "./static-game-cards.js";
-import { buildDestroyedPieceOverlays, findRecordedActionStartPiece } from "./history-preview.js";
+import { historyTurnSide, buildMovePreview, buildTurnPreview, buildDestroyedPieceOverlays, findRecordedActionStartPiece } from "./history-preview.js";
 import { resolveInitialSelectionHydration } from "./selection-hydration.js";
 import { shouldResetBoardSelection, shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
 import { buildScenarioStaticPreviewModel } from "./static-preview-model.js";
@@ -1727,151 +1727,56 @@ const renderGameAlertStackCard = ({ gameId, item, stackIndex, totalAlerts }) => 
     </div>`;
 };
 
+const renderHistoryPreview = (game, preview, key) => getShellLayoutMode() === "narrow"
+  ? `<div class="history-inline-preview" data-testid="history-inline-preview">${preview.snapshot ? renderMiniBoardPreviewRoot({previewId:key,...preview,previewKey:toStableKey(preview)}) : '<p role="status">Preview unavailable</p>'}</div>` : "";
+
 const renderTurnHistory = (game) => {
-  const turns = Array.isArray(game.turns) ? game.turns : [];
-  if (!game.inHistoryMode && turns.length === 0) {
-    return "<li class=\"small\">No turns yet.</li>";
+  const moves = [...(game.moves ?? []), ...(game.pendingMoves ?? [])];
+  if (!game.inHistoryMode && !moves.length && !game.turns?.length) return '<li class="small">No turns yet.</li>';
+  if (game.historyTurnIndex != null || game.historyContextMoves) {
+    for (const frozen of game.historyTurnMoves ?? game.historyContextMoves ?? []) if (!moves.some(move=>move.moveId===frozen.moveId)) moves.push(frozen);
   }
-
-  const activeTurnIndex = typeof game.currentTurn?.index === "number" ? game.currentTurn.index : null;
-  const activeTurn = activeTurnIndex !== null ? turns.find((turn) => turn.index === activeTurnIndex) : null;
-  const liveState = game.currentSnapshot ?? game.board?.state ?? null;
-  const controlSeat = activeTurn ? getControlSeatForTurn(liveState, activeTurn.playerSeat) : null;
-  const liveContinuationText =
-    !game.inHistoryMode && activeTurn && liveState?.continuation
-      ? liveHistoryLabel(game,liveState,{identityId:transport.getIdentityId()})
-      : null;
-  const liveWaitingText =
-    !game.inHistoryMode && activeTurn && activeTurn.moveIndexes.length === 0
-      ? liveHistoryLabel(game,liveState,{identityId:transport.getIdentityId()})
-      : null;
-  const liveStatusText = liveContinuationText ?? liveWaitingText;
-  const selectedMoveIndex =
-    typeof game.historyIndex === "number"
-      ? game.historyIndex
-      : liveStatusText
-        ? null
-        : game.moves.length > 0
-          ? game.moves.length - 1
-          : null;
-
-  const moveRowsChronological = (Array.isArray(game.moves) ? game.moves : []).map((move) => {
-    const isSelected = game.inHistoryMode ? game.historyIndex === move.index : selectedMoveIndex === move.index;
-    const selectedClass = isSelected ? (game.inHistoryMode ? " is-selected" : " is-live-selected") : "";
-    const undoneClass = move.undone === true ? " is-undone" : "";
-    const branchButton = game.inHistoryMode && game.historyIndex === move.index && move.undone !== true
-      ? `<button class="secondary mini-button history-branch-button" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}" data-move-index="${escapeHtml(
-          String(move.index),
-        )}">${icon("play")}New game before this move</button>`
-      : "";
-    const revertButton = game.inHistoryMode && game.historyIndex === move.index && move.undone !== true && game.myRoles?.some(role => role === "Player 1" || role === "Player 2")
-      ? `<button class="secondary mini-button history-branch-button" data-action="revert-to-move" data-game-id="${escapeHtml(game.id)}" data-move-id="${escapeHtml(
-          move.moveId || "",
-        )}">${icon("back")}Undo before this move</button>`
-      : "";
+  const turns = new Map((game.turns ?? []).map(turn => [turn.index,{...turn,moves:[]}]));
+  for (const move of moves) {
+    if (!turns.has(move.turnIndex)) turns.set(move.turnIndex,{index:move.turnIndex,moves:[]});
+    turns.get(move.turnIndex).moves.push(move);
+  }
+  const row = move => {
+    const selected = game.inHistoryMode && (game.inspectedDecision?.moveId ? game.inspectedDecision.moveId === move.moveId : game.historyIndex === move.index);
+    const pending = (game.pendingMoves ?? []).includes(move);
+    const liveSelected = !game.inHistoryMode && move === moves.at(-1) && !game.currentSnapshot?.continuation && game.currentTurn?.moveIndexes?.length;
+    const actor = historyActorLabel(game,move,{identityId:transport.getIdentityId()});
+    const revertButton = selected && !move.undone && game.myRoles?.some(role=>role==='Player 1'||role==='Player 2')
+      ? `<button class="secondary mini-button history-branch-button" data-action="revert-to-move" data-game-id="${escapeHtml(game.id)}" data-move-id="${escapeHtml(move.moveId || '')}">${icon('back')}Undo before this move</button>` : '';
+    const branchButton = selected && !move.undone
+      ? `<button class="secondary mini-button history-branch-button" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}">${icon('play')}New game before this move</button>` : '';
+    const actions = revertButton || branchButton ? `<div class="history-item-actions">${revertButton}${branchButton}</div>` : '';
     const destroyedPieces = Array.isArray(move.destroyedPieces) ? move.destroyedPieces : [];
-    const destructionSubBullets = destroyedPieces.length > 0
-      ? `<ul class="history-destruction-list">${destroyedPieces.map((record) => {
-          const ownerSideClass = playerToneClassForSide(record.ownerSeat === "p1" ? "P1" : record.ownerSeat === "p2" ? "P2" : "neutral");
-          return `<li class="history-destruction-item ${ownerSideClass}${move.undone === true ? " is-undone" : ""}" data-testid="history-destruction-item"><span class="history-destruction-label">DESTROYED (${record.position.row},${record.position.col})</span></li>`;
-        }).join("")}</ul>`
-      : "";
-    const inlinePreview = isSelected && game.inHistoryMode && getShellLayoutMode() === "narrow"
-      ? `<div class="history-inline-preview" data-testid="history-inline-preview">${move.snapshot ? renderMiniBoardPreviewRoot({previewId:`history:${game.id}:${move.moveId}`,snapshot:move.snapshot,previewKey:toStableKey(move.snapshot)}) : '<p role="status">Preview unavailable</p>'}</div>` : "";
-    const actionSection = revertButton || branchButton
-      ? `<div class="history-item-actions">${revertButton}${branchButton}</div>`
-      : "";
-    const sectionClass = actionSection ? " history-item-has-actions" : "";
-    return {
-      undone: move.undone === true,
-      actorSide: move.actorSide || null,
-      html: `<li class="history-item${sectionClass} ${playerToneClassForSide(move.actorSide || "P1")}${selectedClass}${undoneClass}" data-action="jump-history" data-game-id="${escapeHtml(
-        game.id,
-      )}" data-move-index="${move.index}" data-move-id="${escapeHtml(move.moveId || "")}" data-key="${escapeHtml(move.moveId)}" data-testid="history-move-item" aria-label="${escapeHtml(historyActorLabel(game,move,{identityId:transport.getIdentityId()}))} · Move ${escapeHtml(String(move.displayMoveNumber ?? move.index + 1))}: ${escapeHtml(move.notation)}">
-          <div class="history-item-info">
-            <span class="history-move-line"><span class="history-actor" dir="auto">${escapeHtml(historyActorLabel(game,move,{identityId:transport.getIdentityId()}))}</span> · Move ${escapeHtml(
-              String(move.displayMoveNumber ?? move.index + 1),
-            )}: ${escapeHtml(move.notation)}</span>
-            ${destructionSubBullets}
-            <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
-          </div>
-          ${inlinePreview}
-          ${actionSection}
-        </li>`,
-    };
-  });
-  const pendingRows = (Array.isArray(game.pendingMoves) ? game.pendingMoves : []).map(
-    (move) => `<li class="history-item history-item-pending ${playerToneClassForSide(move.actorSide || (move.turnIndex % 2 === 0 ? "P1" : "P2"))}" data-action="jump-history" data-game-id="${escapeHtml(
-      game.id,
-    )}" data-move-index="${escapeHtml(String(move.index))}" data-testid="history-pending-move-item" aria-busy="true">
-          <span class="history-move-line"><span class="history-actor" dir="auto">${escapeHtml(historyActorLabel(game,move,{identityId:transport.getIdentityId()}))}</span> · Move ${escapeHtml(
-            String(move.index + 1),
-          )}: ${escapeHtml(move.notation)} · Pending</span>
-          <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
-        </li>`,
-  );
-  const reverseChronologicalMoveRows = [];
-  const reversedChronological = [...moveRowsChronological].reverse();
-  for (let index = 0; index < reversedChronological.length; ) {
-    if (!reversedChronological[index].undone) {
-      reverseChronologicalMoveRows.push(reversedChronological[index].html);
-      index += 1;
-      continue;
-    }
-    let end = index;
-    while (end < reversedChronological.length && reversedChronological[end].undone) {
-      end += 1;
-    }
-    const count = end - index;
-    const groupKey = `${game.id}:${index}:${end}`;
-    const expanded = expandedUndoneGroups.has(groupKey);
-    const actorSides = new Set(
-      reversedChronological.slice(index, end).map((entry) => (entry.actorSide === "P1" || entry.actorSide === "P2" ? entry.actorSide : null)).filter(Boolean),
-    );
-    const toneClass =
-      actorSides.size > 1
-        ? "player-tone-both"
-        : actorSides.has("P1")
-          ? "player-tone-p1"
-          : actorSides.has("P2")
-            ? "player-tone-p2"
-            : "player-tone-neutral";
-    reverseChronologicalMoveRows.push(`
-      <li class="history-item history-item-undone-group is-undone ${toneClass}${expanded ? " is-expanded" : ""}" data-action="toggle-undone-group" data-group-key="${escapeHtml(
-        groupKey,
-      )}" aria-expanded="${expanded ? "true" : "false"}">
-        <span class="history-move-line">${count} move${count === 1 ? "" : "s"} undone</span>
-      </li>`);
-    if (expanded) {
-      reverseChronologicalMoveRows.push('<li class="history-undone-group-content"><ul class="history-list history-list-nested">');
-      for (let undoIndex = index; undoIndex < end; undoIndex += 1) {
-        reverseChronologicalMoveRows.push(reversedChronological[undoIndex].html);
-      }
-      reverseChronologicalMoveRows.push("</ul></li>");
-    }
-    index = end;
-  }
-  const reverseChronologicalPendingRows = [...pendingRows].reverse();
-
-  const liveStatusItem =
-    liveStatusText && activeTurn
-      ? `<li class="history-item history-item-waiting history-empty-line ${playerToneClassForSeat(
-          activityStateActorSide(liveState) === "P1" ? "Player 1" : "Player 2",
-        )} is-live-selected" aria-disabled="true"><span class="history-move-line">${escapeHtml(liveStatusText)}</span></li>`
-      : "";
-  if (!activeTurn && !game.inHistoryMode) {
-    return `${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
-  }
-  if (!game.inHistoryMode && !liveStatusItem && activeTurn.moveIndexes.length > 0) {
-    return `${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
-  }
-  const emptyTurnItem = game.inHistoryMode
-    ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(
-        game.id,
-      )}" data-testid="history-return-live">${icon("board")}Return to live view</button></li>`
-    : liveStatusItem;
-
-  return `${emptyTurnItem}${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
+    const destroyed = destroyedPieces.map((record)=>`<li class="history-destruction-item ${playerToneClassForSide(record.ownerSeat === "p1" ? "P1" : record.ownerSeat === "p2" ? "P2" : "neutral")}" data-testid="history-destruction-item"><span class="history-destruction-label">DESTROYED (${record.position.row},${record.position.col})</span></li>`).join('');
+    return `<li class="history-item ${playerToneClassForSide(move.actorSide)}${selected?' is-selected':liveSelected?' is-live-selected':''}${move.undone?' is-undone':''}${pending?' history-item-pending':''}${actions?' history-item-has-actions':''}" ${selected?'':`data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}" tabindex="0" role="button"`} data-key="${escapeHtml(move.moveId || move.clientCommandId || String(move.index))}" data-move-id="${escapeHtml(move.moveId || '')}" ${pending?'data-testid="history-pending-move-item"':'data-testid="history-move-item"'} aria-label="${escapeHtml(actor)} · Move ${move.displayMoveNumber ?? move.index+1}: ${escapeHtml(move.notation)}" ${selected?'aria-current="true"':''} ${pending?'aria-busy="true"':''}>
+      <div class="history-item-info"><span class="history-move-line">Move ${move.displayMoveNumber ?? move.index+1}: ${escapeHtml(move.notation)}${pending?' · Pending':''}</span>${destroyedPieces.length > 0 ? `<ul class="history-destruction-list">${destroyed}</ul>` : ""}<span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span></div>
+      ${selected ? renderHistoryPreview(game,buildMovePreview(game.inspectedDecision ?? move),`history:${game.id}:${move.moveId}`) : ''}${actions}</li>`;
+  };
+  const groups = [...turns.values()].sort((a,b)=>b.index-a.index).map(turn=>{
+    const ordered = turn.moves.sort((a,b)=>(a.turnMoveIndex ?? a.index)-(b.turnMoveIndex ?? b.index));
+    const selected = game.inHistoryMode && game.historyTurnIndex === turn.index;
+    const first = ordered.find(move=>!move.undone) ?? ordered[0];
+    const side = historyTurnSide(turn,ordered);
+    const turnActor = ordered.find(move=>move.actorSide===side) ?? first;
+    const name = COMPUTER_PROFILES[turnActor?.computerProof?.profile]?.name ?? playerDisplayName(game,turn.playerSeat ?? side);
+    const active = ordered.some(move=>!move.undone && !(game.pendingMoves??[]).includes(move));
+    const undone = ordered.filter(move=>move.undone);
+    const key = `${game.id}:turn:${turn.index}`;
+    const expanded = expandedUndoneGroups.has(key);
+    return `<li class="history-turn ${playerToneClassForSide(side)}" data-key="history-turn:${escapeHtml(game.id)}:${turn.index}" data-testid="history-turn"><div class="history-turn-heading${selected?' is-selected':''}" data-key="turn:${escapeHtml(game.id)}:${turn.index}" ${selected||!active?'':`data-action="jump-history-turn" data-game-id="${escapeHtml(game.id)}" data-turn-index="${turn.index}" tabindex="0" role="button"`} ${selected?'aria-current="true"':''}>Turn ${turn.index+1} · <span dir="auto">${escapeHtml(name)}</span></div>
+      ${selected?renderHistoryPreview(game,buildTurnPreview(game.historyTurnMoves),`turn:${game.id}:${turn.index}`):''}
+      <ol class="history-list history-list-nested">${ordered.filter(move=>!move.undone).map(row).join('')}${undone.length?`<li class="history-item history-item-undone-group is-undone${expanded?' is-expanded':''}" data-action="toggle-undone-group" data-group-key="${escapeHtml(key)}" aria-expanded="${expanded}">${undone.length} move${undone.length===1?'':'s'} undone</li>${expanded?undone.map(row).join(''):''}`:''}</ol></li>`;
+  }).join('');
+  const live = game.inHistoryMode ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" data-testid="history-return-live">${icon('board')}Return to live view</button></li>` : '';
+  const state = game.currentSnapshot ?? game.board?.state;
+  const current = !game.inHistoryMode && game.currentTurn;
+  const waiting = current && (state?.continuation || !current.moveIndexes?.length) ? `<li class="history-item history-item-waiting ${playerToneClassForSeat(game.controlSeat ?? current.playerSeat)} is-live-selected" aria-disabled="true"><span class="history-move-line">${escapeHtml(liveHistoryLabel(game,state,{identityId:transport.getIdentityId()}))}</span></li>` : '';
+  return live + waiting + groups;
 };
 
 const renderHeader = () => `
@@ -2576,20 +2481,76 @@ const renderAdditionalHistory = game => {
   const state=additionalHistory.snapshot(game.id);
   if(!state)return "";
   if(!state.metadata&&!state.loading&&!state.error)queueMicrotask(()=>void additionalHistory.ensure(game.id));
-  const rows=state.items.map(entry=>{
+  const archiveTurns = new Map();
+  const archiveItems = state.items.filter(entry=>!game.historyContextMoves?.some(move=>move.moveId===entry.id));
+  const inspected = game.inspectedDecision;
+  if (inspected && !game.moves?.some(move=>move.moveId===inspected.moveId) && !archiveItems.some(entry=>entry.id===inspected.moveId)) archiveItems.unshift({id:inspected.moveId,move:inspected,at:inspected.at});
+  for (const entry of archiveItems) {
+    const index = entry.move.turnIndex;
+    if (!archiveTurns.has(index)) archiveTurns.set(index,[]);
+    archiveTurns.get(index).push(entry);
+  }
+  const rows=[...archiveTurns.entries()].sort(([a],[b])=>b-a).map(([index,entries])=>{
+    entries.sort((a,b)=>(a.move.turnMoveIndex ?? a.move.index)-(b.move.turnMoveIndex ?? b.move.index));
+    const first=entries[0].move;
+    const side=historyTurnSide({index},entries.map(entry=>entry.move));
+    const turnActor=entries.find(entry=>entry.move.actorSide===side)?.move ?? first;
+    const selectedTurn=game.inHistoryMode && game.historyTurnIndex===index;
+    const selectableTurn=entries.some(entry=>entry.move.undone!==true && entry.historyStatus!=="unknown");
+    const heading=`<div class="history-turn-heading${selectedTurn?' is-selected':''}" data-key="archive-turn:${escapeHtml(game.id)}:${index}" ${selectedTurn?'aria-current="true"':!selectableTurn?'':`data-action="jump-history-turn" data-game-id="${escapeHtml(game.id)}" data-turn-index="${index}" role="button" tabindex="0"`}>Turn ${index+1} · ${escapeHtml(COMPUTER_PROFILES[turnActor.computerProof?.profile]?.name ?? playerDisplayName(game,side))}</div>`;
+    const contents=entries.sort((a,b)=>a.move.turnMoveIndex-b.move.turnMoveIndex).map(entry=>{
     const selected=Boolean(game.inHistoryMode&&game.inspectedDecision?.moveId===entry.id);
-    const preview=selected&&getShellLayoutMode()==='narrow'?`<div class="history-inline-preview" data-testid="history-inline-preview">${entry.move.snapshot?renderMiniBoardPreviewRoot({previewId:`archive:${game.id}:${entry.id}`,snapshot:entry.move.snapshot,previewKey:toStableKey(entry.move.snapshot)}):'<p role="status">Preview unavailable</p>'}</div>`:"";
-    return `<li class="history-item${selected?' is-selected':''}${entry.move.undone?' is-undone':''}" data-key="archive:${escapeHtml(entry.id)}" data-archive-move-id="${escapeHtml(entry.id)}"><button class="history-item-info history-archive-select" data-action="inspect-history-archive" data-game-id="${escapeHtml(game.id)}" data-decision-id="${escapeHtml(entry.id)}" aria-current="${selected?'true':'false'}"><span class="history-move-line"><span class="history-actor" dir="auto">${escapeHtml(historyActorLabel(game,entry.move,{identityId:transport.getIdentityId()}))}</span> · ${escapeHtml(entry.move.notation)}${entry.move.undone?' · Undone':entry.historyStatus==='unknown'?' · Status unavailable':''}</span><span class="history-move-at small">${escapeHtml(formatClientDateTime(entry.at))}</span></button>${preview}</li>`;
+    const preview=selected?renderHistoryPreview(game,buildMovePreview(game.inspectedDecision ?? entry.move),`archive:${game.id}:${entry.id}`):'';
+    return `<li class="history-item ${playerToneClassForSide(entry.move.actorSide)}${selected?' is-selected':''}${entry.move.undone?' is-undone':''}" data-key="archive:${escapeHtml(entry.id)}" data-archive-move-id="${escapeHtml(entry.id)}" aria-label="${escapeHtml(historyActorLabel(game,entry.move,{identityId:transport.getIdentityId()}))}"><${selected?'div':'button'} class="history-item-info history-archive-select" ${selected?'':'data-action="inspect-history-archive"'} data-game-id="${escapeHtml(game.id)}" data-decision-id="${escapeHtml(entry.id)}" aria-current="${selected?'true':'false'}"><span class="history-move-line">${escapeHtml(entry.move.notation)}${entry.move.undone?' · Undone':entry.historyStatus==='unknown'?' · Status unavailable':''}</span><span class="history-move-at small">${escapeHtml(formatClientDateTime(entry.at))}</span></${selected?'div':'button'}>${preview}</li>`;
+    }).join('');
+    return `<li class="history-turn ${playerToneClassForSide(side)}" data-key="archive-history-turn:${escapeHtml(game.id)}:${index}">${heading}${selectedTurn?renderHistoryPreview(game,buildTurnPreview(game.historyTurnMoves),`archive-turn:${game.id}:${index}`):''}<ol class="history-list history-list-nested">${contents}</ol></li>`;
   }).join('');
   const action=state.error?`<p role="status">We couldn’t load more history</p><button class="secondary" data-action="retry-history-archive" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Retry</button>`
     : state.available&&(!state.loaded||state.cursor)?`<button class="secondary" data-action="load-history-archive" data-game-id="${escapeHtml(game.id)}" ${state.loading?'disabled aria-busy="true"':''}>${icon('history')}${state.loaded?'Load more history':'More game history'}</button>`:"";
   return `<div data-testid="additional-history"><ol class="history-list" aria-label="Additional game history">${rows}</ol>${action}${state.loaded&&state.partial?'<p class="small">Some earlier history is unavailable</p>':''}</div>`;
 };
 
+let revealedHistoryKey = null;
+const revealSelectedHistory = () => {
+  if (getShellLayoutMode() !== 'narrow' || getGamePanel() !== 'history') return;
+  window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+    const selected = appEl.querySelector('[data-game-panel="history"] [aria-current="true"]');
+    if (!selected) { revealedHistoryKey=null; return; }
+    const preview = selected.querySelector('.history-inline-preview') ?? (selected.nextElementSibling?.matches('.history-inline-preview') ? selected.nextElementSibling : null);
+    const viewport = window.visualViewport?.height ?? window.innerHeight;
+    const nav = appEl.querySelector('.shell-mobile-tabbar');
+    // Reserve the controls' full height even while hidden. Revealing the entry
+    // can scroll upward and reveal the navigation at the same time.
+    const navigationHeight = Math.max(nav?.getBoundingClientRect().height ?? 0, nav?.querySelector('[data-mobile-nav-controls]')?.getBoundingClientRect().height ?? 0) + (nav?.querySelector('[data-mobile-nav-reveal]')?.getBoundingClientRect().height ?? 0);
+    const bottomInset = 20 + navigationHeight;
+    if (preview) {
+      // Measure natural geometry each time. DOM patching can replace inline
+      // sizing, and rotation/text enlargement changes the available height.
+      preview.style.removeProperty('zoom');
+      preview.style.removeProperty('width');
+      const bounds = preview.getBoundingClientRect();
+      const headingHeight = bounds.top - selected.getBoundingClientRect().top;
+      const available = Math.max(1, viewport - 12 - bottomInset - headingHeight);
+      if (bounds.height > available && bounds.width > 0) {
+        // Scale the complete mini-board, including its axes, token shapes and
+        // overlay strokes. Compact-board minimum cell sizes remain unchanged.
+        preview.style.width = `${bounds.width}px`;
+        preview.style.zoom = String(available / bounds.height);
+      }
+    }
+    const key = `${getCurrentViewedGameId()}:${selected.closest('[data-key]')?.getAttribute('data-key') ?? selected.textContent}:${window.innerWidth}:${viewport}`;
+    if (revealedHistoryKey === key) return;
+    revealedHistoryKey = key;
+    const top = selected.getBoundingClientRect().top;
+    const bottom = (preview || selected).getBoundingClientRect().bottom;
+    if (top < 12 || bottom > viewport - bottomInset) window.scrollBy({top:top-12,behavior:'instant'});
+  }));
+};
+
 const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
   return renderHistorySlots({rows:historyRows,extra:renderAdditionalHistory(game),
-    before:renderHistoryResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) + (game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? "Loading this move" : "This move couldn’t load. Your current view is still available."}</p>${game.historyLoadError ? `<button class="secondary mini-button" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${game.historyLoadIndex}">Retry</button>` : ""}</div>` : ""),
+    before:renderHistoryResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) + (game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? (game.historyLoadTurnIndex != null ? "Loading this turn" : "Loading this move") : (game.historyLoadTurnIndex != null ? "This turn couldn’t load. Your current view is still available." : "This move couldn’t load. Your current view is still available.")}</p>${game.historyLoadError ? `<button class="secondary mini-button" ${game.historyLoadTurnIndex != null ? `data-action="jump-history-turn" data-turn-index="${game.historyLoadTurnIndex}"` : `data-action="jump-history" data-move-index="${game.historyLoadIndex}"`} data-game-id="${escapeHtml(game.id)}">Retry</button>` : ""}</div>` : ""),
     after:getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">${icon("history")}View result</button>` : ""});
 };
 
@@ -3033,6 +2994,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   }
   if (historyEl instanceof HTMLElement) {
     patchToolHtml(historyEl, renderHistoryPanel(game));
+    revealSelectedHistory();
   }
   if (includeBoard || mountedBoardGameId === game.id || !document.querySelector("#shell-board .cell")) {
     mountBoardForGame(game);
@@ -3345,9 +3307,10 @@ const mountBoardForGame = (game) => {
   updateRecoveryAnnouncement(game);
   const capturing = currentRoute.scenarios && scenarioCapture?.gameId === game.id;
   const snapshot = capturing ? capturePosition() : game.currentSnapshot ?? null;
-  const historyMoveIndex = game.inHistoryMode ? game.historyIndex : null;
+  const historyPreview = game.inHistoryMode ? (game.historyTurnIndex != null ? buildTurnPreview(game.historyTurnMoves) : buildMovePreview(game.inspectedDecision ?? game.moves?.find(move=>move.index===game.historyIndex))) : null;
+  const historyMoveIndex = game.inHistoryMode ? (game.historyTurnIndex != null ? `turn:${game.historyTurnIndex}` : game.historyIndex) : null;
   const historySelectionAction = game.inHistoryMode && !capturing ? game.historySelectionAction ?? null : null;
-  const overlayMode = game.inHistoryMode && !capturing ? "recorded-action" : "interactive";
+  const overlayMode = game.inHistoryMode && !capturing ? historyPreview.overlay.mode : "interactive";
   const effectiveLegalActions = Array.isArray(game.legalActions) && !game.inHistoryMode && !(capturing && scenarioCapture.mode === 'frozen') ? game.legalActions : [];
   const selectionHydrationGame = getSelectionHydrationGame(game);
   const scenarioSelectionHydration = resolvePendingScenarioHydration({
@@ -3368,8 +3331,8 @@ const mountBoardForGame = (game) => {
 
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
-  const historyDestroyedPieces = capturing ? [] : getHistoryDestroyedPieceOverlays(game);
-  const historyRecordedActionStartPiece = capturing ? null : getHistoryRecordedActionStartPiece(game);
+  const historyDestroyedPieces = capturing ? [] : historyPreview?.overlay.destroyedPieces ?? getHistoryDestroyedPieceOverlays(game);
+  const historyRecordedActionStartPiece = capturing ? null : historyPreview?.overlay.recordedActionStartPiece ?? getHistoryRecordedActionStartPiece(game);
   const forceClickTargetSelection = Boolean(capturing);
   const frozenCapture = capturing && scenarioCapture.mode === 'frozen';
   const captureSelection = frozenCapture ? scenarioCapture.selection : null;
@@ -3378,6 +3341,7 @@ const mountBoardForGame = (game) => {
   const hydratedSelectionAction = frozenCapture ? null : scenarioSelectionHydration.selectionAction ?? initialSelectionHydration.selectionAction;
   const overlayKey = toStableKey({
     overlayMode,
+    ...historyPreview?.overlay,
     recordedAction: historySelectionAction,
     recordedActionStartPiece: historyRecordedActionStartPiece,
     destroyedPieces: historyDestroyedPieces,
@@ -3398,6 +3362,10 @@ const mountBoardForGame = (game) => {
         getGameView: () => getBoardGame(transport.getGameViewModel(game.id)),
         getInspectionSnapshot: () => currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id ? capturePosition() : null,
         canSelect: () => Boolean(currentRoute.scenarios && scenarioCapture?.gameId === game.id) || (hostInvite?.gameId !== game.id && Boolean(getBoardGame(transport.getGameViewModel(game.id))?.currentSnapshot)),
+        canPresentActions: () => {
+          const view = getBoardGame(transport.getGameViewModel(game.id));
+          return !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && ownsBoardActor(view, transport.getIdentityId());
+        },
         canInteract: () => {
           const view = getBoardGame(transport.getGameViewModel(game.id));
           return !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && canControlLiveBoard(view);
@@ -3464,6 +3432,7 @@ const mountBoardForGame = (game) => {
       selectionAction: hydratedSelectionAction,
       selectionState: hydratedSelectionState,
       overlayMode,
+      ...historyPreview?.overlay,
       recordedAction: historySelectionAction,
       recordedActionStartPiece: historyRecordedActionStartPiece,
       destroyedPieces: historyDestroyedPieces,
@@ -3478,7 +3447,6 @@ const mountBoardForGame = (game) => {
   });
   const resetSelection =
     (!frozenCapture && mountedHistoryMoveIndex !== historyMoveIndex) ||
-    (mountedSyncStatusKey !== syncStatusKey && failedOperationsKey.length > 0) ||
     shouldResetBoardSelection({
       currentSnapshot: boardRuntime.getState?.() ?? null,
       nextSnapshot: snapshot,
@@ -3531,6 +3499,7 @@ const mountBoardForGame = (game) => {
     selectionAction: hydratedSelectionAction,
     selectionState: hydratedSelectionState,
     overlayMode,
+    ...historyPreview?.overlay,
     recordedAction: historySelectionAction,
     recordedActionStartPiece: historyRecordedActionStartPiece,
     destroyedPieces: historyDestroyedPieces,
@@ -5147,6 +5116,16 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === "jump-history-turn") {
+    const gameId = actionEl.getAttribute('data-game-id');
+    const turnIndex = Number(actionEl.getAttribute('data-turn-index'));
+    viewingIntent.navigate(gameId);
+    await transport.selectHistoryTurn({gameId,turnIndex});
+    if (transport.getGameViewModel(gameId)?.historyTurnIndex === turnIndex) gameSound.play("history");
+    revealSelectedHistory();
+    return;
+  }
+
   if (action === "jump-history") {
     const gameId = actionEl.getAttribute("data-game-id");
     const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
@@ -5156,7 +5135,8 @@ appEl.addEventListener("click", async (event) => {
     playHistoryReleaseBounce(actionEl);
     await animateHistoryDeselection(actionEl);
     if (transport.getGameViewModel(gameId)?.historyIndex !== moveIndex || !transport.getGameViewModel(gameId)?.inHistoryMode) viewingIntent.navigate(gameId);
-    transport.selectHistoryMove({ gameId, moveIndex });
+    transport.selectHistoryMove({ gameId, moveIndex, moveId:actionEl.getAttribute("data-move-id") || null });
+    revealSelectedHistory();
     if(transport.getGameViewModel(gameId)?.inHistoryMode)gameSound.play("history");
     return;
   }
@@ -5582,6 +5562,9 @@ window.addEventListener("keydown", (event) => {
     if(index<0 || event.shiftKey && index===0 || !event.shiftKey && index===controls.length-1){event.preventDefault();controls[event.shiftKey?controls.length-1:0]?.focus();}
   }
   const target = event.target;
+  if (target instanceof HTMLElement && target.matches('[role="button"][data-action="jump-history"], [role="button"][data-action="jump-history-turn"]') && (event.key === 'Enter' || event.key === ' ')) {
+    event.preventDefault(); target.click(); return;
+  }
   if (
     target instanceof HTMLElement &&
     target.matches('[data-action="cycle-game-alert-stack"]') &&

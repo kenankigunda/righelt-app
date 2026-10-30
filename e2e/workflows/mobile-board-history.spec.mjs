@@ -20,6 +20,8 @@ const board = page => page.getByTestId('game-board');
 const tab = (page,key) => page.locator(`[data-action="switch-game-panel"][data-panel="${key}"]`);
 const panel = (page,key) => page.locator(`[data-mobile-panel="${key}"]`);
 const switchPanel = async(page,key)=>{
+  const currentPanel=page.locator('[data-mobile-panel][data-active="true"]');
+  await expect.poll(()=>currentPanel.evaluate(panelGeometrySettledAcrossFrame),{message:'Current panel scroll and layout must settle before deciding whether navigation needs revealing'}).toBe(true);
   const controls=page.locator('[data-mobile-nav-controls]');
   if(await controls.getAttribute('inert')!==null)await page.getByRole('button',{name:'Show game navigation',exact:true}).click();
   await tab(page,key).click();
@@ -143,6 +145,29 @@ test.describe('narrow board and history',()=>{
       const changedPreview=changedRow.getByTestId('history-inline-preview');
       await expect.poll(()=>renderedPieces(changedPreview)).toEqual(expectedPieces(changedMove.snapshot));
       expect(expectedPieces(changedMove.snapshot)).not.toEqual(expectedPieces(changedMove.selectionSnapshot));
+      await expect(changedRow).not.toHaveAttribute('data-action');
+      expect(await changedRow.evaluate(el=>getComputedStyle(el).cursor)).toBe('default');
+      await expect(changedRow.getByRole('button',{name:'Undo before this move',exact:true})).toBeEnabled();
+      if(changedMove.action.from && changedMove.action.to){
+        await expect(changedPreview.locator('.cell.source')).toHaveCount(1);
+        await expect(changedPreview.locator('.cell.target')).toHaveCount(1);
+        expect(await changedPreview.locator('.cell.source').evaluate(el=>getComputedStyle(el).borderColor)).toBe('rgb(118, 80, 166)');
+        expect(await changedPreview.locator('.cell.target').evaluate(el=>getComputedStyle(el).borderColor)).toBe('rgb(31, 122, 90)');
+      }
+      await expect.poll(()=>changedRow.evaluate(el=>el.getBoundingClientRect().top>=0 && el.querySelector('.history-inline-preview').getBoundingClientRect().bottom<=innerHeight)).toBe(true);
+      await page.screenshot({path:info.outputPath('mobile-selected-move-history.png')});
+      const turnHeading=changedRow.locator('xpath=ancestor::li[contains(@class,"history-turn")]/div[contains(@class,"history-turn-heading")]');
+      await turnHeading.click();
+      await expect(turnHeading).toHaveAttribute('aria-current','true');
+      await expect(turnHeading).not.toHaveAttribute('data-action');
+      const aggregate=turnHeading.locator('..').getByTestId('history-inline-preview');
+      await expect(aggregate.locator('.cell')).toHaveCount(100);
+      await expect(aggregate.locator('.cell.source,.cell.target,.axis-strong,.axis-medium')).toHaveCount(0);
+      await page.screenshot({path:info.outputPath('mobile-whole-turn-history.png')});
+      await expect(page.locator('[data-game-panel="history"] [data-action="revert-to-move"]')).toHaveCount(0);
+      await changedRow.click();
+      await expect(changedRow).toHaveAttribute('aria-current','true');
+
       await switchPanel(page,'players');await switchPanel(page,'history');await expect(changedPreview).toBeVisible();
       await switchPanel(page,'board');await expect(page.getByTestId('history-inline-preview')).toHaveCount(0);
       await expectNoHorizontalOverflow(page);
@@ -285,4 +310,29 @@ test('wide history retains its main-board snapshot without duplicate top actions
   await expect(page.locator('[data-game-panel="history"] [data-action="revert-to-move"]')).toHaveCount(1);
   await expect(page.locator('[data-game-panel="history"] [data-action="launch-history-branch"]')).toHaveCount(1);
   await page.getByTestId('history-return-live').click();await expect.poll(()=>renderedPieces(board(page))).toEqual(expectedPieces((await readGame(page,gameId)).board.state));
+});
+
+test.describe('short landscape history',()=>{
+ test.use({viewport:{width:640,height:320},hasTouch:true});
+ test('selected move and turn fit their heading and full mini-board above navigation',async({page},info)=>{
+  await selfPlay(page);await makeAnyLegalMove(page);await switchPanel(page,'history');
+  await page.evaluate(()=>document.documentElement.style.fontSize='200%');
+  const move=page.getByTestId('history-move-item').first();await move.click();
+  await expect(move).toHaveAttribute('aria-current','true');
+  await expect(move.getByTestId('history-inline-preview').locator('.cell')).toHaveCount(100);
+  await expect.poll(()=>move.locator('.history-move-at').evaluate(el=>el.clientHeight>=el.scrollHeight-1)).toBe(true);
+  const fits=locator=>locator.evaluate(el=>{
+   const preview=el.matches('.history-turn-heading')?el.nextElementSibling:el.querySelector('.history-inline-preview');
+   if(!preview)return false;
+   const p=preview.getBoundingClientRect(),heading=el.getBoundingClientRect(),nav=document.querySelector('.shell-mobile-tabbar').getBoundingClientRect();
+   return heading.top>=0 && p.bottom<=Math.min(innerHeight,nav.top)+1;
+  });
+  await expect.poll(()=>fits(move)).toBe(true);
+  expect(await move.locator('.history-inline-preview').evaluate(el=>Number(el.style.zoom))).toBeLessThan(1);
+  await page.screenshot({path:info.outputPath('short-landscape-selected-move.png')});
+  const heading=move.locator('xpath=ancestor::li[contains(@class,"history-turn")]/div[contains(@class,"history-turn-heading")]');
+  await heading.click();await expect(heading).toHaveAttribute('aria-current','true');
+  await expect.poll(()=>fits(heading)).toBe(true);
+  await page.screenshot({path:info.outputPath('short-landscape-selected-turn.png')});
+ });
 });

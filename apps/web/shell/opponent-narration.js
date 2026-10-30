@@ -1,6 +1,6 @@
 import {isCompletedGame} from './game-lifecycle.js';
 import {playerDisplayName} from './perspective-labels.js';
-import {computerBoardMessage, describeMove} from './computer-narration.js';
+import {computerBoardMessage, describeTurn, moveCoordinates} from './computer-narration.js';
 import {activityStateActorSide, normalizeActivitySide} from './activity-affiliation.js';
 import {getTurnOwnerSideForState} from '../generated/packages/shared-types/src/shell-live-turn.js';
 
@@ -26,42 +26,44 @@ export function latestOpponentTurn(game, {identityId} = {}) {
   return last ? {turn, moves, last, side} : null;
 }
 
+// Ownership expresses the player's intended workflow, independently of recovery admission.
+export function ownsBoardActor(game, identityId) {
+  const actor = normalizeActivitySide(game?.controlSeat) ?? activityStateActorSide(game?.board?.state ?? game?.currentSnapshot);
+  return Boolean(actor && roles(game ?? {}, identityId).has(actor) && !computerProfile(game,actor));
+}
+
 export function opponentBoardMessage(game, status, selection = {}, {canInteract = false, identityId} = {}) {
   if (!game || game.inHistoryMode) return null;
   if (selection.selectedPieceId || selection.inspection) return null;
   if (isCompletedGame(game) && game.pendingComputerSaveStartedAt == null) return 'Game complete';
   if (game.computerTurn || game.pendingComputerSaveStartedAt != null) return computerBoardMessage(game, status, selection);
   if ((game.board?.state?.outcome?.status && game.board.state.outcome.status !== 'ongoing') || game.status === 'finished') return 'Game complete';
-  if (canInteract && game.board?.state?.continuation) return null;
-  const withPass = message => message && typeof message === 'object' && canInteract && !game.board?.state?.continuation && game.legalActions?.some(action => action.type === 'pass')
-    ? {...message, actions:[{id:'pass',label:'Pass'}, ...(message.actions ?? (message.action ? [message.action] : []))]} : message;
-  const own = roles(game, identityId);
-  if (!canInteract) {
-    if (status?.activity?.quietRenewal) {
-      const narration = computerBoardMessage(game, status, selection);
-      if (narration) return narration; // Display-only: do not add Pass while fenced.
-    } else {
-      if (game.pendingComputerControl) return 'Updating computer play';
-      if (game.pendingCommandCount > 0) return 'Saving your move';
-      if (game.sharedMutationsBlocked || game.recovering || game.syncStatus === 'confirming') return 'Waiting for the game';
-    }
-    const actor = normalizeActivitySide(game.controlSeat) ?? activityStateActorSide(game.board?.state);
-    if (!actor) return 'Waiting for the game';
-    if (!own.size) {
-      const completed = latestOpponentTurn(game, {identityId});
-      const currentTurn = game.board?.state?.turnIndex;
-      const started = (game.moves ?? []).some(move => !move.undone && move.turnIndex === currentTurn);
-      if (completed && !started) {const actorName=playerDisplayName(game,completed.side);return {text:describeMove(completed.last,actorName),actorName,action:{id:'replay-computer',label:'Show me again'}};}
-      const actorName=playerDisplayName(game,actor);
-      return {text:`${actorName} to play`,actorName};
-    }
-    if (own.has(actor)) return 'Your turn';
-    return 'Waiting for your opponent';
+  const localTurn = canInteract || ownsBoardActor(game,identityId);
+  if (canInteract && game.control === 'opponent' && !game.board?.state?.continuation) return null;
+  if (localTurn && game.board?.state?.continuation) return null;
+  const withPrompt = message => {
+    if (!message || typeof message !== 'object' || !localTurn || game.board?.state?.continuation) return message;
+    const pass = game.legalActions?.some(action => action.type === 'pass');
+    return {...message, rows:[message,{text:pass?'Select a piece or':'Select a piece',actions:pass?[{id:'pass',label:'Pass'}]:[]}]};
+  };
+  const own = roles(game,identityId);
+  const actor = normalizeActivitySide(game.controlSeat) ?? activityStateActorSide(game.board?.state);
+  const completed = latestOpponentTurn(game,{identityId});
+  const started = (game.moves ?? []).some(move => !move.undone && move.turnIndex === game.board?.state?.turnIndex);
+  if (localTurn) {
+    const computer = computerBoardMessage(game,status,selection);
+    if (computer) return withPrompt(computer);
+    if (!completed) return null;
+    return withPrompt({text:describeTurn(completed.moves,'Your opponent'),coordinates:moveCoordinates(completed.moves),action:{id:'replay-computer',label:'Show me again'}});
   }
-  if (selection.selectedPieceId || game.control === 'opponent') return null;
-  const computer = computerBoardMessage(game, status, selection);
-  if (computer) return withPass(computer);
-  const completed = latestOpponentTurn(game, {identityId});
-  if (!completed) return null;
-  return withPass({text: describeMove(completed.last, 'Your opponent'), action: {id: 'replay-computer', label: 'Show me again'}});
+  if (!own.size) {
+    if (completed && !started) {
+      const actorName=playerDisplayName(game,completed.side);
+      return {text:describeTurn(completed.moves,actorName),coordinates:moveCoordinates(completed.moves),actorName,action:{id:'replay-computer',label:'Show me again'}};
+    }
+    if (!actor) return 'Waiting for the game';
+    const actorName=playerDisplayName(game,actor);
+    return {text:`${actorName} to play`,actorName};
+  }
+  return actor && own.has(actor) ? null : 'Waiting for your opponent';
 }

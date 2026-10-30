@@ -28,7 +28,7 @@ test('blocked target explanations use player-facing causes without leaking unkno
 
 test('shared coordinate chips preserve geometry classes and escape malformed values',()=>{
  assert.equal(renderCoordinateChip(null),'');
- assert.equal(renderCoordinateChip({row:9,col:9}),'<span class="board-preview-coordinate-chip board-preview-coordinate-chip-neutral">9,9</span>');
+ assert.equal(renderCoordinateChip({row:9,col:9}),'<span class="board-preview-coordinate-chip board-preview-coordinate-chip-neutral">9, 9</span>');
  const html=renderCoordinateChip({row:'<img>',col:'"'},'tone" onclick="bad');
  assert(!html.includes('<img>'));assert(!html.includes(' onclick="bad'));
  assert(html.includes('&lt;img&gt;'));assert(html.includes('&quot;'));

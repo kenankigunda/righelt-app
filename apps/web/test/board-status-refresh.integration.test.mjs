@@ -13,15 +13,15 @@ const project={type:'project',actorId:'C1',from:{row:3,col:3},to:{row:5,col:3}};
 test('status-only refresh follows an admission gate without reloading state or losing selection',async()=>{
  let blocked=true,submissions=0,pieceReads=0;
  const label=preview(),adapter=createEngineBoardAdapter();
- const runtime=createBoardRuntime({boardAdapter:{...adapter,mount:noop,render:noop},host:{canInteract:()=>!blocked,loadPieceMoves:async()=>{pieceReads++;return {state,actions:[project],previewActions:[project]};},applyAction:async()=>{submissions++;}},controls:{getBoardMessage:()=>blocked?'Waiting for the game':null}});
+ const runtime=createBoardRuntime({boardAdapter:{...adapter,mount:noop,render:noop},host:{canInteract:()=>!blocked,loadPieceMoves:async()=>{pieceReads++;return {state,actions:[project],previewActions:[project]};},applyAction:async()=>{submissions++;}},controls:{}});
  runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
  await runtime.loadSnapshot(state,{legalActions:[{type:'pass'},project]});
  const canonical=runtime.getState(),legal=runtime.getLegalActions();
- assert.equal(label.value,'Waiting for the game');assert.doesNotMatch(label.value,/<button/);
+ assert.match(label.value,/Select a piece or/);assert.match(label.value,/data-board-preview-action="pass"/);
  blocked=false;runtime.refreshStatus();
  assert.match(label.value,/Select a piece/);assert.match(label.value,/data-board-preview-action="pass"/);
  blocked=true;runtime.refreshStatus();
- assert.equal(label.value,'Waiting for the game');assert.doesNotMatch(label.value,/<button/);
+ assert.match(label.value,/Select a piece or/);assert.match(label.value,/data-board-preview-action="pass"/);
  blocked=false;runtime.refreshStatus();
  assert.match(label.value,/data-board-preview-action="pass"/);
  assert.strictEqual(runtime.getState(),canonical);assert.strictEqual(runtime.getLegalActions(),legal);
@@ -34,8 +34,7 @@ test('status-only refresh follows an admission gate without reloading state or l
   assert.deepEqual(runtime.getSelection(),selection);
   assert.equal(pieceReads,reads,'changing status must not reload selection moves');
   assert.doesNotMatch(label.value,/data-board-preview-action="pass"/);
-  if(gate){assert.equal(label.value,'Waiting for the game');assert.doesNotMatch(label.value,/<button/);}
-  else assert.match(label.value,/Select a move/);
+  assert.match(label.value,/Select a move for piece at/);
  }
  assert.equal(submissions,0);
 });
@@ -79,4 +78,15 @@ test('a required defender retains legal retreat previews across a temporary reco
  assert.equal(submissions,0,'uncertain delivery cannot submit the next action');
  blocked=false;runtime.refreshStatus();hover(retreat.to);
  assert.deepEqual(runtime.getSelection().target,retreat.to,'admission restoration reinstates the required defender before selecting its legal destination');
+});
+
+test('authoritative changes prune an invalid target without discarding its valid source',async()=>{
+ const adapter=createEngineBoardAdapter(),label=preview();
+ const runtime=createBoardRuntime({boardAdapter:{...adapter,mount:noop,render:noop},host:{canInteract:()=>true}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ await runtime.loadSnapshot(state,{legalActions:[project],selectionAction:project});
+ const replacement={...project,to:{row:3,col:5}};
+ await runtime.loadSnapshot({...state,acknowledgedRevision:2},{legalActions:[replacement],resetSelection:false});
+ assert.deepEqual(runtime.getSelection(),{selectedPieceId:'C1',source:project.from,target:null});
+ assert.match(label.value,/Select a move for piece at/);
 });
