@@ -29,7 +29,7 @@ test('all profiles keep thinking and save narration plain for the animated cue',
  for(const [profile,{name}]of Object.entries(COMPUTER_PROFILES)){
   const g={...game(),computerTurn:profile};
   for(const phase of ['checking','looking-ahead','saving']){
-   const message=computerBoardMessage(g,{profile,phase});assert.equal(message,`${name} is thinking`);assert.doesNotMatch(message,/…|\.\.\./);
+   const message=computerBoardMessage(g,{profile,phase});assert.equal(message,phase==='saving'?`${name} is saving their move`:`${name} is thinking`);assert.doesNotMatch(message,/…|\.\.\./);
   }
   assert.equal(computerBoardMessage(g,{profile,phase:'preparing'}),`Waiting for ${name}`);
   g.pendingComputerSaveStartedAt=0;assert.equal(computerBoardMessage(g,{profile,phase:'saving'}),`${name} is saving their move`);

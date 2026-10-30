@@ -50,7 +50,7 @@ test('every profile keeps plain board copy and a persistent cue while ordinary e
    const status={profile,phase,attemptId:'thinking-attempt',detailed:false};
    assert.equal(renderComputerProgress(game,status),'',`${profile}/${phase} has no early external notice or CTA`);
    const message=computerBoardMessage(game,status);
-   assert.equal(message,['preparing','initializing-verified-runtime'].includes(phase)?`Waiting for ${name}`:`${name} is thinking`);
+   assert.equal(message,['preparing','initializing-verified-runtime'].includes(phase)?`Waiting for ${name}`:phase==='saving'?`${name} is saving their move`:`${name} is thinking`);
    assert.doesNotMatch(message,/…|\.\.\./);
    updateComputerBoardLoading(cue,game,status);
    assert.equal(cue.dataset.loadingState,'pending');
