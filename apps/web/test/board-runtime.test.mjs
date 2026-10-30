@@ -591,7 +591,7 @@ test("board runtime omits end-turn CTA when the rush chain is not yet closable",
   assert.match(previewHtml, /Rush to reconnect|Select a rush/);
   assert.match(previewHtml, /to reconnect piece at/);
   assert.match(previewHtml, /board-preview-coordinate-chip-rush-blocker/);
-  assert.match(previewHtml, />4,3</);
+  assert.match(previewHtml, />4, 3</);
 });
 
 test("board runtime rush blocker prompt prefers the most recently rushed unsupplied piece", async () => {
@@ -668,7 +668,7 @@ test("board runtime rush blocker prompt prefers the most recently rushed unsuppl
   );
 
   assert.match(previewHtml, /board-preview-coordinate-chip-rush-blocker/);
-  assert.match(previewHtml, />5,1</);
+  assert.match(previewHtml, />5, 1</);
 });
 
 test("board runtime falls back to generic rush prompt when blocker lookup yields no piece", async () => {
@@ -1134,7 +1134,7 @@ test("board runtime uses retreat chip styling for push retreat actor coordinate 
   );
 
   assert.match(previewHtml, /board-preview-coordinate-chip-retreat/);
-  assert.match(previewHtml, />4,2</);
+  assert.match(previewHtml, />4, 2</);
   assert.equal(previewHtml.includes("board-preview-coordinate-chip-continuation-pending"), false);
 });
 
@@ -1259,7 +1259,7 @@ test("board preview source coordinate chip uses selected-piece styling", async (
 
   assert.match(previewHtml, /board-preview-coordinate-chip-selected-piece/);
   assert.match(previewHtml, /board-preview-coordinate-chip-selected-piece-p1/);
-  assert.match(previewHtml, />2,2</);
+  assert.match(previewHtml, />2, 2</);
   assert.equal(previewHtml.includes("board-preview-coordinate-chip-source"), false);
 });
 
@@ -3486,7 +3486,7 @@ test('status refresh redraws admission changes without losing the selected move'
  interactive=true;runtime.refreshStatus();
  assert.equal(renders.length,beforeFence,'an unpainted fence must not cause a settlement redraw');
  interactive=false;runtime.refreshVisuals();runtime.refreshStatus();
- assert.deepEqual(renders.at(-1).selectedPieceMoves,[]);
+ assert.deepEqual(renders.at(-1).selectedPieceMoves,[action]);
  interactive=true;runtime.refreshStatus();
  assert.deepEqual(renders.at(-1).selectedPieceMoves,[action],'status-only settlement must repaint actual actionable moves');
  assert.deepEqual(runtime.getSelection(),prepared);
@@ -3500,11 +3500,11 @@ test('read-only selected pieces remain informational during rush, follow and ret
   let html='';const label={addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
   const state={sideToMove:'P1',turnIndex:0,continuation,pieces:[{id:'A',owner:'P1',kind:'unit',position:{row:4,col:2},supplied:true,commanded:true}]};
   const adapter={mount:noop,render:noop,getSelectedPieceSummary:({selectedPieceId})=>selectedPieceId?{details:{owner:'P1'}}:null,getPieceById:(snapshot,id)=>snapshot.pieces.find(piece=>piece.id===id)};
-  const runtime=createBoardRuntime({boardAdapter:adapter,host:{canInteract:()=>false,loadPieceMoves:async()=>({actions:[],previewActions:[]})}});
+  const runtime=createBoardRuntime({boardAdapter:adapter,host:{canInteract:()=>false,canPresentActions:()=>false,loadPieceMoves:async()=>({actions:[],previewActions:[]})}});
   runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
   await runtime.loadSnapshot(state,{legalActions:[{type:'end_turn'}],selectionState:{selectedPieceId:'A',source:{row:4,col:2},target:null}});
-  assert.match(html,/Piece at/);assert.match(html,/4/);assert.match(html,/2/);assert.doesNotMatch(html,/data-board-preview-action|Select a rush|End Turn|Retreat|Follow/);
-  runtime.setInspection({kind:'command',pieceId:'A'});assert.match(html,/command connection|Command lines/);assert.doesNotMatch(html,/data-board-preview-action/);
+  assert.match(html,/Supply and command lines for piece at/);assert.match(html,/4/);assert.match(html,/2/);assert.doesNotMatch(html,/data-board-preview-action|Select a rush|End Turn|Retreat|Follow/);
+  runtime.setInspection({kind:'command',pieceId:'A'});assert.match(html,/Supply and command lines/);assert.doesNotMatch(html,/data-board-preview-action/);
  }
 });
 

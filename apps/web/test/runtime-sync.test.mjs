@@ -44,7 +44,7 @@ test("shell board selection resets when the selected actor no longer occupies th
   );
 });
 
-test("shell board selection resets when the selected target is no longer legal", () => {
+test("shell board selection retains its source when only the target is no longer legal", () => {
   assert.equal(
     shouldResetBoardSelection({
       currentSnapshot: { sideToMove: "P1", turnIndex: 0, pieces: [] },
@@ -65,7 +65,7 @@ test("shell board selection resets when the selected target is no longer legal",
       },
       nextLegalActions: [{ type: "rush", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 5, col: 2 } }],
     }),
-    true,
+    false,
   );
 });
 
@@ -201,7 +201,7 @@ test("shell board mount skips reload for matching authoritative ack after an opt
 test('frozen capture preserves an inspect-only target across updates without admitting a live move', () => {
   const state = { sideToMove: 'P1', turnIndex: 0, pieces: [{ id: 'p', position: { row: 3, col: 4 } }] };
   const input = { currentSnapshot: state, nextSnapshot: structuredClone(state), currentSelection: { selectedPieceId: 'p', source: { row: 3, col: 4 }, target: { row: 5, col: 4 } }, nextLegalActions: [] };
-  assert.equal(shouldResetBoardSelection(input), true);
+  assert.equal(shouldResetBoardSelection(input), false);
   assert.equal(shouldResetBoardSelection({ ...input, freeSelection: true }), false);
   assert.equal(shouldResetBoardSelection({ ...input, freeSelection: true, nextSnapshot: { ...state, pieces: [] } }), true);
 });

@@ -41,3 +41,16 @@ test('label changes preserve decorative SVG and focused control children',()=>{
  assert.equal(label.textContent,'<Continue>');assert.equal(button.children[0],svg);assert.equal(button.children[1],label);
  assert.equal(updateBoardInlineActionLabel({querySelector:()=>null},'Next'),false);
 });
+
+
+test('structured narration uses coordinate chips and separate natural-wrapping instruction rows',()=>{
+ const html=renderBoardMessageHtml({rows:[{actorName:'Name (9, 9)',text:'Name (9, 9) moved from (9, 9) to (0, 0)',coordinates:[{row:9,col:9},{row:0,col:0}],action:{id:'replay-computer',label:'Show me again'}},{text:'Select a piece or',action:{id:'pass',label:'Pass'}}]});
+ assert.equal((html.match(/class="board-message-row"/g)??[]).length,2);
+ assert.equal((html.match(/board-preview-coordinate-chip-neutral/g)??[]).length,2);
+ assert.match(html,/>Name \(9, 9\)<\/bdi>/);
+ assert.match(html,/>9, 9<\/span>/);
+ assert(html.indexOf('Show me again')<html.indexOf('Select a piece or'));
+ assert(html.indexOf('Select a piece or')<html.indexOf('>Pass<'));
+ const inert=renderBoardMessageHtml({rows:[{text:'Select a piece or',action:{id:'pass',label:'Pass'}}]},{sizing:true});
+ assert.doesNotMatch(inert,/data-board-message-action/);assert.match(inert,/disabled tabindex="-1"/);
+});

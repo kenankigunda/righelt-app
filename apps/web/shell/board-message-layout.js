@@ -1,6 +1,6 @@
-import {renderBoardInlineAction} from '../board/message-presentation.js';
+import {renderBoardMessageHtml,renderBoardInlineAction} from '../board/message-presentation.js';
 import {BOARD_TURN_CAPTIONS} from './perspective-labels.js';
-import {activityActorSide,setActivityActor} from './activity-affiliation.js';
+import {computerActivityActorSide,setActivityActor} from './activity-affiliation.js';
 import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
 import { describeComputerMove, describeMove } from './computer-narration.js';
 import { SELECTED_PIECE_EXPLANATIONS,SELECTED_CONTINUATION_LABELS } from '../board/piece-explanations.js';
@@ -33,7 +33,7 @@ const explanationSizes = SELECTED_PIECE_EXPLANATIONS.flatMap(text => {
 const renderMessageSizing = fallback => {
   const fontClass=fallback?' board-message-fallback-sizing':'';
   const attrs=index=>`data-sizing-font="${fallback?'fallback':'primary'}" data-sizing-variant="${index}" aria-hidden="true" inert`;
-  return narrationSizes.map((text,index) => `<p class="board-preview-label board-message-sizing${fontClass}" ${attrs(`narration:${index}`)}>${escape(text)} ${renderBoardInlineAction({id:"pass",label:"Pass"},{sizing:true})} ${renderBoardInlineAction({id:"replay-computer",label:"Show me again"},{sizing:true})}</p>`).join('')
+  return narrationSizes.map((text,index) => `<p class="board-preview-label board-message-sizing${fontClass}" ${attrs(`narration:${index}`)}>${renderBoardMessageHtml({rows:[{text,coordinates:[{row:9,col:9}],action:{id:"replay-computer",label:"Show me again"}},{text:"Select a piece or",action:{id:"pass",label:"Pass"}}]},{sizing:true})}</p>`).join('')
     + explanationSizes.map((text,index) => `<p class="board-preview-label board-message-sizing board-explanation-sizing${fontClass}" ${attrs(`explanation:${index}`)}>${text}</p>`).join('');
 };
 
@@ -70,7 +70,7 @@ export function updateComputerBoardLoading(element, game, status = {}, {replayin
     active = {owner,actorSide:null,key:`computer-board:${owner}:${++operation}`};
     activeMessages.set(element,active);
   }
-  active.actorSide=activityActorSide(game,{thinking:true}) ?? active.actorSide;
+  active.actorSide=computerActivityActorSide(game,status) ?? active.actorSide;
   setActivityActor(element,active.actorSide);
   if (element.dataset.loadingKey !== active.key) element.dataset.loadingKey = active.key;
   if (element.dataset.loadingState !== 'pending') element.dataset.loadingState = 'pending';
