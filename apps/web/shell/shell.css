@@ -1020,15 +1020,15 @@ button.button-release-bounce,
   transform: translateY(0.08rem);
 }
 
-.history-item:active {
+.history-item[data-action]:active {
   transform: translateY(1px) scale(0.985);
 }
 
-.history-item.is-pressing {
+.history-item[data-action].is-pressing {
   transform: translateY(1px) scale(0.985);
 }
 
-.history-item.history-item-release {
+.history-item[data-action].history-item-release {
   animation: history-item-release 140ms var(--shell-game-entry-easing);
 }
 
@@ -1258,7 +1258,7 @@ button.button-release-bounce,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .history-item.history-item-release {
+  .history-item[data-action].history-item-release {
     animation: none;
   }
 
@@ -1272,7 +1272,7 @@ button.button-release-bounce,
   button.is-pressing,
   .button-link.is-pressing,
   .mini-board-card-link-surface.is-pressing,
-  .history-item:active {
+  .history-item[data-action]:active {
     transform: none;
   }
 
@@ -2246,3 +2246,13 @@ textarea:focus-visible {
 .invite-load-status { display: grid; }
 .invite-load-status > p { grid-area: 1 / 1; }
 .invite-load-status-sizing { visibility: hidden; pointer-events: none; }
+
+.history-turn { list-style:none; margin-block: .7rem; }
+.history-turn-heading { font-weight:800; padding-block:.25rem; }
+.history-turn-heading[data-action], .history-item[data-action] { cursor:pointer; }
+.history-turn-heading.is-selected { text-decoration:underline; text-underline-offset:.2em; }
+.history-item.is-selected, .history-item.is-selected:active { cursor:default; transform:none; animation:none; }
+.history-item.is-selected button { cursor:pointer; }
+.history-item.is-selected .history-archive-select { cursor:default; }
+.history-inline-preview { width:100%; max-width:26rem; }
+.history-turn > .history-list-nested { margin-top:.3rem; }

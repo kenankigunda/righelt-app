@@ -165,7 +165,7 @@ test("U-16: renderTurnHistory source maps all destroyedPieces entries to sub-bul
 });
 
 test("UX-09: selected history rows render destruction sub-bullets before action buttons", () => {
-  assert.match(appSource, /<div class="history-item-info">[\s\S]*history-move-line[\s\S]*\$\{destructionSubBullets\}[\s\S]*history-move-at small[\s\S]*<\/div>[\s\S]*\$\{actionSection\}/);
+  assert.match(appSource, /<div class="history-item-info">[\s\S]*history-move-line[\s\S]*history-destruction-list[\s\S]*history-move-at small[\s\S]*<\/div>[\s\S]*\$\{actions\}/);
   assert.match(appSource, /history-destruction-item"[^>]*><span class="history-destruction-label">DESTROYED/);
 });
 

@@ -143,6 +143,29 @@ test.describe('narrow board and history',()=>{
       const changedPreview=changedRow.getByTestId('history-inline-preview');
       await expect.poll(()=>renderedPieces(changedPreview)).toEqual(expectedPieces(changedMove.snapshot));
       expect(expectedPieces(changedMove.snapshot)).not.toEqual(expectedPieces(changedMove.selectionSnapshot));
+      await expect(changedRow).not.toHaveAttribute('data-action');
+      expect(await changedRow.evaluate(el=>getComputedStyle(el).cursor)).toBe('default');
+      await expect(changedRow.getByRole('button',{name:'Undo before this move',exact:true})).toBeEnabled();
+      if(changedMove.action.from && changedMove.action.to){
+        await expect(changedPreview.locator('.cell.source')).toHaveCount(1);
+        await expect(changedPreview.locator('.cell.target')).toHaveCount(1);
+        expect(await changedPreview.locator('.cell.source').evaluate(el=>getComputedStyle(el).borderColor)).toBe('rgb(118, 80, 166)');
+        expect(await changedPreview.locator('.cell.target').evaluate(el=>getComputedStyle(el).borderColor)).toBe('rgb(31, 122, 90)');
+      }
+      await expect.poll(()=>changedRow.evaluate(el=>el.getBoundingClientRect().top>=0 && el.querySelector('.history-inline-preview').getBoundingClientRect().bottom<=innerHeight)).toBe(true);
+      await page.screenshot({path:info.outputPath('mobile-selected-move-history.png')});
+      const turnHeading=changedRow.locator('xpath=ancestor::li[contains(@class,"history-turn")]/div[contains(@class,"history-turn-heading")]');
+      await turnHeading.click();
+      await expect(turnHeading).toHaveAttribute('aria-current','true');
+      await expect(turnHeading).not.toHaveAttribute('data-action');
+      const aggregate=turnHeading.locator('..').getByTestId('history-inline-preview');
+      await expect(aggregate.locator('.cell')).toHaveCount(100);
+      await expect(aggregate.locator('.cell.source,.cell.target,.axis-strong,.axis-medium')).toHaveCount(0);
+      await page.screenshot({path:info.outputPath('mobile-whole-turn-history.png')});
+      await expect(page.locator('[data-game-panel="history"] [data-action="revert-to-move"]')).toHaveCount(0);
+      await changedRow.click();
+      await expect(changedRow).toHaveAttribute('aria-current','true');
+
       await switchPanel(page,'players');await switchPanel(page,'history');await expect(changedPreview).toBeVisible();
       await switchPanel(page,'board');await expect(page.getByTestId('history-inline-preview')).toHaveCount(0);
       await expectNoHorizontalOverflow(page);

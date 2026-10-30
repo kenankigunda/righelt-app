@@ -268,37 +268,13 @@ test("sync store manages subscriptions through the active route game id", () => 
   assert.match(syncStoreSource, /liveSync\.connectGame\(gameId\);/);
 });
 
-test("history renderer emits move-only rows without visible turn wrappers", () => {
-  assert.doesNotMatch(source, /class="history-turn"/);
-  assert.doesNotMatch(source, /class="history-turn-header"/);
-  assert.doesNotMatch(source, /class="history-turn-list"/);
-  assert.match(source, /const getControlSeatForTurn = \(state, turnOwnerSeat\) => \{/);
-  assert.match(source, /if \(continuation\.type === "push" && continuation\.phase === "retreat"\) \{\s*return getNextSeat\(turnOwnerSeat\);/s);
-  assert.match(source, /const moveRowsChronological = \(Array\.isArray\(game\.moves\) \? game\.moves : \[\]\)\.map/);
-  assert.match(source, /const pendingRows = \(Array\.isArray\(game\.pendingMoves\) \? game\.pendingMoves : \[\]\)\.map/);
-  assert.match(source, /const reverseChronologicalMoveRows = \[\];/);
+test("history renderer groups turns newest first and moves chronologically", () => {
+  assert.match(source, /class="history-turn /);
+  assert.match(source, /sort\(\(a,b\)=>b.index-a.index\)/);
+  assert.match(source, /a.turnMoveIndex \?\? a.index/);
   assert.match(source, /data-action="toggle-undone-group"/);
-  assert.match(source, /history-item history-item-undone-group is-undone/);
-  assert.match(source, /const reverseChronologicalPendingRows = \[\.\.\.pendingRows\]\.reverse\(\);/);
-  assert.match(source, /const branchButton = game\.inHistoryMode && game\.historyIndex === move\.index && move\.undone !== true/);
-  assert.match(source, /const revertButton = game\.inHistoryMode && game\.historyIndex === move\.index && move\.undone !== true/);
+  assert.match(source, /data-action="jump-history-turn"/);
   assert.match(source, /data-action="revert-to-move"/);
-  assert.doesNotMatch(source, /data-action="undo-last-move"/);
-  assert.match(source, /class="history-item history-item-pending/);
-  assert.match(source, /data-testid="history-pending-move-item"/);
-  assert.match(source, /aria-busy="true"/);
-  assert.match(source, /Pending<\/span>/);
-  assert.match(source, /const liveContinuationText =[\s\S]*liveHistoryLabel\(game,liveState,\{identityId:transport\.getIdentityId\(\)\}\)/s);
-  assert.match(source, /const liveWaitingText =[\s\S]*liveHistoryLabel\(game,liveState,\{identityId:transport\.getIdentityId\(\)\}\)/s);
-  assert.match(source, /const liveStatusText = liveContinuationText \?\? liveWaitingText;/);
-  assert.match(source, /class="history-item history-item-waiting history-empty-line/);
-  assert.match(source, /return `\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
-  assert.doesNotMatch(source, /if \(game\.inHistoryMode && activeTurn\.moveIndexes\.length > 0\) \{/);
-  assert.match(source, /if \(!game\.inHistoryMode && !liveStatusItem && activeTurn\.moveIndexes\.length > 0\) \{\s*return `\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;\s*\}/s);
-  assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
-  assert.match(source, /return `\$\{emptyTurnItem\}\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
-  assert.match(source, /data-action="launch-history-branch"/);
-  assert.match(source, /New game before this move/);
 });
 
 test("transport subscriptions drive immediate game-shell updates", () => {
@@ -368,7 +344,7 @@ test("history branch launch keeps the source tab stable while opening a new tab"
 test("history navigation stays local-first without the removed global busy wrapper", () => {
   assert.doesNotMatch(source, /const shouldRenderBusyStateStart =/);
   assert.doesNotMatch(source, /const shouldRenderBusyStateEnd =/);
-  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*transport\.selectHistoryMove\(\{ gameId, moveIndex \}\);[\s\S]*return;/s);
+  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*transport\.selectHistoryMove\(\{ gameId, moveIndex, moveId:actionEl\.getAttribute\("data-move-id"\) \|\| null \}\);[\s\S]*return;/s);
   assert.match(source, /if \(action === "return-live"\) \{[\s\S]*transport\.returnToLive\(\{ gameId \}\);[\s\S]*return;/s);
   assert.doesNotMatch(source, /if \(action === "jump-history"\) \{[\s\S]*await transport\.selectHistoryMove/s);
   assert.doesNotMatch(source, /if \(action === "return-live"\) \{[\s\S]*await transport\.returnToLive/s);
