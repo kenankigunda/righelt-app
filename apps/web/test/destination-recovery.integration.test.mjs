@@ -43,3 +43,12 @@ test('confirmed cold terminal destinations retire live reads while transient and
  context.destinationLoadPresentation={kind:'retry'};context.sync();assert.equal(ids.at(-1),'g');
  context.destinationLoadPresentation={kind:'auth'};context.transport.getGameViewModel=()=>({id:'g'});context.sync();assert.equal(ids.at(-1),'g');
 });
+
+test('responsive and page inputs retain destination recovery ownership within the same route authority',()=>{
+ const segment=source.slice(source.indexOf('const destinationReadScope ='),source.indexOf('const destinationRecovery='));
+ const context={};vm.runInNewContext(`${segment};globalThis.scope=destinationReadScope;`,context);
+ const read={generation:1,epoch:2,routeKey:'#/game/g',inputs:'mobile-page2'};
+ assert.equal(context.scope(read),context.scope({...read,inputs:'desktop-page1'}));
+ const home={...read,routeKey:'#/'};assert.equal(context.scope(home),context.scope({...home,inputs:'resized-home'}));
+ for(const change of [{generation:2},{epoch:3},{routeKey:'#/game/other'}])assert.notEqual(context.scope(read),context.scope({...read,...change}));
+});

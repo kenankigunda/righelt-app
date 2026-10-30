@@ -21,6 +21,7 @@ test('a held cold destination exposes delayed recovery, retries503reads and rest
   await card.tap();await expect.poll(()=>reads).toBeGreaterThan(0);
   const notice=page.getByTestId('destination-load-notice'),layer=page.locator('#shell-route-transition-layer');
   await page.waitForTimeout(1000);await expect(notice).not.toBeVisible();await expect(layer).toHaveAttribute('data-phase','covered');
+  await page.setViewportSize({width:1440,height:900});
   await expect(notice).toBeVisible({timeout:5500});await expect(notice).toContainText('Opening your game');
   expect(await notice.evaluate(el=>Number(getComputedStyle(el).zIndex))).toBeGreaterThan(await layer.evaluate(el=>Number(getComputedStyle(el).zIndex)));
   await page.screenshot({path:info.outputPath('cold-held-status.png')});
@@ -39,6 +40,7 @@ test('a held cold destination exposes delayed recovery, retries503reads and rest
   await notice.getByRole('button',{name:'Retry',exact:true}).tap();mode='healthy';
   await expect(page.getByTestId('game-board')).toBeVisible({timeout:15000});await expect(layer).toHaveAttribute('data-phase','idle');await expect(notice).not.toBeVisible();
   expect(writes).toEqual([]);
+  await page.setViewportSize({width:390,height:844});
   let homeReads=0;await page.route(url=>url.pathname==='/api/shell/games',async route=>{homeReads++;await route.fulfill({status:503,json:{error:'temporarily_unavailable'}});});
   await page.goBack();await expect(section).toContainText('Page 2 of');await expect(layer).toHaveAttribute('data-phase','idle');
   await expect(card).toBeVisible();await expect(card).toBeFocused();await expect.poll(async()=>Math.abs(await page.evaluate(()=>scrollY-window.departureY))).toBeLessThanOrEqual(1);
@@ -82,4 +84,18 @@ test('a confirmed missing destination offers a native Home exit without retry or
  await page.screenshot({path:info.outputPath('missing-reduced-motion.png')});
  await notice.getByRole('link',{name:'Home',exact:true}).tap();await expect(page.getByTestId('home-create-game')).toBeVisible();await expect(notice).not.toBeVisible();
  await page.unrouteAll({behavior:'wait'});
+});
+
+test('a cold Home resize keeps recovery ownership through a failed read and automatic retry',async({ownedContext,baseURL},info)=>{
+ const context=await ownedContext({baseURL,viewport:{width:390,height:844},hasTouch:true}),page=await context.newPage();
+ const [createdId]=await createGamesViaApi(page,1);let release,mode='hold',reads=0;const gate=new Promise(resolve=>release=resolve),writes=[];
+ page.on('request',request=>{if(mutation(request))writes.push(request.url());});
+ await page.route(url=>url.pathname==='/api/shell/games',async route=>{reads++;if(mode==='hold')await gate;if(mode==='healthy')await route.continue();else await route.fulfill({status:503,json:{error:'temporarily_unavailable'}});});
+ try{
+  await page.goto('/');await expect.poll(()=>reads).toBeGreaterThan(0);await page.waitForTimeout(1000);await page.setViewportSize({width:1440,height:900});
+  const notice=page.getByTestId('destination-load-notice');await expect(notice).toContainText('Opening your games',{timeout:5500});
+  const held=reads;mode='fail';release();await expect.poll(()=>reads).toBeGreaterThan(held);await expect(notice).toBeVisible();
+  await page.screenshot({path:info.outputPath('home-resized-503-recovery.png')});mode='healthy';
+  await expect(page.locator(`[data-home-section-root="my"] .mini-board-card-link-surface[data-game-id="${createdId}"]`)).toBeVisible({timeout:15000});await expect(notice).not.toBeVisible();expect(writes).toEqual([]);
+ }finally{release();await page.unrouteAll({behavior:'wait'});}
 });

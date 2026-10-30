@@ -4170,7 +4170,7 @@ const canHydrateRouteFromLocalState = (route = currentRoute) => {
 };
 
 let destinationNoticeEl=null,destinationLoadPresentation=null,destinationRestoreFocus=false;
-const destinationReadScope = read => `${read.generation}:${read.epoch}:${read.routeKey}:${read.inputs}`;
+const destinationReadScope = read => `${read.generation}:${read.epoch}:${read.routeKey}`;
 const destinationRecovery=createDestinationRecovery({
   onChange:()=>syncDestinationNotice(),
   onRetry:()=>{if(!document.hidden && destinationRecovery.currentScope()===destinationReadScope(captureRouteRead()) && ['home','game'].includes(currentRoute.name))startRouteSync({renderStart:false});},
