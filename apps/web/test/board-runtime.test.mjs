@@ -375,7 +375,7 @@ test("board runtime renders removal effects returned from shell apply actions", 
   }
 });
 
-test("board runtime uses the same concise End Turn CTA at narrow and wide widths", async () => {
+test("board runtime uses the same concise End turn CTA at narrow and wide widths", async () => {
   let previewHtml = "";
   const originalWindow = globalThis.window;
   globalThis.window = {
@@ -457,7 +457,7 @@ test("board runtime uses the same concise End Turn CTA at narrow and wide widths
       },
     );
 
-    assert.match(previewHtml, />End Turn</);
+    assert.match(previewHtml, />End turn</);
     assert.doesNotMatch(previewHtml, />end your turn now</);
   } finally {
     globalThis.window = originalWindow;
@@ -3503,7 +3503,7 @@ test('read-only selected pieces remain informational during rush, follow and ret
   const runtime=createBoardRuntime({boardAdapter:adapter,host:{canInteract:()=>false,canPresentActions:()=>false,loadPieceMoves:async()=>({actions:[],previewActions:[]})}});
   runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
   await runtime.loadSnapshot(state,{legalActions:[{type:'end_turn'}],selectionState:{selectedPieceId:'A',source:{row:4,col:2},target:null}});
-  assert.match(html,/Supply and command lines for piece at/);assert.match(html,/4/);assert.match(html,/2/);assert.doesNotMatch(html,/data-board-preview-action|Select a rush|End Turn|Retreat|Follow/);
+  assert.match(html,/Supply and command lines for piece at/);assert.match(html,/4/);assert.match(html,/2/);assert.doesNotMatch(html,/data-board-preview-action|Select a rush|End turn|Retreat|Follow/);
   runtime.setInspection({kind:'command',pieceId:'A'});assert.match(html,/Supply and command lines/);assert.doesNotMatch(html,/data-board-preview-action/);
  }
 });

@@ -404,7 +404,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       );
       return;
     }
-    const endTurnLabel = "End Turn";
+    const endTurnLabel = "End turn";
     setBoardPreviewPromptHtml(
       `Select a rush or ${renderBoardInlineAction({id:"end-turn",label:endTurnLabel},{preview:true})}`,
     );
@@ -567,7 +567,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         } else if (state.continuation?.type === "push") {
           continuation = ` · ${state.continuation.phase === "retreat" ? SELECTED_CONTINUATION_LABELS.retreat : SELECTED_CONTINUATION_LABELS.follow}`;
         }
-        if (state.continuation && legalActions.some(action => action.type === "end_turn")) continuation += ` ${renderBoardInlineAction({id:'end-turn',label:'End Turn'},{preview:true})}`;
+        if (state.continuation && legalActions.some(action => action.type === "end_turn")) continuation += ` ${renderBoardInlineAction({id:'end-turn',label:'End turn'},{preview:true})}`;
       }
       setBoardPreviewPromptHtml(text + continuation);
     };

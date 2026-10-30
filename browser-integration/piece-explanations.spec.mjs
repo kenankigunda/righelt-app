@@ -31,7 +31,7 @@ for (const width of [320, 390]) test(`selection explanations stay in the message
   await page.screenshot({path:info.outputPath(`inactive-${width}-200.png`)});
   await configure('frozen');
   await expect(page.locator('#preview')).toContainText('Cannot move: no command at start of rush');
-  await expect(page.locator('#preview button')).toHaveText('End Turn');
+  await expect(page.locator('#preview button')).toHaveText('End turn');
   expect(await top()).toBeCloseTo(before, 1);
   await configure('frozen-blocker');
   await expect(page.locator('#preview')).toContainText('Cannot move: no command or supply at start of rush');

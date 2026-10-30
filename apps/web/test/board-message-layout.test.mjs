@@ -24,7 +24,7 @@ test('message reservation uses real profile narration and excludes duplicate liv
  for(const explanation of SELECTED_PIECE_EXPLANATIONS) assert(html.includes(explanation));
  const continuations=[...html.matchAll(/<p class="board-preview-label board-message-sizing board-explanation-sizing"[^>]*>(.*?)<\/p>/g)].map(match=>match[1]);
  assert(continuations.some(text=>text.includes('Reconnect piece at')&&text.includes('board-preview-coordinate-chip')));
- for(const text of continuations)if(/Reconnect piece|Select a retreat|Select a follow/.test(text))assert(!text.includes('End Turn'));
+ for(const text of continuations)if(/Reconnect piece|Select a retreat|Select a follow/.test(text))assert(!text.includes('End turn'));
 });
 test('loading retains identical sizing replicas without a visible prompt or identity',()=>{
  const loading=renderBoardMessageSlot({loading:true}),live=renderBoardMessageSlot();

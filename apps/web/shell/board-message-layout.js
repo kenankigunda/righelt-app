@@ -20,7 +20,7 @@ const maximumCoordinate=renderCoordinateChip({row:9,col:9});
 const explanationSizes = SELECTED_PIECE_EXPLANATIONS.flatMap(text => {
   const base=`Piece at ${maximumCoordinate} – ${escape(text)}`;
   return [
-    `${base} ${renderBoardInlineAction({id:"end-turn",label:"End Turn"},{sizing:true})}`,
+    `${base} ${renderBoardInlineAction({id:"end-turn",label:"End turn"},{sizing:true})}`,
     `${base} · ${SELECTED_CONTINUATION_LABELS.rushBlocker} ${maximumCoordinate}`,
     `${base} · ${SELECTED_CONTINUATION_LABELS.retreat}`,
     `${base} · ${SELECTED_CONTINUATION_LABELS.follow}`,
