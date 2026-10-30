@@ -49,14 +49,14 @@ test('phase labels skip sub-500ms phases and preparing never includes an elapsed
 
 test('pending save uses its own clock and profile even after the computer turn changes', () => {
   const g = {...game(), pendingComputerSaveStartedAt:10000, pendingComputerProfile:'babs'};
-  assert.equal(computerBoardMessage(g,{profile:'tau',phase:'checking',phaseElapsedMs:30000,observedAt:10499}), 'Babs is thinking');
+  assert.equal(computerBoardMessage(g,{profile:'tau',phase:'checking',phaseElapsedMs:30000,observedAt:10499}), 'Babs is saving their move');
   assert.equal(computerBoardMessage(g,{profile:'tau',phase:'checking',phaseElapsedMs:30000,observedAt:10500}), 'Babs is saving their move');
 });
 
 
 test('pending journal timestamps do not conceal recovery, and same-scope captured profile remains available', () => {
  const g={...game(),pendingComputerSaveStartedAt:100,pendingComputerProfile:'babs'};
- assert.equal(computerBoardMessage(g,{phase:'recovery',profile:'tau',observedAt:60000}), 'Babs needs a hand');
+ assert.equal(computerBoardMessage(g,{phase:'recovery',profile:'tau',observedAt:60000}), 'Babs needs help');
  assert.equal(computerBoardMessage(g,{phase:'other-device',profile:'tau',observedAt:60000}), 'Babs is thinking');
  assert.equal(computerBoardMessage(g,{phase:'paused',profile:'tau',observedAt:60000}), 'Babs is paused');
  delete g.pendingComputerProfile;
@@ -66,7 +66,7 @@ test('pending journal timestamps do not conceal recovery, and same-scope capture
 test('an idle unacquired runner never claims it is thinking, including delayed recovery',()=>{
  const g={...game(),computerTurn:'tau'};
  assert.equal(computerBoardMessage(g,{phase:'idle',activity:{activeHere:false,showRecoveryNotice:false}}),'Waiting for Tau');
- assert.equal(computerBoardMessage(g,{phase:'idle',activity:{activeHere:false,showRecoveryNotice:true}}),'Tau needs a hand');
+ assert.equal(computerBoardMessage(g,{phase:'idle',activity:{activeHere:false,showRecoveryNotice:true}}),'Tau needs help');
  assert.equal(computerBoardMessage(g,{phase:'resuming'}),'Waiting for Tau');
  assert.equal(computerBoardMessage(g,{phase:'looking-ahead'}),'Tau is thinking');
  g.computer.paused=true;assert.equal(computerBoardMessage(g,{phase:'idle'}),'Tau is paused');
@@ -89,4 +89,11 @@ test('one rushed piece is narrated from its first source to its final destinatio
  assert.equal(describeTurn(moves,'Horus'),'Horus rushed a piece from (1, 1) to (2, 2)');
  const g={...game(),pendingComputerSaveStartedAt:0,pendingComputerProfile:'tau',pendingComputerControl:true};
  assert.equal(computerBoardMessage(g,{phase:'saving',observedAt:1000}),'Tau is saving their move');
+});
+
+test('computer board priority is intervention, confirmed playback, active calculation, then confirmation-only saving',()=>{
+ const g={...game(),computerTurn:'tau',pendingComputerSaveStartedAt:1,pendingComputerProfile:'tau',confirmedPlayback:{playing:true}};
+ const status={phase:'saving',profile:'tau',speculation:{phase:'computing'},activity:{needsHelp:true}};
+ assert.equal(computerBoardMessage(g,status),'Tau needs help');status.activity.needsHelp=false;assert.equal(computerBoardMessage(g,status),'Tau is making their move');
+ delete g.confirmedPlayback;assert.equal(computerBoardMessage(g,status),'Tau is thinking');status.speculation=null;assert.equal(computerBoardMessage(g,status),'Tau is saving their move');
 });

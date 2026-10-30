@@ -34,7 +34,7 @@ test('foreground catch-up sounds each move, while mute, backgrounding and leavin
   for (const cancel of ['toggle', 'hide', 'leaveGame']) {
     const f = audioFixture(); f.sound.authoritative(game(0, []));
     assert.equal(f.sound.authoritative(game(3, [move('a'), move('b'), move('c')])), true);
-    assert.deepEqual(f.notes, [820]); assert.equal(f.timers.size, 2);
+    assert.deepEqual(f.notes, [820]); assert.equal(f.timers.size, 2);f.sound.viewing({gameId:'g',live:true});
     if (cancel === 'hide') f.hide(); else f.sound[cancel]();
     assert.equal(f.timers.size, 0); f.flush(); assert.deepEqual(f.notes, [820]);
   }
@@ -55,13 +55,13 @@ test('computer optimistic publication never sounds or suppresses its authoritati
 
 test('background authoritative moves retain one immediate incoming cue and one reminder loop', () => {
   const f = audioFixture(); f.sound.authoritative(game(0, [])); f.hide();
-  f.sound.authoritative(game(1, [move('a')])); assert.deepEqual(f.notes, [460]); assert.equal(f.timers.size, 1);
-  f.sound.authoritative(game(2, [move('a'), move('b')])); assert.deepEqual(f.notes, [460]); assert.equal(f.timers.size, 1);
-  assert.equal([...f.timers.values()][0].ms, 30000); f.flush(); assert.deepEqual(f.notes, [460, 460]);
-  f.show(); assert.equal(f.timers.size, 0);
+  f.sound.authoritative(game(1, [move('a')])); assert.deepEqual(f.notes, [460,690]); assert.equal(f.timers.size, 1);
+  f.sound.authoritative(game(2, [move('a'), move('b')])); assert.deepEqual(f.notes, [460,690]); assert.equal(f.timers.size, 1);
+  assert.equal([...f.timers.values()][0].ms, 30000); f.flush(); assert.deepEqual(f.notes, [460, 690, 460, 690]);
+  f.show(); assert.equal(f.timers.size, 1);f.sound.viewing({gameId:'g',live:true});assert.equal(f.timers.size,0);
 });
 
-test('history and replay inspection do not suppress live opponent cues, and human acknowledgements stay quiet', () => {
+test('history and replay inspection receive an update chime while human acknowledgements stay quiet', () => {
   const f = audioFixture(), initial = game(0, []);
   f.sound.authoritative(initial);
   f.sound.local({ gameId: 'g', type: 'optimistic_enqueue', clientCommandId: 'human' }, { ...initial, currentSnapshot: initial.board.state });
@@ -71,10 +71,10 @@ test('history and replay inspection do not suppress live opponent cues, and huma
   f.sound.observe({ game: game(1, [human]), eventSeq: 1, type: 'event_appended', reason: 'move_recorded', clientCommandId: 'human' }, { opponentNotifications: false });
   assert.deepEqual(f.notes, [820]);
   f.sound.authoritative({ ...game(2, [human, move('opponent')]), inHistoryMode: true, currentSnapshot: initial.board.state, replaying: true });
-  assert.deepEqual(f.notes, [820, 820]);
+  assert.deepEqual(f.notes, [820, 460,690]);
   f.sound.toggle(); f.sound.authoritative(game(3, [human, move('opponent'), move('muted')]));
   f.sound.toggle(); f.sound.authoritative(game(3, [human, move('opponent'), move('muted')]));
-  assert.deepEqual(f.notes, [820, 820]);
+  assert.deepEqual(f.notes, [820, 460,690]);
 });
 
 test('opponent terminal finalization sounds once when its move was already received', () => {
@@ -84,4 +84,16 @@ test('opponent terminal finalization sounds once when its move was already recei
   f.sound.authoritative(terminal); f.flush(); assert.deepEqual(f.notes, [820, 560]);
   f.sound.observe({ game: terminal, eventSeq: 2, type: 'event_appended', reason: 'turn_ended' }, { opponentNotifications: false });
   f.sound.authoritative(terminal); assert.deepEqual(f.notes, [820, 560]);
+});
+
+test('one unseen batch keeps its shared update chime through History and Players until live playback finishes',()=>{
+ const f=audioFixture();f.sound.authoritative(game(0,[]));f.hide();const update=game(1,[move('a')]);f.sound.authoritative(update,{unseen:true});assert.deepEqual(f.notes,[460,690]);assert.equal(f.timers.size,1);
+ f.show();f.sound.viewing({gameId:'g',live:false});f.sound.authoritative(update,{unseen:true});f.sound.viewing({gameId:'g',live:false});assert.deepEqual(f.notes,[460,690]);assert.equal(f.timers.size,1);
+ f.flush();assert.deepEqual(f.notes,[460,690,460,690]);f.sound.viewing({gameId:'g',live:true,playbackFinished:false});assert.equal(f.timers.size,1);f.sound.viewing({gameId:'g',live:true,playbackFinished:true});assert.equal(f.timers.size,0);
+ f.sound.authoritative(game(2,[move('a'),move('b')]),{unseen:true});assert.deepEqual(f.notes,[460,690,460,690,460,690]);assert.equal(f.timers.size,1);
+});
+test('computer receipt is silent until displayed movement, with identity dedupe and muted preference',()=>{
+ const f=audioFixture(),initial={...game(0,[]),computer:{}};f.sound.authoritative(initial);const entry={...move('computer'),computerProof:{profile:'babs'},snapshot:initial.board.state},update={...game(1,[entry]),computer:{}};
+ f.sound.authoritative(update,{deferComputer:true});assert.deepEqual(f.notes,[]);assert.equal(f.sound.displayed(entry,update),true);assert.equal(f.sound.displayed(entry,update),false);assert.deepEqual(f.notes,[820]);
+ f.sound.toggle();f.sound.displayed({...entry,moveId:'muted'},update);assert.deepEqual(f.notes,[820]);
 });

@@ -687,7 +687,7 @@ test('a replacement login cannot claim the previous session lease and acquires o
  const f=fixture();t.after(()=>f.session.destroy());enableResume(f);await f.session.tick();
  assert.equal(f.session.snapshot().activity.activeHere,true);
  const before=structuredClone(f.game().computer);f.relogin();
- const activity=f.session.snapshot().activity;assert.equal(activity.label,'Needs attention');assert.equal(activity.showResume,true);
+ const activity=f.session.snapshot().activity;assert.equal(activity.label,'Waiting');assert.equal(activity.showResume,true);
  await f.session.tick();assert.equal(f.controls.length,1);assert.equal(f.computations(),0);assert.equal(f.submissions(),0);
  assert.deepEqual(f.game().computer,before);
  f.setTime(before.lease.expiresAt+1);await f.session.tick();
@@ -975,4 +975,24 @@ test('completed-game historical analysis retains hidden-tab cancellation',async 
  const f=fixture({analysisRuntime});t.after(()=>f.session.destroy());f.game().board.state.outcome={status:'p1_win'};
  const work=f.session.analyze(createInitialState());await new Promise(resolve=>setImmediate(resolve));const before=cancellations;f.hide();await f.session.tick();await work;
  assert.equal(cancellations,before+1);assert.notEqual(f.session.snapshot().analysis.phase,'computing');assert.deepEqual(f.controls,[]);assert.equal(f.computations(),0);
+});
+
+test('next calculation may overlap saving but only matching acknowledged authority admits its candidate',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());f.game().computer.seats.p2='babs';await f.session.tick();
+ let acknowledge,admissions=0;const receipt=new Promise(resolve=>acknowledge=resolve),expected=structuredClone(f.game().board.state);expected.sideToMove='P2';expected.turnIndex=1;
+ f.transport.applyGameAction=async()=>({committed:++admissions===1?receipt:Promise.resolve(),...(admissions===1?{state:expected}:{})});
+ const first=f.session.tick();f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.computations(),2,'next calculation overlaps first receipt wait');assert.equal(f.saved.length,1);assert.equal(admissions,1);
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));await f.session.tick();assert.equal(admissions,1,'no second command before acknowledgement');
+ f.game().board.state=expected;f.game().gameplayRevision=1;await f.session.tick();acknowledge();await first;await f.session.tick();
+ assert.equal(f.computations(),2);assert.equal(f.saved.length,2);assert.equal(admissions,2);assert.deepEqual(f.saved[1].attempt.state,expected);assert.notEqual(f.saved[1].attemptId,f.saved[0].attemptId);
+});
+for(const change of ['position','generation','model','account'])test(`speculation is discarded on mismatched ${change} before another command is admitted`,async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());f.game().computer.seats.p2='babs';await f.session.tick();
+ let acknowledge,admissions=0;const expected=structuredClone(f.game().board.state);expected.sideToMove='P2';expected.turnIndex=1;
+ f.transport.applyGameAction=async()=>({committed:new Promise(resolve=>acknowledge=resolve),state:expected});
+ const first=f.session.tick();f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));assert.equal(f.computations(),2);
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));f.game().board.state=structuredClone(expected);f.game().gameplayRevision=1;
+ if(change==='position')f.game().board.state.sideToMove='P1';if(change==='generation')f.game().computer.generation++;if(change==='model')f.game().computer.modelId='different';if(change==='account')f.changeAccount();
+ await f.session.tick();acknowledge();await first;assert.equal(f.saved.length,1,'candidate has no evidence/admission before authority match');assert.equal(f.session.snapshot().speculation,null);
 });

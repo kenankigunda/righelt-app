@@ -177,6 +177,7 @@ export const createLiveTransportStore = ({
 
   let games = [];
   let gameById = new Map();
+  const computerDisplays = new Map();
   let homeGameCardById = new Map();
   const lastEventSeqByGameId = new Map();
   const optimisticStateByGameId = new Map();
@@ -927,6 +928,7 @@ export const createLiveTransportStore = ({
       assertRulesContext(contextEpoch, gameId);
       if (auth?.enabled && (!auth.session.authenticated)) throw Object.assign(new Error("invalid_credentials"), { code: "invalid_credentials" });
       const current = getGameViewModel(gameId);
+      if (!command.computer && computerDisplays.get(gameId)?.pending) throw Object.assign(Error('playback_in_progress'),{code:'playback_in_progress'});
       if (current?.sharedMutationsBlocked) throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
       const isClosure = command.kind === "end-turn" || command.action?.type === "end_turn";
       if (isClosure && serverActionContract !== ACTION_CONTRACT_VERSION) {
@@ -1647,7 +1649,19 @@ export const createLiveTransportStore = ({
     }
     // Browser suspension can advance deadlines before scheduled callbacks run.
     // Refresh time-dependent safety flags even when the board projection is cached.
-    const game = decorateGameWithSync(optimistic.derivedGame, gameId);
+    let game = decorateGameWithSync(optimistic.derivedGame, gameId);
+    const display=computerDisplays.get(gameId);
+    if(display?.pending){
+      const shown=display.game;
+      const fields=['moves','turns','currentTurn'];
+      for(const key of fields)if(shown?.[key]!==undefined)game[key]=clone(shown[key]);
+      if(!game.inHistoryMode&&shown?.board?.state){
+        game.board={...game.board,state:clone(shown.board.state)};
+        game.currentSnapshot=clone(shown.board.state);game.liveCurrentSnapshot=clone(shown.board.state);
+      }
+      game.confirmedPlayback={playing:!display.error,error:display.error??null};
+      game.canRecordMove=false;game.canEndTurn=false;
+    }
     if (auth?.enabled && (!auth.session.authenticated || game.ownershipMode === "legacy_guest")) {
       return { ...game, canRecordMove:false,canEndTurn:false,canPlayAsBothPlayers:false,canUndoLastMove:false,canInvite:false,inviteToken:null,
         ...(!auth.session.authenticated ? {legalActions:[]} : {}) };
@@ -1749,6 +1763,11 @@ export const createLiveTransportStore = ({
     getGameViewModel,
     isUpgradeRequired: (gameId) => getOptimisticState(gameId).upgradeRequired === true,
     markUpgradeRequired,
+    readDecisionMove: (gameId,revision,moveId) => loadHistoricalMove(gameId,revision,moveId),
+    setComputerDisplay: (gameId,display) => {
+      if(display?.pending)computerDisplays.set(gameId,clone(display));else computerDisplays.delete(gameId);
+      emitChange({type:'computer_display',gameId});
+    },
     getAuthoritativeGame: (gameId) => clone(gameById.get(gameId) ?? null),
     applyGamePreview: (gameId,game) => {getOptimisticState(gameId).externalPreview=game?clone(game):null;recalculateOptimisticGame(gameId);emitChange({type:"local_preview",gameId});},
     getIdentityId,
@@ -1756,6 +1775,7 @@ export const createLiveTransportStore = ({
     unsubscribe,
     retire() {
       active = false;
+      computerDisplays.clear();
       rulesExecutor.cancelAll();
       globalThis.document?.removeEventListener?.("visibilitychange", onRulesVisibility);
       globalThis.window?.removeEventListener?.("pagehide", onRulesPageHide);

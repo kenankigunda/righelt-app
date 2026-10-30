@@ -1,7 +1,10 @@
+const interventionCodes=new Set(['invalid_credentials','session_changed','upgrade_required','storage_reset','storage_blocked','invalid_response','invalid_attempt','attempt_id_conflict','computer_owner_required','invalid_device']);
+export const computerInterventionRequired = error => interventionCodes.has(error?.code);
+
 // Only failures known to precede gameplay admission may use this policy.
 // Durable gameplay commands retain their journal's exclusive retry owner.
 export function computerRetryDisposition(error) {
-  if (['invalid_credentials', 'session_changed', 'upgrade_required', 'storage_reset', 'storage_blocked', 'invalid_response', 'invalid_attempt', 'attempt_id_conflict', 'computer_owner_required', 'invalid_device'].includes(error?.code)) return 'terminal';
+  if (computerInterventionRequired(error)) return 'terminal';
   if (['rules_cancelled', 'stale_state', 'sync_recovering'].includes(error?.code)) return 'discard';
   const status = Number(error?.status);
   if ([408, 429].includes(status) || status >= 500 && status <= 599

@@ -13,9 +13,9 @@ const instrument = () => {
 };
 const projected = (page, id) => page.evaluate(readProjectedGame, { id, guest: true });
 const displayedPieces = page => page.locator('#shell-board .cell').evaluateAll(cells => cells.flatMap(cell => [...cell.querySelectorAll('.piece-token:not(.move-ghost):not(.removal-piece):not(.history-destruction-piece)')].map(piece => ({id:piece.dataset.pieceId,row:Number(cell.dataset.row),col:Number(cell.dataset.col)}))).sort((a,b) => a.id.localeCompare(b.id)));
-const moveNotes = page => page.evaluate(() => window.opponentAudioNotes.filter(note => note.frequency === 820));
+const moveNotes = page => page.evaluate(() => window.opponentAudioNotes.filter(note => note.frequency === 460));
 
-for (const delivery of ['WebSocket', 'HTTP fallback']) test(`new opponent move sounds during history inspection through ${delivery}`, async ({ browser, baseURL }, info) => {
+for (const delivery of ['WebSocket', 'HTTP fallback']) test(`unseen opponent updates share one notification batch during history inspection through ${delivery}`, async ({ browser, baseURL }, info) => {
   const ownerContext = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
   const opponentContext = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
   await ownerContext.addInitScript(instrument);

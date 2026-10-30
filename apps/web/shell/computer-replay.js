@@ -31,11 +31,11 @@ export function buildTurnReplay({moves, completedTurnIndex, gameId, revision, li
 }
 
 /** Isolated visual playback. This module deliberately has no transport/search dependency. */
-export function createComputerReplay({rootEl, createAdapter, onChange = () => {}, onFinish = () => {}, reducedMotion = () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true, createPreview = createReplayPreview, timing = COMPUTER_REPLAY_TIMING, holdFinal = false, setTimer = setTimeout, clearTimer = clearTimeout}) {
+export function createComputerReplay({rootEl, createAdapter, onChange = () => {}, onFinish = () => {}, reducedMotion = () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true, createPreview = createReplayPreview, timing = COMPUTER_REPLAY_TIMING, holdFinal = false, automatic = false, onFrame = () => {}, setTimer = setTimeout, clearTimer = clearTimeout}) {
   const doc = rootEl.ownerDocument;
   let replay = null, layer = null, preview = null, index = -1, generation = 0, timer = null, settleWait = null;
   let animations = [], removedTokens = [];
-  const snapshot = () => ({playing: Boolean(replay), step: index + 1, total: replay?.frames.length ?? 0, manual: Boolean(replay && reducedMotion()), gameId: replay?.gameId ?? null, action: index >= 0 && replay?.frames[index] ? structuredClone(replay.frames[index].action) : null});
+  const snapshot = () => ({playing: Boolean(replay), step: index + 1, total: replay?.frames.length ?? 0, manual: Boolean(replay && reducedMotion() && !automatic), gameId: replay?.gameId ?? null, action: index >= 0 && replay?.frames[index] ? structuredClone(replay.frames[index].action) : null});
   const notify = () => onChange(snapshot());
   const wait = duration => new Promise(resolve => { settleWait = resolve; timer = setTimer(() => {timer = null; settleWait = null; resolve(true);}, duration); });
   const clearMotion = () => {
@@ -90,6 +90,7 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
         if (ghost.animate) { const animation = ghost.animate([{opacity: 1}, {opacity: 0}], {duration: timing.motion, fill: 'forwards'}); animation.finished.catch(() => {}); animations.push(animation); }
       }
     }
+    onFrame(structuredClone(frame));
     notify();
   };
   const next = () => {
@@ -110,12 +111,12 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
     rootEl.appendChild(layer);
     preview = createPreview({rootEl: layer, createAdapter, sizeVariant: 'replay', preview: {snapshot: replay.frames[0].before, overlay: {mode: 'none'}, previewKey: `${generation}:before`}});
     notify();
-    if (reducedMotion()) { next(); return true; }
+    if (reducedMotion() && !automatic) { next(); return true; }
     if (!await wait(timing.pause) || generation !== current) return false;
     for (index = 0; replay && generation === current && index < replay.frames.length; index++) {
       if (index) render(replay.frames[index].before, `${generation}:${index}:before`);
       showFrame();
-      if (!await wait(timing.motion + timing.pause) || generation !== current) return false;
+      if (!await wait((reducedMotion() ? 0 : timing.motion) + timing.pause) || generation !== current) return false;
     }
     if (replay && generation === current) {
       if (holdFinal) { index = replay.frames.length - 1; notify(); }
