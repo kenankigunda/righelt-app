@@ -100,9 +100,10 @@ body {
 .shell-route-transition-layer-swipe {
   top: -10%;
   bottom: -10%;
-  left: -38%;
   width: 176%;
   inset-inline: auto;
+  /* Keep the oversized ribbon centered before mirroring for back travel. */
+  left: -38%;
   background: var(--player-p1);
   opacity: .94;
   clip-path: polygon(9% 0,100% 0,91% 100%,0 100%);
