@@ -1,4 +1,4 @@
-import {boardMessagePresentation,renderBoardMessageHtml,renderBoardInlineAction,updateBoardInlineActionLabel} from '../message-presentation.js';
+import {boardMessagePresentation,renderBoardMessageHtml,renderBoardInlineAction,updateBoardInlineActionLabel,patchBoardMessage} from '../message-presentation.js';
 import { inspectionPaths, supplyOwnerAt } from "../inspection.js";
 import {renderCoordinateChip} from '../coordinate-chip.js';
 import {SELECTED_CONTINUATION_LABELS} from '../piece-explanations.js';
@@ -67,6 +67,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let selectedPieceMoves = [];
   let selectedPieceMovePreviews = [];
   let selectedPieceMovesLoading = false;
+  let selectedPieceMovesKnown = false;
+  let pendingPieceMoves = null;
+  const pieceMoveCache = new Map();
   let removalEffects = [];
   const playedRemovalEvents = new Set();
   let selectedPieceId = null;
@@ -87,6 +90,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let lastUsesHoverTargetSelection = null;
   let lastRenderedCanInteract = null;
   let recordedAction = null;
+  let recordedActions = [];
   let recordedActionStartPiece = null;
   /** @type {Array<{row: number, col: number, ownerSeat?: "p1" | "p2" | null, kind?: "unit" | "commander" | null, piece?: unknown | null}>} */
   let destroyedPieces = [];
@@ -120,6 +124,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     selection: overlayMode === OVERLAY_MODE.INTERACTIVE ? getCurrentSelection() : null,
     recordedAction: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedAction : null,
     recordedActionStartPiece: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedActionStartPiece : null,
+    recordedActions,
     destroyedPieces,
   });
 
@@ -135,14 +140,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     (Array.isArray(moves) ? moves : []).some((action) => Boolean(action?.to));
 
   const canToggleSelectedPieceOverlay = () => {
-    if (!state || !selectedPieceId || host.canInteract?.(state) === false) {
+    if (!state || !selectedPieceId || host.canPresentActions?.(state) === false) {
       return false;
     }
     const selectedPiece = getBoardPieceById(selectedPieceId);
     if (!selectedPiece || selectedPiece.owner !== state.sideToMove) {
       return false;
     }
-    return hasActionLayer(selectedPieceMoves, selectedPieceMovePreviews);
+    return !selectedPieceMovesKnown || hasActionLayer(selectedPieceMoves, selectedPieceMovePreviews);
   };
 
   const defaultOverlayPhaseForSelection = () => {
@@ -155,11 +160,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!selectedPiece || selectedPiece.owner !== state.sideToMove) {
       return "supplyCommand";
     }
-    return hasActionLayer(selectedPieceMoves, selectedPieceMovePreviews) ? "actionPreviews" : "supplyCommand";
+    return "actionPreviews";
   };
 
   const getEffectiveSelectedPieceMovesForBoard = () => {
-    if (inspection || host.canInteract?.(state) === false) return { selectedPieceMoves: [], selectedPieceMovePreviews: [] };
+    if (inspection || host.canPresentActions?.(state) === false) return { selectedPieceMoves: [], selectedPieceMovePreviews: [] };
     if (selectedPieceOverlayPhase !== "supplyCommand") {
       return { selectedPieceMoves, selectedPieceMovePreviews };
     }
@@ -404,7 +409,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       );
       return;
     }
-    const endTurnLabel = "End Turn";
+    const endTurnLabel = "End turn";
     setBoardPreviewPromptHtml(
       `Select a rush or ${renderBoardInlineAction({id:"end-turn",label:endTurnLabel},{preview:true})}`,
     );
@@ -453,7 +458,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       removalEffects,
       allowFreeSelection: getAllowFreeSelection(),
       currentActionType: getActionType(),
-      selectedPieceOverlayPhase: canInteract ? selectedPieceOverlayPhase : "supplyCommand",
+      selectedPieceOverlayPhase: host.canPresentActions?.(state) === false ? "supplyCommand" : selectedPieceOverlayPhase,
     });
     lastRenderedCanInteract = canInteract;
     controls.onVisualsUpdated?.({
@@ -470,7 +475,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     disabledInlineActions.clear();
   };
   const syncInlineActionAvailability = () => {
-    if (!submitting) return;
+    if (!submitting && !interactionBlocked && host.canInteract?.(state) !== false) return;
     for (const button of elements.boardPreviewLabelEl?.querySelectorAll?.('[data-board-preview-action="pass"], [data-board-preview-action="end-turn"], [data-board-message-action="pass"], [data-board-message-action="end-turn"]') ?? []) {
       if (!button.disabled) { button.disabled = true; disabledInlineActions.add(button); }
     }
@@ -531,7 +536,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       const buttons = Array.from(label?.querySelectorAll?.(':scope > button[data-board-message-action]') ?? []);
       // A replay counter changes while its controls stay the same. Patch the
       // text in place so a focused Next/Stop button remains usable across steps.
-      if (!actorName && actions.length && label?.firstChild?.nodeType === 3 && label.childNodes.length === actions.length * 2
+      if (!message.rows && !message.coordinates && !actorName && actions.length && label?.firstChild?.nodeType === 3 && label.childNodes.length === actions.length * 2
         && buttons.length === actions.length && buttons.every((button, index) => button.dataset.boardMessageAction === String(actions[index].id))) {
         const text = `${message.text ?? ""} `;
         if (label.firstChild.nodeValue !== text) label.firstChild.nodeValue = text;
@@ -542,7 +547,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         return;
       }
       const name = label?.firstChild;
-      if (actorName && name?.nodeName === 'BDI' && name.classList?.contains('board-message-name')
+      if (!message.rows && !message.coordinates && actorName && name?.nodeName === 'BDI' && name.classList?.contains('board-message-name')
         && label.childNodes[1]?.nodeType === 3 && label.childNodes.length === Math.max(2, actions.length * 2 + 1)
         && buttons.length === actions.length && buttons.every((button, index) => button.dataset.boardMessageAction === String(actions[index].id))) {
         if (name.textContent !== actorName) name.textContent = actorName;
@@ -552,21 +557,22 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         buttons.forEach((button, index) => { const text=String(actions[index].label); updateBoardInlineActionLabel(button,text); });
         return;
       }
-      setBoardPreviewPromptHtml(renderBoardMessageHtml(message));
+      const messageHtml = renderBoardMessageHtml(message);
+      if (!patchBoardMessage(label,messageHtml)) setBoardPreviewPromptHtml(messageHtml);
       return;
     }
     const explanation = pieceSummary?.details?.explanation;
     const setPieceExplanation = () => {
       const text = selectedSource ? `Piece at ${renderBoardPreviewCoordinate(selectedSource)} – ${escapeHtml(explanation)}` : escapeHtml(explanation);
       let continuation = "";
-      if (host.canInteract?.(state) !== false) {
+      if (host.canPresentActions?.(state) !== false) {
         if (state.continuation?.type === "rush") {
           const blocker = !canCloseContinuationNow(state) && getRushContinuationBlockingPiece(state);
           if (blocker && blocker.id !== selectedPieceId) continuation = ` · ${SELECTED_CONTINUATION_LABELS.rushBlocker} ${renderBoardPreviewCoordinate(blocker.position)}`;
         } else if (state.continuation?.type === "push") {
           continuation = ` · ${state.continuation.phase === "retreat" ? SELECTED_CONTINUATION_LABELS.retreat : SELECTED_CONTINUATION_LABELS.follow}`;
         }
-        if (state.continuation && legalActions.some(action => action.type === "end_turn")) continuation += ` ${renderBoardInlineAction({id:'end-turn',label:'End Turn'},{preview:true})}`;
+        if (state.continuation && legalActions.some(action => action.type === "end_turn")) continuation += ` ${renderBoardInlineAction({id:'end-turn',label:'End turn'},{preview:true})}`;
       }
       setBoardPreviewPromptHtml(text + continuation);
     };
@@ -576,6 +582,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         return;
       }
       const label = inspection.kind === "combined" ? "Supply and command lines" : inspection.kind === "command" ? "Command lines" : "Supply lines";
+      if (inspection.kind === "combined" && selectedSource) { setBoardPreviewPromptHtml(`Supply and command lines for piece at ${renderBoardPreviewCoordinate(selectedSource)}`); return; }
       setBoardPreviewPrompt(inspectionPaths(state, inspection).length ? label : inspection.kind === "command" ? "No command connection" : inspection.kind === "supply" ? "No supply connection" : "No connection");
       return;
     }
@@ -584,14 +591,19 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       setPieceExplanation();
       return;
     }
+    if (overlayMode === 'recorded-turn') { setBoardPreviewPrompt('Turn overview'); return; }
     if (overlayMode === OVERLAY_MODE.RECORDED_ACTION) {
+      if (recordedAction?.from && recordedAction?.to) {
+        setBoardPreviewPromptHtml(`Recorded move from ${renderCoordinateChip(recordedAction.from,'board-preview-coordinate-chip-selected-piece')} to ${renderCoordinateChip(recordedAction.to,'board-preview-coordinate-chip-target')}`);
+        return;
+      }
       const recordedActionLabel = recordedAction?.from && recordedAction?.to ? "Recorded move" : "History";
       setBoardPreviewPrompt(recordedActionLabel);
       return;
     }
 
-    if (pieceSummary && selectedPieceId && host.canInteract?.(state) === false) {
-      if (selectedSource) setBoardPreviewPromptHtml(`Piece at ${renderBoardPreviewCoordinate(selectedSource)} – Supply and command lines`);
+    if (pieceSummary && selectedPieceId && host.canPresentActions?.(state) === false) {
+      if (selectedSource) setBoardPreviewPromptHtml(`Supply and command lines for piece at ${renderBoardPreviewCoordinate(selectedSource)}`);
       else setBoardPreviewPrompt("Supply and command lines");
       return;
     }
@@ -607,15 +619,15 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       } else if (state.continuation?.type === "push" && state.continuation.phase === "follow") {
         setPushFollowContinuationPrompt(state.sideToMove);
       } else {
-        const canPass = !selectedPieceId && !state.continuation && host.canInteract?.(state) !== false && legalActions.some(action => action.type === "pass");
-        if (canPass) setBoardPreviewPromptHtml(`Select a piece ${renderBoardInlineAction({id:'pass',label:'Pass'},{preview:true})}`);
+        const canPass = !selectedPieceId && !state.continuation && (host.canPresentActions?.(state) ?? true) && legalActions.some(action => action.type === "pass");
+        if (canPass) setBoardPreviewPromptHtml(`Select a piece or ${renderBoardInlineAction({id:'pass',label:'Pass'},{preview:true})}`);
         else setBoardPreviewPrompt("Select a piece");
       }
       return;
     }
 
     const canOverlayToggle =
-      pieceSummary.details.owner === state.sideToMove && hasActionLayer(selectedPieceMoves, selectedPieceMovePreviews);
+      pieceSummary.details.owner === state.sideToMove && canToggleSelectedPieceOverlay();
 
     if (!selectedTarget) {
       const pushRetreatPrompt = getPushRetreatPrompt(state, selectedPieceId);
@@ -629,7 +641,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         } else {
           setBoardPreviewPrompt("Opponent piece");
         }
-      } else if (!canOverlayToggle) {
+      } else if (!canOverlayToggle && selectedPieceMovesKnown && selectedPieceOverlayPhase !== "supplyCommand") {
         if (state.continuation?.type === "rush") {
           setRushContinuationPrompt(state, state.sideToMove);
         } else if (selectedSource) {
@@ -639,10 +651,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         } else {
           setBoardPreviewPrompt("No moves");
         }
-      } else if (selectedPieceOverlayPhase === "actionPreviews" && host.canInteract?.(state) !== false) {
+      } else if (selectedPieceOverlayPhase === "actionPreviews") {
         if (selectedSource) {
           setBoardPreviewPromptHtml(
-            `Piece at ${renderBoardPreviewCoordinate(selectedSource)} – Select a move`,
+            `Select a move for piece at ${renderBoardPreviewCoordinate(selectedSource)}`,
           );
         } else {
           setBoardPreviewPrompt(
@@ -651,7 +663,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         }
       } else if (selectedSource) {
         setBoardPreviewPromptHtml(
-          `Piece at ${renderBoardPreviewCoordinate(selectedSource)} – Supply and command lines`,
+          `Supply and command lines for piece at ${renderBoardPreviewCoordinate(selectedSource)}`,
         );
       } else {
         setBoardPreviewPrompt("Supply and command lines");
@@ -672,13 +684,13 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       }
       if (canOverlayToggle && selectedPieceOverlayPhase === "supplyCommand" && selectedSource) {
         setBoardPreviewPromptHtml(
-          `Piece at ${renderBoardPreviewCoordinate(selectedSource)} – Supply and command lines`,
+          `Supply and command lines for piece at ${renderBoardPreviewCoordinate(selectedSource)}`,
         );
         return;
       }
       if (selectedSource) {
         setBoardPreviewPromptHtml(
-          `Piece at ${renderBoardPreviewCoordinate(selectedSource)} – Select a move`,
+          `Select a move for piece at ${renderBoardPreviewCoordinate(selectedSource)}`,
         );
       } else {
         setBoardPreviewPrompt("Select a move");
@@ -688,7 +700,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
     if (canOverlayToggle && selectedPieceOverlayPhase === "supplyCommand" && selectedSource) {
       setBoardPreviewPromptHtml(
-        `Piece at ${renderBoardPreviewCoordinate(selectedSource)} – Supply and command lines`,
+        `Supply and command lines for piece at ${renderBoardPreviewCoordinate(selectedSource)}`,
       );
       return;
     }
@@ -713,8 +725,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     });
   };
 
-  const invalidateSelectedPieceMovesRequests = () => {
+  const invalidateSelectedPieceMovesRequests = ({clearCache = false} = {}) => {
     selectedPieceMovesRequestId += 1;
+    pendingPieceMoves = null;
+    selectedPieceMovesKnown = false;
+    if (clearCache) pieceMoveCache.clear();
     host.cancelPieceMoves?.();
     elements.boardPreviewLabelEl?.removeAttribute?.('data-loading-key');
     elements.boardPreviewLabelEl?.removeAttribute?.('data-loading-state');
@@ -779,11 +794,18 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const requestId = ++legalActionsRequestId;
     const body = await host.loadLegalActions(state);
     if (destroyed || revision !== snapshotRevision || requestId !== legalActionsRequestId) return;
-    snapshotRevision += 1;
-    invalidateSelectedPieceMovesRequests();
-    state = body.state ?? state;
-    legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
-    if (!applyForcedContinuationSelection()) primeSelectedPieceMovesFromLegalActions();
+    const nextState = body.state ?? state;
+    const nextLegalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
+    const changed = JSON.stringify([state,legalActions]) !== JSON.stringify([nextState,nextLegalActions]);
+    if (changed) {
+      snapshotRevision += 1;
+      invalidateSelectedPieceMovesRequests({clearCache:true});
+    }
+    state = nextState;
+    legalActions = nextLegalActions;
+    if (changed || !selectedPieceId || (!selectedPieceMovesKnown && !pendingPieceMoves)) {
+      if (!applyForcedContinuationSelection()) primeSelectedPieceMovesFromLegalActions();
+    }
     refreshSelectionLabels();
     renderBoard();
     renderStatus();
@@ -808,11 +830,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const body = actions ? { actions, previewActions: actions } : buildPieceMoveResponse(input);
     selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
     selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
+    selectedPieceMovesKnown = !host.asyncPieceMoves;
     if (selectedPieceId !== lastPhaseInitializedForPieceId) {
       selectedPieceOverlayPhase = defaultOverlayPhaseForSelection();
-      // Blocked-only previews arrive asynchronously. Their complete result,
-      // rather than an empty legal subset, determines the initial layer.
-      if (!host.asyncPieceMoves || selectedPieceMoves.length) lastPhaseInitializedForPieceId = selectedPieceId;
+      // Choosing a layer is user intent. Results can fill it, never choose it.
+      lastPhaseInitializedForPieceId = selectedPieceId;
     }
     maybeAutoSelectTarget(selectedPieceMoves);
     syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
@@ -839,7 +861,33 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     return true;
   };
 
-  const reloadSelectedPieceMoves = async () => {
+  const reloadSelectedPieceMoves = () => {
+    if (destroyed || previewsSuspended) return Promise.resolve();
+    // Full authoritative inputs, including the legal subset, fence
+    // both in-flight reuse and this runtime's bounded read-only preview cache.
+    const key = JSON.stringify([state, legalActions, selectedPieceId]);
+    if (pendingPieceMoves?.key === key) return pendingPieceMoves.promise;
+    const pending = {key, promise: null};
+    pending.promise = loadSelectedPieceMoves(key).finally(() => {
+      if (pendingPieceMoves === pending) pendingPieceMoves = null;
+    });
+    pendingPieceMoves = pending;
+    return pending.promise;
+  };
+
+  const applyPieceMoveResponse = body => {
+    selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
+    selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
+    selectedPieceMovesKnown = true;
+    // A late ordinary result fills choices; it cannot make a target choice.
+    // Initial synchronous priming and mandatory continuations retain their rules.
+    if (state?.continuation) maybeAutoSelectTarget(selectedPieceMoves);
+    syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
+    renderBoard();
+    renderStatus();
+  };
+
+  const loadSelectedPieceMoves = async key => {
     const requestId = ++selectedPieceMovesRequestId;
     const revision = snapshotRevision;
     selectedPieceMovesLoading = false;
@@ -851,6 +899,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       selectedPieceMovesLoading = false;
       renderBoard();
       renderStatus();
+      return;
+    }
+
+    if (pieceMoveCache.has(key)) {
+      applyPieceMoveResponse(structuredClone(pieceMoveCache.get(key)));
       return;
     }
 
@@ -870,16 +923,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       if (destroyed || revision !== snapshotRevision || requestId !== selectedPieceMovesRequestId || selectedPieceId !== requestedPieceId) return;
       if (body.state && JSON.stringify(body.state) !== requestedSnapshot) return;
       // Move queries describe their input snapshot. They must not replace live state.
-      selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
-      selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
-      if (selectedPieceId !== lastPhaseInitializedForPieceId) {
-        selectedPieceOverlayPhase = defaultOverlayPhaseForSelection();
-        lastPhaseInitializedForPieceId = selectedPieceId;
-      }
-      maybeAutoSelectTarget(selectedPieceMoves);
-      syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
-      renderBoard();
-      renderStatus();
+      const cached = {actions: body.actions ?? [], previewActions: body.previewActions ?? body.actions ?? []};
+      pieceMoveCache.set(key, structuredClone(cached));
+      if (pieceMoveCache.size > 8) pieceMoveCache.delete(pieceMoveCache.keys().next().value);
+      applyPieceMoveResponse(body);
     } catch (error) {
       if (error.code !== 'rules_cancelled' && !destroyed && revision === snapshotRevision && requestId === selectedPieceMovesRequestId) throw error;
     } finally {
@@ -1002,7 +1049,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       if (body.accepted) {
         snapshotRevision += 1;
         revision = snapshotRevision;
-        invalidateSelectedPieceMovesRequests();
+        invalidateSelectedPieceMovesRequests({clearCache:true});
         state = body.state;
         legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
         selectedPieceMoves = [];
@@ -1040,7 +1087,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       state = body.state ?? state;
       snapshotRevision += 1;
       revision = snapshotRevision;
-      invalidateSelectedPieceMovesRequests();
+      invalidateSelectedPieceMovesRequests({clearCache:true});
       selectedPieceMoves = [];
       selectedPieceMovePreviews = [];
       setResult({ accepted: false, validation: body.validation });
@@ -1142,12 +1189,13 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
     if (inspection && legalTarget) { inspection = null; selectedPieceOverlayPhase = "actionPreviews"; }
     if (clickedPiece?.id === selectedPieceId && clickedPiece.kind === "commander") {
-      const canPreview = hasActionLayer(selectedPieceMoves, selectedPieceMovePreviews) && host.canInteract?.(state) !== false;
+      const canPreview = clickedPiece.owner === state.sideToMove && host.canPresentActions?.(state) !== false;
       if (inspection?.kind === "command" && !inspection.pieceId) {
         inspection = canPreview ? null : {kind: "combined", pieceId: clickedPiece.id};
         selectedPieceOverlayPhase = canPreview ? "actionPreviews" : "supplyCommand";
       } else if (inspection || selectedPieceOverlayPhase === "supplyCommand" || !canPreview) {
-        inspection = {kind: "command", owner: clickedPiece.owner};
+        inspection = inspectionPaths(state, {kind:"command",owner:clickedPiece.owner}).length ? {kind: "command", owner: clickedPiece.owner} : null;
+        if (!inspection) selectedPieceOverlayPhase = canPreview ? "actionPreviews" : "supplyCommand";
       } else {
         inspection = {kind: "combined", pieceId: clickedPiece.id};
       }
@@ -1330,6 +1378,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       }
       state = result.state ?? state;
       snapshotRevision += 1;
+      pieceMoveCache.clear();
       legalActions = Array.isArray(result.legalActions) ? result.legalActions : legalActions;
       clearSelection();
       refreshSelectionLabels();
@@ -1428,18 +1477,24 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       selectionState = null,
       overlayMode: nextOverlayMode = OVERLAY_MODE.INTERACTIVE,
       recordedAction: nextRecordedAction = null,
+      recordedActions: nextRecordedActions = [],
       recordedActionStartPiece: nextRecordedActionStartPiece = null,
       destroyedPieces: nextDestroyedPieces = [],
     } = {},
   ) => {
     if (destroyed) return;
     const previousInspection = inspection;
-    snapshotRevision += 1;
+    const positionChanged = JSON.stringify(state) !== JSON.stringify(snapshot);
+    const preservePiecePreviews = !resetSelection && !selectionAction && !positionChanged &&
+      Array.isArray(incomingLegalActions) && JSON.stringify(legalActions) === JSON.stringify(incomingLegalActions) &&
+      nextOverlayMode === overlayMode && (!selectionState || JSON.stringify({selectedPieceId:selectionState.selectedPieceId,source:selectionState.source??null,target:selectionState.target??null}) === JSON.stringify(getCurrentSelection()));
+    if (!preservePiecePreviews) snapshotRevision += 1;
     controls.onInteractionSound?.({kind:'preview-leave'});
     state = structuredClone(snapshot);
     legalActions = Array.isArray(incomingLegalActions) ? incomingLegalActions : [];
     overlayMode = nextOverlayMode;
     recordedAction = nextRecordedAction ? structuredClone(nextRecordedAction) : null;
+    recordedActions = structuredClone(nextRecordedActions);
     recordedActionStartPiece = nextRecordedActionStartPiece ? structuredClone(nextRecordedActionStartPiece) : null;
     const preserveRemovalEffects =
       nextOverlayMode === OVERLAY_MODE.INTERACTIVE &&
@@ -1456,13 +1511,16 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
     if (resetSelection) {
       clearSelection();
-    } else {
+    } else if (!preservePiecePreviews) {
       // A response calculated for the previous snapshot cannot refill this selection.
       invalidateSelectedPieceMovesRequests();
     }
-    selectedPieceMoves = [];
-    selectedPieceMovePreviews = [];
-    if (overlayMode === OVERLAY_MODE.INTERACTIVE) {
+    if (!preservePiecePreviews) {
+      pieceMoveCache.clear();
+      selectedPieceMoves = [];
+      selectedPieceMovePreviews = [];
+    }
+    if (!preservePiecePreviews && overlayMode === OVERLAY_MODE.INTERACTIVE) {
       if (selectionState) {
         applySelectionState(selectionState);
       } else {
@@ -1475,12 +1533,17 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       selectedPieceMovePreviews = [structuredClone(selectionAction)];
       lastPhaseInitializedForPieceId = selectedPieceId;
       selectedPieceOverlayPhase = defaultOverlayPhaseForSelection();
-    } else if (!resetSelection && !selectionState && overlayMode === OVERLAY_MODE.INTERACTIVE) {
+    } else if (!preservePiecePreviews && !resetSelection && !selectionState && overlayMode === OVERLAY_MODE.INTERACTIVE) {
       // Branch hydration and other refreshes preserve selection, not stale move data.
       primeSelectedPieceMovesFromLegalActions();
+      if (positionChanged && selectedTarget && !selectedPieceMoves.some(action => sameCoordinate(action.to, selectedTarget))) {
+        setSelectedTarget(null);
+        autoTargetSuppressed = true;
+      }
     }
     inspection = previousInspection;
     if (inspection?.pieceId && !getBoardPieceById(inspection.pieceId)) inspection = null;
+    if (inspection?.kind === "command" && !inspectionPaths(state,inspection).length) inspection = null;
     if (inspection?.pieceId) {
       selectedPieceId = inspection.pieceId;
       selectedSource = {...getBoardPieceById(inspection.pieceId).position};
@@ -1557,7 +1620,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   const destroy = () => {
     destroyed = true;
     snapshotRevision += 1;
-    invalidateSelectedPieceMovesRequests();
+    invalidateSelectedPieceMovesRequests({clearCache:true});
     boardAdapter.unmount?.();
     controls.onInteractionSound?.({kind:'preview-leave'});
     document.removeEventListener('visibilitychange', onPreviewVisibility);
@@ -1594,6 +1657,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       else next.owner = state.sideToMove;
     }
     if (next.pieceId && !getBoardPieceById(next.pieceId)) return false;
+    if (next.kind === "command" && !inspectionPaths(state,next).length) { clearInspection(); return true; }
     inspection = JSON.stringify(inspection) === JSON.stringify(next) ? null : next;
     setSelectedTarget(null);
     refreshSelectionLabels(); renderBoard(); renderStatus();

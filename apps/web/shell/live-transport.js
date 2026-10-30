@@ -1,3 +1,4 @@
+import { activeDecisionLineage } from './decision-history.js';
 import { createRulesExecutor } from '../board/rules-runtime.js';
 import { CURRENT_COMPUTER_MODEL } from '../generated/packages/shared-types/src/computer-play.js';
 import { STORAGE_GENERATION_HEADER } from "../generated/packages/shared-types/src/storage-policy.js";
@@ -17,7 +18,7 @@ const projectionControlKey = game => JSON.stringify({
   ownershipMode: game?.ownershipMode, selfPlayMode: game?.selfPlayMode,
   p1: game?.player1?.identityId, p2: game?.player2?.identityId,
   myRole: game?.myRole, myRoles: game?.myRoles,
-  inHistoryMode: game?.inHistoryMode, historyIndex: game?.historyIndex,
+  inHistoryMode: game?.inHistoryMode, historyIndex: game?.historyIndex, historyTurnIndex: game?.historyTurnIndex,
   // A renewal changes expiry, not authority. Generation/device/owner changes
   // must still fence work, even if the board and gameplay revision stay put.
   computer: game?.computer ? { ...game.computer,
@@ -289,6 +290,7 @@ export const createLiveTransportStore = ({
     next.historyLoading = Boolean(historyLoad?.loading);
     next.historyLoadError = historyLoad?.error ?? null;
     next.historyLoadIndex = historyLoad?.index ?? null;
+    next.historyLoadTurnIndex = historyLoad?.turnIndex ?? null;
     const pendingState = (optimistic.pendingCommands[0] ?? optimistic.unsavedCommand)?.envelope?.expectedState;
     // During a forced retreat the defender acts within the attacker’s turn.
     // Resolve the captured command actor before an optimistic turn change.
@@ -1469,18 +1471,19 @@ export const createLiveTransportStore = ({
     historyRequests.set(key,request);return request;
   };
   const applyHistorySelection = (gameId, game, moves, selected) => {
-    historyIntentByGameId.set(gameId, { moveId: historyMoveKey(selected), clientCommandId: selected.clientCommandId, order: moves.map(historyMoveKey), position: moves.findIndex(move => historyMoveKey(move) === historyMoveKey(selected)), frozen: clone(selected), revision: game.gameplayRevision });
+    historyIntentByGameId.set(gameId, { moveId: historyMoveKey(selected), clientCommandId: selected.clientCommandId, order: moves.map(historyMoveKey), position: moves.findIndex(move => historyMoveKey(move) === historyMoveKey(selected)), frozen: clone(selected), contextMoves: (game.historyTurnMoves ?? game.historyContextMoves)?.some(move=>move.moveId===selected.moveId) ? game.historyTurnMoves ?? game.historyContextMoves : null, revision: game.gameplayRevision });
     historyLoads.delete(gameId);
     recalculateOptimisticGame(gameId);
     emitChange({ type:"history_mode_changed",gameId });
   };
-  const selectHistoryMove = ({ gameId, moveIndex }) => {
+  const selectHistoryMove = ({ gameId, moveIndex, moveId = null }) => {
     const game = getGameViewModel(gameId);
     const moves = [...(game?.moves ?? []), ...(game?.pendingMoves ?? [])];
-    const summary = moves.find(move => move.index === moveIndex);
+    const frozen = moveId ? (game.historyTurnMoves ?? game.historyContextMoves)?.find(move=>move.moveId===moveId) : null;
+    const summary = frozen ?? moves.find(move => moveId ? move.moveId === moveId : move.index === moveIndex);
     if (!summary) throw new Error("move_not_found");
     const selected = summary.snapshot ? summary : historyCache.get(historyKey(gameId,game.gameplayRevision,summary.moveId));
-    if (selected) applyHistorySelection(gameId,game,moves,selected);
+    if (selected) applyHistorySelection(gameId,frozen ? {...game,gameplayRevision:game.inspectedAtRevision} : game,moves,selected);
     else {
       const owner = {loading:true,index:moveIndex,error:null};historyLoads.set(gameId,owner);
       recalculateOptimisticGame(gameId);emitChange({type:"history_loading",gameId});
@@ -1496,6 +1499,41 @@ export const createLiveTransportStore = ({
         owner.loading=false;owner.error=error.code??error.message;
         recalculateOptimisticGame(gameId);emitChange({type:"history_load_failed",gameId});
       });
+    }
+    return getGameViewModel(gameId);
+  };
+
+  const selectHistoryTurn = async ({gameId, turnIndex}) => {
+    const game = getGameViewModel(gameId);
+    const revision = game.gameplayRevision;
+    // Explicit turn selection reads current acknowledged records, not a move's
+    // previously frozen inspection snapshot.
+    let summaries = (gameById.get(gameId)?.moves ?? game.moves ?? []).filter(move => move.turnIndex === turnIndex && !move.undone);
+    const owner = {loading:true,index:summaries[0]?.index ?? 0,error:null,turnIndex};
+    historyLoads.set(gameId,owner);
+    recalculateOptimisticGame(gameId); emitChange({type:'history_loading',gameId});
+    let archived = false;
+    try {
+      if (!summaries.length || summaries[0].turnMoveIndex > 0) {
+        archived = true;
+        let entries = [], cursor = null;
+        do {
+          const page = await decisionRequest(gameId,'decision-history',{cursor});
+          if (!active || historyLoads.get(gameId) !== owner) return;
+          entries.push(...page.items); cursor = page.nextCursor;
+        } while(cursor);
+        summaries = activeDecisionLineage(entries).filter(move=>move.turnIndex===turnIndex);
+      }
+      if (!summaries.length) throw new Error('turn_not_found');
+      const moves = await Promise.all(summaries.map(move => !archived && move.snapshot ? clone(move) : loadHistoricalMove(gameId,revision,move.moveId)));
+      if (!active || historyLoads.get(gameId) !== owner) return;
+      if (getGameViewModel(gameId).gameplayRevision !== revision) throw new Error('history_changed');
+      historyIntentByGameId.set(gameId,{turn:{index:turnIndex,moves},revision});
+      historyLoads.delete(gameId); recalculateOptimisticGame(gameId); emitChange({type:'history_mode_changed',gameId});
+    } catch(error) {
+      if (!active || historyLoads.get(gameId) !== owner) return;
+      owner.loading=false;owner.error=error.message;
+      recalculateOptimisticGame(gameId); emitChange({type:'history_load_failed',gameId});
     }
     return getGameViewModel(gameId);
   };
@@ -1733,6 +1771,7 @@ export const createLiveTransportStore = ({
       return getGameViewModel(gameId);
     },
     selectHistoryMove,
+    selectHistoryTurn,
     returnToLive,
     requestRevertToMove,
     approveRevertRequest,

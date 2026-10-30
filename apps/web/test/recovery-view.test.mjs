@@ -327,3 +327,49 @@ test('quiet renewal presentation does not replace human-turn narration with rout
  assert.match(recoveryMessage(game,16000,{quietComputerRenewal:true}),/retry or view details/);
  assert.equal(isBoardRecoveryPending(game,{quietComputerRenewal:true,now:16000}),true);
 });
+
+test('turn inspection freezes all acknowledged moves and return-to-live restores current authority',async t=>{
+ const transport=store();t.after(()=>transport.retire());
+ const game=fixture();game.moves=game.moves.map((move,index)=>({...move,turnIndex:index<2?0:1,turnMoveIndex:index%2}));
+ transport.applyLiveGameUpdate({game});
+ await transport.selectHistoryTurn({gameId:game.id,turnIndex:0});
+ let view=transport.getGameViewModel(game.id);
+ assert.equal(view.historyTurnIndex,0);assert.deepEqual(view.historyTurnMoves.map(x=>x.moveId),['m0','m1']);
+ assert.deepEqual(view.currentSnapshot,snapshot(1));assert.equal(view.canRecordMove,false);
+ const next=fixture();next.gameplayRevision=2;next.board.state=snapshot(12);next.moves=[];
+ transport.applyLiveGameUpdate({game:next});view=transport.getGameViewModel(game.id);
+ assert.equal(view.historyTurnIndex,0);assert.deepEqual(view.currentSnapshot,snapshot(1));
+ transport.returnToLive({gameId:game.id});view=transport.getGameViewModel(game.id);
+ assert.equal(view.inHistoryMode,false);assert.equal(view.historyTurnIndex,null);assert.deepEqual(view.currentSnapshot,snapshot(12));
+});
+
+test('moves within a frozen turn remain selectable by identity after live trimming changes indexes',async t=>{
+ const transport=store();t.after(()=>transport.retire());
+ const game=fixture();game.moves=game.moves.map((move,index)=>({...move,turnIndex:0,turnMoveIndex:index}));
+ transport.applyLiveGameUpdate({game});await transport.selectHistoryTurn({gameId:game.id,turnIndex:0});
+ const next=fixture();next.gameplayRevision=4;next.moves=next.moves.slice(2).map((move,index)=>({...move,index}));
+ transport.applyLiveGameUpdate({game:next});
+ transport.selectHistoryMove({gameId:game.id,moveIndex:0,moveId:'m0'});
+ const view=transport.getGameViewModel(game.id);
+ assert.equal(view.inspectedDecision.moveId,'m0');assert.deepEqual(view.currentSnapshot,snapshot(0));assert.equal(view.inspectedAtRevision,0);
+ transport.selectHistoryMove({gameId:game.id,moveIndex:1,moveId:'m1'});
+ assert.equal(transport.getGameViewModel(game.id).inspectedDecision.moveId,'m1');
+ assert.equal(transport.getGameViewModel(game.id).inspectedAtRevision,0);
+});
+
+test('archive turn snapshots are revision-fenced and a changed archive leaves the prior selection intact',async t=>{
+ const game=fixture(),archived={...game.moves[0],turnIndex:20,turnMoveIndex:0};
+ const requests=[];
+ const transport=createLiveTransportStore({storage:{getItem:()=> 'actor',setItem(){}},fetcher:async(url,options)=>{
+  requests.push({url,body:JSON.parse(options.body)});
+  if(url.includes('decision-history'))return Response.json({items:[{kind:'decision',id:archived.moveId,move:archived}],nextCursor:null});
+  return Response.json({error:'history_changed'},{status:409});
+ }});t.after(()=>transport.retire());
+ transport.applyLiveGameUpdate({game});transport.selectHistoryMove({gameId:game.id,moveIndex:2});
+ await transport.selectHistoryTurn({gameId:game.id,turnIndex:20});
+ const view=transport.getGameViewModel(game.id);
+ assert.equal(view.inspectedDecision.moveId,'m2');assert.equal(view.historyTurnIndex,null);
+ assert.equal(view.historyLoadError,'history_changed');assert.equal(view.historyLoadTurnIndex,20);
+ const request=requests.find(request=>request.url.includes('decision-snapshot'));
+ assert.equal(request.body.gameplayRevision,0);assert.equal(request.body.decisionId,'m0');
+});
