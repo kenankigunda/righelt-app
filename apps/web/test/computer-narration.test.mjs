@@ -37,10 +37,10 @@ test('all profiles keep thinking and save narration plain for the animated cue',
 });
 
 
-test('phase labels skip sub-500ms phases and preparing never includes an elapsed timer', () => {
+test('saving represents confirmation immediately while preparation remains waiting', () => {
   const g = {...game(), computerTurn:'tau'};
   for (const phase of ['checking','looking-ahead','saving']) {
-    assert.equal(computerBoardMessage(g,{phase,phaseElapsedMs:499}), 'Tau is thinking');
+    assert.equal(computerBoardMessage(g,{phase,phaseElapsedMs:499}), phase==='saving'?'Tau is saving their move':'Tau is thinking');
     assert.equal(computerBoardMessage(g,{phase,phaseElapsedMs:500}), phase === 'saving' ? 'Tau is saving their move' : 'Tau is thinking');
   }
   assert.equal(computerBoardMessage(g,{phase:'preparing',detailed:true,elapsedMs:60000}), 'Waiting for Tau');

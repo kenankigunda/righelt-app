@@ -334,11 +334,13 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
    expect(sample.recovery.join(' ')).not.toMatch(/Updating computer play|Needs attention/);expect(sample.reconnecting).not.toBe('true');expect(sample.busy).not.toBe('true');
   }
   await info.attach('quiet-renew-first-send',{contentType:'image/png',body:await page.screenshot()});
-  // Real request timeout and real server lease expiry must restore attention.
-  await expect(page.getByRole('button',{name:'Babs, Blue, Needs attention',exact:true})).toBeVisible();
+  // Confirmation feedback is separate from intervention. Routine renewal loss
+  // and lease expiry keep this card quiet while its admitted intent recovers.
+  await expect(page.getByRole('button',{name:'Babs, Blue, Waiting',exact:true})).toBeVisible();
   await expect(page.getByTestId('sync-recovery-banner')).toContainText(/updating computer play|retry|details/i);
   await expect.poll(()=>Date.now()).toBeGreaterThanOrEqual(heldAuthority.computer.lease.expiresAt);
-  await expect(page.getByRole('button',{name:'Babs, Blue, Needs attention',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Babs, Blue, Waiting',exact:true})).toBeVisible();
+  await expect(page.locator('[data-computer-activity="attention"]')).toHaveCount(0);
   await info.attach('quiet-renew-expired-lease',{contentType:'image/png',body:await page.screenshot()});
   expect(await journalRecord()).toEqual(original);expect(writes).toEqual([]);
   const fenced=await projected(page,id);expect(fenced.board).toEqual(before.board);expect(fenced.moves).toEqual(before.moves);expect(fenced.gameplayRevision).toBe(before.gameplayRevision);

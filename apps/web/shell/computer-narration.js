@@ -1,4 +1,4 @@
-import { COMPUTER_PROFILES, COMPUTER_TIMING } from '../generated/packages/shared-types/src/computer-play.js';
+import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
 
 export function latestComputerTurn(game) {
   if (!game?.computer) return null;
@@ -72,9 +72,7 @@ export function computerBoardMessage(game, status, { selectedPieceId } = {}) {
     if (game.computer.paused) return `${name} is paused`;
     if (!phase.phase || phase.phase === 'idle') return status?.activity?.showRecoveryNotice ? `${name} needs help` : `Waiting for ${name}`;
     if (['preparing','initializing-verified-runtime'].includes(status?.phase)) return `Waiting for ${name}`;
-    if (phase.phaseElapsedMs >= COMPUTER_TIMING.phaseLabelAfterMs) {
-      if (phase.phase === 'saving') return `${name} is saving their move`;
-    }
+    if (phase.phase === 'saving') return `${name} is saving their move`;
     return `${name} is thinking`;
   }
   if (selectedPieceId) return null;
