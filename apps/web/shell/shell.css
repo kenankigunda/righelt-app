@@ -1417,7 +1417,7 @@ button.button-release-bounce,
   display: inline-flex;
   align-items: center;
   gap: 0.175rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
   min-width: 0;
   max-width: 100%;
@@ -1431,13 +1431,15 @@ button.button-release-bounce,
 }
 
 .home-games-section-controls > button {
-  min-width: max(44px, 2.5rem);
+  flex: 0 0 auto;
+  min-width: 44px;
   min-height: 44px;
-  padding-inline: 0.75rem;
+  padding-inline: 0.375rem;
 }
 
 .home-games-section-page-label {
-  min-width: min(6.5rem, 100%);
+  flex: 0 0 auto;
+  white-space: nowrap;
   text-align: center;
 }
 
@@ -1452,12 +1454,6 @@ button.button-release-bounce,
   .home-games-section-header[data-home-header-paging="true"] .home-games-section-header-center {
     grid-column: 1 / -1;
     grid-row: 2;
-  }
-
-  .home-games-section-controls .home-games-section-page-label {
-    order: -1;
-    flex-basis: 100%;
-    min-width: 0;
   }
 }
 
