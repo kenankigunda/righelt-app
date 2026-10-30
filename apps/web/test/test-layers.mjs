@@ -1,4 +1,5 @@
 export const WEB_UNIT_TEST_FILES = Object.freeze([
+  "game-lifecycle.test.mjs",
   "computer-activity.test.mjs",
   "computer-control-work.test.mjs",
   "account-controller.test.mjs",
