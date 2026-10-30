@@ -1,4 +1,5 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"><link rel="stylesheet" href="/apps/web/shell/computer-replay.css"><style>body{margin:0;padding:12px}.fixture{width:min(314px,100%);margin:auto;display:grid;gap:16px}.fixture .panel{margin:0}</style></head><body><main class="fixture game-shell-frame" id="app"></main><script type="module">
+import {renderHistoryResult} from '/apps/web/shell/game-result.js';
 import * as slots from '/apps/web/shell/panel-loading.js';
 import {renderPlayersPanel} from '/apps/web/shell/players-panel.js';
 import {canReadAdditionalHistory} from '/apps/web/shell/additional-history.js';
@@ -7,7 +8,7 @@ import {icon} from '/apps/web/shell/ui.js';
 const source=await(await fetch('/apps/web/shell/app.js')).text();
 const extract=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));
 const game={id:'game-2fbcb6',myRole:'Both Players',selfPlayMode:true,createdAt:'date',notifications:['You’re now playing both sides'],currentTurn:{index:0,playerSeat:'Player 1',moveIndexes:[]},player1:{identityId:'owner',connected:true},player2:{identityId:'owner',connected:true},viewers:[],pendingJoinRequests:[],canInvite:true};
-const helpers={canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},...slots,icon,invitationOptions,escapeHtml:String,formatDisplayGameId:String,formatClientDateTime:()=> 'Oct 25, 2026, 4:17 AM',renderRoleLabel:()=> 'both players',renderSeatLabel:String,colorizePlayerReferences:String,
+const helpers={renderHistoryResult,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},...slots,icon,invitationOptions,escapeHtml:String,formatDisplayGameId:String,formatClientDateTime:()=> 'Oct 25, 2026, 4:17 AM',renderRoleLabel:()=> 'both players',renderSeatLabel:String,colorizePlayerReferences:String,
  getJoinButtonKey:()=>'',getPlayAsBothButtonKey:()=>'',getCopyInviteButtonKey:()=>'',getApproveRequestButtonKey:()=>'',
  renderButtonStateAttributes:({className=''})=>` class="${className}"`,
  renderParticipantsPanel:game=>renderPlayersPanel(game,{identityId:'owner',icon}),
