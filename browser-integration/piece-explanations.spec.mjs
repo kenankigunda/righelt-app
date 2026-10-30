@@ -35,7 +35,7 @@ for (const width of [320, 390]) test(`selection explanations stay in the message
   expect(await top()).toBeCloseTo(before, 1);
   await configure('frozen-blocker');
   await expect(page.locator('#preview')).toContainText('Cannot move: no command or supply at start of rush');
-  await expect(page.locator('#preview')).toContainText('Reconnect piece at 9,9');
+  await expect(page.locator('#preview')).toContainText('Reconnect piece at 9, 9');
   await expect(page.locator('#preview button')).toHaveCount(0);
   expect(await top()).toBeCloseTo(before,1);
   await configure('frozen', false);
@@ -88,12 +88,12 @@ test('named computer phases keep one colored cue and stable board position witho
     window.savedAnimation.pause();window.savedAnimation.currentTime=700;
     window.showPhase({phase:'checking',phaseElapsedMs:500});
   });
-  await expect(page.locator('#preview')).toHaveText('Horus is checking their options');
+  await expect(page.locator('#preview')).toHaveText('Horus is thinking');
   await page.evaluate(() => window.showPhase({phase:'saving',phaseElapsedMs:500}));
   await expect(page.locator('#preview')).toHaveText('Horus is saving their move');
   expect(await page.evaluate(() => ({same:window.savedCue===document.querySelector('.board-message-activity .loading-pieces'),time:window.savedAnimation.currentTime,side:document.querySelector('.board-message-activity').dataset.activitySide}))).toEqual({same:true,time:700,side:'P2'});
   expect(await page.locator('#board').boundingBox()).toEqual(before);
   await page.evaluate(() => window.showPhase({phase:'preparing',detailed:true,elapsedMs:45000,phaseElapsedMs:45000}));
-  await expect(page.locator('#preview')).toHaveText('Preparing Horus');
+  await expect(page.locator('#preview')).toHaveText('Waiting for Horus');
   await expect(page.locator('#preview progress,#preview button')).toHaveCount(0);
 });
