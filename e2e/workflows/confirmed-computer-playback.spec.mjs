@@ -86,3 +86,17 @@ test('lean confirmed frames recover automatically with foreground grace and no f
   await info.attach('confirmed-frame-read-recovery',{body:JSON.stringify({reads,foregroundWaitMs:Date.now()-firstReadAt}),contentType:'application/json'});
  }finally{blocked=false;}
 });
+
+test('readiness recognizes elapsed loading detail while model response headers are pending',async({page,context},info)=>{
+ let release;const held=new Promise(resolve=>release=resolve);
+ await context.route('**/computer/models/*.onnx',async route=>{const response=await route.fetch();await held;await route.fulfill({response});});
+ try{
+  await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
+  const ready=waitForOpponentReady(page);ready.catch(()=>{});
+  const status=page.locator('[data-story-readiness]');
+  await expect(status).toHaveText(/Loading your opponent · [6-9]s/,{timeout:10000});
+  const message=await status.textContent();expect(message).not.toMatch(/bytes/);
+  release();const receipt=await ready;expect(receipt.detailed).toBe(true);
+  await info.attach('preparation-before-response-headers',{contentType:'application/json',body:JSON.stringify({message,receipt})});
+ }finally{release();}
+});
