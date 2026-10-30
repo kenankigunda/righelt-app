@@ -70,3 +70,38 @@ test("home header pagination is visible at narrow viewport with a multi-column g
     await closeContextQuietly(context);
   }
 });
+
+test("home pagination keeps both arrows and its label on one line across layouts", async ({ browser }, testInfo) => {
+  const { context, page } = await createIsolatedPage(browser);
+  try {
+    await createGamesViaApi(page, 5);
+    await page.goto("/");
+    const section = page.locator('[data-home-section-root="my"]');
+    for (const width of [1440, 1100, 901, 900, 850, 600, 390, 320]) {
+      await page.setViewportSize({ width, height: 1100 });
+      const controls = section.locator('.home-games-section-controls:visible');
+      await expect(controls).toHaveCount(1);
+      await expect.poll(() => controls.evaluate(element => {
+        const parts = [...element.children].map(child => child.getBoundingClientRect());
+        const centers = parts.map(rect => rect.top + rect.height / 2);
+        return Math.max(...centers) - Math.min(...centers);
+      }), { message: `Pagination must share a line at ${width}px` }).toBeLessThan(1);
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+      if (width === 1440 || width === 390) {
+        await section.screenshot({ path: testInfo.outputPath(`pagination-${width}.png`) });
+      }
+    }
+    await page.setViewportSize({ width: 390, height: 1100 });
+    await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+    const controls = section.locator('.home-games-section-controls:visible');
+    await expect.poll(() => controls.evaluate(element => {
+      const centers = [...element.children].map(child => { const r = child.getBoundingClientRect(); return r.top + r.height / 2; });
+      return Math.max(...centers) - Math.min(...centers);
+    })).toBeLessThan(1);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+    await controls.locator('[data-action="home-page-next"]').click();
+    await expect(section).toContainText('Page 2 of');
+  } finally {
+    await closeContextQuietly(context);
+  }
+});

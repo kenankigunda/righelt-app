@@ -167,7 +167,7 @@ export const waitForLegacyIdentity = async (page) => {
   ).toMatch(/\S/);
 };
 
-export const importScenarioGame = async (page, scenario, baseURL) => {
+export const importScenarioGame = async (page, scenario, baseURL, { open = true } = {}) => {
   await page.goto("/");
   await expect(page.getByTestId("home-create-game")).toBeVisible();
   await waitForLegacyIdentity(page);
@@ -191,8 +191,10 @@ export const importScenarioGame = async (page, scenario, baseURL) => {
   }, { scenario });
 
   const gameHash = `#/game/${encodeURIComponent(gameId)}`;
-  await page.goto(buildAppUrl(baseURL, gameHash));
-  await expect(page.getByTestId("game-shell")).toBeVisible();
+  if (open) {
+    await page.goto(buildAppUrl(baseURL, gameHash));
+    await expect(page.getByTestId("game-shell")).toBeVisible();
+  }
   return { gameId, gameHash };
 };
 

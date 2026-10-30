@@ -178,9 +178,9 @@ test('human retreat excludes the stranded square and automatically completes the
 });
 
 test(computerRetreatWorkflow,async({page,baseURL},info)=>{
- // Gameplay prepares its own real runtime. A dismissed introduction creates
- // and retires another runtime before this workflow without exercising the retreat.
- const {gameId:sourceId}=await importScenarioGame(page,makeRetreatScenario('computer'),baseURL);
+ // This source exists only to branch its recorded decision. Open the actual
+ // computer game once, avoiding an unused source runtime and journal lifecycle.
+ const {gameId:sourceId}=await importScenarioGame(page,makeRetreatScenario('computer'),baseURL,{open:false});
  const source=await current(page,sourceId);expect(capturedHash(source.board.state)).toBe(safe.stateHash);
  const sourceDecisionId=source.moves.at(-1).moveId;
  const branched=(await request(page,'/api/shell/history/branch',{sourceGameId:sourceId,sourceDecisionId,creatorSide:'p2',computer:{p1:'babs',p2:null},computerModelId:'initial-1554'})).game;
