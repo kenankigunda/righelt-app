@@ -270,6 +270,9 @@ export const selectPlayableAction = async (page, action) => {
   // Continuations select their required actor automatically. Clicking it again
   // cycles the overlay away from action previews instead of selecting a move.
   if (!["retreat", "follow"].includes(action.type) && !await source.evaluate(el => el.classList.contains("source"))) await source.click();
+  // Complete piece previews are asynchronous. The runtime deliberately ignores
+  // a destination tap while that check is pending, so wait before selecting it.
+  await expect(page.locator('#shell-board-preview-label')).not.toHaveAttribute('aria-busy', 'true');
   const supportsHover = await page.locator('html').getAttribute('data-hover-capability') === 'hover';
   // A single forced follow can already select its destination. Its next tap
   // confirms the move, so do not submit it while trying to select it.
