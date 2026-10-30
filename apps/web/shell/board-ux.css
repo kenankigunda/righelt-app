@@ -46,6 +46,9 @@ body {display:flow-root;}
 .board-heading-slot > .board-heading-fallback-sizing {font-family:var(--font-family-fallback);}
 .board-heading-slot + .board-message-slot {margin-block-start:0;}
 #app[data-shell-layout-mode="narrow"] [data-shell-panel="board"] .board {grid-template-columns:repeat(10,minmax(0,1fr));}
+/* The wrap already reserves room for the axes. Remove the duplicate base gap
+   before the wide legend, retaining extra separation as text size increases. */
+#app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .overlay-key {margin-top:max(0px,calc(1rem - 16px));}
 /* Expand the tap surface inside the reserved message space, without moving
    the board or turning the inline action into a heavy toolbar. */
 .board-message-slot .board-preview-label .board-preview-inline-button {position:relative;min-width:44px;display:inline-flex;align-items:center;justify-content:center;gap:3px;}
