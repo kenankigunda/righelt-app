@@ -14,21 +14,21 @@ export function createConfirmedComputerPlayback({loadMove=async move=>move,prese
   running=true;const run=generation;controller=new AbortController();const signal=controller.signal;notify();
   try{
    while(queue.length&&run===generation){
-    current=queue.shift();notify();
-    const move=await loadMove(clone(current.move),clone(current.game));
+    current=queue.shift();const entry=current;notify();
+    const move=await loadMove(clone(entry.move),clone(entry.game));
     if(run!==generation||signal.aborted)return;
-    if(move?.moveId!==current.move.moveId||!move.selectionSnapshot||!move.snapshot)throw Error('invalid_confirmed_playback_frame');
+    if(move?.moveId!==entry.move.moveId||!move.selectionSnapshot||!move.snapshot)throw Error('invalid_confirmed_playback_frame');
     const frame=clone({decisionId:move.moveId,action:move.action,before:move.selectionSnapshot,after:move.snapshot,destroyedPieces:move.destroyedPieces??[]});
-    await present(frame,{signal,onDisplayed:()=>{if(run===generation&&!signal.aborted&&!announced.has(move.moveId)){announced.add(move.moveId);onMove(clone(move),clone(current.game));}}});
+    await present(frame,{signal,onDisplayed:()=>{if(run===generation&&!signal.aborted&&!announced.has(move.moveId)){announced.add(move.moveId);onMove(clone(move),clone(entry.game));}}});
     if(run!==generation||signal.aborted)return;
-    const position=clone(current.game),index=activeMoves(position).findIndex(entry=>id(entry)===move.moveId);
+    const position=clone(entry.game),index=activeMoves(position).findIndex(entry=>id(entry)===move.moveId);
     position.moves=activeMoves(position).slice(0,index+1);position.board={...position.board,state:clone(move.snapshot)};
     position.currentSnapshot=clone(move.snapshot);position.liveCurrentSnapshot=clone(move.snapshot);
     position.turns=(position.turns??[]).filter(turn=>turn.index<=move.snapshot.turnIndex);
     position.currentTurn=position.turns.at(-1)??null;displayed=position;current=null;notify();
    }
    if(run===generation){displayed=clone(latest);running=false;controller=null;notify();}
-  }catch(failure){if(run!==generation||signal.aborted)return;error=failure;running=false;controller=null;onError(failure);notify();}
+  }catch(failure){if(run!==generation||signal.aborted)return;controller?.abort();error=failure;running=false;controller=null;onError(failure);notify();}
  };
  return {
   observe(game,{scope:nextScope,visible=true,enabled=true}={}){

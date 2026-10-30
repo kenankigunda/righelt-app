@@ -25,3 +25,8 @@ test('failed immutable frame hydration retains position and can retry the same d
  queue.observe(game(0),{scope:'owner'});queue.observe(game(1),{scope:'owner'});await flush();assert.equal(queue.snapshot().displayed.gameplayRevision,0);assert.equal(queue.snapshot().current.move.moveId,'m1');assert.ok(queue.snapshot().error);
  fails=false;queue.retry();await flush();assert.equal(calls,2);assert.equal(queue.snapshot().playing,false);assert.equal(queue.snapshot().displayed.gameplayRevision,1);
 });
+
+test('failed presenter callbacks are revoked before retry and retain their immutable game',async()=>{
+ const callbacks=[],sounds=[];let count=0,finish;const queue=createConfirmedComputerPlayback({present:async(_frame,context)=>{callbacks.push(context);if(!count++)throw Error('presentation_failed');await new Promise(resolve=>finish=resolve);},onMove:(entry,game)=>sounds.push([entry.moveId,game.gameplayRevision])});
+ queue.observe(game(0),{scope:'owner'});queue.observe(game(1),{scope:'owner'});await flush();assert.equal(callbacks[0].signal.aborted,true);queue.retry();await flush();callbacks[0].onDisplayed();assert.deepEqual(sounds,[]);callbacks[1].onDisplayed();finish();await flush();callbacks[0].onDisplayed();assert.deepEqual(sounds,[['m1',1]]);
+});
