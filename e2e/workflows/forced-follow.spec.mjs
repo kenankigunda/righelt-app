@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
 import { createInitialState, resolveToStability } from '../../apps/web/generated/packages/game-engine/src/index.js';
 import { importScenarioGame, submitPlayableAction, switchGamePanel } from '../support/app.mjs';
 import { readProjectedGame } from '../support/computer-projection.mjs';
@@ -72,6 +73,11 @@ for(const fault of ['none','lost reply','refresh pending'])test(`mandatory follo
       const acknowledgement=probe.acknowledgements.find(receipt=>receipt.clientCommandId===follow.clientCommandId);expect(acknowledgement).toBeTruthy();
       expect(holds[0].at).toBeLessThanOrEqual(acknowledgement.at);expect(acknowledgement.at).toBeLessThanOrEqual(sounds[0].at);expect(sounds[0].at).toBeLessThanOrEqual(motions[0].at);
     }
+    await expect(page.locator('.computer-replay')).toHaveCount(0);
+    const liveSelection = await page.locator('[data-testid="game-board"] .cell.selected-piece').evaluateAll(cells=>cells.map(cell=>({row:cell.dataset.row,col:cell.dataset.col,className:cell.className})));
+    expect(liveSelection).toEqual([]);
+    const retreatCell = await page.locator(`[data-testid="game-board"] .cell[data-row="${retreat.to.row}"][data-col="${retreat.to.col}"]`).evaluate(cell=>({className:cell.className,hovered:cell.matches(':hover'),borderColor:getComputedStyle(cell).borderColor,boxShadow:getComputedStyle(cell).boxShadow}));
+    await page.mouse.move(0,0);
     await page.screenshot({path:info.outputPath(`forced-follow-${fault.replaceAll(' ','-')}.png`)});
     const admissions=requests.length;
     await page.emulateMedia({reducedMotion:'reduce'});await replay.click();
@@ -79,6 +85,8 @@ for(const fault of ['none','lost reply','refresh pending'])test(`mandatory follo
     for(let index=0;index<3;index++)await page.getByRole('button',{name:'Next',exact:true}).click();
     await expect(page.locator('.computer-replay')).toHaveCount(0);
     const replayed=await projected(page,gameId);expect(replayed.gameplayRevision).toBe(after.gameplayRevision);expect(replayed.board.state).toEqual(after.board.state);expect(replayed.moves.map(move=>move.moveId)).toEqual(after.moves.map(move=>move.moveId));expect(requests.length).toBe(admissions);
-    await info.attach('forced-follow-proof',{contentType:'application/json',body:JSON.stringify({fault,requests,holds,follow,probe},null,2)});
+    const proof=JSON.stringify({fault,requests,holds,follow,probe,liveSelection,retreatCell},null,2);
+    await writeFile(info.outputPath('forced-follow-proof.json'),proof);
+    await info.attach('forced-follow-proof',{contentType:'application/json',body:proof});
   }finally{release();await page.unrouteAll({behavior:'wait'});}
 });
