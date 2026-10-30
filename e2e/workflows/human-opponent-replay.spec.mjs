@@ -24,7 +24,7 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
   await openDirectGameLink(opponent,baseURL,gameHash);await requestPlayerJoin(opponent);await acceptPendingRequest(owner);
   await expect(opponent.getByTestId('game-role')).toContainText('Player 2');
   await openDirectGameLink(viewer,baseURL,gameHash);await joinAsViewer(viewer);
-  for(const page of [owner,opponent,viewer])await switchGamePanel(page,'board');
+  await Promise.all([owner,opponent,viewer].map(page=>switchGamePanel(page,'board')));
   const initial=await projected(owner,gameId),action=initial.legalActions.find(action=>action.type==='move'&&action.from&&action.to);expect(action).toBeTruthy();
   await submitPlayableAction(owner,action);
   await expect(replayButton(opponent)).toBeVisible();await expect(label(opponent)).toContainText('Your opponent moved');
@@ -54,6 +54,30 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
    expect(write.method).toBe('POST');expect(write.path).toBe(`/api/shell/games/${gameId}/decision-history`);
    expect(write.body).toEqual({identityId:viewerIdentity,metadataOnly:true,cursor:null,historyRevision:advanced.gameplayRevision,mode:'additional',protocolVersion:2});
   }viewer.off('request',watch);
+
+});
+
+for(const width of [390,1440])test(`reopening human play preserves narration and submits one native Pass at ${width}px`,async({ownedRoleContext,baseURL})=>{
+ const contexts=await Promise.all([0,1].map(()=>ownedRoleContext({viewport:{width,height:900}})));
+ const [owner,opponent]=await Promise.all(contexts.map(context=>context.newPage()));
+ const {gameId,gameHash}=await createGameFromHome(owner);
+ await openDirectGameLink(opponent,baseURL,gameHash);await requestPlayerJoin(opponent);await acceptPendingRequest(owner);
+ await expect(opponent.getByTestId('game-role')).toContainText('Player 2');
+ await Promise.all([owner,opponent].map(page=>switchGamePanel(page,'board')));
+ for(const [index,page] of [owner,opponent].entries()){
+  await expect.poll(async()=>(await projected(page,gameId)).board.state.sideToMove).toBe(index===0?'P1':'P2');
+  const state=await projected(page,gameId);
+  const action=state.legalActions.find(action=>action.type==='move'&&action.from&&action.to);expect(action).toBeTruthy();
+  await submitPlayableAction(page,action);
+  if(index===0){
+   await expect(replayButton(opponent)).toBeVisible();
+   const moved=await projected(owner,gameId),piece=moved.board.state.pieces.find(piece=>piece.owner==='P1');expect(piece).toBeTruthy();
+   expect(moved.board.state.pieces.some(piece=>piece.position.row===4&&piece.position.col===4)).toBe(false);
+   await owner.locator('[data-testid="game-board"] .cell[data-row="4"][data-col="4"]').click();
+   await owner.locator(`[data-testid="game-board"] .cell[data-row="${piece.position.row}"][data-col="${piece.position.col}"]`).click();
+   await expect(label(owner)).toContainText('Supply and command lines for piece at');
+  }
+ }
   // Reopening the live game clears inspection and exposes legal Pass beside narration.
   await owner.reload();await expect(owner.getByTestId('game-shell')).toBeVisible();await switchGamePanel(owner,'board');
   await expect(label(owner)).toContainText('Your opponent moved');await expect(replayButton(owner)).toBeVisible();
