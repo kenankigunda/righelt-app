@@ -3865,6 +3865,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   recoveryPresentationOptions(currentRoute.name === 'game' ? transport.getGameViewModel(currentRoute.gameId) : null);
   syncDestinationNotice();
   const previousJoinFocus = document.activeElement;
+  const previousHistoryHeading = getGamePanel() === 'history' && document.activeElement?.matches?.('[data-game-panel="history"] h2') ? document.activeElement : null;
   utilityMemory.capture();
   const result = preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => renderContent({ animatePanels, includeBoard }));
   utilityMemory.restore();
@@ -3874,6 +3875,10 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (pendingResultReviewFocus === currentRoute.gameId && getGamePanel() === "history") {
     const heading = appEl.querySelector('[data-game-panel="history"] h2');
     if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }
+  }
+  if(previousHistoryHeading && document.activeElement===document.body){
+    const heading=appEl.querySelector('[data-game-panel="history"] h2');
+    if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}
   }
   joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });
   return result;
