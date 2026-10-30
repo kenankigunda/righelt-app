@@ -36,7 +36,7 @@ for(const width of [390,1440])test(`completed computer games stay read-only and 
  await page.getByRole('button',{name:'View result',exact:true}).click();await page.getByRole('button',{name:'Review game',exact:true}).click();await expect(summary).toBeVisible();
  await page.reload();await expect(summary).toBeVisible();await expect(summary).toContainText('You won');
  await page.screenshot({path:info.outputPath('completed-history-result.png')});
- await switchGamePanel(page,'board');await expect(page.locator('#shell-board-turn-indicator')).toHaveText('Game complete');
+ await switchGamePanel(page,'board');await expect(page.locator('#shell-board-turn-indicator')).toHaveText('Game complete');await expect(page.locator('#shell-board-preview-label')).toHaveText('Game complete');await expect(page.locator('.board-message-activity')).toHaveAttribute('data-loading-state','idle');
  await expect(page.locator('#shell-board-preview-label [data-board-message-action="pass"],#shell-board-preview-label [data-board-preview-action="pass"],#shell-board-preview-label [data-board-preview-action="end-turn"]')).toHaveCount(0);
  const revision=finished.gameplayRevision;await page.waitForTimeout(COMPUTER_TIMING.renewAfterMs+250);
  const {game:after}=await request(page,`/api/shell/games/${finished.id}?identityId=${encodeURIComponent(identityId)}`);expect(after.gameplayRevision).toBe(revision);expect(automatic).toEqual([]);

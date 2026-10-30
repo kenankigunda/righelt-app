@@ -57,7 +57,7 @@ test('computer cue keeps one operation across search/save revisions and retires 
  for(const phase of ['checking','looking-ahead','saving']){updateComputerBoardLoading(host,{...game,gameplayRevision:7,pendingComputerSaveStartedAt:0},{phase},{scope:'owner1'});assert.equal(host.dataset.loadingKey,key);}
  updateComputerBoardLoading(host,game,{phase:'checking'},{scope:'owner1',inspecting:true});assert.equal(host.dataset.loadingKey,key);assert.equal(host.dataset.loadingSuppressed,'true');
  updateComputerBoardLoading(host,game,{phase:'checking'},{scope:'owner1'});assert.equal(host.dataset.loadingKey,key);assert.equal(host.dataset.loadingSuppressed,'false');
- for(const options of [{game:{...game,computerTurn:null}},{game:{...game,inHistoryMode:true}},{game:{...game,computer:{paused:true}}},{status:{phase:'recovery'}},{status:{phase:'other-device'}},{replaying:true}]){
+ for(const options of [{game:{...game,board:{state:{outcome:{status:'p1_win'}}}}},{game:{...game,liveCurrentSnapshot:{outcome:{status:'draw'}}}},{game:{...game,computerTurn:null}},{game:{...game,inHistoryMode:true}},{game:{...game,computer:{paused:true}}},{status:{phase:'recovery'}},{status:{phase:'other-device'}},{replaying:true}]){
   updateComputerBoardLoading(host,options.game??game,options.status??{}, {scope:'owner1',replaying:options.replaying});
   assert.equal(host.dataset.loadingState,'idle');assert.equal(host.dataset.loadingKey,undefined);
   updateComputerBoardLoading(host,game,{}, {scope:'owner1'});assert.notEqual(host.dataset.loadingKey,key);

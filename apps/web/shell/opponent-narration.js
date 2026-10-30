@@ -1,3 +1,4 @@
+import {isCompletedGame} from './game-lifecycle.js';
 import {playerDisplayName} from './perspective-labels.js';
 import {computerBoardMessage, describeMove} from './computer-narration.js';
 import {activityStateActorSide, normalizeActivitySide} from './activity-affiliation.js';
@@ -28,6 +29,7 @@ export function latestOpponentTurn(game, {identityId} = {}) {
 export function opponentBoardMessage(game, status, selection = {}, {canInteract = false, identityId} = {}) {
   if (!game || game.inHistoryMode) return null;
   if (selection.selectedPieceId || selection.inspection) return null;
+  if (isCompletedGame(game) && game.pendingComputerSaveStartedAt == null) return 'Game complete';
   if (game.computerTurn || game.pendingComputerSaveStartedAt != null) return computerBoardMessage(game, status, selection);
   if ((game.board?.state?.outcome?.status && game.board.state.outcome.status !== 'ongoing') || game.status === 'finished') return 'Game complete';
   if (canInteract && game.board?.state?.continuation) return null;
