@@ -370,7 +370,7 @@ test("scenario flyout round-trips a settled post-rush board state after ending t
     await expect(page.locator('[data-testid="scenario-load-skeleton"]')).toHaveCount(0);
     await expect(page.locator("#shell-board-turn-indicator")).toHaveText("Your turn to play");
     await expect(page.locator("#shell-board-turn-indicator")).toHaveClass(/player-tone-p1/);
-    await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 7,4");
+    await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 7, 4");
     await expect(page.locator("#shell-board-preview-label")).not.toContainText("Select a rush");
     await expect
       .poll(async () => getHistoryMoveCount(page), {
@@ -471,7 +471,7 @@ test("scenario flyout saves history-authored scenarios from the selected pre-mov
     await expect(page.locator('[data-testid="scenario-load-skeleton"]')).toHaveCount(0);
     await expect(page.locator("#shell-board-turn-indicator")).toHaveText("Your turn to play");
     await expect(page.locator("#shell-board-turn-indicator")).toHaveClass(/player-tone-p1/);
-    await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 5,4");
+    await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 5, 4");
     await expect
       .poll(async () => getHistoryMoveCount(page), {
         message: "Expected loading the capture to start a new history at the saved pre-move position",
@@ -576,7 +576,7 @@ test("scenario flyout updates an existing scenario from the selected history pre
     await expect(page.locator('[data-testid="scenario-load-skeleton"]')).toHaveCount(0);
     await expect(page.locator("#shell-board-turn-indicator")).toHaveText("Your turn to play");
     await expect(page.locator("#shell-board-turn-indicator")).toHaveClass(/player-tone-p1/);
-    await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 5,4");
+    await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 5, 4");
     await expect
       .poll(async () => getHistoryMoveCount(page), {
         message: "Expected loading the updated capture to start a new history at the saved pre-move position",

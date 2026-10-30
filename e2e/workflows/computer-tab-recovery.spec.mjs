@@ -304,11 +304,12 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
      recovery:[...document.querySelectorAll('[data-testid="sync-recovery-banner"]')].map(node=>node.textContent),
      pass:!!label?.querySelector('[data-board-message-action="pass"], [data-board-preview-action="pass"]')};
    };
+   window.readQuietRenewalFixture=read;
    let last='',count=0;const emit=()=>{const value=read(),key=JSON.stringify({...value,at:0});if(key!==last){last=key;count++;console.debug(prefix+JSON.stringify(count<=500?value:{at:Date.now(),overflow:true}));}};
    const observer=new MutationObserver(emit);observer.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true});emit();
    // This owned passive observer expires even if an assertion fails; closing the
    // test page also disposes it. It never changes DOM, clock or app authority.
-   setTimeout(()=>observer.disconnect(),25000);
+   setTimeout(()=>{observer.disconnect();delete window.readQuietRenewalFixture;},25000);
    if(read().gameId!==id)throw Error('Observer armed on the wrong game');return Date.now();
   },{prefix,id});
   await expect.poll(()=>Boolean(original)).toBe(true);expect(original.submittedAt).toBeGreaterThanOrEqual(observerReadyAt);
@@ -317,14 +318,18 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   const heldAuthority=await projected(page,id);expect(heldAuthority.computer.generation).toBe(original.payload.values.generation);
   expect(heldAuthority.computer.lease.deviceId).toBe(original.payload.values.deviceId);expect(heldAuthority.computer.lease.expiresAt).toBeGreaterThan(Date.now());
   // One comfortably short first-send interval, not the 4..5s native timing race.
-  const sampledAt=await page.evaluate(submittedAt=>new Promise(resolve=>setTimeout(()=>resolve(Date.now()),Math.max(0,submittedAt+1000-Date.now()))),original.submittedAt);
+  // Stable narration/actions can produce no deduplicated mutation sample.
+  // Take an independent read-only first-send snapshot even in that quiet case.
+  const firstSend=await page.evaluate(submittedAt=>new Promise(resolve=>setTimeout(()=>resolve(window.readQuietRenewalFixture()),Math.max(0,submittedAt+1000-Date.now()))),original.submittedAt);
+  const sampledAt=firstSend.at;samples.push(firstSend);
   expect(sampledAt-original.submittedAt).toBeLessThan(5000);
-  await expect(pass).toHaveCount(0);expect(await journalRecord()).toEqual(original);
+  await expect(pass).toBeVisible();await expect(pass).toBeDisabled();expect(await journalRecord()).toEqual(original);
   const early=samples.filter(sample=>sample.at>=original.submittedAt&&sample.at<=sampledAt);
   expect(early.length).toBeGreaterThan(0);expect(samples.some(sample=>sample.overflow)).toBe(false);
   const narration=samples[0].narration;expect(narration).toMatch(/Babs /);
   for(const sample of early){
    expect(sample.gameId).toBe(id);expect(sample.narration).toBe(narration);expect(sample.activity).toBe('here');expect(sample.activityText).toBe('Active here');expect(sample.connected).toBe(true);
+   expect(sample.pass).toBe(true);
    expect(sample.announcement).not.toMatch(/Updating computer play|Needs attention|Reconnecting|Saving/);
    expect(sample.recovery.join(' ')).not.toMatch(/Updating computer play|Needs attention/);expect(sample.reconnecting).not.toBe('true');expect(sample.busy).not.toBe('true');
   }

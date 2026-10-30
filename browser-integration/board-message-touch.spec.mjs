@@ -73,10 +73,14 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
       const copy=node.cloneNode(true);copy.style.cssText=`position:absolute;inline-size:${width}px;height:auto;align-self:start;margin:0`;
       slot.append(copy);const height=copy.getBoundingClientRect().height;copy.remove();return height;
     });
-    return {required:Math.max(...heights),lineHeight:parseFloat(getComputedStyle(slot.querySelector('.board-preview-label')).lineHeight)};
+    const intrinsicFallback=[...slot.querySelectorAll('.board-message-fallback-sizing')].map(node=>{
+      const copy=node.cloneNode(true);copy.style.cssText=`position:absolute;inline-size:${width}px;height:auto;min-height:0;align-self:start;margin:0`;
+      slot.append(copy);const height=copy.getBoundingClientRect().height;copy.remove();return height;
+    });
+    return {required:Math.max(...heights),intrinsicFallback:Math.max(...intrinsicFallback),lineHeight:parseFloat(getComputedStyle(slot.querySelector('.board-preview-label')).lineHeight)};
   });
   expect(initial.slot.height).toBeCloseTo(reservation.required,5);
-  expect(budgetPixelPrecision(initial.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(admittedHeight(initial.slot.width,reservation.lineHeight/1.5)));
+  expect(budgetPixelPrecision(initial.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(admittedHeight(initial.slot.width,reservation.lineHeight/1.5,reservation.intrinsicFallback)));
   await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(0);
   for(const phase of ['thinking','completed','completed-pass','multi-push','multi-rush','spectator-long-name','selection','frozen-reconnect','frozen-retreat','frozen-follow','loading','human']){
