@@ -97,6 +97,9 @@ for (const width of [933, 932, 901, 900, 899, 390]) test(`recovery overlay and s
 });
 
 test("pending feedback reaches overdue once, then clears or explains definitive conflict", async ({page}) => {
+ // Two real 15-second foreground waits plus WebKit setup and the final move
+ // need headroom under CI load; keep the individual recovery deadlines strict.
+ test.setTimeout(90000);
  await page.setViewportSize({width:1440,height:1100});
  const {gameId}=await createGameFromHome(page);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
