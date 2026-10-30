@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activityActorSide,activityStateActorSide,undoApprovalActorSide,setActivityActor} from '../shell/activity-affiliation.js';
+import {computerActivityActorSide,activityActorSide,activityStateActorSide,undoApprovalActorSide,setActivityActor} from '../shell/activity-affiliation.js';
 import {updateComputerBoardLoading} from '../shell/board-message-layout.js';
 import {renderGameAlertCard} from '../shell/game-alert.js';
 import {renderComputerProgress} from '../shell/computer-view.js';
@@ -53,4 +53,22 @@ test('undo waiting uses the responding player rather than requester or current t
  assert.equal(undoApprovalActorSide({...game,player2:{identityId:'red'}},{requesterIdentityId:'red'}),null);
  assert.equal(undoApprovalActorSide(game,null),null);
  assert.equal(activityStateActorSide({sideToMove:'P2',continuation:{type:'push',phase:'retreat',attackerOwner:'P1'}}),'P2');
+});
+
+
+test('named computer activity never inherits a pending human color',()=>{
+ for(const computerSide of ['P1','P2']){
+  const humanSide=computerSide==='P1'?'P2':'P1';
+  const game={computer:{seats:{p1:computerSide==='P1'?'horus':null,p2:computerSide==='P2'?'horus':null}},computerTurn:'horus',pendingActorSide:humanSide,pendingCommandCount:1,controlSeat:humanSide,board:{state:{sideToMove:humanSide}}};
+  assert.equal(computerActivityActorSide(game,{}),computerSide);
+  assert.equal(computerActivityActorSide({...game,computerTurn:null,pendingComputerProfile:'horus',pendingComputerSaveStartedAt:0},{}),computerSide);
+  assert.equal(activityActorSide(game),humanSide,'the separate human save cue retains its own actor');
+ }
+});
+
+
+test('computer message profile and cue agree during a profile/status handoff',()=>{
+ const game={computer:{seats:{p1:'tau',p2:'horus'}},computerTurn:'horus',controlSeat:'Player 2'};
+ assert.equal(computerActivityActorSide(game,{profile:'tau',phase:'looking-ahead'}),'P1');
+ assert.equal(computerActivityActorSide({...game,pendingComputerSaveStartedAt:0,pendingComputerProfile:'horus'},{profile:'tau',phase:'saving'}),'P2');
 });

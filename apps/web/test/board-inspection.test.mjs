@@ -26,12 +26,12 @@ test('supply-point lookup recognizes only actual supply coordinates', () => {
   assert.equal(supplyOwnerAt(null),null);
 });
 
-function harness({canInteract=true, message=null, moves=[], previews=moves, onMessageAction=()=>{}}={}) {
+function harness({canInteract=true, canPresentActions=canInteract, message=null, moves=[], previews=moves, onMessageAction=()=>{}}={}) {
   let click, rendered, prompt='', writes=0, messageClick;
   const label={get innerHTML(){return prompt;},set innerHTML(value){prompt=value;},get textContent(){return prompt;},set textContent(value){prompt=value;},addEventListener(type,handler){if(type==='click')messageClick=handler;},removeEventListener(){}};
   const runtime=createBoardRuntime({
     boardAdapter:{mount:options=>{click=options.onCellClick;},render:value=>{rendered=value;},getSelectedPieceSummary:({selectedPieceId,snapshot})=>{const found=snapshot.pieces.find(item=>item.id===selectedPieceId);return found ? {details:found}:null;},getPieceById:(state,id)=>state.pieces.find(item=>item.id===id),getPieceAt:(state,coord)=>state.pieces.find(item=>item.position.row===coord.row&&item.position.col===coord.col),nextSelectionForCell:({snapshot,clickedCoord,selection})=>{const selected=snapshot.pieces.find(item=>item.position.row===clickedCoord.row&&item.position.col===clickedCoord.col);return {selection:selected?{selectedPieceId:selected.id,source:selected.position,target:null}:{...selection,target:clickedCoord},nextActionType:'move'};}},
-    host:{canSelect:()=>true,canInteract:()=>canInteract,loadPieceMoves:async()=>({actions:moves,previewActions:previews}),applyAction:async()=>{writes++;return {accepted:false};}},
+    host:{canSelect:()=>true,canInteract:()=>canInteract,canPresentActions:()=>canPresentActions,loadPieceMoves:async()=>({actions:moves,previewActions:previews}),applyAction:async()=>{writes++;return {accepted:false};}},
     controls:{getAllowFreeSelection:()=>true,getBoardMessage:()=>message,onBoardMessageAction:onMessageAction}
   });
   runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
@@ -184,4 +184,16 @@ test('authoritative loss of command paths clears only command inspection',async(
  await h.runtime.loadSnapshot(snapshot,{legalActions:[],resetSelection:false});
  assert.equal(h.runtime.getInspection().kind,'supply');assert.equal(h.runtime.getOverlay().networkOwners.command,'P2');
  h.click(point(3,3));await Promise.resolve();assert.deepEqual(h.runtime.getOverlay().networkInspections,{command:null,supply:null});assert.equal(h.writes,0);
+});
+
+test('commander and legend skip command inspection when there are no paths',async()=>{
+ const moves=[{type:'move',actorId:'C1',from:point(3,3),to:point(2,3)},{type:'move',actorId:'C1',from:point(3,3),to:point(3,2)}];
+ const state=position();state.artifacts.command.shortestPathToCommanderByPieceId={};
+ const h=harness({moves});await h.runtime.loadSnapshot(state,{legalActions:moves});
+ h.click(point(3,3));await Promise.resolve();
+ h.click(point(3,3));assert.equal(h.runtime.getInspection().kind,'combined');
+ h.click(point(3,3));assert.equal(h.runtime.getInspection(),null);
+ assert.match(h.prompt,/Select a move for piece at/);assert.doesNotMatch(h.prompt,/No command connection/);
+ h.runtime.setInspection({kind:'command',owner:'P1'});
+ assert.equal(h.runtime.getInspection(),null);assert.doesNotMatch(h.prompt,/No command connection/);assert.equal(h.writes,0);
 });
