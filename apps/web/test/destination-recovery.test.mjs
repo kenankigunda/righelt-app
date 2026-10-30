@@ -22,9 +22,17 @@ test('hidden time and changed route/account scopes cancel retry work and restart
  h.recovery.fail(h.context.scope,{status:503});h.context.scope='account2:route2';assert.equal(h.state(),null);h.advance(60000);assert.equal(h.retries(),1);
 });
 test('terminal failures have specific help and never enter automatic read retry',()=>{
- const cases=[[{status:401},'auth','signin'],[{status:403},'auth','signin'],[{status:404},'missing',null],[{code:'upgrade_required'},'upgrade','reload'],[Error('invalid_snapshot'),'integrity','reload'],[{code:'invalid_response'},'integrity','reload'],[{status:400},'unavailable','reload']];
+ const cases=[[{status:401},'auth','signin'],[{status:403},'auth','signin'],[{status:404},'missing',null],[{code:'upgrade_required'},'upgrade','reload'],[Error('invalid_snapshot'),'integrity','reload'],[{code:'invalid_response'},'integrity','reload'],[{status:400},'unavailable','reload'],...['storage_reset','storage_blocked','local_storage_unavailable'].map(code=>[{code},'storage','reload'])];
  for(const [error,kind,action]of cases){const h=harness();h.recovery.begin(h.context.scope);h.recovery.fail(h.context.scope,error);const state=h.state();assert.equal(state.kind,kind);assert.equal(state.show,true);assert.equal(destinationRecoveryMessage(state).action,action);assert.equal(destinationRecoveryMessage(state).home,true);h.advance(60000);h.recovery.retry();assert.equal(h.retries(),0);}
  for(const error of [{status:503},{status:429},{code:'request_timeout'},new TypeError('Failed to fetch'),Object.assign(Error('aborted'),{name:'AbortError'})])assert.equal(destinationFailureKind(error),'retry');
+});
+test('server retry deadlines use wall time across hidden time and manual retry without extending on return',()=>{
+ const h=harness();h.recovery.begin(h.context.scope);h.state();h.recovery.fail(h.context.scope,{status:429,retryAfterMs:10000});
+ h.advance(500);h.recovery.retry();assert.equal(h.retries(),0);
+ h.context.visible=false;h.state();h.advance(5000);h.context.visible=true;h.state();
+ h.advance(4499);assert.equal(h.retries(),0);h.advance(1);assert.equal(h.retries(),1);
+ h.recovery.fail(h.context.scope,{status:503,retryAfterMs:5000});h.context.visible=false;h.state();h.advance(10000);h.context.visible=true;h.state();
+ h.advance(999);assert.equal(h.retries(),1);h.advance(1);assert.equal(h.retries(),2);
 });
 test('manual retry clears the scheduled retry and stale failure owners cannot replace a new route',()=>{
  const h=harness();h.recovery.begin(h.context.scope);h.state();h.recovery.fail(h.context.scope,{status:503});h.recovery.retry();assert.equal(h.retries(),1);h.advance(500);assert.equal(h.retries(),1);
