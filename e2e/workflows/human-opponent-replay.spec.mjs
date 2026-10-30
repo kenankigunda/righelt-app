@@ -9,7 +9,7 @@ const test=base.extend({
   finally{await owned.close();}
  },
 });
-import {createGameFromHome,openDirectGameLink,requestPlayerJoin,acceptPendingRequest,joinAsViewer,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
+import {createGamesViaApi,createGameFromHome,openDirectGameLink,requestPlayerJoin,acceptPendingRequest,joinAsViewer,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
 import {readProjectedGame} from '../support/computer-projection.mjs';
 import {isOperationRequest} from '../support/shared-request.mjs';
 import {listLegalActions} from '../../apps/web/generated/packages/game-engine/src/index.js';
@@ -91,7 +91,10 @@ for(const width of [390,1440])test(`reopening human play preserves narration and
 async function createOverviewFriendGame({ownedRoleContext,baseURL,width}) {
  const contexts=await Promise.all([0,1].map(()=>ownedRoleContext({viewport:{width,height:820},hasTouch:width===390})));
  const [owner,opponent]=await Promise.all(contexts.map(context=>context.newPage()));
- const {gameId,gameHash}=await createGameFromHome(owner);
+ // Authoritative fixture creation is not the behavior under test here. Native
+ // Friend creation has separate workflow coverage.
+ const [gameId]=await createGamesViaApi(owner,1),gameHash=`#/game/${encodeURIComponent(gameId)}`;
+ await owner.goto(`${baseURL}/${gameHash}`);await expect(owner.getByTestId('game-shell')).toHaveAttribute('data-game-id',gameId);
  await openDirectGameLink(opponent,baseURL,gameHash);await requestPlayerJoin(opponent);await acceptPendingRequest(owner);
  await expect(opponent.getByTestId('game-role')).toContainText('Player 2');
  await Promise.all([owner,opponent].map(page=>switchGamePanel(page,'board')));
