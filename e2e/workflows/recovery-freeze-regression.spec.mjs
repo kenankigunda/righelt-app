@@ -98,11 +98,11 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  game=await currentGame(page,gameId);expect(game.board.state.continuation.phase).toBe("retreat");
 
  const message=page.locator("#shell-board-preview-label");
- await expect(message).toContainText('Piece at 4,2');
- await expect(message).toContainText('Supply and command lines');
+ await expect(message).toContainText('Select a retreat');
+ await expect(message).not.toContainText('Supply and command lines');
  await expect(message.locator('[data-board-preview-action],[data-board-message-action]')).toHaveCount(0);
- // The selected piece remains inspectable, but continuation CTAs must stay
- // hidden while the accepted push's response is still unknown.
+ // The continuation intent stays visible while admission is disabled. Board
+ // targets still cannot submit a retreat until the original receipt arrives.
  const retreat=game.legalActions.find(a=>a.type==="retreat");expect(retreat).toBeTruthy();
  const retreatTarget=page.locator(`[data-testid="game-board"] .cell[data-row="${retreat.to.row}"][data-col="${retreat.to.col}"]`);
 
