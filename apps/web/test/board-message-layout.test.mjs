@@ -10,7 +10,7 @@ import {SELECTED_PIECE_EXPLANATIONS} from '../board/piece-explanations.js';
 test('message reservation uses real profile narration and excludes duplicate live actions',()=>{
  const html=renderBoardMessageSlot({id:'shell-board-preview-label'});
  assert.equal((html.match(/id=/g)??[]).length,1);
- assert.equal((html.match(/board-message-sizing/g)??[]).length,((Object.keys(COMPUTER_PROFILES).length+3)*6+SELECTED_PIECE_EXPLANATIONS.length*4)*2);
+ assert.equal((html.match(/board-message-sizing/g)??[]).length,((Object.keys(COMPUTER_PROFILES).length+4)*9+SELECTED_PIECE_EXPLANATIONS.length*4)*2);
  assert(!html.includes('data-action'));assert(!html.includes('data-board-message-action'));assert(!html.includes('data-board-preview-action'));
  for(const profile of Object.keys(COMPUTER_PROFILES)){
   assert(html.includes(renderBoardMessageHtml({text:describeComputerMove({computerProof:{profile},action:{type:'retreat',from:{row:9,col:9},to:{row:9,col:9}}}),coordinates:[{row:9,col:9}]})));
@@ -21,6 +21,9 @@ test('message reservation uses real profile narration and excludes duplicate liv
   assert.equal((paragraph[2].match(/disabled tabindex="-1"/g)??[]).length,2);
   assert(paragraph[2].includes('>Pass</span></button>'));assert(paragraph[2].includes('>Show me again</span></button>'));
  }
+ assert(html.includes('Your opponent rushed several pieces'));
+ assert(html.includes('and had a piece follow'));assert(html.includes('and had several pieces follow'));
+ assert(html.includes(`class="board-message-name" dir="auto" title="${'W'.repeat(32)}"`));
  for(const explanation of SELECTED_PIECE_EXPLANATIONS) assert(html.includes(explanation));
  const continuations=[...html.matchAll(/<p class="board-preview-label board-message-sizing board-explanation-sizing"[^>]*>(.*?)<\/p>/g)].map(match=>match[1]);
  assert(continuations.some(text=>text.includes('Reconnect piece at')&&text.includes('board-preview-coordinate-chip')));
@@ -82,7 +85,7 @@ test('fallback sizing permanently mirrors the same formatted messages and inert 
  const paragraphs=[...html.matchAll(/<p class="[^"]*board-message-sizing[^"]*" data-sizing-font="(primary|fallback)" data-sizing-variant="([^"]+)" aria-hidden="true" inert>(.*?)<\/p>/g)];
  const primary=new Map(paragraphs.filter(row=>row[1]==='primary').map(row=>[row[2],row[3]]));
  const fallback=new Map(paragraphs.filter(row=>row[1]==='fallback').map(row=>[row[2],row[3]]));
- assert.equal(primary.size,96);assert.deepEqual(fallback,primary);
+ assert.equal(primary.size,123);assert.deepEqual(fallback,primary);
  for(const [, , ,markup]of paragraphs){assert.doesNotMatch(markup,/data-action=|data-board-message-action=|data-board-preview-action=/);}
  const tokens=readFileSync(new URL('../design-tokens.css',import.meta.url),'utf8');
  const css=readFileSync(new URL('../shell/board-ux.css',import.meta.url),'utf8');

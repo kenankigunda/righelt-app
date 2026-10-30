@@ -10,29 +10,32 @@ body {display:flow-root;}
 /* Tokens align with the middle of surrounding copy, including wrapped rows.
    Sizing replicas use the same renderer and metrics during font loading. */
 .board-message-slot :is(.board-preview-coordinate-chip,.board-preview-highlight-chip,.board-preview-retreat-chip,.board-preview-inline-button) {vertical-align:middle;height:1.25em;}
+.board-message-slot .board-preview-coordinate-chip {font-variant-numeric:tabular-nums;white-space:nowrap;}
 .board-message-activity {display:none;}
 .board-message-activity[data-loading-state="pending"] {display:inline-flex;vertical-align:middle;}
 .board-message-activity[data-loading-suppressed="true"] {display:none;}
 .board-message-sizing, .board-heading-sizing {visibility:hidden;pointer-events:none;user-select:none;}
 .board-message-fallback-sizing {font-family:var(--font-family-fallback);}
 .board-message-fallback-sizing :is(.board-preview-coordinate-chip,.board-preview-highlight-chip,.board-preview-retreat-chip,.board-preview-inline-button) {font-family:inherit;}
-/* Conservative intrinsic Manrope row frontiers measured across all three
-   macOS/Linux engines at 100/200%, in this container's explicit 1rem basis.
-   The permanent fallback replicas can still reserve more space. Evidence
-   starts at 8.5em; narrower unsupported widths keep their intrinsic sizing. */
-@container board-message (min-width:8.5em) and (width < 8.5628662109375em) {
+/* Intrinsic primary-font row frontiers cover the two-row message grammar,
+   full copy, bounded spectator names and turn summaries at 100/200% text.
+   Measured maxima are rounded outward to 1/16em and cover Linux CI. Keep these static so
+   cold and loaded fonts share the same first-paint reservation. Tests probe
+   every source boundary plus independent width samples. Below 8.5em the
+   intrinsic fallback remains the reservation. */
+@container board-message (min-width:8.5em) and (width < 10.1875em) {
   .board-message-sizing {min-height:10.5em;}
 }
-@container board-message (min-width:8.5628662109375em) and (width < 10.5997314453125em) {
+@container board-message (min-width:10.1875em) and (width < 11.8125em) {
   .board-message-sizing {min-height:9em;}
 }
-@container board-message (min-width:10.5997314453125em) and (width < 11.46728515625em) {
+@container board-message (min-width:11.8125em) and (width < 13.1875em) {
   .board-message-sizing {min-height:7.5em;}
 }
-@container board-message (min-width:11.46728515625em) and (width < 14.96893310546875em) {
+@container board-message (min-width:13.1875em) and (width < 18em) {
   .board-message-sizing {min-height:6em;}
 }
-@container board-message (min-width:14.96893310546875em) and (width < 22.406005859375em) {
+@container board-message (min-width:18em) and (width < 35.8125em) {
   .board-message-sizing {min-height:4.5em;}
 }
 .board-heading-slot {display:grid;grid-template-columns:minmax(0,1fr);min-width:0;}
