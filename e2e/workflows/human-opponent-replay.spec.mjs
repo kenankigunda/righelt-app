@@ -32,8 +32,8 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
   // An inactive seated player can still inspect a piece and its command lines.
   const saved=await projected(owner,gameId),piece=saved.board.state.pieces.find(piece=>piece.owner==='P1');
   const cell=(page,point)=>page.locator(`[data-testid="game-board"] .cell[data-row="${point.row}"][data-col="${point.col}"]`);
-  await cell(owner,piece.position).click();await expect(label(owner)).toContainText('Piece at');await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
-  await owner.locator('[data-board-inspection="command"]').click();await expect(label(owner)).toContainText(/Command lines|No command connection/);await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
+  await cell(owner,piece.position).click();await expect(label(owner)).toContainText('Supply and command lines for piece at');await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
+  await owner.locator('[data-board-inspection="command"]').click();await expect(label(owner)).toContainText('Supply and command lines for piece at');await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
   const writes=[];const listen=request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/'))writes.push({method:request.method(),path:new URL(request.url()).pathname});};opponent.on('request',listen);
   const before=await projected(opponent,gameId);
   await opponent.emulateMedia({reducedMotion:'reduce'});await replayButton(opponent).click();await expect(opponent.locator('.computer-replay')).toBeVisible();await expect(label(opponent).getByRole('button',{name:'Next',exact:true})).toBeVisible();
