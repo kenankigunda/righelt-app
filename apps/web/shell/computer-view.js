@@ -3,6 +3,7 @@ import { icon } from './ui.js';
 import { activityActorSide } from './activity-affiliation.js';
 import { COMPUTER_PROFILES, CURRENT_COMPUTER_MODEL, COMPUTER_TIMING, COMPUTER_LIMITS } from '../generated/packages/shared-types/src/computer-play.js';
 import { renderGameAlertCard } from './game-alert.js';
+import { SYNC_TIMING } from '../generated/packages/shared-types/src/sync-protocol.js';
 const displayValue = value => {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
@@ -10,7 +11,7 @@ const displayValue = value => {
 };
 export const escapeDebug = value => displayValue(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const controlIcons={retry:'rematch',takeover:'play',manual:'players',switch:'right',pause:'pause',resume:'play','resume-here':'play',step:'right',upgrade:'check','decline-upgrade':'close'};
-const button = (action, label) => `<button class="secondary" data-action="computer-control" data-control="${action}">${icon(controlIcons[action])}${label}</button>`;
+const button = (action, label, { disabled = false } = {}) => `<button class="secondary" data-action="computer-control" data-control="${action}"${disabled ? ' disabled' : ''}>${icon(controlIcons[action])}${label}</button>`;
 export function renderComputerProgress(game, status = {}) {
   if (!game?.computer) return '';
   const phase = computerPhasePresentation(game, status);
@@ -23,6 +24,9 @@ export function renderComputerProgress(game, status = {}) {
   const working = ['preparing', 'checking', 'looking-ahead', 'initializing-verified-runtime', 'saving'].includes(status.phase);
   let body = '';
   if (!owner) body = '';
+  else if (status.automaticRetry) {
+    if (status.automaticRetry.waitMs >= SYNC_TIMING.reconnectAlertMs) body = `<p>${escapeDebug(name)} is waiting. We’re trying again.</p>${status.automaticRetry.waitMs >= SYNC_TIMING.confirmationBudgetMs ? button('retry', 'Retry', { disabled: !status.automaticRetry.canRetry }) : ''}`;
+  }
   else if (status.activity?.showRecoveryNotice) body = `<p>${escapeDebug(name)} hasn’t resumed</p>${button('resume-here', 'Resume here')}`;
   else if (status.phase === 'other-device') { /* Deliberate handoff remains available in the player card. */ }
   else if (status.phase === 'recovery') body = `<p>${escapeDebug(name)} needs a hand.</p><div class="computer-actions">${status.activity && !status.activity.disabledReason ? button('resume-here', 'Resume here') : button('retry', 'Retry')}${button('takeover', 'Play this turn')}${button('manual', 'Play both sides')}<button class="secondary" data-action="computer-branch">${icon('board')}Create new game here</button><a class="button-link secondary" href="#/">${icon('exit')}Exit</a></div>`;

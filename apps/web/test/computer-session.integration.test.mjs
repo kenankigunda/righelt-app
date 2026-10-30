@@ -97,9 +97,9 @@ test('a rejected committed command remains terminal even with the recovery error
   await f.session.tick(); assert.equal(f.computations(), 1);
 });
 
-test('a proof persistence failure remains terminal rather than becoming an unadmitted move retry', async t => {
+test('an invalid proof persistence failure remains terminal rather than becoming an unadmitted move retry', async t => {
   const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
-  f.transport.decisionAttempt = async () => { throw Object.assign(Error('sync_recovering'), {code:'sync_recovering'}); };
+  f.transport.decisionAttempt = async () => { throw Object.assign(Error('invalid_attempt'), {code:'invalid_attempt'}); };
   const work = f.session.tick(); f.pending().resolve({result:{status:'ready',action:{type:'pass'}}}); await work;
   assert.equal(f.session.snapshot().phase,'recovery'); assert.equal(f.submissions(),0);
   await f.session.tick(); assert.equal(f.computations(),1);
@@ -758,4 +758,131 @@ for(const change of ['switchGame','changeAccount','changeTransport'])test(`save-
  const work=f.session.tick();f.setTime(6000);f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});
  await new Promise(resolve=>setImmediate(resolve));assert.equal(typeof release,'function');assert.equal(f.saved[0].attempt.outcome,'ready');
  f[change]();release();await work;assert.equal(f.submissions(),0);assert.equal(f.saved.length,1);
+});
+
+
+for (const stored of [false, true]) test(`temporary evidence failure reconciles the same attempt without recomputing (already stored=${stored})`, async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
+  const requests = []; let first = true, record;
+  f.transport.decisionAttempt = async (_, value) => {
+    requests.push(structuredClone(value));
+    if (value.operation === 'read') return { attempt: stored ? record.attempt : null };
+    if (first) { first = false; record = structuredClone(value); throw Object.assign(Error('request_timeout'), { code: 'request_timeout' }); }
+    assert.deepEqual(value, record); return { ok: true };
+  };
+  const work = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await work;
+  assert.equal(f.session.snapshot().phase, 'idle'); assert.equal(f.submissions(), 0);
+  assert.equal(requests.length, 1, 'never write conflicting unfinished evidence');
+  f.setTime(599); await f.session.tick(); assert.equal(requests.length, 1);
+  f.setTime(600); await f.session.tick();
+  assert.equal(f.computations(), 1); assert.equal(f.submissions(), 1);
+  assert.deepEqual(requests.map(value => value.operation), stored ? ['write', 'read'] : ['write', 'read', 'write']);
+  assert.equal(f.session.snapshot().automaticRetry, null);
+});
+
+for (const stage of ['calculation', 'evidence']) test(`repeated transient ${stage} failures recover with capped backoff`, async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
+  let failures = 0;
+  if (stage === 'evidence') f.transport.decisionAttempt = async (_, value) => {
+    if (value.operation === 'read') return { attempt: null };
+    if (failures++ < 7) throw Object.assign(Error('unavailable'), { status: 503 });
+    return { ok: true };
+  };
+  let now = 100;
+  for (const delay of [500, 1000, 2000, 4000, 5000, 5000, 5000]) {
+    const work = f.session.tick(); await new Promise(resolve => setImmediate(resolve));
+    const afterMaintenance = f.session.tick();
+    if (stage === 'calculation') f.pending().reject(Object.assign(Error('fetch failed'), { code: 'computer_network_error' }));
+    else if (f.computations() === 1 && failures === 0) f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } });
+    await Promise.all([work, afterMaintenance]);
+    const count = f.computations(), writes = failures;
+    now += delay - 1; f.setTime(now); await f.session.tick();
+    assert.equal(f.computations(), count); assert.equal(failures, writes);
+    now++; f.setTime(now);
+    assert.notEqual(f.session.snapshot().phase, 'recovery');
+  }
+  const success = f.session.tick(); await new Promise(resolve => setImmediate(resolve));
+  const afterMaintenance = f.session.tick();
+  if (stage === 'calculation') f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } });
+  await Promise.all([success, afterMaintenance]); assert.equal(f.submissions(), 1);
+  assert.equal(f.computations(), stage === 'evidence' ? 1 : 8);
+});
+
+for (const change of ['switchGame', 'changeAccount', 'changeTransport', 'hide', 'revision', 'generation']) test(`retained evidence cannot submit after ${change}`, async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
+  f.transport.decisionAttempt = async () => { throw Object.assign(Error('timeout'), { code: 'request_timeout' }); };
+  const work = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await work;
+  if (change === 'revision') f.game().gameplayRevision++;
+  else if (change === 'generation') f.game().computer.generation++;
+  else f[change]();
+  f.setTime(600);
+  f.transport.decisionAttempt = async () => ({ ok: true });
+  const next = f.session.tick();
+  // A fresh eligible game may calculate, but old evidence never directly submits.
+  if (f.computations() > 1) f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } });
+  await next;
+  assert.equal(f.submissions(), f.computations() > 1 ? 1 : 0);
+});
+
+test('conflicting recovered evidence is terminal and never submits', async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
+  f.transport.decisionAttempt = async (_, value) => {
+    if (value.operation === 'read') return { attempt: { outcome: 'unfinished' } };
+    throw Object.assign(Error('lost response'), { code: 'request_timeout' });
+  };
+  const work = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await work;
+  f.setTime(600); await f.session.tick();
+  assert.equal(f.session.snapshot().phase, 'recovery'); assert.equal(f.submissions(), 0);
+});
+
+for (const code of ['rules_cancelled', 'stale_state']) test(`pre-admission ${code} discards evidence and computes a fresh decision`, async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
+  let calls = 0;
+  f.transport.applyGameAction = async () => { if (++calls === 1) throw Object.assign(Error(code), { code }); return { committed: Promise.resolve() }; };
+  const first = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await first;
+  assert.notEqual(f.session.snapshot().phase, 'recovery');
+  const next = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await next;
+  assert.equal(calls, 2); assert.equal(f.computations(), 2); assert.notEqual(f.saved[0].attemptId, f.saved[1].attemptId);
+});
+
+test('Retry-After delays evidence recovery longer than the client backoff cap', async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick(); let requests = 0;
+  f.transport.decisionAttempt = async (_, value) => {
+    requests++; if (requests === 1) throw Object.assign(Error('limited'), { status: 429, retryAfterMs: 10000 });
+    return value.operation === 'read' ? { attempt: null } : { ok: true };
+  };
+  const work = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await work;
+  f.setTime(10099); await f.session.tick(); assert.equal(requests, 1);
+  f.setTime(10100); await f.session.tick(); await new Promise(resolve => setImmediate(resolve)); await f.session.tick(); assert.equal(f.submissions(), 1);
+});
+
+
+for (const error of [{ code: 'request_timeout' }, { status: 503 }]) test(`an admitted gameplay rejection never starts a second computation (${JSON.stringify(error)})`, async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick(); let admissions = 0;
+  f.transport.applyGameAction = async () => { admissions++; return { committed: Promise.reject(Object.assign(Error('rejected'), error)) }; };
+  const work = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await work;
+  assert.equal(f.session.snapshot().phase, 'recovery');
+  f.setTime(5000); await f.session.tick();
+  assert.equal(admissions, 1); assert.equal(f.computations(), 1);
+});
+
+test('automatic retry disclosure uses foreground grace and resets on hiding or scope changes', async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
+  f.transport.decisionAttempt = async () => { throw Object.assign(Error('limited'), { status: 429, retryAfterMs: 60000 }); };
+  const work = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await work;
+  assert.equal(f.session.snapshot().automaticRetry.waitMs, 0);
+  f.setTime(4100); assert.equal(f.session.snapshot().automaticRetry.waitMs, 4000);
+  f.setTime(15100); assert.equal(f.session.snapshot().automaticRetry.waitMs, 15000);
+  f.hide(); assert.equal(f.session.snapshot().automaticRetry, null);
+  f.setTime(100000); f.show(); assert.equal(f.session.snapshot().automaticRetry.waitMs, 0);
+  f.game().inHistoryMode = true; assert.equal(f.session.snapshot().automaticRetry, null);
+  f.setTime(200000); f.game().inHistoryMode = false; assert.equal(f.session.snapshot().automaticRetry.waitMs, 0);
+  f.changeAccount(); assert.equal(f.session.snapshot().automaticRetry, null);
+});
+
+for (const code of ['invalid_response', 'invalid_attempt', 'storage_reset', 'invalid_credentials']) test(`automatic acquisition stops on terminal ${code}`, async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); let requests = 0;
+  f.transport.computerControl = async () => { requests++; throw Object.assign(Error(code), { code }); };
+  await f.session.tick(); assert.equal(f.session.snapshot().phase, 'recovery');
+  f.setTime(5000); await f.session.tick(); assert.equal(requests, 1);
 });
