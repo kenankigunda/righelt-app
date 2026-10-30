@@ -122,16 +122,27 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  // Admission is restored only by the definitive original receipt. Verify the
  // required defender's legal destination before confirming the actual retreat.
  await expect(message).toContainText("Select a retreat");
+ const acceptedRetreat=page.waitForResponse(response=>response.request().method()==='POST'&&new URL(response.url()).pathname.endsWith('/apply')&&actionFor(response.request().postDataJSON())?.type==='retreat');
+ const automaticFollow=page.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/apply')&&actionFor(request.postDataJSON())?.type==='follow');
+ acceptedRetreat.catch(()=>{});automaticFollow.catch(()=>{});
  await submitPlayableAction(page,retreat);
- await expect.poll(async()=> (await currentGame(page,gameId)).board.state.continuation?.phase).toBe("follow");
+ const retreatResponse=await acceptedRetreat,retreatBody=await retreatResponse.json(),retreatCommand=retreatResponse.request().postDataJSON();
+ expect(retreatBody.commandOutcomes).toContainEqual(expect.objectContaining({clientCommandId:retreatCommand.clientCommandId,fingerprint:retreatCommand.fingerprint,outcome:'accepted'}));
+ expect(retreatBody.game.board.state.continuation.phase).toBe('follow');
+ // Read the immutable acknowledged decision: the sole mandatory continuation
+ // may finish before a later live read. No second native activation is needed.
+ expect(retreatBody.game.legalActions).toHaveLength(1);
+ const follow=retreatBody.game.legalActions[0];expect(follow.type).toBe('follow');
+ const followCommand=(await automaticFollow).postDataJSON();
+ expect(actionFor(followCommand)).toEqual(follow);
+ expect(followCommand.payload.computer).toBeUndefined();
+ expect(followCommand.expectedState).toEqual(retreatBody.game.board.state);
+ expect(followCommand.expectedGameplayRevision).toBe(retreatBody.game.gameplayRevision);
  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0,{timeout:10000});
- game=await currentGame(page,gameId);const follow=game.legalActions.find(a=>a.type==="follow");expect(follow).toBeTruthy();
- // The required continuation actor is already selected, even when a pushed
- // defender shares its square with the attacker and has no generic source class.
- await submitPlayableAction(page,follow);
  await expect.poll(async()=> (await currentGame(page,gameId)).moves.length).toBe(3);
  game=await currentGame(page,gameId);expect(game.board.state.continuation).toBeNull();
  expect(game.moves.map(move=>move.action)).toEqual([push,retreat,follow]);
+ expect(game.moves[2].clientCommandId).toBe(followCommand.clientCommandId);
  expect(new Set(game.moves.map(m=>m.clientCommandId)).size).toBe(3);
  expect(new Set(commands.filter(c=>actionFor(c)?.type==="push").map(c=>c.clientCommandId)).size).toBe(1);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
