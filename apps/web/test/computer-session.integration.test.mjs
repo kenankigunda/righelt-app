@@ -5,7 +5,7 @@ import { renderComputerProgress } from '../shell/computer-view.js';
 import { COMPUTER_CAPABILITIES, COMPUTER_TIMING, createComputerControl, changeComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
 import { createInitialState } from '../generated/packages/game-engine/src/state.js';
 
-function fixture({canAnalyze = true, timers = {setInterval(){return 1;},clearInterval(){}}, onChange = () => {}} = {}) {
+function fixture({analysisRuntime, canAnalyze = true, timers = {setInterval(){return 1;},clearInterval(){}}, onChange = () => {}} = {}) {
   let now = 100, visible = true, authenticated = true, unresolved = false, generation = 1, cancelCount = 0, submitted = 0, computed = 0, blocked = false, pending;
   let progress;
   let game = { id: 'g', gameplayRevision: 0, computer: createComputerControl('owner', { p1: 'babs', p2: null }), board: { state: createInitialState() } };
@@ -16,7 +16,7 @@ function fixture({canAnalyze = true, timers = {setInterval(){return 1;},clearInt
     applyGameAction: async () => { submitted++; return { committed: Promise.resolve() }; },
   };
   const runtime = { compute: async (_, onProgress) => new Promise((resolve, reject) => { computed++; progress = onProgress; pending = { resolve, reject }; }), cancel: () => { cancelCount++; pending?.reject(Error('cancelled')); pending = null; } };
-  const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: runtime, clock: () => now, timers, onChange, getContext: () => ({ game: unresolved ? null : game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
+  const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: analysisRuntime ?? runtime, clock: () => now, timers, onChange, getContext: () => ({ game: unresolved ? null : game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
   return { session, controls, relogin: () => {generation++;authContextId=`session-${generation}`;transport={...transport};}, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { unresolved=false; game = { ...game, id: 'other-game' }; }, unresolvedGame: () => { unresolved=true; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, show: () => {visible = true;}, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelCount };
 }
 
@@ -913,4 +913,66 @@ for (const code of ['invalid_response', 'invalid_attempt', 'storage_reset', 'inv
   f.transport.computerControl = async () => { requests++; throw Object.assign(Error(code), { code }); };
   await f.session.tick(); assert.equal(f.session.snapshot().phase, 'recovery');
   f.setTime(5000); await f.session.tick(); assert.equal(requests, 1);
+});
+for(const status of ['p1_win','p2_win','draw'])test(`completed ${status} starts no automatic lease, calculation or evidence work`,async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());f.game().board.state.outcome={status};
+ for(const time of [100,20000,120000]){f.setTime(time);await f.session.tick();}
+ assert.deepEqual(f.controls,[]);assert.equal(f.computations(),0);assert.equal(f.submissions(),0);assert.deepEqual(f.saved,[]);
+ assert.equal(f.session.snapshot().phase,'idle');assert.equal(f.session.snapshot().activity.label,'Game finished');assert.equal(f.session.snapshot().activity.showResume,false);
+ for(const action of ['retry','pause','resume','step','switch','takeover','manual'])await f.session.action(action);
+ assert.deepEqual(f.controls,[]);
+});
+test('completion after acquiring control stops renewal without issuing a release command',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();assert.equal(f.controls.length,1);
+ f.game().board.state.outcome={status:'p1_win'};f.setTime(20000);await f.session.tick();const cancellations=f.cancellations();
+ await f.session.tick();assert.equal(f.cancellations(),cancellations);assert.deepEqual(f.controls.map(c=>c.action),['acquire']);assert.deepEqual(f.saved,[]);
+});
+test('completion before queued control admission sends no acquire request',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());const work=f.session.tick();f.game().board.state.outcome={status:'draw'};await work;await f.session.tick();
+ assert.deepEqual(f.controls,[]);assert.equal(f.computations(),0);
+});
+test('completion during calculation cancels obsolete work without writing unfinished evidence',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();const work=f.session.tick();assert.equal(f.computations(),1);
+ f.game().board.state.outcome={status:'p2_win'};await f.session.tick();await work;
+ assert.equal(f.submissions(),0);assert.deepEqual(f.saved,[]);assert.deepEqual(f.controls.map(c=>c.action),['acquire']);assert.equal(f.session.snapshot().phase,'idle');
+});
+test('a completed game is rechecked after computation even before the next interval tick',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();const work=f.session.tick();
+ f.game().board.state.outcome={status:'draw'};f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;
+ assert.deepEqual(f.saved,[]);assert.equal(f.submissions(),0);
+});
+test('completion during evidence persistence settles the existing write but admits no gameplay',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();let release;const gate=new Promise(resolve=>release=resolve);
+ f.transport.decisionAttempt=async(_,value)=>{f.saved.push(value);await gate;};
+ const work=f.session.tick();f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));assert.equal(f.saved.length,1);
+ f.game().board.state.outcome={status:'p1_win'};await f.session.tick();release();await work;
+ assert.equal(f.submissions(),0);assert.equal(f.saved.length,1);assert.equal(f.saved[0].attempt.outcome,'ready');
+});
+test('completion leaves an already admitted gameplay handle to its durable owner',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();let settle,admissions=0;
+ const committed=new Promise(resolve=>settle=resolve);f.transport.applyGameAction=async()=>{admissions++;return{committed};};
+ const work=f.session.tick();f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));assert.equal(admissions,1);
+ f.game().board.state.outcome={status:'p1_win'};await f.session.tick();let finished=false;void work.then(()=>finished=true);await new Promise(resolve=>setImmediate(resolve));assert.equal(finished,false);
+ settle();await work;assert.equal(admissions,1);assert.equal(f.saved.length,1);assert.equal(f.session.snapshot().phase,'idle');
+});
+
+test('explicit historical analysis remains available after completion without computer-control work',async t=>{
+ let finishAnalysis,analysisCancellations=0;const analysisRuntime={compute:()=>new Promise(resolve=>{finishAnalysis=resolve;}),cancel:()=>{analysisCancellations++;}};
+ const f=fixture({analysisRuntime});t.after(()=>f.session.destroy());f.game().board.state.outcome={status:'p1_win'};
+ const analysis=f.session.analyze(createInitialState());await new Promise(resolve=>setImmediate(resolve));assert.equal(f.computations(),0);
+ const previousCancellations=analysisCancellations;await f.session.tick();assert.equal(analysisCancellations,previousCancellations);finishAnalysis({result:{status:'ready',action:{type:'pass'}}});await analysis;
+ assert.deepEqual(f.controls,[]);assert.equal(f.saved.length,1);assert.equal(f.saved[0].kind,'analysis');assert.equal(f.session.snapshot().analysis.phase,'complete');
+});
+
+ test('explicit Undo reopening keeps the existing paused computer contract',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());f.game().board.state.outcome={status:'p1_win'};await f.session.tick();
+ f.game().board.state=createInitialState();f.game().computer.paused=true;f.game().gameplayRevision++;
+ await f.session.tick();await f.session.tick();assert.equal(f.session.snapshot().phase,'paused');assert.equal(f.computations(),0);assert.equal(f.submissions(),0);assert.deepEqual(f.saved,[]);
+});
+
+test('completed-game historical analysis retains hidden-tab cancellation',async t=>{
+ let rejectAnalysis,cancellations=0;const analysisRuntime={compute:()=>new Promise((resolve,reject)=>{rejectAnalysis=reject;}),cancel:()=>{cancellations++;rejectAnalysis?.(Error('cancelled'));}};
+ const f=fixture({analysisRuntime});t.after(()=>f.session.destroy());f.game().board.state.outcome={status:'p1_win'};
+ const work=f.session.analyze(createInitialState());await new Promise(resolve=>setImmediate(resolve));const before=cancellations;f.hide();await f.session.tick();await work;
+ assert.equal(cancellations,before+1);assert.notEqual(f.session.snapshot().analysis.phase,'computing');assert.deepEqual(f.controls,[]);assert.equal(f.computations(),0);
 });
