@@ -101,7 +101,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const getRouteTransitionPhaseKey = \(\) => routeTransition\?\.phase \|\| "idle";/);
   assert.match(source, /const getRouteTransitionRenderKey = \(\) =>/);
   assert.match(source, /const isGameEntryRouteTransitionActive = \(route = currentRoute\) =>/);
-  assert.match(source, /const startGameEntryRouteTransition = \(gameId, fromRoute = currentRoute\?\.name \|\| "unknown", toRoute = 'game'\) => \{/);
+  assert.match(source, /const startGameEntryRouteTransition = \(gameId, fromRoute = currentRoute\?\.name \|\| "unknown", toRoute = 'game', direction = toRoute === 'home' \? 'back' : 'forward'\) => \{/);
   assert.match(source, /const maybeRevealRouteTransition = \(\) => \{/);
   assert.match(source, /const syncRouteTransitionForCurrentRoute = \(\) => \{/);
   assert.match(source, /const isFlyoutOnlyRouteChange = \(previousRoute, nextRoute\) =>/);
@@ -119,7 +119,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /getAvailableShellContentWidth\(viewportWidth, route\) >= SHELL_WIDE_SCREEN_MIN_WIDTH \? "wide" : "narrow"/);
   assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) => getShellLayoutModeForRoute\(currentRoute, viewportWidth\);/);
   assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
-  assert.match(source, /window\.requestAnimationFrame\(\(\) => \{\s*scrollHomeSectionToTop\(sectionKey\);\s*\}\);/s);
+  assert.match(source, /window\.requestAnimationFrame\(\(\) => \{\s*scrollHomeSectionToTop\(sectionKey\);\s*navigationHistory\.save\(\);\s*\}\);/s);
   assert.match(source, /const syncShellLayoutMode = \(\) => \{/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", layoutMode\);/);
   assert.match(source, /appEl\.setAttribute\("data-shell-route", currentRoute\?\.name \|\| "unknown"\);/);

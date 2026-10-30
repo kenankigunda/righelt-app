@@ -1,3 +1,4 @@
+import { createNavigationHistory } from './navigation-history.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
@@ -315,8 +316,7 @@ let homeSectionResizeFrame = 0;
 let activePanelSwipe = null;
 let panelTransitionResetTimer = null;
 let routeTransition = null;
-let homeReturnPosition = {y:0, gameId:null};
-let restoreHomePending = false;
+let pendingRoutePosition = null;
 window.history.scrollRestoration = 'manual';
 let routeTransitionCoverTimer = null;
 let routeTransitionRevealTimer = null;
@@ -349,6 +349,54 @@ let homeSections = {
   my: createHomeSectionState("My games"),
   other: createHomeSectionState("Other games"),
   smoke: createHomeSectionState("Deploy smoke player"),
+};
+const navigationHistory = createNavigationHistory({
+  history: window.history,
+  getHash: () => window.location.hash,
+  capture: () => ({ y: window.scrollY, generation: account.snapshot().generation,
+    pages: Object.fromEntries(Object.entries(homeSections).map(([key, section]) => [key, section.page])),
+    focusGameId: document.activeElement?.closest?.('.mini-board-card-link-surface')?.dataset.gameId ?? null }),
+});
+let visitScrollTimer = null;
+window.addEventListener('scroll', () => {
+  navigationHistory.remember();
+  // Safari rate-limits history mutations. Remember immediately for Back,
+  // but persist at most twice a second during continuous scrolling.
+  if (visitScrollTimer === null) visitScrollTimer = window.setTimeout(() => {
+    visitScrollTimer = null;
+    navigationHistory.save();
+  }, 500);
+}, { passive: true });
+window.addEventListener('pagehide', () => {
+  window.clearTimeout(visitScrollTimer); visitScrollTimer = null;
+  navigationHistory.save();
+});
+window.addEventListener('popstate', event => {
+  // Replacing a utility URL can leave adjacent visits with identical hashes.
+  // Those traversals dispatch popstate without a subsequent hashchange.
+  if (!navigationHistory.observePop(event.state)) return;
+  const visit = navigationHistory.arrive();
+  const saved = visit.restore?.generation === account.snapshot().generation ? visit.restore : null;
+  if (!saved) return;
+  pendingRoutePosition = { ...saved, hash: window.location.hash };
+  if (currentRoute.name === 'home' && Object.entries(saved.pages ?? {}).some(([key, page]) => homeSections[key]?.page !== page)) {
+    for (const [key, page] of Object.entries(saved.pages)) if (homeSections[key]) homeSections[key] = { ...homeSections[key], page };
+    startRouteSync();
+  } else {
+    render({ animatePanels: false, includeBoard: false });
+    restoreRoutePosition();
+  }
+});
+const restoreRoutePosition = () => {
+  const position = pendingRoutePosition;
+  if (!position || !routeHydrated || position.hash !== window.location.hash) return;
+  pendingRoutePosition = null;
+  window.scrollTo({ top: position.y ?? 0, behavior: 'instant' });
+  const target = currentRoute.name === 'home'
+    ? position.focusGameId ? appEl.querySelector(`.mini-board-card-link-surface[data-game-id="${CSS.escape(position.focusGameId)}"]`) : appEl.querySelector('.shell-header-title-link')
+    : appEl.querySelector('[data-shell-panel="board"] .board-heading, .board-heading');
+  if (target) { if (!target.matches('a, button, [tabindex]')) target.tabIndex = -1; target.focus({ preventScroll: true }); }
+  navigationHistory.save();
 };
 const getPersistedDebugFlyoutOpen = () => loadDebugFlyoutOpen(storage);
 
@@ -1005,7 +1053,7 @@ const syncRouteTransitionLayer = () => {
   routeTransitionLayerEl.style.setProperty("--shell-game-entry-transition-ms", `${GAME_ENTRY_ROUTE_TRANSITION_MS}ms`);
   routeTransitionLayerEl.style.setProperty("--shell-game-entry-cover-ms", `${GAME_ENTRY_ROUTE_TRANSITION_COVER_MS}ms`);
   routeTransitionLayerEl.style.setProperty("--shell-game-entry-reveal-ms", `${GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS}ms`);
-  routeTransitionLayerEl.dataset.direction = routeTransition?.toRoute === "home" ? "back" : "forward";
+  routeTransitionLayerEl.dataset.direction = routeTransition?.direction ?? "forward";
   routeTransitionLayerEl.setAttribute("data-active", routeTransition ? "true" : "false");
   routeTransitionLayerEl.setAttribute("data-transition", routeTransition?.type || "none");
   routeTransitionLayerEl.setAttribute("data-phase", routeTransition?.phase || "idle");
@@ -1044,6 +1092,7 @@ const beginRouteTransitionReveal = (gameId) => {
   if (!routeTransition || routeTransition.gameId !== gameId || routeTransition.phase === "revealing") {
     return;
   }
+  restoreRoutePosition();
   routeTransition.phase = "revealing";
   gameSound.play(routeTransition.toRoute === "home" ? "leave" : "enter", {duration:GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS / 1000});
   syncRouteTransitionLayer();
@@ -1051,7 +1100,9 @@ const beginRouteTransitionReveal = (gameId) => {
   if (routeTransitionRevealTimer) {
     window.clearTimeout(routeTransitionRevealTimer);
   }
+  const revealingTransition = routeTransition;
   routeTransitionRevealTimer = window.setTimeout(() => {
+    if (routeTransition !== revealingTransition) return;
     routeTransitionRevealTimer = null;
     finishRouteTransitionReveal(gameId);
   }, GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS);
@@ -1072,13 +1123,14 @@ const scheduleRouteTransitionCoverSettle = (gameId) => {
   if (routeTransitionCoverTimer) {
     window.clearTimeout(routeTransitionCoverTimer);
   }
+  const coveringTransition = routeTransition;
   routeTransitionCoverTimer = window.setTimeout(() => {
+    if (routeTransition !== coveringTransition) return;
     routeTransitionCoverTimer = null;
     settleRouteTransitionCover(gameId);
   }, GAME_ENTRY_ROUTE_TRANSITION_COVER_MS);
 };
-const startGameEntryRouteTransition = (gameId, fromRoute = currentRoute?.name || "unknown", toRoute = 'game') => {
-  if(fromRoute === 'home') homeReturnPosition={y:window.scrollY,gameId};
+const startGameEntryRouteTransition = (gameId, fromRoute = currentRoute?.name || "unknown", toRoute = 'game', direction = toRoute === 'home' ? 'back' : 'forward') => {
   if (!gameId || prefersReducedMotion()) {
     clearRouteTransition({ renderNow: false });
     return;
@@ -1089,6 +1141,7 @@ const startGameEntryRouteTransition = (gameId, fromRoute = currentRoute?.name ||
     fromRoute,
     toRoute,
     gameId,
+    direction,
     phase: "covering",
   };
   syncRouteTransitionLayer();
@@ -1114,10 +1167,7 @@ const syncRouteTransitionForCurrentRoute = () => {
   syncRouteTransitionLayer();
 };
 const maybeRevealRouteTransition = () => {
-  if(restoreHomePending && currentRoute.name === 'home' && routeHydrated){
-    restoreHomePending=false;
-    window.requestAnimationFrame(()=>{if(currentRoute.name!=='home')return;window.scrollTo({top:homeReturnPosition.y,behavior:'instant'});const target=homeReturnPosition.gameId?appEl.querySelector(`.mini-board-card-link-surface[data-game-id="${CSS.escape(homeReturnPosition.gameId)}"]`):null;(target || appEl.querySelector('[data-testid="home-create-game"]'))?.focus({preventScroll:true});});
-  }
+  restoreRoutePosition();
   if (!routeTransition || !isGameEntryRouteTransitionActive(currentRoute) || !routeHydrated) {
     return;
   }
@@ -1151,7 +1201,7 @@ const preparePanelTransition = (previous, next) => {
       const selected = transport.getGameViewModel(next.gameId)?.inHistoryMode;
       if (selected) transport.returnToLive({gameId:next.gameId});
     }
-    window.requestAnimationFrame(() => mobileNavigation?.restoreScroll(viewingIntent.scrollTop(next.gameId, getGamePanel(next))));
+    if (!pendingRoutePosition) window.requestAnimationFrame(() => mobileNavigation?.restoreScroll(viewingIntent.scrollTop(next.gameId, getGamePanel(next))));
   }
 };
 
@@ -2383,7 +2433,7 @@ const scrollHomeSectionToTop = (sectionKey) => {
     return;
   }
   sectionEl.scrollIntoView({
-    behavior: "smooth",
+    behavior: prefersReducedMotion() ? "instant" : "smooth",
     block: "start",
   });
 };
@@ -4529,6 +4579,7 @@ const syncLiveChannels = () => {
 };
 
 const navigateTo = (hash) => {
+  navigationHistory.save();
   clearAccountContinuation();
   const parsedRoute = parseRouteFromHash(hash);
   const preferredFlyoutKey = FLYOUT_KEYS.find((key) => parsedRoute[key] && !currentRoute[key]) ?? null;
@@ -4559,8 +4610,17 @@ window.addEventListener("hashchange", () => {
   joinFeedback.clear();
   clearAccountContinuation();
   const previousRoute = currentRoute;
+  const visit = navigationHistory.arrive();
+  const saved = visit.restore?.generation === account.snapshot().generation ? visit.restore : null;
+  const incoming = parseRouteFromHash(window.location.hash);
+  const changedPage = incoming.name !== previousRoute.name || incoming.gameId !== previousRoute.gameId;
+  pendingRoutePosition = saved ? { ...saved, hash: window.location.hash }
+    : changedPage ? { y: 0, hash: window.location.hash } : null;
+  if (saved && incoming.name === 'home') for (const [key, page] of Object.entries(saved.pages ?? {})) {
+    if (homeSections[key]) homeSections[key] = { ...homeSections[key], page };
+  }
   closeHeaderMenu();
-  const parsedRoute = parseRouteFromHash(window.location.hash);
+  const parsedRoute = incoming;
   if(parsedRoute.name!=='game' || parsedRoute.gameId!==currentRoute.gameId)gameSound.leaveGame();
   if(hostInvite && (parsedRoute.name!=='game' || parsedRoute.gameId!==hostInvite.gameId)){hostInvite=null;inviteVisit++;}
   inlineProfiles.close();
@@ -4569,13 +4629,13 @@ window.addEventListener("hashchange", () => {
   const enteringRoute = normalizeRouteFlyoutState(parsedRoute);
   preparePanelTransition(previousRoute, enteringRoute);
   currentRoute = enteringRoute;
-  if(previousRoute.name !== 'game' && currentRoute.name === 'game' && !routeTransition)gameSound.play('enter');
+  if(previousRoute.name !== 'game' && currentRoute.name === 'game' && !routeTransition && (previousRoute.name !== 'home' || prefersReducedMotion()))gameSound.play('enter');
   else if(previousRoute.name === 'game' && currentRoute.name !== 'game' && (currentRoute.name !== 'home' || prefersReducedMotion()))gameSound.play('leave');
   if(previousRoute.name === 'game' && currentRoute.name === 'home') {
-    gameSound.cancelPreview();restoreHomePending=true;
-    startGameEntryRouteTransition(previousRoute.gameId,'game','home');
+    gameSound.cancelPreview();
+    startGameEntryRouteTransition(previousRoute.gameId,'game','home', visit.direction ?? 'back');
   } else if(previousRoute.name === 'home' && currentRoute.name === 'game') {
-    window.scrollTo({top:0,behavior:'instant'});
+    if (!routeTransition || routeTransition.toRoute !== 'game' || routeTransition.gameId !== currentRoute.gameId) startGameEntryRouteTransition(currentRoute.gameId, 'home', 'game', visit.direction ?? 'forward');
   }
   syncRouteTransitionForCurrentRoute();
   // Observe before normalization or cached fast paths can skip hydration.
@@ -4583,8 +4643,8 @@ window.addEventListener("hashchange", () => {
   const routeReadChanged = captureRouteRead().epoch !== previousRouteEpoch;
   const normalizedHash = buildHashForRoute(currentRoute);
   if (window.location.hash !== normalizedHash) {
-    window.location.hash = normalizedHash;
-    return;
+    navigationHistory.replaceHash(normalizedHash);
+    if (pendingRoutePosition) pendingRoutePosition.hash = normalizedHash;
   }
   syncFlyoutRenderOrder(currentRoute);
   if (canHydrateRouteFromLocalState(currentRoute)) {
@@ -4612,7 +4672,7 @@ window.addEventListener("resize", () => {
     previousLayoutMode = layout;
     if (layout === 'narrow' && currentRoute.name === 'game' && transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode) {
       currentRoute = {...currentRoute,panel:'history'};
-      window.history.replaceState(null,'',buildHashForRoute(currentRoute));
+      navigationHistory.replaceHash(buildHashForRoute(currentRoute));
     }
     render({animatePanels:false});
   }
@@ -4620,7 +4680,7 @@ window.addEventListener("resize", () => {
   if (FLYOUT_KEYS.some(key => Boolean(normalized[key]) !== Boolean(currentRoute[key]))) {
     currentRoute = normalized;
     saveDebugFlyoutOpen(storage, Boolean(currentRoute.debug));
-    window.history.replaceState(null, "", buildHashForRoute(currentRoute));
+    navigationHistory.replaceHash(buildHashForRoute(currentRoute));
     render({ animatePanels: false, includeBoard: false });
   }
   scheduleGameShellStickyLayout();
@@ -4677,7 +4737,7 @@ const closeUtilityFlyouts = () => utilityCloseFlight ||= (async () => {
   saveDebugFlyoutOpen(storage, false);
   currentRoute = {...currentRoute, debug:false, scenarios:false};
   flyoutRenderOrder = [];
-  window.history.replaceState(null, '', buildHashForRoute(currentRoute));
+  navigationHistory.replaceHash(buildHashForRoute(currentRoute));
   render({animatePanels:false,includeBoard:false});
 })().finally(() => { utilityCloseFlight = null; });
 // Passive page space dismisses utilities. Links, buttons, form fields, board
@@ -4695,6 +4755,16 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  const routeLink = target.closest('a[href^="#/"]');
+  if (routeLink && event.button === 0 && !event.defaultPrevented && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+    navigationHistory.save();
+    if (routeLink.dataset.flyoutLink === 'home' && currentRoute.name === 'home') {
+      event.preventDefault();
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      navigationHistory.save();
+      return;
+    }
+  }
   const gameLinkEl = target.closest(".mini-board-card-link-surface[data-game-id]");
   if (
     gameLinkEl instanceof HTMLAnchorElement &&
@@ -4708,6 +4778,9 @@ appEl.addEventListener("click", async (event) => {
   ) {
     const gameId = gameLinkEl.getAttribute("data-game-id");
     if (gameId) {
+      // Safari pointer activation need not focus links. Capture the actual
+      // origin explicitly rather than inferring it from activeElement.
+      navigationHistory.save({ focusGameId: gameId });
       startGameEntryRouteTransition(gameId, "home");
     }
   }
@@ -5266,6 +5339,7 @@ appEl.addEventListener("click", async (event) => {
       render({ animatePanels: false, includeBoard: false });
       window.requestAnimationFrame(() => {
         scrollHomeSectionToTop(sectionKey);
+        navigationHistory.save();
       });
     }
     return;

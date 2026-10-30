@@ -52,3 +52,9 @@ Physical iPhone checks supplement browser automation: Safari chrome resizing, ru
 ## Resource continuity
 
 Follow `RESOURCE_MANAGEMENT.md`. Checkpoint each stream's source revision, evidence, owned runs and next action before heavy phases. Critical-pressure cancellation is incomplete validation. An authorized recovery heartbeat may resume only recorded pressure interruptions after four real normal/warning samples 15 seconds apart, completed cleanup and a free exclusive runner lock. It must not restart manual cancellations or duplicate active work. Preserve current model data and provenance. Keep Codex, unrelated resources and all worktrees open. Stop the dedicated recovery monitor when this program finishes.
+
+## Navigation visit contract
+
+- Explicit Home returns to the top while keeping each game list page. Clicking Home again does not create another browser entry. New game-card visits start at the live Board at the top. Browser Back and Forward restore that visit’s panel, list pages and reading position. Utility dismissal replaces its URL while retaining the visit.
+- Restore scroll and focus before revealing the destination. Background updates never overwrite a different visit. New navigation cancels obsolete cover/reveal timers, including rapid reversals to the same game.
+- The approved Dense ribbon is 94% opaque with 160ms cover and 200ms reveal using the shared easing. Forward has a leading top-right corner; back mirrors the complete geometry. Hold a stable loading surface for slow destinations. Reduced motion skips the ribbon, fades and held pulsing.

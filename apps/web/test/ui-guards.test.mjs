@@ -257,7 +257,7 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /hasHeaderAction \? renderHomeStartButton\(\) : ""/);
   assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
   assert.match(source, /if \(getShellLayoutMode\(\) !== "narrow" \|\| !\(appEl instanceof HTMLElement\)\) \{\s*return;\s*\}/s);
-  assert.match(source, /sectionEl\.scrollIntoView\(\{\s*behavior: "smooth",\s*block: "start",\s*\}\);/s);
+  assert.match(source, /sectionEl\.scrollIntoView\(\{\s*behavior: prefersReducedMotion\(\) \? "instant" : "smooth",\s*block: "start",\s*\}\);/s);
   assert.match(
     source,
     /const loadHomeSectionServerPage = async \(\s*sectionKey,\s*serverPage,\s*\{\s*visiblePageSize = getHomeSectionVisiblePageSize\(sectionKey\),\s*visibleColumnCount = getHomeSectionColumnCount\(sectionKey\),\s*\} = \{\},\s*\) => \{/s,
