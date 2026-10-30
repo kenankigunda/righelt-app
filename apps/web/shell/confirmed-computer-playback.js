@@ -5,11 +5,11 @@ const activeMoves=game=>(game?.moves??[]).filter(move=>!move.undone);
 const id=move=>move.moveId;
 
 /** Orders immutable server decisions. Display ownership never grants game authority. */
-export function createConfirmedComputerPlayback({loadMove=async move=>move,present=async()=>{},onChange=()=>{},onMove=()=>{},onError=()=>{},setTimer=setTimeout,clearTimer=clearTimeout}={}){
- let generation=0,scope=null,latest=null,known=[],queue=[],running=false,displayed=null,current=null,controller=null,error=null,announced=new Set(),retryTimer=null,retrying=false,loading=false,failures=0;
- const snapshot=()=>({playing:running||queue.length>0||Boolean(current),pending:queue.length+(current?1:0),displayed:displayed?clone(displayed):null,current:current?clone(current):null,error,retrying:retrying||loading,canRetry:!running});
+export function createConfirmedComputerPlayback({loadMove=async move=>move,present=async()=>{},onChange=()=>{},onMove=()=>{},onError=()=>{},setTimer=setTimeout,clearTimer=clearTimeout,clock=Date.now}={}){
+ let generation=0,scope=null,latest=null,known=[],queue=[],running=false,displayed=null,current=null,controller=null,error=null,announced=new Set(),retryTimer=null,retrying=false,loading=false,failures=0,retryNotBefore=0;
+ const snapshot=()=>({playing:running||queue.length>0||Boolean(current),pending:queue.length+(current?1:0),displayed:displayed?clone(displayed):null,current:current?clone(current):null,error,retrying:retrying||loading,canRetry:!running&&clock()>=retryNotBefore,retryNotBefore});
  const notify=()=>onChange(snapshot());
- const cancel=()=>{generation++;if(retryTimer!==null)clearTimer(retryTimer);retryTimer=null;retrying=false;loading=false;failures=0;controller?.abort();controller=null;queue=[];current=null;running=false;error=null;};
+ const cancel=()=>{generation++;if(retryTimer!==null)clearTimer(retryTimer);retryTimer=null;retrying=false;loading=false;failures=0;retryNotBefore=0;controller?.abort();controller=null;queue=[];current=null;running=false;error=null;};
  const baseline=(game,nextScope)=>{cancel();scope=nextScope;latest=clone(game);known=activeMoves(game).map(id);announced=new Set(known);displayed=clone(game);notify();};
  const drain=async()=>{
   if(running||retryTimer!==null||error||!queue.length)return;
@@ -20,7 +20,7 @@ export function createConfirmedComputerPlayback({loadMove=async move=>move,prese
     const move=await loadMove(clone(entry.move),clone(latest??entry.game));
     if(run!==generation||signal.aborted)return;
     if(move?.moveId!==entry.move.moveId||!move.selectionSnapshot||!move.snapshot)throw Error('invalid_confirmed_playback_frame');
-    loading=false;retrying=false;notify();
+    loading=false;retrying=false;retryNotBefore=0;notify();
     const frame=clone({decisionId:move.moveId,action:move.action,before:move.selectionSnapshot,after:move.snapshot,destroyedPieces:move.destroyedPieces??[]});
     await present(frame,{signal,onDisplayed:()=>{if(run===generation&&!signal.aborted&&!announced.has(move.moveId)){announced.add(move.moveId);onMove(clone(move),clone(entry.game));}}});
     if(run!==generation||signal.aborted)return;
@@ -34,8 +34,10 @@ export function createConfirmedComputerPlayback({loadMove=async move=>move,prese
   }catch(failure){
    if(run!==generation||signal.aborted)return;controller?.abort();loading=false;running=false;controller=null;
    if(computerRetryDisposition(failure)!=='terminal'){
-    retrying=true;const delay=Math.max(SYNC_TIMING.retryDelaysMs[Math.min(failures++,SYNC_TIMING.retryDelaysMs.length-1)],failure.retryAfterMs??0);
-    retryTimer=setTimer(()=>{retryTimer=null;if(run!==generation)return;queue.unshift(current);current=null;void drain();},delay);
+    retrying=true;retryNotBefore=clock()+Math.max(0,failure.retryAfterMs??0);
+    const delay=Math.max(SYNC_TIMING.retryDelaysMs[Math.min(failures++,SYNC_TIMING.retryDelaysMs.length-1)],failure.retryAfterMs??0);
+    const resume=()=>{retryTimer=null;if(run!==generation)return;const remaining=retryNotBefore-clock();if(remaining>0){retryTimer=setTimer(resume,remaining);return;}queue.unshift(current);current=null;void drain();};
+    retryTimer=setTimer(resume,delay);
    }else{error=failure;onError(failure);}
    notify();
   }
@@ -56,7 +58,7 @@ export function createConfirmedComputerPlayback({loadMove=async move=>move,prese
    if(!running&&!queue.length&&!error){displayed=clone(game);return;}
    notify();void drain();
   },
-  retry(){if(running||(!error&&!retrying)||!current)return;if(retryTimer!==null)clearTimer(retryTimer);retryTimer=null;queue.unshift(current);current=null;error=null;void drain();},
+  retry(){if(clock()<retryNotBefore||running||(!error&&!retrying)||!current)return;if(retryTimer!==null)clearTimer(retryTimer);retryTimer=null;queue.unshift(current);current=null;error=null;void drain();},
   snapshot,
   reset(){cancel();scope=null;latest=null;known=[];displayed=null;notify();},
   destroy(){cancel();scope=null;latest=null;displayed=null;},

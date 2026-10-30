@@ -3454,12 +3454,14 @@ const mountBoardForGame = (game) => {
           const view = getBoardGame(transport.getGameViewModel(game.id));
           const status = computerSession?.snapshot();
           updateComputerBoardLoading(document.getElementById('shell-board-preview-label')?.parentElement.querySelector('.board-message-activity'), view, status, {
-            replaying: Boolean(forcedFollowWorking(game.id) || replay?.playing || replayFeedback?.gameId === game.id), inspecting: Boolean(selection.selectedPieceId || selection.inspection), scope: viewingScope(),
+            replaying: Boolean(view?.confirmedPlayback || forcedFollowWorking(game.id) || replay?.playing || replayFeedback?.gameId === game.id), inspecting: Boolean(selection.selectedPieceId || selection.inspection), scope: viewingScope(),
           });
           if(view?.confirmedPlayback){
             const actor=confirmedPlayback?.snapshot().current?.move?.actorSide;
             const actorName=playerDisplayName(view,actor);
-            return (view.confirmedPlayback.error||status?.activity?.needsHelp)?{text:`${actorName} needs help`,actorName,action:{id:'retry-confirmed-playback',label:'Retry'}}:{text:`${actorName} is making their move`,actorName};
+            if(view.confirmedPlayback.error)return {text:`${actorName} needs help`,actorName,action:{id:'retry-confirmed-playback',label:'Retry'}};
+            if(status?.activity?.needsHelp){const helpName=COMPUTER_PROFILES[status.profile]?.name??actorName;return {text:`${helpName} needs help`,actorName:helpName};}
+            return {text:`${actorName} is making their move`,actorName};
           }
           if (replayFeedback?.gameId === game.id) return replayFeedback.phase === "loading"
             ? {text:"Preparing replay",action:{id:"replay-cancel",label:"Cancel replay"}}
@@ -4298,8 +4300,8 @@ const startComputerReplay = async (source = 'opponent-turn') => {
   const rootEl=appEl.querySelector('[data-testid="game-board-wrap"]');
   if(!rootEl)return;
   replayController=createComputerReplay({rootEl,createAdapter:()=>createEngineBoardAdapter(),reducedMotion:prefersReducedMotion,
-    onChange:replay=>{boardRuntime?.setInteractionBlocked(replay.playing);boardRuntime?.refreshStatus();},
-    onFinish:()=>{boardRuntime?.setInteractionBlocked(forcedFollowWorking(gameId));boardRuntime?.refreshStatus();appEl.querySelector(`[data-board-message-action="${context.replayAction}"]`)?.focus({preventScroll:true});}
+    onChange:replay=>{boardRuntime?.setInteractionBlocked(replay.playing||Boolean(confirmedPlayback?.snapshot().playing));boardRuntime?.refreshStatus();},
+    onFinish:()=>{boardRuntime?.setInteractionBlocked(forcedFollowWorking(gameId)||Boolean(confirmedPlayback?.snapshot().playing));boardRuntime?.refreshStatus();appEl.querySelector(`[data-board-message-action="${context.replayAction}"]`)?.focus({preventScroll:true});}
   });
   try {await replayController.play(payload);} catch {replayController.stop('error');replayRequests.fail(token,currentReplayContext());}
 };
@@ -4330,7 +4332,7 @@ computerSession = createComputerSession({ getContext: () => {
   else { computerUiPresentation.cancel(); updateComputerUi(); }
 } });
 const updateForcedFollowUi = () => {
-  boardRuntime?.setInteractionBlocked(Boolean(forcedFollowSession?.snapshot().working || replayController?.snapshot().playing));
+  boardRuntime?.setInteractionBlocked(Boolean(forcedFollowSession?.snapshot().working || replayController?.snapshot().playing || confirmedPlayback?.snapshot().playing));
   boardRuntime?.refreshStatus();
 };
 const showForcedFollowVisual = async (state, move = null) => {
