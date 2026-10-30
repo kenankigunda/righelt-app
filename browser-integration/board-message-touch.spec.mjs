@@ -78,12 +78,18 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
   if(scale==='100%')expect(initial.slot.height).toBeLessThanOrEqual(reservation.lineHeight*3);
   await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(0);
-  for(const phase of ['thinking','completed','completed-pass','spectator-long-name','selection','frozen-reconnect','frozen-retreat','frozen-follow','loading','human']){
+  for(const phase of ['thinking','completed','completed-pass','multi-push','multi-rush','spectator-long-name','selection','frozen-reconnect','frozen-retreat','frozen-follow','loading','human']){
     await page.evaluate(async phase=>{
       const {computerBoardMessage}=await import('/apps/web/shell/computer-narration.js');
       const {opponentBoardMessage}=await import('/apps/web/shell/opponent-narration.js');
       const {renderBoardMessageSlot}=await import('/apps/web/shell/board-message-layout.js');
       const game={computer:{seats:{p1:null,p2:'horus'}},board:{state:{turnIndex:1}},turns:[{index:0,status:'complete'}],moves:[{turnIndex:0,computerProof:{profile:'horus'},action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]};
+      if(phase==='multi-push'||phase==='multi-rush'){
+        const {describeTurn,moveCoordinates}=await import('/apps/web/shell/computer-narration.js');
+        const point=(row,col)=>({row,col}),move=(type,actorId,from,to)=>({action:{type,actorId,from,to}});
+        const moves=phase==='multi-push'?[move('push','a',point(9,9),point(0,0)),move('follow','a',point(0,0),point(1,0)),move('follow','b',point(1,1),point(0,1))]:[move('rush','a',point(9,9),point(0,0)),move('rush','b',point(9,8),point(0,1))];
+        window.boardFixture.message({rows:[{text:describeTurn(moves,'Your opponent'),coordinates:moveCoordinates(moves),action:{id:'replay-computer',label:'Show me again'}},{text:'Select a piece or',action:{id:'pass',label:'Pass'}}]});return;
+      }
       if(phase==='thinking')game.computerTurn='horus';
       window.updateComputerBoardLoading(document.querySelector('.board-message-activity'),game,{phase:'looking-ahead'});
       const preview=document.querySelector('#preview');
@@ -118,7 +124,7 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
         await replay.focus();await replay.evaluate(button=>{window.namedReplayButton=button;window.namedActorNode=button.parentElement.querySelector('.board-message-name');});
         await page.evaluate(()=>window.boardFixture.message({...window.namedSpectatorMessage,text:window.namedSpectatorMessage.text.replace('retreated','followed')}));
         await expect(replay).toBeFocused();expect(await replay.evaluate(button=>button===window.namedReplayButton&&button.parentElement.querySelector('.board-message-name')===window.namedActorNode)).toBe(true);
-        await expect(page.locator('#preview')).toContainText('followed a piece from (9, 9) to (0, 0)');
+        await expect(page.locator('#preview')).toContainText('followed a piece from 9, 9 to 0, 0');
         expect(await measure(),'Named narration refresh preserves the board, card, and action focus').toEqual(initial);
       }
       if(phase==='completed-pass')await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
@@ -179,4 +185,44 @@ test('computer loading pieces remain continuous, plain and motion-aware beside t
   expect(await geometry(page)).toEqual(initial);
  }
  expect(await page.locator('.board-message-sizing [data-loading-state],.board-message-sizing .loading-pieces').count()).toBe(0);
+});
+
+test('admission changes preserve selection, sentence rows, centered chips and disabled controls',async({page})=>{
+ await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
+ await page.evaluate(async()=>{
+  await window.boardFixture.setup('pass',false);
+  const {opponentBoardMessage}=await import('/apps/web/shell/opponent-narration.js');
+  const game={myRoles:['Player 2'],controlSeat:'Player 2',legalActions:[{type:'pass'}],board:{state:{turnIndex:1,sideToMove:'P2'}},turns:[{index:0,playerSeat:'Player 1',status:'complete'}],moves:[{turnIndex:0,actorSide:'P1',action:{type:'move',from:{row:1,col:2},to:{row:2,col:2}}}]};
+  window.stableMessageGame=game;window.opponentMessage=opponentBoardMessage;
+  window.boardFixture.message(opponentBoardMessage(game,{}, {},{canInteract:true}));
+ });
+ const prompt=page.locator('#preview'),pass=page.getByRole('button',{name:'Pass',exact:true});
+ await expect(prompt.locator('.board-message-row')).toHaveCount(2);
+ await expect(prompt.locator('.board-preview-coordinate-chip')).toHaveCount(2);
+ await expect(prompt.locator('.board-message-row').nth(0)).toContainText('Show me again');
+ await expect(prompt.locator('.board-message-row').nth(1)).toHaveText('Select a piece or Pass');
+ const copy=await prompt.textContent(),before=await geometry(page);
+ for(const blocked of [true,false,true,false]){
+  await page.evaluate(blocked=>{
+   window.boardFixture.message(window.opponentMessage({...window.stableMessageGame,sharedMutationsBlocked:blocked,recovering:blocked},{}, {},{canInteract:!blocked}));
+   window.boardFixture.gateInteraction(blocked);
+  },blocked);
+  if(blocked)await expect(pass).toBeDisabled();else await expect(pass).toBeEnabled();
+  expect(await prompt.textContent()).toBe(copy);expect(await geometry(page)).toEqual(before);
+  if(blocked)await pass.evaluate(button=>button.click());
+ }
+ expect(await page.evaluate(()=>window.boardFixture.applied())).toEqual([]);
+ expect(await prompt.locator('.board-preview-coordinate-chip').first().evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('middle');
+ expect(await pass.evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('middle');
+ // A prepared move remains a move preview while submission admission changes.
+ await page.evaluate(async()=>{await window.boardFixture.setup('rush',false);});
+ await page.locator('[data-row="4"][data-col="2"]').click();
+ const selectedCopy=await prompt.textContent(),selection=await page.evaluate(()=>window.boardFixture.selection());
+ expect(selectedCopy).toContain('Select a move for piece at');
+ for(const blocked of [true,false,true,false]){
+  await page.evaluate(blocked=>window.boardFixture.gateInteraction(blocked),blocked);
+  expect(await prompt.textContent()).toBe(selectedCopy);
+  expect(await page.evaluate(()=>window.boardFixture.selection())).toEqual(selection);
+  await expect(page.locator('.move-ghost').first()).toBeVisible();
+ }
 });

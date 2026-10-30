@@ -293,7 +293,7 @@ test("an older legal query cannot cancel an accepted pending end-turn", async ()
 test('published continuation controls stay natively disabled until local admission finishes',async()=>{
   const pending=deferred(),button={disabled:false},calls=[];
   const previewLabel={innerHTML:'',querySelectorAll:()=>[button]};
-  const f=await fixture({previewLabel,controls:{getBoardMessage:()=>({text:'Finish the turn',action:{id:'end-turn',label:'End Turn'}})},host:{
+  const f=await fixture({previewLabel,controls:{getBoardMessage:()=>({text:'Finish the turn',action:{id:'end-turn',label:'End turn'}})},host:{
     applyAction:()=>pending.promise,endTurn:async()=>{calls.push('end');return {accepted:false};},
   }});
   f.hover(coord(4,3));f.click(coord(4,3));

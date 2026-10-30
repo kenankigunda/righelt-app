@@ -4,7 +4,7 @@ import { createDesktopBoardFit } from './desktop-board-fit.js';
 import { buildTurnReplay, createComputerReplay } from './computer-replay.js';
 import { deriveBoardView, createViewingIntent } from './viewing-state.js';
 import { mountMobileNavigation } from './mobile-navigation.js';
-import { opponentBoardMessage, latestOpponentTurn } from './opponent-narration.js';
+import { opponentBoardMessage, latestOpponentTurn, ownsBoardActor } from './opponent-narration.js';
 import { renderBoardHeadingSlot, renderBoardMessageSlot, updateComputerBoardLoading } from './board-message-layout.js';
 import { activityActorSide, activityStateActorSide, setActivityActor, undoApprovalActorSide } from './activity-affiliation.js';
 import { applyDecisionNotes } from './decision-notes.js';
@@ -3337,6 +3337,10 @@ const mountBoardForGame = (game) => {
         getGameView: () => getBoardGame(transport.getGameViewModel(game.id)),
         getInspectionSnapshot: () => currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id ? capturePosition() : null,
         canSelect: () => Boolean(currentRoute.scenarios && scenarioCapture?.gameId === game.id) || (hostInvite?.gameId !== game.id && Boolean(getBoardGame(transport.getGameViewModel(game.id))?.currentSnapshot)),
+        canPresentActions: () => {
+          const view = getBoardGame(transport.getGameViewModel(game.id));
+          return !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && ownsBoardActor(view, transport.getIdentityId());
+        },
         canInteract: () => {
           const view = getBoardGame(transport.getGameViewModel(game.id));
           return !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && canControlLiveBoard(view);
@@ -3418,7 +3422,6 @@ const mountBoardForGame = (game) => {
   });
   const resetSelection =
     (!frozenCapture && mountedHistoryMoveIndex !== historyMoveIndex) ||
-    (mountedSyncStatusKey !== syncStatusKey && failedOperationsKey.length > 0) ||
     shouldResetBoardSelection({
       currentSnapshot: boardRuntime.getState?.() ?? null,
       nextSnapshot: snapshot,

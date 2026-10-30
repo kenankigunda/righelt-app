@@ -11,7 +11,7 @@ test('a pending control preserves a prepared destination until a fresh native co
   const prepared = await page.evaluate(() => window.boardFixture.selection());
   expect(prepared).toEqual({selectedPieceId:'A',source:{row:4,col:2},target:{row:4,col:3}});
   await page.evaluate(() => window.boardFixture.gateInteraction(true));
-  await expect(cell(page, 4, 3)).toHaveClass(/unselectable/);
+  await expect(cell(page, 4, 3)).toHaveClass(/(?:^|\s)target(?:\s|$)/);
   await cell(page, 4, 3).click();
   expect(await page.evaluate(() => window.boardFixture.selection())).toEqual(prepared);
   expect(await page.evaluate(() => window.boardFixture.applied())).toEqual([]);
@@ -24,14 +24,14 @@ test('a pending control preserves a prepared destination until a fresh native co
   ]);
 });
 
-test('status-only control settlement restores actionable destination styling without pointer movement', async ({ page }) => {
+test('status-only control settlement preserves destination styling without pointer movement', async ({ page }) => {
   await page.goto('/browser-integration/support/board.html');
   await page.waitForFunction(() => window.fixtureReady);
   await page.evaluate(() => window.boardFixture.setup('move'));
   await cell(page, 4, 2).click(); await cell(page, 4, 3).hover();
   const prepared = await page.evaluate(() => window.boardFixture.selection());
   await page.evaluate(() => window.boardFixture.gateInteraction(true));
-  await expect(cell(page, 4, 3)).toHaveClass(/unselectable/);
+  await expect(cell(page, 4, 3)).toHaveClass(/(?:^|\s)target(?:\s|$)/);
   await page.evaluate(() => window.boardFixture.gateInteraction(false));
   await expect(cell(page, 4, 3)).not.toHaveClass(/unselectable/);
   await expect(cell(page, 4, 3)).toHaveClass(/(?:^|\s)target(?:\s|$)/);
