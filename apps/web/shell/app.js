@@ -1,3 +1,4 @@
+import {createConfirmedFramePresenter} from './confirmed-frame-presenter.js';
 import {createConfirmedComputerPlayback} from './confirmed-computer-playback.js';
 import {isOngoingGame} from './game-lifecycle.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
@@ -27,7 +28,7 @@ let computerSession = null;
 const viewingIntent = createViewingIntent();
 let mobileNavigation = null;
 let replayController = null;
-let confirmedPlayback=null,confirmedPlaybackVisual=null,confirmedDisplayGameId=null,lastPlaybackVisibility=null;
+let confirmedPlayback=null,confirmedFramePresenter=null,confirmedDisplayGameId=null,lastPlaybackVisibility=null;
 let forcedFollowSession = null;
 let forcedFollowVisual = null;
 const forcedFollowWorking = gameId => Boolean(forcedFollowSession?.snapshot().working && forcedFollowSession.snapshot().gameId === gameId);
@@ -2617,8 +2618,8 @@ const renderAdditionalHistory = game => {
 const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
   return renderHistorySlots({rows:historyRows,extra:renderAdditionalHistory(game),
-    before:renderHistoryResult(game.confirmedPlayback?game:transport.getAuthoritativeGame(game.id),transport.getIdentityId()) + (game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? "Loading this move" : "This move couldn’t load. Your current view is still available."}</p>${game.historyLoadError ? `<button class="secondary mini-button" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${game.historyLoadIndex}">Retry</button>` : ""}</div>` : ""),
-    after:getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">${icon("history")}View result</button>` : ""});
+    before:(game.confirmedPlayback?'':renderHistoryResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId())) + (game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? "Loading this move" : "This move couldn’t load. Your current view is still available."}</p>${game.historyLoadError ? `<button class="secondary mini-button" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${game.historyLoadIndex}">Retry</button>` : ""}</div>` : ""),
+    after:!game.confirmedPlayback && getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">${icon("history")}View result</button>` : ""});
 };
 
 const renderBoardPanel = (game) => `
@@ -4521,6 +4522,7 @@ const syncConfirmedPlayback = () => {
   confirmedPlayback?.observe(game,{scope:`${viewingScope()}:${gameId}`,visible:!document.hidden,
     enabled:routeHydrated&&liveBoardVisible()&&!replayController?.snapshot().playing&&!currentRoute.scenarios});
 };
+confirmedFramePresenter=createConfirmedFramePresenter({getRoot:()=>appEl.querySelector('[data-testid="game-board-wrap"]'),getGameId:getCurrentViewedGameId,createAdapter:()=>createEngineBoardAdapter(),reducedMotion:prefersReducedMotion});
 confirmedPlayback=createConfirmedComputerPlayback({
   loadMove:async(move,game)=>move.snapshot&&move.selectionSnapshot?move:transport.readDecisionMove(game.id,game.gameplayRevision,move.moveId),
   onChange:state=>{
@@ -4532,15 +4534,7 @@ confirmedPlayback=createConfirmedComputerPlayback({
     boardRuntime?.setInteractionBlocked(state.playing||Boolean(replayController?.snapshot().playing)||forcedFollowWorking(gameId));
   },
   onMove:(move,game)=>gameSound.displayed(move,game,{scope:viewingScope()}),
-  present:(frame,{signal,onDisplayed})=>new Promise((resolve,reject)=>{
-    const rootEl=appEl.querySelector('[data-testid="game-board-wrap"]');
-    if(!rootEl){reject(Error('board_unavailable'));return;}
-    confirmedPlaybackVisual?.destroy();
-    const visual=confirmedPlaybackVisual=createComputerReplay({rootEl,createAdapter:()=>createEngineBoardAdapter(),automatic:true,reducedMotion:prefersReducedMotion,
-      onFrame:onDisplayed,onFinish:()=>{signal.removeEventListener('abort',abort);resolve();}});
-    const abort=()=>visual.stop('scope-changed');signal.addEventListener('abort',abort,{once:true});
-    void visual.play({gameId:getCurrentViewedGameId(),frames:[frame]}).catch(reject);
-  }),
+  present:(frame,context)=>confirmedFramePresenter.present(frame,context),
 });
 document.addEventListener('visibilitychange',()=>{syncConfirmedPlayback();gameSound.viewing({gameId:getCurrentViewedGameId(),live:liveBoardVisible(),playbackFinished:!confirmedPlayback.snapshot().playing});});
 for(const event of ['focus','blur'])window.addEventListener(event,()=>{syncConfirmedPlayback();gameSound.viewing({gameId:getCurrentViewedGameId(),live:liveBoardVisible(),playbackFinished:!confirmedPlayback.snapshot().playing});});
@@ -4589,7 +4583,7 @@ const subscribeToTransport = () => transport.subscribe((change) => {
 subscribeToTransport();
 accountInitialized = true;
 function resetAccountTransport(next) {
-  confirmedPlayback?.reset();confirmedPlaybackVisual?.destroy();gameSound.resetUpdates();
+  confirmedPlayback?.reset();confirmedFramePresenter?.destroy();gameSound.resetUpdates();
   forcedFollowSession?.cancel();
   inviteLoadState = null;
   if (currentRoute.name === "invite") resolvedInvite = null;
@@ -4885,7 +4879,7 @@ appEl.addEventListener("click", async (event) => {
     accountDialog.open("login", intent, actionEl);
     return;
   }
-  if (action === "view-result") { if (!getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId())) return; resultPresentation.clear();activeResultGameId = actionGameId; render({ animatePanels: false }); return; }
+  if (action === "view-result") { if (transport.getGameViewModel(actionGameId)?.confirmedPlayback || !getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId())) return; resultPresentation.clear();activeResultGameId = actionGameId; render({ animatePanels: false }); return; }
   if (action === "analysis") { resultPresentation.clear();pendingResultReviewFocus = actionGameId; activeResultGameId = null; render({ animatePanels: false }); navigateTo(buildGameHash(actionGameId, null, getCurrentGameHashState("history"))); return; }
   if (action === "rematch") {
     const result = getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId());

@@ -26,3 +26,13 @@ test('actual History panel places the authoritative winner before moves even dur
   }
  }
 });
+
+test('pending confirmed winning frames expose neither the result button nor a stale result action',()=>{
+ const authoritative=fixture('p1_win'),view={...fixture('ongoing'),confirmedPlayback:{playing:true}};let rendered=0,cleared=0;
+ const context={renderHistoryResult,renderHistorySlots,getGameResult,transport:{getAuthoritativeGame:()=>authoritative,getGameViewModel:()=>view,getIdentityId:()=> 'me'},renderTurnHistory:()=>'<li>recorded move</li>',renderAdditionalHistory:()=>'',icon:()=>'',escapeHtml:value=>value};
+ const start=source.indexOf('const renderHistoryPanel ='),end=source.indexOf('const renderBoardPanel =',start);runInNewContext(`${source.slice(start,end)};globalThis.history=renderHistoryPanel;`,context);
+ assert.doesNotMatch(context.history(view),/history-result-summary|View result/);
+ const action=source.split('\n').find(line=>line.includes('if (action === "view-result")'));Object.assign(context,{action:'view-result',actionGameId:'g',resultPresentation:{clear:()=>cleared++},activeResultGameId:null,render:()=>rendered++});
+ runInNewContext(`(()=>{${action}})();`,context);assert.equal(rendered,0);assert.equal(cleared,0);assert.equal(context.activeResultGameId,null);
+ delete view.confirmedPlayback;runInNewContext(`(()=>{${action}})();`,context);assert.equal(rendered,1);assert.equal(context.activeResultGameId,'g');
+});
