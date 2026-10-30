@@ -1,3 +1,4 @@
+import {historyTurnSide} from '../shell/history-preview.js';
 import {playerDisplayName,liveHistoryLabel} from '../shell/perspective-labels.js';
 import {canReadAdditionalHistory} from '../shell/additional-history.js';
 import {renderHistorySlots} from '../shell/panel-loading.js';
@@ -144,8 +145,8 @@ test("computer seats have distinct human, watch, history and result labels despi
 });
 
 test("retained historical turns keep an exit even after undo removes the live turn", () => {
-  const context = {icon,escapeHtml:String,getControlSeatForTurn:(_state,seat)=>seat,
-    playerToneClassForSide:()=>"",playerToneClassForSeat:()=>"",formatClientDateTime:String,expandedUndoneGroups:new Set()};
+  const context = {icon,liveHistoryLabel,transport:{getIdentityId:()=>"me"},escapeHtml:String,getControlSeatForTurn:(_state,seat)=>seat,
+    historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:()=>"You",playerToneClassForSide:()=>"",playerToneClassForSeat:()=>"",formatClientDateTime:String,expandedUndoneGroups:new Set()};
   runInNewContext(`${extract("const renderTurnHistory =", "const renderHeader =")}\n globalThis.history = renderTurnHistory;`, context);
   for (const turns of [[], [{index:0,playerSeat:"Player 1",moveIndexes:[]}]]) {
     const game={id:"retained",currentTurn:{index:2,playerSeat:"Player 1"},turns,moves:[],inHistoryMode:true,historyIndex:1};
@@ -195,7 +196,7 @@ function historyRouteHarness(t) {
     icon,historyActorLabel,liveHistoryLabel,renderHistorySlots,canReadAdditionalHistory,activityStateActorSide,
     account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})},
     escapeHtml:String,formatClientDateTime:String,toStableKey:JSON.stringify,
-    getControlSeatForTurn:(_state,seat)=>seat,playerToneClassForSide:()=>'',playerToneClassForSeat:()=>'',
+    revealSelectedHistory:()=>{},buildMovePreview:move=>({snapshot:move.snapshot}),buildTurnPreview:()=>({}),getControlSeatForTurn:(_state,seat)=>seat,historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:()=>"You",playerToneClassForSide:()=>'',playerToneClassForSeat:()=>'',
     getShellLayoutMode:()=> 'narrow',getShellLayoutModeForRoute:()=> 'narrow',
     expandedUndoneGroups:new Set(),getDecisionDebugState:()=>({items:[],cursor:null}),getGameResult:()=>null,
     renderMiniBoardPreviewRoot:()=>'<div class="mini-board-preview"></div>',
@@ -210,7 +211,7 @@ function historyRouteHarness(t) {
   runInNewContext(`
     ${patchHelper}
     ${extract('const preparePanelTransition =','const getCurrentFlyoutState =')}
-    ${extract('const renderTurnHistory =','const renderHeader =')}
+    ${extract('const renderHistoryPreview =','const renderHeader =')}
     ${extract('const renderAdditionalHistory =','const renderHistoryPanel =')}
     ${extract('const renderHistoryPanel =','const renderBoardPanel =')}
     ${extract('const updateMountedGameShell =','const doesMountedFlyoutStateMatchRoute =')}

@@ -113,7 +113,8 @@ async function digest(page) {
    presentation:{active:document.querySelector('[data-testid="active-turn-label"]')?.textContent,
     heading:indicator?.textContent,actor:indicator?.classList.contains('player-tone-p1')?'P1':indicator?.classList.contains('player-tone-p2')?'P2':null,
     live:document.querySelector('.history-item-waiting .history-move-line')?.textContent,
-    actors:[...document.querySelectorAll('[data-testid="history-move-item"]')].map(e=>({side:e.classList.contains('player-tone-p1')?'P1':'P2',text:e.querySelector('.history-actor')?.textContent}))},
+    visibleMoveActorNames:document.querySelectorAll('[data-testid="history-move-item"] .history-actor').length,
+    actors:[...document.querySelectorAll('[data-testid="history-move-item"]')].map(e=>({side:e.classList.contains('player-tone-p1')?'P1':'P2',text:e.getAttribute('aria-label')?.split(' · Move ')[0]}))},
   };
  });
 }
@@ -124,6 +125,7 @@ function expectPerspective(value,index) {
  const actor=label(value.presentation.actor);
  expect(value.presentation.heading).toBe(actor==='You'?'Your turn to play':`${actor} to play`);
  if(value.presentation.live)expect(value.presentation.live).toBe(`Live · Waiting on ${actor==='You'?'you':actor==='Opponent'?'opponent':actor} to move`);
+ expect(value.presentation.visibleMoveActorNames).toBe(0);
  for(const entry of value.presentation.actors)expect(entry.text).toBe(label(entry.side));
 }
 async function converged(pages) {
