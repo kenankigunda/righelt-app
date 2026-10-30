@@ -18,8 +18,7 @@ export const renderPlayersLoading = () => `
   <div class="panel-loading-content" aria-hidden="true"><h2>Players</h2>
     <ul class="participant-list perspective-participants panel-loading-players" data-testid="participants-list">
       ${[0,1].map(()=>`<li><span class="participant-identity"><span class="participant-profile"><span class="panel-loading-emblem skeleton-pulse"></span><span class="player-name-stack"><span class="player-name">${loadingText('8ch')}</span></span><span class="panel-loading-presence skeleton-pulse"></span></span></span></li>`).join('')}
-      <li class="viewers-row"><span class="participant-empty"><span class="panel-loading-viewers skeleton-pulse"></span>${loadingText('8ch')}</span></li>
-    </ul><div class="row section-actions panel-loading-actions">${loadingAction('Invite someone to view')}</div><div class="invite-feedback"></div>
+    </ul><section class="viewers-section"><h3>Viewers</h3><p class="viewer-empty"><span class="panel-loading-viewers skeleton-pulse"></span>${loadingText('auto','None')}</p><div class="players-section-actions"><div class="row section-actions panel-loading-actions">${loadingAction('Invite someone to view')}</div></div><div class="invite-feedback"></div></section>
   </div>`;
 
 export const renderHistorySlots = ({rows, extra = '', after = '', before = ''}) => `<h2>History</h2><div class="section-followup">${before}<ol class="history-list" data-testid="history-list">${rows}</ol>${extra}</div>${after}`;

@@ -1,4 +1,4 @@
-import {isOngoingGame} from './game-lifecycle.js';
+import {isCompletedGame,isOngoingGame} from './game-lifecycle.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
@@ -53,7 +53,8 @@ import { createRouteHydration } from './route-hydration.js';
 import { invitationLoadFailureKind, renderInviteLoadRecovery } from './invite-load-recovery.js';
 import { createRenderGestureGate, preserveBoardFocus } from './render-gesture.js';
 import { participantButton, participantName, participantDisplayName, createInlineProfiles } from './public-profile.js';
-import { renderPlayersPanel } from './players-panel.js';
+import { renderPlayersPanel, renderViewersPanel } from './players-panel.js';
+import {patchViewerSection,recordViewerDisclosure,recordViewerDisclosureClick,revealViewerKeyboardFocus} from './viewer-disclosure.js';
 import { createAccountController, safeAccountIntent } from './account-controller.js';
 import { createAccountDialog } from './account-dialog.js';
 import { renderPieceSymbol } from '../piece-symbols.js';
@@ -263,6 +264,7 @@ let wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
 let lastWsStatusKey = toStableKey(wsStatus);
 let wsLastEvent = "none";
 let inviteFeedback = "";
+let inviteFeedbackRole = "viewer";
 let inviteFallback = null;
 let hostInvite = null;
 const preparedPlayerInvitations = new Map();
@@ -2153,7 +2155,8 @@ const updateHeaderFields = () => {
   }
 };
 
-const renderInviteFeedback = (scope = "invite-panel") => {
+const renderInviteFeedback = (scope = "invite-panel", role = null) => {
+  if(role && role!==inviteFeedbackRole)return '<div class="invite-feedback"></div>';
   const reports = issueDiagnostics.list().filter(report => report.key === `invite:${currentRoute.gameId}` && (!report.resolvedAt || isDiagnosticOpen(report.id)));
   return `<div class="invite-feedback" role="status" aria-live="polite" data-success="${inviteFeedback === 'Link copied! Ready to share.'}">${inviteFeedback ? `${icon(inviteFeedback === 'Link copied! Ready to share.' ? 'check' : 'copy')}<span>${escapeHtml(inviteFeedback)}</span>` : ""}${reports.map(report => renderDiagnosticDisclosure(report.id, scope)).join("")}</div>`;
 };
@@ -2484,7 +2487,6 @@ const renderGameSummaryPanel = (game) => {
 };
 
 const renderJoinInvitePanel = (game, inviteLink) => {
-  const joinViewerButtonKey = getJoinButtonKey("viewer", game.id);
   const joinPlayerButtonKey = getJoinButtonKey("player", game.id);
   const playAsBothButtonKey = getPlayAsBothButtonKey(game.id);
   const copyInviteButtonKey = getCopyInviteButtonKey(game.id);
@@ -2511,19 +2513,13 @@ const renderJoinInvitePanel = (game, inviteLink) => {
           )
           .join("");
   const joinInviteActions = renderSectionActions([
-    game.canJoinAsViewer
-      ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="join-viewer"${renderButtonStateAttributes({
-          className: "secondary",
-          pendingKey: joinViewerButtonKey,
-        })}>${icon("players")}Join as viewer</button>`
-      : "",
-    game.canJoinAsPlayer && game.showJoinActions
+    game.canJoinAsPlayer && game.showJoinActions && !isCompletedGame(game)
       ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" data-testid="join-player"${renderButtonStateAttributes({
           pendingKey: joinPlayerButtonKey,
         })}>${icon("play")}Join as player</button>`
       : "",
-    ...invitationOptions(game).map(option => `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-invite-role="${option.role}" ${option.role==='viewer'?'data-testid="copy-viewer-invite"':'data-testid="copy-invite"'}${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:copyInviteButtonKey,disabled:!game.canInvite})}>${icon('invite')}${option.label}</button>`),
-    game.canPlayAsBothPlayers
+    ...invitationOptions(game).filter(option=>option.role!=="viewer" && !isCompletedGame(game)).map(option => `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-invite-role="${option.role}" ${option.role==='viewer'?'data-testid="copy-viewer-invite"':'data-testid="copy-invite"'}${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:copyInviteButtonKey,disabled:!game.canInvite})}>${icon('invite')}${option.label}</button>`),
+    game.canPlayAsBothPlayers && !isCompletedGame(game)
       ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({
           className: "secondary",
           pendingKey: playAsBothButtonKey,
@@ -2535,16 +2531,34 @@ const renderJoinInvitePanel = (game, inviteLink) => {
     <h2 data-testid="join-invite-heading">Players</h2>
     ${renderParticipantsPanel(game)}
     ${pendingSeatNotice}
-    ${joinInviteActions}
+    <div class="players-section-actions">${joinInviteActions}</div>
     ${joinFeedback.message(game.id)?`<p class="alert error" role="status" data-testid="join-failure">${escapeHtml(joinFeedback.message(game.id))}</p>`:""}
-    ${renderInviteFeedback()}
-    ${inviteFallback?.gameId === game.id ? `<input class="invite-link-field" aria-label="Invitation link" value="${escapeHtml(inviteFallback.link)}" readonly>` : ""}
+    ${renderInviteFeedback("invite-player", "player")}
+    ${inviteFallback?.gameId === game.id && inviteFallback.role!=="viewer" ? `<input class="invite-link-field" aria-label="Invitation link" value="${escapeHtml(inviteFallback.link)}" readonly>` : ""}
     ${pendingRows ? `<div class="section-followup"><ul class="participant-list">${pendingRows}</ul></div>` : ""}
+    ${renderViewersSection(game)}
   `;
 };
 
 const expandedViewerGames = new Set();
 const expandedComputerCards = new Map();
+appEl.addEventListener('click',event=>recordViewerDisclosureClick(event,expandedViewerGames),true);
+appEl.addEventListener('toggle',event=>recordViewerDisclosure(event,expandedViewerGames),true);
+appEl.addEventListener('focusin',event=>revealViewerKeyboardFocus(event));
+const renderViewersSection = game => {
+  const joinViewerButtonKey = getJoinButtonKey("viewer", game.id);
+  const viewerActions=renderSectionActions([
+    game.canJoinAsViewer ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="join-viewer"${renderButtonStateAttributes({
+      className: "secondary",
+      pendingKey: joinViewerButtonKey,
+    })}>${icon('players')}Join as viewer</button>` : '',
+    ...invitationOptions(game).filter(option=>option.role==='viewer').map(option=>`<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-invite-role="viewer" data-testid="copy-viewer-invite"${renderButtonStateAttributes({className:'invite-action invite-viewer secondary',pendingKey:getCopyInviteButtonKey(game.id),disabled:!game.canInvite})}>${icon('invite')}${option.label}</button>`),
+  ]);
+  return renderViewersPanel(game,{
+    identityId:transport.getIdentityId(),expanded:expandedViewerGames.has(game.id),icon,formatStatus,
+    after:`<div class="players-section-actions">${viewerActions}</div>${renderInviteFeedback('invite-viewer','viewer')}${inviteFallback?.gameId===game.id && (inviteFallback.role??'viewer')==='viewer'?`<input class="invite-link-field" aria-label="Invitation link" value="${escapeHtml(inviteFallback.link)}" readonly>`:''}`,
+  });
+};
 const renderParticipantsPanel = game => renderPlayersPanel(game, {
   identityId:transport.getIdentityId(), expanded:expandedViewerGames.has(game.id),
   pendingSeat:preparedPlayerInvitations.get(game.id), icon, formatStatus,
@@ -2559,6 +2573,8 @@ const updateParticipantCards = game => {
   const next=document.createElement('div');next.innerHTML=renderParticipantsPanel(game);
   patchSectionContent(panel,next.firstElementChild);
   if(restoreSide && (!focused.isConnected || focused.disabled))panel.querySelector(`[data-action="toggle-computer-card"][data-computer-side="${restoreSide}"]`)?.focus({preventScroll:true});
+  const viewerPanel=appEl.querySelector('[data-testid="viewers-section"]');
+  if(viewerPanel)patchViewerSection(viewerPanel,renderViewersSection(game),{document});
   inlineProfiles.sync();
 };
 
@@ -4294,6 +4310,7 @@ const closeFriendInvite = () => {
   document.querySelector('[data-action="copy-invite"]')?.focus({preventScroll:true});
 };
 const copyGameInvitation = async (gameId, role, fromHost=false) => {
+  inviteFeedbackRole=role==='viewer'?'viewer':'player';
   const visit=inviteVisit, generation=account.snapshot().generation;
   const active=()=>generation===account.snapshot().generation && currentRoute.name==='game' && currentRoute.gameId===gameId && (!fromHost || hostInvite?.gameId===gameId && visit===inviteVisit);
   try {
@@ -4309,7 +4326,7 @@ const copyGameInvitation = async (gameId, role, fromHost=false) => {
     const link=`${window.location.origin}${window.location.pathname}${hash}${hash.includes('?')?'&':'?'}as=${role}`;
     window.__righeltLastInvite=link;
     try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }
-    catch { if(!active())return;inviteFallback={gameId,link};setInviteFeedback('Copy the link below to share it.'); }
+    catch { if(!active())return;inviteFallback={gameId,link,role};setInviteFeedback('Copy the link below to share it.'); }
   }catch(error){if(active()){ issueDiagnostics.capture(`invite:${gameId}`, { gameId, operation: 'create_invite', stage: 'failed', code: error.code ?? 'unavailable' }); setInviteFeedback('We couldn’t create your invite link. Please try again.'); }}
 };
 const renderHostInvite = game => renderInvitationSurface({host:true,background:renderGameContent(game.id),content:`
@@ -4565,7 +4582,7 @@ window.addEventListener("hashchange", () => {
   if(parsedRoute.name!=='game' || parsedRoute.gameId!==currentRoute.gameId)gameSound.leaveGame();
   if(hostInvite && (parsedRoute.name!=='game' || parsedRoute.gameId!==hostInvite.gameId)){hostInvite=null;inviteVisit++;}
   inlineProfiles.close();
-  if(parsedRoute.gameId!==previousRoute.gameId){resultPresentation.clear();activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();}
+  if(parsedRoute.gameId!==previousRoute.gameId){expandedViewerGames.clear();resultPresentation.clear();activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();}
   if (previousRoute.name === "tutorial" && (parsedRoute.name !== "tutorial" || parsedRoute.gameId !== previousRoute.gameId)) retireTutorialSave();
   const enteringRoute = normalizeRouteFlyoutState(parsedRoute);
   preparePanelTransition(previousRoute, enteringRoute);
@@ -4743,11 +4760,6 @@ appEl.addEventListener("click", async (event) => {
   const actionGameId = actionEl.getAttribute("data-game-id") || currentRoute.gameId;
   if (action === "refresh-game") { window.location.reload(); return; }
   if (action === "reconnect-safely") { void transport.reconnectSafely(actionGameId).catch(() => {}); return; }
-  if (action === "toggle-viewers") {
-    const gameId=actionEl.dataset.gameId;
-    if(expandedViewerGames.has(gameId))expandedViewerGames.delete(gameId);else expandedViewerGames.add(gameId);
-    render({animatePanels:false,includeBoard:false});return;
-  }
   if (action === "public-profile") { void inlineProfiles.open(actionEl.getAttribute("data-username"), actionEl); return; }
   if (action === "retry-account-continuation") { void retryAccountContinuation(); return; }
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
@@ -4845,11 +4857,6 @@ appEl.addEventListener("click", async (event) => {
     const open=expandedComputerCards.get(gameId) ?? new Set();
     if(open.has(side))open.delete(side);else open.add(side);
     expandedComputerCards.set(gameId,open); updateParticipantCards(transport.getGameViewModel(gameId));return;
-  }
-  if (action === 'toggle-viewers') {
-    const gameId=actionEl.dataset.gameId;
-    if(expandedViewerGames.has(gameId))expandedViewerGames.delete(gameId);else expandedViewerGames.add(gameId);
-    updateParticipantCards(transport.getGameViewModel(gameId));return;
   }
   if (action === 'computer-control') { await withPendingButton(`computer:${actionEl.dataset.control}`, () => computerSession.action(actionEl.dataset.control)); return; }
   if (action === 'computer-watch') {
