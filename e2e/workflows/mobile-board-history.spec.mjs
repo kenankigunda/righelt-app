@@ -20,6 +20,8 @@ const board = page => page.getByTestId('game-board');
 const tab = (page,key) => page.locator(`[data-action="switch-game-panel"][data-panel="${key}"]`);
 const panel = (page,key) => page.locator(`[data-mobile-panel="${key}"]`);
 const switchPanel = async(page,key)=>{
+  const currentPanel=page.locator('[data-mobile-panel][data-active="true"]');
+  await expect.poll(()=>currentPanel.evaluate(panelGeometrySettledAcrossFrame),{message:'Current panel scroll and layout must settle before deciding whether navigation needs revealing'}).toBe(true);
   const controls=page.locator('[data-mobile-nav-controls]');
   if(await controls.getAttribute('inert')!==null)await page.getByRole('button',{name:'Show game navigation',exact:true}).click();
   await tab(page,key).click();
