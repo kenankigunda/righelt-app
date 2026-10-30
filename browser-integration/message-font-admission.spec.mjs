@@ -4,6 +4,12 @@ import {decodeFontBoundarySamples} from './support/font-envelope-codec.mjs';
 import {reservationBands,admittedHeight,budgetPixelPrecision} from './support/message-reservation-policy.mjs';
 const anchors=page=>page.evaluate(()=>window.fontAnchors());
 const sameAnchors=(a,b)=>{for(const target of ['heading','slot','board','panel'])for(const key of ['x','y','width','height'])expect(Math.abs(a[target][key]-b[target][key]),`${target}.${key}`).toBeLessThanOrEqual(.1);};
+test('row budget retains a wider intrinsic fallback and rejects absent measurements',()=>{
+ // Linux Firefox's natural fallback needs seven rows at this source boundary,
+ // while the primary-font floor needs six. An eighth row remains unadmitted.
+ expect(admittedHeight(163,16,168)).toBe(168);
+ for(const missing of [undefined,NaN,Infinity,-Infinity,0])expect(()=>admittedHeight(163,16,missing)).toThrow('intrinsic fallback measurement');
+});
 for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(`cold and settled-reload message reservation at ${width}px and ${scale}%`,async({page},info)=>{
  await page.setViewportSize({width,height:900});
  const key=`font-admission-${width}-${scale}`,fontUrl=`/apps/web/assets/fonts/Manrope-variable.ttf?${key}`;
@@ -16,6 +22,7 @@ for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(
   receipts.cold=await anchors(page);expect(receipts.cold.fontStatus).toBe('loading');
   expect(receipts.cold.slot.width).toBeGreaterThan(0);expect(Math.abs(receipts.cold.slot.width-receipts.cold.availableInlineSize)).toBeLessThanOrEqual(.1);
   receipts.coldEnvelope=await page.evaluate(()=>window.fontEnvelope());
+  receipts.coldIntrinsicFallback=await page.evaluate(()=>window.fontEnvelope(undefined,{intrinsic:true}).fallback);
   receipts.coldAfterMeasurement=await anchors(page);sameAnchors(receipts.cold,receipts.coldAfterMeasurement);
   receipts.probeIsolation=await page.evaluate(()=>{const wrapper=document.querySelector('[data-font-measurement-wrapper]'),rect=wrapper.getBoundingClientRect(),style=getComputedStyle(wrapper);return {width:rect.width,height:rect.height,position:style.position,overflowX:style.overflowX,overflowY:style.overflowY,inert:wrapper.inert,hidden:wrapper.getAttribute('aria-hidden'),scrollWidth:document.documentElement.scrollWidth,viewport:innerWidth};});
   expect(receipts.probeIsolation).toMatchObject({width:0,height:0,position:'fixed',overflowX:'hidden',overflowY:'hidden',inert:true,hidden:'true'});expect(receipts.probeIsolation.scrollWidth).toBeLessThanOrEqual(receipts.probeIsolation.viewport);
@@ -24,7 +31,7 @@ for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(
   sameAnchors(receipts.cold,receipts.loaded);
   expect(await page.evaluate(()=>window.admitMessagePhases())).toEqual([]);
   const lineHeight=receipts.loadedEnvelope.rows[0].lineHeight;
-  expect(budgetPixelPrecision(receipts.loaded.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(admittedHeight(receipts.loaded.slot.width,lineHeight/1.5)));
+  expect(budgetPixelPrecision(receipts.loaded.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(admittedHeight(receipts.loaded.slot.width,lineHeight/1.5,receipts.coldIntrinsicFallback)));
   // Routing disables HTTP caching. This witnesses settled reload consistency,
   // not cache-admitted first paint. The actual cache-warm E2E is separate.
   await page.reload();await page.waitForFunction(()=>window.fixtureReady);await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
@@ -81,12 +88,13 @@ test('measured font boundaries keep cold, loaded and settled-reload row envelope
     let definitions;
     const samples=widths.map(width=>{
      const envelope=window.fontEnvelope(width);
+     const intrinsic=window.fontEnvelope(width,{intrinsic:true});
      // Definitions are stable within this page/scale. Transfer them once while
      // retaining every fresh metric at every boundary, then restore full rows.
      definitions??=envelope.rows.map(({font,variant,text})=>({font,variant,text}));
      return {scale,width:envelope.width,primary:envelope.primary,fallback:envelope.fallback,
       rows:envelope.rows.map(({height,lineHeight,minHeight})=>[height,lineHeight,minHeight]),
-      intrinsicPrimary:window.fontEnvelope(width,{intrinsic:true,primaryOnly:true}).primary};
+      intrinsicPrimary:intrinsic.primary,intrinsicFallback:intrinsic.fallback};
     });
     return {definitions,samples};
    },{scale,bands});
@@ -109,7 +117,7 @@ test('measured font boundaries keep cold, loaded and settled-reload row envelope
    expect(Math.max(cold.primary,cold.fallback),`${label} cold to loaded`).toBeCloseTo(Math.max(loaded.primary,loaded.fallback),5);
    expect(Math.max(warm.primary,warm.fallback),`${label} settled reload`).toBeCloseTo(Math.max(loaded.primary,loaded.fallback),5);
    const lineHeight=loaded.rows[0].lineHeight;
-   expect(budgetPixelPrecision(Math.max(loaded.primary,loaded.fallback)),`${label} reviewed source row budget`).toBeLessThanOrEqual(budgetPixelPrecision(admittedHeight(cold.width,lineHeight/1.5)));
+   expect(budgetPixelPrecision(Math.max(loaded.primary,loaded.fallback)),`${label} reviewed source row budget and cold intrinsic fallback`).toBeLessThanOrEqual(budgetPixelPrecision(admittedHeight(cold.width,lineHeight/1.5,cold.intrinsicFallback)));
   }
  }finally{hold=false;release();const path=info.outputPath('font-boundary-admission.json');await writeFile(path,JSON.stringify(receipts,null,2));await info.attach('font-boundary-admission',{path,contentType:'application/json'});}
 });
