@@ -2326,14 +2326,14 @@ const renderHomeSectionControls = (sectionKey, section, { placement } = { placem
     data-action="home-page-prev"
     data-home-section="${escapeHtml(sectionKey)}"
     aria-label="Previous ${escapeHtml(section.title)} page"
-  >&larr;</button>
+  >${icon('left')}</button>
   <p class="small home-games-section-page-label">Page ${section.page + 1} of ${section.totalPages}</p>
   <button
     ${renderPendingStateAttributes({ className: "secondary", pending: isHomeSectionPending(sectionKey) })}
     data-action="home-page-next"
     data-home-section="${escapeHtml(sectionKey)}"
     aria-label="Next ${escapeHtml(section.title)} page"
-  >&rarr;</button>
+  >${icon('right')}</button>
 </div>`;
 
 const renderHomeStartButton = () =>
