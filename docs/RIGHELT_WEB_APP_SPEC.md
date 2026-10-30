@@ -455,3 +455,10 @@ This section is normative and applies to every new endpoint, page, and performan
 - New startup-path code must carry verification:
   - Tests must assert bootstrap endpoint cache headers and response determinism.
   - Performance-sensitive changes must include a short note in PR/commit text describing startup impact and why the chosen approach preserves fast start.
+
+### Independent board legend inspection
+
+- Commander and Supply point keep separate inspection selections and owner contexts. Toggling one leaves the other intact. Selecting an unoccupied supply square updates only supply inspection and preserves the selected commander context. Normal piece selection may clear explicit networks to resume move selection.
+- Commander and supply icons, selected-label underlines, and their visible line swatches use their respective owner colors. Supply lines on the board use the supply owner's color. A selected supply square has an owner-colored selection treatment.
+- The selected label uses a 2px text underline with a 5px offset. Text remains neutral and existing icons remain unchanged. Do not add a selected tint, outline, check mark, or button-wide bottom rule. Keyboard focus has a separate visible outline and controls retain at least 44px touch targets.
+- Inspection never submits actions or changes rules authority. Explanatory line and group entries appear only when the corresponding overlay is actually drawn. Empty command networks are skipped.

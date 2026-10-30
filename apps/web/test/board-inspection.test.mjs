@@ -142,3 +142,46 @@ test('whole networks deduplicate compressed and unit-step representations of the
   state.artifacts.supply[0].shortestPathByPieceId={C1:[point(3,3),point(3,5)],A:[point(3,3),point(3,4),point(3,5)]};
   assert.equal(inspectionSegments(state,{kind:'supply',owner:'P1'}).length,2);
 });
+
+
+test('independent command and supply inspections preserve opposite owners and clear separately',async()=>{
+ const h=harness({canInteract:false}),snapshot=position();
+ let supply;for(let row=0;row<10;row++)for(let col=0;col<10;col++)if(supplyOwnerAt(point(row,col))==='P1')supply=point(row,col);
+ snapshot.artifacts.supply[0].shortestPathByPieceId.C1=[point(3,3),point(3,9),supply];
+ await h.runtime.loadSnapshot(snapshot,{legalActions:[]});h.click(point(6,3));await Promise.resolve();
+ h.runtime.toggleNetworkInspection('command');
+ const command={kind:'command',owner:'P2'};assert.deepEqual(h.runtime.getInspection(),command);
+ h.click(supply);
+ assert.deepEqual(h.runtime.getInspection(),{kind:'networks',command,supply:{kind:'supply',owner:'P1',point:supply}});
+ assert.equal(h.runtime.getSelection().selectedPieceId,'B');
+ assert.deepEqual(new Set(inspectionPaths(snapshot,h.runtime.getInspection()).map(path=>`${path.kind}:${path.owner}`)),new Set(['command:P2','supply:P1']));
+ h.runtime.toggleNetworkInspection('supply');assert.deepEqual(h.runtime.getInspection(),command);
+ h.runtime.toggleNetworkInspection('supply');h.runtime.toggleNetworkInspection('command');
+ assert.deepEqual(h.runtime.getInspection(),{kind:'supply',owner:'P1',point:supply});
+ await h.runtime.loadSnapshot(snapshot,{legalActions:[],resetSelection:false});
+ assert.equal(h.runtime.getOverlay().networkOwners.command,'P2');assert.equal(h.runtime.getOverlay().networkOwners.supply,'P1');
+ h.runtime.toggleNetworkInspection('supply');assert.equal(h.runtime.getInspection(),null);assert.equal(h.writes,0);
+});
+
+
+test('a pressed board command inspection clears on its first legend toggle and invalid input preserves other networks',async()=>{
+ const h=harness({canInteract:false});await h.runtime.loadSnapshot(position(),{legalActions:[]});
+ h.runtime.setInspection({kind:'command',owner:'P2'});h.runtime.toggleNetworkInspection('command',{owner:'P2'});
+ assert.equal(h.runtime.getInspection(),null);
+ h.runtime.toggleNetworkInspection('supply',{owner:'P1'});const before=structuredClone(h.runtime.getInspection());
+ assert.equal(h.runtime.setInspection({kind:'command',pieceId:'missing'}),false);assert.deepEqual(h.runtime.getInspection(),before);
+ assert.equal(h.runtime.toggleNetworkInspection('command',{owner:'invalid'}),false);assert.deepEqual(h.runtime.getInspection(),before);
+ assert.equal(h.runtime.toggleNetworkInspection('supply',{owner:'P1',point:point(9,0)}),false);assert.deepEqual(h.runtime.getInspection(),before);
+ h.runtime.toggleNetworkInspection('supply',{owner:'P1',point:{col:9,row:0}});assert.equal(h.runtime.getInspection(),null);assert.equal(h.writes,0);
+});
+
+
+test('authoritative loss of command paths clears only command inspection',async()=>{
+ const h=harness({canInteract:false}),snapshot=position();
+ await h.runtime.loadSnapshot(snapshot,{legalActions:[]});
+ h.runtime.toggleNetworkInspection('command',{owner:'P2'});h.runtime.toggleNetworkInspection('supply',{owner:'P1'});
+ snapshot.artifacts.command.shortestPathToCommanderByPieceId={};
+ await h.runtime.loadSnapshot(snapshot,{legalActions:[],resetSelection:false});
+ assert.equal(h.runtime.getInspection().kind,'supply');assert.equal(h.runtime.getOverlay().networkOwners.command,'P2');
+ h.click(point(3,3));await Promise.resolve();assert.deepEqual(h.runtime.getOverlay().networkInspections,{command:null,supply:null});assert.equal(h.writes,0);
+});

@@ -42,10 +42,12 @@ export const normalizeConnectionPath = (path) => {
 };
 
 const samePoint = (a, b) => Boolean(a && b && a.row === b.row && a.col === b.col);
+export const supplyPointForOwner = owner => SUPPLY_POINTS[owner] ? {...SUPPLY_POINTS[owner]} : null;
 export const supplyOwnerAt = point => Object.entries(SUPPLY_POINTS).find(([, value]) => samePoint(point, value))?.[0] ?? null;
 
 /** Resolve only recorded engine paths. Inspection never computes alternate routes. */
 export function inspectionPaths(snapshot, inspection) {
+  if (inspection?.kind === 'networks') return [inspection.command,inspection.supply].filter(Boolean).flatMap(layer=>inspectionPaths(snapshot,layer));
   if (!inspection || !['supply', 'command', 'combined'].includes(inspection.kind)) return [];
   const pieces = snapshot?.pieces ?? [];
   const selected = inspection.pieceId ? pieces.find(piece => piece.id === inspection.pieceId) : null;

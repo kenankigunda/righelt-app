@@ -1,5 +1,5 @@
 import {boardMessagePresentation,renderBoardMessageHtml,renderBoardInlineAction,updateBoardInlineActionLabel} from '../message-presentation.js';
-import { inspectionPaths, supplyOwnerAt } from "../inspection.js";
+import { inspectionPaths, supplyOwnerAt, supplyPointForOwner } from "../inspection.js";
 import {renderCoordinateChip} from '../coordinate-chip.js';
 import {SELECTED_CONTINUATION_LABELS} from '../piece-explanations.js';
 import { REMOVAL_EFFECT_DURATION_MS } from "../removal-timing.js";
@@ -57,6 +57,12 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   let inspection = null;
+  let networkInspections = {command:null,supply:null};
+  const networkOwners = {command:null,supply:null};
+  const getInspectionView = () => networkInspections.command && networkInspections.supply
+    ? {kind:'networks',...networkInspections}
+    : networkInspections.command ?? networkInspections.supply ?? inspection;
+  const hasInspection = () => Boolean(getInspectionView());
   let interactionBlocked = false;
   let state = null;
   let snapshotRevision = 0;
@@ -116,7 +122,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   const getCurrentSelection = () => ({ selectedPieceId, source: selectedSource, target: selectedTarget });
   const getOverlay = () => ({
     mode: overlayMode,
-    inspection: inspection ? structuredClone(inspection) : null,
+    inspection: getInspectionView() ? structuredClone(getInspectionView()) : null,
+    networkInspections: structuredClone(networkInspections),
+    networkOwners: {...networkOwners},
     selection: overlayMode === OVERLAY_MODE.INTERACTIVE ? getCurrentSelection() : null,
     recordedAction: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedAction : null,
     recordedActionStartPiece: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedActionStartPiece : null,
@@ -159,7 +167,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const getEffectiveSelectedPieceMovesForBoard = () => {
-    if (inspection || host.canInteract?.(state) === false) return { selectedPieceMoves: [], selectedPieceMovePreviews: [] };
+    if (hasInspection() || host.canInteract?.(state) === false) return { selectedPieceMoves: [], selectedPieceMovePreviews: [] };
     if (selectedPieceOverlayPhase !== "supplyCommand") {
       return { selectedPieceMoves, selectedPieceMovePreviews };
     }
@@ -459,7 +467,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     controls.onVisualsUpdated?.({
       command: Boolean(elements.overlayLinesEl?.querySelector('[data-legend-kind="command"]')),
       supply: Boolean(elements.overlayLinesEl?.querySelector('[data-legend-kind="supply"]')),
-      inspection: inspection ? structuredClone(inspection) : null,
+      inspection: getInspectionView() ? structuredClone(getInspectionView()) : null,
+      networkInspections: structuredClone(networkInspections),
+      networkOwners: {...networkOwners},
       group: Boolean(elements.boardEl?.querySelector('.group-strength-badge')),
     });
   };
@@ -483,6 +493,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const renderStatusContent = () => {
+    const inspection = getInspectionView();
     if (!state) {
       return;
     }
@@ -575,6 +586,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         setPieceExplanation();
         return;
       }
+      if (inspection.kind === "networks") { setBoardPreviewPrompt("Supply and command lines"); return; }
       const label = inspection.kind === "combined" ? "Supply and command lines" : inspection.kind === "command" ? "Command lines" : "Supply lines";
       setBoardPreviewPrompt(inspectionPaths(state, inspection).length ? label : inspection.kind === "command" ? "No command connection" : inspection.kind === "supply" ? "No supply connection" : "No connection");
       return;
@@ -747,6 +759,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
   const clearSelection = () => {
     inspection = null;
+    networkInspections = {command:null,supply:null};
     selectedPieceId = null;
     selectedPieceMoves = [];
     selectedPieceMovePreviews = [];
@@ -1117,7 +1130,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         setInspection({kind: "combined", pieceId: piece.id});
       } else {
         const owner = supplyOwnerAt(clickedCoord);
-        if (owner) setInspection({kind: "supply", owner, point: clickedCoord});
+        if (owner) toggleNetworkInspection("supply", {owner,point:clickedCoord});
       }
       return;
     }
@@ -1135,12 +1148,17 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     // A transient shared-command fence hides actionable previews, but a click
     // on the prepared destination must not become a blank-square deselection.
     // Authority is checked again on a later explicit confirmation; never queue it.
-    if (selectedSource && !inspection && selectedPieceOverlayPhase === "actionPreviews" && legalTarget && host.canInteract?.(state) === false) return;
+    if (selectedSource && !hasInspection() && selectedPieceOverlayPhase === "actionPreviews" && legalTarget && host.canInteract?.(state) === false) return;
     if (!clickedPiece && ownerAtPoint && !legalTarget) {
-      setInspection({kind: "supply", owner: ownerAtPoint, point: clickedCoord});
+      toggleNetworkInspection("supply", {owner:ownerAtPoint,point:clickedCoord});
       return;
     }
-    if (inspection && legalTarget) { inspection = null; selectedPieceOverlayPhase = "actionPreviews"; }
+    if (hasInspection() && legalTarget) { inspection = null; networkInspections = {command:null,supply:null}; selectedPieceOverlayPhase = "actionPreviews"; }
+    if (clickedPiece && (!legalTarget || clickedPiece.id === selectedPieceId)) {
+      networkOwners.command = clickedPiece.owner;
+      networkOwners.supply = clickedPiece.owner;
+      networkInspections = {command:null,supply:null};
+    }
     if (clickedPiece?.id === selectedPieceId && clickedPiece.kind === "commander") {
       const canPreview = hasActionLayer(selectedPieceMoves, selectedPieceMovePreviews) && host.canInteract?.(state) !== false;
       if (inspection?.kind === "command" && !inspection.pieceId) {
@@ -1241,7 +1259,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const handleBoardCellHoverStart = (hoveredCoord) => {
-    if (interactionBlocked || inspection || !state || !getUsesHoverTargetSelection() || host.canInteract?.(state) === false) {
+    if (interactionBlocked || hasInspection() || !state || !getUsesHoverTargetSelection() || host.canInteract?.(state) === false) {
       return;
     }
     if(applyHoveredTarget(hoveredCoord) && actionsAtTarget(hoveredCoord).length > 0) controls.onInteractionSound?.({kind:'preview-hover',key:`${hoveredCoord.row}:${hoveredCoord.col}`});
@@ -1270,7 +1288,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const handleDocumentKeydown = (event) => {
-    if (interactionBlocked || inspection) return;
+    if (interactionBlocked || hasInspection()) return;
     if (
       !shouldSubmitOnEnter({
         key: event.key,
@@ -1286,7 +1304,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const submitPass = () => {
-    if (interactionBlocked || selectedPieceId || inspection || state?.continuation || host.canInteract?.(state) === false || !legalActions.some(action => action.type === "pass")) return;
+    if (interactionBlocked || selectedPieceId || hasInspection() || state?.continuation || host.canInteract?.(state) === false || !legalActions.some(action => action.type === "pass")) return;
     void submitCurrentAction({type:"pass"});
   };
 
@@ -1434,6 +1452,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   ) => {
     if (destroyed) return;
     const previousInspection = inspection;
+    const previousNetworks = structuredClone(networkInspections);
     snapshotRevision += 1;
     controls.onInteractionSound?.({kind:'preview-leave'});
     state = structuredClone(snapshot);
@@ -1480,6 +1499,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       primeSelectedPieceMovesFromLegalActions();
     }
     inspection = previousInspection;
+    networkInspections = previousNetworks;
+    if (networkInspections.command && !inspectionPaths(state,networkInspections.command).length) networkInspections.command=null;
     if (inspection?.pieceId && !getBoardPieceById(inspection.pieceId)) inspection = null;
     if (inspection?.pieceId) {
       selectedPieceId = inspection.pieceId;
@@ -1594,6 +1615,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       else next.owner = state.sideToMove;
     }
     if (next.pieceId && !getBoardPieceById(next.pieceId)) return false;
+    networkInspections = {command:null,supply:null};
     inspection = JSON.stringify(inspection) === JSON.stringify(next) ? null : next;
     setSelectedTarget(null);
     refreshSelectionLabels(); renderBoard(); renderStatus();
@@ -1601,20 +1623,40 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
   const clearInspection = () => {
     inspection = null;
+    networkInspections = {command:null,supply:null};
     refreshSelectionLabels(); renderBoard(); renderStatus();
+  };
+
+  const toggleNetworkInspection = (kind, requested = {}) => {
+    if (destroyed || interactionBlocked || !state || !['command','supply'].includes(kind)) return false;
+    const selected = getBoardPieceById(selectedPieceId);
+    const owner = requested.owner ?? networkOwners[kind] ?? selected?.owner ?? state.sideToMove;
+    if (!['P1','P2'].includes(owner)) return false;
+    const next = {kind,owner,...(kind === 'supply' ? {point:requested.point ?? supplyPointForOwner(owner)} : {})};
+    if (kind === 'supply' && supplyOwnerAt(next.point) !== owner) return false;
+    networkOwners[kind] = owner;
+    if (kind === 'command' && !inspectionPaths(state,next).length) { networkInspections.command=null;inspection=null;refreshSelectionLabels();renderBoard();renderStatus();return true; }
+    const current = networkInspections[kind];
+    const sameSelection = current?.owner === owner && (kind === 'command' || sameCoordinate(current.point,next.point));
+    networkInspections[kind] = inspection?.kind === kind || sameSelection ? null : next;
+    inspection = null;
+    setSelectedTarget(null);
+    refreshSelectionLabels();renderBoard();renderStatus();
+    return true;
   };
 
   return {
     initialize,
+    toggleNetworkInspection,
     setInspection,
     clearInspection,
-    getInspection: () => inspection ? structuredClone(inspection) : null,
+    getInspection: () => getInspectionView() ? structuredClone(getInspectionView()) : null,
     setInteractionBlocked: value => { interactionBlocked = Boolean(value); if (interactionBlocked) clearHoveredTarget(); },
     refreshStatus: () => {
       // A blocked board still permits inspection. Empty-square clicks can clear
       // its forced actor, so restore that actor from current legal actions only
       // after admission returns. Preserve deliberate inspections and selections.
-      if (!selectedPieceId && !inspection && host.canInteract?.(state) !== false && applyForcedContinuationSelection({requireLegalAction:true})) renderBoard();
+      if (!selectedPieceId && !hasInspection() && host.canInteract?.(state) !== false && applyForcedContinuationSelection({requireLegalAction:true})) renderBoard();
       // Routine control fences do not repaint action ghosts as inspection lines.
       // Restore admission styling only if a real render showed the blocked state.
       else if (host.canInteract?.(state) !== false && lastRenderedCanInteract === false) renderBoard();

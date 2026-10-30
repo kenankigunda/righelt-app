@@ -560,7 +560,7 @@ button {
 }
 
 .swatch.supply {
-  color: #2f8e63;
+  color: var(--swatch-supply-color, var(--player-p1));
 }
 
 .swatch.command {
@@ -1053,3 +1053,11 @@ button:disabled {
     gap: 0.8rem;
   }
 }
+
+.cell.selected-supply-point {
+  --supply-selection-color:var(--player-p1);
+  border-color:var(--supply-selection-color);
+  box-shadow:inset 0 0 0 2px var(--supply-selection-color);
+  --cell-fill:color-mix(in srgb,var(--supply-selection-color) 12%,#fbf8f0);
+}
+.cell.selected-supply-point[data-selected-supply-owner="P2"] {--supply-selection-color:var(--player-p2);}

@@ -44,8 +44,8 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  await expect(page.getByTestId('game-board')).toBeVisible();
  const legend=page.locator('.overlay-key').getByRole('button');
  await expect(legend).toHaveText(['Commander','Supply point']);
- await expect(legend.nth(0)).toHaveAccessibleName('Commander');
- await expect(legend.nth(1)).toHaveAccessibleName('Supply point');
+ await expect(legend.nth(0)).toHaveAccessibleName('Red commander inspection');
+ await expect(legend.nth(1)).toHaveAccessibleName('Red supply point inspection');
  await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
  const ownProfile=page.getByTestId('participant-player-1').locator('[data-action="guest-profile"]');
  await expect(ownProfile).toHaveText('You');await expect(ownProfile).toHaveAccessibleName('You, Red, Connected');
