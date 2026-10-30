@@ -288,12 +288,16 @@ test('E06 real IndexedDB commits admission atomically across tabs and aborts suc
 for (const frozenRole of ['player', 'viewer']) {
 test(`E05 intentional ${frozenRole} history survives disconnection and home navigation`,async({browser,baseURL},info)=>{
  test.skip(info.project.name!=='chromium');const p=await party(browser,baseURL);try{
-  await move(p.pages[0],p.gameId);await converged(p.pages);
+  await move(p.pages[0],p.gameId);
+  await expect(p.pages[0].getByTestId('history-move-item')).toHaveCount(1);
+  await converged(p.pages);
   const frozenIndex=frozenRole==='player'?1:2;
   const actorIndex=frozenRole==='player'?0:1;
   if(frozenRole==='player'){
    // Return authority to Player 1 before freezing Player 2 in history.
-   await move(p.pages[1],p.gameId);await converged(p.pages);
+   await move(p.pages[1],p.gameId);
+   await expect(p.pages[1].getByTestId('history-move-item')).toHaveCount(2);
+   await converged(p.pages);
    const endTurn=p.pages[1].locator('[data-board-preview-action="end-turn"]');
    if(await endTurn.isVisible()){await endTurn.click();await converged(p.pages);}
   }
