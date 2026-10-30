@@ -329,3 +329,29 @@ test("E-06: scenario with both P1 and P2 destructions shows sub-bullets in both 
     await closeContextQuietly(context);
   }
 });
+
+test('whole-turn history combines push routes and destruction on the final board',async({browser,baseURL},info)=>{
+ const {context,page}=await createIsolatedPage(browser);
+ try{
+  await importScenarioGame(page,DESTRUCTION_SCENARIO,baseURL);
+  const heading=page.locator('[data-testid="history-turn"] .history-turn-heading').filter({hasText:'Turn 1'});
+  await heading.click();
+  await expect(heading).toHaveAttribute('aria-current','true');
+  await expect(heading).not.toHaveAttribute('data-action');
+  const board=page.getByTestId('game-board');
+  await expect(board.locator('.cell.source,.cell.target,.axis-strong,.axis-medium,.cell.selected-piece')).toHaveCount(0);
+  await expect(board.locator('.history-destruction-piece')).toHaveCount(1);
+  await expect(page.locator('#shell-overlay-lines line')).toHaveCount(2);
+  await expect(board.locator('.recorded-action-source-piece')).toHaveCount(2);
+  await expect(page.locator('[data-game-panel="history"] [data-action="revert-to-move"], [data-game-panel="history"] [data-action="launch-history-branch"]')).toHaveCount(0);
+  await page.screenshot({path:info.outputPath('whole-turn-history.png'),fullPage:true});
+  const move=page.getByTestId('history-move-item').first();
+  await move.click();
+  await expect(move).toHaveAttribute('aria-current','true');
+  await expect(move).not.toHaveAttribute('data-action');
+  await expect(board.locator('.cell.source')).toHaveCount(1);
+  await expect(board.locator('.cell.target')).toHaveCount(1);
+  await expect(page.locator('[data-game-panel="history"] [data-action="launch-history-branch"]')).toHaveCount(1);
+  await page.screenshot({path:info.outputPath('selected-move-history.png'),fullPage:true});
+ }finally{await closeContextQuietly(context);}
+});
