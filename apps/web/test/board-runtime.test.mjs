@@ -186,7 +186,7 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
   assert.equal(renderCalls.at(-1)?.overlay?.mode, "recorded-action");
   assert.deepEqual(renderCalls.at(-1)?.overlay?.recordedAction, recordedAction);
   assert.deepEqual(renderCalls.at(-1)?.overlay?.recordedActionStartPiece, recordedActionStartPiece);
-  assert.match(boardPreviewLabelEl.innerHTML || boardPreviewLabelEl.textContent, /Recorded move from.*board-preview-coordinate-chip-selected-piece.*4,2.*board-preview-coordinate-chip-target.*4,3/);
+  assert.match(boardPreviewLabelEl.innerHTML || boardPreviewLabelEl.textContent, /Recorded move from.*board-preview-coordinate-chip-selected-piece.*4,\s*2.*board-preview-coordinate-chip-target.*4,\s*3/);
 });
 
 test("board runtime starts history destruction in the removal-effects layer before the settled overlay appears", async () => {

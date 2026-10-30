@@ -309,3 +309,28 @@ test('wide history retains its main-board snapshot without duplicate top actions
   await expect(page.locator('[data-game-panel="history"] [data-action="launch-history-branch"]')).toHaveCount(1);
   await page.getByTestId('history-return-live').click();await expect.poll(()=>renderedPieces(board(page))).toEqual(expectedPieces((await readGame(page,gameId)).board.state));
 });
+
+test.describe('short landscape history',()=>{
+ test.use({viewport:{width:640,height:320},hasTouch:true});
+ test('selected move and turn fit their heading and full mini-board above navigation',async({page},info)=>{
+  await selfPlay(page);await makeAnyLegalMove(page);await switchPanel(page,'history');
+  await page.evaluate(()=>document.documentElement.style.fontSize='200%');
+  const move=page.getByTestId('history-move-item').first();await move.click();
+  await expect(move).toHaveAttribute('aria-current','true');
+  await expect(move.getByTestId('history-inline-preview').locator('.cell')).toHaveCount(100);
+  await expect.poll(()=>move.locator('.history-move-at').evaluate(el=>el.clientHeight>=el.scrollHeight-1)).toBe(true);
+  const fits=locator=>locator.evaluate(el=>{
+   const preview=el.matches('.history-turn-heading')?el.nextElementSibling:el.querySelector('.history-inline-preview');
+   if(!preview)return false;
+   const p=preview.getBoundingClientRect(),heading=el.getBoundingClientRect(),nav=document.querySelector('.shell-mobile-tabbar').getBoundingClientRect();
+   return heading.top>=0 && p.bottom<=Math.min(innerHeight,nav.top)+1;
+  });
+  await expect.poll(()=>fits(move)).toBe(true);
+  expect(await move.locator('.history-inline-preview').evaluate(el=>Number(el.style.zoom))).toBeLessThan(1);
+  await page.screenshot({path:info.outputPath('short-landscape-selected-move.png')});
+  const heading=move.locator('xpath=ancestor::li[contains(@class,"history-turn")]/div[contains(@class,"history-turn-heading")]');
+  await heading.click();await expect(heading).toHaveAttribute('aria-current','true');
+  await expect.poll(()=>fits(heading)).toBe(true);
+  await page.screenshot({path:info.outputPath('short-landscape-selected-turn.png')});
+ });
+});

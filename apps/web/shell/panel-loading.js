@@ -23,7 +23,7 @@ export const renderPlayersLoading = () => `
   </div>`;
 
 export const renderHistorySlots = ({rows, extra = '', after = '', before = ''}) => `<h2>History</h2><div class="section-followup">${before}<ol class="history-list" data-testid="history-list">${rows}</ol>${extra}</div>${after}`;
-export const renderHistoryLoading = () => `<div class="panel-loading-content" aria-hidden="true">${renderHistorySlots({rows:`<li class="history-item history-item-waiting history-empty-line"><span class="history-move-line">${loadingText('auto','Live · Waiting on you to move')}</span></li>`,extra:'<div><ol class="history-list"></ol></div>'})}</div>`;
+export const renderHistoryLoading = () => `<div class="panel-loading-content" aria-hidden="true">${renderHistorySlots({rows:`<li class="history-item history-item-waiting history-empty-line"><span class="history-move-line">${loadingText('auto','Live · Waiting on you to move')}</span></li><li class="history-turn"><div class="history-turn-heading">${loadingText('auto','Turn 1 · Guest 1')}</div><ol class="history-list history-list-nested"></ol></li>`,extra:'<div><ol class="history-list"></ol></div>'})}</div>`;
 
 export const renderInvitationLoading = ({actions = 3} = {}) => `<div class="panel-loading-content" aria-hidden="true">
   <p class="small invite-gate-kicker">${loadingText('10ch')}</p><h2>${loadingText('17ch')}</h2>
