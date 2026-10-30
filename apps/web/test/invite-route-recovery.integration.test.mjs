@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import {createDestinationRecovery,destinationRecoveryMessage} from '../shell/destination-recovery.js';
 import { createNavigationHistory } from '../shell/navigation-history.js';
 import { createRouteHydration } from '../shell/route-hydration.js';
 import { createIssueDiagnostics } from '../shell/issue-diagnostics.js';
@@ -42,7 +43,8 @@ function fixture({staleInvite=false}={}) {
   };
   const diagnostics=createIssueDiagnostics({schedule:()=>1,environment:()=>({})});
   const context=vm.createContext({
-    pendingRoutePosition:null,homeSections:{},startGameEntryRouteTransition:noop,
+    pendingRoutePosition:null,homeSections:{},homeSectionsHydrated:false,startGameEntryRouteTransition:noop,
+    document:{hidden:false,addEventListener:noop},destinationRecoveryMessage,createDestinationRecovery:options=>createDestinationRecovery({...options,setTimer:()=>0,clearTimer:noop}),
     account:{snapshot:()=>({generation})},transport:owner,currentRoute:parseRouteFromHash('#/invite/first'),
     window:{location:{hash:'#/invite/first'},addEventListener:(name,fn)=>events[name]=fn,history:{replaceState:(state,_title,hash)=>{context.window.history.state=state;if(hash)context.window.location.hash=hash;}}},parseRouteFromHash,buildHashForRoute,FLYOUT_KEYS,URLSearchParams,hydrateRoute:createRouteHydration(),
     appEl:{querySelectorAll:()=>[{classList:{add:noop}}],addEventListener:(_name,fn)=>clicks.push(fn)},

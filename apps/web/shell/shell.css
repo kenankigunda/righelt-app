@@ -2249,3 +2249,9 @@ textarea:focus-visible {
 .invite-load-status { display: grid; }
 .invite-load-status > p { grid-area: 1 / 1; }
 .invite-load-status-sizing { visibility: hidden; pointer-events: none; }
+
+/* A slow destination stays readable above its static navigation cover. */
+.destination-load-notice { position:fixed; z-index:41; top:max(20px,env(safe-area-inset-top)); left:50%; transform:translateX(-50%); width:min(480px,calc(100% - 32px)); }
+.destination-load-notice[hidden] { display:none; }
+.destination-load-notice .shell-game-alert { margin:0; }
+.destination-load-notice .shell-game-alert-actions { flex-wrap:wrap; }

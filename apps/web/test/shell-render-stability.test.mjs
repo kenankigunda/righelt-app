@@ -256,7 +256,7 @@ test("live sync status renders are deduplicated by stable status key", () => {
 });
 
 test("sync store manages subscriptions through the active route game id", () => {
-  assert.match(source, /syncStore\.setActiveGameId\(routeGameId\);/);
+  assert.match(source, /syncStore\.setActiveGameId\(routeGameId \|\| null\);/);
   assert.match(syncStoreSource, /let activeGameId = null;/);
   assert.match(syncStoreSource, /const getLocalFailureMessage = \(game\) =>/);
   assert.match(syncStoreSource, /const isFailedLocalStub = \(game\) =>/);
@@ -437,7 +437,7 @@ test("app uses route skeleton sync and localized loading instead of a global bus
   assert.match(source, /const pendingHomeSectionKeys = new Set\(\);/);
   assert.match(source, /const SCENARIO_LOAD_PENDING_KEY = "scenario:load";/);
   assert.match(source, /const startRouteSync = \(\{ renderStart = true \} = \{\}\) => \{/);
-  assert.match(source, /routeHydrated = false;\s*syncLiveChannels\(\);/s);
+  assert.match(source, /routeHydrated = Boolean\(usableDestination\);\s*syncDestinationNotice\(\);\s*syncLiveChannels\(\);/s);
   assert.match(source, /const initialRender = async \(\) => \{[\s\S]*?routeHydrated = false;\s*render\(\{ animatePanels: false, includeBoard: false \}\);[\s\S]*?await account\.start\(\);/s);
   assert.match(source, /startRouteSync\(\{ renderStart: false \}\);/);
   assert.match(source, /renderGameViewSkeleton\(\)/);

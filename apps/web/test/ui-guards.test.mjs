@@ -108,7 +108,7 @@ test("invite choice commit suppresses repeat game-route invite gate and join act
   assert.match(source, /if \(action === "join-player" \|\| action === "accept-invite-player"\)[\s\S]*?markInviteChoiceCommitted\(gameId\);/s);
   assert.match(source, /if \(read\.route\.name === "game"\) \{\s*resolvedInvite = null;\s*await read\.owner\.loadGame\(read\.route\.gameId, \{ openAsViewer: false \}\);\s*\}/s);
   assert.match(source, /const startRouteSync = \(\{ renderStart = true \} = \{\}\) => \{/);
-  assert.match(source, /routeHydrated = false;\s*syncLiveChannels\(\);/s);
+  assert.match(source, /routeHydrated = Boolean\(usableDestination\);\s*syncDestinationNotice\(\);\s*syncLiveChannels\(\);/s);
   assert.match(source, /const initialRender = async \(\) => \{[\s\S]*?routeHydrated = false;\s*render\(\{ animatePanels: false, includeBoard: false \}\);[\s\S]*?await account\.start\(\);/s);
   assert.match(source, /startRouteSync\(\{ renderStart: false \}\);/);
   assert.match(source, /routeHydrated = true;\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
@@ -117,9 +117,9 @@ test("invite choice commit suppresses repeat game-route invite gate and join act
 test("game route live sync connection is not gated by participant role", () => {
   assert.match(
     source,
-    /const routeGameId =\s*shouldLiveSyncRoute\(currentRoute\)\s*&&/s,
+    /const routeGameId =\s*!terminalColdRead && shouldLiveSyncRoute\(currentRoute\)\s*&&/s,
   );
-  assert.match(source, /syncStore\.setActiveGameId\(routeGameId\);/);
+  assert.match(source, /syncStore\.setActiveGameId\(routeGameId \|\| null\);/);
   assert.match(syncStoreSource, /const getLocalFailureMessage = \(game\) =>/);
   assert.match(syncStoreSource, /const isFailedLocalStub = \(game\) =>/);
   assert.match(syncStoreSource, /const activeGame =/);
@@ -260,10 +260,10 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /sectionEl\.scrollIntoView\(\{\s*behavior: prefersReducedMotion\(\) \? "instant" : "smooth",\s*block: "start",\s*\}\);/s);
   assert.match(
     source,
-    /const loadHomeSectionServerPage = async \(\s*sectionKey,\s*serverPage,\s*\{\s*visiblePageSize = getHomeSectionVisiblePageSize\(sectionKey\),\s*visibleColumnCount = getHomeSectionColumnCount\(sectionKey\),\s*\} = \{\},\s*\) => \{/s,
+    /const loadHomeSectionServerPage = async \(\s*sectionKey,\s*serverPage,\s*\{\s*visiblePageSize = getHomeSectionVisiblePageSize\(sectionKey\),\s*visibleColumnCount = getHomeSectionColumnCount\(sectionKey\),\s*replaceCache = false,\s*\} = \{\},\s*\) => \{/s,
   );
   assert.match(source, /pageSize:\s*HOME_SECTION_SERVER_PAGE_SIZE,/);
-  assert.match(source, /serverPageGameIdsByPage:\s*\{\s*\.\.\.previous\.serverPageGameIdsByPage,\s*\[normalizedServerPage\]: serverPageGameIds,/s);
+  assert.match(source, /serverPageGameIdsByPage:\s*replaceCache\s*\?\s*\{\[normalizedServerPage\]:serverPageGameIds\}\s*:\s*\{\s*\.\.\.previous\.serverPageGameIdsByPage,\s*\[normalizedServerPage\]: serverPageGameIds,/s);
   assert.match(source, /const syncResponsiveHomeSectionPageSizes = async \(\) => \{/);
   assert.match(source, /const nextVisibleColumnCount = getHomeSectionColumnCount\(sectionKey\);/);
   assert.match(source, /section\.visiblePageSize === nextVisiblePageSize && section\.visibleColumnCount === nextVisibleColumnCount/);
