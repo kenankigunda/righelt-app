@@ -2,10 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
+import {renderHistorySlots} from '../shell/panel-loading.js';
 
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const start=source.indexOf('const render = ({ animatePanels'),end=source.indexOf('\nconst renderContent =',start);
 assert.ok(start>=0&&end>start);
+test('History markup retains its programmatic focus target through attribute reconciliation',()=>{
+ assert.match(renderHistorySlots({rows:''}),/<h2 tabindex="-1">History<\/h2>/);
+});
 
 for(const retainedNode of [true,false])for(const selected of [true,false])test(`actual warm render ${selected?'retains History heading focus':'leaves other focus alone'} with ${retainedNode?'patched':'replaced'} heading`,()=>{
  const body={},document={body,activeElement:body};let heading;
