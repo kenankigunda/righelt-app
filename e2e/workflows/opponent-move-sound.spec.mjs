@@ -12,6 +12,7 @@ const instrument = () => {
   };
 };
 const projected = (page, id) => page.evaluate(readProjectedGame, { id, guest: true });
+const displayedPieces = page => page.locator('#shell-board .cell').evaluateAll(cells => cells.flatMap(cell => [...cell.querySelectorAll('.piece-token:not(.move-ghost):not(.removal-piece):not(.history-destruction-piece)')].map(piece => ({id:piece.dataset.pieceId,row:Number(cell.dataset.row),col:Number(cell.dataset.col)}))).sort((a,b) => a.id.localeCompare(b.id)));
 const moveNotes = page => page.evaluate(() => window.opponentAudioNotes.filter(note => note.frequency === 820));
 
 for (const delivery of ['WebSocket', 'HTTP fallback']) test(`new opponent move sounds during history inspection through ${delivery}`, async ({ browser, baseURL }, info) => {
@@ -33,10 +34,12 @@ for (const delivery of ['WebSocket', 'HTTP fallback']) test(`new opponent move s
     const next = await projected(opponent, gameId);
     const destination = await selectPlayableAction(opponent, next.legalActions.find(action => action.type === 'move' && action.from && action.to));
     await owner.bringToFront();
-    const row = owner.getByTestId('history-move-item').first();
+    const moveId = (await projected(owner, gameId)).moves[0].moveId;
+    const row = owner.locator(`[data-testid="history-move-item"][data-move-id="${moveId}"]`);
     await row.locator('.history-item-info').click();
     await expect(row).toHaveClass(/is-selected/);
-    const inspected = (await projected(owner, gameId)).currentSnapshot;
+    const inspected = await displayedPieces(owner);
+    expect(inspected.length).toBeGreaterThan(0);
     await expect.poll(() => owner.evaluate(() => document.hasFocus() && !document.hidden)).toBe(true);
     await owner.evaluate(() => { window.opponentAudioNotes = []; });
     // Confirm the other player's real prepared board action without stealing
@@ -45,7 +48,8 @@ for (const delivery of ['WebSocket', 'HTTP fallback']) test(`new opponent move s
     await expect.poll(async () => (await projected(owner, gameId)).moves.length, { timeout: 15000 }).toBe(2);
     await expect.poll(async () => (await moveNotes(owner)).length).toBe(1);
     expect((await moveNotes(owner))[0]).toMatchObject({ state: 'running', focused: true, hidden: false });
-    expect((await projected(owner, gameId)).currentSnapshot).toEqual(inspected);
+    await expect(row).toHaveClass(/is-selected/);
+    expect(await displayedPieces(owner)).toEqual(inspected);
     await owner.waitForTimeout(delivery === 'HTTP fallback' ? 5500 : 300);
     expect(await moveNotes(owner)).toHaveLength(1);
     await info.attach('authoritative-opponent-sound', { contentType: 'application/json', body: JSON.stringify({ delivery, notes: await moveNotes(owner), revision: (await projected(owner, gameId)).gameplayRevision }, null, 2) });
