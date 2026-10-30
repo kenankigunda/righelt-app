@@ -35,13 +35,12 @@ async function wire(page) {
    if(!fault.receive){lifecycle.schedule(()=>{fault.lastInbound=Date.now();socket.send(message);},fault.latency);}
   });
  });
- await page.route('**/api/shell/games/**',route=>lifecycle.run(async()=>{
+ // Do not intercept healthy Blob beacons: Linux WebKit can lose their body
+ // even with route.continue(). E07 installs an explicit abort only while offline.
+ await page.route(/\/api\/shell\/games\/(?![^?]*\/presence(?:\?|$))/,route=>lifecycle.run(async()=>{
   fault.requests++;
   if(fault.legacy && /\/reconcile$/.test(new URL(route.request().url()).pathname)){await route.fulfill({status:404,json:{ok:false,error:"not_found"}});return;}
   if(fault.http || (fault.loseReply && isOperationRequest(route.request(),'reconcile'))){await route.abort();return;}
-  // Keep the browser's Blob beacon body intact. Presence is still blocked by
-  // the explicit HTTP fault above; gameplay and reconciliation stay intercepted.
-  if(route.request().method()==='POST'&&/\/presence$/.test(new URL(route.request().url()).pathname)){await route.continue();return;}
   const mutation=isOperationRequest(route.request(),'apply');
   // Loss of an admitted move begins at submission, not during pointer setup.
   // Otherwise a slow browser can enter recovery and reject the click entirely.
@@ -344,13 +343,14 @@ test('E07 old protocol keeps a stable notice until the player refreshes their sa
  const presence=await presenceResponse;
  expect(presence.status(),'The application presence beacon must reach the server with its identity and session').toBe(200);
  expect(await presence.json()).toMatchObject({ok:true,eventSeq:expect.any(Number)});
- // Native forwarding must not bypass the fixture's explicit offline fault.
+ // Keep the offline beacon fault explicit without intercepting healthy bodies.
+ const blockPresence=route=>route.abort();await page.route(presenceUrl,blockPresence);
  fault.http=true;
  try{
   const blockedPresence=page.waitForEvent('requestfailed',{predicate:request=>request.url()===presenceUrl&&request.method()==='POST'});
   await page.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
   expect((await blockedPresence).failure()).not.toBeNull();
- }finally{fault.http=false;}
+ }finally{fault.http=false;await page.unroute(presenceUrl,blockPresence);}
  // WebKit also emits frame navigation for same-document history metadata.
  // Count document requests so only actual reloads satisfy the recovery contract.
  fault.legacy=true;let navigation=0;page.on('request',request=>{if(request.isNavigationRequest()&&request.resourceType()==='document'&&request.frame()===page.mainFrame())navigation++;});
