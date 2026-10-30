@@ -445,10 +445,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
     const effectiveMoves = getEffectiveSelectedPieceMovesForBoard();
     const canInteract = host.canInteract?.(state) !== false;
+    const interactiveOverlay = getOverlay();
+    const displayOverlay = overlayMode === OVERLAY_MODE.INTERACTIVE
+      ? controls.getDisplayOverlay?.({state,selectedPieceId,inspection:interactiveOverlay.inspection}) : null;
+    elements.boardEl?.setAttribute?.('data-display-overlay',displayOverlay?.mode ?? 'none');
     boardAdapter.render({
       snapshot: state,
       selection: getCurrentSelection(),
-      overlay: getOverlay(),
+      overlay: displayOverlay ?? interactiveOverlay,
       legalActions,
       selectedPieceMoves: effectiveMoves.selectedPieceMoves,
       selectedPieceMovePreviews: effectiveMoves.selectedPieceMovePreviews,
@@ -1138,6 +1142,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const allowFreeSelection = getAllowFreeSelection();
     const usesHoverTargetSelection = getUsesHoverTargetSelection();
     const clickedPiece = boardAdapter.getPieceAt(state, clickedCoord);
+    if (clickedPiece) controls.onPieceSelected?.(clickedPiece);
     if (clickedPiece?.id === selectedPieceId) lastPhaseInitializedForPieceId = selectedPieceId;
     const ownerAtPoint = supplyOwnerAt(clickedCoord);
     const legalTarget = [...selectedPieceMoves, ...selectedPieceMovePreviews.filter(action => action.legal !== false)].some(action => sameCoordinate(action.to, clickedCoord));
