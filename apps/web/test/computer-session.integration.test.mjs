@@ -53,7 +53,7 @@ test('connection recovery defers computer work before calculation without saving
   assert.equal(f.computations(), 1); assert.equal(f.submissions(), 1);
 });
 
-for (const boundary of ['calculation', 'proof persistence']) test(`recovery during ${boundary} retains evidence and recomputes only after authority settles`, async t => {
+for (const boundary of ['calculation', 'proof persistence']) test(`recovery during ${boundary} retains completed evidence and admits only after authority settles`, async t => {
   const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
   if (boundary === 'proof persistence') {
     const save = f.transport.decisionAttempt;
@@ -66,11 +66,13 @@ for (const boundary of ['calculation', 'proof persistence']) test(`recovery duri
   assert.equal(f.submissions(), 0); assert.notEqual(f.session.snapshot().phase, 'recovery');
   await f.session.tick(); assert.equal(f.computations(), 1);
   f.transport.decisionAttempt = async (_, value) => f.saved.push(value);
-  f.setBlocked(false); const fresh = f.session.tick();
-  assert.equal(f.computations(), 2);
-  f.pending().resolve({result:{status:'ready',action:{type:'pass'}}}); await fresh;
-  assert.equal(f.submissions(), 1); assert.equal(f.saved.length, 2);
-  assert.notEqual(f.saved[0].attemptId, f.saved[1].attemptId, 'fresh calculation has fresh proof, not an intent replay');
+  const original=structuredClone(f.saved[0]);
+  f.setBlocked(false); const resumed=f.session.tick();
+  if(f.computations()>1)f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});
+  await resumed;
+  assert.equal(f.computations(), 1, 'a temporary fence cannot start another calculation');
+  assert.equal(f.submissions(), 1); assert.equal(f.saved.length, 1);
+  assert.deepEqual(f.saved[0],original,'the acknowledged completed attempt remains unchanged');
 });
 
 test('a recovery race at durable admission defers only an unadmitted command', async t => {
@@ -85,8 +87,12 @@ test('a recovery race at durable admission defers only an unadmitted command', a
   assert.equal(calls, 1); assert.equal(f.saved[0].attempt.outcome, 'ready');
   assert.notEqual(f.session.snapshot().phase, 'recovery');
   await f.session.tick(); assert.equal(f.computations(), 1);
-  f.setBlocked(false); const fresh = f.session.tick(); f.pending().resolve({result:{status:'ready',action:{type:'pass'}}}); await fresh;
-  assert.equal(calls, 2); assert.equal(f.computations(), 2);
+  const original=structuredClone(f.saved[0]);
+  f.setBlocked(false); const resumed=f.session.tick();
+  if(f.computations()>1)f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});
+  await resumed;
+  assert.equal(calls, 2); assert.equal(f.computations(), 1);
+  assert.deepEqual(f.saved,[original],'an unadmitted recovery fence retains the exact proof');
 });
 
 test('a rejected committed command remains terminal even with the recovery error code', async t => {
@@ -778,6 +784,28 @@ for (const stored of [false, true]) test(`temporary evidence failure reconciles 
   assert.equal(f.computations(), 1); assert.equal(f.submissions(), 1);
   assert.deepEqual(requests.map(value => value.operation), stored ? ['write', 'read'] : ['write', 'read', 'write']);
   assert.equal(f.session.snapshot().automaticRetry, null);
+});
+
+
+test('a lost evidence response followed by a recovery fence retains the recovered attempt',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ let record,admission;const requests=[];
+ const apply=f.transport.applyGameAction;f.transport.applyGameAction=async value=>{admission=structuredClone(value);return apply(value);};
+ f.transport.decisionAttempt=async(_,value)=>{
+  requests.push(structuredClone(value));
+  if(value.operation==='write'){record=structuredClone(value);throw Object.assign(Error('request_timeout'),{code:'request_timeout'});}
+  f.setBlocked(true);return{attempt:structuredClone(record.attempt)};
+ };
+ const work=f.session.tick();f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;
+ f.setTime(600);await f.session.tick();
+ assert.equal(f.computations(),1);assert.equal(f.submissions(),0);assert.deepEqual(requests.map(r=>r.operation),['write','read']);
+ await f.session.tick();assert.equal(f.submissions(),0,'the fence still owns admission');
+ f.setBlocked(false);const resumed=f.session.tick();
+ if(f.computations()>1)f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});
+ await resumed;
+ assert.equal(f.computations(),1);assert.equal(f.submissions(),1);assert.equal(requests.length,2,'no second attempt or rewrite');
+ assert.equal(requests[1].attemptId,record.attemptId);assert.deepEqual(requests[0],record);
+ assert.equal(admission.computer.attemptId,record.attemptId);assert.deepEqual(admission.computer,record.attempt.proof);assert.deepEqual(admission.action,record.attempt.result.action);
 });
 
 for (const stage of ['calculation', 'evidence']) test(`repeated transient ${stage} failures recover with capped backoff`, async t => {

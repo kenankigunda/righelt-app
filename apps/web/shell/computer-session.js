@@ -256,7 +256,12 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       return run === epoch && latest.visible && latest.authenticated && latest.key === context.key
         && sameOwnerScope(ownerScope(context), latest) && deterministicStateHash(latest.game.board.state) === base.fingerprint;
     };
-    let saved = false, attempt = retained?.attempt ?? null, evidenceWriteStarted = Boolean(retained);
+    let saved = retained?.saved === true, attempt = retained?.attempt ?? null, evidenceWriteStarted = Boolean(retained);
+    const retainCompletedDecision = () => {
+      decisionRetry = { scope: ownerScope(context), key: context.key, failures: retry?.failures ?? 0, at: clock(),
+        decision: { attemptId, proof, base, attempt, saved } };
+      publish({ phase: 'idle', message: null }, context);
+    };
     publish({ phase: attempt ? 'saving' : 'preparing', startedAt, profile, attemptId, progress: null, message: null });
     try {
       if (!attempt) {
@@ -272,7 +277,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       // Cold preparation can delay interval ticks. Start the same guarded
       // renewal before persisting evidence, then await its receipt below.
       void renewWhenDue(context);
-      if (retained) {
+      if (retained && !saved) {
         const existing = await context.transport.decisionAttempt(game.id, { operation: 'read', kind: 'computer', attemptId });
         if (existing?.attempt) {
           if (canonicalCommandJson(existing.attempt) !== canonicalCommandJson(attempt)) throw Object.assign(new Error('attempt_id_conflict'), { code: 'attempt_id_conflict' });
@@ -292,11 +297,11 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
         await work.leaseWork;
         if (!decisionIsCurrent()) { decisionRetry = null; return; }
       }
-      // Recovery can begin during calculation or evidence persistence. Keep the
-      // completed evidence, then calculate again from settled authority later.
+      // A temporary admission fence does not invalidate a completed decision.
+      // The key/hash checks above and on every later tick still retire evidence
+      // after actual position, control, account, or viewing-scope changes.
       if (context.transport.getGameViewModel(game.id)?.sharedMutationsBlocked) {
-        decisionRetry = null;
-        publish({ phase: 'idle', message: null }, context);
+        retainCompletedDecision();
         return;
       }
       // Evidence does not extend control authority. An expired lease leaves
@@ -324,6 +329,10 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       // computer failure. Once admitted, its durable outcome remains binding.
       if (!pendingSubmission && !decisionIsCurrent()) { decisionRetry = null; return; }
       if (!pendingSubmission) {
+        if (saved && attempt?.result?.status === 'ready' && (error.code ?? error.message) === 'sync_recovering') {
+          retainCompletedDecision();
+          return;
+        }
         const disposition = computerRetryDisposition(error);
         if (disposition !== 'terminal') {
           const failures = retry?.failures ?? 0;
