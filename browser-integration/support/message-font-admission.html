@@ -5,7 +5,7 @@
 <script type="module">
 import {renderBoardMessageSlot,renderBoardHeadingSlot} from '/apps/web/shell/board-message-layout.js';
 import {renderSummaryLoading,renderPlayersLoading,renderHistoryLoading} from '/apps/web/shell/panel-loading.js';
-import {icon} from '/apps/web/icons.js';
+import {renderBoardMessageHtml} from '/apps/web/board/message-presentation.js';
 const app=document.querySelector('#app'),source=await(await fetch('/apps/web/shell/app.js')).text();
 const start=source.indexOf('const renderGameShellFrame ='),end=source.indexOf('const getMountedGameShellRoot =',start);
 if(start<0||end<=start)throw Error('Actual shell frame missing');
@@ -23,8 +23,9 @@ const measurementProbes=new Map([false,true].map(intrinsic=>{
  const copies=[...document.querySelector('.board-message-slot').querySelectorAll('.board-message-sizing')].map(node=>{const copy=node.cloneNode(true);copy.style.cssText=`display:block;height:auto;align-self:start;margin:0${intrinsic?';min-height:0':''}`;probe.append(copy);return copy;});
  measurementWrapper.append(probe);return [intrinsic,{probe,copies}];
 }));
-window.fontEnvelope=(width,{intrinsic=false,primaryOnly=false}={})=>{
+window.fontEnvelope=(width,{intrinsic=false,primaryOnly=false,fallbackFamily=null}={})=>{
  const size=width??document.querySelector('.board-message-slot').getBoundingClientRect().width,{probe,copies}=measurementProbes.get(intrinsic);probe.style.inlineSize=`${size}px`;
+ for(const copy of copies)if(copy.dataset.sizingFont==='fallback')copy.style.fontFamily=fallbackFamily??'';
  // Read fresh metrics after each width/font-stage change: container-query
  // minimum heights and font-dependent line boxes must never be cached.
  // Intrinsic boundary admission only consumes the primary maximum. Keep those
@@ -42,7 +43,7 @@ window.admitMessagePhases=()=>{
   if(probe.getBoundingClientRect().height>before.slot.height+.1||envelope.board.top!==before.board.top||envelope.slot.height!==before.slot.height)failures.push({variant:paragraph.dataset.sizingVariant,text:paragraph.textContent,height:probe.getBoundingClientRect().height,reserved:before.slot.height});
   probe.remove();
  }
- live.innerHTML=`Select a piece <button class="board-preview-inline-button">${icon('right')}<span class="board-inline-action-label">Pass</span></button>`;
+ live.innerHTML=renderBoardMessageHtml({text:'Select a piece or',action:{id:'pass',label:'Pass'}});
  return failures;
 };
 window.fixtureReady=true;

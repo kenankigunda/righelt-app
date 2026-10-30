@@ -1,3 +1,4 @@
+import {computerPhasePresentation} from './computer-narration.js';
 import {getControlSeatForTurn,getSideForSeat,getTurnOwnerSideForState} from '../generated/packages/shared-types/src/shell-live-turn.js';
 
 export const normalizeActivitySide = side => ['P1','p1','Player 1'].includes(side) ? 'P1' : ['P2','p2','Player 2'].includes(side) ? 'P2' : null;
@@ -29,4 +30,15 @@ export function undoApprovalActorSide(game,request) {
   if(!requester)return null;
   const p1=game?.player1?.identityId===requester,p2=game?.player2?.identityId===requester;
   return p1===p2 ? null : p1 ? 'P2' : 'P1';
+}
+
+// A computer message names a profile, so its cue follows that profile's seat.
+// A still-pending human command must never donate its color to this message.
+export function computerActivityActorSide(game, status = {}) {
+  const profile = computerPhasePresentation(game ?? {},status).profile;
+  const seats = game?.computer?.seats ?? {};
+  const matching = ['P1','P2'].filter(side => seats[side === 'P1' ? 'p1' : 'p2'] === profile);
+  if (matching.length === 1) return matching[0];
+  if (game?.pendingComputerSaveStartedAt != null) return normalizeActivitySide(game.pendingActorSide) ?? activityStateActorSide(game.pendingMoves?.[0]?.selectionSnapshot);
+  return normalizeActivitySide(game?.controlSeat) ?? activityStateActorSide(game?.liveCurrentSnapshot ?? game?.board?.state ?? game?.currentSnapshot);
 }
