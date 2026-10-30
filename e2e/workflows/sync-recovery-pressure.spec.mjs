@@ -349,7 +349,9 @@ test('E07 old protocol keeps a stable notice until the player refreshes their sa
   await page.evaluate(()=>window.dispatchEvent(new Event('beforeunload')));
   expect((await blockedPresence).failure()).not.toBeNull();
  }finally{fault.http=false;}
- fault.legacy=true;let navigation=0;page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigation++;});
+ // WebKit also emits frame navigation for same-document history metadata.
+ // Count document requests so only actual reloads satisfy the recovery contract.
+ fault.legacy=true;let navigation=0;page.on('request',request=>{if(request.isNavigationRequest()&&request.resourceType()==='document'&&request.frame()===page.mainFrame())navigation++;});
  await page.reload();
  const refresh=page.locator('[data-action="refresh-game"]');
  await expect(page.getByTestId('sync-recovery-banner')).toBeVisible();
