@@ -31,7 +31,7 @@ export function buildTurnReplay({moves, completedTurnIndex, gameId, revision, li
 }
 
 /** Isolated visual playback. This module deliberately has no transport/search dependency. */
-export function createComputerReplay({rootEl, createAdapter, onChange = () => {}, onFinish = () => {}, reducedMotion = () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true, createPreview = createReplayPreview, timing = COMPUTER_REPLAY_TIMING, setTimer = setTimeout, clearTimer = clearTimeout}) {
+export function createComputerReplay({rootEl, createAdapter, onChange = () => {}, onFinish = () => {}, reducedMotion = () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true, createPreview = createReplayPreview, timing = COMPUTER_REPLAY_TIMING, holdFinal = false, setTimer = setTimeout, clearTimer = clearTimeout}) {
   const doc = rootEl.ownerDocument;
   let replay = null, layer = null, preview = null, index = -1, generation = 0, timer = null, settleWait = null;
   let animations = [], removedTokens = [];
@@ -117,7 +117,10 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
       showFrame();
       if (!await wait(timing.motion + timing.pause) || generation !== current) return false;
     }
-    if (replay && generation === current) stop('completed');
+    if (replay && generation === current) {
+      if (holdFinal) { index = replay.frames.length - 1; notify(); }
+      else stop('completed');
+    }
     return true;
     } catch (error) { if (generation === current) stop('error'); throw error; }
   };
