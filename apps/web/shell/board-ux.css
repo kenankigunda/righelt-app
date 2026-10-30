@@ -19,7 +19,9 @@ body {display:flow-root;}
 .board-message-fallback-sizing :is(.board-preview-coordinate-chip,.board-preview-highlight-chip,.board-preview-retreat-chip,.board-preview-inline-button) {font-family:inherit;}
 /* Intrinsic primary-font row frontiers cover the two-row message grammar,
    full copy, bounded spectator names and turn summaries at 100/200% text.
-   Measured maxima are rounded outward to 1/16em and cover Linux CI. Keep these static so
+   Measured maxima are rounded outward to 1/16em and cover Linux CI.
+   The 123-variant Linux primary envelope needs 18.00537em for three rows
+   and 35.90339em for two rows (the multi-follow push summary). Keep these static so
    cold and loaded fonts share the same first-paint reservation. Tests probe
    every source boundary plus independent width samples. Below 8.5em the
    intrinsic fallback remains the reservation. */
@@ -32,10 +34,10 @@ body {display:flow-root;}
 @container board-message (min-width:11.8125em) and (width < 13.1875em) {
   .board-message-sizing {min-height:7.5em;}
 }
-@container board-message (min-width:13.1875em) and (width < 18em) {
+@container board-message (min-width:13.1875em) and (width < 18.0625em) {
   .board-message-sizing {min-height:6em;}
 }
-@container board-message (min-width:18em) and (width < 35.8125em) {
+@container board-message (min-width:18.0625em) and (width < 35.9375em) {
   .board-message-sizing {min-height:4.5em;}
 }
 .board-heading-slot {display:grid;grid-template-columns:minmax(0,1fr);min-width:0;}
