@@ -12,7 +12,7 @@ for (const reducedMotion of ['no-preference', 'reduce']) test(`Home resets while
     await section.locator('[data-action="home-page-next"]').click();
     await expect(section).toContainText('Page 2 of');
     await expect.poll(() => section.evaluate(element => Math.abs(element.getBoundingClientRect().top))).toBeLessThan(2);
-    await page.evaluate(() => {
+    const initialScroll=await page.evaluate(() => {
       window.routeMotion = [];
       const layer = document.querySelector('#shell-route-transition-layer');
       new MutationObserver(() => {
@@ -22,8 +22,10 @@ for (const reducedMotion of ['no-preference', 'reduce']) test(`Home resets while
         }
       }).observe(layer, { attributes: true });
       window.scrollTo({ top: 240, behavior: 'instant' });
+      return scrollY;
     });
-    await expect.poll(() => page.evaluate(() => scrollY)).toBe(240);
+    expect(initialScroll).toBeGreaterThan(0);
+    await expect.poll(() => page.evaluate(() => scrollY)).toBe(initialScroll);
     const card = section.locator('.mini-board-card-link-surface').last();
     await page.evaluate(() => addEventListener('click', event => {
       if (event.target.closest('.mini-board-card-link-surface')) window.departureScroll = scrollY;

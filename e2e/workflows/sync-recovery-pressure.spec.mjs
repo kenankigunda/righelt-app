@@ -355,11 +355,11 @@ test('E07 old protocol keeps a stable notice until the player refreshes their sa
  // Count document requests so only actual reloads satisfy the recovery contract.
  fault.legacy=true;let navigation=0;page.on('request',request=>{if(request.isNavigationRequest()&&request.resourceType()==='document'&&request.frame()===page.mainFrame())navigation++;});
  await page.reload();
- const refresh=page.locator('[data-action="refresh-game"]');
- await expect(page.getByTestId('sync-recovery-banner')).toBeVisible();
- await expect(refresh).toHaveAccessibleName('Reload game');
+ const recovery=page.getByTestId('destination-load-notice'),refresh=recovery.getByRole('button',{name:'Reload',exact:true});
+ await expect(recovery).toContainText('Righelt has an update. Reload to keep playing.');
+ await expect(refresh).toBeVisible();
  await expect(refresh.locator('svg')).toHaveAttribute('aria-hidden','true');
- const home=page.getByTestId('sync-recovery-banner').getByRole('link',{name:'Home',exact:true});
+ const home=recovery.getByRole('link',{name:'Home',exact:true});
  await expect(home).toHaveAttribute('href','#/');await expect(home.locator('svg')).toHaveAttribute('aria-hidden','true');
  await refresh.focus();
  await expect(refresh).toBeFocused();
@@ -368,7 +368,8 @@ test('E07 old protocol keeps a stable notice until the player refreshes their sa
  expect(fault.commands).toHaveLength(0);
  const start=Date.now();fault.legacy=false;await refresh.click();
  await expect.poll(()=>navigation).toBe(2);
- await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
+ await expect(recovery).toBeHidden();
+ await expect(page.getByTestId('game-shell')).toBeVisible();await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-phase','idle');
  await expect.poll(async()=>JSON.stringify(await digest(page))).toBe(JSON.stringify(before));
  await evidence(info,'upgrade-refresh',start,[fault],{automaticReloads:navigation-2,presenceBeacon:{acceptedStatus:presence.status(),offlineBlocked:true}});
 });
