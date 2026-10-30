@@ -13,15 +13,20 @@ for(const motion of ['no-preference','reduce'])test(`computer stays unprojected 
   await page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true}).click();await expect.poll(()=>Boolean(command),{timeout:30000}).toBe(true);
   const before=await pieces(page);const read=()=>page.evaluate(readProjectedGame,{id:game.id,guest:true});const acknowledged=await read();expect(acknowledged.moves.filter(move=>move.computerProof)).toHaveLength(0);
   await page.evaluate(()=>window.moveNotes=[]);await expect(page.locator('#shell-board-preview-label')).toContainText('saving their move');expect(await pieces(page)).toEqual(before);await expect(page.locator('.computer-replay')).toHaveCount(0);expect(await page.evaluate(()=>window.moveNotes.filter(note=>note.frequency===820))).toHaveLength(0);
-  release();await expect(page.locator('.computer-replay')).toBeVisible({timeout:15000});await expect(page.locator('#shell-board-preview-label')).toContainText('making their move');await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toHaveCount(0);
+  // Inspect each presentation atomically, including the short reduced-motion frame.
+  // Separate protocol assertions could otherwise straddle its completion.
+  await page.evaluate(()=>{window.playbackControlSamples=[];const sample=()=>{if(!document.querySelector('.computer-replay'))return;const label=document.querySelector('#shell-board-preview-label');window.playbackControlSamples.push({message:label?.textContent??'',pass:[...(label?.querySelectorAll('button')??[])].some(button=>button.textContent.trim()==='Pass')});};window.playbackControlObserver=new MutationObserver(sample);window.playbackControlObserver.observe(document.querySelector('#game-shell')??document.body,{childList:true,subtree:true,characterData:true});});
+  release();await expect.poll(()=>page.evaluate(()=>window.playbackControlSamples.some(sample=>sample.message.includes('making their move'))),{timeout:15000}).toBe(true);
+  expect(await page.evaluate(()=>window.playbackControlSamples.some(sample=>sample.pass))).toBe(false);
   await expect.poll(()=>page.evaluate(()=>window.moveNotes.filter(note=>note.frequency===820).length)).toBe(1);await expect(page.locator('.computer-replay')).toHaveCount(0,{timeout:15000});
   await expect.poll(async()=> (await read()).moves.filter(move=>move.computerProof).length).toBeGreaterThan(0);
+  expect(await page.evaluate(()=>{window.playbackControlObserver.disconnect();return window.playbackControlSamples.some(sample=>sample.pass);})).toBe(false);
   await page.screenshot({path:info.outputPath('confirmed-computer-final.png')});await info.attach('confirmed-computer-command',{body:JSON.stringify({commandId:command.clientCommandId,attemptId:command.payload.computer.attemptId,before}),contentType:'application/json'});
  }finally{release();}
 });
 
 test('unseen update chime stays pending through History and Players and stops after live review',async({page,context},info)=>{
- test.setTimeout(90000); // Observe the real 30-second reminder both before and after seeing Live.
+ test.setTimeout(120000); // Keep both real 30-second intervals plus cold preparation and native navigation within the workflow budget.
  const {switchGamePanel}=await import('../support/app.mjs');
  await page.addInitScript(()=>{window.WebSocket=undefined;window.moveNotes=[];const original=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(original,this,args);window.moveNotes.push({frequency:this.frequency.value,at:performance.now()});return value;};});
  await page.setViewportSize({width:390,height:900});await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
