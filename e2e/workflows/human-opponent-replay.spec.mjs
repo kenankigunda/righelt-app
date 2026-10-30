@@ -88,17 +88,22 @@ for(const width of [390,1440])test(`reopening human play preserves narration and
   await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
 });
 
-for(const width of [390,1440])test(`live opponent overview preserves play and visit intent at ${width}px`,async({ownedRoleContext,baseURL},info)=>{
+async function createOverviewFriendGame({ownedRoleContext,baseURL,width}) {
  const contexts=await Promise.all([0,1].map(()=>ownedRoleContext({viewport:{width,height:820},hasTouch:width===390})));
  const [owner,opponent]=await Promise.all(contexts.map(context=>context.newPage()));
  const {gameId,gameHash}=await createGameFromHome(owner);
  await openDirectGameLink(opponent,baseURL,gameHash);await requestPlayerJoin(opponent);await acceptPendingRequest(owner);
  await expect(opponent.getByTestId('game-role')).toContainText('Player 2');
- for(const page of [owner,opponent])await switchGamePanel(page,'board');
+ await Promise.all([owner,opponent].map(page=>switchGamePanel(page,'board')));
  const initial=await projected(owner,gameId),action=initial.legalActions.find(action=>action.type==='move'&&action.to?.row===4&&action.to?.col===6);
- await submitPlayableAction(owner,action);
+ expect(action).toBeTruthy();await submitPlayableAction(owner,action);
  const board=opponent.getByTestId('game-board'),cell=point=>board.locator(`.cell[data-row="${point.row}"][data-col="${point.col}"]`);
  await expect(board).toHaveAttribute('data-display-overlay','recorded-turn');
+ return {owner,opponent,gameId,board,cell};
+}
+
+for(const width of [390,1440])test(`live opponent overview preserves play and visit intent at ${width}px`,async({ownedRoleContext,baseURL},info)=>{
+ const {owner,opponent,gameId,board,cell}=await createOverviewFriendGame({ownedRoleContext,baseURL,width});
  await expect(board.locator('.cell.source,.cell.target,.axis-strong,.axis-medium')).toHaveCount(0);
  await expect(opponent.getByTestId('history-return-live')).toHaveCount(0);
  await expect(replayButton(opponent)).toBeVisible();
@@ -121,6 +126,10 @@ for(const width of [390,1440])test(`live opponent overview preserves play and vi
  await opponent.locator('.shell-header-title-link').click();await expect(opponent.getByTestId('home-create-game')).toBeVisible();
  await opponent.locator(`.mini-board-card-link-surface[data-game-id="${gameId}"]`).click();await switchGamePanel(opponent,'board');
  await expect(board).toHaveAttribute('data-display-overlay','recorded-turn');
+ });
+
+for(const width of [390,1440])test(`unfinished human turn reopens live and a new opponent turn restores overview at ${width}px`,async({ownedRoleContext,baseURL})=>{
+ const {owner,opponent,gameId,board}=await createOverviewFriendGame({ownedRoleContext,baseURL,width});
  // Project a second actor and approach before rushing: a lone actor's rush
  // settles immediately, so it cannot prove reopening an unfinished turn.
  const approach=listLegalActions((await projected(opponent,gameId)).board.state).find(action=>action.type==='project'&&action.to?.row===4&&action.to?.col===3);expect(approach).toBeTruthy();await submitPlayableAction(opponent,approach);
