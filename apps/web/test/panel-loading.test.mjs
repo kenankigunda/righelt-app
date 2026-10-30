@@ -22,7 +22,8 @@ test('unknown loading placeholders have no identities, enabled controls or autho
   assert.match(html,/aria-hidden="true"/);assert.doesNotMatch(html,/<(?:button|a|input)\b|data-action=|data-username=|data-profile-key=|tabindex=/);
  }
  const players=slots.renderPlayersLoading();assert.equal((players.match(/<li/g)||[]).length,3);assert.equal((players.match(/panel-loading-emblem/g)||[]).length,2);
- assert.equal((slots.renderHistoryLoading().match(/<li /g)||[]).length,1);
+ assert.equal((slots.renderHistoryLoading().match(/<li /g)||[]).length,2);
+ assert.match(slots.renderHistoryLoading(),/class="history-turn"[\s\S]*class="history-turn-heading"[\s\S]*history-list-nested/);
  for(const actions of [2,3])assert.equal((slots.renderInvitationLoading({actions}).match(/invite-choice-row/g)||[]).length,actions);
 });
 test('loading preserves the real empty feedback and additional-history footer flow',()=>{

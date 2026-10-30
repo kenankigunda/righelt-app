@@ -1745,7 +1745,11 @@ const renderTurnHistory = (game) => {
     const pending = (game.pendingMoves ?? []).includes(move);
     const liveSelected = !game.inHistoryMode && move === moves.at(-1) && !game.currentSnapshot?.continuation && game.currentTurn?.moveIndexes?.length;
     const actor = historyActorLabel(game,move,{identityId:transport.getIdentityId()});
-    const actions = selected && !move.undone ? `<div class="history-item-actions">${game.myRoles?.some(role=>role==='Player 1'||role==='Player 2') ? `<button class="secondary mini-button history-branch-button" data-action="revert-to-move" data-game-id="${escapeHtml(game.id)}" data-move-id="${escapeHtml(move.moveId || '')}">${icon('back')}Undo before this move</button>` : ''}<button class="secondary mini-button history-branch-button" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}">${icon('play')}New game before this move</button></div>` : '';
+    const revertButton = selected && !move.undone && game.myRoles?.some(role=>role==='Player 1'||role==='Player 2')
+      ? `<button class="secondary mini-button history-branch-button" data-action="revert-to-move" data-game-id="${escapeHtml(game.id)}" data-move-id="${escapeHtml(move.moveId || '')}">${icon('back')}Undo before this move</button>` : '';
+    const branchButton = selected && !move.undone
+      ? `<button class="secondary mini-button history-branch-button" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}">${icon('play')}New game before this move</button>` : '';
+    const actions = revertButton || branchButton ? `<div class="history-item-actions">${revertButton}${branchButton}</div>` : '';
     const destroyedPieces = Array.isArray(move.destroyedPieces) ? move.destroyedPieces : [];
     const destroyed = destroyedPieces.map((record)=>`<li class="history-destruction-item ${playerToneClassForSide(record.ownerSeat === "p1" ? "P1" : record.ownerSeat === "p2" ? "P2" : "neutral")}" data-testid="history-destruction-item"><span class="history-destruction-label">DESTROYED (${record.position.row},${record.position.col})</span></li>`).join('');
     return `<li class="history-item ${playerToneClassForSide(move.actorSide)}${selected?' is-selected':liveSelected?' is-live-selected':''}${move.undone?' is-undone':''}${pending?' history-item-pending':''}${actions?' history-item-has-actions':''}" ${selected?'':`data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}" tabindex="0" role="button"`} data-key="${escapeHtml(move.moveId || move.clientCommandId || String(move.index))}" data-move-id="${escapeHtml(move.moveId || '')}" ${pending?'data-testid="history-pending-move-item"':'data-testid="history-move-item"'} aria-label="${escapeHtml(actor)} · Move ${move.displayMoveNumber ?? move.index+1}: ${escapeHtml(move.notation)}" ${selected?'aria-current="true"':''} ${pending?'aria-busy="true"':''}>
@@ -2511,21 +2515,41 @@ const revealSelectedHistory = () => {
   window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
     const selected = appEl.querySelector('[data-game-panel="history"] [aria-current="true"]');
     if (!selected) { revealedHistoryKey=null; return; }
-    const key = `${getCurrentViewedGameId()}:${selected.closest('[data-key]')?.getAttribute('data-key') ?? selected.textContent}`;
+    const preview = selected.querySelector('.history-inline-preview') ?? (selected.nextElementSibling?.matches('.history-inline-preview') ? selected.nextElementSibling : null);
+    const viewport = window.visualViewport?.height ?? window.innerHeight;
+    const nav = appEl.querySelector('.shell-mobile-tabbar');
+    // Reserve the controls' full height even while hidden. Revealing the entry
+    // can scroll upward and reveal the navigation at the same time.
+    const navigationHeight = Math.max(nav?.getBoundingClientRect().height ?? 0, nav?.querySelector('[data-mobile-nav-controls]')?.getBoundingClientRect().height ?? 0) + (nav?.querySelector('[data-mobile-nav-reveal]')?.getBoundingClientRect().height ?? 0);
+    const bottomInset = 20 + navigationHeight;
+    if (preview) {
+      // Measure natural geometry each time. DOM patching can replace inline
+      // sizing, and rotation/text enlargement changes the available height.
+      preview.style.removeProperty('zoom');
+      preview.style.removeProperty('width');
+      const bounds = preview.getBoundingClientRect();
+      const headingHeight = bounds.top - selected.getBoundingClientRect().top;
+      const available = Math.max(1, viewport - 12 - bottomInset - headingHeight);
+      if (bounds.height > available && bounds.width > 0) {
+        // Scale the complete mini-board, including its axes, token shapes and
+        // overlay strokes. Compact-board minimum cell sizes remain unchanged.
+        preview.style.width = `${bounds.width}px`;
+        preview.style.zoom = String(available / bounds.height);
+      }
+    }
+    const key = `${getCurrentViewedGameId()}:${selected.closest('[data-key]')?.getAttribute('data-key') ?? selected.textContent}:${window.innerWidth}:${viewport}`;
     if (revealedHistoryKey === key) return;
     revealedHistoryKey = key;
-    const preview = selected.querySelector('.history-inline-preview') ?? (selected.nextElementSibling?.matches('.history-inline-preview') ? selected.nextElementSibling : null);
     const top = selected.getBoundingClientRect().top;
     const bottom = (preview || selected).getBoundingClientRect().bottom;
-    const viewport = window.visualViewport?.height ?? window.innerHeight;
-    if (top < 12 || bottom > viewport - 12) window.scrollBy({top:top-12,behavior:'instant'});
+    if (top < 12 || bottom > viewport - bottomInset) window.scrollBy({top:top-12,behavior:'instant'});
   }));
 };
 
 const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
   return renderHistorySlots({rows:historyRows,extra:renderAdditionalHistory(game),
-    before:game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? (game.historyLoadTurnIndex != null ? "Loading this turn" : "Loading this move") : "This view couldn’t load. Your current view is still available."}</p>${game.historyLoadError ? `<button class="secondary mini-button" ${game.historyLoadTurnIndex != null ? `data-action="jump-history-turn" data-turn-index="${game.historyLoadTurnIndex}"` : `data-action="jump-history" data-move-index="${game.historyLoadIndex}"`} data-game-id="${escapeHtml(game.id)}">Retry</button>` : ""}</div>` : "",
+    before:game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? (game.historyLoadTurnIndex != null ? "Loading this turn" : "Loading this move") : (game.historyLoadTurnIndex != null ? "This turn couldn’t load. Your current view is still available." : "This move couldn’t load. Your current view is still available.")}</p>${game.historyLoadError ? `<button class="secondary mini-button" ${game.historyLoadTurnIndex != null ? `data-action="jump-history-turn" data-turn-index="${game.historyLoadTurnIndex}"` : `data-action="jump-history" data-move-index="${game.historyLoadIndex}"`} data-game-id="${escapeHtml(game.id)}">Retry</button>` : ""}</div>` : "",
     after:getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">${icon("history")}View result</button>` : ""});
 };
 

@@ -2256,3 +2256,6 @@ textarea:focus-visible {
 .history-item.is-selected .history-archive-select { cursor:default; }
 .history-inline-preview { width:100%; max-width:26rem; }
 .history-turn > .history-list-nested { margin-top:.3rem; }
+
+/* Selected metadata participates in measured preview fitting at enlarged text. */
+.history-item.is-selected .history-move-at { max-height:none; }
