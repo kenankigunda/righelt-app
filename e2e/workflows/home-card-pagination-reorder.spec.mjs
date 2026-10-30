@@ -106,6 +106,19 @@ test("home pagination keeps both arrows and its label on one line across layouts
         await section.screenshot({ path: testInfo.outputPath(`pagination-${width}-${scale}.png`) });
       }
     }
+
+  } finally {
+    await closeContextQuietly(context);
+  }
+});
+
+
+test("home pagination fits pending, final-page, and delayed-font controls at enlarged text size", async ({ browser }, testInfo) => {
+  const { context, page } = await createIsolatedPage(browser);
+  try {
+    await createGamesViaApi(page, 28);
+    await page.goto("/");
+    const section = page.locator('[data-home-section-root="my"]');
     await page.setViewportSize({ width: 390, height: 1100 });
     await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
     const controls = section.locator('.home-games-section-controls:visible');
@@ -136,11 +149,11 @@ test("home pagination keeps both arrows and its label on one line across layouts
       await assertPagingFits(controls);
       await controls.screenshot({path:testInfo.outputPath('pagination-pending-390-200.png')});
     }finally{releasePage();if(heldRequests)await pageHandled;await page.unroute(pagePattern,holdPage);}
-    await expect(section).toContainText('Page 2 of 17');
+    await expect(section).toContainText('Page 2 of 10');
     await expect(controls.locator('[data-action="home-page-next"]')).toBeEnabled();
-    for(let number=3;number<=17;number++){
+    for(let number=3;number<=10;number++){
       await controls.locator('[data-action="home-page-next"]').click();
-      await expect(section).toContainText(`Page ${number} of 17`);
+      await expect(section).toContainText(`Page ${number} of 10`);
       await expect(controls.locator('[data-action="home-page-prev"]')).toBeEnabled();
     }
     await assertPagingFits(controls);
@@ -153,7 +166,7 @@ test("home pagination keeps both arrows and its label on one line across layouts
     const fontProof={};
     try{
       await page.reload({waitUntil:'domcontentloaded'});await expect.poll(()=>fontSeen).toBe(true);
-      await expect(section).toContainText('Page 1 of 17');
+      await expect(section).toContainText('Page 1 of 10');
       expect(await page.evaluate(()=>document.fonts.status)).toBe('loading');
       await assertPagingFits(controls);
       fontProof.cold=await controls.evaluate(element=>({font:document.fonts.status,buttons:[...element.querySelectorAll('button')].map(button=>{const rect=button.getBoundingClientRect();return {width:rect.width,height:rect.height};})}));
