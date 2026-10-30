@@ -1,4 +1,5 @@
 export const WEB_UNIT_TEST_FILES = Object.freeze([
+  "confirmed-computer-playback.test.mjs",
   "forced-follow.test.mjs",
   "push-sequence-replay.test.mjs",
   "opponent-move-sound.test.mjs",
