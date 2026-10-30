@@ -4303,7 +4303,7 @@ const showForcedFollowVisual = async (state, move = null) => {
   forcedFollowVisual = createComputerReplay({rootEl,createAdapter:()=>createEngineBoardAdapter(),reducedMotion:prefersReducedMotion,holdFinal:true,
     timing:{motion:move?COMPUTER_REPLAY_TIMING.motion:0,pause:0},onChange:updateForcedFollowUi,onFinish:updateForcedFollowUi});
   const context = currentReplayContext();
-  await forcedFollowVisual.play({...context,frames:[{decisionId:move?.moveId ?? 'follow-wait',action:move?.action ?? {type:'hold'},before:move?.selectionSnapshot ?? state,after:move?.snapshot ?? state,destroyedPieces:move?.destroyedPieces ?? []}]});
+  await forcedFollowVisual.play({gameId:context.gameId,revision:context.revision,lineageHead:context.lineageHead,frames:[{decisionId:move?.moveId ?? 'follow-wait',action:move?.action ?? {type:'hold'},before:move?.selectionSnapshot ?? state,after:move?.snapshot ?? state,destroyedPieces:move?.destroyedPieces ?? []}]});
 };
 forcedFollowSession = createForcedFollow({ getContext: () => {
   const gameId = currentRoute.name === 'game' ? currentRoute.gameId : null;
