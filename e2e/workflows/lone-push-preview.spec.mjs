@@ -111,9 +111,12 @@ test("a pushed commander stays below the attacking unit while its window masks b
   }
   await importScenarioGame(page,scenario,baseURL);
   await getBoardCell(page,{row:8,col:9}).click();
-  const stack=getBoardCell(page,{row:9,col:9}).locator('[data-push-preview-stack="1"]');
+  const stackSelector='[data-testid="game-board"] .cell[data-row="9"][data-col="9"] [data-push-preview-stack="1"]';
+  const stack=page.locator(stackSelector);
   await expect(stack.locator('.commander.stacked-underlay')).toBeVisible();
-  const order=await stack.evaluate(el=>({stack:Number(getComputedStyle(el).zIndex),under:Number(getComputedStyle(el.querySelector('.stacked-underlay')).zIndex),top:Number(getComputedStyle(el.querySelector('.stacked-top')).zIndex),opacity:getComputedStyle(el.querySelector('.commander')).opacity}));
+  // Query and measure in one browser task so a completed preview cannot detach
+  // a previously resolved element between lookup and computed-style inspection.
+  const order=await page.evaluate(selector=>{const el=document.querySelector(selector);if(!el)throw Error('Expected the live push-preview stack');return{stack:Number(getComputedStyle(el).zIndex),under:Number(getComputedStyle(el.querySelector('.stacked-underlay')).zIndex),top:Number(getComputedStyle(el.querySelector('.stacked-top')).zIndex),opacity:getComputedStyle(el.querySelector('.commander')).opacity};},stackSelector);
   expect(order.stack).toBeGreaterThanOrEqual(2);expect(order.under).toBeLessThan(order.top);expect(order.opacity).toBe('1');
  } finally {await closeContextQuietly(context);}
 });
