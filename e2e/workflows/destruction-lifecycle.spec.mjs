@@ -62,7 +62,8 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
    await expect(preview.locator('.cell')).toHaveCount(100);
    const renderedIds=()=>preview.locator('.piece-token[data-piece-id]:not(.move-ghost):not(.removal-piece):not(.history-destruction-piece)').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('data-piece-id')).sort());
    await expect.poll(renderedIds).toEqual(saved.moves[0].snapshot.pieces.map(piece=>piece.id).sort());
-   await expect(preview.locator('.removal-piece,.history-destruction-piece')).toHaveCount(0);
+   await expect(preview.locator('.removal-piece')).toHaveCount(0);
+   await expect(preview.locator('.history-destruction-piece')).toHaveCount(2);
    await expect(page.getByTestId('history-destruction-item')).toHaveCount(2);
    await page.screenshot({path:testInfo.outputPath('history-removals.png')});
    await switchGamePanel(page,'board');

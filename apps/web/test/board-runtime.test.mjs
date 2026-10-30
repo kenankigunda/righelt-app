@@ -186,7 +186,7 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
   assert.equal(renderCalls.at(-1)?.overlay?.mode, "recorded-action");
   assert.deepEqual(renderCalls.at(-1)?.overlay?.recordedAction, recordedAction);
   assert.deepEqual(renderCalls.at(-1)?.overlay?.recordedActionStartPiece, recordedActionStartPiece);
-  assert.equal(boardPreviewLabelEl.textContent, "Recorded move");
+  assert.match(boardPreviewLabelEl.innerHTML || boardPreviewLabelEl.textContent, /Recorded move from.*board-preview-coordinate-chip-selected-piece.*4,\s*2.*board-preview-coordinate-chip-target.*4,\s*3/);
 });
 
 test("board runtime starts history destruction in the removal-effects layer before the settled overlay appears", async () => {
@@ -3560,4 +3560,15 @@ test('production bind path suspends new preview requests until pageshow',async()
   if(savedDocument)Object.defineProperty(globalThis,'document',savedDocument);else delete globalThis.document;
   if(savedWindow)Object.defineProperty(globalThis,'window',savedWindow);else delete globalThis.window;
  }
+});
+
+test('whole-turn overlays reach the adapter without selected-cell state',async()=>{
+ const rendered=[];
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:input=>rendered.push(input),getSelectedPieceSummary:()=>null},host:{canInteract:()=>false}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null});
+ const actions=[{recordedAction:{type:'move',from:{row:1,col:1},to:{row:1,col:2}},recordedActionStartPiece:{id:'A',owner:'P1'}}];
+ await runtime.loadSnapshot({pieces:[],sideToMove:'P1',turnIndex:1},{legalActions:[],overlayMode:'recorded-turn',recordedActions:actions});
+ assert.equal(rendered.at(-1).overlay.mode,'recorded-turn');
+ assert.deepEqual(rendered.at(-1).overlay.recordedActions,actions);
+ assert.equal(rendered.at(-1).overlay.selection,null);
 });
