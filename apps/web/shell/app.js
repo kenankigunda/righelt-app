@@ -2371,7 +2371,7 @@ const renderHome = () => `<section class="stack home-refresh">${storageResetNoti
 
 const getHeaderAlertItems = game => {
   const scope=loadingContextScope();
-  const slow=accountStartupError?[]:slowLoadingContexts.filter(context=>context.scope===scope).map(context=>({
+  const slow=accountStartupError || destinationLoadPresentation?.blocked?[]:slowLoadingContexts.filter(context=>context.scope===scope).map(context=>({
     key:context.key,
     html:renderGameAlertCard({tone:'neutral',activity:'processing',body:`<span role="status">${escapeHtml(context.message)}</span>`,testId:'slow-loading-notice'}),
   }));
@@ -2800,7 +2800,16 @@ const patchHomeAroundCreateControl = (markup) => {
       if (child === freshHeader && retainedHeader) continue;
       if(child instanceof HTMLElement && child.matches("[data-shell-flyouts]"))continue;
       const section=child instanceof HTMLElement ? sectionNodes.get(child.dataset.homeSectionRoot) : null;
-      if(section){patchSectionContent(section,child);continue;}
+      if(section){
+        if(section.matches('[data-testid="home-section-skeleton"]') && child.matches('[data-testid="home-section-skeleton"]')){
+          // The loading controller owns this cue and animation. A retry/status
+          // render with unchanged source markup must not remount its children.
+          const comparable=section.cloneNode(true);comparable.removeAttribute('data-loading-phase');
+          comparable.querySelectorAll(':scope > .loading-pieces, :scope > .loading-context').forEach(node=>node.remove());
+          if(comparable.isEqualNode(child))continue;
+        }
+        patchSectionContent(section,child);continue;
+      }
       if (after) current.append(child.cloneNode(true)); else current.insertBefore(child.cloneNode(true), retained);
     }
   }

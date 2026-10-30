@@ -206,13 +206,14 @@ test('cold Home loading keeps its bounded card until a read succeeds',async({pag
   await expect(recovery.getByRole('link',{name:'Home',exact:true})).toHaveAttribute('href','#/');
   await expect(card).toHaveCount(1);
   const frames=await page.evaluate(()=>window.boundedHomeFrames);
+  const blockedSlowNotices=await page.getByTestId('slow-loading-notice').count();
+  await info.attach('mounted-home-bounded-layout',{body:JSON.stringify({before,frames,blockedSlowNotices}),contentType:'application/json'});
   expect(frames.length).toBeGreaterThan(2);
   for(const frame of frames){expect(frame.rect).toEqual(before.rect);expect(frame.same).toBe(true);expect(frame.inlineContext).toBe(false);}
   expect(frames.at(-1).time).toBeGreaterThan(before.time);
   release();await expect(card).toHaveCount(0);await expect(recovery).toBeHidden();
   await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-phase','idle');
   await expect(page.getByTestId('slow-loading-notice')).toHaveCount(0);
-  await info.attach('mounted-home-bounded-layout',{body:JSON.stringify({before,frames}),contentType:'application/json'});
-  expect(errors).toEqual([]);
+  expect(blockedSlowNotices).toBe(0);expect(errors).toEqual([]);
  }finally{release();await page.unrouteAll({behavior:'wait'});}
 });
