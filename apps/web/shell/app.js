@@ -69,6 +69,7 @@ import { createGameSound } from './sound.js';
 import { createModal } from './modal.js';
 import { createOpponentStoryDialog, OPPONENT_STORIES } from './opponent-stories.js';
 import { recoveryMessage, needsRecoveryAction, sharedMutationActions, isBoardRecoveryPending } from "./recovery-view.js";
+import { createForegroundRecoveryWait } from './foreground-recovery.js';
 import { renderGameAlertCard } from "./game-alert.js";
 import { createNotificationStack, recoveryActivity } from "./notification-state.js";
 import { patchNotificationTree, patchNotificationHtml, replaceMainPreservingHeader } from "./notification-dom.js";
@@ -130,7 +131,27 @@ syncAnnouncement.setAttribute("aria-live", "polite");
 syncAnnouncement.setAttribute("aria-atomic", "true");
 document.body.appendChild(syncAnnouncement);
 const quietComputerRenewal = game => Boolean(game?.id === getCurrentViewedGameId() && computerSession?.snapshot().activity?.quietRenewal);
-const presentedRecoveryMessage = game => recoveryMessage(game, Date.now(), { computerSaveActive: game?.id === getCurrentViewedGameId() && computerSession?.snapshot().phase === "saving", quietComputerRenewal: quietComputerRenewal(game) });
+const foregroundRecoveryWait = createForegroundRecoveryWait({ onChange: () => {
+  updateMountedHeader();
+  const game = currentRoute.name === 'game' ? transport.getGameViewModel(currentRoute.gameId) : null;
+  updateRecoveryAnnouncement(game);
+} });
+const recoveryPresentationOptions = game => ({
+  foregroundWaitMs: foregroundRecoveryWait.update({
+    scope: `${viewingScope()}:${currentRoute.name === 'game' ? currentRoute.gameId : ''}:${game?.recoveryEpisodeId ?? ''}`,
+    active: !document.hidden && currentRoute.name === 'game' && currentRoute.gameId === game?.id && !game?.inHistoryMode,
+    blocked: Boolean(game?.sharedMutationsBlocked && (game.recovering || game.syncStatus === 'confirming' || game.confirmationOverdue)),
+  }),
+  computerSaveActive: game?.id === getCurrentViewedGameId() && computerSession?.snapshot().phase === 'saving',
+  quietComputerRenewal: quietComputerRenewal(game),
+});
+const presentedRecoveryMessage = game => recoveryMessage(game, Date.now(), recoveryPresentationOptions(game));
+document.addEventListener('visibilitychange', () => {
+  foregroundRecoveryWait.reset();
+  updateMountedHeader();
+  updateRecoveryAnnouncement(currentRoute.name === 'game' ? transport.getGameViewModel(currentRoute.gameId) : null);
+});
+window.addEventListener('pagehide', () => foregroundRecoveryWait.reset());
 const updateRecoveryAnnouncement = (game) => {
   const failures = game ? [...new Set((transport.getFailedOperations?.(game.id) ?? []).map((operation) => operation.error?.message).filter(Boolean))] : [];
   const text = game ? [presentedRecoveryMessage(game), game.historyNotice, ...failures].filter(Boolean).join(" ") : "";
@@ -1628,7 +1649,7 @@ const getGameAlertItems = (game) => {
   }));
 
   const message = presentedRecoveryMessage(game);
-  const recoveryNeedsAction = needsRecoveryAction(game);
+  const recoveryNeedsAction = needsRecoveryAction(game, Date.now(), recoveryPresentationOptions(game));
   for (const report of issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.key.startsWith("operation:"))) if (!failedOperations.some(op => `operation:${op.id}` === report.key)) issueDiagnostics.resolve(report.key);
   const retained = issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.resolvedAt && isDiagnosticOpen(r.id));
   for (const report of retained) items.push({ key: `resolved:${report.id}`, html: renderGameAlertCard({ body: "Resolved", incidentId: report.id, action: `<button class="secondary mini-button" data-action="dismiss-diagnostic" data-incident-id="${report.id}">${icon('close')}Dismiss</button>` }) });
@@ -3807,6 +3828,7 @@ const captureScenarioDraftFocus = (baseRouteKey) => {
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (renderGesture.defer({ animatePanels, includeBoard })) return;
+  recoveryPresentationOptions(currentRoute.name === 'game' ? transport.getGameViewModel(currentRoute.gameId) : null);
   const previousJoinFocus = document.activeElement;
   utilityMemory.capture();
   const result = preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => renderContent({ animatePanels, includeBoard }));
@@ -5160,7 +5182,7 @@ appEl.addEventListener("click", async (event) => {
   }
   if (action === "dismiss-recovery-notice") {
     const gameId = actionEl.getAttribute("data-game-id");
-    dismissedRecoveryNotices.set(gameId, recoveryMessage(transport.getGameViewModel(gameId)));
+    dismissedRecoveryNotices.set(gameId, presentedRecoveryMessage(transport.getGameViewModel(gameId)));
     render({ animatePanels: false, includeBoard: false });
     document.querySelector('[data-action="return-live"], [data-action="open-history"], .shell-logo, a[href="#/"]')?.focus({ preventScroll: true });
     return;

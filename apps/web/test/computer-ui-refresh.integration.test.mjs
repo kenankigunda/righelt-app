@@ -7,6 +7,7 @@ import {recoveryMessage,needsRecoveryAction,isBoardRecoveryPending} from '../she
 import {SYNC_TIMING} from '../generated/packages/shared-types/src/sync-protocol.js';
 import {createFramePresentation,COMPUTER_UI_FRAME_MEASURE} from '../shell/frame-presentation.js';
 import {COMPUTER_PRESENTATION} from '../shell/computer-session.js';
+import {createForegroundRecoveryWait} from '../shell/foreground-recovery.js';
 
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const slice=(start,end)=>{
@@ -37,7 +38,9 @@ test('quiet renewal mounted UI refresh clears stale loading and announcement onl
   getCurrentViewedGameId:()=>viewedId,computerSession:{snapshot:()=>({phase:'idle',activity:activity()})},
   transport:{getGameViewModel:()=>view,getFailedOperations:()=>[]},
   appEl:{querySelector:selector=>selector==='[data-testid="game-shell"]'?{getAttribute:()=>mountedId}:null},
-  document:{querySelector:()=>{wrapReads++;return wrap;}},syncAnnouncement:announcement,
+  document:{querySelector:()=>{wrapReads++;return wrap;},addEventListener(){}},window:{addEventListener(){}},syncAnnouncement:announcement,
+  currentRoute:{name:'game',gameId:game.id},viewingScope:()=> 'account:storage',
+  createForegroundRecoveryWait:options=>createForegroundRecoveryWait({...options,setTimer:()=>1,clearTimer(){}}),
   boardRuntime:{refreshStatus(){}},updateParticipantCards(){},setActivityActor(){},activityActorSide(){return 'P1';},
   recoveryMessage,needsRecoveryAction,isBoardRecoveryPending,Date,SYNC_TIMING,LOADING_CUE_DELAY_MS:500,
   clearTimeout(){},setTimeout(){return 1;},updateMountedHeader(){},

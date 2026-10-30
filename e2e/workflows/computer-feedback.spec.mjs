@@ -76,24 +76,36 @@ test('computer save failures take priority while the delayed saving notice stays
   }finally{holdGameplay=false;await context.unrouteAll({behavior:'wait'});}
 });
 
-test('a failed computer proof save exposes usable recovery immediately and Resume here completes the real move',async({page,context},info)=>{
+for(const failure of ['transient','terminal'])test(failure==='transient'
+  ? 'a transient computer proof save recovers automatically without manual recovery'
+  : 'an invalid computer proof save exposes immediate recovery and Resume here completes the real move',async({page,context},info)=>{
   const game=await createBabs(page);let failed=false;
   await context.route('**/decision-attempt',async route=>{
-    if(!failed&&readyAttempt(route)){failed=true;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'temporarily_unavailable'})});return;}
+    if(!failed&&readyAttempt(route)){
+      failed=true;
+      await route.fulfill({status:failure==='transient'?503:400,contentType:'application/json',body:JSON.stringify({error:failure==='transient'?'temporarily_unavailable':'invalid_attempt'})});return;
+    }
     await route.continue();
   });
   const before=await geometry(page);
   await page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true}).tap();
   await expect.poll(()=>failed,{timeout:30000}).toBe(true);
   const retry=notice(page).getByRole('button',{name:'Resume here',exact:true});
-  await expect(retry).toBeVisible({timeout:3000});
-  expect(await retry.evaluate(el=>!el.closest('[hidden],[inert],[aria-hidden="true"]'))).toBe(true);
-  await expect(retry).toBeEnabled();
-  await expect(page.getByRole('button',{name:'Interrupt',exact:true})).toHaveCount(0);
-  expect(await geometry(page)).toEqual(before);
-  await settleNotice(page);
-  await page.screenshot({path:info.outputPath('computer-proof-recovery.png')});
-  await retry.tap();
+  if(failure==='terminal'){
+    await expect(retry).toBeVisible({timeout:3000});
+    expect(await retry.evaluate(el=>!el.closest('[hidden],[inert],[aria-hidden="true"]'))).toBe(true);
+    await expect(retry).toBeEnabled();
+    await expect(page.getByRole('button',{name:'Interrupt',exact:true})).toHaveCount(0);
+    expect(await geometry(page)).toEqual(before);
+    await settleNotice(page);
+    await page.screenshot({path:info.outputPath('computer-proof-terminal-recovery.png')});
+    await retry.tap();
+  }else{
+    // A fresh temporary failure retries in the background. It cannot borrow
+    // the preceding search duration to expose manual recovery immediately.
+    await expect(retry).toHaveCount(0);
+    await expect(page.getByRole('button',{name:'Retry',exact:true})).toHaveCount(0);
+  }
   await waitForComputerDecision(page,game.id,'babs',{guest:true,modelId:game.computer.modelId});
   await expect(notice(page)).toHaveCount(0);
   expect(await geometry(page)).toEqual(before);

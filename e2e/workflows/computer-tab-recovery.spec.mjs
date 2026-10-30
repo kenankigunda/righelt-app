@@ -351,3 +351,55 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   try{await info.attach('quiet-renew-raw-samples',{contentType:'application/json',body:JSON.stringify({observerReadyAt,original,samples},null,2)});}catch{}
   release();page.off('console',consoleSample);page.off('request',observeWrite);await page.unrouteAll({behavior:'wait'});}
 });
+
+
+for (const fault of ['manifest unavailable', 'evidence response lost']) test(`computer play automatically recovers when ${fault}`, async ({ page }, info) => {
+  const id = await createComputer(page);
+  const initial = await projected(page, id);
+  let injected = false, manifestRequests = 0, lostWrite = null;
+  const evidenceReads = [], writes = [], submissions = [];
+  const observe = request => {
+    if (request.method() !== 'POST') return;
+    try { const body = request.postDataJSON(); if (body?.payload?.computer) submissions.push(body); } catch {}
+  };
+  page.on('request', observe);
+  await page.route('**/computer/runtime/manifest.json', async route => {
+    manifestRequests++;
+    if (fault === 'manifest unavailable' && !injected) { injected = true; await route.fulfill({ status: 503, body: 'Temporary failure' }); }
+    else await route.continue();
+  });
+  await page.route(`**/api/shell/games/${id}/decision-attempt`, async route => {
+    const body = route.request().postDataJSON();
+    if (body.operation === 'read') evidenceReads.push(body);
+    else writes.push(body);
+    if (fault === 'evidence response lost' && !injected && body.operation === 'write' && body.attempt?.outcome === 'ready') {
+      injected = true; lostWrite = structuredClone(body);
+      const persisted = await route.fetch(); expect(persisted.ok()).toBe(true);
+      await route.abort('failed');
+    } else await route.continue();
+  });
+  try {
+    await switchGamePanel(page, 'board');
+    await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
+    if ((await projected(page, id)).canEndTurn) await page.locator('[data-board-preview-action="end-turn"]').click();
+    await waitForComputerDecision(page, id, 'babs', { guest: true, modelId: initial.computer.modelId });
+    expect(injected).toBe(true);
+    const result = await projected(page, id);
+    const moves = result.moves.filter(move => move.computerProof);
+    expect(moves.length).toBeGreaterThan(0);
+    expect(new Set(moves.map(move => move.moveId)).size).toBe(moves.length);
+    const byRevision = new Map();
+    for (const envelope of submissions) {
+      const first = byRevision.get(envelope.expectedGameplayRevision);
+      if (first) expect(envelope).toEqual(first);
+      else byRevision.set(envelope.expectedGameplayRevision, envelope);
+    }
+    if (fault === 'manifest unavailable') expect(manifestRequests).toBeGreaterThanOrEqual(2);
+    else {
+      expect(evidenceReads.some(read => read.attemptId === lostWrite.attemptId)).toBe(true);
+      for (const write of writes.filter(write => write.attemptId === lostWrite.attemptId)) expect(write).toEqual(lostWrite);
+      expect(moves.filter(move => move.computerProof.attemptId === lostWrite.attemptId)).toHaveLength(1);
+    }
+    await info.attach('automatic-computer-recovery', { contentType: 'application/json', body: JSON.stringify({ fault, injected, manifestRequests, lostWrite, evidenceReads, submissions, moves }, null, 2) });
+  } finally { page.off('request', observe); await page.unrouteAll({ behavior: 'wait' }); }
+});
