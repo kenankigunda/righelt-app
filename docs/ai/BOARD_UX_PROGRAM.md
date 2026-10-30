@@ -22,6 +22,8 @@ This program follows the October 2026 product decisions. Independent healthy PRs
 
 ## Motion and presentation
 
+- Sound for a newly received opponent move follows its authoritative move ID across sockets, snapshots and reconciliation. Initial history and older history expansion are silent. Live opponent moves still notify while the person inspects history or replay. Computer optimistic commands do not receive human-local feedback or suppress their later authoritative cue. Human placement and its acknowledgement remain deduplicated. Foreground batched catch-up gives each move a short separate cue; mute, leaving and backgrounding cancel queued foreground cues. Background play retains one initial incoming cue and one 30-second reminder loop until focus returns.
+
 - Notifications retain incident identity, focus, open details and animation time during updates. Active work pulses its whole surface every 2.4 seconds. Waiting for a human uses a slower 4-second pulse. Copy and controls stay steady. Errors, completion and paused states are static. A new urgent notice must not hide a focused or expanded notice.
 - Loading sweeps have crisp red and blue facets, smooth transforms and no blended edge or blur. An independent reviewer inspects the sweep, pulses, replay and narrow layout together for coherence with Righelt's stone-cut design.
 - Computer home cards name the opponent rather than saying both players. User-facing experimental copy and redundant UI instructions are removed. First-use explanatory tooltips are deferred.
