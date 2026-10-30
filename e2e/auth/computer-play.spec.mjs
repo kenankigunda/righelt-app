@@ -88,6 +88,9 @@ test('ordinary computer play records real worker evidence, preserves private not
   } catch (error) {
     await attachFailureAndRethrow(error,{page,testInfo,lastVerifiedProjection:lastVerifiedGame,details:{journeyPhase,errors}});
   }
+  // The saved decision is inspectable only after its confirmed presentation finishes.
+  // Server acceptance alone can precede the last visible computer movement.
+  await expect(page.locator('#shell-board-preview-label').getByRole('button', { name: 'Pass', exact: true })).toBeVisible({ timeout: 100000 });
   const navigation = page.getByRole('button', { name: 'Open navigation menu', exact: true });
   if (await navigation.isVisible()) await navigation.click();
   await page.getByRole('button', { name: 'Debug', exact: true }).click();

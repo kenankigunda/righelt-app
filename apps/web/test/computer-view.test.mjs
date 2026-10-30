@@ -131,3 +131,19 @@ test('automatic retry notices stay outside the board and offer Retry after foreg
   assert.match(render(15000), /data-control="retry"/);
   assert.match(render(15000, false), /data-control="retry" disabled/);
 });
+
+test('an active notes editor keeps its decision and draft as confirmed playback advances',()=>{
+ const first={moveId:'human-first',index:0,action:{type:'pass'}},next={moveId:'computer-next',index:1,action:{type:'pass'}};
+ const state={drafts:new Map([['human-first',{text:'Still typing',flagged:true}]]),notes:[],attempts:new Map(),open:new Set(['notes']),items:[],noteDecisionId:first.moveId};
+ const game={id:'g',moves:[first,next],currentSnapshot:{sideToMove:'P1',turnIndex:1}};
+ const html=renderDecisionDebug({game,status:{},state,signedIn:true});
+ const notes=html.split('data-debug-section="notes"')[1].split('data-debug-section="history"')[0];
+ assert.match(notes,/data-decision-id="human-first"/);
+ assert.doesNotMatch(notes,/data-decision-id="computer-next"/);
+ assert.match(notes,/Still typing/);
+ assert.match(notes,/data-action="debug-save-note" data-decision-id="human-first"/);
+ assert.match(html,/computer-next/,'decision evidence continues tracking the current displayed decision');
+ delete state.noteDecisionId;
+ const latest=renderDecisionDebug({game,status:{},state,signedIn:true}).split('data-debug-section="notes"')[1].split('data-debug-section="history"')[0];
+ assert.match(latest,/data-decision-id="computer-next"/,'deliberately leaving the editor permits a fresh current decision');
+});
