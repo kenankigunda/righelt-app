@@ -96,6 +96,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let lastUsesHoverTargetSelection = null;
   let lastRenderedCanInteract = null;
   let recordedAction = null;
+  let recordedActions = [];
   let recordedActionStartPiece = null;
   /** @type {Array<{row: number, col: number, ownerSeat?: "p1" | "p2" | null, kind?: "unit" | "commander" | null, piece?: unknown | null}>} */
   let destroyedPieces = [];
@@ -131,6 +132,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     selection: overlayMode === OVERLAY_MODE.INTERACTIVE ? getCurrentSelection() : null,
     recordedAction: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedAction : null,
     recordedActionStartPiece: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedActionStartPiece : null,
+    recordedActions,
     destroyedPieces,
   });
 
@@ -601,7 +603,12 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       setPieceExplanation();
       return;
     }
+    if (overlayMode === 'recorded-turn') { setBoardPreviewPrompt('Turn overview'); return; }
     if (overlayMode === OVERLAY_MODE.RECORDED_ACTION) {
+      if (recordedAction?.from && recordedAction?.to) {
+        setBoardPreviewPromptHtml(`Recorded move from ${renderCoordinateChip(recordedAction.from,'board-preview-coordinate-chip-selected-piece')} to ${renderCoordinateChip(recordedAction.to,'board-preview-coordinate-chip-target')}`);
+        return;
+      }
       const recordedActionLabel = recordedAction?.from && recordedAction?.to ? "Recorded move" : "History";
       setBoardPreviewPrompt(recordedActionLabel);
       return;
@@ -1488,6 +1495,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       selectionState = null,
       overlayMode: nextOverlayMode = OVERLAY_MODE.INTERACTIVE,
       recordedAction: nextRecordedAction = null,
+      recordedActions: nextRecordedActions = [],
       recordedActionStartPiece: nextRecordedActionStartPiece = null,
       destroyedPieces: nextDestroyedPieces = [],
     } = {},
@@ -1505,6 +1513,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     legalActions = Array.isArray(incomingLegalActions) ? incomingLegalActions : [];
     overlayMode = nextOverlayMode;
     recordedAction = nextRecordedAction ? structuredClone(nextRecordedAction) : null;
+    recordedActions = structuredClone(nextRecordedActions);
     recordedActionStartPiece = nextRecordedActionStartPiece ? structuredClone(nextRecordedActionStartPiece) : null;
     const preserveRemovalEffects =
       nextOverlayMode === OVERLAY_MODE.INTERACTIVE &&

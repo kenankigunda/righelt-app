@@ -742,53 +742,56 @@ export function createEngineBoardAdapter() {
       return;
     }
 
-    if (overlay?.mode === "recorded-action") {
-      const action = overlay.recordedAction;
-      const startPiece = overlay.recordedActionStartPiece ?? null;
-      const piece = findActionTargetPiece(snapshot, action) ?? startPiece;
-      if (!action || !piece) {
-        return;
-      }
-
-      if (action.type === "push") {
-        applyGroupDecorations(snapshot, piece, cellByCoordinateKey);
-      }
-
-      if (action.from && startPiece) {
-        const sourceSnapshotPiece = findPieceAt(snapshot, action.from.row, action.from.col);
-        const sourceCell = cellByCoordinateKey.get(coordKey(action.from));
-        const shouldAppendSourceToken =
-          !sourceSnapshotPiece || (typeof sourceSnapshotPiece.id === "string" && sourceSnapshotPiece.id !== startPiece.id);
-        if (sourceCell && shouldAppendSourceToken) {
-          const sourceToken = buildPieceToken(startPiece, action.type !== "project");
-          sourceToken.classList.add("recorded-action-source-piece");
-          if (action.type !== "project") {
-            sourceToken.classList.add("move-ghost");
-          }
-          sourceCell.appendChild(sourceToken);
+    if (["recorded-action", "recorded-turn"].includes(overlay?.mode)) {
+      for (const recorded of overlay.mode === "recorded-turn" ? overlay.recordedActions ?? [] : [overlay]) {
+        const action = recorded.recordedAction;
+        const startPiece = recorded.recordedActionStartPiece ?? null;
+        const piece = startPiece ?? findActionTargetPiece(snapshot, action);
+        if (!action || !piece) {
+          continue;
         }
-      }
 
-      if (action.to) {
-        if (action.type !== "project") {
-          drawArrowLine(action.from ?? startPiece?.position ?? piece.position, action.to, piece.owner, false, true);
+        if (action.type === "push" && overlay.mode !== "recorded-turn") {
+          applyGroupDecorations(snapshot, piece, cellByCoordinateKey);
         }
-        const targetCell = cellByCoordinateKey.get(coordKey(action.to));
-        if (targetCell) {
-          if (action.type === "project") {
-            const existingToken = findRenderablePieceToken(targetCell);
-            if (existingToken) {
-              existingToken.classList.add("preview-created");
-              return;
+
+        if (action.from && startPiece) {
+          const sourceSnapshotPiece = findPieceAt(snapshot, action.from.row, action.from.col);
+          const sourceCell = cellByCoordinateKey.get(coordKey(action.from));
+          const shouldAppendSourceToken =
+            !sourceSnapshotPiece || (typeof sourceSnapshotPiece.id === "string" && sourceSnapshotPiece.id !== startPiece.id);
+          if (sourceCell && shouldAppendSourceToken) {
+            const sourceToken = buildPieceToken(startPiece, action.type !== "project");
+            sourceToken.classList.add("recorded-action-source-piece");
+            if (action.type !== "project") {
+              sourceToken.classList.add("move-ghost");
             }
+            sourceCell.appendChild(sourceToken);
           }
-          const previewPiece = findActionTargetPiece(snapshot, action) ?? action.previewPiece ?? piece;
-          const ghost = buildPieceToken(previewPiece, true);
-          ghost.classList.add("move-ghost");
-          if (action.type === "project") {
-            ghost.classList.add("preview-created");
+        }
+
+        if (action.to) {
+          if (action.type !== "project") {
+            drawArrowLine(action.from ?? startPiece?.position ?? piece.position, action.to, piece.owner, false, true);
           }
-          targetCell.appendChild(ghost);
+          const targetCell = cellByCoordinateKey.get(coordKey(action.to));
+          if (targetCell) {
+            if (action.type === "project") {
+              const existingToken = findRenderablePieceToken(targetCell);
+              if (existingToken) {
+                existingToken.classList.add("preview-created");
+                continue;
+              }
+            }
+            if (overlay.mode === "recorded-turn" && action.type !== "project") continue;
+            const previewPiece = findActionTargetPiece(snapshot, action) ?? action.previewPiece ?? piece;
+            const ghost = buildPieceToken(previewPiece, true);
+            ghost.classList.add("move-ghost");
+            if (action.type === "project") {
+              ghost.classList.add("preview-created");
+            }
+            targetCell.appendChild(ghost);
+          }
         }
       }
       return;
@@ -1142,7 +1145,7 @@ export function createEngineBoardAdapter() {
             continuationHighlight.movedPieceIds.has(piece.id),
         );
       };
-      const isLiveInteractiveBoard = overlay?.mode !== "recorded-action";
+      const isLiveInteractiveBoard = !["recorded-action", "recorded-turn"].includes(overlay?.mode);
 
       for (let row = 0; row < BOARD_SIZE; row += 1) {
         for (let col = 0; col < BOARD_SIZE; col += 1) {
@@ -1168,7 +1171,7 @@ export function createEngineBoardAdapter() {
                   source: overlay?.recordedAction?.from ?? null,
                   target: overlay?.recordedAction?.to ?? null,
                 }
-              : selection;
+              : overlay?.mode === "recorded-turn" ? {source:null,target:null,selectedPieceId:null} : selection;
           const previews =
             overlay?.mode === "interactive"
               ? Array.isArray(selectedPieceMovePreviews)
@@ -1418,7 +1421,7 @@ export function createEngineBoardAdapter() {
       });
       eventLabels?.update({
         scope: boardEl,
-        enabled: effectiveInteractionMode === "interactive" && overlay?.mode !== "recorded-action",
+        enabled: effectiveInteractionMode === "interactive" && !["recorded-action", "recorded-turn"].includes(overlay?.mode),
         events: (Array.isArray(removalEffects) ? removalEffects : [])
           .filter(effect => effect.reason !== "history_destroyed" && effect.position)
           .map(effect => ({
