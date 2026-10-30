@@ -20,8 +20,8 @@ export function mountMobileNavigation({ window, document, isNarrow, isBlocked = 
       visible = false; render();
     }, MOBILE_NAVIGATION.idleMs);
   };
-  const reveal = () => { visible = true; render(); schedule(); };
   const resetScroll = () => { previousY = Math.max(0, window.scrollY); distance = 0; direction = 0; };
+  const reveal = () => { resetScroll(); visible = true; render(); schedule(); };
   const onScroll = () => {
     const maximum = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
     const current = Math.min(maximum, Math.max(0, window.scrollY));

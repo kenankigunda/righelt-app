@@ -4,18 +4,20 @@ import {renderPlayersPanel} from '/apps/web/shell/players-panel.js';
 import {canReadAdditionalHistory} from '/apps/web/shell/additional-history.js';
 import {invitationOptions} from '/apps/web/shell/invitations.js';
 import {icon} from '/apps/web/shell/ui.js';
+import {liveHistoryLabel,historyActorLabel,playerDisplayName} from '/apps/web/shell/perspective-labels.js';
+import {buildMovePreview,buildTurnPreview,historyTurnSide} from '/apps/web/shell/history-preview.js';
+import {COMPUTER_PROFILES} from '/apps/web/generated/packages/shared-types/src/computer-play.js';
 const source=await(await fetch('/apps/web/shell/app.js')).text();
 const extract=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));
-const game={id:'game-2fbcb6',myRole:'Both Players',selfPlayMode:true,createdAt:'date',notifications:['You’re now playing both sides'],currentTurn:{index:0,playerSeat:'Player 1',moveIndexes:[]},player1:{identityId:'owner',connected:true},player2:{identityId:'owner',connected:true},viewers:[],pendingJoinRequests:[],canInvite:true};
-const helpers={canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},...slots,icon,invitationOptions,escapeHtml:String,formatDisplayGameId:String,formatClientDateTime:()=> 'Oct 25, 2026, 4:17 AM',renderRoleLabel:()=> 'both players',renderSeatLabel:String,colorizePlayerReferences:String,
+const game={id:'game-2fbcb6',myRole:'Both Players',selfPlayMode:true,createdAt:'date',notifications:['You’re now playing both sides'],currentTurn:{index:0,playerSeat:'Player 1',moveIndexes:[]},turns:[{index:0,playerSeat:'Player 1'}],moves:[],currentSnapshot:{turnIndex:0,sideToMove:'P1'},player1:{identityId:'owner',connected:true},player2:{identityId:'owner',connected:true},viewers:[],pendingJoinRequests:[],canInvite:true};
+const helpers={canReadAdditionalHistory,liveHistoryLabel,historyActorLabel,playerDisplayName,buildMovePreview,buildTurnPreview,historyTurnSide,COMPUTER_PROFILES,expandedUndoneGroups:new Set(),getShellLayoutMode:()=> 'wide',account:{snapshot:()=>({enabled:false})},...slots,icon,invitationOptions,escapeHtml:String,formatDisplayGameId:String,formatClientDateTime:()=> 'Oct 25, 2026, 4:17 AM',renderRoleLabel:()=> 'both players',colorizePlayerReferences:String,
  getJoinButtonKey:()=>'',getPlayAsBothButtonKey:()=>'',getCopyInviteButtonKey:()=>'',getApproveRequestButtonKey:()=>'',
  renderButtonStateAttributes:({className=''})=>` class="${className}"`,
  renderParticipantsPanel:game=>renderPlayersPanel(game,{identityId:'owner',icon}),
  issueDiagnostics:{list:()=>[]},currentRoute:{gameId:game.id},inviteFeedback:'',inviteFallback:null,joinFeedback:{message:()=>''},
  additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})},
- renderTurnHistory:()=>'<li class="history-item history-item-waiting history-empty-line"><span class="history-move-line">Live · Waiting on you to move</span></li>',
  getGameResult:()=>null,transport:{getAuthoritativeGame:()=>game,getIdentityId:()=> 'owner'}};
-const real=Function(...Object.keys(helpers),`${extract('const renderSectionActions =','const getAnimatedPanels =')}${extract('const renderInviteFeedback =','const setInviteFeedback =')}${extract('const renderGameSummaryPanel =','const expandedViewerGames =')}${extract('const renderAdditionalHistory =','const renderBoardPanel =')};return {summary:renderGameSummaryPanel,players:renderJoinInvitePanel,history:renderHistoryPanel};`)(...Object.values(helpers));
+const real=Function(...Object.keys(helpers),`${extract('const playerToneClassForSeat =','const isDualSeatIdentity =')}${extract('const renderHistoryPreview =','const renderHeader =')}${extract('const renderSectionActions =','const getAnimatedPanels =')}${extract('const renderInviteFeedback =','const setInviteFeedback =')}${extract('const renderGameSummaryPanel =','const expandedViewerGames =')}${extract('const renderAdditionalHistory =','const renderBoardPanel =')};return {summary:renderGameSummaryPanel,players:renderJoinInvitePanel,history:renderHistoryPanel};`)(...Object.values(helpers));
 window.renderPanels=loading=>{
  document.querySelector('#app').innerHTML=`<section class="panel" data-card="summary">${loading?slots.renderSummaryLoading('Game <span class="mono">game-2fbcb6</span>'):real.summary(game)}</section><section class="panel" data-card="players">${loading?slots.renderPlayersLoading():real.players(game)}</section><section class="panel" data-card="history">${loading?slots.renderHistoryLoading():real.history(game)}</section>`;
 };window.renderPanels(true);await document.fonts.ready;window.fixtureReady=true;

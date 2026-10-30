@@ -1456,9 +1456,9 @@ export const createSyncStore = ({
       if (outcome?.outcome === "rejected") operationManager.fail(handle.id, createOperationError(outcome.reason));
       return handle;
     },
-    selectHistoryMove: ({ gameId, moveIndex }) => operationManager.createCommitted({
+    selectHistoryMove: ({ gameId, moveIndex, moveId = null }) => operationManager.createCommitted({
       id: `history:${gameId}:${moveIndex}:${Date.now()}`, gameId,
-      result: transport.selectHistoryMove({ gameId, moveIndex }),
+      result: transport.selectHistoryMove({ gameId, moveIndex, moveId }),
     }),
     returnToLive: ({ gameId }) => operationManager.createCommitted({
       id: `live:${gameId}:${Date.now()}`, gameId,
