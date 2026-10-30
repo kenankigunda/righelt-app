@@ -30,3 +30,17 @@ test('failed presenter callbacks are revoked before retry and retain their immut
  const callbacks=[],sounds=[];let count=0,finish;const queue=createConfirmedComputerPlayback({present:async(_frame,context)=>{callbacks.push(context);if(!count++)throw Error('presentation_failed');await new Promise(resolve=>finish=resolve);},onMove:(entry,game)=>sounds.push([entry.moveId,game.gameplayRevision])});
  queue.observe(game(0),{scope:'owner'});queue.observe(game(1),{scope:'owner'});await flush();assert.equal(callbacks[0].signal.aborted,true);queue.retry();await flush();callbacks[0].onDisplayed();assert.deepEqual(sounds,[]);callbacks[1].onDisplayed();finish();await flush();callbacks[0].onDisplayed();assert.deepEqual(sounds,[['m1',1]]);
 });
+
+test('transient frame reads retry in order with capped policy and honor server Retry-After',async()=>{
+ const timers=new Map(),frames=[];let calls=0,next=0;const queue=createConfirmedComputerPlayback({setTimer:(fn,ms)=>{timers.set(++next,{fn,ms});return next;},clearTimer:id=>timers.delete(id),loadMove:async entry=>{calls++;if(calls===1)throw Object.assign(Error('unavailable'),{status:503,retryAfterMs:7000});return entry;},present:async frame=>frames.push(frame.decisionId)});
+ queue.observe(game(0),{scope:'owner'});queue.observe(game(1),{scope:'owner'});await flush();assert.equal(queue.snapshot().retrying,true);assert.equal(queue.snapshot().error,null);assert.equal(queue.snapshot().playing,true);queue.observe(game(2),{scope:'owner'});await flush();assert.equal(calls,1);
+ const timer=[...timers.values()][0];assert.equal(timer.ms,7000);timers.clear();timer.fn();await flush();assert.deepEqual(frames,['m1','m2']);assert.equal(queue.snapshot().playing,false);assert.equal(queue.snapshot().retrying,false);
+});
+test('leaving during a transient frame retry clears its owned timer and stale callback',async()=>{
+ let retry,cleared=0,calls=0;const queue=createConfirmedComputerPlayback({setTimer:fn=>(retry=fn,1),clearTimer:()=>cleared++,loadMove:async()=>{calls++;throw Object.assign(Error('request_timeout'),{code:'request_timeout'});}});queue.observe(game(0),{scope:'owner'});queue.observe(game(1),{scope:'owner'});await flush();queue.observe(game(2),{scope:'owner',visible:false});assert.equal(cleared,1);retry();await flush();assert.equal(calls,1);assert.equal(queue.snapshot().playing,false);
+});
+
+test('bounded history trimming and older-history hydration never skip or replay a new confirmed step',async()=>{
+ const frames=[],queue=createConfirmedComputerPlayback({present:async frame=>frames.push(frame.decisionId)});queue.observe(game(2),{scope:'owner'});const trimmed=game(3);trimmed.moves=trimmed.moves.slice(1);queue.observe(trimmed,{scope:'owner'});await flush();assert.deepEqual(frames,['m3']);
+ queue.observe(game(3),{scope:'owner'});await flush();assert.deepEqual(frames,['m3'],'prepending older decisions is not a new turn');queue.observe(game(4),{scope:'owner'});await flush();assert.deepEqual(frames,['m3','m4']);
+});

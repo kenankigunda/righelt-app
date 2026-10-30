@@ -109,7 +109,7 @@ export const createGameSound = ({
   };
   const incoming = (gameId='legacy') => {
     unseenGames.add(gameId);
-    if(!enabled)return false;
+    if(!enabled){pendingIncoming=true;return false;}
     // Several opponent actions form one outstanding reminder, never overlapping loops.
     if(pendingIncoming)return false;
     pendingIncoming=true;
@@ -127,7 +127,7 @@ export const createGameSound = ({
   return {
     enabled:()=>enabled, gesture, play, cancelPreview,
     activityChanged(){cancelPreview();if(!active())clearOpponentCues();},
-    toggle(){enabled=!enabled;cancelPreview();clearIncoming();clearOpponentCues();try{storage?.setItem(SOUND_KEY,String(enabled));}catch{} if(enabled)gesture();else void audio?.suspend().catch(()=>{});return enabled;},
+    toggle(){enabled=!enabled;cancelPreview();if(reminderTimer!==null)clearTimer(reminderTimer);reminderTimer=null;clearOpponentCues();try{storage?.setItem(SOUND_KEY,String(enabled));}catch{} if(enabled){gesture();scheduleReminder();}else void audio?.suspend().catch(()=>{});return enabled;},
     hide(){cancelPreview();clearOpponentCues();},
     leaveGame(){cancelPreview();clearOpponentCues();if(unseenGames.size)incoming(unseenGames.values().next().value);},
     interaction({kind,key}){
@@ -171,7 +171,9 @@ export const createGameSound = ({
       const key=`${scope}:${game.id}:${move.moveId}`;
       if(displayedMoves.has(key)||!active()||!isOpponentAction(game,move,getIdentityId()))return false;
       displayedMoves.add(key);if(displayedMoves.size>1024)displayedMoves.delete(displayedMoves.values().next().value);
-      return play(move.snapshot?.outcome?.status&&move.snapshot.outcome.status!=='ongoing'?resultSound(getGameResult({...game,board:{state:move.snapshot}},getIdentityId())):'move');
+      const destroyed=(move.destroyedPieces??[]).length>0&&play('destruction');
+      if(move.snapshot?.outcome?.status&&move.snapshot.outcome.status!=='ongoing')return play(resultSound(getGameResult({...game,board:{state:move.snapshot}},getIdentityId())))||destroyed;
+      return destroyed||play('move');
     },
     observe(payload,{silent=false, opponentNotifications = true}={}){
       const id=payload?.game?.id, seq=payload?.eventSeq;
@@ -185,7 +187,6 @@ export const createGameSound = ({
       // confirm a destruction; their ordinary move cue is still deduplicated.
       if(silent || payload.type!=='event_appended' || !['move_recorded','turn_ended','moves_reverted'].includes(payload.reason))return false;
       if(!active())return opponentNotifications && payload.reason==='move_recorded' && isOpponentMove(payload.game,payload.clientCommandId,getIdentityId()) ? incoming(payload.game.id) : false;
-      clearIncoming();
       let destroyed=false;
       for(let i=0;i<destructionBatches;i++)destroyed=play('destruction') || destroyed;
       if (!opponentNotifications && isOpponentMove(payload.game, payload.clientCommandId, getIdentityId())) return destroyed;

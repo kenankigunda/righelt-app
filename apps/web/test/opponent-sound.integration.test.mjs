@@ -97,3 +97,10 @@ test('computer receipt is silent until displayed movement, with identity dedupe 
  f.sound.authoritative(update,{deferComputer:true});assert.deepEqual(f.notes,[]);assert.equal(f.sound.displayed(entry,update),true);assert.equal(f.sound.displayed(entry,update),false);assert.deepEqual(f.notes,[820]);
  f.sound.toggle();f.sound.displayed({...entry,moveId:'muted'},update);assert.deepEqual(f.notes,[820]);
 });
+
+test('ordinary receipt observers cannot reset an unseen batch and replay its initial chime',()=>{
+ const f=audioFixture();f.sound.authoritative(game(0,[]));const first=game(1,[move('a')]);f.sound.authoritative(first,{unseen:true});
+ f.sound.observe({game:first,eventSeq:1,type:'event_appended',reason:'move_recorded',clientCommandId:'a'},{opponentNotifications:false,silent:false});
+ const next=game(2,[move('a'),move('b')]);f.sound.observe({game:next,eventSeq:2,type:'event_appended',reason:'move_recorded',clientCommandId:'b'},{opponentNotifications:false,silent:false});f.sound.authoritative(next,{unseen:true});
+ assert.deepEqual(f.notes,[460,690]);assert.equal(f.timers.size,1);
+});

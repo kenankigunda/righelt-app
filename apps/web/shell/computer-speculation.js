@@ -2,7 +2,7 @@ import {computerProfileFor} from '../generated/packages/shared-types/src/compute
 import {deterministicStateHash} from '../generated/packages/game-engine/src/hash.js';
 
 /** A candidate is local calculation only: no evidence writes or gameplay admission. */
-export function createComputerSpeculation({compute,onChange=()=>{}}){
+export function createComputerSpeculation({compute,onChange=()=>{},clock=()=>Date.now()}){
  let candidate=null;
  const matches=(game,scope)=>Boolean(candidate&&candidate.scope===scope&&game?.id===candidate.gameId
   &&game.gameplayRevision===candidate.revision&&game.computer?.generation===candidate.generation
@@ -14,7 +14,7 @@ export function createComputerSpeculation({compute,onChange=()=>{}}){
    const next=candidate={...input,state:structuredClone(input.state),hash:deterministicStateHash(input.state),phase:'computing',response:null,error:null,cancelled:false};
    next.promise=Promise.resolve().then(()=>next.cancelled?null:compute(input.request,progress=>{
     if(!next.cancelled){next.progress=progress;next.onProgress?.(progress);if(candidate===next)onChange();}
-   })).then(response=>{next.response=response;return response;},error=>{next.error=error;return null;}).finally(()=>{next.phase='ready';if(candidate===next)onChange();});
+   })).then(response=>{next.response=response;next.completedAt=clock();return response;},error=>{next.error=error;return null;}).finally(()=>{next.phase='ready';if(candidate===next)onChange();});
    onChange();return next;
   },
   matches,

@@ -50,7 +50,7 @@ test('mute pauses reminders while leaving a game retains the unseen update',()=>
  sound.gesture();focused=false;
  const event=seq=>({game:{id:'a',myRoles:['Player 1'],moves:[{actorSide:'P2'}]},eventSeq:seq,type:'event_appended',reason:'move_recorded'});
  sound.observe(event(1));assert.equal(timers.size,1);sound.toggle();assert.equal(timers.size,0);
- sound.observe(event(2));assert.equal(timers.size,0);sound.toggle();assert.equal(timers.size,0);
+ sound.observe(event(2));assert.equal(timers.size,0);sound.toggle();assert.equal(timers.size,1);
  sound.observe(event(3));assert.equal(timers.size,1);sound.leaveGame();assert.equal(timers.size,1);sound.resetUpdates();assert.equal(timers.size,0);
 });
 
@@ -106,4 +106,10 @@ test('confirmed result cues reflect player perspective and stay silent on hydrat
   sound.observe(event(6,status));sound.observe(event(7,status));assert.deepEqual(notes,expected);
   sound.toggle();assert.equal(sound.play('result-victory'),false);assert.deepEqual(notes,expected);
  }
+});
+
+test('the waiting-update chime is a prominent ascending pair distinct from movement',()=>{
+ const tones=[],gains=[];const node=()=>({connect(){},disconnect(){},frequency:{},Q:{},gain:{setValueAtTime(value,at){gains.push({value,at});},exponentialRampToValueAtTime(){}},start(){},stop(){}});
+ const audio={state:'running',currentTime:0,sampleRate:8000,createBuffer:(_,length)=>({getChannelData:()=>new Float32Array(length)}),createBufferSource:node,createBiquadFilter:node,createGain:node,createOscillator:()=>{const value=node();value.start=at=>tones.push({frequency:value.frequency.value,at});return value;}};
+ const sound=createGameSound({createAudio:()=>audio});sound.gesture();assert.equal(sound.play('incoming'),true);assert.deepEqual(tones,[{frequency:460,at:0},{frequency:690,at:.16}]);assert(gains.some(gain=>gain.value===.06));assert(gains.some(gain=>Math.abs(gain.value-.054)<.000001));
 });

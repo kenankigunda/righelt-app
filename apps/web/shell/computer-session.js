@@ -16,7 +16,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   let analysis = null, analysisContext = null, analysisEpoch = 0, lastPositionRevision = null, destroyed = false;
   let activityScope = null, waitingSince = null, waitingRevision = null, lastAcquisitionFailure = null, acquisitionAttempts = 0, retryAt = 0;
   const workFor = createComputerControlWork();
-  const speculation=createComputerSpeculation({compute:(request,progress)=>runtime.compute(request,progress),onChange});
+  const speculation=createComputerSpeculation({compute:(request,progress)=>runtime.compute(request,progress),onChange,clock});
   const progressWork = new Map();
   let acknowledgedLease = null;
   const repetitions = new Map();
@@ -288,7 +288,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
         if(!response)throw candidate?.error??Error('speculation_discarded');
         // Retain the exact JSON payload the API stores, including omission of
         // undefined optional diagnostics, for an unambiguous recovery compare.
-        attempt = JSON.parse(JSON.stringify({ ...base, completedAt: clock(), outcome: response.result.status, result: response.result, cacheAvailable: runtime.cacheAvailable, evidenceSource: 'client-reported' }));
+        attempt = JSON.parse(JSON.stringify({ ...base, completedAt: candidate?.completedAt??clock(), outcome: response.result.status, result: response.result, cacheAvailable: runtime.cacheAvailable, evidenceSource: 'client-reported' }));
       }
       if (!decisionIsCurrent()) { decisionRetry = null; return; }
       // Proof persistence is part of saving; a slow evidence write deserves the

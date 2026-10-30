@@ -140,6 +140,7 @@ const foregroundRecoveryWait = createForegroundRecoveryWait({ onChange: () => {
   const game = currentRoute.name === 'game' ? transport.getGameViewModel(currentRoute.gameId) : null;
   updateRecoveryAnnouncement(game);
 } });
+const playbackRecoveryWait=createForegroundRecoveryWait({onChange:()=>render({animatePanels:false,includeBoard:false})});
 const recoveryPresentationOptions = game => ({
   foregroundWaitMs: foregroundRecoveryWait.update({
     scope: `${viewingScope()}:${currentRoute.name === 'game' ? currentRoute.gameId : ''}:${game?.recoveryEpisodeId ?? ''}`,
@@ -1673,6 +1674,10 @@ const getGameAlertItems = (game) => {
   }
   if (game.historyNotice) items.push({ key: `history-change:${game.id}`, html: renderGameAlertCard({ body: escapeHtml(game.historyNotice) }) });
 
+  const playbackWait=playbackRecoveryWait.update({scope:`${viewingScope()}:${game.id}`,active:liveBoardVisible(),blocked:Boolean(game.confirmedPlayback?.retrying)});
+  if(playbackWait>=SYNC_TIMING.reconnectAlertMs)items.push({key:`confirmed-playback-recovery:${game.id}`,html:renderGameAlertCard({
+    body:playbackWait>=SYNC_TIMING.confirmationBudgetMs?'Still loading the move. Retrying in the background.':'Loading the move.',
+    testId:'confirmed-playback-recovery',action:playbackWait>=SYNC_TIMING.confirmationBudgetMs?`<button class="secondary mini-button" data-action="retry-confirmed-playback" ${game.confirmedPlayback.canRetry?'':'disabled'}>Retry</button>`:''})});
   const computerNotice=renderComputerProgress(game,computerSession?.snapshot());
   if(computerNotice) items.push({key:`computer:${game.id}`,priority:computerSession?.snapshot().phase==='recovery'?'urgent':'normal',html:computerNotice});
   const approval = getActiveRevertRequest(game), waiting = getActivePendingRevertRequest(game);
@@ -4208,7 +4213,7 @@ const makeAccountSyncStore = auth => createSyncStore({
   fetcher: account.fetch,
   onAuthLost: () => account.authorityLost(),
   onEvent: (payload, context = {}) => {
-    gameSound.observe(payload,{opponentNotifications:false,silent:Boolean(payload?.game?.moves?.findLast(move=>!move.undone)?.computerProof) || context.initial || currentRoute.name!=='game' || payload?.game?.id!==currentRoute.gameId || Boolean(transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode) || Boolean(replayController?.snapshot()?.playing || replayRequests.snapshot())});
+    gameSound.observe(payload,{opponentNotifications:false,silent:!liveBoardVisible() || Boolean(payload?.game?.moves?.findLast(move=>!move.undone)?.computerProof) || context.initial || currentRoute.name!=='game' || payload?.game?.id!==currentRoute.gameId || Boolean(transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode) || Boolean(replayController?.snapshot()?.playing || replayRequests.snapshot())});
     wsLastEvent = payload?.type
       ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
       : "unknown";
@@ -4529,18 +4534,20 @@ confirmedPlayback=createConfirmedComputerPlayback({
     const gameId=state.displayed?.id??getCurrentViewedGameId();
     if(confirmedDisplayGameId&&confirmedDisplayGameId!==gameId)transport.setComputerDisplay(confirmedDisplayGameId,null);
     confirmedDisplayGameId=state.playing?gameId:null;
-    if(gameId)transport.setComputerDisplay(gameId,state.playing?{pending:true,game:state.displayed,error:state.error?.message??null}:null);
+    if(gameId)transport.setComputerDisplay(gameId,state.playing?{pending:true,game:state.displayed,error:state.error?.message??null,retrying:state.retrying,canRetry:state.canRetry}:null);
     gameSound.viewing({gameId,live:liveBoardVisible(),playbackFinished:!state.playing});
     boardRuntime?.setInteractionBlocked(state.playing||Boolean(replayController?.snapshot().playing)||forcedFollowWorking(gameId));
   },
   onMove:(move,game)=>gameSound.displayed(move,game,{scope:viewingScope()}),
   present:(frame,context)=>confirmedFramePresenter.present(frame,context),
 });
-document.addEventListener('visibilitychange',()=>{syncConfirmedPlayback();gameSound.viewing({gameId:getCurrentViewedGameId(),live:liveBoardVisible(),playbackFinished:!confirmedPlayback.snapshot().playing});});
+document.addEventListener('visibilitychange',()=>{playbackRecoveryWait.reset();syncConfirmedPlayback();gameSound.viewing({gameId:getCurrentViewedGameId(),live:liveBoardVisible(),playbackFinished:!confirmedPlayback.snapshot().playing});});
 for(const event of ['focus','blur'])window.addEventListener(event,()=>{syncConfirmedPlayback();gameSound.viewing({gameId:getCurrentViewedGameId(),live:liveBoardVisible(),playbackFinished:!confirmedPlayback.snapshot().playing});});
 window.addEventListener('hashchange',()=>queueMicrotask(()=>{syncConfirmedPlayback();gameSound.viewing({gameId:getCurrentViewedGameId(),live:liveBoardVisible(),playbackFinished:!confirmedPlayback.snapshot().playing});}));
 window.addEventListener('scroll',()=>{const live=liveBoardVisible();if(live!==lastPlaybackVisibility)syncConfirmedPlayback();gameSound.viewing({gameId:getCurrentViewedGameId(),live,playbackFinished:!confirmedPlayback.snapshot().playing});},{passive:true});
 window.addEventListener('resize',()=>{if(liveBoardVisible()!==lastPlaybackVisibility)syncConfirmedPlayback();});
+window.addEventListener('pagehide',()=>{playbackRecoveryWait.reset();confirmedPlayback.destroy();confirmedFramePresenter.destroy();});
+window.addEventListener('pageshow',()=>syncConfirmedPlayback());
 const subscribeToTransport = () => transport.subscribe((change) => {
   if(['authoritative_update','history_mode_changed'].includes(change?.type))syncConfirmedPlayback();
   branchDialog.refresh();
@@ -4564,7 +4571,7 @@ const subscribeToTransport = () => transport.subscribe((change) => {
     hostInvite=null;inviteVisit++;inviteFeedback="";inviteFallback=null;
   }
   const frozenCapture = Boolean(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === visibleGameId);
-  const transition = destructionTransitions.update(game, { frozen: frozenCapture, reset: change?.baseline === true || change?.type === "optimistic_rollback" || change?.type === "history_mode_changed" });
+  const transition = destructionTransitions.update(game, { frozen: frozenCapture, reset: change?.baseline === true || change?.type === "optimistic_rollback" || change?.type === "history_mode_changed" || change?.type === "computer_display" });
   if (transition.clear) boardRuntime?.clearRemovalEffects();
   render({
     animatePanels: false,
@@ -4583,7 +4590,7 @@ const subscribeToTransport = () => transport.subscribe((change) => {
 subscribeToTransport();
 accountInitialized = true;
 function resetAccountTransport(next) {
-  confirmedPlayback?.reset();confirmedFramePresenter?.destroy();gameSound.resetUpdates();
+  playbackRecoveryWait.reset();confirmedPlayback?.reset();confirmedFramePresenter?.destroy();gameSound.resetUpdates();
   forcedFollowSession?.cancel();
   inviteLoadState = null;
   if (currentRoute.name === "invite") resolvedInvite = null;
@@ -5019,6 +5026,7 @@ appEl.addEventListener("click", async (event) => {
   if(action==='close-invite'){closeFriendInvite();return;}
   if(action==='share-invite'){await withPendingButton(getCopyInviteButtonKey(actionEl.dataset.gameId),()=>copyGameInvitation(actionEl.dataset.gameId,actionEl.dataset.inviteRole,true));return;}
   if (action === 'guest-profile') { void inlineProfiles.open(null,actionEl);return; }
+  if(action==='retry-confirmed-playback'){confirmedPlayback?.retry();return;}
   if (action === 'toggle-sound') { const enabled=gameSound.toggle();actionEl.innerHTML=icon(enabled?'sound':'muted');actionEl.setAttribute('aria-label',enabled?'Mute sound':'Enable sound');actionEl.setAttribute('aria-pressed',String(enabled));actionEl.title=`Sound ${enabled?'on':'off'}`;return; }
   if (action === 'opponent-story') {
     // Initial session adoption retires dialogs. Open only after it settles.

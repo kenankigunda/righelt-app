@@ -1659,7 +1659,7 @@ export const createLiveTransportStore = ({
         game.board={...game.board,state:clone(shown.board.state)};
         game.currentSnapshot=clone(shown.board.state);game.liveCurrentSnapshot=clone(shown.board.state);
       }
-      game.confirmedPlayback={playing:!display.error,error:display.error??null};
+      game.confirmedPlayback={playing:!display.error,error:display.error??null,retrying:Boolean(display.retrying),canRetry:Boolean(display.canRetry)};
       game.canRecordMove=false;game.canEndTurn=false;
     }
     if (auth?.enabled && (!auth.session.authenticated || game.ownershipMode === "legacy_guest")) {
