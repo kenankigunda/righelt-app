@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { getCommandLegendColor, getCommandLegendSwatchStyle, updateLegendVisibility } from "../legend.js";
+import { getCommandLegendColor, getCommandLegendSwatchStyle, updateLegendVisibility, getInspectionLegendState, updateInspectionLegend } from "../legend.js";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
 const shellAppSource = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
@@ -47,7 +47,7 @@ test("command legend swatch style exposes the CSS variable", () => {
 test("shell command legend swatch is state-driven", () => {
   assert.match(shellAppSource, /id="shell-command-legend-swatch"/);
   assert.match(shellAppSource, /getCommandLegendSwatchStyle\(game\.currentSnapshot \?\? null\)/);
-  assert.match(shellAppSource, /applyCommandLegendSwatch\(document\.getElementById\("shell-command-legend-swatch"\), state, selectedPieceId\);/);
+  assert.match(shellAppSource, /updateInspectionLegend\(document\.querySelector\('.overlay-key'\),state,\{selectedPieceId,\.\.\.overlay\}\);/);
 });
 
 test("command legend swatch renders as a dashed line", () => {
@@ -55,8 +55,8 @@ test("command legend swatch renders as a dashed line", () => {
   assert.match(stylesSource, /\.swatch\.command::before\s*\{[\s\S]*border-top:\s*3px dashed currentColor;/s);
 });
 
-test("supply legend swatch renders as a dashed green line", () => {
-  assert.match(stylesSource, /\.swatch\.supply\s*\{[\s\S]*color:\s*#2f8e63;/s);
+test("supply legend swatch renders as an owner-colored dashed line", () => {
+  assert.match(stylesSource, /\.swatch\.supply\s*\{[\s\S]*color:\s*var\(--swatch-supply-color, var\(--player-p1\)\);/s);
   assert.match(stylesSource, /\.swatch\.supply::before,\s*\.swatch\.command::before\s*\{[\s\S]*border-top:\s*3px dashed currentColor;/s);
 });
 
@@ -83,4 +83,22 @@ test("same legend visibility retains running animation; changed visibility resta
   updateLegendVisibility(legend, {command: true}, true);
   assert.equal(item.hidden, false);
   assert.equal(animations.length, 2);
+});
+
+
+test('commander and supply colors and pressed states resolve independently',()=>{
+ const snapshot={sideToMove:'P1',pieces:[{id:'C2',owner:'P2',kind:'commander'}]};
+ const context={selectedPieceId:'C2',networkInspections:{command:{kind:'command',owner:'P2'},supply:{kind:'supply',owner:'P1'}},networkOwners:{command:'P2',supply:'P1'}};
+ const state=getInspectionLegendState(snapshot,context);
+ assert.deepEqual(getInspectionLegendState(snapshot,{inspection:{kind:'networks',...context.networkInspections}}),state);
+ assert.deepEqual(state,{command:{owner:'P2',color:'var(--player-p2)',selected:true},supply:{owner:'P1',color:'var(--player-p1)',selected:true}});
+ context.networkInspections.supply=null;
+ assert.equal(getInspectionLegendState(snapshot,context).command.selected,true);
+ assert.deepEqual(getInspectionLegendState(snapshot,context).supply,{owner:'P1',color:'var(--player-p1)',selected:false});
+ const attrs={},style={},iconStyle={},lineStyle={};
+ const button={setAttribute:(key,value)=>{attrs[key]=value},style:{setProperty:(key,value)=>{style[key]=value}},querySelector:()=>({style:{setProperty:(key,value)=>{iconStyle[key]=value}}})};
+ const legend={querySelector:selector=>selector.includes('data-board-inspection')?button:{style:{setProperty:(key,value)=>{lineStyle[key]=value}}}};
+ updateInspectionLegend(legend,snapshot,context);
+ assert.equal(attrs['aria-pressed'],'false');assert.equal(attrs['aria-label'],'Red supply point inspection');
+ assert.equal(style['--legend-owner-color'],'var(--player-p1)');assert.equal(iconStyle['--supply-owner'],'var(--player-p1)');assert.equal(lineStyle['--swatch-supply-color'],'var(--player-p1)');
 });
