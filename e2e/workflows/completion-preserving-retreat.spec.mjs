@@ -1,7 +1,7 @@
 import {test as base,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {deterministicStateHash,resolveToStability,serializeState} from '../../apps/web/generated/packages/game-engine/src/index.js';
-import {ACTION_CONTRACT_HEADER,ACTION_CONTRACT_VERSION,commandFingerprint,isSyncCommand,isReconcileResponse,isCommandOutcome} from '../../apps/web/generated/packages/shared-types/src/sync-protocol.js';
+import {ACTION_CONTRACT_HEADER,ACTION_CONTRACT_VERSION,SYNC_TIMING,commandFingerprint,isSyncCommand,isReconcileResponse,isCommandOutcome} from '../../apps/web/generated/packages/shared-types/src/sync-protocol.js';
 import {importScenarioGame,submitPlayableAction,switchGamePanel,ensureActionActorSelected} from '../support/app.mjs';
 import {waitForComputerDecision} from '../support/computer-projection.mjs';
 import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
@@ -66,7 +66,7 @@ test.afterEach(async({page},info)=>{
   await info.attach('local-recovery-incidents',{contentType:'application/json',path});
  }
  catch{console.warn('[retreat-diagnostic] Diagnostic attachment unavailable; original test failure retained.');}
- if(info.title!==computerRetreatWorkflow||!snapshot?.available)return;
+ if(![computerRetreatWorkflow,computerFollowWorkflow].includes(info.title)||!snapshot?.available)return;
  const started=Date.now(),maximumDrainMs=20000,samples=[];
  while(Date.now()-started<maximumDrainMs&&!page.isClosed()){
   let timer;
@@ -111,7 +111,7 @@ async function receipt(page,id,command,outcome='accepted'){
   body=await request(page,`/api/shell/games/${id}/reconcile`,{knownSnapshotEventSeq:0,commands:[command]});
   expect(isReconcileResponse(body,id,[command])).toBe(true);
   return body.commandOutcomes.find(row=>row.clientCommandId===command.clientCommandId)?.outcome;
- }).toBe(outcome);
+ },{timeout:SYNC_TIMING.confirmationBudgetMs}).toBe(outcome);
  const own=body.commandOutcomes.filter(row=>row.clientCommandId===command.clientCommandId);expect(own).toHaveLength(1);
  expect(isCommandOutcome(own[0],command)).toBe(true);
  expect(own[0]).toMatchObject({outcome,fingerprint:command.fingerprint,identityId:command.identityId});return own[0];

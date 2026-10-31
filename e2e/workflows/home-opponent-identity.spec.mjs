@@ -4,7 +4,8 @@ import {test,expect} from '@playwright/test';
 import {waitForLegacyIdentity} from '../support/app.mjs';
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 
-test('fresh Home cards retain configured computer identity through manual control on either side',async({page},info)=>{
+// Each width is a fresh real visit with its own unchanged workflow budget.
+for(const width of [390,900,1440])test(`fresh Home cards retain configured computer identity through manual control on either side at ${width}px`,async({page},info)=>{
  await page.goto('/');await waitForLegacyIdentity(page);
  const games=await page.evaluate(async header=>{
   const bootstrap=await fetch('/api/shell/bootstrap');if(!bootstrap.ok)throw Error(`Bootstrap ${bootstrap.status}`);
@@ -28,7 +29,7 @@ test('fresh Home cards retain configured computer identity through manual contro
  },STORAGE_GENERATION_HEADER);
  // A fresh page uses the actual Home list projection, not the create response.
  await page.reload();
- for(const width of [390,900,1440])for(const text of [100,200]){
+ for(const text of [100,200]){
   await page.setViewportSize({width,height:900});await page.evaluate(text=>document.documentElement.style.fontSize=`${text}%`,text);
   for(const {id,side} of games){
    const card=page.locator(`.mini-board-card-link-surface[data-game-id="${id}"]`),matchup=card.locator('.home-card-matchup');
