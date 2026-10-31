@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test as base,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {deterministicStateHash,resolveToStability,serializeState} from '../../apps/web/generated/packages/game-engine/src/index.js';
 import {ACTION_CONTRACT_HEADER,ACTION_CONTRACT_VERSION,SYNC_TIMING,commandFingerprint,isSyncCommand,isReconcileResponse,isCommandOutcome} from '../../apps/web/generated/packages/shared-types/src/sync-protocol.js';
@@ -8,6 +8,16 @@ import {isOperationRequest,operationValues} from '../support/shared-request.mjs'
 import {makeRetreatScenario,readRetreatCapture,FOLLOW_ACTION,RETREAT_CAPTURE_SHA256} from '../support/retreat-completion-fixture.mjs';
 import {installJournalObservations} from '../support/journal-observations.mjs';
 import {COMPUTER_UI_FRAME_MEASURE} from '../../apps/web/shell/frame-presentation.js';
+
+// Artifact encoding is separate from the unchanged 60-second behavioral budget.
+// Linux WebKit completed every Follow assertion before its screenshot crossed it.
+const test=base.extend({followEvidence:[async({page},use,info)=>{
+ let evidence;
+ await use(value=>{evidence=value;});
+ if(!evidence)return;
+ await page.screenshot({path:info.outputPath('computer-safe-retreat-follow-completed.png')});
+ await info.attach('accepted-computer-follow-source',{body:JSON.stringify(evidence,null,2),contentType:'application/json'});
+},{timeout:20000}]});
 
 const f=readRetreatCapture(),safe=f.alternatives.find(row=>row.completable);
 const computerRetreatWorkflow='the real computer defender records only the completion-preserving retreat';
@@ -209,12 +219,11 @@ test(computerRetreatWorkflow,async({page,baseURL},info)=>{
  await info.attach('accepted-computer-retreat',{body:JSON.stringify({command,move,attempt},null,2),contentType:'application/json'});
 });
 
-test(computerFollowWorkflow,async({page,baseURL},info)=>{
+test(computerFollowWorkflow,async({page,baseURL,followEvidence})=>{
  const {branched,command,move}=await acceptedComputerRetreat(page,baseURL);
  await switchGamePanel(page,'board');
  await completedMandatoryFollow(page,branched.id,command.clientCommandId);
- await page.screenshot({path:info.outputPath('computer-safe-retreat-follow-completed.png')});
- await info.attach('accepted-computer-follow-source',{body:JSON.stringify({command,move},null,2),contentType:'application/json'});
+ followEvidence({command,move});
 });
 
 test('a retained stranded Follow stays ongoing and its move-row Undo restores live Board',async({page,baseURL},info)=>{
