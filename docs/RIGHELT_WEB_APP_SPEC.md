@@ -298,6 +298,8 @@ When a recipient opens either invite type:
 
 On home page, users must see a game list in reverse chronological order by latest activity timestamp (latest move time; if no moves, creation time).
 
+Pagination uses Ghost arrows at every width, with full accessible Previous/Next page names and no visible words on the buttons. Keep transparent resting borders, quiet hover, clear keyboard focus, and unobstructed native targets of at least 44 by 44px. Both arrows and the full Page X of Y label stay on one physical line at 320px, 390px, and desktop, including natural 200% text and two-digit counts. The arrow and loading pieces replace each other in the same centered slot. Preserve the 200ms cue and 5000ms slow thresholds. Both arrows remain disabled during their request. The opted-in Home section shares one existing slow status below its content, outside the busy buttons and pagination row, so feedback does not move the arrows or label. Preserve modulo wraparound, header/footer placement, page-size rules, cancellation and account guards, and the current failure behavior: retain the page and allow another arrow activation to retry, without a new error panel or separate Retry button.
+
 Each listed game must display:
 - `Player 1` activity state.
 - `Player 2` activity state.
@@ -469,6 +471,7 @@ This section is normative and applies to every new endpoint, page, and performan
 - Use “Select a move for piece at” and “Supply and command lines for piece at”, followed by the shared coordinate chip. Keep specific explanations for pieces without legal moves.
 - The completed opponent sequence and Show me again form the first logical row. “Select a piece or Pass” forms the next. Both rows may wrap naturally on narrow screens.
 - All board-message coordinates, including move narration, use the shared coordinate-chip renderer with a space after the comma. Structured coordinates must stay separate from player-controlled names. Coordinate chips and Pass/End turn pills align with the middle of the surrounding text. Reuse the same renderer for sizing replicas. Verify cold fonts, zoom, narrow widths, and touch targets when changing token metrics.
+- Refreshing an unchanged board message must retain its live action buttons through pointer and keyboard press/release feedback. Ignore only the known temporary feedback classes (`is-pressing`, `is-releasing`, `button-release-bounce`) during structural comparison; action IDs, disabled state and genuine style classes remain semantic. Verify pointer-down → refresh → pointer-up and keyboard activation → release feedback → refresh with one action and stable focus.
 - Computer status uses human-facing phases: Waiting for the named computer, thinking, and saving their move. Preparation and control renewal remain waiting. Activity-dot ownership follows the computer named in the message rather than a pending human operation.
 - Narration describes the acknowledged sequence. Multiple rushed pieces use “X rushed several pieces”. Pushes name the victim’s original square and say “and had a piece follow” or “and had several pieces follow”.
 
