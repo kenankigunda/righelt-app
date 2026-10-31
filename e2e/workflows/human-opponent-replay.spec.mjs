@@ -9,7 +9,7 @@ const test=base.extend({
   finally{await owned.close();}
  },
 });
-import {createGameFromHome,openDirectGameLink,requestPlayerJoin,acceptPendingRequest,joinAsViewer,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
+import {createGamesViaApi,createGameFromHome,openDirectGameLink,requestPlayerJoin,acceptPendingRequest,joinAsViewer,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
 import {readProjectedGame} from '../support/computer-projection.mjs';
 import {isOperationRequest} from '../support/shared-request.mjs';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
