@@ -880,8 +880,10 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
     await expect(sibling.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
     await foreground(sibling);
     await account(sibling);
-    signingOut = signOutAndOpenSignIn(sibling);
-    signingOut.catch(() => {}); // Cleanup below also drains this owned helper on assertion failure.
+    // Keep the normal confirmation budget after this fixture releases its
+    // intentional response-body hold, rather than spending it inside the hold.
+    signingOut = sibling.getByTestId("account-dialog").getByRole("button", {name:"Sign out",exact:true}).click();
+    signingOut.catch(() => {}); // Cleanup below also drains this owned native click on assertion failure.
     await expect.poll(async () => (await Promise.all([page, sibling].map(tab =>
       tab.evaluate(() => window.__heldLogoutBodies.length),
     ))).reduce((total, count) => total + count, 0)).toBe(1);
@@ -895,6 +897,8 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
       window.__heldLogoutBodies.splice(0).forEach(resolve => resolve());
     })));
     await signingOut;
+    await expect.poll(() => sibling.evaluate(() => localStorage.getItem("righelt.account.logout-pending.v1"))).toBeNull();
+    await openPlaySignIn(sibling);
     await enterUsername(sibling, second);
     await dialog(sibling).getByLabel("Password", { exact: true }).fill(password);
     await dialog(sibling).getByRole("button", { name: "Sign in", exact: true }).click();
