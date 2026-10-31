@@ -21,14 +21,14 @@ for(const width of [390,1440])test(`lazy history retains the selected board thro
  const narrow=await page.locator('#app').getAttribute('data-shell-layout-mode')==='narrow';
  const liveBoard=narrow?await page.getByTestId('game-board').innerHTML():null;
  await switchGamePanel(page,'history');
- await rowFor(moves[1]).locator('.history-item-info').click();
+ await rowFor(moves[1]).locator(':scope > .history-move-hit').click();
  await expect(rowFor(moves[1])).toHaveClass(/is-selected/);
  const selectedSurface=narrow?rowFor(moves[1]).getByTestId('history-inline-preview'):page.getByTestId('game-board');
  await expect(selectedSurface.locator('.cell')).toHaveCount(100);
  const selected=await selectedSurface.innerHTML();
  let fail=true,reads=0;
  await page.route(`**/api/shell/games/${gameId}/decision-snapshot`,async route=>{reads++;if(fail)await route.abort();else await route.continue();});
- await rowFor(moves[0]).locator('.history-move-line').click();
+ await rowFor(moves[0]).locator(':scope > .history-move-hit').click();
  await expect(page.getByText('This move couldn’t load. Your current view is still available.')).toBeVisible();
  const status=page.getByTestId('history-load-status');
  await expect(status).toBeVisible();
@@ -44,7 +44,7 @@ for(const width of [390,1440])test(`lazy history retains the selected board thro
  if(narrow){await expect(rowFor(moves[0]).getByTestId('history-inline-preview').locator('.cell')).toHaveCount(100);expect(await page.getByTestId('game-board').innerHTML()).toBe(liveBoard);}
  await returnToLive(page);await switchGamePanel(page,'board');const before=reads;
  await page.context().setOffline(true);
- try{await switchGamePanel(page,'history');await rowFor(moves[0]).locator('.history-item-info').click();await expect(rowFor(moves[0])).toHaveClass(/is-selected/);expect(reads).toBe(before);if(narrow)await expect(rowFor(moves[0]).getByTestId('history-inline-preview').locator('.cell')).toHaveCount(100);await returnToLive(page);}
+ try{await switchGamePanel(page,'history');await rowFor(moves[0]).locator(':scope > .history-move-hit').click();await expect(rowFor(moves[0])).toHaveClass(/is-selected/);expect(reads).toBe(before);if(narrow)await expect(rowFor(moves[0]).getByTestId('history-inline-preview').locator('.cell')).toHaveCount(100);await returnToLive(page);}
  finally{await page.context().setOffline(false);}
 });
 

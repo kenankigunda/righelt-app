@@ -88,7 +88,7 @@ test("game, join/invite, and history use shared section spacing structure", () =
 test("history live-return control stays mounted without blocking through the global busy gate", () => {
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
   assert.doesNotMatch(source, /data-action="return-live"[^`]*\$\{busy \? "disabled" : ""\}/);
-  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*transport\.selectHistoryMove\(\{ gameId, moveIndex, moveId:actionEl\.getAttribute\("data-move-id"\) \|\| null \}\);[\s\S]*return;/s);
+  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*const moveId=actionEl\.getAttribute\("data-move-id"\)\?\?actionEl\.closest\("\.history-item\[data-move-id\]"\)\?\.getAttribute\("data-move-id"\)\?\?null;[\s\S]*await animateHistoryDeselection\(actionEl\);[\s\S]*transport\.selectHistoryMove\(\{ gameId, moveIndex, moveId \}\);[\s\S]*return;/s);
   assert.match(source, /if \(action === "return-live"\) \{[\s\S]*transport\.returnToLive\(\{ gameId \}\);[\s\S]*return;/s);
   assert.match(syncStoreSource, /selectHistoryMove: \(\{ gameId, moveIndex, moveId = null \}\) => operationManager.createCommitted/);
   assert.match(syncStoreSource, /returnToLive: \(\{ gameId \}\) => operationManager.createCommitted/);

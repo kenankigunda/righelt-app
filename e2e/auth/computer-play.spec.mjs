@@ -193,7 +193,7 @@ test('ordinary computer undo restores the human turn and resumes computer contro
     const firstMove=(await projected(page,initial.id)).moves.find(move=>!move.undone);
     expect(firstMove?.moveId).toBeTruthy();
     const row=page.locator(`[data-testid="history-move-item"][data-move-id="${firstMove.moveId}"]`);
-    await row.locator('.history-item-info').click();
+    await row.locator(':scope > .history-move-hit').click();
     await row.getByRole('button',{name:'Undo before this move',exact:true}).click();
     await expect.poll(async () => {
       const game = await projected(page, initial.id);

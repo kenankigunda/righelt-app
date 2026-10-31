@@ -157,7 +157,7 @@ test.describe('narrow board and history',()=>{
       await expect.poll(()=>changedRow.evaluate(el=>el.getBoundingClientRect().top>=0 && el.querySelector('.history-inline-preview').getBoundingClientRect().bottom<=innerHeight)).toBe(true);
       await page.screenshot({path:info.outputPath('mobile-selected-move-history.png')});
       const turnHeading=changedRow.locator('xpath=ancestor::li[contains(@class,"history-turn")]/div[contains(@class,"history-turn-heading")]');
-      await turnHeading.click();
+      await turnHeading.locator('..').locator(':scope > .history-turn-hit').click({position:{x:12,y:12}});
       await expect(turnHeading).toHaveAttribute('aria-current','true');
       await expect(turnHeading).not.toHaveAttribute('data-action');
       const aggregate=turnHeading.locator('..').getByTestId('history-inline-preview');
@@ -207,7 +207,8 @@ test.describe('narrow board and history',()=>{
       await page.getByRole('button',{name:'Undo before this move',exact:true}).tap();
       await expect(page.getByTestId('undo-waiting-notice')).toBeVisible();
       await expect(guest.getByTestId('undo-approval-notice')).toBeVisible();
-      await firstRow.click();await secondRow.click();await firstRow.click();await expect(firstRow).toHaveClass(/is-selected/);
+      for(const row of [firstRow,secondRow,firstRow]){await row.locator(':scope > .history-move-hit').click();await expect(row).toHaveAttribute('aria-current','true');}
+      await expect(firstRow).toHaveClass(/is-selected/);
       await guestContext.route(/\/(shared|revert-approve)$/,async route=>{
         if(!isOperationRequest(route.request(),'revert-approve'))return route.continue();
         approvalSeen=true;await held;await route.continue();
@@ -331,7 +332,7 @@ test.describe('short landscape history',()=>{
   expect(await move.locator('.history-inline-preview').evaluate(el=>Number(el.style.zoom))).toBeLessThan(1);
   await page.screenshot({path:info.outputPath('short-landscape-selected-move.png')});
   const heading=move.locator('xpath=ancestor::li[contains(@class,"history-turn")]/div[contains(@class,"history-turn-heading")]');
-  await heading.click();await expect(heading).toHaveAttribute('aria-current','true');
+  await heading.locator('..').locator(':scope > .history-turn-hit').click({position:{x:12,y:12}});await expect(heading).toHaveAttribute('aria-current','true');
   await expect.poll(()=>fits(heading)).toBe(true);
   await page.screenshot({path:info.outputPath('short-landscape-selected-turn.png')});
  });

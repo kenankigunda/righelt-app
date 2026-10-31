@@ -287,6 +287,9 @@ When a recipient opens either invite type:
 
 - Game page must show a sidebar/history panel listing turn history in order.
 - The history panel must group moves beneath their parent turn.
+- Use the approved compact owner-colored rail. Its affiliation belongs to the whole turn, including defender-retreat rows whose text retains the defender color. Turn headings visibly read `Turn N`; retain player attribution in accessible labels. Every move label retains its board-wide `Move N:` prefix.
+- The entire turn group is an implicit selection surface. Heading and surrounding space select the aggregate; each child move selects that exact move; child action buttons win over both. Use independent native button targets without nested buttons or duplicate keyboard activation. Selected move/turn targets are inert while their child move/action controls remain usable.
+- Keep the rail compact without collapsing turn contents. Preserve newest-turn/chronological-move order, recorded destruction nesting, pending/archive states, frozen acknowledged selection and mobile preview reveal. Mobile selection and action targets stay at least 44px; desktop density follows the approved rail study. Reduced motion removes press/release movement.
 - Users can click any move entry.
 - Clicking an entry switches board from `Live view` to `History view` at post-move state for that entry.
 - While user is in `History view`:

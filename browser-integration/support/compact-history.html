@@ -1,0 +1,37 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Compact History contracts</title><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"></head><body><main id="app" class="app-root" data-hover-capability="hover"><section class="panel" style="max-width:34rem;margin:1rem auto"><h2>History</h2><ol class="history-list" id="history"></ol></section></main>
+<script type="module">
+import {applyAction} from '/apps/web/generated/packages/game-engine/src/index.js';
+import {selectedHistoryPresentation} from '/apps/web/shell/history-narration.js';
+import {visibleRecordedMoves,recordedMoveNumber} from '/apps/web/shell/recorded-narration.js';
+import {renderBoardMessageHtml} from '/apps/web/board/message-presentation.js';
+import {buildMovePreview,buildTurnPreview,historyTurnSide} from '/apps/web/shell/history-preview.js';
+import {historyActorLabel,playerDisplayName} from '/apps/web/shell/perspective-labels.js';
+import {COMPUTER_PROFILES} from '/apps/web/generated/packages/shared-types/src/computer-play.js';
+import {createEngineBoardAdapter} from '/apps/web/board-adapters/engine-board-adapter.js';
+import {syncMiniBoardPreviews} from '/apps/web/board/mini-board-preview.js';
+import {icon} from '/apps/web/shell/ui.js';
+try{
+const source=await(await fetch('/apps/web/shell/app.js')).text();
+const extract=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));
+const escapeHtml=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const tones=Function('escapeHtml',`${extract('const playerToneClassForSeat =','const isDualSeatIdentity =')};return {playerToneClassForSeat,playerToneClassForSide};`)(escapeHtml);
+// Use the same verified legal push/retreat/follow fixture as the app E2E matrix.
+// This browser fixture validates rendering/interaction only; it writes no gameplay.
+const scenario=window.compactScenario;
+if(!scenario)throw Error('Explicit canonical scenario fixture binding missing');
+let state=structuredClone(scenario.initialState);
+const moves=scenario.moves.map((record,index)=>{const before=structuredClone(state);state=applyAction(state,record.action).state;return {...record,index,displayMoveNumber:index+41,moveId:`record-${index}`,selectionSnapshot:before,snapshot:structuredClone(state),destroyedPieces:[],at:'2026-10-30'};});
+const game={id:'fixture',moves,turns:[{index:moves[0].turnIndex,playerSeat:'Player 1'}],myRoles:['Player 1'],player1:{identityId:'red',profile:{displayName:'Maya'}},player2:{identityId:'blue',profile:{displayName:'Kenan'}},currentSnapshot:state,board:{state}};
+const renderedMiniBoardPreviewPayloads=new Map(),registry=new Map();
+const renderMiniBoardPreviewRoot=Function('renderedMiniBoardPreviewPayloads','escapeHtml',`${extract('const registerMiniBoardPreview =','const formatOutcomeStatus =')};return renderMiniBoardPreviewRoot;`)(renderedMiniBoardPreviewPayloads,escapeHtml);
+const expandedUndoneGroups=new Set();
+const deps={...tones,selectedHistoryPresentation,visibleRecordedMoves,recordedMoveNumber,renderBoardMessageHtml,buildMovePreview,buildTurnPreview,historyTurnSide,historyActorLabel,playerDisplayName,COMPUTER_PROFILES,renderMiniBoardPreviewRoot,getShellLayoutMode:()=>innerWidth<933?'narrow':'wide',toStableKey:JSON.stringify,escapeHtml,icon,transport:{getIdentityId:()=> 'red'},formatClientDateTime:()=> 'Oct 30',expandedUndoneGroups,liveHistoryLabel:()=> 'Waiting'};
+const render=Function(...Object.keys(deps),`${extract('const renderHistoryPreview =','const renderHeader =')};return renderTurnHistory;`)(...Object.values(deps));
+window.historyActions=[];
+function draw(){document.querySelector('#history').innerHTML=render(game);syncMiniBoardPreviews({previews:[...document.querySelectorAll('[data-mini-board-preview]')].map(rootEl=>({rootEl,...renderedMiniBoardPreviewPayloads.get(rootEl.dataset.previewId)})),registry,createAdapter:()=>createEngineBoardAdapter()});}
+document.querySelector('#app').addEventListener('click',event=>{const control=event.target.closest('[data-action]');if(!control)return;const action=control.dataset.action;window.historyActions.push(action);if(action==='jump-history'){game.inHistoryMode=true;game.historyTurnIndex=null;game.historyIndex=Number(control.dataset.moveIndex);game.inspectedDecision=moves.find(move=>move.index===game.historyIndex);draw();}else if(action==='toggle-undone-group'){const key=control.dataset.groupKey;if(expandedUndoneGroups.has(key))expandedUndoneGroups.delete(key);else expandedUndoneGroups.add(key);draw();}else if(action==='jump-history-turn'){game.inHistoryMode=true;game.historyTurnIndex=Number(control.dataset.turnIndex);game.historyTurnMoves=moves;draw();}});
+window.addUndoneHistory=()=>{game.moves=[...moves,{...moves[0],index:6,moveId:'undone-record',undone:true}];game.inHistoryMode=false;game.historyTurnIndex=null;game.inspectedDecision=null;window.historyActions=[];draw();};
+window.resetCompactHistory=()=>{game.inHistoryMode=false;game.historyTurnIndex=null;game.inspectedDecision=null;window.historyActions=[];draw();};
+draw();window.fixtureReady=true;
+}catch(error){window.fixtureError=String(error.stack??error);window.fixtureReady=true;throw error;}
+</script></body></html>

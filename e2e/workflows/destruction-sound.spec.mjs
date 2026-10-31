@@ -91,7 +91,7 @@ test('real audio destruction batches deduplicate local receipts while mute and r
   // Reload/history/replay are informational and must not reproduce destruction audio.
   await retain('owner',owner,'local-confirmed-and-duplicates');await retain('viewer',viewer,'local-confirmed-and-duplicates');
   await viewer.bringToFront();await viewer.reload();await expect(viewer.getByTestId('game-shell')).toBeVisible();expect(await crackStarts(viewer)).toHaveLength(0);
-  await switchGamePanel(viewer,'history');await viewer.getByTestId('history-move-item').first().locator('.history-move-line').click();await expect(viewer.locator('#shell-board .history-destruction-piece')).toHaveCount(2);expect(await crackStarts(viewer)).toHaveLength(0);
+  await switchGamePanel(viewer,'history');await viewer.getByTestId('history-move-item').first().locator(':scope > .history-move-hit').click();await expect(viewer.locator('#shell-board .history-destruction-piece')).toHaveCount(2);expect(await crackStarts(viewer)).toHaveLength(0);
   await returnToLive(viewer);await switchGamePanel(viewer,'board');await viewer.emulateMedia({reducedMotion:'reduce'});
   await viewer.locator('#shell-board-preview-label').getByRole('button',{name:'Show me again',exact:true}).click();await expect(viewer.locator('.computer-replay')).toBeVisible();
   await viewer.locator('#shell-board-preview-label').getByRole('button',{name:'Stop replay',exact:true}).click();expect(await crackStarts(viewer)).toHaveLength(0);
