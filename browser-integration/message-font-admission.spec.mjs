@@ -101,7 +101,6 @@ for(const scale of [100,200])test(`measured font boundaries keep cold, loaded an
    },{scale,bands});
    result.push(...decodeFontBoundarySamples(measured));
    sameAnchors(before,await anchors(page));
-  }
   return result;
  };
  try{
