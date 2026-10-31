@@ -68,7 +68,7 @@ test('Back restores same-URL visits after passive utility dismissal and rapid re
     await page.setViewportSize({ width: 390, height: 600 });
     await createGamesViaApi(page, 1);
     await page.goto('/');
-    await page.locator('[data-home-section-root="my"] .mini-board-card-link-surface').first().click();
+    await page.locator('[data-home-section-root="my"] a.mini-board-card-link-surface[data-game-id]').first().click();
     await expect(page.getByTestId('game-shell')).toBeVisible();
     await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-phase', 'idle');
     const gameHash = await page.evaluate(() => location.hash);
