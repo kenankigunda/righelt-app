@@ -108,12 +108,15 @@ async function receipt(page,id,command,outcome='accepted'){
  },{timeout:SYNC_TIMING.confirmationBudgetMs}).toBe(outcome);
  const own=body.commandOutcomes.filter(row=>row.clientCommandId===command.clientCommandId);expect(own).toHaveLength(1);
  expect(isCommandOutcome(own[0],command)).toBe(true);
- expect(own[0]).toMatchObject({outcome,fingerprint:command.fingerprint,identityId:command.identityId});return own[0];
+ expect(own[0]).toMatchObject({outcome,fingerprint:command.fingerprint,identityId:command.identityId});
+ expect(body.game?.id).toBe(id);expect(body.game.gameplayRevision).toBe(body.gameplayRevision);
+ if(outcome==='accepted')expect(own[0].gameplayRevision).toBe(body.gameplayRevision);
+ return {outcome:own[0],game:body.game};
 }
 async function submit(page,id,action){
  const sent=page.waitForRequest(req=>req.method()==='POST'&&new URL(req.url()).pathname===`/api/shell/games/${id}/apply`);
  await submitPlayableAction(page,action);const command=(await sent).postDataJSON();expect(command.payload.action).toEqual(action);
- await receipt(page,id,command);return command;
+ const acknowledged=await receipt(page,id,command);return {command,game:acknowledged.game};
 }
 async function claimBoth(page){
  await switchGamePanel(page,'players');
@@ -151,7 +154,7 @@ test('human retreat excludes the stranded square and completes the native Follow
  const unsafe={protocolVersion:2,actionContractVersion:3,gameId,identityId,clientCommandId:`v2:${crypto.randomUUID()}`,kind:'action',payload:{action:f.retreat.action},expectedState:pushed.board.state,expectedGameplayRevision:pushed.gameplayRevision};
  unsafe.fingerprint=await commandFingerprint(unsafe);
  const rejected=await request(page,`/api/shell/games/${gameId}/apply`,unsafe);expect(rejected.accepted).toBe(false);
- expect((await receipt(page,gameId,unsafe,'rejected')).reason).toBe('SUPPLY_DESTINATION_UNSUPPLIED');
+ expect((await receipt(page,gameId,unsafe,'rejected')).outcome.reason).toBe('SUPPLY_DESTINATION_UNSUPPLIED');
  const unchanged=await current(page,gameId);expect(unchanged.board).toEqual(pushed.board);expect(unchanged.gameplayRevision).toBe(pushed.gameplayRevision);expect(unchanged.moves).toEqual(pushed.moves);
  // Clicking an empty unhighlighted square deliberately clears selection.
  // Resume through the actual pushed-piece control before selecting its move.
@@ -198,7 +201,9 @@ test(computerFollowWorkflow,async({page,baseURL},info)=>{
  const {branched,command,move}=await acceptedComputerRetreat(page,baseURL);
  const ready=await atHash(page,branched.id,safe.stateHash);expect(ready.legalActions).toEqual([FOLLOW_ACTION]);await switchGamePanel(page,'board');await noClosure(page,ready);
  await page.screenshot({path:info.outputPath('computer-safe-retreat.png')});
- await submit(page,branched.id,FOLLOW_ACTION);completed(await current(page,branched.id));
+ // Completion comes from the same validated authoritative reconciliation that
+ // acknowledged this exact Follow; do not add a duplicate final snapshot fetch.
+ const acknowledged=await submit(page,branched.id,FOLLOW_ACTION);completed(acknowledged.game);
  await info.attach('accepted-computer-follow-source',{body:JSON.stringify({command,move},null,2),contentType:'application/json'});
 });
 
