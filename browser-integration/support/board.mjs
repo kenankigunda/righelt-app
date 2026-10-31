@@ -2,11 +2,12 @@ import { createBoardRuntime } from "/apps/web/board/runtime/board-runtime.js";
 import { createEngineBoardAdapter } from "/apps/web/board-adapters/engine-board-adapter.js";
 import { buildPieceMoveResponse } from "/apps/web/board/client-move-generation.js";
 
-let state, actions, runtime, applied = [], pending = null, canInteract = true, selectWhileBlocked = false, message = null, messageActions = [];
+let state, actions, runtime, applied = [], pending = null, canInteract = true, canPresentActions = true, selectWhileBlocked = false, message = null, messageActions = [];
 const coord = (row, col) => ({ row, col });
 const setup = async (type = "rush", hover = true) => {
   runtime?.destroy();
   canInteract = true;
+  canPresentActions = true;
   selectWhileBlocked = false;
   message = null; messageActions = [];
   state = { boardSize: 10, sideToMove: "P1", turnIndex: 0, continuation: null, outcome: { status: "ongoing" },
@@ -18,6 +19,7 @@ const setup = async (type = "rush", hover = true) => {
   runtime = createBoardRuntime({ boardAdapter: createEngineBoardAdapter(), controls: { getSupportsHover: () => hover, getBoardMessage: () => message, onBoardMessageAction: action => messageActions.push(action) }, host: {
     canSelect: () => canInteract || selectWhileBlocked,
     canInteract: () => canInteract,
+    canPresentActions: () => canPresentActions,
     loadPieceMoves: async (_state, pieceId) => buildPieceMoveResponse({ state, legalActions: actions, pieceId }),
     loadLegalActions: async () => ({ state, legalActions: actions }),
     applyAction: async (_state, action) => {
@@ -35,6 +37,7 @@ window.boardFixture = {
     state = snapshot;
     actions = legalActions;
     canInteract = interactive;
+    canPresentActions = interactive;
     await runtime.loadSnapshot(state, {legalActions: actions, selectionState});
   },
   inspect: value => runtime.setInspection(value),

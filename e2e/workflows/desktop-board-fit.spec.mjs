@@ -98,6 +98,26 @@ test('desktop board fits primary viewport, remains stable through scroll/header 
 
 });
 
+test('desktop board fits the generic platform fallback at 1440x800',async({page},info)=>{
+ await page.route('**/design-tokens.css',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text()).replace('--font-family-fallback: "Avenir Next", sans-serif','--font-family-fallback: sans-serif')});});
+ await page.addInitScript(installGeometryProbe);await page.setViewportSize({width:1440,height:800});await createGameFromHome(page);
+ await page.evaluate(()=>document.fonts.ready);
+ for(const scale of [100,200]){
+  await page.evaluate(scale=>{document.documentElement.style.fontSize=`${scale}%`;},scale);
+  await expect.poll(async()=>{const geometry=await read(page);return Math.abs(geometry.board.width-geometry.board.height);}).toBeLessThanOrEqual(1);
+  await expect.poll(()=>page.locator('[data-shell-panel="board"]').evaluate(panel=>{
+   const axes=[...panel.querySelectorAll('.axis-label.col-axis')],legend=panel.querySelector('.overlay-key').getBoundingClientRect();
+   return axes.length===10&&axes.every(axis=>axis.getBoundingClientRect().bottom<=legend.top);
+  })).toBe(true);
+  const geometry=await read(page),path=info.outputPath(`generic-fallback-fit-${scale}.json`);await writeFile(path,JSON.stringify(geometry,null,2));
+  await info.attach(`generic fallback desktop geometry at ${scale}%`,{path,contentType:'application/json'});
+  await page.screenshot({path:info.outputPath(`generic-fallback-fit-${scale}.png`),fullPage:scale===200});
+  expect(geometry.cells).toHaveLength(100);expect(geometry.cells[0].width).toBeGreaterThanOrEqual(35.9);
+  if(scale===100)expect(geometry.panel.y+geometry.panel.height).toBeLessThanOrEqual(800);
+  else expect(geometry.panel.y+geometry.panel.height).toBeGreaterThan(800);
+ }
+});
+
 for(const [width,height,text]of[[1440,800,100],[390,740,100],[1440,800,200]])test(`cold loading populates the same card shape and100-cell grid at ${width}x${height} and${text}% text`,async({page,context},info)=>{
  await page.setViewportSize({width,height});const {gameId}=await createGameFromHome(page);
  // An unfilled friend seat legitimately waits for an opponent after reload.
