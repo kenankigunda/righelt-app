@@ -247,3 +247,19 @@ test('a Home batch retains a failed read identity without discarding healthy sec
  assert.equal(result.error,original);assert.equal(result.healthySettled,false);
  assert.equal(states.my.totalGames,4);assert.equal(states.completed.totalGames,4);assert.equal(states.other.error,true);
 });
+
+for(const churn of [false,true])test(`a visible Home page retains every required server page across newly learned membership churn=${churn}`,async()=>{
+ const begin=source.indexOf('const loadHomeSectionServerPage ='),finish=source.indexOf('const syncResponsiveHomeSectionPageSizes =',begin);
+ let revision=1,calls=0;const ids=['g0','g1','g2','g3','g4'];
+ let state={page:0,loaded:true,totalGames:5,homeListRevision:1,visiblePageSize:3,visibleColumnCount:3,serverPageGameIdsByPage:{0:ids.slice(0,4)},gameIds:ids.slice(0,3),animationToken:0};
+ const owner={getHomeListRevision:()=>revision,loadGamesPage:async({page})=>{calls++;if(churn||calls===1)revision++;return {page,totalGames:5,totalPages:2,homeListRevision:revision,games:ids.slice(page*4,page*4+4).map(id=>({id}))};}};
+ const context=vm.createContext({currentRoute:{debug:false},captureRouteRead:()=>({owner}),assertCurrentRouteRead:()=>{},getHomeSection:()=>state,setHomeSection:(_,next)=>state=next,
+ getHomeSectionVisiblePageSize:()=>3,getHomeSectionColumnCount:()=>3,HOME_SECTION_SERVER_PAGE_SIZE:4,
+ getHomeSectionRequiredServerPages:({totalGames,visiblePageSize,page})=>totalGames?Array.from(new Set(Array.from({length:Math.max(0,Math.min(visiblePageSize,totalGames-page*visiblePageSize))},(_,i)=>Math.floor((page*visiblePageSize+i)/4)))):[],
+ hasHomeSectionServerPages:(section,pages)=>pages.every(page=>Object.hasOwn(section.serverPageGameIdsByPage,page)),
+ getHomeSectionSafePage:(total,size,page)=>Math.max(0,Math.min(page,Math.ceil(total/size)-1)),getHomeSectionVisibleTotalPages:(total,size)=>Math.ceil(total/size),
+ getHomeSectionVisibleGameIdsFromCache:(section,{page,visiblePageSize})=>{const result=Array.from({length:Math.max(0,Math.min(visiblePageSize,section.totalGames-page*visiblePageSize))},(_,i)=>{const index=page*visiblePageSize+i;return section.serverPageGameIdsByPage[Math.floor(index/4)]?.[index%4];});return result.every(Boolean)?result:null;},gameSound:{play(){}}});
+ const load=new vm.Script(`${source.slice(begin,finish)};loadHomeSectionPage`).runInContext(context);
+ if(churn){await assert.rejects(load('my',{page:1,direction:'next'}),/game list changed/);assert.ok(calls<=4,'membership churn must remain bounded');assert.deepEqual(Array.from(state.gameIds),ids.slice(0,3));}
+ else{await load('my',{page:1,direction:'next'});assert.deepEqual(Array.from(state.gameIds),['g3','g4']);assert.equal(state.page,1);assert.equal(calls,2);}
+});

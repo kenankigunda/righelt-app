@@ -3638,14 +3638,24 @@ const loadHomeSectionPage = async (
     const superseded = current.page !== previous.page || current.visiblePageSize !== previous.visiblePageSize || current.visibleColumnCount !== previous.visibleColumnCount;
     return superseded ? {page:current.page,visiblePageSize:current.visiblePageSize,visibleColumnCount:current.visibleColumnCount} : {page,visiblePageSize,visibleColumnCount};
   };
-  let intent = currentIntent();
-  let requiredServerPages = getHomeSectionRequiredServerPages({totalGames:nextSection.totalGames,...intent});
-  for (const serverPage of requiredServerPages) {
-    if (!hasHomeSectionServerPages(nextSection, [serverPage])) {
-      nextSection = await loadHomeSectionServerPage(sectionKey, serverPage, intent);
+  let intent;
+  // A later server page can reveal membership evidence that invalidates an
+  // earlier cached page. Settle that bounded cache change before publishing
+  // the visible slice; an incomplete slice must never hide the whole section.
+  for (let pass = 0; pass < 2; pass++) {
+    intent = currentIntent();
+    const required = getHomeSectionRequiredServerPages({totalGames:nextSection.totalGames,...intent});
+    for (const serverPage of required) {
+      if (!hasHomeSectionServerPages(nextSection, [serverPage])) {
+        nextSection = await loadHomeSectionServerPage(sectionKey, serverPage, intent);
+      }
     }
+    if (hasHomeSectionServerPages(nextSection, required)) break;
   }
   intent = currentIntent();
+  if (!hasHomeSectionServerPages(nextSection, getHomeSectionRequiredServerPages({totalGames:nextSection.totalGames,...intent}))) {
+    throw Object.assign(new Error('Your game list changed. Try again.'),{code:'home_list_changed'});
+  }
   ({page,visiblePageSize,visibleColumnCount} = intent);
   const normalizedPage = getHomeSectionSafePage(nextSection.totalGames, visiblePageSize, page);
   const normalizedTotalPages = getHomeSectionVisibleTotalPages(nextSection.totalGames, visiblePageSize);
