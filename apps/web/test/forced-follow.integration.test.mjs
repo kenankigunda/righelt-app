@@ -6,18 +6,18 @@ import { followGame, applyFollow } from './support/forced-follow.mjs';
 const deferred = () => {let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};};
 const flush = () => new Promise(resolve=>setImmediate(resolve));
 function fixture(options={}) {
-  let game=followGame(options),visible=true,eligible=true,scope='account',canAct=true,view={pendingCommandCount:0},sound=0,clears=0;
+  let game=followGame(options),visible=true,eligible=true,scope='account',canAct=true,hasHumanAuthority=true,view={pendingCommandCount:0},sound=0,clears=0;
   const requests=[],events=[],errors=[];let receipt,commandId;
   const owner={getIdentityId:()=> 'human',reconcileGame:async()=>{events.push('reconcile');},applyGameAction:async request=>{
     requests.push(request);commandId=requests.length===1?'follow-command':`follow-command-${requests.length}`;events.push('admit');view={...view,pendingCommandCount:1,pendingMoves:[{clientCommandId:commandId,action:request.action}]};receipt=deferred();
     return{id:commandId,committed:receipt.promise};
   }};
   let currentOwner=owner;
-  const getContext=()=>({owner:currentOwner,scope,game,view,visible,eligible,canAct});
+  const getContext=()=>({owner:currentOwner,scope,game,view,visible,eligible,canAct,hasHumanAuthority});
   const controller=createForcedFollow({getContext,hold:async()=>{events.push('hold');},animate:async move=>{events.push('animate');options.onAnimate?.(move);},clearVisual:()=>{clears++;},sound:()=>{sound++;events.push('sound');},onError:error=>errors.push(error),withLock:options.withLock??((_,work)=>work())});
   return{controller,owner,getContext,requests,events,errors,game:()=>game,view:()=>view,sounds:()=>sound,clears:()=>clears,
     setView:values=>{view={...view,...values};},setGame:next=>{game=next;},ack:()=>{game=applyFollow(game,requests.at(-1).action,commandId);view={...view,pendingCommandCount:0};receipt.resolve();},reject:error=>{view={...view,pendingCommandCount:0};receipt.reject(error);},
-    change:kind=>{if(kind==='owner')currentOwner={...owner};if(kind==='scope')scope='other-account';if(kind==='game')game={...game,id:'other'};if(kind==='hidden')visible=false;if(kind==='history')eligible=false;if(kind==='computer')canAct=false;}};
+    change:kind=>{if(kind==='owner')currentOwner={...owner};if(kind==='scope')scope='other-account';if(kind==='game')game={...game,id:'other'};if(kind==='hidden')visible=false;if(kind==='history')eligible=false;if(kind==='computer'){canAct=false;hasHumanAuthority=false;}if(kind==='authority'){hasHumanAuthority=false;canAct=false;}}};
 }
 
 test('automatic follow waits for authoritative reconciliation and durable acknowledgement before animation/sound',async t=>{
@@ -32,7 +32,7 @@ test('automatic follow waits for authoritative reconciliation and durable acknow
 
 test('restored pending journals block a refreshed controller before any second admission',async t=>{
   const f=fixture();t.after(()=>f.controller.destroy());
-  f.owner.reconcileGame=async()=>{f.setView({pendingCommandCount:1,sharedMutationsBlocked:true});};
+  f.owner.reconcileGame=async()=>{f.setView({pendingCommandCount:1,sharedMutationsBlocked:true,pendingMoves:[{clientCommandId:'restored-follow',action:f.game().legalActions[0]}]});};
   await f.controller.tick();await f.controller.tick();assert.equal(f.requests.length,0);assert.equal(f.sounds(),0);
 });
 
@@ -96,4 +96,61 @@ test('automatic enqueue ownership suppresses only its own exact follow while adm
   return handle;
  };
  const work=f.controller.tick();await flush();f.ack();await work;assert.equal(f.sounds(),1);
+});
+
+test('a transient fence after preflight preserves one automatic intent, hold and reconciliation',async t=>{
+ const f=fixture();t.after(()=>f.controller.destroy());
+ f.owner.reconcileGame=async()=>{f.events.push('reconcile');f.setView({sharedMutationsBlocked:true,pendingCommandCount:1});};
+ const work=f.controller.tick();await flush();
+ assert.equal(f.controller.snapshot().working,true);assert.equal(f.clears(),0);assert.equal(f.requests.length,0);
+ for(let n=0;n<3;n++)await f.controller.tick();
+ assert.deepEqual(f.events,['hold','reconcile']);
+ f.setView({sharedMutationsBlocked:false,pendingCommandCount:0});await f.controller.tick();await flush();
+ assert.equal(f.requests.length,1);f.ack();await work;
+ assert.deepEqual(f.events,['hold','reconcile','admit','sound','animate']);assert.equal(f.errors.length,0);
+});
+
+test('transport-owned preflight recovery resumes the same pending follow without another read',async t=>{
+ const f=fixture();t.after(()=>f.controller.destroy());
+ f.owner.reconcileGame=async()=>{f.events.push('reconcile');f.setView({sharedMutationsBlocked:true});throw Object.assign(Error('request_timeout'),{code:'request_timeout'});};
+ const work=f.controller.tick();await flush();assert.equal(f.controller.snapshot().working,true);assert.equal(f.requests.length,0);
+ f.setView({sharedMutationsBlocked:false});await f.controller.tick();await flush();assert.equal(f.requests.length,1);
+ f.ack();await work;assert.equal(f.errors.length,0);assert.deepEqual(f.events,['hold','reconcile','admit','sound','animate']);
+});
+
+for(const reason of ['scope','hidden','history','authority'])test(`waiting automatic intent is cancelled on ${reason} change`,async t=>{
+ const f=fixture();t.after(()=>f.controller.destroy());
+ f.owner.reconcileGame=async()=>{f.setView({sharedMutationsBlocked:true});};
+ const work=f.controller.tick();await flush();assert.equal(f.controller.snapshot().working,true);
+ f.change(reason);await f.controller.tick();await work;assert.equal(f.requests.length,0);assert.equal(f.controller.snapshot().working,false);
+});
+
+
+test('a discovered admitted follow is not resubmitted after its restored receipt rejects',async t=>{
+ const f=fixture();t.after(()=>f.controller.destroy());let reads=0;
+ f.owner.reconcileGame=async()=>{if(++reads===1)f.setView({pendingCommandCount:1,sharedMutationsBlocked:true,pendingMoves:[{clientCommandId:'restored-follow',action:f.game().legalActions[0]}]});};
+ await f.controller.tick();f.setView({pendingCommandCount:0,sharedMutationsBlocked:false,pendingMoves:[]});
+ const next=f.controller.tick();await flush();assert.equal(f.requests.length,0);await next;assert.equal(reads,1);
+});
+
+test('an explicit pre-admission fence resumes without another hold or reconciliation',async t=>{
+ const f=fixture();t.after(()=>f.controller.destroy());const apply=f.owner.applyGameAction;let attempts=0;
+ f.owner.applyGameAction=async request=>{if(++attempts===1){f.setView({sharedMutationsBlocked:true});throw Object.assign(Error('sync_recovering'),{code:'sync_recovering'});}return apply(request);};
+ const work=f.controller.tick();await flush();assert.equal(f.controller.snapshot().working,true);assert.equal(f.requests.length,0);
+ f.setView({sharedMutationsBlocked:false});await f.controller.tick();await flush();assert.equal(f.requests.length,1);
+ f.ack();await work;assert.equal(attempts,2);assert.equal(f.errors.length,0);assert.deepEqual(f.events,['hold','reconcile','admit','sound','animate']);
+});
+
+test('a waiting intent cannot submit after another owner changes the position',async t=>{
+ const f=fixture();t.after(()=>f.controller.destroy());f.owner.reconcileGame=async()=>{f.setView({sharedMutationsBlocked:true});};
+ const work=f.controller.tick();await flush();assert.equal(f.controller.snapshot().working,true);
+ f.setGame(applyFollow(f.game(),f.game().legalActions[0],'other-owner'));f.setView({sharedMutationsBlocked:false});
+ await f.controller.tick();await work;assert.equal(f.requests.length,0);assert.equal(f.sounds(),0);
+});
+
+test('unknown admission persistence failure never creates another automatic command owner',async t=>{
+ const f=fixture();t.after(()=>f.controller.destroy());const apply=f.owner.applyGameAction;
+ f.owner.applyGameAction=async request=>{const handle=await apply(request);handle.committed.catch(()=>{});throw Object.assign(Error('journal_timeout'),{code:'journal_timeout'});};
+ await f.controller.tick();assert.equal(f.requests.length,1);await f.controller.tick();
+ f.reject(Error('rejected'));await flush();await f.controller.tick();assert.equal(f.requests.length,1);assert.equal(f.sounds(),0);
 });
