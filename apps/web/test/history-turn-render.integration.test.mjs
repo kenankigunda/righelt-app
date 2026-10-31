@@ -94,3 +94,10 @@ test('compact rail uses independent native turn and move targets without nested 
  assert.equal((selected.match(/class="history-move-hit secondary"/g)??[]).length,2);
  assert.match(selected,/data-action="revert-to-move"/);assert.match(selected,/data-action="launch-history-branch"/);
 });
+
+test('archived entries retain their known decision identity when old move payloads omit moveId',()=>{
+ const {moveId,...legacy}=moves[0];context.archiveState={metadata:true,loaded:true,items:[{id:moveId,move:legacy,at:'date',historyStatus:'unknown'}]};
+ const html=context.archive({...game,moves:[]});
+ assert.match(html,/data-archive-move-id="a"/);assert.match(html,/Status unavailable/);
+ assert.match(html,/data-decision-id="a"/);
+});
