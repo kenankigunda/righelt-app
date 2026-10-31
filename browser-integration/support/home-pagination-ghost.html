@@ -1,0 +1,21 @@
+<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"></head><body><main id="app" class="app-root"><div class="stack home-refresh" id="fixture"></div></main><script type="module">
+import {icon} from '/apps/web/icons.js';
+import {mountLoadingFeedback} from '/apps/web/shell/loading.js';
+const source=await (await fetch('/apps/web/shell/app.js')).text();
+const escapeHtml=value=>String(value).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;');
+const pendingSource=source.slice(source.indexOf('const renderPendingStateAttributes ='),source.indexOf('const formatStatus ='));
+const pendingAttributes=Function(`${pendingSource};return renderPendingStateAttributes;`)();
+const rendererSource=source.slice(source.indexOf('const renderHomeSectionControls ='),source.indexOf('const renderHomeStartButton ='));
+let pending=false,time=0,timer,dispose;
+const controls=Function('escapeHtml','icon','isHomeSectionPending','renderPendingStateAttributes',`${rendererSource};return renderHomeSectionControls;`)(escapeHtml,icon,()=>pending,pendingAttributes);
+window.setup=({page=0,totalPages=99,placement='footer',fallback=false}={})=>{
+ dispose?.();pending=false;time=0;
+ document.documentElement.dataset.hoverCapability='hover';
+ document.querySelector('#fixture').innerHTML=`<section class="panel home-games-section" data-loading-context-group><div class="home-games-section-header" data-home-header-paging="${placement==='header'}"><div class="home-games-section-heading"><h2>Continue playing</h2><p class="small">99 games</p></div><div class="home-games-section-header-center">${placement==='header'?controls('my',{title:'Continue playing',page,totalPages},{placement}):''}</div><div class="home-games-section-header-actions"></div></div><div style="height:100px">Current games remain visible.</div>${placement==='footer'?controls('my',{title:'Continue playing',page,totalPages},{placement}):''}</section>`;
+ document.querySelector('#fixture').style.fontFamily=fallback?'var(--font-family-fallback)':'';
+ dispose=mountLoadingFeedback(document,{now:()=>time,setTimer:callback=>(timer=callback),clearTimer:()=>{timer=null;}});
+};
+window.setPending=value=>{pending=value;for(const button of document.querySelectorAll('.home-games-section-controls button')){button.dataset.loadingState=value?'pending':'idle';button.dataset.pending=String(value);button.disabled=value;button.setAttribute('aria-busy',String(value));}};
+window.advance=ms=>{time+=ms;const callback=timer;timer=null;callback?.();};
+window.setup();window.fixtureReady=true;
+</script></body></html>

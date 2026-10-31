@@ -298,6 +298,8 @@ When a recipient opens either invite type:
 
 On home page, users must see a game list in reverse chronological order by latest activity timestamp (latest move time; if no moves, creation time).
 
+Pagination uses Ghost arrows at every width, with full accessible Previous/Next page names and no visible words on the buttons. Keep transparent resting borders, quiet hover, clear keyboard focus, and unobstructed native targets of at least 44 by 44px. Both arrows and the full Page X of Y label stay on one physical line at 320px, 390px, and desktop, including natural 200% text and two-digit counts. The arrow and loading pieces replace each other in the same centered slot. Preserve the 200ms cue and 5000ms slow thresholds. Both arrows remain disabled during their request. The opted-in Home section shares one existing slow status below its content, outside the busy buttons and pagination row, so feedback does not move the arrows or label. Preserve modulo wraparound, header/footer placement, page-size rules, cancellation and account guards, and the current failure behavior: retain the page and allow another arrow activation to retry, without a new error panel or separate Retry button.
+
 Each listed game must display:
 - `Player 1` activity state.
 - `Player 2` activity state.

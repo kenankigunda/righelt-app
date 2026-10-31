@@ -2228,6 +2228,7 @@ const renderHomeSectionControls = (sectionKey, section, { placement } = { placem
 >
   <button
     ${renderPendingStateAttributes({ className: "secondary", pending: isHomeSectionPending(sectionKey) })}
+    data-loading-context="group"
     data-action="home-page-prev"
     data-home-section="${escapeHtml(sectionKey)}"
     aria-label="Previous ${escapeHtml(section.title)} page"
@@ -2235,6 +2236,7 @@ const renderHomeSectionControls = (sectionKey, section, { placement } = { placem
   <p class="small home-games-section-page-label">Page ${section.page + 1} of ${section.totalPages}</p>
   <button
     ${renderPendingStateAttributes({ className: "secondary", pending: isHomeSectionPending(sectionKey) })}
+    data-loading-context="group"
     data-action="home-page-next"
     data-home-section="${escapeHtml(sectionKey)}"
     aria-label="Next ${escapeHtml(section.title)} page"
@@ -2257,7 +2259,7 @@ const renderHomeGameSection = (sectionKey) => {
   const showHeaderPaging = showPaging && section.visibleColumnCount > 1;
   const showFooterPaging = showPaging && section.visibleColumnCount === 1;
   const hasHeaderAction = false;
-  return `<section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}">
+  return `<section class="panel home-games-section" data-loading-context-group data-home-section-root="${escapeHtml(sectionKey)}">
       <div class="home-games-section-header" data-home-header-has-action="${hasHeaderAction ? "true" : "false"}" data-home-header-paging="${showHeaderPaging ? "true" : "false"}">
       <div class="home-games-section-heading">
         <h2>${sectionKey === "my" ? "Continue playing" : escapeHtml(section.title)}</h2>
