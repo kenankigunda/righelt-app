@@ -1,3 +1,4 @@
+import {isCompletedGame,isOngoingGame} from './game-lifecycle.js';
 import { COMPUTER_CAPABILITIES, COMPUTER_TIMING, COMPUTER_PROFILES, CURRENT_COMPUTER_MODEL, computerProfileFor } from '../generated/packages/shared-types/src/computer-play.js';
 import { SYNC_TIMING, canonicalCommandJson } from '../generated/packages/shared-types/src/sync-protocol.js';
 import { computerRetryDisposition } from './computer-recovery.js';
@@ -67,9 +68,9 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   const keyFor = ({ game, accountGeneration }) => game ? `${accountGeneration}:${game.id}:${game.gameplayRevision}:${game.computer?.generation}:${game.computer?.modelId}` : null;
   const current = () => { const context = getContext(); return { ...context, key: keyFor(context) }; };
   const cancelWork = (reason) => { cancelPhaseDeadline(); epoch++; runtime.cancel(reason); };
-  const ownLease = game => !destroyed && sameOwnerScope(acknowledgedLease, current()) && acknowledgedLease.generation === game?.computer?.generation && game?.computer?.lease?.deviceId === deviceId && game.computer.lease.expiresAt > clock();
+  const ownLease = game => !destroyed && isOngoingGame(game) && sameOwnerScope(acknowledgedLease, current()) && acknowledgedLease.generation === game?.computer?.generation && game?.computer?.lease?.deviceId === deviceId && game.computer.lease.expiresAt > clock();
   const resumeSupported = game => game?.sharedReceipts === true && game.computerCapabilities?.resumeHere === COMPUTER_CAPABILITIES.resumeHere;
-  const recoveryScopeIsCurrent = context => !destroyed && sameOwnerScope(ownerScope(context), current()) && current().authenticated;
+  const recoveryScopeIsCurrent = context => !destroyed && isOngoingGame(current().game) && sameOwnerScope(ownerScope(context), current()) && current().authenticated;
   const updateActivity = context => {
     if (!sameOwnerScope(activityScope, context)) {
       activityScope = ownerScope(context); waitingSince = null; waitingRevision = null;
@@ -93,6 +94,9 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     if (Number.isFinite(work) && work > (progressWork.get(key) ?? 0)) { progressWork.set(key, work); waitingSince = clock(); }
   };
   const control = async (context, action) => {
+    const latest=current();
+    if (!isOngoingGame(context.game) || latest.game?.id===context.game.id && !isOngoingGame(latest.game)) return;
+    if (action!=='release' && (latest.key!==context.key || !sameOwnerScope(ownerScope(context),latest))) return;
     const result = await context.transport.computerControl(context.game.id, { action, deviceId, generation: context.game.computer.generation });
     // Public leases omit authentication context. A stable tab ID alone cannot
     // establish ownership after account/transport replacement. Only an accepted
@@ -125,7 +129,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     decisionRetry = null; retryWait.reset();
     cancelWork(action);
     let context = current();
-    if (!context.game?.computer) return;
+    if (!context.game?.computer || !isOngoingGame(context.game)) return;
     const gameId = context.game.id;
     const owner = context.transport, accountGeneration = context.accountGeneration;
     publish({ phase: 'saving', message: 'Confirming the last move…' });
@@ -149,7 +153,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   });
   const renewWhenDue = context => {
     const latest = current();
-    if (destroyed || !latest.visible || !latest.authenticated || latest.key !== context.key || !sameOwnerScope(ownerScope(context), latest)) return;
+    if (destroyed || !isOngoingGame(latest.game) || !isOngoingGame(context.game) || !latest.visible || !latest.authenticated || latest.key !== context.key || !sameOwnerScope(ownerScope(context), latest)) return;
     const game = context.game, work = workFor(context);
     const projection = context.transport.getGameViewModel(game.id);
     if (work.leaseWork || work.controlWork || work.resumeWork || projection?.sharedMutationsBlocked || projection?.pendingCommandCount > 0
@@ -172,6 +176,18 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     updateActivity(context);
     if (analysis && (analysis.gameId !== game?.id || analysisContext?.accountGeneration !== context.accountGeneration || analysisContext?.transport !== context.transport || !context.authenticated)) {
       cancelAnalysis(); analysis = null; analysisContext = null;
+    }
+    // Completion retires only unadmitted local work. Any accepted/uncertain
+    // gameplay handle continues under its existing durable journal owner.
+    if (isCompletedGame(game)) {
+      if (!context.visible && analysis?.phase === 'computing') cancelAnalysis();
+      if (active || status.phase!=='idle' || !sameOwnerScope(statusScope,context)) {
+        active=null;cancelWork('game-finished');acknowledgedLease=null;decisionRetry=null;retryWait.reset();
+        recovery=null;waitingSince=null;lastAcquisitionFailure=null;retryAt=0;
+        lastPositionRevision=null;repetitions.clear();
+        publish({phase:'idle',startedAt:undefined,attemptId:null,profile:null,progress:null,message:null},context);
+      }
+      return;
     }
     if (!context.visible || !context.authenticated || !game?.computer || game.computer.ownerId !== context.transport.getIdentityId()) {
       if (active) {
@@ -253,7 +269,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     const base = retained?.base ?? { proof, gameId: game.id, gameplayRevision: game.gameplayRevision, fingerprint: deterministicStateHash(game.board.state), startedAt, state: structuredClone(game.board.state) };
     const decisionIsCurrent = () => {
       const latest = current();
-      return run === epoch && latest.visible && latest.authenticated && latest.key === context.key
+      return run === epoch && isOngoingGame(latest.game) && latest.visible && latest.authenticated && latest.key === context.key
         && sameOwnerScope(ownerScope(context), latest) && deterministicStateHash(latest.game.board.state) === base.fingerprint;
     };
     let saved = retained?.saved === true, attempt = retained?.attempt ?? null, evidenceWriteStarted = Boolean(retained);
@@ -323,7 +339,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     } catch (error) {
       // A lost evidence-write response may already have stored a completed
       // attempt. Never replace it with a different unfinished payload.
-      if (!evidenceWriteStarted) void context.transport.decisionAttempt(game.id, { operation: 'write', kind: 'computer', attemptId, attempt: { ...base, stoppedAt: clock(), outcome: 'unfinished', reason: error.message, progress: status.progress ?? null } }).catch(() => {});
+      if (!evidenceWriteStarted && !isCompletedGame(current().game)) void context.transport.decisionAttempt(game.id, { operation: 'write', kind: 'computer', attemptId, attempt: { ...base, stoppedAt: clock(), outcome: 'unfinished', reason: error.message, progress: status.progress ?? null } }).catch(() => {});
       // The admission guard may win the final race after the projection check.
       // No command exists yet, so wait for recovery instead of latching a
       // computer failure. Once admitted, its durable outcome remains binding.
@@ -360,7 +376,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     if (!context.authenticated || context.canAnalyze === false || !context.game) throw new Error('Sign in to analyze this position.');
     const requestEpoch = analysisEpoch, requestContext = context;
     const frozen = structuredClone(state), gameId = context.game.id, revision = context.game.gameplayRevision;
-    if (context.game.computer?.ownerId === context.transport.getIdentityId() && ownLease(context.game)) await fence('pause');
+    if (isOngoingGame(context.game) && context.game.computer?.ownerId === context.transport.getIdentityId() && ownLease(context.game)) await fence('pause');
     context = current();
     if (requestEpoch !== analysisEpoch || context.transport !== requestContext.transport || context.accountGeneration !== requestContext.accountGeneration || context.game?.id !== gameId || !context.authenticated || !context.visible) return;
     analysisContext = context;
@@ -448,7 +464,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       const retryWaitMs = retryWait.update({ scope: context.key, active: retryVisible, blocked: retrying });
       return { ...scopedStatus, automaticRetry: retryVisible ? { waitMs: retryWaitMs, canRetry: !busy } : null, observedAt: clock(), elapsedMs: scopedStatus.startedAt !== undefined ? Math.max(0, clock() - scopedStatus.startedAt) : 0, phaseElapsedMs: scopedStatus.phaseStartedAt !== undefined ? Math.max(0, clock() - scopedStatus.phaseStartedAt) : 0, detailed: Boolean(scopedStatus.startedAt !== undefined && clock() - scopedStatus.startedAt >= COMPUTER_TIMING.detailAfterMs), analysis: scopedAnalysis, deviceId, activity: activity(context, scopedStatus) };
     },
-    action: async action => { if (action === 'resume-here') return resumeHere(); if (action === 'switch') await withControlWork(async () => { cancelWork('switch'); const context = current(); await control(context, 'switch'); }); else await fence(action === 'retry' ? 'resume' : action); },
+    action: async action => { if(isCompletedGame(current().game))return; if (action === 'resume-here') return resumeHere(); if (action === 'switch') await withControlWork(async () => { cancelWork('switch'); const context = current(); await control(context, 'switch'); }); else await fence(action === 'retry' ? 'resume' : action); },
     suspend: () => { const previous = active; cancelWork('session-changed'); cancelAnalysis(); analysis = null; analysisContext = null; active = null; activityScope = null; waitingSince = null; recovery = null; decisionRetry = null; retryWait.reset(); status = { phase: 'idle' }; if (previous && ownLease(previous.game)) void control(previous, 'release').catch(() => {}); onChange(); },
     destroy: () => { destroyed = true; retryWait.reset(); timers.clearInterval(timer); cancelWork('destroyed'); cancelAnalysis(); active = null; },
   };

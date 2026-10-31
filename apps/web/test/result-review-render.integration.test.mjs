@@ -1,3 +1,4 @@
+import {renderHistoryResult} from '../shell/game-result.js';
 import {historyTurnSide} from '../shell/history-preview.js';
 import {playerDisplayName,liveHistoryLabel} from '../shell/perspective-labels.js';
 import {canReadAdditionalHistory} from '../shell/additional-history.js';
@@ -31,7 +32,7 @@ function harness({ resultMounted = true, activeResult = null } = {}) {
   let mountedPanel = "board";
   const appEl = new Element();
   appEl.querySelector = selector => selector === ".game-result" ? (resultMounted ? new Element() : null) : new Element();
-  const context = {
+  const context = {renderHistoryResult,
     resultPresentation:createResultPresentation(),
     HTMLElement: Element, appEl, currentRoute: { name: "game", gameId: "g", panel: "board" },
     activeResultGameId: activeResult,
@@ -99,7 +100,7 @@ test("only true flyout changes retain flyout-only patching; panel changes refres
 test("authoritative terminal rollback clears result state so the board can remount", () => {
   const reconcile = extract("    if (activeResultGameId === currentRoute.gameId && confirmed?.board", "    if(resultTransitions.observe");
   for (const status of ["ongoing", "p1_win", "draw"]) {
-    const context = {activeResultGameId:"g", currentRoute:{gameId:"g"}, confirmed:{board:{state:{outcome:{status}}}}, transport:{getIdentityId:()=>"me"},getGameResult:game=>game.board.state.outcome.status === "ongoing" ? null : {title:"Finished"}};
+    const context = {renderHistoryResult,activeResultGameId:"g", currentRoute:{gameId:"g"}, confirmed:{board:{state:{outcome:{status}}}}, transport:{getIdentityId:()=>"me"},getGameResult:game=>game.board.state.outcome.status === "ongoing" ? null : {title:"Finished"}};
     runInNewContext(reconcile, context);
     assert.equal(context.activeResultGameId,status === "ongoing" ? null : "g");
   }
@@ -108,7 +109,7 @@ test("authoritative terminal rollback clears result state so the board can remou
 test("optimistic terminal state cannot expose a result or open it before confirmation", () => {
   const optimistic = {id:"g",board:{state:{outcome:{status:"p1_win"}}},player1:{identityId:"me"}};
   let confirmed = {...optimistic,board:{state:{outcome:{status:"ongoing"}}}};
-  const context = {canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},renderHistorySlots,renderResultMark,playerDisplayName,resultPresentation:createResultPresentation(),additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})}, getGameResult, transport:{getIdentityId:()=>"me",getAuthoritativeGame:()=>confirmed},escapeHtml:value=>String(value),formatDisplayGameId:value=>value,icon,renderTurnHistory:()=>"",participantName,participantDisplayName,render:()=>{},activeResultGameId:null};
+  const context = {renderHistoryResult,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},renderHistorySlots,renderResultMark,playerDisplayName,resultPresentation:createResultPresentation(),additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})}, getGameResult, transport:{getIdentityId:()=>"me",getAuthoritativeGame:()=>confirmed},escapeHtml:value=>String(value),formatDisplayGameId:value=>value,icon,renderTurnHistory:()=>"",participantName,participantDisplayName,render:()=>{},activeResultGameId:null};
   runInNewContext(`${extract("const renderResult =", "const renderGame =")}
     ${extract("const renderAdditionalHistory =", "const renderHistoryPanel =")}
     ${extract("const renderHistoryPanel =", "const renderBoardPanel =")}
@@ -127,7 +128,7 @@ test("optimistic terminal state cannot expose a result or open it before confirm
 test("computer seats have distinct human, watch, history and result labels despite shared authority", () => {
   const person = {identityId:'me', profile:{username:'owner', displayName:'Owner'}};
   const game = {id:'g', player1:person, player2:{...person, computerProfile:'babs'}, selfPlayMode:true, computer:{seats:{p1:null,p2:'babs'},manual:false}, board:{state:{outcome:{status:'p1_win'}}}, moves:[]};
-  const context = {canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},renderHistorySlots,renderResultMark,playerDisplayName,isPlayerRole:role=>['Player 1','Player 2'].includes(role),escapeHtml:String,participantName,participantDisplayName,getGameResult,transport:{getIdentityId:()=> 'me',getAuthoritativeGame:()=>game},additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})},formatDisplayGameId:String,icon:()=>'',renderTurnHistory:()=>`<li data-testid="history-move-item">${historyActorLabel(game,{actorSide:'P2'},{identityId:'me'})} · Move 1: Pass</li>`};
+  const context = {renderHistoryResult,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},renderHistorySlots,renderResultMark,playerDisplayName,isPlayerRole:role=>['Player 1','Player 2'].includes(role),escapeHtml:String,participantName,participantDisplayName,getGameResult,transport:{getIdentityId:()=> 'me',getAuthoritativeGame:()=>game},additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})},formatDisplayGameId:String,icon:()=>'',renderTurnHistory:()=>`<li data-testid="history-move-item">${historyActorLabel(game,{actorSide:'P2'},{identityId:'me'})} · Move 1: Pass</li>`};
   runInNewContext(`${extract('const playerToneClassForSeat =','const renderConnectionStatusIcon =')}
     ${extract('const renderResult =','const renderGame =')}
     ${extract('const renderAdditionalHistory =','const renderHistoryPanel =')}
@@ -145,7 +146,7 @@ test("computer seats have distinct human, watch, history and result labels despi
 });
 
 test("retained historical turns keep an exit even after undo removes the live turn", () => {
-  const context = {icon,liveHistoryLabel,transport:{getIdentityId:()=>"me"},escapeHtml:String,getControlSeatForTurn:(_state,seat)=>seat,
+  const context = {renderHistoryResult,icon,liveHistoryLabel,transport:{getIdentityId:()=>"me"},escapeHtml:String,getControlSeatForTurn:(_state,seat)=>seat,
     historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:()=>"You",playerToneClassForSide:()=>"",playerToneClassForSeat:()=>"",formatClientDateTime:String,expandedUndoneGroups:new Set()};
   runInNewContext(`${extract("const renderTurnHistory =", "const renderHeader =")}\n globalThis.history = renderTurnHistory;`, context);
   for (const turns of [[], [{index:0,playerSeat:"Player 1",moveIndexes:[]}]]) {
@@ -158,7 +159,7 @@ test("retained historical turns keep an exit even after undo removes the live tu
 test('actual result renderer affiliates victory with the authoritative winning side',()=>{
  for(const [winner,identity]of[['p1','red'],['p2','blue']]){
   const game={id:'g',player1:{identityId:'red'},player2:{identityId:'blue'},currentTurn:{playerSeat:winner==='p1'?'Player 2':'Player 1'},board:{state:{sideToMove:winner==='p1'?'P2':'P1',pieces:[{id:winner==='p1'?'C1':'C2',supplied:true}],outcome:{status:`${winner}_win`,reason:winner==='p1'?'p2_commander_destroyed':'p1_commander_destroyed'}}}};
-  const context={game,renderResultMark,getGameResult,playerDisplayName,transport:{getIdentityId:()=>identity,getAuthoritativeGame:()=>game},escapeHtml:String,formatDisplayGameId:String,icon,participantName,participantDisplayName};
+  const context={renderHistoryResult,game,renderResultMark,getGameResult,playerDisplayName,transport:{getIdentityId:()=>identity,getAuthoritativeGame:()=>game},escapeHtml:String,formatDisplayGameId:String,icon,participantName,participantDisplayName};
   runInNewContext(`${extract('const renderResult =','const renderGame =')};globalThis.output=renderResult(game);`,context);
   assert.match(context.output,new RegExp(`data-result-tone="victory" data-winner="${winner}"`));
   assert.match(context.output,/>You won<\/h1>/);assert.match(context.output,/Your opponent’s commander was destroyed/);
@@ -183,7 +184,7 @@ function historyRouteHarness(t) {
     moves:[0,1].map(index=>({index,moveId:`m${index}`,snapshot:snapshot(index),selectionSnapshot:snapshot(index),notation:'MOVE',at:'2026-01-01'}))}});
   transport.selectHistoryMove({gameId:'g',moveIndex:0});
   const noop=()=>{};
-  const context={HTMLElement:Element,appEl,transport,currentRoute:{name:'game',gameId:'g',panel:'history'},
+  const context={renderHistoryResult,HTMLElement:Element,appEl,transport,currentRoute:{name:'game',gameId:'g',panel:'history'},
     lastRenderedRouteKey:'g|history|debug:false',lastRenderedBaseRouteKey:'g',lastRenderedTransitionPhaseKey:'idle',
     activeResultGameId:null,mountedBoardGameId:null,FLYOUT_KEYS:[],
     getGamePanel:route=>(route??context.currentRoute).panel,
