@@ -695,9 +695,11 @@ export function createEngineBoardAdapter() {
         "rush-blocker",
         "retreat-piece",
         "selected-piece",
+        "selected-supply-point",
         "inactive-selected-piece",
       );
       cell.removeAttribute("data-inactive-label");
+      cell.removeAttribute("data-selected-supply-owner");
       cell.querySelectorAll(".group-strength-badge,.move-ghost").forEach((node) => node.remove());
     }
   };
@@ -727,7 +729,13 @@ export function createEngineBoardAdapter() {
       for (const segment of segments) {
         const key = getSegmentKey(segment.from, segment.to);
         const offset = supplyKeys.has(key) && commandKeys.has(key) ? (segment.kind === "supply" ? -OVERLAY_PARALLEL_SPLIT_OFFSET : OVERLAY_PARALLEL_SPLIT_OFFSET) : 0;
-        drawPath([segment.from, segment.to], segment.kind === "supply" ? "#2f8e63" : PREVIEW_STROKE_BY_OWNER[segment.owner], "2 6", new Map([[key, offset]]), segment.kind);
+        drawPath([segment.from, segment.to], PREVIEW_STROKE_BY_OWNER[segment.owner], "2 6", new Map([[key, offset]]), segment.kind);
+      }
+      const supplyInspection = overlay.inspection.kind === 'networks' ? overlay.inspection.supply : overlay.inspection.kind === 'supply' ? overlay.inspection : null;
+      if (supplyInspection?.point) {
+        const square = cellByCoordinateKey.get(coordKey(supplyInspection.point));
+        square?.classList.add('selected-supply-point');
+        square?.setAttribute('data-selected-supply-owner',supplyInspection.owner);
       }
       const selected = findPieceById(snapshot, selectedPieceId);
       if (selected) cellByCoordinateKey.get(coordKey(selected.position))?.classList.add("selected-piece");
@@ -833,7 +841,7 @@ export function createEngineBoardAdapter() {
       commandPath,
     );
     if (drawSupplyCommand) {
-      drawPath(supplyPath, "#2f8e63", "2 6", supplyOffsetsBySegmentKey, "supply");
+      drawPath(supplyPath, commandStroke, "2 6", supplyOffsetsBySegmentKey, "supply");
       drawPath(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey, "command");
     }
 
@@ -1153,6 +1161,7 @@ export function createEngineBoardAdapter() {
           cell.removeAttribute("data-removal-label");
           cell.removeAttribute("data-disallow-reason");
           cell.removeAttribute("data-inactive-label");
+      cell.removeAttribute("data-selected-supply-owner");
           if (effectiveInteractionMode === "interactive") {
             cell.type = "button";
           } else {
