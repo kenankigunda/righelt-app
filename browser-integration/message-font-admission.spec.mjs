@@ -71,7 +71,7 @@ test('loaded message width envelope never exceeds its permanent fallback reserva
 });
 
 
-test('measured font boundaries keep cold, loaded and settled-reload row envelopes identical',async({page},info)=>{
+for(const scale of [100,200])test(`measured font boundaries keep cold, loaded and settled-reload row envelopes identical at ${scale}%`,async({page},info)=>{
  const bands=reservationBands.map(({min,max})=>[min,max]);
  const receipts={cold:[],loaded:[],warm:[]};let release,seen=false,hold=true;const held=new Promise(resolve=>{release=resolve;});
  const key='message-boundary-admission',fontUrl=`/apps/web/assets/fonts/Manrope-variable.ttf?${key}`;
@@ -79,7 +79,7 @@ test('measured font boundaries keep cold, loaded and settled-reload row envelope
  await page.route(url=>url.pathname==='/apps/web/assets/fonts/Manrope-variable.ttf'&&url.searchParams.has(key),async route=>{seen=true;if(hold)await held;await route.continue();});
  const measure=async()=>{
   const result=[];
-  for(const scale of [100,200]){
+  {
    await page.evaluate(scale=>{document.documentElement.style.fontSize=`${scale}%`;},scale);
    const before=await anchors(page);
    const measured=await page.evaluate(({scale,bands})=>{
