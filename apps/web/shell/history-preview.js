@@ -1,3 +1,4 @@
+import {visibleRecordedMoves} from './recorded-narration.js';
 import { getTurnOwnerSideForState } from '../generated/packages/shared-types/src/shell-live-turn.js';
 
 const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
@@ -66,7 +67,7 @@ export const buildMovePreview = (move) => ({
 });
 
 export const buildTurnPreview = (moves) => {
-  const ordered = [...(moves ?? [])].filter(move => !move.undone).sort((a,b) => (a.turnMoveIndex ?? a.index) - (b.turnMoveIndex ?? b.index));
+  const ordered = visibleRecordedMoves(moves).sort((a,b) => (a.turnMoveIndex ?? a.index) - (b.turnMoveIndex ?? b.index));
   const previews = ordered.map(buildMovePreview);
   const routes = new Set();
   const actions = previews.flatMap(({overlay}) => {

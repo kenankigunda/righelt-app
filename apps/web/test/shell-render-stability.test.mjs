@@ -1,3 +1,6 @@
+import {selectedHistoryPresentation} from '../shell/history-narration.js';
+import {recordedMoveNumber,visibleRecordedMoves} from '../shell/recorded-narration.js';
+import {renderBoardMessageHtml} from '../board/message-presentation.js';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

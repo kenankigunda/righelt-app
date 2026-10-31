@@ -1,3 +1,6 @@
+import {selectedHistoryPresentation,recordedHistoryView} from '../shell/history-narration.js';
+import {recordedMoveNumber,visibleRecordedMoves} from '../shell/recorded-narration.js';
+import {renderBoardMessageHtml} from '../board/message-presentation.js';
 import {historyTurnSide} from '../shell/history-preview.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -7,7 +10,7 @@ import {buildMovePreview,buildTurnPreview} from '../shell/history-preview.js';
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const declaration=source.slice(source.indexOf('const renderHistoryPreview ='),source.indexOf('const renderHeader ='));
 const escape=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
-const context={buildMovePreview,buildTurnPreview,escapeHtml:escape,getShellLayoutMode:()=> 'narrow',toStableKey:JSON.stringify,
+const context={selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,buildMovePreview,buildTurnPreview,escapeHtml:escape,getShellLayoutMode:()=> 'narrow',toStableKey:JSON.stringify,
  renderMiniBoardPreviewRoot:({overlay})=>`<div data-preview-mode="${overlay.mode}"></div>`,playerToneClassForSide:side=>`player-tone-${side}`,playerToneClassForSeat:()=>'',
  historyActorLabel:(_game,move)=>move.actorSide==='P2'?'Defender':'Attacker',historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:(_game,side)=>side==='Player 2'||side==='P2'?'Defender':'Attacker',
  transport:{getIdentityId:()=> 'me'},icon:()=>'',formatClientDateTime:String,expandedUndoneGroups:new Set(),liveHistoryLabel:()=> 'Waiting'};
@@ -55,4 +58,31 @@ test('archive entries share turn grouping, actor accessibility and inert selecte
  assert.match(html,/<div class="history-item-info history-archive-select"  data-game-id="g" data-decision-id="b" aria-current="true"/);
  assert.match(html,/data-preview-mode="recorded-action"/);
  assert.match(html,/data-action="inspect-history-archive"[^>]*data-decision-id="a"/);
+});
+
+test('mobile active and archived previews share the known closure final snapshot with narration',()=>{
+ const before={pieces:[]},final={pieces:[],label:'closure-final'};
+ const action={index:0,turnIndex:0,turnMoveIndex:0,moveId:'action',actorSide:'P1',notation:'Rush',action:{type:'rush',actorId:'A',from:{row:4,col:3},to:{row:4,col:4}},selectionSnapshot:before,snapshot:before};
+ const closure={index:1,turnIndex:0,turnMoveIndex:1,moveId:'closure',actorSide:'P1',notation:'End turn',action:{type:'end_turn'},snapshot:final,destroyedPieces:[{pieceId:'lost',ownerSeat:'p1',position:{row:5,col:3}}]};
+ const snapshots=[],original=context.renderMiniBoardPreviewRoot;
+ const getter=source.slice(source.indexOf('const getBoardGame ='),source.indexOf('const decisionDebugStates ='));
+ const desktopContext={recordedHistoryView,deriveBoardView:value=>value,getShellLayoutMode:()=> 'wide',transport:context.transport,additionalHistory:context.additionalHistory};
+ vm.runInNewContext(`${getter};globalThis.get= getBoardGame`,desktopContext);
+ context.renderMiniBoardPreviewRoot=preview=>{snapshots.push(preview.snapshot);return '<div data-preview-mode="recorded-action"></div>';};
+ try{
+  const selected={...game,inHistoryMode:true,historyIndex:0,inspectedDecision:action,moves:[action,closure]};
+  assert.match(context.render(selected),/lost piece at/);
+  context.archiveState={metadata:true,loaded:true,items:[{id:'closure',move:closure},{id:'action',move:action}]};
+  assert.match(context.archive({...selected,moves:[]}),/lost piece at/);
+  const desktop=desktopContext.get({...selected,moves:[]});
+  assert.deepEqual(snapshots,[desktop.currentSnapshot,desktop.currentSnapshot]);
+  assert.deepEqual(desktop.currentSnapshot,final);
+ }finally{context.renderMiniBoardPreviewRoot=original;}
+});
+
+test('archived entries retain their known decision identity when old move payloads omit moveId',()=>{
+ const {moveId,...legacy}=moves[0];context.archiveState={metadata:true,loaded:true,items:[{id:moveId,move:legacy,at:'date',historyStatus:'unknown'}]};
+ const html=context.archive({...game,moves:[]});
+ assert.match(html,/data-archive-move-id="a"/);assert.match(html,/Status unavailable/);
+ assert.match(html,/data-decision-id="a"/);
 });

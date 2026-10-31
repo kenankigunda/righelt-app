@@ -2,6 +2,10 @@
 <link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"><link rel="stylesheet" href="/apps/web/shell/computer-replay.css">
 </head><body><main id="app" class="app-root" data-action-affiliation="red"></main><div id="p1" style="background:var(--player-p1)"></div><div id="p2" style="background:var(--player-p2)"></div>
 <script type="module">
+import {selectedHistoryPresentation} from '/apps/web/shell/history-narration.js';
+import {visibleRecordedMoves,recordedMoveNumber} from '/apps/web/shell/recorded-narration.js';
+import {renderBoardMessageHtml} from '/apps/web/board/message-presentation.js';
+
 import {syncMiniBoardPreviews} from '/apps/web/board/mini-board-preview.js';
 import {createEngineBoardAdapter,createInitialBoardSnapshot} from '/apps/web/board-adapters/engine-board-adapter.js';
 import {icon} from '/apps/web/shell/ui.js';
@@ -37,7 +41,7 @@ const history=createAdditionalHistory({getScope:gameId=>({gameId,owner,generatio
 const renderedMiniBoardPreviewPayloads=new Map(),registry=new Map();let inspectedDecision=null;
 const renderMini=Function('renderedMiniBoardPreviewPayloads','escapeHtml',`${extract('const registerMiniBoardPreview =','const formatOutcomeStatus =')};return renderMiniBoardPreviewRoot;`)(renderedMiniBoardPreviewPayloads,escapeHtml);
 const archiveGame={id:'g',myRole:'Viewer',player1:{identityId:'red'},player2:{identityId:'blue'}};
-const historyDeps={canReadAdditionalHistory,...seatHelpers,playerDisplayName,buildMovePreview,buildTurnPreview,historyTurnSide,COMPUTER_PROFILES,account:{snapshot:()=>({enabled:false})},getShellLayoutMode:()=> 'narrow',renderMiniBoardPreviewRoot:renderMini,toStableKey:JSON.stringify,additionalHistory:history,escapeHtml,formatClientDateTime:()=> 'Jan 1',icon,historyActorLabel,transport:{getIdentityId:()=> 'viewer'}};
+const historyDeps={selectedHistoryPresentation,visibleRecordedMoves,recordedMoveNumber,renderBoardMessageHtml,canReadAdditionalHistory,...seatHelpers,playerDisplayName,buildMovePreview,buildTurnPreview,historyTurnSide,COMPUTER_PROFILES,account:{snapshot:()=>({enabled:false})},getShellLayoutMode:()=> 'narrow',renderMiniBoardPreviewRoot:renderMini,toStableKey:JSON.stringify,additionalHistory:history,escapeHtml,formatClientDateTime:()=> 'Jan 1',icon,historyActorLabel,transport:{getIdentityId:()=> 'viewer'}};
 const renderHistory=Function(...Object.keys(historyDeps),`${extract('const renderHistoryPreview =','const renderTurnHistory =')}${extract('const renderAdditionalHistory =','const renderHistoryPanel =')};return renderAdditionalHistory;`)(...Object.values(historyDeps));
 function drawHistory(){root.classList.add("panel");const next=root.cloneNode(false);next.innerHTML=renderHistory({...archiveGame,inHistoryMode:Boolean(inspectedDecision),inspectedDecision});patchSectionContent(root,next);syncMiniBoardPreviews({previews:[...root.querySelectorAll('[data-mini-board-preview]')].map(rootEl=>({rootEl,...renderedMiniBoardPreviewPayloads.get(rootEl.dataset.previewId)})),registry,createAdapter:()=>createEngineBoardAdapter()});}
 root.addEventListener('click',event=>{const action=event.target.closest('[data-action]')?.dataset.action;if(action==='inspect-history-archive'){const id=event.target.closest('[data-action]').dataset.decisionId;inspectedDecision={...history.snapshot('g').items.find(entry=>entry.id===id).move,moveId:id};drawHistory();}if(action==='load-history-archive'){void history.more('g');drawHistory();}if(action==='retry-history-archive'){void history.retry('g');drawHistory();}});

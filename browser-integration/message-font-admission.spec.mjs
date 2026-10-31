@@ -40,12 +40,11 @@ for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(
  }finally{hold=false;release();const path=info.outputPath('font-reservation-receipt.json');await writeFile(path,JSON.stringify(receipts,null,2));await info.attach('font-reservation',{path,contentType:'application/json'});}
 });
 
-test('loaded message width envelope never exceeds its permanent fallback reservation',async({page},info)=>{
+for(const scale of [100,200])test(`loaded message width envelope never exceeds its permanent fallback reservation at ${scale}%`,async({page},info)=>{
  const failures=[];
  await page.goto('/browser-integration/support/message-font-admission.html');await page.waitForFunction(()=>window.fixtureReady);
  const frontiers=[];
  try{
- for(const scale of [100,200]){
   await page.evaluate(async scale=>{document.documentElement.style.fontSize=`${scale}%`;await document.fonts.ready;},scale);
   // Also measure the real generic fallback when Avenir Next is unavailable,
   // as on Linux CI. This never changes the live page or its native-font probes.
@@ -64,14 +63,13 @@ test('loaded message width envelope never exceeds its permanent fallback reserva
    return {scale,font,fallbackFamily,fontSize,fontStatus:document.fonts.status,primaryFont:getComputedStyle(document.querySelector('[data-sizing-font="primary"]')).fontFamily,rows,measurements:cache.size};
   },{scale,font,fallbackFamily}));
   for(let width=280;width<=800;width+=16){const envelope=await page.evaluate(width=>window.fontEnvelope(width),width);if(envelope.primary>envelope.fallback+.1)failures.push({scale,...envelope});}
- }
  }finally{const frontierPath=info.outputPath('intrinsic-primary-row-frontiers.json');await writeFile(frontierPath,JSON.stringify(frontiers,null,2));await info.attach('intrinsic-primary-row-frontiers',{path:frontierPath,contentType:'application/json'});}
  const path=info.outputPath('primary-over-fallback-envelopes.json');await writeFile(path,JSON.stringify(failures,null,2));await info.attach('primary-over-fallback',{path,contentType:'application/json'});
  expect(failures.map(({scale,width,primary,fallback})=>({scale,width,primary,fallback})),'Any uncovered primary bin must be reviewed before adding a measured floor').toEqual([]);
 });
 
 
-test('measured font boundaries keep cold, loaded and settled-reload row envelopes identical',async({page},info)=>{
+for(const scale of [100,200])test(`measured font boundaries keep cold, loaded and settled-reload row envelopes identical at ${scale}%`,async({page},info)=>{
  const bands=reservationBands.map(({min,max})=>[min,max]);
  const receipts={cold:[],loaded:[],warm:[]};let release,seen=false,hold=true;const held=new Promise(resolve=>{release=resolve;});
  const key='message-boundary-admission',fontUrl=`/apps/web/assets/fonts/Manrope-variable.ttf?${key}`;
@@ -79,7 +77,6 @@ test('measured font boundaries keep cold, loaded and settled-reload row envelope
  await page.route(url=>url.pathname==='/apps/web/assets/fonts/Manrope-variable.ttf'&&url.searchParams.has(key),async route=>{seen=true;if(hold)await held;await route.continue();});
  const measure=async()=>{
   const result=[];
-  for(const scale of [100,200]){
    await page.evaluate(scale=>{document.documentElement.style.fontSize=`${scale}%`;},scale);
    const before=await anchors(page);
    const measured=await page.evaluate(({scale,bands})=>{
@@ -100,7 +97,6 @@ test('measured font boundaries keep cold, loaded and settled-reload row envelope
    },{scale,bands});
    result.push(...decodeFontBoundarySamples(measured));
    sameAnchors(before,await anchors(page));
-  }
   return result;
  };
  try{
@@ -138,4 +134,36 @@ test('coordinate pills keep every board digit atomic and equal in both font fami
   expect(widths).toHaveLength(2);
   for(const family of widths){expect(family.widths).toHaveLength(10);expect(family.atomic).toBe(true);expect(Math.max(...family.widths)-Math.min(...family.widths),`${family.family} at ${scale}%`).toBeLessThanOrEqual(.1);}
  }
+});
+
+for(const width of [320,390,1440])for(const scale of [100,200])for(const count of [1,6,100])test(`acknowledged narration reserves ${count} destinations at ${width}px and ${scale}% across font arrival`,async({page},info)=>{
+ await page.setViewportSize({width,height:900});
+ let release,hold=true,seen=false;const gate=new Promise(resolve=>{release=resolve;});
+ await page.route('**/Manrope-variable.ttf',async route=>{seen=true;if(hold)await gate;await route.continue();});
+ const receipt={};
+ try{
+  await page.goto(`/browser-integration/support/message-font-admission.html?scale=${scale}&narrationCount=${count}`,{waitUntil:'domcontentloaded'});
+  await page.waitForFunction(()=>window.fixtureReady);await expect.poll(()=>seen).toBe(true);
+  receipt.cold=await anchors(page);expect(receipt.cold.fontStatus).toBe('loading');
+  hold=false;release();await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+  receipt.loaded=await anchors(page);sameAnchors(receipt.cold,receipt.loaded);
+  expect(await page.evaluate(()=>window.admitMessagePhases())).toEqual([]);
+  receipt.envelope=await page.evaluate(()=>window.fontEnvelope());
+  expect(receipt.envelope.fallback).toBeGreaterThanOrEqual(receipt.envelope.primary);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  await page.reload();await page.waitForFunction(()=>window.fixtureReady);await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+  receipt.reload=await anchors(page);sameAnchors(receipt.loaded,receipt.reload);
+ }finally{hold=false;release();await info.attach('acknowledged-reservation',{body:JSON.stringify(receipt),contentType:'application/json'});}
+});
+
+test('acknowledged reservation stays stable within intent and resets across scopes',async({page})=>{
+ await page.goto('/browser-integration/support/message-font-admission.html?narrationCount=6');await page.waitForFunction(()=>window.fixtureReady);await page.evaluate(()=>document.fonts.ready);
+ const result=await page.evaluate(()=>{
+  const slot=document.querySelector('.board-message-slot'),nodes=()=>[...slot.querySelectorAll('[data-narration-reservation]')];
+  const first=nodes();window.retainNarrationReservations({scope:'copy:6',messages:[window.acknowledgedNarrationProbe]});
+  const duplicate=nodes();window.retainNarrationReservations({scope:'copy:6',messages:[]});const inspected=nodes();
+  window.retainNarrationReservations({scope:'another-account:another-game',messages:[]});
+  return {initial:first.length,duplicateSame:duplicate.every((node,index)=>node===first[index]),inspectionSame:inspected.every((node,index)=>node===first[index]),remaining:nodes().length,oldConnected:first.some(node=>node.isConnected)};
+ });
+ expect(result).toEqual({initial:2,duplicateSame:true,inspectionSame:true,remaining:0,oldConnected:false});
 });

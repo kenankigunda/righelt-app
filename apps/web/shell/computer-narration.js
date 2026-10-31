@@ -1,3 +1,4 @@
+import {describeRecordedMove,describeRecordedTurn,recordedNarrationCoordinates} from './recorded-narration.js';
 import { COMPUTER_PROFILES, COMPUTER_TIMING } from '../generated/packages/shared-types/src/computer-play.js';
 
 export function latestComputerTurn(game) {
@@ -15,35 +16,9 @@ export function describeComputerMove(move) {
   return describeMove(move, COMPUTER_PROFILES[move?.computerProof?.profile]?.name ?? 'Computer');
 }
 
-export function describeMove(move, name) {
-  if (!move) return null;
-  const coordinate = point => `(${point.row}, ${point.col})`;
-  const action = move.action;
-  if (action?.type === 'pass') return `${name} passed`;
-  const verb = {move:'moved',project:'projected',rush:'rushed',push:'pushed',retreat:'retreated',follow:'followed'}[action?.type] ?? 'moved';
-  return action?.from && action?.to ? `${name} ${verb} a piece from ${coordinate(action.from)} to ${coordinate(action.to)}` : `${name} completed the turn`;
-}
-
-export const moveCoordinates = moves => moves.flatMap(move => [move.action?.from, move.action?.to]).filter(Boolean);
-
-/** Summarize the acknowledged sequence, including defender retreat and all followers. */
-export function describeTurn(moves, name) {
-  const active = moves.filter(move => !move.undone && move.action?.type !== 'end_turn');
-  const push = active.find(move => move.action?.type === 'push');
-  if (push) {
-    const point = push.action.to;
-    const followers = new Set(active.filter(move => move.action?.type === 'follow').map(move => move.action.actorId ?? `${move.action.from?.row},${move.action.from?.col}`));
-    const victim = point ? `(${point.row}, ${point.col})` : 'a piece';
-    return `${name} pushed ${victim}${followers.size ? ` and had ${followers.size > 1 ? 'several pieces' : 'a piece'} follow` : ''}`;
-  }
-  const rushed = new Set(active.filter(move => move.action?.type === 'rush').map(move => move.action.actorId ?? `${move.action.from?.row},${move.action.from?.col}`));
-  if (rushed.size > 1) return `${name} rushed several pieces`;
-  if (rushed.size === 1) {
-    const steps=active.filter(move=>move.action?.type==='rush');
-    return describeMove({...steps[0],action:{...steps[0].action,to:steps.at(-1).action.to}},name);
-  }
-  return describeMove(active.at(-1),name);
-}
+export const describeMove = describeRecordedMove;
+export const describeTurn = describeRecordedTurn;
+export const moveCoordinates = recordedNarrationCoordinates;
 
 export function computerPhasePresentation(game, status = {}, now = status?.observedAt ?? Date.now()) {
   const hasPending = game.pendingComputerSaveStartedAt != null;

@@ -3,7 +3,7 @@
 <link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css">
 </head><body><main id="app" class="app-root" data-shell-route="game"><div class="shell-main-content"></div></main>
 <script type="module">
-import {renderBoardMessageSlot,renderBoardHeadingSlot} from '/apps/web/shell/board-message-layout.js';
+import {renderBoardMessageSlot,renderBoardHeadingSlot,retainNarrationReservations} from '/apps/web/shell/board-message-layout.js';
 import {renderSummaryLoading,renderPlayersLoading,renderHistoryLoading} from '/apps/web/shell/panel-loading.js';
 import {renderBoardMessageHtml} from '/apps/web/board/message-presentation.js';
 const app=document.querySelector('#app'),source=await(await fetch('/apps/web/shell/app.js')).text();
@@ -15,6 +15,15 @@ app.querySelector('.shell-main-content').innerHTML=frame({id:'font-admission'},{
 const layout=()=>{const narrow=innerWidth<933;app.dataset.shellLayoutMode=narrow?'narrow':'wide';app.style.setProperty('--shell-game-panel-index','1');app.querySelectorAll('[data-mobile-panel]').forEach(node=>node.toggleAttribute('inert',narrow&&node.dataset.mobilePanel!=='board'));};
 layout();window.addEventListener('resize',layout);
 window.fontAnchors=()=>{const rect=selector=>document.querySelector(selector).getBoundingClientRect().toJSON();const panel=document.querySelector('[data-shell-panel="board"]'),style=getComputedStyle(panel);return {availableInlineSize:panel.getBoundingClientRect().width-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight)-parseFloat(style.borderLeftWidth)-parseFloat(style.borderRightWidth),slot:rect('.board-message-slot'),board:rect('#font-board'),panel:rect('[data-shell-panel="board"]'),heading:rect('.board-heading-slot'),headingCaptions:[...document.querySelectorAll('.board-heading-slot > .board-heading')].map(node=>{const style=getComputedStyle(node);return {font:node.dataset.headingSizingFont??'live',caption:node.dataset.headingSizingCaption??null,text:node.textContent,rect:node.getBoundingClientRect().toJSON(),fontFamily:style.fontFamily,fontSize:style.fontSize,lineHeight:style.lineHeight,flexBasis:getComputedStyle(node.lastElementChild??node).flexBasis};}),fontStatus:document.fonts.status,fallback:getComputedStyle(document.querySelector('[data-sizing-font="fallback"]')).fontFamily,primary:getComputedStyle(document.querySelector('[data-sizing-font="primary"]')).fontFamily};};
+// Presentation-only stress copy: no claim of a legal board or gameplay writes.
+const destinationCount=Number(new URLSearchParams(location.search).get('narrationCount'));
+if(destinationCount){
+ const {describeRecordedTurn}=await import('/apps/web/shell/recorded-narration.js');
+ const at={row:9,col:9},name='W'.repeat(32),moves=Array.from({length:destinationCount},(_,index)=>({index,turnMoveIndex:index,actorSide:'P1',action:{type:'rush',actorId:`copy-only-${index}`,from:at,to:at}}));
+ const message={text:describeRecordedTurn(moves,name),actorName:name,coordinates:[at]};
+ retainNarrationReservations(document.querySelector('.board-message-slot'),{scope:`copy:${destinationCount}`,messages:[message]});
+ window.acknowledgedNarrationProbe=message;
+}
 // These two canonical replica probes persist only in this fixture. The fixed,
 // zero-size clipped wrapper cannot contribute to page flow or scroll bounds.
 const measurementWrapper=document.createElement('div');measurementWrapper.setAttribute('data-font-measurement-wrapper','');measurementWrapper.setAttribute('aria-hidden','true');measurementWrapper.setAttribute('inert','');measurementWrapper.style.cssText='position:fixed;left:0;top:0;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none';document.body.append(measurementWrapper);
@@ -46,5 +55,6 @@ window.admitMessagePhases=()=>{
  live.innerHTML=renderBoardMessageHtml({text:'Select a piece or',action:{id:'pass',label:'Pass'}});
  return failures;
 };
+window.retainNarrationReservations=options=>retainNarrationReservations(document.querySelector('.board-message-slot'),options);
 window.fixtureReady=true;
 </script></body></html>

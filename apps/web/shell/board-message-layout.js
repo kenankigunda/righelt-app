@@ -18,11 +18,19 @@ const sizingActors = [
 const sizingDecision = (type,actorId) => ({action:{type,actorId,from:maximumPoint,to:maximumPoint}});
 const sizingSequences = [
   [sizingDecision('rush','A'),sizingDecision('rush','B')],
-  [sizingDecision('push','A'),sizingDecision('follow','A')],
-  [sizingDecision('push','A'),sizingDecision('follow','A'),sizingDecision('follow','B')],
+  [sizingDecision('push','A'),sizingDecision('follow','B')],
+  [sizingDecision('push','A'),sizingDecision('follow','B'),sizingDecision('follow','C')],
 ];
 const narrationSizes = sizingActors.flatMap(({name,actorName}) => [
-  ...['move','project','rush','push','retreat','follow'].map(type=>({text:describeMove(sizingDecision(type,'A'),name),actorName})),
+  ...['move','project','rush','push','retreat','follow'].flatMap(type=>[
+    {text:describeMove(sizingDecision(type,'A'),name),actorName},
+    // Finite single-step envelope, including one coordinate per removal owner.
+    // Long variable destination lists are admitted from exact records below.
+    {text:describeMove({...sizingDecision(type,'A'),actorSide:'P1',destroyedPieces:[
+      {pieceId:'sizing-own',ownerSeat:'P1',position:maximumPoint},
+      {pieceId:'sizing-opposing',ownerSeat:'P2',position:maximumPoint},
+    ]},name),actorName},
+  ]),
   ...sizingSequences.map(moves=>({text:describeTurn(moves,name),actorName})),
 ]);
 const maximumCoordinate=renderCoordinateChip({row:9,col:9});
@@ -38,13 +46,32 @@ const explanationSizes = SELECTED_PIECE_EXPLANATIONS.flatMap(text => {
 
 // Both font families use this one real formatter. The fallback remains present
 // after Manrope loads, so a cold font swap cannot shrink the reserved message.
-// This finite set is 123 paragraphs per family, with no actionable replicas.
+// The finite base uses the real grammar, with no actionable replicas.
 const renderMessageSizing = fallback => {
   const fontClass=fallback?' board-message-fallback-sizing':'';
   const attrs=index=>`data-sizing-font="${fallback?'fallback':'primary'}" data-sizing-variant="${index}" aria-hidden="true" inert`;
-  return narrationSizes.map((message,index) => `<p class="board-preview-label board-message-sizing${fontClass}" ${attrs(`narration:${index}`)}>${renderBoardMessageHtml({rows:[{...message,coordinates:[maximumPoint],action:{id:"replay-computer",label:"Show me again"}},{text:"Select a piece or",action:{id:"pass",label:"Pass"}}]},{sizing:true})}</p>`).join('')
+  return narrationSizes.map((message,index) => `<p class="board-preview-label board-message-sizing board-message-narration-sizing${fontClass}" ${attrs(`narration:${index}`)}>${renderBoardMessageHtml({rows:[{...message,coordinates:[maximumPoint],action:{id:"replay-computer",label:"Show me again"}},{text:"Select a piece or",action:{id:"pass",label:"Pass"}}]},{sizing:true})}</p>`).join('')
     + explanationSizes.map((text,index) => `<p class="board-preview-label board-message-sizing board-explanation-sizing${fontClass}" ${attrs(`explanation:${index}`)}>${text}</p>`).join('');
 };
+
+const narrationReservationStates=new WeakMap();
+/** Retain exact acknowledged copy within one game/lineage/view intent. The
+ * permanent enlarged fallback also covers the cold-to-primary font swap. */
+export function retainNarrationReservations(slot,{scope,messages=[]}={}){
+  if(!slot?.insertAdjacentHTML)return;
+  let state=narrationReservationStates.get(slot);
+  if(!state||state.scope!==scope){
+    for(const node of slot.querySelectorAll('[data-narration-reservation]'))node.remove();
+    state={scope,html:new Set(),serial:0};narrationReservationStates.set(slot,state);
+  }
+  for(const message of messages.filter(Boolean)){
+    const rows=message.rows?message:{rows:[{...message,action:{id:'replay-computer',label:'Show me again'}},{text:'Select a piece or',action:{id:'pass',label:'Pass'}}]};
+    const html=renderBoardMessageHtml(rows,{sizing:true});
+    if(state.html.has(html))continue;
+    state.html.add(html);const index=++state.serial;
+    for(const fallback of [false,true])slot.insertAdjacentHTML('beforeend',`<p class="board-preview-label board-message-sizing${fallback?' board-message-fallback-sizing board-message-dynamic-fallback':''}" data-narration-reservation="${index}" data-sizing-font="${fallback?'fallback':'primary'}" data-sizing-variant="acknowledged:${index}" aria-hidden="true" inert>${html}</p>`);
+  }
+}
 
 export function renderBoardMessageSlot({id, loading = false, loadingKey} = {}) {
   return `<div class="board-message-slot"><div class="board-message-live"><p class="board-preview-label"${id ? ` id="${escape(id)}"` : ''}${loading ? ' aria-hidden="true"' : ''}>${loading ? '' : 'Select a piece'}</p><span class="board-message-activity" aria-hidden="true" data-loading-state="${loading && loadingKey ? 'pending' : 'idle'}" data-loading-context="external"${loading && loadingKey ? ` data-loading-key="${escape(loadingKey)}"` : ''}></span></div>${renderMessageSizing(false)}${renderMessageSizing(true)}</div>`;

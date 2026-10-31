@@ -16,6 +16,9 @@ body {display:flow-root;}
 .board-message-activity[data-loading-suppressed="true"] {display:none;}
 .board-message-sizing, .board-heading-sizing {visibility:hidden;pointer-events:none;user-select:none;}
 .board-message-fallback-sizing {font-family:var(--font-family-fallback);}
+/* Hidden exact-copy fallback reserves conservative width/height before Manrope. */
+.board-message-slot > .board-message-dynamic-fallback,
+.board-message-slot > .board-message-narration-sizing.board-message-fallback-sizing {font-size:1.125em;}
 .board-message-fallback-sizing :is(.board-preview-coordinate-chip,.board-preview-highlight-chip,.board-preview-retreat-chip,.board-preview-inline-button) {font-family:inherit;}
 /* Intrinsic primary-font row frontiers cover the two-row message grammar,
    full copy, bounded spectator names and turn summaries at 100/200% text.

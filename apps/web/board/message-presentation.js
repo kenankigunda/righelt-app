@@ -47,17 +47,66 @@ export function patchBoardMessage(element, html) {
   const compatible = (left,right) => {
     if (left.nodeType !== right.nodeType || left.nodeName !== right.nodeName) return false;
     if (left.nodeType === 1) {
-      const attrs = node => [...node.attributes].filter(attr => attr.name !== 'title').map(attr => `${attr.name}=${attr.value}`).sort().join('|');
+      const attrs = node => [...node.attributes].filter(attr => attr.name !== 'title').map(attr => {
+        // Native press feedback belongs to the live control. It must not turn
+        // an otherwise identical message refresh into a detached click target.
+        const inlineAction=node.matches?.('button[data-board-message-action],button[data-board-preview-action]');
+        const value=attr.name==='class'&&inlineAction
+          ? attr.value.split(/\s+/).filter(name=>name!=='is-pressing'&&name!=='is-releasing'&&name!=='button-release-bounce').join(' ')
+          : attr.value;
+        return `${attr.name}=${value}`;
+      }).sort().join('|');
       if (attrs(left) !== attrs(right)) return false;
     }
-    return left.childNodes.length === right.childNodes.length && [...left.childNodes].every((child,index)=>compatible(child,right.childNodes[index]));
+    return true;
   };
-  if (element.childNodes.length !== next.childNodes.length || ![...element.childNodes].every((child,index)=>compatible(child,next.childNodes[index]))) return false;
+  const directActions=node=>[...(node.querySelectorAll?.(':scope > button[data-board-message-action]')??[])];
+  const previousActions=directActions(element),nextActions=directActions(next);
+  const patchRootActions=previousActions.length>0&&previousActions.length===nextActions.length
+    &&previousActions.every((button,index)=>compatible(button,nextActions[index]));
+  if (!patchRootActions&&(element.childNodes.length !== next.childNodes.length || ![...element.childNodes].every((child,index)=>compatible(child,next.childNodes[index])))) return false;
   const patch = (left,right) => {
     if (left.nodeType === 3 && left.nodeValue !== right.nodeValue) left.nodeValue = right.nodeValue;
     if (left.nodeType === 1 && left.title !== right.title) left.title = right.title;
-    [...left.childNodes].forEach((child,index)=>patch(child,right.childNodes[index]));
+    const previous=[...left.childNodes], incoming=[...right.childNodes];
+    const actionKey=node=>node.nodeType===1&&node.matches?.('button[data-board-message-action]')
+      ? node.getAttribute('data-board-message-action') : null;
+    const oldActions=new Map(previous.map(node=>[actionKey(node),node]).filter(([key])=>key));
+    const nextActions=new Map(incoming.map(node=>[actionKey(node),node]).filter(([key])=>key));
+    const retained=new Set([...oldActions.keys()].filter(key=>nextActions.has(key)&&compatible(oldActions.get(key),nextActions.get(key))));
+    const beforeKeys=previous.map(actionKey).filter(key=>retained.has(key));
+    const afterKeys=incoming.map(actionKey).filter(key=>retained.has(key));
+    // Keep matching action anchors in place: inserting/removing adjacent copy
+    // preserves native focus, whereas moving a focused button can blur it.
+    if(retained.size&&JSON.stringify(beforeKeys)===JSON.stringify(afterKeys)){
+      let cursor=left.firstChild;
+      for(const next of incoming){
+        const anchor=retained.has(actionKey(next))?oldActions.get(actionKey(next)):null;
+        if(anchor){
+          while(cursor&&cursor!==anchor){const following=cursor.nextSibling;cursor.remove();cursor=following;}
+          patch(anchor,next);cursor=anchor.nextSibling;
+        }else if(cursor&&retained.has(actionKey(cursor))){
+          left.insertBefore(next.cloneNode(true),cursor);
+        }else if(cursor){
+          const following=cursor.nextSibling;
+          if(compatible(cursor,next))patch(cursor,next);else cursor.replaceWith(next.cloneNode(true));
+          cursor=following;
+        }else left.appendChild(next.cloneNode(true));
+      }
+      while(cursor){const following=cursor.nextSibling;cursor.remove();cursor=following;}
+      return;
+    }
+    // Independent rows can also gain coordinate pills while their sibling
+    // control row remains mounted and compatible.
+    for(let index=0;index<Math.max(previous.length,incoming.length);index++){
+      const old=previous[index], next=incoming[index];
+      if(!next){old.remove();continue;}
+      if(!old){left.appendChild(next.cloneNode(true));continue;}
+      if(compatible(old,next))patch(old,next);
+      else old.replaceWith(next.cloneNode(true));
+    }
   };
-  [...element.childNodes].forEach((child,index)=>patch(child,next.childNodes[index]));
+  if(patchRootActions)patch(element,next);
+  else [...element.childNodes].forEach((child,index)=>patch(child,next.childNodes[index]));
   return true;
 }
