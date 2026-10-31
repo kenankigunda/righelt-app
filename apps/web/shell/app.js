@@ -83,7 +83,7 @@ import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
 import { createSyncStore } from "./sync-store.js";
 import { ensureHoverCapabilityController } from "../hover-capability.js";
-import { applyCommandLegendSwatch, getCommandLegendColor, getCommandLegendSwatchStyle, updateLegendVisibility } from "../legend.js";
+import { getCommandLegendSwatchStyle, updateLegendVisibility, updateInspectionLegend } from "../legend.js";
 import { loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted } from "./persistence.js";
 import {
   buildHistoryBranchSeedFromGame,
@@ -2579,8 +2579,8 @@ const renderBoardPanel = (game) => `
     <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
   </div>
   <div class="overlay-key" aria-label="Board legend">
-    <button type="button" class="legend-inspection" data-board-inspection="command" aria-pressed="false"><i class="swatch commander-key">${renderPieceSymbol('commander')}</i>Commander</button>
-    <button type="button" class="legend-inspection" data-board-inspection="supply" aria-pressed="false"><i class="swatch supply-point" style="--supply-owner:var(--player-${game.currentSnapshot?.sideToMove === 'P2' ? 'p2' : 'p1'})">${renderPieceSymbol('supply')}</i>Supply point</button>
+    <button type="button" class="legend-inspection" data-board-inspection="command" aria-pressed="false"><i class="swatch commander-key">${renderPieceSymbol('commander')}</i><span class="legend-inspection-label">Commander</span></button>
+    <button type="button" class="legend-inspection" data-board-inspection="supply" aria-pressed="false"><i class="swatch supply-point" style="--supply-owner:var(--player-${game.currentSnapshot?.sideToMove === 'P2' ? 'p2' : 'p1'})">${renderPieceSymbol('supply')}</i><span class="legend-inspection-label">Supply point</span></button>
     <span data-legend-entry="group" hidden><i class="swatch group"></i>Group strength</span>
     <span data-legend-entry="command" hidden><i id="shell-command-legend-swatch" class="swatch command" style="${escapeHtml(
       getCommandLegendSwatchStyle(game.currentSnapshot ?? null),
@@ -3430,15 +3430,13 @@ const mountBoardForGame = (game) => {
         getAllowFreeSelection: () => Boolean(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id),
         getSupportsHover: () => hoverCapability.getSupportsHover(),
         getForceClickTargetSelection: () => Boolean(currentRoute.scenarios && scenarioCapture?.gameId === game.id),
-        onVisualsUpdated: visible => { updateLegendVisibility(document.querySelector('.overlay-key'), visible, prefersReducedMotion()); document.querySelectorAll('[data-board-inspection]').forEach(button => button.setAttribute('aria-pressed', String(visible.inspection?.kind === button.dataset.boardInspection))); },
-        onStateUpdated: ({ state, selectedPieceId, selectedSource, selectedTarget }) => {
+        onVisualsUpdated: visible => { updateLegendVisibility(document.querySelector('.overlay-key'), visible, prefersReducedMotion()); updateInspectionLegend(document.querySelector('.overlay-key'),boardRuntime?.getState(),{selectedPieceId:boardRuntime?.getSelection()?.selectedPieceId,...visible}); },
+        onStateUpdated: ({ state, selectedPieceId, selectedSource, selectedTarget, overlay }) => {
           if (selectedPieceId && replayRequests.snapshot()) replayRequests.cancel();
           if (currentRoute.scenarios && scenarioCapture?.gameId === game.id && toStableKey(state) === toStableKey(capturePosition())) {
             scenarioCapture.selection = buildSavedSelectionFromRuntimeSelection({ source: selectedSource, target: selectedTarget }, state);
           }
-          applyCommandLegendSwatch(document.getElementById("shell-command-legend-swatch"), state, selectedPieceId);
-          applyCommandLegendSwatch(document.querySelector(".commander-key"), state, selectedPieceId);
-          document.querySelector('.swatch.supply-point')?.style.setProperty('--supply-owner',getCommandLegendColor(state,selectedPieceId));
+          updateInspectionLegend(document.querySelector('.overlay-key'),state,{selectedPieceId,...overlay});
         },
       },
     });
@@ -4689,7 +4687,7 @@ appEl.addEventListener('click', event => {
 });
 appEl.addEventListener("click", async (event) => {
   const inspectionControl = event.target.closest('[data-board-inspection]');
-  if (inspectionControl) { event.preventDefault(); if(replayController?.snapshot().playing)return; boardRuntime?.setInspection({kind:inspectionControl.dataset.boardInspection}); return; }
+  if (inspectionControl) { event.preventDefault(); if(replayController?.snapshot().playing)return; boardRuntime?.toggleNetworkInspection(inspectionControl.dataset.boardInspection); return; }
   const target = event.target;
   if (!(target instanceof Element)) {
     return;
