@@ -11,7 +11,11 @@ import {COMPUTER_UI_FRAME_MEASURE} from '../../apps/web/shell/frame-presentation
 
 // Artifact encoding is separate from the unchanged 60-second behavioral budget.
 // Linux WebKit completed every Follow assertion before its screenshot crossed it.
-const test=base.extend({followEvidence:[async({page},use,info)=>{
+const test=base.extend({
+ acceptedRetreat:[async({page,baseURL},use)=>{
+  await use(await acceptedComputerRetreat(page,baseURL));
+ },{timeout:60000}],
+ followEvidence:[async({page},use,info)=>{
  let evidence;
  await use(value=>{evidence=value;});
  if(!evidence)return;
@@ -209,9 +213,9 @@ async function acceptedComputerRetreat(page,baseURL){
 }
 
 // Evidence persistence and live completion are independent journeys. Keep each
-// within the existing 60s workflow budget, including real worker preparation.
-test(computerRetreatWorkflow,async({page,baseURL},info)=>{
- const {branched,command,move}=await acceptedComputerRetreat(page,baseURL);
+// within their unchanged 60s bodies after separately bounded worker preparation.
+test(computerRetreatWorkflow,async({page,acceptedRetreat},info)=>{
+ const {branched,command,move}=acceptedRetreat;
  const attempt=(await request(page,`/api/shell/games/${branched.id}/decision-attempt`,{attemptId:move.computerProof.attemptId,kind:'computer'})).attempt;
  expect(attempt.proof).toEqual(move.computerProof);expect(attempt.fingerprint).toBe(deterministicStateHash(branched.board.state));expect(attempt.result.status).toBe('ready');expect(attempt.result.action).toEqual(safe.action);
  expect(attempt.result.legality).toMatchObject({complete:true,unknown:0,indices:[1144]});expect(attempt.result.actionIndex).toBe(1144);
@@ -219,8 +223,8 @@ test(computerRetreatWorkflow,async({page,baseURL},info)=>{
  await info.attach('accepted-computer-retreat',{body:JSON.stringify({command,move,attempt},null,2),contentType:'application/json'});
 });
 
-test(computerFollowWorkflow,async({page,baseURL,followEvidence})=>{
- const {branched,command,move}=await acceptedComputerRetreat(page,baseURL);
+test(computerFollowWorkflow,async({page,acceptedRetreat,followEvidence})=>{
+ const {branched,command,move}=acceptedRetreat;
  await switchGamePanel(page,'board');
  await completedMandatoryFollow(page,branched.id,command.clientCommandId);
  followEvidence({command,move});

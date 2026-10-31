@@ -104,11 +104,15 @@ test('readiness recognizes elapsed loading detail while model response headers a
  }finally{release();}
 });
 
-for(const [width,height,covered] of [[390,450,true],[1440,1100,false]])test(`utility visibility keeps computer cues aligned with Live Board (${covered?'covered':'docked'})`,async({page,context},info)=>{
+for(const [width,height,covered] of [[390,450,true],[1440,1100,false]]){
+ const utilityTest=test.extend({utilityGame:[async({page},use)=>{
  await page.addInitScript(()=>{window.WebSocket=undefined;window.moveNotes=[];const original=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(original,this,args);window.moveNotes.push({frequency:this.frequency.value,at:performance.now()});return value;};});
  await page.setViewportSize({width,height});await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
  const created=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await created).json()).game;
  await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveText('Active here');
+  await use(game);
+ },{timeout:60000}]});
+ utilityTest(`utility visibility keeps computer cues aligned with Live Board (${covered?'covered':'docked'})`,async({page,context,utilityGame:game},info)=>{
  let release,command;const held=new Promise(resolve=>release=resolve);
  await context.route('**/apply',async route=>{const body=route.request().postDataJSON();if(body?.payload?.computer&&!command){command=body;await held;}await route.continue();});
  await context.route('**/reconcile',async route=>{if(command&&route.request().postDataJSON()?.commands?.some(item=>item.clientCommandId===command.clientCommandId))await held;await route.continue();});
@@ -136,6 +140,8 @@ for(const [width,height,covered] of [[390,450,true],[1440,1100,false]])test(`uti
   await debug.locator('[data-action="close-debug"]').click();await expect(debug).toHaveCount(0);await expect(page.getByTestId('game-board')).toBeVisible();
  }finally{release();await context.unrouteAll({behavior:'wait'});}
 });
+
+}
 
 test('initial computer control keeps Pass visible and disabled until acknowledged',async({page,context},info)=>{
  await page.addInitScript(()=>window.WebSocket=undefined);await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
