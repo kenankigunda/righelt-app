@@ -34,7 +34,7 @@ button.opponent-choice:hover { background:var(--surface-foundation); border-colo
 .opponent-choice .small { font-size:13px; }
 .opponent-friend { height:116px; display:grid; place-items:center; width:100%; color:var(--action-color); }
 .opponent-friend svg { width:64px; height:64px; }
-.home-start-footer { display:flex; align-items:center; gap:16px; margin-top:18px; flex-wrap:wrap; }
+.home-start-footer { display:flex; align-items:center; justify-content:center; margin-top:18px; }
 .home-start-footer button { background:transparent; color:var(--text-secondary); border:0; }
 .game-shell-frame .panel:not([data-shell-panel="board"]), .game-shell-mobile-panel .panel:not([data-shell-panel="board"]) { box-shadow:none; border-color:transparent; background:var(--surface-raised); border-radius:16px; }
 .participant-list { list-style:none; padding:0; margin:0; display:grid; gap:14px; }
