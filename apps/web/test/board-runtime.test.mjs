@@ -3572,3 +3572,17 @@ test('whole-turn overlays reach the adapter without selected-cell state',async()
  assert.deepEqual(rendered.at(-1).overlay.recordedActions,actions);
  assert.equal(rendered.at(-1).overlay.selection,null);
 });
+
+
+test('History role metadata passes through snapshot loading and clears on live return',async()=>{
+ const rendered=[],snapshot={pieces:[],sideToMove:'P1',turnIndex:1};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:value=>rendered.push(value),getSelectedPieceSummary:()=>null},host:{canInteract:()=>false}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null});
+ const endpointRoles=[{row:3,col:4,source:true,target:true}];
+ await runtime.loadSnapshot(snapshot,{legalActions:[],overlayMode:'recorded-turn',presentationContext:'history',endpointRoles});
+ assert.equal(rendered.at(-1).overlay.presentationContext,'history');assert.deepEqual(rendered.at(-1).overlay.endpointRoles,endpointRoles);
+ endpointRoles[0].source=false;assert.equal(rendered.at(-1).overlay.endpointRoles[0].source,true);
+ await runtime.loadSnapshot(snapshot,{legalActions:[]});
+ assert.equal(rendered.at(-1).overlay.presentationContext,null);assert.deepEqual(rendered.at(-1).overlay.endpointRoles,[]);
+ destroyUninitializedNodeRuntime(runtime);
+});
