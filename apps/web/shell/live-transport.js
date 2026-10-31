@@ -331,7 +331,10 @@ export const createLiveTransportStore = ({
       return { ok: true, game: null };
     }
 
-    if (optimistic.pendingCommands.length === 0) {
+    // Shared admission changes submission permissions, not the board. Keep its
+    // durable recovery fence without creating a worker for an empty move queue.
+    const queue = optimistic.pendingCommands.filter(command => command.kind !== "shared");
+    if (queue.length === 0) {
       rulesExecutor.cancel(`project:${gameId}`);
       optimistic.projectionJob = null;
       optimistic.derivedGame = decorateGameWithSync(authoritativeGame, gameId);
@@ -350,7 +353,6 @@ export const createLiveTransportStore = ({
       return { ok: true, game: optimistic.derivedGame };
     }
     if (optimistic.admissionProjection) return { ok: true, game: optimistic.derivedGame };
-    const queue = optimistic.pendingCommands.filter(command => command.kind !== "shared");
     const signature = queue.map(command => command.clientCommandId).join("|");
     const previous = optimistic.projectionJob;
     if (previous?.base === authoritativeGame && previous.signature === signature) {
@@ -584,6 +586,11 @@ export const createLiveTransportStore = ({
     return sameTerminalOwner(gameId, optimistic, owner, envelope, outcome);
   };
   const verifyCleanupAbsence = async (job, saved) => {
+    // A committed journal row can become visible before its admission callback
+    // registers the command in memory. Finish that existing admission before
+    // deciding whether the readback contains untracked intent; never enqueue it.
+    await job.optimistic.admission.catch(() => {});
+    if (!currentCleanupJob(job)) return false;
     for (const envelope of saved) {
       if (!currentCleanupJob(job)) return false;
       if (!isSyncCommand(envelope) || envelope.identityId !== identityId || envelope.gameId !== job.gameId

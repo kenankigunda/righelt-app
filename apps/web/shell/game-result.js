@@ -1,13 +1,13 @@
+import {isTerminalOutcome} from './game-lifecycle.js';
 import {owningPerspective,playerDisplayName,sideColorName} from './perspective-labels.js';
 import { icon } from './ui.js';
 import { commanderOutcome } from '../generated/packages/shared-types/src/commander-outcome.js';
 export const RESULT_HEADING_CONTRACT = 'perspective-v2';
 export const REMATCH_CHOICES_CONTRACT = 'colors-v1';
 
-const terminal = new Set(["p1_win", "p2_win", "draw"]);
 export const getGameResult = (game, identityId) => {
   const outcome = game?.board?.state?.outcome;
-  if (!terminal.has(outcome?.status)) return null;
+  if (!isTerminalOutcome(outcome?.status)) return null;
   // Authoritative snapshots have no personalized roles. Derive them only
   // from a nonempty captured identity, then use the shared seat perspective.
   const roles = identityId ? ['p1','p2'].filter(side => game[side === 'p1' ? 'player1' : 'player2']?.identityId === identityId).map(side => side === 'p1' ? 'Player 1' : 'Player 2') : [];
@@ -26,6 +26,14 @@ export const getGameResult = (game, identityId) => {
   return { title, side, winner, tone, controlsBothSides: both, reason: reasons[reason] || "The game has finished.", opponent: game.computer?.seats?.p1 || game.computer?.seats?.p2 || game.player1?.computerProfile || game.player2?.computerProfile || (game.selfPlayMode ? "self" : "friend"), rematchSide: side === "p1" ? "p2" : "p1" };
 };
 
+const escapeResult = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+export const renderHistoryResult = (game,identityId) => {
+  const result=getGameResult(game,identityId);
+  if(!result)return '';
+  const color=result.winner?sideColorName(result.winner):null;
+  return `<p class="history-result-summary" data-testid="history-result-summary" role="status"><strong class="${result.winner?`player-tone-${result.winner}`:'player-tone-neutral'}">${escapeResult(result.title)}</strong>${color?` <span>· ${color}</span>`:''}</p>`;
+};
+
 // Only an observed live transition opens automatically. Initial hydration,
 // history, hidden tabs and a currently open story consume the transition silently.
 export const createResultTransitions = () => {
@@ -37,7 +45,7 @@ export const createResultTransitions = () => {
       const next = game.board.state.outcome.status;
       const previous = statuses.get(game.id);
       statuses.set(game.id, next);
-      return previous === "ongoing" && terminal.has(next) && !inHistory && !hidden && !storyOpen;
+      return previous === "ongoing" && isTerminalOutcome(next) && !inHistory && !hidden && !storyOpen;
     },
   };
 };

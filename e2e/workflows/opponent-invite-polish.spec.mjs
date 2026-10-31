@@ -32,7 +32,7 @@ test('the initial invitation survives a viewer and closes once its friend joins'
    const body=await(await fetch(`/api/shell/games/${id}?identityId=${encodeURIComponent(identityId)}`)).json();
    return body.game?.player2?.identityId;
   },gameId)).toBe(friendIdentity);
-  await expect(page.getByTestId('participant-player-2')).toHaveText('Guest');
+  await expect(page.getByTestId('participant-player-2')).toHaveText('Guest 2');
   await page.screenshot({path:info.outputPath('friend-joined-players.png')});
   await switchGamePanel(page,'history');
   const readContract=await page.evaluate(async id=>{
