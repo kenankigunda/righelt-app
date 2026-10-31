@@ -1,3 +1,4 @@
+import {isObsoleteComputerRejection} from './computer-recovery.js';
 import { activeDecisionLineage } from './decision-history.js';
 import { createRulesExecutor } from '../board/rules-runtime.js';
 import { CURRENT_COMPUTER_MODEL } from '../generated/packages/shared-types/src/computer-play.js';
@@ -178,6 +179,7 @@ export const createLiveTransportStore = ({
 
   let games = [];
   let gameById = new Map();
+  const computerDisplays = new Map();
   let homeGameCardById = new Map();
   const lastEventSeqByGameId = new Map();
   const optimisticStateByGameId = new Map();
@@ -586,6 +588,11 @@ export const createLiveTransportStore = ({
     return sameTerminalOwner(gameId, optimistic, owner, envelope, outcome);
   };
   const verifyCleanupAbsence = async (job, saved) => {
+    // A committed journal row can become visible before its admission callback
+    // registers the command in memory. Finish that existing admission before
+    // deciding whether the readback contains untracked intent; never enqueue it.
+    await job.optimistic.admission.catch(() => {});
+    if (!currentCleanupJob(job)) return false;
     for (const envelope of saved) {
       if (!currentCleanupJob(job)) return false;
       if (!isSyncCommand(envelope) || envelope.identityId !== identityId || envelope.gameId !== job.gameId
@@ -672,8 +679,11 @@ export const createLiveTransportStore = ({
     optimistic.syncStatus = optimistic.pendingCommands.length ? optimistic.syncStatus : "ready";
     startTerminalCleanup(gameId, command, outcome);
     recalculateOptimisticGame(gameId);
-    const notification = { type: outcome.outcome === "accepted" ? "authoritative_update" : command.kind === "shared" ? "shared_request_rejected" : "optimistic_rollback", gameId, clientCommandId: command.clientCommandId, reason:outcome.reason,
-      failureNotice: outcome.outcome === "rejected" && command.kind !== "shared" ? outcome.reason === "state_capacity_exceeded" ? "This game couldn’t save another move. Your earlier moves are safe. Please view details." : "Board changed before your move was recorded. Check it and try again." : "" };
+    // A confirmed obsolete computer attempt is handled by its session's
+    // automatic recovery, not a prompt to repeat a human move.
+    const quietComputerRetry = isObsoleteComputerRejection(command.computer,outcome.reason);
+    const notification = { type: outcome.outcome === "accepted" ? "authoritative_update" : command.kind === "shared" ? "shared_request_rejected" : "optimistic_rollback", gameId, clientCommandId: command.clientCommandId, computer: Boolean(command.computer), reason:outcome.reason,
+      failureNotice: outcome.outcome === "rejected" && command.kind !== "shared" && !quietComputerRetry ? outcome.reason === "state_capacity_exceeded" ? "This game couldn’t save another move. Your earlier moves are safe. Please view details." : "Board changed before your move was recorded. Check it and try again." : "" };
     if (notifications) notifications.push(notification); else emitChange(notification);
     return true;
   };
@@ -931,6 +941,7 @@ export const createLiveTransportStore = ({
       assertRulesContext(contextEpoch, gameId);
       if (auth?.enabled && (!auth.session.authenticated)) throw Object.assign(new Error("invalid_credentials"), { code: "invalid_credentials" });
       const current = getGameViewModel(gameId);
+      if (!command.computer && computerDisplays.get(gameId)?.pending) throw Object.assign(Error('playback_in_progress'),{code:'playback_in_progress'});
       if (current?.sharedMutationsBlocked) throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
       const isClosure = command.kind === "end-turn" || command.action?.type === "end_turn";
       if (isClosure && serverActionContract !== ACTION_CONTRACT_VERSION) {
@@ -1687,7 +1698,19 @@ export const createLiveTransportStore = ({
     }
     // Browser suspension can advance deadlines before scheduled callbacks run.
     // Refresh time-dependent safety flags even when the board projection is cached.
-    const game = decorateGameWithSync(optimistic.derivedGame, gameId);
+    let game = decorateGameWithSync(optimistic.derivedGame, gameId);
+    const display=computerDisplays.get(gameId);
+    if(display?.pending){
+      const shown=display.game;
+      const fields=['moves','turns','currentTurn'];
+      for(const key of fields)if(shown?.[key]!==undefined)game[key]=clone(shown[key]);
+      if(!game.inHistoryMode&&shown?.board?.state){
+        game.board={...game.board,state:clone(shown.board.state)};
+        game.currentSnapshot=clone(shown.board.state);game.liveCurrentSnapshot=clone(shown.board.state);
+      }
+      game.confirmedPlayback={playing:!display.error,error:display.error??null,retrying:Boolean(display.retrying),canRetry:Boolean(display.canRetry)};
+      game.canRecordMove=false;game.canEndTurn=false;
+    }
     if (auth?.enabled && (!auth.session.authenticated || game.ownershipMode === "legacy_guest")) {
       return { ...game, canRecordMove:false,canEndTurn:false,canPlayAsBothPlayers:false,canUndoLastMove:false,canInvite:false,inviteToken:null,
         ...(!auth.session.authenticated ? {legalActions:[]} : {}) };
@@ -1790,6 +1813,11 @@ export const createLiveTransportStore = ({
     getGameViewModel,
     isUpgradeRequired: (gameId) => getOptimisticState(gameId).upgradeRequired === true,
     markUpgradeRequired,
+    readDecisionMove: (gameId,revision,moveId) => loadHistoricalMove(gameId,revision,moveId),
+    setComputerDisplay: (gameId,display) => {
+      if(display?.pending)computerDisplays.set(gameId,clone(display));else computerDisplays.delete(gameId);
+      emitChange({type:'computer_display',gameId});
+    },
     getAuthoritativeGame: (gameId) => clone(gameById.get(gameId) ?? null),
     applyGamePreview: (gameId,game) => {getOptimisticState(gameId).externalPreview=game?clone(game):null;recalculateOptimisticGame(gameId);emitChange({type:"local_preview",gameId});},
     getIdentityId,
@@ -1797,6 +1825,7 @@ export const createLiveTransportStore = ({
     unsubscribe,
     retire() {
       active = false;
+      computerDisplays.clear();
       rulesExecutor.cancelAll();
       globalThis.document?.removeEventListener?.("visibilitychange", onRulesVisibility);
       globalThis.window?.removeEventListener?.("pagehide", onRulesPageHide);

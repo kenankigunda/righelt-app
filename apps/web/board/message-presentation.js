@@ -10,7 +10,7 @@ export function boardMessagePresentation(message) {
   return {text,actorName,rest:actorName?text.slice(actorName.length):text,
     actions:Array.isArray(message.actions)?message.actions:message.action?[message.action]:[]};
 }
-const actionIcons = {'replay-computer':'rematch','replay-next':'right','replay-stop':'close','replay-dismiss':'close',pass:'right','end-turn':'check'};
+const actionIcons = {'replay-computer':'rematch','replay-push-sequence':'rematch','replay-next':'right','replay-stop':'close','replay-dismiss':'close',pass:'right','end-turn':'check'};
 // Sizing uses identical content without exposing an actionable data attribute.
 export function renderBoardInlineAction({id,label},{sizing=false,preview=false}={}) {
   const glyph=Object.hasOwn(actionIcons,id)?actionIcons[id]:null;
