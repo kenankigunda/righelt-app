@@ -21,8 +21,8 @@ test('message reservation uses real profile narration and excludes duplicate liv
   assert.equal((paragraph[2].match(/disabled tabindex="-1"/g)??[]).length,2);
   assert(paragraph[2].includes('>Pass</span></button>'));assert(paragraph[2].includes('>Show me again</span></button>'));
  }
- assert(html.includes('Your opponent rushed several pieces'));
- assert(html.includes('and had a piece follow'));assert(html.includes('and had several pieces follow'));
+ assert(html.includes('Your opponent rushed 2 pieces to'));
+ assert(html.includes('and had 1 piece follow'));assert(html.includes('and had 2 pieces follow'));
  assert(html.includes(`class="board-message-name" dir="auto" title="${'W'.repeat(32)}"`));
  for(const explanation of SELECTED_PIECE_EXPLANATIONS) assert(html.includes(explanation));
  const continuations=[...html.matchAll(/<p class="board-preview-label board-message-sizing board-explanation-sizing"[^>]*>(.*?)<\/p>/g)].map(match=>match[1]);

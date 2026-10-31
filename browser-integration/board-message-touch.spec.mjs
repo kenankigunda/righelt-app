@@ -129,7 +129,7 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
         await replay.focus();await replay.evaluate(button=>{window.namedReplayButton=button;window.namedActorNode=button.parentElement.querySelector('.board-message-name');});
         await page.evaluate(()=>window.boardFixture.message({...window.namedSpectatorMessage,text:window.namedSpectatorMessage.text.replace('retreated','followed')}));
         await expect(replay).toBeFocused();expect(await replay.evaluate(button=>button===window.namedReplayButton&&button.parentElement.querySelector('.board-message-name')===window.namedActorNode)).toBe(true);
-        await expect(page.locator('#preview')).toContainText('followed a piece from 9, 9 to 0, 0');
+        await expect(page.locator('#preview')).toContainText('followed from 9, 9 to 0, 0');
         expect(await measure(),'Named narration refresh preserves the board, card, and action focus').toEqual(initial);
       }
       if(phase==='completed-pass')await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);

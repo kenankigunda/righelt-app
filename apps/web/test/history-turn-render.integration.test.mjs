@@ -1,3 +1,6 @@
+import {selectedHistoryPresentation} from '../shell/history-narration.js';
+import {recordedMoveNumber,visibleRecordedMoves} from '../shell/recorded-narration.js';
+import {renderBoardMessageHtml} from '../board/message-presentation.js';
 import {historyTurnSide} from '../shell/history-preview.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -7,7 +10,7 @@ import {buildMovePreview,buildTurnPreview} from '../shell/history-preview.js';
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const declaration=source.slice(source.indexOf('const renderHistoryPreview ='),source.indexOf('const renderHeader ='));
 const escape=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
-const context={buildMovePreview,buildTurnPreview,escapeHtml:escape,getShellLayoutMode:()=> 'narrow',toStableKey:JSON.stringify,
+const context={selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,buildMovePreview,buildTurnPreview,escapeHtml:escape,getShellLayoutMode:()=> 'narrow',toStableKey:JSON.stringify,
  renderMiniBoardPreviewRoot:({overlay})=>`<div data-preview-mode="${overlay.mode}"></div>`,playerToneClassForSide:side=>`player-tone-${side}`,playerToneClassForSeat:()=>'',
  historyActorLabel:(_game,move)=>move.actorSide==='P2'?'Defender':'Attacker',historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:(_game,side)=>side==='Player 2'||side==='P2'?'Defender':'Attacker',
  transport:{getIdentityId:()=> 'me'},icon:()=>'',formatClientDateTime:String,expandedUndoneGroups:new Set(),liveHistoryLabel:()=> 'Waiting'};

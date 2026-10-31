@@ -18,8 +18,8 @@ const sizingActors = [
 const sizingDecision = (type,actorId) => ({action:{type,actorId,from:maximumPoint,to:maximumPoint}});
 const sizingSequences = [
   [sizingDecision('rush','A'),sizingDecision('rush','B')],
-  [sizingDecision('push','A'),sizingDecision('follow','A')],
-  [sizingDecision('push','A'),sizingDecision('follow','A'),sizingDecision('follow','B')],
+  [sizingDecision('push','A'),sizingDecision('follow','B')],
+  [sizingDecision('push','A'),sizingDecision('follow','B'),sizingDecision('follow','C')],
 ];
 const narrationSizes = sizingActors.flatMap(({name,actorName}) => [
   ...['move','project','rush','push','retreat','follow'].map(type=>({text:describeMove(sizingDecision(type,'A'),name),actorName})),
