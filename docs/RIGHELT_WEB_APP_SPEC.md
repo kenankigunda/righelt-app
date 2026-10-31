@@ -466,3 +466,9 @@ This section is normative and applies to every new endpoint, page, and performan
 - Narration describes the acknowledged sequence. Multiple rushed pieces use “X rushed several pieces”. Pushes name the victim’s original square and say “and had a piece follow” or “and had several pieces follow”.
 
 - Board-message height must admit the complete two-row grammar at every supported width. Reserve its measured font and width envelopes before first paint, including all turn summaries and the bounded spectator-name box. Changes to wording, fonts or inline pills require primary/fallback measurements at 100% and 200% text, boundary probes and exact cold/loaded/reload anchor checks. Natural wrapping may require four or more lines; a universal three-line cap is not the contract.
+
+### Undo consent
+
+- Undo applies directly in self-play and against a computer controlled by the same human. While its durable receipt is pending, do not show an undo request, acceptance message, or approval controls. Confirm completion as “Move undone”.
+- Only another human controller must approve Undo. Keep that player's request, Accept, Reject and Cancel request flow. Use authoritative seat-controller identities, never display names, to distinguish these cases.
+- Direct Undo keeps the existing serialized command, receipt and recovery path. Computer work is paused and reconciled before restoration, then resumes under the acknowledged position and control generation. Reopening a completed game by explicit Undo retains these same safeguards.
