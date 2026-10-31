@@ -75,7 +75,9 @@ for(const width of [390,900,1440])test(`fresh Home cards retain configured compu
    }
    const pagination=[...document.querySelectorAll('.home-games-section-controls')].map(controls=>({
     bounds:rect(controls),
-    label:{text:controls.querySelector('.home-games-section-page-label')?.textContent.trim(),bounds:rect(controls.querySelector('.home-games-section-page-label')),
+    label:{text:controls.querySelector('.home-games-section-page-label .sr-only')?.textContent.trim(),
+     visibleTexts:[...controls.querySelectorAll('.home-games-section-page-label [aria-hidden="true"]')].filter(node=>node.getClientRects().length&&style(node).display!=='none').map(node=>node.textContent.trim()),
+     bounds:rect(controls.querySelector('.home-games-section-page-label')),
      clientWidth:controls.querySelector('.home-games-section-page-label').clientWidth,scrollWidth:controls.querySelector('.home-games-section-page-label').scrollWidth},
     buttons:[...controls.querySelectorAll('button')].map(button=>({action:button.dataset.action,bounds:rect(button)})),
    }));
@@ -87,8 +89,11 @@ for(const width of [390,900,1440])test(`fresh Home cards retain configured compu
   await info.attach(`home-overflow-${width}-${text}`,{path:diagnosticPath,contentType:'application/json'});
   expect(overflow.documentOverflow).toBeLessThanOrEqual(1);
   expect(overflow.pagination.length).toBeGreaterThan(0);
-  for(const pagination of overflow.pagination){
+  for(const [index,pagination] of overflow.pagination.entries()){
    expect(pagination.label.text).toMatch(/^Page \d+ of \d+$/);
+   expect(pagination.label.visibleTexts).toHaveLength(1);
+   expect([pagination.label.text,pagination.label.text.replace(/^Page /,'')]).toContain(pagination.label.visibleTexts[0]);
+   await expect(page.locator('.home-games-section-page-label').nth(index)).toMatchAriaSnapshot(`- paragraph: ${pagination.label.text}`);
    expect(pagination.label.scrollWidth).toBeLessThanOrEqual(pagination.label.clientWidth+1);
    expect(pagination.buttons.map(button=>button.action)).toEqual(['home-page-prev','home-page-next']);
    for(const item of [pagination.label,...pagination.buttons]){
