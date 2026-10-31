@@ -585,6 +585,11 @@ export const createLiveTransportStore = ({
     return sameTerminalOwner(gameId, optimistic, owner, envelope, outcome);
   };
   const verifyCleanupAbsence = async (job, saved) => {
+    // A committed journal row can become visible before its admission callback
+    // registers the command in memory. Finish that existing admission before
+    // deciding whether the readback contains untracked intent; never enqueue it.
+    await job.optimistic.admission.catch(() => {});
+    if (!currentCleanupJob(job)) return false;
     for (const envelope of saved) {
       if (!currentCleanupJob(job)) return false;
       if (!isSyncCommand(envelope) || envelope.identityId !== identityId || envelope.gameId !== job.gameId
