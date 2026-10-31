@@ -1,3 +1,4 @@
+import {isCompletedGame} from './game-lifecycle.js';
 import {renderBoardMessageHtml,renderBoardInlineAction} from '../board/message-presentation.js';
 import {BOARD_TURN_CAPTIONS} from './perspective-labels.js';
 import {computerActivityActorSide,setActivityActor} from './activity-affiliation.js';
@@ -63,7 +64,7 @@ let operation = 0;
 export function updateComputerBoardLoading(element, game, status = {}, {replaying = false, inspecting = false, scope = ''} = {}) {
   if (!element) return;
   element.dataset.loadingSuppressed = String(inspecting);
-  const pending = Boolean(game?.computer && !game.inHistoryMode && !replaying && !game.computer.paused
+  const pending = Boolean(game?.computer && (!isCompletedGame(game) || game.pendingComputerSaveStartedAt != null) && !game.inHistoryMode && !replaying && !game.computer.paused
     && !['recovery','other-device','paused'].includes(status.phase)
     && (game.computerTurn || game.pendingComputerSaveStartedAt != null));
   const owner = `${scope}:${game?.id}`;
