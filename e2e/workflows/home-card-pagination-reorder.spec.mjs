@@ -23,6 +23,25 @@ const assertPagingFits = async controls => {
   })).toEqual({count:3,aligned:true,contained:true,touchTargets:true});
 };
 
+test('home pagination remains contained with page zoom at the smallest viewport',async({page},info)=>{
+ await createGamesViaApi(page,28);
+ await page.setViewportSize({width:320,height:900});await page.goto('/');
+ await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+ await page.evaluate(()=>document.fonts.ready);
+ await page.evaluate(()=>document.documentElement.style.zoom='2');
+ const controls=page.locator('[data-home-section-root="my"] .home-games-section-controls:visible');
+ await info.attach('page-zoom-pager-geometry',{body:JSON.stringify(await controls.evaluate(el=>{
+  const measure=node=>{const r=node.getBoundingClientRect(),s=getComputedStyle(node);return{left:r.left,right:r.right,width:r.width,fontSize:s.fontSize,gap:s.gap,padding:s.padding,minWidth:s.minWidth};};
+  return{controls:measure(el),panel:measure(el.closest('.panel')),parts:[...el.children].map(measure),scrollWidth:document.documentElement.scrollWidth,viewport:innerWidth};
+ })),contentType:'application/json'});
+ await assertPagingFits(controls);
+ await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBeLessThanOrEqual(1);
+ await expect(controls.locator('.sr-only')).toHaveText('Page 1 of 10');
+ await expect(controls.locator('.home-page-label-compact')).toHaveText('1 of 10');
+ await expect(controls.locator('.home-page-label-compact')).toBeVisible();
+ await controls.screenshot({path:info.outputPath('page-zoom-compact-pager.png')});
+});
+
 test("home pagination refreshes correctly when a moved game reorders onto an earlier page", async ({ browser }) => {
   const { context, page } = await createIsolatedPage(browser);
 
