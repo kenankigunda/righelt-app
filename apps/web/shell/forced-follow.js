@@ -24,6 +24,30 @@ export function createForcedFollow({ getContext, hold = async () => {}, animate 
   const current = token => !destroyed && token === active && token.generation === generation && sameScope(token, getContext());
   const candidate = context => context.visible && context.eligible && context.canAct && !context.view?.sharedMutationsBlocked && !(context.view?.pendingCommandCount > 0) && !context.view?.inHistoryMode && !context.game?.computerTurn
     ? mandatoryFollowAction(context.game) : null;
+  const admissionKeyFor = context => `${context.scope}:${keyFor(context.game)}`;
+  const observeAdmittedFollow = context => {
+    const action=mandatoryFollowAction(context.game);
+    if(action && context.view?.pendingMoves?.some(move=>move.clientCommandId && move.action && canonicalCommandJson(move.action)===canonicalCommandJson(action))) {
+      // A restored durable intent already has an admission owner, even if its
+      // eventual receipt rejects. This controller must not create another one.
+      admitted.add(admissionKeyFor(context));
+    }
+  };
+  const waitUntilReady = async token => {
+    while(current(token)) {
+      const next=getContext(), action=mandatoryFollowAction(next.game);
+      observeAdmittedFollow(next);
+      if(next.hasHumanAuthority===false || keyFor(next.game)!==token.positionKey || !action
+        || canonicalCommandJson(action)!==canonicalCommandJson(token.action) || admitted.has(token.admissionKey)) return null;
+      if(candidate(next))return next;
+      // A temporary protocol fence does not discard the automatic intent or
+      // repeat its hold/reconciliation. Transport updates wake this one waiter.
+      token.waiting=true;
+      await Promise.race([new Promise(resolve=>{token.wake=resolve;}),token.cancellation]);
+      token.waiting=false;token.wake=null;
+    }
+    return null;
+  };
   const api = {
     snapshot: () => ({ working: Boolean(active), gameId: active?.gameId ?? null }),
     ownsEnqueue(change, view) {
@@ -35,8 +59,12 @@ export function createForcedFollow({ getContext, hold = async () => {}, animate 
     async tick() {
       if (destroyed) return;
       const context = getContext();
+      observeAdmittedFollow(context);
       if (active) {
-        if (!sameScope(active, context) || active.animatingRevision != null && context.game.gameplayRevision !== active.animatingRevision) cancel();
+        const preAdmission=!active.admitting && !active.admitted;
+        if (!sameScope(active, context) || active.animatingRevision != null && context.game.gameplayRevision !== active.animatingRevision
+          || preAdmission && (context.hasHumanAuthority===false || keyFor(context.game)!==active.positionKey)) cancel();
+        else active.wake?.();
         return;
       }
       const action = candidate(context);
@@ -45,7 +73,7 @@ export function createForcedFollow({ getContext, hold = async () => {}, animate 
       if (admitted.has(admissionKey)) return;
       let cancelWait;
       const cancellation = new Promise(resolve => { cancelWait = resolve; });
-      const token = active = { owner: context.owner, scope: context.scope, gameId: context.game.id, generation, action, admitting: false, cancellation, cancelWait };
+      const token = active = { owner: context.owner, scope: context.scope, gameId: context.game.id, generation, action, positionKey:key, admissionKey, admitting: false, admitted:false, cancellation, cancelWait };
       onChange();
       try {
         await withLock(`${context.owner.getIdentityId()}:${key}`, async () => {
@@ -54,15 +82,30 @@ export function createForcedFollow({ getContext, hold = async () => {}, animate 
           if (!current(token)) return;
           // This hydrates restored journals too. A refreshed tab cannot create
           // another command while an earlier automatic follow remains unknown.
-          await context.owner.reconcileGame(context.game.id);
-          if (!current(token)) return;
-          const refreshed = getContext(), next = candidate(refreshed);
-          if (!next || keyFor(refreshed.game) !== key || canonicalCommandJson(next) !== canonicalCommandJson(action)) return;
-          token.admitting = true;
-          const handle = await context.owner.applyGameAction({ gameId: token.gameId, state: structuredClone(refreshed.game.board.state), action });
-          token.admitting = false;
+          try { await context.owner.reconcileGame(context.game.id); }
+          catch(error) {
+            if(!current(token))return;
+            // Recovery remains owned by the transport. An unfenced failure
+            // still surfaces normally; a fenced one keeps this intent pending.
+            if(candidate(getContext()))throw error;
+          }
+          let handle;
+          while(current(token)) {
+            const refreshed=await waitUntilReady(token);
+            if(!refreshed)return;
+            token.admitting=true;
+            try {
+              handle=await context.owner.applyGameAction({gameId:token.gameId,state:structuredClone(refreshed.game.board.state),action});
+              break;
+            } catch(error) {
+              // This code is emitted before durable admission. Never replay an
+              // uncertain persistence failure or an already returned handle.
+              if(error.code!=='sync_recovering' || !current(token) || candidate(getContext()))throw error;
+            } finally { token.admitting=false; }
+          }
+          if(!current(token))return;
           if (!handle?.committed) throw new Error(handle?.validation?.code ?? 'follow_not_admitted');
-          admitted.add(admissionKey);
+          token.admitted=true;admitted.add(admissionKey);
           // Releasing visual/lock ownership never cancels the durable command.
           await Promise.race([handle.committed, token.cancellation]);
           if (!current(token)) return;

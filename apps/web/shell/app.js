@@ -4313,6 +4313,7 @@ forcedFollowSession = createForcedFollow({ getContext: () => {
   const game = gameId ? transport.getAuthoritativeGame(gameId) : null, view = gameId ? getBoardGame(transport.getGameViewModel(gameId)) : null;
   return {owner:transport,scope:viewingScope(),game,view,visible:!document.hidden && Boolean(gameId),
     eligible:routeHydrated && mountedBoardGameId === gameId && account.canPlay() && getGamePanel() === 'board' && !view?.inHistoryMode && hostInvite?.gameId !== gameId && !currentRoute.scenarios && !replayController?.snapshot().playing && !replayRequests.snapshot(),
+    hasHumanAuthority:ownsBoardActor(view,transport.getIdentityId()) && !view?.computerTurn,
     canAct:canControlLiveBoard(view) && ownsBoardActor(view,transport.getIdentityId()) && !view?.computerTurn};
 }, hold:async state=>{boardRuntime?.clearSelection();await showForcedFollowVisual(state);},animate:move=>showForcedFollowVisual(null,move),
   clearVisual:()=>{forcedFollowVisual?.destroy();forcedFollowVisual=null;},sound:()=>gameSound.play('move'),onChange:updateForcedFollowUi,
