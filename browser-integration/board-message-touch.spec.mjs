@@ -252,11 +252,20 @@ test('message compatibility ignores only known inline press feedback',async({pag
   const {patchBoardMessage,renderBoardMessageHtml}=await import('/apps/web/board/message-presentation.js');
   const html=renderBoardMessageHtml({rows:[{text:'Opponent moved',actions:[{id:'replay-computer',label:'Show me again'}]},{text:'Select a piece or',actions:[{id:'pass',label:'Pass'}]}]});
   const probe=change=>{const box=document.createElement('div');box.innerHTML=html;const button=box.querySelector('button');change(button);const patched=patchBoardMessage(box,html);const current=box.querySelector('button');return {patched,same:current===button,classes:button.className,current:current?{action:current.dataset.boardMessageAction,disabled:current.disabled,classes:current.className}:null};};
-  return {press:probe(b=>b.classList.add('is-pressing')),release:probe(b=>b.classList.add('is-releasing')),semantic:probe(b=>b.classList.add('different-action-style')),action:probe(b=>b.dataset.boardMessageAction='pass'),disabled:probe(b=>b.disabled=true)};
+  return {press:probe(b=>b.classList.add('is-pressing')),release:probe(b=>b.classList.add('is-releasing')),bounce:probe(b=>b.classList.add('button-release-bounce')),semantic:probe(b=>b.classList.add('different-action-style')),action:probe(b=>b.dataset.boardMessageAction='pass'),disabled:probe(b=>b.disabled=true)};
  });
  expect(result.press).toMatchObject({patched:true,same:true});expect(result.press.classes).toContain('is-pressing');
  expect(result.release).toMatchObject({patched:true,same:true});expect(result.release.classes).toContain('is-releasing');
+ expect(result.bounce).toMatchObject({patched:true,same:true});expect(result.bounce.classes).toContain('button-release-bounce');
  // Narration may patch compatible parent rows, but genuine semantic changes
  // must replace the child action rather than retain its native identity.
  for(const key of ['semantic','action','disabled']){expect(result[key].same,key).toBe(false);expect(result[key].current,key).toEqual({action:'replay-computer',disabled:false,classes:'board-preview-inline-button'});}
+});
+
+test('keyboard release feedback preserves its focused replay action across refresh',async({page})=>{
+ await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
+ await page.evaluate(async()=>{await window.boardFixture.setup('pass',false);window.msg={rows:[{text:'Opponent moved',actions:[{id:'replay-computer',label:'Show me again'}]},{text:'Select a piece or',actions:[{id:'pass',label:'Pass'}]}]};window.boardFixture.message(window.msg);document.addEventListener('click',event=>event.target.closest('button')?.classList.add('button-release-bounce'));});
+ const replay=page.getByRole('button',{name:'Show me again',exact:true});await replay.press('Enter');
+ const result=await page.evaluate(()=>{const button=document.activeElement;const feedback=button.classList.contains('button-release-bounce');window.boardFixture.message(window.msg);return {feedback,same:document.querySelector('[data-board-message-action="replay-computer"]')===button,connected:button.isConnected,focused:document.activeElement===button,actions:window.boardFixture.messageActions()};});
+ expect(result).toEqual({feedback:true,same:true,connected:true,focused:true,actions:['replay-computer']});
 });
