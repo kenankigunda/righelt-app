@@ -332,7 +332,10 @@ export const createLiveTransportStore = ({
       return { ok: true, game: null };
     }
 
-    if (optimistic.pendingCommands.length === 0) {
+    // Shared admission changes submission permissions, not the board. Keep its
+    // durable recovery fence without creating a worker for an empty move queue.
+    const queue = optimistic.pendingCommands.filter(command => command.kind !== "shared");
+    if (queue.length === 0) {
       rulesExecutor.cancel(`project:${gameId}`);
       optimistic.projectionJob = null;
       optimistic.derivedGame = decorateGameWithSync(authoritativeGame, gameId);
@@ -351,7 +354,6 @@ export const createLiveTransportStore = ({
       return { ok: true, game: optimistic.derivedGame };
     }
     if (optimistic.admissionProjection) return { ok: true, game: optimistic.derivedGame };
-    const queue = optimistic.pendingCommands.filter(command => command.kind !== "shared");
     const signature = queue.map(command => command.clientCommandId).join("|");
     const previous = optimistic.projectionJob;
     if (previous?.base === authoritativeGame && previous.signature === signature) {
