@@ -5,7 +5,7 @@ import {isOperationRequest,operationValues} from "../support/shared-request.mjs"
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {test,expect} from '@playwright/test';
 import {ownedContexts} from '../support/owned-contexts.mjs';
-import {submitPlayableAction,switchGamePanel,waitForLegacyIdentity} from '../support/app.mjs';
+import {submitPlayableAction,selectPlayableAction,switchGamePanel,waitForLegacyIdentity} from '../support/app.mjs';
 import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
 import {waitForPlayableBoard} from '../../scripts/validation/browser-navigation.mjs';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
@@ -114,7 +114,20 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
     const sample=()=>{const record=window.boardStatusGeometry;if(!record.running)return;const board=document.querySelector('#shell-board');if(board){const rect=board.getBoundingClientRect();record.samples.push({y:rect.top+scrollY,height:rect.height,message:document.querySelector('#shell-board-preview-label')?.textContent});}requestAnimationFrame(sample);};sample();
   });
   await waitForPlayableBoard(page);
-  await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
+  const target=await selectPlayableAction(page,initial.legalActions.find(action=>action.from&&action.to));
+  // Start the single confirmation inside a fresh acknowledged authority episode,
+  // rather than letting a periodic renewal fence a slow native click mid-flight.
+  // The held-renewal workflow separately proves disabled/no-queue semantics.
+  const renewed=await page.waitForResponse(response=>response.status()===200&&isOperationRequest(response.request(),'computer-control')&&operationValues(response.request())?.action==='renew'&&new URL(response.url()).pathname.includes(`/games/${initial.id}/`));
+  const renewal=renewed.request().postDataJSON(),receipt=await renewed.json();
+  expect(receipt.commandOutcomes.some(outcome=>outcome.clientCommandId===renewal.clientCommandId&&outcome.outcome==='accepted')).toBe(true);
+  await expect.poll(()=>page.evaluate(envelope=>new Promise((resolve,reject)=>{
+    const open=indexedDB.open('righelt.online-commands.v2');open.onerror=()=>reject(open.error);
+    open.onsuccess=()=>{const db=open.result,read=db.transaction('commands').objectStore('commands').get([envelope.identityId,envelope.gameId,envelope.clientCommandId]);read.onerror=()=>{db.close();reject(read.error);};read.onsuccess=()=>{db.close();resolve(read.result??null);};};
+  }),renewal),{message:'Acknowledged renewal must leave its durable fence before native confirmation'}).toBeNull();
+  await expect.poll(()=>target.evaluate(node=>{const message=document.getElementById('shell-board-preview-label');return Boolean(message&&message.getAttribute('aria-busy')!=='true'&&node.classList.contains('target')&&!node.classList.contains('unselectable'));}),{timeout:2000,message:'The prepared destination must survive renewal and finish complete move checks'}).toBe(true);
+  await target.click();
+  await info.attach('fresh-confirmation-authority',{body:JSON.stringify({commandId:renewal.clientCommandId,eventSeq:receipt.eventSeq,gameplayRevision:receipt.gameplayRevision}),contentType:'application/json'});
   await expect.poll(async () => (await projected(page, initial.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-board-preview-action="end-turn"]').click();
   await waitForComputerDecision(page, initial.id, 'babs', {guest:true,modelId:initial.computer.modelId});
