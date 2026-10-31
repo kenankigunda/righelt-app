@@ -314,6 +314,17 @@ List behavior:
   - Existing seat holder has been inactive for more than 5 minutes.
 - Such a takeover request must be approved by the opposite player before assignment.
 
+### Completed games on Home
+
+- Keep ongoing owned games in Continue playing. Put Your completed games below Start something new and above Other games. Only the current account's completed games belong in Your completed games. Other people's completed games remain in Other games.
+- Classify completion only from a confirmed `p1_win`, `p2_win` or `draw` outcome. Unknown status shows Game status unavailable, never a guessed winner or draw. A pending winning move or Undo does not change confirmed membership. Accepted Undo can reopen a game and update all affected counts, pages and cards together.
+- Filter membership before server counts and pagination. Preserve newest-activity ordering and stable ties. Clamp a removed last page. Each section has independent loading and recovery, and an empty completed section is hidden only after a successful zero count.
+- Completed cards show the winner line beside the matchup and a subtle three-pixel rail in the winning side's color. Own victories say You won. Own losses name the actual winner, such as Tau won, with You lost beneath. Draw says Draw and No winner. Self-play uses Red won or Blue won without personal win/loss wording. Missing winner identity falls back to the actual side.
+- A completed card keeps its final board, saved move count and one full-card Review game link. It has no active-turn or presence cues and no nested interactive elements. The winner comes from the outcome's winning seat, independent of whose turn follows or shared computer ownership. Reuse shared player names and perspective rules, escape names and isolate their writing direction.
+- A card's board, result, count and identities form one confirmed revision. Older list replies must not overwrite a newer live projection or Undo reopening. Provisional previews stay separate. Recheck section membership and counts after concurrent updates rather than mixing old totals with newer cards.
+- Preserve a connected control the reader moved to during refresh. Otherwise retain the same card or a stable neighbor/heading in its previous section with no scroll jump. Announce a completed focus restoration. Refresh a trailing update after a successful batch, without creating a tight automatic retry on a failed section.
+- Validate narrow layouts, text zoom, keyboard activation, single focus stops and the actual application rendering. Approved static study references do not replace app acceptance.
+
 ## 9. Home Page Preview Board (Flow 7)
 
 - Home page must include a top-of-page preview board.

@@ -602,3 +602,15 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .player-kind-icon {display:inline-flex;align-items:center;color:var(--muted);}
 .player-kind-icon .righelt-icon {width:14px;height:14px;}
 .history-result-summary {margin:0 0 var(--section-item-gap,12px);}
+
+.home-card-result { display:grid; align-items:start; gap:4px; margin-block:8px; overflow-wrap:anywhere; }
+.home-card-result > strong { color:var(--ink); }
+.home-card-result > .small { color:var(--text-secondary); }
+[data-winner-side="p1"] { --home-winner-color:var(--player-p1); }
+[data-winner-side="p2"] { --home-winner-color:var(--player-p2); }
+.mini-board-card[data-winner-side] > .mini-board-card-link-surface { position:relative; }
+.mini-board-card[data-winner-side] > .mini-board-card-link-surface::before { content:''; position:absolute; inset-block:20px; inset-inline-start:0; width:3px; background:var(--home-winner-color); pointer-events:none; }
+
+/* A short completed list can have wide cards. Its miniature still represents
+   the square board instead of stretching fixed-height rows horizontally. */
+.home-refresh .mini-board-preview-board .cell { min-height:0; aspect-ratio:1; }

@@ -16,6 +16,7 @@ import {
   listHomeSectionStaticGameCardPage,
   resolveInvite,
   type D1DatabaseLike,
+  type HomeSectionKey,
 } from "./shell-live-db";
 
 type DurableObjectIdLike = { name?: string; toString?: () => string };
@@ -38,8 +39,6 @@ export type LiveGameRequestEnv = {
 
 const GAME_ROOMS_BINDING_ERROR = "server_misconfigured_game_rooms_binding";
 const nowMs = () => Date.now();
-
-type HomeSectionKey = "my" | "other" | "smoke";
 
 const json = (body: unknown, status = 200, cacheControl = CACHE_NO_STORE): Response =>
   new Response(JSON.stringify(body), {
@@ -109,7 +108,7 @@ const fetchGameRoom = async (
 };
 
 const parseHomeSectionKey = (value: string | null): HomeSectionKey | null =>
-  value === "my" || value === "other" || value === "smoke" ? value : null;
+  value === "my" || value === "completed" || value === "other" || value === "smoke" ? value : null;
 
 const parseNonNegativeInt = (value: string | null) => {
   if (typeof value !== "string" || value.trim().length === 0) {
@@ -192,7 +191,7 @@ export const handleLiveGameRequest = async (
     if (!section || page === null || pageSize === null || pageSize <= 0) {
       return { handled: true, status: 400, body: { ok: false, error: "invalid_pagination" }, cacheControl: CACHE_NO_STORE };
     }
-    if (authActive(env) && !authority && section === "my") return { handled: true, status: 200, body: { ok: true, section, page: 0, pageSize, totalGames: 0, totalPages: 0, games: [] }, cacheControl: CACHE_NO_STORE };
+    if (authActive(env) && !authority && (section === "my" || section === "completed")) return { handled: true, status: 200, body: { ok: true, section, page: 0, pageSize, totalGames: 0, totalPages: 0, games: [] }, cacheControl: CACHE_NO_STORE };
     const debug = !authActive(env) && url.searchParams.get("debug") === "1";
     const totalStart = nowMs();
     const totalGames = await countHomeSectionGames(env, { identityId, section, debug });

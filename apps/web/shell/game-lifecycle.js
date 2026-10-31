@@ -1,5 +1,5 @@
-const terminal = new Set(['p1_win', 'p2_win', 'draw']);
-export const isTerminalOutcome = status => terminal.has(status);
+import {isTerminalOutcome} from '../generated/packages/shared-types/src/engine.js';
+export {isTerminalOutcome};
 
 // History can display an earlier position while the authoritative game is over.
 const outcome = game => (game?.liveCurrentSnapshot ?? game?.board?.state)?.outcome?.status;

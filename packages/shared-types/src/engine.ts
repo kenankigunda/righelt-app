@@ -42,7 +42,11 @@ export type ContinuationContext = {
   chainLength: number;
 };
 
-export type OutcomeStatus = "ongoing" | "p1_win" | "p2_win" | "draw";
+export const TERMINAL_OUTCOME_STATUSES = ['p1_win', 'p2_win', 'draw'] as const;
+export type TerminalOutcomeStatus = typeof TERMINAL_OUTCOME_STATUSES[number];
+export type OutcomeStatus = "ongoing" | TerminalOutcomeStatus;
+export const isTerminalOutcome = (status: unknown): status is TerminalOutcomeStatus =>
+  TERMINAL_OUTCOME_STATUSES.some(value => value === status);
 
 export type Outcome = {
   status: OutcomeStatus;

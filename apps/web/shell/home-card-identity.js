@@ -36,7 +36,8 @@ export function homeCardMatchup(game, { identityId } = {}) {
 }
 
 const renderName = (seat, label = seat.name) => `<strong class="player-tone-${seat.side}"><bdi>${escape(label)}</bdi></strong>`;
-const renderParticipant = seat => {
+const renderParticipant = (seat, quiet = false) => {
+  if (quiet) return renderName(seat);
   const status = seat.presence === 'open' ? 'open to join' : seat.presence;
   const label = seat.computer ? 'Computer player' : `${seat.name} ${status}`;
   return `<span class="mini-board-card-connection-item">${renderName(seat)}<span class="connection-status-icon is-${seat.presence}" role="img" aria-label="${escape(label)}" title="${escape(label)}"></span></span>`;
@@ -48,7 +49,7 @@ export function renderHomeCardIdentity(game, options) {
   if (matchup.kind === 'player') {
     const own = matchup.seats.find(seat => seat.side === matchup.ownSide);
     const other = matchup.seats.find(seat => seat !== own);
-    return `<span class="home-card-matchup">${renderName(own, 'You')} <span>vs.</span> ${renderParticipant(other)}</span>`;
+    return `<span class="home-card-matchup">${renderName(own, 'You')} <span>vs.</span> ${renderParticipant(other, options?.quiet)}</span>`;
   }
-  return `<span class="home-card-matchup">${renderParticipant(matchup.seats[0])} <span>${matchup.kind === 'watched-self' ? '/' : 'vs.'}</span> ${renderParticipant(matchup.seats[1])}${matchup.kind === 'watched-self' ? ' <span>· Both sides</span>' : ''}</span>`;
+  return `<span class="home-card-matchup">${renderParticipant(matchup.seats[0], options?.quiet)} <span>${matchup.kind === 'watched-self' ? '/' : 'vs.'}</span> ${renderParticipant(matchup.seats[1], options?.quiet)}${matchup.kind === 'watched-self' ? ' <span>· Both sides</span>' : ''}</span>`;
 }

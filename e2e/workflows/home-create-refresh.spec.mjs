@@ -156,7 +156,7 @@ for (const input of ['pointer', 'keyboard']) test(`home refresh preserves ${inpu
   else { await button.focus(); await page.keyboard.down("Space"); }
   try {
     release();
-    await expect.poll(() => completedSections.size).toBe(2);
+    await expect.poll(() => [...completedSections].sort()).toEqual(['completed','my','other']);
     // Account UI defers rendering during a held activation. Let response
     // microtasks and the next paint finish without requiring that deferred UI.
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -195,12 +195,15 @@ test('bounded Home loading retires without growing its pending card',async({page
   const before=await card.evaluate(node=>{
    const cue=node.querySelector(':scope > .loading-pieces'),clock=cue.querySelector('i').getAnimations()[0];
    const rect=node.getBoundingClientRect().toJSON();window.boundedHomeFrames=[];
-   const sample=()=>{if(!node.isConnected)return;window.boundedHomeFrames.push({rect:node.getBoundingClientRect().toJSON(),same:node.querySelector(':scope > .loading-pieces')===cue&&cue.querySelector('i').getAnimations()[0]===clock,time:clock.currentTime,inlineContext:Boolean(node.querySelector('.loading-context'))});requestAnimationFrame(sample);};sample();
+   const sample=()=>{if(!node.isConnected||!node.matches('[data-testid="home-section-skeleton"][data-loading-state="pending"]'))return;window.boundedHomeFrames.push({rect:node.getBoundingClientRect().toJSON(),same:node.querySelector(':scope > .loading-pieces')===cue&&cue.querySelector('i').getAnimations()[0]===clock,time:clock.currentTime,inlineContext:Boolean(node.querySelector('.loading-context'))});requestAnimationFrame(sample);};sample();
    return {rect,time:clock.currentTime,at:performance.now()};
   });
   // Native request timeout retires the pending card. No test clock, widened
   // network timeout, fabricated response or loading-policy override is used.
   await expect(card).toHaveCount(0);
+  const retired=page.locator('[data-home-section-root="my"]');
+  await expect(retired).toContainText("We couldn't load these games.");
+  await expect(retired.getByRole('button',{name:'Try again',exact:true})).toBeVisible();
   const frames=await page.evaluate(()=>window.boundedHomeFrames);
   expect(frames.length).toBeGreaterThan(2);
   for(const frame of frames){expect(frame.rect).toEqual(before.rect);expect(frame.same).toBe(true);expect(frame.inlineContext).toBe(false);}
