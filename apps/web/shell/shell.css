@@ -1356,6 +1356,8 @@ button.button-release-bounce,
   animation: history-item-release 140ms var(--shell-game-entry-easing);
 }
 
+.home-games-section { container: home-games / inline-size; }
+
 .home-games-section + .home-games-section {
   margin-top: 1.25rem;
 }
@@ -1416,7 +1418,7 @@ button.button-release-bounce,
 .home-games-section-controls {
   display: inline-flex;
   align-items: center;
-  gap: 0.175rem;
+  gap: min(0.175rem, 4px);
   flex-wrap: nowrap;
   justify-content: center;
   min-width: 0;
@@ -1434,13 +1436,31 @@ button.button-release-bounce,
   flex: 0 0 auto;
   min-width: 44px;
   min-height: 44px;
-  padding-inline: 0.375rem;
+  /* Icon-only controls share their existing 20px icon/loading slot. The page
+     label still follows text zoom; targets never fall below 44px. */
+  padding: 0;
+  font-size: 20px;
 }
 
 .home-games-section-page-label {
   flex: 0 0 auto;
   white-space: nowrap;
   text-align: center;
+}
+
+.home-page-label-compact { display:none; }
+
+/* Page zoom can leave less than a mobile viewport inside the card. Keep full
+   sized targets and text, using the short visual label and some card inset. */
+@container home-games (max-width:280px) {
+  .home-page-label-full { display:none; }
+  .home-page-label-compact { display:inline; }
+  .home-games-section-controls {
+    width:calc(100% + 24px);
+    max-width:calc(100% + 24px);
+    margin-inline:-12px;
+    gap:0;
+  }
 }
 
 @media (max-width: 900px) {
