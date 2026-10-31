@@ -114,12 +114,15 @@ async function receipt(page,id,command,outcome='accepted'){
  },{timeout:SYNC_TIMING.confirmationBudgetMs}).toBe(outcome);
  const own=body.commandOutcomes.filter(row=>row.clientCommandId===command.clientCommandId);expect(own).toHaveLength(1);
  expect(isCommandOutcome(own[0],command)).toBe(true);
- expect(own[0]).toMatchObject({outcome,fingerprint:command.fingerprint,identityId:command.identityId});return own[0];
+ expect(own[0]).toMatchObject({outcome,fingerprint:command.fingerprint,identityId:command.identityId});
+ expect(body.game?.id).toBe(id);expect(body.game.gameplayRevision).toBe(body.gameplayRevision);
+ if(outcome==='accepted')expect(own[0].gameplayRevision).toBe(body.gameplayRevision);
+ return {outcome:own[0],game:body.game};
 }
 async function submit(page,id,action){
  const sent=page.waitForRequest(req=>req.method()==='POST'&&new URL(req.url()).pathname===`/api/shell/games/${id}/apply`);
  await submitPlayableAction(page,action);const command=(await sent).postDataJSON();expect(command.payload.action).toEqual(action);
- await receipt(page,id,command);return command;
+ const acknowledged=await receipt(page,id,command);return {command,game:acknowledged.game};
 }
 async function claimBoth(page){
  await switchGamePanel(page,'players');
@@ -172,12 +175,12 @@ test('human retreat excludes the stranded square and automatically completes the
  const unsafe={protocolVersion:2,actionContractVersion:3,gameId,identityId,clientCommandId:`v2:${crypto.randomUUID()}`,kind:'action',payload:{action:f.retreat.action},expectedState:pushed.board.state,expectedGameplayRevision:pushed.gameplayRevision};
  unsafe.fingerprint=await commandFingerprint(unsafe);
  const rejected=await request(page,`/api/shell/games/${gameId}/apply`,unsafe);expect(rejected.accepted).toBe(false);
- expect((await receipt(page,gameId,unsafe,'rejected')).reason).toBe('SUPPLY_DESTINATION_UNSUPPLIED');
+ expect((await receipt(page,gameId,unsafe,'rejected')).outcome.reason).toBe('SUPPLY_DESTINATION_UNSUPPLIED');
  const unchanged=await current(page,gameId);expect(unchanged.board).toEqual(pushed.board);expect(unchanged.gameplayRevision).toBe(pushed.gameplayRevision);expect(unchanged.moves).toEqual(pushed.moves);
  // Clicking an empty unhighlighted square deliberately clears selection.
  // Resume through the actual pushed-piece control before selecting its move.
  await ensureActionActorSelected(cell(page,safe.action.from));
- const retreatCommand=await submit(page,gameId,safe.action);
+ const {command:retreatCommand}=await submit(page,gameId,safe.action);
  await completedMandatoryFollow(page,gameId,retreatCommand.clientCommandId);
  await expect(page.locator('[data-board-message-action="replay-push-sequence"]')).toBeVisible();
  await page.screenshot({path:info.outputPath('safe-retreat-follow-completed.png')});
