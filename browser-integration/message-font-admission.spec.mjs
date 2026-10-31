@@ -40,12 +40,11 @@ for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(
  }finally{hold=false;release();const path=info.outputPath('font-reservation-receipt.json');await writeFile(path,JSON.stringify(receipts,null,2));await info.attach('font-reservation',{path,contentType:'application/json'});}
 });
 
-test('loaded message width envelope never exceeds its permanent fallback reservation',async({page},info)=>{
+for(const scale of [100,200])test(`loaded message width envelope never exceeds its permanent fallback reservation at ${scale}%`,async({page},info)=>{
  const failures=[];
  await page.goto('/browser-integration/support/message-font-admission.html');await page.waitForFunction(()=>window.fixtureReady);
  const frontiers=[];
  try{
- for(const scale of [100,200]){
   await page.evaluate(async scale=>{document.documentElement.style.fontSize=`${scale}%`;await document.fonts.ready;},scale);
   // Also measure the real generic fallback when Avenir Next is unavailable,
   // as on Linux CI. This never changes the live page or its native-font probes.
@@ -64,7 +63,6 @@ test('loaded message width envelope never exceeds its permanent fallback reserva
    return {scale,font,fallbackFamily,fontSize,fontStatus:document.fonts.status,primaryFont:getComputedStyle(document.querySelector('[data-sizing-font="primary"]')).fontFamily,rows,measurements:cache.size};
   },{scale,font,fallbackFamily}));
   for(let width=280;width<=800;width+=16){const envelope=await page.evaluate(width=>window.fontEnvelope(width),width);if(envelope.primary>envelope.fallback+.1)failures.push({scale,...envelope});}
- }
  }finally{const frontierPath=info.outputPath('intrinsic-primary-row-frontiers.json');await writeFile(frontierPath,JSON.stringify(frontiers,null,2));await info.attach('intrinsic-primary-row-frontiers',{path:frontierPath,contentType:'application/json'});}
  const path=info.outputPath('primary-over-fallback-envelopes.json');await writeFile(path,JSON.stringify(failures,null,2));await info.attach('primary-over-fallback',{path,contentType:'application/json'});
  expect(failures.map(({scale,width,primary,fallback})=>({scale,width,primary,fallback})),'Any uncovered primary bin must be reviewed before adding a measured floor').toEqual([]);
