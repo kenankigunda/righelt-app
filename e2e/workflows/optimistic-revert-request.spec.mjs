@@ -19,7 +19,7 @@ const selectOnlyMoveUndo = async(page,gameId)=>{
   expect(moves).toHaveLength(1);expect(moves[0].moveId).toBeTruthy();
   await switchGamePanel(page,'history');
   const row=page.locator(`[data-testid="history-move-item"][data-move-id="${moves[0].moveId}"]`);
-  await row.locator('.history-item-info').click();
+  await row.locator(':scope > .history-move-hit').click();
   const undo=row.getByRole('button',{name:'Undo before this move',exact:true});
   await expect(undo).toBeVisible();await undo.click();
   return moves[0].moveId;

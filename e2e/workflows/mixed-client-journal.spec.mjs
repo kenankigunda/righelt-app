@@ -83,7 +83,7 @@ for (const fault of ['uncommitted', 'delayed-cleanup']) test(`actual150 browser 
     expect(activeMoves).toHaveLength(1);expect(activeMoves[0].moveId).toBeTruthy();
     await switchGamePanel(page,'history');
     const undoRow=page.locator(`[data-testid="history-move-item"][data-move-id="${activeMoves[0].moveId}"]`);
-    await undoRow.locator('.history-item-info').click();
+    await undoRow.locator(':scope > .history-move-hit').click();
     const undo = undoRow.getByRole('button',{name:'Undo before this move',exact:true});
     await expect(undo).toBeEnabled();
     await undo.click();

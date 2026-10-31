@@ -2255,3 +2255,41 @@ textarea:focus-visible {
 
 /* Selected metadata participates in measured preview fitting at enlarged text. */
 .history-item.is-selected .history-move-at { max-height:none; }
+
+/* Approved compact History rail. Selection buttons are siblings, never parents
+   of child move/action buttons; their stacking gives the most specific hit priority. */
+.history-turn {position:relative;isolation:isolate;margin:0;transform-origin:50% 50%;transition:transform 140ms var(--shell-game-entry-easing);}
+.history-turn-heading {min-height:44px;padding:0;display:flex;align-items:center;pointer-events:none;}
+.history-turn > .history-list-nested {margin:0 0 0 3px;padding-left:10px;gap:0;border-left:2px solid currentColor;pointer-events:none;}
+.history-list:has(> .history-turn) {gap:6px;}
+.history-turn > .history-list-nested > .history-item {position:relative;display:block;pointer-events:none;}
+.history-turn > .history-list-nested > .history-item::before {content:none;}
+.history-turn .history-move-line {min-height:44px;display:flex;align-items:center;overflow-wrap:anywhere;}
+.history-turn .history-item-info {pointer-events:none;}
+.history-turn .history-archive-select {min-height:0;}
+.app-root .history-turn button:is(.history-turn-hit,.history-move-hit).secondary {
+  position:absolute;inset:0;width:100%;height:100%;min-height:0;margin:0;padding:0;
+  border:0;border-radius:0;clip-path:none;background:transparent;color:inherit;
+  pointer-events:auto;transform:none!important;animation:none!important;
+}
+.history-turn-hit {z-index:0;}
+.history-move-hit {z-index:2;}
+.history-turn .history-item.is-selected {pointer-events:auto;z-index:2;cursor:default;}
+.history-turn .history-item-actions,.history-turn .history-inline-preview {position:relative;z-index:3;pointer-events:auto;}
+.history-turn:has(> .history-turn-hit:is(:active,.is-pressing)),
+.history-turn .history-item:has(> .history-move-hit:is(:active,.is-pressing)) {transform:translateY(1px) scale(.985);}
+.history-turn:has(> .history-turn-hit.button-release-bounce),
+.history-turn .history-item:has(> .history-move-hit.button-release-bounce) {animation:history-item-release 140ms var(--shell-game-entry-easing);}
+[data-hover-capability="hover"] .history-turn button:is(.history-turn-hit,.history-move-hit).secondary:hover {background:color-mix(in srgb,currentColor 5%,transparent);}
+@media(min-width:933px) and (pointer:fine) {
+  .history-turn-heading,.history-turn .history-move-line {min-height:1.5em;}
+}
+@media(prefers-reduced-motion:reduce) {
+  .history-turn {transition:none;}
+  .history-turn:has(> .history-turn-hit:is(:active,.is-pressing)),
+  .history-turn .history-item:has(> .history-move-hit:is(:active,.is-pressing)) {transform:none;}
+  .history-turn:has(> .history-turn-hit.button-release-bounce),
+  .history-turn .history-item:has(> .history-move-hit.button-release-bounce) {animation:none;}
+}
+
+.app-root .history-turn button.history-undone-toggle.secondary {position:relative;z-index:3;pointer-events:auto;min-height:44px;border:0;border-radius:0;padding:0;background:transparent;color:inherit;font:inherit;text-align:left;}

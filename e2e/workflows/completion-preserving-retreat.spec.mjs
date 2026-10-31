@@ -200,7 +200,7 @@ test('a retained stranded Follow stays ongoing and its move-row Undo restores li
  const target=retained.moves.at(-1);await switchGamePanel(page,'history');
  // The immutable row identity remains available when the action markup changes.
  const exactRow=page.locator(`[data-testid="history-move-item"][data-move-id="${target.moveId}"]`);
- await expect(exactRow).toHaveCount(1);await exactRow.locator('.history-item-info').click();await expect(page.getByTestId('history-inline-preview')).toBeVisible();
+ await expect(exactRow).toHaveCount(1);await exactRow.locator(':scope > .history-move-hit').click();await expect(page.getByTestId('history-inline-preview')).toBeVisible();
  const sent=page.waitForRequest(req=>isOperationRequest(req,'revert-request'));
  await exactRow.locator('[data-action="revert-to-move"]').click();const nativeRequest=await sent,command=nativeRequest.postDataJSON();
  expect(command.kind).toBe('shared');expect(command.payload.operation).toBe('revert-request');expect(operationValues(nativeRequest).targetMoveId).toBe(target.moveId);

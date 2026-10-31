@@ -23,7 +23,8 @@ test('turn headings align attribution and preserve chronological defender action
  const html=context.render({...game,pendingMoves:[{index:3,turnIndex:1,turnMoveIndex:1,actorSide:'P2',notation:'Pending'}]});
  assert(html.indexOf('Turn 2')<html.indexOf('Turn 1'));
  assert(html.indexOf('Push')<html.indexOf('Retreat'));
- assert.match(html,/Turn 1 · <span dir="auto">Attacker/);
+ assert.match(html,/aria-label="Turn 1 · Attacker"/);
+ assert.match(html,/>Turn 1<\/div>/);
  assert.match(html,/aria-label="Defender · Move 2: Retreat"/);
  assert.doesNotMatch(html,/class="history-actor"/);
  assert.match(html,/data-testid="history-pending-move-item"[^>]*aria-busy="true"/);
@@ -55,7 +56,7 @@ test('archive entries share turn grouping, actor accessibility and inert selecte
  assert(html.indexOf('Push')<html.indexOf('Retreat'));
  assert.doesNotMatch(html,/history-actor/);
  assert.match(html,/aria-label="Defender"/);
- assert.match(html,/<div class="history-item-info history-archive-select"  data-game-id="g" data-decision-id="b" aria-current="true"/);
+ assert.match(html,/<div class="history-item-info history-archive-select" aria-current="true"/);
  assert.match(html,/data-preview-mode="recorded-action"/);
  assert.match(html,/data-action="inspect-history-archive"[^>]*data-decision-id="a"/);
 });
@@ -78,4 +79,18 @@ test('mobile active and archived previews share the known closure final snapshot
   assert.deepEqual(snapshots,[desktop.currentSnapshot,desktop.currentSnapshot]);
   assert.deepEqual(desktop.currentSnapshot,final);
  }finally{context.renderMiniBoardPreviewRoot=original;}
+});
+
+test('compact rail uses independent native turn and move targets without nested buttons',()=>{
+ const html=context.render(game);
+ assert.equal((html.match(/class="history-turn-hit secondary"/g)??[]).length,2);
+ assert.equal((html.match(/class="history-move-hit secondary"/g)??[]).length,3);
+ assert.match(html,/class="history-turn-hit secondary"[^>]*aria-label="Inspect Turn 1 · Attacker"/);
+ assert.match(html,/class="history-move-hit secondary"[^>]*aria-label="Defender · Move 2: Retreat"/);
+ assert.doesNotMatch(html,/<div class="history-turn-heading[^>]*>Turn \d+ ·/);
+ assert.doesNotMatch(html,/<li class="history-item[^>]*(?:role="button"|tabindex=)/);
+ let depth=0;for(const token of html.matchAll(/<\/?button\b[^>]*>/g)){depth+=token[0].startsWith('</')?-1:1;assert(depth>=0&&depth<=1,'native buttons must never nest');}assert.equal(depth,0);
+ const selected=context.render({...game,inHistoryMode:true,historyIndex:1,inspectedDecision:moves[1]});
+ assert.equal((selected.match(/class="history-move-hit secondary"/g)??[]).length,2);
+ assert.match(selected,/data-action="revert-to-move"/);assert.match(selected,/data-action="launch-history-branch"/);
 });
