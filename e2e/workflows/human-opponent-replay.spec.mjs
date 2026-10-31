@@ -16,7 +16,10 @@ const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
 const label=page=>page.locator('#shell-board-preview-label');
 const replayButton=page=>label(page).getByRole('button',{name:'Show me again',exact:true});
 const assertUnchanged=(before,after)=>{expect(after.gameplayRevision).toBe(before.gameplayRevision);expect(after.board.state).toEqual(before.board.state);expect(after.moves.map(move=>({id:move.moveId,undone:move.undone}))).toEqual(before.moves.map(move=>({id:move.moveId,undone:move.undone})));};
-for(const width of [390,1440])test(`human opponent replay preserves authority and read-only inspection at ${width}px`,async({ownedRoleContext,baseURL},info)=>{
+for(const width of [390,1440]){
+ // Real Home and role admission have their own bounded setup phase. The
+ // native moves and every replay/authority assertion retain the original 60 seconds.
+ const replayTest=test.extend({replaySetup:[async({ownedRoleContext,baseURL},use)=>{
  const contexts=await Promise.all([0,1,2].map(()=>ownedRoleContext({viewport:{width,height:900}})));
  const [owner,opponent,viewer]=await Promise.all(contexts.map(context=>context.newPage()));
   const {gameId,gameHash}=await createGameFromHome(owner);
@@ -24,6 +27,10 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
   await expect(opponent.getByTestId('game-role')).toContainText('Player 2');
   await openDirectGameLink(viewer,baseURL,gameHash);await joinAsViewer(viewer);
   await Promise.all([owner,opponent,viewer].map(page=>switchGamePanel(page,'board')));
+  await use({owner,opponent,viewer,gameId});
+ },{timeout:60000}]});
+ replayTest(`human opponent replay preserves authority and read-only inspection at ${width}px`,async({replaySetup},info)=>{
+ const {owner,opponent,viewer,gameId}=replaySetup;
   const initial=await projected(owner,gameId),action=initial.legalActions.find(action=>action.type==='move'&&action.from&&action.to);expect(action).toBeTruthy();
   await submitPlayableAction(owner,action);
   await expect(replayButton(opponent)).toBeVisible();await expect(label(opponent)).toContainText('Your opponent moved');
@@ -55,6 +62,7 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
   }viewer.off('request',watch);
 
 });
+}
 
 for(const width of [390,1440])test(`reopening human play preserves narration and submits one native Pass at ${width}px`,async({ownedRoleContext,baseURL})=>{
  const contexts=await Promise.all([0,1].map(()=>ownedRoleContext({viewport:{width,height:900}})));
