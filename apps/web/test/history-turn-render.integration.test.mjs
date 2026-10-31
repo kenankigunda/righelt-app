@@ -79,3 +79,10 @@ test('mobile active and archived previews share the known closure final snapshot
   assert.deepEqual(desktop.currentSnapshot,final);
  }finally{context.renderMiniBoardPreviewRoot=original;}
 });
+
+test('archived entries retain their known decision identity when old move payloads omit moveId',()=>{
+ const {moveId,...legacy}=moves[0];context.archiveState={metadata:true,loaded:true,items:[{id:moveId,move:legacy,at:'date',historyStatus:'unknown'}]};
+ const html=context.archive({...game,moves:[]});
+ assert.match(html,/data-archive-move-id="a"/);assert.match(html,/Status unavailable/);
+ assert.match(html,/data-decision-id="a"/);
+});

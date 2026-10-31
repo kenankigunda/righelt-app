@@ -31,7 +31,7 @@ const viewingScope = () => `${account.snapshot().generation}:${activeStorageGene
 const getBoardGame = game => {
   const viewed=deriveBoardView(game,{narrow:getShellLayoutMode()==="narrow",identityId:transport.getIdentityId()});
   if(!viewed?.inHistoryMode)return viewed;
-  const archived=additionalHistory.snapshot(viewed.id)?.items?.map(entry=>entry.move)??[];
+  const archived=additionalHistory.snapshot(viewed.id)?.items?.map(entry=>({...entry.move,moveId:entry.move?.moveId??entry.id}))??[];
   return recordedHistoryView({...viewed,historyContextMoves:[...archived,...(viewed.historyContextMoves??[])]});
 };
 const decisionDebugStates = new Map();
@@ -2489,7 +2489,8 @@ const renderAdditionalHistory = game => {
   if(!state)return "";
   if(!state.metadata&&!state.loading&&!state.error)queueMicrotask(()=>void additionalHistory.ensure(game.id));
   const archiveTurns = new Map();
-  const archiveMoves=new Map(visibleRecordedMoves(state.items.map(entry=>entry.move),{includeUndone:true}).map(move=>[move.moveId,move]));
+  const archiveRecords=state.items.map(entry=>({...entry.move,moveId:entry.move?.moveId??entry.id}));
+  const archiveMoves=new Map(visibleRecordedMoves(archiveRecords,{includeUndone:true}).map(move=>[move.moveId,move]));
   const archiveItems = state.items.filter(entry=>archiveMoves.has(entry.id)&&!game.historyContextMoves?.some(move=>move.moveId===entry.id)).map(entry=>({...entry,move:archiveMoves.get(entry.id)}));
   const inspected = game.inspectedDecision;
   if (inspected && inspected.action?.type!=='end_turn' && !game.moves?.some(move=>move.moveId===inspected.moveId) && !archiveItems.some(entry=>entry.id===inspected.moveId)) archiveItems.unshift({id:inspected.moveId,move:inspected,at:inspected.at});
@@ -2508,7 +2509,7 @@ const renderAdditionalHistory = game => {
     const heading=`<div class="history-turn-heading${selectedTurn?' is-selected':''}" data-key="archive-turn:${escapeHtml(game.id)}:${index}" ${selectedTurn?'aria-current="true"':!selectableTurn?'':`data-action="jump-history-turn" data-game-id="${escapeHtml(game.id)}" data-turn-index="${index}" role="button" tabindex="0"`}>Turn ${index+1} · ${escapeHtml(COMPUTER_PROFILES[turnActor.computerProof?.profile]?.name ?? playerDisplayName(game,side))}</div>`;
     const contents=entries.sort((a,b)=>a.move.turnMoveIndex-b.move.turnMoveIndex).map(entry=>{
     const selected=Boolean(game.inHistoryMode&&game.inspectedDecision?.moveId===entry.id);
-    const previewGame={...game,historyContextMoves:[...state.items.map(item=>item.move),...(game.historyContextMoves??[])]};
+    const previewGame={...game,historyContextMoves:[...archiveRecords,...(game.historyContextMoves??[])]};
     const preview=selected?renderHistoryPreview(previewGame,buildMovePreview(selectedHistoryPresentation(previewGame)?.record ?? entry.move),`archive:${game.id}:${entry.id}`):'';
     return `<li class="history-item ${playerToneClassForSide(entry.move.actorSide)}${selected?' is-selected':''}${entry.move.undone?' is-undone':''}" data-key="archive:${escapeHtml(entry.id)}" data-archive-move-id="${escapeHtml(entry.id)}" aria-label="${escapeHtml(historyActorLabel(game,entry.move,{identityId:transport.getIdentityId()}))}"><${selected?'div':'button'} class="history-item-info history-archive-select" ${selected?'':'data-action="inspect-history-archive"'} data-game-id="${escapeHtml(game.id)}" data-decision-id="${escapeHtml(entry.id)}" aria-current="${selected?'true':'false'}"><span class="history-move-line">${recordedMoveNumber(entry.move)==null?'Move unavailable':`Move ${recordedMoveNumber(entry.move)}:`} ${escapeHtml(entry.move.notation)}${entry.move.undone?' · Undone':entry.historyStatus==='unknown'?' · Status unavailable':''}</span><span class="history-move-at small">${escapeHtml(formatClientDateTime(entry.at))}</span></${selected?'div':'button'}>${preview}</li>`;
     }).join('');
