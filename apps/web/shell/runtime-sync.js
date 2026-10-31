@@ -3,19 +3,6 @@ const sameCoordinate = (left, right) => Boolean(left && right && left.row === ri
 const findPieceAt = (snapshot, coord) =>
   snapshot?.pieces?.find((piece) => sameCoordinate(piece.position, coord)) ?? null;
 
-const selectionMatchesAction = (action, selection) => {
-  if (!action?.from || !action?.to || !selection?.source || !selection?.target) {
-    return false;
-  }
-  if (!sameCoordinate(action.from, selection.source) || !sameCoordinate(action.to, selection.target)) {
-    return false;
-  }
-  if (!selection.selectedPieceId) {
-    return true;
-  }
-  return action.actorId === selection.selectedPieceId || !action.actorId;
-};
-
 export const shouldResetBoardSelection = ({
   currentSnapshot,
   nextSnapshot,
@@ -43,13 +30,9 @@ export const shouldResetBoardSelection = ({
     return true;
   }
 
-  if (!currentSelection.target || freeSelection) {
-    return false;
-  }
-
-  return !(Array.isArray(nextLegalActions) ? nextLegalActions : []).some((action) =>
-    selectionMatchesAction(action, currentSelection),
-  );
+  // A changed destination does not invalidate the selected piece. The runtime
+  // reconciles only that target against the acknowledged next position.
+  return false;
 };
 
 export const shouldSkipBoardRuntimeReload = ({
