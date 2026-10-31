@@ -426,7 +426,7 @@ test("interactive overlay omits supply lines in action preview phase and omits m
       selectedPieceOverlayPhase: "actionPreviews",
     });
 
-    const supplyStrokeLines = overlayLinesEl.querySelectorAll("line").filter((line) => line.getAttribute("stroke") === "#2f8e63");
+    const supplyStrokeLines = overlayLinesEl.querySelectorAll("line").filter((line) => line.getAttribute("data-legend-kind") === "supply");
     assert.equal(supplyStrokeLines.length, 0);
     assert.equal(getCell(boardEl, 4, 3)?.querySelectorAll(".move-ghost").length > 0, true);
 
@@ -437,7 +437,7 @@ test("interactive overlay omits supply lines in action preview phase and omits m
       selectedPieceOverlayPhase: "supplyCommand",
     });
 
-    const supplyLinesAfter = overlayLinesEl.querySelectorAll("line").filter((line) => line.getAttribute("stroke") === "#2f8e63");
+    const supplyLinesAfter = overlayLinesEl.querySelectorAll("line").filter((line) => line.getAttribute("data-legend-kind") === "supply");
     assert.ok(supplyLinesAfter.length > 0);
     assert.equal(boardEl.querySelectorAll(".move-ghost").length, 0);
   });
@@ -1156,7 +1156,7 @@ test("project previews use a plus badge while move-style previews use lightweigh
   assert.match(adapterSource, /const supplyPath = normalizeOverlayPath\(getSupplyPathForPiece\(snapshot, piece\)\);/);
   assert.match(adapterSource, /const commandPath = normalizeOverlayPath\(getCommandPathForPiece\(snapshot, piece\)\);/);
   assert.match(adapterSource, /buildSharedPathSegmentOffsetMaps\(\s*supplyPath,\s*commandPath,\s*\)/s);
-  assert.match(adapterSource, /drawPath\(supplyPath, "#2f8e63", "2 6", supplyOffsetsBySegmentKey, "supply"\);/);
+  assert.match(adapterSource, /drawPath\(supplyPath, commandStroke, "2 6", supplyOffsetsBySegmentKey, "supply"\);/);
   assert.match(adapterSource, /const commandStroke = PREVIEW_STROKE_BY_OWNER\[piece\.owner\] \?\? PREVIEW_STROKE_BY_OWNER\.P1;/);
   assert.match(adapterSource, /drawPath\(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey, "command"\);/);
   assert.doesNotMatch(adapterSource, /drawPath\(commandPath, "#2470c7"\)/);
@@ -1224,6 +1224,27 @@ test('combined explicit inspection keeps overlapping supply and command strokes 
     assert.equal(lines.length,2);assert.notEqual(lines[0].getAttribute('y1'),lines[1].getAttribute('y1'));
     adapter.unmount();
   });
+});
+
+
+test('opposite-owner network inspection colors both paths and selects only the active supply square',async()=>{
+ await withFakeDocument(()=>{
+  const {adapter,boardEl,overlayLinesEl}=createMountedAdapter();
+  const snapshot={sideToMove:'P2',pieces:[{id:'C2',owner:'P2',kind:'commander',position:{row:6,col:3},supplied:true,commanded:true},{id:'A2',owner:'P2',kind:'unit',position:{row:4,col:3},supplied:true,commanded:true},{id:'C1',owner:'P1',kind:'commander',position:{row:3,col:6},supplied:true,commanded:true}],artifacts:{supply:[{player:'P1',shortestPathByPieceId:{C1:[{row:3,col:6},{row:0,col:6},{row:0,col:9}]}}],command:{shortestPathToCommanderByPieceId:{A2:[{row:4,col:3},{row:6,col:3}]}}}};
+  const command={kind:'command',owner:'P2'},supply={kind:'supply',owner:'P1',point:{row:0,col:9}};
+  const payload={snapshot,selection:{selectedPieceId:'C2',source:{row:6,col:3},target:null},overlay:{mode:'interactive',inspection:{kind:'networks',command,supply}},legalActions:[],selectedPieceMoves:[],selectedPieceMovePreviews:[],removalEffects:[]};
+  adapter.render(payload);
+  const lines=overlayLinesEl.querySelectorAll('line');
+  assert(lines.some(line=>line.getAttribute('data-legend-kind')==='command'&&line.getAttribute('stroke')==='var(--player-p2)'));
+  assert(lines.some(line=>line.getAttribute('data-legend-kind')==='supply'&&line.getAttribute('stroke')==='var(--player-p1)'));
+  assert.equal(getCell(boardEl,0,9).classList.contains('selected-supply-point'),true);
+  assert.equal(getCell(boardEl,0,9).getAttribute('data-selected-supply-owner'),'P1');
+  assert.equal(getCell(boardEl,6,3).classList.contains('selected-piece'),true);
+  adapter.render({...payload,overlay:{mode:'interactive',inspection:command}});
+  assert.equal(getCell(boardEl,0,9).classList.contains('selected-supply-point'),false);
+  assert.equal(getCell(boardEl,0,9).getAttribute('data-selected-supply-owner'),null);
+  adapter.unmount();
+ });
 });
 
 test('turn summaries show owner routes, source ghosts and destruction without selection rings or axes',async()=>{
