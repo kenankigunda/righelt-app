@@ -675,8 +675,11 @@ export const createLiveTransportStore = ({
     optimistic.syncStatus = optimistic.pendingCommands.length ? optimistic.syncStatus : "ready";
     startTerminalCleanup(gameId, command, outcome);
     recalculateOptimisticGame(gameId);
+    // A confirmed obsolete computer attempt is handled by its session's
+    // automatic recovery, not a prompt to repeat a human move.
+    const quietComputerRetry = Boolean(command.computer) && ['computer_control_changed','stale_state'].includes(outcome.reason);
     const notification = { type: outcome.outcome === "accepted" ? "authoritative_update" : command.kind === "shared" ? "shared_request_rejected" : "optimistic_rollback", gameId, clientCommandId: command.clientCommandId, reason:outcome.reason,
-      failureNotice: outcome.outcome === "rejected" && command.kind !== "shared" ? outcome.reason === "state_capacity_exceeded" ? "This game couldn’t save another move. Your earlier moves are safe. Please view details." : "Board changed before your move was recorded. Check it and try again." : "" };
+      failureNotice: outcome.outcome === "rejected" && command.kind !== "shared" && !quietComputerRetry ? outcome.reason === "state_capacity_exceeded" ? "This game couldn’t save another move. Your earlier moves are safe. Please view details." : "Board changed before your move was recorded. Check it and try again." : "" };
     if (notifications) notifications.push(notification); else emitChange(notification);
     return true;
   };
