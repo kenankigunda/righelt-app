@@ -251,10 +251,12 @@ test('message compatibility ignores only known inline press feedback',async({pag
  const result=await page.evaluate(async()=>{
   const {patchBoardMessage,renderBoardMessageHtml}=await import('/apps/web/board/message-presentation.js');
   const html=renderBoardMessageHtml({rows:[{text:'Opponent moved',actions:[{id:'replay-computer',label:'Show me again'}]},{text:'Select a piece or',actions:[{id:'pass',label:'Pass'}]}]});
-  const probe=change=>{const box=document.createElement('div');box.innerHTML=html;const button=box.querySelector('button');change(button);const patched=patchBoardMessage(box,html);return {patched,same:box.querySelector('button')===button,classes:button.className};};
+  const probe=change=>{const box=document.createElement('div');box.innerHTML=html;const button=box.querySelector('button');change(button);const patched=patchBoardMessage(box,html);const current=box.querySelector('button');return {patched,same:current===button,classes:button.className,current:current?{action:current.dataset.boardMessageAction,disabled:current.disabled,classes:current.className}:null};};
   return {press:probe(b=>b.classList.add('is-pressing')),release:probe(b=>b.classList.add('is-releasing')),semantic:probe(b=>b.classList.add('different-action-style')),action:probe(b=>b.dataset.boardMessageAction='pass'),disabled:probe(b=>b.disabled=true)};
  });
  expect(result.press).toMatchObject({patched:true,same:true});expect(result.press.classes).toContain('is-pressing');
  expect(result.release).toMatchObject({patched:true,same:true});expect(result.release.classes).toContain('is-releasing');
- for(const key of ['semantic','action','disabled'])expect(result[key].patched,key).toBe(false);
+ // Narration may patch compatible parent rows, but genuine semantic changes
+ // must replace the child action rather than retain its native identity.
+ for(const key of ['semantic','action','disabled']){expect(result[key].same,key).toBe(false);expect(result[key].current,key).toEqual({action:'replay-computer',disabled:false,classes:'board-preview-inline-button'});}
 });
