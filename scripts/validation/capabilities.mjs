@@ -1,5 +1,6 @@
 import {access,readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {RESULT_HEADING_CONTRACTS} from './result-heading-contract.mjs';
 import {sourceFile,stringContract,currentModelContract,historyUndoLabelContract} from './source-contract.mjs';
 // Source capabilities select explicit contracts before tests run. A failed
 // assertion never changes contracts or downgrades account proof to guest proof.
@@ -12,7 +13,7 @@ export async function candidateCapabilities(root) {
     const result=await readFile(path.join(root,'apps/web/shell/game-result.js'),'utf8');
     const source=sourceFile('game-result.js',result);
     const selectContract=(name,allowed,label)=>stringContract(source,name,allowed,label);
-    resultHeadingContract=selectContract('RESULT_HEADING_CONTRACT',['perspective-v1','perspective-v2'],'result heading');
+    resultHeadingContract=selectContract('RESULT_HEADING_CONTRACT',RESULT_HEADING_CONTRACTS,'result heading');
     rematchChoicesContract=selectContract('REMATCH_CHOICES_CONTRACT',['colors-v1'],'rematch choices');
   } catch(error) { if(error.code!=='ENOENT') throw error; }
   try {

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { expect } from '@playwright/test';
 import { proof } from './proof.mjs';
 import {candidateCapabilities} from './capabilities.mjs';
-import {assertResultHeading} from './result-heading.mjs';
+import {assertResultHeading,capturedResultHeading} from './result-heading.mjs';
 import { request as accountRequest, selectTerminalScenario } from './results-proof.mjs';
 import {humanMoveForUndo,undoBeforeHumanMove} from './history-undo.mjs';
 
@@ -91,7 +91,7 @@ export async function proveComputerPlay({ page, info, root, submitPlayableAction
     // This page owns the worker and observes an ongoing-to-terminal transition.
     // Await delivery of that transition instead of branching on a transient frame.
     await expect(result).toBeVisible();
-    await assertResultHeading(result, {contract: capabilities.resultHeadingContract, outcome: finished.board.state.outcome.status, viewerSide: 'p2'});
+    await assertResultHeading(result, capturedResultHeading(finished,{contract:capabilities.resultHeadingContract,viewerSide:'p2'}));
     await proof(page, info, 'computer-game-result', result);
     await result.getByRole('button', { name: 'Play again', exact: true }).click();
     const chooser = page.getByRole('dialog', { name: 'Play again', exact: true });
