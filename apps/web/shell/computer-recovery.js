@@ -1,3 +1,6 @@
+// Presentation only, after a validated terminal rejection; never authorizes a new command.
+export const isObsoleteComputerRejection = (computer,reason) => Boolean(computer) && ['computer_control_changed','stale_state'].includes(reason);
+
 // Only failures known to precede gameplay admission may use this policy.
 // Durable gameplay commands retain their journal's exclusive retry owner.
 export function computerRetryDisposition(error) {
