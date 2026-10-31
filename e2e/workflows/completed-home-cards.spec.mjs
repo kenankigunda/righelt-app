@@ -175,6 +175,8 @@ test('completed pagination and resizing preserve the visible page without retryi
 
 
 test('manual completed Retry learns an uncached off-page completion and repairs ongoing totals',async({page,context,homeGames},info)=>{
+ const diagnostics=[];page.on('console',message=>{try{const value=JSON.parse(message.text());if(value.event?.startsWith('home_'))diagnostics.push(value);}catch{}});
+ await page.addInitScript(()=>{window.__RIGHELT_VERBOSE_CLIENT_LOGS=true;});
  await page.goto('/#/');
  const lastMove=homeGames.source.moves.at(-1);
  const {game:offPage}=await request(page,'/api/shell/history/branch',{sourceGameId:homeGames.source.id,sourceMoveIndex:homeGames.source.moves.length-1,creatorSide:'p1',selfPlayMode:true});
@@ -213,8 +215,10 @@ test('manual completed Retry learns an uncached off-page completion and repairs 
   await expect(active.getByText('9 games',{exact:true})).toBeVisible();
   expect(myRequests).toBeGreaterThan(before.myRequests);expect(otherRequests).toBe(before.otherRequests);
   await expect(page.locator('[data-home-section-root="other"]').getByText("We couldn't load these games.",{exact:true})).toBeVisible();
-  const evidence={gameId:offPage.id,before,after:{myRequests,otherRequests},completed:4,ongoing:9};
-  writeFileSync(info.outputPath('home-off-page-completion.json'),JSON.stringify(evidence,null,2));
   await page.screenshot({path:info.outputPath('home-off-page-completion.png'),fullPage:true});
- }finally{await sibling?.close();await page.unrouteAll({behavior:'wait'});}
+  const actual=await page.evaluate(()=>Object.fromEntries(['my','completed','other'].map(key=>{const node=document.querySelector(`[data-home-section-root="${key}"]`);return[key,{text:node?.textContent,gameIds:Array.from(node?.querySelectorAll('a[data-game-id]')??[],card=>card.dataset.gameId),error:Boolean(node?.querySelector('[data-action="home-section-retry"]'))}];})));
+  const evidence={gameId:offPage.id,before,after:{myRequests,otherRequests},actual};
+  writeFileSync(info.outputPath('home-off-page-completion.json'),JSON.stringify(evidence,null,2));
+  expect(actual.completed.error).toBe(false);expect(actual.my.error).toBe(false);expect(actual.completed.gameIds).toContain(offPage.id);expect(actual.completed.gameIds).toHaveLength(3);expect(actual.completed.text).toContain('4 games');expect(actual.my.text).toContain('9 games');
+ }finally{writeFileSync(info.outputPath('home-off-page-diagnostics.json'),JSON.stringify(diagnostics,null,2));await sibling?.close();await page.unrouteAll({behavior:'wait'});}
 });

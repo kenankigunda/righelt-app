@@ -192,8 +192,12 @@ export const createLiveTransportStore = ({
       previousStatus:old.status,nextStatus:fresh.status,previousCount:old.count,nextCount:fresh.count,
       previousRole:old.myRole,nextRole:fresh.myRole,previousRoles:old.myRoles,nextRoles:fresh.myRoles},{verboseOnly:true});
   };
+  const isStaleHomeEvidence = (incoming,current) => Number.isSafeInteger(current?.eventSeq) &&
+    (!Number.isSafeInteger(incoming?.eventSeq) || incoming.eventSeq < current.eventSeq ||
+      (incoming.eventSeq === current.eventSeq && (incoming.gameplayRevision ?? -1) < (current.gameplayRevision ?? -1)));
   const installAuthoritativeHomeCard = (game, eventSeq) => {
     const next = buildStaticGameCardFromGame(game, {eventSeq, confirmed:true});
+    if(isStaleHomeEvidence(next,homeGameCardById.get(next.id)))return;
     if (homeMembershipSignature(homeGameCardById.get(game.id)) !== homeMembershipSignature(next)) {
       homeListRevision++;
       recordHomeProjectionChange(homeGameCardById.get(game.id),next,'authoritative');
@@ -427,11 +431,11 @@ export const createLiveTransportStore = ({
     emitChange({ type: changeType, gameId, clientCommandId, failureNotice: notice });
   };
 
-  const upsertGame = (game) => {
+  const upsertGame = (game, {homeEventSeq=lastEventSeqByGameId.get(game.id) ?? null} = {}) => {
     const next = clone(game);
     getOptimisticState(next.id).externalPreview = null;
     gameById.set(next.id, next);
-    installAuthoritativeHomeCard(next,lastEventSeqByGameId.get(next.id) ?? null);
+    installAuthoritativeHomeCard(next,homeEventSeq);
     const current = games.filter((entry) => entry.id !== next.id);
     current.push(next);
     current.sort((left, right) => {
@@ -453,7 +457,7 @@ export const createLiveTransportStore = ({
     const nextEventSeq = typeof eventSeq === "number" && Number.isFinite(eventSeq) ? eventSeq : null;
     const currentEventSeq = nextEventSeq !== null ? lastEventSeqByGameId.get(game.id) ?? 0 : null;
     const staleSnapshotIgnored = nextEventSeq !== null && currentEventSeq !== null && nextEventSeq < currentEventSeq;
-    const authoritative = staleSnapshotIgnored ? gameById.get(game.id) ?? null : upsertGame(game);
+    const authoritative = staleSnapshotIgnored ? gameById.get(game.id) ?? null : upsertGame(game,{homeEventSeq:nextEventSeq});
     if (staleSnapshotIgnored) {
       logDiagnostic(
         "info",
@@ -1198,9 +1202,7 @@ export const createLiveTransportStore = ({
     const gamesPage = Array.isArray(body.games) ? body.games.map((game) => normalizeStaticGameCard(game)) : [];
     for (const game of gamesPage) {
       const current = homeGameCardById.get(game.id);
-      const hasCurrentAuthority = Number.isSafeInteger(current?.eventSeq);
-      const stale = hasCurrentAuthority && (!Number.isSafeInteger(game.eventSeq) || game.eventSeq < current.eventSeq ||
-        (game.eventSeq === current.eventSeq && (game.gameplayRevision ?? -1) < (current.gameplayRevision ?? -1)));
+      const stale = isStaleHomeEvidence(game,current);
       if (stale) {
         if (homeMembershipSignature(current) !== homeMembershipSignature(game)) homeListChanged = true;
       } else {

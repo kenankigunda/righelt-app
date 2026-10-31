@@ -2716,3 +2716,27 @@ test('a retired account Home response cannot install another card after its owne
  await assert.rejects(waiting,/session_changed/);
  assert.equal(store.getHomeGameCard('late-private-card'),null);
 });
+
+test('installing an already confirmed snapshot publishes its Home evidence atomically without false membership changes',async t=>{
+ const {buildStaticGameCardFromGame}=await import('../shell/static-game-cards.js');
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
+ const game=buildLiveGame();game.gameplayRevision=4;game.board.state.outcome={status:'p1_win'};game.liveCurrentSnapshot=clone(game.board.state);
+ const card=buildStaticGameCardFromGame(game,{eventSeq:10,confirmed:true});
+ const store=createLiveTransportStore({storage,fetcher:async()=>Response.json({ok:true,section:'completed',page:0,totalGames:1,totalPages:1,games:[card]})});t.after(()=>store.retire());
+ await store.loadGamesPage({section:'completed'});const revision=store.getHomeListRevision();
+ store.applyLiveGameUpdate({game,eventSeq:10});
+ assert.equal(store.getHomeListRevision(),revision,'the same confirmed card must not flip through unproven status during installation');
+ assert.deepEqual(store.getHomeGameCard(game.id),card);
+});
+
+for(const [eventSeq,gameplayRevision] of [[9,3],[null,3],[null,5]])test(`weaker live evidence cannot replace a stronger whole Home card seq=${eventSeq} revision=${gameplayRevision}`,async t=>{
+ const {buildStaticGameCardFromGame}=await import('../shell/static-game-cards.js');
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
+ const game=buildLiveGame();game.gameplayRevision=4;game.board.state.outcome={status:'p1_win'};game.liveCurrentSnapshot=clone(game.board.state);
+ const card=buildStaticGameCardFromGame(game,{eventSeq:10,confirmed:true});
+ const store=createLiveTransportStore({storage,fetcher:async()=>Response.json({ok:true,section:'completed',page:0,totalGames:1,totalPages:1,games:[card]})});t.after(()=>store.retire());
+ await store.loadGamesPage({section:'completed'});const revision=store.getHomeListRevision();
+ const older=clone(game);older.gameplayRevision=gameplayRevision;older.board.state.outcome={status:'ongoing'};older.liveCurrentSnapshot=clone(older.board.state);
+ store.applyLiveGameUpdate({game:older,eventSeq});
+ assert.equal(store.getHomeListRevision(),revision);assert.deepEqual(store.getHomeGameCard(game.id),card);
+});
