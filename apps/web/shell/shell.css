@@ -1416,7 +1416,7 @@ button.button-release-bounce,
 .home-games-section-controls {
   display: inline-flex;
   align-items: center;
-  gap: 0.175rem;
+  gap: min(0.175rem, 4px);
   flex-wrap: nowrap;
   justify-content: center;
   min-width: 0;
@@ -1434,7 +1434,10 @@ button.button-release-bounce,
   flex: 0 0 auto;
   min-width: 44px;
   min-height: 44px;
-  padding-inline: 0.375rem;
+  /* Icon-only controls share their existing 20px icon/loading slot. The page
+     label still follows text zoom; targets never fall below 44px. */
+  padding: 0;
+  font-size: 20px;
 }
 
 .home-games-section-page-label {

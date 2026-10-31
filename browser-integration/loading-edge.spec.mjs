@@ -91,10 +91,10 @@ for(const productionSwipe of [false,true])test(`a reconnecting narrow track keep
   await expect.poll(async()=>{const s=await sample();return s.alignment<.1&&s.clipped&&s.clear&&s.same&&!s.visible;}).toBe(true);
   if(fraction===5/12)await page.screenshot({path:info.outputPath('edge-native-track-midpoint.png'),fullPage:true});
  }
- if(productionSwipe){
-  // Hold the real production CSS transition's native clock, while retaining
-  // its running state. Geometry and early flag clearing must not depend on
-  // how many callbacks CI can deliver inside the unchanged 220 ms duration.
+ {
+  // Hold each real CSS transition's native clock, while retaining
+  // its running state. Three progressive geometry checkpoints must not depend
+  // on how many callbacks CI delivers inside the unchanged native duration.
   await page.evaluate(async()=>{window.trackMotion.playbackRate=0;window.trackMotion.play();await window.trackMotion.ready;});
   const held=[];
   for(const fraction of [1/12,5/12,10/12]){
@@ -107,19 +107,19 @@ for(const productionSwipe of [false,true])test(`a reconnecting narrow track keep
   expect(held[1].navigation).toBe('');expect(held[2].navigation).toBe('');
   expect(held[1].panel.left).toBeLessThan(held[0].panel.left);expect(held[2].panel.left).toBeLessThan(held[1].panel.left);
   expect(held[2].strokeTime).toBeGreaterThan(held[0].strokeTime);
+  observations.push(...held);
  }
  await page.evaluate(()=>{window.trackMotion.pause();window.trackMotion.playbackRate=1;window.trackMotion.currentTime=window.trackDuration/6;window.edgeTrack.dataset.transitionState='forward';window.dispatchEvent(new Event('resize'));});
  await expect.poll(async()=> (await sample()).alignment).toBeLessThan(.1);
- // The production transition now runs freely at its original rate/duration.
+ // The native transition now runs freely at its original rate/duration.
  // Inspect every delivered active callback, but require semantic lifecycle
  // and endpoint progress rather than a particular callback throughput.
  // WebKit can advance compositor positions between DOM rectangle reads while
  // currentTime stays unchanged. Held native checkpoints above prove exact
  // mask geometry; during free motion the stroke must stay hidden, then all
  // geometry must be correct again before the settled stroke is restored.
- // The longer native-motion case retains its three progressive checkpoints.
- const active=await page.evaluate(productionSwipe=>{
- if(productionSwipe)return new Promise(resolve=>{
+ // Both durations retain three progressive held-running checkpoints above.
+ const active=await page.evaluate(()=>new Promise(resolve=>{
   const samples=[],start=window.edgeSnapshot();let raf=null,done=false;
   const finish=result=>{if(done)return;done=true;if(raf!==null)cancelAnimationFrame(raf);window.removeEventListener('pagehide',leave);if(window.edgeObservationCancel===cancel)delete window.edgeObservationCancel;resolve({...result,samples,start,mode:'free-running-native',callbackSource:'requestAnimationFrame'});};
   const leave=()=>finish({ok:false,reason:'Page left during native observation'});
@@ -142,55 +142,13 @@ for(const productionSwipe of [false,true])test(`a reconnecting narrow track keep
    window.trackMotion.finished.then(()=>finish({ok:true,running,end:window.edgeSnapshot()}),error=>finish({ok:false,reason:'Native transition did not finish',error:String(error)}));
    raf=requestAnimationFrame(tick);
   }catch(error){finish({ok:false,reason:'Native observation could not start',error:String(error)});}
- });
- return new Promise(resolve=>{
-  const samples=[],accepted=[];let previousTime=window.trackMotion.currentTime,previousLeft=Infinity;
-  const duration=window.trackDuration,deadline=duration-Math.min(100,duration*.1),step=Math.min(80,duration*.15);
-  let timer=null,raf=null,done=false,previousCallback=null;
-  const callbackSource=productionSwipe?'native-timer-8ms':'requestAnimationFrame';
-  const finish=result=>{if(done)return;done=true;if(timer!==null)clearTimeout(timer);if(raf!==null)cancelAnimationFrame(raf);window.removeEventListener('pagehide',leave);if(window.edgeObservationCancel===cancel)delete window.edgeObservationCancel;resolve({...result,callbackSource});};
-  const leave=()=>finish({ok:false,samples,accepted,deadline,reason:'Page left during native observation'});
-  const cancel=()=>finish({ok:false,samples,accepted,deadline,reason:'Test retired native observation'});window.edgeObservationCancel=cancel;
-  window.addEventListener('pagehide',leave,{once:true});
-  const schedule=()=>{if(done)return;if(productionSwipe)timer=setTimeout(tick,8);else raf=requestAnimationFrame(tick);};
-  const tick=()=>{
-   timer=null;raf=null;
-   const callbackAt=performance.now(),wallGapMs=previousCallback===null?null:callbackAt-previousCallback;previousCallback=callbackAt;
-   const snapshot=full=>({...window.edgeSnapshot(full),callbackSource,callbackAt,wallGapMs});
-   try{
-   let sample=snapshot(false);samples.push(sample);
-   if(sample.state!=='running'||sample.time>=deadline){finish({ok:false,samples,accepted,deadline,reason:'No three valid checkpoints before native end'});return;}
-   if(sample.visible){finish({ok:false,samples,accepted,deadline,reason:'Decorative stroke became visible during navigation'});return;}
-   if(sample.time>previousTime+step&&sample.clipped&&sample.same&&!sample.visible){
-    // Full geometry is freshly measured only at eligible checkpoints. The
-    // transition can advance during that work, so recheck every gate against
-    // this new full sample rather than accepting the earlier light sample.
-    sample=snapshot(true);samples.push(sample);
-    if(sample.state!=='running'||sample.time>=deadline){finish({ok:false,samples,accepted,deadline,reason:'No three valid checkpoints before native end'});return;}
-    if(sample.visible){finish({ok:false,samples,accepted,deadline,reason:'Decorative stroke became visible during navigation'});return;}
-    if(sample.time>previousTime+step&&sample.clipped&&sample.same&&!sample.visible){
-     if(sample.panel.left>=previousLeft){finish({ok:false,samples,accepted,deadline,reason:'Panel failed to progress in swipe direction'});return;}
-     accepted.push(sample);previousLeft=sample.panel.left;previousTime=sample.time;
-     if(accepted.length===1)window.edgeTrack.dataset.transitionState='';
-     if(accepted.length===3){finish({ok:true,samples,accepted,deadline});return;}
-    }
-   }
-   schedule();
-   }catch(error){finish({ok:false,samples,accepted,deadline,reason:'Native observation threw',error:String(error)});}
-  };
-  raf=requestAnimationFrame(()=>{raf=null;try{window.trackMotion.play();window.dispatchEvent(new Event('resize'));schedule();}catch(error){finish({ok:false,samples,accepted,deadline,reason:'Native observation could not start',error:String(error)});}});
- });},productionSwipe);
+ }));
  observations.push(...active.samples);
  expect(active.ok,JSON.stringify(active)).toBe(true);
- if(productionSwipe){
-  expect(active.running).toBe(true);expect(active.start.playbackRate).toBe(1);expect(active.end.playbackRate).toBe(1);
-  expect(active.end.state).toBe('finished');expect(active.end.time).toBeGreaterThanOrEqual(nativeFrames.duration);
-  expect(active.end.panel.left).toBeLessThan(active.start.panel.left);expect(active.end.strokeTime).toBeGreaterThan(active.start.strokeTime);
-  expect(active.samples.filter(sample=>sample.state==='running'&&sample.time<sample.duration).every(sample=>!sample.visible)).toBe(true);
- }else{
-  expect(active.accepted).toHaveLength(3);expect(active.accepted.every(sample=>sample.full)).toBe(true);
-  expect(active.accepted[2].navigation).toBe('');expect(active.accepted[2].strokeTime).toBeGreaterThan(active.accepted[0].strokeTime);
- }
+ expect(active.running).toBe(true);expect(active.start.playbackRate).toBe(1);expect(active.end.playbackRate).toBe(1);
+ expect(active.end.state).toBe('finished');expect(active.end.time).toBeGreaterThanOrEqual(nativeFrames.duration);
+ expect(active.end.panel.left).toBeLessThan(active.start.panel.left);expect(active.end.strokeTime).toBeGreaterThan(active.start.strokeTime);
+ expect(active.samples.filter(sample=>sample.state==='running'&&sample.time<sample.duration).every(sample=>!sample.visible)).toBe(true);
  // The UI flag may clear before the native transition. Actual geometric
  // motion must continue suppressing decoration until its own end/cancel.
  await page.evaluate(()=>{window.edgeTrack.dataset.transitionState='';});
