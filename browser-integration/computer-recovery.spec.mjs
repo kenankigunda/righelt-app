@@ -9,7 +9,8 @@ for(const width of [320,390,1440])test(`computer card reports local activity and
  await expect(page.getByRole('button',{name:'Horus, Blue, Resuming',exact:true})).toHaveAttribute('aria-expanded','true');
  await page.getByRole('button',{name:'Complete resume',exact:true}).click();await expect(resume).toHaveCount(0);await expect(page.getByRole('button',{name:'Horus, Blue, Active here',exact:true})).toHaveAttribute('aria-expanded','true');
  for(const state of ['Paused','Manual']){await page.getByRole('button',{name:state,exact:true}).click();await expect(page.getByRole('button',{name:'Resume here',exact:true})).toBeEnabled();}
- for(const state of ['Viewer','Finished']){await page.getByRole('button',{name:state,exact:true}).click();await expect(page.getByRole('button',{name:'Resume here',exact:true})).toBeDisabled();}
+ await page.getByRole('button',{name:'Viewer',exact:true}).click();await expect(page.getByRole('button',{name:'Resume here',exact:true})).toBeDisabled();
+ await page.getByRole('button',{name:'Finished',exact:true}).click();await expect(page.getByRole('button',{name:'Resume here',exact:true})).toHaveCount(0);await expect(page.getByRole('button',{name:'Horus, Blue, Game finished',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'No control',exact:true}).click();await expect(page.locator('#notice')).toBeEmpty();
  await page.getByRole('button',{name:'Advance 29 seconds',exact:true}).click();await expect(page.locator('#notice')).toBeEmpty();
  await page.getByRole('button',{name:'Advance one second',exact:true}).click();await expect(page.locator('#notice')).toContainText('Horus hasn’t resumed');
