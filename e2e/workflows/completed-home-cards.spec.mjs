@@ -1,5 +1,5 @@
 import {test as base,expect} from '@playwright/test';
-import {readFileSync} from 'node:fs';
+import {readFileSync,writeFileSync} from 'node:fs';
 import {importScenarioGame,switchGamePanel} from '../support/app.mjs';
 import {CURRENT_COMPUTER_MODEL} from '../../packages/shared-types/src/computer-play.ts';
 const catalog=JSON.parse(readFileSync(new URL('../../apps/web/scenarios/catalog.json',import.meta.url),'utf8'));
@@ -20,6 +20,9 @@ const test=base.extend({homeGames:[async({page,baseURL},use)=>{
  const {game:win}=await request(page,'/api/shell/history/branch',{sourceGameId:sourceId,sourceGameplayRevision:source.gameplayRevision,creatorSide:'p1',computer:{p1:null,p2:'tau'},computerModelId:CURRENT_COMPUTER_MODEL.id});
  const {game:loss}=await request(page,'/api/shell/history/branch',{sourceGameId:sourceId,sourceGameplayRevision:source.gameplayRevision,creatorSide:'p2',computer:{p1:'tau',p2:null},computerModelId:CURRENT_COMPUTER_MODEL.id});
  const {game:ongoing}=await request(page,'/api/shell/games',{selfPlayMode:true});
+ // Seed through real APIs, then make the next native entry a fresh document.
+ // Same-hash navigation would retain Home's pre-seed, already-hydrated list.
+ await page.goto('about:blank');
  await use({source,win,loss,ongoing});
 },{timeout:60000}]});
 for(const width of [390,1440])test(`Home separates completed games and names confirmed winners at ${width}px`,async({page,homeGames},info)=>{
@@ -31,11 +34,15 @@ for(const width of [390,1440])test(`Home separates completed games and names con
  const card=id=>completed.locator(`a[data-game-id="${id}"]`);
  await expect(card(homeGames.win.id)).toContainText('You won');
  await expect(card(homeGames.loss.id)).toContainText('Tau won');await expect(card(homeGames.loss.id)).toContainText('You lost');
+ const lossLines=await card(homeGames.loss.id).locator('.home-card-result').evaluate(node=>({headlineBottom:node.querySelector('strong').getBoundingClientRect().bottom,detailTop:node.querySelector('.small').getBoundingClientRect().top}));
+ expect(lossLines.detailTop).toBeGreaterThanOrEqual(lossLines.headlineBottom-1);
  await expect(card(homeGames.source.id)).toContainText('Red won');
  for(const game of [homeGames.source,homeGames.win,homeGames.loss]){
   await expect(card(game.id)).toContainText('Review game');
   await expect(card(game.id).locator('.connection-status-icon')).toHaveCount(0);
   await expect(card(game.id).locator('button,a,[tabindex]')).toHaveCount(0);
+  const square=await card(game.id).locator('.mini-board-preview-board .cell').first().boundingBox();
+  expect(Math.abs(square.width-square.height)).toBeLessThanOrEqual(1);
   await expect(active.locator(`a[data-game-id="${game.id}"]`)).toHaveCount(0);
  }
  await expect(active.locator(`a[data-game-id="${homeGames.ongoing.id}"]`)).toBeVisible();
@@ -52,6 +59,9 @@ for(const width of [390,1440])test(`Home separates completed games and names con
 
 
 test('an acknowledged Undo moves its Home card and counts without stealing focus or scrolling',async({page,context,homeGames},info)=>{
+ const homeDiagnostics=[];
+ page.on('console',message=>{try{const value=JSON.parse(message.text());if(value.event?.startsWith('home_'))homeDiagnostics.push(value);}catch{}});
+ await page.addInitScript(()=>{window.__RIGHELT_VERBOSE_CLIENT_LOGS=true;});
  await page.setViewportSize({width:1440,height:1100});
  await page.goto(`/#/game/${homeGames.source.id}`);await switchGamePanel(page,'history');
  const move=page.getByTestId('history-move-item').last();await move.locator('.history-item-info').click();
@@ -66,24 +76,28 @@ test('an acknowledged Undo moves its Home card and counts without stealing focus
  try{
   await undo.click();await expect.poll(()=>Boolean(heldCommand)).toBe(true);
   await page.locator('.shell-header-title-link').click();
+  await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
   const completed=page.locator('[data-home-section-root="completed"]');
   const card=completed.locator(`a[data-game-id="${homeGames.source.id}"]`);
   await expect(completed.getByText('3 games',{exact:true})).toBeVisible();
   await expect(card).toContainText('Red won');
-  await card.focus();const before=await page.evaluate(()=>scrollY);
+  await card.focus();const before=await card.evaluate(node=>({scrollY,cardTop:node.getBoundingClientRect().top,sectionTop:node.closest('[data-home-section-root]').getBoundingClientRect().top}));
   release();
   await expect(completed.getByText('2 games',{exact:true})).toBeVisible();
   await expect(card).toHaveCount(0);
   await expect(page.locator(`[data-home-section-root="my"] a[data-game-id="${homeGames.source.id}"]`)).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>document.activeElement.closest('[data-home-section-root]')?.getAttribute('data-home-section-root'))).toBe('completed');
   await expect(page.locator('#shell-sync-announcement')).toHaveText('Your game lists were updated.');
-  expect(Math.abs(await page.evaluate(()=>scrollY)-before)).toBeLessThanOrEqual(1);
+  const after=await page.evaluate(()=>({scrollY,cardTop:document.activeElement.getBoundingClientRect().top,sectionTop:document.activeElement.closest('[data-home-section-root]').getBoundingClientRect().top}));
+  writeFileSync(info.outputPath('home-reading-position.json'),JSON.stringify({before,after},null,2));
+  await info.attach('home-reading-position',{contentType:'application/json',path:info.outputPath('home-reading-position.json')});
+  expect(Math.abs(after.sectionTop-before.sectionTop)).toBeLessThanOrEqual(1);
   const identityId=await page.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'));
   const result=await page.request.get(`/api/shell/games/${homeGames.source.id}?identityId=${encodeURIComponent(identityId)}`);
   expect(result.ok()).toBe(true);const game=(await result.json()).game;
   expect(game.board.state.outcome.status).toBe('ongoing');expect(game.lastRestoration).toBeTruthy();
   await page.screenshot({path:info.outputPath('home-undo-reopens-with-stable-focus.png'),fullPage:true});
- }finally{release();await context.unrouteAll({behavior:'wait'});}
+ }finally{release();writeFileSync(info.outputPath('home-cache-diagnostics.json'),JSON.stringify(homeDiagnostics,null,2));await info.attach('home-cache-diagnostics',{contentType:'application/json',path:info.outputPath('home-cache-diagnostics.json')});await context.unrouteAll({behavior:'wait'});}
 });
 
 

@@ -329,7 +329,7 @@ test("home visible game cache stitches 4-item server pages into 3-item single-co
 });
 
 test("responsive home pagination reanchors from 2-column pages to 1-column pages using the leading visible game", async () => {
-  const segment = extractSourceSegment("const syncResponsiveHomeSectionPageSizes = async () => {", "const syncHomeSections = async () => {");
+  const segment = extractSourceSegment("const syncResponsiveHomeSectionPageSizes = async () => {", "const syncHomeSections = async (");
   const createSyncResponsiveHomeSectionPageSizes = new Function(
     "getVisibleHomeSectionKeys",
     "getHomeSection",
@@ -392,7 +392,7 @@ test("responsive home pagination avoids reload when 3-column and 1-column modes 
     `${totalPagesHelpers}
     return { getHomeSectionVisibleTotalPages };`,
   )();
-  const segment = extractSourceSegment("const syncResponsiveHomeSectionPageSizes = async () => {", "const syncHomeSections = async () => {");
+  const segment = extractSourceSegment("const syncResponsiveHomeSectionPageSizes = async () => {", "const syncHomeSections = async (");
   const createSyncResponsiveHomeSectionPageSizes = new Function(
     "getVisibleHomeSectionKeys",
     "getHomeSection",

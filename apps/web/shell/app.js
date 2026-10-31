@@ -1,4 +1,4 @@
-import {captureHomeFocus,refreshHomeFocus,restoreHomeFocus} from './home-focus.js';
+import {captureHomeFocus,refreshHomeFocus,restoreHomeFocus,restoreHomeReadingPosition} from './home-focus.js';
 import {homeCardResult} from './home-card-result.js';
 import {isOngoingGame} from './game-lifecycle.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
@@ -1149,6 +1149,11 @@ const getAdjacentGamePanel = (panel = getGamePanel(), direction = 0) => {
   return GAME_PANEL_KEYS[nextIndex];
 };
 const preparePanelTransition = (previous, next) => {
+  if(previous.name === 'home' && next.name !== 'home'){
+    pendingHomeSectionKeys.clear();
+    pendingHomeRefresh=null;
+    homeFocusToRestore=null;
+  }
   if (previous.name === 'game' && (next.gameId !== previous.gameId || getGamePanel(previous) !== getGamePanel(next))) {
     viewingIntent.saveScroll(previous.gameId, getGamePanel(previous), window.scrollY);
   }
@@ -3569,7 +3574,6 @@ const loadHomeSectionServerPage = async (
     visibleColumnCount = getHomeSectionColumnCount(sectionKey),
   } = {},
 ) => {
-  const previous = getHomeSection(sectionKey);
   const read = captureRouteRead();
   const requestPage = () => read.owner.loadGamesPage({section:sectionKey,page:serverPage,pageSize:HOME_SECTION_SERVER_PAGE_SIZE,debug:currentRoute.debug === true});
   let response = await requestPage();
@@ -3579,8 +3583,9 @@ const loadHomeSectionServerPage = async (
   if (response.homeListChanged) {
     response = await requestPage();
     assertCurrentRouteRead(read);
-    if (response.homeListChanged) throw new Error('Your game list changed. Try again.');
+    if (response.homeListChanged) throw Object.assign(new Error('Your game list changed. Try again.'),{code:'home_list_changed'});
   }
+  const previous = getHomeSection(sectionKey);
   const normalizedServerPage = typeof response.page === "number" ? response.page : 0;
   const serverPageGameIds = Array.isArray(response.games) ? response.games.map((game) => game.id) : [];
   const nextSection = {
@@ -3588,6 +3593,7 @@ const loadHomeSectionServerPage = async (
     homeListRevision: response.homeListRevision ?? null,
     loaded: true,
     error: null,
+    refreshUnsettled: false,
     totalGames: typeof response.totalGames === "number" ? response.totalGames : 0,
     serverPage: normalizedServerPage,
     serverTotalPages: typeof response.totalPages === "number" ? response.totalPages : 0,
@@ -3596,8 +3602,6 @@ const loadHomeSectionServerPage = async (
       ...(previous.homeListRevision === response.homeListRevision ? previous.serverPageGameIdsByPage : {}),
       [normalizedServerPage]: serverPageGameIds,
     },
-    visiblePageSize,
-    visibleColumnCount,
   };
   setHomeSection(sectionKey, nextSection);
   return nextSection;
@@ -3627,16 +3631,22 @@ const loadHomeSectionPage = async (
   if (shouldPrimeCache) {
     nextSection = await loadHomeSectionServerPage(sectionKey, initialServerPage, { visiblePageSize, visibleColumnCount });
   }
-  const requiredServerPages = getHomeSectionRequiredServerPages({
-    totalGames: nextSection.totalGames,
-    visiblePageSize,
-    page,
-  });
+  // Reads may overlap a newer completed page or responsive-layout change.
+  // Merge server data into the current cache, then keep the latest view intent.
+  const currentIntent = () => {
+    const current = getHomeSection(sectionKey);
+    const superseded = current.page !== previous.page || current.visiblePageSize !== previous.visiblePageSize || current.visibleColumnCount !== previous.visibleColumnCount;
+    return superseded ? {page:current.page,visiblePageSize:current.visiblePageSize,visibleColumnCount:current.visibleColumnCount} : {page,visiblePageSize,visibleColumnCount};
+  };
+  let intent = currentIntent();
+  let requiredServerPages = getHomeSectionRequiredServerPages({totalGames:nextSection.totalGames,...intent});
   for (const serverPage of requiredServerPages) {
     if (!hasHomeSectionServerPages(nextSection, [serverPage])) {
-      nextSection = await loadHomeSectionServerPage(sectionKey, serverPage, { visiblePageSize, visibleColumnCount });
+      nextSection = await loadHomeSectionServerPage(sectionKey, serverPage, intent);
     }
   }
+  intent = currentIntent();
+  ({page,visiblePageSize,visibleColumnCount} = intent);
   const normalizedPage = getHomeSectionSafePage(nextSection.totalGames, visiblePageSize, page);
   const normalizedTotalPages = getHomeSectionVisibleTotalPages(nextSection.totalGames, visiblePageSize);
   const visibleGameIds = getHomeSectionVisibleGameIdsFromCache(nextSection, {
@@ -3647,6 +3657,8 @@ const loadHomeSectionPage = async (
   assertCurrentRouteRead(read);
   setHomeSection(sectionKey, {
     ...nextSection,
+    visiblePageSize,
+    visibleColumnCount,
     page: normalizedPage,
     totalPages: normalizedTotalPages,
     gameIds: visibleGameIds,
@@ -3694,16 +3706,17 @@ const syncResponsiveHomeSectionPageSizes = async () => {
   return updated;
 };
 
-const syncHomeSections = async () => {
+const syncHomeSections = async ({onlyStale=false} = {}) => {
   const read = captureRouteRead();
   homeFocusToRestore ??= captureHomeFocus(appEl,document);
   const visibleSectionKeys = getVisibleHomeSectionKeys();
-  await Promise.all(
+  if(!onlyStale)await Promise.all(
     visibleSectionKeys.map(async (sectionKey) => {
       const section = getHomeSection(sectionKey);
       setHomeSection(sectionKey, {
         ...section,
         error: null,
+        refreshUnsettled: false,
         serverPage: 0,
         serverTotalPages: 0,
         serverPageGameIds: [],
@@ -3716,7 +3729,8 @@ const syncHomeSections = async () => {
         await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
       } catch (error) {
         assertCurrentRouteRead(read);
-        setHomeSection(sectionKey,{...getHomeSection(sectionKey),error:true});
+        const refreshUnsettled=error?.code==='home_list_changed';
+        setHomeSection(sectionKey,{...getHomeSection(sectionKey),error:refreshUnsettled?null:true,refreshUnsettled});
       }
     }),
   );
@@ -3724,13 +3738,16 @@ const syncHomeSections = async () => {
   const listRevision = read.owner.getHomeListRevision?.();
   const staleSections = listRevision === undefined ? [] : visibleSectionKeys.filter(key => {
     const section=getHomeSection(key);
-    return !section.error && section.homeListRevision !== listRevision;
+    // Initial parallel reads can exhaust their page-local freshness retry
+    // while another section is still populating the cache. Repair them once
+    // after the whole initial batch settles, retaining off-page count evidence.
+    return section.refreshUnsettled || (!section.error && section.homeListRevision !== listRevision);
   });
   await Promise.all(staleSections.map(async sectionKey => {
     const section=getHomeSection(sectionKey);
-    setHomeSection(sectionKey,{...section,serverPageGameIdsByPage:{}});
+    setHomeSection(sectionKey,{...section,error:null,refreshUnsettled:false,serverPageGameIdsByPage:{}});
     try { await loadHomeSectionPage(sectionKey,{page:section.page,direction:'none'}); }
-    catch(error) { assertCurrentRouteRead(read);setHomeSection(sectionKey,{...getHomeSection(sectionKey),error:true}); }
+    catch(error) { assertCurrentRouteRead(read);setHomeSection(sectionKey,{...getHomeSection(sectionKey),error:true,refreshUnsettled:false}); }
   }));
   assertCurrentRouteRead(read);
   const finalRevision = read.owner.getHomeListRevision?.();
@@ -3758,26 +3775,50 @@ const syncHomeSections = async () => {
     });
   });
 };
-const scheduleHomeListRefresh = () => {
-  if (currentRoute.name !== 'home' || pendingHomeRefresh || lastHomeBatchRevision === (transport.getHomeListRevision?.() ?? null)) return;
+const scheduleHomeListRefresh = ({onlyStale=false} = {}) => {
+  if (currentRoute.name !== 'home')return;
+  if(pendingHomeRefresh)return pendingHomeRefresh;
+  if(lastHomeBatchRevision === (transport.getHomeListRevision?.() ?? null))return;
   const read = captureRouteRead();
   homeFocusToRestore ??= captureHomeFocus(appEl,document);
   let succeeded=false;
   const work = Promise.resolve().then(async () => {
     assertCurrentRouteRead(read);
-    await syncHomeSections();
+    await syncHomeSections({onlyStale});
     assertCurrentRouteRead(read);
     succeeded=getVisibleHomeSectionKeys().every(key=>!getHomeSection(key).error);
-    render({animatePanels:false,includeBoard:false});
   }).catch(error => { if(routeReadIsCurrent(read)) window.__righeltLastError = error.message; });
   pendingHomeRefresh = work;
   void work.finally(() => {
     if(pendingHomeRefresh !== work)return;
     pendingHomeRefresh=null;
-    if(succeeded && routeReadIsCurrent(read))scheduleHomeListRefresh();
+    if(routeReadIsCurrent(read))render({animatePanels:false,includeBoard:false});
+    if(succeeded && routeReadIsCurrent(read))scheduleHomeListRefresh({onlyStale});
   });
+  return work;
 };
 
+// A manual page, Retry or responsive read can learn off-page membership changes.
+// Settle the existing owner first, then repair healthy stale sections once.
+const stabilizeAfterHomeRead = async read => {
+  assertCurrentRouteRead(read);
+  if(pendingHomeRefresh)await pendingHomeRefresh;
+  assertCurrentRouteRead(read);
+  await scheduleHomeListRefresh({onlyStale:true});
+  assertCurrentRouteRead(read);
+};
+
+
+const restoreHomeReadingIntent = ({patched}) => {
+  if(currentRoute.name !== 'home' || !homeFocusToRestore)return;
+  const settled=routeHydrated && !pendingHomeRefresh && getVisibleHomeSectionKeys().every(key=>!isHomeSectionPending(key));
+  if(!patched && !settled)return;
+  restoreHomeReadingPosition(appEl,homeFocusToRestore,document);
+  if(settled) {
+    if(restoreHomeFocus(appEl,homeFocusToRestore))syncAnnouncement.textContent='Your game lists were updated.';
+    homeFocusToRestore=null;
+  }
+};
 
 const scheduleResponsiveHomeSectionPageSizes = () => {
   window.cancelAnimationFrame(homeSectionResizeFrame);
@@ -3787,10 +3828,12 @@ const scheduleResponsiveHomeSectionPageSizes = () => {
       if (currentRoute.name !== "home") {
         return;
       }
+      const read=captureRouteRead();
       const didUpdate = await syncResponsiveHomeSectionPageSizes();
       if (!didUpdate) {
         return;
       }
+      await stabilizeAfterHomeRead(read);
       syncLiveChannels();
       render({ animatePanels: false, includeBoard: false });
     })();
@@ -3941,7 +3984,9 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   brand.setHome(currentRoute.name === 'home');
   appEl.dataset.actionAffiliation = resolveActionAffiliation({game:transport.getGameViewModel(currentRoute.gameId),identityId:transport.getIdentityId()});
   const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">${renderHeader()}${body}</div>${renderFlyouts()}</div>`;
-  if(currentRoute.name === 'home' && homeFocusToRestore)homeFocusToRestore=refreshHomeFocus(appEl,homeFocusToRestore,document);
+  const didPatchContent=nextMarkup !== lastRenderedMarkup;
+  const preserveHomeReadingPosition=currentRoute.name === 'home' && Boolean(homeFocusToRestore);
+  if(preserveHomeReadingPosition)homeFocusToRestore=refreshHomeFocus(appEl,homeFocusToRestore,document);
   if (nextMarkup !== lastRenderedMarkup) {
     if (currentRoute.name !== "home" || !patchHomeAroundCreateControl(nextMarkup)) {
       const currentMain=appEl.querySelector('.shell-main-content');
@@ -3958,17 +4003,13 @@ const renderContent = ({ animatePanels, includeBoard }) => {
         if (target instanceof HTMLInputElement) target.setSelectionRange(hostInvite.focusTarget.start,hostInvite.focusTarget.end);
       } else document.querySelector('.invite-gate-modal')?.focus({preventScroll:true});
     }
-    if(currentRoute.name === 'home' && homeFocusToRestore && routeHydrated && !isHomeSectionPending(homeFocusToRestore.sectionKey)) {
-      if(restoreHomeFocus(appEl,homeFocusToRestore))syncAnnouncement.textContent='Your game lists were updated.';
-      homeFocusToRestore=null;
-    }
     lastRenderedMarkup = nextMarkup;
     lastRenderedMainMarkup = `<div class="shell-main-content">${renderHeader()}${body}</div>`;
     lastRenderedFlyoutMarkup = renderFlyouts();
     lastRenderedRouteKey = routeKey;
     lastRenderedBaseRouteKey = baseRouteKey;
     lastRenderedTransitionPhaseKey = getRouteTransitionPhaseKey();
-    if (animatePanels) {
+    if (animatePanels && !preserveHomeReadingPosition) {
       animatePanelHeightChanges(previousPanelHeights);
       animateFlyoutPositionChanges(previousFlyoutRects);
     }
@@ -3984,6 +4025,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   updateHeaderFields();
   syncMountedGameShellPanelUi();
   reconcileMiniBoardPreviews();
+  restoreHomeReadingIntent({patched:didPatchContent});
   animateHomeSectionTransitions();
   syncScenarioAuthoringControls();
   if(currentRoute.name==='game' && activeResultGameId===currentRoute.gameId){destroyMountedBoardRuntime();resultPresentation.mount(appEl.querySelector('.game-result'),currentRoute.gameId);if(!hadResultView)appEl.querySelector('.game-result h1')?.focus({preventScroll:true});return;}
@@ -5297,7 +5339,7 @@ appEl.addEventListener("click", async (event) => {
     homeFocusToRestore ??= captureHomeFocus(appEl,document);
     pendingHomeSectionKeys.add(sectionKey);
     render({animatePanels:false,includeBoard:false});
-    try { await loadHomeSectionPage(sectionKey); }
+    try { await loadHomeSectionPage(sectionKey);await stabilizeAfterHomeRead(read); }
     catch (error) { if(routeReadIsCurrent(read))setHomeSection(sectionKey,{...getHomeSection(sectionKey),error:true}); }
     finally { if(routeReadIsCurrent(read)){pendingHomeSectionKeys.delete(sectionKey);render({animatePanels:false,includeBoard:false});} }
     return;
@@ -5311,7 +5353,7 @@ appEl.addEventListener("click", async (event) => {
     }
     const delta = action === "home-page-prev" ? -1 : 1;
     const nextPage = (section.page + delta + section.totalPages) % section.totalPages;
-    const pageGeneration=account.snapshot().generation;
+    const read=captureRouteRead();
     pendingHomeSectionKeys.add(sectionKey);
     render({ animatePanels: false, includeBoard: false });
     try {
@@ -5319,11 +5361,12 @@ appEl.addEventListener("click", async (event) => {
         page: nextPage,
         direction: action === "home-page-prev" ? "prev" : "next",
       });
+      await stabilizeAfterHomeRead(read);
       syncLiveChannels();
     } catch (error) {
       window.__righeltLastError = error instanceof Error ? error.message : String(error);
     } finally {
-      if(pageGeneration!==account.snapshot().generation)return;
+      if(!routeReadIsCurrent(read))return;
       pendingHomeSectionKeys.delete(sectionKey);
       render({ animatePanels: false, includeBoard: false });
       window.requestAnimationFrame(() => {

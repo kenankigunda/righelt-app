@@ -2588,6 +2588,19 @@ test('a delayed Home list cannot overwrite a newer confirmed board or Undo reope
 });
 
 
+test('a newly learned off-page completion invalidates older ongoing totals even when the old visible page omits it',async t=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');const replies={};
+ const store=createLiveTransportStore({storage,fetcher:async url=>new Promise(resolve=>{replies[new URL(String(url),'https://example.test').searchParams.get('section')]=resolve;})});
+ t.after(()=>store.retire());
+ const my=store.loadGamesPage({section:'my'}),completed=store.loadGamesPage({section:'completed'});
+ await new Promise(resolve=>setImmediate(resolve));
+ replies.completed(Response.json({ok:true,section:'completed',page:0,totalGames:1,totalPages:1,games:[{id:'off-page-x',moveCount:5,eventSeq:10,gameplayRevision:5,confirmedOutcomeStatus:'p1_win',previewSnapshot:{outcome:{status:'p1_win'}}}]}));
+ await completed;
+ replies.my(Response.json({ok:true,section:'my',page:0,totalGames:2,totalPages:2,games:[{id:'visible-a',moveCount:1,eventSeq:2,gameplayRevision:1,confirmedOutcomeStatus:'ongoing',previewSnapshot:{outcome:{status:'ongoing'}}}]}));
+ const old=await my;assert.equal(old.games.some(game=>game.id==='off-page-x'),false);
+ assert.equal(old.homeListChanged,true,'off-page completion changes counts despite no substituted visible card');
+});
+
 test('reversed concurrent Home section replies cannot reuse stale ongoing membership after confirmed completion',async t=>{
   const storage=createMemoryStorage(); storage.setItem(IDENTITY_KEY,'id-a');
   const replies={};

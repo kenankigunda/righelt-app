@@ -180,12 +180,24 @@ export const createLiveTransportStore = ({
   let gameById = new Map();
   let homeGameCardById = new Map();
   let homeListRevision = 0;
-  const homeMembershipSignature = card => JSON.stringify([card?.gameplayRevision,card?.confirmedOutcomeStatus,card?.moveCount,card?.lastMoveAt,
-    card?.selfPlayMode,card?.myRole,card?.myRoles,card?.player1?.identityId,card?.player2?.identityId,
-    card?.player1?.profile,card?.player2?.profile,card?.player1?.computerProfile,card?.player2?.computerProfile]);
+  const homeMembershipFields = card => ({gameplayRevision:card?.gameplayRevision,status:card?.confirmedOutcomeStatus,count:card?.moveCount,lastMoveAt:card?.lastMoveAt,
+    selfPlayMode:card?.selfPlayMode,myRole:card?.myRole,myRoles:card?.myRoles,player1Id:card?.player1?.identityId,player2Id:card?.player2?.identityId,
+    player1Profile:card?.player1?.profile,player2Profile:card?.player2?.profile,player1Computer:card?.player1?.computerProfile,player2Computer:card?.player2?.computerProfile});
+  const homeMembershipSignature = card => JSON.stringify(homeMembershipFields(card));
+  const recordHomeProjectionChange = (previous,next,source) => {
+    const old=homeMembershipFields(previous),fresh=homeMembershipFields(next);
+    logDiagnostic('info','home_projection_changed',{gameId:next.id,source,revision:homeListRevision,
+      changedFields:Object.keys(fresh).filter(key=>JSON.stringify(old[key])!==JSON.stringify(fresh[key])),
+      previousGameplayRevision:old.gameplayRevision,nextGameplayRevision:fresh.gameplayRevision,
+      previousStatus:old.status,nextStatus:fresh.status,previousCount:old.count,nextCount:fresh.count,
+      previousRole:old.myRole,nextRole:fresh.myRole,previousRoles:old.myRoles,nextRoles:fresh.myRoles},{verboseOnly:true});
+  };
   const installAuthoritativeHomeCard = (game, eventSeq) => {
     const next = buildStaticGameCardFromGame(game, {eventSeq, confirmed:true});
-    if (homeMembershipSignature(homeGameCardById.get(game.id)) !== homeMembershipSignature(next)) homeListRevision++;
+    if (homeMembershipSignature(homeGameCardById.get(game.id)) !== homeMembershipSignature(next)) {
+      homeListRevision++;
+      recordHomeProjectionChange(homeGameCardById.get(game.id),next,'authoritative');
+    }
     homeGameCardById.set(game.id,next);
   };
   const lastEventSeqByGameId = new Map();
@@ -1192,7 +1204,10 @@ export const createLiveTransportStore = ({
       if (stale) {
         if (homeMembershipSignature(current) !== homeMembershipSignature(game)) homeListChanged = true;
       } else {
-        if (homeMembershipSignature(current) !== homeMembershipSignature(game)) homeListRevision++;
+        if (homeMembershipSignature(current) !== homeMembershipSignature(game)) {
+          homeListRevision++;
+          recordHomeProjectionChange(current,game,'list');
+        }
         homeGameCardById.set(game.id, game);
       }
     }
@@ -1206,6 +1221,8 @@ export const createLiveTransportStore = ({
       for (const game of gamesPage) blockStorage(game.id, error);
     }
     assertActive();
+    logDiagnostic('info','home_page_consistency',{section,startedRevision,installedRevision,revision:homeListRevision,
+      changed:homeListChanged || installedRevision!==homeListRevision},{verboseOnly:true});
     return {
       ...body,
       homeListRevision,
