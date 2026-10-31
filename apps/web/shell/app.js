@@ -1,4 +1,4 @@
-import {selectedHistoryPresentation} from './history-narration.js';
+import {selectedHistoryPresentation,recordedHistoryView} from './history-narration.js';
 import {recordedMoveNumber,visibleRecordedMoves} from './recorded-narration.js';
 import {renderBoardMessageHtml} from '../board/message-presentation.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
@@ -28,7 +28,12 @@ let mobileNavigation = null;
 let replayController = null;
 const replayRequests = createReplayRequest({onChange:() => boardRuntime?.refreshStatus()});
 const viewingScope = () => `${account.snapshot().generation}:${activeStorageGeneration}`;
-const getBoardGame = game => deriveBoardView(game, { narrow: getShellLayoutMode() === "narrow", identityId: transport.getIdentityId() });
+const getBoardGame = game => {
+  const viewed=deriveBoardView(game,{narrow:getShellLayoutMode()==="narrow",identityId:transport.getIdentityId()});
+  if(!viewed?.inHistoryMode)return viewed;
+  const archived=additionalHistory.snapshot(viewed.id)?.items?.map(entry=>entry.move)??[];
+  return recordedHistoryView({...viewed,historyContextMoves:[...archived,...(viewed.historyContextMoves??[])]});
+};
 const decisionDebugStates = new Map();
 const getDecisionDebugState = (gameId) => {
   if (!decisionDebugStates.has(gameId)) decisionDebugStates.set(gameId, { items: [], notes: [], drafts: new Map(), attempts: new Map(), attemptPages: { computer: { items: [], cursor: null }, analysis: { items: [], cursor: null } }, open: new Set(), cursor: null, partial: false, flaggedOnly: false, error: null });
@@ -1757,7 +1762,7 @@ const renderTurnHistory = (game) => {
     const destroyed = destroyedPieces.map((record)=>`<li class="history-destruction-item ${playerToneClassForSide(record.ownerSeat === "p1" ? "P1" : record.ownerSeat === "p2" ? "P2" : "neutral")}" data-testid="history-destruction-item"><span class="history-destruction-label">DESTROYED (${record.position.row},${record.position.col})</span></li>`).join('');
     return `<li class="history-item ${playerToneClassForSide(move.actorSide)}${selected?' is-selected':liveSelected?' is-live-selected':''}${move.undone?' is-undone':''}${pending?' history-item-pending':''}${actions?' history-item-has-actions':''}" ${selected?'':`data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}" tabindex="0" role="button"`} data-key="${escapeHtml(move.moveId || move.clientCommandId || String(move.index))}" data-move-id="${escapeHtml(move.moveId || '')}" ${pending?'data-testid="history-pending-move-item"':'data-testid="history-move-item"'} aria-label="${escapeHtml(actor)} · Move ${move.displayMoveNumber ?? move.index+1}: ${escapeHtml(move.notation)}" ${selected?'aria-current="true"':''} ${pending?'aria-busy="true"':''}>
       <div class="history-item-info"><span class="history-move-line">Move ${move.displayMoveNumber ?? move.index+1}: ${escapeHtml(move.notation)}${pending?' · Pending':''}</span>${destroyedPieces.length > 0 ? `<ul class="history-destruction-list">${destroyed}</ul>` : ""}<span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span></div>
-      ${selected ? renderHistoryPreview(game,buildMovePreview(game.inspectedDecision ?? move),`history:${game.id}:${move.moveId}`) : ''}${actions}</li>`;
+      ${selected ? renderHistoryPreview(game,buildMovePreview(selectedHistoryPresentation(game)?.record ?? move),`history:${game.id}:${move.moveId}`) : ''}${actions}</li>`;
   };
   const groups = [...turns.values()].sort((a,b)=>b.index-a.index).map(turn=>{
     const ordered = turn.moves.sort((a,b)=>(a.turnMoveIndex ?? a.index)-(b.turnMoveIndex ?? b.index));
@@ -2484,9 +2489,10 @@ const renderAdditionalHistory = game => {
   if(!state)return "";
   if(!state.metadata&&!state.loading&&!state.error)queueMicrotask(()=>void additionalHistory.ensure(game.id));
   const archiveTurns = new Map();
-  const archiveItems = state.items.filter(entry=>entry.move?.action?.type!=='end_turn'&&!game.historyContextMoves?.some(move=>move.moveId===entry.id));
+  const archiveMoves=new Map(visibleRecordedMoves(state.items.map(entry=>entry.move),{includeUndone:true}).map(move=>[move.moveId,move]));
+  const archiveItems = state.items.filter(entry=>archiveMoves.has(entry.id)&&!game.historyContextMoves?.some(move=>move.moveId===entry.id)).map(entry=>({...entry,move:archiveMoves.get(entry.id)}));
   const inspected = game.inspectedDecision;
-  if (inspected && !game.moves?.some(move=>move.moveId===inspected.moveId) && !archiveItems.some(entry=>entry.id===inspected.moveId)) archiveItems.unshift({id:inspected.moveId,move:inspected,at:inspected.at});
+  if (inspected && inspected.action?.type!=='end_turn' && !game.moves?.some(move=>move.moveId===inspected.moveId) && !archiveItems.some(entry=>entry.id===inspected.moveId)) archiveItems.unshift({id:inspected.moveId,move:inspected,at:inspected.at});
   for (const entry of archiveItems) {
     const index = entry.move.turnIndex;
     if (!archiveTurns.has(index)) archiveTurns.set(index,[]);
@@ -2502,7 +2508,8 @@ const renderAdditionalHistory = game => {
     const heading=`<div class="history-turn-heading${selectedTurn?' is-selected':''}" data-key="archive-turn:${escapeHtml(game.id)}:${index}" ${selectedTurn?'aria-current="true"':!selectableTurn?'':`data-action="jump-history-turn" data-game-id="${escapeHtml(game.id)}" data-turn-index="${index}" role="button" tabindex="0"`}>Turn ${index+1} · ${escapeHtml(COMPUTER_PROFILES[turnActor.computerProof?.profile]?.name ?? playerDisplayName(game,side))}</div>`;
     const contents=entries.sort((a,b)=>a.move.turnMoveIndex-b.move.turnMoveIndex).map(entry=>{
     const selected=Boolean(game.inHistoryMode&&game.inspectedDecision?.moveId===entry.id);
-    const preview=selected?renderHistoryPreview(game,buildMovePreview(game.inspectedDecision ?? entry.move),`archive:${game.id}:${entry.id}`):'';
+    const previewGame={...game,historyContextMoves:[...state.items.map(item=>item.move),...(game.historyContextMoves??[])]};
+    const preview=selected?renderHistoryPreview(previewGame,buildMovePreview(selectedHistoryPresentation(previewGame)?.record ?? entry.move),`archive:${game.id}:${entry.id}`):'';
     return `<li class="history-item ${playerToneClassForSide(entry.move.actorSide)}${selected?' is-selected':''}${entry.move.undone?' is-undone':''}" data-key="archive:${escapeHtml(entry.id)}" data-archive-move-id="${escapeHtml(entry.id)}" aria-label="${escapeHtml(historyActorLabel(game,entry.move,{identityId:transport.getIdentityId()}))}"><${selected?'div':'button'} class="history-item-info history-archive-select" ${selected?'':'data-action="inspect-history-archive"'} data-game-id="${escapeHtml(game.id)}" data-decision-id="${escapeHtml(entry.id)}" aria-current="${selected?'true':'false'}"><span class="history-move-line">${recordedMoveNumber(entry.move)==null?'Move unavailable':`Move ${recordedMoveNumber(entry.move)}:`} ${escapeHtml(entry.move.notation)}${entry.move.undone?' · Undone':entry.historyStatus==='unknown'?' · Status unavailable':''}</span><span class="history-move-at small">${escapeHtml(formatClientDateTime(entry.at))}</span></${selected?'div':'button'}>${preview}</li>`;
     }).join('');
     return `<li class="history-turn ${playerToneClassForSide(side)}" data-key="archive-history-turn:${escapeHtml(game.id)}:${index}">${heading}${selectedTurn?renderHistoryPreview(game,buildTurnPreview(game.historyTurnMoves),`archive-turn:${game.id}:${index}`):''}<ol class="history-list history-list-nested">${contents}</ol></li>`;

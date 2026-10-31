@@ -22,7 +22,15 @@ const sizingSequences = [
   [sizingDecision('push','A'),sizingDecision('follow','B'),sizingDecision('follow','C')],
 ];
 const narrationSizes = sizingActors.flatMap(({name,actorName}) => [
-  ...['move','project','rush','push','retreat','follow'].map(type=>({text:describeMove(sizingDecision(type,'A'),name),actorName})),
+  ...['move','project','rush','push','retreat','follow'].flatMap(type=>[
+    {text:describeMove(sizingDecision(type,'A'),name),actorName},
+    // Finite single-step envelope, including one coordinate per removal owner.
+    // Long variable destination lists are admitted from exact records below.
+    {text:describeMove({...sizingDecision(type,'A'),actorSide:'P1',destroyedPieces:[
+      {pieceId:'sizing-own',ownerSeat:'P1',position:maximumPoint},
+      {pieceId:'sizing-opposing',ownerSeat:'P2',position:maximumPoint},
+    ]},name),actorName},
+  ]),
   ...sizingSequences.map(moves=>({text:describeTurn(moves,name),actorName})),
 ]);
 const maximumCoordinate=renderCoordinateChip({row:9,col:9});
@@ -38,11 +46,11 @@ const explanationSizes = SELECTED_PIECE_EXPLANATIONS.flatMap(text => {
 
 // Both font families use this one real formatter. The fallback remains present
 // after Manrope loads, so a cold font swap cannot shrink the reserved message.
-// This finite set is 123 paragraphs per family, with no actionable replicas.
+// The finite base uses the real grammar, with no actionable replicas.
 const renderMessageSizing = fallback => {
   const fontClass=fallback?' board-message-fallback-sizing':'';
   const attrs=index=>`data-sizing-font="${fallback?'fallback':'primary'}" data-sizing-variant="${index}" aria-hidden="true" inert`;
-  return narrationSizes.map((message,index) => `<p class="board-preview-label board-message-sizing${fontClass}" ${attrs(`narration:${index}`)}>${renderBoardMessageHtml({rows:[{...message,coordinates:[maximumPoint],action:{id:"replay-computer",label:"Show me again"}},{text:"Select a piece or",action:{id:"pass",label:"Pass"}}]},{sizing:true})}</p>`).join('')
+  return narrationSizes.map((message,index) => `<p class="board-preview-label board-message-sizing board-message-narration-sizing${fontClass}" ${attrs(`narration:${index}`)}>${renderBoardMessageHtml({rows:[{...message,coordinates:[maximumPoint],action:{id:"replay-computer",label:"Show me again"}},{text:"Select a piece or",action:{id:"pass",label:"Pass"}}]},{sizing:true})}</p>`).join('')
     + explanationSizes.map((text,index) => `<p class="board-preview-label board-message-sizing board-explanation-sizing${fontClass}" ${attrs(`explanation:${index}`)}>${text}</p>`).join('');
 };
 

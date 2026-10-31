@@ -27,7 +27,7 @@ test('push follower counts exclude initial pusher and deduplicate actors',()=>{
  assert.equal(describeRecordedTurn([push,follow,other,{...other}],'Maya'),'Maya pushed onto (4, 4) and had 1 piece follow');
 });
 test('closure folds final board and distinct removals into last real action once without mutating records',()=>{
- const first={...move('rush'),destroyedPieces:[removal('victim','p2')]},closure={...move('end_turn'),snapshot:{pieces:['final']},destroyedPieces:[removal('victim','p2'),removal('lost','p1')]};
+ const first={...move('rush'),destroyedPieces:[removal('victim','p2')]},closure={...move('end_turn'),index:41,snapshot:{pieces:['final']},destroyedPieces:[removal('victim','p2'),removal('lost','p1')]};
  const original=structuredClone([first,closure]);const visible=visibleRecordedMoves([first,closure]);
  assert.equal(visible.length,1);assert.deepEqual(visible[0].snapshot,{pieces:['final']});assert.equal(visible[0].destroyedPieces.length,2);assert.deepEqual([first,closure],original);
  assert.equal(describeRecordedTurn([first,closure],'Maya'),'Maya rushed from (4, 3) to (4, 4), lost piece at (5, 3), and destroyed piece at (5, 3)');
@@ -36,4 +36,18 @@ test('closure folds final board and distinct removals into last real action once
 test('numbering is board-wide and missing metadata stays unavailable',()=>{
  assert.equal(recordedMoveNumber({index:40,turnMoveIndex:0}),41);assert.equal(recordedMoveNumber({index:40,displayMoveNumber:17}),17);assert.equal(recordedMoveNumber({turnMoveIndex:0}),null);
  assert.equal(describeRecordedMove({action:{type:'rush'}},'Maya'),null);
+});
+
+test('reverse archived pages fold closure into its recorded branch only',()=>{
+ const old={...move('rush'),moveId:'old',index:4,turnIndex:2,undone:true,snapshot:{label:'old'}},active={...move('rush'),moveId:'active',index:6,turnIndex:2,snapshot:{label:'active'}};
+ const closure={...move('end_turn'),moveId:'closure',index:5,turnIndex:2,undone:true,snapshot:{label:'closed-old'}};
+ const visible=visibleRecordedMoves([closure,active,old],{includeUndone:true});
+ assert.deepEqual(visible.map(move=>[move.moveId,move.snapshot.label]),[['old','closed-old'],['active','active']]);
+ assert.deepEqual(visibleRecordedMoves([closure,active,old]).map(move=>[move.moveId,move.snapshot.label]),[['active','active']]);
+});
+
+test('partial archive never assigns a later closure to an earlier action',()=>{
+ const first={...move('rush'),moveId:'A',index:1,turnIndex:2,turnMoveIndex:0,snapshot:{label:'A-only'}};
+ const closure={...move('end_turn'),moveId:'closure',index:5,turnIndex:2,turnMoveIndex:4,snapshot:{label:'after-omitted-actions'}};
+ assert.deepEqual(visibleRecordedMoves([first,closure])[0].snapshot,{label:'A-only'});
 });

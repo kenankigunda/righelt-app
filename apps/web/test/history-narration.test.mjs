@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {selectedHistoryPresentation} from '../shell/history-narration.js';
+import {selectedHistoryPresentation,recordedHistoryView} from '../shell/history-narration.js';
 import {renderBoardMessageHtml} from '../board/message-presentation.js';
 const from={row:4,col:3},to={row:4,col:4};
 const move=(type,actorSide='P1')=>({moveId:type,index:40,displayMoveNumber:41,turnIndex:4,turnMoveIndex:0,actorSide,action:{type,actorId:actorSide,from,to},selectionSnapshot:{sideToMove:actorSide,pieces:[]},snapshot:{pieces:[]}});
@@ -22,4 +22,20 @@ test('turn summary names the turn owner while retaining distinct defender attrib
 test('unknown historical metadata does not briefly become a live turn caption or guessed move number',()=>{
  const result=selectedHistoryPresentation(game);assert.equal(result.caption.text,'Move unavailable');assert.equal(result.message.text,'Historical move details unavailable');
  assert.equal(selectedHistoryPresentation({...game,inHistoryMode:false}),null);
+});
+
+test('known closing record finalizes selected historical presentation without changing live authority',()=>{
+ const action=move('rush'),final={pieces:[],outcome:{status:'ongoing'}},closure={...move('end_turn'),moveId:'closure',index:41,turnMoveIndex:1,snapshot:final,destroyedPieces:[{pieceId:'lost',ownerSeat:'p1',position:to}]};
+ const selected={...game,inspectedDecision:action,moves:[action,closure],currentSnapshot:action.snapshot};const original=structuredClone(selected);
+ const view=recordedHistoryView(selected);
+ assert.deepEqual(view.currentSnapshot,final);assert.deepEqual(selected,original);
+ assert.match(selectedHistoryPresentation(selected).message.text,/and lost piece at \(4, 4\)/);
+ const live={...selected,inHistoryMode:false};assert.equal(recordedHistoryView(live),live);
+});
+
+test('selected archived action keeps its exact snapshot when the closure predecessor is absent',()=>{
+ const action={...move('rush'),index:1,turnIndex:2,turnMoveIndex:0,snapshot:{label:'selected-only'}};
+ const closure={...move('end_turn'),moveId:'closure',index:5,turnIndex:2,turnMoveIndex:4,snapshot:{label:'later-final'}};
+ const selected={...game,inspectedDecision:action,moves:[closure],currentSnapshot:action.snapshot};
+ assert.deepEqual(recordedHistoryView(selected).currentSnapshot,{label:'selected-only'});
 });

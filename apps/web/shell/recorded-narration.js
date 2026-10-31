@@ -28,15 +28,32 @@ export const distinctRecordedRemovals = moves => {
  * never creates a selectable History row or a synthetic narrated replay step. */
 export const visibleRecordedMoves = (moves,{includeUndone=false}={}) => {
   const result=[];
-  for(const move of moves??[]){
+  const ordered=[...(moves??[])].sort((left,right)=>Number.isInteger(left.index)&&Number.isInteger(right.index)?left.index-right.index:0);
+  for(const move of ordered){
     if(!includeUndone&&move.undone)continue;
     if(move.action?.type!=='end_turn'){result.push(move);continue;}
-    const previous=result.at(-1);
-    if(!previous||previous.turnIndex!==move.turnIndex)continue;
-    result[result.length-1]={...previous,snapshot:move.snapshot??previous.snapshot,
+    const previousIndex=result.findLastIndex(previous=>previous.turnIndex===move.turnIndex&&Boolean(previous.undone)===Boolean(move.undone));
+    const previous=result[previousIndex];
+    if(!previous)continue;
+    // Partial archives can retain a closure while omitting its real predecessor.
+    // Same turn/branch is insufficient evidence for attaching the final state.
+    const boardAdjacent=Number.isInteger(previous.index)&&Number.isInteger(move.index)&&move.index===previous.index+1;
+    const turnAdjacent=Number.isInteger(previous.turnMoveIndex)&&Number.isInteger(move.turnMoveIndex)&&move.turnMoveIndex===previous.turnMoveIndex+1;
+    if(!boardAdjacent&&!turnAdjacent)continue;
+    if(Number.isInteger(previous.index)&&Number.isInteger(move.index)&&!boardAdjacent)continue;
+    if(Number.isInteger(previous.turnMoveIndex)&&Number.isInteger(move.turnMoveIndex)&&!turnAdjacent)continue;
+    result[previousIndex]={...previous,snapshot:move.snapshot??previous.snapshot,
       destroyedPieces:distinctRecordedRemovals([previous,move])};
   }
   return result;
+};
+/** Preserve an explicitly selected record while folding its known closure only. */
+export const recordedMoveWithClosure=(move,context=[])=>{
+  if(!move||move.action?.type==='end_turn')return move;
+  const records=new Map();
+  for(const record of [...context,move])if(record?.moveId)records.set(record.moveId,record);
+  if(!move.moveId)return move;
+  return visibleRecordedMoves([...records.values()],{includeUndone:true}).find(record=>record.moveId===move.moveId)??move;
 };
 const removalEvents=(moves,actorSide)=>{
   const removed=distinctRecordedRemovals(moves),own=[],opposing=[];
