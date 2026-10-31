@@ -1,3 +1,4 @@
+import {computerKindIcon} from './ui.js';
 import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
 import { loadingAttributes } from "./loading.js";
 import { renderPlayerEmblem } from './player-emblem.js';
@@ -13,7 +14,7 @@ export const participantDisplayName = (person, fallback = 'Guest player') =>
   COMPUTER_PROFILES[person?.computerProfile]?.name || person?.profile?.displayName || person?.profile?.username || fallback;
 export const participantName = (person, {inlineComputerBadge = false} = {}) =>
   person?.computerProfile && COMPUTER_PROFILES[person.computerProfile]
-    ? `<span class="player-name">${COMPUTER_PROFILES[person.computerProfile].name}</span>${inlineComputerBadge ? '<span class="player-kind-badge">Computer</span>' : ''}`
+    ? `<span class="player-name">${COMPUTER_PROFILES[person.computerProfile].name}</span>${inlineComputerBadge ? computerKindIcon() : ''}`
     : person?.profile
     ? `<span class="player-name"><bdi>${escape(person.profile.displayName || person.profile.username)}</bdi></span><span class="player-username"><bdi>@${escape(person.profile.username)}</bdi></span>`
     : `<bdi>Guest player</bdi>`;
