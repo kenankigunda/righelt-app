@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createSyncStore } from "../shell/sync-store.js";
+import {CURRENT_COMPUTER_MODEL} from "../generated/packages/shared-types/src/computer-play.js";
 import { buildHistoryBranchSeedFromGame } from "../shell/scenarios.js";
 import apiWorker from "../../api/index.js";
 import { createFakeD1 } from "../../../packages/api-handler/test/support/fake-d1.mjs";
@@ -547,7 +548,7 @@ test("integration sync store keeps a failed create-game stub locally hydratable 
   assert.deepEqual(syncClientCalls, [], "a game that never persisted must never open a recovery socket");
 });
 
-test("integration sync store keeps optimistic revert request ids aligned through auto-approved server commits", async () => {
+for (const [kind, options] of [["unopposed",{selfPlayMode:false}],["both sides",{selfPlayMode:true}],["computer",{computer:{p1:null,p2:"babs"},computerModelId:CURRENT_COMPUTER_MODEL.id}]]) test(`integration sync store applies owned Undo directly while its server receipt is held (${kind})`, async () => {
   const env = createApiEnv();
   const storage = createMemoryStorage();
   const requests = [];
@@ -585,8 +586,12 @@ test("integration sync store keeps optimistic revert request ids aligned through
     }),
   });
 
-  const createHandle = store.createGame({ selfPlayMode: false });
+  const createHandle = store.createGame(options);
   const createdGame = await createHandle.committed;
+  if(kind === "computer"){
+    assert.equal(createdGame.computer.seats.p2,"babs");
+    assert.equal(createdGame.player1.identityId,createdGame.player2.identityId,"The human owns the computer seat, regardless of its display identity");
+  }
   const action = createdGame.legalActions.find((entry) => entry.type !== "pass") ?? createdGame.legalActions[0];
   const moveHandle = await store.applyGameAction({
     gameId: createdGame.id,
@@ -613,6 +618,7 @@ test("integration sync store keeps optimistic revert request ids aligned through
   const request = requests.find((entry) => (entry.url.endsWith("/revert-request") || entry.body?.payload?.operation === "revert-request") && entry.method === "POST");
   assert.equal((request?.body?.payload?.values ?? request?.body)?.requestId, optimisticRequestId);
   assert.equal(committedGame.pendingRevertRequest, null);
+  assert.equal(committedGame.notifications[0], "Undo applied", "Direct Undo must not announce a request acceptance");
   assert.equal(committedGame.moves.at(-1)?.undone, true);
   assert.equal(store.getGameViewModel(createdGame.id).pendingRevertRequest, null);
   assert.equal(store.getGameViewModel(createdGame.id).moves.at(-1)?.undone, true);
