@@ -207,7 +207,9 @@ test.describe('narrow board and history',()=>{
       await page.getByRole('button',{name:'Undo before this move',exact:true}).tap();
       await expect(page.getByTestId('undo-waiting-notice')).toBeVisible();
       await expect(guest.getByTestId('undo-approval-notice')).toBeVisible();
-      await firstRow.click();await secondRow.click();await firstRow.click();await expect(firstRow).toHaveClass(/is-selected/);
+      // Each explicit inspection must settle before the next native selection.
+      // Target move text so an expanded row's action buttons are never clicked.
+      for(const row of [firstRow,secondRow,firstRow]){await row.locator('.history-move-line').click();await expect(row).toHaveClass(/is-selected/);}
       await guestContext.route(/\/(shared|revert-approve)$/,async route=>{
         if(!isOperationRequest(route.request(),'revert-approve'))return route.continue();
         approvalSeen=true;await held;await route.continue();
