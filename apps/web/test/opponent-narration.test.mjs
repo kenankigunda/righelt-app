@@ -108,3 +108,12 @@ test('quiet renewal keeps actual opponent narration and replay while the interac
  assert.equal(opponentBoardMessage(g,{phase:'idle',activity:{quietRenewal:false}},{},options).text,before.text);
  g.moves=[];g.turns=[];assert.equal(opponentBoardMessage(g,status,{},options),null,'no completed turn leaves the normal selection prompt in charge');
 });
+
+test('terminal authority takes precedence over stale computer work while inspection stays available',()=>{
+ for(const status of ['p1_win','p2_win','draw']){
+ const g=game();Object.assign(g,{computer:{seats:{p1:'tau'}},computerTurn:'tau'});g.board.state.outcome={status};
+ assert.equal(opponentBoardMessage(g,{phase:'saving'}),'Game complete');
+ assert.equal(opponentBoardMessage(g,{}, {selectedPieceId:'piece'}),null);
+ assert.equal(opponentBoardMessage({...g,inHistoryMode:true},{}),null);
+ }
+});

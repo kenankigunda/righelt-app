@@ -1,3 +1,4 @@
+import {isCompletedGame} from './game-lifecycle.js';
 import { computerPhasePresentation } from './computer-narration.js';
 import { icon } from './ui.js';
 import { activityActorSide } from './activity-affiliation.js';
@@ -12,7 +13,7 @@ export const escapeDebug = value => displayValue(value).replace(/[&<>"']/g, c =>
 const controlIcons={retry:'rematch',takeover:'play',manual:'players',switch:'right',pause:'pause',resume:'play','resume-here':'play',step:'right',upgrade:'check','decline-upgrade':'close'};
 const button = (action, label) => `<button class="secondary" data-action="computer-control" data-control="${action}">${icon(controlIcons[action])}${label}</button>`;
 export function renderComputerProgress(game, status = {}) {
-  if (!game?.computer) return '';
+  if (!game?.computer || isCompletedGame(game)) return '';
   const phase = computerPhasePresentation(game, status);
   status = {...status, ...phase};
   const control = game.computer;
