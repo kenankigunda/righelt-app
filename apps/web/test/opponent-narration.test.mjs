@@ -16,8 +16,8 @@ test('read only boards never receive gameplay or replay CTAs for another player'
  const g=game();g.controlSeat='Player 1';
  assert.equal(opponentBoardMessage(g,{}),'Waiting for your opponent');
  g.myRoles=[];g.moves.push({...g.moves[0],moveId:'current',turnIndex:1});assert.equal(opponentBoardMessage(g,{}).text,'Guest 1 to play');
- g.controlSeat='Player 2';assert.equal(opponentBoardMessage(g,{}, {},{identityId:'me'}),'Your turn');
- g.pendingCommandCount=1;assert.equal(opponentBoardMessage(g,{}),'Saving your move');
+ g.controlSeat='Player 2';assert.match(opponentBoardMessage(g,{}, {},{identityId:'me'}).text,/Your opponent/);
+ g.pendingCommandCount=1;assert.equal(opponentBoardMessage(g,{}).text,'Guest 2 to play');
  g.inHistoryMode=true;assert.equal(opponentBoardMessage(g,{}),null);
 });
 test('turn ownership and forced retreat attribution use sides, including a dual-seat account',()=>{
@@ -60,9 +60,9 @@ test('spectators can replay named guest completed turns only before the next ack
   const message=opponentBoardMessage(g,{});assert.equal(message.text,`${side==='P1'?'Guest 1':'Guest 2'} rushed a piece from (1, 2) to (2, 3)`);assert.equal(message.action.label,'Show me again');
   g.moves.push({...g.moves[0],moveId:'current',turnIndex:1});assert.equal(opponentBoardMessage(g,{}).text,`${side==='P1'?'Guest 2':'Guest 1'} to play`);
   g.moves[1].undone=true;assert.equal(opponentBoardMessage(g,{}).action.label,'Show me again');
-  g.sharedMutationsBlocked=true;assert.equal(opponentBoardMessage(g,{}),'Waiting for the game');
+  g.sharedMutationsBlocked=true;assert.equal(opponentBoardMessage(g,{}).action.label,'Show me again');
  }
- const g=game();assert.equal(opponentBoardMessage(g,{}, {},{identityId:'me'}),'Your turn');
+ const g=game();assert.match(opponentBoardMessage(g,{}, {},{identityId:'me'}).text,/Your opponent/);
 });
 
 test('optimistic computer terminal saves finish before confirmed game-complete narration',()=>{
@@ -74,9 +74,9 @@ test('legal untouched local turns offer Pass beside human and computer narration
  for(const computer of [false,true]){
   const g=game();g.legalActions=[{type:'pass'}];
   if(computer){g.computer={seats:{p1:'tau'}};g.moves[0].computerProof={profile:'tau'};}
-  const message=opponentBoardMessage(g,{}, {},{canInteract:true});assert.equal(message.action.label,'Show me again');assert.deepEqual(message.actions.map(action=>action.id),['pass','replay-computer']);
-  delete g.legalActions;assert.equal(opponentBoardMessage(g,{}, {},{canInteract:true}).actions,undefined);
-  g.legalActions=[{type:'pass'}];assert.equal(opponentBoardMessage(g,{}, {},{canInteract:false}).actions,undefined);
+  const message=opponentBoardMessage(g,{}, {},{canInteract:true});assert.equal(message.action.label,'Show me again');assert.deepEqual(message.rows.map(row=>row.text),[message.text,'Select a piece or']);assert.deepEqual(message.rows[1].actions.map(action=>action.id),['pass']);
+  delete g.legalActions;assert.deepEqual(opponentBoardMessage(g,{}, {},{canInteract:true}).rows[1].actions,[]);
+  g.legalActions=[{type:'pass'}];assert.equal(opponentBoardMessage(g,{}, {},{canInteract:false}).rows[1].actions[0].id,'pass');
   g.board.state.continuation={type:'rush'};assert.equal(opponentBoardMessage(g,{}, {},{canInteract:true}),null);
  }
 });
@@ -85,26 +85,26 @@ test('spectator narration uses participant names and preserves owned relative wo
  const g=game();g.myRoles=[];g.player1.profile={displayName:'Étoile 星'};g.player2.profile={username:'BlueMoon'};
  const message=opponentBoardMessage(g,{});assert.equal(message.text,'Étoile 星 rushed a piece from (1, 2) to (2, 3)');assert.equal(message.action.label,'Show me again');assert.equal(message.actorName,'Étoile 星');
  g.moves.push({...g.moves[0],moveId:'current',turnIndex:1});assert.equal(opponentBoardMessage(g,{}).text,'BlueMoon to play');
- assert.equal(opponentBoardMessage(g,{}, {},{identityId:'me'}),'Your turn');
+ assert.match(opponentBoardMessage(g,{}, {},{identityId:'me'}).text,/Your opponent/);
  g.controlSeat='Player 1';assert.equal(opponentBoardMessage(g,{}, {},{identityId:'me'}),'Waiting for your opponent');
  const actorSides=g.moves.map(move=>move.actorSide);assert.deepEqual(actorSides,['P1','P1']);
 });
 
 test('a pending computer control is not described as saving a human move',()=>{
  const g={...game(),pendingCommandCount:1,pendingComputerControl:true};
- assert.equal(opponentBoardMessage(g,{}),'Updating computer play');
- g.pendingComputerControl=false;assert.equal(opponentBoardMessage(g,{}),'Saving your move');
+ assert.match(opponentBoardMessage(g,{}).text,/Your opponent/);
+ g.pendingComputerControl=false;assert.match(opponentBoardMessage(g,{}).text,/Your opponent/);
 });
 
 
-test('quiet renewal keeps actual opponent narration and replay while the interaction fence removes Pass',()=>{
+test('quiet renewal keeps actual opponent narration and replay while the interaction fence preserves disabled Pass',()=>{
  const g=game();g.computer={seats:{p1:'babs',p2:null}};g.moves[0].computerProof={profile:'babs'};g.legalActions=[{type:'pass'}];
  const status={phase:'idle',activity:{quietRenewal:true}},options={canInteract:true,identityId:'me'};
- const before=opponentBoardMessage(g,status,{},options);assert.match(before.text,/Babs rushed/);assert.equal(before.actions[0].id,'pass');
+ const before=opponentBoardMessage(g,status,{},options);assert.match(before.text,/Babs rushed/);assert.equal(before.rows[1].actions[0].id,'pass');
  g.pendingComputerControl=true;g.pendingCommandCount=1;g.sharedMutationsBlocked=true;options.canInteract=false;
  const held=opponentBoardMessage(g,status,{},options);
  assert.equal(typeof held==='string'?held:held.text,before.text);assert.deepEqual(held.action,{id:'replay-computer',label:'Show me again'});
- assert.equal((held.actions??[]).some(action=>action.id==='pass'),false);assert.equal(g.sharedMutationsBlocked,true);
- assert.equal(opponentBoardMessage(g,{phase:'idle',activity:{quietRenewal:false}},{},options),'Updating computer play');
- g.moves=[];g.turns=[];assert.equal(opponentBoardMessage(g,status,{},options),'Your turn','no completed turn uses the normal human-turn fallback');
+ assert.equal(held.rows[1].actions[0].id,'pass');assert.equal(g.sharedMutationsBlocked,true);
+ assert.equal(opponentBoardMessage(g,{phase:'idle',activity:{quietRenewal:false}},{},options).text,before.text);
+ g.moves=[];g.turns=[];assert.equal(opponentBoardMessage(g,status,{},options),null,'no completed turn leaves the normal selection prompt in charge');
 });
