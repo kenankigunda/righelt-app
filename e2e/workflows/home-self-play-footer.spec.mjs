@@ -15,6 +15,8 @@ test('Home self-play stays centered below opponent choices at narrow widths and 
   })).toBe(true);
  }
  await page.evaluate(()=>document.documentElement.style.zoom='');
+ await page.setViewportSize({width:1024,height:900});
+ await page.screenshot({path:info.outputPath('home-self-play-centered-desktop.png')});
  await page.setViewportSize({width:390,height:900});await action.focus();await expect(action).toBeFocused();
  await page.screenshot({path:info.outputPath('home-self-play-centered-mobile.png')});
  await page.keyboard.press('Enter');await expect(page.getByTestId('game-shell')).toBeVisible();
