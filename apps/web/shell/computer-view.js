@@ -1,8 +1,10 @@
+import {isCompletedGame} from './game-lifecycle.js';
 import { computerPhasePresentation } from './computer-narration.js';
 import { icon } from './ui.js';
 import { activityActorSide } from './activity-affiliation.js';
 import { COMPUTER_PROFILES, CURRENT_COMPUTER_MODEL, COMPUTER_TIMING, COMPUTER_LIMITS } from '../generated/packages/shared-types/src/computer-play.js';
 import { renderGameAlertCard } from './game-alert.js';
+import { SYNC_TIMING } from '../generated/packages/shared-types/src/sync-protocol.js';
 const displayValue = value => {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
@@ -10,9 +12,9 @@ const displayValue = value => {
 };
 export const escapeDebug = value => displayValue(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const controlIcons={retry:'rematch',takeover:'play',manual:'players',switch:'right',pause:'pause',resume:'play','resume-here':'play',step:'right',upgrade:'check','decline-upgrade':'close'};
-const button = (action, label) => `<button class="secondary" data-action="computer-control" data-control="${action}">${icon(controlIcons[action])}${label}</button>`;
+const button = (action, label, { disabled = false } = {}) => `<button class="secondary" data-action="computer-control" data-control="${action}"${disabled ? ' disabled' : ''}>${icon(controlIcons[action])}${label}</button>`;
 export function renderComputerProgress(game, status = {}) {
-  if (!game?.computer) return '';
+  if (!game?.computer || isCompletedGame(game)) return '';
   const phase = computerPhasePresentation(game, status);
   status = {...status, ...phase};
   const control = game.computer;
@@ -23,6 +25,9 @@ export function renderComputerProgress(game, status = {}) {
   const working = ['preparing', 'checking', 'looking-ahead', 'initializing-verified-runtime', 'saving'].includes(status.phase);
   let body = '';
   if (!owner) body = '';
+  else if (status.automaticRetry) {
+    if (status.automaticRetry.waitMs >= SYNC_TIMING.reconnectAlertMs) body = `<p>${escapeDebug(name)} is waiting. We’re trying again.</p>${status.automaticRetry.waitMs >= SYNC_TIMING.confirmationBudgetMs ? button('retry', 'Retry', { disabled: !status.automaticRetry.canRetry }) : ''}`;
+  }
   else if (status.activity?.showRecoveryNotice) body = `<p>${escapeDebug(name)} hasn’t resumed</p>${button('resume-here', 'Resume here')}`;
   else if (status.phase === 'other-device') { /* Deliberate handoff remains available in the player card. */ }
   else if (status.phase === 'recovery') body = `<p>${escapeDebug(name)} needs a hand.</p><div class="computer-actions">${status.activity && !status.activity.disabledReason ? button('resume-here', 'Resume here') : button('retry', 'Retry')}${button('takeover', 'Play this turn')}${button('manual', 'Play both sides')}<button class="secondary" data-action="computer-branch">${icon('board')}Create new game here</button><a class="button-link secondary" href="#/">${icon('exit')}Exit</a></div>`;
@@ -51,7 +56,8 @@ export function renderDecisionDebug({ game, selection, legalActions, status, dia
   const selected = game?.inspectedDecision ?? (game?.inHistoryMode ? game.moves?.find(move => move.index === game.historyIndex) : game?.moves?.at(-1));
   const position = game?.currentSnapshot;
   const id = selected?.moveId ?? 'initial';
-  const note = state.drafts.get(id) ?? state.notes.find(note => note.decisionId === id) ?? { text: '', flagged: false };
+  const noteId = state.noteDecisionId ?? id;
+  const note = state.drafts.get(noteId) ?? state.notes.find(note => note.decisionId === noteId) ?? { text: '', flagged: false };
   const analysis = status.analysis?.gameId === game?.id ? status.analysis : null;
   const attempt = selected?.computerProof ? state.attempts.get(selected.computerProof.attemptId) : null;
   const actions = legalActions ?? [];
@@ -64,7 +70,7 @@ export function renderDecisionDebug({ game, selection, legalActions, status, dia
     const page = state.attemptPages?.[kind] ?? { items: [], cursor: null };
     return `<h3>${kind === 'computer' ? 'Computer play attempts' : 'My private analyses'}</h3><button class="secondary" data-action="debug-load-attempts" data-kind="${kind}">${page.cursor ? 'Load more' : 'Load saved searches'}</button>${page.items.map(item => `<details data-persist data-key="${escapeDebug(item.attemptId)}"><summary>${escapeDebug(item.attempt.outcome ?? item.attempt.phase ?? item.attempt.result?.status)} · ${escapeDebug(item.attemptId)}</summary>${facts({ 'Decision': item.attempt.decisionId, 'Started': item.attempt.startedAt ? safeTimestamp(item.attempt.startedAt) : null, 'Stopped': item.attempt.reason ?? item.attempt.message, 'Position': item.attempt.fingerprint, 'Model': item.attempt.modelId ?? item.attempt.proof?.modelId })}${searchEvidence(item.attempt.result)}<details data-persist data-key="saved-raw"><summary>Saved raw evidence</summary>${json(item.attempt)}</details></details>`).join('')}`;
   }).join(''), state.open)}
-  ${section('notes', 'My flags and notes', !signedIn ? '<p>Sign in to save private notes.</p>' : `<p>Only your account can read these notes.</p><label><input type="checkbox" data-debug-note="flagged" data-persist data-version="${state.noteVersions?.get(id) ?? 0}" data-decision-id="${escapeDebug(id)}" ${note.flagged ? 'checked' : ''}> Flag this decision</label><label>Note<textarea data-debug-note="text" data-decision-id="${escapeDebug(id)}" maxlength="${COMPUTER_LIMITS.noteCharacters}" data-version="${state.noteVersions?.get(id) ?? 0}" data-persist>${escapeDebug(note.text)}</textarea></label><div class="computer-actions"><button data-action="debug-save-note" data-decision-id="${escapeDebug(id)}">Save note</button><button class="secondary" data-action="debug-delete-note" data-decision-id="${escapeDebug(id)}">Delete note</button></div><label><input type="checkbox" data-debug-filter ${state.flaggedOnly ? 'checked' : ''}> Show flagged decisions only</label>`, state.open)}
+  ${section('notes', 'My flags and notes', !signedIn ? '<p>Sign in to save private notes.</p>' : `<p>Only your account can read these notes. Decision: ${escapeDebug(noteId)}.</p><label><input type="checkbox" data-debug-note="flagged" data-persist data-version="${state.noteVersions?.get(noteId) ?? 0}" data-decision-id="${escapeDebug(noteId)}" ${note.flagged ? 'checked' : ''}> Flag this decision</label><label>Note<textarea data-debug-note="text" data-decision-id="${escapeDebug(noteId)}" maxlength="${COMPUTER_LIMITS.noteCharacters}" data-version="${state.noteVersions?.get(noteId) ?? 0}" data-persist>${escapeDebug(note.text)}</textarea></label><div class="computer-actions"><button data-action="debug-save-note" data-decision-id="${escapeDebug(noteId)}">Save note</button><button class="secondary" data-action="debug-delete-note" data-decision-id="${escapeDebug(noteId)}">Delete note</button></div><label><input type="checkbox" data-debug-filter ${state.flaggedOnly ? 'checked' : ''}> Show flagged decisions only</label>`, state.open)}
   ${section('history', 'Durable history', `<p>${state.partial ? 'Earlier history is partial. Unavailable decisions are not reconstructed.' : 'Original decisions remain available after undo.'}</p><button class="secondary" data-action="debug-load-history">${state.cursor ? 'Load next 100' : 'Refresh history'}</button><ol class="debug-history">${state.items.filter(item => !state.flaggedOnly || state.notes.some(note => note.decisionId === item.id && note.flagged)).map(item => `<li data-key="${escapeDebug(item.id)}"><button class="secondary" data-action="debug-inspect-decision" data-decision-id="${escapeDebug(item.id)}">${escapeDebug(item.move?.notation || item.kind)} · ${escapeDebug(item.id)}</button></li>`).join('')}</ol>`, state.open)}
   ${section('runtime', 'Connection and runtime', json(diagnostics), state.open)}
   ${section('raw', 'Raw data and export', `<div class="computer-actions"><button class="secondary" data-action="debug-copy">Copy position</button><button class="secondary" data-action="debug-export">Export game evidence and my notes</button></div>${json({ position, selected })}`, state.open)}

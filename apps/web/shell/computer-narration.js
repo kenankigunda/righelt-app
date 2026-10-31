@@ -1,4 +1,4 @@
-import { COMPUTER_PROFILES, COMPUTER_TIMING } from '../generated/packages/shared-types/src/computer-play.js';
+import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
 
 export function latestComputerTurn(game) {
   if (!game?.computer) return null;
@@ -49,7 +49,7 @@ export function computerPhasePresentation(game, status = {}, now = status?.obser
   const hasPending = game.pendingComputerSaveStartedAt != null;
   const pending = hasPending && !['recovery', 'other-device', 'paused'].includes(status?.phase);
   return {
-    phase: pending ? 'saving' : status?.phase,
+    phase: status?.speculation?.phase==='computing'?'computing':pending ? 'saving' : status?.phase,
     phaseElapsedMs: pending ? Math.max(0, now - game.pendingComputerSaveStartedAt) : status?.phaseElapsedMs ?? 0,
     profile: hasPending ? game.pendingComputerProfile ?? game.computerTurn ?? status?.profile : status?.profile ?? game.computerTurn,
   };
@@ -59,19 +59,20 @@ export function computerBoardMessage(game, status, { selectedPieceId } = {}) {
   if (!game?.computer || game.inHistoryMode) return null;
   const phase = computerPhasePresentation(game, status);
   const name = COMPUTER_PROFILES[phase.profile]?.name ?? 'Computer';
+  if(status?.activity?.needsHelp||game.confirmedPlayback?.error)return `${name} needs help`;
+  if(game.confirmedPlayback?.playing)return `${name} is making their move`;
   if (game.computerTurn || game.pendingComputerSaveStartedAt != null) {
-    if (status?.phase === 'recovery') return `${name} needs a hand`;
+    if (status?.phase === 'recovery') return `${name} needs help`;
+    if(status?.speculation?.phase==='computing')return `${name} is thinking`;
     if (status?.phase === 'other-device') return `${name} is thinking`;
     if (status?.phase === 'paused') return `${name} is paused`;
-    if (game.pendingComputerSaveStartedAt != null) return phase.phaseElapsedMs >= COMPUTER_TIMING.phaseLabelAfterMs ? `${name} is saving their move` : `${name} is thinking`;
+    if (game.pendingComputerSaveStartedAt != null) return `${name} is saving their move`;
     if (game.pendingComputerControl) return `Waiting for ${name}`;
     if (status?.phase === 'resuming') return `Waiting for ${name}`;
     if (game.computer.paused) return `${name} is paused`;
-    if (!phase.phase || phase.phase === 'idle') return status?.activity?.showRecoveryNotice ? `${name} needs a hand` : `Waiting for ${name}`;
+    if (!phase.phase || phase.phase === 'idle') return status?.activity?.showRecoveryNotice ? `${name} needs help` : `Waiting for ${name}`;
     if (['preparing','initializing-verified-runtime'].includes(status?.phase)) return `Waiting for ${name}`;
-    if (phase.phaseElapsedMs >= COMPUTER_TIMING.phaseLabelAfterMs) {
-      if (phase.phase === 'saving') return `${name} is saving their move`;
-    }
+    if (phase.phase === 'saving') return `${name} is saving their move`;
     return `${name} is thinking`;
   }
   if (selectedPieceId) return null;

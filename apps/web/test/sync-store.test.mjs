@@ -596,6 +596,28 @@ test("sync store exposes rollback notices through the shared failed-operation AP
   assert.deepEqual(store.getFailedOperations("game-rollback"), []);
 });
 
+for(const delivery of ['event','already-settled'])for(const computer of [false,true])for(const reason of ['computer_control_changed','stale_state','state_capacity_exceeded'])test(`obsolete computer rollback does not become a human failed-operation banner delivery=${delivery} computer=${computer} reason=${reason}`,async()=>{
+ const {transport,games,listeners}=createTransportHarness();const game={...createRevertReadyGame(),id:'quiet-retry'};games.set(game.id,game);
+ transport.applyGameAction=async()=>({ok:true,accepted:true,clientCommandId:'quiet-command',game});
+ if(delivery==='already-settled')transport.getCommandOutcome=()=>({outcome:'rejected',reason});
+ const store=createSyncStore({storage:createMemoryStorage(),createTransportStore:()=>transport,createSyncClient:()=>({connectGame(){},disconnectGame(){},disconnectAll(){},getDesiredGameIds:()=>[]})});
+ const handle=await store.applyGameAction({gameId:game.id,state:{},action:{type:'pass'},...(computer?{computer:{profile:'babs'}}:{})});
+ if(delivery==='event')for(const listener of listeners)listener({type:'optimistic_rollback',gameId:game.id,clientCommandId:'quiet-command',reason,computer,failureNotice:''});
+ await assert.rejects(handle.committed);assert.equal(handle.status,'failed','the rejected command must never appear committed');
+ const quiet=computer&&['computer_control_changed','stale_state'].includes(reason);
+ assert.equal(store.getFailedOperations(game.id).length===0,quiet);
+ assert.equal(store.getGameViewModel(game.id).id,game.id);
+});
+
+test('quiet computer rollback preserves an unrelated human recovery banner',()=>{
+ const {transport,games,listeners}=createTransportHarness();const game={...createRevertReadyGame(),id:'quiet-preserves-human'};games.set(game.id,game);
+ const store=createSyncStore({storage:createMemoryStorage(),createTransportStore:()=>transport,createSyncClient:()=>({connectGame(){},disconnectGame(){},disconnectAll(){},getDesiredGameIds:()=>[]})});
+ for(const listener of listeners)listener({type:'optimistic_rollback',gameId:game.id,clientCommandId:'human-command',reason:'stale_state',computer:false,failureNotice:'Your move needs review.'});
+ for(const listener of listeners)listener({type:'optimistic_rollback',gameId:game.id,clientCommandId:'computer-command',reason:'computer_control_changed',computer:true,failureNotice:''});
+ assert.equal(store.getFailedOperations(game.id).length,1);
+ assert.equal(store.getFailedOperations(game.id)[0].error.message,'Your move needs review.');
+});
+
 test("sync store requests reverts optimistically with a stable client request id", async () => {
   const { transport, games } = createTransportHarness();
   games.set("game-revert", createRevertReadyGame());

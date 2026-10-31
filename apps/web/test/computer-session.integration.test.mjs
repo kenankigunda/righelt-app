@@ -5,7 +5,7 @@ import { renderComputerProgress } from '../shell/computer-view.js';
 import { COMPUTER_CAPABILITIES, COMPUTER_TIMING, createComputerControl, changeComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
 import { createInitialState } from '../generated/packages/game-engine/src/state.js';
 
-function fixture({canAnalyze = true, timers = {setInterval(){return 1;},clearInterval(){}}, onChange = () => {}} = {}) {
+function fixture({analysisRuntime, canAnalyze = true, timers = {setInterval(){return 1;},clearInterval(){}}, onChange = () => {}} = {}) {
   let now = 100, visible = true, authenticated = true, unresolved = false, generation = 1, cancelCount = 0, submitted = 0, computed = 0, blocked = false, pending;
   let progress;
   let game = { id: 'g', gameplayRevision: 0, computer: createComputerControl('owner', { p1: 'babs', p2: null }), board: { state: createInitialState() } };
@@ -16,7 +16,7 @@ function fixture({canAnalyze = true, timers = {setInterval(){return 1;},clearInt
     applyGameAction: async () => { submitted++; return { committed: Promise.resolve() }; },
   };
   const runtime = { compute: async (_, onProgress) => new Promise((resolve, reject) => { computed++; progress = onProgress; pending = { resolve, reject }; }), cancel: () => { cancelCount++; pending?.reject(Error('cancelled')); pending = null; } };
-  const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: runtime, clock: () => now, timers, onChange, getContext: () => ({ game: unresolved ? null : game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
+  const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: analysisRuntime ?? runtime, clock: () => now, timers, onChange, getContext: () => ({ game: unresolved ? null : game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
   return { session, controls, relogin: () => {generation++;authContextId=`session-${generation}`;transport={...transport};}, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { unresolved=false; game = { ...game, id: 'other-game' }; }, unresolvedGame: () => { unresolved=true; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, show: () => {visible = true;}, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelCount };
 }
 
@@ -53,7 +53,7 @@ test('connection recovery defers computer work before calculation without saving
   assert.equal(f.computations(), 1); assert.equal(f.submissions(), 1);
 });
 
-for (const boundary of ['calculation', 'proof persistence']) test(`recovery during ${boundary} retains evidence and recomputes only after authority settles`, async t => {
+for (const boundary of ['calculation', 'proof persistence']) test(`recovery during ${boundary} retains completed evidence and admits only after authority settles`, async t => {
   const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
   if (boundary === 'proof persistence') {
     const save = f.transport.decisionAttempt;
@@ -66,11 +66,13 @@ for (const boundary of ['calculation', 'proof persistence']) test(`recovery duri
   assert.equal(f.submissions(), 0); assert.notEqual(f.session.snapshot().phase, 'recovery');
   await f.session.tick(); assert.equal(f.computations(), 1);
   f.transport.decisionAttempt = async (_, value) => f.saved.push(value);
-  f.setBlocked(false); const fresh = f.session.tick();
-  assert.equal(f.computations(), 2);
-  f.pending().resolve({result:{status:'ready',action:{type:'pass'}}}); await fresh;
-  assert.equal(f.submissions(), 1); assert.equal(f.saved.length, 2);
-  assert.notEqual(f.saved[0].attemptId, f.saved[1].attemptId, 'fresh calculation has fresh proof, not an intent replay');
+  const original=structuredClone(f.saved[0]);
+  f.setBlocked(false); const resumed=f.session.tick();
+  if(f.computations()>1)f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});
+  await resumed;
+  assert.equal(f.computations(), 1, 'a temporary fence cannot start another calculation');
+  assert.equal(f.submissions(), 1); assert.equal(f.saved.length, 1);
+  assert.deepEqual(f.saved[0],original,'the acknowledged completed attempt remains unchanged');
 });
 
 test('a recovery race at durable admission defers only an unadmitted command', async t => {
@@ -85,8 +87,12 @@ test('a recovery race at durable admission defers only an unadmitted command', a
   assert.equal(calls, 1); assert.equal(f.saved[0].attempt.outcome, 'ready');
   assert.notEqual(f.session.snapshot().phase, 'recovery');
   await f.session.tick(); assert.equal(f.computations(), 1);
-  f.setBlocked(false); const fresh = f.session.tick(); f.pending().resolve({result:{status:'ready',action:{type:'pass'}}}); await fresh;
-  assert.equal(calls, 2); assert.equal(f.computations(), 2);
+  const original=structuredClone(f.saved[0]);
+  f.setBlocked(false); const resumed=f.session.tick();
+  if(f.computations()>1)f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});
+  await resumed;
+  assert.equal(calls, 2); assert.equal(f.computations(), 1);
+  assert.deepEqual(f.saved,[original],'an unadmitted recovery fence retains the exact proof');
 });
 
 test('a rejected committed command remains terminal even with the recovery error code', async t => {
@@ -97,9 +103,9 @@ test('a rejected committed command remains terminal even with the recovery error
   await f.session.tick(); assert.equal(f.computations(), 1);
 });
 
-test('a proof persistence failure remains terminal rather than becoming an unadmitted move retry', async t => {
+test('an invalid proof persistence failure remains terminal rather than becoming an unadmitted move retry', async t => {
   const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
-  f.transport.decisionAttempt = async () => { throw Object.assign(Error('sync_recovering'), {code:'sync_recovering'}); };
+  f.transport.decisionAttempt = async () => { throw Object.assign(Error('invalid_attempt'), {code:'invalid_attempt'}); };
   const work = f.session.tick(); f.pending().resolve({result:{status:'ready',action:{type:'pass'}}}); await work;
   assert.equal(f.session.snapshot().phase,'recovery'); assert.equal(f.submissions(),0);
   await f.session.tick(); assert.equal(f.computations(),1);
@@ -681,7 +687,7 @@ test('a replacement login cannot claim the previous session lease and acquires o
  const f=fixture();t.after(()=>f.session.destroy());enableResume(f);await f.session.tick();
  assert.equal(f.session.snapshot().activity.activeHere,true);
  const before=structuredClone(f.game().computer);f.relogin();
- const activity=f.session.snapshot().activity;assert.equal(activity.label,'Needs attention');assert.equal(activity.showResume,true);
+ const activity=f.session.snapshot().activity;assert.equal(activity.label,'Waiting');assert.equal(activity.showResume,true);
  await f.session.tick();assert.equal(f.controls.length,1);assert.equal(f.computations(),0);assert.equal(f.submissions(),0);
  assert.deepEqual(f.game().computer,before);
  f.setTime(before.lease.expiresAt+1);await f.session.tick();
@@ -782,4 +788,234 @@ test('same-device lease acknowledgement still requires the server authentication
  assert.equal(f.game().computer.generation,generation);assert.equal(f.game().computer.lease.authContextId,'different-session');
  assert.equal(f.computations(),0);assert.equal(f.submissions(),0);
  await f.session.tick();assert.equal(f.controls.length,2);
+});
+
+for (const stored of [false, true]) test(`temporary evidence failure reconciles the same attempt without recomputing (already stored=${stored})`, async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
+  const requests = []; let first = true, record;
+  f.transport.decisionAttempt = async (_, value) => {
+    requests.push(structuredClone(value));
+    if (value.operation === 'read') return { attempt: stored ? record.attempt : null };
+    if (first) { first = false; record = structuredClone(value); throw Object.assign(Error('request_timeout'), { code: 'request_timeout' }); }
+    assert.deepEqual(value, record); return { ok: true };
+  };
+  const work = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await work;
+  assert.equal(f.session.snapshot().phase, 'idle'); assert.equal(f.submissions(), 0);
+  assert.equal(requests.length, 1, 'never write conflicting unfinished evidence');
+  f.setTime(599); await f.session.tick(); assert.equal(requests.length, 1);
+  f.setTime(600); await f.session.tick();
+  assert.equal(f.computations(), 1); assert.equal(f.submissions(), 1);
+  assert.deepEqual(requests.map(value => value.operation), stored ? ['write', 'read'] : ['write', 'read', 'write']);
+  assert.equal(f.session.snapshot().automaticRetry, null);
+});
+
+
+test('a lost evidence response followed by a recovery fence retains the recovered attempt',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ let record,admission;const requests=[];
+ const apply=f.transport.applyGameAction;f.transport.applyGameAction=async value=>{admission=structuredClone(value);return apply(value);};
+ f.transport.decisionAttempt=async(_,value)=>{
+  requests.push(structuredClone(value));
+  if(value.operation==='write'){record=structuredClone(value);throw Object.assign(Error('request_timeout'),{code:'request_timeout'});}
+  f.setBlocked(true);return{attempt:structuredClone(record.attempt)};
+ };
+ const work=f.session.tick();f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;
+ f.setTime(600);await f.session.tick();
+ assert.equal(f.computations(),1);assert.equal(f.submissions(),0);assert.deepEqual(requests.map(r=>r.operation),['write','read']);
+ await f.session.tick();assert.equal(f.submissions(),0,'the fence still owns admission');
+ f.setBlocked(false);const resumed=f.session.tick();
+ if(f.computations()>1)f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});
+ await resumed;
+ assert.equal(f.computations(),1);assert.equal(f.submissions(),1);assert.equal(requests.length,2,'no second attempt or rewrite');
+ assert.equal(requests[1].attemptId,record.attemptId);assert.deepEqual(requests[0],record);
+ assert.equal(admission.computer.attemptId,record.attemptId);assert.deepEqual(admission.computer,record.attempt.proof);assert.deepEqual(admission.action,record.attempt.result.action);
+});
+
+for (const stage of ['calculation', 'evidence']) test(`repeated transient ${stage} failures recover with capped backoff`, async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
+  let failures = 0;
+  if (stage === 'evidence') f.transport.decisionAttempt = async (_, value) => {
+    if (value.operation === 'read') return { attempt: null };
+    if (failures++ < 7) throw Object.assign(Error('unavailable'), { status: 503 });
+    return { ok: true };
+  };
+  let now = 100;
+  for (const delay of [500, 1000, 2000, 4000, 5000, 5000, 5000]) {
+    const work = f.session.tick(); await new Promise(resolve => setImmediate(resolve));
+    const afterMaintenance = f.session.tick();
+    if (stage === 'calculation') f.pending().reject(Object.assign(Error('fetch failed'), { code: 'computer_network_error' }));
+    else if (f.computations() === 1 && failures === 0) f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } });
+    await Promise.all([work, afterMaintenance]);
+    const count = f.computations(), writes = failures;
+    now += delay - 1; f.setTime(now); await f.session.tick();
+    assert.equal(f.computations(), count); assert.equal(failures, writes);
+    now++; f.setTime(now);
+    assert.notEqual(f.session.snapshot().phase, 'recovery');
+  }
+  const success = f.session.tick(); await new Promise(resolve => setImmediate(resolve));
+  const afterMaintenance = f.session.tick();
+  if (stage === 'calculation') f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } });
+  await Promise.all([success, afterMaintenance]); assert.equal(f.submissions(), 1);
+  assert.equal(f.computations(), stage === 'evidence' ? 1 : 8);
+});
+
+for (const change of ['switchGame', 'changeAccount', 'changeTransport', 'hide', 'revision', 'generation']) test(`retained evidence cannot submit after ${change}`, async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
+  f.transport.decisionAttempt = async () => { throw Object.assign(Error('timeout'), { code: 'request_timeout' }); };
+  const work = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await work;
+  if (change === 'revision') f.game().gameplayRevision++;
+  else if (change === 'generation') f.game().computer.generation++;
+  else f[change]();
+  f.setTime(600);
+  f.transport.decisionAttempt = async () => ({ ok: true });
+  const next = f.session.tick();
+  // A fresh eligible game may calculate, but old evidence never directly submits.
+  if (f.computations() > 1) f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } });
+  await next;
+  assert.equal(f.submissions(), f.computations() > 1 ? 1 : 0);
+});
+
+test('conflicting recovered evidence is terminal and never submits', async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
+  f.transport.decisionAttempt = async (_, value) => {
+    if (value.operation === 'read') return { attempt: { outcome: 'unfinished' } };
+    throw Object.assign(Error('lost response'), { code: 'request_timeout' });
+  };
+  const work = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await work;
+  f.setTime(600); await f.session.tick();
+  assert.equal(f.session.snapshot().phase, 'recovery'); assert.equal(f.submissions(), 0);
+});
+
+for (const code of ['rules_cancelled', 'stale_state']) test(`pre-admission ${code} discards evidence and computes a fresh decision`, async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
+  let calls = 0;
+  f.transport.applyGameAction = async () => { if (++calls === 1) throw Object.assign(Error(code), { code }); return { committed: Promise.resolve() }; };
+  const first = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await first;
+  assert.notEqual(f.session.snapshot().phase, 'recovery');
+  const next = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await next;
+  assert.equal(calls, 2); assert.equal(f.computations(), 2); assert.notEqual(f.saved[0].attemptId, f.saved[1].attemptId);
+});
+
+test('Retry-After delays evidence recovery longer than the client backoff cap', async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick(); let requests = 0;
+  f.transport.decisionAttempt = async (_, value) => {
+    requests++; if (requests === 1) throw Object.assign(Error('limited'), { status: 429, retryAfterMs: 10000 });
+    return value.operation === 'read' ? { attempt: null } : { ok: true };
+  };
+  const work = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await work;
+  f.setTime(10099); await f.session.tick(); assert.equal(requests, 1);
+  f.setTime(10100); await f.session.tick(); await new Promise(resolve => setImmediate(resolve)); await f.session.tick(); assert.equal(f.submissions(), 1);
+});
+
+
+for (const error of [{ code: 'request_timeout' }, { status: 503 }]) test(`an admitted gameplay rejection never starts a second computation (${JSON.stringify(error)})`, async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick(); let admissions = 0;
+  f.transport.applyGameAction = async () => { admissions++; return { committed: Promise.reject(Object.assign(Error('rejected'), error)) }; };
+  const work = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await work;
+  assert.equal(f.session.snapshot().phase, 'recovery');
+  f.setTime(5000); await f.session.tick();
+  assert.equal(admissions, 1); assert.equal(f.computations(), 1);
+});
+
+test('automatic retry disclosure uses foreground grace and resets on hiding or scope changes', async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
+  f.transport.decisionAttempt = async () => { throw Object.assign(Error('limited'), { status: 429, retryAfterMs: 60000 }); };
+  const work = f.session.tick(); f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await work;
+  assert.equal(f.session.snapshot().automaticRetry.waitMs, 0);
+  f.setTime(4100); assert.equal(f.session.snapshot().automaticRetry.waitMs, 4000);
+  f.setTime(15100); assert.equal(f.session.snapshot().automaticRetry.waitMs, 15000);
+  f.hide(); assert.equal(f.session.snapshot().automaticRetry, null);
+  f.setTime(100000); f.show(); assert.equal(f.session.snapshot().automaticRetry.waitMs, 0);
+  f.game().inHistoryMode = true; assert.equal(f.session.snapshot().automaticRetry, null);
+  f.setTime(200000); f.game().inHistoryMode = false; assert.equal(f.session.snapshot().automaticRetry.waitMs, 0);
+  f.changeAccount(); assert.equal(f.session.snapshot().automaticRetry, null);
+});
+
+for (const code of ['invalid_response', 'invalid_attempt', 'storage_reset', 'invalid_credentials']) test(`automatic acquisition stops on terminal ${code}`, async t => {
+  const f = fixture(); t.after(() => f.session.destroy()); let requests = 0;
+  f.transport.computerControl = async () => { requests++; throw Object.assign(Error(code), { code }); };
+  await f.session.tick(); assert.equal(f.session.snapshot().phase, 'recovery');
+  f.setTime(5000); await f.session.tick(); assert.equal(requests, 1);
+});
+for(const status of ['p1_win','p2_win','draw'])test(`completed ${status} starts no automatic lease, calculation or evidence work`,async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());f.game().board.state.outcome={status};
+ for(const time of [100,20000,120000]){f.setTime(time);await f.session.tick();}
+ assert.deepEqual(f.controls,[]);assert.equal(f.computations(),0);assert.equal(f.submissions(),0);assert.deepEqual(f.saved,[]);
+ assert.equal(f.session.snapshot().phase,'idle');assert.equal(f.session.snapshot().activity.label,'Game finished');assert.equal(f.session.snapshot().activity.showResume,false);
+ for(const action of ['retry','pause','resume','step','switch','takeover','manual'])await f.session.action(action);
+ assert.deepEqual(f.controls,[]);
+});
+test('completion after acquiring control stops renewal without issuing a release command',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();assert.equal(f.controls.length,1);
+ f.game().board.state.outcome={status:'p1_win'};f.setTime(20000);await f.session.tick();const cancellations=f.cancellations();
+ await f.session.tick();assert.equal(f.cancellations(),cancellations);assert.deepEqual(f.controls.map(c=>c.action),['acquire']);assert.deepEqual(f.saved,[]);
+});
+test('completion before queued control admission sends no acquire request',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());const work=f.session.tick();f.game().board.state.outcome={status:'draw'};await work;await f.session.tick();
+ assert.deepEqual(f.controls,[]);assert.equal(f.computations(),0);
+});
+test('completion during calculation cancels obsolete work without writing unfinished evidence',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();const work=f.session.tick();assert.equal(f.computations(),1);
+ f.game().board.state.outcome={status:'p2_win'};await f.session.tick();await work;
+ assert.equal(f.submissions(),0);assert.deepEqual(f.saved,[]);assert.deepEqual(f.controls.map(c=>c.action),['acquire']);assert.equal(f.session.snapshot().phase,'idle');
+});
+test('a completed game is rechecked after computation even before the next interval tick',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();const work=f.session.tick();
+ f.game().board.state.outcome={status:'draw'};f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;
+ assert.deepEqual(f.saved,[]);assert.equal(f.submissions(),0);
+});
+test('completion during evidence persistence settles the existing write but admits no gameplay',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();let release;const gate=new Promise(resolve=>release=resolve);
+ f.transport.decisionAttempt=async(_,value)=>{f.saved.push(value);await gate;};
+ const work=f.session.tick();f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));assert.equal(f.saved.length,1);
+ f.game().board.state.outcome={status:'p1_win'};await f.session.tick();release();await work;
+ assert.equal(f.submissions(),0);assert.equal(f.saved.length,1);assert.equal(f.saved[0].attempt.outcome,'ready');
+});
+test('completion leaves an already admitted gameplay handle to its durable owner',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();let settle,admissions=0;
+ const committed=new Promise(resolve=>settle=resolve);f.transport.applyGameAction=async()=>{admissions++;return{committed};};
+ const work=f.session.tick();f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));assert.equal(admissions,1);
+ f.game().board.state.outcome={status:'p1_win'};await f.session.tick();let finished=false;void work.then(()=>finished=true);await new Promise(resolve=>setImmediate(resolve));assert.equal(finished,false);
+ settle();await work;assert.equal(admissions,1);assert.equal(f.saved.length,1);assert.equal(f.session.snapshot().phase,'idle');
+});
+
+test('explicit historical analysis remains available after completion without computer-control work',async t=>{
+ let finishAnalysis,analysisCancellations=0;const analysisRuntime={compute:()=>new Promise(resolve=>{finishAnalysis=resolve;}),cancel:()=>{analysisCancellations++;}};
+ const f=fixture({analysisRuntime});t.after(()=>f.session.destroy());f.game().board.state.outcome={status:'p1_win'};
+ const analysis=f.session.analyze(createInitialState());await new Promise(resolve=>setImmediate(resolve));assert.equal(f.computations(),0);
+ const previousCancellations=analysisCancellations;await f.session.tick();assert.equal(analysisCancellations,previousCancellations);finishAnalysis({result:{status:'ready',action:{type:'pass'}}});await analysis;
+ assert.deepEqual(f.controls,[]);assert.equal(f.saved.length,1);assert.equal(f.saved[0].kind,'analysis');assert.equal(f.session.snapshot().analysis.phase,'complete');
+});
+
+ test('explicit Undo reopening keeps the existing paused computer contract',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());f.game().board.state.outcome={status:'p1_win'};await f.session.tick();
+ f.game().board.state=createInitialState();f.game().computer.paused=true;f.game().gameplayRevision++;
+ await f.session.tick();await f.session.tick();assert.equal(f.session.snapshot().phase,'paused');assert.equal(f.computations(),0);assert.equal(f.submissions(),0);assert.deepEqual(f.saved,[]);
+});
+
+test('completed-game historical analysis retains hidden-tab cancellation',async t=>{
+ let rejectAnalysis,cancellations=0;const analysisRuntime={compute:()=>new Promise((resolve,reject)=>{rejectAnalysis=reject;}),cancel:()=>{cancellations++;rejectAnalysis?.(Error('cancelled'));}};
+ const f=fixture({analysisRuntime});t.after(()=>f.session.destroy());f.game().board.state.outcome={status:'p1_win'};
+ const work=f.session.analyze(createInitialState());await new Promise(resolve=>setImmediate(resolve));const before=cancellations;f.hide();await f.session.tick();await work;
+ assert.equal(cancellations,before+1);assert.notEqual(f.session.snapshot().analysis.phase,'computing');assert.deepEqual(f.controls,[]);assert.equal(f.computations(),0);
+});
+
+test('next calculation may overlap saving but only matching acknowledged authority admits its candidate',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());f.game().computer.seats.p2='babs';await f.session.tick();
+ let acknowledge,admissions=0;const receipt=new Promise(resolve=>acknowledge=resolve),expected=structuredClone(f.game().board.state);expected.sideToMove='P2';expected.turnIndex=1;
+ f.transport.applyGameAction=async()=>({committed:++admissions===1?receipt:Promise.resolve(),...(admissions===1?{state:expected}:{})});
+ const first=f.session.tick();f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.computations(),2,'next calculation overlaps first receipt wait');assert.equal(f.saved.length,1);assert.equal(admissions,1);
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));await f.session.tick();assert.equal(admissions,1,'no second command before acknowledgement');
+ f.game().board.state=expected;f.game().gameplayRevision=1;await f.session.tick();acknowledge();await first;await f.session.tick();
+ assert.equal(f.computations(),2);assert.equal(f.saved.length,2);assert.equal(admissions,2);assert.deepEqual(f.saved[1].attempt.state,expected);assert.notEqual(f.saved[1].attemptId,f.saved[0].attemptId);
+});
+for(const change of ['position','generation','model','account'])test(`speculation is discarded on mismatched ${change} before another command is admitted`,async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());f.game().computer.seats.p2='babs';await f.session.tick();
+ let acknowledge,admissions=0;const expected=structuredClone(f.game().board.state);expected.sideToMove='P2';expected.turnIndex=1;
+ f.transport.applyGameAction=async()=>({committed:new Promise(resolve=>acknowledge=resolve),state:expected});
+ const first=f.session.tick();f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));assert.equal(f.computations(),2);
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));f.game().board.state=structuredClone(expected);f.game().gameplayRevision=1;
+ if(change==='position')f.game().board.state.sideToMove='P1';if(change==='generation')f.game().computer.generation++;if(change==='model')f.game().computer.modelId='different';if(change==='account')f.changeAccount();
+ await f.session.tick();acknowledge();await first;assert.equal(f.saved.length,1,'candidate has no evidence/admission before authority match');assert.equal(f.session.snapshot().speculation,null);
 });

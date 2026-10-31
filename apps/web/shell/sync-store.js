@@ -1,3 +1,4 @@
+import {isObsoleteComputerRejection} from './computer-recovery.js';
 import { CURRENT_COMPUTER_MODEL, createComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
 import { IDENTITY_KEY } from "./persistence.js";
 import { STORAGE_GENERATION_HEADER, STORAGE_GENERATION_QUERY } from "../generated/packages/shared-types/src/storage-policy.js";
@@ -1220,9 +1221,15 @@ export const createSyncStore = ({
         clientCommandId,
         createOperationError(failureNotice || "Board changed before your move was recorded. Check it and try again.", "optimistic_rollback"),
       );
-      const rejectedMoves = operationManager.getFailedOperations(gameId).filter((handle) => handle.error?.code === "optimistic_rollback").length;
-      const notice = failureNotice || "Board changed before your move was recorded. Check it and try again.";
-      upsertRollbackFailure(gameId, rejectedMoves > 1 ? notice.replace("your move could", "your moves could") : notice);
+      if (isObsoleteComputerRejection(change.computer,change.reason)) {
+        // Keep the rejected handle's promise settled for its computer session,
+        // but do not present obsolete computer intent as a failed human move.
+        operationManager.dismiss(clientCommandId);
+      } else {
+        const rejectedMoves = operationManager.getFailedOperations(gameId).filter((handle) => handle.error?.code === "optimistic_rollback").length;
+        const notice = failureNotice || "Board changed before your move was recorded. Check it and try again.";
+        upsertRollbackFailure(gameId, rejectedMoves > 1 ? notice.replace("your move could", "your moves could") : notice);
+      }
     }
     if (change?.type === "optimistic_desynced" && clientCommandId) {
       failOperation(
@@ -1442,7 +1449,10 @@ export const createSyncStore = ({
       const handle = operationManager.enqueue({ id: response.clientCommandId, gameId, result: response });
       const outcome = transport.getCommandOutcome?.(gameId, response.clientCommandId);
       if (outcome?.outcome === "accepted") operationManager.confirm(handle.id);
-      if (outcome?.outcome === "rejected") operationManager.fail(handle.id, createOperationError(outcome.reason));
+      if (outcome?.outcome === "rejected") {
+        operationManager.fail(handle.id, createOperationError(outcome.reason));
+        if(isObsoleteComputerRejection(computer,outcome.reason))operationManager.dismiss(handle.id);
+      }
       return handle;
     },
     endTurn: async ({ gameId }) => {

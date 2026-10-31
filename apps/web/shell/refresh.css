@@ -598,3 +598,7 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .computer-player-details:not([hidden]) { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; }
 .computer-player-details[hidden] { display:none; }
 .computer-player-details:empty { display:none; }
+
+.player-kind-icon {display:inline-flex;align-items:center;color:var(--muted);}
+.player-kind-icon .righelt-icon {width:14px;height:14px;}
+.history-result-summary {margin:0 0 var(--section-item-gap,12px);}
