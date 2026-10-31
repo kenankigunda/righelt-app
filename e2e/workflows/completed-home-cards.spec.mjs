@@ -1,6 +1,6 @@
 import {test as base,expect} from '@playwright/test';
 import {readFileSync,writeFileSync} from 'node:fs';
-import {importScenarioGame,switchGamePanel} from '../support/app.mjs';
+import {importScenarioGame,switchGamePanel,submitPlayableAction} from '../support/app.mjs';
 import {CURRENT_COMPUTER_MODEL} from '../../packages/shared-types/src/computer-play.ts';
 const catalog=JSON.parse(readFileSync(new URL('../../apps/web/scenarios/catalog.json',import.meta.url),'utf8'));
 const terminal=catalog.scenarios.find(row=>row.title==='Capture supply point to win by unsupplying the commander');
@@ -137,4 +137,84 @@ test('a completed section stays in its loading state until a known zero result',
   await expect(completed).toHaveCount(0);
   await expect(page.getByRole('heading',{name:'Start something new',exact:true})).toBeVisible();
  }finally{release();await context.unrouteAll({behavior:'wait'});}
+});
+
+test('completed pagination and resizing preserve the visible page without retrying a failed Other section',async({page,context,homeGames},info)=>{
+ await page.goto('/#/');
+ for(let index=0;index<7;index++)await request(page,'/api/shell/history/branch',{sourceGameId:homeGames.source.id,sourceGameplayRevision:homeGames.source.gameplayRevision,creatorSide:'p1'});
+ await page.goto('about:blank');await page.setViewportSize({width:980,height:1100});
+ let otherRequests=0;
+ await context.route('**/api/shell/games?**',async route=>{
+  if(new URL(route.request().url()).searchParams.get('section')==='other'){
+   otherRequests++;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({ok:false,error:'temporary_unavailable'})});
+  }else await route.continue();
+ });
+ try{
+  await page.goto('/#/');
+  const completed=page.locator('[data-home-section-root="completed"]'),other=page.locator('[data-home-section-root="other"]');
+  await expect(completed.getByText('10 games',{exact:true})).toBeVisible();
+  await expect(completed.locator('a[data-game-id]')).toHaveCount(4);
+  await expect(other.getByText("We couldn't load these games.",{exact:true})).toBeVisible();
+  const beforeRequests=otherRequests;
+  const next=completed.locator('[data-action="home-page-next"]');await next.focus();await page.keyboard.press('Enter');
+  await expect(completed.getByText('Page 2 of 3',{exact:true})).toBeVisible();
+  const anchor=await completed.locator('a[data-game-id]').first().getAttribute('data-game-id');
+  await page.setViewportSize({width:390,height:1100});
+  await expect(completed.locator('a[data-game-id]')).toHaveCount(3);
+  await expect(completed.getByText('Page 2 of 4',{exact:true})).toBeVisible();
+  await expect(completed.locator(`a[data-game-id="${anchor}"]`)).toBeVisible();
+  await page.setViewportSize({width:1440,height:1100});
+  await expect(completed.getByText('Page 2 of 4',{exact:true})).toBeVisible();
+  await expect(completed.locator(`a[data-game-id="${anchor}"]`)).toBeVisible();
+  expect(otherRequests).toBe(beforeRequests);
+  await expect(other.getByText("We couldn't load these games.",{exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+  await page.screenshot({path:info.outputPath('home-completed-responsive-page.png'),fullPage:true});
+ }finally{await context.unrouteAll({behavior:'wait'});}
+});
+
+
+test('manual completed Retry learns an uncached off-page completion and repairs ongoing totals',async({page,context,homeGames},info)=>{
+ await page.goto('/#/');
+ const lastMove=homeGames.source.moves.at(-1);
+ const {game:offPage}=await request(page,'/api/shell/history/branch',{sourceGameId:homeGames.source.id,sourceMoveIndex:homeGames.source.moves.length-1,creatorSide:'p1',selfPlayMode:true});
+ expect(offPage.board.state.outcome.status).toBe('ongoing');
+ for(let index=0;index<8;index++)await request(page,'/api/shell/games',{selfPlayMode:true});
+ await page.goto('about:blank');await page.setViewportSize({width:1440,height:1100});
+ let failCompleted=true,otherRequests=0,myRequests=0;
+ await page.route('**/api/shell/games?**',async route=>{
+  const section=new URL(route.request().url()).searchParams.get('section');
+  if(section==='other')otherRequests++;
+  if(section==='my')myRequests++;
+  if(section==='other'||(section==='completed'&&failCompleted))await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({ok:false,error:'temporary_unavailable'})});
+  else await route.continue();
+ });
+ let sibling;
+ try{
+  await page.goto('/#/');await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
+  const active=page.locator('[data-home-section-root="my"]'),completed=page.locator('[data-home-section-root="completed"]');
+  await expect(active.getByText('10 games',{exact:true})).toBeVisible();
+  await expect(active.locator(`a[data-game-id="${offPage.id}"]`)).toHaveCount(0);
+  await expect(completed.getByRole('button',{name:'Try again',exact:true})).toBeVisible();
+  const before={otherRequests,myRequests};
+  sibling=await context.newPage();await sibling.goto(`/#/game/${offPage.id}`);
+  await expect(sibling.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
+  await submitPlayableAction(sibling,lastMove.action);
+  const identityId=await sibling.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'));
+  await expect.poll(async()=>{
+   const response=await sibling.request.get(`/api/shell/games/${offPage.id}?identityId=${encodeURIComponent(identityId)}`);
+   expect(response.ok()).toBe(true);return(await response.json()).game.board.state.outcome.status;
+  }).toBe('p1_win');
+  await sibling.close();sibling=null;await page.bringToFront();
+  // This game was absent from the loaded ongoing page and was never subscribed.
+  await expect(active.getByText('10 games',{exact:true})).toBeVisible();
+  failCompleted=false;await completed.getByRole('button',{name:'Try again',exact:true}).click();
+  await expect(completed.getByText('4 games',{exact:true})).toBeVisible();
+  await expect(active.getByText('9 games',{exact:true})).toBeVisible();
+  expect(myRequests).toBeGreaterThan(before.myRequests);expect(otherRequests).toBe(before.otherRequests);
+  await expect(page.locator('[data-home-section-root="other"]').getByText("We couldn't load these games.",{exact:true})).toBeVisible();
+  const evidence={gameId:offPage.id,before,after:{myRequests,otherRequests},completed:4,ongoing:9};
+  writeFileSync(info.outputPath('home-off-page-completion.json'),JSON.stringify(evidence,null,2));
+  await page.screenshot({path:info.outputPath('home-off-page-completion.png'),fullPage:true});
+ }finally{await sibling?.close();await page.unrouteAll({behavior:'wait'});}
 });

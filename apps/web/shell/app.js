@@ -3678,6 +3678,13 @@ const syncResponsiveHomeSectionPageSizes = async () => {
     if (section.visiblePageSize === nextVisiblePageSize && section.visibleColumnCount === nextVisibleColumnCount) {
       continue;
     }
+    // Resizing must not turn an unrelated manual recovery into a new request.
+    // It must also not let that failure prevent healthy sections from rendering.
+    if(section.error){
+      setHomeSection(sectionKey,{...section,visiblePageSize:nextVisiblePageSize,visibleColumnCount:nextVisibleColumnCount});
+      updated=true;
+      continue;
+    }
     const anchorGameId = section.gameIds[0] ?? null;
     const anchorIndex = getHomeSectionCachedGameIndex(section, anchorGameId);
     const nextPage = anchorIndex === null ? section.page : Math.floor(anchorIndex / nextVisiblePageSize);
@@ -3710,6 +3717,7 @@ const syncHomeSections = async ({onlyStale=false} = {}) => {
   const read = captureRouteRead();
   homeFocusToRestore ??= captureHomeFocus(appEl,document);
   const visibleSectionKeys = getVisibleHomeSectionKeys();
+  const preservedErrors=new Set(onlyStale?visibleSectionKeys.filter(key=>getHomeSection(key).error):[]);
   if(!onlyStale)await Promise.all(
     visibleSectionKeys.map(async (sectionKey) => {
       const section = getHomeSection(sectionKey);
@@ -3774,8 +3782,9 @@ const syncHomeSections = async ({onlyStale=false} = {}) => {
       slideDirection: "none",
     });
   });
+  return {healthySettled:visibleSectionKeys.every(key=>!getHomeSection(key).error || preservedErrors.has(key))};
 };
-const scheduleHomeListRefresh = ({onlyStale=false} = {}) => {
+const scheduleHomeListRefresh = ({onlyStale=true} = {}) => {
   if (currentRoute.name !== 'home')return;
   if(pendingHomeRefresh)return pendingHomeRefresh;
   if(lastHomeBatchRevision === (transport.getHomeListRevision?.() ?? null))return;
@@ -3784,9 +3793,9 @@ const scheduleHomeListRefresh = ({onlyStale=false} = {}) => {
   let succeeded=false;
   const work = Promise.resolve().then(async () => {
     assertCurrentRouteRead(read);
-    await syncHomeSections({onlyStale});
+    const result=await syncHomeSections({onlyStale});
     assertCurrentRouteRead(read);
-    succeeded=getVisibleHomeSectionKeys().every(key=>!getHomeSection(key).error);
+    succeeded=result?.healthySettled ?? getVisibleHomeSectionKeys().every(key=>!getHomeSection(key).error);
   }).catch(error => { if(routeReadIsCurrent(read)) window.__righeltLastError = error.message; });
   pendingHomeRefresh = work;
   void work.finally(() => {

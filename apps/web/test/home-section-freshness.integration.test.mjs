@@ -172,7 +172,8 @@ test('a manual read repairs only stale healthy section counts and preserves page
  const context=vm.createContext({appEl:null,document:{},homeFocusToRestore:null,captureHomeFocus:()=>null,captureRouteRead:()=>({owner}),assertCurrentRouteRead:()=>{},
   getVisibleHomeSectionKeys:()=>['my','completed','other'],getHomeSection:key=>states[key],setHomeSection:(key,value)=>states[key]=value,lastHomeBatchRevision:1,
   HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT:3,loadHomeSectionPage:async(key,{page})=>{calls.push([key,page]);states[key]={...states[key],homeListRevision:2,totalGames:9};}});
- await new vm.Script(`${source.slice(begin,end)};syncHomeSections`).runInContext(context)({onlyStale:true});
+ const result=await new vm.Script(`${source.slice(begin,end)};syncHomeSections`).runInContext(context)({onlyStale:true});
+ assert.equal(result.healthySettled,true);
  assert.deepEqual(calls,[['my',2]]);assert.equal(states.my.totalGames,9);assert.equal(states.completed.page,1);assert.equal(states.other.error,true);assert.equal(states.other.totalGames,8);
 });
 
@@ -199,4 +200,36 @@ test('leaving Home retires only its presentation read owner and pending section 
  const nextOwner={};context.pendingHomeRefresh=nextOwner;keys.add('my');
  prepare({name:'tutorial'},{name:'tutorial'});
  assert.equal(context.pendingHomeRefresh,nextOwner);assert.equal(keys.has('my'),true);
+});
+
+test('responsive Home layout preserves a failed section without another network read',async()=>{
+ const begin=source.indexOf('const syncResponsiveHomeSectionPageSizes ='),end=source.indexOf('const syncHomeSections =',begin);
+ let state={error:true,page:1,visiblePageSize:4,visibleColumnCount:2,totalGames:8,gameIds:['kept']},loads=0;
+ const context=vm.createContext({getVisibleHomeSectionKeys:()=>['other'],getHomeSection:()=>state,setHomeSection:(_,value)=>state=value,
+  getHomeSectionColumnCount:()=>1,getHomeSectionVisiblePageSize:()=>3,loadHomeSectionPage:async()=>{loads++;throw Error('failed section must remain manual');},getHomeSectionCachedGameIndex:()=>4});
+ const changed=await new vm.Script(`${source.slice(begin,end)};syncResponsiveHomeSectionPageSizes`).runInContext(context)();
+ assert.equal(changed,true);assert.equal(loads,0);assert.equal(state.error,true);assert.equal(state.visiblePageSize,3);assert.equal(state.visibleColumnCount,1);
+ assert.deepEqual(state.gameIds,['kept']);
+});
+
+test('an authoritative background Home update stabilizes stale sections without resetting manual errors',async()=>{
+ let observed;
+ const owner={getHomeListRevision:()=>2};
+ const context=vm.createContext({currentRoute:{name:'home'},pendingHomeRefresh:null,lastHomeBatchRevision:1,transport:owner,
+  homeFocusToRestore:null,captureHomeFocus:()=>null,appEl:null,document:{},captureRouteRead:()=>({owner}),assertCurrentRouteRead:()=>{},routeReadIsCurrent:()=>true,window:{},
+  getVisibleHomeSectionKeys:()=>['my','other'],getHomeSection:key=>({error:key==='other'}),render:()=>{},syncHomeSections:async options=>{observed=options.onlyStale;context.lastHomeBatchRevision=2;}});
+ const schedule=schedulerScript.runInContext(context);await schedule();
+ assert.equal(observed,true);
+});
+
+test('a preserved failed section does not swallow a newer healthy-list update at the trailing edge',async()=>{
+ let revision=1,calls=0;
+ const owner={getHomeListRevision:()=>revision};
+ const context=vm.createContext({currentRoute:{name:'home'},pendingHomeRefresh:null,lastHomeBatchRevision:0,transport:owner,
+  homeFocusToRestore:null,captureHomeFocus:()=>null,appEl:null,document:{},captureRouteRead:()=>({owner}),assertCurrentRouteRead:()=>{},routeReadIsCurrent:()=>true,window:{},queueMicrotask,
+  getVisibleHomeSectionKeys:()=>['my','other'],getHomeSection:key=>({error:key==='other'}),
+  syncHomeSections:async()=>{calls++;context.lastHomeBatchRevision=revision;if(calls===1)queueMicrotask(()=>{revision=2;context.reentrant();});return{healthySettled:true};},
+  render:()=>{}});
+ const schedule=schedulerScript.runInContext(context);context.reentrant=schedule;schedule();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(calls,2);assert.equal(context.lastHomeBatchRevision,2);assert.equal(context.pendingHomeRefresh,null);
 });
