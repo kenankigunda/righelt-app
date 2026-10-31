@@ -11,3 +11,9 @@ History selection freezes the acknowledged moves and their revision. New moves, 
 The selected entry has no selection action, button cursor or press animation. Its child actions remain buttons. A highlighted live entry can still be selected to enter history.
 
 Regression proof covers shared presentation models, turn-selection transport, desktop overlays, mobile parity and reveal, accessible attribution, and interactive child actions. Preserve production histories and receipts. No data migration is needed for this presentation contract.
+
+## Live opponent-turn overview
+
+Before the human starts their next turn, the live board can display the immediately preceding opponent turn using the same aggregate overlays. The underlying board snapshot, legal actions and mutation gates stay live. Viewing never selects History or submits a move. Missing snapshot detail loads through revision-fenced reads in the background; a failed visual read leaves normal play available.
+
+Opponent-piece and supply-point inspection temporarily replace the overview. Clearing them restores it. Explicitly selecting any own piece, including one with no legal moves, dismisses it for the current visit. Deselecting does not undo that dismissal. Reopening the game or completing a new opponent turn resets the dismissal. Reopening after any acknowledged or pending action in the human's current turn shows the live position. Narration and Show me again retain their separate selection rules.

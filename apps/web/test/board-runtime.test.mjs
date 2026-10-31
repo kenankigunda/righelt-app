@@ -3572,3 +3572,24 @@ test('whole-turn overlays reach the adapter without selected-cell state',async()
  assert.deepEqual(rendered.at(-1).overlay.recordedActions,actions);
  assert.equal(rendered.at(-1).overlay.selection,null);
 });
+
+test('display-only turn overview preserves interactive authority and yields on an explicit own piece click',async()=>{
+ let click,display={mode:'recorded-turn',recordedActions:[]};const rendered=[],selections=[],contexts=[];
+ const piece={id:'own',owner:'P1',kind:'unit',position:{row:4,col:2},supplied:true,commanded:true};
+ const state={sideToMove:'P1',turnIndex:1,pieces:[piece],outcome:{status:'ongoing'}};
+ const runtime=createBoardRuntime({boardAdapter:{mount:input=>click=input.onCellClick,render:input=>rendered.push(input),getSelectedPieceSummary:()=>null,
+  getPieceById:()=>piece,getPieceAt:()=>piece,nextSelectionForCell:()=>({selection:{selectedPieceId:piece.id,source:piece.position,target:null},nextActionType:'move'})},
+  host:{canInteract:()=>true,canSelect:()=>true,loadPieceMoves:async()=>({state,actions:[],previewActions:[]})},
+  controls:{getDisplayOverlay:context=>{contexts.push(context);return display;},onPieceSelected:piece=>{selections.push(piece.id);display=null;}}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null});
+ await runtime.loadSnapshot(state,{legalActions:[]});
+ assert.equal(rendered.at(-1).overlay.mode,'recorded-turn');assert.equal(runtime.getOverlay().mode,'interactive');
+ assert.deepEqual(runtime.getState(),state);
+ runtime.setInspection({kind:'supply',owner:'P1'});
+ assert.deepEqual(contexts.at(-1).inspection,runtime.getOverlay().inspection);
+ assert.equal(contexts.at(-1).inspection.kind,'supply');
+ runtime.clearInspection();
+ click(piece.position);await Promise.resolve();
+ assert.deepEqual(selections,['own']);assert.equal(runtime.getSelection().selectedPieceId,'own');
+ assert.equal(rendered.at(-1).overlay.mode,'interactive');assert.deepEqual(runtime.getState(),state);
+});

@@ -1503,37 +1503,43 @@ export const createLiveTransportStore = ({
     return getGameViewModel(gameId);
   };
 
-  const selectHistoryTurn = async ({gameId, turnIndex}) => {
-    const game = getGameViewModel(gameId);
-    const revision = game.gameplayRevision;
-    // Explicit turn selection reads current acknowledged records, not a move's
-    // previously frozen inspection snapshot.
-    let summaries = (gameById.get(gameId)?.moves ?? game.moves ?? []).filter(move => move.turnIndex === turnIndex && !move.undone);
-    const owner = {loading:true,index:summaries[0]?.index ?? 0,error:null,turnIndex};
-    historyLoads.set(gameId,owner);
-    recalculateOptimisticGame(gameId); emitChange({type:'history_loading',gameId});
+  // Read-only presentation hydration. It never changes personal History intent,
+  // live authority, or the command queue. Archive records are revision-fenced.
+  const loadTurnMoves = async ({gameId, turnIndex, revision = gameById.get(gameId)?.gameplayRevision, isCurrent = () => true}) => {
+    let summaries = (gameById.get(gameId)?.moves ?? []).filter(move=>move.turnIndex===turnIndex && !move.undone);
     let archived = false;
+    if (!summaries.length || summaries[0].turnMoveIndex > 0) {
+      archived = true;
+      let entries = [], cursor = null;
+      do {
+        const page = await decisionRequest(gameId,'decision-history',{cursor});
+        if (!active || !isCurrent()) throw new Error('history_superseded');
+        entries.push(...page.items);cursor=page.nextCursor;
+      } while(cursor);
+      summaries=activeDecisionLineage(entries).filter(move=>move.turnIndex===turnIndex);
+    }
+    if (!summaries.length) throw new Error('turn_not_found');
+    const moves=await Promise.all(summaries.map(move=>!archived && move.snapshot ? clone(move) : loadHistoricalMove(gameId,revision,move.moveId)));
+    if (!active || !isCurrent()) throw new Error('history_superseded');
+    if (gameById.get(gameId)?.gameplayRevision!==revision) throw new Error('history_changed');
+    return moves;
+  };
+
+  const selectHistoryTurn = async ({gameId, turnIndex}) => {
+    const game=getGameViewModel(gameId),revision=game.gameplayRevision;
+    const first=game.moves?.find(move=>move.turnIndex===turnIndex && !move.undone);
+    const owner={loading:true,index:first?.index ?? 0,error:null,turnIndex};
+    historyLoads.set(gameId,owner);
+    recalculateOptimisticGame(gameId);emitChange({type:'history_loading',gameId});
     try {
-      if (!summaries.length || summaries[0].turnMoveIndex > 0) {
-        archived = true;
-        let entries = [], cursor = null;
-        do {
-          const page = await decisionRequest(gameId,'decision-history',{cursor});
-          if (!active || historyLoads.get(gameId) !== owner) return;
-          entries.push(...page.items); cursor = page.nextCursor;
-        } while(cursor);
-        summaries = activeDecisionLineage(entries).filter(move=>move.turnIndex===turnIndex);
-      }
-      if (!summaries.length) throw new Error('turn_not_found');
-      const moves = await Promise.all(summaries.map(move => !archived && move.snapshot ? clone(move) : loadHistoricalMove(gameId,revision,move.moveId)));
-      if (!active || historyLoads.get(gameId) !== owner) return;
-      if (getGameViewModel(gameId).gameplayRevision !== revision) throw new Error('history_changed');
+      const moves=await loadTurnMoves({gameId,turnIndex,revision,isCurrent:()=>historyLoads.get(gameId)===owner});
+      if (!active || historyLoads.get(gameId)!==owner) return;
       historyIntentByGameId.set(gameId,{turn:{index:turnIndex,moves},revision});
-      historyLoads.delete(gameId); recalculateOptimisticGame(gameId); emitChange({type:'history_mode_changed',gameId});
+      historyLoads.delete(gameId);recalculateOptimisticGame(gameId);emitChange({type:'history_mode_changed',gameId});
     } catch(error) {
-      if (!active || historyLoads.get(gameId) !== owner) return;
+      if (!active || historyLoads.get(gameId)!==owner) return;
       owner.loading=false;owner.error=error.message;
-      recalculateOptimisticGame(gameId); emitChange({type:'history_load_failed',gameId});
+      recalculateOptimisticGame(gameId);emitChange({type:'history_load_failed',gameId});
     }
     return getGameViewModel(gameId);
   };
@@ -1772,6 +1778,7 @@ export const createLiveTransportStore = ({
     },
     selectHistoryMove,
     selectHistoryTurn,
+    loadTurnMoves,
     returnToLive,
     requestRevertToMove,
     approveRevertRequest,
