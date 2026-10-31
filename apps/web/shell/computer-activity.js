@@ -1,3 +1,4 @@
+import {isCompletedGame} from './game-lifecycle.js';
 import { COMPUTER_TIMING, computerProfileFor } from '../generated/packages/shared-types/src/computer-play.js';
 import { SYNC_TIMING } from '../generated/packages/shared-types/src/sync-protocol.js';
 
@@ -7,6 +8,7 @@ const workingPhases = new Set(['preparing', 'initializing-verified-runtime', 'in
 export function computerActivity({ game, identityId, deviceId, authenticated, visible, status = {}, projection = {}, now, resuming = false, waitingMs = 0, lastAcquisitionFailure = null, resumeSupported = true, controlAcknowledged = true, renewing = false }) {
   const control = game?.computer;
   if (!control) return null;
+  if(isCompletedGame(game))return {state:'finished',label:'Game finished',activeHere:false,quietRenewal:false,showResume:false,disabledReason:null,showRecoveryNotice:false,waitingMs:0,lastAcquisitionFailure:null};
   const owner = control.ownerId === identityId && game.canControlComputer !== false;
   const ongoing = game.board?.state?.outcome?.status === 'ongoing';
   const turnIndex = game.currentTurn?.index ?? game.board?.state?.turnIndex ?? 0;
