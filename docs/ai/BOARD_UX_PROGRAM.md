@@ -12,6 +12,7 @@ This program follows the October 2026 product decisions. Independent healthy PRs
 - Thinking, saving and related activity animations use the responsible player’s red or blue. Pending work keeps its captured actor after optimistic turn advancement, including defender-controlled retreats. Color updates preserve node identity and animation time. Unknown-actor page loading retains the dual-color brand treatment.
 - A valid unresolved receipt remains pending with its original durable command, retry ownership and deadline. Actual request failures show an immediate static error. Recovery offers icon-labeled Reload game and Home actions without discarding pending intent.
 - Ordinary thinking exposes no recovery CTA. Preparation detail starts after 5 seconds, Interrupt after 30 seconds, and save feedback after 10 seconds in the save phase. Actual failures appear immediately. Slow feedback lives outside the board card.
+- Connection recovery notices count only visible time waiting on blocked live play in the active game. Show a quiet notice after 4 seconds and stronger recovery actions after 15 seconds. Returning from a hidden tab, changing games or accounts, entering history, and settled recovery reset this presentation wait. An overdue background command cannot bypass the fresh grace. Durable command deadlines, lease authority and retry timing remain wall-clock based. Authentication, update, invalid-response and local-storage failures remain immediately actionable. Recovery notices stay separate from board task messages.
 
 ## Space and history
 
@@ -52,3 +53,13 @@ Physical iPhone checks supplement browser automation: Safari chrome resizing, ru
 ## Resource continuity
 
 Follow `RESOURCE_MANAGEMENT.md`. Checkpoint each stream's source revision, evidence, owned runs and next action before heavy phases. Critical-pressure cancellation is incomplete validation. An authorized recovery heartbeat may resume only recorded pressure interruptions after four real normal/warning samples 15 seconds apart, completed cleanup and a free exclusive runner lock. It must not restart manual cancellations or duplicate active work. Preserve current model data and provenance. Keep Codex, unrelated resources and all worktrees open. Stop the dedicated recovery monitor when this program finishes.
+
+## Navigation visit contract
+
+- Explicit Home returns to the top while keeping each game list page. Clicking Home again does not create another browser entry. New game-card visits start at the live Board at the top. Browser Back and Forward restore that visit’s panel, list pages and reading position. Utility dismissal replaces its URL while retaining the visit.
+- Restore scroll and focus before revealing the destination. Background updates never overwrite a different visit. New navigation cancels obsolete cover/reveal timers, including rapid reversals to the same game.
+- The approved Dense ribbon is 94% opaque with 160ms cover and 200ms reveal using the shared easing. Forward has a leading top-right corner; back mirrors the complete geometry. Hold a stable loading surface for slow destinations. Reduced motion skips the ribbon, fades and held pulsing.
+
+Cold destinations keep the Dense cover until the view, scroll and focus are ready. After 4 seconds of visible waiting, show a neutral static status card above the cover. After 15 seconds, expose Retry and Home while transient reads continue retrying. Background time does not count. Route, account and authority changes cancel obsolete retries and status. Missing games, sign-in requirements, invalid data and protocol updates have specific help and never enter the transient retry loop. Recovery never replays a gameplay action.
+
+An acknowledged game or Home view stays usable during a failed refresh. Keep its cards, board, reading position and focus while safe reads retry quietly. Replace a Home page cache only after its fresh read succeeds. Account changes clear this cached-view authority.

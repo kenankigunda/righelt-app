@@ -177,7 +177,7 @@ for (const input of ['pointer', 'keyboard']) test(`home refresh preserves ${inpu
 
 // The real Home read has a five-second request bound. Keep that bound intact;
 // the renderer fixture separately exercises naturally prolonged slow notices.
-test('bounded Home loading retires without growing its pending card',async({page},info)=>{
+test('cold Home loading keeps its bounded card until a read succeeds',async({page},info)=>{
  await page.setViewportSize({width:390,height:800});
  const errors=[];page.on('pageerror',error=>errors.push(error.message));
  let release,entered=false;const held=new Promise(resolve=>{release=resolve;});
@@ -198,15 +198,22 @@ test('bounded Home loading retires without growing its pending card',async({page
    const sample=()=>{if(!node.isConnected)return;window.boundedHomeFrames.push({rect:node.getBoundingClientRect().toJSON(),same:node.querySelector(':scope > .loading-pieces')===cue&&cue.querySelector('i').getAnimations()[0]===clock,time:clock.currentTime,inlineContext:Boolean(node.querySelector('.loading-context'))});requestAnimationFrame(sample);};sample();
    return {rect,time:clock.currentTime,at:performance.now()};
   });
-  // Native request timeout retires the pending card. No test clock, widened
-  // network timeout, fabricated response or loading-policy override is used.
-  await expect(card).toHaveCount(0);
+  // A cold destination stays covered until an actual read succeeds. Its
+  // foreground recovery controls remain outside the stable pending card.
+  const recovery=page.getByTestId('destination-load-notice');
+  await expect(recovery).toBeVisible({timeout:7000});
+  await expect(recovery.getByRole('button',{name:'Retry',exact:true})).toBeVisible({timeout:13000});
+  await expect(recovery.getByRole('link',{name:'Home',exact:true})).toHaveAttribute('href','#/');
+  await expect(card).toHaveCount(1);
   const frames=await page.evaluate(()=>window.boundedHomeFrames);
+  const blockedSlowNotices=await page.getByTestId('slow-loading-notice').count();
+  await info.attach('mounted-home-bounded-layout',{body:JSON.stringify({before,frames,blockedSlowNotices}),contentType:'application/json'});
   expect(frames.length).toBeGreaterThan(2);
   for(const frame of frames){expect(frame.rect).toEqual(before.rect);expect(frame.same).toBe(true);expect(frame.inlineContext).toBe(false);}
   expect(frames.at(-1).time).toBeGreaterThan(before.time);
+  release();await expect(card).toHaveCount(0);await expect(recovery).toBeHidden();
+  await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-phase','idle');
   await expect(page.getByTestId('slow-loading-notice')).toHaveCount(0);
-  await info.attach('mounted-home-bounded-layout',{body:JSON.stringify({before,frames}),contentType:'application/json'});
-  expect(errors).toEqual([]);
+  expect(blockedSlowNotices).toBe(0);expect(errors).toEqual([]);
  }finally{release();await page.unrouteAll({behavior:'wait'});}
 });

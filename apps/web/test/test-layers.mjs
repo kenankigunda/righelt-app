@@ -1,4 +1,6 @@
 export const WEB_UNIT_TEST_FILES = Object.freeze([
+  "destination-recovery.test.mjs",
+  "foreground-recovery.test.mjs",
   "game-lifecycle.test.mjs",
   "history-turn-preview.test.mjs",
   "computer-activity.test.mjs",
@@ -63,6 +65,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "operation-manager.test.mjs",
   "optimistic-live.test.mjs",
   "routing.test.mjs",
+  "navigation-history.test.mjs",
   "shell-host.test.mjs",
   "shell-render-stability.test.mjs",
   "sync-store.test.mjs",

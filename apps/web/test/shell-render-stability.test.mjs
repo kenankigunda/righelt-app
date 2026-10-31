@@ -101,7 +101,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const getRouteTransitionPhaseKey = \(\) => routeTransition\?\.phase \|\| "idle";/);
   assert.match(source, /const getRouteTransitionRenderKey = \(\) =>/);
   assert.match(source, /const isGameEntryRouteTransitionActive = \(route = currentRoute\) =>/);
-  assert.match(source, /const startGameEntryRouteTransition = \(gameId, fromRoute = currentRoute\?\.name \|\| "unknown", toRoute = 'game'\) => \{/);
+  assert.match(source, /const startGameEntryRouteTransition = \(gameId, fromRoute = currentRoute\?\.name \|\| "unknown", toRoute = 'game', direction = toRoute === 'home' \? 'back' : 'forward'\) => \{/);
   assert.match(source, /const maybeRevealRouteTransition = \(\) => \{/);
   assert.match(source, /const syncRouteTransitionForCurrentRoute = \(\) => \{/);
   assert.match(source, /const isFlyoutOnlyRouteChange = \(previousRoute, nextRoute\) =>/);
@@ -119,7 +119,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /getAvailableShellContentWidth\(viewportWidth, route\) >= SHELL_WIDE_SCREEN_MIN_WIDTH \? "wide" : "narrow"/);
   assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) => getShellLayoutModeForRoute\(currentRoute, viewportWidth\);/);
   assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
-  assert.match(source, /window\.requestAnimationFrame\(\(\) => \{\s*scrollHomeSectionToTop\(sectionKey\);\s*\}\);/s);
+  assert.match(source, /window\.requestAnimationFrame\(\(\) => \{\s*scrollHomeSectionToTop\(sectionKey\);\s*navigationHistory\.save\(\);\s*\}\);/s);
   assert.match(source, /const syncShellLayoutMode = \(\) => \{/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", layoutMode\);/);
   assert.match(source, /appEl\.setAttribute\("data-shell-route", currentRoute\?\.name \|\| "unknown"\);/);
@@ -256,7 +256,7 @@ test("live sync status renders are deduplicated by stable status key", () => {
 });
 
 test("sync store manages subscriptions through the active route game id", () => {
-  assert.match(source, /syncStore\.setActiveGameId\(routeGameId\);/);
+  assert.match(source, /syncStore\.setActiveGameId\(routeGameId \|\| null\);/);
   assert.match(syncStoreSource, /let activeGameId = null;/);
   assert.match(syncStoreSource, /const getLocalFailureMessage = \(game\) =>/);
   assert.match(syncStoreSource, /const isFailedLocalStub = \(game\) =>/);
@@ -413,7 +413,7 @@ test("app uses route skeleton sync and localized loading instead of a global bus
   assert.match(source, /const pendingHomeSectionKeys = new Set\(\);/);
   assert.match(source, /const SCENARIO_LOAD_PENDING_KEY = "scenario:load";/);
   assert.match(source, /const startRouteSync = \(\{ renderStart = true \} = \{\}\) => \{/);
-  assert.match(source, /routeHydrated = false;\s*syncLiveChannels\(\);/s);
+  assert.match(source, /routeHydrated = Boolean\(usableDestination\);\s*syncDestinationNotice\(\);\s*syncLiveChannels\(\);/s);
   assert.match(source, /const initialRender = async \(\) => \{[\s\S]*?routeHydrated = false;\s*render\(\{ animatePanels: false, includeBoard: false \}\);[\s\S]*?await account\.start\(\);/s);
   assert.match(source, /startRouteSync\(\{ renderStart: false \}\);/);
   assert.match(source, /renderGameViewSkeleton\(\)/);

@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import {createDestinationRecovery,destinationRecoveryMessage} from '../shell/destination-recovery.js';
+import { createNavigationHistory } from '../shell/navigation-history.js';
 import { createRouteHydration } from '../shell/route-hydration.js';
 import { createIssueDiagnostics } from '../shell/issue-diagnostics.js';
 import { parseRouteFromHash, buildHomeHash, buildHashForRoute, FLYOUT_KEYS } from '../shell/routes.js';
@@ -41,8 +43,10 @@ function fixture({staleInvite=false}={}) {
   };
   const diagnostics=createIssueDiagnostics({schedule:()=>1,environment:()=>({})});
   const context=vm.createContext({
+    pendingRoutePosition:null,homeSections:{},homeSectionsHydrated:false,startGameEntryRouteTransition:noop,
+    document:{hidden:false,addEventListener:noop},destinationRecoveryMessage,createDestinationRecovery:options=>createDestinationRecovery({...options,setTimer:()=>0,clearTimer:noop}),
     account:{snapshot:()=>({generation})},transport:owner,currentRoute:parseRouteFromHash('#/invite/first'),
-    window:{location:{hash:'#/invite/first'},addEventListener:(name,fn)=>events[name]=fn,history:{replaceState:(_state,_title,hash)=>{context.window.location.hash=hash;}}},parseRouteFromHash,buildHashForRoute,FLYOUT_KEYS,URLSearchParams,hydrateRoute:createRouteHydration(),
+    window:{location:{hash:'#/invite/first'},addEventListener:(name,fn)=>events[name]=fn,history:{replaceState:(state,_title,hash)=>{context.window.history.state=state;if(hash)context.window.location.hash=hash;}}},parseRouteFromHash,buildHashForRoute,FLYOUT_KEYS,URLSearchParams,hydrateRoute:createRouteHydration(),
     appEl:{querySelectorAll:()=>[{classList:{add:noop}}],addEventListener:(_name,fn)=>clicks.push(fn)},
     joinFeedback:{clear:noop},clearAccountContinuation:noop,closeHeaderMenu:noop,gameSound:{leaveGame:noop,play:noop,cancelPreview:noop},
     inlineProfiles:{close:noop},resultPresentation:{clear:noop},rematchDialog:{close:noop},retireTutorialSave:noop,
@@ -59,6 +63,7 @@ function fixture({staleInvite=false}={}) {
     getInviteContextForGame:game=>game?{game}:null,renderInviteLanding:invite=>`<section data-loaded-invitation="${invite.game.id}"></section>`,renderGame:()=>'<section data-generic-game-skeleton></section>',
 
   });
+  context.navigationHistory=createNavigationHistory({history:context.window.history,getHash:()=>context.window.location.hash,capture:()=>({y:0,generation}),id:()=>String(Math.random())});
   const api=new vm.Script(`
     let inviteLoadState=null,resolvedInvite=${staleInvite?"{gameId:'stale-game'}":'null'},routeSyncRequestId=0,routeHydrated=false;
     let hostInvite=null,inviteVisit=0,activeResultGameId=null,pendingResultReviewFocus=null,routeTransition=null,restoreHomePending=false,flyoutRenderOrder=[];

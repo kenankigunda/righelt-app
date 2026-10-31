@@ -184,7 +184,7 @@ function historyRouteHarness(t) {
     moves:[0,1].map(index=>({index,moveId:`m${index}`,snapshot:snapshot(index),selectionSnapshot:snapshot(index),notation:'MOVE',at:'2026-01-01'}))}});
   transport.selectHistoryMove({gameId:'g',moveIndex:0});
   const noop=()=>{};
-  const context={renderHistoryResult,HTMLElement:Element,appEl,transport,currentRoute:{name:'game',gameId:'g',panel:'history'},
+  const context={renderHistoryResult,pendingRoutePosition:null,HTMLElement:Element,appEl,transport,currentRoute:{name:'game',gameId:'g',panel:'history'},
     lastRenderedRouteKey:'g|history|debug:false',lastRenderedBaseRouteKey:'g',lastRenderedTransitionPhaseKey:'idle',
     activeResultGameId:null,mountedBoardGameId:null,FLYOUT_KEYS:[],
     getGamePanel:route=>(route??context.currentRoute).panel,
