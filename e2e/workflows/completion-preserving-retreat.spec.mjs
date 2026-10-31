@@ -140,10 +140,18 @@ async function noClosure(page,game){
  await expect(page.locator('[data-action="end-turn"],[data-board-preview-action="end-turn"]').filter({visible:true})).toHaveCount(0);
 }
 async function completedMandatoryFollow(page,id,retreatCommandId){
- await expect.poll(async()=>{
-  const game=await current(page,id),index=game.moves.findIndex(move=>move.clientCommandId===retreatCommandId);
-  return index>=0&&game.moves.slice(index+1).some(move=>move.action.type==='follow');
- }).toBe(true);
+ // Keep the same 10s authoritative predicate, returning only its evidence.
+ // Shipping a full game and nested assertions on every pass can consume that
+ // clock after a Follow is already confirmed, under a busy native runner.
+ await expect.poll(()=>page.evaluate(async({id,retreatCommandId,header,version})=>{
+  const identityId=localStorage.getItem('righelt.identity.id.v1');if(!identityId)throw Error('Native fixture identity missing');
+  const response=await fetch(`/api/shell/games/${id}?identityId=${encodeURIComponent(identityId)}`,{headers:{'content-type':'application/json',[header]:String(version)}});
+  const body=await response.json();
+  if(response.status!==200||body.ok!==true)throw Error(`Native fixture current-game response: HTTP ${response.status}, ok=${String(body.ok)}`);
+  const moves=body.game?.moves;if(!Array.isArray(moves))throw Error('Native fixture current-game moves missing');
+  const index=moves.findIndex(move=>move.clientCommandId===retreatCommandId);
+  return {status:response.status,ok:body.ok,follow:index>=0&&moves.slice(index+1).some(move=>move.action.type==='follow')};
+ },{id,retreatCommandId,header:ACTION_CONTRACT_HEADER,version:ACTION_CONTRACT_VERSION})).toEqual({status:200,ok:true,follow:true});
  const game=await current(page,id),index=game.moves.findIndex(move=>move.clientCommandId===retreatCommandId),retreat=game.moves[index];
  expect(retreat).toBeTruthy();expect(capturedHash(retreat.snapshot)).toBe(safe.stateHash);
  const follows=game.moves.slice(index+1).filter(move=>move.action.type==='follow');
