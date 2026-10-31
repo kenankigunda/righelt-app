@@ -47,7 +47,15 @@ export function patchBoardMessage(element, html) {
   const compatible = (left,right) => {
     if (left.nodeType !== right.nodeType || left.nodeName !== right.nodeName) return false;
     if (left.nodeType === 1) {
-      const attrs = node => [...node.attributes].filter(attr => attr.name !== 'title').map(attr => `${attr.name}=${attr.value}`).sort().join('|');
+      const attrs = node => [...node.attributes].filter(attr => attr.name !== 'title').map(attr => {
+        // Native press feedback belongs to the live control. It must not turn
+        // an otherwise identical message refresh into a detached click target.
+        const inlineAction=node.matches?.('button[data-board-message-action],button[data-board-preview-action]');
+        const value=attr.name==='class'&&inlineAction
+          ? attr.value.split(/\s+/).filter(name=>name!=='is-pressing'&&name!=='is-releasing').join(' ')
+          : attr.value;
+        return `${attr.name}=${value}`;
+      }).sort().join('|');
       if (attrs(left) !== attrs(right)) return false;
     }
     return left.childNodes.length === right.childNodes.length && [...left.childNodes].every((child,index)=>compatible(child,right.childNodes[index]));
