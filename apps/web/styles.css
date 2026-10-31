@@ -1067,7 +1067,7 @@ button:disabled {
 }
 .cell.selected-supply-point[data-selected-supply-owner="P2"] {--supply-selection-color:var(--player-p2);}
 /* Movement roles are independent of player ownership. Keep cells, coordinates
-   and axes aligned. Whole-turn previews intentionally have no selection rings. */
+   and individual-move axes aligned. History endpoints opt in separately below. */
 :root { --move-source: #7650A6; --move-target: #1F7A5A; }
 .cell.source { border-color: var(--move-source); box-shadow: inset 0 0 0 1px var(--move-source); }
 .cell.target:not(.continuation-member) { border-color: var(--move-target); box-shadow: inset 0 0 0 1px var(--move-target); }
@@ -1077,3 +1077,9 @@ button:disabled {
 .axis-label.axis-medium { color:var(--move-target); }
 .axis-label.axis-medium.axis-target-p1, .axis-label.axis-medium.axis-target-p2 { color:var(--move-target); }
 .cell.target.target-side-p1:not(.continuation-member), .cell.target.target-side-p2:not(.continuation-member) { border-color:var(--move-target); box-shadow:inset 0 0 0 1px var(--move-target); }
+
+/* History action roles: shape distinguishes source from target independently
+   of affiliation. Shared endpoints retain both roles; live views do not opt in. */
+[data-presentation-context="history"] .cell.history-role-source { border:2px dashed var(--move-source); box-shadow:none; }
+[data-presentation-context="history"] .cell.history-role-target { border:2px solid var(--move-target); box-shadow:none; }
+[data-presentation-context="history"] .cell.history-role-source.history-role-target { border:2px dashed var(--move-source); box-shadow:inset 0 0 0 2px var(--move-target); }

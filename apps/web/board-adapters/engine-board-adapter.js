@@ -1135,6 +1135,7 @@ export function createEngineBoardAdapter() {
       renderedInteractionMode = effectiveInteractionMode;
       if (boardEl?.setAttribute) {
         boardEl.setAttribute("data-interaction-mode", effectiveInteractionMode);
+        boardEl.setAttribute("data-presentation-context", overlay?.presentationContext === 'history' ? 'history' : 'default');
       }
       const removalByCoordinateKey = new Map(
         (Array.isArray(removalEffects) ? removalEffects : []).map((effect) => [coordKey(effect.position), effect]),
@@ -1165,6 +1166,11 @@ export function createEngineBoardAdapter() {
         return token;
       };
 
+      // History explicitly opts in. Recorded overlays also serve live summaries,
+      // whose appearance must remain independent of History's role treatment.
+      const historyRoles = overlay?.presentationContext === 'history' && !isLiveInteractiveBoard
+        ? new Map((overlay.endpointRoles ?? []).map(cell => [`${cell.row},${cell.col}`,cell])) : new Map();
+
       for (let row = 0; row < BOARD_SIZE; row += 1) {
         for (let col = 0; col < BOARD_SIZE; col += 1) {
           const key = `${row},${col}`;
@@ -1181,6 +1187,9 @@ export function createEngineBoardAdapter() {
             cell.setAttribute("aria-hidden", "true");
           }
           cell.className = "cell";
+          const historyRole = historyRoles.get(key);
+          if (historyRole?.source) cell.classList.add('history-role-source');
+          if (historyRole?.target) cell.classList.add('history-role-target');
           const cellPiece = findPieceAt(snapshot, row, col);
           const effectiveSelection =
             overlay?.mode === "recorded-action"
