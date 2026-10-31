@@ -87,6 +87,7 @@ import {
   tryLocalScenarioWrite,
 } from "./scenarios.js";
 import { renderHomeCardIdentity, renderHomeCardTurn } from "./home-card-identity.js";
+import {renderScenarioPlayerCopy} from "./scenario-player-copy.js";
 import { buildStaticGameCardFromScenario } from "./static-game-cards.js";
 import { historyTurnSide, buildMovePreview, buildTurnPreview, buildDestroyedPieceOverlays, findRecordedActionStartPiece } from "./history-preview.js";
 import { resolveInitialSelectionHydration } from "./selection-hydration.js";
@@ -1849,6 +1850,7 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
   const selectedScenarioTitle = scenarioMetadataDrafts.get(selectedScenario?.id)?.title ?? selectedScenario?.title ?? "";
   const selectedScenarioDescription = scenarioMetadataDrafts.get(selectedScenario?.id)?.description ?? selectedScenario?.description ?? "Scenarios replay canonical shell history into a game.";
   const canUpdateScenario = canAuthorScenarios && Boolean(selectedScenario);
+  const contextualDescription = !editing ? renderScenarioPlayerCopy({...selectedScenario,description:selectedScenarioDescription},game) : null;
   if (scenarioLoadPending) {
     return `
       <section class="panel debug-panel scenario-panel scenario-panel-load loading-region" ${loadingAttributes("scenarios", "The scenarios are taking a little longer to load.")} data-testid="scenario-load-skeleton">
@@ -1881,9 +1883,10 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
               <p
                 class="small"
                 data-scenario-editable="description"
+                data-version="${canAuthorScenarios && editing ? 'editing' : 'reading'}"
                 data-persist data-decision-id="${escapeHtml(selectedScenario?.id)}" ${canAuthorScenarios && editing ? 'contenteditable="plaintext-only" role="textbox" aria-label="Scenario description"' : ""}
                 ${canAuthorScenarios && editing ? "" : 'tabindex="0"'}
-              >${escapeHtml(selectedScenarioDescription)}</p>
+              >${contextualDescription ?? escapeHtml(selectedScenarioDescription)}</p>
             </div>`
           : `<p class="small">${escapeHtml(selectedScenarioDescription)}</p>`
       }

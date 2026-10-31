@@ -990,6 +990,31 @@ test("long profile names remain accessible to observers without covering the boa
   await expect.poll(()=>card.locator('.mini-board-preview-status').evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
   await card.scrollIntoViewIfNeeded();
   await page.screenshot({path:test.info().outputPath('canonical-home-name-mobile.png')});
+  await page.setViewportSize({width:1440,height:1000});await card.click();
+  await expect(page.getByRole('button',{name:'Debug',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Debug',exact:true}).click();
+  const analysis=page.locator('[data-debug-section="analysis"]');await analysis.locator('summary').click();
+  await expect(analysis.locator('.debug-section-body > p').first().locator('bdi')).toHaveText(displayName);
+  await expect(analysis.locator('.debug-section-body > p').first().locator('.sr-only')).toHaveText('Red: ');
+  await page.getByRole('button',{name:'Close Debug mode',exact:true}).click();
+  const scenarioId=await page.evaluate(async()=>{const response=await fetch('/scenarios/catalog.json');if(!response.ok)throw Error('Catalog unavailable');const catalog=await response.json();return catalog.scenarios.find(item=>(item.resultingState??item.initialState)?.sideToMove==='P1'&&!item.savedSelection?.target)?.id;});
+  expect(scenarioId).toBeTruthy();
+  await page.getByRole('button',{name:'Scenarios',exact:true}).click();
+  await page.locator('#scenario-select').selectOption(scenarioId);
+  const preview=page.locator('.mini-board-card-scenario .mini-board-preview-status');
+  await expect(preview.locator('bdi')).toHaveText(displayName);await expect(preview.locator('.sr-only')).toHaveText('Red: ');
+  const curated=await page.evaluate(async()=>{const catalog=await(await fetch('/scenarios/catalog.json')).json();return catalog.scenarios.find(item=>item.id==='5bbc0ebf-ed20-4e12-8143-67eaa5cc8676');});
+  expect(curated).toBeTruthy();await page.locator('#scenario-select').selectOption(curated.id);
+  const description=page.locator('[data-scenario-editable="description"]');
+  await expect(description.locator('bdi')).toHaveText([displayName,'Open seat']);
+  await page.getByRole('button',{name:'Edit details',exact:true}).click();
+  await expect(description).toHaveAttribute('contenteditable','plaintext-only');
+  await expect(description).toHaveText(curated.description);await expect(description.locator('bdi')).toHaveCount(0);
+  await page.locator('#scenario-select').selectOption(scenarioId);
+  await page.getByRole('link',{name:'Righelt',exact:true}).click();
+  await expect(preview).toHaveText('Red to play');await expect(preview.locator('bdi')).toHaveCount(0);
+  await page.locator('#scenario-select').selectOption(curated.id);
+  await expect(description).toHaveText(curated.description);await expect(description.locator('bdi')).toHaveCount(0);
 });
 
  test("username lookup diagnostics redact entries and dismiss resolved details with stable focus", async ({ page }) => {
