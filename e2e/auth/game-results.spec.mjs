@@ -145,10 +145,10 @@ test('a retained legacy commander destruction explains the actual cause without 
   return{status:response.status,body:await response.json()};
  },{gameId,scenario,terminal,headers});
  expect(imported.status,JSON.stringify(imported.body)).toBe(200);expect(imported.body.game.board.state.outcome.reason).toBe('p2_commander_unsupplied');expect(imported.body.game.moves).toHaveLength(0);
- const result=page.getByTestId('game-result');await expect(result.getByRole('heading',{name:'You won',exact:true})).toBeVisible();await expect(result).toContainText('Your Blue commander was destroyed.');await expect(result).not.toContainText('lost its supply');
+ const result=page.getByTestId('game-result');await expect(result.getByRole('heading',{name:'You won as Red',exact:true})).toBeVisible();await expect(result).toContainText('Your Blue commander was destroyed.');await expect(result).not.toContainText('lost its supply');
  await page.reload();await expect(page.getByTestId('game-shell')).toBeVisible();await expect(result).toHaveCount(0);
  await page.goto(`/#/game/${gameId}?panel=history`);await page.getByRole('button',{name:'View result',exact:true}).click();
- await expect(result.getByRole('heading',{name:'You won',exact:true})).toBeVisible();expect(await result.locator('[data-result-mark]').evaluate(el=>el.getAnimations({subtree:true}).length)).toBe(0);
+ await expect(result.getByRole('heading',{name:'You won as Red',exact:true})).toBeVisible();expect(await result.locator('[data-result-mark]').evaluate(el=>el.getAnimations({subtree:true}).length)).toBe(0);
  const retained=await page.evaluate(async({gameId,headers})=>(await(await fetch(`/api/shell/games/${gameId}`,{headers})).json()).game,{gameId,headers});
  expect(retained.board.state.outcome.reason).toBe('p2_commander_unsupplied');expect(retained.moves).toHaveLength(0);
  await page.screenshot({path:info.outputPath('legacy-commander-result.png')});

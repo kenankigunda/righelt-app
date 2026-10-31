@@ -47,7 +47,7 @@ import { issueDiagnostics } from "./issue-diagnostics.js";
 import { renderDiagnosticDisclosure, handleDiagnosticAction, isDiagnosticOpen, closeDiagnostic } from "./diagnostic-disclosure.js";
 import { patchSectionContent } from "./dom-patch.js";
 import { SWIPE_EASING_CSS } from './navigation-motion.js';
-import { getGameResult, renderHistoryResult, createResultTransitions, createRematchDialog } from './game-result.js';
+import { getGameResult, renderResultText, renderHistoryResult, createResultTransitions, createRematchDialog } from './game-result.js';
 import { renderResultMark, createResultPresentation } from './result-presentation.js';
 import { createRouteHydration } from './route-hydration.js';
 import { invitationLoadFailureKind, renderInviteLoadRecovery } from './invite-load-recovery.js';
@@ -3118,23 +3118,8 @@ const renderResult = game => {
   const result = getGameResult(confirmed, transport.getIdentityId());
   if (!result) return "";
   const names = ['P1','P2'].map(side => playerDisplayName(confirmed,side));
-  const isolatedName = name => `<bdi dir="auto">${escapeHtml(name)}</bdi>`;
-  const namedText = text => {
-    if (result.side) return escapeHtml(text);
-    const winnerName = result.winner ? playerDisplayName(confirmed,result.winner) : null;
-    if (winnerName && text === `${winnerName} won`) return `${isolatedName(winnerName)} won`;
-    const unique = [...new Set(names)].sort((a,b) => b.length-a.length);
-    let remaining = text, html = '';
-    while (remaining) {
-      const matches = unique.map(name => ({name,index:remaining.indexOf(`${name}’s commander`)})).filter(match => match.index >= 0).sort((a,b) => a.index-b.index || b.name.length-a.name.length);
-      if (!matches.length) return html + escapeHtml(remaining);
-      const {name,index} = matches[0];
-      html += escapeHtml(remaining.slice(0,index)) + isolatedName(name);
-      remaining = remaining.slice(index+name.length);
-    }
-    return html;
-  };
-  return `<section class="panel game-result" data-testid="game-result" data-result-tone="${result.tone}" data-winner="${result.winner ?? ''}"><p class="small">Game finished</p>${renderResultMark(result)}<h1 tabindex="-1">${namedText(result.title)}</h1><p>${namedText(result.reason)}</p><p>${result.controlsBothSides ? "You play both sides" : names.map(isolatedName).join(" vs ")}</p><p class="small">Game ${escapeHtml(formatDisplayGameId(game.id))}</p><div class="story-modal-actions"><button data-action="analysis" data-game-id="${escapeHtml(game.id)}">${icon('back')}Review game</button><button${result.tone === "victory" ? "" : ' class="secondary"'} data-action="rematch" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Play again</button><a class="button-link secondary" href="#/">${icon('home')}Home</a></div></section>`;
+  const isolatedName = (name,index) => `<span class="player-tone-p${index+1}"><bdi dir="auto">${escapeHtml(name)}</bdi></span>`;
+  return `<section class="panel game-result" data-testid="game-result" data-result-tone="${result.tone}" data-winner="${result.winner ?? ''}"><p class="small">Game finished</p>${renderResultMark(result)}<h1 tabindex="-1">${renderResultText(result,'title')}</h1><p>${renderResultText(result,'reason')}</p><p>${result.controlsBothSides ? "You play both sides" : names.map(isolatedName).join(" vs ")}</p><p class="small">Game ${escapeHtml(formatDisplayGameId(game.id))}</p><div class="story-modal-actions"><button data-action="analysis" data-game-id="${escapeHtml(game.id)}">${icon('back')}Review game</button><button${result.tone === "victory" ? "" : ' class="secondary"'} data-action="rematch" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Play again</button><a class="button-link secondary" href="#/">${icon('home')}Home</a></div></section>`;
 };
 
 const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {

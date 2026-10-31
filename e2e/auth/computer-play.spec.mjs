@@ -74,6 +74,30 @@ test('ordinary computer play records real worker evidence, preserves private not
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
   await expect(page.getByTestId('game-role')).toContainText('Player 1');
   await waitForInitialComputerControl(page, created, initialControl);
+  const humanName = created.player1.profile.displayName || created.player1.profile.username;
+  await switchGamePanel(page,'players');
+  const humanReference=page.getByTestId('participant-player-1').locator('.participant-profile');
+  await expect(humanReference.locator('.player-name')).toHaveText(humanName);
+  await expect(humanReference).toHaveAccessibleName(`${humanName}, you, Red, Connected`);
+  await expect(humanReference.locator('.player-name')).toHaveCSS('color','rgb(194, 69, 47)');
+  await expect(page.getByTestId('participant-player-2').locator('.player-name')).toHaveText('Babs');
+  await page.screenshot({path:testInfo.outputPath('canonical-players-desktop.png')});
+  const identityViewport=page.viewportSize();
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.locator('#app')).toHaveAttribute('data-shell-layout-mode','narrow');
+  await switchGamePanel(page,'players');
+  await testInfo.attach('canonical-mobile-bounds',{contentType:'application/json',body:JSON.stringify(await humanReference.locator('.player-name').evaluate(async node=>{
+    const range=document.createRange();range.selectNodeContents(node);
+    const observation=await new Promise(resolve=>{const observer=new IntersectionObserver(([entry])=>{observer.disconnect();resolve({ratio:entry.intersectionRatio,root:entry.rootBounds?.toJSON(),box:entry.boundingClientRect.toJSON(),intersection:entry.intersectionRect.toJSON()});});observer.observe(node);});
+    const ancestors=[];for(let el=node;el;el=el.parentElement){const style=getComputedStyle(el);ancestors.push({tag:el.tagName,className:el.className,box:el.getBoundingClientRect().toJSON(),overflowX:style.overflowX,overflowY:style.overflowY,clipPath:style.clipPath});}
+    return {viewport:{width:innerWidth,height:innerHeight,pixelRatio:devicePixelRatio},text:range.getBoundingClientRect().toJSON(),observation,ancestors};
+  }),null,2)});
+  await expect(humanReference.locator('.player-name')).toBeInViewport({ratio:1});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:testInfo.outputPath('canonical-players-mobile.png')});
+  await page.setViewportSize(identityViewport);
+  await expect(page.locator('#app')).toHaveAttribute('data-shell-layout-mode','wide');
+  await switchGamePanel(page,'board');
   const humanAction = created.legalActions.find(action => action.from && action.to);
   await submitPlayableAction(page, humanAction);
   await expect.poll(async () => (await projected(page, created.id)).moves.length).toBeGreaterThan(0);

@@ -473,3 +473,10 @@ This section is normative and applies to every new endpoint, page, and performan
 - Narration describes the acknowledged sequence. Multiple rushed pieces use “X rushed several pieces”. Pushes name the victim’s original square and say “and had a piece follow” or “and had several pieces follow”.
 
 - Board-message height must admit the complete two-row grammar at every supported width. Reserve its measured font and width envelopes before first paint, including all turn summaries and the bounded spectator-name box. Changes to wording, fonts or inline pills require primary/fallback measurements at 100% and 200% text, boundary probes and exact cold/loaded/reload anchor checks. Natural wrapping may require four or more lines; a universal three-line cap is not the contract.
+
+
+### Canonical player references and accessible affiliation
+
+Use the current canonical player name in its owning color for identity references. One anonymous player is Guest; when both seats are anonymous, use Guest 1 and Guest 2 by fixed seat. Names that happen to be Red, Blue or Guest remain unchanged. Preserve profile actions, bidirectional isolation and complete accessible names for long or duplicate names. Accessible labels retain the owner color and identify the human's own seat independently of visible color. Useful relative control prompts and You won may remain.
+
+History actor references use canonical names rather than You or Opponent. Result titles identify the actual winner, never the active side or selected rematch side. Human self-play needs the winning-seat qualification: You won as Red/Blue for its owner and {player name} won as Red/Blue for viewers. Other results omit redundant visible color suffixes while retaining accessible color attribution. Commander explanations carry structured owner references; style the entire Your Blue commander phrase in the relevant color. Never infer an owner's color by matching user-supplied name text. Viewing, temporary computer control and replay must not change the recorded owner or gameplay authority.

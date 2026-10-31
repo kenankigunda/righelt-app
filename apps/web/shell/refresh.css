@@ -383,6 +383,10 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .player-name-stack {display:grid;gap:2px;text-align:left;min-width:0;}
 .player-name {font-weight:700;line-height:1.35;}
 .player-username {display:block;font-size:.78rem;font-weight:400;color:var(--muted);line-height:1.4;}
+/* Names wrap; a truncation clip can cut fractional glyph bounds in WebKit. */
+.perspective-participants .participant-profile :is(.player-name-stack,.player-name) {overflow:visible;}
+.perspective-participants .participant-identity[data-player-side="p1"] .player-name {color:var(--player-p1);}
+.perspective-participants .participant-identity[data-player-side="p2"] .player-name {color:var(--player-p2);}
 .participant-identity[data-player-side="p1"] .player-emblem {color:var(--player-p1);}
 .participant-identity[data-player-side="p2"] .player-emblem {color:var(--player-p2);}
 .panel .participant-identity .participant-profile {display:inline-flex;align-items:center;justify-content:flex-start;gap:var(--identity-gap,10px);background:transparent;color:var(--ink);border:0;border-radius:0;padding:5px 0;box-shadow:none;max-width:100%;text-align:left;}
