@@ -393,11 +393,11 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /return '<strong class="player-tone-both">both players<\/strong>';/);
   assert.match(source, /const renderConnectionStatusIcon = \(status, label\) =>/);
   assert.match(source, /import \{ renderHomeCardIdentity \} from "\.\/home-card-identity\.js"/);
-  assert.match(source, /renderHomeCardIdentity\(game, \{identityId: transport\.getIdentityId\(\)\}\)/);
+  assert.match(source, /renderHomeCardIdentity\(game, \{identityId: transport\.getIdentityId\(\), quiet:completed\}\)/);
   assert.doesNotMatch(source, /renderHomeSeatConnectionLine|renderHomeConnectionSummary|renderHomeRoleLine/);
   assert.match(source, /<div class="mini-board-card-copy">/);
   assert.match(source, /<div class="mini-board-card-meta mini-board-card-meta-primary">/);
-  assert.match(source, /const moveLabel = `Move \$\{game\.moveCount \+ 1\}`;/);
+  assert.match(source, /const moveLabel = completed \?[^;]+game\.moveCount[^;]+: `Move \$\{game\.moveCount \+ 1\}`;/);
   assert.match(source, /reconcileMiniBoardPreviews\(\);\s*syncMountedGameShellPanelUi\(shellRoot\);\s*scheduleGameShellStickyLayout\(\);/);
 });
 

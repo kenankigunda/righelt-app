@@ -1,3 +1,4 @@
+import {TERMINAL_OUTCOME_STATUSES} from '../../shared-types/src/engine';
 import { parseComputerControl } from '../../shared-types/src/computer-play';
 import { archiveRow, readArchivedGame } from "./storage-archive";
 import { growthGuard } from "./storage-budget";
@@ -118,7 +119,7 @@ type PersistedGameRow = {
   gameplay_revision?: number;
 };
 
-export type HomeSectionKey = "my" | "other" | "smoke";
+export type HomeSectionKey = "my" | "completed" | "other" | "smoke";
 
 type HomeSectionCountRow = {
   total_games: number;
@@ -716,6 +717,8 @@ const normalizePersistedStaticGameCard = (
   const game = toStaticGameCard(
     {
       id: typeof parsed.id === "string" && parsed.id ? parsed.id : row.game_id,
+      eventSeq: Number(row.event_seq),
+      gameplayRevision: Number(row.gameplay_revision),
       createdAt: typeof parsed.createdAt === "string" && parsed.createdAt ? parsed.createdAt : row.created_at || row.updated_at || now(),
       lastMoveAt: typeof parsed.lastMoveAt === "string" ? parsed.lastMoveAt : null,
       updatedAt: typeof parsed.updatedAt === "string" && parsed.updatedAt ? parsed.updatedAt : row.updated_at || row.created_at || now(),
@@ -781,7 +784,10 @@ const getHomeSectionWhereClause = ({ identityId, section, debug }: Omit<HomeSect
   const unfinished = "outcome_status = 'ongoing'";
   const ownedGameSql = accountMode ? `(${playerMatchSql} AND ownership_mode = 'account_v1')` : playerMatchSql;
   const notOwned = accountMode ? "((player1_identity_id IS NOT ?1 AND player2_identity_id IS NOT ?1) OR ownership_mode != 'account_v1')" : "(player1_identity_id IS NOT ?1 AND player2_identity_id IS NOT ?1)";
-  const sectionSql = section === "my" ? `${ownedGameSql} AND (${unfinished})` : `(${notOwned} OR NOT (${unfinished}))`;
+  const completed = `outcome_status IN (${TERMINAL_OUTCOME_STATUSES.map(status => `'${status}'`).join(',')})`;
+  const sectionSql = section === "my" ? `${ownedGameSql} AND (${unfinished})`
+    : section === "completed" ? `${ownedGameSql} AND (${completed})`
+    : `(${notOwned} OR (NOT (${unfinished}) AND NOT (${completed})))`;
   const smokeSql = debug ? "AND has_smoke_identity = 0" : "AND has_smoke_identity = 0";
   return {
     sql: `WHERE ${sectionSql} ${smokeSql}`,

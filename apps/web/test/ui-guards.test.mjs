@@ -206,7 +206,7 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /serverPageGameIdsByPage:\s*\{\},/);
   assert.match(source, /visiblePageSize:\s*HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,/);
   assert.match(source, /visibleColumnCount:\s*1,/);
-  assert.match(source, /const getVisibleHomeSectionKeys = \(route = currentRoute\) => \(route\?\.debug \? \["my", "other", "smoke"\] : \["my", "other"\]\);/);
+  assert.match(source, /const getVisibleHomeSectionKeys = \(route = currentRoute\) => \(route\?\.debug \? \["my", "completed", "other", "smoke"\] : \["my", "completed", "other"\]\);/);
   assert.match(source, /const getHomeSectionCardMinWidthPx = \(\) => getRootFontSizePx\(\) \* HOME_SECTION_CARD_MIN_WIDTH_REM;/);
   assert.match(source, /const getHomeSectionCardGapPx = \(\) => getRootFontSizePx\(\) \* HOME_SECTION_CARD_GAP_REM;/);
   assert.match(source, /const carouselEl = appEl\?\.querySelector\?\.\(`\[data-home-carousel="\$\{sectionKey\}"\]`\);/);
@@ -263,7 +263,7 @@ test("home uses per-section pagination and renders the smoke section only in deb
     /const loadHomeSectionServerPage = async \(\s*sectionKey,\s*serverPage,\s*\{\s*visiblePageSize = getHomeSectionVisiblePageSize\(sectionKey\),\s*visibleColumnCount = getHomeSectionColumnCount\(sectionKey\),\s*\} = \{\},\s*\) => \{/s,
   );
   assert.match(source, /pageSize:\s*HOME_SECTION_SERVER_PAGE_SIZE,/);
-  assert.match(source, /serverPageGameIdsByPage:\s*\{\s*\.\.\.previous\.serverPageGameIdsByPage,\s*\[normalizedServerPage\]: serverPageGameIds,/s);
+  assert.match(source, /serverPageGameIdsByPage:\s*\{\s*\.\.\.\(previous\.homeListRevision === response\.homeListRevision \? previous\.serverPageGameIdsByPage : \{\}\),\s*\[normalizedServerPage\]: serverPageGameIds,/s);
   assert.match(source, /const syncResponsiveHomeSectionPageSizes = async \(\) => \{/);
   assert.match(source, /const nextVisibleColumnCount = getHomeSectionColumnCount\(sectionKey\);/);
   assert.match(source, /section\.visiblePageSize === nextVisiblePageSize && section\.visibleColumnCount === nextVisibleColumnCount/);

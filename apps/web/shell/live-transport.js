@@ -179,6 +179,15 @@ export const createLiveTransportStore = ({
   let games = [];
   let gameById = new Map();
   let homeGameCardById = new Map();
+  let homeListRevision = 0;
+  const homeMembershipSignature = card => JSON.stringify([card?.gameplayRevision,card?.confirmedOutcomeStatus,card?.moveCount,card?.lastMoveAt,
+    card?.selfPlayMode,card?.myRole,card?.myRoles,card?.player1?.identityId,card?.player2?.identityId,
+    card?.player1?.profile,card?.player2?.profile,card?.player1?.computerProfile,card?.player2?.computerProfile]);
+  const installAuthoritativeHomeCard = (game, eventSeq) => {
+    const next = buildStaticGameCardFromGame(game, {eventSeq, confirmed:true});
+    if (homeMembershipSignature(homeGameCardById.get(game.id)) !== homeMembershipSignature(next)) homeListRevision++;
+    homeGameCardById.set(game.id,next);
+  };
   const lastEventSeqByGameId = new Map();
   const optimisticStateByGameId = new Map();
   // Storage recovery owns asynchronous work separately from game projections.
@@ -335,7 +344,6 @@ export const createLiveTransportStore = ({
       rulesExecutor.cancel(`project:${gameId}`);
       optimistic.projectionJob = null;
       optimistic.derivedGame = decorateGameWithSync(authoritativeGame, gameId);
-      homeGameCardById.set(gameId, buildStaticGameCardFromGame(optimistic.derivedGame));
       return { ok: true, game: optimistic.derivedGame };
     }
 
@@ -346,7 +354,6 @@ export const createLiveTransportStore = ({
       rulesExecutor.cancel(`project:${gameId}`);
       optimistic.projectionJob = null;
       optimistic.derivedGame = decorateGameWithSync(optimistic.derivedGame ?? authoritativeGame, gameId);
-      homeGameCardById.set(gameId, buildStaticGameCardFromGame(optimistic.derivedGame));
       return { ok: true, game: optimistic.derivedGame };
     }
     if (optimistic.admissionProjection) return { ok: true, game: optimistic.derivedGame };
@@ -385,7 +392,6 @@ export const createLiveTransportStore = ({
     }
     optimistic.commandResults = projection.commandResults;
     optimistic.derivedGame = decorateGameWithSync(projection.game, gameId);
-    homeGameCardById.set(gameId, buildStaticGameCardFromGame(optimistic.derivedGame));
     return { ok: true, game: optimistic.derivedGame };
   };
 
@@ -413,7 +419,7 @@ export const createLiveTransportStore = ({
     const next = clone(game);
     getOptimisticState(next.id).externalPreview = null;
     gameById.set(next.id, next);
-    homeGameCardById.set(next.id, buildStaticGameCardFromGame(next));
+    installAuthoritativeHomeCard(next,lastEventSeqByGameId.get(next.id) ?? null);
     const current = games.filter((entry) => entry.id !== next.id);
     current.push(next);
     current.sort((left, right) => {
@@ -447,6 +453,7 @@ export const createLiveTransportStore = ({
 
     if (nextEventSeq !== null) {
       lastEventSeqByGameId.set(game.id, Math.max(currentEventSeq ?? 0, nextEventSeq));
+      if (!staleSnapshotIgnored) installAuthoritativeHomeCard(authoritative,nextEventSeq);
     }
 
     const optimistic = getOptimisticState(game.id);
@@ -1162,6 +1169,7 @@ export const createLiveTransportStore = ({
   };
 
   const loadGamesPage = async ({ section, page = 0, pageSize = 6, debug = false } = {}) => {
+    const startedRevision = homeListRevision;
     const params = new URLSearchParams({
       identityId,
       section: String(section || ""),
@@ -1173,10 +1181,22 @@ export const createLiveTransportStore = ({
       method: "GET",
       cache: "no-store",
     });
+    assertActive();
+    let homeListChanged = startedRevision !== homeListRevision;
     const gamesPage = Array.isArray(body.games) ? body.games.map((game) => normalizeStaticGameCard(game)) : [];
     for (const game of gamesPage) {
-      homeGameCardById.set(game.id, game);
+      const current = homeGameCardById.get(game.id);
+      const hasCurrentAuthority = Number.isSafeInteger(current?.eventSeq);
+      const stale = hasCurrentAuthority && (!Number.isSafeInteger(game.eventSeq) || game.eventSeq < current.eventSeq ||
+        (game.eventSeq === current.eventSeq && (game.gameplayRevision ?? -1) < (current.gameplayRevision ?? -1)));
+      if (stale) {
+        if (homeMembershipSignature(current) !== homeMembershipSignature(game)) homeListChanged = true;
+      } else {
+        if (homeMembershipSignature(current) !== homeMembershipSignature(game)) homeListRevision++;
+        homeGameCardById.set(game.id, game);
+      }
     }
+    const installedRevision = homeListRevision;
     // Home reloads must resume durable commands even when their game is not opened.
     // Hydration starts bounded reconciliation; listing a page never waits on the network recovery.
     try {
@@ -1185,8 +1205,11 @@ export const createLiveTransportStore = ({
     } catch (error) {
       for (const game of gamesPage) blockStorage(game.id, error);
     }
+    assertActive();
     return {
       ...body,
+      homeListRevision,
+      homeListChanged: homeListChanged || installedRevision !== homeListRevision,
       games: gamesPage.map(game => getHomeGameCard(game.id)),
     };
   };
@@ -1670,7 +1693,10 @@ export const createLiveTransportStore = ({
     if (!card) return null;
     const optimistic = getOptimisticState(gameId);
     const next = clone(card);
-    if (optimistic.pendingCommands.length) next.syncStatus = optimistic.syncStatus;
+    if (optimistic.pendingCommands.length) {
+      next.syncStatus = optimistic.syncStatus;
+      next.pendingPreviewSnapshot = clone(optimistic.derivedGame?.liveCurrentSnapshot ?? optimistic.derivedGame?.board?.state ?? null);
+    }
     if (optimistic.storageBlocked || optimistic.connectionRecovering) next.syncStatus = "confirming";
     return next;
   };
@@ -1785,6 +1811,7 @@ export const createLiveTransportStore = ({
     discardPendingCommands,
     listGames,
     getHomeGameCard,
+    getHomeListRevision: () => homeListRevision,
     getGameViewModel,
     isUpgradeRequired: (gameId) => getOptimisticState(gameId).upgradeRequired === true,
     markUpgradeRequired,
