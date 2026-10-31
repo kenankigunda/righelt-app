@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test as base,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {deterministicStateHash,resolveToStability,serializeState} from '../../apps/web/generated/packages/game-engine/src/index.js';
 import {ACTION_CONTRACT_HEADER,ACTION_CONTRACT_VERSION,SYNC_TIMING,commandFingerprint,isSyncCommand,isReconcileResponse,isCommandOutcome} from '../../apps/web/generated/packages/shared-types/src/sync-protocol.js';
@@ -8,6 +8,12 @@ import {isOperationRequest,operationValues} from '../support/shared-request.mjs'
 import {makeRetreatScenario,readRetreatCapture,FOLLOW_ACTION,RETREAT_CAPTURE_SHA256} from '../support/retreat-completion-fixture.mjs';
 import {installJournalObservations} from '../support/journal-observations.mjs';
 import {COMPUTER_UI_FRAME_MEASURE} from '../../apps/web/shell/frame-presentation.js';
+
+// Worker/bootstrap preparation has an explicit fixture budget. The receipt and
+// native Follow journeys retain their complete existing 60-second body budget.
+const test=base.extend({acceptedRetreat:[async({page,baseURL},use)=>{
+ await use(await acceptedComputerRetreat(page,baseURL));
+},{timeout:60000}]});
 
 const f=readRetreatCapture(),safe=f.alternatives.find(row=>row.completable);
 const computerRetreatWorkflow='the real computer defender records only the completion-preserving retreat';
@@ -184,9 +190,9 @@ async function acceptedComputerRetreat(page,baseURL){
 }
 
 // Evidence persistence and live completion are independent journeys. Keep each
-// within the existing 60s workflow budget, including real worker preparation.
-test(computerRetreatWorkflow,async({page,baseURL},info)=>{
- const {branched,command,move}=await acceptedComputerRetreat(page,baseURL);
+// within its existing 60s body budget after separately bounded worker preparation.
+test(computerRetreatWorkflow,async({page,acceptedRetreat},info)=>{
+ const {branched,command,move}=acceptedRetreat;
  const attempt=(await request(page,`/api/shell/games/${branched.id}/decision-attempt`,{attemptId:move.computerProof.attemptId,kind:'computer'})).attempt;
  expect(attempt.proof).toEqual(move.computerProof);expect(attempt.fingerprint).toBe(deterministicStateHash(branched.board.state));expect(attempt.result.status).toBe('ready');expect(attempt.result.action).toEqual(safe.action);
  expect(attempt.result.legality).toMatchObject({complete:true,unknown:0,indices:[1144]});expect(attempt.result.actionIndex).toBe(1144);
@@ -194,8 +200,8 @@ test(computerRetreatWorkflow,async({page,baseURL},info)=>{
  await info.attach('accepted-computer-retreat',{body:JSON.stringify({command,move,attempt},null,2),contentType:'application/json'});
 });
 
-test(computerFollowWorkflow,async({page,baseURL},info)=>{
- const {branched,command,move}=await acceptedComputerRetreat(page,baseURL);
+test(computerFollowWorkflow,async({page,acceptedRetreat},info)=>{
+ const {branched,command,move}=acceptedRetreat;
  const ready=await atHash(page,branched.id,safe.stateHash);expect(ready.legalActions).toEqual([FOLLOW_ACTION]);await switchGamePanel(page,'board');await noClosure(page,ready);
  await page.screenshot({path:info.outputPath('computer-safe-retreat.png')});
  await submit(page,branched.id,FOLLOW_ACTION);completed(await current(page,branched.id));
