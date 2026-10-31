@@ -79,7 +79,7 @@ body { isolation:isolate; }
 .shell-route-transition-layer[data-direction="back"] .shell-route-transition-layer-swipe { scale:-1 1; }
 
 [data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:is(.opponent-choice,.ui-icon-button):not(:disabled):hover { background:var(--surface-hover-quiet); color:var(--ink); border-color:transparent; box-shadow:none; }
-[data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:not(.cell):not(.board-preview-inline-button):not(.secondary):not(.opponent-choice):not(.ui-icon-button):not(.participant-profile):not(:disabled):hover { background:var(--action-hover); }
+[data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:not(.cell):not(.board-preview-inline-button):not(:where(.legend-inspection)):not(.secondary):not(.opponent-choice):not(.ui-icon-button):not(.participant-profile):not(:disabled):hover { background:var(--action-hover); }
 
 /* Surfaces share angular accents; controls keep their softer, tactile shape. */
 .brand-grid { mask-image:radial-gradient(ellipse 1050px 850px at var(--grid-origin-x,220px) var(--grid-origin-y,60px),#000 0%,rgb(0 0 0 / 65%) 30%,rgb(0 0 0 / 28%) 85%); }
