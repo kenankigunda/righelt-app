@@ -194,7 +194,10 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     if (projection?.sharedMutationsBlocked || projection?.pendingCommandCount > 0) return;
     if (!ownLease(game)) {
       cancelWork('other-device');
-      if (game.computer.lease?.expiresAt > clock()) { if (status.phase !== 'other-device') publish({ phase: 'other-device' }); return; }
+      // A newer generation on this device may be re-acknowledged only by the
+      // same owner scope that already held it. Acquire still validates the
+      // server authentication context and never takes another device's lease.
+      if (game.computer.lease?.expiresAt > clock() && (game.computer.lease.deviceId !== deviceId || !sameOwnerScope(acknowledgedLease, context))) { if (status.phase !== 'other-device') publish({ phase: 'other-device' }); return; }
       if (work.leaseWork) {
         const wasRenewal = work.leaseWorkAction === 'renew';
         await work.leaseWork;

@@ -759,3 +759,27 @@ for(const change of ['switchGame','changeAccount','changeTransport'])test(`save-
  await new Promise(resolve=>setImmediate(resolve));assert.equal(typeof release,'function');assert.equal(f.saved[0].attempt.outcome,'ready');
  f[change]();release();await work;assert.equal(f.submissions(),0);assert.equal(f.saved.length,1);
 });
+
+test('a newer same-device server lease is acknowledged without waiting for expiry',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ const originalGeneration=f.game().computer.generation;
+ f.game().computer=changeComputerControl(f.game().computer,{ownerId:'owner',authContextId:'session',deviceId:'device',action:'resume-here',generation:originalGeneration,now:100,turnIndex:0});
+ const replacementGeneration=f.game().computer.generation;
+ f.setBlocked(true);await f.session.tick();assert.equal(f.controls.length,1);assert.equal(f.computations(),0);
+ f.setBlocked(false);await f.session.tick();
+ assert.equal(f.controls.length,2);assert.equal(f.controls[1].action,'acquire');assert.equal(f.controls[1].generation,replacementGeneration);
+ assert.equal(f.game().computer.generation,replacementGeneration);assert.equal(f.session.snapshot().phase,'idle');
+ const computation=f.session.tick();assert.equal(f.computations(),1);
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await computation;
+ assert.equal(f.submissions(),1);assert.equal(f.controls.length,2);
+});
+
+test('same-device lease acknowledgement still requires the server authentication context',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ f.game().computer.generation++;f.game().computer.lease.authContextId='different-session';
+ const generation=f.game().computer.generation;await f.session.tick();
+ assert.equal(f.controls.length,2);assert.equal(f.controls[1].action,'acquire');
+ assert.equal(f.game().computer.generation,generation);assert.equal(f.game().computer.lease.authContextId,'different-session');
+ assert.equal(f.computations(),0);assert.equal(f.submissions(),0);
+ await f.session.tick();assert.equal(f.controls.length,2);
+});
