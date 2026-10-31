@@ -22,3 +22,13 @@ test('undone disclosure retains native priority above the aggregate target',asyn
  await expect(page.locator('[data-move-id="undone-record"]')).toBeVisible();expect(await page.evaluate(()=>window.historyActions)).toEqual(['toggle-undone-group']);
  await toggle.focus();await page.keyboard.press('Space');await expect(toggle).toHaveAttribute('aria-expanded','false');expect(await page.evaluate(()=>window.historyActions)).toEqual(['toggle-undone-group','toggle-undone-group']);
 });
+
+test('native History hover stays a quiet owner wash rather than a generic paper button',async({page},info)=>{
+ await page.addInitScript(scenario=>{window.compactScenario=scenario;},scenario);await page.goto('/browser-integration/support/compact-history.html');await page.waitForFunction(()=>window.fixtureReady);
+ for(const target of [page.locator('.history-turn-hit').first(),page.locator('.history-move-hit').first()]){
+  await target.hover({position:{x:12,y:12}});
+  await expect.poll(()=>target.evaluate(node=>getComputedStyle(node).backgroundColor)).toMatch(/0\.05\b/);
+  await expect.poll(()=>target.evaluate(node=>getComputedStyle(node).boxShadow)).toBe('none');
+ }
+ await page.screenshot({path:info.outputPath('compact-native-hover.png'),fullPage:true});
+});

@@ -2280,7 +2280,8 @@ textarea:focus-visible {
 .history-turn .history-item:has(> .history-move-hit:is(:active,.is-pressing)) {transform:translateY(1px) scale(.985);}
 .history-turn:has(> .history-turn-hit.button-release-bounce),
 .history-turn .history-item:has(> .history-move-hit.button-release-bounce) {animation:history-item-release 140ms var(--shell-game-entry-easing);}
-[data-hover-capability="hover"] .history-turn button:is(.history-turn-hit,.history-move-hit).secondary:hover {background:color-mix(in srgb,currentColor 5%,transparent);}
+[data-hover-capability="hover"] .app-root .history-turn button:is(.history-turn-hit,.history-move-hit).secondary:hover,
+.app-root[data-hover-capability="hover"] .history-turn button:is(.history-turn-hit,.history-move-hit).secondary:hover {background:color-mix(in srgb,currentColor 5%,transparent);border:0;box-shadow:none;}
 @media(min-width:933px) and (pointer:fine) {
   .history-turn-heading,.history-turn .history-move-line {min-height:1.5em;}
 }
