@@ -109,7 +109,8 @@ for(const productionSwipe of [false,true])test(`a reconnecting narrow track keep
   expect(held[2].strokeTime).toBeGreaterThan(held[0].strokeTime);
   observations.push(...held);
  }
- await page.evaluate(()=>{window.trackMotion.pause();window.trackMotion.playbackRate=1;window.trackMotion.currentTime=window.trackDuration/6;window.edgeTrack.dataset.transitionState='forward';window.dispatchEvent(new Event('resize'));});
+ await page.evaluate(async()=>{window.trackMotion.pause();await window.trackMotion.ready;window.trackMotion.playbackRate=1;window.trackMotion.currentTime=window.trackDuration/6;window.edgeTrack.dataset.transitionState='forward';window.dispatchEvent(new Event('resize'));});
+ const prepared=await sample();expect(prepared.state).toBe('paused');expect(prepared.pending).toBe(false);expect(prepared.time).toBeCloseTo(nativeFrames.duration/6,1);
  await expect.poll(async()=> (await sample()).alignment).toBeLessThan(.1);
  // The native transition now runs freely at its original rate/duration.
  // Inspect every delivered active callback, but require semantic lifecycle
@@ -120,7 +121,7 @@ for(const productionSwipe of [false,true])test(`a reconnecting narrow track keep
  // geometry must be correct again before the settled stroke is restored.
  // Both durations retain three progressive held-running checkpoints above.
  const active=await page.evaluate(()=>new Promise(resolve=>{
-  const samples=[],start=window.edgeSnapshot();let raf=null,done=false;
+  const samples=[];let start=null,raf=null,done=false;
   const finish=result=>{if(done)return;done=true;if(raf!==null)cancelAnimationFrame(raf);window.removeEventListener('pagehide',leave);if(window.edgeObservationCancel===cancel)delete window.edgeObservationCancel;resolve({...result,samples,start,mode:'free-running-native',callbackSource:'requestAnimationFrame'});};
   const leave=()=>finish({ok:false,reason:'Page left during native observation'});
   const cancel=()=>finish({ok:false,reason:'Test retired native observation'});window.edgeObservationCancel=cancel;
@@ -138,9 +139,13 @@ for(const productionSwipe of [false,true])test(`a reconnecting narrow track keep
   };
   try{
    window.trackMotion.play();window.dispatchEvent(new Event('resize'));
-   const running=window.trackMotion.playState==='running';
-   window.trackMotion.finished.then(()=>finish({ok:true,running,end:window.edgeSnapshot()}),error=>finish({ok:false,reason:'Native transition did not finish',error:String(error)}));
-   raf=requestAnimationFrame(tick);
+   window.trackMotion.ready.then(()=>{
+    if(done)return;start=window.edgeSnapshot();
+    const running=start.state==='running'&&!start.pending&&start.time<start.duration;
+    if(!running){finish({ok:false,reason:'Native transition must be actively running after play readiness'});return;}
+    window.trackMotion.finished.then(()=>finish({ok:true,running,end:window.edgeSnapshot()}),error=>finish({ok:false,reason:'Native transition did not finish',error:String(error)}));
+    raf=requestAnimationFrame(tick);
+   },error=>finish({ok:false,reason:'Native play readiness failed',error:String(error)}));
   }catch(error){finish({ok:false,reason:'Native observation could not start',error:String(error)});}
  }));
  observations.push(...active.samples);
