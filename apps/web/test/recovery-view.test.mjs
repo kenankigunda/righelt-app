@@ -373,3 +373,14 @@ test('archive turn snapshots are revision-fenced and a changed archive leaves th
  const request=requests.find(request=>request.url.includes('decision-snapshot'));
  assert.equal(request.body.gameplayRevision,0);assert.equal(request.body.decisionId,'m0');
 });
+
+test('read-only turn hydration preserves viewing intent and live authority',async t=>{
+ const transport=store();t.after(()=>transport.retire());const game=fixture();
+ game.moves=game.moves.map((move,index)=>({...move,turnIndex:0,turnMoveIndex:index}));
+ transport.applyLiveGameUpdate({game});const before=transport.getGameViewModel(game.id);
+ const moves=await transport.loadTurnMoves({gameId:game.id,turnIndex:0,revision:0});
+ assert.equal(moves.length,4);assert.deepEqual(transport.getGameViewModel(game.id),before);
+ transport.selectHistoryMove({gameId:game.id,moveIndex:2});const selected=transport.getGameViewModel(game.id);
+ await transport.loadTurnMoves({gameId:game.id,turnIndex:0,revision:0});
+ assert.deepEqual(transport.getGameViewModel(game.id),selected);
+});

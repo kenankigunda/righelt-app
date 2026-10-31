@@ -1,3 +1,4 @@
+import {createLiveTurnOverview} from './live-turn-overview.js';
 import {isOngoingGame} from './game-lifecycle.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
@@ -22,6 +23,10 @@ import { renderComputerProgress, renderDecisionDebug } from './computer-view.js'
 import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
 let computerSession = null;
 const viewingIntent = createViewingIntent();
+const liveTurnOverview = createLiveTurnOverview({
+  loadMoves:values=>transport.loadTurnMoves(values),
+  onChange:()=>{if(currentRoute.name==='game'){boardRuntime?.refreshVisuals?.();boardRuntime?.refreshStatus?.();}},
+});
 let mobileNavigation = null;
 let replayController = null;
 const replayRequests = createReplayRequest({onChange:() => boardRuntime?.refreshStatus()});
@@ -1141,6 +1146,7 @@ const getAdjacentGamePanel = (panel = getGamePanel(), direction = 0) => {
   return GAME_PANEL_KEYS[nextIndex];
 };
 const preparePanelTransition = (previous, next) => {
+  if (previous.name === "game" && (next.name !== "game" || next.gameId !== previous.gameId)) liveTurnOverview.leave();
   if (previous.name === 'game' && (next.gameId !== previous.gameId || getGamePanel(previous) !== getGamePanel(next))) {
     viewingIntent.saveScroll(previous.gameId, getGamePanel(previous), window.scrollY);
   }
@@ -3306,6 +3312,7 @@ const mountBoardForGame = (game) => {
   applySharedMutationGates(game);
   updateRecoveryAnnouncement(game);
   const capturing = currentRoute.scenarios && scenarioCapture?.gameId === game.id;
+  liveTurnOverview.sync(capturing ? null : game,{identityId:transport.getIdentityId(),scope:viewingScope()});
   const snapshot = capturing ? capturePosition() : game.currentSnapshot ?? null;
   const historyPreview = game.inHistoryMode ? (game.historyTurnIndex != null ? buildTurnPreview(game.historyTurnMoves,{context:'history'}) : buildMovePreview(game.inspectedDecision ?? game.moves?.find(move=>move.index===game.historyIndex),{context:'history'})) : null;
   const historyMoveIndex = game.inHistoryMode ? (game.historyTurnIndex != null ? `turn:${game.historyTurnIndex}` : game.historyIndex) : null;
@@ -3373,6 +3380,8 @@ const mountBoardForGame = (game) => {
       }),
       controls: {
         onInteractionSound: event => gameSound.interaction(event),
+        getDisplayOverlay:selection=>liveTurnOverview.overlay(selection),
+        onPieceSelected:piece=>liveTurnOverview.selected(piece),
         getTurnIndicator: state => {
           const view=getBoardGame(transport.getGameViewModel(game.id));
           return boardTurnCaption(view,state,{identityId:transport.getIdentityId()});
@@ -4453,6 +4462,7 @@ function resetAccountTransport(next) {
   additionalHistory.clear();
   utilityMemory.clear(); expandedViewerGames.clear(); expandedComputerCards.clear();
   viewingIntent.clear();
+  liveTurnOverview.leave();
   replayController?.stop("account-changed");
   preparation.cancel();
   computerSession?.suspend(); scenarioCapture = null; scenarioMetadataDrafts.clear(); decisionDebugStates.clear();
