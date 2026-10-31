@@ -36,26 +36,27 @@ test('self-play resumes after account creation and uses responsive account contr
 });
 
 test('self-play profile controls preserve focus and expansion across viewer presence',async({page,browser},info)=>{
- await createSelfPlayAccount(page);
+ const registered=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/auth/register'&&response.request().method()==='POST');
+ await createSelfPlayAccount(page);const account=(await(await registered).json()).account;const expectedName=account.displayName||account.username;
  await page.setViewportSize({width:1440,height:1000});
  const red=page.getByTestId('participant-player-1').getByRole('button');
- await expect(red).toHaveText('You');const username=await red.getAttribute('data-username');expect(username).toBeTruthy();
+ await expect(red).toHaveText(expectedName);const username=await red.getAttribute('data-username');expect(username).toBeTruthy();
  await red.click();
  const profile=page.getByTestId('public-profile');await expect(profile).toContainText('Joined');
  await expect(page.getByTestId('participant-player-1').getByRole('button')).toHaveAttribute('aria-expanded','true');
  // Presence updates may replace profile nodes between locator resolution and
  // evaluation. Inspect the current mounted geometry and motion atomically.
- await expect.poll(()=>page.evaluate(()=>{
+ await expect.poll(()=>page.evaluate(expectedName=>{
   const row=document.querySelector('[data-testid="participant-player-1"]');
   const name=row?.querySelector('.player-name'),button=row?.querySelector('[data-profile-key]');
   const profile=row?.querySelector('[data-testid="public-profile"]');
   if(!name?.isConnected||!button?.isConnected||!profile?.parentElement)return false;
   if(profile.parentElement.getAnimations().some(a=>(a.playState==='running'||a.pending)&&Number.isFinite(a.effect?.getComputedTiming().endTime)))return false;
   const nameRect=name.getBoundingClientRect(),buttonRect=button.getBoundingClientRect(),profileRect=profile.getBoundingClientRect();
-  return name.textContent==='You'&&nameRect.height>0&&profileRect.height>0&&profileRect.top>=buttonRect.bottom-1;
- })).toBe(true);
+  return name.textContent===expectedName&&nameRect.height>0&&profileRect.height>0&&profileRect.top>=buttonRect.bottom-1;
+ },expectedName)).toBe(true);
  await page.screenshot({path:info.outputPath('profile-wide.png')});
- const blue=page.getByTestId('participant-player-2').getByRole('button');await expect(blue).toHaveText('You');await expect(blue).toHaveAttribute('data-username',username);await blue.click();
+ const blue=page.getByTestId('participant-player-2').getByRole('button');await expect(blue).toHaveText(expectedName);await expect(blue).toHaveAttribute('data-username',username);await blue.click();
  await expect(page.getByTestId('participant-player-1').getByRole('button')).toHaveAttribute('aria-expanded','false');
  await expect(blue).toHaveAttribute('aria-expanded','true');await blue.focus();
  const watcher=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:1000}});
@@ -68,7 +69,7 @@ test('self-play profile controls preserve focus and expansion across viewer pres
  await guest.goto(page.url());await guest.getByTestId('join-viewer').click();
  const summary=page.getByRole('button',{name:`Viewers: ${viewerName}`,exact:true});await expect(summary).toBeVisible();await expect(summary).toHaveAttribute('aria-expanded','false');
  await expect(page.getByTestId('participant-viewer')).toHaveCount(0);
- await expect(blue).toBeFocused();await expect(blue).toHaveAttribute('aria-expanded','true');await expect(blue).toHaveText('You');await expect(blue).toHaveAttribute('data-username',username);
+ await expect(blue).toBeFocused();await expect(blue).toHaveAttribute('aria-expanded','true');await expect(blue).toHaveText(expectedName);await expect(blue).toHaveAttribute('data-username',username);
  await summary.click();await expect(summary).toHaveAttribute('aria-expanded','true');
  const viewerRow=page.getByTestId('participant-viewer');await expect(viewerRow).toBeVisible();await expect(viewerRow.getByRole('button')).toHaveAttribute('data-username',viewerName);await expect(viewerRow).toHaveText(viewerName);
  await expect(blue).toHaveAttribute('aria-expanded','true');await blue.focus();}finally{await watcher.close();}

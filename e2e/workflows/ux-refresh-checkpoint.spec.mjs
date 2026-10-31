@@ -48,7 +48,7 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  await expect(legend.nth(1)).toHaveAccessibleName('Red supply point inspection');
  await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
  const ownProfile=page.getByTestId('participant-player-1').locator('[data-action="guest-profile"]');
- await expect(ownProfile).toHaveText('You');await expect(ownProfile).toHaveAccessibleName('You, Red, Connected');
+ await expect(ownProfile).toHaveText('Guest');await expect(ownProfile).toHaveAccessibleName('Guest, you, Red, Connected');
  const supply=await page.locator('.supply-point-marker.supply-point-p1').first().evaluate(el=>({core:getComputedStyle(el.querySelector('svg')).fill}));
  expect(supply.core).toBe('rgb(194, 69, 47)');
  await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-phase','idle');
