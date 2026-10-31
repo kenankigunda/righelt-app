@@ -3562,6 +3562,22 @@ test('production bind path suspends new preview requests until pageshow',async()
  }
 });
 
+
+test('sequence message End turn uses the existing guarded turn-control path',async()=>{
+ let click,canInteract=true,calls=0;
+ const label={innerHTML:'',textContent:'',addEventListener:(kind,callback)=>{if(kind==='click')click=callback;},removeEventListener:noop};
+ const state={sideToMove:'P1',turnIndex:0,continuation:{type:'push',phase:'follow'},outcome:{status:'ongoing'},pieces:[]};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getSelectedPieceSummary:()=>null},host:{canInteract:()=>canInteract,endTurn:async()=>{calls++;return{accepted:true,state:{...state,sideToMove:'P2',turnIndex:1,continuation:null},legalActions:[]};}}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ const fire=()=>click({target:{closest:selector=>selector==='[data-board-message-action]'?{getAttribute:()=> 'end-turn'}:null}});
+ await runtime.loadSnapshot(state,{legalActions:[]});fire();assert.equal(calls,0);
+ await runtime.loadSnapshot(state,{legalActions:[{type:'end_turn'}]});runtime.setInteractionBlocked(true);fire();assert.equal(calls,0);runtime.setInteractionBlocked(false);
+ canInteract=false;fire();assert.equal(calls,0);canInteract=true;
+ runtime.setInspection({kind:'supply',owner:'P1'});fire();assert.equal(calls,0);runtime.clearInspection();
+ fire();await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,1);fire();assert.equal(calls,1);
+ destroyUninitializedNodeRuntime(runtime);
+});
+
 test('whole-turn overlays reach the adapter without selected-cell state',async()=>{
  const rendered=[];
  const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:input=>rendered.push(input),getSelectedPieceSummary:()=>null},host:{canInteract:()=>false}});

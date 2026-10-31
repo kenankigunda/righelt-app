@@ -28,7 +28,7 @@ test('replay includes authoritative finalization without adding gameplay moves',
   assert.equal(moves().length,3);
 });
 
-function fixture({manual=true,throwRender=false,withTokens=false,baseTransform='none'}={}) {
+function fixture({manual=true,throwRender=false,withTokens=false,baseTransform='none',holdFinal=false}={}) {
   const handlers=new Map(),events=[],renders=[],timers=new Map(),motions=[],ghosts=[]; let nextTimer=0,destroyed=0,tokens=[];
   const doc={hidden:false,addEventListener:(key,fn)=>handlers.set(key,fn),removeEventListener:key=>handlers.delete(key),defaultView:{getComputedStyle:()=>({transform:baseTransform}),addEventListener:(key,fn)=>handlers.set(key,fn),removeEventListener:key=>handlers.delete(key)}};
   const element=()=>({ownerDocument:doc,style:{},setAttribute(){},addEventListener(){},appendChild(child){child.parent=this;},getBoundingClientRect:()=>({left:0,top:0}),querySelector(){return null;},querySelectorAll(){return tokens;},remove(){this.removed=true;}});
@@ -37,7 +37,7 @@ function fixture({manual=true,throwRender=false,withTokens=false,baseTransform='
     if (!withTokens) return;
     tokens=(frame.snapshot.pieces ?? []).map(piece=>({getAttribute:()=>piece.id,classList:{contains:()=>false,add(){}},getBoundingClientRect:()=>({left:piece.position.col*10,top:piece.position.row*10,width:10,height:10}),cloneNode:()=>{const ghost={style:{transform:baseTransform},setAttribute(){},remove(){},animate:()=>({cancel(){},finished:Promise.resolve()})};ghosts.push(ghost);return ghost;},animate:frames=>{motions.push({id:piece.id,frames});return {cancel(){},finished:Promise.resolve()};}}));
   };
-  const replay=createComputerReplay({rootEl,onChange:status=>events.push(status),onFinish:event=>events.push(event),reducedMotion:()=>manual,createPreview:({preview})=>{if(throwRender)throw Error('render failed');renders.push(preview);updateTokens(preview);return {update:frame=>{renders.push(frame);updateTokens(frame);},destroy:()=>{destroyed++;}};},setTimer:fn=>{timers.set(++nextTimer,fn);return nextTimer;},clearTimer:id=>timers.delete(id)});
+  const replay=createComputerReplay({rootEl,holdFinal,onChange:status=>events.push(status),onFinish:event=>events.push(event),reducedMotion:()=>manual,createPreview:({preview})=>{if(throwRender)throw Error('render failed');renders.push(preview);updateTokens(preview);return {update:frame=>{renders.push(frame);updateTokens(frame);},destroy:()=>{destroyed++;}};},setTimer:fn=>{timers.set(++nextTimer,fn);return nextTimer;},clearTimer:id=>timers.delete(id)});
   return {replay,doc,handlers,events,renders,timers,motions,ghosts,get destroyed(){return destroyed;},tick(){const [id,fn]=timers.entries().next().value;timers.delete(id);fn();}};
 }
 
@@ -115,4 +115,13 @@ test('removed stack ghosts use measured geometry without applying the stack tran
   assert.equal(f.ghosts.length,1);assert.equal(f.ghosts[0].style.transform,'none');
   assert.equal(f.ghosts[0].style.left,'30px');
   f.tick();await pending;f.replay.destroy();
+});
+
+
+for(const manual of [false,true])test(`held automatic frames hide optimistic state until explicitly released (reduced motion=${manual})`,async()=>{
+ const f=fixture({manual,holdFinal:true}),input=payload();input.frames=input.frames.slice(0,1);
+ const work=f.replay.play(input);
+ if(!manual){f.tick();await Promise.resolve();f.tick();}
+ assert.equal(await work,true);assert.equal(f.replay.snapshot().playing,true);assert.equal(f.replay.snapshot().step,1);assert.equal(f.destroyed,0);
+ f.replay.stop('acknowledged-next-frame');assert.equal(f.destroyed,1);assert.equal(f.replay.snapshot().playing,false);f.replay.destroy();
 });
