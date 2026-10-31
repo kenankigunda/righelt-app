@@ -19,7 +19,7 @@ const unwrapOperationResult = async (value) => {
   return resolved;
 };
 
-export const createShellBoardHost = ({ transport, gameId, canInteract, canSelect, getInspectionSnapshot = () => null, getGameView = () => transport.getGameViewModel(gameId), rulesExecutor = createRulesExecutor() }) => ({
+export const createShellBoardHost = ({ transport, gameId, canInteract, canPresentActions, canSelect, getInspectionSnapshot = () => null, getGameView = () => transport.getGameViewModel(gameId), rulesExecutor = createRulesExecutor() }) => ({
   asyncPieceMoves: rulesExecutor.asynchronous,
   cancelPieceMoves: () => rulesExecutor.cancelAll(),
   async loadInitialState() {
@@ -103,5 +103,6 @@ export const createShellBoardHost = ({ transport, gameId, canInteract, canSelect
     }
   },
   canInteract,
+  canPresentActions,
   canSelect: canSelect ?? canInteract,
 });

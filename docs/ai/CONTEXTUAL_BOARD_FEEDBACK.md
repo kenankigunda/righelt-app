@@ -21,6 +21,14 @@ This follow-on builds on the opponent, invitation and history work in PR156. Its
 - Remove redundant control-rule explanations and internal device/runtime copy from normal player surfaces. Keep useful event, error, approval and recovery information.
 - Authenticated optimistic game creation and branching use the public profile already known for that same captured account and transport identity. Computer seats use their known computer identity. Expanded participant details update safely when an authoritative profile arrives.
 
+## Selection intent and asynchronous previews
+
+Selecting an own piece enters the action layer immediately. A coarse legal-action subset is not proof that no moves exist. Keep “Select a move” while the complete preview query is pending; show the existing inactivity explanation when the snapshot proves inactivity, or “No moves” after a complete empty result. Loading remains separate accessibility/progress state and never replaces the board instruction.
+
+Only explicit interaction chooses the action, combined supply/command, or command layer. Pending results cannot choose a layer or undo a deliberate inspection. A late unique ordinary move also cannot choose its target: retain “Select a move” until explicit input. Initial synchronous target selection and mandatory continuation behavior remain available. Commander cycling uses this intent even before previews arrive and during a temporary submission fence; an empty command step is still skipped. Submission always checks current authority and never queues a blocked click.
+
+Identical authoritative snapshot, legal actions and selection refreshes preserve pending and completed previews. Coalesce identical pending piece queries and retain at most eight completed exact-input preview responses within the board runtime. Real position, legality, selection-scope changes and runtime retirement invalidate the relevant work; cache contents never grant submission authority. Regression proof must hold results pending, use native piece clicks and inspections, check request counts and capture click-to-message timing.
+
 ## Confirmed loading reference
 
 The user chose the current reference, preserving its cut-stone shapes, sizing and vertical settling motion. The isolated comparison uses the actual Manrope font, Red and Blue colors and the real message-height reservation. Literal font punctuation, a separate cluster and a contextual hybrid were considered but not selected. Production at the time of diagnosis still used the earlier direct-to-text cue without the upcoming board sibling spacing. Shared inline cue spacing now carries the approved separation; board hosts must not add it twice. Keep button and standalone-region spacing appropriate to those existing components, with readable contrast on filled controls.

@@ -455,3 +455,14 @@ This section is normative and applies to every new endpoint, page, and performan
 - New startup-path code must carry verification:
   - Tests must assert bootstrap endpoint cache headers and response determinism.
   - Performance-sensitive changes must include a short note in PR/commit text describing startup impact and why the chosen approach preserves fast start.
+
+### Stable board messages and inline actions
+
+- The host’s `canPresentActions` callback expresses durable human control of the current actor. `canInteract` expresses permission to submit right now. Selection, preview phase and instructional copy express player intent. Temporary command admission, socket recovery, lease renewal and save confirmation must not switch them to another state. Keep Pass and End turn in their sentence and disable submission while blocked. Never queue a blocked click. Authoritative board changes may invalidate selection.
+- Use “Select a move for piece at” and “Supply and command lines for piece at”, followed by the shared coordinate chip. Keep specific explanations for pieces without legal moves.
+- The completed opponent sequence and Show me again form the first logical row. “Select a piece or Pass” forms the next. Both rows may wrap naturally on narrow screens.
+- All board-message coordinates, including move narration, use the shared coordinate-chip renderer with a space after the comma. Structured coordinates must stay separate from player-controlled names. Coordinate chips and Pass/End turn pills align with the middle of the surrounding text. Reuse the same renderer for sizing replicas. Verify cold fonts, zoom, narrow widths, and touch targets when changing token metrics.
+- Computer status uses human-facing phases: Waiting for the named computer, thinking, and saving their move. Preparation and control renewal remain waiting. Activity-dot ownership follows the computer named in the message rather than a pending human operation.
+- Narration describes the acknowledged sequence. Multiple rushed pieces use “X rushed several pieces”. Pushes name the victim’s original square and say “and had a piece follow” or “and had several pieces follow”.
+
+- Board-message height must admit the complete two-row grammar at every supported width. Reserve its measured font and width envelopes before first paint, including all turn summaries and the bounded spectator-name box. Changes to wording, fonts or inline pills require primary/fallback measurements at 100% and 200% text, boundary probes and exact cold/loaded/reload anchor checks. Natural wrapping may require four or more lines; a universal three-line cap is not the contract.
