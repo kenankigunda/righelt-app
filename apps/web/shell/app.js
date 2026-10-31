@@ -4490,9 +4490,14 @@ const maybeReturnAfterUndo = gameId => {
 };
 const liveBoardVisible = () => {
   if(document.hidden||!document.hasFocus()||currentRoute.name!=='game'||transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode
+    ||currentRoute.scenarios||replayController?.snapshot().playing||(appEl.dataset.shellTransitionPhase??'idle')!=='idle'
     ||getShellLayoutMode()==='narrow'&&(currentRoute.panel??'board')!=='board')return false;
-  const rect=appEl.querySelector('[data-testid="game-board"]')?.getBoundingClientRect();
-  return Boolean(rect&&rect.width>0&&rect.height>0&&rect.bottom>0&&rect.top<window.innerHeight&&rect.right>0&&rect.left<window.innerWidth);
+  const board=appEl.querySelector('[data-testid="game-board"]'),rect=board?.getBoundingClientRect();
+  if(!rect||rect.width<=0||rect.height<=0)return false;
+  const left=Math.max(0,rect.left),right=Math.min(window.innerWidth,rect.right),top=Math.max(0,rect.top),bottom=Math.min(window.innerHeight,rect.bottom);
+  // A drawer/dialog can cover a still-mounted Board. Test the visible region,
+  // while allowing a docked utility beside a genuinely visible Live Board.
+  return right>left&&bottom>top&&Boolean(board.closest('[data-testid="game-board-wrap"]')?.contains(document.elementFromPoint((left+right)/2,(top+bottom)/2)));
 };
 const syncConfirmedPlayback = () => {
   const gameId=getCurrentViewedGameId(),game=transport.getAuthoritativeGame(gameId),view=transport.getGameViewModel(gameId);
