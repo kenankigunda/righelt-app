@@ -12,7 +12,9 @@ import {
 const assertPagingFits = async controls => {
   await expect(controls).toHaveCount(1);
   await expect.poll(()=>controls.evaluate(element=>{
-    const bounds=element.getBoundingClientRect(),panel=element.closest('.panel').getBoundingClientRect();
+    const panelNode=element.closest('.panel');
+    if(!element.isConnected||!panelNode?.isConnected)return null;
+    const bounds=element.getBoundingClientRect(),panel=panelNode.getBoundingClientRect();
     const parts=[...element.children].map(child=>child.getBoundingClientRect());
     const centers=parts.map(rect=>rect.top+rect.height/2);
     return {count:parts.length,aligned:Math.max(...centers)-Math.min(...centers)<1,
