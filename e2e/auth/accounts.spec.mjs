@@ -980,6 +980,16 @@ test("long profile names remain accessible to observers without covering the boa
     await expect(profile).toHaveAttribute('aria-expanded','true');await expect(profile).toBeFocused();
     await expect(profile).toHaveText(displayName);await expect(profile).toHaveAttribute('data-username',username);
   }finally{await observerContext.close();}
+  await page.getByRole('link',{name:'Righelt',exact:true}).click();
+  const card=page.locator('[data-home-section-root="my"] .mini-board-card-link-surface').first();
+  await expect(card.locator('.home-card-matchup bdi').first()).toHaveText(displayName);
+  await expect(card.locator('.mini-board-preview-status bdi')).toHaveText(displayName);
+  await expect(card.locator('.mini-board-preview-status .sr-only')).toHaveText('Red: ');
+  await page.screenshot({path:test.info().outputPath('canonical-home-name-desktop.png')});
+  await page.setViewportSize({width:390,height:900});
+  await expect.poll(()=>card.locator('.mini-board-preview-status').evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+  await card.scrollIntoViewIfNeeded();
+  await page.screenshot({path:test.info().outputPath('canonical-home-name-mobile.png')});
 });
 
  test("username lookup diagnostics redact entries and dismiss resolved details with stable focus", async ({ page }) => {

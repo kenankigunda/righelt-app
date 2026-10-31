@@ -1,5 +1,6 @@
 import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
 import {computerProfileForCard} from './static-game-cards.js';
+import {playerDisplayName,sideColorName} from './perspective-labels.js';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, character =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
@@ -9,7 +10,7 @@ const participant = (person, side, game) => {
   const computer = COMPUTER_PROFILES[computerProfileForCard(game, side)];
   return {
     side,
-    name: computer?.name || person?.profile?.displayName || person?.profile?.username || (person ? 'Guest' : 'Open seat'),
+    name: person || computer ? playerDisplayName(game,side) : 'Open seat',
     identityId: person?.identityId,
     computer: Boolean(computer),
     presence: computer || person?.connected === true ? 'connected' : person ? 'disconnected' : 'open',
@@ -18,7 +19,12 @@ const participant = (person, side, game) => {
 
 /** Explicit role and the captured current identity determine perspective, never whose turn it is. */
 export function homeCardMatchup(game, { identityId } = {}) {
-  const seats = [participant(game?.player1, 'p1', game), participant(game?.player2, 'p2', game)];
+  const identityGame={...game};
+  for(const side of ['p1','p2']){
+    const key=side==='p1'?'player1':'player2',profile=computerProfileForCard(game,side);
+    if(game?.[key])identityGame[key]={...game[key],computerProfile:profile};
+  }
+  const seats = [participant(identityGame.player1, 'p1', identityGame), participant(identityGame.player2, 'p2', identityGame)];
   let ownSide = seatForRole(game?.myRole);
   const computers = seats.filter(seat => seat.computer);
   // Computer seats may share their owner's identity. Keep the human in their real color.
@@ -35,7 +41,7 @@ export function homeCardMatchup(game, { identityId } = {}) {
   return { kind: ownSide ? 'player' : sameHuman ? 'watched-self' : 'viewer', ownSide, seats };
 }
 
-const renderName = (seat, label = seat.name) => `<strong class="player-tone-${seat.side}"><bdi>${escape(label)}</bdi></strong>`;
+const renderName = (seat, label = seat.name) => `<strong class="player-tone-${seat.side}"><span class="sr-only">${sideColorName(seat.side)}: </span><bdi>${escape(label)}</bdi></strong>`;
 const renderParticipant = seat => {
   const status = seat.presence === 'open' ? 'open to join' : seat.presence;
   const label = seat.computer ? 'Computer player' : `${seat.name} ${status}`;
@@ -48,7 +54,16 @@ export function renderHomeCardIdentity(game, options) {
   if (matchup.kind === 'player') {
     const own = matchup.seats.find(seat => seat.side === matchup.ownSide);
     const other = matchup.seats.find(seat => seat !== own);
-    return `<span class="home-card-matchup">${renderName(own, 'You')} <span>vs.</span> ${renderParticipant(other)}</span>`;
+    return `<span class="home-card-matchup">${renderName(own)} <span>vs.</span> ${renderParticipant(other)}</span>`;
   }
   return `<span class="home-card-matchup">${renderParticipant(matchup.seats[0])} <span>${matchup.kind === 'watched-self' ? '/' : 'vs.'}</span> ${renderParticipant(matchup.seats[1])}${matchup.kind === 'watched-self' ? ' <span>· Both sides</span>' : ''}</span>`;
+}
+
+
+/** Only presentation: the actor comes from the preview, never the viewer role. */
+export function renderHomeCardTurn(game,snapshot) {
+  const side=snapshot?.sideToMove==='P1'?'p1':snapshot?.sideToMove==='P2'?'p2':null;
+  if(!side)return 'Turn unknown';
+  const actor=homeCardMatchup(game).seats.find(seat=>seat.side===side);
+  return `${renderName(actor)} to play`;
 }
