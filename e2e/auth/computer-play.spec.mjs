@@ -1,5 +1,5 @@
 import { CURRENT_COMPUTER_MODEL } from '../../packages/shared-types/src/computer-play.ts';
-import { test, expect } from '@playwright/test';
+import { test as base, expect } from '@playwright/test';
 import { submitPlayableAction, switchGamePanel } from '../support/app.mjs';
 import { AUTH_CONTROL_ORIGIN } from './fixture.mjs';
 import { readProjectedGame, waitForComputerDecision } from '../support/computer-projection.mjs';
@@ -7,6 +7,16 @@ import { isOperationRequest, operationValues } from '../support/shared-request.m
 import { attachFailureAndRethrow } from '../support/failure-evidence.mjs';
 import { waitForPlayableBoard } from '../../scripts/validation/browser-navigation.mjs';
 import {installPassiveCommandObservations,attachCommandObservations} from '../support/command-observations.mjs';
+
+// Preserve native account registration, but give setup and the Undo journey
+// their own bounded phases instead of consuming Undo's 60-second body budget.
+const test=base.extend({
+  computerUndoPage:[async({page},use)=>{
+    await page.addInitScript(installPassiveCommandObservations);
+    await registerComputerTester(page);
+    await use(page);
+  },{timeout:60000}],
+});
 
 const projected = (page, id) => page.evaluate(readProjectedGame, { id });
 
@@ -163,11 +173,9 @@ test('ordinary computer play records real worker evidence, preserves private not
   expect(errors).toEqual([]);
 });
 
-test('ordinary computer undo restores the human turn and resumes computer control', async ({ page }, info) => {
-  await page.addInitScript(installPassiveCommandObservations);
+test('ordinary computer undo restores the human turn and resumes computer control', async ({ computerUndoPage: page }, info) => {
   let primaryError;
   try{
-  await registerComputerTester(page);
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
   const creation = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST' && response.request().postDataJSON()?.computer?.p2 === 'babs');
   const initialControl = captureInitialComputerControl(page);

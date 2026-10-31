@@ -6,7 +6,7 @@ for(const motion of ['no-preference','reduce'])test(`computer stays unprojected 
  await page.addInitScript(()=>{window.WebSocket=undefined;window.moveNotes=[];const original=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(original,this,args);window.moveNotes.push({frequency:this.frequency.value,at:performance.now()});return value;};});
  await page.setViewportSize({width:1440,height:1100});await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
  const created=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await created).json()).game;
- await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.getByTestId('game-board')).toBeVisible();
+ await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveText('Active here');await expect(page.getByTestId('game-board')).toBeVisible();
  let release,seen;const held=new Promise(resolve=>release=resolve),submitted=new Promise(resolve=>seen=resolve);let command;
  await context.route('**/apply',async route=>{const body=route.request().postDataJSON();if(body?.payload?.computer&&!command){command=body;seen();await held;}await route.continue();});
  try{
@@ -30,7 +30,7 @@ test('unseen update chime stays pending through History and Players and stops af
  const {switchGamePanel}=await import('../support/app.mjs');
  await page.addInitScript(()=>{window.WebSocket=undefined;window.moveNotes=[];const original=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(original,this,args);window.moveNotes.push({frequency:this.frequency.value,at:performance.now()});return value;};});
  await page.setViewportSize({width:390,height:900});await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
- const created=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await created).json()).game;await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
+ const created=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await created).json()).game;await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveText('Active here');
  let release,command;const held=new Promise(resolve=>release=resolve);await context.route('**/apply',async route=>{const body=route.request().postDataJSON();if(body?.payload?.computer&&!command){command=body;await held;}await route.continue();});
  const notes=frequency=>page.evaluate(value=>window.moveNotes.filter(note=>note.frequency===value),frequency);
  try{
@@ -46,7 +46,7 @@ test('unseen update chime stays pending through History and Players and stops af
 for(const refresh of [false,true])test(`lost accepted computer reply reconciles without duplicate movement or command (refresh=${refresh})`,async({page,context},info)=>{
  await page.addInitScript(()=>{window.WebSocket=undefined;window.moveNotes=[];const original=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(original,this,args);window.moveNotes.push(this.frequency.value);return value;};});
  await page.setViewportSize({width:1440,height:1100});await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
- const creation=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await creation).json()).game;await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
+ const creation=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await creation).json()).game;await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveText('Active here');
  const applications=[],attempts=[];let accepted,blocked=true,reads=0;
  await context.route(/\/api\/shell\/games\/(?![^?]*\/presence(?:\?|$))/,async route=>{
   const request=route.request(),path=new URL(request.url()).pathname,body=request.method()==='POST'?request.postDataJSON():null;
@@ -69,21 +69,24 @@ for(const refresh of [false,true])test(`lost accepted computer reply reconciles 
 
 test('lean confirmed frames recover automatically with foreground grace and no false intervention',async({page,context},info)=>{
  await page.addInitScript(()=>window.WebSocket=undefined);await page.setViewportSize({width:1440,height:1100});await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
- const creation=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await creation).json()).game;await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
- let blocked=true,reads=0,firstReadAt;
+ const creation=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await creation).json()).game;await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveText('Active here');
+ let blocked=true,reads=0,firstReadAt,firstConfirmedAt;
  await context.route(/\/api\/shell\/games\/(?![^?]*\/presence(?:\?|$))/,async route=>{
   const path=new URL(route.request().url()).pathname;
   if(path===`/api/shell/games/${game.id}/decision-snapshot`){reads++;firstReadAt??=Date.now();if(blocked){await route.fulfill({status:503,json:{ok:false,error:'unavailable'}});return;}}
   const response=await route.fetch();let body;try{body=await response.json();}catch{await route.fulfill({response});return;}
-  if(body.game?.id===game.id)for(const move of body.game.moves??[])if(move.computerProof){delete move.snapshot;delete move.selectionSnapshot;}
+  if(body.game?.id===game.id)for(const move of body.game.moves??[])if(move.computerProof){firstConfirmedAt??=Date.now();delete move.snapshot;delete move.selectionSnapshot;}
   await route.fulfill({response,json:body});
  });
  try{
   await page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true}).click();await expect.poll(()=>reads,{timeout:30000}).toBeGreaterThan(0);
-  const notice=page.getByTestId('confirmed-playback-recovery');await expect(notice).toHaveCount(0);await expect(notice).toBeVisible({timeout:7000});expect(Date.now()-firstReadAt).toBeGreaterThanOrEqual(3900);
-  await expect(notice.getByRole('button',{name:'Retry',exact:true})).toBeVisible({timeout:13000});expect(Date.now()-firstReadAt).toBeGreaterThanOrEqual(14900);await expect(page.locator('[data-computer-activity="attention"]')).toHaveCount(0);
+  // Foreground blocking starts when the confirmed update is delivered, before
+  // the browser's later decision-snapshot request reaches this route handler.
+  expect(firstConfirmedAt).toEqual(expect.any(Number));
+  const notice=page.getByTestId('confirmed-playback-recovery');await expect(notice).toHaveCount(0);await expect(notice).toBeVisible({timeout:7000});expect(Date.now()-firstConfirmedAt).toBeGreaterThanOrEqual(3900);
+  await expect(notice.getByRole('button',{name:'Retry',exact:true})).toBeVisible({timeout:13000});expect(Date.now()-firstConfirmedAt).toBeGreaterThanOrEqual(14900);await expect(page.locator('[data-computer-activity="attention"]')).toHaveCount(0);
   blocked=false;await expect(page.locator('.computer-replay')).toBeVisible({timeout:10000});await expect(page.locator('.computer-replay')).toHaveCount(0);await expect(notice).toHaveCount(0);await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toBeEnabled();
-  await info.attach('confirmed-frame-read-recovery',{body:JSON.stringify({reads,foregroundWaitMs:Date.now()-firstReadAt}),contentType:'application/json'});
+  await info.attach('confirmed-frame-read-recovery',{body:JSON.stringify({reads,firstReadDelayMs:firstReadAt-firstConfirmedAt,foregroundWaitMs:Date.now()-firstConfirmedAt}),contentType:'application/json'});
  }finally{blocked=false;}
 });
 
@@ -99,4 +102,50 @@ test('readiness recognizes elapsed loading detail while model response headers a
   release();const receipt=await ready;expect(receipt.detailed).toBe(true);
   await info.attach('preparation-before-response-headers',{contentType:'application/json',body:JSON.stringify({message,receipt})});
  }finally{release();}
+});
+
+for(const [width,height,covered] of [[390,450,true],[1440,1100,false]])test(`utility visibility keeps computer cues aligned with Live Board (${covered?'covered':'docked'})`,async({page,context},info)=>{
+ await page.addInitScript(()=>{window.WebSocket=undefined;window.moveNotes=[];const original=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(original,this,args);window.moveNotes.push({frequency:this.frequency.value,at:performance.now()});return value;};});
+ await page.setViewportSize({width,height});await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
+ const created=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await created).json()).game;
+ await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveText('Active here');
+ let release,command;const held=new Promise(resolve=>release=resolve);
+ await context.route('**/apply',async route=>{const body=route.request().postDataJSON();if(body?.payload?.computer&&!command){command=body;await held;}await route.continue();});
+ await context.route('**/reconcile',async route=>{if(command&&route.request().postDataJSON()?.commands?.some(item=>item.clientCommandId===command.clientCommandId))await held;await route.continue();});
+ try{
+  await page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true}).click();await expect.poll(()=>Boolean(command),{timeout:30000}).toBe(true);
+  const navigation=page.getByRole('button',{name:'Open navigation menu',exact:true});if(await navigation.isVisible())await navigation.click();await page.getByRole('button',{name:'Debug',exact:true}).click();
+  const debug=page.locator('[data-flyout="debug"]');await expect(debug).toBeVisible();
+  if(covered){
+   await page.mouse.move(20,20);await page.mouse.wheel(0,-1000);await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
+   await expect.poll(()=>page.getByTestId('game-board').evaluate(board=>{const r=board.getBoundingClientRect(),f=document.querySelector('[data-flyout="debug"]').getBoundingClientRect(),left=Math.max(0,r.left),right=Math.min(innerWidth,r.right),top=Math.max(0,r.top),bottom=Math.min(innerHeight,r.bottom);return right>left&&bottom>top&&f.left<=left&&f.right>=right&&f.top<=top&&f.bottom>=bottom&&!board.closest('[data-testid="game-board-wrap"]').contains(document.elementFromPoint((left+right)/2,(top+bottom)/2));})).toBe(true);
+  }else{
+   await expect(debug).toHaveCSS('opacity','1');
+   expect(await page.getByTestId('game-board').evaluate(board=>{const r=board.getBoundingClientRect();return board.closest('[data-testid="game-board-wrap"]').contains(document.elementFromPoint((Math.max(0,r.left)+Math.min(innerWidth,r.right))/2,(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2));})).toBe(true);
+  }
+  await page.screenshot({path:info.outputPath(`utility-${covered?'covered':'docked'}-live-board.png`)});await page.evaluate(()=>window.moveNotes=[]);
+  release();
+  if(covered){
+   await expect.poll(()=>page.evaluate(()=>window.moveNotes.filter(note=>note.frequency===460).length),{timeout:15000}).toBe(1);
+   expect(await page.evaluate(()=>window.moveNotes.filter(note=>note.frequency===820).length)).toBe(0);
+  }else{
+   await expect.poll(()=>page.evaluate(()=>window.moveNotes.filter(note=>note.frequency===820).length),{timeout:15000}).toBeGreaterThan(0);
+   expect(await page.evaluate(()=>window.moveNotes.filter(note=>note.frequency===460).length)).toBe(0);
+  }
+  await expect.poll(async()=>(await page.evaluate(readProjectedGame,{id:game.id,guest:true})).moves.some(move=>move.computerProof)).toBe(true);
+  await debug.locator('[data-action="close-debug"]').click();await expect(debug).toHaveCount(0);await expect(page.getByTestId('game-board')).toBeVisible();
+ }finally{release();await context.unrouteAll({behavior:'wait'});}
+});
+
+test('initial computer control keeps Pass visible and disabled until acknowledged',async({page,context},info)=>{
+ await page.addInitScript(()=>window.WebSocket=undefined);await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
+ let release,acquisition;const held=new Promise(resolve=>release=resolve),applications=[];
+ await context.route('**/shared',async route=>{const body=route.request().postDataJSON();if(body?.payload?.operation==='computer-control'&&body.payload.values?.action==='acquire'){acquisition=body;await held;}await route.continue();});
+ page.on('request',request=>{if(request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/apply'))applications.push(request.postDataJSON());});
+ try{
+  await page.getByRole('button',{name:'Play Babs',exact:true}).click();await expect.poll(()=>Boolean(acquisition)).toBe(true);await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
+  const pass=page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true});await expect(pass).toBeVisible();await expect(pass).toBeDisabled();expect(applications).toHaveLength(0);
+  release();await expect(page.locator('[data-computer-activity="here"]')).toHaveText('Active here');await expect(pass).toBeEnabled();expect(applications).toHaveLength(0);
+  await info.attach('initial-computer-admission',{body:JSON.stringify({commandId:acquisition.clientCommandId,applicationsBeforeHumanAction:applications.length}),contentType:'application/json'});
+ }finally{release();await context.unrouteAll({behavior:'wait'});}
 });
