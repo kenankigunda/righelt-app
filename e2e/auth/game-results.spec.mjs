@@ -81,10 +81,14 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
     await expect(page.getByTestId("game-result")).toHaveCount(0);
     // Selecting a saved after-state must keep the History board/mini preview,
     // never open a result overlay or replay a celebration.
-    // Click the move text. A selected row contains an Undo action, so its
-    // geometric center is not a reliable target for selecting that same move.
-    const lastMove=page.locator('[data-testid="history-move-item"] .history-move-line').last();
-    await lastMove.click();
+    // Unselected moves expose the native selection target. A selected move
+    // has no selection action; its corner remains inert beside child actions.
+    const lastMove=page.getByTestId('history-move-item').last();
+    const selectMove=lastMove.locator(':scope > .history-move-hit');
+    if(await selectMove.count())await selectMove.click();
+    else{await expect(lastMove).toHaveAttribute('aria-current','true');await lastMove.click({position:{x:3,y:3}});}
+    await expect(lastMove).toHaveAttribute('aria-current','true');
+    await expect(lastMove.locator(':scope > .history-move-hit')).toHaveCount(0);
     await expect(page.getByTestId('game-result')).toHaveCount(0);
     // Read the real authenticated HTTP projection, not the optimistic creation
     // object or a warm socket snapshot. Repeating catches persistence regressions.
