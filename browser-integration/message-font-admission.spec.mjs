@@ -80,7 +80,6 @@ for(const scale of [100,200])test(`measured font boundaries keep cold, loaded an
  await page.route(url=>url.pathname==='/apps/web/assets/fonts/Manrope-variable.ttf'&&url.searchParams.has(key),async route=>{seen=true;if(hold)await held;await route.continue();});
  const measure=async()=>{
   const result=[];
-  {
    await page.evaluate(scale=>{document.documentElement.style.fontSize=`${scale}%`;},scale);
    const before=await anchors(page);
    const measured=await page.evaluate(({scale,bands})=>{
