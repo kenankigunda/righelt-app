@@ -137,3 +137,14 @@ test("U-17 JS: optimistic-live — destroyedPieces is empty when no pieces are r
   const cmdResult = result.commandResults.get("cmd-no-removal");
   assert.deepEqual(cmdResult.destroyedPieces, []);
 });
+
+test('computer admission computes its result without showing unconfirmed position, history or turn',()=>{
+ const state=resolveToStability(createInitialState(),{artifactMode:'full'}),game=makeLiveGame(state);
+ const command={kind:'apply',clientCommandId:'computer-1',queuedAt:'2026-10-30T00:00:00.000Z',action:{type:'pass'},computer:{attemptId:'attempt-1'}};
+ const projected=projectOptimisticGame({authoritativeGame:game,identityId:'id-p1',queue:[command]});
+ assert.equal(projected.ok,true);assert.deepEqual(projected.game.board.state,state);assert.deepEqual(projected.game.moves,[]);assert.deepEqual(projected.game.pendingMoves,[]);assert.deepEqual(projected.game.turns,game.turns);
+ assert.notDeepEqual(projected.commandResults.get(command.clientCommandId).state,state,'admission still validates/computes the durable result');
+ const human=projectOptimisticGame({authoritativeGame:game,identityId:'id-p1',queue:[{...command,computer:undefined}]});
+ assert.equal(human.ok,true);assert.notDeepEqual(human.game.board.state,state);assert.equal(human.game.pendingMoves.length,1);
+ assert.deepEqual(game.board.state,state,'authority remains immutable');
+});

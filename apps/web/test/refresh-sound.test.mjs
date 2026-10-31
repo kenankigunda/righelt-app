@@ -27,7 +27,7 @@ test('restored local commands and background actions are silent and never replay
  assert.equal(f.sound.observe({game:{id:'a',board:{state:game.currentSnapshot}},type:'event_appended',reason:'move_recorded',eventSeq:2,clientCommandId:'new'}),false);
  assert.equal(f.starts(),0);
 });
-test('inactive opponent moves create exactly one 30-second reminder until focus returns',()=>{
+test('inactive opponent moves create exactly one 30-second reminder until the live board is seen',()=>{
  let focused=true,hidden=false;const timers=new Map();let n=0,starts=0;
  const node=()=>({connect(){},disconnect(){},frequency:{},Q:{},gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},start(){starts++},stop(){}});
  const audio={state:'running',currentTime:0,sampleRate:8000,createBuffer:(_,n)=>({getChannelData:()=>new Float32Array(n)}),createBufferSource:node,createBiquadFilter:node,createGain:node,createOscillator:node};
@@ -37,21 +37,21 @@ test('inactive opponent moves create exactly one 30-second reminder until focus 
  assert.equal(sound.observe(event(1)),true);const first=starts;assert.equal(timers.size,1);assert.equal([...timers.values()][0].ms,30000);
  assert.equal(sound.observe(event(2)),false);assert.equal(starts,first);assert.equal(timers.size,1);
  hidden=true;const [id,timer]=[...timers][0];timers.delete(id);timer.fn();assert.equal(starts,first*2);assert.equal(timers.size,1);
- focused=true;hidden=false;sound.activityChanged();assert.equal(timers.size,0);assert.equal(starts,first*2);
+ focused=true;hidden=false;sound.activityChanged();assert.equal(timers.size,1);sound.viewing({gameId:'a',live:true,playbackFinished:false});assert.equal(timers.size,1);sound.viewing({gameId:'a',live:true,playbackFinished:true});assert.equal(timers.size,0);assert.equal(starts,first*2);
 });
 test('own moves from another tab, viewers and initial replay never create background reminders',()=>{
  let focused=true;const timers=[];const sound=createGameSound({focused:()=>focused,setTimer:fn=>timers.push(fn),createAudio:()=>({state:'running'})});sound.gesture();focused=false;
  for(const role of ['Player 1','Viewer'])assert.equal(sound.observe({game:{id:role,myRoles:[role],moves:[{actorSide:'P1'}]},eventSeq:1,type:'event_appended',reason:'move_recorded'}),false);
  assert.equal(sound.observe({game:{id:'initial',myRoles:['Player 1'],moves:[{actorSide:'P2'}]},eventSeq:1,type:'event_appended',reason:'move_recorded'},{silent:true}),false);assert.equal(timers.length,0);
 });
-test('mute and leaving a game cancel outstanding incoming reminders without replay',()=>{
+test('mute pauses reminders while leaving a game retains the unseen update',()=>{
  let focused=true;const timers=new Map();let id=0;
  const sound=createGameSound({focused:()=>focused,setTimer:fn=>(timers.set(++id,fn),id),clearTimer:id=>timers.delete(id),createAudio:()=>({state:'suspended',resume:()=>Promise.resolve(),suspend:()=>Promise.resolve()})});
  sound.gesture();focused=false;
  const event=seq=>({game:{id:'a',myRoles:['Player 1'],moves:[{actorSide:'P2'}]},eventSeq:seq,type:'event_appended',reason:'move_recorded'});
  sound.observe(event(1));assert.equal(timers.size,1);sound.toggle();assert.equal(timers.size,0);
- sound.observe(event(2));assert.equal(timers.size,0);sound.toggle();assert.equal(timers.size,0);
- sound.observe(event(3));assert.equal(timers.size,1);sound.leaveGame();assert.equal(timers.size,0);
+ sound.observe(event(2));assert.equal(timers.size,0);sound.toggle();assert.equal(timers.size,1);
+ sound.observe(event(3));assert.equal(timers.size,1);sound.leaveGame();assert.equal(timers.size,1);sound.resetUpdates();assert.equal(timers.size,0);
 });
 
 test('page and flyout cues have forward and reverse feedback without pitched notes',()=>{
@@ -106,4 +106,10 @@ test('confirmed result cues reflect player perspective and stay silent on hydrat
   sound.observe(event(6,status));sound.observe(event(7,status));assert.deepEqual(notes,expected);
   sound.toggle();assert.equal(sound.play('result-victory'),false);assert.deepEqual(notes,expected);
  }
+});
+
+test('the waiting-update chime is a prominent ascending pair distinct from movement',()=>{
+ const tones=[],gains=[];const node=()=>({connect(){},disconnect(){},frequency:{},Q:{},gain:{setValueAtTime(value,at){gains.push({value,at});},exponentialRampToValueAtTime(){}},start(){},stop(){}});
+ const audio={state:'running',currentTime:0,sampleRate:8000,createBuffer:(_,length)=>({getChannelData:()=>new Float32Array(length)}),createBufferSource:node,createBiquadFilter:node,createGain:node,createOscillator:()=>{const value=node();value.start=at=>tones.push({frequency:value.frequency.value,at});return value;}};
+ const sound=createGameSound({createAudio:()=>audio});sound.gesture();assert.equal(sound.play('incoming'),true);assert.deepEqual(tones,[{frequency:460,at:0},{frequency:690,at:.16}]);assert(gains.some(gain=>gain.value===.06));assert(gains.some(gain=>Math.abs(gain.value-.054)<.000001));
 });

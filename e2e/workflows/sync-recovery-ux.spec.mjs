@@ -97,12 +97,14 @@ for (const width of [933, 932, 901, 900, 899, 390]) test(`recovery overlay and s
 });
 
 test("pending feedback reaches overdue once, then clears or explains definitive conflict", async ({page}) => {
+ // Two real 15-second foreground waits plus WebKit setup and the final move
+ // need headroom under CI load; keep the individual recovery deadlines strict.
+ test.setTimeout(90000);
  await page.setViewportSize({width:1440,height:1100});
  const {gameId}=await createGameFromHome(page);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  let mode="hold", unknownResponses=0;
- // A transport failure must show its error immediately. To exercise genuinely
- // pending work instead, return valid unknown receipts without applying it.
+ // Keep durable work genuinely pending with valid unknown receipts.
  await page.route(`**/api/shell/games/${gameId}/**`,async route=>{
   if(!isOperationRequest(route.request(),'apply')&&!isOperationRequest(route.request(),'reconcile')){await route.continue();return;}
   if(mode==="accept"){await route.continue();return;}
@@ -126,6 +128,26 @@ test("pending feedback reaches overdue once, then clears or explains definitive 
  await expect(page.getByTestId("sync-recovery-banner")).toContainText("Still checking your move. You can retry or view details.",{timeout:20000});
  await expect(page.getByTestId("sync-recovery-banner").getByRole("button",{name:"Reload game",exact:true})).toBeVisible();
  expect(unknownResponses).toBeGreaterThan(0);
+ // An already-overdue command must not announce an old background wait when
+ // the person returns. Exercise the real shell visibility listener without
+ // relying on the browser runner keeping an auxiliary tab in the background.
+ await page.evaluate(() => {
+   Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+   document.dispatchEvent(new Event('visibilitychange'));
+ });
+ await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
+ await page.evaluate(() => {
+   delete document.hidden; delete document.visibilityState;
+   document.dispatchEvent(new Event('visibilitychange'));
+ });
+ await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
+ await expect(page.locator('#shell-sync-announcement')).not.toContainText('Still checking');
+ await page.waitForTimeout(2000);
+ await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
+ await expect(page.getByTestId('sync-recovery-banner')).toContainText('Recording your move', { timeout: 5000 });
+ await expect(page.getByTestId('sync-recovery-banner').getByRole('button', { name: 'Reload game', exact: true })).toHaveCount(0);
+ await expect(page.getByTestId('sync-recovery-banner')).toContainText('Still checking your move', { timeout: 15000 });
  const board=await page.getByTestId("game-board").innerHTML();
  mode="reject";
  await expect(page.getByTestId("sync-failure-banner")).toContainText("Board changed before your move was recorded. Check it and try again.",{timeout:10000});

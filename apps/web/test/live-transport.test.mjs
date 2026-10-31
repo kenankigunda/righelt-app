@@ -1152,6 +1152,28 @@ test("live transport store notifies subscribers for optimistic enqueue and autho
   assert.equal(changes.some((change) => change.type === "authoritative_update" && change.gameId === baseGame.id), true);
 });
 
+for(const computer of [false,true])for(const reason of ['computer_control_changed','stale_state','state_capacity_exceeded'])test(`computer rollback notices remain quiet only for transient computer outcomes computer=${computer} reason=${reason}`,async t=>{
+ const game=buildLiveGame(),storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
+ let resolveRollback;const rollback=new Promise(resolve=>resolveRollback=resolve);let sent;
+ const store=createLiveTransportStore({storage,fetcher:async(url,init={})=>{
+  if(init.method==='GET')return Response.json({ok:true,protocolVersion:2,game,eventSeq:1});
+  if(String(url).endsWith('/apply')){
+   sent=JSON.parse(init.body);const outcome={...receipt(sent.clientCommandId,false,2),reason};
+   return Response.json({ok:true,accepted:false,protocolVersion:2,gameId:game.id,game,eventSeq:2,gameplayRevision:game.gameplayRevision,commandOutcomes:[outcome]});
+  }
+  return Response.json({ok:true,games:[]});
+ }});t.after(()=>store.retire());
+ t.after(store.subscribe(change=>{if(change.type==='optimistic_rollback')resolveRollback(change);}));
+ await store.loadGame(game.id);
+ const proof={deviceId:crypto.randomUUID(),generation:1,modelId:'initial-1554',profile:'babs',profileVersion:'experimental-v1',seed:1,attemptId:crypto.randomUUID()};
+ await store.applyGameAction({gameId:game.id,state:game.board.state,action:game.legalActions[0],...(computer?{computer:proof}:{})});
+ const change=await rollback;
+ assert.equal(change.computer,computer);
+ assert.equal(Boolean(change.failureNotice),!(computer&&['computer_control_changed','stale_state'].includes(reason)));
+ assert.equal(store.getCommandOutcome(game.id,sent.clientCommandId).reason,reason);
+ assert.deepEqual(store.getGameViewModel(game.id).currentSnapshot,game.board.state);
+});
+
 test("live transport store notifies subscribers when optimistic sync rolls back or enters confirming", async () => {
   const baseGame = buildLiveGame();
   const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
@@ -2249,6 +2271,41 @@ test('terminal receipt cleanup preserves an already tracked valid durable pendin
   assert.equal(h.view().sharedMutationsBlocked,true);assert.deepEqual(await h.durable.list('id-a',h.game.id),[second]);
   pendingResponse.resolve();assert.equal((await completion).ok,true);assert.equal((await h.settled('remove',3)).ok,true);
   assert.equal(h.view().sharedMutationsBlocked,false);assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
+});
+
+for(const retired of [false,true])test(`terminal cleanup readback preserves a committed in-flight maintenance admission retired=${retired}`,{timeout:5000},async t=>{
+ const h=await terminalCleanupStore(t,'committed-admission'),initial=cleanupDeferred(t),admissionCallback=cleanupDeferred(t),committed=cleanupDeferred(t),readback=cleanupDeferred(t),response=cleanupDeferred(t);
+ const errors=[];t.after(h.store.subscribe(change=>{if(change.type==='journal_blocked')errors.push(change.error?.code);}));
+ h.hooks.remove=async(_envelope,remove,count)=>count===1?initial.promise:remove();
+ await h.control();
+ h.hooks.admit=async(_envelope,admit)=>{const result=await admit();committed.resolve();await admissionCallback.promise;return result;};
+ h.hooks.sharedResponse=()=>response.promise;
+ const pending=h.control();await committed.promise;
+ try {
+  assert.equal(h.view().pendingCommandCount,0,'the second durable row exists before its admission callback registers it');
+  h.hooks.list=async(args,read)=>{const saved=await read();if(args[1]===h.game.id&&saved.some(row=>row.clientCommandId===h.calls.admit.at(-1).clientCommandId))readback.resolve();return saved;};
+  initial.reject(cleanupTimeout());await h.change('journal_blocked',1,'journal_timeout');await h.advance(500);
+  await readback.promise;
+  if(retired)h.store.retire();
+  await new Promise(resolve=>cleanupRealSetTimeout(resolve,50));
+  assert.equal(errors.includes('untracked_saved_command'),false,'a real current admission cannot become untracked stored intent');
+ } finally {admissionCallback.resolve();response.resolve();}
+ if(retired)assert.equal((await pending).ok,false,'retired admission cannot resume sending or cleanup');
+ else {await h.change('journal_cleanup_recovered');assert.equal(h.view().storageBlocked,false);await pending;}
+});
+
+test('terminal cleanup never treats a rejected admission callback as tracked authority',{timeout:5000},async t=>{
+ const h=await terminalCleanupStore(t,'rejected-admission'),initial=cleanupDeferred(t),callback=cleanupDeferred(t),committed=cleanupDeferred(t),readback=cleanupDeferred(t);
+ h.hooks.remove=async(_envelope,remove,count)=>count===1?initial.promise:remove();await h.control();
+ h.hooks.admit=async(_envelope,admit)=>{await admit();committed.resolve();await callback.promise;};
+ const pending=h.control();await committed.promise;const uncertain=clone(h.calls.admit.at(-1));
+ h.hooks.list=async(args,read)=>{const rows=await read();if(args[1]===h.game.id&&rows.some(row=>row.clientCommandId===uncertain.clientCommandId))readback.resolve();return rows;};
+ initial.reject(cleanupTimeout());await h.change('journal_blocked',1,'journal_timeout');await h.advance(500);await readback.promise;
+ callback.reject(cleanupTimeout());assert.equal((await pending).ok,false);
+ await h.change('journal_blocked',1,'untracked_saved_command');
+ assert.equal(h.view().storageBlocked,true,'an uncertain stored row still requires explicit receipt reconciliation');
+ assert.equal(h.view().pendingCommandCount,0);assert.deepEqual(await h.durable.list('id-a',h.game.id),[uncertain]);
+ assert.equal(h.calls.network.filter(row=>String(row.url).endsWith('/shared')).length,1,'never send an unregistered admission');
 });
 
 test('terminal receipt cleanup successful initial commit does not manufacture a bulk hydration failure',{timeout:5000},async t=>{

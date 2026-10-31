@@ -1361,6 +1361,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (externalAction) {
       const action=externalAction.getAttribute("data-board-message-action");
       if (action === "pass") submitPass();
+      else if (action === "end-turn") { if (!inspection && legalActions.some(action => action.type === "end_turn")) void endCurrentTurn(); }
       else controls.onBoardMessageAction?.(action);
       return;
     }
