@@ -12,6 +12,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "computer-view.test.mjs",
   "result-presentation.test.mjs",
   "scenario-capture.test.mjs",
+  "scenario-player-copy.test.mjs",
   "dom-patch.test.mjs",
   "notification-state.test.mjs",
   "brand-grid.test.mjs",

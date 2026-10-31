@@ -86,7 +86,8 @@ import {
   resolveHistoryScenarioExportContext,
   tryLocalScenarioWrite,
 } from "./scenarios.js";
-import { renderHomeCardIdentity } from "./home-card-identity.js";
+import { renderHomeCardIdentity, renderHomeCardTurn } from "./home-card-identity.js";
+import {renderScenarioPlayerCopy} from "./scenario-player-copy.js";
 import { buildStaticGameCardFromScenario } from "./static-game-cards.js";
 import { historyTurnSide, buildMovePreview, buildTurnPreview, buildDestroyedPieceOverlays, findRecordedActionStartPiece } from "./history-preview.js";
 import { resolveInitialSelectionHydration } from "./selection-hydration.js";
@@ -1849,6 +1850,7 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
   const selectedScenarioTitle = scenarioMetadataDrafts.get(selectedScenario?.id)?.title ?? selectedScenario?.title ?? "";
   const selectedScenarioDescription = scenarioMetadataDrafts.get(selectedScenario?.id)?.description ?? selectedScenario?.description ?? "Scenarios replay canonical shell history into a game.";
   const canUpdateScenario = canAuthorScenarios && Boolean(selectedScenario);
+  const contextualDescription = !editing ? renderScenarioPlayerCopy({...selectedScenario,description:selectedScenarioDescription},game) : null;
   if (scenarioLoadPending) {
     return `
       <section class="panel debug-panel scenario-panel scenario-panel-load loading-region" ${loadingAttributes("scenarios", "The scenarios are taking a little longer to load.")} data-testid="scenario-load-skeleton">
@@ -1881,9 +1883,10 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
               <p
                 class="small"
                 data-scenario-editable="description"
+                data-version="${canAuthorScenarios && editing ? 'editing' : 'reading'}"
                 data-persist data-decision-id="${escapeHtml(selectedScenario?.id)}" ${canAuthorScenarios && editing ? 'contenteditable="plaintext-only" role="textbox" aria-label="Scenario description"' : ""}
                 ${canAuthorScenarios && editing ? "" : 'tabindex="0"'}
-              >${escapeHtml(selectedScenarioDescription)}</p>
+              >${contextualDescription ?? escapeHtml(selectedScenarioDescription)}</p>
             </div>`
           : `<p class="small">${escapeHtml(selectedScenarioDescription)}</p>`
       }
@@ -1900,6 +1903,8 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
               statusText: scenarioPreviewSnapshot
                 ? formatSideToMoveLabel(scenarioPreviewSnapshot)
                 : "Snapshot unavailable",
+              statusMarkup: scenarioPreviewSnapshot && getActiveScenarioGame()
+                ? renderHomeCardTurn(getActiveScenarioGame(),scenarioPreviewSnapshot) : null,
             })
           : ""
       }
@@ -2151,7 +2156,7 @@ const getInviteContextForGame = (game, routeName = currentRoute.name) => {
   };
 };
 
-const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyoutLink = null, gameId = null, header, meta, statusText }) => {
+const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyoutLink = null, gameId = null, header, meta, statusText, statusMarkup = null }) => {
   const previewPayload = card?.previewPayload ?? getStaticCardPreviewPayload(card);
   const previewKey = toStableKey({
     snapshot: previewPayload.snapshot,
@@ -2184,7 +2189,7 @@ const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyout
       previewKey,
       sizeVariant: "compact",
     })}
-    <p class="small mini-board-preview-status">${escapeHtml(statusText)}</p>`;
+    <p class="small mini-board-preview-status">${statusMarkup ?? escapeHtml(statusText)}</p>`;
   if (!href) {
     return `<div class="mini-board-card mini-board-card-${escapeHtml(variant)}">${body}</div>`;
   }
@@ -2221,6 +2226,7 @@ const renderHomeGameCard = (game) => {
         <span class="small">${escapeHtml(moveLabel)}</span>
       </div>`,
     statusText,
+    statusMarkup: snapshot?.outcome?.status==='ongoing'?renderHomeCardTurn(game,snapshot):null,
   });
 };
 
@@ -3118,7 +3124,7 @@ const renderResult = game => {
   const result = getGameResult(confirmed, transport.getIdentityId());
   if (!result) return "";
   const names = ['P1','P2'].map(side => playerDisplayName(confirmed,side));
-  const isolatedName = (name,index) => `<span class="player-tone-p${index+1}"><bdi dir="auto">${escapeHtml(name)}</bdi></span>`;
+  const isolatedName = (name,index) => `<span class="player-tone-p${index+1}"><span class="sr-only">${index===0?'Red':'Blue'}: </span><bdi dir="auto">${escapeHtml(name)}</bdi></span>`;
   return `<section class="panel game-result" data-testid="game-result" data-result-tone="${result.tone}" data-winner="${result.winner ?? ''}"><p class="small">Game finished</p>${renderResultMark(result)}<h1 tabindex="-1">${renderResultText(result,'title')}</h1><p>${renderResultText(result,'reason')}</p><p>${result.controlsBothSides ? "You play both sides" : names.map(isolatedName).join(" vs ")}</p><p class="small">Game ${escapeHtml(formatDisplayGameId(game.id))}</p><div class="story-modal-actions"><button data-action="analysis" data-game-id="${escapeHtml(game.id)}">${icon('back')}Review game</button><button${result.tone === "victory" ? "" : ' class="secondary"'} data-action="rematch" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Play again</button><a class="button-link secondary" href="#/">${icon('home')}Home</a></div></section>`;
 };
 

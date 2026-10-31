@@ -392,7 +392,7 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /const isDualSeatIdentity = \(game\) =>/);
   assert.match(source, /return '<strong class="player-tone-both">both players<\/strong>';/);
   assert.match(source, /const renderConnectionStatusIcon = \(status, label\) =>/);
-  assert.match(source, /import \{ renderHomeCardIdentity \} from "\.\/home-card-identity\.js"/);
+  assert.match(source, /import \{ renderHomeCardIdentity, renderHomeCardTurn \} from "\.\/home-card-identity\.js"/);
   assert.match(source, /renderHomeCardIdentity\(game, \{identityId: transport\.getIdentityId\(\)\}\)/);
   assert.doesNotMatch(source, /renderHomeSeatConnectionLine|renderHomeConnectionSummary|renderHomeRoleLine/);
   assert.match(source, /<div class="mini-board-card-copy">/);

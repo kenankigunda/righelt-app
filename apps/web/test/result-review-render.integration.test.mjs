@@ -139,7 +139,7 @@ test("computer seats have distinct human, watch, history and result labels despi
   assert.match(context.role('Player 1', {...game,player1:{...person,computerProfile:'tau'}}), /watching computers/);
   assert.match(context.role('Viewer', game), />Viewer</);
   assert.match(context.role('Player 1', {...game,player2:person}), /both players/);
-  assert.match(context.result(game), /<span class="player-tone-p1"><bdi dir="auto">Owner<\/bdi><\/span> vs <span class="player-tone-p2"><bdi dir="auto">Babs<\/bdi>/);
+  assert.match(context.result(game), /<span class="player-tone-p1"><span class="sr-only">Red: <\/span><bdi dir="auto">Owner<\/bdi><\/span> vs <span class="player-tone-p2"><span class="sr-only">Blue: <\/span><bdi dir="auto">Babs<\/bdi>/);
   const history = context.history(game);
   assert.match(history, /history-move-item">Babs · Move 1/);
   assert.doesNotMatch(history, /history-player-names|history-player-name|>Owner<|Computer/);
