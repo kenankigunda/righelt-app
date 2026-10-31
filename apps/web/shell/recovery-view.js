@@ -4,6 +4,22 @@ import { SYNC_TIMING } from "../generated/packages/shared-types/src/sync-protoco
 export const historyMoveKey = (move) => move.moveId ?? (move.clientCommandId ? `pending:${move.clientCommandId}` : null);
 export const applyHistoryIntent = (game, intent, identityId) => {
   if (!intent) return game;
+  if (intent.turn) {
+    const selected = intent.turn;
+    game.inHistoryMode = true;
+    game.historyTurnIndex = selected.index;
+    game.historyTurnMoves = structuredClone(selected.moves);
+    game.historyIndex = null;
+    game.inspectedDecision = null;
+    game.historySelectionAction = null;
+    game.currentSnapshot = structuredClone(selected.moves.at(-1)?.snapshot ?? game.board.state);
+    game.canRecordMove = game.canEndTurn = false;
+    game.inspectedAtRevision = intent.revision;
+    return game;
+  }
+  game.historyTurnIndex = null;
+  game.historyTurnMoves = null;
+  game.historyContextMoves = intent.contextMoves ?? null;
   const moves = [...(game.moves ?? []), ...(game.pendingMoves ?? [])];
   let selected = intent.moveId ? moves.find((move) => historyMoveKey(move) === intent.moveId || (intent.clientCommandId && move.clientCommandId === intent.clientCommandId)) : null;
   const currentIndex = selected?.index ?? null;
