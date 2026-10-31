@@ -207,7 +207,8 @@ test.describe('narrow board and history',()=>{
       await page.getByRole('button',{name:'Undo before this move',exact:true}).tap();
       await expect(page.getByTestId('undo-waiting-notice')).toBeVisible();
       await expect(guest.getByTestId('undo-approval-notice')).toBeVisible();
-      await firstRow.click();await secondRow.click();await firstRow.click();await expect(firstRow).toHaveClass(/is-selected/);
+      for(const row of [firstRow,secondRow,firstRow]){await row.locator(':scope > .history-move-hit').click();await expect(row).toHaveAttribute('aria-current','true');}
+      await expect(firstRow).toHaveClass(/is-selected/);
       await guestContext.route(/\/(shared|revert-approve)$/,async route=>{
         if(!isOperationRequest(route.request(),'revert-approve'))return route.continue();
         approvalSeen=true;await held;await route.continue();
