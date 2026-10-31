@@ -290,11 +290,14 @@ export const selectPlayableAction = async (page, action) => {
 
 export const submitPlayableAction = async (page, action) => {
   const target = await selectPlayableAction(page, action);
-  // A shared control can fence gameplay after hover prepared the destination.
+  // A shared control or fresh complete-move check can fence confirmation
+  // after hover or a tap prepared the destination.
   // Wait for visual readiness, then perform exactly one native confirmation.
   // Admission can change during the click; the runtime still checks it live.
-  await expect.poll(() => target.evaluate(node => node.classList.contains('target') && !node.classList.contains('unselectable')),
-    {timeout:2000,message:'The prepared destination must be actionable at confirmation'}).toBe(true);
+  await expect.poll(() => target.evaluate(node => {
+    const message=document.getElementById('shell-board-preview-label');
+    return Boolean(message && message.getAttribute('aria-busy')!=='true' && node.classList.contains('target') && !node.classList.contains('unselectable'));
+  }),{timeout:2000,message:'Complete move checks and the prepared destination must be ready at confirmation'}).toBe(true);
   await target.click();
 };
 
