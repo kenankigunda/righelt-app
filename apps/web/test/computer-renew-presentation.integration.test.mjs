@@ -10,8 +10,11 @@ import {IDENTITY_KEY} from '../shell/persistence.js';
 import {createInitialState,resolveToStability,listLegalActions} from '../generated/packages/game-engine/src/index.js';
 import {createComputerControl,changeComputerControl,COMPUTER_TIMING} from '../generated/packages/shared-types/src/computer-play.js';
 
-const microtasks = async predicate => {
- for(let i=0;i<100;i++){if(await predicate())return;await new Promise(resolve=>setImmediate(resolve));}
+// IndexedDB admission/cleanup is an asynchronous transaction boundary. A fixed
+// number of immediate turns can expire before its scheduled callback on Linux.
+const waitForBoundary = async predicate => {
+ const deadline=performance.now()+1000;
+ while(performance.now()<deadline){if(await predicate())return;await new Promise(resolve=>setTimeout(resolve,1));}
  assert.fail('renewal fixture did not reach its expected boundary');
 };
 
@@ -49,7 +52,7 @@ test('quiet renewal keeps the durable envelope and human-turn fences through acc
  const boardMessage=view=>opponentBoardMessage(view,session.snapshot(),{},{canInteract:view.canRecordMove,identityId:'owner'});
  const hasPass=message=>(message.rows??[message]).some(row=>(row.actions??(row.action?[row.action]:[])).some(action=>action.id==='pass'));
  const narration=boardMessage(transport.getGameViewModel(game.id));assert.match(narration.text,/Babs projected/);assert.equal(hasPass(narration),true);
- now+=COMPUTER_TIMING.renewAfterMs;await session.tick();await microtasks(()=>held);
+ now+=COMPUTER_TIMING.renewAfterMs;await session.tick();await waitForBoundary(()=>held);
  const original=structuredClone(held),view=transport.getGameViewModel(game.id);
  assert.equal(view.pendingCommandCount,1);assert.equal(view.sharedMutationsBlocked,true);assert.equal(view.canRecordMove,false);
  assert.deepEqual(await journal.list('owner',game.id),[original]);
@@ -76,7 +79,7 @@ test('quiet renewal keeps the durable envelope and human-turn fences through acc
  accountGeneration++;assert.equal(session.snapshot().activity.quietRenewal,false);accountGeneration--;
  visible=false;assert.equal(session.snapshot().activity.quietRenewal,false);visible=true;
  assert.deepEqual(await journal.list('owner',game.id),[original]);assert.equal(computations,0);
- release();await microtasks(async()=>transport.getGameViewModel(game.id).pendingCommandCount===0&&(await journal.list('owner',game.id)).length===0);
+ release();await waitForBoundary(async()=>transport.getGameViewModel(game.id).pendingCommandCount===0&&(await journal.list('owner',game.id)).length===0);
  const final=transport.getGameViewModel(game.id);
  assert.equal(final.sharedMutationsBlocked,false);assert.equal(final.canRecordMove,true);assert.equal(final.pendingComputerControlRequest,null);
  assert.equal(final.moves.length,1);assert.deepEqual(final.moves,game.moves);assert.equal(computations,0);
