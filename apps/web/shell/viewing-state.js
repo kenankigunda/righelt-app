@@ -14,6 +14,7 @@ export function createViewingIntent() {
   const generations = new Map(), undos = new Map(), scroll = new Map();
   const generation = id => generations.get(id) ?? 0;
   return {
+    generation,
     navigate(id) { generations.set(id, generation(id) + 1); },
     beginUndo(id, { targetMoveId, revision, scope }) {
       const token = { targetMoveId, revision, scope, generation: generation(id), committed: false };

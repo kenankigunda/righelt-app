@@ -8,7 +8,7 @@ import { buildTurnReplay, createComputerReplay } from './computer-replay.js';
 import { deriveBoardView, createViewingIntent } from './viewing-state.js';
 import { mountMobileNavigation } from './mobile-navigation.js';
 import { opponentBoardMessage, latestOpponentTurn, ownsBoardActor } from './opponent-narration.js';
-import { renderBoardHeadingSlot, renderBoardMessageSlot, updateComputerBoardLoading } from './board-message-layout.js';
+import { renderBoardHeadingSlot, renderBoardMessageSlot, retainNarrationReservations, updateComputerBoardLoading } from './board-message-layout.js';
 import { activityActorSide, activityStateActorSide, setActivityActor, undoApprovalActorSide } from './activity-affiliation.js';
 import { applyDecisionNotes } from './decision-notes.js';
 import { createUtilityMemory } from './utility-memory.js';
@@ -3303,6 +3303,17 @@ const mountBoardForGame = (game) => {
     }
     return;
   }
+
+  // Exact acknowledged copy joins the finite base envelope only at an
+  // authoritative/explicit-view mount. Piece hover and font arrival never
+  // change this scope or shrink an admitted message budget.
+  const narrationScope = JSON.stringify([viewingScope(),game.id,game.board?.state?.turnIndex,viewingIntent.generation(game.id),game.lastRestoration??null]);
+  const acknowledgedMessage = game.inHistoryMode
+    ? {rows:[selectedHistoryPresentation(game)?.message??{text:'Historical move details unavailable'}]}
+    : opponentBoardMessage(game,{}, {},{canInteract:canControlLiveBoard(game),identityId:transport.getIdentityId()});
+  retainNarrationReservations(boardPreviewLabelEl.closest('.board-message-slot'),{
+    scope:narrationScope,messages:acknowledgedMessage&&typeof acknowledgedMessage==='object'?[acknowledgedMessage]:[],
+  });
 
   document.querySelector('[data-shell-panel="board"]')?.setAttribute('data-turn-side', game.currentSnapshot?.sideToMove === 'P2' ? 'blue' : 'red');
   applySharedMutationGates(game);

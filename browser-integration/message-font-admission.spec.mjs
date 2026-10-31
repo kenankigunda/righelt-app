@@ -139,3 +139,35 @@ test('coordinate pills keep every board digit atomic and equal in both font fami
   for(const family of widths){expect(family.widths).toHaveLength(10);expect(family.atomic).toBe(true);expect(Math.max(...family.widths)-Math.min(...family.widths),`${family.family} at ${scale}%`).toBeLessThanOrEqual(.1);}
  }
 });
+
+for(const width of [320,390,1440])for(const scale of [100,200])for(const count of [1,6,100])test(`acknowledged narration reserves ${count} destinations at ${width}px and ${scale}% across font arrival`,async({page},info)=>{
+ await page.setViewportSize({width,height:900});
+ let release,hold=true,seen=false;const gate=new Promise(resolve=>{release=resolve;});
+ await page.route('**/Manrope-variable.ttf',async route=>{seen=true;if(hold)await gate;await route.continue();});
+ const receipt={};
+ try{
+  await page.goto(`/browser-integration/support/message-font-admission.html?scale=${scale}&narrationCount=${count}`,{waitUntil:'domcontentloaded'});
+  await page.waitForFunction(()=>window.fixtureReady);await expect.poll(()=>seen).toBe(true);
+  receipt.cold=await anchors(page);expect(receipt.cold.fontStatus).toBe('loading');
+  hold=false;release();await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+  receipt.loaded=await anchors(page);sameAnchors(receipt.cold,receipt.loaded);
+  expect(await page.evaluate(()=>window.admitMessagePhases())).toEqual([]);
+  receipt.envelope=await page.evaluate(()=>window.fontEnvelope());
+  expect(receipt.envelope.fallback).toBeGreaterThanOrEqual(receipt.envelope.primary);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  await page.reload();await page.waitForFunction(()=>window.fixtureReady);await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+  receipt.reload=await anchors(page);sameAnchors(receipt.loaded,receipt.reload);
+ }finally{hold=false;release();await info.attach('acknowledged-reservation',{body:JSON.stringify(receipt),contentType:'application/json'});}
+});
+
+test('acknowledged reservation stays stable within intent and resets across scopes',async({page})=>{
+ await page.goto('/browser-integration/support/message-font-admission.html?narrationCount=6');await page.waitForFunction(()=>window.fixtureReady);await page.evaluate(()=>document.fonts.ready);
+ const result=await page.evaluate(()=>{
+  const slot=document.querySelector('.board-message-slot'),nodes=()=>[...slot.querySelectorAll('[data-narration-reservation]')];
+  const first=nodes();window.retainNarrationReservations({scope:'copy:6',messages:[window.acknowledgedNarrationProbe]});
+  const duplicate=nodes();window.retainNarrationReservations({scope:'copy:6',messages:[]});const inspected=nodes();
+  window.retainNarrationReservations({scope:'another-account:another-game',messages:[]});
+  return {initial:first.length,duplicateSame:duplicate.every((node,index)=>node===first[index]),inspectionSame:inspected.every((node,index)=>node===first[index]),remaining:nodes().length,oldConnected:first.some(node=>node.isConnected)};
+ });
+ expect(result).toEqual({initial:2,duplicateSame:true,inspectionSame:true,remaining:0,oldConnected:false});
+});

@@ -46,6 +46,25 @@ const renderMessageSizing = fallback => {
     + explanationSizes.map((text,index) => `<p class="board-preview-label board-message-sizing board-explanation-sizing${fontClass}" ${attrs(`explanation:${index}`)}>${text}</p>`).join('');
 };
 
+const narrationReservationStates=new WeakMap();
+/** Retain exact acknowledged copy within one game/lineage/view intent. The
+ * permanent enlarged fallback also covers the cold-to-primary font swap. */
+export function retainNarrationReservations(slot,{scope,messages=[]}={}){
+  if(!slot?.insertAdjacentHTML)return;
+  let state=narrationReservationStates.get(slot);
+  if(!state||state.scope!==scope){
+    for(const node of slot.querySelectorAll('[data-narration-reservation]'))node.remove();
+    state={scope,html:new Set(),serial:0};narrationReservationStates.set(slot,state);
+  }
+  for(const message of messages.filter(Boolean)){
+    const rows=message.rows?message:{rows:[{...message,action:{id:'replay-computer',label:'Show me again'}},{text:'Select a piece or',action:{id:'pass',label:'Pass'}}]};
+    const html=renderBoardMessageHtml(rows,{sizing:true});
+    if(state.html.has(html))continue;
+    state.html.add(html);const index=++state.serial;
+    for(const fallback of [false,true])slot.insertAdjacentHTML('beforeend',`<p class="board-preview-label board-message-sizing${fallback?' board-message-fallback-sizing board-message-dynamic-fallback':''}" data-narration-reservation="${index}" data-sizing-font="${fallback?'fallback':'primary'}" data-sizing-variant="acknowledged:${index}" aria-hidden="true" inert>${html}</p>`);
+  }
+}
+
 export function renderBoardMessageSlot({id, loading = false, loadingKey} = {}) {
   return `<div class="board-message-slot"><div class="board-message-live"><p class="board-preview-label"${id ? ` id="${escape(id)}"` : ''}${loading ? ' aria-hidden="true"' : ''}>${loading ? '' : 'Select a piece'}</p><span class="board-message-activity" aria-hidden="true" data-loading-state="${loading && loadingKey ? 'pending' : 'idle'}" data-loading-context="external"${loading && loadingKey ? ` data-loading-key="${escape(loadingKey)}"` : ''}></span></div>${renderMessageSizing(false)}${renderMessageSizing(true)}</div>`;
 }
