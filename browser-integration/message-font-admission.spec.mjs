@@ -1,13 +1,13 @@
 import {test,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {decodeFontBoundarySamples} from './support/font-envelope-codec.mjs';
-import {reservationBands,admittedHeight,budgetPixelPrecision} from './support/message-reservation-policy.mjs';
+import {reservationBands,admittedHeight,budgetPixelPrecision,actionReservationMetrics} from './support/message-reservation-policy.mjs';
 const anchors=page=>page.evaluate(()=>window.fontAnchors());
 const sameAnchors=(a,b)=>{for(const target of ['heading','slot','board','panel'])for(const key of ['x','y','width','height'])expect(Math.abs(a[target][key]-b[target][key]),`${target}.${key}`).toBeLessThanOrEqual(.1);};
 test('row budget retains a wider intrinsic fallback and rejects absent measurements',()=>{
- // Linux Firefox's natural fallback needs seven rows at this source boundary,
- // while the primary-font floor needs six. An eighth row remains unadmitted.
- expect(admittedHeight(163,16,168)).toBe(168);
+ // Preserve an intrinsic fallback taller than the source width budget; an
+ // absent measurement must never silently collapse to the primary-font floor.
+ expect(admittedHeight(163,16,280)).toBe(280);
  for(const missing of [undefined,NaN,Infinity,-Infinity,0])expect(()=>admittedHeight(163,16,missing)).toThrow('intrinsic fallback measurement');
 });
 for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(`cold and settled-reload message reservation at ${width}px and ${scale}%`,async({page},info)=>{
@@ -40,21 +40,22 @@ for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(
  }finally{hold=false;release();const path=info.outputPath('font-reservation-receipt.json');await writeFile(path,JSON.stringify(receipts,null,2));await info.attach('font-reservation',{path,contentType:'application/json'});}
 });
 
-test('loaded message width envelope never exceeds its permanent fallback reservation',async({page},info)=>{
+for(const scale of [100,200])for(const {font,fallbackFamily=null} of [{font:'primary'},{font:'fallback'},{font:'fallback',fallbackFamily:'sans-serif'}])test(`loaded message width envelope at ${scale}% / ${font} / ${fallbackFamily??'native'}`,async({page},info)=>{
  const failures=[];
  await page.goto('/browser-integration/support/message-font-admission.html');await page.waitForFunction(()=>window.fixtureReady);
  const frontiers=[];
  try{
- for(const scale of [100,200]){
+ {
   await page.evaluate(async scale=>{document.documentElement.style.fontSize=`${scale}%`;await document.fonts.ready;},scale);
   // Also measure the real generic fallback when Avenir Next is unavailable,
   // as on Linux CI. This never changes the live page or its native-font probes.
-  for(const {font,fallbackFamily=null} of [{font:'primary'},{font:'fallback'},{font:'fallback',fallbackFamily:'sans-serif'}])frontiers.push(await page.evaluate(({scale,font,fallbackFamily})=>{
+  frontiers.push(await page.evaluate(({scale,font,fallbackFamily,extra})=>{
    const fontSize=parseFloat(getComputedStyle(document.querySelector('.board-message-slot')).fontSize),cache=new Map();
    const measure=width=>{if(!cache.has(width)){const result=window.fontEnvelope(width,{intrinsic:true,fallbackFamily});const rows=result.rows.filter(row=>row.font===font);cache.set(width,{height:result[font],lineHeight:rows[0].lineHeight,variants:rows.filter(row=>row.height===result[font]).map(row=>row.variant)});}return cache.get(width);};
    const minimum=8.5*fontSize,maximum=60*fontSize,rows=[];
+   const allowance=extra.em*fontSize+extra.px+4*Math.max(0,extra.halfPx-extra.halfEm*fontSize);
    for(let count=2;count<=10;count++){
-    const fits=width=>{const value=measure(width);return value.height<=count*value.lineHeight;};
+    const fits=width=>{const value=measure(width);return value.height<=count*value.lineHeight+allowance;};
     if(fits(minimum)){rows.push({rows:count,atOrBelowMinimum:true,maximumWidth:minimum,maximumEm:8.5,sample:measure(minimum)});continue;}
     if(!fits(maximum)){rows.push({rows:count,notReached:true,minimumWidth:maximum,minimumEm:60,sample:measure(maximum)});continue;}
     let lower=minimum,upper=maximum;
@@ -62,7 +63,7 @@ test('loaded message width envelope never exceeds its permanent fallback reserva
     rows.push({rows:count,lowerWidth:lower,upperWidth:upper,lowerEm:lower/fontSize,upperEm:upper/fontSize,lower:measure(lower),upper:measure(upper)});
    }
    return {scale,font,fallbackFamily,fontSize,fontStatus:document.fonts.status,primaryFont:getComputedStyle(document.querySelector('[data-sizing-font="primary"]')).fontFamily,rows,measurements:cache.size};
-  },{scale,font,fallbackFamily}));
+  },{scale,font,fallbackFamily,extra:actionReservationMetrics}));
   for(let width=280;width<=800;width+=16){const envelope=await page.evaluate(width=>window.fontEnvelope(width),width);if(envelope.primary>envelope.fallback+.1)failures.push({scale,...envelope});}
  }
  }finally{const frontierPath=info.outputPath('intrinsic-primary-row-frontiers.json');await writeFile(frontierPath,JSON.stringify(frontiers,null,2));await info.attach('intrinsic-primary-row-frontiers',{path:frontierPath,contentType:'application/json'});}
@@ -71,7 +72,7 @@ test('loaded message width envelope never exceeds its permanent fallback reserva
 });
 
 
-test('measured font boundaries keep cold, loaded and settled-reload row envelopes identical',async({page},info)=>{
+for(const scale of [100,200])test(`measured font boundaries keep cold, loaded and settled-reload row envelopes identical at ${scale}%`,async({page},info)=>{
  const bands=reservationBands.map(({min,max})=>[min,max]);
  const receipts={cold:[],loaded:[],warm:[]};let release,seen=false,hold=true;const held=new Promise(resolve=>{release=resolve;});
  const key='message-boundary-admission',fontUrl=`/apps/web/assets/fonts/Manrope-variable.ttf?${key}`;
@@ -79,7 +80,7 @@ test('measured font boundaries keep cold, loaded and settled-reload row envelope
  await page.route(url=>url.pathname==='/apps/web/assets/fonts/Manrope-variable.ttf'&&url.searchParams.has(key),async route=>{seen=true;if(hold)await held;await route.continue();});
  const measure=async()=>{
   const result=[];
-  for(const scale of [100,200]){
+  {
    await page.evaluate(scale=>{document.documentElement.style.fontSize=`${scale}%`;},scale);
    const before=await anchors(page);
    const measured=await page.evaluate(({scale,bands})=>{
