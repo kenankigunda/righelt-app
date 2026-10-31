@@ -456,6 +456,13 @@ This section is normative and applies to every new endpoint, page, and performan
   - Tests must assert bootstrap endpoint cache headers and response determinism.
   - Performance-sensitive changes must include a short note in PR/commit text describing startup impact and why the chosen approach preserves fast start.
 
+### Independent board legend inspection
+
+- Commander and Supply point keep separate inspection selections and owner contexts. Toggling one leaves the other intact. Selecting an unoccupied supply square updates only supply inspection and preserves the selected commander context. Normal piece selection may clear explicit networks to resume move selection.
+- Commander and supply icons, selected-label underlines, and their visible line swatches use their respective owner colors. Supply lines on the board use the supply owner's color. A selected supply square has an owner-colored selection treatment.
+- The selected label uses a 2px text underline with a 5px offset. Text remains neutral and existing icons remain unchanged. Do not add a selected tint, outline, check mark, or button-wide bottom rule. Keyboard focus has a separate visible outline and controls retain at least 44px touch targets.
+- Inspection never submits actions or changes rules authority. Explanatory line and group entries appear only when the corresponding overlay is actually drawn. Empty command networks are skipped.
+
 ### Stable board messages and inline actions
 
 - The host’s `canPresentActions` callback expresses durable human control of the current actor. `canInteract` expresses permission to submit right now. Selection, preview phase and instructional copy express player intent. Temporary command admission, socket recovery, lease renewal and save confirmation must not switch them to another state. Keep Pass and End turn in their sentence and disable submission while blocked. Never queue a blocked click. Authoritative board changes may invalidate selection.
