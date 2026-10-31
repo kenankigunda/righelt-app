@@ -7,9 +7,26 @@ body {display:flow-root;}
 .board-message-slot > .board-preview-label {grid-area:1 / 1;min-width:0;margin:0;}
 .board-message-live {grid-area:1 / 1;min-width:0;font-size:1rem;line-height:1.5;}
 .board-message-live > .board-preview-label {display:inline;margin:0;}
-/* Tokens align with the middle of surrounding copy, including wrapped rows.
-   Sizing replicas use the same renderer and metrics during font loading. */
-.board-message-slot :is(.board-preview-coordinate-chip,.board-preview-highlight-chip,.board-preview-retreat-chip,.board-preview-inline-button) {vertical-align:middle;height:1.25em;}
+/* Coordinate boxes stay compact, while both token text runs share the prose
+   baseline. The icon is excluded from the action's baseline-sharing group. */
+.board-message-slot :is(.board-preview-coordinate-chip,.board-preview-highlight-chip,.board-preview-retreat-chip) {vertical-align:baseline;height:1.25em;}
+.board-message-slot .board-preview-inline-button {vertical-align:baseline;height:auto;line-height:1.5;padding:.2em .48em;border-width:1px;}
+/* Reserve the invisible 44px target plus native WebKit hit-test clearance inside each logical row, including wrapped
+   replay+Pass messages. Replicas and live rows use the same exact spacing. */
+.board-message-slot {
+  --board-message-hit-half-px:23.0625;
+  --board-message-hit-half-em:.836;
+  /* Two action lines add 2 * (.88 * 1.9 - 1.5)em, two borders each,
+     and an outward 1/8em font/layout allowance. Logical rows own four insets. */
+  --board-message-action-extra-em:.469;
+  --board-message-action-extra-px:4;
+  --board-action-hit-inset:max(0px,calc(var(--board-message-hit-half-px) * 1px - var(--board-message-hit-half-em) * 1em));
+  --board-message-action-allowance:calc(var(--board-message-action-extra-em) * 1em + var(--board-message-action-extra-px) * 1px + var(--board-action-hit-inset) + var(--board-action-hit-inset) + var(--board-action-hit-inset) + var(--board-action-hit-inset));
+}
+.board-message-sizing {--board-message-row-lines:2;min-height:calc(var(--board-message-row-lines) * 1.5em + var(--board-message-action-allowance));}
+.board-message-live, .board-message-sizing {padding-block:var(--board-action-hit-inset);}
+.board-message-live:has(.board-message-row), .board-message-sizing:has(.board-message-row) {padding-block:0;}
+.board-message-row {padding-block:var(--board-action-hit-inset);}
 .board-message-slot .board-preview-coordinate-chip {font-variant-numeric:tabular-nums;white-space:nowrap;}
 .board-message-activity {display:none;}
 .board-message-activity[data-loading-state="pending"] {display:inline-flex;vertical-align:middle;}
@@ -20,25 +37,26 @@ body {display:flow-root;}
 /* Intrinsic primary-font row frontiers cover the two-row message grammar,
    full copy, bounded spectator names and turn summaries at 100/200% text.
    Measured maxima are rounded outward to 1/16em and cover Linux CI.
-   The 123-variant Linux primary envelope needs 18.00537em for three rows
-   and 35.90339em for two rows (the multi-follow push summary). Keep these static so
-   cold and loaded fonts share the same first-paint reservation. Tests probe
+   The complete grammar is measured at 100/200% with primary, native fallback
+   and generic fallback fonts. Row counts include a separate action-growth and
+   44px-hit allowance. Keep the outward-rounded width frontiers static so cold
+   and loaded fonts share the same first-paint reservation. Tests probe
    every source boundary plus independent width samples. Below 8.5em the
    intrinsic fallback remains the reservation. */
 @container board-message (min-width:8.5em) and (width < 10.1875em) {
-  .board-message-sizing {min-height:10.5em;}
+  .board-message-sizing {--board-message-row-lines:7;}
 }
 @container board-message (min-width:10.1875em) and (width < 11.8125em) {
-  .board-message-sizing {min-height:9em;}
+  .board-message-sizing {--board-message-row-lines:6;}
 }
 @container board-message (min-width:11.8125em) and (width < 13.1875em) {
-  .board-message-sizing {min-height:7.5em;}
+  .board-message-sizing {--board-message-row-lines:5;}
 }
 @container board-message (min-width:13.1875em) and (width < 18.0625em) {
-  .board-message-sizing {min-height:6em;}
+  .board-message-sizing {--board-message-row-lines:4;}
 }
 @container board-message (min-width:18.0625em) and (width < 35.9375em) {
-  .board-message-sizing {min-height:4.5em;}
+  .board-message-sizing {--board-message-row-lines:3;}
 }
 .board-heading-slot {display:grid;grid-template-columns:minmax(0,1fr);min-width:0;}
 .board-heading-slot > .board-heading {grid-area:1 / 1;min-width:0;}
@@ -51,9 +69,9 @@ body {display:flow-root;}
 #app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .overlay-key {margin-top:max(0px,calc(1rem - 16px));}
 /* Expand the tap surface inside the reserved message space, without moving
    the board or turning the inline action into a heavy toolbar. */
-.board-message-slot .board-preview-label .board-preview-inline-button {position:relative;min-width:44px;display:inline-flex;align-items:center;justify-content:center;gap:3px;}
-.board-preview-label .board-preview-inline-button > .righelt-icon {width:12px;height:12px;vertical-align:top;}
-.board-preview-label .board-preview-inline-button::before {content:"";position:absolute;left:0;right:0;top:50%;height:44px;transform:translateY(-50%);}
+.board-message-slot .board-preview-label .board-preview-inline-button {position:relative;z-index:1;overflow:visible;min-width:44px;display:inline-flex;align-items:baseline;justify-content:center;gap:3px;}
+.board-preview-label .board-preview-inline-button > .righelt-icon {width:12px;height:12px;vertical-align:top;align-self:center;}
+.board-preview-label .board-preview-inline-button::before {content:"";position:absolute;left:0;right:0;top:50%;height:max(44px,100%);transform:translateY(-50%);}
 .legend-inspection { display:inline-flex;align-items:center;gap:5px;min-height:44px;min-width:44px;padding:4px 8px;border:0;background:transparent;color:var(--ink);font:inherit; }
 .legend-inspection[aria-pressed="true"] {background:transparent;box-shadow:none;}
 .legend-inspection[aria-pressed="true"] .legend-inspection-label {text-decoration-line:underline;text-decoration-color:var(--legend-owner-color);text-decoration-thickness:2px;text-underline-offset:5px;}
@@ -111,6 +129,11 @@ body {display:flow-root;}
 .overlay-key {display:flex;flex-wrap:wrap;gap:10px 12px;}
 .overlay-key .legend-inspection {white-space:nowrap;}
 
+/* Keep the approved taller actions and their hit clearance inside the existing
+   desktop viewport budget. Reclaim board-only chrome, not usable cell size. */
+#app[data-shell-layout-mode="wide"] [data-shell-panel="board"] {padding-block:.5rem;}
+#app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board-heading {margin-block-end:0;}
+#app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board-message-slot {margin-block-end:0;}
 /* Desktop squares fit beneath stable chrome; short windows keep usable cells and scroll. */
 #app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board-wrap:not(.computer-replay-wrap) {
   width:min(100%,var(--desktop-board-side,max(396px,calc(100dvh - 25.5rem))));
