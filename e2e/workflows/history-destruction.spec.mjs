@@ -335,7 +335,7 @@ test('whole-turn history combines push routes and destruction on the final board
  try{
   await importScenarioGame(page,DESTRUCTION_SCENARIO,baseURL);
   const heading=page.locator('[data-testid="history-turn"] .history-turn-heading').filter({hasText:'Turn 1'});
-  await heading.locator('..').locator(':scope > .history-turn-hit').click();
+  await heading.locator('..').locator(':scope > .history-turn-hit').click({position:{x:12,y:12}});
   await expect(heading).toHaveAttribute('aria-current','true');
   await expect(heading).not.toHaveAttribute('data-action');
   const board=page.getByTestId('game-board');
