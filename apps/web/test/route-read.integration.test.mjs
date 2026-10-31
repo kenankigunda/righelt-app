@@ -42,3 +42,15 @@ test('captured game routes follow the URL rather than a previous invitation rout
   assert.equal(read.route.name,'game'); assert.equal(read.route.gameId,'current-game');
   assert.equal(read.hash,'#/game/current-game?panel=history');
 });
+
+
+test('Home route hydration retains the original failed section read for account continuation', async () => {
+  const original=Object.assign(new Error('local_api_unavailable'),{code:'local_api_unavailable',status:503,diagnosticEvidence:{serverBuild:'continuation-test-build'}});
+  let channels=0;
+  const context=vm.createContext({account:{snapshot:()=>({generation:2})},window:{location:{hash:'#/'}},transport:{},currentRoute:parseRouteFromHash('#/'),
+    getVisibleHomeSectionKeys:()=>[],getHomeSection:()=>{},getHomeSectionVisiblePageSize:()=>0,getHomeSectionColumnCount:()=>1,
+    hydrateRoute:createRouteHydration(),parseRouteFromHash,FLYOUT_KEYS,URLSearchParams,
+    syncHomeSections:async()=>({healthySettled:false,error:original}),syncLiveChannels:()=>{channels++;}});
+  await assert.rejects(script.runInContext(context).syncRouteDataAndLiveChannels(),error=>error===original);
+  assert.equal(channels,0);
+});

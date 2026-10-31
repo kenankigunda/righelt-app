@@ -1,7 +1,7 @@
 import test, { beforeEach } from "node:test";
 import { IDBFactory } from "fake-indexeddb";
 import assert from "node:assert/strict";
-import { writeSync as writeCleanupFailure } from "node:fs";
+import { readFileSync, writeSync as writeCleanupFailure } from "node:fs";
 import { createLiveTransportStore as createActualTransportStore } from "../shell/live-transport.js";
 import { createCommandJournal } from '../shell/command-journal.js';
 import { issueDiagnostics } from '../shell/issue-diagnostics.js';
@@ -808,7 +808,9 @@ test("live transport store applies optimistic moves immediately and clears pendi
   const optimisticHomeCard = store.getHomeGameCard(baseGame.id);
   assert.equal(optimisticHomeCard.syncStatus, "applying-update");
   assert.equal(optimisticHomeCard.moveCount, 1);
-  assert.notDeepEqual(optimisticHomeCard.previewSnapshot, baseGame.currentSnapshot);
+  assert.deepEqual(optimisticHomeCard.previewSnapshot, baseGame.currentSnapshot);
+  assert.notDeepEqual(optimisticHomeCard.pendingPreviewSnapshot, baseGame.currentSnapshot);
+  assert.equal(optimisticHomeCard.confirmedOutcomeStatus, 'ongoing');
 
   resolveApply?.(
     commandResponse({
@@ -2555,4 +2557,186 @@ test('an in-flight automatic journal read cannot act after a conflicting storage
  await h.advance(500);await h.phase('list',held);await h.store.loadGamesPage();const network=clone(h.calls.network);
  gate.resolve();assert.equal((await h.settled('list',held)).ok,true);await new Promise(resolve=>setImmediate(resolve));
  assert.deepEqual(h.calls.network,network);assert.equal(h.calls.admit.length,1);assert.equal(h.view().storageBlocked,true);
+});
+
+
+test('a delayed Home list cannot overwrite a newer confirmed board or Undo reopening', async t => {
+  const storage = createMemoryStorage(); storage.setItem(IDENTITY_KEY, 'id-a');
+  let reply;
+  const store = createLiveTransportStore({storage, fetcher:async () => new Promise(resolve => {reply=resolve;}), random:()=>0.1});
+  t.after(()=>store.retire());
+  const game=buildLiveGame(); game.gameplayRevision=4;
+  game.board.state.outcome={status:'p1_win'}; game.liveCurrentSnapshot=clone(game.board.state);
+  store.applyLiveGameUpdate({game,eventSeq:8});
+  const waiting=store.loadGamesPage({section:'completed'});
+  await new Promise(resolve=>setImmediate(resolve));
+  const reopened=clone(game); reopened.gameplayRevision=5; reopened.board.state.outcome={status:'ongoing'};
+  reopened.liveCurrentSnapshot=clone(reopened.board.state); reopened.moveCount=73; reopened.player1.profile={displayName:'Fresh name'};
+  store.applyLiveGameUpdate({game:reopened,eventSeq:9});
+  reply(Response.json({ok:true,section:'completed',page:0,pageSize:6,totalGames:1,totalPages:1,games:[{
+    id:game.id,eventSeq:8,gameplayRevision:4,confirmedOutcomeStatus:'p1_win',moveCount:74,
+    previewSnapshot:game.board.state,player1:{identityId:'id-a',profile:{displayName:'Stale name'}}
+  }]}));
+  const delayedPage = await waiting;
+  assert.equal(delayedPage.homeListChanged,true);
+  assert.equal(delayedPage.homeListRevision,store.getHomeListRevision());
+  const card=store.getHomeGameCard(game.id);
+  assert.equal(card.eventSeq,9); assert.equal(card.gameplayRevision,5);
+  assert.equal(card.confirmedOutcomeStatus,'ongoing'); assert.equal(card.moveCount,73);
+  assert.equal(card.player1.profile.displayName,'Fresh name');
+  assert.equal(card.previewSnapshot.outcome.status,'ongoing');
+});
+
+
+test('a newly learned off-page completion invalidates older ongoing totals even when the old visible page omits it',async t=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');const replies={};
+ const store=createLiveTransportStore({storage,fetcher:async url=>new Promise(resolve=>{replies[new URL(String(url),'https://example.test').searchParams.get('section')]=resolve;})});
+ t.after(()=>store.retire());
+ const my=store.loadGamesPage({section:'my'}),completed=store.loadGamesPage({section:'completed'});
+ await new Promise(resolve=>setImmediate(resolve));
+ replies.completed(Response.json({ok:true,section:'completed',page:0,totalGames:1,totalPages:1,games:[{id:'off-page-x',moveCount:5,eventSeq:10,gameplayRevision:5,confirmedOutcomeStatus:'p1_win',previewSnapshot:{outcome:{status:'p1_win'}}}]}));
+ await completed;
+ replies.my(Response.json({ok:true,section:'my',page:0,totalGames:2,totalPages:2,games:[{id:'visible-a',moveCount:1,eventSeq:2,gameplayRevision:1,confirmedOutcomeStatus:'ongoing',previewSnapshot:{outcome:{status:'ongoing'}}}]}));
+ const old=await my;assert.equal(old.games.some(game=>game.id==='off-page-x'),false);
+ assert.equal(old.homeListChanged,true,'off-page completion changes counts despite no substituted visible card');
+});
+
+test('reversed concurrent Home section replies cannot reuse stale ongoing membership after confirmed completion',async t=>{
+  const storage=createMemoryStorage(); storage.setItem(IDENTITY_KEY,'id-a');
+  const replies={};
+  const store=createLiveTransportStore({storage,fetcher:async url=>new Promise(resolve=>{replies[new URL(String(url),'https://example.test').searchParams.get('section')]=resolve;}),random:()=>0.1});
+  t.after(()=>store.retire());
+  const my=store.loadGamesPage({section:'my'}), completed=store.loadGamesPage({section:'completed'});
+  await new Promise(resolve=>setImmediate(resolve));
+  const base={id:'overlap',moveCount:8,eventSeq:10,gameplayRevision:5,confirmedOutcomeStatus:'p1_win',previewSnapshot:{outcome:{status:'p1_win'}}};
+  replies.completed(Response.json({ok:true,section:'completed',totalGames:1,totalPages:1,page:0,games:[base]}));
+  const newPage=await completed; assert.equal(newPage.homeListChanged,false);
+  replies.my(Response.json({ok:true,section:'my',totalGames:1,totalPages:1,page:0,games:[{...base,eventSeq:9,gameplayRevision:4,confirmedOutcomeStatus:'ongoing',previewSnapshot:{outcome:{status:'ongoing'}}}]}));
+  const oldPage=await my;
+  assert.equal(oldPage.homeListChanged,true);
+  assert.equal(store.getHomeGameCard('overlap').confirmedOutcomeStatus,'p1_win');
+  assert.equal(oldPage.games[0].eventSeq,10);
+});
+
+
+test('a confirmed result arriving during Home journal hydration invalidates the earlier section count',async t=>{
+  const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
+  let releaseJournal;
+  const game=buildLiveGame();
+  const store=createLiveTransportStore({storage,commandJournal:{list:()=>new Promise(resolve=>{releaseJournal=resolve;}),close:async()=>{}},
+    fetcher:async()=>Response.json({ok:true,section:'my',page:0,totalGames:1,totalPages:1,games:[{
+      id:game.id,eventSeq:4,gameplayRevision:game.gameplayRevision,confirmedOutcomeStatus:'ongoing',moveCount:1,previewSnapshot:game.board.state
+    }]})});
+  t.after(()=>{releaseJournal?.([]);store.retire();});
+  const waiting=store.loadGamesPage({section:'my'});
+  while(!releaseJournal)await new Promise(resolve=>setImmediate(resolve));
+  const completed=clone(game);completed.gameplayRevision++;completed.board.state.outcome={status:'p2_win'};
+  completed.liveCurrentSnapshot=clone(completed.board.state);
+  store.applyLiveGameUpdate({game:completed,eventSeq:5});
+  releaseJournal([]);
+  const page=await waiting;
+  assert.equal(page.homeListChanged,true);
+  assert.equal(page.games[0].confirmedOutcomeStatus,'p2_win');
+  assert.equal(page.games[0].eventSeq,5);
+});
+
+
+for(const accepted of [true,false])test(`a pending winning Home preview becomes a result only after ${accepted?'acceptance':'rejection keeps it ongoing'}`,async t=>{
+ const record=JSON.parse(readFileSync(new URL('../scenarios/catalog.json',import.meta.url),'utf8')).scenarios.find(row=>row.title==='Capture supply point to win by unsupplying the commander');
+ let game=buildLiveGame();
+ const initial=resolveToStability(record.initialState,{artifactMode:'full'});
+ game.board={state:clone(initial)};game.currentSnapshot=clone(initial);game.moves=[];
+ game.currentTurn={...game.currentTurn,index:0,playerSeat:'Player 1',moveIndexes:[]};game.turns=[clone(game.currentTurn)];
+ for(const row of record.moves.slice(0,-1)){
+  while(game.currentTurn.index<row.turnIndex){
+   const next=finalizeResolvedTurn({state:game.board.state,activeTurn:game.currentTurn,endedAt:game.updatedAt,resolveToStability});
+   game={...game,board:{state:clone(next.nextState)},currentSnapshot:clone(next.nextState),currentTurn:next.nextTurn,turns:[...game.turns,next.nextTurn]};
+  }
+  game=buildAcknowledgedGame(game,row.action);
+ }
+ const finalRecord=record.moves.at(-1);
+ while(game.currentTurn.index<finalRecord.turnIndex){
+  const next=finalizeResolvedTurn({state:game.board.state,activeTurn:game.currentTurn,endedAt:game.updatedAt,resolveToStability});
+  game={...game,board:{state:clone(next.nextState)},currentSnapshot:clone(next.nextState),currentTurn:next.nextTurn,turns:[...game.turns,next.nextTurn]};
+ }
+ game.canRecordMove=true;game.myRole='Player 1';game.legalActions=listLegalActions(game.board.state);
+ const action=record.moves.at(-1).action,finished=buildAcknowledgedGame(game,action);
+ assert.equal(game.board.state.outcome.status,'ongoing');assert.equal(finished.board.state.outcome.status,'p1_win');
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');let reply;
+ const store=createLiveTransportStore({storage,fetcher:async(url,init={})=>{
+  if(String(url).endsWith('/apply'))return new Promise(resolve=>{reply=resolve;});
+  return Response.json({protocolVersion:2,ok:true,game,eventSeq:50});
+ }});t.after(()=>store.retire());
+ await store.loadGame(game.id);
+ const pending=await store.applyGameAction({gameId:game.id,state:game.board.state,action});
+ assert.equal(pending.accepted,true);
+ const before=store.getHomeGameCard(game.id);
+ assert.equal(before.confirmedOutcomeStatus,'ongoing');assert.equal(before.pendingPreviewSnapshot.outcome.status,'p1_win');
+ assert.equal(before.previewSnapshot.outcome.status,'ongoing');
+ reply(commandResponse({ok:true,accepted,clientCommandId:pending.clientCommandId,eventSeq:51,game:accepted?finished:game}));
+ for(let index=0;index<100&&store.getGameViewModel(game.id).pendingCommandCount;index++)await new Promise(resolve=>setTimeout(resolve,1));
+ assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);
+ const after=store.getHomeGameCard(game.id);
+ assert.equal(after.confirmedOutcomeStatus,accepted?'p1_win':'ongoing');
+ assert.equal(after.pendingPreviewSnapshot,undefined);
+ assert.equal(after.moveCount,accepted?finished.moves.length:game.moves.length);
+});
+
+for(const accepted of [true,false])test(`Home keeps a confirmed result until an Undo is ${accepted?'accepted':'rejected'}`,async t=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');let envelope;
+ const store=createLiveTransportStore({storage,fetcher:(_url,init)=>{envelope=JSON.parse(init.body);return new Promise(()=>{});}});
+ t.after(()=>store.retire());
+ const game=buildLiveGame();game.sharedReceipts=true;game.board.state.outcome={status:'p1_win'};game.liveCurrentSnapshot=clone(game.board.state);
+ store.applyLiveGameUpdate({game,eventSeq:1});
+ const operation=store.requestRevertToMove({gameId:game.id,targetMoveId:game.moves[0].moveId});
+ const settled=operation.then(()=>true,()=>false);
+ for(let index=0;index<100&&!envelope;index++)await tick();
+ assert(envelope,'Undo must admit its real durable command');
+ assert.equal(envelope.payload.operation,'revert-request');
+ assert.equal(store.getHomeGameCard(game.id).confirmedOutcomeStatus,'p1_win');
+ const next=clone(game);
+ if(accepted){next.gameplayRevision++;next.board.state.outcome={status:'ongoing'};next.liveCurrentSnapshot=clone(next.board.state);}
+ const outcome={gameId:game.id,identityId:envelope.identityId,clientCommandId:envelope.clientCommandId,fingerprint:envelope.fingerprint,
+  outcome:accepted?'accepted':'rejected',reason:accepted?null:'stale_state',eventSeq:2,gameplayRevision:next.gameplayRevision};
+ store.applyLiveGameUpdate({game:next,eventSeq:2,commandOutcome:outcome});
+ assert.equal(await settled,accepted);
+ const card=store.getHomeGameCard(game.id);
+ assert.equal(card.confirmedOutcomeStatus,accepted?'ongoing':'p1_win');
+ assert.equal(card.previewSnapshot.outcome.status,card.confirmedOutcomeStatus);
+ assert.equal(card.eventSeq,2);assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);
+});
+
+test('a retired account Home response cannot install another card after its owner changes',async()=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'old-account');let reply;
+ const store=createLiveTransportStore({storage,fetcher:async()=>new Promise(resolve=>{reply=resolve;})});
+ const waiting=store.loadGamesPage({section:'completed'});
+ await tick();store.retire();
+ reply(Response.json({ok:true,section:'completed',totalGames:1,games:[{id:'late-private-card',eventSeq:4,gameplayRevision:2,
+  confirmedOutcomeStatus:'p1_win',previewSnapshot:{outcome:{status:'p1_win'}}}]}));
+ await assert.rejects(waiting,/session_changed/);
+ assert.equal(store.getHomeGameCard('late-private-card'),null);
+});
+
+test('installing an already confirmed snapshot publishes its Home evidence atomically without false membership changes',async t=>{
+ const {buildStaticGameCardFromGame}=await import('../shell/static-game-cards.js');
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
+ const game=buildLiveGame();game.gameplayRevision=4;game.board.state.outcome={status:'p1_win'};game.liveCurrentSnapshot=clone(game.board.state);
+ const card=buildStaticGameCardFromGame(game,{eventSeq:10,confirmed:true});
+ const store=createLiveTransportStore({storage,fetcher:async()=>Response.json({ok:true,section:'completed',page:0,totalGames:1,totalPages:1,games:[card]})});t.after(()=>store.retire());
+ await store.loadGamesPage({section:'completed'});const revision=store.getHomeListRevision();
+ store.applyLiveGameUpdate({game,eventSeq:10});
+ assert.equal(store.getHomeListRevision(),revision,'the same confirmed card must not flip through unproven status during installation');
+ assert.deepEqual(store.getHomeGameCard(game.id),card);
+});
+
+for(const [eventSeq,gameplayRevision] of [[9,3],[null,3],[null,5]])test(`weaker live evidence cannot replace a stronger whole Home card seq=${eventSeq} revision=${gameplayRevision}`,async t=>{
+ const {buildStaticGameCardFromGame}=await import('../shell/static-game-cards.js');
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
+ const game=buildLiveGame();game.gameplayRevision=4;game.board.state.outcome={status:'p1_win'};game.liveCurrentSnapshot=clone(game.board.state);
+ const card=buildStaticGameCardFromGame(game,{eventSeq:10,confirmed:true});
+ const store=createLiveTransportStore({storage,fetcher:async()=>Response.json({ok:true,section:'completed',page:0,totalGames:1,totalPages:1,games:[card]})});t.after(()=>store.retire());
+ await store.loadGamesPage({section:'completed'});const revision=store.getHomeListRevision();
+ const older=clone(game);older.gameplayRevision=gameplayRevision;older.board.state.outcome={status:'ongoing'};older.liveCurrentSnapshot=clone(older.board.state);
+ store.applyLiveGameUpdate({game:older,eventSeq});
+ assert.equal(store.getHomeListRevision(),revision);assert.deepEqual(store.getHomeGameCard(game.id),card);
 });

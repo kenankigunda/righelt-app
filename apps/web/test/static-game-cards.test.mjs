@@ -87,3 +87,36 @@ test("static game cards derive home-card summaries from full live game views", (
   assert.equal(card.myRole, "Player 1");
   assert.equal(card.syncStatus, "confirming");
 });
+
+
+test('archived Home cards retain the saved move count when compact history is empty',()=>{
+  const card=buildStaticGameCardFromGame({id:'archived',moveCount:74,moves:[],board:{state:{outcome:{status:'p1_win'}}}});
+  assert.equal(card.moveCount,74);
+});
+
+test('Home list cards retain comparable authority and explicit perspective metadata',()=>{
+  const card=normalizeStaticGameCard({id:'confirmed',eventSeq:41,gameplayRevision:8,confirmedOutcomeStatus:'p2_win',
+    selfPlayMode:true,myRole:'Player 1',myRoles:['Player 1','Player 2'],
+    player1:{identityId:'owner'},player2:{identityId:'owner'},previewSnapshot:{outcome:{status:'p2_win'}}});
+  assert.equal(card.eventSeq,41);
+  assert.equal(card.gameplayRevision,8);
+  assert.equal(card.confirmedOutcomeStatus,'p2_win');
+  assert.equal(card.selfPlayMode,true);
+  assert.deepEqual(card.myRoles,['Player 1','Player 2']);
+});
+
+
+test('a terminal-looking preview cannot claim a result without confirmed revision evidence',()=>{
+  const previewSnapshot={outcome:{status:'p1_win'}};
+  assert.equal(normalizeStaticGameCard({previewSnapshot,confirmedOutcomeStatus:'p1_win'}).confirmedOutcomeStatus,null);
+  for(const value of [undefined,null,'future','finished','win']){
+    assert.equal(normalizeStaticGameCard({previewSnapshot,eventSeq:4,gameplayRevision:2,confirmedOutcomeStatus:value}).confirmedOutcomeStatus,null);
+  }
+  const game={board:{state:previewSnapshot},gameplayRevision:2};
+  assert.equal(buildStaticGameCardFromGame(game,{eventSeq:4}).confirmedOutcomeStatus,null);
+  assert.equal(buildStaticGameCardFromGame(game,{eventSeq:4,confirmed:true}).confirmedOutcomeStatus,'p1_win');
+});
+
+test('conflicting result metadata and miniature state cannot establish a confirmed winner',()=>{
+  assert.equal(normalizeStaticGameCard({eventSeq:4,gameplayRevision:2,confirmedOutcomeStatus:'p1_win',previewSnapshot:{outcome:{status:'ongoing'}}}).confirmedOutcomeStatus,null);
+});

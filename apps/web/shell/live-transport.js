@@ -179,6 +179,31 @@ export const createLiveTransportStore = ({
   let games = [];
   let gameById = new Map();
   let homeGameCardById = new Map();
+  let homeListRevision = 0;
+  const homeMembershipFields = card => ({gameplayRevision:card?.gameplayRevision,status:card?.confirmedOutcomeStatus,count:card?.moveCount,lastMoveAt:card?.lastMoveAt,
+    selfPlayMode:card?.selfPlayMode,myRole:card?.myRole,myRoles:card?.myRoles,player1Id:card?.player1?.identityId,player2Id:card?.player2?.identityId,
+    player1Profile:card?.player1?.profile,player2Profile:card?.player2?.profile,player1Computer:card?.player1?.computerProfile,player2Computer:card?.player2?.computerProfile});
+  const homeMembershipSignature = card => JSON.stringify(homeMembershipFields(card));
+  const recordHomeProjectionChange = (previous,next,source) => {
+    const old=homeMembershipFields(previous),fresh=homeMembershipFields(next);
+    logDiagnostic('info','home_projection_changed',{gameId:next.id,source,revision:homeListRevision,
+      changedFields:Object.keys(fresh).filter(key=>JSON.stringify(old[key])!==JSON.stringify(fresh[key])),
+      previousGameplayRevision:old.gameplayRevision,nextGameplayRevision:fresh.gameplayRevision,
+      previousStatus:old.status,nextStatus:fresh.status,previousCount:old.count,nextCount:fresh.count,
+      previousRole:old.myRole,nextRole:fresh.myRole,previousRoles:old.myRoles,nextRoles:fresh.myRoles},{verboseOnly:true});
+  };
+  const isStaleHomeEvidence = (incoming,current) => Number.isSafeInteger(current?.eventSeq) &&
+    (!Number.isSafeInteger(incoming?.eventSeq) || incoming.eventSeq < current.eventSeq ||
+      (incoming.eventSeq === current.eventSeq && (incoming.gameplayRevision ?? -1) < (current.gameplayRevision ?? -1)));
+  const installAuthoritativeHomeCard = (game, eventSeq) => {
+    const next = buildStaticGameCardFromGame(game, {eventSeq, confirmed:true});
+    if(isStaleHomeEvidence(next,homeGameCardById.get(next.id)))return;
+    if (homeMembershipSignature(homeGameCardById.get(game.id)) !== homeMembershipSignature(next)) {
+      homeListRevision++;
+      recordHomeProjectionChange(homeGameCardById.get(game.id),next,'authoritative');
+    }
+    homeGameCardById.set(game.id,next);
+  };
   const lastEventSeqByGameId = new Map();
   const optimisticStateByGameId = new Map();
   // Storage recovery owns asynchronous work separately from game projections.
@@ -335,7 +360,6 @@ export const createLiveTransportStore = ({
       rulesExecutor.cancel(`project:${gameId}`);
       optimistic.projectionJob = null;
       optimistic.derivedGame = decorateGameWithSync(authoritativeGame, gameId);
-      homeGameCardById.set(gameId, buildStaticGameCardFromGame(optimistic.derivedGame));
       return { ok: true, game: optimistic.derivedGame };
     }
 
@@ -346,7 +370,6 @@ export const createLiveTransportStore = ({
       rulesExecutor.cancel(`project:${gameId}`);
       optimistic.projectionJob = null;
       optimistic.derivedGame = decorateGameWithSync(optimistic.derivedGame ?? authoritativeGame, gameId);
-      homeGameCardById.set(gameId, buildStaticGameCardFromGame(optimistic.derivedGame));
       return { ok: true, game: optimistic.derivedGame };
     }
     if (optimistic.admissionProjection) return { ok: true, game: optimistic.derivedGame };
@@ -385,7 +408,6 @@ export const createLiveTransportStore = ({
     }
     optimistic.commandResults = projection.commandResults;
     optimistic.derivedGame = decorateGameWithSync(projection.game, gameId);
-    homeGameCardById.set(gameId, buildStaticGameCardFromGame(optimistic.derivedGame));
     return { ok: true, game: optimistic.derivedGame };
   };
 
@@ -409,11 +431,11 @@ export const createLiveTransportStore = ({
     emitChange({ type: changeType, gameId, clientCommandId, failureNotice: notice });
   };
 
-  const upsertGame = (game) => {
+  const upsertGame = (game, {homeEventSeq=lastEventSeqByGameId.get(game.id) ?? null} = {}) => {
     const next = clone(game);
     getOptimisticState(next.id).externalPreview = null;
     gameById.set(next.id, next);
-    homeGameCardById.set(next.id, buildStaticGameCardFromGame(next));
+    installAuthoritativeHomeCard(next,homeEventSeq);
     const current = games.filter((entry) => entry.id !== next.id);
     current.push(next);
     current.sort((left, right) => {
@@ -435,7 +457,7 @@ export const createLiveTransportStore = ({
     const nextEventSeq = typeof eventSeq === "number" && Number.isFinite(eventSeq) ? eventSeq : null;
     const currentEventSeq = nextEventSeq !== null ? lastEventSeqByGameId.get(game.id) ?? 0 : null;
     const staleSnapshotIgnored = nextEventSeq !== null && currentEventSeq !== null && nextEventSeq < currentEventSeq;
-    const authoritative = staleSnapshotIgnored ? gameById.get(game.id) ?? null : upsertGame(game);
+    const authoritative = staleSnapshotIgnored ? gameById.get(game.id) ?? null : upsertGame(game,{homeEventSeq:nextEventSeq});
     if (staleSnapshotIgnored) {
       logDiagnostic(
         "info",
@@ -447,6 +469,7 @@ export const createLiveTransportStore = ({
 
     if (nextEventSeq !== null) {
       lastEventSeqByGameId.set(game.id, Math.max(currentEventSeq ?? 0, nextEventSeq));
+      if (!staleSnapshotIgnored) installAuthoritativeHomeCard(authoritative,nextEventSeq);
     }
 
     const optimistic = getOptimisticState(game.id);
@@ -1162,6 +1185,7 @@ export const createLiveTransportStore = ({
   };
 
   const loadGamesPage = async ({ section, page = 0, pageSize = 6, debug = false } = {}) => {
+    const startedRevision = homeListRevision;
     const params = new URLSearchParams({
       identityId,
       section: String(section || ""),
@@ -1173,10 +1197,23 @@ export const createLiveTransportStore = ({
       method: "GET",
       cache: "no-store",
     });
+    assertActive();
+    let homeListChanged = startedRevision !== homeListRevision;
     const gamesPage = Array.isArray(body.games) ? body.games.map((game) => normalizeStaticGameCard(game)) : [];
     for (const game of gamesPage) {
-      homeGameCardById.set(game.id, game);
+      const current = homeGameCardById.get(game.id);
+      const stale = isStaleHomeEvidence(game,current);
+      if (stale) {
+        if (homeMembershipSignature(current) !== homeMembershipSignature(game)) homeListChanged = true;
+      } else {
+        if (homeMembershipSignature(current) !== homeMembershipSignature(game)) {
+          homeListRevision++;
+          recordHomeProjectionChange(current,game,'list');
+        }
+        homeGameCardById.set(game.id, game);
+      }
     }
+    const installedRevision = homeListRevision;
     // Home reloads must resume durable commands even when their game is not opened.
     // Hydration starts bounded reconciliation; listing a page never waits on the network recovery.
     try {
@@ -1185,8 +1222,13 @@ export const createLiveTransportStore = ({
     } catch (error) {
       for (const game of gamesPage) blockStorage(game.id, error);
     }
+    assertActive();
+    logDiagnostic('info','home_page_consistency',{section,startedRevision,installedRevision,revision:homeListRevision,
+      changed:homeListChanged || installedRevision!==homeListRevision},{verboseOnly:true});
     return {
       ...body,
+      homeListRevision,
+      homeListChanged: homeListChanged || installedRevision !== homeListRevision,
       games: gamesPage.map(game => getHomeGameCard(game.id)),
     };
   };
@@ -1670,7 +1712,10 @@ export const createLiveTransportStore = ({
     if (!card) return null;
     const optimistic = getOptimisticState(gameId);
     const next = clone(card);
-    if (optimistic.pendingCommands.length) next.syncStatus = optimistic.syncStatus;
+    if (optimistic.pendingCommands.length) {
+      next.syncStatus = optimistic.syncStatus;
+      next.pendingPreviewSnapshot = clone(optimistic.derivedGame?.liveCurrentSnapshot ?? optimistic.derivedGame?.board?.state ?? null);
+    }
     if (optimistic.storageBlocked || optimistic.connectionRecovering) next.syncStatus = "confirming";
     return next;
   };
@@ -1785,6 +1830,7 @@ export const createLiveTransportStore = ({
     discardPendingCommands,
     listGames,
     getHomeGameCard,
+    getHomeListRevision: () => homeListRevision,
     getGameViewModel,
     isUpgradeRequired: (gameId) => getOptimisticState(gameId).upgradeRequired === true,
     markUpgradeRequired,

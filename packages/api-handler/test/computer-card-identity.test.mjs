@@ -6,7 +6,7 @@ import {handleApiRequest} from './support/v2-test-adapter.mjs';
 import {createFakeD1} from './support/fake-d1.mjs';
 import {createFakeGameRooms} from './support/fake-game-rooms.mjs';
 
-const cardKeys=['id','createdAt','lastMoveAt','updatedAt','moveCount','previewSnapshot','previewSelection','myRole','canJoinAsPlayer','player1','player2'].sort();
+const cardKeys=['eventSeq','gameplayRevision','confirmedOutcomeStatus','selfPlayMode','myRoles','id','createdAt','lastMoveAt','updatedAt','moveCount','previewSnapshot','previewSelection','myRole','canJoinAsPlayer','player1','player2'].sort();
 test('static cards preserve configured computer identity independently of manual control',()=>{
  for(const profile of Object.keys(COMPUTER_PROFILES))for(const sides of ['p1','p2','both'])for(const manual of [false,true]){
   const game=createInitialGame({gameId:`${profile}-${sides}-${manual}`,identityId:'owner',selfPlayMode:true});
@@ -18,7 +18,7 @@ test('static cards preserve configured computer identity independently of manual
    assert.equal(card.player1.computerProfile,seats.p1,`${profile}/${sides}/manual=${manual}/p1`);
    assert.equal(card.player2.computerProfile,seats.p2,`${profile}/${sides}/manual=${manual}/p2`);
    assert.equal(card.canJoinAsPlayer,false);
-   assert.deepEqual(Object.keys(card).sort(),cardKeys,'cards gain no control, lease or permission fields');
+   assert.deepEqual(Object.keys(card).sort(),cardKeys,'cards expose only the allowlisted identity, confirmed projection and review fields');
   }
   assert.deepEqual(game,original,'static identity decoration never mutates durable participants or control');
   assert.deepEqual(withViewModel(game,'owner'),fullBefore);

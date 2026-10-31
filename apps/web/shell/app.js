@@ -1,3 +1,5 @@
+import {captureHomeFocus,refreshHomeFocus,restoreHomeFocus,restoreHomeReadingPosition} from './home-focus.js';
+import {homeCardResult} from './home-card-result.js';
 import {isOngoingGame} from './game-lifecycle.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
@@ -333,6 +335,8 @@ const renderedMiniBoardPreviewPayloads = new Map();
 const lastAnimatedHomeSectionTokenByKey = new Map();
 const createHomeSectionState = (title) => ({
   title,
+  loaded: false,
+  error: null,
   page: 0,
   totalPages: 0,
   totalGames: 0,
@@ -346,8 +350,12 @@ const createHomeSectionState = (title) => ({
   slideDirection: "none",
   animationToken: 0,
 });
+let homeFocusToRestore = null;
+let pendingHomeRefresh = null;
+let lastHomeBatchRevision = null;
 let homeSections = {
   my: createHomeSectionState("My games"),
+  completed: createHomeSectionState("Your completed games"),
   other: createHomeSectionState("Other games"),
   smoke: createHomeSectionState("Deploy smoke player"),
 };
@@ -753,7 +761,7 @@ const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
 };
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
 const canControlLiveBoard = (game) => isOngoingGame(game) && account.canPlay() && !game?.sharedMutationsBlocked && Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
-const getVisibleHomeSectionKeys = (route = currentRoute) => (route?.debug ? ["my", "other", "smoke"] : ["my", "other"]);
+const getVisibleHomeSectionKeys = (route = currentRoute) => (route?.debug ? ["my", "completed", "other", "smoke"] : ["my", "completed", "other"]);
 const getHomeSection = (sectionKey) => homeSections[sectionKey] ?? createHomeSectionState(sectionKey);
 const setHomeSection = (sectionKey, nextState) => {
   homeSections = {
@@ -1141,6 +1149,11 @@ const getAdjacentGamePanel = (panel = getGamePanel(), direction = 0) => {
   return GAME_PANEL_KEYS[nextIndex];
 };
 const preparePanelTransition = (previous, next) => {
+  if(previous.name === 'home' && next.name !== 'home'){
+    pendingHomeSectionKeys.clear();
+    pendingHomeRefresh=null;
+    homeFocusToRestore=null;
+  }
   if (previous.name === 'game' && (next.gameId !== previous.gameId || getGamePanel(previous) !== getGamePanel(next))) {
     viewingIntent.saveScroll(previous.gameId, getGamePanel(previous), window.scrollY);
   }
@@ -2151,7 +2164,7 @@ const getInviteContextForGame = (game, routeName = currentRoute.name) => {
   };
 };
 
-const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyoutLink = null, gameId = null, header, meta, statusText }) => {
+const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyoutLink = null, gameId = null, header, meta, statusText, winnerSide = null }) => {
   const previewPayload = card?.previewPayload ?? getStaticCardPreviewPayload(card);
   const previewKey = toStableKey({
     snapshot: previewPayload.snapshot,
@@ -2188,7 +2201,7 @@ const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyout
   if (!href) {
     return `<div class="mini-board-card mini-board-card-${escapeHtml(variant)}">${body}</div>`;
   }
-  return `<article class="mini-board-card">
+  return `<article class="mini-board-card"${winnerSide ? ` data-winner-side="${winnerSide.toLowerCase()}"` : ''}>
     <a
       class="mini-board-card-link-surface"
       href="${href}"
@@ -2202,10 +2215,13 @@ const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyout
 
 const renderHomeGameCard = (game) => {
   const snapshot = getStaticCardPreviewSnapshot(game);
-  const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
-  const moveLabel = `Move ${game.moveCount + 1}`;
+  const result = homeCardResult(game, {identityId:transport.getIdentityId()});
+  const completed = result.kind === 'completed';
+  const statusText = result.kind === 'ongoing' ? snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable" : result.label;
+  const moveLabel = completed ? `${game.moveCount} ${game.moveCount === 1 ? 'move' : 'moves'}` : `Move ${game.moveCount + 1}`;
+  const resultHtml = completed ? `<div class="home-card-result${result.winnerSide ? ` player-tone-${result.winnerSide.toLowerCase()}` : ''}"><strong><bdi>${escapeHtml(result.label)}</bdi></strong>${result.detail ? `<span class="small">${escapeHtml(result.detail)}</span>` : ''}</div>` : '';
   const recoveryChip =
-    game.syncStatus === "desynced" || game.syncStatus === "confirming" ? '<span class="status-chip">Recovering</span>' : "";
+    game.pendingPreviewSnapshot ? '<span class="status-chip">Update pending</span>' : game.syncStatus === "desynced" || game.syncStatus === "confirming" ? '<span class="status-chip">Recovering</span>' : "";
   return renderStaticMiniBoardCard({
     card: game,
     href: buildGameHash(game.id, null, getCurrentFlyoutState()),
@@ -2217,10 +2233,11 @@ const renderHomeGameCard = (game) => {
       </div>
       ${recoveryChip}`,
     meta: `<div class="mini-board-card-meta mini-board-card-meta-primary">
-        ${renderHomeCardIdentity(game, {identityId: transport.getIdentityId()})}
+        ${renderHomeCardIdentity(game, {identityId: transport.getIdentityId(), quiet:completed})}
         <span class="small">${escapeHtml(moveLabel)}</span>
-      </div>`,
-    statusText,
+      </div>${resultHtml}`,
+    statusText: completed ? result.action : result.kind === 'pending' ? `${statusText} · ${result.action}` : statusText,
+    winnerSide: completed ? result.winnerSide : null,
   });
 };
 
@@ -2247,7 +2264,8 @@ const renderHomeStartButton = () =>
 
 const renderHomeGameSection = (sectionKey) => {
   const section = getHomeSection(sectionKey);
-  if ((isHomeSectionPending(sectionKey) || !routeHydrated) && section.gameIds.length === 0) {
+  if (section.error) return `<section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}"><h2>${escapeHtml(section.title)}</h2><p role="status">We couldn't load these games.</p><button class="secondary" data-action="home-section-retry" data-home-section="${escapeHtml(sectionKey)}" ${isHomeSectionPending(sectionKey) ? 'disabled' : ''}>Try again</button></section>`;
+  if ((isHomeSectionPending(sectionKey) || !section.loaded) && section.gameIds.length === 0) {
     return renderHomeSectionSkeleton(sectionKey === "my" ? "Continue playing" : section.title,{sectionKey});
   }
   const games = section.gameIds.map((gameId) => transport.getHomeGameCard(gameId)).filter(Boolean);
@@ -3556,29 +3574,34 @@ const loadHomeSectionServerPage = async (
     visibleColumnCount = getHomeSectionColumnCount(sectionKey),
   } = {},
 ) => {
-  const previous = getHomeSection(sectionKey);
   const read = captureRouteRead();
-  const response = await read.owner.loadGamesPage({
-    section: sectionKey,
-    page: serverPage,
-    pageSize: HOME_SECTION_SERVER_PAGE_SIZE,
-    debug: currentRoute.debug === true,
-  });
+  const requestPage = () => read.owner.loadGamesPage({section:sectionKey,page:serverPage,pageSize:HOME_SECTION_SERVER_PAGE_SIZE,debug:currentRoute.debug === true});
+  let response = await requestPage();
   assertCurrentRouteRead(read);
+  // A live result or accepted Undo can change all three section counts while
+  // this read is in flight. Re-read the server projection before publishing it.
+  if (response.homeListChanged) {
+    response = await requestPage();
+    assertCurrentRouteRead(read);
+    if (response.homeListChanged) throw Object.assign(new Error('Your game list changed. Try again.'),{code:'home_list_changed'});
+  }
+  const previous = getHomeSection(sectionKey);
   const normalizedServerPage = typeof response.page === "number" ? response.page : 0;
   const serverPageGameIds = Array.isArray(response.games) ? response.games.map((game) => game.id) : [];
   const nextSection = {
     ...previous,
+    homeListRevision: response.homeListRevision ?? null,
+    loaded: true,
+    error: null,
+    refreshUnsettled: false,
     totalGames: typeof response.totalGames === "number" ? response.totalGames : 0,
     serverPage: normalizedServerPage,
     serverTotalPages: typeof response.totalPages === "number" ? response.totalPages : 0,
     serverPageGameIds,
     serverPageGameIdsByPage: {
-      ...previous.serverPageGameIdsByPage,
+      ...(previous.homeListRevision === response.homeListRevision ? previous.serverPageGameIdsByPage : {}),
       [normalizedServerPage]: serverPageGameIds,
     },
-    visiblePageSize,
-    visibleColumnCount,
   };
   setHomeSection(sectionKey, nextSection);
   return nextSection;
@@ -3600,21 +3623,40 @@ const loadHomeSectionPage = async (
     visiblePageSize,
     visibleColumnCount,
   };
+  if (previous.homeListRevision !== (read.owner.getHomeListRevision?.() ?? previous.homeListRevision)) {
+    nextSection.serverPageGameIdsByPage = {};
+  }
   const initialServerPage = Math.floor((Math.max(0, page) * visiblePageSize) / HOME_SECTION_SERVER_PAGE_SIZE);
   const shouldPrimeCache = Object.keys(nextSection.serverPageGameIdsByPage ?? {}).length === 0;
   if (shouldPrimeCache) {
     nextSection = await loadHomeSectionServerPage(sectionKey, initialServerPage, { visiblePageSize, visibleColumnCount });
   }
-  const requiredServerPages = getHomeSectionRequiredServerPages({
-    totalGames: nextSection.totalGames,
-    visiblePageSize,
-    page,
-  });
-  for (const serverPage of requiredServerPages) {
-    if (!hasHomeSectionServerPages(nextSection, [serverPage])) {
-      nextSection = await loadHomeSectionServerPage(sectionKey, serverPage, { visiblePageSize, visibleColumnCount });
+  // Reads may overlap a newer completed page or responsive-layout change.
+  // Merge server data into the current cache, then keep the latest view intent.
+  const currentIntent = () => {
+    const current = getHomeSection(sectionKey);
+    const superseded = current.page !== previous.page || current.visiblePageSize !== previous.visiblePageSize || current.visibleColumnCount !== previous.visibleColumnCount;
+    return superseded ? {page:current.page,visiblePageSize:current.visiblePageSize,visibleColumnCount:current.visibleColumnCount} : {page,visiblePageSize,visibleColumnCount};
+  };
+  let intent;
+  // A later server page can reveal membership evidence that invalidates an
+  // earlier cached page. Settle that bounded cache change before publishing
+  // the visible slice; an incomplete slice must never hide the whole section.
+  for (let pass = 0; pass < 2; pass++) {
+    intent = currentIntent();
+    const required = getHomeSectionRequiredServerPages({totalGames:nextSection.totalGames,...intent});
+    for (const serverPage of required) {
+      if (!hasHomeSectionServerPages(nextSection, [serverPage])) {
+        nextSection = await loadHomeSectionServerPage(sectionKey, serverPage, intent);
+      }
     }
+    if (hasHomeSectionServerPages(nextSection, required)) break;
   }
+  intent = currentIntent();
+  if (!hasHomeSectionServerPages(nextSection, getHomeSectionRequiredServerPages({totalGames:nextSection.totalGames,...intent}))) {
+    throw Object.assign(new Error('Your game list changed. Try again.'),{code:'home_list_changed'});
+  }
+  ({page,visiblePageSize,visibleColumnCount} = intent);
   const normalizedPage = getHomeSectionSafePage(nextSection.totalGames, visiblePageSize, page);
   const normalizedTotalPages = getHomeSectionVisibleTotalPages(nextSection.totalGames, visiblePageSize);
   const visibleGameIds = getHomeSectionVisibleGameIdsFromCache(nextSection, {
@@ -3625,6 +3667,8 @@ const loadHomeSectionPage = async (
   assertCurrentRouteRead(read);
   setHomeSection(sectionKey, {
     ...nextSection,
+    visiblePageSize,
+    visibleColumnCount,
     page: normalizedPage,
     totalPages: normalizedTotalPages,
     gameIds: visibleGameIds,
@@ -3642,6 +3686,13 @@ const syncResponsiveHomeSectionPageSizes = async () => {
     const nextVisibleColumnCount = getHomeSectionColumnCount(sectionKey);
     const nextVisiblePageSize = getHomeSectionVisiblePageSize(sectionKey);
     if (section.visiblePageSize === nextVisiblePageSize && section.visibleColumnCount === nextVisibleColumnCount) {
+      continue;
+    }
+    // Resizing must not turn an unrelated manual recovery into a new request.
+    // It must also not let that failure prevent healthy sections from rendering.
+    if(section.error){
+      setHomeSection(sectionKey,{...section,visiblePageSize:nextVisiblePageSize,visibleColumnCount:nextVisibleColumnCount});
+      updated=true;
       continue;
     }
     const anchorGameId = section.gameIds[0] ?? null;
@@ -3672,17 +3723,19 @@ const syncResponsiveHomeSectionPageSizes = async () => {
   return updated;
 };
 
-const syncHomeSections = async () => {
+const syncHomeSections = async ({onlyStale=false} = {}) => {
   const read = captureRouteRead();
+  homeFocusToRestore ??= captureHomeFocus(appEl,document);
   const visibleSectionKeys = getVisibleHomeSectionKeys();
-  await Promise.all(
+  const preservedErrors=new Set(onlyStale?visibleSectionKeys.filter(key=>getHomeSection(key).error):[]);
+  const readErrors=new Map();
+  if(!onlyStale)await Promise.all(
     visibleSectionKeys.map(async (sectionKey) => {
       const section = getHomeSection(sectionKey);
       setHomeSection(sectionKey, {
         ...section,
-        totalGames: 0,
-        totalPages: 0,
-        gameIds: [],
+        error: null,
+        refreshUnsettled: false,
         serverPage: 0,
         serverTotalPages: 0,
         serverPageGameIds: [],
@@ -3691,11 +3744,42 @@ const syncHomeSections = async () => {
         visibleColumnCount: getHomeSectionColumnCount(sectionKey),
         slideDirection: "none",
       });
-      await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
+      try {
+        await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
+      } catch (error) {
+        assertCurrentRouteRead(read);
+        readErrors.set(sectionKey,error);
+        const refreshUnsettled=error?.code==='home_list_changed';
+        setHomeSection(sectionKey,{...getHomeSection(sectionKey),error:refreshUnsettled?null:true,refreshUnsettled});
+      }
     }),
   );
   assertCurrentRouteRead(read);
-  const hiddenSectionKeys = ["my", "other", "smoke"].filter((sectionKey) => !visibleSectionKeys.includes(sectionKey));
+  const listRevision = read.owner.getHomeListRevision?.();
+  const staleSections = listRevision === undefined ? [] : visibleSectionKeys.filter(key => {
+    const section=getHomeSection(key);
+    // Initial parallel reads can exhaust their page-local freshness retry
+    // while another section is still populating the cache. Repair them once
+    // after the whole initial batch settles, retaining off-page count evidence.
+    return section.refreshUnsettled || (!section.error && section.homeListRevision !== listRevision);
+  });
+  await Promise.all(staleSections.map(async sectionKey => {
+    const section=getHomeSection(sectionKey);
+    setHomeSection(sectionKey,{...section,error:null,refreshUnsettled:false,serverPageGameIdsByPage:{}});
+    try { await loadHomeSectionPage(sectionKey,{page:section.page,direction:'none'});readErrors.delete(sectionKey); }
+    catch(error) { assertCurrentRouteRead(read);readErrors.set(sectionKey,error);setHomeSection(sectionKey,{...getHomeSection(sectionKey),error:true,refreshUnsettled:false}); }
+  }));
+  assertCurrentRouteRead(read);
+  const finalRevision = read.owner.getHomeListRevision?.();
+  if(finalRevision !== undefined)for(const key of visibleSectionKeys){
+    const section=getHomeSection(key);
+    if(!section.error && section.homeListRevision !== finalRevision){
+      setHomeSection(key,{...section,error:true});
+      readErrors.set(key,Object.assign(new Error('Your game list changed. Try again.'),{code:'home_list_changed'}));
+    }
+  }
+  lastHomeBatchRevision = finalRevision ?? null;
+  const hiddenSectionKeys = ["my", "completed", "other", "smoke"].filter((sectionKey) => !visibleSectionKeys.includes(sectionKey));
   hiddenSectionKeys.forEach((sectionKey) => {
     const section = getHomeSection(sectionKey);
     setHomeSection(sectionKey, {
@@ -3713,6 +3797,51 @@ const syncHomeSections = async () => {
       slideDirection: "none",
     });
   });
+  return {healthySettled:visibleSectionKeys.every(key=>!getHomeSection(key).error || preservedErrors.has(key)),error:readErrors.values().next().value ?? null};
+};
+const scheduleHomeListRefresh = ({onlyStale=true} = {}) => {
+  if (currentRoute.name !== 'home')return;
+  if(pendingHomeRefresh)return pendingHomeRefresh;
+  if(lastHomeBatchRevision === (transport.getHomeListRevision?.() ?? null))return;
+  const read = captureRouteRead();
+  homeFocusToRestore ??= captureHomeFocus(appEl,document);
+  let succeeded=false;
+  const work = Promise.resolve().then(async () => {
+    assertCurrentRouteRead(read);
+    const result=await syncHomeSections({onlyStale});
+    assertCurrentRouteRead(read);
+    succeeded=result?.healthySettled ?? getVisibleHomeSectionKeys().every(key=>!getHomeSection(key).error);
+  }).catch(error => { if(routeReadIsCurrent(read)) window.__righeltLastError = error.message; });
+  pendingHomeRefresh = work;
+  void work.finally(() => {
+    if(pendingHomeRefresh !== work)return;
+    pendingHomeRefresh=null;
+    if(routeReadIsCurrent(read))render({animatePanels:false,includeBoard:false});
+    if(succeeded && routeReadIsCurrent(read))scheduleHomeListRefresh({onlyStale});
+  });
+  return work;
+};
+
+// A manual page, Retry or responsive read can learn off-page membership changes.
+// Settle the existing owner first, then repair healthy stale sections once.
+const stabilizeAfterHomeRead = async read => {
+  assertCurrentRouteRead(read);
+  if(pendingHomeRefresh)await pendingHomeRefresh;
+  assertCurrentRouteRead(read);
+  await scheduleHomeListRefresh({onlyStale:true});
+  assertCurrentRouteRead(read);
+};
+
+
+const restoreHomeReadingIntent = ({patched}) => {
+  if(currentRoute.name !== 'home' || !homeFocusToRestore)return;
+  const settled=routeHydrated && !pendingHomeRefresh && getVisibleHomeSectionKeys().every(key=>!isHomeSectionPending(key));
+  if(!patched && !settled)return;
+  restoreHomeReadingPosition(appEl,homeFocusToRestore,document);
+  if(settled) {
+    if(restoreHomeFocus(appEl,homeFocusToRestore))syncAnnouncement.textContent='Your game lists were updated.';
+    homeFocusToRestore=null;
+  }
 };
 
 const scheduleResponsiveHomeSectionPageSizes = () => {
@@ -3723,10 +3852,12 @@ const scheduleResponsiveHomeSectionPageSizes = () => {
       if (currentRoute.name !== "home") {
         return;
       }
+      const read=captureRouteRead();
       const didUpdate = await syncResponsiveHomeSectionPageSizes();
       if (!didUpdate) {
         return;
       }
+      await stabilizeAfterHomeRead(read);
       syncLiveChannels();
       render({ animatePanels: false, includeBoard: false });
     })();
@@ -3877,6 +4008,9 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   brand.setHome(currentRoute.name === 'home');
   appEl.dataset.actionAffiliation = resolveActionAffiliation({game:transport.getGameViewModel(currentRoute.gameId),identityId:transport.getIdentityId()});
   const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">${renderHeader()}${body}</div>${renderFlyouts()}</div>`;
+  const didPatchContent=nextMarkup !== lastRenderedMarkup;
+  const preserveHomeReadingPosition=currentRoute.name === 'home' && Boolean(homeFocusToRestore);
+  if(preserveHomeReadingPosition)homeFocusToRestore=refreshHomeFocus(appEl,homeFocusToRestore,document);
   if (nextMarkup !== lastRenderedMarkup) {
     if (currentRoute.name !== "home" || !patchHomeAroundCreateControl(nextMarkup)) {
       const currentMain=appEl.querySelector('.shell-main-content');
@@ -3899,7 +4033,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
     lastRenderedRouteKey = routeKey;
     lastRenderedBaseRouteKey = baseRouteKey;
     lastRenderedTransitionPhaseKey = getRouteTransitionPhaseKey();
-    if (animatePanels) {
+    if (animatePanels && !preserveHomeReadingPosition) {
       animatePanelHeightChanges(previousPanelHeights);
       animateFlyoutPositionChanges(previousFlyoutRects);
     }
@@ -3915,6 +4049,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   updateHeaderFields();
   syncMountedGameShellPanelUi();
   reconcileMiniBoardPreviews();
+  restoreHomeReadingIntent({patched:didPatchContent});
   animateHomeSectionTransitions();
   syncScenarioAuthoringControls();
   if(currentRoute.name==='game' && activeResultGameId===currentRoute.gameId){destroyMountedBoardRuntime();resultPresentation.mount(appEl.querySelector('.game-result'),currentRoute.gameId);if(!hadResultView)appEl.querySelector('.game-result h1')?.focus({preventScroll:true});return;}
@@ -3998,7 +4133,10 @@ const assertCurrentRouteRead = (read, isActive = () => true) => {
 const syncRouteDataAndLiveChannels = (read = captureRouteRead()) => {
   return hydrateRoute(read, async isActive => {
     assertCurrentRouteRead(read, isActive);
-    if (read.route.name === "home") await syncHomeSections();
+    if (read.route.name === "home") {
+      const result=await syncHomeSections();
+      if(result?.error)throw result.error;
+    }
     if (read.route.name === "game") {
       resolvedInvite = null;
       await read.owner.loadGame(read.route.gameId, { openAsViewer: false });
@@ -4413,7 +4551,7 @@ const subscribeToTransport = () => transport.subscribe((change) => {
   const liveReplayGame = transport.getAuthoritativeGame(getCurrentViewedGameId());
   replayRequests.reconcile(currentReplayContext());
   replayController?.reconcile({gameId:liveReplayGame?.id,revision:liveReplayGame?.gameplayRevision,lineageHead:liveReplayGame?.moves?.filter(move=>!move.undone).at(-1)?.moveId ?? null});
-  if (change?.gameId) maybeReturnAfterUndo(change.gameId);
+  if (change?.gameId) { maybeReturnAfterUndo(change.gameId); scheduleHomeListRefresh(); }
   if (currentRoute.debug && currentRoute.gameId && !getDecisionDebugState(currentRoute.gameId).loaded && !getDecisionDebugState(currentRoute.gameId).loading) {
     const state = getDecisionDebugState(currentRoute.gameId); state.loading = true;
     void loadDebugHistory(currentRoute.gameId).catch(error => { state.error = error.message; state.loaded = true; }).finally(() => { state.loading = false; });
@@ -4472,7 +4610,8 @@ function resetAccountTransport(next) {
   destroyMountedBoardRuntime();
   clearRouteTransition({ renderNow: false });
 
-  homeSections = { my: createHomeSectionState("My games"), other: createHomeSectionState("Other games"), smoke: createHomeSectionState("Deploy smoke player") };
+  homeFocusToRestore=null;lastHomeBatchRevision=null;
+  homeSections = { my: createHomeSectionState("My games"), completed: createHomeSectionState("Your completed games"), other: createHomeSectionState("Other games"), smoke: createHomeSectionState("Deploy smoke player") };
   syncStore = makeAccountSyncStore(next);transport = syncStore;subscribeToTransport();
   if (visible) {
     for (const key of ['canRecordMove','canEndTurn','canInvite','canPlayAsBothPlayers','canUndoLastMove']) visible[key] = false;
@@ -5220,6 +5359,19 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === "home-section-retry") {
+    const sectionKey=actionEl.getAttribute('data-home-section');
+    if (!getVisibleHomeSectionKeys().includes(sectionKey) || isHomeSectionPending(sectionKey)) return;
+    const read=captureRouteRead();
+    homeFocusToRestore ??= captureHomeFocus(appEl,document);
+    pendingHomeSectionKeys.add(sectionKey);
+    render({animatePanels:false,includeBoard:false});
+    try { await loadHomeSectionPage(sectionKey);await stabilizeAfterHomeRead(read); }
+    catch (error) { if(routeReadIsCurrent(read))setHomeSection(sectionKey,{...getHomeSection(sectionKey),error:true}); }
+    finally { if(routeReadIsCurrent(read)){pendingHomeSectionKeys.delete(sectionKey);render({animatePanels:false,includeBoard:false});} }
+    return;
+  }
+
   if (action === "home-page-prev" || action === "home-page-next") {
     const sectionKey = actionEl.getAttribute("data-home-section");
     const section = getHomeSection(sectionKey);
@@ -5228,7 +5380,7 @@ appEl.addEventListener("click", async (event) => {
     }
     const delta = action === "home-page-prev" ? -1 : 1;
     const nextPage = (section.page + delta + section.totalPages) % section.totalPages;
-    const pageGeneration=account.snapshot().generation;
+    const read=captureRouteRead();
     pendingHomeSectionKeys.add(sectionKey);
     render({ animatePanels: false, includeBoard: false });
     try {
@@ -5236,11 +5388,12 @@ appEl.addEventListener("click", async (event) => {
         page: nextPage,
         direction: action === "home-page-prev" ? "prev" : "next",
       });
+      await stabilizeAfterHomeRead(read);
       syncLiveChannels();
     } catch (error) {
       window.__righeltLastError = error instanceof Error ? error.message : String(error);
     } finally {
-      if(pageGeneration!==account.snapshot().generation)return;
+      if(!routeReadIsCurrent(read))return;
       pendingHomeSectionKeys.delete(sectionKey);
       render({ animatePanels: false, includeBoard: false });
       window.requestAnimationFrame(() => {
