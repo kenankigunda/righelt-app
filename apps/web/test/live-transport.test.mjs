@@ -2275,18 +2275,45 @@ for(const retired of [false,true])test(`terminal cleanup readback preserves a co
  else {await h.change('journal_cleanup_recovered');assert.equal(h.view().storageBlocked,false);await pending;}
 });
 
-test('terminal cleanup never treats a rejected admission callback as tracked authority',{timeout:5000},async t=>{
+test('terminal cleanup preserves exact timed-out shared intent until durable reconciliation',{timeout:10000},async t=>{
  const h=await terminalCleanupStore(t,'rejected-admission'),initial=cleanupDeferred(t),callback=cleanupDeferred(t),committed=cleanupDeferred(t),readback=cleanupDeferred(t);
+ const errors=[];t.after(h.store.subscribe(change=>{if(change.type==='journal_blocked')errors.push(change.error?.code);}));
  h.hooks.remove=async(_envelope,remove,count)=>count===1?initial.promise:remove();await h.control();
  h.hooks.admit=async(_envelope,admit)=>{await admit();committed.resolve();await callback.promise;};
  const pending=h.control();await committed.promise;const uncertain=clone(h.calls.admit.at(-1));
  h.hooks.list=async(args,read)=>{const rows=await read();if(args[1]===h.game.id&&rows.some(row=>row.clientCommandId===uncertain.clientCommandId))readback.resolve();return rows;};
  initial.reject(cleanupTimeout());await h.change('journal_blocked',1,'journal_timeout');await h.advance(500);await readback.promise;
  callback.reject(cleanupTimeout());assert.equal((await pending).ok,false);
- await h.change('journal_blocked',1,'untracked_saved_command');
- assert.equal(h.view().storageBlocked,true,'an uncertain stored row still requires explicit receipt reconciliation');
- assert.equal(h.view().pendingCommandCount,0);assert.deepEqual(await h.durable.list('id-a',h.game.id),[uncertain]);
- assert.equal(h.calls.network.filter(row=>String(row.url).endsWith('/shared')).length,1,'never send an unregistered admission');
+ await h.change('journal_cleanup_recovered');
+ assert.equal(errors.includes('untracked_saved_command'),false,'only this exact captured admission is known; arbitrary saved rows remain blocked');
+ await h.advance(500);await h.change('journal_recovered');
+ await h.phase('change',1,e=>e.change.type==='authoritative_update'&&e.change.clientCommandId===uncertain.clientCommandId);
+ assert.equal(h.calls.admit.length,2,'never create or readmit the shared command');
+ const requests=h.calls.network.filter(row=>String(row.url).endsWith('/shared'));
+ assert.equal(requests.length,2);assert.deepEqual(requests[1].body,uncertain);
+ assert.equal(h.view().storageBlocked,false);assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
+});
+
+for(const variant of ['altered','stop','switch'])test(`timed-out shared cleanup preserves ${variant} safety policy`,{timeout:10000},async t=>{
+ const h=await terminalCleanupStore(t,`uncertain-${variant}`),initial=cleanupDeferred(t),callback=cleanupDeferred(t),committed=cleanupDeferred(t),readback=cleanupDeferred(t);
+ h.hooks.remove=async(_envelope,remove,count)=>count===1?initial.promise:remove();await h.control();
+ h.hooks.admit=async(_envelope,admit)=>{await admit();committed.resolve();await callback.promise;};
+ const action=variant==='altered'?'renew':variant;
+ const pending=h.store.computerControl(h.game.id,{action,deviceId:'cleanup-device',generation:1}).then(()=>true,()=>false);
+ await committed.promise;const original=clone(h.calls.admit.at(-1));
+ if(variant==='altered'){
+  await h.durable.remove(original);const altered={...clone(original),payload:{...clone(original.payload),values:{...clone(original.payload.values),deviceId:'other-device'}}};
+  altered.fingerprint=await commandFingerprint(altered);await h.durable.admit(altered);
+ }
+ h.hooks.list=async(args,read)=>{const rows=await read();if(args[1]===h.game.id&&rows.some(row=>row.clientCommandId===original.clientCommandId))readback.resolve();return rows;};
+ initial.reject(cleanupTimeout());await h.change('journal_blocked',1,'journal_timeout');await h.advance(500);await readback.promise;
+ callback.reject(cleanupTimeout());assert.equal(await pending,false);
+ if(variant==='altered')await h.change('journal_blocked',1,'untracked_saved_command');
+ else await h.change('journal_cleanup_recovered');
+ await h.advance(60000);
+ assert.equal(h.view().storageBlocked,true);assert.equal(h.view().pendingCommandCount,0);
+ assert.equal(h.calls.admit.length,2);assert.equal(h.calls.network.filter(row=>String(row.url).endsWith('/shared')).length,1);
+ assert.equal((await h.durable.list('id-a',h.game.id)).length,1,'unresolved intent is retained, never silently deleted');
 });
 
 test('terminal receipt cleanup successful initial commit does not manufacture a bulk hydration failure',{timeout:5000},async t=>{
