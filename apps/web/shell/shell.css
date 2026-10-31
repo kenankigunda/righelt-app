@@ -100,12 +100,15 @@ body {
 .shell-route-transition-layer-swipe {
   top: -10%;
   bottom: -10%;
-  left: -38%;
   width: 176%;
   inset-inline: auto;
-  background: none;
+  /* Keep the oversized ribbon centered before mirroring for back travel. */
+  left: -38%;
+  background: var(--player-p1);
+  opacity: .94;
+  clip-path: polygon(9% 0,100% 0,91% 100%,0 100%);
   box-shadow: none;
-  transform: translateX(-74%) skewX(-14deg);
+  transform: translateX(-110%);
 }
 
 .shell-route-transition-layer-swipe::before,
@@ -113,12 +116,12 @@ body {
   content: "";
   position: absolute;
   inset: 0;
-  clip-path: polygon(8% 0,55% 0,47% 100%,0 100%);
-  background: color-mix(in srgb,var(--player-p1) 24%,transparent);
+  clip-path: polygon(27% 0,42% 0,17% 100%,2% 100%);
+  background: var(--player-p1);
 }
 .shell-route-transition-layer-swipe::after {
-  clip-path: polygon(55% 0,100% 0,92% 100%,47% 100%);
-  background: color-mix(in srgb,var(--player-p2) 24%,transparent);
+  clip-path: polygon(75% 0,100% 0,100% 100%,50% 100%);
+  background: var(--player-p2);
 }
 
 .shell-route-transition-layer[data-phase="covering"] .shell-route-transition-layer-backdrop {
@@ -139,12 +142,12 @@ body {
 }
 
 .shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-swipe {
-  transform: translateX(10%) skewX(-12deg);
+  transform: translateX(0);
 }
 
 .shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-swipe::before,
 .shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-swipe::after {
-  animation: shell-held-facet-pulse 2.4s ease-in-out infinite;
+  animation: none;
 }
 @keyframes shell-held-facet-pulse { 0%,100% { opacity:.55; } 50% { opacity:1; } }
 [data-loading-hidden] .shell-route-transition-layer-swipe::before,
@@ -188,23 +191,23 @@ body {
 
 @keyframes shell-game-entry-swipe-in {
   0% {
-    opacity: 0.3;
-    transform: translateX(-74%) skewX(-14deg);
+    opacity: .94;
+    transform: translateX(-110%);
   }
   100% {
-    opacity: 0.38;
-    transform: translateX(10%) skewX(-12deg);
+    opacity: .94;
+    transform: translateX(0);
   }
 }
 
 @keyframes shell-game-entry-swipe-out {
   0% {
-    opacity: 0.38;
-    transform: translateX(10%) skewX(-12deg);
+    opacity: .94;
+    transform: translateX(0);
   }
   100% {
-    opacity: 0.18;
-    transform: translateX(84%) skewX(-10deg);
+    opacity: .94;
+    transform: translateX(110%);
   }
 }
 
@@ -2242,6 +2245,12 @@ textarea:focus-visible {
 .invite-load-status { display: grid; }
 .invite-load-status > p { grid-area: 1 / 1; }
 .invite-load-status-sizing { visibility: hidden; pointer-events: none; }
+
+/* A slow destination stays readable above its static navigation cover. */
+.destination-load-notice { position:fixed; z-index:41; top:max(20px,env(safe-area-inset-top)); left:50%; transform:translateX(-50%); width:min(480px,calc(100% - 32px)); }
+.destination-load-notice[hidden] { display:none; }
+.destination-load-notice .shell-game-alert { margin:0; }
+.destination-load-notice .shell-game-alert-actions { flex-wrap:wrap; }
 
 .history-turn { list-style:none; margin-block: .7rem; }
 .history-turn-heading { font-weight:800; padding-block:.25rem; }

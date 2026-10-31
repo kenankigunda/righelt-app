@@ -1,3 +1,5 @@
+import {createDestinationRecovery,destinationRecoveryMessage} from './destination-recovery.js';
+import { createNavigationHistory } from './navigation-history.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
@@ -64,6 +66,7 @@ import { createGameSound } from './sound.js';
 import { createModal } from './modal.js';
 import { createOpponentStoryDialog, OPPONENT_STORIES } from './opponent-stories.js';
 import { recoveryMessage, needsRecoveryAction, sharedMutationActions, isBoardRecoveryPending } from "./recovery-view.js";
+import { createForegroundRecoveryWait } from './foreground-recovery.js';
 import { renderGameAlertCard } from "./game-alert.js";
 import { createNotificationStack, recoveryActivity } from "./notification-state.js";
 import { patchNotificationTree, patchNotificationHtml, replaceMainPreservingHeader } from "./notification-dom.js";
@@ -125,7 +128,27 @@ syncAnnouncement.setAttribute("aria-live", "polite");
 syncAnnouncement.setAttribute("aria-atomic", "true");
 document.body.appendChild(syncAnnouncement);
 const quietComputerRenewal = game => Boolean(game?.id === getCurrentViewedGameId() && computerSession?.snapshot().activity?.quietRenewal);
-const presentedRecoveryMessage = game => recoveryMessage(game, Date.now(), { computerSaveActive: game?.id === getCurrentViewedGameId() && computerSession?.snapshot().phase === "saving", quietComputerRenewal: quietComputerRenewal(game) });
+const foregroundRecoveryWait = createForegroundRecoveryWait({ onChange: () => {
+  updateMountedHeader();
+  const game = currentRoute.name === 'game' ? transport.getGameViewModel(currentRoute.gameId) : null;
+  updateRecoveryAnnouncement(game);
+} });
+const recoveryPresentationOptions = game => ({
+  foregroundWaitMs: foregroundRecoveryWait.update({
+    scope: `${viewingScope()}:${currentRoute.name === 'game' ? currentRoute.gameId : ''}:${game?.recoveryEpisodeId ?? ''}`,
+    active: !document.hidden && currentRoute.name === 'game' && currentRoute.gameId === game?.id && !game?.inHistoryMode,
+    blocked: Boolean(game?.sharedMutationsBlocked && (game.recovering || game.syncStatus === 'confirming' || game.confirmationOverdue)),
+  }),
+  computerSaveActive: game?.id === getCurrentViewedGameId() && computerSession?.snapshot().phase === 'saving',
+  quietComputerRenewal: quietComputerRenewal(game),
+});
+const presentedRecoveryMessage = game => recoveryMessage(game, Date.now(), recoveryPresentationOptions(game));
+document.addEventListener('visibilitychange', () => {
+  foregroundRecoveryWait.reset();
+  updateMountedHeader();
+  updateRecoveryAnnouncement(currentRoute.name === 'game' ? transport.getGameViewModel(currentRoute.gameId) : null);
+});
+window.addEventListener('pagehide', () => foregroundRecoveryWait.reset());
 const updateRecoveryAnnouncement = (game) => {
   const failures = game ? [...new Set((transport.getFailedOperations?.(game.id) ?? []).map((operation) => operation.error?.message).filter(Boolean))] : [];
   const text = game ? [presentedRecoveryMessage(game), game.historyNotice, ...failures].filter(Boolean).join(" ") : "";
@@ -315,8 +338,7 @@ let homeSectionResizeFrame = 0;
 let activePanelSwipe = null;
 let panelTransitionResetTimer = null;
 let routeTransition = null;
-let homeReturnPosition = {y:0, gameId:null};
-let restoreHomePending = false;
+let pendingRoutePosition = null;
 window.history.scrollRestoration = 'manual';
 let routeTransitionCoverTimer = null;
 let routeTransitionRevealTimer = null;
@@ -345,10 +367,59 @@ const createHomeSectionState = (title) => ({
   slideDirection: "none",
   animationToken: 0,
 });
+let homeSectionsHydrated=false;
 let homeSections = {
   my: createHomeSectionState("My games"),
   other: createHomeSectionState("Other games"),
   smoke: createHomeSectionState("Deploy smoke player"),
+};
+const navigationHistory = createNavigationHistory({
+  history: window.history,
+  getHash: () => window.location.hash,
+  capture: () => ({ y: window.scrollY, generation: account.snapshot().generation,
+    pages: Object.fromEntries(Object.entries(homeSections).map(([key, section]) => [key, section.page])),
+    focusGameId: document.activeElement?.closest?.('.mini-board-card-link-surface')?.dataset.gameId ?? null }),
+});
+let visitScrollTimer = null;
+window.addEventListener('scroll', () => {
+  navigationHistory.remember();
+  // Safari rate-limits history mutations. Remember immediately for Back,
+  // but persist at most twice a second during continuous scrolling.
+  if (visitScrollTimer === null) visitScrollTimer = window.setTimeout(() => {
+    visitScrollTimer = null;
+    navigationHistory.save();
+  }, 500);
+}, { passive: true });
+window.addEventListener('pagehide', () => {
+  window.clearTimeout(visitScrollTimer); visitScrollTimer = null;
+  navigationHistory.save();
+});
+window.addEventListener('popstate', event => {
+  // Replacing a utility URL can leave adjacent visits with identical hashes.
+  // Those traversals dispatch popstate without a subsequent hashchange.
+  if (!navigationHistory.observePop(event.state)) return;
+  const visit = navigationHistory.arrive();
+  const saved = visit.restore?.generation === account.snapshot().generation ? visit.restore : null;
+  if (!saved) return;
+  pendingRoutePosition = { ...saved, hash: window.location.hash };
+  if (currentRoute.name === 'home' && Object.entries(saved.pages ?? {}).some(([key, page]) => homeSections[key]?.page !== page)) {
+    for (const [key, page] of Object.entries(saved.pages)) if (homeSections[key]) homeSections[key] = { ...homeSections[key], page };
+    startRouteSync();
+  } else {
+    render({ animatePanels: false, includeBoard: false });
+    restoreRoutePosition();
+  }
+});
+const restoreRoutePosition = () => {
+  const position = pendingRoutePosition;
+  if (!position || !routeHydrated || position.hash !== window.location.hash) return;
+  pendingRoutePosition = null;
+  window.scrollTo({ top: position.y ?? 0, behavior: 'instant' });
+  const target = currentRoute.name === 'home'
+    ? position.focusGameId ? appEl.querySelector(`.mini-board-card-link-surface[data-game-id="${CSS.escape(position.focusGameId)}"]`) : appEl.querySelector('.shell-header-title-link')
+    : appEl.querySelector('[data-shell-panel="board"] .board-heading, .board-heading');
+  if (target) { if (!target.matches('a, button, [tabindex]')) target.tabIndex = -1; target.focus({ preventScroll: true }); }
+  navigationHistory.save();
 };
 const getPersistedDebugFlyoutOpen = () => loadDebugFlyoutOpen(storage);
 
@@ -1005,7 +1076,7 @@ const syncRouteTransitionLayer = () => {
   routeTransitionLayerEl.style.setProperty("--shell-game-entry-transition-ms", `${GAME_ENTRY_ROUTE_TRANSITION_MS}ms`);
   routeTransitionLayerEl.style.setProperty("--shell-game-entry-cover-ms", `${GAME_ENTRY_ROUTE_TRANSITION_COVER_MS}ms`);
   routeTransitionLayerEl.style.setProperty("--shell-game-entry-reveal-ms", `${GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS}ms`);
-  routeTransitionLayerEl.dataset.direction = routeTransition?.toRoute === "home" ? "back" : "forward";
+  routeTransitionLayerEl.dataset.direction = routeTransition?.direction ?? "forward";
   routeTransitionLayerEl.setAttribute("data-active", routeTransition ? "true" : "false");
   routeTransitionLayerEl.setAttribute("data-transition", routeTransition?.type || "none");
   routeTransitionLayerEl.setAttribute("data-phase", routeTransition?.phase || "idle");
@@ -1044,6 +1115,7 @@ const beginRouteTransitionReveal = (gameId) => {
   if (!routeTransition || routeTransition.gameId !== gameId || routeTransition.phase === "revealing") {
     return;
   }
+  restoreRoutePosition();
   routeTransition.phase = "revealing";
   gameSound.play(routeTransition.toRoute === "home" ? "leave" : "enter", {duration:GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS / 1000});
   syncRouteTransitionLayer();
@@ -1051,7 +1123,9 @@ const beginRouteTransitionReveal = (gameId) => {
   if (routeTransitionRevealTimer) {
     window.clearTimeout(routeTransitionRevealTimer);
   }
+  const revealingTransition = routeTransition;
   routeTransitionRevealTimer = window.setTimeout(() => {
+    if (routeTransition !== revealingTransition) return;
     routeTransitionRevealTimer = null;
     finishRouteTransitionReveal(gameId);
   }, GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS);
@@ -1072,13 +1146,14 @@ const scheduleRouteTransitionCoverSettle = (gameId) => {
   if (routeTransitionCoverTimer) {
     window.clearTimeout(routeTransitionCoverTimer);
   }
+  const coveringTransition = routeTransition;
   routeTransitionCoverTimer = window.setTimeout(() => {
+    if (routeTransition !== coveringTransition) return;
     routeTransitionCoverTimer = null;
     settleRouteTransitionCover(gameId);
   }, GAME_ENTRY_ROUTE_TRANSITION_COVER_MS);
 };
-const startGameEntryRouteTransition = (gameId, fromRoute = currentRoute?.name || "unknown", toRoute = 'game') => {
-  if(fromRoute === 'home') homeReturnPosition={y:window.scrollY,gameId};
+const startGameEntryRouteTransition = (gameId, fromRoute = currentRoute?.name || "unknown", toRoute = 'game', direction = toRoute === 'home' ? 'back' : 'forward') => {
   if (!gameId || prefersReducedMotion()) {
     clearRouteTransition({ renderNow: false });
     return;
@@ -1089,6 +1164,7 @@ const startGameEntryRouteTransition = (gameId, fromRoute = currentRoute?.name ||
     fromRoute,
     toRoute,
     gameId,
+    direction,
     phase: "covering",
   };
   syncRouteTransitionLayer();
@@ -1114,10 +1190,7 @@ const syncRouteTransitionForCurrentRoute = () => {
   syncRouteTransitionLayer();
 };
 const maybeRevealRouteTransition = () => {
-  if(restoreHomePending && currentRoute.name === 'home' && routeHydrated){
-    restoreHomePending=false;
-    window.requestAnimationFrame(()=>{if(currentRoute.name!=='home')return;window.scrollTo({top:homeReturnPosition.y,behavior:'instant'});const target=homeReturnPosition.gameId?appEl.querySelector(`.mini-board-card-link-surface[data-game-id="${CSS.escape(homeReturnPosition.gameId)}"]`):null;(target || appEl.querySelector('[data-testid="home-create-game"]'))?.focus({preventScroll:true});});
-  }
+  restoreRoutePosition();
   if (!routeTransition || !isGameEntryRouteTransitionActive(currentRoute) || !routeHydrated) {
     return;
   }
@@ -1151,7 +1224,7 @@ const preparePanelTransition = (previous, next) => {
       const selected = transport.getGameViewModel(next.gameId)?.inHistoryMode;
       if (selected) transport.returnToLive({gameId:next.gameId});
     }
-    window.requestAnimationFrame(() => mobileNavigation?.restoreScroll(viewingIntent.scrollTop(next.gameId, getGamePanel(next))));
+    if (!pendingRoutePosition) window.requestAnimationFrame(() => mobileNavigation?.restoreScroll(viewingIntent.scrollTop(next.gameId, getGamePanel(next))));
   }
 };
 
@@ -1623,7 +1696,7 @@ const getGameAlertItems = (game) => {
   }));
 
   const message = presentedRecoveryMessage(game);
-  const recoveryNeedsAction = needsRecoveryAction(game);
+  const recoveryNeedsAction = needsRecoveryAction(game, Date.now(), recoveryPresentationOptions(game));
   for (const report of issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.key.startsWith("operation:"))) if (!failedOperations.some(op => `operation:${op.id}` === report.key)) issueDiagnostics.resolve(report.key);
   const retained = issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.resolvedAt && isDiagnosticOpen(r.id));
   for (const report of retained) items.push({ key: `resolved:${report.id}`, html: renderGameAlertCard({ body: "Resolved", incidentId: report.id, action: `<button class="secondary mini-button" data-action="dismiss-diagnostic" data-incident-id="${report.id}">${icon('close')}Dismiss</button>` }) });
@@ -2288,7 +2361,7 @@ const scrollHomeSectionToTop = (sectionKey) => {
     return;
   }
   sectionEl.scrollIntoView({
-    behavior: "smooth",
+    behavior: prefersReducedMotion() ? "instant" : "smooth",
     block: "start",
   });
 };
@@ -2298,7 +2371,7 @@ const renderHome = () => `<section class="stack home-refresh">${storageResetNoti
 
 const getHeaderAlertItems = game => {
   const scope=loadingContextScope();
-  const slow=accountStartupError?[]:slowLoadingContexts.filter(context=>context.scope===scope).map(context=>({
+  const slow=accountStartupError || destinationLoadPresentation?.blocked?[]:slowLoadingContexts.filter(context=>context.scope===scope).map(context=>({
     key:context.key,
     html:renderGameAlertCard({tone:'neutral',activity:'processing',body:`<span role="status">${escapeHtml(context.message)}</span>`,testId:'slow-loading-notice'}),
   }));
@@ -2727,7 +2800,16 @@ const patchHomeAroundCreateControl = (markup) => {
       if (child === freshHeader && retainedHeader) continue;
       if(child instanceof HTMLElement && child.matches("[data-shell-flyouts]"))continue;
       const section=child instanceof HTMLElement ? sectionNodes.get(child.dataset.homeSectionRoot) : null;
-      if(section){patchSectionContent(section,child);continue;}
+      if(section){
+        if(section.matches('[data-testid="home-section-skeleton"]') && child.matches('[data-testid="home-section-skeleton"]')){
+          // The loading controller owns this cue and animation. A retry/status
+          // render with unchanged source markup must not remount its children.
+          const comparable=section.cloneNode(true);comparable.removeAttribute('data-loading-phase');
+          comparable.querySelectorAll(':scope > .loading-pieces, :scope > .loading-context').forEach(node=>node.remove());
+          if(comparable.isEqualNode(child))continue;
+        }
+        patchSectionContent(section,child);continue;
+      }
       if (after) current.append(child.cloneNode(true)); else current.insertBefore(child.cloneNode(true), retained);
     }
   }
@@ -3043,6 +3125,7 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
 
 const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
   const game = transport.getGameViewModel(gameId);
+  if (!game && destinationLoadPresentation?.kind && destinationLoadPresentation.kind!=='retry') return '';
   if (!game && transport.isUpgradeRequired?.(gameId)) {
     return `<section class="panel" data-testid="sync-recovery-banner" role="status"><p>Righelt has an update. Refresh to keep playing.</p><button class="secondary" data-action="refresh-game">${icon('rematch')}Reload game</button><a class="secondary mini-button button-link" href="#/">${icon('home')}Home</a></section>`;
   }
@@ -3553,6 +3636,7 @@ const loadHomeSectionServerPage = async (
   {
     visiblePageSize = getHomeSectionVisiblePageSize(sectionKey),
     visibleColumnCount = getHomeSectionColumnCount(sectionKey),
+    replaceCache = false,
   } = {},
 ) => {
   const previous = getHomeSection(sectionKey);
@@ -3572,7 +3656,7 @@ const loadHomeSectionServerPage = async (
     serverPage: normalizedServerPage,
     serverTotalPages: typeof response.totalPages === "number" ? response.totalPages : 0,
     serverPageGameIds,
-    serverPageGameIdsByPage: {
+    serverPageGameIdsByPage: replaceCache ? {[normalizedServerPage]:serverPageGameIds} : {
       ...previous.serverPageGameIdsByPage,
       [normalizedServerPage]: serverPageGameIds,
     },
@@ -3677,23 +3761,13 @@ const syncHomeSections = async () => {
   await Promise.all(
     visibleSectionKeys.map(async (sectionKey) => {
       const section = getHomeSection(sectionKey);
-      setHomeSection(sectionKey, {
-        ...section,
-        totalGames: 0,
-        totalPages: 0,
-        gameIds: [],
-        serverPage: 0,
-        serverTotalPages: 0,
-        serverPageGameIds: [],
-        serverPageGameIdsByPage: {},
-        visiblePageSize: getHomeSectionVisiblePageSize(sectionKey),
-        visibleColumnCount: getHomeSectionColumnCount(sectionKey),
-        slideDirection: "none",
-      });
+      // Keep an acknowledged Home view visible until the fresh page succeeds.
+      await loadHomeSectionServerPage(sectionKey,Math.floor((section.page*getHomeSectionVisiblePageSize(sectionKey))/HOME_SECTION_SERVER_PAGE_SIZE),{replaceCache:true,visiblePageSize:getHomeSectionVisiblePageSize(sectionKey),visibleColumnCount:getHomeSectionColumnCount(sectionKey),});
       await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
     }),
   );
   assertCurrentRouteRead(read);
+  homeSectionsHydrated=true;
   const hiddenSectionKeys = ["my", "other", "smoke"].filter((sectionKey) => !visibleSectionKeys.includes(sectionKey));
   hiddenSectionKeys.forEach((sectionKey) => {
     const section = getHomeSection(sectionKey);
@@ -3733,11 +3807,12 @@ const scheduleResponsiveHomeSectionPageSizes = () => {
 };
 
 const renderGesture = createRenderGestureGate({ render: options => render(options) });
+const isShellGestureTarget=target=>appEl.contains(target) || Boolean(target?.closest?.('.destination-load-notice'));
 window.addEventListener("pointerdown", event => {
-  if (appEl.contains(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
+  if (isShellGestureTarget(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
 }, true);
 window.addEventListener("keydown", event => {
-  if (!event.repeat && (event.key === " " || event.key === "Enter") && appEl.contains(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
+  if (!event.repeat && (event.key === " " || event.key === "Enter") && isShellGestureTarget(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
 }, true);
 window.addEventListener("keyup", event => { if (event.key === " " || event.key === "Enter") renderGesture.end(); }, true);
 for (const type of ["pointerup", "pointercancel", "touchcancel", "lostpointercapture", "click"])
@@ -3763,15 +3838,23 @@ const captureScenarioDraftFocus = (baseRouteKey) => {
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (renderGesture.defer({ animatePanels, includeBoard })) return;
+  recoveryPresentationOptions(currentRoute.name === 'game' ? transport.getGameViewModel(currentRoute.gameId) : null);
+  syncDestinationNotice();
   const previousJoinFocus = document.activeElement;
+  const previousHistoryHeading = getGamePanel() === 'history' && document.activeElement?.matches?.('[data-game-panel="history"] h2') ? document.activeElement : null;
   utilityMemory.capture();
   const result = preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => renderContent({ animatePanels, includeBoard }));
   utilityMemory.restore();
+  if(destinationRestoreFocus){destinationRestoreFocus=false;const heading=appEl.querySelector('.board-heading, .shell-header-title-link');if(heading){if(!heading.matches('a,button,[tabindex]'))heading.tabIndex=-1;heading.focus({preventScroll:true});}}
   inlineProfiles.sync();
   syncMountedGameShellPanelUi();
   if (pendingResultReviewFocus === currentRoute.gameId && getGamePanel() === "history") {
     const heading = appEl.querySelector('[data-game-panel="history"] h2');
     if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }
+  }
+  if(previousHistoryHeading && document.activeElement===document.body){
+    const heading=appEl.querySelector('[data-game-panel="history"] h2');
+    if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}
   }
   joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });
   return result;
@@ -4067,20 +4150,66 @@ const canHydrateRouteFromLocalState = (route = currentRoute) => {
   return Boolean(transport.getGameViewModel(route.gameId));
 };
 
+let destinationNoticeEl=null,destinationLoadPresentation=null,destinationRestoreFocus=false;
+const destinationReadScope = read => `${read.generation}:${read.epoch}:${read.routeKey}`;
+const destinationRecovery=createDestinationRecovery({
+  onChange:()=>syncDestinationNotice(),
+  onRetry:()=>{if(!document.hidden && destinationRecovery.currentScope()===destinationReadScope(captureRouteRead()) && ['home','game'].includes(currentRoute.name))startRouteSync({renderStart:false});},
+});
+const syncDestinationNotice = () => {
+  destinationLoadPresentation=destinationRecovery.update({scope:destinationReadScope(captureRouteRead()),visible:!document.hidden});
+  const message=destinationRecoveryMessage(destinationLoadPresentation,currentRoute.name);
+  if(!message){
+    if(destinationNoticeEl){
+      const ownedFocus=destinationNoticeEl.contains(document.activeElement);
+      destinationNoticeEl.hidden=true;destinationNoticeEl.innerHTML='';
+      if(ownedFocus && routeHydrated)destinationRestoreFocus=true;
+    }
+    return;
+  }
+  if(!destinationNoticeEl){
+    destinationNoticeEl=document.createElement('div');destinationNoticeEl.className='destination-load-notice';
+    destinationNoticeEl.setAttribute('data-testid','destination-load-notice');destinationNoticeEl.setAttribute('role','status');destinationNoticeEl.setAttribute('aria-live','polite');destinationNoticeEl.setAttribute('aria-atomic','true');
+    document.body.append(destinationNoticeEl);
+    destinationNoticeEl.addEventListener('click',async event=>{
+      const action=event.target.closest('[data-destination-action]')?.dataset.destinationAction;
+      if(action==='home' && event.button===0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey){event.preventDefault();navigateTo(buildHomeHash());}
+      if(action==='retry')destinationRecovery.retry();
+      if(action==='reload')window.location.reload();
+      if(action==='signin'){await closeUtilityFlyouts();accountDialog.open('login',null,event.target);}
+    });
+  }
+  destinationNoticeEl.hidden=false;
+  const action=message.action?`<button class="secondary mini-button" data-destination-action="${message.action}">${icon(message.action==='signin'?'account':'rematch')}${message.action==='signin'?'Sign in':message.action==='reload'?'Reload':'Retry'}</button>`:'';
+  const home=message.home?`<a class="secondary mini-button button-link" data-destination-action="home" href="${escapeHtml(buildHomeHash())}">${icon('home')}Home</a>`:'';
+  const html=renderGameAlertCard({tone:'neutral',activity:'static',body:escapeHtml(message.message),action:action+home});
+  if(destinationNoticeEl.innerHTML!==html)patchToolHtml(destinationNoticeEl,html);
+};
+document.addEventListener('visibilitychange',()=>syncDestinationNotice());
+window.addEventListener('pagehide',()=>{destinationRecovery.update({scope:destinationReadScope(captureRouteRead()),visible:false});});
+window.addEventListener('pageshow',()=>syncDestinationNotice());
+window.addEventListener('online',()=>destinationRecovery.retry());
+
 const startRouteSync = ({ renderStart = true } = {}) => {
   const requestId = ++routeSyncRequestId;
   const read = captureRouteRead();
+  const destinationRead=['game','home'].includes(read.route.name);
+  const usableDestination=read.route.name==='game'?canHydrateRouteFromLocalState(read.route):read.route.name==='home' && homeSectionsHydrated;
+  if(destinationRead)destinationRecovery.begin(destinationReadScope(read),{blocked:!usableDestination});else destinationRecovery.reset();
   const retrying = read.route.name === "invite" && inviteLoadState?.status === "error" && routeReadIsCurrent(inviteLoadState.read);
   inviteLoadState = read.route.name === "invite" ? { read, requestId, status: "loading", retrying, kind: "retry" } : null;
   resolvedInvite = null;
-  routeHydrated = false;
+  routeHydrated = Boolean(usableDestination);
+  syncDestinationNotice();
   syncLiveChannels();
   if (renderStart) {
     render({ animatePanels: false, includeBoard: false });
   }
   void (async () => {
+    let succeeded=false;
     try {
       await syncRouteDataAndLiveChannels(read);
+      succeeded=true;
       if (requestId === routeSyncRequestId && routeReadIsCurrent(read)) {
         inviteLoadState = null;
         issueDiagnostics.resolve("invite-load");
@@ -4088,6 +4217,7 @@ const startRouteSync = ({ renderStart = true } = {}) => {
     } catch (error) {
       if (requestId !== routeSyncRequestId || !routeReadIsCurrent(read)) return;
       window.__righeltLastError = error instanceof Error ? error.message : String(error);
+      if(destinationRead)destinationRecovery.fail(destinationReadScope(read),error);
       if (read.route.name === "invite" && error?.code !== "upgrade_required") {
         resolvedInvite = null;
         inviteLoadState = { read, requestId, status: "error", retrying: false, kind: invitationLoadFailureKind(error) };
@@ -4095,16 +4225,24 @@ const startRouteSync = ({ renderStart = true } = {}) => {
       } else inviteLoadState = null;
     } finally {
       if (requestId !== routeSyncRequestId || !routeReadIsCurrent(read)) return;
-      routeHydrated = true;
+      routeHydrated = !destinationRead || succeeded || Boolean(usableDestination);
+      if(destinationRead && succeeded)destinationRecovery.reset();
       render({ animatePanels: false, includeBoard: false });
+      if(destinationRead && !succeeded && !usableDestination){
+        syncLiveChannels();
+        if(read.route.name==='game' && destinationLoadPresentation?.kind && destinationLoadPresentation.kind!=='retry')read.owner?.setConnectionRecovering?.(read.route.gameId,false);
+      }
       maybeRevealRouteTransition();
     }
   })();
 };
 
 const syncRouteDataPassive = async () => {
+  const read=captureRouteRead();
   try {
-    await syncRouteDataAndLiveChannels();
+    await syncRouteDataAndLiveChannels(read);
+    if(!routeReadIsCurrent(read))return;
+    destinationRecovery.reset();
     routeHydrated = true;
     render({ animatePanels: false, includeBoard: false });
     maybeRevealRouteTransition();
@@ -4465,12 +4603,14 @@ function resetAccountTransport(next) {
   const gameId = getCurrentViewedGameId();
   const visible = gameId && !storageChanged ? transport.getAuthoritativeGame?.(gameId) : null;
   routeSyncRequestId++;
+  destinationRecovery.reset();
   pendingButtonKeys.clear();pendingHomeSectionKeys.clear();inviteChoiceCommittedByGameId.clear();ignoredApprovalRequests.clear();ignoredRevertRequests.clear();
   consumedInitialSelectionActionKeyByGameId.clear();
   transport.retire?.();
   destroyMountedBoardRuntime();
   clearRouteTransition({ renderNow: false });
 
+  homeSectionsHydrated=false;
   homeSections = { my: createHomeSectionState("My games"), other: createHomeSectionState("Other games"), smoke: createHomeSectionState("Deploy smoke player") };
   syncStore = makeAccountSyncStore(next);transport = syncStore;subscribeToTransport();
   if (visible) {
@@ -4482,20 +4622,22 @@ function resetAccountTransport(next) {
   queueMicrotask(() => { if (account.snapshot().ready) startRouteSync(); });
 }
 const syncLiveChannels = () => {
+  const terminalColdRead=currentRoute.name==='game' && !transport.getGameViewModel(currentRoute.gameId) && destinationLoadPresentation?.kind && destinationLoadPresentation.kind!=='retry';
   const routeGameId =
-    shouldLiveSyncRoute(currentRoute) &&
+    !terminalColdRead && shouldLiveSyncRoute(currentRoute) &&
     (currentRoute.name === "game"
       ? currentRoute.gameId
       : currentRoute.name === "invite"
         ? resolvedInvite?.gameId || null
         : null);
-  syncStore.setActiveGameId(routeGameId);
+  syncStore.setActiveGameId(routeGameId || null);
   if (!routeGameId) {
     resetRouteWsStatus();
   }
 };
 
 const navigateTo = (hash) => {
+  navigationHistory.save();
   clearAccountContinuation();
   const parsedRoute = parseRouteFromHash(hash);
   const preferredFlyoutKey = FLYOUT_KEYS.find((key) => parsedRoute[key] && !currentRoute[key]) ?? null;
@@ -4526,8 +4668,17 @@ window.addEventListener("hashchange", () => {
   joinFeedback.clear();
   clearAccountContinuation();
   const previousRoute = currentRoute;
+  const visit = navigationHistory.arrive();
+  const saved = visit.restore?.generation === account.snapshot().generation ? visit.restore : null;
+  const incoming = parseRouteFromHash(window.location.hash);
+  const changedPage = incoming.name !== previousRoute.name || incoming.gameId !== previousRoute.gameId;
+  pendingRoutePosition = saved ? { ...saved, hash: window.location.hash }
+    : changedPage ? { y: 0, hash: window.location.hash } : null;
+  if (saved && incoming.name === 'home') for (const [key, page] of Object.entries(saved.pages ?? {})) {
+    if (homeSections[key]) homeSections[key] = { ...homeSections[key], page };
+  }
   closeHeaderMenu();
-  const parsedRoute = parseRouteFromHash(window.location.hash);
+  const parsedRoute = incoming;
   if(parsedRoute.name!=='game' || parsedRoute.gameId!==currentRoute.gameId)gameSound.leaveGame();
   if(hostInvite && (parsedRoute.name!=='game' || parsedRoute.gameId!==hostInvite.gameId)){hostInvite=null;inviteVisit++;}
   inlineProfiles.close();
@@ -4536,13 +4687,13 @@ window.addEventListener("hashchange", () => {
   const enteringRoute = normalizeRouteFlyoutState(parsedRoute);
   preparePanelTransition(previousRoute, enteringRoute);
   currentRoute = enteringRoute;
-  if(previousRoute.name !== 'game' && currentRoute.name === 'game' && !routeTransition)gameSound.play('enter');
+  if(previousRoute.name !== 'game' && currentRoute.name === 'game' && !routeTransition && (previousRoute.name !== 'home' || prefersReducedMotion()))gameSound.play('enter');
   else if(previousRoute.name === 'game' && currentRoute.name !== 'game' && (currentRoute.name !== 'home' || prefersReducedMotion()))gameSound.play('leave');
   if(previousRoute.name === 'game' && currentRoute.name === 'home') {
-    gameSound.cancelPreview();restoreHomePending=true;
-    startGameEntryRouteTransition(previousRoute.gameId,'game','home');
+    gameSound.cancelPreview();
+    startGameEntryRouteTransition(previousRoute.gameId,'game','home', visit.direction ?? 'back');
   } else if(previousRoute.name === 'home' && currentRoute.name === 'game') {
-    window.scrollTo({top:0,behavior:'instant'});
+    if (!routeTransition || routeTransition.toRoute !== 'game' || routeTransition.gameId !== currentRoute.gameId) startGameEntryRouteTransition(currentRoute.gameId, 'home', 'game', visit.direction ?? 'forward');
   }
   syncRouteTransitionForCurrentRoute();
   // Observe before normalization or cached fast paths can skip hydration.
@@ -4550,8 +4701,8 @@ window.addEventListener("hashchange", () => {
   const routeReadChanged = captureRouteRead().epoch !== previousRouteEpoch;
   const normalizedHash = buildHashForRoute(currentRoute);
   if (window.location.hash !== normalizedHash) {
-    window.location.hash = normalizedHash;
-    return;
+    navigationHistory.replaceHash(normalizedHash);
+    if (pendingRoutePosition) pendingRoutePosition.hash = normalizedHash;
   }
   syncFlyoutRenderOrder(currentRoute);
   if (canHydrateRouteFromLocalState(currentRoute)) {
@@ -4579,7 +4730,7 @@ window.addEventListener("resize", () => {
     previousLayoutMode = layout;
     if (layout === 'narrow' && currentRoute.name === 'game' && transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode) {
       currentRoute = {...currentRoute,panel:'history'};
-      window.history.replaceState(null,'',buildHashForRoute(currentRoute));
+      navigationHistory.replaceHash(buildHashForRoute(currentRoute));
     }
     render({animatePanels:false});
   }
@@ -4587,7 +4738,7 @@ window.addEventListener("resize", () => {
   if (FLYOUT_KEYS.some(key => Boolean(normalized[key]) !== Boolean(currentRoute[key]))) {
     currentRoute = normalized;
     saveDebugFlyoutOpen(storage, Boolean(currentRoute.debug));
-    window.history.replaceState(null, "", buildHashForRoute(currentRoute));
+    navigationHistory.replaceHash(buildHashForRoute(currentRoute));
     render({ animatePanels: false, includeBoard: false });
   }
   scheduleGameShellStickyLayout();
@@ -4644,7 +4795,7 @@ const closeUtilityFlyouts = () => utilityCloseFlight ||= (async () => {
   saveDebugFlyoutOpen(storage, false);
   currentRoute = {...currentRoute, debug:false, scenarios:false};
   flyoutRenderOrder = [];
-  window.history.replaceState(null, '', buildHashForRoute(currentRoute));
+  navigationHistory.replaceHash(buildHashForRoute(currentRoute));
   render({animatePanels:false,includeBoard:false});
 })().finally(() => { utilityCloseFlight = null; });
 // Passive page space dismisses utilities. Links, buttons, form fields, board
@@ -4662,6 +4813,16 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  const routeLink = target.closest('a[href^="#/"]');
+  if (routeLink && event.button === 0 && !event.defaultPrevented && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+    navigationHistory.save();
+    if (routeLink.dataset.flyoutLink === 'home' && currentRoute.name === 'home') {
+      event.preventDefault();
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      navigationHistory.save();
+      return;
+    }
+  }
   const gameLinkEl = target.closest(".mini-board-card-link-surface[data-game-id]");
   if (
     gameLinkEl instanceof HTMLAnchorElement &&
@@ -4675,6 +4836,9 @@ appEl.addEventListener("click", async (event) => {
   ) {
     const gameId = gameLinkEl.getAttribute("data-game-id");
     if (gameId) {
+      // Safari pointer activation need not focus links. Capture the actual
+      // origin explicitly rather than inferring it from activeElement.
+      navigationHistory.save({ focusGameId: gameId });
       startGameEntryRouteTransition(gameId, "home");
     }
   }
@@ -5088,7 +5252,7 @@ appEl.addEventListener("click", async (event) => {
   }
   if (action === "dismiss-recovery-notice") {
     const gameId = actionEl.getAttribute("data-game-id");
-    dismissedRecoveryNotices.set(gameId, recoveryMessage(transport.getGameViewModel(gameId)));
+    dismissedRecoveryNotices.set(gameId, presentedRecoveryMessage(transport.getGameViewModel(gameId)));
     render({ animatePanels: false, includeBoard: false });
     document.querySelector('[data-action="return-live"], [data-action="open-history"], .shell-logo, a[href="#/"]')?.focus({ preventScroll: true });
     return;
@@ -5244,6 +5408,7 @@ appEl.addEventListener("click", async (event) => {
       render({ animatePanels: false, includeBoard: false });
       window.requestAnimationFrame(() => {
         scrollHomeSectionToTop(sectionKey);
+        navigationHistory.save();
       });
     }
     return;

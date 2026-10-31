@@ -8,8 +8,8 @@
 @keyframes righelt-edge-cut {from {stroke-dashoffset:var(--edge-offset);}to {stroke-dashoffset:calc(var(--edge-offset) - 1000px);}}
 [data-loading-hidden] .loading-edge-frame polygon {animation-play-state:paused;}
 @media(prefers-reduced-motion:reduce){.loading-edge-frame polygon {animation:none;stroke-dashoffset:var(--edge-offset);}}
-/* Retain the route timing contract while replacing its old full-content wash. */
-.shell-route-transition-layer-backdrop,.shell-route-transition-layer-swipe {display:none;}
+/* The dense ribbon owns route motion; do not add a separate content wash. */
+.shell-route-transition-layer-backdrop {display:none;}
 #app[data-shell-transition-active="true"][data-shell-transition="game-entry"][data-shell-transition-phase="revealing"][data-shell-route="game"] :is(.shell-main-content,.game-shell-frame,.layout-grid,.invite-gate) {animation:none;}
 .board-wrap[data-reconnecting="true"]:is([data-loading-phase="visible"],[data-loading-phase="slow"]) > :is(.board,.overlay-lines) {opacity:1;}
 .board-wrap[data-reconnecting="true"] .reconnect-background {display:none!important;}
