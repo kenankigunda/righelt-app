@@ -269,9 +269,13 @@ test.describe('narrow board and history',()=>{
       await expect(page.getByTestId('game-loading-shell')).toBeVisible();
       const silhouette=page.locator('.loading-board-silhouette');await expect(silhouette).toBeVisible();
       await page.evaluate(()=>document.fonts.ready);
-      const loading=await documentGeometry(silhouette);
-      const loadingHeading=await documentGeometry(page.locator('[data-shell-panel="board"] .board-heading:not([aria-hidden])'));
+      // Read the current board and heading atomically. A font-driven render can
+      // detach a locator-resolved silhouette before its callback reads geometry.
       const loadingReceipt=await coldBoardLayoutReceipt(page);
+      expect(loadingReceipt.board?.className).toContain('loading-board-silhouette');
+      const loading=loadingReceipt.board.documentRect;
+      const loadingHeading=loadingReceipt.heading.documentRect;
+      expect(loading.width).toBeGreaterThan(0);expect(loading.height).toBeGreaterThan(0);
       const loadingReceiptPath=info.outputPath('cold-board-loading-layout.json');
       await writeFile(loadingReceiptPath,JSON.stringify({width,textScale,loading,loadingHeading,layout:loadingReceipt},null,2));
       await info.attach('cold-board-loading-layout',{path:loadingReceiptPath,contentType:'application/json'});
