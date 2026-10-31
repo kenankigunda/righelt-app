@@ -52,7 +52,7 @@ export function patchBoardMessage(element, html) {
         // an otherwise identical message refresh into a detached click target.
         const inlineAction=node.matches?.('button[data-board-message-action],button[data-board-preview-action]');
         const value=attr.name==='class'&&inlineAction
-          ? attr.value.split(/\s+/).filter(name=>name!=='is-pressing'&&name!=='is-releasing').join(' ')
+          ? attr.value.split(/\s+/).filter(name=>name!=='is-pressing'&&name!=='is-releasing'&&name!=='button-release-bounce').join(' ')
           : attr.value;
         return `${attr.name}=${value}`;
       }).sort().join('|');
