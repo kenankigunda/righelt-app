@@ -1168,6 +1168,7 @@ for(const computer of [false,true])for(const reason of ['computer_control_change
  const proof={deviceId:crypto.randomUUID(),generation:1,modelId:'initial-1554',profile:'babs',profileVersion:'experimental-v1',seed:1,attemptId:crypto.randomUUID()};
  await store.applyGameAction({gameId:game.id,state:game.board.state,action:game.legalActions[0],...(computer?{computer:proof}:{})});
  const change=await rollback;
+ assert.equal(change.computer,computer);
  assert.equal(Boolean(change.failureNotice),!(computer&&['computer_control_changed','stale_state'].includes(reason)));
  assert.equal(store.getCommandOutcome(game.id,sent.clientCommandId).reason,reason);
  assert.deepEqual(store.getGameViewModel(game.id).currentSnapshot,game.board.state);

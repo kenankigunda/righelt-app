@@ -1,5 +1,8 @@
 const interventionCodes=new Set(['invalid_credentials','session_changed','upgrade_required','storage_reset','storage_blocked','invalid_response','invalid_attempt','attempt_id_conflict','computer_owner_required','invalid_device']);
 export const computerInterventionRequired = error => interventionCodes.has(error?.code);
+// Presentation only, after a validated terminal rejection; never authorizes a new command.
+export const isObsoleteComputerRejection = (computer,reason) => Boolean(computer) && ['computer_control_changed','stale_state'].includes(reason);
+
 
 // Only failures known to precede gameplay admission may use this policy.
 // Durable gameplay commands retain their journal's exclusive retry owner.
