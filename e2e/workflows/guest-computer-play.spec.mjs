@@ -89,6 +89,11 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   // The ownership helper closes even partially completed context creation.
   test.afterAll(async () => {await owned?.close();});
   test(`guest computer prepares and replays a real turn at ${width}px`, async ({}, info) => {
+  // Observe both delivery channels: an accepted socket receipt may cancel HTTP.
+  const renewals=new Map(),renewalReceipts=new Map();
+  page.on('request',request=>{if(isOperationRequest(request,'computer-control')&&operationValues(request)?.action==='renew'){const command=request.postDataJSON();renewals.set(command.clientCommandId,command);}});
+  page.on('response',async response=>{if(response.status()!==200||!isOperationRequest(response.request(),'computer-control'))return;try{const body=await response.json();for(const outcome of body.commandOutcomes??[])if(outcome.outcome==='accepted')renewalReceipts.set(outcome.clientCommandId,outcome);}catch{/* A native socket receipt can cancel the HTTP body. */}});
+  page.on('websocket',socket=>socket.on('framereceived',frame=>{try{const body=JSON.parse(String(frame.payload));if(body.commandOutcome?.outcome==='accepted')renewalReceipts.set(body.commandOutcome.clientCommandId,body.commandOutcome);}catch{/* Non-JSON frames do not contain command receipts. */}}));
   await page.setViewportSize({width,height:900});
   await page.goto('/');
   expect((await (await page.request.get('/api/shell/bootstrap')).json()).accountsRequired).toBe(false);
@@ -118,9 +123,9 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   // Start the single confirmation inside a fresh acknowledged authority episode,
   // rather than letting a periodic renewal fence a slow native click mid-flight.
   // The held-renewal workflow separately proves disabled/no-queue semantics.
-  const renewed=await page.waitForResponse(response=>response.status()===200&&isOperationRequest(response.request(),'computer-control')&&operationValues(response.request())?.action==='renew'&&new URL(response.url()).pathname.includes(`/games/${initial.id}/`));
-  const renewal=renewed.request().postDataJSON(),receipt=await renewed.json();
-  expect(receipt.commandOutcomes.some(outcome=>outcome.clientCommandId===renewal.clientCommandId&&outcome.outcome==='accepted')).toBe(true);
+  const previousRenewals=new Set(renewals.keys());
+  let renewal,receipt;
+  await expect.poll(()=>{for(const [id,command] of renewals)if(!previousRenewals.has(id)&&command.gameId===initial.id&&renewalReceipts.has(id)){renewal=command;receipt=renewalReceipts.get(id);return true;}return false;},{timeout:15000,message:'A new native renewal must receive an accepted authoritative receipt'}).toBe(true);
   await expect.poll(()=>page.evaluate(envelope=>new Promise((resolve,reject)=>{
     const open=indexedDB.open('righelt.online-commands.v2');open.onerror=()=>reject(open.error);
     open.onsuccess=()=>{const db=open.result,read=db.transaction('commands').objectStore('commands').get([envelope.identityId,envelope.gameId,envelope.clientCommandId]);read.onerror=()=>{db.close();reject(read.error);};read.onsuccess=()=>{db.close();resolve(read.result??null);};};
