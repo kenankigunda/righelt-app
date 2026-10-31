@@ -142,6 +142,7 @@ For the current board implementation:
   - Presence indicators and participant roster UX.
   - History panel container and `Return to live` controls.
   - Home list/preview board placement and routing.
+  - Home pagination keeps both arrows and its page label on one line without document overflow, including enlarged text and page zoom. Arrow targets remain at least 44 CSS pixels and label text is not reduced. At exceptionally narrow card content widths, the visible label may omit “Page” and use card inset space; assistive technology retains the full “Page X of Y” text.
   - Tutorial trigger policy and completion bookkeeping.
 - Board owns:
   - Rule legality and board-state transitions.

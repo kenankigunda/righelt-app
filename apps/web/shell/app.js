@@ -2233,7 +2233,7 @@ const renderHomeSectionControls = (sectionKey, section, { placement } = { placem
     data-home-section="${escapeHtml(sectionKey)}"
     aria-label="Previous ${escapeHtml(section.title)} page"
   >${icon('left')}</button>
-  <p class="small home-games-section-page-label">Page ${section.page + 1} of ${section.totalPages}</p>
+  <p class="small home-games-section-page-label"><span class="sr-only">Page ${section.page + 1} of ${section.totalPages}</span><span class="home-page-label-full" aria-hidden="true">Page ${section.page + 1} of ${section.totalPages}</span><span class="home-page-label-compact" aria-hidden="true">${section.page + 1} of ${section.totalPages}</span></p>
   <button
     ${renderPendingStateAttributes({ className: "secondary", pending: isHomeSectionPending(sectionKey) })}
     data-action="home-page-next"
