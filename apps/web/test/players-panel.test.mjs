@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {renderPlayersPanel} from '../shell/players-panel.js';
+import {renderPlayersPanel,renderViewersPanel} from '../shell/players-panel.js';
 const game={id:'game',myRole:'Player 1',player1:{identityId:'me'},player2:{identityId:'other',profile:{displayName:'Ada',username:'ada'}},viewers:[]};
 test('seat emblems replace numbered seat labels and identity remains a profile action',()=>{
  const html=renderPlayersPanel(game,{identityId:'me'});
  assert.match(html,/<bdi>You<\/bdi>/);assert.match(html,/<bdi>Ada<\/bdi>/);
  assert.match(html,/aria-label="You, Red, Disconnected"/);assert.match(html,/data-player-side="p2"/);
- assert.match(html,/No viewers/);assert.doesNotMatch(html,/Player [12]|Guest player/);
+ assert.doesNotMatch(html,/Viewers|No viewers/);assert.doesNotMatch(html,/Player [12]|Guest player/);
  assert.match(html,/data-username="ada"/);
 });
 test('anonymous self play disambiguates both guests while computers retain their identity',()=>{
@@ -16,18 +16,20 @@ test('anonymous self play disambiguates both guests while computers retain their
  const html=renderPlayersPanel({...self,player2:{identityId:'me',computerProfile:'horus'}},{identityId:'me'});
  assert.match(html,/Horus/);assert.match(html,/aria-label="Horus, Blue, Needs attention"/);assert.match(html,/player-kind-icon" title="Computer"/);assert.match(html,/data-action="toggle-computer-card"/);
 });
-test('viewer summary expands the full ordered profile list with stable keys',()=>{
+test('viewer section has static empty and singular identities, with native disclosure only for two or more',()=>{
+ const empty=renderViewersPanel(game,{icon:kind=>`<svg data-icon="${kind}"></svg>`});
+ assert.match(empty,/<h3 tabindex="-1">Viewers<\/h3>/);assert.match(empty,/>None<\/span>/);assert.match(empty,/data-icon="players"/);assert.doesNotMatch(empty,/<details|account-none/);
+ const one=renderViewersPanel({...game,viewers:[game.player2]});assert.match(one,/data-testid="participant-viewer"/);assert.match(one,/>Ada<\/bdi>/);assert.doesNotMatch(one,/<details|<summary/);
  const view={...game,viewers:[{identityId:'b',profile:{username:'bo'}},{identityId:'me'},{identityId:'guest'}]};
- const collapsed=renderPlayersPanel(view,{identityId:'me'});
- assert.match(collapsed,/aria-label="Viewers: You, bo, and 1 guest"/);assert.match(collapsed,/aria-expanded="false"/);assert.match(collapsed,/id="viewers-game" hidden/);
- assert.doesNotMatch(collapsed,/data-testid="participant-viewer"/);
- const expanded=renderPlayersPanel(view,{identityId:'me',expanded:true});
+ const collapsed=renderViewersPanel(view,{identityId:'me'});
+ assert.match(collapsed,/<details[^>]+data-viewer-disclosure/);assert.match(collapsed,/<summary data-action="viewer-disclosure">/);assert.match(collapsed,/You, bo and 1 other/);assert.doesNotMatch(collapsed,/<details[^>]+ open/);
+ const expanded=renderViewersPanel(view,{identityId:'me',expanded:true});
  assert.equal((expanded.match(/data-testid="participant-viewer"/g)||[]).length,3);
- assert.match(expanded,/data-profile-key="viewer:me"/);assert.match(expanded,/aria-expanded="true"/);
+ assert.match(expanded,/data-profile-key="viewer:me"/);assert.match(expanded,/<details[^>]+ open/);assert.match(expanded,/>3 viewers<\/span>/);
 });
 test('vacant seats keep invitation status and malicious names cannot inject markup',()=>{
  const html=renderPlayersPanel({...game,player2:null,player1:{identityId:'other',profile:{displayName:'<script>',username:'a'}},viewers:[{profile:{displayName:'<img>',username:'b'}}]},{pendingSeat:'blue'});
- assert.match(html,/Awaiting player/);assert.match(html,/&lt;script&gt;/);assert.match(html,/&lt;img&gt;/);assert.doesNotMatch(html,/<script>|<img>/);
+ assert.match(html,/Awaiting player/);assert.match(html,/&lt;script&gt;/);assert.match(renderViewersPanel({...game,viewers:[{profile:{displayName:'<img>',username:'b'}}]}),/&lt;img&gt;/);assert.doesNotMatch(html,/<script>|<img>/);
 });
 
 test('computer rows expose local activity and an immediate deliberate recovery action',()=>{

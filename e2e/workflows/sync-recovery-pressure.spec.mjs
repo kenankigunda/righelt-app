@@ -397,8 +397,10 @@ test('E07 cold invitation keeps upgrade recovery tied to its resolved game', asy
  await evidence(info,'invite-upgrade-refresh',start,[fault]);
 });
 
-test('I10 browser reconnect transfers one current snapshot after205 moves and30 duplicate submissions',async({page},info)=>{
- test.skip(info.project.name!=='chromium');test.setTimeout(120000);
+// The reconnect assertion needs a real long-history position, not a budget
+// already consumed by 205 sequential durable setup writes on a loaded runner.
+const longHistoryTest=test.extend({longHistoryGame:[async({page},use,info)=>{
+ if(info.project.name!=='chromium'){await use(null);return;}
  const {gameId}=await createGameFromHome(page);
  await page.getByRole('button',{name:'Play both sides',exact:true}).click();
  await expect(page.getByRole('button',{name:'Play both sides',exact:true})).toHaveCount(0);
@@ -413,14 +415,21 @@ test('I10 browser reconnect transfers one current snapshot after205 moves and30 
    if(current.commandOutcomes?.[0]?.outcome!=='accepted')throw new Error(JSON.stringify(current));
    if(i<30)duplicates.push(command);
   }
-  for(const command of duplicates){const body=await(await fetch(`/api/shell/games/${gameId}/moves`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(command)})).json();if(!body.duplicate)throw new Error('duplicate lost');}
   return {duplicates};
  },gameId);
+ await use({gameId,duplicates:result.duplicates});
+},{timeout:120000}]});
+longHistoryTest('I10 browser reconnect transfers one current snapshot after205 moves and30 duplicate submissions',async({page,longHistoryGame},info)=>{
+ longHistoryTest.skip(info.project.name!=='chromium');longHistoryTest.setTimeout(120000);
+ const {gameId,duplicates}=longHistoryGame;expect(duplicates).toHaveLength(30);
+ await page.evaluate(async({gameId,duplicates})=>{
+  for(const command of duplicates){const body=await(await fetch(`/api/shell/games/${gameId}/moves`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(command)})).json();if(!body.duplicate)throw new Error('duplicate lost');}
+ },{gameId,duplicates});
  const fault=await wire(page);const start=Date.now();await page.reload();await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
  await page.waitForTimeout(5500);
  // Initial socket owns current state; reconciliation acknowledges unchanged revision.
  expect(fault.snapshots).toBe(1);
- await evidence(info,'long-history',start,[fault],{moves:205,duplicateSubmissions:result.duplicates.length});
+ await evidence(info,'long-history',start,[fault],{moves:205,duplicateSubmissions:duplicates.length});
 });
 
 test('E05 home reload recovers unopened journal games and retains pending card',async({browser,baseURL},info)=>{

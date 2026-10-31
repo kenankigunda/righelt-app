@@ -1,0 +1,26 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Players and viewers</title><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css">
+<style>body{margin:0;padding:0}#app{width:100%!important;box-sizing:border-box;padding:12px}#host{width:320px;max-width:100%;box-sizing:border-box;margin:0 auto}.outside-control{min-height:44px}</style></head>
+<body><div id="app" data-shell-route="game"><main id="host" class="panel"></main><button class="outside-control">Other control</button></div>
+<script type="module">
+import {renderPlayersPanel,renderViewersPanel} from '/apps/web/shell/players-panel.js';
+import {patchViewerSection,recordViewerDisclosure,recordViewerDisclosureClick} from '/apps/web/shell/viewer-disclosure.js';
+import {icon} from '/apps/web/shell/ui.js';
+import {mountLoadingFeedback} from '/apps/web/shell/loading.js';
+mountLoadingFeedback(document);
+const expanded=new Set();let game;
+document.addEventListener('click',event=>recordViewerDisclosureClick(event,expanded),true);
+document.addEventListener('toggle',event=>recordViewerDisclosure(event,expanded),true);
+const viewers=count=>Array.from({length:count},(_,index)=>({identityId:`v${index}`,connected:index!==1,profile:{displayName:index===0?'Amara Nwosu-Alexander':index===1?'Jules':`Viewer ${index+1}`,username:`viewer${index}`}}));
+const options=()=>({identityId:'owner',expanded:expanded.has(game.id),icon,formatStatus:connected=>`<span class="connection-status-icon ${connected?'is-connected':'is-disconnected'}" role="img" aria-label="${connected?'Connected':'Disconnected'}"></span>`,after:'<div class="players-section-actions"><button data-loading-key="viewer-invite" class="invite-action invite-viewer">'+icon('invite')+'Invite someone to view</button></div>'});
+const renderAudience=()=>renderViewersPanel(game,options());
+window.viewerFixture={
+ show(count,kind='open',id='g'){
+  if(game?.id!==id)expanded.clear();
+  game={id,viewers:viewers(count),player1:{identityId:'owner',connected:true},player2:kind==='open'?null:{identityId:kind==='guests'?'guest':'other',computerProfile:kind==='bot'||kind==='finished'?'babs':null}};
+  document.querySelector('#host').innerHTML='<h2>Players</h2>'+renderPlayersPanel(game,{...options(),computerActivity:kind==='finished'?{state:'finished',label:'Game finished',showResume:false}:undefined})+(kind==='open'?'<div class="players-section-actions"><button data-loading-key="player-invite" class="invite-action invite-blue">'+icon('invite')+'Invite someone to play</button></div>':'')+renderAudience();
+ },
+ refresh(count,{disabledInvite=false}={}){game={...game,viewers:viewers(count)};const html=renderAudience();patchViewerSection(document.querySelector('[data-testid="viewers-section"]'),disabledInvite?html.replace('<button data-loading-key="viewer-invite"','<button disabled data-loading-key="viewer-invite"'):html);},
+};
+window.viewerFixture.show(0);window.fixtureReady=true;
+</script></body></html>
