@@ -602,3 +602,27 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .player-kind-icon {display:inline-flex;align-items:center;color:var(--muted);}
 .player-kind-icon .righelt-icon {width:14px;height:14px;}
 .history-result-summary {margin:0 0 var(--section-item-gap,12px);}
+
+/* Players and audience share one surface, with natural page scrolling. */
+.viewers-section {margin-top:var(--section-group-gap,24px);}
+.viewers-section h3 {font-size:1.125rem;line-height:1.4;margin:0 0 var(--section-item-gap,12px);}
+.viewer-empty {display:flex;align-items:center;gap:var(--identity-gap,8px);margin:0 0 16px;}
+.viewer-empty > svg {color:var(--muted);opacity:.65;flex:none;}
+.viewer-roster {margin:0 0 16px;padding:0;list-style:none;}
+.viewer-roster > li {display:flex;min-width:0;padding:8px 0;}
+.viewer-audience {margin:0 0 16px;}
+.viewer-audience > summary {min-height:44px;padding:10px 0;box-sizing:border-box;cursor:pointer;font-weight:600;overflow-wrap:anywhere;}
+.viewer-audience > summary:focus-visible {outline:2px solid var(--ink);outline-offset:3px;}
+.viewer-audience-expanded,.viewer-audience[open] .viewer-audience-compact {display:none;}
+.viewer-audience[open] .viewer-audience-expanded {display:inline;}
+.viewer-audience .viewer-roster {margin-top:8px;}
+.players-section-actions:empty {display:none;}
+.players-section-actions .section-actions {margin-top:0;}
+#app .players-section-actions button.invite-action {color:var(--ink);border-color:var(--divider);background:transparent;min-height:44px;}
+.players-section-actions .invite-action .righelt-icon {color:var(--player-p2);}
+.players-section-actions .invite-viewer .righelt-icon {color:#7048a5;}
+
+.players-section-actions .invite-red .righelt-icon {color:var(--player-p1);}
+#app .players-section-actions button.invite-action:hover {color:var(--ink);}
+
+.viewer-roster button.participant-profile,.perspective-participants button.participant-profile {min-height:44px;}

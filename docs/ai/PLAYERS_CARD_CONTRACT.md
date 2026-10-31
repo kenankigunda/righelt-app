@@ -1,13 +1,23 @@
-# Players card integration checkpoint
+# Players card contract
 
-This checkpoint provides shared presentation modules. App wiring and final browser/release proof remain in the broader UX follow-on. It is not a merge or deployment readiness claim.
+The Players card contains two player rows and permitted player invitations, followed by a smaller `h3` Viewers subtitle. The subtitle has no count. Viewer invitations follow the audience and its expanded roster. Preserve the existing invitation, join, approval, pending and permission checks. Completed games show viewing controls, without invitations or controls to play.
 
-`renderPlayersPanel(game, options)` renders the two seats and viewer disclosure. Options include the captured `identityId`, `expanded`, `pendingSeat`, `icon` and `formatStatus`. The host owns expansion state per game and handles `toggle-viewers`, rerendering without replacing the board. `participantButton` retains the existing public/guest profile actions and stable keys.
+`renderPlayersPanel(game, options)` renders the two player rows. `renderViewersPanel(game, options)` renders the Viewers section, including an optional trailing action area. Both retain the captured identity, public profile actions, presence labels and stable identity keys.
 
-Seat emblems carry Red/Blue color. Names remain neutral and use You, display name, username fallback or Guest. Computer rows keep the name and small Computer badge. Seat color and human connection status are included in accessible names. Viewer summaries show two names, remaining named viewers as others, and guest counts. The current viewer is You in the first slot. Expansion retains every distinct identity, including duplicate display names.
+The audience has three states:
+
+- No viewers: a quiet group icon and None, with no disclosure.
+- One viewer: the identity and presence appear directly, with no disclosure.
+- Two or more viewers: a native details/summary disclosure. Its compact line shows both names for two viewers, or two names and the remaining number for a larger audience. When expanded, the same summary says N viewers, followed by the complete roster. Invite someone to view remains below the roster.
 
 The perspective helper separates permanent human identity from temporary computer takeover. Shared computer-owner identities do not imply self-play. Turn captions and history labels use the canonical actor, including a defender's retreat. Computer history turn headings retain computer names. Individual move rows use owner color and accessible actor attribution without visible names. The standalone participant-name block below History is removed by the later app integration.
 
-The separately authorized computer-tab recovery stream owns the subsequent expandable computer row and real session status. Its Active here, Active in another tab, Resuming, Paused and Needs attention states supersede the static semantic computer dot in Players. It also owns Resume here and permission/pending explanations. Preserve the compact badge, colored emblem, neutral name, focus, expansion state and reserved board geometry. Home computer dots remain semantic. Consume committed sources and integrate against the recovery transport capability/receipt contract.
+Use native Enter and Space activation, a visible disclosure marker, visible keyboard focus and at least 44px touch height. Names wrap; the roster uses natural page scrolling without a nested scroll box. Invitation text stays neutral, with restrained affiliation color on its icon, including inside the loading-icon wrapper. Keyboard focus within Viewers scrolls a control clear of an overlapping floating navigation bar; pointer focus does not move a click target.
 
-Focused unit checks cover ownership, guest numbering, viewer grouping, escaping, profile upgrade fencing and accessible identity. The earlier generic participant-row browser matrix is not final proof for this redesign. Complete keyboard/focus, long-name and enlarged-text browser checks after app integration. Preserve all production games and history.
+Expansion belongs to the current game visit. Preserve it across roster and presence updates in the same game, and reset compact when navigating to another game or changing account. Native click intent is captured before the queued toggle event so a refresh cannot restore the previous state. Ignore toggle events from detached disclosures. If a refresh removes a focused disclosure because fewer than two viewers remain, restore only that control's focus to the Viewers heading. Do not claim focus from another control or the page.
+
+Seat emblems carry Red/Blue affiliation. Two anonymous players use Guest 1 and Guest 2, including the current player's visible row; the accessible label still identifies ownership. Computer rows show their name and bot icon with an accessible Computer player description. Preserve completed-game status, deliberate computer disclosures, historical analysis and Undo behavior from their canonical feature modules.
+
+Invitation feedback and fallback links stay with the relevant Players or Viewers section and are announced once. Sharing a viewing link grants no play authority. Roster expansion performs no server mutation and does not alter live board selection or history.
+
+Product checks cover 0/1/2/many viewers, named and guest identities, long names, open seats, computer and completed states, keyboard operation, presence refresh, disclosure focus removal, invitation copy/failure, and native navigation between games. The study is a visual reference; it does not replace product authority or browser validation.

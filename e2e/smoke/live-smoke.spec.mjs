@@ -21,10 +21,9 @@ test("@smoke create-game, viewer-join, and live browser update", async ({ browse
     await joinAsViewer(viewerPage);
 
     await switchGamePanel(creatorPage,'players');
-    const viewers=creatorPage.locator('[data-action="toggle-viewers"]');
-    await expect(viewers).toHaveAccessibleName(/^Viewers: /);
-    await expect(viewers).toHaveAttribute('aria-expanded','false');
-    await viewers.click();await expect(viewers).toHaveAttribute('aria-expanded','true');
+    const viewers=creatorPage.getByTestId('viewers-section');
+    await expect(viewers.getByRole('heading',{name:'Viewers',exact:true})).toBeVisible();
+    await expect(viewers.locator('summary')).toHaveCount(0);
     await expect(creatorPage.getByTestId("participant-viewer")).toHaveCount(1);
     await expect(creatorPage.getByTestId("participant-viewer")).toBeVisible();
     await expect(creatorPage.getByTestId("participant-viewer").locator('[data-action="guest-profile"]')).toBeVisible();
