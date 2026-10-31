@@ -644,7 +644,7 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
   await page.route(/\/api\/shell\/games(?:\?|$)/, async route => {
     const request = route.request();
     const section = new URL(request.url()).searchParams.get("section");
-    if (request.method() !== "GET" || !["my", "other"].includes(section)) return route.continue();
+    if (request.method() !== "GET" || !["completed", "my", "other"].includes(section)) return route.continue();
     heldSections.add(section);
     await released;
     // Release the browser's real request without a second Node/TLS fetch.
@@ -654,16 +654,16 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
     await page.goto("/");
     const trigger = page.getByTestId("home-create-game");
     await expect(trigger).toBeVisible();
-    await expect.poll(() => [...heldSections].sort()).toEqual(["my", "other"]);
-    await expect(page.getByTestId("home-section-skeleton")).toHaveCount(2);
+    await expect.poll(() => [...heldSections].sort()).toEqual(["completed", "my", "other"]);
+    await expect(page.getByTestId("home-section-skeleton")).toHaveCount(3);
     const originalTrigger = await trigger.elementHandle();
     expect(originalTrigger).not.toBeNull();
     if (gesture === "pointer") { await trigger.hover(); await page.mouse.down(); }
     else { await trigger.focus(); await page.keyboard.down("Space"); }
-    // Home loading awaits both sections. Finish both while activation is held.
+    // Home loading awaits all three sections. Finish all three while activation is held.
     // The unchanged application deadline applies once real reads can proceed.
     await page.clock.resume();
-    const refreshed = Promise.all(["my", "other"].map(async section => {
+    const refreshed = Promise.all(["completed", "my", "other"].map(async section => {
       const response = await page.waitForResponse(response => {
         const url = new URL(response.url());
         return response.request().method() === "GET" && url.pathname === "/api/shell/games" && url.searchParams.get("section") === section;
@@ -939,10 +939,10 @@ test('a failed continuation read preserves the play choice for explicit retry', 
   });
   await dialog(page).getByRole('button', { name: 'Create account & continue', exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
-  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
+  await expect(page.getByTestId('account-continuation-error').getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
   expect(creates).toBe(0);
   denyReads = false;
-  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await page.getByTestId('account-continuation-error').getByRole('button', { name: 'Try again', exact: true }).click();
   await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
   await expect(page).toHaveURL(/#\/game\//);
   await expect(page.getByTestId('game-role')).toContainText('Player 1');
