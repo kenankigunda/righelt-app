@@ -1442,6 +1442,19 @@ button.button-release-bounce,
   font-size: 20px;
 }
 
+/* Approved Ghost arrows keep the shared SVG/loading slot centered. */
+.home-refresh .home-games-section .home-games-section-controls > button.secondary {
+  width:44px;height:44px;gap:0;border-color:transparent;border-radius:50%;
+  background:transparent;box-shadow:none;
+}
+.home-refresh .home-games-section .home-games-section-controls > button.secondary:disabled {opacity:1;}
+[data-hover-capability="hover"] .home-refresh .home-games-section .home-games-section-controls > button.secondary:not(:disabled):hover {
+  background:var(--surface-hover-quiet);border-color:transparent;box-shadow:none;
+}
+.home-refresh .home-games-section .home-games-section-controls > button.secondary:focus-visible {outline:2px solid var(--ink);outline-offset:2px;}
+.home-games-section-controls .loading-icon-slot {width:28px;min-width:28px;height:25px;}
+.home-games-section[data-loading-context-group] > .loading-context {text-align:center;}
+
 .home-games-section-page-label {
   flex: 0 0 auto;
   white-space: nowrap;
