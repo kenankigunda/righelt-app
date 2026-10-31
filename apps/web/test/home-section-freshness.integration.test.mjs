@@ -233,3 +233,17 @@ test('a preserved failed section does not swallow a newer healthy-list update at
  const schedule=schedulerScript.runInContext(context);context.reentrant=schedule;schedule();await new Promise(resolve=>setImmediate(resolve));
  assert.equal(calls,2);assert.equal(context.lastHomeBatchRevision,2);assert.equal(context.pendingHomeRefresh,null);
 });
+
+test('a Home batch retains a failed read identity without discarding healthy sections',async()=>{
+ const begin=source.indexOf('const syncHomeSections ='),end=source.indexOf('const scheduleHomeListRefresh =',begin);
+ const original=Object.assign(Error('local_api_unavailable'),{code:'local_api_unavailable',status:503,diagnosticEvidence:{serverBuild:'continuation-test-build'}});
+ const states={my:{page:0},completed:{page:0},other:{page:0}};
+ const owner={getHomeListRevision:()=>1};
+ const context=vm.createContext({appEl:null,document:{},homeFocusToRestore:null,captureHomeFocus:()=>null,captureRouteRead:()=>({owner}),assertCurrentRouteRead:()=>{},
+  getVisibleHomeSectionKeys:()=>['my','completed','other'],getHomeSection:key=>states[key],setHomeSection:(key,value)=>states[key]=value,lastHomeBatchRevision:null,
+  HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT:3,getHomeSectionVisiblePageSize:()=>3,getHomeSectionColumnCount:()=>1,
+  loadHomeSectionPage:async key=>{if(key==='other')throw original;states[key]={...states[key],homeListRevision:1,totalGames:4,loaded:true};}});
+ const result=await new vm.Script(`${source.slice(begin,end)};syncHomeSections`).runInContext(context)();
+ assert.equal(result.error,original);assert.equal(result.healthySettled,false);
+ assert.equal(states.my.totalGames,4);assert.equal(states.completed.totalGames,4);assert.equal(states.other.error,true);
+});

@@ -3718,6 +3718,7 @@ const syncHomeSections = async ({onlyStale=false} = {}) => {
   homeFocusToRestore ??= captureHomeFocus(appEl,document);
   const visibleSectionKeys = getVisibleHomeSectionKeys();
   const preservedErrors=new Set(onlyStale?visibleSectionKeys.filter(key=>getHomeSection(key).error):[]);
+  const readErrors=new Map();
   if(!onlyStale)await Promise.all(
     visibleSectionKeys.map(async (sectionKey) => {
       const section = getHomeSection(sectionKey);
@@ -3737,6 +3738,7 @@ const syncHomeSections = async ({onlyStale=false} = {}) => {
         await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
       } catch (error) {
         assertCurrentRouteRead(read);
+        readErrors.set(sectionKey,error);
         const refreshUnsettled=error?.code==='home_list_changed';
         setHomeSection(sectionKey,{...getHomeSection(sectionKey),error:refreshUnsettled?null:true,refreshUnsettled});
       }
@@ -3754,14 +3756,17 @@ const syncHomeSections = async ({onlyStale=false} = {}) => {
   await Promise.all(staleSections.map(async sectionKey => {
     const section=getHomeSection(sectionKey);
     setHomeSection(sectionKey,{...section,error:null,refreshUnsettled:false,serverPageGameIdsByPage:{}});
-    try { await loadHomeSectionPage(sectionKey,{page:section.page,direction:'none'}); }
-    catch(error) { assertCurrentRouteRead(read);setHomeSection(sectionKey,{...getHomeSection(sectionKey),error:true,refreshUnsettled:false}); }
+    try { await loadHomeSectionPage(sectionKey,{page:section.page,direction:'none'});readErrors.delete(sectionKey); }
+    catch(error) { assertCurrentRouteRead(read);readErrors.set(sectionKey,error);setHomeSection(sectionKey,{...getHomeSection(sectionKey),error:true,refreshUnsettled:false}); }
   }));
   assertCurrentRouteRead(read);
   const finalRevision = read.owner.getHomeListRevision?.();
   if(finalRevision !== undefined)for(const key of visibleSectionKeys){
     const section=getHomeSection(key);
-    if(!section.error && section.homeListRevision !== finalRevision)setHomeSection(key,{...section,error:true});
+    if(!section.error && section.homeListRevision !== finalRevision){
+      setHomeSection(key,{...section,error:true});
+      readErrors.set(key,Object.assign(new Error('Your game list changed. Try again.'),{code:'home_list_changed'}));
+    }
   }
   lastHomeBatchRevision = finalRevision ?? null;
   const hiddenSectionKeys = ["my", "completed", "other", "smoke"].filter((sectionKey) => !visibleSectionKeys.includes(sectionKey));
@@ -3782,7 +3787,7 @@ const syncHomeSections = async ({onlyStale=false} = {}) => {
       slideDirection: "none",
     });
   });
-  return {healthySettled:visibleSectionKeys.every(key=>!getHomeSection(key).error || preservedErrors.has(key))};
+  return {healthySettled:visibleSectionKeys.every(key=>!getHomeSection(key).error || preservedErrors.has(key)),error:readErrors.values().next().value ?? null};
 };
 const scheduleHomeListRefresh = ({onlyStale=true} = {}) => {
   if (currentRoute.name !== 'home')return;
@@ -4118,7 +4123,10 @@ const assertCurrentRouteRead = (read, isActive = () => true) => {
 const syncRouteDataAndLiveChannels = (read = captureRouteRead()) => {
   return hydrateRoute(read, async isActive => {
     assertCurrentRouteRead(read, isActive);
-    if (read.route.name === "home") await syncHomeSections();
+    if (read.route.name === "home") {
+      const result=await syncHomeSections();
+      if(result?.error)throw result.error;
+    }
     if (read.route.name === "game") {
       resolvedInvite = null;
       await read.owner.loadGame(read.route.gameId, { openAsViewer: false });
