@@ -794,6 +794,10 @@ test("keyboard board activation opens sign in without losing the board", async (
 });
 
 test("a delayed play continuation is discarded after a cross-tab account switch", async ({ page, request, baseURL }) => {
+  const foreground=async tab=>{
+    await tab.bringToFront();
+    await expect.poll(()=>tab.evaluate(()=>!document.hidden&&document.hasFocus())).toBe(true);
+  };
   await page.context().addInitScript(() => {
     const original = window.fetch.bind(window);
     window.__heldAccountLists = [];
@@ -865,6 +869,7 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
   page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates++; });
   try {
     await sibling.goto("/");
+    await foreground(page);
     await page.getByTestId("home-create-game").click();
     await enterUsername(page, first);
     await dialog(page).getByLabel("Password", { exact: true }).fill(password);
@@ -873,6 +878,7 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
     await expect(dialog(page)).not.toBeVisible();
     await expect.poll(() => page.evaluate(() => window.__heldAccountLists.length)).toBeGreaterThan(0);
     await expect(sibling.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
+    await foreground(sibling);
     await account(sibling);
     signingOut = signOutAndOpenSignIn(sibling);
     signingOut.catch(() => {}); // Cleanup below also drains this owned helper on assertion failure.
@@ -899,6 +905,7 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
       ...window.__accountSessionReads,
       authenticated: document.querySelector('[data-testid="account-open"]')?.dataset.authenticated,
     }))).toEqual({ pending: 0, username: second, authenticated: "true" });
+    await foreground(page);
     await account(page);
     await expect(dialog(page)).toContainText(`@${second}`);
     await dialog(page).getByRole("button", { name: "Close", exact: true }).click();
