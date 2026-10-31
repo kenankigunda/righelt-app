@@ -1,3 +1,6 @@
+import {ACTION_CONTRACT_HEADER,ACTION_CONTRACT_VERSION,isReconcileResponse} from '../../packages/shared-types/src/sync-protocol.ts';
+import {writeFileSync} from 'node:fs';
+import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {test,expect} from '@playwright/test';
 import {waitForOpponentReady,readProjectedGame} from '../support/computer-projection.mjs';
 const pieces=page=>page.getByTestId('game-board').evaluate(board=>[...board.querySelectorAll('.cell .piece-token[data-piece-id]:not(.ghost):not(.destruction-piece)')].map(token=>({id:token.dataset.pieceId,row:Number(token.closest('.cell').dataset.row),col:Number(token.closest('.cell').dataset.col)})).sort((a,b)=>a.id.localeCompare(b.id)));
@@ -139,6 +142,44 @@ for(const [width,height,covered] of [[390,450,true],[1440,1100,false]]){
   await expect.poll(async()=>(await page.evaluate(readProjectedGame,{id:game.id,guest:true})).moves.some(move=>move.computerProof)).toBe(true);
   await debug.locator('[data-action="close-debug"]').click();await expect(debug).toHaveCount(0);await expect(page.getByTestId('game-board')).toBeVisible();
  }finally{release();await context.unrouteAll({behavior:'wait'});}
+});
+
+if(!covered)utilityTest('a confirmed obsolete computer attempt recovers without a human failure banner or duplicate move',async({page,context,utilityGame:game},info)=>{
+ let release,command,rejectedReceipt;const held=new Promise(resolve=>release=resolve),applications=[];
+ await context.route('**/apply',async route=>{const body=route.request().postDataJSON();if(body?.payload?.computer){applications.push(body);command??=body;if(body.clientCommandId===command.clientCommandId)await held;}await route.continue();});
+ await context.route('**/reconcile',async route=>{if(command&&route.request().postDataJSON()?.commands?.some(row=>row.clientCommandId===command.clientCommandId))await held;await route.continue();});
+ try{
+  await page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true}).click();await expect.poll(()=>Boolean(command),{timeout:30000}).toBe(true);
+  expect((await page.evaluate(readProjectedGame,{id:game.id,guest:true})).moves.filter(move=>move.computerProof)).toHaveLength(0);
+  await page.evaluate(()=>{window.obsoleteComputerBanners=[];const sample=()=>{for(const node of document.querySelectorAll('[data-testid="sync-failure-banner"]')){const text=node.textContent;if(!window.obsoleteComputerBanners.includes(text))window.obsoleteComputerBanners.push(text);}};window.obsoleteComputerBannerObserver=new MutationObserver(sample);window.obsoleteComputerBannerObserver.observe(document.body,{childList:true,subtree:true,characterData:true});sample();});
+  // A separate legitimate owner action changes the lease generation while this
+  // exact durable computer command is still unacknowledged. No fake receipt.
+  const changed=await page.evaluate(async({id,proof,header})=>{
+   const bootstrap=await fetch('/api/shell/bootstrap'),generation=bootstrap.headers.get(header),identityId=localStorage.getItem('righelt.identity.id.v1');
+   const response=await fetch(`/api/shell/games/${id}/computer-control`,{method:'POST',headers:{'content-type':'application/json',...(generation?{[header]:generation}:{})},body:JSON.stringify({identityId,protocolVersion:2,action:'resume-here',deviceId:proof.deviceId,generation:proof.generation})});
+   if(!response.ok)throw Error(`Owner authority fixture failed: ${response.status}`);return response.json();
+  },{id:game.id,proof:command.payload.computer,header:STORAGE_GENERATION_HEADER});
+  expect(changed.game.computer.generation).toBeGreaterThan(command.payload.computer.generation);
+  release();
+  // Read the exact server receipt independently of whichever native delivery
+  // channel wins. Reconcile reports unknown/terminal outcomes; it creates no
+  // replacement command and never recomputes the admitted move.
+  await expect.poll(async()=>{
+   const response=await page.request.post(`/api/shell/games/${game.id}/reconcile`,{headers:{[ACTION_CONTRACT_HEADER]:String(ACTION_CONTRACT_VERSION)},data:{identityId:command.identityId,protocolVersion:2,knownSnapshotEventSeq:0,commands:[command]}});
+   expect(response.status()).toBe(200);const body=await response.json();expect(isReconcileResponse(body,game.id,[command])).toBe(true);
+   rejectedReceipt=body.commandOutcomes.find(row=>row.clientCommandId===command.clientCommandId);return rejectedReceipt?.outcome;
+  },{timeout:15000}).toBe('rejected');
+  expect(rejectedReceipt).toMatchObject({clientCommandId:command.clientCommandId,fingerprint:command.fingerprint,outcome:'rejected',reason:'computer_control_changed'});
+  let final;
+  await expect.poll(async()=>{final=await page.evaluate(readProjectedGame,{id:game.id,guest:true});return final.moves.filter(move=>move.computerProof).length;},{timeout:30000}).toBe(1);
+  await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toBeEnabled({timeout:15000});
+  const banners=await page.evaluate(()=>{window.obsoleteComputerBannerObserver.disconnect();return window.obsoleteComputerBanners;});expect(banners).toEqual([]);
+  const confirmed=final.moves.find(move=>move.computerProof);expect(confirmed.clientCommandId).not.toBe(command.clientCommandId);
+  for(const attempt of applications.filter(row=>row.clientCommandId===command.clientCommandId))expect(attempt).toEqual(command);
+  const receipt={rejected:rejectedReceipt,oldCommandId:command.clientCommandId,newCommandId:confirmed.clientCommandId,newGeneration:confirmed.computerProof.generation,committedComputerMoves:1,banners};
+  writeFileSync(info.outputPath('obsolete-computer-recovery.json'),JSON.stringify(receipt,null,2));await info.attach('obsolete-computer-recovery',{path:info.outputPath('obsolete-computer-recovery.json'),contentType:'application/json'});
+  await page.screenshot({path:info.outputPath('obsolete-computer-recovery.png')});
+ }finally{release();await page.evaluate(()=>window.obsoleteComputerBannerObserver?.disconnect()).catch(()=>{});await context.unrouteAll({behavior:'wait'});}
 });
 
 }
