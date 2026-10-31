@@ -175,8 +175,9 @@ if(!covered)utilityTest('a confirmed obsolete computer attempt recovers without 
   await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toBeEnabled({timeout:15000});
   const banners=await page.evaluate(()=>{window.obsoleteComputerBannerObserver.disconnect();return window.obsoleteComputerBanners;});expect(banners).toEqual([]);
   const confirmed=final.moves.find(move=>move.computerProof);expect(confirmed.clientCommandId).not.toBe(command.clientCommandId);
+  expect(confirmed.computerProof.generation,'Same-device recovery must acknowledge the existing generation without waiting for lease expiry').toBe(changed.game.computer.generation);
   for(const attempt of applications.filter(row=>row.clientCommandId===command.clientCommandId))expect(attempt).toEqual(command);
-  const receipt={rejected:rejectedReceipt,oldCommandId:command.clientCommandId,newCommandId:confirmed.clientCommandId,newGeneration:confirmed.computerProof.generation,committedComputerMoves:1,banners};
+  const receipt={rejected:rejectedReceipt,oldCommandId:command.clientCommandId,newCommandId:confirmed.clientCommandId,oldGeneration:command.payload.computer.generation,forcedGeneration:changed.game.computer.generation,newGeneration:confirmed.computerProof.generation,committedComputerMoves:1,banners};
   writeFileSync(info.outputPath('obsolete-computer-recovery.json'),JSON.stringify(receipt,null,2));await info.attach('obsolete-computer-recovery',{path:info.outputPath('obsolete-computer-recovery.json'),contentType:'application/json'});
   await page.screenshot({path:info.outputPath('obsolete-computer-recovery.png')});
  }finally{release();await page.evaluate(()=>window.obsoleteComputerBannerObserver?.disconnect()).catch(()=>{});await context.unrouteAll({behavior:'wait'});}

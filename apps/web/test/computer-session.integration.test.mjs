@@ -1019,3 +1019,11 @@ for(const change of ['position','generation','model','account'])test(`speculatio
  if(change==='position')f.game().board.state.sideToMove='P1';if(change==='generation')f.game().computer.generation++;if(change==='model')f.game().computer.modelId='different';if(change==='account')f.changeAccount();
  await f.session.tick();acknowledge();await first;assert.equal(f.saved.length,1,'candidate has no evidence/admission before authority match');assert.equal(f.session.snapshot().speculation,null);
 });
+
+
+test('an acknowledged owner never automatically takes a newer lease held by another device',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ f.game().computer=changeComputerControl(f.game().computer,{ownerId:'owner',authContextId:'session',deviceId:'different-device',action:'resume-here',generation:f.game().computer.generation,now:100,turnIndex:0});
+ await f.session.tick();assert.equal(f.controls.length,1);assert.equal(f.session.snapshot().phase,'other-device');
+ assert.equal(f.game().computer.lease.deviceId,'different-device');assert.equal(f.computations(),0);assert.equal(f.submissions(),0);
+});
