@@ -1,3 +1,4 @@
+import {isObsoleteComputerRejection} from './computer-recovery.js';
 import { activeDecisionLineage } from './decision-history.js';
 import { createRulesExecutor } from '../board/rules-runtime.js';
 import { CURRENT_COMPUTER_MODEL } from '../generated/packages/shared-types/src/computer-play.js';
@@ -675,8 +676,11 @@ export const createLiveTransportStore = ({
     optimistic.syncStatus = optimistic.pendingCommands.length ? optimistic.syncStatus : "ready";
     startTerminalCleanup(gameId, command, outcome);
     recalculateOptimisticGame(gameId);
-    const notification = { type: outcome.outcome === "accepted" ? "authoritative_update" : command.kind === "shared" ? "shared_request_rejected" : "optimistic_rollback", gameId, clientCommandId: command.clientCommandId, reason:outcome.reason,
-      failureNotice: outcome.outcome === "rejected" && command.kind !== "shared" ? outcome.reason === "state_capacity_exceeded" ? "This game couldn’t save another move. Your earlier moves are safe. Please view details." : "Board changed before your move was recorded. Check it and try again." : "" };
+    // A confirmed obsolete computer attempt is handled by its session's
+    // automatic recovery, not a prompt to repeat a human move.
+    const quietComputerRetry = isObsoleteComputerRejection(command.computer,outcome.reason);
+    const notification = { type: outcome.outcome === "accepted" ? "authoritative_update" : command.kind === "shared" ? "shared_request_rejected" : "optimistic_rollback", gameId, clientCommandId: command.clientCommandId, computer: Boolean(command.computer), reason:outcome.reason,
+      failureNotice: outcome.outcome === "rejected" && command.kind !== "shared" && !quietComputerRetry ? outcome.reason === "state_capacity_exceeded" ? "This game couldn’t save another move. Your earlier moves are safe. Please view details." : "Board changed before your move was recorded. Check it and try again." : "" };
     if (notifications) notifications.push(notification); else emitChange(notification);
     return true;
   };

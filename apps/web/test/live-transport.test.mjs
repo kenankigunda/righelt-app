@@ -1152,6 +1152,28 @@ test("live transport store notifies subscribers for optimistic enqueue and autho
   assert.equal(changes.some((change) => change.type === "authoritative_update" && change.gameId === baseGame.id), true);
 });
 
+for(const computer of [false,true])for(const reason of ['computer_control_changed','stale_state','state_capacity_exceeded'])test(`computer rollback notices remain quiet only for transient computer outcomes computer=${computer} reason=${reason}`,async t=>{
+ const game=buildLiveGame(),storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
+ let resolveRollback;const rollback=new Promise(resolve=>resolveRollback=resolve);let sent;
+ const store=createLiveTransportStore({storage,fetcher:async(url,init={})=>{
+  if(init.method==='GET')return Response.json({ok:true,protocolVersion:2,game,eventSeq:1});
+  if(String(url).endsWith('/apply')){
+   sent=JSON.parse(init.body);const outcome={...receipt(sent.clientCommandId,false,2),reason};
+   return Response.json({ok:true,accepted:false,protocolVersion:2,gameId:game.id,game,eventSeq:2,gameplayRevision:game.gameplayRevision,commandOutcomes:[outcome]});
+  }
+  return Response.json({ok:true,games:[]});
+ }});t.after(()=>store.retire());
+ t.after(store.subscribe(change=>{if(change.type==='optimistic_rollback')resolveRollback(change);}));
+ await store.loadGame(game.id);
+ const proof={deviceId:crypto.randomUUID(),generation:1,modelId:'initial-1554',profile:'babs',profileVersion:'experimental-v1',seed:1,attemptId:crypto.randomUUID()};
+ await store.applyGameAction({gameId:game.id,state:game.board.state,action:game.legalActions[0],...(computer?{computer:proof}:{})});
+ const change=await rollback;
+ assert.equal(change.computer,computer);
+ assert.equal(Boolean(change.failureNotice),!(computer&&['computer_control_changed','stale_state'].includes(reason)));
+ assert.equal(store.getCommandOutcome(game.id,sent.clientCommandId).reason,reason);
+ assert.deepEqual(store.getGameViewModel(game.id).currentSnapshot,game.board.state);
+});
+
 test("live transport store notifies subscribers when optimistic sync rolls back or enters confirming", async () => {
   const baseGame = buildLiveGame();
   const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
