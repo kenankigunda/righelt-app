@@ -2251,6 +2251,41 @@ test('terminal receipt cleanup preserves an already tracked valid durable pendin
   assert.equal(h.view().sharedMutationsBlocked,false);assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
 });
 
+for(const retired of [false,true])test(`terminal cleanup readback preserves a committed in-flight maintenance admission retired=${retired}`,{timeout:5000},async t=>{
+ const h=await terminalCleanupStore(t,'committed-admission'),initial=cleanupDeferred(t),admissionCallback=cleanupDeferred(t),committed=cleanupDeferred(t),readback=cleanupDeferred(t),response=cleanupDeferred(t);
+ const errors=[];t.after(h.store.subscribe(change=>{if(change.type==='journal_blocked')errors.push(change.error?.code);}));
+ h.hooks.remove=async(_envelope,remove,count)=>count===1?initial.promise:remove();
+ await h.control();
+ h.hooks.admit=async(_envelope,admit)=>{const result=await admit();committed.resolve();await admissionCallback.promise;return result;};
+ h.hooks.sharedResponse=()=>response.promise;
+ const pending=h.control();await committed.promise;
+ try {
+  assert.equal(h.view().pendingCommandCount,0,'the second durable row exists before its admission callback registers it');
+  h.hooks.list=async(args,read)=>{const saved=await read();if(args[1]===h.game.id&&saved.some(row=>row.clientCommandId===h.calls.admit.at(-1).clientCommandId))readback.resolve();return saved;};
+  initial.reject(cleanupTimeout());await h.change('journal_blocked',1,'journal_timeout');await h.advance(500);
+  await readback.promise;
+  if(retired)h.store.retire();
+  await new Promise(resolve=>cleanupRealSetTimeout(resolve,50));
+  assert.equal(errors.includes('untracked_saved_command'),false,'a real current admission cannot become untracked stored intent');
+ } finally {admissionCallback.resolve();response.resolve();}
+ if(retired)assert.equal((await pending).ok,false,'retired admission cannot resume sending or cleanup');
+ else {await h.change('journal_cleanup_recovered');assert.equal(h.view().storageBlocked,false);await pending;}
+});
+
+test('terminal cleanup never treats a rejected admission callback as tracked authority',{timeout:5000},async t=>{
+ const h=await terminalCleanupStore(t,'rejected-admission'),initial=cleanupDeferred(t),callback=cleanupDeferred(t),committed=cleanupDeferred(t),readback=cleanupDeferred(t);
+ h.hooks.remove=async(_envelope,remove,count)=>count===1?initial.promise:remove();await h.control();
+ h.hooks.admit=async(_envelope,admit)=>{await admit();committed.resolve();await callback.promise;};
+ const pending=h.control();await committed.promise;const uncertain=clone(h.calls.admit.at(-1));
+ h.hooks.list=async(args,read)=>{const rows=await read();if(args[1]===h.game.id&&rows.some(row=>row.clientCommandId===uncertain.clientCommandId))readback.resolve();return rows;};
+ initial.reject(cleanupTimeout());await h.change('journal_blocked',1,'journal_timeout');await h.advance(500);await readback.promise;
+ callback.reject(cleanupTimeout());assert.equal((await pending).ok,false);
+ await h.change('journal_blocked',1,'untracked_saved_command');
+ assert.equal(h.view().storageBlocked,true,'an uncertain stored row still requires explicit receipt reconciliation');
+ assert.equal(h.view().pendingCommandCount,0);assert.deepEqual(await h.durable.list('id-a',h.game.id),[uncertain]);
+ assert.equal(h.calls.network.filter(row=>String(row.url).endsWith('/shared')).length,1,'never send an unregistered admission');
+});
+
 test('terminal receipt cleanup successful initial commit does not manufacture a bulk hydration failure',{timeout:5000},async t=>{
   const h=await terminalCleanupStore(t,'normal-bulk'),response=cleanupDeferred(t);
   h.hooks.remove=null;h.hooks.sharedResponse=()=>response.promise;
