@@ -5,7 +5,7 @@ import { participantName, participantButton, createInlineProfiles, formatJoinedM
 test('computer kind is opt-in for Players rows and absent from ordinary history names',()=>{
  const person={computerProfile:'horus'};
  assert.equal(participantName(person),'<span class="player-name">Horus</span>');
- assert.match(participantName(person,{inlineComputerBadge:true}),/player-kind-badge">Computer/);
+ assert.match(participantName(person,{inlineComputerBadge:true}),/player-kind-icon" title="Computer"/);
 });
 
 test("public names are escaped and direction isolated with a profile link only for accounts", () => {
@@ -70,7 +70,7 @@ test('an expanded guest row upgrades to its authoritative account profile withou
 test('computer identities use an inline badge and semantic green mark without human profile actions',()=>{
  for(const side of ['p1','p2','neutral']){
   const html=participantButton({identityId:'owner',profile:{username:'Human'},computerProfile:'horus',connected:false},{side,presence:'<span>Disconnected</span>'});
-  assert.match(html,/participant-profile participant-computer/);assert.match(html,/<span class="player-name">Horus<\/span><span class="player-kind-badge">Computer<\/span>/);
+  assert.match(html,/participant-profile participant-computer/);assert.match(html,/<span class="player-name">Horus<\/span><span class="player-kind-icon" title="Computer"/);
   assert.match(html,/connection-status-icon is-connected.*aria-label="Computer player"/);assert.doesNotMatch(html,/<button|data-profile|Human|Disconnected|player-username/);
   assert.match(html,new RegExp(`data-player-side="${side}"`));
  }

@@ -9,11 +9,12 @@ test('seat emblems replace numbered seat labels and identity remains a profile a
  assert.match(html,/No viewers/);assert.doesNotMatch(html,/Player [12]|Guest player/);
  assert.match(html,/data-username="ada"/);
 });
-test('self play uses You for both human seats while computers retain their name and badge',()=>{
+test('anonymous self play disambiguates both guests while computers retain their identity',()=>{
  const self={...game,selfPlayMode:true,myRole:'Both Players',player2:{identityId:'me'}};
- assert.equal((renderPlayersPanel(self,{identityId:'me'}).match(/<bdi>You<\/bdi>/g)||[]).length,2);
+ assert.match(renderPlayersPanel(self,{identityId:'me'}),/<bdi>Guest 1<\/bdi>/);
+ assert.match(renderPlayersPanel(self,{identityId:'me'}),/<bdi>Guest 2<\/bdi>/);
  const html=renderPlayersPanel({...self,player2:{identityId:'me',computerProfile:'horus'}},{identityId:'me'});
- assert.match(html,/Horus/);assert.match(html,/aria-label="Horus, Blue, Needs attention"/);assert.match(html,/player-kind-badge">Computer/);assert.match(html,/data-action="toggle-computer-card"/);
+ assert.match(html,/Horus/);assert.match(html,/aria-label="Horus, Blue, Needs attention"/);assert.match(html,/player-kind-icon" title="Computer"/);assert.match(html,/data-action="toggle-computer-card"/);
 });
 test('viewer summary expands the full ordered profile list with stable keys',()=>{
  const view={...game,viewers:[{identityId:'b',profile:{username:'bo'}},{identityId:'me'},{identityId:'guest'}]};
@@ -55,4 +56,19 @@ test('configured computer seats remain recoverable when manual projections omit 
   assert.match(html,/Horus, Blue, Paused/);assert.equal((html.match(/>Resume here<\/button>/g)||[]).length,both?2:1);
   if(both)assert.match(html,/Babs, Red, Paused/);else assert.match(html,/<bdi>You<\/bdi>/);
  }
+});
+
+test('both guest names are visible to their owner and viewers without losing ownership labels',()=>{
+ const guests={...game,player1:{identityId:'me',connected:true},player2:{identityId:'other',connected:true}};
+ for(const identityId of ['me','viewer']){
+  const html=renderPlayersPanel(guests,{identityId});
+  assert.match(html,/<bdi>Guest 1<\/bdi>/);assert.match(html,/<bdi>Guest 2<\/bdi>/);assert.doesNotMatch(html,/<bdi>You<\/bdi>|<bdi>Guest<\/bdi>/);
+  assert.match(html,new RegExp(`aria-label="Guest 1${identityId==='me'?', you':''}, Red, Connected"`));
+ }
+ const namedSelf={...game,selfPlayMode:true,myRole:'Both Players',player1:{identityId:'me',profile:{displayName:'Ada'}},player2:{identityId:'me',profile:{displayName:'Ada'}}};
+ assert.equal((renderPlayersPanel(namedSelf,{identityId:'me'}).match(/<bdi>You<\/bdi>/g)||[]).length,2);
+});
+test('computer kind is a small native icon with accessible type and finished controls stay absent',()=>{
+ const html=renderPlayersPanel({...game,player2:{identityId:'me',computerProfile:'horus'}},{identityId:'me',expandedComputers:new Set(['P2']),computerActivity:{state:'finished',label:'Game finished',showResume:false}});
+ assert.match(html,/aria-description="Computer player"/);assert.match(html,/player-kind-icon/);assert.match(html,/<svg class="righelt-icon"/);assert.doesNotMatch(html,/>Computer<|Resume here/);assert.match(html,/Game finished/);
 });
