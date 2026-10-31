@@ -479,3 +479,9 @@ This section is normative and applies to every new endpoint, page, and performan
 - Undo applies directly in self-play and against a computer controlled by the same human. While its durable receipt is pending, do not show an undo request, acceptance message, or approval controls. Confirm completion as “Move undone”.
 - Only another human controller must approve Undo. Keep that player's request, Accept, Reject and Cancel request flow. Use authoritative seat-controller identities, never display names, to distinguish these cases.
 - Direct Undo keeps the existing serialized command, receipt and recovery path. Computer work is paused and reconciled before restoration, then resumes under the acknowledged position and control generation. Reopening a completed game by explicit Undo retains these same safeguards.
+
+### History endpoint roles
+
+- Desktop and mobile History opt into dashed violet 2px source borders and solid green 2px target borders. Shared-role squares retain the dashed violet outer border plus an inset solid green 2px outline. Colors remain `#7650A6` and `#1F7A5A`.
+- Turn roles are the union of all acknowledged action endpoints, including intermediate shared squares. Preserve final positions, owner colors, source ghosts, destruction/projection marks and push/follow arrow deduplication. Defender retreats remain distinct. Individual axes remain unchanged; aggregate axes and step numbers stay absent.
+- The explicit History presentation context must reach both the desktop board runtime and mobile preview adapter. It resets when returning live. Live automatic opponent overviews and replay retain their existing appearance.
