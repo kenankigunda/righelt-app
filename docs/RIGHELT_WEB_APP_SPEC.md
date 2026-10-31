@@ -466,3 +466,10 @@ This section is normative and applies to every new endpoint, page, and performan
 - Narration describes the acknowledged sequence. Multiple rushed pieces use “X rushed several pieces”. Pushes name the victim’s original square and say “and had a piece follow” or “and had several pieces follow”.
 
 - Board-message height must admit the complete two-row grammar at every supported width. Reserve its measured font and width envelopes before first paint, including all turn summaries and the bounded spectator-name box. Changes to wording, fonts or inline pills require primary/fallback measurements at 100% and 200% text, boundary probes and exact cold/loaded/reload anchor checks. Natural wrapping may require four or more lines; a universal three-line cap is not the contract.
+
+
+### History endpoint roles
+
+- Desktop and mobile History opt into dashed violet 2px source borders and solid green 2px target borders. Shared-role squares retain the dashed violet outer border plus an inset solid green 2px outline. Colors remain `#7650A6` and `#1F7A5A`.
+- Turn roles are the union of all acknowledged action endpoints, including intermediate shared squares. Preserve final positions, owner colors, source ghosts, destruction/projection marks and push/follow arrow deduplication. Defender retreats remain distinct. Individual axes remain unchanged; aggregate axes and step numbers stay absent.
+- The explicit History presentation context must reach both the desktop board runtime and mobile preview adapter. It resets when returning live. Live automatic opponent overviews and replay retain their existing appearance.

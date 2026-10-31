@@ -91,6 +91,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let lastRenderedCanInteract = null;
   let recordedAction = null;
   let recordedActions = [];
+  let presentationContext = null;
+  let endpointRoles = [];
   let recordedActionStartPiece = null;
   /** @type {Array<{row: number, col: number, ownerSeat?: "p1" | "p2" | null, kind?: "unit" | "commander" | null, piece?: unknown | null}>} */
   let destroyedPieces = [];
@@ -125,6 +127,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     recordedAction: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedAction : null,
     recordedActionStartPiece: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedActionStartPiece : null,
     recordedActions,
+    presentationContext,
+    endpointRoles,
     destroyedPieces,
   });
 
@@ -1478,6 +1482,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       overlayMode: nextOverlayMode = OVERLAY_MODE.INTERACTIVE,
       recordedAction: nextRecordedAction = null,
       recordedActions: nextRecordedActions = [],
+      presentationContext: nextPresentationContext = null,
+      endpointRoles: nextEndpointRoles = [],
       recordedActionStartPiece: nextRecordedActionStartPiece = null,
       destroyedPieces: nextDestroyedPieces = [],
     } = {},
@@ -1495,6 +1501,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     overlayMode = nextOverlayMode;
     recordedAction = nextRecordedAction ? structuredClone(nextRecordedAction) : null;
     recordedActions = structuredClone(nextRecordedActions);
+    presentationContext = nextPresentationContext;
+    endpointRoles = structuredClone(nextEndpointRoles);
     recordedActionStartPiece = nextRecordedActionStartPiece ? structuredClone(nextRecordedActionStartPiece) : null;
     const preserveRemovalEffects =
       nextOverlayMode === OVERLAY_MODE.INTERACTIVE &&
