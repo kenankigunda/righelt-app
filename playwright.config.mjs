@@ -35,7 +35,7 @@ const config = defineConfig({
     },
     ...["firefox", "webkit"].map(name => ({
       name,
-      testMatch: /(completion-preserving-retreat|completed-game-review|invitation-load-recovery|named-observer-result|desktop-board-fit|home-opponent-identity|opponent-invite-polish|destruction-sound|human-opponent-replay|legend-inspection|computer-feedback|mobile-board-history|sync-recovery-(pressure|ux)|recovery-freeze-regression|browser-move-input|home-create-refresh|guest-computer-play|computer-tab-recovery|storage-lifecycle|destruction-lifecycle)\.spec\.mjs/,
+      testMatch: /(completion-preserving-retreat|completed-game-review|invitation-load-recovery|named-observer-result|desktop-board-fit|home-opponent-identity|opponent-invite-polish|destruction-sound|human-opponent-replay|legend-inspection|computer-feedback|mobile-board-history|sync-recovery-(pressure|ux)|recovery-freeze-regression|browser-move-input|home-create-refresh|guest-computer-play|computer-tab-recovery|storage-lifecycle|destruction-lifecycle|history-endpoint-roles)\.spec\.mjs/,
       use: { ...devices[name === "firefox" ? "Desktop Firefox" : "Desktop Safari"],
         launchOptions: browserLaunchOptions(name) },
     })),
