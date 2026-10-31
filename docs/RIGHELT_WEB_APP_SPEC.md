@@ -466,3 +466,9 @@ This section is normative and applies to every new endpoint, page, and performan
 - Narration describes the acknowledged sequence. Multiple rushed pieces use “X rushed several pieces”. Pushes name the victim’s original square and say “and had a piece follow” or “and had several pieces follow”.
 
 - Board-message height must admit the complete two-row grammar at every supported width. Reserve its measured font and width envelopes before first paint, including all turn summaries and the bounded spectator-name box. Changes to wording, fonts or inline pills require primary/fallback measurements at 100% and 200% text, boundary probes and exact cold/loaded/reload anchor checks. Natural wrapping may require four or more lines; a universal three-line cap is not the contract.
+
+### Projected status during a sequence
+
+- During a live rush or push sequence, show every piece's status as it would be after the turn ended at its current position. Recompute the projection after each acknowledged sequence step, including defender retreats and follows.
+- Pieces that would be destroyed use the same crossed-out treatment as historical destruction. A later step that restores supply removes that forecast and restores the piece's projected status.
+- A forecast never removes a real piece, changes frozen action eligibility, completes a turn, adds a history destruction record, or triggers removal animation or sound. Real move admission continues to use the authoritative state. Preserve the existing acknowledged-history presentation separately.
