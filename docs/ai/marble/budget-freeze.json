@@ -55,5 +55,11 @@
     "hidden/disposal/mute",
     "retired AudioNodes and callbacks",
     "clock versus actual acoustic delivery"
-  ]
+  ],
+  "plannedFunctionalBaseline": {
+    "appRevision": "de65ba1a6c4dde950baf4d4b2ccfe6e276d553ad",
+    "status": "actual merged main; capture not run",
+    "changesSinceHistorical0ace": "PR214 quiet-owned-renewal gameplay admission and durable projection compatibility",
+    "comparisonRule": "Compare materials on same214 functionality; do not attribute permission/worker policy differences to paint. Keep total user-visible authority latency separately."
+  }
 }
