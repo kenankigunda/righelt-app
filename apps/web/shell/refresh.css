@@ -4,7 +4,6 @@
 @font-face { font-family: Manrope; src: url('../assets/fonts/Manrope-variable.ttf') format('truetype'); font-weight: 200 800; font-display: swap; }
 :root { --font-family: Manrope, var(--font-family-fallback); --player-p1:#c2452f; --player-p2:#2d67c7; --radius-card:20px; --shell-elevated-surface:var(--surface-raised); }
 body { font-family:var(--font-family); background:var(--surface-foundation); }
-.brand-grid { position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:-1; overflow:hidden; }
 .shell-header { margin:8px 0 22px; }
 .shell-header-title-link { display:block; width:min(100%,330px); }
 .shell-header h1 { line-height:1; }
@@ -82,7 +81,6 @@ body { isolation:isolate; }
 [data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:not(.cell):not(.board-preview-inline-button):not(:where(.legend-inspection)):not(.secondary):not(.opponent-choice):not(.ui-icon-button):not(.participant-profile):not(:disabled):hover { background:var(--action-hover); }
 
 /* Surfaces share angular accents; controls keep their softer, tactile shape. */
-.brand-grid { mask-image:radial-gradient(ellipse 1050px 850px at var(--grid-origin-x,220px) var(--grid-origin-y,60px),#000 0%,rgb(0 0 0 / 65%) 30%,rgb(0 0 0 / 28%) 85%); }
 .home-refresh > .panel, .game-shell-frame .panel:not([data-shell-panel="board"]), .game-shell-mobile-panel .panel:not([data-shell-panel="board"]) {
   position:relative; border-radius:0 18px 0 18px;
   clip-path:polygon(20px 0,100% 0,100% calc(100% - 20px),calc(100% - 20px) 100%,0 100%,0 20px);
@@ -288,11 +286,6 @@ body {background-image:var(--stone-grain);background-color:var(--surface-foundat
 html[data-page-active="false"] .shell-header button.ui-icon-button {background:transparent!important;box-shadow:none!important;border-color:transparent!important;transform:none!important;}
 html[data-page-active="false"] .home-refresh button.opponent-choice {background:transparent!important;box-shadow:none!important;transform:none!important;}
 html[data-page-active="false"] .home-refresh button.opponent-choice::before {background:var(--stone-grain),linear-gradient(135deg,#fffef9,#f8f3e8);}
-/* Keep the full-viewport grid static: decoration must not delay interaction. */
-.brand-grid {
- mask-image:radial-gradient(ellipse 1050px 850px at var(--grid-origin-x,220px) var(--grid-origin-y,60px),#000 0%,rgb(0 0 0 / 55%) 30%,rgb(0 0 0 / 20%) 85%),radial-gradient(ellipse 650px 650px at 100% 100%,rgb(0 0 0 / 85%),transparent 85%);
- mask-composite:add;opacity:1;
-}
 .story-art {perspective:900px;}
 .story-art img {transform-origin:50% 50%;backface-visibility:hidden;transition:none;}
 .shell-flyout {background:var(--stone-grain),var(--surface-raised);border-color:#cfc5b3;box-shadow:-4px 0 0 #d2c8b7,-9px 0 18px rgb(54 45 30 / 12%);}

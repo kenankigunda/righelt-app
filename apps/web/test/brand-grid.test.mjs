@@ -1,70 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBrandGrid } from '../shell/brand.js';
+import {readFileSync} from 'node:fs';
+import * as brand from '../shell/brand.js';
 
-const fixture=()=>{
-  const writes=[], frames=new Map(), listeners=new Map();
-  let nextFrame=0, observer, rect={left:40,top:24,width:755,height:151}, logo;
-  const element=label=>{
-    const attributes=new Map(), styles=new Map();
-    return {
-      classList:{add(){}},
-      getAttribute:name=>attributes.get(name)??null,
-      setAttribute(name,value){attributes.set(name,String(value));writes.push(`${label}:${name}`);},
-      style:{getPropertyValue:name=>styles.get(name)??'',setProperty(name,value){styles.set(name,value);writes.push(`style:${name}`);}},
-      remove(){this.removed=true;},
-    };
-  };
-  const grid=element('grid'), pattern=element('pattern'), path=element('path');
-  grid.querySelector=()=>pattern;pattern.querySelector=()=>path;
-  const newLogo=()=>({getBoundingClientRect:()=>({...rect})});logo=newLogo();
-  const app={};
-  const documentObject={createElementNS:()=>grid,body:{prepend(){}},getElementById:()=>app,querySelector:()=>logo};
-  const windowObject={
-    MutationObserver:class{constructor(callback){observer=this;this.callback=callback;}observe(target,options){this.target=target;this.options=options;}disconnect(){this.disconnected=true;}},
-    requestAnimationFrame(callback){const id=++nextFrame;frames.set(id,callback);return id;},
-    cancelAnimationFrame(id){frames.delete(id);},
-    addEventListener(name,callback){listeners.set(name,callback);},
-    removeEventListener(name,callback){if(listeners.get(name)===callback)listeners.delete(name);},
-  };
-  const destroy=createBrandGrid({documentObject,windowObject});
-  return {grid,pattern,path,writes,frames,listeners,app,destroy,get observer(){return observer;},
-    flush(){const pending=[...frames.values()];frames.clear();pending.forEach(callback=>callback());},
-    move(next){rect={...rect,...next};},replaceLogo(){logo=newLogo();},setLogoPresent(present){logo=present?newLogo():null;},
-  };
-};
-
-test('unchanged app updates and equal-geometry logo replacement do not rewrite grid paint inputs',()=>{
-  const f=fixture();f.flush();
-  assert.equal(f.pattern.getAttribute('width'),'74');
-  assert.equal(f.pattern.getAttribute('x'),'565');
-  assert.equal(f.path.getAttribute('d'),'M0 37L37 0L74 37L37 74Z');
-  f.writes.length=0;
-  f.observer.callback();f.observer.callback();f.listeners.get('scroll')();
-  assert.equal(f.frames.size,1);f.flush();assert.deepEqual(f.writes,[]);
-  f.replaceLogo();f.observer.callback();f.flush();assert.deepEqual(f.writes,[]);
-  f.destroy();
+// The selected canvas has no page-grid owner. Reintroducing its startup call
+// used to install subtree/scroll observers and animation work on every page.
+test('the removed page grid has no startup, paint or lifecycle owner',()=>{
+ const source=readFileSync(new URL('../shell/brand.js',import.meta.url),'utf8');
+ const app=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
+ const css=readFileSync(new URL('../shell/refresh.css',import.meta.url),'utf8');
+ assert.equal('createBrandGrid' in brand,false);
+ assert.doesNotMatch(source,/MutationObserver|requestAnimationFrame|brand-background-grid/);
+ assert.doesNotMatch(app,/createBrandGrid/);
+ assert.doesNotMatch(css,/\.brand-grid|--grid-origin/);
+ assert.equal(typeof brand.createBrandController,'function','wordmark activity remains independently owned');
+ assert.match(brand.renderWordmark(),/class="brand-motif"/);
 });
 
-test('scroll changes origin without invalidating pitch/path; responsive width updates actual geometry',()=>{
-  const f=fixture();f.flush();f.writes.length=0;
-  f.move({top:-24});f.listeners.get('scroll')();f.flush();
-  assert.deepEqual(f.writes,['style:--grid-origin-y','pattern:y']);
-  assert.equal(f.pattern.getAttribute('y'),'20');
-  f.move({width:377.5,height:75.5});f.listeners.get('resize')();f.flush();
-  assert.equal(f.pattern.getAttribute('width'),'37');
-  assert.equal(f.pattern.getAttribute('height'),'37');
-  assert.equal(f.pattern.getAttribute('x'),'302.5');
-  assert.equal(f.path.getAttribute('d'),'M0 18.5L18.5 0L37 18.5L18.5 37Z');
-  assert.equal(f.path.getAttribute('stroke-width'),'1');f.destroy();
-});
-
-test('observer lifecycle tolerates absent logo and cancels pending grid work on destruction',()=>{
-  const f=fixture();
-  assert.equal(f.observer.target,f.app);assert.deepEqual(f.observer.options,{childList:true,subtree:true});
-  f.setLogoPresent(false);f.flush();assert.equal(f.pattern.getAttribute('width'),null);
-  f.setLogoPresent(true);f.observer.callback();f.flush();assert.equal(f.pattern.getAttribute('width'),'74');
-  f.observer.callback();f.destroy();
-  assert.equal(f.frames.size,0);assert.equal(f.listeners.size,0);
-  assert.equal(f.observer.disconnected,true);assert.equal(f.grid.removed,true);
+test('wordmark activity remains finite and releases timers/listeners while hidden or destroyed',()=>{
+ const timers=new Map(),events=new Map(),motionEvents=new Map();let next=0;
+ const motion={matches:false,addEventListener:(key,fn)=>motionEvents.set(key,fn),removeEventListener:key=>motionEvents.delete(key)};
+ const documentObject={hidden:false,querySelectorAll:()=>[],addEventListener:(key,fn)=>events.set(key,fn),removeEventListener:key=>events.delete(key)};
+ const windowObject={matchMedia:()=>motion,setTimeout:fn=>{timers.set(++next,fn);return next;},clearTimeout:key=>timers.delete(key)};
+ const controller=brand.createBrandController({documentObject,windowObject});controller.setHome(true);assert.equal(timers.size,1);
+ const tick=[...timers.values()][0];timers.clear();tick();assert.deepEqual(controller.getState(),{player:'blue',cell:1});assert.equal(timers.size,1);
+ documentObject.hidden=true;events.get('visibilitychange')();assert.equal(timers.size,0);
+ documentObject.hidden=false;events.get('visibilitychange')();assert.equal(timers.size,1);
+ motion.matches=true;motionEvents.get('change')();assert.equal(timers.size,0);assert.deepEqual(controller.getState(),{player:'red',cell:0});
+ controller.destroy();assert.equal(timers.size,0);assert.equal(events.size,0);assert.equal(motionEvents.size,0);
 });

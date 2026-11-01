@@ -59,7 +59,7 @@ import { createAccountDialog } from './account-dialog.js';
 import { renderPieceSymbol } from '../piece-symbols.js';
 import { invitationOptions, renderInvitationSurface, createHostInvitation, hostInvitationSettled } from './invitations.js';
 import { createIntroductionPreferences, createOpponentSession } from './opponent-session.js';
-import { renderWordmark, createBrandController, createBrandGrid, resolveActionAffiliation } from './brand.js';
+import { renderWordmark, createBrandController, resolveActionAffiliation } from './brand.js';
 import { icon, soundToggle, headerActionContent } from './ui.js';
 import { createGameSound } from './sound.js';
 import { createModal } from './modal.js';
@@ -219,7 +219,6 @@ const accountDialog = createAccountDialog({ controller: account, onSound:kind=>g
 });
 const gameSound = createGameSound({ storage, getIdentityId:()=>transport.getIdentityId() });
 const brand = createBrandController();
-createBrandGrid();
 document.addEventListener('pointerdown',()=>{gameSound.gesture();gameSound.cancelPreview();},{passive:true});
 document.addEventListener('keydown',()=>gameSound.gesture());
 document.addEventListener('visibilitychange',()=>gameSound.activityChanged());
