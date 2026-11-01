@@ -14,7 +14,7 @@ for (const width of [390, 1440]) test(`saved board remains visible while play lo
   // empty metadata move list is the complete history.
   const action = JSON.parse(readFileSync(new URL('../../packages/game-engine/test/fixtures/game-loading-actions.json', import.meta.url))).find(action => action.type === 'move');
   const expectedState = width === 1440 ? resolveToStability(applyAction(initialState, action).state) : initialState;
-  const input = width === 1440 ? { ...scenario, moves: [{ turnIndex: initialState.turnIndex, action, notation: 'Saved move' }], resultingState: expectedState } : scenario;
+  const input = width === 1440 ? { ...scenario, moves: [{ turnIndex: initialState.turnIndex, turnMoveIndex: 0, actorSide: initialState.sideToMove, action, notation: 'Saved move' }], resultingState: expectedState } : scenario;
   const { gameId, gameHash } = await importScenarioGame(page, input, baseURL, { open: false });
   let blocked = true; const releases = new Set(); const mutations = [];
   await page.routeWebSocket(new RegExp(`/api/shell/games/${gameId}/ws`), socket => socket.close());
