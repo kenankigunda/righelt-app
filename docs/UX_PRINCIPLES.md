@@ -465,3 +465,7 @@ Identity color does not define every semantic role. Supply and command paths, ac
 ## Keep feedback above decoration and below modal decisions
 
 Nonmodal notices stay above content, menus, utility rails, mobile navigation, loading borders and the page-transition ribbon. Native modal dialogs and their backdrops stay above notices. Use shared layer roles and inspect ancestor stacking contexts, clipping and transforms. A larger child z-index alone does not establish this order. Notices preserve their controls, focus and incident identity and must not trap focus or make the page inert. See [notifications](RIGHELT_WEB_APP_SPEC.md#13-notifications-and-prompts). Provenance: [D13](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
+
+## Preserve design detail and intentional functionality together
+
+The marble extension requires the full selected visual treatment wherever possible and the app's intentional workflows, icon/label treatments, semantic states and accessibility together. Neither preserving old CSS nor copying a simplified generated reference satisfies that obligation. Follow [the reconciliation rule](ai/MATERIAL_UX_CONTRACT.md#unite-reference-fidelity-and-product-fidelity): record adopt/adapt/conflict/deferred per selected property and actual component, demonstrate both in native contexts, and escalate only demonstrated consequential conflicts. Do not silently omit visual details, existing icons or intentionally text-only affordances.
