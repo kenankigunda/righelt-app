@@ -292,7 +292,7 @@ The current sound contract below owns movement cues and unseen-update reminders.
 
 Hover and focus alone are silent. Deliberate navigation can have distinct forward/back cues. See the current sound contract below.
 
-Use restrained perspective and moving shadow for story artwork changes, with fixed readable copy. Reserve status space for brief confirmations and retain keyboard focus through asynchronous work. Let peripheral utilities reveal labels without competing with play. Background texture remains static under the October 7 decision below. Its geometric alignment must remain stable.
+For modal artwork swaps, use the selected short reverse anticipation then deliberate slide, with the whole outgoing illustration visible through draw-back and clipping only after later slide clearance. Mirror Back. Keep crisp art at intended scale and copy/readiness/actions stationary. This supersedes storybook perspective turning for artwork swaps only. Reserve status space for brief confirmations and retain keyboard focus through asynchronous work. Let peripheral utilities reveal labels without competing with play. Background texture remains static under the October 7 decision below. Its geometric alignment must remain stable.
 
 
 ## Login integration after prerequisite merge (2026-10-04)

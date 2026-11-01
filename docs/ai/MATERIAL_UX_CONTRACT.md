@@ -1,5 +1,17 @@
 # Marble and glass UX contract
 
+## Selected artwork-swap motion: draw back and slide
+
+Final human approval from the study: “Looks fabulous. We love to see it. Ship it to the parent thread as the decision and have it update its debrief and any relevant documentation, then archive”.
+
+For modal ARTWORK SWAPS ONLY, use a short reverse anticipation, then a deliberate forward slide. The entire outgoing illustration stays visible throughout draw-back. Clipping begins only when later slide travel passes the safety clearance. Back mirrors direction. Keep crisp transparent artwork at intended scale and copy/readiness/actions stationary. No page/perspective turn, bounce, curl, brightness wash, added enclosing tray, opaque patch or new sound. Do not shrink artwork to manufacture clearance.
+
+This supersedes earlier preserve-storybook-motion wording only for artwork swaps. Preserve modal entry/exit, route/ribbon, sizing, focus, scroll and unrelated transitions. Preserve three-scene bot stories and their three-second controller, no hover/focus-only pause, deliberate caret/keyboard stopping auto for the visit, page-hidden remaining interval, reduced-motion manual behavior, and readiness/retry/cancel/revisit/session/generation/load/decode/failure semantics. Keep last usable art or a safe fallback on image failure; image load cannot change opponent readiness. Friend stays single-scene with the exact pinned R33 master and separate Home hands.
+
+The selected [corrected playable reference and dual review](https://github.com/kenankigunda/righelt-backlog/blob/main/backlog/docs/tickets/t-118/marble-2026-11-01/artwork-motion-study/selected/README.md) defines the visual behavior. Its 760ms, 6% reverse nudge, 8% safety envelope and outward caret offsets are prototype tuning, not universal tokens. Tune against final marble assets and native geometry while preserving the whole image, native44px targets and legible stationary carets.
+
+Study evidence is bounded prototype proof, not native production acceptance. Implementation must verify complete illustration/target visibility through draw-back, later exit clipping, actual scene identity and both directions, all-frame arbitrary interruption, final new art/alpha/crispness, short-height/zoom/landscape fit, focus/scroll restoration, native caret hit ownership, loading failure/readiness and stale completion. Resolve integration tradeoffs autonomously under the existing nonblocking conflict-report policy. No production implementation, shared PR update, merge/deployment, coordinator dispatch or schedule resumption is authorized by the study handoff.
+
 ## Autonomous conflict resolution and final report
 
 Latest user instruction supersedes the earlier requirement to ask about implementation conflicts. The implementer must choose autonomously the option judged most consistent with the end goal: the full selected beauty together with intentional product workflows, icons, semantics and principles. First attempt an adaptation satisfying both. If a real tradeoff remains, compare alternatives, choose the best overall fit, implement it and validate it without waiting for user confirmation.
@@ -143,4 +155,4 @@ Match all elements of the selected design references wherever possible, without 
 
 Use a per-property adopt/adapt/conflict/deferred ledger from the [reference/product reconciliation protocol](https://github.com/kenankigunda/righelt-backlog/blob/main/backlog/docs/tickets/t-118/marble-2026-11-01/reference-product-reconciliation.md). Include small visual details and every actual control/state, not just material backgrounds. First demonstrate an adaptation satisfying both obligations. Resolve a genuine conflict autonomously using bounded visual/source evidence and the option most consistent with the end goal. Record alternatives, decision, rationale and consequences in the final nonblocking conflict report. No silent loss of approved beauty or functionality. UX validation enforces visual fidelity; product testing enforces workflow fidelity; both independently review repairs and native combined proof.
 
-The separate artwork-swap motion study explores marble-board sliding instead of storybook turning, and notification styling is under study. Those proposed changes are not final variant selections. Generic preservation wording cannot erase later explicit choices, and active studies cannot silently become implemented requirements.
+Artwork-swap motion is now selected as draw back and slide, described above. Notification styling is a separate study. Selection is intended behavior, not implementation proof.
