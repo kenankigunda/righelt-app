@@ -217,11 +217,23 @@ export const joinAsViewer = async (page) => {
 };
 
 export const requestPlayerJoin = async (page) => {
-  if (await getVisibleJoinSurface(page) === "invite-gate") {
-    await page.getByTestId("invite-join-player").click();
-  } else {
-    await page.getByTestId("join-player").click();
-  }
+  const surface=await getVisibleJoinSurface(page);
+  const button=page.getByTestId(surface==='invite-gate'?'invite-join-player':'join-player');
+  await expect(button).toBeVisible();
+  await expect(button).toBeEnabled();
+  const gameId=await button.getAttribute('data-game-id');
+  expect(gameId).toBeTruthy();
+  // The role assertion measures publication after the actual join is accepted,
+  // independently of request transport latency. The workflow budget is unchanged.
+  const joined = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname===`/api/shell/games/${gameId}/join`, {timeout:10000});
+  await button.click();
+  const response=await joined;
+  expect(response.status()).toBe(200);
+  const body=await response.json();
+  expect(body.ok).toBe(true);
+  expect(body.game?.id).toBe(gameId);
+  expect(body.game?.myRole).toBe('Viewer');
+  expect(body.game?.pendingPlayerRequestSeat).toBeTruthy();
   await expect(page.getByTestId("game-role")).toContainText("Viewer");
   await expect(page.getByTestId("pending-player-request-notice")).toBeVisible();
 };
