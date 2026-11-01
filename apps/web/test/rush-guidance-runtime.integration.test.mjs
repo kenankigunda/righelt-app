@@ -40,7 +40,7 @@ test('guidance preserves a selection made while analysis runs',async()=>{
 
 test('failed analysis restores the original reconnect copy and legal highlights',async()=>{
   const f=fixture();await f.runtime.loadSnapshot(state,{legalActions:legal});await flush();f.fail();await flush();
-  assert.match(f.html,/Rush to reconnect piece at/);assert.doesNotMatch(f.html,/Finding|Obligatory/);
+  assert.match(f.html,/Rush to reconnect piece at/);assert.doesNotMatch(f.html,/Finding|Obligatory/);assert.match(f.html,/Hints unavailable/);assert.match(f.html,/Try again/);
   assert.equal(f.render.rushSupplyGuidance,null);assert.deepEqual(f.runtime.getLegalActions(),legal);
 });
 

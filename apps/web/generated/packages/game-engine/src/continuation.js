@@ -665,14 +665,53 @@ export function isContinuationCompletable(state, memo) {
         return solveContinuation(state, memo);
     return completedDecisionRule("continuation-v1", state, () => solveContinuation(state, new Map()));
 }
-// During a rush enemies stay put and friendly pieces never obstruct their own
-// supply. Ignoring every enemy command edge gives an optimistic supply region.
-// A required piece that has already rushed cannot escape outside this region.
+// Enemy pieces never move during a rush. Preserve only command barriers that
+// no remaining friendly actor can possibly interrupt, even with friendly
+// occupancy and enemy-adjacency restrictions relaxed. This overestimates future
+// supply: failure is a proof, while reachability is never a legality answer.
 function optimisticRushSupplyRegion(state) {
     const owner = obligationOwner(state);
-    const blocked = new Set(buildSupplyCheckPieces(state)
-        .filter(piece => piece.owner !== owner)
-        .map(piece => coordinateKey(piece.position.row, piece.position.col)));
+    const allEnemies = state.pieces.filter(piece => piece.owner !== owner);
+    const enemies = allEnemies.filter(piece => !piece.pushed);
+    const blocked = new Set(enemies.map(piece => coordinateKey(piece.position.row, piece.position.col)));
+    const possibleBlockers = new Set();
+    const moved = new Set(state.continuation?.rushedPieceIds ?? []);
+    for (const piece of state.pieces.filter(piece => piece.owner === owner && !piece.pushed)) {
+        possibleBlockers.add(coordinateKey(piece.position.row, piece.position.col));
+        if (moved.has(piece.id) || !isActivePieceInContext(state, piece))
+            continue;
+        for (let dr = -1; dr <= 1; dr++)
+            for (let dc = -1; dc <= 1; dc++) {
+                const to = { row: piece.position.row + dr, col: piece.position.col + dc };
+                if ((!dr && !dc) || outOfBounds(to) || blocked.has(coordinateKey(to.row, to.col)))
+                    continue;
+                // Enemy occupancy and adjacency never change during this sequence.
+                // Friendly occupancy is deliberately relaxed: another actor may vacate it.
+                const enemyAt = (row, col) => allEnemies.some(enemy => enemy.position.row === row && enemy.position.col === col);
+                const geometricallyPossible = dr && dc
+                    ? enemyAt(piece.position.row + dr, piece.position.col) || enemyAt(piece.position.row, piece.position.col + dc)
+                    : allEnemies.some(enemy => Math.max(Math.abs(enemy.position.row - to.row), Math.abs(enemy.position.col - to.col)) === 1);
+                if (geometricallyPossible)
+                    possibleBlockers.add(coordinateKey(to.row, to.col));
+            }
+    }
+    for (const edge of buildCommandEdgesForPieces(enemies)) {
+        checkEngineComputation();
+        const interior = [];
+        if (edge.from.row === edge.to.row) {
+            for (let col = Math.min(edge.from.col, edge.to.col) + 1; col < Math.max(edge.from.col, edge.to.col); col++) {
+                interior.push(coordinateKey(edge.from.row, col));
+            }
+        }
+        else if (edge.from.col === edge.to.col) {
+            for (let row = Math.min(edge.from.row, edge.to.row) + 1; row < Math.max(edge.from.row, edge.to.row); row++) {
+                interior.push(coordinateKey(row, edge.from.col));
+            }
+        }
+        if (!interior.some(key => possibleBlockers.has(key)))
+            for (const key of interior)
+                blocked.add(key);
+    }
     const point = SUPPLY_POINTS[owner];
     const visited = new Set();
     const queue = [point];
@@ -691,7 +730,7 @@ function optimisticRushSupplyRegion(state) {
     }
     return visited;
 }
-function solveContinuation(state, memo, rushSupplyRegion) {
+function solveContinuation(state, memo) {
     checkEngineComputation(Boolean(state.continuation));
     if (!state.continuation) {
         return true;
@@ -716,7 +755,10 @@ function solveContinuation(state, memo, rushSupplyRegion) {
             return true;
         }
         if (normalized.continuation?.type === "rush") {
-            rushSupplyRegion ??= optimisticRushSupplyRegion(normalized);
+            // A friendly actor that has spent its rush can no longer interrupt a
+            // barrier elsewhere. Reusing the root relaxation would keep those dead
+            // branches artificially open and enumerate permutations of unrelated moves.
+            const rushSupplyRegion = optimisticRushSupplyRegion(normalized);
             const required = new Set(obligationPieceIdsForContinuation(normalized));
             const moved = new Set(normalized.continuation.rushedPieceIds ?? []);
             if (normalized.pieces.some(piece => required.has(piece.id) && moved.has(piece.id)
@@ -726,7 +768,7 @@ function solveContinuation(state, memo, rushSupplyRegion) {
             }
         }
         for (const successor of buildSuccessorStates(normalized)) {
-            if (solveContinuation(successor, memo, rushSupplyRegion)) {
+            if (solveContinuation(successor, memo)) {
                 memo.set(key, "success");
                 return true;
             }
@@ -765,6 +807,13 @@ export function analyzeRushSupplyGuidance(state) {
     while (frontier.length) {
         const nextFrontier = [];
         for (const node of frontier) {
+            checkEngineComputation(true);
+            const rushSupplyRegion = optimisticRushSupplyRegion(node.state);
+            const moved = new Set(node.state.continuation?.rushedPieceIds ?? []);
+            const required = new Set(obligationPieceIdsForContinuation(node.state));
+            if (node.state.pieces.some(piece => required.has(piece.id) && moved.has(piece.id)
+                && !rushSupplyRegion.has(coordinateKey(piece.position.row, piece.position.col))))
+                continue;
             // A completed subsequence makes every extension redundant.
             if (solutions.some(route => isSubsequence(route, node.path)))
                 continue;
@@ -772,6 +821,7 @@ export function analyzeRushSupplyGuidance(state) {
             let edges = successors.get(key);
             if (!edges) {
                 edges = buildRushSuccessorActions(node.state).map(action => {
+                    checkEngineComputation(true);
                     const next = buildContinuationSuccessorState(node.state, action);
                     return { action, state: next, closes: canCloseContinuationNow(next) };
                 });

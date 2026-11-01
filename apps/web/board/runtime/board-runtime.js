@@ -635,6 +635,12 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       if (!patchBoardMessage(label,messageHtml)) setBoardPreviewPromptHtml(messageHtml);
       return;
     }
+    if (rushGuidanceStatus === 'failed' && overlayMode === OVERLAY_MODE.INTERACTIVE && !hasInspection()
+      && !selectedPieceId && host.canPresentActions?.(state) !== false && state?.continuation?.type === 'rush') {
+      const blocker = getRushContinuationBlockingPiece(state);
+      setBoardPreviewPromptHtml(`${blocker ? `Rush to reconnect piece at ${renderBoardPreviewCoordinate(blocker.position)}` : 'Select a rush'} · Hints unavailable ${renderBoardInlineAction({id:'retry-rush-guidance',label:'Try again'})}`);
+      return;
+    }
     if (overlayMode === OVERLAY_MODE.INTERACTIVE && !selectedPieceId && !hasInspection() && host.canPresentActions?.(state) !== false
       && state?.continuation?.type === 'rush' && getRushUnsuppliedPieceIds(state).length
       && ['loading', 'ready'].includes(rushGuidanceStatus)) {
@@ -1432,7 +1438,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     const externalAction = event.target.closest("[data-board-message-action]");
     if (externalAction) {
       const action=externalAction.getAttribute("data-board-message-action");
-      if (action === "pass") submitPass();
+      if (action === "retry-rush-guidance") { rushGuidanceKey = null; syncRushGuidance(); renderStatusContent(); }
+      else if (action === "pass") submitPass();
       else controls.onBoardMessageAction?.(action);
       return;
     }
