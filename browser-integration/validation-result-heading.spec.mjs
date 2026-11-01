@@ -34,3 +34,42 @@ test('named observer heading is exact and never falls back to numbered, wrong-na
   await assert.rejects(()=>assertResultHeading(result,{contract:'perspective-v2',outcome:'p2_win',winnerName:'Horus'},{timeout:100}));
  }
 });
+
+const namedHeading = async (page,{actor,color,selfPlay=false}) => {
+ await page.setContent('<style>.sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}</style><section data-testid="result"><h1><span class="owner"><bdi dir="auto"></bdi></span></h1></section>');
+ await page.getByTestId('result').getByRole('heading').evaluate((heading,{actor,color,selfPlay})=>{
+  const owner=heading.querySelector('.owner');
+  if(!selfPlay){const prefix=document.createElement('span');prefix.className='sr-only';prefix.textContent=`${color}: `;owner.prepend(prefix);}
+  owner.querySelector('bdi').textContent=selfPlay?`${actor} won as ${color}`:actor;
+  if(!selfPlay)heading.append(document.createTextNode(' won'));
+ },{actor,color,selfPlay});
+};
+
+test('named v3 headings include exact native nonvisual color and isolated canonical identity',async({page})=>{
+ const result=page.getByTestId('result');
+ for(const [outcome,winner,color]of[['p1_win','p1','Red'],['p2_win','p2','Blue']]){
+  for(const winnerName of ['Guest 1','Horus','Red <&> שלום']){
+   await namedHeading(page,{actor:winnerName,color});
+   await assertResultHeading(result,{contract:'named-perspective-v3',outcome,winnerName});
+   await assertResultHeading(result,{contract:'named-perspective-v3',outcome,winnerName,viewerSide:winner==='p1'?'p2':'p1'});
+  }
+  await namedHeading(page,{actor:'You',color});
+  await assertResultHeading(result,{contract:'named-perspective-v3',outcome,viewerSide:winner});
+  for(const [actor,controlsBothSides]of[['You',true],['Same name',false]]){
+   await namedHeading(page,{actor,color,selfPlay:true});
+   await assertResultHeading(result,{contract:'named-perspective-v3',outcome,winnerName:actor,selfPlay:true,controlsBothSides});
+  }
+ }
+});
+
+test('named v3 rejects wrong owner, wrong name, missing qualifier and longer copy without fallback',async({page})=>{
+ const result=page.getByTestId('result'),options={contract:'named-perspective-v3',outcome:'p1_win',winnerName:'Horus'};
+ for(const [actor,color]of[['Horus','Blue'],['Guest 1','Red'],['Horus again','Red']]){
+  await namedHeading(page,{actor,color});
+  await assert.rejects(()=>assertResultHeading(result,options,{timeout:100}));
+ }
+ await page.setContent('<section data-testid="result"><h1>Horus won</h1></section>');
+ await assert.rejects(()=>assertResultHeading(result,options,{timeout:100}));
+ await namedHeading(page,{actor:'You',color:'Blue',selfPlay:true});
+ await assert.rejects(()=>assertResultHeading(result,{...options,controlsBothSides:true,selfPlay:true},{timeout:100}));
+});

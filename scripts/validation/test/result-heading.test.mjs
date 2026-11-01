@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {expectedResultHeading} from '../result-heading.mjs';
+import {expectedResultHeading,capturedResultHeading} from '../result-heading.mjs';
 
 test('source-selected contracts assert exact winner and loser perspective for either side', () => {
   for (const [contract, win, loss] of [['legacy', 'Win', 'Loss'], ['perspective-v1', 'You won', 'Your opponent won']]) {
@@ -38,4 +38,35 @@ test('named observer results require the captured name and retain exact seated a
   }
   assert.equal(expectedResultHeading({contract:'perspective-v2',outcome:'draw'}),'Draw');
   assert.throws(()=>expectedResultHeading({contract:'perspective-v1',outcome:'p1_win',controlsBothSides:true}));
+});
+
+test('named result v3 preserves exact canonical names, nonvisual colors and actual self-play winner seats',()=>{
+ for(const [outcome,winner,color] of [['p1_win','p1','Red'],['p2_win','p2','Blue']]) {
+  assert.equal(expectedResultHeading({contract:'named-perspective-v3',outcome,viewerSide:winner}),`${color}: You won`);
+  for(const winnerName of ['Guest 1','Horus','Red <&> שלום']) {
+   assert.equal(expectedResultHeading({contract:'named-perspective-v3',outcome,winnerName}),`${color}: ${winnerName} won`);
+   assert.equal(expectedResultHeading({contract:'named-perspective-v3',outcome,winnerName,selfPlay:true}),`${winnerName} won as ${color}`);
+   assert.equal(expectedResultHeading({contract:'named-perspective-v3',outcome,winnerName,viewerSide:winner==='p1'?'p2':'p1'}),`${color}: ${winnerName} won`);
+  }
+  assert.equal(expectedResultHeading({contract:'named-perspective-v3',outcome,controlsBothSides:true,selfPlay:true}),`You won as ${color}`);
+  assert.throws(()=>expectedResultHeading({contract:'named-perspective-v3',outcome}));
+  assert.throws(()=>expectedResultHeading({contract:'named-perspective-v3',outcome,controlsBothSides:true}));
+ }
+ assert.equal(expectedResultHeading({contract:'named-perspective-v3',outcome:'draw'}),'Draw');
+});
+
+
+test('acknowledged result context keeps human identities and computer profiles distinct',()=>{
+ const game={player1:{identityId:'a'},player2:{identityId:'b'},board:{state:{outcome:{status:'p1_win'}}}};
+ const options={contract:'named-perspective-v3',viewerSide:'p2'};
+ assert.equal(capturedResultHeading(game,options).winnerName,'Guest 1');
+ assert.equal(capturedResultHeading({...game,player1:null},options).winnerName,'Guest');
+ const named={...game,player1:{identityId:'a',profile:{displayName:'Blue <&> שלום'}},player2:{identityId:'a',profile:{displayName:'Blue <&> שלום'}},selfPlayMode:true};
+ assert.deepEqual(capturedResultHeading(named,{...options,controlsBothSides:true}),{...options,outcome:'p1_win',controlsBothSides:true,selfPlay:true,winnerName:'Blue <&> שלום'});
+ const computer={...named,computer:{seats:{p1:'babs',p2:null},manual:true}};
+ const captured=capturedResultHeading(computer,options);
+ assert.equal(captured.winnerName,'Babs');assert.equal(captured.selfPlay,false);
+ assert.equal(expectedResultHeading(captured),'Red: Babs won');
+ assert.throws(()=>capturedResultHeading({...game,computer:{seats:{p1:'unknown'}}},options));
+ assert.throws(()=>capturedResultHeading({...game,board:{state:{outcome:{status:'ongoing'}}}},options));
 });
