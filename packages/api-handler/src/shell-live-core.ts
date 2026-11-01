@@ -1,3 +1,4 @@
+import { LIVE_HISTORY } from "../../shared-types/src/sync-protocol";
 import { boundedEngineOperation } from "../../game-engine/src/computation-guard";
 import {CURRENT_RETREAT_SEMANTICS,archivedRetreatSemantics,type RetreatSemantics} from '../../shared-types/src/retreat-rules';
 import { computerProfileFor, type ComputerControl, type ComputerProfile, type ComputerProof } from '../../shared-types/src/computer-play';
@@ -877,7 +878,7 @@ const buildViewModel = (game: LiveGame, identityId: string, includeLegalActions:
         return game.viewers.some((viewer) => viewer.identityId === identityId && viewer.connected);
       })
     : false;
-  const historyIndex = typeof historyIndexByIdentity[identityId] === "number" ? historyIndexByIdentity[identityId] : null;
+  const historyIndex = includeLegalActions && typeof historyIndexByIdentity[identityId] === "number" ? historyIndexByIdentity[identityId] : null;
   const inHistoryMode = typeof historyIndex === "number";
   const currentSnapshot =
     typeof historyIndex === "number" && moves[historyIndex]
@@ -987,7 +988,7 @@ export const withFullViewModel = (game: LiveGame, identityId: string) => buildVi
 /** Presentation only. Never use this projection as command/reconciliation state. */
 export const withPositionViewModel = (game: LiveGame, identityId: string) => {
   const view = buildViewModel(game, identityId, false);
-  return { ...view, legalActions: undefined, positionOnly: true as const,
+  return { ...view, legalActions: undefined, positionOnly: true as const, historyProjection: LIVE_HISTORY.snapshotValue,
     canRecordMove: false, canEndTurn: false, canUndoLastMove: false,
     canPlayAsBothPlayers: false, canControlComputer: false, canInvite: false, canJoinAsPlayer: false,
     canJoinAsViewer: false, showJoinActions: false, inviteToken: null,

@@ -25,6 +25,10 @@ for (const width of [390, 1440]) test(`saved board remains visible while play lo
     await switchGamePanel(page, 'board');
     const board = page.getByTestId('game-board'), wrap = page.getByTestId('game-board-wrap');
     await expect(board.locator('[data-piece-id]')).toHaveCount(initialState.pieces.length);
+    // Initial frames must contain their real side panels before route hydration.
+    await expect(page.locator('[data-game-panel="summary"]')).toContainText('Role:');
+    await expect(page.locator('[data-game-panel="join"] h2')).toHaveText('Players');
+    await expect(page.locator('[data-game-panel="history"] h2')).toHaveText('History');
     await expect(wrap).toHaveAttribute('aria-busy', 'true');
     await expect(wrap).toHaveAttribute('data-loading-phase', /visible|slow/);
     await expect(page.locator('.loading-edge-frame').first()).toBeVisible();

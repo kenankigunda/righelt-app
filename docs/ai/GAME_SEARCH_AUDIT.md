@@ -23,7 +23,7 @@ Cold local enumeration before optimization took about 3.2 seconds and 240,262 co
 
 ## Position-only safety contract
 
-`GET /api/shell/games/:id/position` reads durable state without dispatching a room operation or mutating a game. It uses existing authorization, account-name enrichment, and sanitization. The shared `position-v1` discriminator and `positionOnly` marker distinguish presentation from synchronization.
+`GET /api/shell/games/:id/position` reads durable state without dispatching a room operation or mutating a game. It uses existing authorization, account-name enrichment, and sanitization. D1 strips per-move snapshots before returning row metadata and move summaries. The outer Worker never decompresses history payloads or reconstructs archives for this route. Compacted history remains accessible through the existing paginated read endpoints. The shared `position-v1` discriminator and `positionOnly` marker distinguish presentation from synchronization.
 
 The browser stores this view separately from authoritative games, event cursors, command receipts, and optimistic projection. The complete-snapshot validator rejects position-only views. Late position replies cannot replace a complete response or survive account retirement. Older full responses cannot replace a newer displayed position.
 

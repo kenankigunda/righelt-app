@@ -2549,6 +2549,7 @@ const revealSelectedHistory = () => {
 };
 
 const renderHistoryPanel = (game) => {
+  if (game.positionOnly && game.positionHistoryPending) return `${renderHistoryLoading()}<p class="small" role="status">Loading game history</p>`;
   const historyRows = renderTurnHistory(game);
   return renderHistorySlots({rows:historyRows,extra:renderAdditionalHistory(game),
     before:renderHistoryResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) + (game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? (game.historyLoadTurnIndex != null ? "Loading this turn" : "Loading this move") : (game.historyLoadTurnIndex != null ? "This turn couldn’t load. Your current view is still available." : "This move couldn’t load. Your current view is still available.")}</p>${game.historyLoadError ? `<button class="secondary mini-button" ${game.historyLoadTurnIndex != null ? `data-action="jump-history-turn" data-turn-index="${game.historyLoadTurnIndex}"` : `data-action="jump-history" data-move-index="${game.historyLoadIndex}"`} data-game-id="${escapeHtml(game.id)}">Retry</button>` : ""}</div>` : ""),
@@ -2599,8 +2600,8 @@ const renderGameShellFrame = (game, { loading = false } = {}) => `
     <div class="game-shell-track-wrap">
       <section class="layout-grid game-shell-track" data-game-shell-track>
         <div class="stack game-shell-mobile-panel" data-mobile-panel="players" data-shell-sticky-target="left" data-sticky-enabled="false">
-          <section class="panel" data-game-panel="summary">${loading ? renderSummaryLoading(`Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span>`) : ""}</section>
-          <section class="panel" data-game-panel="join">${loading ? renderPlayersLoading() : ""}</section>
+          <section class="panel" data-game-panel="summary">${loading ? renderSummaryLoading(`Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span>`) : renderGameSummaryPanel(game)}</section>
+          <section class="panel" data-game-panel="join">${loading ? renderPlayersLoading() : renderJoinInvitePanel(game, `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || game.id, getCurrentFlyoutState())}`)}</section>
 
         </div>
 
@@ -2611,7 +2612,7 @@ const renderGameShellFrame = (game, { loading = false } = {}) => `
         </div>
 
         <div class="stack game-shell-mobile-panel" data-mobile-panel="history">
-          <section class="panel" data-game-panel="history">${loading ? renderHistoryLoading() : ""}</section>
+          <section class="panel" data-game-panel="history">${loading ? renderHistoryLoading() : renderHistoryPanel(game)}</section>
         </div>
       </section>
     </div>

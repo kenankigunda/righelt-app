@@ -15,7 +15,7 @@ import {
 } from "./shell-live-core";
 import {
   countHomeSectionGames,
-  loadGameProjection,
+  loadPositionProjection,
   listHomeSectionStaticGameCardPage,
   resolveInvite,
   type D1DatabaseLike,
@@ -396,7 +396,7 @@ export const handleLiveGameRequest = async (
     if (request.method === "GET" && route.length === 3 && route[2] === "position") {
       const identityId = asIdentity(url.searchParams.get("identityId")) ?? (authActive(env) ? "" : null);
       if (identityId === null) return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
-      const projection = await loadGameProjection(env, gameId);
+      const projection = await loadPositionProjection(env, gameId);
       if (!projection) return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: CACHE_NO_STORE };
       if (projection.kind === "invalid") return { handled: true, status: 500, body: { ok: false, error: "invalid_persisted_game" }, cacheControl: CACHE_NO_STORE };
       const game = withPositionViewModel(projection.game, authActive(env) && projection.game.ownershipMode !== "account_v1" ? "" : identityId);
