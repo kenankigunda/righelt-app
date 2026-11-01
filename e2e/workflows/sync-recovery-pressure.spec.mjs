@@ -125,7 +125,7 @@ function expectPerspective(value,index) {
  expect(value.presentation.heading).toBe(actor==='You'?'Your turn to play':`${actor} to play`);
  if(value.presentation.live)expect(value.presentation.live).toBe(`Live · Waiting on ${actor==='You'?'you':actor==='Opponent'?'opponent':actor} to move`);
  expect(value.presentation.visibleMoveActorNames).toBe(0);
- for(const entry of value.presentation.actors)expect(entry.text).toBe(label(entry.side));
+ for(const entry of value.presentation.actors)expect(entry.text).toBe(`Guest ${entry.side==='P1'?1:2}`);
 }
 async function converged(pages) {
  for(const page of pages)await expect(page.getByTestId("game-board")).toBeVisible();

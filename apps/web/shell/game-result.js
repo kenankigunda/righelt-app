@@ -2,7 +2,7 @@ import {isTerminalOutcome} from './game-lifecycle.js';
 import {owningPerspective,playerDisplayName,sideColorName} from './perspective-labels.js';
 import { icon } from './ui.js';
 import { commanderOutcome } from '../generated/packages/shared-types/src/commander-outcome.js';
-export const RESULT_HEADING_CONTRACT = 'perspective-v2';
+export const RESULT_HEADING_CONTRACT = 'named-perspective-v3';
 export const REMATCH_CHOICES_CONTRACT = 'colors-v1';
 
 export const getGameResult = (game, identityId) => {
@@ -15,23 +15,43 @@ export const getGameResult = (game, identityId) => {
   const both = perspective.kind === 'self';
   const side = both ? game.selfPlayStartSide || 'p1' : perspective.sides[0]?.toLowerCase() ?? null;
   const winner = outcome.status === "draw" ? null : outcome.status.slice(0, 2);
-  const title = !winner ? 'Draw' : both || winner === side ? 'You won' : side ? 'Your opponent won' : `${playerDisplayName(game,winner)} won`;
-  const commander = owner => both ? `Your ${sideColorName(owner)} commander` : !side ? `${playerDisplayName(game,owner)}’s commander` : side === owner ? 'Your commander' : 'Your opponent’s commander';
-  const reasons = { both_commanders_unsupplied: "Both commanders lost their supply.", p1_commander_unsupplied: `${commander('p1')} lost its supply.`, p2_commander_unsupplied: `${commander('p2')} lost its supply.`, p1_commander_destroyed: `${commander('p1')} was destroyed.`, p2_commander_destroyed: `${commander('p2')} was destroyed.`, both_commanders_destroyed: "Both commanders were destroyed.", p1_commander_destroyed_p2_unsupplied: `${commander('p1')} was destroyed. ${commander('p2')} lost its supply.`, p1_commander_unsupplied_p2_destroyed: `${commander('p1')} lost its supply. ${commander('p2')} was destroyed.` };
+  const humanSelfPlay = Boolean(game.selfPlayMode && game.player1?.identityId && game.player1.identityId === game.player2?.identityId
+    && !game.player1?.computerProfile && !game.player2?.computerProfile && !game.computer?.seats?.p1 && !game.computer?.seats?.p2);
+  const winnerName = winner ? both || winner === side ? 'You' : playerDisplayName(game,winner) : null;
+  const titleParts = !winner ? [{text:'Draw'}] : humanSelfPlay
+    ? [{text:`${winnerName} won as ${sideColorName(winner)}`,side:winner,colorNamed:true}]
+    : [{text:winnerName,side:winner},{text:' won'}];
+  const title = titleParts.map(part=>part.text).join('');
+  const commander = owner => ({text:both ? `Your ${sideColorName(owner)} commander` : side === owner ? 'Your commander' : `${playerDisplayName(game,owner)}’s commander`,side:owner,...(both?{colorNamed:true}:{})});
+  const sentence = (owner,ending) => [commander(owner),{text:ending}];
+  const reasons = {
+    both_commanders_unsupplied:[{text:'Both commanders lost their supply.'}],
+    p1_commander_unsupplied:sentence('p1',' lost its supply.'),p2_commander_unsupplied:sentence('p2',' lost its supply.'),
+    p1_commander_destroyed:sentence('p1',' was destroyed.'),p2_commander_destroyed:sentence('p2',' was destroyed.'),
+    both_commanders_destroyed:[{text:'Both commanders were destroyed.'}],
+    p1_commander_destroyed_p2_unsupplied:[...sentence('p1',' was destroyed. '),...sentence('p2',' lost its supply.')],
+    p1_commander_unsupplied_p2_destroyed:[...sentence('p1',' lost its supply. '),...sentence('p2',' was destroyed.')],
+  };
   // Old outcomes used 'unsupplied' even after a commander was removed by a
   // push. Read the saved terminal position without rewriting that record.
   const legacy = Array.isArray(game.board.state.pieces) && ['both_commanders_unsupplied','p1_commander_unsupplied','p2_commander_unsupplied'].includes(outcome.reason) ? commanderOutcome(game.board.state.pieces) : null;
   const reason = legacy?.status === outcome.status ? legacy.reason : outcome.reason;
   const tone = !winner ? 'draw' : !side ? 'neutral' : both || winner === side ? 'victory' : 'defeat';
-  return { title, side, winner, tone, controlsBothSides: both, reason: reasons[reason] || "The game has finished.", opponent: game.computer?.seats?.p1 || game.computer?.seats?.p2 || game.player1?.computerProfile || game.player2?.computerProfile || (game.selfPlayMode ? "self" : "friend"), rematchSide: side === "p1" ? "p2" : "p1" };
+  const reasonParts=reasons[reason] ?? [{text:'The game has finished.'}];
+  return { title, titleParts, side, winner, tone, controlsBothSides: both, reason: reasonParts.map(part=>part.text).join(''), reasonParts, opponent: game.computer?.seats?.p1 || game.computer?.seats?.p2 || game.player1?.computerProfile || game.player2?.computerProfile || (game.selfPlayMode ? "self" : "friend"), rematchSide: side === "p1" ? "p2" : "p1" };
 };
 
 const escapeResult = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Structured owner references avoid guessing identities from duplicate names or user text.
+export const renderResultText = (result,field) => (result?.[`${field}Parts`] ?? [{text:result?.[field] ?? ''}]).map(part=>
+  part.side ? `<span class="player-tone-${part.side}">${part.colorNamed?'':`<span class="sr-only">${sideColorName(part.side)}: </span>`}<bdi dir="auto">${escapeResult(part.text)}</bdi></span>` : escapeResult(part.text)
+).join('');
 export const renderHistoryResult = (game,identityId) => {
   const result=getGameResult(game,identityId);
   if(!result)return '';
   const color=result.winner?sideColorName(result.winner):null;
-  return `<p class="history-result-summary" data-testid="history-result-summary" role="status"><strong class="${result.winner?`player-tone-${result.winner}`:'player-tone-neutral'}">${escapeResult(result.title)}</strong>${color?` <span>· ${color}</span>`:''}</p>`;
+  const accessible=result.title + (color && !result.title.endsWith(` as ${color}`) ? `, ${color}` : '');
+  return `<p class="history-result-summary" data-testid="history-result-summary" role="status"><strong class="player-tone-neutral" aria-label="${escapeResult(accessible)}">${renderResultText(result,'title')}</strong></p>`;
 };
 
 // Only an observed live transition opens automatically. Initial hydration,

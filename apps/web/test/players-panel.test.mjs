@@ -4,8 +4,8 @@ import {renderPlayersPanel} from '../shell/players-panel.js';
 const game={id:'game',myRole:'Player 1',player1:{identityId:'me'},player2:{identityId:'other',profile:{displayName:'Ada',username:'ada'}},viewers:[]};
 test('seat emblems replace numbered seat labels and identity remains a profile action',()=>{
  const html=renderPlayersPanel(game,{identityId:'me'});
- assert.match(html,/<bdi>You<\/bdi>/);assert.match(html,/<bdi>Ada<\/bdi>/);
- assert.match(html,/aria-label="You, Red, Disconnected"/);assert.match(html,/data-player-side="p2"/);
+ assert.match(html,/<bdi>Guest<\/bdi>/);assert.match(html,/<bdi>Ada<\/bdi>/);
+ assert.match(html,/aria-label="Guest, you, Red, Disconnected"/);assert.match(html,/data-player-side="p2"/);
  assert.match(html,/No viewers/);assert.doesNotMatch(html,/Player [12]|Guest player/);
  assert.match(html,/data-username="ada"/);
 });
@@ -54,7 +54,7 @@ test('configured computer seats remain recoverable when manual projections omit 
  for(const marker of [undefined,null])for(const both of [false,true]){
   const html=renderPlayersPanel({...game,computer:{manual:true,paused:true,seats:{p1:both?'babs':null,p2:'horus'}},player1:{identityId:'me',computerProfile:marker},player2:{identityId:'me',computerProfile:marker}},{identityId:'me',expandedComputers:new Set(['P1','P2']),computerActivity:{state:'paused',label:'Paused',showResume:true,disabledReason:null}});
   assert.match(html,/Horus, Blue, Paused/);assert.equal((html.match(/>Resume here<\/button>/g)||[]).length,both?2:1);
-  if(both)assert.match(html,/Babs, Red, Paused/);else assert.match(html,/<bdi>You<\/bdi>/);
+  if(both)assert.match(html,/Babs, Red, Paused/);else assert.match(html,/<bdi>Guest<\/bdi>/);
  }
 });
 
@@ -66,7 +66,7 @@ test('both guest names are visible to their owner and viewers without losing own
   assert.match(html,new RegExp(`aria-label="Guest 1${identityId==='me'?', you':''}, Red, Connected"`));
  }
  const namedSelf={...game,selfPlayMode:true,myRole:'Both Players',player1:{identityId:'me',profile:{displayName:'Ada'}},player2:{identityId:'me',profile:{displayName:'Ada'}}};
- assert.equal((renderPlayersPanel(namedSelf,{identityId:'me'}).match(/<bdi>You<\/bdi>/g)||[]).length,2);
+ assert.equal((renderPlayersPanel(namedSelf,{identityId:'me'}).match(/<bdi>Ada<\/bdi>/g)||[]).length,2);
 });
 test('computer kind is a small native icon with accessible type and finished controls stay absent',()=>{
  const html=renderPlayersPanel({...game,player2:{identityId:'me',computerProfile:'horus'}},{identityId:'me',expandedComputers:new Set(['P2']),computerActivity:{state:'finished',label:'Game finished',showResume:false}});
