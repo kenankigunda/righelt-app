@@ -1,3 +1,4 @@
+import { createRushSupplyGuidanceClient, rushActionKey } from '../rush-supply-guidance.js';
 import {boardMessagePresentation,renderBoardMessageHtml,renderBoardInlineAction,updateBoardInlineActionLabel,patchBoardMessage} from '../message-presentation.js';
 import { inspectionPaths, supplyOwnerAt, supplyPointForOwner } from "../inspection.js";
 import {renderCoordinateChip} from '../coordinate-chip.js';
@@ -18,6 +19,7 @@ import {
 import {
   canCloseContinuationNow,
   getRushContinuationBlockingPiece,
+  getRushUnsuppliedPieceIds,
 } from "../../generated/packages/game-engine/src/continuation.js";
 import { buildPieceMoveResponse, listPieceMovesFromLegalActions } from "../client-move-generation.js";
 
@@ -48,7 +50,7 @@ const OVERLAY_MODE = {
   RECORDED_ACTION: "recorded-action",
 };
 
-export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
+export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuidanceClient = createRushSupplyGuidanceClient() }) {
   let elements = {
     boardEl: null,
     overlayLinesEl: null,
@@ -70,6 +72,48 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let submitting = false;
   let destroyed = false;
   let legalActions = [];
+  let rushGuidanceKey = null;
+  let rushGuidanceGeneration = 0;
+  let rushGuidance = null;
+  let rushGuidanceStatus = 'idle';
+  const syncRushGuidance = () => {
+    const eligible = !previewsSuspended && overlayMode === OVERLAY_MODE.INTERACTIVE && state?.continuation?.type === 'rush'
+      && host.canPresentActions?.(state) !== false && getRushUnsuppliedPieceIds(state).length > 0;
+    const key = eligible ? JSON.stringify(state) : null;
+    if (key === rushGuidanceKey) return;
+    rushGuidanceClient.cancel();
+    const generation = ++rushGuidanceGeneration;
+    rushGuidanceKey = key;
+    rushGuidance = null;
+    rushGuidanceStatus = key ? 'loading' : 'idle';
+    if (!key) return;
+    const snapshot = structuredClone(state);
+    Promise.resolve().then(() => {
+      if (destroyed || rushGuidanceGeneration !== generation || rushGuidanceKey !== key) throw new Error('stale_rush_guidance');
+      return rushGuidanceClient.analyze(snapshot);
+    }).then(result => {
+      if (destroyed || rushGuidanceGeneration !== generation || rushGuidanceKey !== key) return;
+      if (!result?.actions?.length) throw new Error('empty_rush_guidance');
+      rushGuidance = result;
+      rushGuidanceStatus = 'ready';
+      const sources = new Set(result.actions.map(entry => entry.action.actorId));
+      if (sources.size === 1 && !selectedPieceId && !hasInspection() && host.canInteract?.(state) !== false) {
+        const piece = getBoardPieceById([...sources][0]);
+        if (piece) {
+          selectedPieceId = piece.id;
+          selectedSource = { ...piece.position };
+          selectedPieceOverlayPhase = 'actionPreviews';
+          primeSelectedPieceMovesFromLegalActions();
+          refreshSelectionLabels();
+        }
+      }
+      renderBoard(); renderStatus();
+    }).catch(() => {
+      if (destroyed || rushGuidanceGeneration !== generation || rushGuidanceKey !== key) return;
+      rushGuidanceStatus = 'failed'; rushGuidance = null;
+      renderBoard(); renderStatus();
+    });
+  };
   let selectedPieceMoves = [];
   let selectedPieceMovePreviews = [];
   let selectedPieceMovesLoading = false;
@@ -458,10 +502,12 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!state || !mounted) {
       return;
     }
+    syncRushGuidance();
     const effectiveMoves = getEffectiveSelectedPieceMovesForBoard();
     const canInteract = host.canInteract?.(state) !== false;
     boardAdapter.render({
       snapshot: state,
+      rushSupplyGuidance: rushGuidance,
       selection: getCurrentSelection(),
       overlay: getOverlay(),
       legalActions,
@@ -574,6 +620,28 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       }
       const messageHtml = renderBoardMessageHtml(message);
       if (!patchBoardMessage(label,messageHtml)) setBoardPreviewPromptHtml(messageHtml);
+      return;
+    }
+    if (overlayMode === OVERLAY_MODE.INTERACTIVE && !hasInspection() && host.canPresentActions?.(state) !== false
+      && state?.continuation?.type === 'rush' && getRushUnsuppliedPieceIds(state).length
+      && ['loading', 'ready'].includes(rushGuidanceStatus)) {
+      const ids = rushGuidance?.obligationPieceIds ?? getRushUnsuppliedPieceIds(state);
+      const points = ids.map(id => getBoardPieceById(id)?.position).filter(Boolean)
+        .sort((a,b) => a.row - b.row || a.col - b.col);
+      const coordinates = points.map(point => renderCoordinateChip(point, 'board-preview-coordinate-chip-rush-blocker')).join(', ');
+      let detail = rushGuidanceStatus === 'loading' ? 'Finding rushes that restore supply' : '';
+      const action = selectedTarget && selectedPieceMoves.find(action => action.type === 'rush' && sameCoordinate(action.to, selectedTarget));
+      if (action) {
+        const entry = rushGuidance?.actions.find(entry => rushActionKey(entry.action) === rushActionKey(action));
+        const actionCopy = `${getUsesHoverTargetSelection() ? 'Click to' : 'Click again to'} ${actionPreviewLabel('rush', state, selectedTarget)}`;
+        const effect = entry ? entry.immediate ? 'Restores required supply' : 'Restores required supply after further rushes' : '';
+        detail = [actionCopy, effect || detail].filter(Boolean).join(' · ');
+      } else {
+        const blocked = selectedTarget && selectedPieceMovePreviews.find(preview => sameCoordinate(preview.to, selectedTarget) && preview.legal === false);
+        const explanation = blocked ? getBlockedMoveExplanation(blocked.blockedReason) : pieceSummary?.details?.explanation;
+        if (explanation) detail = [`${selectedSource ? `Piece at (${selectedSource.row}, ${selectedSource.col}) – ` : ''}${explanation}`, detail].filter(Boolean).join(' · ');
+      }
+      setBoardPreviewPromptHtml(`<span class="board-obligatory-pill">Obligatory</span> Rush to restore supply to the ${points.length === 1 ? 'piece' : 'pieces'} at ${coordinates}${detail ? `<span class="board-rush-guidance-detail">${escapeHtml(detail)}</span>` : ''}`);
       return;
     }
     const explanation = pieceSummary?.details?.explanation;
@@ -1623,12 +1691,17 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
   const onPreviewVisibility = () => {
     previewsSuspended = Boolean(document.hidden);
-    if (previewsSuspended) invalidateSelectedPieceMovesRequests();
-    else if (!destroyed && selectedPieceId) void reloadSelectedPieceMoves().catch(error => {
-      setResult({ ok: false, error: 'piece_moves_load_failed', message: error.message });
-    });
+    if (previewsSuspended) {
+      rushGuidanceGeneration++; rushGuidanceClient.cancel(); rushGuidanceKey = null; rushGuidance = null; rushGuidanceStatus = 'idle';
+      invalidateSelectedPieceMovesRequests();
+    } else if (!destroyed) {
+      renderBoard(); renderStatus();
+      if (selectedPieceId) void reloadSelectedPieceMoves().catch(error => {
+        setResult({ ok: false, error: 'piece_moves_load_failed', message: error.message });
+      });
+    }
   };
-  const onPreviewPageHide = () => { previewsSuspended = true; invalidateSelectedPieceMovesRequests(); };
+  const onPreviewPageHide = () => { rushGuidanceGeneration++; rushGuidanceClient.cancel(); rushGuidanceKey = null; rushGuidance = null; rushGuidanceStatus = 'idle'; previewsSuspended = true; invalidateSelectedPieceMovesRequests(); };
   let previewLifecycleBound = false;
   const bindPreviewLifecycle = () => {
     if (previewLifecycleBound) return;
@@ -1648,6 +1721,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
   const destroy = () => {
     destroyed = true;
+    rushGuidanceClient.destroy();
     snapshotRevision += 1;
     invalidateSelectedPieceMovesRequests({clearCache:true});
     boardAdapter.unmount?.();
