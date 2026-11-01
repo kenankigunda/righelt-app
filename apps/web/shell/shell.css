@@ -893,6 +893,15 @@ button.secondary:disabled {
   grid-template-rows: auto;
 }
 
+/* Keep the labelled disclosure from narrowing the message at small widths.
+   This layout is identical before and after expansion, preserving its hit target. */
+@container game-alert (width < 480px) {
+  .shell-game-alert:has(.shell-game-alert-actions):has(.issue-diagnostic) {
+    grid-template-areas: "copy copy" "actions disclosure" "details details";
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+}
+
 @container game-alert (min-width: 480px) {
   .shell-game-alert:has(.shell-game-alert-actions) {
     grid-template-columns: minmax(0, 1fr) auto auto;
@@ -2206,7 +2215,9 @@ textarea:focus-visible {
 .shell-game-alert .issue-details { grid-area: details; min-width: 0; min-height: 0; overflow: auto; border-top: 1px solid var(--divider, var(--line)); padding-top: 12px; }
 .shell-game-alert .issue-details > p { margin: 0 0 8px; }
 .shell-game-alert .issue-details > button { min-height: 44px; margin: 0 8px 8px 0; }
-.shell-game-alert .issue-details pre { margin: 0; }
+.shell-game-alert .issue-details { display: flex; flex-direction: column; }
+.shell-game-alert .issue-details > :is(p, button) { flex: 0 0 auto; }
+.shell-game-alert .issue-details pre { margin: 0; min-height: 0; flex: 1 1 auto; overflow: auto; }
 .shell-header-status:has(.issue-details) { height: auto; }
 @media (prefers-reduced-motion: reduce) {
   .board-wrap > .board, .board-wrap > .overlay-lines { transition: none; }
