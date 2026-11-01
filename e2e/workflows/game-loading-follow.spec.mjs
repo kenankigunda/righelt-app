@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { importScenarioGame, switchGamePanel } from '../support/app.mjs';
 import { readProjectedGame } from '../support/computer-projection.mjs';
+import { ownedContexts } from '../support/owned-contexts.mjs';
 import { applyAction, resolveToStability } from '../../apps/web/generated/packages/game-engine/src/index.js';
 import { CURRENT_COMPUTER_MODEL } from '../../packages/shared-types/src/computer-play.ts';
 import { STORAGE_GENERATION_HEADER } from '../../packages/shared-types/src/storage-policy.js';
@@ -60,44 +61,72 @@ const journalEntry = (page, command) => page.evaluate(envelope => new Promise((r
   };
 }), command);
 
-test('the retained follow saves once, survives reload and resumes native Horus play', async ({ page, baseURL }, info) => {
+test.describe('retained Horus follow', () => {
+  // Keep the actual page, identity, game and receipt across both journeys. Each
+  // native decision gets the existing test budget; failures skip its dependent.
+  test.describe.configure({ mode: 'serial' });
+  let owned, page, game, command, originalReceipt, paused;
+  test.beforeAll(async ({ browser }, info) => {
+    owned = ownedContexts(browser);
+    const use = info.project.use;
+    const context = await owned.create({ ...use.contextOptions, baseURL: use.baseURL,
+      viewport: { width: 390, height: 900 }, deviceScaleFactor: use.deviceScaleFactor,
+      isMobile: use.isMobile, hasTouch: use.hasTouch, userAgent: use.userAgent });
+    page = await context.newPage();
+  });
+  test.afterAll(async () => { await owned?.close(); });
+  const nextCommand = minimumGeneration => page.waitForRequest(request => {
+    if (request.method() !== 'POST' || new URL(request.url()).pathname !== `/api/shell/games/${game.id}/apply`) return false;
+    return request.postDataJSON()?.payload?.computer?.generation > minimumGeneration;
+  }, { timeout: 30000 });
+
+test('the exact follow saves once and pauses with its durable receipt', async ({ baseURL }, info) => {
   await page.setViewportSize({ width: 390, height: 900 });
   const { gameId: sourceId } = await importScenarioGame(page, scenario, baseURL, { open: false });
   const source = await projected(page, sourceId);
-  const { game } = await guestRequest(page, '/api/shell/history/branch', { sourceGameId: sourceId,
+  ({ game } = await guestRequest(page, '/api/shell/history/branch', { sourceGameId: sourceId,
     sourceDecisionId: source.moves.at(-1).moveId, creatorSide: 'p2',
     // Watch mode permits a later native decision regardless of which side the
     // resumed continuation leaves active. The retained model itself is unchanged.
-    computer: { p1: 'horus', p2: 'horus' }, computerModelId: CURRENT_COMPUTER_MODEL.id });
+    computer: { p1: 'horus', p2: 'horus' }, computerModelId: CURRENT_COMPUTER_MODEL.id }));
   expect(game.legalActions).toEqual([action]);
   expect(game.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
   const acquired = await guestRequest(page, `/api/shell/games/${game.id}/computer-control`, { action: 'acquire', deviceId: 'follow-fixture', generation: game.computer.generation });
   await guestRequest(page, `/api/shell/games/${game.id}/computer-control`, { action: 'pause', deviceId: 'follow-fixture', generation: acquired.game.computer.generation });
   await page.goto(`/?retained-follow=1#/game/${game.id}`);
-  const nextCommand = minimumGeneration => page.waitForRequest(request => {
-    if (request.method() !== 'POST' || new URL(request.url()).pathname !== `/api/shell/games/${game.id}/apply`) return false;
-    return request.postDataJSON()?.payload?.computer?.generation > minimumGeneration;
-  });
   const firstRequest = nextCommand(-1);
   await resumeHere(page, game.id);
-  const command = (await firstRequest).postDataJSON(), saved = await acceptedReceipt(page, command);
+  command = (await firstRequest).postDataJSON();
+  const saved = await acceptedReceipt(page, command);
   expect(command.payload.action).toEqual(action);
   expect(command.payload.computer.modelId).toBe(game.computer.modelId);
   expect(command.payload.computer.profile).toBe('horus');
   expect(saved.commandOutcomes).toHaveLength(1);
-  const originalReceipt = saved.commandOutcomes[0];
+  originalReceipt = saved.commandOutcomes[0];
   expect(originalReceipt).toMatchObject({ gameId: game.id, identityId: command.identityId, clientCommandId: command.clientCommandId,
     fingerprint: command.fingerprint, outcome: 'accepted', gameplayRevision: command.expectedGameplayRevision + 1 });
   expect(saved.game.moves.filter(move => move.clientCommandId === command.clientCommandId)).toHaveLength(1);
   // Pause through the real owned handler after acknowledgement, never altering
   // the command, proof, generation or receipt that admitted the saved follow.
   const current = await projected(page, game.id);
-  const paused = (await guestRequest(page, `/api/shell/games/${game.id}/computer-control`, {
+  paused = (await guestRequest(page, `/api/shell/games/${game.id}/computer-control`, {
     action: 'pause', deviceId: current.computer.lease.deviceId, generation: current.computer.generation })).game;
+  expect(paused.computer.paused).toBe(true);
+  const path = info.outputPath('retained-follow-accepted.json');
+  await writeFile(path, JSON.stringify({ modelId: game.computer.modelId, command, originalReceipt,
+    pausedRevision: paused.gameplayRevision }, null, 2));
+  await info.attach('retained-follow-accepted', { path, contentType: 'application/json' });
+});
+
+test('the same saved follow survives reload and resumes a distinct native Horus move', async ({}, info) => {
   await page.reload();
   const reloaded = await projected(page, game.id);
   expect(reloaded.moves.filter(move => move.clientCommandId === command.clientCommandId)).toHaveLength(1);
   expect(reloaded.computer.modelId).toBe(game.computer.modelId);
+  expect(reloaded.computer.paused).toBe(true);
+  expect(reloaded.computer.generation).toBe(paused.computer.generation);
+  const beforeResume = await guestRequest(page, `/api/shell/games/${game.id}/reconcile`, { knownSnapshotEventSeq: 0, commands: [command] });
+  expect(beforeResume.commandOutcomes).toEqual([originalReceipt]);
   await expect.poll(() => journalEntry(page, command)).toBeNull();
   const resumedRequest = nextCommand(paused.computer.generation);
   await resumeHere(page, game.id);
@@ -119,4 +148,5 @@ test('the retained follow saves once, survives reload and resumes native Horus p
   await info.attach('retained-follow-save-reload', { path, contentType: 'application/json' });
   await switchGamePanel(page, 'board');
   await page.screenshot({ path: info.outputPath('retained-follow-resumed.png') });
+});
 });
