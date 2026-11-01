@@ -47,10 +47,10 @@ External references that informed these principles include Apple Human Interface
 - Write all user-facing text as if speaking to a first-time player who just wants to play. Technical accuracy is not an excuse for jargon.
 - Prefer showing state through UI treatment (color, position, icons, visual hierarchy) over telling the player about state in text. If the UI already communicates something, the text is redundant — remove it.
 - Use natural, first-person phrasing ("You are Player 1") over label-colon-value patterns ("Role: Player 1"). The player is a person in a game, not a row in a database.
-- Empty states should be invisible, not narrated. When there are no items in a list, show nothing rather than printing "No pending X" or "None."
+- Hide empty optional lists. Explicit audience state is an exception: Viewers uses None when empty, as specified in the [Players contract](ai/PLAYERS_CARD_CONTRACT.md).
 - Error and recovery messages should describe what is happening for the player, not what the system is doing internally. Avoid words like "sync," "optimistic," "authoritative," "server," "route," "snapshot," or "live state." Technical error details (stack traces, error codes, operation IDs) should be logged to the browser console for debugging, never shown in the UI.
 - Explainer text attached to actions should be short enough to read in one breath. If an explanation needs multiple clauses, simplify the action surface so less explanation is needed.
-- Section headings should feel like natural wayfinding, not database table names. Prefer conversational headings ("Players & Viewers") over clinical ones ("Participants," "Join / Invite").
+- Section headings should feel like natural wayfinding, not database table names. Use Players with a subordinate Viewers section, as specified in the [Players contract](ai/PLAYERS_CARD_CONTRACT.md).
 - Never show raw system identifiers (device IDs, operation IDs) to players. Use human-readable names. If friendly names are not yet available, design the surface to work without showing the raw identifier.
 
 Examples illustrating the spirit:
@@ -281,14 +281,14 @@ CTA icons use familiar concepts expressed through Righelt's clipped and angular 
 
 The latest carousel rule supersedes hover/focus pause: cycle every three seconds, continuing through hover and mere focus. Deliberate keyboard or caret input stops cycling for the visit; reduced motion is manual.
 
-The latest sound rule supersedes blanket background silence: ordinary cues require a visible, focused page. An incoming opponent move while away may play immediately and every thirty seconds until refocus. Coalesce events into one reminder cycle. Muting or leaving the game cancels it. Browser playback restrictions remain authoritative. No initial/replayed/reconnected events create reminders.
+The current sound contract below owns movement cues and unseen-update reminders. Its later completion boundary supersedes the earlier stop-on-refocus rule.
 
 
 ### Final first-pass interaction polish
 
-Hover feedback should suggest contact lightly: a short-dwell brush/rustle, not a click or committed move. Navigation can have distinct forward/back cues. Keep all ordinary feedback silent while inactive.
+Hover and focus alone are silent. Deliberate navigation can have distinct forward/back cues. See the current sound contract below.
 
-Use restrained perspective and moving shadow for story artwork changes, with fixed readable copy. Reserve status space for brief confirmations and retain keyboard focus through asynchronous work. Let peripheral utilities reveal labels without competing with play. Background texture may breathe subtly, but its geometric alignment must remain stable.
+Use restrained perspective and moving shadow for story artwork changes, with fixed readable copy. Reserve status space for brief confirmations and retain keyboard focus through asynchronous work. Let peripheral utilities reveal labels without competing with play. Background texture remains static under the October 7 decision below. Its geometric alignment must remain stable.
 
 
 ## Login integration after prerequisite merge (2026-10-04)
@@ -348,7 +348,8 @@ The shared modal surface owns its stone decoration and persistent close control.
 - Deliberate section pagination uses a quiet forward/reverse page cue when a successful page change starts. Initial loads, refreshes, failed requests, and unchanged pages are silent. Reduced motion still permits the cue.
 - Flyouts have paired entry/exit cues on actual user-requested opening/closing, including Account settings. Content refreshes, page changes underneath, and responsive repositioning do not replay them.
 - Story opening/closing and History browsing/returning use paired forward/reverse cues. Automatic scene changes stay silent. Confirmed undo has a return cue, pending or rejected undo does not claim success.
-- Ordinary cues require a visible, focused page. A genuine incoming opponent move is the explicit exception: one reminder cycle repeats every 30 seconds until refocus. Coalesce additional moves. Mute, game exit, and account retirement cancel reminders. Initial state, replay, and reconnect never start one.
+- Movement cues follow actual visible presentation of each acknowledged opponent move, including confirmed playback. Receipt arrival alone must not sound like a piece has already moved. Do not duplicate the same movement on acknowledgement or repaint.
+- Genuine unseen updates use the shared prominent update chime once per batch. Remind every 30 seconds until visible live playback has completed, not merely until the tab regains focus. Coalesce additional updates. Respect mute and browser playback restrictions. Navigation, account retirement and disposal cancel reminders. Hydration, duplicate delivery and reconnect without new moves never start a batch. Provenance: [D07](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
 - Sound defaults on, respects saved mute and browser playback restrictions, and never queues stale blocked cues. The shared header toggle works without login. Reduced motion does not mute sound.
 - Balance perceived loudness against the accepted wooden cues. Swooshes and brighter/longer noise may need lower gain. Every source ends and disconnects. Sound supplements visible feedback.
 
@@ -372,7 +373,7 @@ A player request awaiting approval keeps the invitation surface at the top. The 
 
 Notices inside an existing surface use an unboxed status marker, text, and clearly grouped actions. A standalone notice can own one cut surface. Avoid rounded pastel alert boxes nested inside stone panels. Shared components own padding, empty-state collapse, and spacing between messages and actions. Test both empty and populated messages so hidden content cannot reserve accidental space.
 
-The legend explains only the current board visualization. Commander and supply point stay present and share the active or selected piece's owner color. Command and supply lines appear only when their paths are drawn. Group strength appears only when an actual group-strength badge is visible, not merely when highlighted group members exist. Legend changes resize the section smoothly, including interrupted transitions.
+The legend explains only the current board visualization. Commander and Supply point stay present and retain their independent inspector affiliation colors. Path samples appear only when their paths are drawn, using the separate semantic styles in the [legend contract](RIGHELT_WEB_APP_SPEC.md#independent-board-legend-inspection). Group strength appears only when an actual group-strength badge is visible, not merely when highlighted group members exist. Legend changes resize the section smoothly, including interrupted transitions.
 
 Artwork that includes gameplay uses the current Righelt board and piece vocabulary: clipped unit pieces, the stepped commander with its open horizontal center, and the angular supply-point arch. Use the shared piece-symbol source and rendered board as references. Avoid generic checker discs. Preserve the characters, scene continuity, large composition, and surface-integrated negative space while updating the game details.
 
@@ -440,3 +441,23 @@ Retain existing content, headings, scroll, focus and open flyouts during refresh
 The game-freeze/recovery stream owns connection state, safe retry, diagnostic disclosure and deadlines. Reconnecting alone retains its faint board-only sweep plus this shared cue, four-second continuous-episode message delay, and immediate confirmed failures. Do not reset recovery timing on retry or copy it into generic loading. Shared visual integration uses `data-loading-state="pending"` and an optional stable `data-loading-key`; removal/idle retires the presentation. Recovery sets `data-loading-context="external"` so its four-second message owns explanatory text instead of the generic five-second copy. Do not infer recovery or success from DOM appearance.
 
 Outside-click dismissal follows the original event path. An actionable child can be replaced during rendering before the shell receives its click. Do not treat that detached child as a click on passive page space or close an unrelated open flyout.
+
+## Preserve intent through asynchronous work
+
+A player choosing a piece, destination, inspection layer or historical record establishes intent. Background computation, saving, presence updates and routine connection renewal must preserve that intent while its semantic target remains valid. A temporary submission block changes permission to act, not the selected task or its instruction. Never queue a blocked click. Real position, ownership, lineage or account changes still invalidate unsafe intent.
+
+Give immediate pressed and selection feedback in plain language. Distinguish input received, local durable admission and server confirmation. A waiting cue must not claim that a move or result has committed. Slow work belongs to its affected surface, with a stable instruction and responsible actor. Routine recovery should stay quiet until the player has visibly waited. Real authentication, storage and upgrade failures remain actionable immediately.
+
+Preserve native control identity through pointer-down, pointer-up, click and keyboard activation. Equivalent text after a rerender does not prove that the same button, focus or press survived. Decorative motion must not move a target away during a press. The selected target becomes inert while independently useful child controls remain interactive.
+
+These defaults apply to desktop, mobile and embedded previews. Reuse their shared presentation model rather than reconstructing a weaker small-screen version. Detailed contracts live in [board messages](RIGHELT_WEB_APP_SPEC.md#stable-board-messages-and-inline-actions), [History](ai/HISTORY_PRESENTATION.md), and [recovery](ai/GAME_RECOVERY.md). Provenance: [D01, D03, D05, D08](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
+
+## Identify people and visual roles separately
+
+Prefer actual player names in their affiliation colors. Omit redundant visible Red/Blue words. Retain necessary self-play and invitation disambiguation, with the identifying phrase in the matching color. Keep useful color qualifiers in accessible labels without a special accessibility mode. One anonymous player is Guest. Two anonymous players are Guest 1 and Guest 2, tied to their saved seats. Never rewrite a person's actual name Red or Blue, freeform content, internal side values or raw diagnostics to enforce this copy policy.
+
+Identity color does not define every semantic role. Supply and command paths, action endpoints, activity states and owner emblems each have their own documented meaning. Preserve non-color distinctions, accessible attribution and independent inspector selections. See [legend inspection](RIGHELT_WEB_APP_SPEC.md#independent-board-legend-inspection) and [Players](ai/PLAYERS_CARD_CONTRACT.md). Provenance: [D02, D04, D11](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
+
+## Keep feedback above decoration and below modal decisions
+
+Nonmodal notices stay above content, menus, utility rails, mobile navigation, loading borders and the page-transition ribbon. Native modal dialogs and their backdrops stay above notices. Use shared layer roles and inspect ancestor stacking contexts, clipping and transforms. A larger child z-index alone does not establish this order. Notices preserve their controls, focus and incident identity and must not trap focus or make the page inert. See [notifications](RIGHELT_WEB_APP_SPEC.md#13-notifications-and-prompts). Provenance: [D13](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).

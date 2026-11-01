@@ -1,5 +1,7 @@
 # Sync Store Architecture Plan
 
+Status: historical implementation plan. Its branch checklist and future phases are not current release evidence. The [recovery contract](../ai/GAME_RECOVERY.md#intent-computation-and-durable-admission) owns current intent, worker cancellation, projection and durable admission requirements. The [seamless recovery contract](../ai/SEAMLESS_RECOVERY.md) owns retained journal compatibility. Do not infer offline support or current authority from a proposed phase below.
+
 ## Context
 
 Righelt's original client architecture had two active stores (`createLiveTransportStore` + `createLiveSyncClient`) and a dead one (`createShellStore`). The orchestrator `app.js` manually glued transport and WebSocket layers together, managed online/offline transitions across both, and routed different code paths for local vs live games. This branch replaces that split with `createSyncStore()` and removes the old global `busy`-wrapper behavior from the online-first shell path.

@@ -201,3 +201,9 @@ Phase 3:
 - Introduce multi-region strategies only if latency and traffic require it.
 
 This staged path minimizes migration risk while preserving current app contracts.
+
+## Client intent and asynchronous authority
+
+The browser may compute legal previews and tentative projections, but neither a completed worker nor a visible selection grants command authority. Follow the shared [intent and durable admission contract](ai/GAME_RECOVERY.md#intent-computation-and-durable-admission) across worker, journal, transport and receipt boundaries. Per-game authoritative acceptance persists state and its receipt atomically. Presentation forecasts and chronological replay never write back to game state.
+
+The approved loading/search follow-up separates an early authorized read-only position from complete command state and keeps exact legality search sound. Its cache, pruning and budget mechanics remain implementation work. Incomplete or interrupted search cannot establish illegality or terminal defeat, and a light read cannot advance authoritative cursors or authorize a command. See [the automatic-ending review boundary](RIGHELT_RULES_SPEC.md#81-approved-automatic-endings-pending-implementation). Provenance: [D16, D17](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
