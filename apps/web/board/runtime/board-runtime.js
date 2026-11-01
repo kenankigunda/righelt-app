@@ -292,6 +292,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   };
 
   const setBoardPreviewPrompt = (text) => {
+    if(messageHeightController?.deferContent?.(escapeHtml(text),()=>renderStatus()))return;
     if (elements.boardPreviewLabelEl && elements.boardPreviewLabelEl.textContent !== text) {
       elements.boardPreviewLabelEl.textContent = text;
     }
@@ -305,6 +306,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       const entry=action&&rushGuidance?.actions.find(value=>rushActionKey(value.action)===rushActionKey(action));
       if(entry)html=`<span class="board-message-row">${html}</span><span class="board-message-row">${escapeHtml(entry.immediate?RUSH_SUPPLY_EFFECT.immediate:RUSH_SUPPLY_EFFECT.further)}</span>`;
     }
+    if(messageHeightController?.deferContent?.(html,()=>renderStatus()))return;
     if (elements.boardPreviewLabelEl && elements.boardPreviewLabelEl.innerHTML !== html) {
       if(!patchBoardMessage(elements.boardPreviewLabelEl,html))elements.boardPreviewLabelEl.innerHTML = html;
     }
@@ -606,6 +608,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     if (externalMessage) {
       const message = typeof externalMessage === "string" ? {text: externalMessage} : externalMessage;
       const {actorName,rest,actions} = boardMessagePresentation(message);
+      if(messageHeightController?.deferContent?.(renderBoardMessageHtml(message),()=>renderStatus()))return;
       const label = elements.boardPreviewLabelEl;
       const buttons = Array.from(label?.querySelectorAll?.(':scope > button[data-board-message-action]') ?? []);
       // A replay counter changes while its controls stay the same. Patch the

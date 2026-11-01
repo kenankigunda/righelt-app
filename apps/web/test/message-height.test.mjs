@@ -13,14 +13,16 @@ function fixture(){
  const live={getBoundingClientRect:()=>({height:current})};
  const replicas=[['primary',70],['fallback',75]].map(([font,height])=>({dataset:{sizingFont:font},getBoundingClientRect:()=>({height})}));
  const slot={dataset:{},isConnected:true,style:{removeProperty(key){delete this[key];}},querySelector:()=>live,querySelectorAll:()=>replicas,getBoundingClientRect:()=>({height:rendered,width}),animate(keys,options){const a={keys,options,cancel(){this.canceled=true;}};animations.push(a);return a;}};
- const button={},label={...events(),ownerDocument:doc,closest:()=>slot,contains:node=>node===button};
+ const button={disabled:false,textContent:'Next',hasAttribute:name=>name==='data-board-message-action',getAttribute:name=>name==='data-board-message-action'?'replay-next':null};
+ doc.createElement=()=>({innerHTML:'',querySelectorAll(){return this.innerHTML.includes('Next')?[{disabled:this.innerHTML.includes('disabled'),textContent:'Next',getAttribute:name=>name==='data-board-message-action'?'replay-next':null}]:[];}});
+ const label={...events(),ownerDocument:doc,closest:()=>slot,contains:node=>node===button};
  const controller=createMessageHeightController(label);
  const flush=()=>{for(const fn of frames.values()){frames.clear();fn();}};
  return{controller,slot,label,doc,win,fonts,motion,animations,observers,frames,button,flush,setWidth:value=>{width=value;},change(height,liveHeight=height){current=height;rendered=liveHeight;observers[0].fn();flush();}};
 }
 test('controller preserves native press geometry, retargets from rendered height and cleans every owner',()=>{
  const f=fixture();assert.equal(f.slot.style.height,'75px');assert.equal(f.animations.length,0);
- f.label.handlers.get('pointerdown')({type:'pointerdown',target:{closest:()=>f.button}});
+ f.doc.handlers.get('pointerdown')({type:'pointerdown',target:{closest:()=>f.button}});
  f.change(160,75);assert.equal(f.slot.style.height,'75px');assert.equal(f.animations.length,0);
  f.doc.handlers.get('pointerup')({type:'pointerup'});f.flush();assert.equal(f.slot.style.height,'160px');assert.equal(f.animations[0].options.duration,450);
  f.change(90,112);assert.deepEqual(f.animations[1].keys,[{height:'112px'},{height:'90px'}]);assert.equal(f.animations[1].options.duration,280);assert.equal(f.animations[0].canceled,true);
@@ -32,9 +34,20 @@ test('container-only width changes snap and retired presses cannot leave height 
  for(const retirement of ['blur','visibilitychange']){
   const f=fixture();f.change(160,75);assert.equal(f.animations.length,1);
   f.setWidth(300);f.change(190,110);assert.equal(f.slot.style.height,'190px');assert.equal(f.animations.length,1);assert.equal(f.animations[0].canceled,true);
-  f.label.handlers.get('keydown')({type:'keydown',key:'Enter',target:{closest:()=>f.button}});
+  f.doc.handlers.get('keydown')({type:'keydown',key:'Enter',target:{closest:()=>f.button}});
   f.change(210,190);assert.equal(f.slot.style.height,'190px');
   (retirement==='blur'?f.win:f.doc).handlers.get(retirement)();f.flush();assert.equal(f.slot.style.height,'210px');assert.equal(f.animations.length,1);
   f.controller.destroy();
  }
+});
+
+test('same action defers wrapping content until after release while changed availability cancels deferral',()=>{
+ const f=fixture();let published=0;
+ f.doc.handlers.get('pointerdown')({type:'pointerdown',target:{closest:()=>f.button}});
+ assert.equal(f.controller.deferContent('Longer prose Next',()=>published++),true);assert.equal(published,0);
+ f.doc.handlers.get('pointerup')({type:'pointerup'});assert.equal(published,0);f.flush();assert.equal(published,1);
+ f.doc.handlers.get('keydown')({type:'keydown',key:' ',target:{closest:()=>f.button}});
+ assert.equal(f.controller.deferContent('Another prose Next',()=>published++),true);
+ assert.equal(f.controller.deferContent('Next disabled',()=>published++),false);
+ f.doc.handlers.get('keyup')({type:'keyup',key:' '});f.flush();assert.equal(published,1,'obsolete same-action prose is not published after genuine availability changes');f.controller.destroy();
 });
