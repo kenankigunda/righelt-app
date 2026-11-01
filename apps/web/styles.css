@@ -3,6 +3,7 @@
 }
 
 :root {
+  --connection-supply: #2f8e63;
   --bg: #f8f4ec;
   --paper: #fffdf8;
   --ink: #172a2f;
@@ -552,7 +553,7 @@ button {
 .swatch.supply,
 .swatch.command {
   position: relative;
-  width: 16px;
+  width: var(--connection-sample-width);
   height: 10px;
   border: 0;
   border-radius: 0;
@@ -560,7 +561,7 @@ button {
 }
 
 .swatch.supply {
-  color: var(--swatch-supply-color, var(--player-p1));
+  color: var(--connection-supply);
 }
 
 .swatch.command {
@@ -575,8 +576,11 @@ button {
   right: 0;
   top: 50%;
   transform: translateY(-50%);
-  border-top: 3px dashed currentColor;
+  height:var(--connection-line-width);
+  background:var(--connection-command-sample);
 }
+
+.swatch.supply::before {background:var(--connection-supply-sample);}
 
 .swatch.move {
   background: #8b5ec0;

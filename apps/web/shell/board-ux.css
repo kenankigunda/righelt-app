@@ -164,3 +164,5 @@ body {display:flow-root;}
 .board-message-name {display:inline-block;max-inline-size:12ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:top;unicode-bidi:isolate;}
 
 .board-message-row {display:block;}
+
+.overlay-key .swatch.supply::before {background:var(--connection-supply-sample);}

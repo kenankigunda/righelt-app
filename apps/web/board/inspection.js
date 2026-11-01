@@ -1,4 +1,4 @@
-import { SUPPLY_POINTS } from '../generated/packages/game-engine/src/deterministic.js';
+import { BOARD_SIZE, SUPPLY_POINTS } from '../generated/packages/game-engine/src/deterministic.js';
 
 const gcd = (left, right) => {
   let a = Math.abs(left);
@@ -47,20 +47,33 @@ export const supplyOwnerAt = point => Object.entries(SUPPLY_POINTS).find(([, val
 
 /** Resolve only recorded engine paths. Inspection never computes alternate routes. */
 export function inspectionPaths(snapshot, inspection) {
-  if (inspection?.kind === 'networks') return [inspection.command,inspection.supply].filter(Boolean).flatMap(layer=>inspectionPaths(snapshot,layer));
+  if (inspection?.kind === 'networks') {
+    const explicit=[inspection.command,inspection.supply].filter(Boolean).flatMap(layer=>inspectionPaths(snapshot,layer));
+    const personal=inspectionPaths(snapshot,inspection.personal).filter(path=>path.kind==='command'?!inspection.command:!inspection.supply&&!inspection.suppressPersonalSupply);
+    return [...explicit,...personal];
+  }
   if (!inspection || !['supply', 'command', 'combined'].includes(inspection.kind)) return [];
   const pieces = snapshot?.pieces ?? [];
   const selected = inspection.pieceId ? pieces.find(piece => piece.id === inspection.pieceId) : null;
   if (inspection.pieceId && !selected) return [];
   const owner = selected?.owner ?? inspection.owner ?? snapshot?.sideToMove;
-  const candidates = selected ? [selected] : pieces.filter(piece => piece.owner === owner);
   const supply = snapshot?.artifacts?.supply?.find(item => item.player === owner)?.shortestPathByPieceId ?? {};
   const command = snapshot?.artifacts?.command?.shortestPathToCommanderByPieceId ?? {};
+  const combinedCommander = inspection.kind === 'combined' && selected?.kind === 'commander';
   const paths = [];
-  for (const piece of candidates) {
-    for (const kind of inspection.kind === 'combined' ? ['supply', 'command'] : [inspection.kind]) {
-      const path = normalizeConnectionPath((kind === 'supply' ? supply : command)[piece.id] ?? []);
+  for (const kind of inspection.kind === 'combined' ? ['supply', 'command'] : [inspection.kind]) {
+    const candidates = combinedCommander && kind === 'command'
+      ? pieces.filter(piece => piece.owner === owner)
+      : selected ? [selected] : pieces.filter(piece => piece.owner === owner);
+    for (const piece of candidates) {
+      const recorded=(kind === 'supply' ? supply : command)[piece.id] ?? [];
+      if(combinedCommander&&(!Array.isArray(recorded)||!recorded.every(point=>Number.isInteger(point?.row)&&Number.isInteger(point?.col)&&point.row>=0&&point.col>=0&&point.row<BOARD_SIZE&&point.col<BOARD_SIZE)))continue;
+      const path = normalizeConnectionPath(recorded);
       if (path.length < 2) continue;
+      // The combined commander view expands only recorded, correctly affiliated
+      // routes ending at this commander. It never invents UI routing.
+      if (combinedCommander && (!samePoint(path[0],piece.position)
+        || !samePoint(path.at(-1),kind === 'command' ? selected.position : supplyPointForOwner(owner)))) continue;
       if (inspection.point && !path.some(point => samePoint(point, inspection.point))) continue;
       paths.push({kind, owner, path});
     }

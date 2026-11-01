@@ -66,9 +66,22 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   let inspection = null;
   let networkInspections = {command:null,supply:null};
   const networkOwners = {command:null,supply:null};
-  const getInspectionView = () => networkInspections.command && networkInspections.supply
-    ? {kind:'networks',...networkInspections}
-    : networkInspections.command ?? networkInspections.supply ?? inspection;
+  let personalSupplySuppressed = false;
+  let personalConnectionsCleared = false;
+  const getPersonalInspection = () => {
+    if(inspection)return inspection;
+    const selected=state?.pieces?.find(piece=>piece.id===selectedPieceId);
+    return !personalConnectionsCleared&&overlayMode===OVERLAY_MODE.INTERACTIVE&&selected?.kind==='commander'&&(host.canPresentActions?.(state)===false||selected.owner!==state.sideToMove)?{kind:'combined',pieceId:selected.id}:null;
+  };
+  const getInspectionView = () => {
+    const personal=getPersonalInspection();
+    const commander=personal?.kind==='combined' && state?.pieces?.some(piece=>piece.id===personal.pieceId&&piece.kind==='commander');
+    if(commander && (networkInspections.command || networkInspections.supply || personalSupplySuppressed))return {kind:'networks',...networkInspections,personal,suppressPersonalSupply:personalSupplySuppressed};
+    if(networkInspections.command&&networkInspections.supply)return {kind:'networks',...networkInspections};
+    const explicit=networkInspections.command??networkInspections.supply;
+    if(explicit)return explicit;
+    return personal;
+  };
   const hasInspection = () => Boolean(getInspectionView());
   let interactionBlocked = false;
   let state = null;
@@ -180,6 +193,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     inspection: getInspectionView() ? structuredClone(getInspectionView()) : null,
     networkInspections: structuredClone(networkInspections),
     networkOwners: {...networkOwners},
+    suppressPersonalConnections:personalConnectionsCleared,
     selection: overlayMode === OVERLAY_MODE.INTERACTIVE ? getCurrentSelection() : null,
     recordedAction: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedAction : null,
     recordedActionStartPiece: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedActionStartPiece : null,
@@ -678,15 +692,28 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       setBoardPreviewPromptHtml(text + continuation);
     };
     if (inspection) {
-      if (explanation && inspection.pieceId === selectedPieceId) {
-        setPieceExplanation();
-        return;
+      const personalId=inspection.personal?.pieceId??inspection.pieceId;
+      const personalPiece=getBoardPieceById(personalId);
+      if (explanation && personalId === selectedPieceId) {setPieceExplanation();return;}
+      const paths=inspectionPaths(state,inspection),supply=paths.some(path=>path.kind==='supply'),command=paths.some(path=>path.kind==='command');
+      const explicit=inspection.kind==='networks'&&(inspection.command||inspection.supply);
+      if(personalPiece?.kind==='commander'&&!explicit){
+        const chip=renderBoardPreviewCoordinate(personalPiece.position),atSupply=sameCoordinate(personalPiece.position,supplyPointForOwner(personalPiece.owner));
+        const text=supply&&command?`Supply and command lines for piece at ${chip}`
+          :supply?`Supply line for commander at ${chip}. No connected units.`
+          :command?`Command lines for commander at ${chip}${atSupply?'. Already at its supply point.':''}`
+          :atSupply?'At its supply point. No connected units.':`Commander at ${chip}. No connections.`;
+        setBoardPreviewPromptHtml(text);return;
       }
-      if (inspection.kind === "networks") { setBoardPreviewPrompt("Supply and command lines"); return; }
-      const label = inspection.kind === "combined" ? "Supply and command lines" : inspection.kind === "command" ? "Command lines" : "Supply lines";
-      if (inspection.kind === "combined" && selectedSource) { setBoardPreviewPromptHtml(`Supply and command lines for piece at ${renderBoardPreviewCoordinate(selectedSource)}`); return; }
-      setBoardPreviewPrompt(inspectionPaths(state, inspection).length ? label : inspection.kind === "command" ? "No command connection" : inspection.kind === "supply" ? "No supply connection" : "No connection");
-      return;
+      if(inspection.kind==='networks'){
+        const ownerName=kind=>paths.find(path=>path.kind===kind)?.owner==='P2'?'Blue':'Red';
+        const supplyText=supply?`${ownerName('supply')} supply lines`:'';
+        const commandText=command?`${ownerName('command')} command lines`:'';
+        setBoardPreviewPrompt([supplyText,commandText].filter(Boolean).join(' and ')||'No connections');return;
+      }
+      const label=inspection.kind==='combined'?'Supply and command lines':inspection.kind==='command'?'Command lines':'Supply lines';
+      if(inspection.kind==='combined'&&selectedSource){setBoardPreviewPromptHtml(`Supply and command lines for piece at ${renderBoardPreviewCoordinate(selectedSource)}`);return;}
+      setBoardPreviewPrompt(paths.length?label:inspection.kind==='supply'?'No supply connection':'No connections');return;
     }
 
     if (explanation && !selectedTarget) {
@@ -705,6 +732,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     }
 
     if (pieceSummary && selectedPieceId && host.canPresentActions?.(state) === false) {
+      if (selectedSource && personalConnectionsCleared && getBoardPieceById(selectedPieceId)?.kind === 'commander') {
+        setBoardPreviewPromptHtml(`Commander at ${renderBoardPreviewCoordinate(selectedSource)}. No connections.`);
+        return;
+      }
       if (selectedSource) setBoardPreviewPromptHtml(`Supply and command lines for piece at ${renderBoardPreviewCoordinate(selectedSource)}`);
       else setBoardPreviewPrompt("Supply and command lines");
       return;
@@ -862,9 +893,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     maybeAutoSelectTarget(selectedPieceMoves);
   };
 
-  const clearSelection = () => {
+  const clearSelection = ({preserveNetworks=false}={}) => {
     inspection = null;
-    networkInspections = {command:null,supply:null};
+    if(!preserveNetworks)networkInspections = {command:null,supply:null};
+    personalSupplySuppressed=false;personalConnectionsCleared=false;
     selectedPieceId = null;
     selectedPieceMoves = [];
     selectedPieceMovePreviews = [];
@@ -1291,21 +1323,26 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       return;
     }
     if (hasInspection() && legalTarget) { inspection = null; networkInspections = {command:null,supply:null}; selectedPieceOverlayPhase = "actionPreviews"; }
-    if (clickedPiece && (!legalTarget || clickedPiece.id === selectedPieceId)) {
+    if (clickedPiece && !(clickedPiece.id === selectedPieceId && clickedPiece.kind === "commander") && (!legalTarget || clickedPiece.id === selectedPieceId)) {
       networkOwners.command = clickedPiece.owner;
       networkOwners.supply = clickedPiece.owner;
       networkInspections = {command:null,supply:null};
+      personalSupplySuppressed=false;personalConnectionsCleared=false;
     }
     if (clickedPiece?.id === selectedPieceId && clickedPiece.kind === "commander") {
-      const canPreview = clickedPiece.owner === state.sideToMove && host.canPresentActions?.(state) !== false;
-      if (inspection?.kind === "command" && !inspection.pieceId) {
-        inspection = canPreview ? null : {kind: "combined", pieceId: clickedPiece.id};
-        selectedPieceOverlayPhase = canPreview ? "actionPreviews" : "supplyCommand";
-      } else if (inspection || selectedPieceOverlayPhase === "supplyCommand" || !canPreview) {
-        inspection = inspectionPaths(state, {kind:"command",owner:clickedPiece.owner}).length ? {kind: "command", owner: clickedPiece.owner} : null;
-        if (!inspection) selectedPieceOverlayPhase = canPreview ? "actionPreviews" : "supplyCommand";
-      } else {
-        inspection = {kind: "combined", pieceId: clickedPiece.id};
+      const mayPresent = clickedPiece.owner === state.sideToMove && host.canPresentActions?.(state) !== false;
+      if(mayPresent&&(!selectedPieceMovesKnown||selectedPieceMovesLoading))return;
+      const canPreview=mayPresent&&hasActionLayer(selectedPieceMoves,selectedPieceMovePreviews);
+      const combined={kind:'combined',pieceId:clickedPiece.id};
+      if(canPreview){
+        const wasConnections=Boolean(inspection)||selectedPieceOverlayPhase==='supplyCommand';
+        networkInspections={command:null,supply:null};networkOwners.command=clickedPiece.owner;networkOwners.supply=clickedPiece.owner;personalSupplySuppressed=false;personalConnectionsCleared=false;
+        inspection=!wasConnections&&inspectionPaths(state,combined).length?combined:null;
+        selectedPieceOverlayPhase=inspection?'supplyCommand':'actionPreviews';
+      }else if(getPersonalInspection()||selectedPieceOverlayPhase==='supplyCommand'){
+        clearSelection({preserveNetworks:true});
+      }else{
+        inspection=combined;selectedPieceOverlayPhase='supplyCommand';networkOwners.command=clickedPiece.owner;networkOwners.supply=clickedPiece.owner;personalSupplySuppressed=false;personalConnectionsCleared=false;
       }
       setSelectedTarget(null);
       refreshSelectionLabels(); renderBoard(); renderStatus();
@@ -1595,6 +1632,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   ) => {
     if (destroyed) return;
     const previousInspection = inspection;
+    const previousPersonalSuppression=personalSupplySuppressed,previousPersonalCleared=personalConnectionsCleared;
     const previousNetworks = structuredClone(networkInspections);
     const positionChanged = JSON.stringify(state) !== JSON.stringify(snapshot);
     const preservePiecePreviews = !resetSelection && !selectionAction && !positionChanged &&
@@ -1656,6 +1694,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       }
     }
     inspection = previousInspection;
+    personalSupplySuppressed=previousPersonalSuppression;personalConnectionsCleared=previousPersonalCleared;
     networkInspections = previousNetworks;
     if (networkInspections.command && !inspectionPaths(state,networkInspections.command).length) networkInspections.command=null;
     if (inspection?.pieceId && !getBoardPieceById(inspection.pieceId)) inspection = null;
@@ -1782,6 +1821,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     if (next.kind === "command" && !inspectionPaths(state,next).length) { clearInspection(); return true; }
     networkInspections = {command:null,supply:null};
     inspection = JSON.stringify(inspection) === JSON.stringify(next) ? null : next;
+    if(next.kind==='combined'){personalSupplySuppressed=false;personalConnectionsCleared=!inspection;}
     setSelectedTarget(null);
     refreshSelectionLabels(); renderBoard(); renderStatus();
     return true;
@@ -1789,6 +1829,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   const clearInspection = () => {
     inspection = null;
     networkInspections = {command:null,supply:null};
+    if(getBoardPieceById(selectedPieceId)?.kind==='commander'){personalConnectionsCleared=true;personalSupplySuppressed=true;selectedPieceOverlayPhase='actionPreviews';}
     refreshSelectionLabels(); renderBoard(); renderStatus();
   };
 
@@ -1799,12 +1840,15 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     if (!['P1','P2'].includes(owner)) return false;
     const next = {kind,owner,...(kind === 'supply' ? {point:requested.point ?? supplyPointForOwner(owner)} : {})};
     if (kind === 'supply' && supplyOwnerAt(next.point) !== owner) return false;
+    const personal=getPersonalInspection(),commanderPersonal=personal?.kind==='combined'&&getBoardPieceById(personal.pieceId)?.kind==='commander';
     networkOwners[kind] = owner;
+    if(kind==='supply')personalSupplySuppressed=true;
+    else {personalConnectionsCleared=true;personalSupplySuppressed=true;selectedPieceOverlayPhase='actionPreviews';}
     if (kind === 'command' && !inspectionPaths(state,next).length) { networkInspections.command=null;inspection=null;refreshSelectionLabels();renderBoard();renderStatus();return true; }
     const current = networkInspections[kind];
     const sameSelection = current?.owner === owner && (kind === 'command' || sameCoordinate(current.point,next.point));
     networkInspections[kind] = inspection?.kind === kind || sameSelection ? null : next;
-    inspection = null;
+    inspection = kind==='supply'&&commanderPersonal?personal:null;
     setSelectedTarget(null);
     refreshSelectionLabels();renderBoard();renderStatus();
     return true;

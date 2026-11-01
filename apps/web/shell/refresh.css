@@ -484,7 +484,7 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .panel > .section-actions:last-of-type:not(:has(~ :not(.invite-feedback:empty))) {margin-bottom:0;}
 
 /* Four short dashes, scoped to legend samples, never board overlay strokes. */
-.overlay-key .swatch:is(.command,.supply)::before {border:0;height:3px;background:repeating-linear-gradient(to right,currentColor 0 2px,transparent 2px 4px);}
+.overlay-key .swatch:is(.command,.supply)::before {border:0;height:var(--connection-line-width);background:var(--connection-command-sample);}
 
 .overlay-key [hidden] {display:none!important;}
 .overlay-key {overflow:hidden;}
@@ -602,3 +602,5 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .player-kind-icon {display:inline-flex;align-items:center;color:var(--muted);}
 .player-kind-icon .righelt-icon {width:14px;height:14px;}
 .history-result-summary {margin:0 0 var(--section-item-gap,12px);}
+
+.overlay-key .swatch.supply::before {background:var(--connection-supply-sample);}
