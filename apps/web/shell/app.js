@@ -4004,7 +4004,7 @@ const syncRouteDataAndLiveChannels = (read = captureRouteRead()) => {
     if (read.route.name === "home") await syncHomeSections();
     if (read.route.name === "game") {
       resolvedInvite = null;
-      await read.owner.loadGame(read.route.gameId, { openAsViewer: false });
+      await read.owner.loadGame(read.route.gameId, { openAsViewer: false, positionFirst: true });
     }
     if (read.route.name === "invite") {
       const invite = await read.owner.resolveInvite(read.route.inviteToken);
@@ -4012,7 +4012,7 @@ const syncRouteDataAndLiveChannels = (read = captureRouteRead()) => {
       // Keep validated invitation routing metadata even if its board requires an
       // upgrade. It identifies the recovery fence without trusting a snapshot.
       resolvedInvite = invite;
-      await read.owner.loadGame(invite.gameId, { openAsViewer: false });
+      await read.owner.loadGame(invite.gameId, { openAsViewer: false, positionFirst: true });
       assertCurrentRouteRead(read, isActive);
     }
     assertCurrentRouteRead(read, isActive);

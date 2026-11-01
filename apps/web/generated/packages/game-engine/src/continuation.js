@@ -671,7 +671,8 @@ export function isContinuationCompletable(state, memo) {
 // supply: failure is a proof, while reachability is never a legality answer.
 function optimisticRushSupplyRegion(state) {
     const owner = obligationOwner(state);
-    const enemies = state.pieces.filter(piece => piece.owner !== owner && !piece.pushed);
+    const allEnemies = state.pieces.filter(piece => piece.owner !== owner);
+    const enemies = allEnemies.filter(piece => !piece.pushed);
     const blocked = new Set(enemies.map(piece => coordinateKey(piece.position.row, piece.position.col)));
     const possibleBlockers = new Set();
     const moved = new Set(state.continuation?.rushedPieceIds ?? []);
@@ -682,9 +683,16 @@ function optimisticRushSupplyRegion(state) {
         for (let dr = -1; dr <= 1; dr++)
             for (let dc = -1; dc <= 1; dc++) {
                 const to = { row: piece.position.row + dr, col: piece.position.col + dc };
-                if (!outOfBounds(to) && !blocked.has(coordinateKey(to.row, to.col))) {
+                if ((!dr && !dc) || outOfBounds(to) || blocked.has(coordinateKey(to.row, to.col)))
+                    continue;
+                // Enemy occupancy and adjacency never change during this sequence.
+                // Friendly occupancy is deliberately relaxed: another actor may vacate it.
+                const enemyAt = (row, col) => allEnemies.some(enemy => enemy.position.row === row && enemy.position.col === col);
+                const geometricallyPossible = dr && dc
+                    ? enemyAt(piece.position.row + dr, piece.position.col) || enemyAt(piece.position.row, piece.position.col + dc)
+                    : allEnemies.some(enemy => Math.max(Math.abs(enemy.position.row - to.row), Math.abs(enemy.position.col - to.col)) === 1);
+                if (geometricallyPossible)
                     possibleBlockers.add(coordinateKey(to.row, to.col));
-                }
             }
     }
     for (const edge of buildCommandEdgesForPieces(enemies)) {
@@ -789,7 +797,6 @@ export function analyzeRushSupplyGuidance(state) {
                 index++;
         return index === needle.length;
     };
-    const rushSupplyRegion = optimisticRushSupplyRegion(state);
     const solutions = [];
     const firstActions = new Map();
     const successors = new Map();
@@ -798,6 +805,7 @@ export function analyzeRushSupplyGuidance(state) {
         const nextFrontier = [];
         for (const node of frontier) {
             checkEngineComputation(true);
+            const rushSupplyRegion = optimisticRushSupplyRegion(node.state);
             const moved = new Set(node.state.continuation?.rushedPieceIds ?? []);
             const required = new Set(obligationPieceIdsForContinuation(node.state));
             if (node.state.pieces.some(piece => required.has(piece.id) && moved.has(piece.id)

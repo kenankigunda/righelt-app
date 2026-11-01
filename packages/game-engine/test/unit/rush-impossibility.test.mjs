@@ -66,6 +66,7 @@ test('permanent-edge pruning agrees with independent exhaustive completion acros
     const pieces = [commander('C1', 'P1', 0, 9), commander('C2', 'P2', 9, 0),
       unit('A', 'P1', ...coordinates[0]), unit('B', 'P1', ...coordinates[1]),
       ...coordinates.slice(2).filter((_, bit) => index & 1 << bit).map(([r, c], bit) => unit(`E${bit}`, 'P2', r, c))];
+    if (index & 64) { const enemy = pieces.find(piece => piece.id === 'E0'); if (enemy) enemy.pushed = true; }
     const state = normalizeState(makeState({ pieces, continuation: { type: 'rush', owner: 'P1', frozenOwner: 'P1', chainLength: 1,
       rushedPieceIds: index & 8 ? ['A'] : [], rushChainPieceIds: ['A', 'B'],
       frozenPieceStatesById: { A: { supplied: true, commanded: true }, B: { supplied: true, commanded: true }, C1: { supplied: true, commanded: false } } } }));

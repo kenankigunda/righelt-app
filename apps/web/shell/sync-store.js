@@ -1360,7 +1360,7 @@ export const createSyncStore = ({
         return transport.getGameViewModel(gameId) ?? localPendingGame;
       }
       try {
-        const loadedGame = await transport.loadGame(gameId, { positionFirst: true, ...options });
+        const loadedGame = await transport.loadGame(gameId, options);
         clearPendingLocalGame(gameId);
         return loadedGame;
       } catch (error) {
