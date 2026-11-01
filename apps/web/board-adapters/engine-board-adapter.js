@@ -1,3 +1,4 @@
+import { rushActionKey } from '../board/rush-supply-guidance.js';
 import { REMOVAL_EFFECT_DURATION_MS, REMOVAL_FLASH_COUNT } from "../board/removal-timing.js";
 import { createBoardEventLabels } from "../board/event-label-controller.js";
 import { getPieceRenderStatus, getSelectedPieceExplanation } from "../board/piece-explanations.js";
@@ -413,10 +414,10 @@ function getGroupInfoForPiece(snapshot, piece) {
   };
 }
 
-function applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey) {
+function applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey, rushSupplyGuidance) {
   const { groupMemberPieceIds, movedPieceIds, pendingPieceIds } = deriveContinuationHighlightByPieceId(
     snapshot,
-    legalActions,
+    legalActions, rushSupplyGuidance,
   );
   const continuationGroupMembers = [...groupMemberPieceIds]
     .map((pieceId) => findPieceById(snapshot, pieceId))
@@ -708,6 +709,7 @@ export function createEngineBoardAdapter() {
     snapshot,
     overlay,
     legalActions,
+    rushSupplyGuidance,
     selectedPieceId,
     selectedPieceMoves,
     selectedPieceMovePreviews,
@@ -799,7 +801,7 @@ export function createEngineBoardAdapter() {
 
     const piece = findPieceById(snapshot, selectedPieceId);
     if (!piece) {
-      applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey);
+      applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey, rushSupplyGuidance);
       if (snapshot?.continuation?.type === "push" && snapshot.continuation.phase === "retreat") {
         const pushedPiece = findPieceById(snapshot, snapshot.continuation.pushedPieceId);
         if (pushedPiece) {
@@ -823,7 +825,7 @@ export function createEngineBoardAdapter() {
       applyGroupDecorations(snapshot, piece, cellByCoordinateKey);
     }
 
-    applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey);
+    applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey, rushSupplyGuidance);
     if (snapshot?.continuation?.type === "push" && snapshot.continuation.phase === "retreat") {
       const pushedPiece = findPieceById(snapshot, snapshot.continuation.pushedPieceId);
       if (pushedPiece) {
@@ -1106,6 +1108,7 @@ export function createEngineBoardAdapter() {
       selection,
       overlay,
       legalActions,
+      rushSupplyGuidance,
       selectedPieceMoves,
       selectedPieceMovePreviews,
       removalEffects,
@@ -1137,7 +1140,7 @@ export function createEngineBoardAdapter() {
         (Array.isArray(overlay?.destroyedPieces) ? overlay.destroyedPieces : []).map((record) => [coordKey(record), record]),
       );
 
-      const continuationHighlight = deriveContinuationHighlightByPieceId(snapshot, legalActions);
+      const continuationHighlight = deriveContinuationHighlightByPieceId(snapshot, legalActions, rushSupplyGuidance);
       const isContinuationHighlightedSquare = (row, col) => {
         const piecesHere = findPiecesAt(snapshot, row, col);
         return piecesHere.some(
@@ -1158,6 +1161,7 @@ export function createEngineBoardAdapter() {
           const existingCell = cellByCoordinateKey.get(key);
           const cell = existingCell ?? document.createElement(effectiveInteractionMode === "static" ? "div" : "button");
           cell.innerHTML = "";
+          cell.removeAttribute('aria-label');
           cell.removeAttribute("data-removal-label");
           cell.removeAttribute("data-disallow-reason");
           cell.removeAttribute("data-inactive-label");
@@ -1421,12 +1425,34 @@ export function createEngineBoardAdapter() {
         snapshot,
         overlay,
         legalActions,
+        rushSupplyGuidance,
         selectedPieceId: selection.selectedPieceId,
         selectedPieceMoves,
         selectedPieceMovePreviews,
         currentActionType,
         selectedPieceOverlayPhase,
       });
+      if (rushSupplyGuidance && overlay?.mode === 'interactive' && !overlay?.inspection) {
+        const entries = new Map(rushSupplyGuidance.actions.map(entry => [rushActionKey(entry.action), entry]));
+        for (const entry of rushSupplyGuidance.actions) {
+          const source = findPieceById(snapshot, entry.action.actorId);
+          const cell = source && cellByCoordinateKey.get(coordKey(source.position));
+          cell?.classList.add('rush-guidance-source');
+          cell?.setAttribute('aria-label', `Piece at (${source.position.row}, ${source.position.col}), supply-restoring rush available`);
+        }
+        for (const action of selectedPieceMoves ?? []) {
+          if (action.type !== 'rush' || !action.to) continue;
+          const cell = cellByCoordinateKey.get(coordKey(action.to));
+          const entry = entries.get(rushActionKey(action));
+          cell?.classList.add(entry ? 'rush-guidance-target' : 'rush-guidance-other');
+          cell?.setAttribute('aria-label', `Rush to (${action.to.row}, ${action.to.col}): ${entry ? entry.immediate ? 'Restores required supply' : 'Restores required supply after further rushes' : 'Other legal rush'}`);
+        }
+        for (const cell of cellByCoordinateKey.values()) if (cell.classList.contains('rush-blocker')) cell.classList.remove('rush-blocker');
+        for (const id of rushSupplyGuidance.obligationPieceIds) {
+          const piece = findPieceById(snapshot, id);
+          if (piece) cellByCoordinateKey.get(coordKey(piece.position))?.classList.add('rush-blocker');
+        }
+      }
       eventLabels?.update({
         scope: boardEl,
         enabled: effectiveInteractionMode === "interactive" && !["recorded-action", "recorded-turn"].includes(overlay?.mode),

@@ -36,6 +36,7 @@
  *   selection: BoardSelection,
  *   overlay: BoardOverlay,
  *   legalActions?: unknown[],
+ *   rushSupplyGuidance?: {obligationPieceIds: string[], actions: Array<{action: unknown, immediate: boolean}>} | null,
  *   selectedPieceMoves: unknown[],
  *   selectedPieceMovePreviews?: unknown[],
  *   removalEffects?: unknown[],
