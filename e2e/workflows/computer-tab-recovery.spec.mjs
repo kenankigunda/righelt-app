@@ -369,7 +369,7 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
 });
 
 
-for (const fault of ['manifest unavailable', 'evidence response lost']) test(`computer play automatically recovers when ${fault}`, async ({ page }, info) => {
+for (const fault of ['manifest unavailable', 'evidence response lost', 'evidence write unavailable']) test(`computer play automatically recovers when ${fault}`, async ({ page }, info) => {
   const id = await createComputer(page);
   const initial = await projected(page, id);
   let injected = false, manifestRequests = 0, lostWrite = null;
@@ -388,10 +388,15 @@ for (const fault of ['manifest unavailable', 'evidence response lost']) test(`co
     const body = route.request().postDataJSON();
     if (body.operation === 'read') evidenceReads.push(body);
     else writes.push(body);
-    if (fault === 'evidence response lost' && !injected && body.operation === 'write' && body.attempt?.outcome === 'ready') {
+    if (fault !== 'manifest unavailable' && !injected && body.operation === 'write' && body.attempt?.outcome === 'ready') {
       injected = true; lostWrite = structuredClone(body);
-      const persisted = await route.fetch(); expect(persisted.ok()).toBe(true);
-      await route.abort('failed');
+      if (fault === 'evidence write unavailable') {
+        // Fail before backend persistence, unlike the lost-response variant.
+        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ok:false,error:'local_api_unavailable'}) });
+      } else {
+        const persisted = await route.fetch(); expect(persisted.ok()).toBe(true);
+        await route.abort('failed');
+      }
     } else await route.continue();
   });
   try {
@@ -413,10 +418,15 @@ for (const fault of ['manifest unavailable', 'evidence response lost']) test(`co
     if (fault === 'manifest unavailable') expect(manifestRequests).toBeGreaterThanOrEqual(2);
     else {
       expect(evidenceReads.some(read => read.attemptId === lostWrite.attemptId)).toBe(true);
-      for (const write of writes.filter(write => write.attemptId === lostWrite.attemptId)) expect(write).toEqual(lostWrite);
+      const sameAttemptWrites = writes.filter(write => write.attemptId === lostWrite.attemptId);
+      for (const write of sameAttemptWrites) expect(write).toEqual(lostWrite);
+      if (fault === 'evidence write unavailable') expect(sameAttemptWrites.length).toBeGreaterThanOrEqual(2);
       expect(moves.filter(move => move.computerProof.attemptId === lostWrite.attemptId)).toHaveLength(1);
     }
-    await info.attach('automatic-computer-recovery', { contentType: 'application/json', body: JSON.stringify({ fault, injected, manifestRequests, lostWrite, evidenceReads, submissions, moves }, null, 2) });
+    const evidence = { fault, injected, manifestRequests, lostWrite, evidenceReads, submissions, moves };
+    await writeFile(info.outputPath('automatic-computer-recovery.json'), JSON.stringify(evidence, null, 2));
+    await page.screenshot({path:info.outputPath('automatic-computer-recovery.png')});
+    await info.attach('automatic-computer-recovery', { contentType: 'application/json', body: JSON.stringify(evidence, null, 2) });
   } finally { page.off('request', observe); await page.unrouteAll({ behavior: 'wait' }); }
 });
 
