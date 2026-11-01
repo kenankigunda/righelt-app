@@ -16,6 +16,14 @@ The verified unmodified `0ace3cb4` engine did not finish that position within th
 
 The completion search had kept its initial optimistic supply region after actors spent their moves. Refreshing that conservative region at each uncached rush state prunes branches whose only possible rescuer has already moved elsewhere. This preserves every candidate, internal/public action ordering, guard accounting, and the resource ceiling. The resulting position now completes with 52 legal actions and 174 expansions (13.5ms in the diagnostic run). All 105 audited operations complete with zero unknown results and zero errors. The original reported game still returns its ordered 34 baseline actions with 90 expansions. These are bounded corpus results, not a guarantee for every possible board.
 
+## Retained follow save
+
+A later production-derived position exposed the same search cost after a seven-push chain. Its sole legal action was C1 following from (3,5) to (4,5). The deployed engine validated and applied that action quickly, but enumeration of the next position exceeded one million expansions without finishing. That interrupted probe supplies no complete baseline action set.
+
+The existing pruning fix returns 45 actions from that next position in 128 expansions. The first measured pass took 12.1ms and the second 7.8ms, after initial state resolution had already warmed the module. These are diagnostic timings. The regression validates every returned action and bounds expansions, but does not claim an independent completeness or ordering comparison with the interrupted baseline.
+
+The retained rules-only fixture also covers optimistic projection, server commit, a lost response, room restart, reconciliation of the exact command receipt, and duplicate protection. A native Chromium journey saved the exact follow once, reloaded at the same gameplay revision, and resumed a distinct accepted move under a newer control generation. The model remained `trained-20261029-1086`. That local journey uses Horus on both seats to permit later computer play after a side change. It differs from the reported single-computer game and does not establish production session or provider behavior.
+
 ## Findings and changes
 
 | Path | Finding | Treatment |
