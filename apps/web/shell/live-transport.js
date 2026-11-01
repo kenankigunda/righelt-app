@@ -9,7 +9,7 @@ import { loadIdentity, saveIdentity } from "./persistence.js";
 import { defaultNotationForAction, rebaseProjectedMetadata } from "./optimistic-live.js";
 import { buildStaticGameCardFromGame, normalizeStaticGameCard } from "./static-game-cards.js";
 import { createCommandJournal } from "./command-journal.js";
-import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, SYNC_PROTOCOL_VERSION, SYNC_TIMING, SYNC_LIMITS, LIVE_HISTORY, SHARED_OPERATIONS, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
+import { POSITION_PROJECTION, ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, SYNC_PROTOCOL_VERSION, SYNC_TIMING, SYNC_LIMITS, LIVE_HISTORY, SHARED_OPERATIONS, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
 
 import { applyHistoryIntent, historyMoveKey } from "./recovery-view.js";
 import { activityStateActorSide } from "./activity-affiliation.js";
@@ -35,7 +35,7 @@ const sameProjectionAuthority = (left, right) => Boolean(left && right
 // A validated, unresolved receipt is pending durable intent, not a failed
 // request. Private identity prevents external error messages impersonating it.
 const unresolvedCommandOutcome = Symbol('unresolved-command-outcome');
-export const validSyncSnapshot = (game, gameId) => {
+const validGameShape = (game, gameId) => {
   const state = game?.board?.state;
   return typeof gameId === "string" && gameId.length > 0 && game?.id === gameId
     && typeof game.createdAt === "string" && Number.isFinite(Date.parse(game.createdAt))
@@ -44,6 +44,7 @@ export const validSyncSnapshot = (game, gameId) => {
     && ["P1", "P2"].includes(state.sideToMove) && isSyncRevision(state.turnIndex) && Array.isArray(state.pieces)
     && Array.isArray(game.moves) && Array.isArray(game.turns);
 };
+export const validSyncSnapshot = (game, gameId) => game?.positionOnly !== true && validGameShape(game, gameId);
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
 const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
@@ -183,6 +184,9 @@ export const createLiveTransportStore = ({
   let gameById = new Map();
   let homeGameCardById = new Map();
   const lastEventSeqByGameId = new Map();
+  const positions = new Map();
+  const positionFlights = new Map();
+  let positionGameId = null;
   const optimisticStateByGameId = new Map();
   // Storage recovery owns asynchronous work separately from game projections.
   const journalRecoveryByOwner = new WeakMap();
@@ -474,6 +478,9 @@ export const createLiveTransportStore = ({
       return null;
     }
 
+    const position = positions.get(game.id);
+    if (position && (game.gameplayRevision < position.gameplayRevision || (eventSeq !== null && eventSeq < position.positionEventSeq))) return null;
+    positions.delete(game.id);
     const nextEventSeq = typeof eventSeq === "number" && Number.isFinite(eventSeq) ? eventSeq : null;
     const currentEventSeq = nextEventSeq !== null ? lastEventSeqByGameId.get(game.id) ?? 0 : null;
     const staleSnapshotIgnored = nextEventSeq !== null && currentEventSeq !== null && nextEventSeq < currentEventSeq;
@@ -981,7 +988,7 @@ export const createLiveTransportStore = ({
       assertRulesContext(contextEpoch, gameId);
       if (auth?.enabled && (!auth.session.authenticated)) throw Object.assign(new Error("invalid_credentials"), { code: "invalid_credentials" });
       const current = getGameViewModel(gameId);
-      if (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked) throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
+      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
       const isClosure = command.kind === "end-turn" || command.action?.type === "end_turn";
       if (isClosure && serverActionContract !== ACTION_CONTRACT_VERSION) {
         markUpgradeRequired(gameId);
@@ -1271,6 +1278,47 @@ export const createLiveTransportStore = ({
     clearTimeout(optimistic.recoveryRetryTimer); optimistic.recoveryRetryTimer = null;
     recalculateOptimisticGame(gameId);
     emitChange({ type: "upgrade_required", gameId });
+  };
+  // Read-only display state is deliberately outside gameById, event cursors,
+  // command receipts, optimistic projection and journal hydration.
+  const loadGamePosition = (gameId) => {
+    if (getOptimisticState(gameId).upgradeRequired) return Promise.reject(Object.assign(new Error("upgrade_required"), { code: "upgrade_required" }));
+    if (gameById.has(gameId)) return Promise.resolve(getGameViewModel(gameId));
+    if (positionGameId !== gameId) { positions.clear(); positionGameId = gameId; }
+    if (positionFlights.has(gameId)) return positionFlights.get(gameId);
+    if (positions.has(gameId)) {
+      positions.set(gameId, { ...positions.get(gameId), positionLoading: true, positionError: false });
+      emitChange({ type: "position_loading", gameId });
+    }
+    const flight = boundedRequest(`/api/shell/games/${encodeURIComponent(gameId)}/position?identityId=${encodeURIComponent(identityId)}`, { method: "GET", cache: "no-store" })
+      .then(body => {
+        assertActive();
+        if (body.projection !== POSITION_PROJECTION || body.protocolVersion !== 2 || body.game?.positionOnly !== true
+          || !validGameShape(body.game, gameId) || !isSyncRevision(body.eventSeq)) throw new Error("invalid_position");
+        if (positionGameId === gameId && !gameById.has(gameId) && positionFlights.get(gameId) === flight) {
+          positions.set(gameId, { ...body.game, positionEventSeq: body.eventSeq, positionLoading: true, positionError: false });
+          emitChange({ type: "position_loaded", gameId });
+        }
+        return getGameViewModel(gameId);
+      }).finally(() => { if (positionFlights.get(gameId) === flight) positionFlights.delete(gameId); });
+    positionFlights.set(gameId, flight);
+    return flight;
+  };
+  const loadCompleteGame = async (gameId, options = {}) => {
+    const positionFlight = options.positionFirst ? loadGamePosition(gameId).catch(() => null) : Promise.resolve(null);
+    try {
+      const game = await loadGame(gameId, options);
+      if (!game || game.positionOnly) throw Object.assign(new Error("stale_snapshot"), { code: "stale_snapshot" });
+      return game;
+    }
+    catch (error) {
+      await positionFlight;
+      if (active && !gameById.has(gameId) && positions.has(gameId)) {
+        positions.set(gameId, { ...positions.get(gameId), positionLoading: false, positionError: true });
+        emitChange({ type: "position_failed", gameId });
+      }
+      throw error;
+    }
   };
   const loadGame = async (gameId, { openAsViewer = false } = {}) => {
     if (getOptimisticState(gameId).upgradeRequired) throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
@@ -1763,7 +1811,12 @@ export const createLiveTransportStore = ({
       recalculateOptimisticGame(gameId);
     }
     if (!optimistic.derivedGame) {
-      return null;
+      const position = clone(positions.get(gameId) ?? null);
+      if (!position) return null;
+      applyHistoryIntent(position, historyIntentByGameId.get(gameId), identityId);
+      return { ...position, canRecordMove: false, canEndTurn: false, canUndoLastMove: false, sharedMutationsBlocked: true, gameplayMutationsBlocked: true,
+        historyLoading: clone(historyLoads.get(gameId) ?? null) };
+
     }
     // Browser suspension can advance deadlines before scheduled callbacks run.
     // Refresh time-dependent safety flags even when the board projection is cached.
@@ -1806,7 +1859,8 @@ export const createLiveTransportStore = ({
   return {
     setRulesActiveGame,
     loadGamesPage,
-    loadGame,
+    loadGame: loadCompleteGame,
+    loadGamePosition,
     resolveInvite,
     createGame,
     computerControl: (gameId, values) => decisionRequest(gameId, 'computer-control', values),
@@ -1877,6 +1931,7 @@ export const createLiveTransportStore = ({
     unsubscribe,
     retire() {
       active = false;
+      positions.clear(); positionFlights.clear();
       rulesExecutor.cancelAll();
       globalThis.document?.removeEventListener?.("visibilitychange", onRulesVisibility);
       globalThis.window?.removeEventListener?.("pagehide", onRulesPageHide);
