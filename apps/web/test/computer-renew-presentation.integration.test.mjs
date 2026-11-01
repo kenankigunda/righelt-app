@@ -261,3 +261,26 @@ test('failed human journal admission retains storage recovery instead of hiding 
  assert.equal(view.storageBlocked,true);assert.equal(view.unsavedCommand,true);assert.equal(view.canRecordMove,false);
  assert.equal((await h.journal.list('owner',h.game().id)).length,1);assert.equal(h.actions.length,0);
 });
+
+test('empty auto-settled turn retains its semantic rejection without journaling',async t=>{
+ const h=await humanRenewalHarness(t,{startRenewal:false});
+ h.update(game=>({...game,canRecordMove:false,canEndTurn:false,currentTurn:{index:1,playerSeat:'Player 2',status:'active',moveIndexes:[]},turns:[...game.turns,{index:1,playerSeat:'Player 2',status:'active',moveIndexes:[]}],board:{state:{...game.board.state,sideToMove:'P2',turnIndex:1}},currentSnapshot:{...game.board.state,sideToMove:'P2',turnIndex:1}}));
+ await assert.rejects(h.store.endTurn({gameId:h.game().id}),{code:'turn_has_no_moves'});
+ assert.deepEqual(await h.journal.list('owner',h.game().id),[]);assert.deepEqual(h.actions,[]);
+});
+
+test('permission loss still blocks a nonempty legal End turn without journaling',async t=>{
+ const fixture=JSON.parse(readFileSync(new URL('./support/quiet-renew-closable-rush.json',import.meta.url)));
+ const h=await humanRenewalHarness(t,{initialState:fixture.state,startRenewal:false});
+ h.update(game=>({...game,canRecordMove:false,canEndTurn:false,control:'viewer'}));
+ await assert.rejects(h.store.endTurn({gameId:h.game().id}),{code:'sync_recovering'});
+ assert.deepEqual(await h.journal.list('owner',h.game().id),[]);assert.deepEqual(h.actions,[]);
+});
+
+
+test('terminal empty turns retain their completion fence without journaling',async t=>{
+ const h=await humanRenewalHarness(t,{startRenewal:false});
+ h.update(game=>({...game,canRecordMove:false,canEndTurn:false,board:{state:{...game.board.state,outcome:{status:'p1_win',reason:'p2_commander_destroyed'}}}}));
+ await assert.rejects(h.store.endTurn({gameId:h.game().id}),{code:'sync_recovering'});
+ assert.deepEqual(await h.journal.list('owner',h.game().id),[]);assert.deepEqual(h.actions,[]);
+});

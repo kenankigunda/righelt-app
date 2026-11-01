@@ -1488,6 +1488,15 @@ export const createLiveTransportStore = ({
 
   const endTurn = async ({ gameId }) => {
     const current = getGameViewModel(gameId);
+    // An ordinary action may already have opened the next empty turn. Preserve
+    // that semantic refusal without admitting a command or treating the prior
+    // player's lack of turn permission as connection recovery.
+    if (active && (!auth?.enabled || auth.session.authenticated) && gameById.has(gameId)
+      && current?.positionOnly !== true && current?.board?.state?.outcome?.status === "ongoing"
+      && current?.currentTurn?.status === "active" && current.currentTurn.moveIndexes?.length === 0
+      && !current?.board?.state?.continuation) {
+      throw Object.assign(new Error("turn_has_no_moves"), { code: "turn_has_no_moves" });
+    }
     const command = {
       kind: "end-turn",
       clientCommandId: createClientCommandId({ gameId, identityId, random }),
