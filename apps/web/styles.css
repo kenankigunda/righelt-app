@@ -95,7 +95,7 @@ body {
 }
 
 .board-preview-coordinate-chip {
-  border: 1px solid #cac7bd;
+  border: 1px solid #c7cecf;
   background: #fbf8f0;
   color: var(--ink);
 }
@@ -367,7 +367,7 @@ button {
 }
 
 .cell {
-  --cell-fill: #fbf8f0;
+  --cell-fill: #f8fafa;
   position: relative;
   display: grid;
   place-items: center;
@@ -377,6 +377,8 @@ button {
   border: 1px solid #cac7bd;
   color: var(--ink);
   background: var(--cell-fill);
+  background-image: var(--marble-face, none);
+  box-shadow: inset 1px 2px 3px rgb(44 57 66 / 17%), inset -1px -1px 0 rgb(255 255 255 / 90%);
 }
 
 /* Do not override border on source/target: they use border + inset shadow as one ring; changing
