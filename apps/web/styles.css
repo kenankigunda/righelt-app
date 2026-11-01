@@ -1083,3 +1083,26 @@ button:disabled {
 [data-presentation-context="history"] .cell.history-role-source { border:2px dashed var(--move-source); box-shadow:none; }
 [data-presentation-context="history"] .cell.history-role-target { border:2px solid var(--move-target); box-shadow:none; }
 [data-presentation-context="history"] .cell.history-role-source.history-role-target { border:2px dashed var(--move-source); box-shadow:inset 0 0 0 2px var(--move-target); }
+
+/* Warning semantics are independent of either player's affiliation. */
+.board-obligatory-pill {
+  display: inline-block;
+  padding: .12em .6em;
+  border: 1px solid var(--warning);
+  border-radius: 999px;
+  background: #f7e8cb;
+  color: #754506;
+  font-size: .8em;
+  font-weight: 700;
+  line-height: 1.5;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+.board-rush-guidance-detail { display: grid; font-size: .875em; }
+.board-rush-guidance-detail > span { grid-area: 1 / 1; min-width: 0; }
+.board-rush-guidance-sizing { visibility: hidden; pointer-events: none; user-select: none; }
+.board-rush-guidance-sizing::before { content: attr(data-copy); }
+.cell.rush-guidance-target { outline: 2px solid var(--warning); outline-offset: -4px; }
+.cell.rush-guidance-other { background: var(--surface-hover-quiet); }
+.cell.rush-guidance-other .move-ghost { opacity: .25; }
+.cell.rush-guidance-source { border-style: dashed; }

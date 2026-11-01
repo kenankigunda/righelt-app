@@ -37,9 +37,9 @@ for (const fault of ['uncommitted', 'delayed-cleanup']) test(`actual150 browser 
     await makeAnyLegalMove(page, 'p1');
     await expect.poll(async () => (await journalRecords(page)).length).toBe(0);
     old = await context.newPage();
-    await old.route('**/*.js', async route => {
+    await old.route(/\.m?js(?:\?.*)?$/, async route => {
       const pathname = new URL(route.request().url()).pathname;
-      if (!/^\/(shell\/|generated\/|main\.js$|local-dev-ports\.js$)/.test(pathname)) return route.continue();
+      expect(fixture.assetPaths.has(pathname), `Historical browser must load its own module: ${pathname}`).toBe(true);
       const body = await readFile(join(fixture.web, pathname));
       return route.fulfill({ status: 200, contentType: 'application/javascript', body });
     });
