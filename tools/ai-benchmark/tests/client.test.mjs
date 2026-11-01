@@ -48,5 +48,10 @@ test('verified fetch rejects corrupt and partial assets', async () => {
 test('no-progress download aborts rather than waiting forever', async () => {
   const expected = { bytes: 1, sha256: 'a'.repeat(64) };
   await assert.rejects(fetchVerifiedAsset('test', expected, { noProgressMs: 5,
-    fetchImpl: (_, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')))) }), /aborted/);
+    fetchImpl: (_, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')))) }), error => {
+      assert.equal(error.code, 'computer_network_timeout');
+      assert.equal(error.message, 'no-progress');
+      assert.equal(error.cause?.message, 'aborted');
+      return true;
+    });
 });
