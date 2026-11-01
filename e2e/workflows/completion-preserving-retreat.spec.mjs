@@ -2,7 +2,7 @@ import {test as base,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {deterministicStateHash,resolveToStability,serializeState} from '../../apps/web/generated/packages/game-engine/src/index.js';
 import {ACTION_CONTRACT_HEADER,ACTION_CONTRACT_VERSION,SYNC_TIMING,commandFingerprint,isSyncCommand,isReconcileResponse,isCommandOutcome} from '../../apps/web/generated/packages/shared-types/src/sync-protocol.js';
-import {importScenarioGame,submitPlayableAction,switchGamePanel,ensureActionActorSelected} from '../support/app.mjs';
+import {importScenarioGame,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
 import {waitForComputerDecision} from '../support/computer-projection.mjs';
 import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
 import {makeRetreatScenario,readRetreatCapture,FOLLOW_ACTION,RETREAT_CAPTURE_SHA256} from '../support/retreat-completion-fixture.mjs';
@@ -162,9 +162,10 @@ test('human retreat excludes the stranded square and completes the native Follow
  const rejected=await request(page,`/api/shell/games/${gameId}/apply`,unsafe);expect(rejected.accepted).toBe(false);
  expect((await receipt(page,gameId,unsafe,'rejected')).outcome.reason).toBe('SUPPLY_DESTINATION_UNSUPPLIED');
  const unchanged=await current(page,gameId);expect(unchanged.board).toEqual(pushed.board);expect(unchanged.gameplayRevision).toBe(pushed.gameplayRevision);expect(unchanged.moves).toEqual(pushed.moves);
- // Clicking an empty unhighlighted square deliberately clears selection.
- // Resume through the actual pushed-piece control before selecting its move.
- await ensureActionActorSelected(cell(page,safe.action.from));
+ // The rejected decision publishes the unchanged authoritative position and
+ // restores its mandatory actor. Clicking during that publication can arrive
+ // after restoration and deliberately cycle the selected piece's overlay.
+ await expect(cell(page,safe.action.from)).toHaveClass(/(?:^|\s)source(?:\s|$)/);
  await submit(page,gameId,safe.action);const retreat=await atHash(page,gameId,safe.stateHash);
  expect(retreat.legalActions).toEqual([FOLLOW_ACTION]);await noClosure(page,retreat);
  await page.screenshot({path:info.outputPath('safe-retreat-awaits-follow.png')});
