@@ -706,39 +706,44 @@ button {
   top: 50%;
   transform: translate(-50%, -50%);
   z-index: 2;
+}
+
+/* Forecasts share the historical visual treatment while the real live token
+   keeps its ordinary geometry, including a pushed defender's stack offset. */
+.piece-token:is(.history-destruction-piece, .projected-destruction-piece) {
   color: rgba(255, 255, 255, 0.46);
   pointer-events: none;
 }
 
-.piece-token.history-destruction-piece.p1 {
+.piece-token:is(.history-destruction-piece, .projected-destruction-piece).p1 {
   --destroyed-cut-border: rgba(194, 69, 47, 0.46);
   background: rgba(194, 69, 47, 0.46);
   border-color: rgba(194, 69, 47, 0.46);
 }
 
-.piece-token.history-destruction-piece.p2 {
+.piece-token:is(.history-destruction-piece, .projected-destruction-piece).p2 {
   --destroyed-cut-border: rgba(45, 103, 199, 0.46);
   background: rgba(45, 103, 199, 0.46);
   border-color: rgba(45, 103, 199, 0.46);
 }
 
-.piece-token.history-destruction-piece.inactive {
+.piece-token:is(.history-destruction-piece, .projected-destruction-piece).inactive {
   background: var(--cell-fill, #fbf8f0);
 }
 
-.piece-token.history-destruction-piece.inactive.p1 {
+.piece-token:is(.history-destruction-piece, .projected-destruction-piece).inactive.p1 {
   border-color: rgba(194, 69, 47, 0.46);
 }
 
-.piece-token.history-destruction-piece.inactive.p2 {
+.piece-token:is(.history-destruction-piece, .projected-destruction-piece).inactive.p2 {
   border-color: rgba(45, 103, 199, 0.46);
 }
 
-.piece-token.history-destruction-piece.commander {
+.piece-token:is(.history-destruction-piece, .projected-destruction-piece).commander {
   border-color: rgba(246, 229, 141, 0.46);
 }
 
-.piece-token.history-destruction-piece::before {
+.piece-token:is(.history-destruction-piece, .projected-destruction-piece)::before {
   content: "";
   position: absolute;
   z-index: 3;
@@ -755,7 +760,7 @@ button {
   transform-origin: center;
 }
 
-.piece-token.history-destruction-piece::after {
+.piece-token:is(.history-destruction-piece, .projected-destruction-piece)::after {
   content: "";
   position: absolute;
   z-index: 4;
