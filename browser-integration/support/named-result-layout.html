@@ -1,5 +1,5 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Named result layout</title><link rel="preload" href="/apps/web/assets/fonts/Manrope-variable.ttf" as="font" type="font/ttf" crossorigin><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"><link rel="stylesheet" href="/apps/web/shell/computer-replay.css"></head><body><main id="app" class="app-root" aria-live="polite"></main><script type="module">
-import {getGameResult} from '/apps/web/shell/game-result.js';
+import {getGameResult,renderResultText} from '/apps/web/shell/game-result.js';
 import {playerDisplayName} from '/apps/web/shell/perspective-labels.js';
 import {renderResultMark} from '/apps/web/shell/result-presentation.js';
 import {icon} from '/apps/web/shell/ui.js';
@@ -7,10 +7,10 @@ const response=await fetch('/apps/web/shell/app.js');if(!response.ok)throw Error
 const source=await response.text(),start=source.indexOf('const renderResult ='),end=source.indexOf('const renderGame =',start);
 if(start<0||end<=start)throw Error('Actual result renderer boundary unavailable');
 const escapeHtml=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
-const render=Function('game','getGameResult','playerDisplayName','renderResultMark','transport','escapeHtml','formatDisplayGameId','icon',`${source.slice(start,end)};return renderResult(game);`);
+const render=Function('game','getGameResult','renderResultText','playerDisplayName','renderResultMark','transport','escapeHtml','formatDisplayGameId','icon',`${source.slice(start,end)};return renderResult(game);`);
 window.namedResultFixture={render(name){
  const game={id:'named-result',player1:{identityId:'red',profile:{displayName:name}},player2:{identityId:'blue',profile:{displayName:'Other guest'}},board:{state:{outcome:{status:'p1_win',reason:'p2_commander_destroyed'}}}};
- document.querySelector('#app').innerHTML=render(game,getGameResult,playerDisplayName,renderResultMark,{getIdentityId:()=> 'observer',getAuthoritativeGame:()=>game},escapeHtml,String,icon);
+ document.querySelector('#app').innerHTML=render(game,getGameResult,renderResultText,playerDisplayName,renderResultMark,{getIdentityId:()=> 'observer',getAuthoritativeGame:()=>game},escapeHtml,String,icon);
 }};
 await document.fonts.load('700 56px Manrope');await document.fonts.ready;window.fixtureReady=true;
 </script></body></html>

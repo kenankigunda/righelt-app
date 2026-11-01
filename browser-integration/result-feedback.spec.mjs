@@ -9,7 +9,7 @@ for(const width of [320,390,1440])test(`result perspectives remain readable and 
  for(const [side,tone]of[['red','victory'],['blue','defeat'],['viewer','neutral']]){
   await page.evaluate(side=>window.resultFixture.setup(side),side);await page.getByRole('button',{name:'Finish live game',exact:true}).click();
   const result=page.locator('.game-result');await expect(result).toHaveAttribute('data-result-tone',tone);
-  await expect(result.getByRole('heading',{name:side==='red'?'You won':side==='blue'?'Your opponent won':'Guest 1 won',exact:true})).toBeVisible();await expect(result).toContainText(side==='red'?'Your opponent’s commander was destroyed':side==='blue'?'Your commander was destroyed':'Guest 2’s commander was destroyed');
+  await expect(result.getByRole('heading',{name:side==='red'?'Red: You won':'Red: Guest 1 won',exact:true})).toBeVisible();await expect(result).toContainText(side==='blue'?'Your commander was destroyed':'Guest 2’s commander was destroyed');
   await page.evaluate(async()=>{await document.fonts.ready;await Promise.all(document.querySelector('.game-result').getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));});
   expect(await result.evaluate(element=>element.scrollWidth<=element.clientWidth+1)).toBe(true);
   for(const action of await result.locator('button,a').all()){await action.scrollIntoViewIfNeeded();await expect(action).toBeInViewport({ratio:1});expect(await action.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})).toBe(true);}
@@ -45,7 +45,7 @@ test('animation timeline survives repaint and history, hydration, spectator and 
  await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>{window.resultFixture.setup('red');window.resultFixture.finish();});
  expect(await page.locator('.game-result').evaluate(el=>el.getAnimations({subtree:true}).length)).toBe(0);
  await page.locator('.game-result').screenshot({path:info.outputPath('result-reduced-motion.png')});
- await expect(page.locator('.result-mark svg')).toHaveAttribute('aria-hidden','true');await expect(page.getByRole('heading',{name:'You won',exact:true})).toBeVisible();
+ await expect(page.locator('.result-mark svg')).toHaveAttribute('aria-hidden','true');await expect(page.getByRole('heading',{name:'Red: You won',exact:true})).toBeVisible();
 });
 
 for(const width of [320,390])test(`200% result text enlarges its heading and keeps all actions reachable at ${width}px`,async({page},info)=>{
@@ -54,9 +54,9 @@ for(const width of [320,390])test(`200% result text enlarges its heading and kee
  for(const side of ['red','blue','viewer']){
   await page.evaluate(side=>window.resultFixture.setup(side,'p1_win'),side);
   const result=page.locator('.game-result'),heading=result.getByRole('heading');
-  await expect(heading).toHaveText(side==='red'?'You won':side==='blue'?'Your opponent won':'Guest 1 won');
+  await expect(heading).toHaveAccessibleName(side==='red'?'Red: You won':'Red: Guest 1 won');
   expect(await heading.evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(56);
-  if(side==='blue')expect(await heading.evaluate(el=>{const start=el.firstChild.textContent.indexOf('opponent'),range=document.createRange();range.setStart(el.firstChild,start);range.setEnd(el.firstChild,start+8);return range.getClientRects().length;})).toBe(1);
+  if(side==='blue')expect(await heading.evaluate(el=>{const text=el.querySelector('bdi').firstChild,range=document.createRange();range.setStart(text,0);range.setEnd(text,text.length);return range.getClientRects().length;})).toBe(1);
   expect(await result.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
   for(const action of await result.locator('button,a').all()){
    await action.scrollIntoViewIfNeeded();
@@ -75,7 +75,7 @@ test('red and blue winners keep their actual side color throughout the victory a
  for(const [identity,winner]of[['red','p1'],['blue','p2']]){
   await page.evaluate(([identity,winner])=>{window.resultFixture.setup(identity);window.resultFixture.finish(false,`${winner}_win`);},[identity,winner]);
   const result=page.locator('.game-result');await expect(result).toHaveAttribute('data-result-tone','victory');await expect(result).toHaveAttribute('data-winner',winner);
-  await expect(result.getByRole('heading',{name:'You won',exact:true})).toBeVisible();
+  await expect(result.getByRole('heading',{name:`${winner==='p1'?'Red':'Blue'}: You won`,exact:true})).toBeVisible();
   const colors=await result.evaluate((el,{winner,identity})=>{
    const resolve=token=>{const probe=document.createElement('i');probe.style.color=token;el.append(probe);const color=getComputedStyle(probe).color;probe.remove();return color;};
    const expected=resolve(`var(--player-${winner})`),hover=resolve(`var(--player-${identity}-hover)`),paper=resolve('var(--paper)');
