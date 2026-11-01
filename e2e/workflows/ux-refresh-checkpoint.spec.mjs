@@ -231,7 +231,7 @@ test('storybook artwork draws back then slides while story copy stays fixed',asy
      return {frames,shadeCount:el.querySelectorAll('.story-turn-shade').length};
    });
    expect(held.frames).toHaveLength(2);expect(held.shadeCount).toBe(0);
-   for(const animation of held.frames){expect(animation.duration).toBe(760);for(const frame of animation.frames)expect(frame.opacity).toBe(1);}
+   for(const animation of held.frames){expect(animation.duration).toBe(760);for(const frame of animation.frames)expect(Number(frame.opacity)).toBe(1);}
    expect(held.frames[0].frames[1].transform).toBe(`translateX(${6*direction}%)`);
    expect(held.frames[0].frames.at(-1).transform).toBe(`translateX(${-112*direction}%)`);
    expect(held.frames[1].frames[1].transform).toBe(`translateX(${118*direction}%)`);
