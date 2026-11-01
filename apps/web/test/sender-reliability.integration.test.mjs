@@ -530,7 +530,8 @@ for(const committed of [false,true])test(`shared undo recovery preserves one dur
  for(const envelope of sent)assert.deepEqual(envelope,sent[0]);
  const saved=f.env.DB.getGameState(f.gameId);
  assert.equal(saved.moves.filter(move=>move.undone).length,1);
- assert.equal(saved.notifications.filter(note=>note.includes("accepted the undo")).length,1);
+ assert.equal(saved.notifications.filter(note=>note === "Undo applied").length,1);
+ assert.equal(saved.notifications.some(note=>note.includes("accepted the undo")),false);
  assert.equal((await f.journal.list(f.store.getIdentityId(),f.gameId)).length,0);
 });
 

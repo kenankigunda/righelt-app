@@ -1,3 +1,4 @@
+import { requiresUndoApproval } from '../../shared-types/src/undo-policy';
 import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, canonicalCommandJson } from '../../shared-types/src/sync-protocol';
 import { archiveStatements, readDecision, readDecisionPage, readAdditionalDecisionPage, parseHistoryCursor, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
 import { StorageWriteLimitError } from './storage-codec';
@@ -723,14 +724,13 @@ export class GameRoomDO {
       }
       const requesterSeat = role;
       const approverIdentityId = getApproverIdentityForSeat(game, requesterSeat);
-      const autoApprove = !approverIdentityId || approverIdentityId === identityId;
+      const autoApprove = !requiresUndoApproval(identityId, approverIdentityId);
       if (autoApprove) {
         const reverted = applyRevertToMove(game, targetMoveId, identityId, targetMove);
         if (!reverted.ok) {
           this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, targetMoveId, error: reverted.error });
           return json({ ok: false, error: reverted.error }, 409);
         }
-        addNotification(game, `Player ${identityId} accepted the undo request`);
         this.logDiagnostic("info", "live_server_revert_auto_approved", { identityId, targetMoveId }, true);
         await this.commit({
           type: "event_appended",

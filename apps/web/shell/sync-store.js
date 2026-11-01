@@ -1,3 +1,4 @@
+import { requiresUndoApproval } from '../generated/packages/shared-types/src/undo-policy.js';
 import { CURRENT_COMPUTER_MODEL, createComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
 import { IDENTITY_KEY } from "./persistence.js";
 import { STORAGE_GENERATION_HEADER, STORAGE_GENERATION_QUERY } from "../generated/packages/shared-types/src/storage-policy.js";
@@ -1581,7 +1582,7 @@ export const createSyncStore = ({
         id: `revert-request:${requestId}`,
         gameId,
         buildOptimisticGame: (game) =>
-          !targetMove ? game : approverIdentityId
+          !targetMove ? game : requiresUndoApproval(requesterIdentityId, approverIdentityId)
             ? buildOptimisticRevertRequestGame({ game, requestId, requesterIdentityId, targetMoveId })
             : buildOptimisticApprovedRevertGame({
                 game,
