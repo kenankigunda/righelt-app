@@ -273,3 +273,5 @@ Use the dedicated sibling `righelt-validation-tools/skills/validate-and-shepherd
 Validate introduced behavior and affected contracts, reuse compatible exact-revision evidence, and finish with required combined proof. Curate screenshots while preserving raw artifacts. Independent review is bounded to the coherent diff and changed findings. Separate ready-for-review, merge-ready/authorized, and activation-ready/authorized states. Scheduling is opt-in; a paused automation stays paused. Parent workspace templates are applied only during the explicit released installation, not while this tooling branch is under review.
 
 Validation publication is paused by default until explicitly resumed by the user. Deliver the generated local `evidence.md` and key inspected screenshot embeds directly in the Codex task. Preserve validation, independent review, merge and activation gates.
+
+Before changing any loading state or initial page delivery, follow [loading UX](docs/ai/LOADING_UX.md). Start with the default document background and critical styles, preserve final geometry through intermediate states, and validate speed, workflow readiness and layout stability together.

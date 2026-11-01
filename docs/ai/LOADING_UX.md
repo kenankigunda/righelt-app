@@ -1,0 +1,17 @@
+# Loading UX: earliest useful paint, stable final geometry
+
+This applies from the default document background upward. Follow the [detailed loading-state contract](https://github.com/kenankigunda/righelt-backlog/blob/main/backlog/docs/tickets/t-118/marble-2026-11-01/loading-state-contract.md), [UI performance plan](UI_PERFORMANCE.md), [selected material](MATERIAL_UX_CONTRACT.md) and native behavior specs.
+
+Render usable content as soon as its actual prerequisites are ready. This is not a serialized reveal sequence: background, shell, sections, cards, board, art and controls are logical owners, not mandatory timed loading stages. No minimum skeleton dwell, decorative cycle completion, fake progress, whole-page veil or unrelated-data barrier may delay ready content or input.
+
+Make the earliest document canvas match the selected quiet white-marble base, and audit critical style delivery rather than merely adding an inline color while optional styles still block paint. Preserve the no-unstyled-app contract. Full shell content needs its real required styles; optional textures/fonts/art must not add unnecessary global readiness gates. Preserve genuine account, auth, model and authority prerequisites.
+
+Loading and loaded states share final geometry: section/card widths and padding, responsive gaps/cuts, header/text/icon baselines, square Board/axes/message/legend tracks, image aspect boxes, fields/actions/status and single scroll owners. Keep cached data and actual mounted DOM during refresh. No temporary tray, omitted coordinate track, generic utility bar or late icon wrapper may cause avoidable shifts. Font swap and flyout/viewport changes need complete invalidation.
+
+Reserve known content honestly. Unknown data can legitimately add/collapse content; classify and minimize that movement rather than invent names/counts/permissions, reserve worst-case walls, shrink art or hide errors. Existing one-row Home placeholder policy and conditional visibility remain. Inline status and profile/editor changes retain their source owners and actual native targets.
+
+Acknowledge/guard deliberate input immediately and complete on actual operation readiness. Existing200ms cue,5s generic slow explanation and separate4s recovery explanation are presentation policies, not operation delays or minimum dwell. Preserve source clocks/incident identity/cancellation; no duplicate Retry/status. Asset completion cannot grant worker/account/game readiness. Failed assets retain usable same-box content/fallback and true recovery actions.
+
+Validate from before app import/navigation, through intermediate frames, not only after stable fonts or final content. Record first background/styled shell/usable action and regional/overall readiness separately with real clocks. Compare per-frame equivalent-anchor boxes and DOM identity, raw shifts including recent input, font/texture/decode/stylesheet/data/model failure and cached refresh. CLS alone or a screenshot after actionability waiting cannot prove stable loading.
+
+UX validator, product tester and performance tester independently review representative loading owners, repair and recheck speed/geometry/correctness. Use frozen baseline-derived budgets and explicit allowed data-driven growth. No unsupported observer, fake clock or hidden interface may obtain a passing score. Resolve implementation tradeoffs autonomously and report them at delivery. Planning records are not runtime proof.

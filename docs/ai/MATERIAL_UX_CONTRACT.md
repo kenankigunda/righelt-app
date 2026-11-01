@@ -177,3 +177,9 @@ Push the debrief, decisions and review repairs after each meaningful planning ch
 Where a selected option lives inside a comparison sheet, use the exact selected-panel crop authorized by the user, with no regeneration or resizing. Retain source SHA256, crop rectangle, output SHA256 and decoded pixel-equality verification. Preserve byte-identical explicitly selected masters. Inspect the staged image allowlist and commit exact owned paths so concurrent drafts cannot leak into a push. Existing Git history is not rewritten.
 
 Performance is required alongside beauty and functionality. Use UI_PERFORMANCE.md and the T118 performance plan for native workload/budget/evidence requirements and targeted preexisting UI improvements. Do not trade away the selected design or intentional workflows to pass a stripped-down benchmark.
+
+## Complete loading layers and approved artwork delivery
+
+Follow [loading UX](LOADING_UX.md) from the default document background upward: rapid useful paint, source-correct stylesheet/readiness handling, final-layout slots and minimal avoidable movement through every load/refresh/error. No serialized reveal or artificial dwell. Preserve genuine authority and cached native identities, with UX/product/performance phase proof.
+
+The approved artwork pack has14assets, pinned in the [current selected artwork manifest](https://github.com/kenankigunda/righelt-backlog/blob/main/backlog/docs/tickets/t-118/marble-2026-11-01/artwork-regeneration/selected-artwork-manifest.json). Eight board-bearing computer scenes now depict thin upright commanders/supplies and flat regular units. This narrative-art exception does not change native UI piece flatness. Preserve exact counts/owners/cell bases/openings and original story/character/setting. Friend Home/rematch retains hands; modal retains exact R33. Historical all-flat manifests are superseded. Native integration/loading/motion/decode/performance still require proof.

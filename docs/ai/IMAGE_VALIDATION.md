@@ -47,3 +47,7 @@ The [T-118 reference register](https://github.com/kenankigunda/righelt-backlog/b
 Push the debrief, decisions and review repairs after each meaningful planning checkpoint. Do not wait until implementation to preserve them remotely. Include only selected authoritative reference images or accepted final delivery artwork under the delegated review process. Unselected candidates, rejected revisions and comparison alternatives stay in durable local exploration folders outside the tracked handoff. Preserve textual decision/supersession history without republishing those visuals.
 
 Where a selected option lives inside a comparison sheet, use the exact selected-panel crop authorized by the user, with no regeneration or resizing. Retain source SHA256, crop rectangle, output SHA256 and decoded pixel-equality verification. Preserve byte-identical explicitly selected masters. Inspect the staged image allowlist and commit exact owned paths so concurrent drafts cannot leak into a push. Existing Git history is not rewritten.
+
+## Approved narrative-art exception
+
+The current T-118 selected artwork manifest supersedes historical all-flat narrative drafts. Eight computer scenes use thin upright commanders and supply points, with ordinary units flat. Preserve their distinct openings and single-cell bases. This exception applies to narrative illustrations only. Native board UI pieces remain thin/flat, and the exact approved Friend modal master remains unchanged. Verify all delivery hashes against the current selected manifest before integration.
