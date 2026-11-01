@@ -23,6 +23,8 @@ Before changing a player workflow, read [UX principles](docs/UX_PRINCIPLES.md), 
 
 Before planning or changing material, depth, colors, forms, flyouts or mobile switcher presentation, read [the selected marble and glass contract](docs/ai/MATERIAL_UX_CONTRACT.md). It records approved intended design, not deployed behavior. Preserve current and incoming approved workflow decisions. The refresh requires independent UX-validator and product-tester review loops at planning and implementation, with repaired findings rechecked.
 
+For the UX-refresh planning package, push debrief/decision checkpoints early and often, using exact owned paths. Include only selected authoritative visual references or accepted final delivery assets. Keep unselected drafts/comparison alternatives local. User-authorized exact selected-panel crops preserve pixels and record crop/hash provenance.
+
 Generalize new feedback in the existing canonical contract. Record its final approval and supersession in the decision index. Do not turn an early proposal, selected preview control or implementation recommendation into a requirement. Keep process details out of product UI and coordinate edits to shared contracts with their active owners.
 
 ## 2) Skills Contract

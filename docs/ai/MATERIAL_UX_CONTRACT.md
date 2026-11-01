@@ -121,12 +121,12 @@ Distinguish source inspection, test-plan review, generated concept review, brows
 
 Selected properties are recorded in the shared backlog reference register and hash manifest:
 
-- R-01 middle column: expressive intensity and white/red/blue material balance.
+- R01 exact selected-middle crop: expressive intensity and white/red/blue material balance.
 - R-02: flat piece material, not its superseded inner tray or generated geometry.
 - R-03: corrected four-section Game anatomy and no intermediate board tray.
 - R-13: selected raised Home sections and lighter raised cards.
 - R-14/R-15: selected form/state/press vocabulary, not illustrative validation copy or measured motion proof.
-- R-16–R-19: flyout content hierarchy and responsive composition only, their matching-white material is superseded.
+- R16–R19: accepted hierarchy/responsive requirements are retained in text and native-source mapping; superseded white flyout images are excluded from current selected-only pushes.
 - R-25: selected frosted accessory material for all three flyouts, not every generated control/data/palette choice.
 
 Recessed Home galleries, triple-nested Game wells, unbounded flat Game columns, whole-app wood, alternate flyout materials and earlier dark/stone directions are not current implementation targets. The retained study history explains decisions without keeping rejected rules active.
@@ -156,3 +156,9 @@ Match all elements of the selected design references wherever possible, without 
 Use a per-property adopt/adapt/conflict/deferred ledger from the [reference/product reconciliation protocol](https://github.com/kenankigunda/righelt-backlog/blob/main/backlog/docs/tickets/t-118/marble-2026-11-01/reference-product-reconciliation.md). Include small visual details and every actual control/state, not just material backgrounds. First demonstrate an adaptation satisfying both obligations. Resolve a genuine conflict autonomously using bounded visual/source evidence and the option most consistent with the end goal. Record alternatives, decision, rationale and consequences in the final nonblocking conflict report. No silent loss of approved beauty or functionality. UX validation enforces visual fidelity; product testing enforces workflow fidelity; both independently review repairs and native combined proof.
 
 Artwork-swap motion is now selected as draw back and slide, described above. Notification styling is a separate study. Selection is intended behavior, not implementation proof.
+
+## Frequent selected-only checkpoints
+
+Push the debrief, decisions and review repairs after each meaningful planning checkpoint. Do not wait until implementation to preserve them remotely. Include only selected authoritative reference images or accepted final delivery artwork under the delegated review process. Unselected candidates, rejected revisions and comparison alternatives stay in durable local exploration folders outside the tracked handoff. Preserve textual decision/supersession history without republishing those visuals.
+
+Where a selected option lives inside a comparison sheet, use the exact selected-panel crop authorized by the user, with no regeneration or resizing. Retain source SHA256, crop rectangle, output SHA256 and decoded pixel-equality verification. Preserve byte-identical explicitly selected masters. Inspect the staged image allowlist and commit exact owned paths so concurrent drafts cannot leak into a push. Existing Git history is not rewritten.

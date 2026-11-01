@@ -41,3 +41,9 @@ For the selected unrotated ten-by-ten new-game view: red supply(row0,col9), red 
 Verify current source in [state.ts](../../packages/game-engine/src/state.ts) and [deterministic.ts](../../packages/game-engine/src/deterministic.ts). Preserve actual commander silhouettes and single-cell footprints. These state requirements apply when depicting a new game, not all story scenes.
 
 The [T-118 reference register](https://github.com/kenankigunda/righelt-backlog/blob/main/backlog/docs/tickets/t-118/marble-2026-11-01/reference-register.md) retains the approval and rejection history. R32's shapes were approved, then its fuzzy artifacts were rejected. R33 is a quality-restoration candidate, not automatic acceptance of every pixel.
+
+## Frequent selected-only checkpoints
+
+Push the debrief, decisions and review repairs after each meaningful planning checkpoint. Do not wait until implementation to preserve them remotely. Include only selected authoritative reference images or accepted final delivery artwork under the delegated review process. Unselected candidates, rejected revisions and comparison alternatives stay in durable local exploration folders outside the tracked handoff. Preserve textual decision/supersession history without republishing those visuals.
+
+Where a selected option lives inside a comparison sheet, use the exact selected-panel crop authorized by the user, with no regeneration or resizing. Retain source SHA256, crop rectangle, output SHA256 and decoded pixel-equality verification. Preserve byte-identical explicitly selected masters. Inspect the staged image allowlist and commit exact owned paths so concurrent drafts cannot leak into a push. Existing Git history is not rewritten.
