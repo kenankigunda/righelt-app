@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {decodeFontBoundarySamples} from './support/font-envelope-codec.mjs';
-import {reservationBands,admittedHeight,budgetPixelPrecision,actionReservationMetrics} from './support/message-reservation-policy.mjs';
+import {reservationBands,routineFontBoundaryEm,admittedHeight,budgetPixelPrecision,actionReservationMetrics} from './support/message-reservation-policy.mjs';
 const anchors=page=>page.evaluate(()=>window.fontAnchors());
 const sameAnchors=(a,b)=>{for(const target of ['heading','slot','board','panel'])for(const key of ['x','y','width','height'])expect(Math.abs(a[target][key]-b[target][key]),`${target}.${key}`).toBeLessThanOrEqual(.1);};
 test('row budget retains a wider intrinsic fallback and rejects absent measurements',()=>{
@@ -82,9 +82,9 @@ for(const scale of [100,200])test(`measured font boundaries keep cold, loaded an
   const result=[];
    await page.evaluate(scale=>{document.documentElement.style.fontSize=`${scale}%`;},scale);
    const before=await anchors(page);
-   const measured=await page.evaluate(({scale,bands})=>{
+   const measured=await page.evaluate(({scale,bands,routineFontBoundaryEm})=>{
     const size=parseFloat(getComputedStyle(document.querySelector('.board-message-slot')).fontSize);
-    const widths=[...new Set([272,273.59375,280,288,296,334.375,349.5,355.5,360,365,365.5,366.8,471.5,491.6,573,573.125,696,699.5,800,...(scale===200?[326.125,326.25,326.5,326.75,327]:[]),...bands.flatMap(([lower,upper])=>[lower*size-.125,lower*size,lower*size+.125,(lower+upper)*size/2,upper*size-.125,upper*size,upper*size+.125])])].filter(width=>width>=8.5*size&&width<=800).sort((a,b)=>a-b);
+    const widths=[...new Set([272,273.59375,280,288,296,334.375,349.5,355.5,360,365,365.5,366.8,456,471.5,491.6,573,573.125,696,699.5,800,...(scale===200?[326.125,326.25,326.5,326.75,327]:[]),...[-.125,0,.125].map(delta=>routineFontBoundaryEm*size+delta),...bands.flatMap(([lower,upper])=>[lower*size-.125,lower*size,lower*size+.125,(lower+upper)*size/2,upper*size-.125,upper*size,upper*size+.125])])].filter(width=>width>=8.5*size&&width<=800).sort((a,b)=>a-b);
     let definitions;
     const samples=widths.map(width=>{
      const envelope=window.fontEnvelope(width);
@@ -97,7 +97,7 @@ for(const scale of [100,200])test(`measured font boundaries keep cold, loaded an
       intrinsicPrimary:intrinsic.primary,intrinsicFallback:intrinsic.fallback};
     });
     return {definitions,samples};
-   },{scale,bands});
+   },{scale,bands,routineFontBoundaryEm});
    result.push(...decodeFontBoundarySamples(measured));
    sameAnchors(before,await anchors(page));
   return result;
