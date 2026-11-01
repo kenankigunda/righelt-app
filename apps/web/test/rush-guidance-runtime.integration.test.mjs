@@ -25,10 +25,11 @@ test('loading keeps legal play and sole-source completion selects the useful pie
   f.complete();await flush();
   assert.equal(f.runtime.getSelection().selectedPieceId,'U1-7');
   assert.deepEqual(f.render.rushSupplyGuidance,result);
-  assert.match(f.html,/Rush to restore supply/);
+  assert.doesNotMatch(f.html,/Rush to restore supply|Obligatory/,'automatic selection replaces the complete global warning');
   await f.runtime.setSelectionFromAction(result.actions[0].action);
   assert.match(f.html,/Restores required supply/);
-  assert.match(f.html,/Obligatory/);
+  assert.doesNotMatch(f.html,/Obligatory|Rush to restore supply/);
+  assert.equal((f.html.match(/class="board-message-row"/g)||[]).length,2,'confirmation and known effect have separate semantic rows');
 });
 
 test('guidance preserves a selection made while analysis runs',async()=>{
@@ -65,6 +66,6 @@ test('pageshow restarts guidance without a selection and rejects a canceled same
   jobs[0].reject(new Error('canceled'));await flush();assert.match(html,/Finding rushes/);
   // Several sources leave the player in control of which piece to choose.
   jobs[1].resolve({...result,actions:[...result.actions,{action:legal.find(a=>a.actorId==='C1'),immediate:false}]});
-  await flush();assert.equal(runtime.getSelection().selectedPieceId,null);assert.match(html, /class="board-rush-guidance-copy"><\/span>/);assert.match(html,/Obligatory/);
+  await flush();assert.equal(runtime.getSelection().selectedPieceId,null);assert.doesNotMatch(html,/Finding|board-rush-guidance-sizing/);assert.match(html,/Obligatory/);
   runtime.destroy();
 });

@@ -1,4 +1,6 @@
 export const WEB_UNIT_TEST_FILES = Object.freeze([
+  "message-composition.test.mjs",
+  "message-height.test.mjs",
   "game-lifecycle.test.mjs",
   "history-turn-preview.test.mjs",
   "computer-activity.test.mjs",
