@@ -294,10 +294,11 @@ export const submitPlayableAction = async (page, action) => {
   // after hover or a tap prepared the destination.
   // Wait for visual readiness, then perform exactly one native confirmation.
   // Admission can change during the click; the runtime still checks it live.
-  await expect.poll(() => target.evaluate(node => {
+  await expect.poll(() => page.evaluate(to => {
+    const node=document.querySelector(`[data-testid="game-board"] .cell[data-row="${to.row}"][data-col="${to.col}"]`);
     const message=document.getElementById('shell-board-preview-label');
-    return Boolean(message && message.getAttribute('aria-busy')!=='true' && node.classList.contains('target') && !node.classList.contains('unselectable'));
-  }),{timeout:2000,message:'Complete move checks and the prepared destination must be ready at confirmation'}).toBe(true);
+    return Boolean(node?.isConnected && message?.isConnected && message.getAttribute('aria-busy')!=='true' && node.classList.contains('target') && !node.classList.contains('unselectable'));
+  },action.to),{timeout:2000,message:'Complete move checks and the prepared destination must be ready at confirmation'}).toBe(true);
   await target.click();
 };
 
