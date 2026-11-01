@@ -89,5 +89,9 @@ test('a success-publication exception is attributed to presentation rather than 
  const events=[];let fail=true;const f=fixture({onGuidanceDiagnostic:event=>events.push(event)},input=>{if(fail&&input.rushSupplyGuidance){fail=false;throw Error('private renderer details');}});
  await f.runtime.loadSnapshot(state,{legalActions:legal});await flush();f.complete();await flush();
  const failed=events.find(event=>event.phase==='failed');assert.ok(failed);assert.equal(failed.stage,'presentation');assert.equal(failed.code,'unavailable');
- assert.match(f.html,/Hints unavailable/);assert.deepEqual(f.runtime.getLegalActions(),legal);f.runtime.destroy();
+ let baselineFailure=true;const baseline=fixture({},input=>{if(baselineFailure&&input.rushSupplyGuidance){baselineFailure=false;throw Error('same presentation failure');}});
+ await baseline.runtime.loadSnapshot(state,{legalActions:legal});await flush();baseline.complete();await flush();
+ assert.equal(f.html,baseline.html,'observation must preserve the original selected confirmation after publication fails');
+ assert.deepEqual(f.runtime.getSelection(),baseline.runtime.getSelection());assert.match(f.html,/Confirm/);
+ assert.deepEqual(f.runtime.getLegalActions(),legal);f.runtime.destroy();baseline.runtime.destroy();
 });
