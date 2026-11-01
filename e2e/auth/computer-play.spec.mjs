@@ -311,7 +311,7 @@ test('authenticated human Pass stays available during a sanitized pending renewa
   await page.route(`**/api/shell/games/${created.id}/shared`,async route=>{
     const value=route.request().postDataJSON();
     if(!renewal&&value.payload?.operation==='computer-control'&&value.payload.values?.action==='renew'){
-      renewal=value;headers=Object.fromEntries(Object.entries(route.request().headers()).filter(([name])=>name==='content-type'||name.startsWith('x-righelt-')));await held;
+      renewal=value;headers=Object.fromEntries(Object.entries(route.request().headers()).filter(([name])=>name==='content-type'||name==='origin'||name.startsWith('x-righelt-')));await held;
     }
     await route.continue();
   });
