@@ -295,27 +295,42 @@
       "kind": "component",
       "scope": "Page and header, V01",
       "status": "gap",
-      "sourceAudit": "pending actual consumer mapping",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
       "proofRevision": null,
-      "evidence": []
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/index.html",
+        "apps/web/design-tokens.css",
+        "apps/web/shell/brand.js",
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
     },
     {
       "id": "C-02",
       "kind": "component",
       "scope": "Header menu, V01/29",
       "status": "gap",
-      "sourceAudit": "pending actual consumer mapping",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
       "proofRevision": null,
-      "evidence": []
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
     },
     {
       "id": "C-03",
       "kind": "component",
       "scope": "Primary/secondary actions",
       "status": "gap",
-      "sourceAudit": "pending actual consumer mapping",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
       "proofRevision": null,
-      "evidence": []
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
     },
     {
       "id": "C-04",
@@ -331,9 +346,13 @@
       "kind": "component",
       "scope": "Fields and inline editors",
       "status": "gap",
-      "sourceAudit": "pending actual consumer mapping",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
       "proofRevision": null,
-      "evidence": []
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
     },
     {
       "id": "C-06",
@@ -367,27 +386,39 @@
       "kind": "component",
       "scope": "Home cards, V02\u201306",
       "status": "gap",
-      "sourceAudit": "pending actual consumer mapping",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
       "proofRevision": null,
-      "evidence": []
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
     },
     {
       "id": "C-10",
       "kind": "component",
       "scope": "Game sections, V07\u201309",
       "status": "gap",
-      "sourceAudit": "pending actual consumer mapping",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
       "proofRevision": null,
-      "evidence": []
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
     },
     {
       "id": "C-11",
       "kind": "component",
       "scope": "Board and coordinates, V10\u201312",
       "status": "gap",
-      "sourceAudit": "pending actual consumer mapping",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
       "proofRevision": null,
-      "evidence": []
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/styles.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
     },
     {
       "id": "C-12",
@@ -457,36 +488,56 @@
       "kind": "component",
       "scope": "Opponent story dialogs and assets, V21",
       "status": "gap",
-      "sourceAudit": "pending actual consumer mapping",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
       "proofRevision": null,
-      "evidence": []
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/opponent-stories.js",
+        "apps/web/shell/story-artwork-motion.js",
+        "apps/web/assets/opponents/manifest.json"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
     },
     {
       "id": "C-20",
       "kind": "component",
       "scope": "Friend asset split, V05/21",
       "status": "gap",
-      "sourceAudit": "pending actual consumer mapping",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
       "proofRevision": null,
-      "evidence": []
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/assets/opponents/friend-introduction.webp",
+        "apps/web/assets/opponents/friend-portrait.webp",
+        "apps/web/shell/opponent-stories.js"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
     },
     {
       "id": "C-21",
       "kind": "component",
       "scope": "Login/create and Account auxiliary flows, V22/23",
       "status": "gap",
-      "sourceAudit": "pending actual consumer mapping",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
       "proofRevision": null,
-      "evidence": []
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
     },
     {
       "id": "C-22",
       "kind": "component",
       "scope": "Utility flyouts, V23/25/26",
       "status": "gap",
-      "sourceAudit": "pending actual consumer mapping",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
       "proofRevision": null,
-      "evidence": []
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
     },
     {
       "id": "C-23",
@@ -520,18 +571,26 @@
       "kind": "component",
       "scope": "Phone bottom switcher, V29",
       "status": "gap",
-      "sourceAudit": "pending actual consumer mapping",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
       "proofRevision": null,
-      "evidence": []
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/board-ux.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
     },
     {
       "id": "C-27",
       "kind": "component",
       "scope": "Motion and cover layers, V30",
       "status": "gap",
-      "sourceAudit": "pending actual consumer mapping",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
       "proofRevision": null,
-      "evidence": []
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/story-artwork-motion.js"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
     },
     {
       "id": "C-28",
@@ -542,5 +601,16 @@
       "proofRevision": null,
       "evidence": []
     }
+  ],
+  "candidateRevision": "bd8b0f11",
+  "functionalBase": "ba5dc28385cb296b0ecda4b77b847cea05dbfd4d",
+  "foundationRemaining": [
+    "Native fullfoundation comparison before broad propagation",
+    "Flat piece material/miniature semantics inspection",
+    "Network-owned real vellum/audio integration",
+    "Canonical startup-guidance/PR215 ancestry reconciliation",
+    "Game/Players/Board/History and all32/28 stateproof",
+    "Matchedba5baseline repeatednoise/overhead+frozenbudgets before acceptancecomparisons",
+    "Fullweb/type/CI/pinned and combineddependencyproof"
   ]
 }
