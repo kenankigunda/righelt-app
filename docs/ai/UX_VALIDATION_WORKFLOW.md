@@ -1,5 +1,7 @@
 # UX Validation Workflow
 
+The [marble and glass refresh](MATERIAL_UX_CONTRACT.md) requires independent UX-validator and product-tester loops during planning and implementation. Recheck repaired findings and preserve current and incoming approved workflows. Visual acceptance does not substitute for regression evidence.
+
 This workflow defines how to turn UX goals into automated proof before implementation ships. Use it when a ticket touches UI, interaction, motion, accessibility, branding, layout stability, responsive behavior, or sound.
 
 ## Objective

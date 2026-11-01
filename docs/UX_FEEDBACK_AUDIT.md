@@ -1,5 +1,7 @@
 # UX feedback decision index
 
+November 1 material extension: the [marble and glass contract](ai/MATERIAL_UX_CONTRACT.md) records the selected treatment and links durable approvals, references and supersession. It is intended design, not evidence of implementation or deployment.
+
 This index records provenance and supersession. Requirements live in the linked canonical contracts. An approved direction is not evidence that a particular revision implements it or is deployed. Resolve current source, CI and deployment evidence separately.
 
 ## October 6 historical checkpoint

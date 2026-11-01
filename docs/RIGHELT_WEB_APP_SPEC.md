@@ -1,5 +1,7 @@
 # Righelt Web App Specification (v1)
 
+Read the [selected marble and glass contract](ai/MATERIAL_UX_CONTRACT.md) before planning or changing material presentation. It owns the approved November 1 visual extension while preserving the latest approved product workflows. Selection does not imply implementation or deployment.
+
 Status: Normative source of truth for product and UX behavior of the web application.
 
 This document defines application-level behavior around game creation, invites, joining, live updates, presence, history viewing, lobby listing, preview board, and onboarding tutorial.

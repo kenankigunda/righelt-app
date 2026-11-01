@@ -1,5 +1,7 @@
 # Righelt UX Principles
 
+Read the [selected marble and glass contract](ai/MATERIAL_UX_CONTRACT.md) before planning or changing material presentation. It owns the approved November 1 visual extension while preserving the latest approved product workflows. Selection does not imply implementation or deployment.
+
 This document defines the shared UX canon for the Righelt web app shell. It covers information architecture, visual identity, motion, feedback, sound, accessibility, and the overall quality bar for a slick, modern, non-generic experience.
 
 Righelt should feel clean and easy to play at a glance, but also distinct. The goal is not "generic modern app" polish. The goal is a recognizable shell with its own calm personality, built around the game's player colors, strong layout rhythm, stable feedback, and a clear sense of responsiveness.
