@@ -9,15 +9,19 @@ export const storyArtworkFrames = (step = 1) => {
  };
 };
 
-export function createStoryArtworkMotion({reducedMotion=()=>globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,getStyle=node=>globalThis.getComputedStyle?.(node)}={}) {
+export function createStoryArtworkMotion({reducedMotion,motionPreference=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)'),getStyle=node=>globalThis.getComputedStyle?.(node)}={}) {
  let active=[];
+ const isReduced=()=>reducedMotion?reducedMotion():Boolean(motionPreference?.matches);
  const cancel=()=>{const previous=active;active=[];for(const animation of previous)animation.cancel();};
+ const preferenceChanged=()=>{if(isReduced())cancel();};
+ motionPreference?.addEventListener?.('change',preferenceChanged);
  return {
   cancel,
+  destroy(){cancel();motionPreference?.removeEventListener?.('change',preferenceChanged);},
   swap(previous,selected,step){
    const transforms=[previous,selected].map(node=>node&&getStyle(node)?.transform);
    cancel();
-   if(!previous||previous===selected||!previous.animate||!selected?.animate||reducedMotion())return;
+   if(!previous||previous===selected||!previous.animate||!selected?.animate||isReduced())return;
    const {outgoing,incoming}=storyArtworkFrames(step);
    if(transforms[0]&&transforms[0]!=='none')outgoing[0].transform=transforms[0];
    if(transforms[1]&&transforms[1]!=='none')incoming[0].transform=transforms[1];

@@ -31,3 +31,11 @@ test('reduced motion and retirement never leave a delayed or stale artwork owner
  reduced=false;motion.swap(first,second,1);motion.cancel();assert.ok(first.animations[0].canceled);assert.ok(second.animations[0].canceled);
  await Promise.resolve();motion.swap(second,first,-1);assert.equal(first.animations[1].canceled,false);motion.cancel();
 });
+
+
+test('changing reduced motion settles active effects and disposal removes its preference owner',async()=>{
+ const handlers=new Map(),preference={matches:false,addEventListener:(type,fn)=>handlers.set(type,fn),removeEventListener:type=>handlers.delete(type)};
+ const first=image(),second=image(),motion=createStoryArtworkMotion({motionPreference:preference,getStyle:()=>({transform:'none'})});
+ motion.swap(first,second,1);preference.matches=true;handlers.get('change')();assert.equal(first.animations[0].canceled,true);assert.equal(second.animations[0].canceled,true);
+ motion.swap(second,first,-1);assert.equal(first.animations.length,1);motion.destroy();assert.equal(handlers.size,0);await Promise.resolve();
+});

@@ -90,7 +90,7 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
   });
   return {
     close: modal.close,
-    destroy() { artworkMotion.cancel();document.removeEventListener("visibilitychange", onVisibility); modal.destroy(); },
+    destroy() { artworkMotion.destroy();document.removeEventListener("visibilitychange", onVisibility); modal.destroy(); },
     isOpen: () => modal.element.open,
     gameId: () => gameId,
     opponent: () => mode === "intro" ? opponent : null,
