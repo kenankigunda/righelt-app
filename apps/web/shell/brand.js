@@ -34,6 +34,8 @@ export const renderWordmark = ({ player = "red", cell = 0 } = {}) => `
     <path data-brand-cell="0" d="M525 81L562 44L599 81L562 118Z"/>
     <path data-brand-cell="1" d="M599 81L636 44L673 81L636 118Z"/>
     <path data-brand-cell="2" d="M673 81L710 44L747 81L710 118Z"/>
+    <path class="brand-cell-depth" d="M527 81L562 46L597 81M601 81L636 46L671 81M675 81L710 46L745 81"/>
+    <path class="brand-cell-light" d="M597 81L562 116L527 81M671 81L636 116L601 81M745 81L710 116L675 81"/>
     <circle class="brand-piece" cx="562" cy="81" r="17"/>
   </g>
 </svg>`;

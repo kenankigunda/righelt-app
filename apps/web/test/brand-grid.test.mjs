@@ -29,3 +29,10 @@ test('wordmark activity remains finite and releases timers/listeners while hidde
  motion.matches=true;motionEvents.get('change')();assert.equal(timers.size,0);assert.deepEqual(controller.getState(),{player:'red',cell:0});
  controller.destroy();assert.equal(timers.size,0);assert.equal(events.size,0);assert.equal(motionEvents.size,0);
 });
+
+
+test('the retained wordmark cells use inset edge paint without changing their three positions',()=>{
+ const markup=brand.renderWordmark();assert.equal((markup.match(/data-brand-cell=/g)||[]).length,3);
+ assert.match(markup,/class="brand-cell-depth"/);assert.match(markup,/class="brand-cell-light"/);
+ assert.match(markup,/<circle class="brand-piece" cx="562" cy="81" r="17"/);
+});
