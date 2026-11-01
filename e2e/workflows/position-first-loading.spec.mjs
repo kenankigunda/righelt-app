@@ -20,7 +20,8 @@ for (const width of [390, 1440]) test(`saved board remains visible while play lo
     return route.fulfill({ status: 503, json: { ok: false, error: 'rules_budget_exceeded' } });
   });
   try {
-    await page.goto(`/${gameHash}`);
+    // A changed document URL retires Home's already-open sockets and cached authority.
+    await page.goto(`/?position-first=${width}${gameHash}`);
     await switchGamePanel(page, 'board');
     const board = page.getByTestId('game-board'), wrap = page.getByTestId('game-board-wrap');
     await expect(board.locator('[data-piece-id]')).toHaveCount(initialState.pieces.length);
@@ -42,6 +43,7 @@ for (const width of [390, 1440]) test(`saved board remains visible while play lo
     expect(mutations).toEqual([]);
     await page.screenshot({ path: info.outputPath(`position-ready-${width}.png`) });
   } finally {
+    blocked = false;
     for (const release of releases) release();
     await page.unrouteAll({ behavior: 'wait' });
   }
