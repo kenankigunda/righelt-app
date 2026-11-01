@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><style>body{margin:0;padding:12px}main{max-width:600px;margin:auto}</style></head><body><main id="fixture" class="panel"></main><script type="module">
+import {renderComputerPlayerCard} from '/apps/web/shell/computer-player-card.js';
+import {mountHoverTooltips} from '/apps/web/shell/hover-tooltip.js';
+const root=document.querySelector('#fixture');let activity,expanded=false,side='P2';
+const render=()=>{root.innerHTML=`<ul class="participant-list" data-testid="participants-list"><li>${renderComputerPlayerCard({computerProfile:'horus'},{gameId:'badge',side,expanded,activity})}</li></ul>`;};
+window.showState=(state,label,options={})=>{activity={state,label,showResume:options.showResume??false,disabledReason:options.disabledReason};side=options.side??'P2';expanded=false;render();};
+root.addEventListener('click',event=>{if(event.target.closest('[data-action="toggle-computer-card"]')){expanded=!expanded;render();root.querySelector('.participant-computer').focus();}else if(event.target.closest('[data-control="resume-here"]'))window.resumeClicks=(window.resumeClicks??0)+1;});
+mountHoverTooltips(root);window.showState('here','Active here');await document.fonts.ready;window.fixtureReady=true;
+</script></body></html>

@@ -14,7 +14,7 @@ test('anonymous self play disambiguates both guests while computers retain their
  assert.match(renderPlayersPanel(self,{identityId:'me'}),/<bdi>Guest 1<\/bdi>/);
  assert.match(renderPlayersPanel(self,{identityId:'me'}),/<bdi>Guest 2<\/bdi>/);
  const html=renderPlayersPanel({...self,player2:{identityId:'me',computerProfile:'horus'}},{identityId:'me'});
- assert.match(html,/Horus/);assert.match(html,/aria-label="Horus, Blue, Needs attention"/);assert.match(html,/player-kind-icon" title="Computer"/);assert.match(html,/data-action="toggle-computer-card"/);
+ assert.match(html,/Horus/);assert.match(html,/aria-label="Horus, Blue, Computer player, Needs help"/);assert.match(html,/computer-status-badge/);assert.match(html,/data-action="toggle-computer-card"/);
 });
 test('viewer summary expands the full ordered profile list with stable keys',()=>{
  const view={...game,viewers:[{identityId:'b',profile:{username:'bo'}},{identityId:'me'},{identityId:'guest'}]};
@@ -35,7 +35,7 @@ test('computer rows expose local activity and an immediate deliberate recovery a
  for(const label of ['Active in another tab','Resuming','Paused','Needs attention']){
   const html=renderPlayersPanel(computer,{identityId:'me',expandedComputers:new Set(['P2']),computerActivity:{state:'attention',label,showResume:true,disabledReason:label==='Resuming'?'Resuming computer play…':null}});
   assert.match(html,/data-action="toggle-computer-card"/);assert.match(html,/aria-expanded="true"/);
-  assert.ok(html.includes(`Horus, Blue, ${label}`));assert.match(html,/>Resume here<\/button>/);
+  assert.ok(html.includes(`Horus, Blue, Computer player, ${label}`));assert.match(html,/>Resume here<\/button>/);
   if(label==='Resuming')assert.match(html,/disabled aria-describedby=/);
  }
  const active=renderPlayersPanel(computer,{identityId:'me',expandedComputers:new Set(['P2']),computerActivity:{state:'here',label:'Active here',activeHere:true,showResume:false}});
@@ -45,7 +45,7 @@ test('computer rows expose local activity and an immediate deliberate recovery a
 test('both computer seats receive the same session status and independent accessible disclosures',()=>{
  const html=renderPlayersPanel({...game,player1:{computerProfile:'babs'},player2:{computerProfile:'horus'}},{expandedComputers:new Set(['P1','P2']),computerActivity:{state:'paused',label:'Paused',showResume:true,disabledReason:'Only the game owner can resume computer play.'}});
  assert.equal((html.match(/>Resume here<\/button>/g)||[]).length,2);
- assert.match(html,/Babs, Red, Paused/);assert.match(html,/Horus, Blue, Paused/);
+ assert.match(html,/Babs, Red, Computer player, Paused/);assert.match(html,/Horus, Blue, Computer player, Paused/);
  assert.match(html,/computer-details-game-P1/);assert.match(html,/computer-details-game-P2/);
  assert.equal((html.match(/disabled aria-describedby=/g)||[]).length,2);
 });
@@ -53,8 +53,8 @@ test('both computer seats receive the same session status and independent access
 test('configured computer seats remain recoverable when manual projections omit the computer marker',()=>{
  for(const marker of [undefined,null])for(const both of [false,true]){
   const html=renderPlayersPanel({...game,computer:{manual:true,paused:true,seats:{p1:both?'babs':null,p2:'horus'}},player1:{identityId:'me',computerProfile:marker},player2:{identityId:'me',computerProfile:marker}},{identityId:'me',expandedComputers:new Set(['P1','P2']),computerActivity:{state:'paused',label:'Paused',showResume:true,disabledReason:null}});
-  assert.match(html,/Horus, Blue, Paused/);assert.equal((html.match(/>Resume here<\/button>/g)||[]).length,both?2:1);
-  if(both)assert.match(html,/Babs, Red, Paused/);else assert.match(html,/<bdi>You<\/bdi>/);
+  assert.match(html,/Horus, Blue, Computer player, Paused/);assert.equal((html.match(/>Resume here<\/button>/g)||[]).length,both?2:1);
+  if(both)assert.match(html,/Babs, Red, Computer player, Paused/);else assert.match(html,/<bdi>You<\/bdi>/);
  }
 });
 
@@ -68,7 +68,7 @@ test('both guest names are visible to their owner and viewers without losing own
  const namedSelf={...game,selfPlayMode:true,myRole:'Both Players',player1:{identityId:'me',profile:{displayName:'Ada'}},player2:{identityId:'me',profile:{displayName:'Ada'}}};
  assert.equal((renderPlayersPanel(namedSelf,{identityId:'me'}).match(/<bdi>You<\/bdi>/g)||[]).length,2);
 });
-test('computer kind is a small native icon with accessible type and finished controls stay absent',()=>{
+test('combined computer badge keeps accessible kind and finished controls stay absent',()=>{
  const html=renderPlayersPanel({...game,player2:{identityId:'me',computerProfile:'horus'}},{identityId:'me',expandedComputers:new Set(['P2']),computerActivity:{state:'finished',label:'Game finished',showResume:false}});
- assert.match(html,/aria-description="Computer player"/);assert.match(html,/player-kind-icon/);assert.match(html,/<svg class="righelt-icon"/);assert.doesNotMatch(html,/>Computer<|Resume here/);assert.match(html,/Game finished/);
+ assert.match(html,/aria-label="Horus, Blue, Computer player, Game finished"/);assert.match(html,/computer-status-badge/);assert.match(html,/<svg class="righelt-icon"/);assert.doesNotMatch(html,/>Computer<|Resume here/);assert.match(html,/Game finished/);
 });

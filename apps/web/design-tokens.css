@@ -4,6 +4,12 @@
   --text-primary: #252b2d;
   --text-secondary: #5e6465;
   --warning: #a5630f;
+  --computer-status-paused-bg: #f0bb55;
+  --computer-status-attention-bg: #f2a397;
+  --computer-status-finished-bg: #426e65;
+  --computer-status-moving-bg: var(--info);
+  --computer-status-dark-symbol: var(--text-primary);
+  --computer-status-light-symbol: var(--surface-raised);
   --divider: #d4d1c7;
   --surface-hover-quiet: rgb(37 43 45 / 6%);
   --player-red: #b42f36;
