@@ -845,3 +845,63 @@ function solveContinuation(state: GameState, memo: Map<string, SearchMemoState>,
     throw error;
   }
 }
+
+/** Exact guidance, separate from legality. Every retained route is irredundant:
+ * no proper ordered subsequence is itself a legal supplied completion.
+ * Base-valid prefixes of a successful route are completable by that suffix,
+ * so this search need not recursively validate each prefix's completability.
+ */
+export type RushSupplyGuidance = {
+  obligationPieceIds: string[];
+  actions: { action: Action; immediate: boolean }[];
+};
+
+export function getRushUnsuppliedPieceIds(state: GameState): string[] {
+  if (state.continuation?.type !== "rush" || !["P1", "P2"].includes(state.continuation.owner)) return [];
+  const supplied = computeLiveSuppliedPieceIds(state, state.continuation.owner);
+  return obligationPieceIdsForContinuation(state).filter(id => !supplied.has(id));
+}
+
+export function analyzeRushSupplyGuidance(state: GameState): RushSupplyGuidance {
+  const obligationPieceIds = getRushUnsuppliedPieceIds(state);
+  if (!obligationPieceIds.length) return { obligationPieceIds, actions: [] };
+  const actionKey = (action: Action) => `${action.actorId}:${action.to?.row},${action.to?.col}`;
+  const isSubsequence = (needle: string[], haystack: string[]) => {
+    let index = 0;
+    for (const key of haystack) if (needle[index] === key) index++;
+    return index === needle.length;
+  };
+  const solutions: string[][] = [];
+  const firstActions = new Map<string, { action: Action; immediate: boolean }>();
+  const successors = new Map<string, { action: Action; state: GameState; closes: boolean }[]>();
+  let frontier: { state: GameState; path: string[]; first?: Action }[] = [{ state, path: [] }];
+  while (frontier.length) {
+    const nextFrontier: typeof frontier = [];
+    for (const node of frontier) {
+      // A completed subsequence makes every extension redundant.
+      if (solutions.some(route => isSubsequence(route, node.path))) continue;
+      const key = continuationSearchKey(node.state);
+      let edges = successors.get(key);
+      if (!edges) {
+        edges = buildRushSuccessorActions(node.state).map(action => {
+          const next = buildContinuationSuccessorState(node.state, action);
+          return { action, state: next, closes: canCloseContinuationNow(next) };
+        });
+        successors.set(key, edges);
+      }
+      for (const edge of edges) {
+        const path = [...node.path, actionKey(edge.action)];
+        if (solutions.some(route => isSubsequence(route, path))) continue;
+        const first = node.first ?? edge.action;
+        if (edge.closes) {
+          // Breadth-first order means every proper successful subsequence has
+          // already been considered, including omissions of several actions.
+          solutions.push(path);
+          firstActions.set(actionKey(first), { action: first, immediate: path.length === 1 });
+        } else nextFrontier.push({ state: edge.state, path, first });
+      }
+    }
+    frontier = nextFrontier;
+  }
+  return { obligationPieceIds, actions: [...firstActions.values()] };
+}

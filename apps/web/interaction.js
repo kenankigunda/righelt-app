@@ -144,7 +144,7 @@ export function buildActionPayload(type, source, target, actorId = null) {
   };
 }
 
-export function deriveContinuationHighlightByPieceId(snapshot, legalActions) {
+export function deriveContinuationHighlightByPieceId(snapshot, legalActions, rushSupplyGuidance = null) {
   const groupMemberPieceIds = new Set();
   const movedPieceIds = new Set();
   const pendingPieceIds = new Set();
@@ -169,6 +169,7 @@ export function deriveContinuationHighlightByPieceId(snapshot, legalActions) {
   }
 
   if (snapshot.continuation.type === "rush") {
+    if (rushSupplyGuidance) legalActions = rushSupplyGuidance.actions.map(entry => entry.action);
     for (const pieceId of snapshot.continuation.rushedPieceIds ?? []) {
       movedPieceIds.add(pieceId);
     }
