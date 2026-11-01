@@ -294,15 +294,17 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   // Read-only observer persists in its closure, not in app state or a test hook.
   // Console samples are raw synchronous DOM reads, including the admission onset.
   observerReadyAt=await page.evaluate(({prefix,id})=>{
+   let firstPass=null;
    const read=()=>{
     const label=document.querySelector('#shell-board-preview-label'),card=document.querySelector('[data-computer-activity]'),wrap=document.querySelector('[data-testid="game-board-wrap"]');
+    const pass=label?.querySelector('[data-board-message-action="pass"], [data-board-preview-action="pass"]');if(!firstPass)firstPass=pass;
     return {at:Date.now(),gameId:document.querySelector('[data-testid="game-shell"]')?.getAttribute('data-game-id'),
      narration:label?[...label.childNodes].filter(node=>node.nodeType!==1||node.tagName!=='BUTTON').map(node=>node.textContent).join('').trim():'',
      activity:card?.getAttribute('data-computer-activity'),activityText:card?.textContent.trim(),connected:!!card?.querySelector('.is-connected'),
      announcement:document.querySelector('#shell-sync-announcement')?.textContent??'',
      reconnecting:wrap?.getAttribute('data-reconnecting'),busy:wrap?.getAttribute('aria-busy'),
      recovery:[...document.querySelectorAll('[data-testid="sync-recovery-banner"]')].map(node=>node.textContent),
-     pass:!!label?.querySelector('[data-board-message-action="pass"], [data-board-preview-action="pass"]')};
+     pass:!!pass,passEnabled:!!pass&&!pass.disabled,samePass:pass===firstPass};
    };
    window.readQuietRenewalFixture=read;
    let last='',count=0;const emit=()=>{const value=read(),key=JSON.stringify({...value,at:0});if(key!==last){last=key;count++;console.debug(prefix+JSON.stringify(count<=500?value:{at:Date.now(),overflow:true}));}};
@@ -323,19 +325,20 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   const firstSend=await page.evaluate(submittedAt=>new Promise(resolve=>setTimeout(()=>resolve(window.readQuietRenewalFixture()),Math.max(0,submittedAt+1000-Date.now()))),original.submittedAt);
   const sampledAt=firstSend.at;samples.push(firstSend);
   expect(sampledAt-original.submittedAt).toBeLessThan(5000);
-  await expect(pass).toBeVisible();await expect(pass).toBeDisabled();expect(await journalRecord()).toEqual(original);
+  await expect(pass).toBeVisible();await expect(pass).toBeEnabled();expect(await journalRecord()).toEqual(original);
   const early=samples.filter(sample=>sample.at>=original.submittedAt&&sample.at<=sampledAt);
   expect(early.length).toBeGreaterThan(0);expect(samples.some(sample=>sample.overflow)).toBe(false);
   const narration=samples[0].narration;expect(narration).toMatch(/Babs /);
   for(const sample of early){
    expect(sample.gameId).toBe(id);expect(sample.narration).toBe(narration);expect(sample.activity).toBe('here');expect(sample.activityText).toBe('Active here');expect(sample.connected).toBe(true);
-   expect(sample.pass).toBe(true);
+   expect(sample.pass).toBe(true);expect(sample.passEnabled).toBe(true);expect(sample.samePass).toBe(true);
    expect(sample.announcement).not.toMatch(/Updating computer play|Needs attention|Reconnecting|Saving/);
    expect(sample.recovery.join(' ')).not.toMatch(/Updating computer play|Needs attention/);expect(sample.reconnecting).not.toBe('true');expect(sample.busy).not.toBe('true');
   }
   await info.attach('quiet-renew-first-send',{contentType:'image/png',body:await page.screenshot()});
   // Real request timeout and real server lease expiry must restore attention.
   await expect(page.getByRole('button',{name:'Babs, Blue, Needs attention',exact:true})).toBeVisible();
+  await expect(pass).toBeDisabled();
   await expect(page.getByTestId('sync-recovery-banner')).toContainText(/updating computer play|retry|details/i);
   await expect.poll(()=>Date.now()).toBeGreaterThanOrEqual(heldAuthority.computer.lease.expiresAt);
   await expect(page.getByRole('button',{name:'Babs, Blue, Needs attention',exact:true})).toBeVisible();

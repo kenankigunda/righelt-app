@@ -16,6 +16,8 @@ import { activityStateActorSide } from "./activity-affiliation.js";
 const clone = (value) => structuredClone(value);
 const projectionControlKey = game => JSON.stringify({
   ownershipMode: game?.ownershipMode, selfPlayMode: game?.selfPlayMode,
+  canRecordMove: game?.canRecordMove, canEndTurn: game?.canEndTurn,
+  control: game?.control, canControlComputer: game?.canControlComputer,
   p1: game?.player1?.identityId, p2: game?.player2?.identityId,
   myRole: game?.myRole, myRoles: game?.myRoles,
   inHistoryMode: game?.inHistoryMode, historyIndex: game?.historyIndex, historyTurnIndex: game?.historyTurnIndex,
@@ -339,7 +341,9 @@ export const createLiveTransportStore = ({
     next.storageLimitReached = optimistic.storageError?.code === "command_limit_reached" || /limit/.test(optimistic.storageError?.message ?? "");
     next.rulesChecking = Boolean(optimistic.admissionProjection || optimistic.projectionJob?.pending);
     next.sharedMutationsBlocked = next.rulesChecking || optimistic.storageBlocked || next.recovering || next.upgradeRequired || optimistic.pendingCommands.some(command=>command.kind === "shared");
-    next.gameplayMutationsBlocked = next.sharedMutationsBlocked && !(!next.rulesChecking && hasOnlySafeHumanRenewal(game, optimistic));
+    const authoritative = gameById.get(gameId);
+    const humanPermissionWithdrawn = authoritative?.canRecordMove === false && authoritative?.canEndTurn !== true;
+    next.gameplayMutationsBlocked = humanPermissionWithdrawn || next.sharedMutationsBlocked && !(!next.rulesChecking && hasOnlySafeHumanRenewal(game, optimistic));
     applyHistoryIntent(next, historyIntentByGameId.get(gameId), identityId);
     if (next.gameplayMutationsBlocked) {
       next.canRecordMove = false;

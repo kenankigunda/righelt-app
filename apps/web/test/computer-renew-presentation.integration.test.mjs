@@ -181,7 +181,7 @@ test('a legal End turn remains enabled and durably submits once during harmless 
  h.release();await h.renew;await result.committed;assert.equal(h.actions.length,1);assert.equal(h.game().gameplayRevision,1);
 });
 
-for(const change of ['metadata','authority'])test(`${change} arriving during durable admission uses only a compatible completed projection`,async t=>{
+for(const change of ['metadata','authority','permission'])test(`${change} arriving during durable admission uses only a compatible completed projection`,async t=>{
  const requests=[],rules={asynchronous:true,project(scope,input){let resolve;const promise=new Promise(r=>{resolve=r;});requests.push({scope,input,resolve});return promise;},cancel(){},cancelAll(){}};
  const h=await humanRenewalHarness(t,{startRenewal:false,rulesOverride:rules});h.store.setRulesActiveGame(h.game().id,true);
  const before=structuredClone(h.game().board.state);let entered,finish;
@@ -191,7 +191,7 @@ for(const change of ['metadata','authority'])test(`${change} arriving during dur
  const action=h.game().legalActions.find(action=>action.type==='move');assert.ok(action);
  const applying=host.applyAction(before,action);await waitForBoundary(()=>requests.length===1);
  requests[0].resolve(projectOptimisticGame(requests[0].input));await ready;
- h.update(game=>({...game,updatedAt:new Date().toISOString(),notifications:['new metadata'],...(change==='authority'?{gameplayRevision:1,player1:{identityId:'another-player'},player2:{identityId:'other-player'},myRole:'Viewer',canRecordMove:false,board:{state:{...game.board.state,sideToMove:'P2'}},currentSnapshot:{...game.board.state,sideToMove:'P2'}}:{})}));
+ h.update(game=>({...game,updatedAt:new Date().toISOString(),notifications:['new metadata'],...(change==='authority'?{gameplayRevision:1,player1:{identityId:'another-player'},player2:{identityId:'other-player'},myRole:'Viewer',canRecordMove:false,board:{state:{...game.board.state,sideToMove:'P2'}},currentSnapshot:{...game.board.state,sideToMove:'P2'}}:change==='permission'?{canRecordMove:false,canEndTurn:false,control:'viewer'}:{})}));
  finish();const result=await applying;assert.equal(result.accepted,true);assert.equal((await h.journal.list('owner',h.game().id)).length,1);
  if(change==='metadata') {
   assert.equal(requests.length,1,'harmless metadata cannot start another rules worker');
@@ -199,9 +199,10 @@ for(const change of ['metadata','authority'])test(`${change} arriving during dur
   assert.deepEqual(h.store.getGameViewModel(h.game().id).notifications,['new metadata']);
  }else{
   assert.equal(requests.length,2,'changed authority refuses the stale successful projection');
-  const next=projectOptimisticGame(requests[1].input);assert.equal(next.ok,false);requests[1].resolve(next);
+  const next=projectOptimisticGame(requests[1].input);if(change==='authority')assert.equal(next.ok,false);requests[1].resolve(next);
   await waitForBoundary(()=>!h.store.getGameViewModel(h.game().id).rulesChecking);
-  assert.equal(h.store.getGameViewModel(h.game().id).currentSnapshot.sideToMove,'P2');
+  if(change==='authority')assert.equal(h.store.getGameViewModel(h.game().id).currentSnapshot.sideToMove,'P2');
+  else assert.equal(h.store.getGameViewModel(h.game().id).canRecordMove,false,'a rebuilt projection cannot restore withdrawn human permission');
  }
 });
 
@@ -231,4 +232,32 @@ test('repeated accepted maintenance never toggles legal human availability at a 
  }
  assert.equal(new Set(ids).size,3);assert.ok(samples.length>3);
  for(const sample of samples)assert.equal(sample.canRecordMove,true,`unexpected availability change at ${sample.type}`);
+});
+
+test('permission-only loss after renewal settlement still cancels fresh worker admission',async t=>{
+ let entered,finish;const gate=new Promise(resolve=>{finish=resolve;}),ready=new Promise(resolve=>{entered=resolve;});
+ const h=await humanRenewalHarness(t,{gateProjection:()=>{entered();return gate;}});
+ const work=h.store.applyGameAction({gameId:h.game().id,state:h.game().board.state,action:{type:'pass'}});
+ const outcome=work.then(value=>({value}),error=>({error}));await ready;h.release();await h.renew;
+ h.update(game=>({...game,canRecordMove:false,canEndTurn:false,control:'viewer'}));finish();
+ const result=await outcome;assert.equal(result.error?.code,'stale_state');assert.equal(h.actions.length,0);
+ await waitForBoundary(async()=>!(await h.journal.list('owner',h.game().id)).length);
+});
+
+test('a real confirmation deadline remains a fence even while the lease is still valid',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:Date.now()});
+ const h=await humanRenewalHarness(t);t.mock.timers.tick(16000);
+ h.update(game=>({...game,computer:{...game.computer,lease:{...game.computer.lease,expiresAt:Date.now()+60000}}}));
+ const view=h.store.getGameViewModel(h.game().id);assert.equal(view.confirmationOverdue,true);assert.equal(view.canRecordMove,false);
+ await assert.rejects(h.store.applyGameAction({gameId:h.game().id,state:h.game().board.state,action:{type:'pass'}}),{code:'sync_recovering'});
+ assert.equal((await h.journal.list('owner',h.game().id)).length,1);assert.equal(h.actions.length,0);
+});
+
+test('failed human journal admission retains storage recovery instead of hiding it behind renewal',async t=>{
+ const h=await humanRenewalHarness(t);const original=h.journal.admit.bind(h.journal);
+ h.journal.admit=async()=>{throw Object.assign(Error('journal_timeout'),{code:'journal_timeout'});};
+ await assert.rejects(h.store.applyGameAction({gameId:h.game().id,state:h.game().board.state,action:{type:'pass'}}),{code:'journal_timeout'});
+ h.journal.admit=original;const view=h.store.getGameViewModel(h.game().id);
+ assert.equal(view.storageBlocked,true);assert.equal(view.unsavedCommand,true);assert.equal(view.canRecordMove,false);
+ assert.equal((await h.journal.list('owner',h.game().id)).length,1);assert.equal(h.actions.length,0);
 });
