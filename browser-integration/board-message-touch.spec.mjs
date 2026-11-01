@@ -192,7 +192,7 @@ test('computer loading pieces remain continuous, plain and motion-aware beside t
  expect(await page.locator('.board-message-sizing [data-loading-state],.board-message-sizing .loading-pieces').count()).toBe(0);
 });
 
-test('admission changes preserve selection, sentence rows, centered chips and disabled controls',async({page})=>{
+test('admission changes preserve selection, sentence rows, baseline-aligned chips and disabled controls',async({page})=>{
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
  await page.evaluate(async()=>{
   await window.boardFixture.setup('pass',false);
@@ -217,8 +217,8 @@ test('admission changes preserve selection, sentence rows, centered chips and di
   if(blocked)await pass.evaluate(button=>button.click());
  }
  expect(await page.evaluate(()=>window.boardFixture.applied())).toEqual([]);
- expect(await prompt.locator('.board-preview-coordinate-chip').first().evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('middle');
- expect(await pass.evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('middle');
+ expect(await prompt.locator('.board-preview-coordinate-chip').first().evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('baseline');
+ expect(await pass.evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('baseline');
  // A prepared move remains a move preview while submission admission changes.
  await page.evaluate(async()=>{await window.boardFixture.setup('rush',false);});
  await page.locator('[data-row="4"][data-col="2"]').click();
