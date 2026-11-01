@@ -826,7 +826,7 @@ function optimisticRushSupplyRegion(state: GameState): Set<string> {
   return visited;
 }
 
-function solveContinuation(state: GameState, memo: Map<string, SearchMemoState>, rushSupplyRegion?: Set<string>): boolean {
+function solveContinuation(state: GameState, memo: Map<string, SearchMemoState>): boolean {
   checkEngineComputation(Boolean(state.continuation));
   if (!state.continuation) {
     return true;
@@ -852,18 +852,21 @@ function solveContinuation(state: GameState, memo: Map<string, SearchMemoState>,
     }
 
     if (normalized.continuation?.type === "rush") {
-      rushSupplyRegion ??= optimisticRushSupplyRegion(normalized);
+      // A friendly actor that has spent its rush can no longer interrupt a
+      // barrier elsewhere. Reusing the root relaxation would keep those dead
+      // branches artificially open and enumerate permutations of unrelated moves.
+      const rushSupplyRegion = optimisticRushSupplyRegion(normalized);
       const required = new Set(obligationPieceIdsForContinuation(normalized));
       const moved = new Set(normalized.continuation.rushedPieceIds ?? []);
       if (normalized.pieces.some(piece => required.has(piece.id) && moved.has(piece.id)
-        && !rushSupplyRegion!.has(coordinateKey(piece.position.row, piece.position.col)))) {
+        && !rushSupplyRegion.has(coordinateKey(piece.position.row, piece.position.col)))) {
         memo.set(key, "failure");
         return false;
       }
     }
 
     for (const successor of buildSuccessorStates(normalized)) {
-      if (solveContinuation(successor, memo, rushSupplyRegion)) {
+      if (solveContinuation(successor, memo)) {
         memo.set(key, "success");
         return true;
       }

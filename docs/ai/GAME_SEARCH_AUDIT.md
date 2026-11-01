@@ -8,6 +8,14 @@ The recovered rules position and ordered actions are retained in `packages/game-
 
 Cold local enumeration before optimization took about 3.2 seconds and 240,262 continuation expansions. One rejected rush, U2-2 from (4,5) to (5,6), used 240,174 expansions. After pruning, complete enumeration returned the same ordered 34 actions with 90 expansions in 14.9 milliseconds. Timings are diagnostic measurements, not portable latency guarantees. The regression enforces fewer than 1,000 expansions and exact baseline actions.
 
+## Broader catalog result
+
+The bounded diagnostic (`scripts/diagnose-rule-search.mjs`) covers 50 catalog/retained positions and 105 legal, stabilization, and applicable guidance operations. Its first pass found one additional required legal search exceeding 16,384 expansions: the resulting position of catalog scenario `5bbc0ebf-ed20-4e12-8143-67eaa5cc8676`, Push vs. project strategy endgame.
+
+The verified unmodified `0ace3cb4` engine did not finish that position within the 15-second diagnostic limit. That attempt is incomplete, not a negative legality answer. A concrete two-rush witness proves the problematic rush can complete: U1-2 (6,5) → (7,5), followed by U1-1 (5,5) → (6,5).
+
+The completion search had kept its initial optimistic supply region after actors spent their moves. Refreshing that conservative region at each uncached rush state prunes branches whose only possible rescuer has already moved elsewhere. This preserves every candidate, internal/public action ordering, guard accounting, and the resource ceiling. The resulting position now completes with 52 legal actions and 174 expansions (13.5ms in the diagnostic run). All 105 audited operations complete with zero unknown results and zero errors. The original reported game still returns its ordered 34 baseline actions with 90 expansions. These are bounded corpus results, not a guarantee for every possible board.
+
 ## Findings and changes
 
 | Path | Finding | Treatment |
