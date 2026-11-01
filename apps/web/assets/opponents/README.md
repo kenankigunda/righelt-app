@@ -2,7 +2,7 @@
 
 T-087 narrative illustrations generated with the built-in image-generation tool, revised October 6, 2026. Production WebP files are self-contained. `manifest.json` records scene IDs, descriptive text, dimensions, byte sizes, and generation provenance.
 
-## Current visual contract
+## Historical October visual contract (superseded where noted below)
 
 Scenes fill their card generously. Plain ivory walls, linen, paving and negative space continue the card surface (#fffdf6). Use crisp selective boundaries, never fuzzy vignettes, feathered fades, halos, or CSS masks to hide a rectangular image. The scene scale follows a responsive composition and its natural 3:2 aspect ratio. Wide introductions place the scene beside the story. Narrow introductions stack them, balancing scene height and copy so Play is visible at common default zoom. The shared inset viewport retains scrolling for genuine overflow.
 
@@ -28,3 +28,12 @@ Friend's compact and full illustrations now use complete foreground silhouettes.
 Built-in generation edited the existing Friend assets. Full-scene prompt: preserve the faceted hands/tabletop invitation, extend cropped props and sleeves into complete angular silhouettes, use clean transparent negative space, keep red and blue supply arches on opposite corner squares, retain windowed commanders and octagonal pieces, and use no faces, animals, text, blur or feathering. Final corrective prompt: remove all colored background and shadows, preserve foreground objects, complete truncated sleeve and napkin ends, and output crisp true alpha with margin around the whole composition. Generation `2e5a3015-7164-4182-b516-aaf14719c5d8` is the delivered full scene. Generation `d32dbb90-ee46-48cd-b00f-5e32e0aa800b` is the delivered compact hands illustration. The compact prompt is recorded in `portrait-prompts.json`.
 
 Delivery conversion only resizes the compact illustration to 480 pixels wide and encodes WebP at quality 90. Alpha is preserved. Both assets were inspected in the real component, since transparent pixels may retain irrelevant RGB values in image-generation previews.
+
+
+## Approved November marble delivery
+
+The current14-asset delivery pack is pinned in [selected-assets.json](../../../../docs/ai/marble/selected-assets.json), including exact hashes, consumer targets and alt mapping. These replace the older encodes described above. Native rendering, motion and transfer/decode/residency acceptance are still pending.
+
+All characters, settings and copy remain. Eight board-bearing computer scenes have thin upright commanders/supplies and flat ordinary units; native UI pieces remain flat. The four Home/rematch portraits retain their characters and Friend's red/blue hands. Only the Friend modal changes to the exact R33 empty ornate chairs/new-game table composition, master49f1b9c6111d57b99e5decd8a83d2403aa888435d6bb8aa4466dc1761e6492ad; it is never regenerated. Its consumer remains friend-introduction.webp and the modal remains single-scene.
+
+Use only the selected delivery WebPs, totaling2,906,220bytes. Do not download full masters in the app. Preserve first-image eager/later-scene deferred policy, native control readiness, generation/cancel guards and usable failure fallbacks. The selected artwork transition is reverse anticipation then slide, with complete outgoing art visible through draw-back and mirrored Back; old page-turn/brightness/shade behavior is superseded, with implementation/proof tracked by the foundation owner.
