@@ -9,7 +9,7 @@ const test=base.extend({
   finally{await owned.close();}
  },
 });
-import {createGameFromHome,openDirectGameLink,requestPlayerJoin,acceptPendingRequest,joinAsViewer,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
+import {createGamesViaApi,createGameFromHome,openDirectGameLink,requestPlayerJoin,acceptPendingRequest,joinAsViewer,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
 import {readProjectedGame} from '../support/computer-projection.mjs';
 import {isOperationRequest} from '../support/shared-request.mjs';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
@@ -22,7 +22,14 @@ for(const width of [390,1440]){
  const replayTest=test.extend({replaySetup:[async({ownedRoleContext,baseURL},use)=>{
  const contexts=await Promise.all([0,1,2].map(()=>ownedRoleContext({viewport:{width,height:900}})));
  const [owner,opponent,viewer]=await Promise.all(contexts.map(context=>context.newPage()));
-  const {gameId,gameHash}=await createGameFromHome(owner);
+  // Replay owns native roles and moves. Repeated Friend-story creation has
+  // separate coverage in the reopening/Pass workflow below.
+  const [gameId]=await createGamesViaApi(owner,1),gameHash=`#/game/${encodeURIComponent(gameId)}`;
+  await owner.goto(`${baseURL}/${gameHash}`);await expect(owner.getByTestId('game-shell')).toHaveAttribute('data-game-id',gameId);
+  await expect(owner.getByTestId('game-role')).toContainText('Player 1');
+  await expect(owner.locator('[data-action="play-as-both-players"]')).toBeEnabled();
+  await expect(owner.getByTestId('sync-recovery-banner')).toHaveCount(0);
+  await expect(owner.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
   await openDirectGameLink(opponent,baseURL,gameHash);await requestPlayerJoin(opponent);await acceptPendingRequest(owner);
   await expect(opponent.getByTestId('game-role')).toContainText('Player 2');
   await openDirectGameLink(viewer,baseURL,gameHash);await joinAsViewer(viewer);

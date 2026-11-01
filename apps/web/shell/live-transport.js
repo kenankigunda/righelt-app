@@ -1,6 +1,7 @@
+import {isObsoleteComputerRejection} from './computer-recovery.js';
 import { activeDecisionLineage } from './decision-history.js';
 import { createRulesExecutor } from '../board/rules-runtime.js';
-import { CURRENT_COMPUTER_MODEL } from '../generated/packages/shared-types/src/computer-play.js';
+import { CURRENT_COMPUTER_MODEL, computerProfileFor } from '../generated/packages/shared-types/src/computer-play.js';
 import { STORAGE_GENERATION_HEADER } from "../generated/packages/shared-types/src/storage-policy.js";
 import { issueDiagnostics } from "./issue-diagnostics.js";
 import { serializeState, listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
@@ -8,7 +9,7 @@ import { loadIdentity, saveIdentity } from "./persistence.js";
 import { defaultNotationForAction, rebaseProjectedMetadata } from "./optimistic-live.js";
 import { buildStaticGameCardFromGame, normalizeStaticGameCard } from "./static-game-cards.js";
 import { createCommandJournal } from "./command-journal.js";
-import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, SYNC_PROTOCOL_VERSION, SYNC_TIMING, SYNC_LIMITS, LIVE_HISTORY, SHARED_OPERATIONS, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
+import { POSITION_PROJECTION, ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, SYNC_PROTOCOL_VERSION, SYNC_TIMING, SYNC_LIMITS, LIVE_HISTORY, SHARED_OPERATIONS, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
 
 import { applyHistoryIntent, historyMoveKey } from "./recovery-view.js";
 import { activityStateActorSide } from "./activity-affiliation.js";
@@ -16,6 +17,8 @@ import { activityStateActorSide } from "./activity-affiliation.js";
 const clone = (value) => structuredClone(value);
 const projectionControlKey = game => JSON.stringify({
   ownershipMode: game?.ownershipMode, selfPlayMode: game?.selfPlayMode,
+  canRecordMove: game?.canRecordMove, canEndTurn: game?.canEndTurn,
+  control: game?.control, canControlComputer: game?.canControlComputer,
   p1: game?.player1?.identityId, p2: game?.player2?.identityId,
   myRole: game?.myRole, myRoles: game?.myRoles,
   inHistoryMode: game?.inHistoryMode, historyIndex: game?.historyIndex, historyTurnIndex: game?.historyTurnIndex,
@@ -32,7 +35,7 @@ const sameProjectionAuthority = (left, right) => Boolean(left && right
 // A validated, unresolved receipt is pending durable intent, not a failed
 // request. Private identity prevents external error messages impersonating it.
 const unresolvedCommandOutcome = Symbol('unresolved-command-outcome');
-export const validSyncSnapshot = (game, gameId) => {
+const validGameShape = (game, gameId) => {
   const state = game?.board?.state;
   return typeof gameId === "string" && gameId.length > 0 && game?.id === gameId
     && typeof game.createdAt === "string" && Number.isFinite(Date.parse(game.createdAt))
@@ -41,6 +44,7 @@ export const validSyncSnapshot = (game, gameId) => {
     && ["P1", "P2"].includes(state.sideToMove) && isSyncRevision(state.turnIndex) && Array.isArray(state.pieces)
     && Array.isArray(game.moves) && Array.isArray(game.turns);
 };
+export const validSyncSnapshot = (game, gameId) => game?.positionOnly !== true && validGameShape(game, gameId);
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
 const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
@@ -180,6 +184,9 @@ export const createLiveTransportStore = ({
   let gameById = new Map();
   let homeGameCardById = new Map();
   const lastEventSeqByGameId = new Map();
+  const positions = new Map();
+  const positionFlights = new Map();
+  let positionGameId = null;
   const optimisticStateByGameId = new Map();
   // Storage recovery owns asynchronous work separately from game projections.
   const journalRecoveryByOwner = new WeakMap();
@@ -276,6 +283,40 @@ export const createLiveTransportStore = ({
     optimistic.confirmDeadlineAt = 0;
   };
 
+  // A fresh lease renewal changes no gameplay or human authority. Keep shared
+  // mutations serialized, while admitting explicit human play through the normal
+  // durable command path. Any uncertain recovery or changed owner still fences it.
+  const hasOnlySafeHumanRenewal = (game, optimistic) => {
+    if (!game) return false;
+    if (optimistic.pendingCommands.length !== 1 || optimistic.storageBlocked || optimistic.unsavedCommand
+      || optimistic.forceSnapshot || optimistic.recoveryPromise || optimistic.recoveryIssue || optimistic.upgradeRequired
+      || optimistic.confirmationOverdue || optimistic.retryAttempt > 0 || optimistic.syncStatus === 'confirming') return false;
+    const pending = optimistic.pendingCommands[0], envelope = pending.envelope, values = envelope?.payload?.values;
+    const control = game.computer, state = game.board?.state, now = Date.now();
+    // Account projections intentionally redact the lease's private auth context.
+    // A redacted lease is compatible only with the exact currently signed-in
+    // owner and this locally admitted envelope, never an absent/mismatched session.
+    const currentAccountEnvelope = Boolean(auth?.enabled && auth.session.authenticated
+      && auth.session.account?.id === identityId && /^[a-f0-9]{64}$/.test(auth.session.contextId ?? '')
+      && envelope?.authContextId === auth.session.contextId);
+    const leaseContextMatches = control?.lease?.authContextId === (envelope?.authContextId ?? '')
+      || currentAccountEnvelope && control?.lease?.authContextId === undefined;
+    if (pending.kind !== 'shared' || envelope?.payload?.operation !== 'computer-control' || values?.action !== 'renew'
+      || !control || control.ownerId !== identityId || game.canControlComputer === false
+      || !state || state.outcome?.status !== 'ongoing' || !(game.canRecordMove || game.canEndTurn)
+      || control.paused || control.manual || values.generation !== control.generation
+      || !control.lease || values.deviceId !== control.lease.deviceId || control.lease.expiresAt <= now
+      || envelope.identityId !== identityId || auth?.enabled && !currentAccountEnvelope
+      || !leaseContextMatches || envelope.expectedGameplayRevision !== game.gameplayRevision
+      || serializeState(envelope.expectedState) !== serializeState(state)
+      || !Number.isFinite(envelope.submittedAt) || envelope.submittedAt > now
+      || now - envelope.submittedAt >= timing.confirmationBudgetMs
+      || optimistic.connectionRecovering && pending.sharedRecoveryEpoch !== optimistic.connectionRecoveryEpoch) return false;
+    const turnIndex = game.currentTurn?.index ?? state.turnIndex ?? 0;
+    const actor = activityStateActorSide(state);
+    return Boolean(actor && !computerProfileFor(control, actor, turnIndex));
+  };
+
   const decorateGameWithSync = (game, gameId) => {
     const optimistic = getOptimisticState(gameId);
     const next = clone(game);
@@ -313,8 +354,11 @@ export const createLiveTransportStore = ({
     next.storageLimitReached = optimistic.storageError?.code === "command_limit_reached" || /limit/.test(optimistic.storageError?.message ?? "");
     next.rulesChecking = Boolean(optimistic.admissionProjection || optimistic.projectionJob?.pending);
     next.sharedMutationsBlocked = next.rulesChecking || optimistic.storageBlocked || next.recovering || next.upgradeRequired || optimistic.pendingCommands.some(command=>command.kind === "shared");
+    const authoritative = gameById.get(gameId);
+    const humanPermissionWithdrawn = authoritative?.canRecordMove === false && authoritative?.canEndTurn !== true;
+    next.gameplayMutationsBlocked = humanPermissionWithdrawn || next.sharedMutationsBlocked && !(!next.rulesChecking && hasOnlySafeHumanRenewal(game, optimistic));
     applyHistoryIntent(next, historyIntentByGameId.get(gameId), identityId);
-    if (next.sharedMutationsBlocked) {
+    if (next.gameplayMutationsBlocked) {
       next.canRecordMove = false;
       next.canEndTurn = false;
     }
@@ -434,6 +478,9 @@ export const createLiveTransportStore = ({
       return null;
     }
 
+    const position = positions.get(game.id);
+    if (position && (game.gameplayRevision < position.gameplayRevision || (eventSeq !== null && eventSeq < position.positionEventSeq))) return null;
+    positions.delete(game.id);
     const nextEventSeq = typeof eventSeq === "number" && Number.isFinite(eventSeq) ? eventSeq : null;
     const currentEventSeq = nextEventSeq !== null ? lastEventSeqByGameId.get(game.id) ?? 0 : null;
     const staleSnapshotIgnored = nextEventSeq !== null && currentEventSeq !== null && nextEventSeq < currentEventSeq;
@@ -677,8 +724,11 @@ export const createLiveTransportStore = ({
     optimistic.syncStatus = optimistic.pendingCommands.length ? optimistic.syncStatus : "ready";
     startTerminalCleanup(gameId, command, outcome);
     recalculateOptimisticGame(gameId);
-    const notification = { type: outcome.outcome === "accepted" ? "authoritative_update" : command.kind === "shared" ? "shared_request_rejected" : "optimistic_rollback", gameId, clientCommandId: command.clientCommandId, reason:outcome.reason,
-      failureNotice: outcome.outcome === "rejected" && command.kind !== "shared" ? outcome.reason === "state_capacity_exceeded" ? "This game couldn’t save another move. Your earlier moves are safe. Please view details." : "Board changed before your move was recorded. Check it and try again." : "" };
+    // A confirmed obsolete computer attempt is handled by its session's
+    // automatic recovery, not a prompt to repeat a human move.
+    const quietComputerRetry = isObsoleteComputerRejection(command.computer,outcome.reason);
+    const notification = { type: outcome.outcome === "accepted" ? "authoritative_update" : command.kind === "shared" ? "shared_request_rejected" : "optimistic_rollback", gameId, clientCommandId: command.clientCommandId, computer: Boolean(command.computer), reason:outcome.reason,
+      failureNotice: outcome.outcome === "rejected" && command.kind !== "shared" && !quietComputerRetry ? outcome.reason === "state_capacity_exceeded" ? "This game couldn’t save another move. Your earlier moves are safe. Please view details." : "Board changed before your move was recorded. Check it and try again." : "" };
     if (notifications) notifications.push(notification); else emitChange(notification);
     return true;
   };
@@ -752,13 +802,15 @@ export const createLiveTransportStore = ({
     const notifications = [];
     for (const outcome of body.commandOutcomes) settleOutcome(gameId, outcome, notifications);
     if (body.game) upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, publish: false });
-    for (const notification of notifications) emitChange(notification);
     if (body.commandOutcomes.some(outcome => outcome.reason === "upgrade_required")) {
+      for (const notification of notifications) emitChange(notification);
       markUpgradeRequired(gameId);
       throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
     }
     if (!optimistic.pendingCommands.length && !optimistic.forceSnapshot && (!sharedRecoveryOwners.length || sharedRecoveryOwners.some(epoch => epoch !== undefined && epoch === optimistic.connectionRecoveryEpoch))) setConnectionRecovering(gameId, false);
-
+    // Publish a settled receipt together with its owned recovery state. An
+    // intermediate pending=0/recovering=true frame disables legal controls.
+    for (const notification of notifications) emitChange(notification);
     emitChange({ type: "authoritative_update", gameId });
     void sendNextPendingCommand(gameId);
     return body;
@@ -936,17 +988,18 @@ export const createLiveTransportStore = ({
       assertRulesContext(contextEpoch, gameId);
       if (auth?.enabled && (!auth.session.authenticated)) throw Object.assign(new Error("invalid_credentials"), { code: "invalid_credentials" });
       const current = getGameViewModel(gameId);
-      if (current?.sharedMutationsBlocked) throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
+      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
       const isClosure = command.kind === "end-turn" || command.action?.type === "end_turn";
       if (isClosure && serverActionContract !== ACTION_CONTRACT_VERSION) {
         markUpgradeRequired(gameId);
         throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
       }
+      const admittedRenewal = !command.computer && hasOnlySafeHumanRenewal(gameById.get(gameId), optimistic) ? clone(optimistic.pendingCommands[0].envelope) : null;
       const predecessor = optimistic.pendingCommands.at(-1)?.envelope;
       const envelope = { protocolVersion: 2, actionContractVersion: ACTION_CONTRACT_VERSION, gameId, identityId, clientCommandId: command.clientCommandId, submittedAt: Date.parse(command.queuedAt) || Date.now(),
         ...(auth?.enabled ? { authContextId: auth.session.contextId } : {}),
         kind: command.kind === "apply" ? "action" : "end_turn", payload: command.kind === "apply" ? { action: command.action, notation: command.notation, ...(command.computer ? { computer: command.computer } : {}) } : {},
-        expectedState: clone(command.state ?? current.board.state), expectedGameplayRevision: predecessor ? predecessor.expectedGameplayRevision + 1 : (gameById.get(gameId)?.gameplayRevision ?? 0),
+        expectedState: clone(command.state ?? current.board.state), expectedGameplayRevision: predecessor ? predecessor.expectedGameplayRevision + (predecessor.kind === "shared" ? 0 : 1) : (gameById.get(gameId)?.gameplayRevision ?? 0),
         ...(command.kind === "end-turn" ? { expectedTurnIndex: current.board.state.turnIndex } : {}),
         ...(predecessor ? { predecessor: { clientCommandId: predecessor.clientCommandId, fingerprint: predecessor.fingerprint } } : {}),
       };
@@ -956,6 +1009,16 @@ export const createLiveTransportStore = ({
       command.envelope = envelope;
       const base = gameById.get(gameId);
       const pendingIds = optimistic.pendingCommands.map(entry => entry.clientCommandId).join("|");
+      const renewalSettled = () => {
+        const receipt = admittedRenewal && optimistic.outcomes.get(admittedRenewal.clientCommandId);
+        return Boolean(admittedRenewal && optimistic.pendingCommands.length === 0
+          && isCommandOutcome(receipt, admittedRenewal) && receipt.outcome === 'accepted');
+      };
+      const pendingStillMatches = () => optimistic.pendingCommands.map(entry => entry.clientCommandId).join("|") === pendingIds || renewalSettled();
+      const gameplayRecoveryBlocked = game => Boolean(optimistic.storageBlocked || optimistic.unsavedCommand
+        || optimistic.forceSnapshot || optimistic.upgradeRequired || optimistic.confirmationOverdue || optimistic.recoveryIssue
+        || optimistic.recoveryPromise || optimistic.syncStatus === 'confirming'
+        || optimistic.connectionRecovering && !hasOnlySafeHumanRenewal(game, optimistic));
       rulesExecutor.cancel(`project:${gameId}`);
       optimistic.projectionJob = null;
       optimistic.admissionProjection = true;
@@ -964,19 +1027,28 @@ export const createLiveTransportStore = ({
         assertActive();
         assertRulesContext(contextEpoch, gameId);
         const latest = gameById.get(gameId);
-        if (!sameProjectionAuthority(base, latest) || optimistic.pendingCommands.map(entry => entry.clientCommandId).join("|") !== pendingIds) {
+        if (!sameProjectionAuthority(base, latest) || !pendingStillMatches()) {
           throw Object.assign(new Error("stale_state"), { code: "stale_state" });
         }
+        if (gameplayRecoveryBlocked(latest)) throw Object.assign(new Error('sync_recovering'), {code:'sync_recovering'});
         if (!projection.ok) return projection;
         if (latest !== base) projection = rebaseProjectedMetadata(projection, latest);
         try { await commandJournal.admit(envelope); }
         catch (error) { optimistic.unsavedCommand = command; blockStorage(gameId, error); throw error; }
         assertActive();
+        const committedBase = gameById.get(gameId);
+        const contextStillCurrent = !rulesExecutor.asynchronous || rulesEpoch === contextEpoch && rulesGameId === gameId && rulesVisible;
+        // Admission is durable now. Reuse completed work only across unchanged
+        // authority/lineage and harmless metadata; changed authority still uses
+        // normal journal recovery and must never receive a stale projection.
+        const reuseProjection = contextStillCurrent && sameProjectionAuthority(latest, committedBase)
+          && pendingStillMatches() && !gameplayRecoveryBlocked(committedBase);
+        if (reuseProjection && committedBase !== latest) projection = rebaseProjectedMetadata(projection, committedBase);
         optimistic.pendingCommands.push(command);
-        optimistic.syncStatus = "applying-update";
+        if (optimistic.syncStatus !== 'confirming') optimistic.syncStatus = "applying-update";
         optimistic.admissionProjection = false;
-        if (gameById.get(gameId) === latest) {
-          optimistic.projectionJob = { base: latest, signature: optimistic.pendingCommands.filter(entry => entry.kind !== "shared").map(entry => entry.clientCommandId).join("|"), result: projection, pending: false };
+        if (reuseProjection) {
+          optimistic.projectionJob = { base: committedBase, signature: optimistic.pendingCommands.filter(entry => entry.kind !== "shared").map(entry => entry.clientCommandId).join("|"), result: projection, pending: false };
           installProjection(gameId, projection);
         } else recalculateOptimisticGame(gameId);
         emitChange({ type: "optimistic_enqueue", gameId, clientCommandId: command.clientCommandId });
@@ -1206,6 +1278,47 @@ export const createLiveTransportStore = ({
     clearTimeout(optimistic.recoveryRetryTimer); optimistic.recoveryRetryTimer = null;
     recalculateOptimisticGame(gameId);
     emitChange({ type: "upgrade_required", gameId });
+  };
+  // Read-only display state is deliberately outside gameById, event cursors,
+  // command receipts, optimistic projection and journal hydration.
+  const loadGamePosition = (gameId) => {
+    if (getOptimisticState(gameId).upgradeRequired) return Promise.reject(Object.assign(new Error("upgrade_required"), { code: "upgrade_required" }));
+    if (gameById.has(gameId)) return Promise.resolve(getGameViewModel(gameId));
+    if (positionGameId !== gameId) { positions.clear(); positionGameId = gameId; }
+    if (positionFlights.has(gameId)) return positionFlights.get(gameId);
+    if (positions.has(gameId)) {
+      positions.set(gameId, { ...positions.get(gameId), positionLoading: true, positionError: false });
+      emitChange({ type: "position_loading", gameId });
+    }
+    const flight = boundedRequest(`/api/shell/games/${encodeURIComponent(gameId)}/position?identityId=${encodeURIComponent(identityId)}`, { method: "GET", cache: "no-store" })
+      .then(body => {
+        assertActive();
+        if (body.projection !== POSITION_PROJECTION || body.protocolVersion !== 2 || body.game?.positionOnly !== true
+          || !validGameShape(body.game, gameId) || !isSyncRevision(body.eventSeq)) throw new Error("invalid_position");
+        if (positionGameId === gameId && !gameById.has(gameId) && positionFlights.get(gameId) === flight) {
+          positions.set(gameId, { ...body.game, positionEventSeq: body.eventSeq, positionLoading: true, positionError: false });
+          emitChange({ type: "position_loaded", gameId });
+        }
+        return getGameViewModel(gameId);
+      }).finally(() => { if (positionFlights.get(gameId) === flight) positionFlights.delete(gameId); });
+    positionFlights.set(gameId, flight);
+    return flight;
+  };
+  const loadCompleteGame = async (gameId, options = {}) => {
+    const positionFlight = options.positionFirst ? loadGamePosition(gameId).catch(() => null) : Promise.resolve(null);
+    try {
+      const game = await loadGame(gameId, options);
+      if (!game || game.positionOnly) throw Object.assign(new Error("stale_snapshot"), { code: "stale_snapshot" });
+      return game;
+    }
+    catch (error) {
+      await positionFlight;
+      if (active && !gameById.has(gameId) && positions.has(gameId)) {
+        positions.set(gameId, { ...positions.get(gameId), positionLoading: false, positionError: true });
+        emitChange({ type: "position_failed", gameId });
+      }
+      throw error;
+    }
   };
   const loadGame = async (gameId, { openAsViewer = false } = {}) => {
     if (getOptimisticState(gameId).upgradeRequired) throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
@@ -1440,6 +1553,15 @@ export const createLiveTransportStore = ({
 
   const endTurn = async ({ gameId }) => {
     const current = getGameViewModel(gameId);
+    // An ordinary action may already have opened the next empty turn. Preserve
+    // that semantic refusal without admitting a command or treating the prior
+    // player's lack of turn permission as connection recovery.
+    if (active && (!auth?.enabled || auth.session.authenticated) && gameById.has(gameId)
+      && current?.positionOnly !== true && current?.board?.state?.outcome?.status === "ongoing"
+      && current?.currentTurn?.status === "active" && current.currentTurn.moveIndexes?.length === 0
+      && !current?.board?.state?.continuation) {
+      throw Object.assign(new Error("turn_has_no_moves"), { code: "turn_has_no_moves" });
+    }
     const command = {
       kind: "end-turn",
       clientCommandId: createClientCommandId({ gameId, identityId, random }),
@@ -1587,6 +1709,7 @@ export const createLiveTransportStore = ({
       const completion=new Promise((resolve,reject)=>sharedWaiters.set(envelope.clientCommandId,{resolve,reject}));
       const pending = internalCommand(envelope);
       optimistic.pendingCommands.push(pending);
+      pending.sharedRecoveryEpoch = (optimistic.connectionRecoveryEpoch ?? 0) + 1;
       setConnectionRecovering(gameId,true);
       pending.sharedRecoveryEpoch = optimistic.connectionRecoveryEpoch;
       void sendNextPendingCommand(gameId);
@@ -1688,7 +1811,12 @@ export const createLiveTransportStore = ({
       recalculateOptimisticGame(gameId);
     }
     if (!optimistic.derivedGame) {
-      return null;
+      const position = clone(positions.get(gameId) ?? null);
+      if (!position) return null;
+      applyHistoryIntent(position, historyIntentByGameId.get(gameId), identityId);
+      return { ...position, canRecordMove: false, canEndTurn: false, canUndoLastMove: false, sharedMutationsBlocked: true, gameplayMutationsBlocked: true,
+        historyLoading: clone(historyLoads.get(gameId) ?? null) };
+
     }
     // Browser suspension can advance deadlines before scheduled callbacks run.
     // Refresh time-dependent safety flags even when the board projection is cached.
@@ -1731,7 +1859,8 @@ export const createLiveTransportStore = ({
   return {
     setRulesActiveGame,
     loadGamesPage,
-    loadGame,
+    loadGame: loadCompleteGame,
+    loadGamePosition,
     resolveInvite,
     createGame,
     computerControl: (gameId, values) => decisionRequest(gameId, 'computer-control', values),
@@ -1802,6 +1931,7 @@ export const createLiveTransportStore = ({
     unsubscribe,
     retire() {
       active = false;
+      positions.clear(); positionFlights.clear();
       rulesExecutor.cancelAll();
       globalThis.document?.removeEventListener?.("visibilitychange", onRulesVisibility);
       globalThis.window?.removeEventListener?.("pagehide", onRulesPageHide);

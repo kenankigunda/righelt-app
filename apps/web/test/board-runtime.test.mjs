@@ -588,8 +588,8 @@ test("board runtime omits end-turn CTA when the rush chain is not yet closable",
   );
 
   assert.doesNotMatch(previewHtml, /data-board-preview-action="end-turn"/);
-  assert.match(previewHtml, /Rush to reconnect|Select a rush/);
-  assert.match(previewHtml, /to reconnect piece at/);
+  assert.match(previewHtml, /Rush to reconnect|Rush to restore supply|Select a rush/);
+  assert.match(previewHtml, /restore supply to the piece at/);
   assert.match(previewHtml, /board-preview-coordinate-chip-rush-blocker/);
   assert.match(previewHtml, />4, 3</);
 });
@@ -742,7 +742,7 @@ test("board runtime falls back to generic rush prompt when blocker lookup yields
     },
   );
 
-  assert.match(previewHtml, /Rush to reconnect|Select a rush/);
+  assert.match(previewHtml, /Rush to reconnect|Rush to restore supply|Select a rush/);
   assert.doesNotMatch(previewHtml, /to reconnect piece at/);
   assert.doesNotMatch(previewHtml, /board-preview-coordinate-chip-rush-blocker/);
 });

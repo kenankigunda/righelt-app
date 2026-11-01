@@ -1,3 +1,4 @@
+import { SYNC_TIMING } from "../generated/packages/shared-types/src/sync-protocol.js";
 import { equivalentGameStates } from '../generated/packages/game-engine/src/index.js';
 import { projectOptimisticGame } from '../shell/optimistic-live.js';
 import { buildPieceMoveResponse } from './client-move-generation.js';
@@ -7,12 +8,14 @@ const cancelled = () => Object.assign(new Error('rules_cancelled'), { code: 'rul
 /** One running job, with replaceable queued scopes. Termination stops blocked JS. */
 export class RulesRuntime {
   asynchronous = true;
-  constructor({ workerFactory = () => new Worker(new URL('./rules-worker.js', import.meta.url), { type: 'module' }) } = {}) {
+  constructor({ workerFactory = () => new Worker(new URL('./rules-worker.js', import.meta.url), { type: 'module' }), timers = globalThis, timeoutMs = SYNC_TIMING.requestTimeoutMs } = {}) {
     this.workerFactory = workerFactory;
+    this.timers = timers; this.timeoutMs = timeoutMs;
     this.sequence = 0;
     this.jobs = new Map();
     this.running = null;
   }
+  rushGuidance(scope, input) { return this.request(scope, 'rush-guidance', input); }
   project(scope, input) { return this.request(scope, 'project', input); }
   equivalent(scope, input) { return this.request(scope, 'equivalent', input); }
   previews(scope, input) { return this.request(scope, 'previews', input); }
@@ -36,6 +39,7 @@ export class RulesRuntime {
     this.running = job;
     const finish = (error, result) => {
       if (this.running !== job) return;
+      this.timers.clearTimeout(job.timer);
       job.worker?.terminate();
       this.running = null;
       this.jobs.delete(job.scope);
@@ -51,6 +55,7 @@ export class RulesRuntime {
         finish(data.error ? Object.assign(new Error(data.error.message), { code: data.error.code }) : null, data.result);
       };
       worker.onerror = worker.onmessageerror = () => finish(new Error('rules_worker_failed'));
+      job.timer = this.timers.setTimeout(() => finish(Object.assign(new Error("Rules calculation timed out"), { code: "rules_timeout" })), this.timeoutMs);
       worker.postMessage({ id: job.id, scope: job.scope, type: job.type, input: job.input });
     } catch (error) { finish(error); }
   }
@@ -58,6 +63,7 @@ export class RulesRuntime {
     const job = this.jobs.get(scope);
     if (!job) return;
     this.jobs.delete(scope);
+    this.timers.clearTimeout(job.timer);
     if (this.running === job) { job.worker?.terminate(); this.running = null; }
     job.reject(cancelled());
     this.drain();
@@ -67,7 +73,7 @@ export class RulesRuntime {
     const jobs = [...this.jobs.values()];
     this.jobs.clear();
     this.running?.worker?.terminate(); this.running = null;
-    for (const job of jobs) job.reject(cancelled());
+    for (const job of jobs) { this.timers.clearTimeout(job.timer); job.reject(cancelled()); }
   }
 }
 
