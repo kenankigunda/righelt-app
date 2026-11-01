@@ -649,7 +649,7 @@ export const createLiveTransportStore = ({
   const startTerminalCleanup = (gameId, command, outcome) => {
     const optimistic = getOptimisticState(gameId), owner = journalRecoveryState(optimistic);
     const envelope = clone(command.envelope), receipt = clone(outcome), key = cleanupKey(envelope);
-    if (owner.jobs.has(key)) return;
+    if (owner.jobs.has(key)) return owner.jobs.get(key);
     // Register before the first removal: a manual repair may finish while that
     // original transaction is still pending, making its late failure obsolete.
     const job = { gameId, optimistic, owner, envelope, receipt, command, key, token: Symbol('terminal-cleanup'), retries: 0, retired: false, timer: null };
@@ -699,6 +699,57 @@ export const createLiveTransportStore = ({
       }
     };
     job.promise = attempt(true);
+    return job;
+  };
+  const settleHydratedTerminalRow = async (gameId, optimistic, envelope, outcome, isCurrent) => {
+    const owner = journalRecoveryState(optimistic), key = cleanupKey(envelope);
+    const current = () => isCurrent() && currentJournalOwner(gameId, optimistic, owner);
+    let joined = null, startedCleanup = false;
+    while (current()) {
+      if (!await validTerminalCleanup(gameId, optimistic, owner, envelope, outcome)) {
+        if (!current()) return false;
+        throw Object.assign(new Error("invalid_cleanup_receipt"), { code: "invalid_cleanup_receipt" });
+      }
+      if (!current()) return false;
+      const cleanup = owner.jobs.get(key);
+      if (cleanup && cleanup !== joined) { joined = cleanup; await cleanup.promise; }
+      if (!current()) return false;
+      // The captured hydration row may predate a successful receipt cleanup.
+      // Prove current presence before requesting any removal of that row.
+      const cleanupBeforeRead = owner.jobs.get(key);
+      const saved = await commandJournal.list(identityId, gameId);
+      if (!current()) return false;
+      const latestCleanup = owner.jobs.get(key);
+      if (latestCleanup !== cleanupBeforeRead) continue;
+      if (latestCleanup && latestCleanup !== joined) continue;
+      const retained = saved.find(value => value.clientCommandId === envelope.clientCommandId);
+      if (!retained) {
+        if (latestCleanup) {
+          if (!await verifyCleanupAbsence(latestCleanup, saved)) return false;
+          const hadReason = owner.reasons.has(latestCleanup.token);
+          retireCleanupJob(latestCleanup, { verified: true });
+          if (hadReason) {
+            refreshStorageReasons(optimistic, owner);
+            resolveRecoveryIfClear(gameId, optimistic);
+          }
+        }
+        return current();
+      }
+      if (!isSyncCommand(retained) || retained.fingerprint !== await commandFingerprint(retained)
+        || canonicalCommandJson(retained) !== canonicalCommandJson(envelope)) {
+        throw Object.assign(new Error("invalid_saved_command"), { code: "invalid_saved_command" });
+      }
+      if (!current()) return false;
+      if (owner.jobs.get(key) !== latestCleanup) continue;
+      // A failed cleanup still has its own blocker and retry owner. Hydration
+      // must not launch another delete or erase that owner's storage failure.
+      if (latestCleanup) return true;
+      if (startedCleanup) throw Object.assign(new Error("cleanup_unverified"), { code: "cleanup_unverified" });
+      startedCleanup = true;
+      joined = startTerminalCleanup(gameId, internalCommand(envelope), outcome);
+      await joined.promise;
+    }
+    return false;
   };
   const settleOutcome = (gameId, outcome, notifications = null) => {
     const optimistic = getOptimisticState(gameId);
@@ -928,9 +979,11 @@ export const createLiveTransportStore = ({
   };
 
   const internalCommand = (envelope) => ({ envelope, kind: envelope.kind === "shared" ? "shared" : envelope.kind === "action" ? "apply" : "end-turn", clientCommandId: envelope.clientCommandId, state: clone(envelope.expectedState), action: envelope.payload.action, notation: envelope.payload.notation, computer: envelope.payload.computer, queuedAt: Number.isFinite(envelope.submittedAt) ? new Date(envelope.submittedAt).toISOString() : new Date().toISOString() });
-  const hydrateJournal = async (gameId, isCurrent = () => true) => {
+  const mayHydrateJournal = gameId => !auth?.enabled
+    || auth.session.authenticated && gameById.get(gameId)?.ownershipMode === "account_v1";
+  const hydrateJournalOnce = async (gameId, isCurrent) => {
     assertActive();
-    if (auth?.enabled && (!auth.session.authenticated || gameById.get(gameId)?.ownershipMode !== "account_v1")) return;
+    if (!mayHydrateJournal(gameId)) return;
     const optimistic = getOptimisticState(gameId);
     if (optimistic.hydrated) return;
     try {
@@ -947,12 +1000,7 @@ export const createLiveTransportStore = ({
         if (!isCurrent()) return;
         const outcome = optimistic.outcomes.get(envelope.clientCommandId);
         if (outcome) {
-          const owner = journalRecoveryState(optimistic);
-          const valid = await validTerminalCleanup(gameId, optimistic, owner, envelope, outcome);
-          if (!isCurrent() || !currentJournalOwner(gameId, optimistic, owner)) return;
-          if (!valid) throw Object.assign(new Error("invalid_cleanup_receipt"), { code: "invalid_cleanup_receipt" });
-          await commandJournal.remove(envelope);
-          if (!isCurrent() || !currentJournalOwner(gameId, optimistic, owner)) return;
+          if (!await settleHydratedTerminalRow(gameId, optimistic, envelope, outcome, isCurrent)) return;
           continue;
         }
         if (!optimistic.pendingCommands.some((entry) => entry.clientCommandId === envelope.clientCommandId)) optimistic.pendingCommands.push(internalCommand(envelope));
@@ -969,6 +1017,29 @@ export const createLiveTransportStore = ({
       optimistic.hydrated = true;
       if (saved.length) { optimistic.syncStatus = "confirming"; recalculateOptimisticGame(gameId); emitChange({ type: "journal_restored", gameId, clientCommandIds: ordered.map((entry) => entry.clientCommandId) }); void sendNextPendingCommand(gameId, { reconcileFirst: true }); }
     } catch (error) { if (isCurrent() && active) blockStorage(gameId, error); throw error; }
+  };
+
+  const hydrateJournal = async (gameId, isCurrent = () => true) => {
+    assertActive();
+    const optimistic = getOptimisticState(gameId);
+    while (isCurrent() && mayHydrateJournal(gameId) && !optimistic.hydrated) {
+      assertActive();
+      let job = optimistic.hydrationJob;
+      if (!job || !job.isCurrent()) {
+        // Share the entire validation/adoption/terminal-cleanup pass. Two
+        // readers of the same saved row must not independently remove it.
+        job = { isCurrent: () => isCurrent() && mayHydrateJournal(gameId) };
+        optimistic.hydrationJob = job;
+        job.promise = Promise.resolve().then(() => hydrateJournalOnce(gameId, job.isCurrent))
+          .finally(() => { if (optimistic.hydrationJob === job) optimistic.hydrationJob = null; });
+      }
+      try { await job.promise; }
+      catch (error) {
+        if (!active || !isCurrent() || job.isCurrent()) throw error;
+        // A different caller's obsolete pass cannot establish this caller's
+        // storage result. Re-read under its still-current recovery owner.
+      }
+    }
   };
 
   const enqueueOptimisticCommand = async ({ gameId, command }) => {
@@ -1137,6 +1208,50 @@ export const createLiveTransportStore = ({
     });
     optimistic.recoveryPromise = promise; return promise;
   };
+  const finishSocketRecovery = async (gameId, { isCurrent = () => true, beforeRetire = () => {} } = {}) => {
+    const current = () => active && isCurrent();
+    const optimistic = getOptimisticState(gameId);
+    let recoveryGeneration = optimistic.recoveryGeneration ?? 0;
+    const recoveryEpoch = optimistic.connectionRecoveryEpoch;
+    await hydrateJournal(gameId, current);
+    if (!current()) return false;
+    const admission = optimistic.admission;
+    await admission.catch(() => {});
+    const blocked = () => optimistic.storageBlocked || optimistic.unsavedCommand || optimistic.upgradeRequired
+      || ['session_changed', 'invalid_credentials'].includes(optimistic.recoveryIssue)
+      || auth?.enabled && !auth.session.authenticated;
+    const sameRecovery = () => (optimistic.recoveryGeneration ?? 0) === recoveryGeneration
+      && optimistic.connectionRecoveryEpoch === recoveryEpoch;
+    if (!current() || !sameRecovery() || optimistic.admission !== admission || blocked()) return false;
+    // A snapshot is not a receipt for saved intent. Hydrate first and keep the
+    // durable sender's existing ownership until every command is settled.
+    if (optimistic.pendingCommands.length || optimistic.forceSnapshot) {
+      const reconciliation = reconcileGame(gameId);
+      recoveryGeneration = optimistic.recoveryGeneration ?? 0;
+      await reconciliation;
+    }
+    if (!current() || !sameRecovery() || blocked() || optimistic.admission !== admission || optimistic.pendingCommands.length || optimistic.forceSnapshot
+      || optimistic.attempt?.commandId != null) return false;
+    const owner = optimistic.recoveryOwner;
+    const attempt = optimistic.attempt;
+    if (beforeRetire() === false || !current() || optimistic.recoveryOwner !== owner
+      || optimistic.attempt !== attempt || !sameRecovery()
+      || blocked() || optimistic.admission !== admission || optimistic.pendingCommands.length || optimistic.forceSnapshot) return false;
+    if (owner) {
+      owner.superseded = true;
+      owner.reject?.(Object.assign(new Error("recovery_superseded"), { code: "recovery_superseded" }));
+      optimistic.recoveryOwner = null; optimistic.recoveryPromise = null;
+    }
+    // Only an obsolete read can be cancelled here. Accepted or uncertain writes
+    // remain under the durable command journal, including their deadlines.
+    if (attempt && attempt.commandId === null) {
+      optimistic.attempt = null;
+      attempt.controller.abort(); attempt.finish();
+    }
+    setConnectionRecovering(gameId, false);
+    return true;
+  };
+
   const retrySavingOnce = async (gameId, optimistic, owner, mayRecover) => {
     const reasons = [...owner.reasons.keys()], jobs = [...owner.jobs.values()];
     const current = () => currentJournalOwner(gameId, optimistic, owner) && mayRecover();
@@ -1869,6 +1984,7 @@ export const createLiveTransportStore = ({
     loadGameLegalActions,
     loadGamePieceMoves,
     reconcileGame,
+    finishSocketRecovery,
     setConnectionRecovering,
     prepareSafeReconnect(gameId) {
       const optimistic = getOptimisticState(gameId);
