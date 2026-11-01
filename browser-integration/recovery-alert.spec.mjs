@@ -39,7 +39,7 @@ for(const width of [320,375,390,479,480,481,899,900,901,1440]) test(`alert modes
    if(width<480)expect(buttons.y).toBeGreaterThanOrEqual(copy.y+copy.height);
    else expect(buttons.x).toBeGreaterThanOrEqual(copy.x+copy.width);
   }
-  const caret=alert.getByRole('button',{name:'Details'});
+  const caret=alert.getByRole('button',{name:'Details',exact:true});
   if(await caret.count()){
    const collapsed=await caret.boundingBox();await caret.click();await expect(caret).toHaveAttribute('aria-expanded','true');
    await containedControls(page);const expanded=await caret.boundingBox();expect(expanded.x).toBeCloseTo(collapsed.x,1);expect(expanded.y).toBeCloseTo(collapsed.y,1);
@@ -51,24 +51,24 @@ for(const width of [320,375,390,479,480,481,899,900,901,1440]) test(`alert modes
  expect((await runScopedAxeScan({page,include:'[data-testid="fixture-alert"]'})).violations).toEqual([]);
  expect(await page.getByTestId('game-board').boundingBox()).toEqual(boardBefore);
  if((width===390&&info.project.name==='webkit')||(width===1440&&info.project.name==='chromium')){
-  await page.screenshot({path:info.outputPath('alert-collapsed.png')});await page.getByRole('button',{name:'Details'}).click();await page.screenshot({path:info.outputPath('alert-expanded.png')});
+  await page.screenshot({path:info.outputPath('alert-collapsed.png')});await page.getByRole('button',{name:'Details',exact:true}).click();await page.screenshot({path:info.outputPath('alert-expanded.png')});
  }
 });
 
 for(const viewport of [{width:667,height:320},{width:390,height:460}]) test(`expanded details remain usable in ${viewport.width}x${viewport.height}`,async({page})=>{
  await page.setViewportSize(viewport);await page.emulateMedia({reducedMotion:'reduce'});await openFixture(page);
  await page.evaluate(()=>{window.renderMode('storage');Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async()=>{throw Error('Unavailable');}}});});
- await page.getByRole('button',{name:'Details'}).click();await page.getByRole('button',{name:'Copy full details',exact:true}).click();
+ await page.getByRole('button',{name:'Details',exact:true}).click();await page.getByRole('button',{name:'Copy full details',exact:true}).click();
  await expect(page.getByTestId('fixture-alert')).toContainText('Copy the full details below');await containedControls(page);
  const details=page.locator('.issue-details');expect(await details.evaluate(el=>getComputedStyle(el).overflowY)).toBe('auto');
  expect((await page.getByTestId('fixture-alert').boundingBox()).y+(await page.getByTestId('fixture-alert').boundingBox()).height).toBeLessThanOrEqual(viewport.height-70);
- await page.getByRole('button',{name:'Details'}).click();await containedControls(page);
+ await page.getByRole('button',{name:'Details',exact:true}).click();await containedControls(page);
 });
 
 test('enlarged text retains alert actions and disclosure',async({page})=>{
  await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'});await openFixture(page);
  await page.evaluate(()=>{document.documentElement.style.fontSize='32px';window.renderMode('storage',{longMessage:true});});
- await containedControls(page);await page.getByRole('button',{name:'Details'}).click();await containedControls(page);
+ await containedControls(page);await page.getByRole('button',{name:'Details',exact:true}).click();await containedControls(page);
 });
 
 for(const reduced of [false,true]) test(`confirmation fades the board and sweeps right${reduced?' with static reduced motion':''}`,async({page},info)=>{

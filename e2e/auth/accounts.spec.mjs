@@ -223,7 +223,7 @@ test("failed page reads after registration preserve the original action and reso
   await expect(dialog(page)).not.toBeVisible();
   const session = await page.evaluate(async () => (await (await fetch('/api/auth/session')).json()).contextId);
   expect(session).toBeTruthy();
-  await error.getByRole('button',{name:'Details'}).click();
+  await error.getByRole('button',{name:'Details',exact:true}).click();
   const report = page.locator('.issue-diagnostic').filter({has:page.locator('.issue-details')});
   await expect(report).toContainText('route_read_failed');
   await expect(report).toContainText('503');

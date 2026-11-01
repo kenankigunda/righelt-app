@@ -49,7 +49,7 @@ for (const width of [933, 932, 901, 900, 899, 390]) test(`recovery overlay and s
  const after=await geometry();expect(Math.abs(after.y-before.y)).toBeLessThanOrEqual(1);expect(Math.abs(after.x-before.x)).toBeLessThanOrEqual(1);
  const box=await banner.boundingBox();expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(width+1);
  if(width===390){
-  const caret=banner.getByRole("button",{name:"Details"});
+  const caret=banner.getByRole("button",{name:"Details",exact:true});
   expect(await caret.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
   const hit=await caret.boundingBox();expect(hit.width).toBeGreaterThanOrEqual(44);expect(hit.height).toBeGreaterThanOrEqual(44);
   await caret.click();await expect(caret).toHaveAttribute("aria-expanded","true");
