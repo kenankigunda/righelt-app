@@ -479,6 +479,12 @@ This section is normative and applies to every new endpoint, page, and performan
 - Undo applies directly in self-play and against a computer controlled by the same human. While its durable receipt is pending, do not show an undo request, acceptance message, or approval controls. Confirm completion as “Move undone”.
 - Only another human controller must approve Undo. Keep that player's request, Accept, Reject and Cancel request flow. Use authoritative seat-controller identities, never display names, to distinguish these cases.
 - Direct Undo keeps the existing serialized command, receipt and recovery path. Computer work is paused and reconciled before restoration, then resumes under the acknowledged position and control generation. Reopening a completed game by explicit Undo retains these same safeguards.
+### Projected status during a sequence
+
+- During a live rush or push sequence, show every piece's status as it would be after the turn ended at its current position. Recompute the projection after each acknowledged sequence step, including defender retreats and follows.
+- Pieces that would be destroyed use the same crossed-out treatment as historical destruction. A later step that restores supply removes that forecast and restores the piece's projected status.
+- A forecast never removes a real piece, changes frozen action eligibility, completes a turn, adds a history destruction record, or triggers removal animation or sound. Real move admission continues to use the authoritative state. Preserve the existing acknowledged-history presentation separately.
+
 
 ### History endpoint roles
 

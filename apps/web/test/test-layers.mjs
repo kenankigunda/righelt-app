@@ -1,5 +1,6 @@
 export const WEB_UNIT_TEST_FILES = Object.freeze([
   "undo-policy.test.mjs",
+  "sequence-status-preview.test.mjs",
   "game-lifecycle.test.mjs",
   "history-turn-preview.test.mjs",
   "computer-activity.test.mjs",
