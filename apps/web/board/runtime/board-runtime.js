@@ -2,7 +2,7 @@ import { createRushSupplyGuidanceClient, rushActionKey } from '../rush-supply-gu
 import {boardMessagePresentation,renderBoardMessageHtml,renderBoardInlineAction,updateBoardInlineActionLabel,patchBoardMessage} from '../message-presentation.js';
 import { inspectionPaths, supplyOwnerAt, supplyPointForOwner } from "../inspection.js";
 import {renderCoordinateChip} from '../coordinate-chip.js';
-import {SELECTED_CONTINUATION_LABELS} from '../piece-explanations.js';
+import {SELECTED_CONTINUATION_LABELS, SELECTED_PIECE_EXPLANATIONS} from '../piece-explanations.js';
 import { REMOVAL_EFFECT_DURATION_MS } from "../removal-timing.js";
 import {
   getBlockedPreviewLabel,
@@ -23,6 +23,11 @@ import {
 } from "../../generated/packages/game-engine/src/continuation.js";
 import { buildPieceMoveResponse, listPieceMovesFromLegalActions } from "../client-move-generation.js";
 
+const RUSH_SUPPLY_EFFECT = {
+  immediate: 'Restores required supply',
+  further: 'Restores required supply after further rushes',
+};
+const RUSH_SUPPLY_LOADING = 'Finding rushes that restore supply';
 const PLAYER_TONE_CLASSES = ["player-tone-p1", "player-tone-p2", "player-tone-both", "player-tone-neutral"];
 
 const escapeHtml = (value) =>
@@ -629,19 +634,26 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       const points = ids.map(id => getBoardPieceById(id)?.position).filter(Boolean)
         .sort((a,b) => a.row - b.row || a.col - b.col);
       const coordinates = points.map(point => renderCoordinateChip(point, 'board-preview-coordinate-chip-rush-blocker')).join(', ');
-      let detail = rushGuidanceStatus === 'loading' ? 'Finding rushes that restore supply' : '';
+      let detail = rushGuidanceStatus === 'loading' ? RUSH_SUPPLY_LOADING : '';
       const action = selectedTarget && selectedPieceMoves.find(action => action.type === 'rush' && sameCoordinate(action.to, selectedTarget));
       if (action) {
         const entry = rushGuidance?.actions.find(entry => rushActionKey(entry.action) === rushActionKey(action));
         const actionCopy = `${getUsesHoverTargetSelection() ? 'Click to' : 'Click again to'} ${actionPreviewLabel('rush', state, selectedTarget)}`;
-        const effect = entry ? entry.immediate ? 'Restores required supply' : 'Restores required supply after further rushes' : '';
+        const effect = entry ? entry.immediate ? RUSH_SUPPLY_EFFECT.immediate : RUSH_SUPPLY_EFFECT.further : '';
         detail = [actionCopy, effect || detail].filter(Boolean).join(' · ');
       } else {
         const blocked = selectedTarget && selectedPieceMovePreviews.find(preview => sameCoordinate(preview.to, selectedTarget) && preview.legal === false);
         const explanation = blocked ? getBlockedMoveExplanation(blocked.blockedReason) : pieceSummary?.details?.explanation;
         if (explanation) detail = [`${selectedSource ? `Piece at (${selectedSource.row}, ${selectedSource.col}) – ` : ''}${explanation}`, detail].filter(Boolean).join(' · ');
       }
-      setBoardPreviewPromptHtml(`<span class="board-obligatory-pill">Obligatory</span> Rush to restore supply to the ${points.length === 1 ? 'piece' : 'pieces'} at ${coordinates}${detail ? `<span class="board-rush-guidance-detail">${escapeHtml(detail)}</span>` : ''}`);
+      // Reserve the real explanation grammar before the first selection. Data
+      // attributes supply invisible sizing copy without adding it to narration
+      // textContent or the accessibility tree.
+      const reservations = [
+        `Click again to ${actionPreviewLabel('rush', state, {row:9,col:9})} · ${RUSH_SUPPLY_EFFECT.further}`,
+        ...SELECTED_PIECE_EXPLANATIONS.map(text => `Piece at (9, 9) – ${text} · ${RUSH_SUPPLY_LOADING}`),
+      ].map(copy => `<span class="board-rush-guidance-sizing" data-copy="${escapeHtml(copy)}" aria-hidden="true" inert></span>`).join('');
+      setBoardPreviewPromptHtml(`<span class="board-obligatory-pill">Obligatory</span> Rush to restore supply to the ${points.length === 1 ? 'piece' : 'pieces'} at ${coordinates}<span class="board-rush-guidance-detail">${reservations}<span class="board-rush-guidance-copy">${escapeHtml(detail)}</span></span>`);
       return;
     }
     const explanation = pieceSummary?.details?.explanation;

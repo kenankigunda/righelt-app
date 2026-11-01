@@ -1093,7 +1093,10 @@ button:disabled {
   vertical-align: baseline;
   white-space: nowrap;
 }
-.board-rush-guidance-detail { display: block; font-size: .875em; }
+.board-rush-guidance-detail { display: grid; font-size: .875em; }
+.board-rush-guidance-detail > span { grid-area: 1 / 1; min-width: 0; }
+.board-rush-guidance-sizing { visibility: hidden; pointer-events: none; user-select: none; }
+.board-rush-guidance-sizing::before { content: attr(data-copy); }
 .cell.rush-guidance-target { outline: 2px solid var(--warning); outline-offset: -4px; }
 .cell.rush-guidance-other { background: var(--surface-hover-quiet); }
 .cell.rush-guidance-other .move-ghost { opacity: .25; }

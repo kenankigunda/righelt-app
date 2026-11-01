@@ -65,6 +65,6 @@ test('pageshow restarts guidance without a selection and rejects a canceled same
   jobs[0].reject(new Error('canceled'));await flush();assert.match(html,/Finding rushes/);
   // Several sources leave the player in control of which piece to choose.
   jobs[1].resolve({...result,actions:[...result.actions,{action:legal.find(a=>a.actorId==='C1'),immediate:false}]});
-  await flush();assert.equal(runtime.getSelection().selectedPieceId,null);assert.doesNotMatch(html,/Finding/);assert.match(html,/Obligatory/);
+  await flush();assert.equal(runtime.getSelection().selectedPieceId,null);assert.match(html, /class="board-rush-guidance-copy"><\/span>/);assert.match(html,/Obligatory/);
   runtime.destroy();
 });
