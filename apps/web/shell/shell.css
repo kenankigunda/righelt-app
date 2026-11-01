@@ -73,7 +73,7 @@ body {
 .shell-route-transition-layer {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: var(--shell-layer-transition);
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
@@ -285,7 +285,7 @@ body {
   display: flex;
   align-items: flex-start;
   transform: translateX(-50%);
-  z-index: 2;
+  z-index: var(--shell-layer-notice);
 }
 
 .shell-header-status[data-shell-alert-zone="idle"] {
@@ -1803,7 +1803,7 @@ textarea:focus-visible {
   align-items: stretch;
   justify-content: flex-end;
   gap: 0;
-  z-index: 10;
+  z-index: var(--shell-layer-utility-backdrop);
   pointer-events: none;
 }
 
@@ -1824,7 +1824,7 @@ textarea:focus-visible {
   transition:
     transform 180ms ease,
     opacity 180ms ease;
-  z-index: 11;
+  z-index: var(--shell-layer-utility);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   will-change: transform, opacity;
@@ -2042,7 +2042,7 @@ textarea:focus-visible {
     width: auto;
     max-width: none;
     transform: none;
-    z-index: 20;
+    z-index: var(--shell-layer-notice);
     min-height: 0;
     height: auto;
     max-height: calc(100dvh - var(--shell-mobile-tabbar-height) - 1rem);

@@ -367,7 +367,7 @@ html[data-page-active="false"] .shell-header button.ui-icon-button {transition:n
 @media(max-width:480px){.game-result{padding:24px;margin:16px 0 32px;}}
 
 /* Account settings occupy the same side rail as the secondary tools. */
-.account-dialog[data-presentation="flyout"] {position:fixed;inset:0 0 0 auto;margin:0;width:var(--shell-flyout-wide-width);max-width:none;height:100dvh;max-height:100dvh;padding:28px;z-index:100;overflow-y:auto;--corner-start:var(--player-p1);--corner-end:var(--player-p2);--flyout-offset-x:100%;--flyout-offset-y:0%;animation:account-rail-enter 180ms ease-out;transition:transform 180ms ease,opacity 180ms ease;}
+.account-dialog[data-presentation="flyout"] {position:fixed;inset:0 0 0 auto;margin:0;width:var(--shell-flyout-wide-width);max-width:none;height:100dvh;max-height:100dvh;padding:28px;z-index:var(--shell-layer-utility);overflow-y:auto;--corner-start:var(--player-p1);--corner-end:var(--player-p2);--flyout-offset-x:100%;--flyout-offset-y:0%;animation:account-rail-enter 180ms ease-out;transition:transform 180ms ease,opacity 180ms ease;}
 .account-dialog[data-presentation="flyout"] .account-form {position:relative;}
 .account-player-signature {display:flex;align-items:center;gap:14px;margin:4px 0 24px;}
 .account-player-signature .player-emblem {width:64px;height:64px;color:var(--action-color);}

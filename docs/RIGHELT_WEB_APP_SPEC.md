@@ -486,3 +486,11 @@ This section is normative and applies to every new endpoint, page, and performan
 - Desktop and mobile History opt into dashed violet 2px source borders and solid green 2px target borders. Shared-role squares retain the dashed violet outer border plus an inset solid green 2px outline. Colors remain `#7650A6` and `#1F7A5A`.
 - Turn roles are the union of all acknowledged action endpoints, including intermediate shared squares. Preserve final positions, owner colors, source ghosts, destruction/projection marks and push/follow arrow deduplication. Defender retreats remain distinct. Individual axes remain unchanged; aggregate axes and step numbers stay absent.
 - The explicit History presentation context must reach both the desktop board runtime and mobile preview adapter. It resets when returning live. Live automatic opponent overviews and replay retain their existing appearance.
+
+### Global notice layers
+
+Game recovery and destination notices use the shared `--shell-layer-notice` page layer. They remain above board decorations, menus, nonmodal utility/account rails, mobile navigation and the route-transition ribbon. Native `showModal()` dialogs and their backdrops remain above notices in the browser top layer. Notices themselves stay nonmodal: they do not make the page inert, trap focus or intercept uncovered page input.
+
+Keep the existing notice DOM, delegated native controls, incident identity, live-region deduplication and document Tab order. Header ancestors must not acquire transforms, filters, isolation, opacity animation or clipping that traps the notice in a lower stacking context. Route reveal motion belongs on route content beneath the header. A document-level notice host is a fallback requiring a separate event/focus ownership review.
+
+Use the named page-layer tokens in `design-tokens.css` rather than component-specific escalation. Keep local card/stone layers local. Acceptance includes actual overlay pixels and native hit targets, unchanged focused controls through updates, modal Escape/focus restoration, nonmodal rail coexistence, narrow and zoomed layouts, and notice/ribbon coexistence during navigation. A computed layer number alone is insufficient visual proof.

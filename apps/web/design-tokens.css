@@ -1,4 +1,12 @@
 :root {
+  /* Page layers are shared across body-level decoration and in-app surfaces.
+     Native showModal() dialogs remain in the browser top layer above notices. */
+  --shell-layer-loading-edge: 8;
+  --shell-layer-utility-backdrop: 10;
+  --shell-layer-utility: 11;
+  --shell-layer-navigation: 25;
+  --shell-layer-transition: 40;
+  --shell-layer-notice: 50;
   --surface-foundation: #f5f2e9;
   --surface-raised: #fffdf6;
   --text-primary: #252b2d;
