@@ -486,3 +486,10 @@ This section is normative and applies to every new endpoint, page, and performan
 - Desktop and mobile History opt into dashed violet 2px source borders and solid green 2px target borders. Shared-role squares retain the dashed violet outer border plus an inset solid green 2px outline. Colors remain `#7650A6` and `#1F7A5A`.
 - Turn roles are the union of all acknowledged action endpoints, including intermediate shared squares. Preserve final positions, owner colors, source ghosts, destruction/projection marks and push/follow arrow deduplication. Defender retreats remain distinct. Individual axes remain unchanged; aggregate axes and step numbers stay absent.
 - The explicit History presentation context must reach both the desktop board runtime and mobile preview adapter. It resets when returning live. Live automatic opponent overviews and replay retain their existing appearance.
+
+
+### Stable human controls during computer maintenance
+
+A fresh, owned computer lease renewal that changes neither the human actor's position nor their authority must not disable a legal Pass, End turn, piece selection, or destination. Keep control-changing requests serialized. Exempt gameplay only while the exact renewal, owner, device, generation, lease, state/revision, and recovery episode remain valid. Storage uncertainty, overdue or failed requests, incompatible versions, lost permissions, changed positions, and independent recovery continue to disable unavailable actions; blocked input never creates deferred gameplay intent.
+
+An explicit permitted action still enters the ordinary durable journal and receipt chain. A shared predecessor does not advance gameplay revision. Compatible metadata arriving during that durable write may update a completed projection without another rules worker, but only after rechecking authority, permissions, queue lineage, recovery, and viewing context. Never publish a solid local move before durable admission, reuse a stale authority projection, or recompute an admitted command to conceal a failure.
