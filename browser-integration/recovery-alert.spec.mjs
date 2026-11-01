@@ -69,6 +69,17 @@ test('enlarged text retains alert actions and disclosure',async({page})=>{
  await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'});await openFixture(page);
  await page.evaluate(()=>{document.documentElement.style.fontSize='32px';window.renderMode('storage',{longMessage:true});});
  await containedControls(page);await page.getByRole('button',{name:'Details',exact:true}).click();await containedControls(page);
+ // Capture the clipboard adapter to verify native control feedback, not OS clipboard permissions.
+ const expected=await page.evaluate(async()=>{
+  const diagnostics=(await import('/apps/web/shell/issue-diagnostics.js')).issueDiagnostics;
+  const id=document.querySelector('.issue-diagnostic').dataset.incidentId;
+  Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async value=>{window.copiedFullDetails=value;}}});
+  return diagnostics.text(id);
+ });
+ const copy=page.getByRole('button',{name:'Copy full details',exact:true});await copy.click();
+ await expect(page.locator('.issue-details [role="status"]')).toHaveText('Full details copied.');
+ expect(await page.evaluate(()=>window.copiedFullDetails)).toBe(expected);
+ await expect(copy).toBeFocused();await containedControls(page);
 });
 
 for(const reduced of [false,true]) test(`confirmation fades the board and sweeps right${reduced?' with static reduced motion':''}`,async({page},info)=>{
