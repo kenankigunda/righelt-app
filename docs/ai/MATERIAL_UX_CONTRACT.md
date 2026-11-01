@@ -1,5 +1,17 @@
 # Marble and glass UX contract
 
+## Selected notification material: type-colored vellum
+
+Final user instruction: “Ok. Let's go ahead and use the colored paper tied to the notification type on both mobile and desktop, with blue as the default.”
+
+Use translucent vellum paper notifications on both desktop and mobile: mild blue for default/neutral roles, soft amber for source warning tone, muted rose for source danger/error tone. Preserve the selected higher transparency, paper grain, opaque readable ink/controls and restrained paper edge/contact shadow. This supersedes plain-desktop and optical-crystal explorations. Exact opacity, color, curl, dimensions and generated control silhouettes are tuning, not tokens.
+
+Map actual source role/tone, never keywords in copy. Storage saving failure is warning/amber; failed operations use danger/rose. Default blue is not player affiliation. Actor-specific activity remains independent. Keep existing local invite success inline; do not introduce a green global notice type or wrap every inline field/status message in paper.
+
+Preserve actual copy/actions, quiet grace, permissions, incident/focus/stack identity, inert hidden cards, first native activation, diagnostic access, responsive anchor/target constraints, Board geometry, unseen-audio rules and nonmodal/modal layers. Paper decoration must not intercept input or reduce readability. Notice arrival/departure motion is a separate ongoing study, not selected by this material approval.
+
+The [selected notification treatment and cropped references](https://github.com/kenankigunda/righelt-backlog/blob/main/backlog/docs/tickets/t-118/marble-2026-11-01/notification-study/selected-notification-treatment.md) and selected-type-colors-manifest.json own the exact approval/crop scope. Only selected paper/material and blue/amber/rose crops are included. Selected appearance is not production proof: native contrast/transparency/fallback/performance, focus/hit-testing, responsive stacking and runtime workflows remain required.
+
 ## Selected artwork-swap motion: draw back and slide
 
 Final human approval from the study: “Looks fabulous. We love to see it. Ship it to the parent thread as the decision and have it update its debrief and any relevant documentation, then archive”.
@@ -155,7 +167,7 @@ Match all elements of the selected design references wherever possible, without 
 
 Use a per-property adopt/adapt/conflict/deferred ledger from the [reference/product reconciliation protocol](https://github.com/kenankigunda/righelt-backlog/blob/main/backlog/docs/tickets/t-118/marble-2026-11-01/reference-product-reconciliation.md). Include small visual details and every actual control/state, not just material backgrounds. First demonstrate an adaptation satisfying both obligations. Resolve a genuine conflict autonomously using bounded visual/source evidence and the option most consistent with the end goal. Record alternatives, decision, rationale and consequences in the final nonblocking conflict report. No silent loss of approved beauty or functionality. UX validation enforces visual fidelity; product testing enforces workflow fidelity; both independently review repairs and native combined proof.
 
-Artwork-swap motion is now selected as draw back and slide, described above. Notification styling is a separate study. Selection is intended behavior, not implementation proof.
+Artwork-swap motion is now selected as draw back and slide, described above. Notification material is now selected type-colored vellum; its motion remains a separate study. Selection is intended behavior, not implementation proof.
 
 ## Frequent selected-only checkpoints
 
