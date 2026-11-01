@@ -28,6 +28,19 @@ test('replay message steps preserve action nodes and keyboard focus',async({page
  await expect(page.locator('#preview')).toContainText('Finished <safely>');expect(await page.locator('#preview safely').count()).toBe(0);
 });
 
+test('vertical translation preserves exact board layout sizing',async({page})=>{
+ await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
+ await page.evaluate(()=>window.boardFixture.setup('pass',false));await settledMessage(page);
+ const values=await page.locator('#board').evaluate(board=>{
+  const measure=()=>{const rect=board.getBoundingClientRect(),style=getComputedStyle(board);return{x:rect.x,y:rect.y,width:rect.width,height:rect.height,layoutHeight:style.height,boxSizing:style.boxSizing};};
+  const before=measure();board.style.transform='translateY(300px)';const translated=measure();board.style.removeProperty('transform');return{before,translated,restored:measure()};
+ });
+ expect(values.before.boxSizing).toBe('border-box');
+ expect(values.translated.y).not.toBe(values.before.y);
+ expect({x:values.translated.x,width:values.translated.width,layoutHeight:values.translated.layoutHeight}).toEqual({x:values.before.x,width:values.before.width,layoutHeight:values.before.layoutHeight});
+ expect(values.restored).toEqual(values.before);
+});
+
 test('compact Pass accepts actual touches at both ends of its 44px hit area without moving the board',async({page},info)=>{
   await page.goto('/browser-integration/support/board-message.html');
   await page.waitForFunction(()=>window.fixtureReady);
@@ -61,7 +74,7 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
   },scale);
   const measure=()=>page.locator('main').evaluate(main=>{
     const rect=selector=>{const value=main.querySelector(selector).getBoundingClientRect();return{x:value.x,y:value.y,width:value.width,height:value.height};};
-    return{cardHeight:main.getBoundingClientRect().height,board:rect('#board'),slot:rect('.board-message-slot')};
+    return{cardHeight:main.getBoundingClientRect().height,board:rect('#board'),boardLayoutHeight:getComputedStyle(main.querySelector('#board')).height,slot:rect('.board-message-slot')};
   });
   await settledMessage(page);const initial=await measure();
   expect(initial.slot.height).toBeGreaterThanOrEqual(44);
@@ -123,7 +136,7 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
     // Different semantic messages may use their own intrinsic height. Keep the
     // board size and horizontal placement exact, and account for all vertical
     // movement solely through the settled message slot.
-    expect({x:current.board.x,width:current.board.width,height:current.board.height}).toEqual({x:initial.board.x,width:initial.board.width,height:initial.board.height});
+    expect({x:current.board.x,width:current.board.width,layoutHeight:current.boardLayoutHeight}).toEqual({x:initial.board.x,width:initial.board.width,layoutHeight:initial.boardLayoutHeight});
     expect({x:current.slot.x,y:current.slot.y,width:current.slot.width}).toEqual({x:initial.slot.x,y:initial.slot.y,width:initial.slot.width});
     const growth=current.slot.height-initial.slot.height;
     expect(current.board.y-initial.board.y).toBeCloseTo(growth,5);
