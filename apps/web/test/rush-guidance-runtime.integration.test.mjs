@@ -70,7 +70,8 @@ test('pageshow restarts guidance without a selection and rejects a canceled same
 });
 
 
-test('guidance observation preserves failed copy/legal actions and a throwing sink cannot affect rendering',async()=>{
+test('guidance observation preserves failed copy/legal actions and a throwing sink cannot affect rendering',async t=>{
+ const previous=globalThis.document;globalThis.document={removeEventListener(){}};t.after(()=>{globalThis.document=previous;});
  for(const throws of [false,true]){
   const events=[];const f=fixture({onGuidanceDiagnostic:event=>{events.push(event);if(throws)throw Error('sink unavailable');}});
   await f.runtime.loadSnapshot(state,{legalActions:legal});await flush();f.fail(Object.assign(new Error('private raw payload'),{code:'rules_budget_exceeded'}));await flush();
@@ -83,7 +84,8 @@ test('guidance observation preserves failed copy/legal actions and a throwing si
 });
 
 
-test('a success-publication exception is attributed to presentation rather than worker analysis',async()=>{
+test('a success-publication exception is attributed to presentation rather than worker analysis',async t=>{
+ const previous=globalThis.document;globalThis.document={removeEventListener(){}};t.after(()=>{globalThis.document=previous;});
  const events=[];let fail=true;const f=fixture({onGuidanceDiagnostic:event=>events.push(event)},input=>{if(fail&&input.rushSupplyGuidance){fail=false;throw Error('private renderer details');}});
  await f.runtime.loadSnapshot(state,{legalActions:legal});await flush();f.complete();await flush();
  const failed=events.find(event=>event.phase==='failed');assert.ok(failed);assert.equal(failed.stage,'presentation');assert.equal(failed.code,'unavailable');

@@ -1,12 +1,13 @@
 import {RUSH_GUIDANCE_TIMEOUT_MS} from './rush-supply-guidance.js';
 let nextOwner=0;
+const ownerId=()=>{try{return crypto.randomUUID();}catch{return `${Date.now()}:${Math.random()}:${++nextOwner}`;}};
 const stages=new Set(['request','result-validation','presentation']);
 const known=new Set(['rules_timeout','rules_cancelled','rules_budget_exceeded','empty_rush_guidance']);
 
 // Observation only. A broken sink cannot alter query, rendering or admission.
 export function createGuidanceDiagnostics(onEvent,{now=()=>performance.now()}={}){
  if(typeof onEvent!=='function')return {start:()=>null,failed(){},resolved(){},retire(){}};
- const owner=++nextOwner;let current=null,sequence=0;
+ const owner=ownerId();let current=null,sequence=0;
  const time=()=>{try{return now();}catch{return 0;}};
  const emit=(phase,episode,error,stage='request')=>{
   if(!episode||episode!==current)return;

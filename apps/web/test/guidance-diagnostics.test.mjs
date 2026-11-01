@@ -33,3 +33,11 @@ test('local incident sink deduplicates current failures and resolves only the ex
  assert.equal(captured[0].data.operation,'rush_guidance');assert.equal('state' in captured[0].data,false);
  sink({phase:'resolved',episode:'second'});assert.deepEqual(resolved,['guidance:g:first','guidance:g:second']);
 });
+
+test('a reloaded observer owner cannot reuse an earlier persisted episode key',async()=>{
+ const first=await import('../board/guidance-diagnostics.js?owner-first');
+ const reloaded=await import('../board/guidance-diagnostics.js?owner-reloaded');
+ const a=first.createGuidanceDiagnostics(()=>{}).start();
+ const b=reloaded.createGuidanceDiagnostics(()=>{}).start();
+ assert.notEqual(a.id,b.id,'module-local sequence resets must not collide across reloads');
+});
