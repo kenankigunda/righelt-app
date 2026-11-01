@@ -44,10 +44,12 @@ const acceptedReceipt = async (page, command) => {
   }, { timeout: 30000, message: 'The exact native command must have a durable accepted receipt' }).toBe('accepted');
   return result;
 };
-const resumeHere = async page => {
+const resumeHere = async (page, gameId) => {
+  await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', gameId);
+  await expect(page.locator('#app')).toHaveAttribute('data-shell-layout-mode', 'narrow');
   await switchGamePanel(page, 'players');
   await page.getByRole('button', { name: 'Horus, Red, Paused', exact: true }).click();
-  await page.getByRole('button', { name: 'Resume here', exact: true }).first().click();
+  await page.locator('[data-game-panel="join"] [data-player-side="p1"]').getByRole('button', { name: 'Resume here', exact: true }).click();
 };
 const journalEntry = (page, command) => page.evaluate(envelope => new Promise((resolve, reject) => {
   const open = indexedDB.open('righelt.online-commands.v2'); open.onerror = () => reject(open.error);
@@ -77,7 +79,7 @@ test('the retained follow saves once, survives reload and resumes native Horus p
     return request.postDataJSON()?.payload?.computer?.generation > minimumGeneration;
   });
   const firstRequest = nextCommand(-1);
-  await resumeHere(page);
+  await resumeHere(page, game.id);
   const command = (await firstRequest).postDataJSON(), saved = await acceptedReceipt(page, command);
   expect(command.payload.action).toEqual(action);
   expect(command.payload.computer.modelId).toBe(game.computer.modelId);
@@ -98,7 +100,7 @@ test('the retained follow saves once, survives reload and resumes native Horus p
   expect(reloaded.computer.modelId).toBe(game.computer.modelId);
   await expect.poll(() => journalEntry(page, command)).toBeNull();
   const resumedRequest = nextCommand(paused.computer.generation);
-  await resumeHere(page);
+  await resumeHere(page, game.id);
   const laterCommand = (await resumedRequest).postDataJSON(), later = await acceptedReceipt(page, laterCommand);
   expect(laterCommand.clientCommandId).not.toBe(command.clientCommandId);
   expect(laterCommand.payload.computer.modelId).toBe(game.computer.modelId);
