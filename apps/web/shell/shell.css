@@ -796,7 +796,7 @@ button.secondary:disabled {
   animation: shell-game-alert-reveal 180ms ease;
   overflow: visible;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas: "copy disclosure" "actions actions" "details details";
   grid-template-rows: auto auto minmax(0, 1fr);
   gap: 12px 8px;
@@ -893,9 +893,18 @@ button.secondary:disabled {
   grid-template-rows: auto;
 }
 
+/* Keep the labelled disclosure from narrowing the message at small widths.
+   This layout is identical before and after expansion, preserving its hit target. */
+@container game-alert (width < 480px) {
+  .shell-game-alert:has(.shell-game-alert-actions):has(.issue-diagnostic) {
+    grid-template-areas: "copy copy" "actions disclosure" "details details";
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+}
+
 @container game-alert (min-width: 480px) {
   .shell-game-alert:has(.shell-game-alert-actions) {
-    grid-template-columns: minmax(0, 1fr) auto 44px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     grid-template-areas: "copy actions disclosure" "details details details";
     grid-template-rows: auto minmax(0, 1fr);
   }
@@ -2198,15 +2207,17 @@ textarea:focus-visible {
 @keyframes reconnect-sweep { from { transform: translateX(0); } to { transform: translateX(800%); } }
 [data-loading-hidden] .reconnect-background::before,
 [data-loading-hidden] .reconnect-background::after { animation-play-state: paused; }
-.issue-diagnostic > button.issue-caret { background: transparent; color: var(--muted); box-shadow: none; border: 0; min-width: 44px; min-height: 44px; padding: 0; opacity: .6; font-size: 20px; }
+.issue-diagnostic > button.issue-caret { background: transparent; color: inherit; box-shadow: none; border: 0; min-width: 44px; min-height: 44px; padding: 6px 10px; }
 .issue-details { font-size: 13px; line-height: 1.4; }
 .issue-details pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; user-select: text; }
 .shell-game-alert .issue-diagnostic { display: contents; }
-.shell-game-alert .issue-caret { grid-area: disclosure; align-self: start; width: 44px; height: 44px; }
+.shell-game-alert .issue-caret { grid-area: disclosure; align-self: start; width: auto; min-height: 44px; }
 .shell-game-alert .issue-details { grid-area: details; min-width: 0; min-height: 0; overflow: auto; border-top: 1px solid var(--divider, var(--line)); padding-top: 12px; }
 .shell-game-alert .issue-details > p { margin: 0 0 8px; }
 .shell-game-alert .issue-details > button { min-height: 44px; margin: 0 8px 8px 0; }
-.shell-game-alert .issue-details pre { margin: 0; }
+.shell-game-alert .issue-details { display: flex; flex-direction: column; }
+.shell-game-alert .issue-details > :is(p, button) { flex: 0 0 auto; }
+.shell-game-alert .issue-details pre { margin: 0; min-height: 2.8em; flex: 1 1 auto; overflow: auto; }
 .shell-header-status:has(.issue-details) { height: auto; }
 @media (prefers-reduced-motion: reduce) {
   .board-wrap > .board, .board-wrap > .overlay-lines { transition: none; }
