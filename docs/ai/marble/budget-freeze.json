@@ -1,0 +1,51 @@
+{
+  "status": "unmeasured-schema-not-acceptance",
+  "baseline": {
+    "appRevision": "0ace3cb4cc0c4a5105c949844070a7e1ed79fb22",
+    "engineBuildIdentity": null,
+    "functionalDependencyHeads": {},
+    "assetManifestSha256": null,
+    "browserVersion": null,
+    "hostAndLoad": null,
+    "pressure": null,
+    "cacheNetworkProfile": null
+  },
+  "functionalComparison": "Only matched functionality; if incoming logic differs, capture updated functional baseline without material changes",
+  "workloads": [],
+  "requiredWorkloadFields": [
+    "id",
+    "nativeInputKind",
+    "deterministicInputManifest",
+    "iterations",
+    "warmup",
+    "sampleCount",
+    "startEndPredicates",
+    "settlementPredicate",
+    "browserMonotonicClock",
+    "driverWaitSeparate",
+    "crossClockErrorIfUsed",
+    "capabilityGaps",
+    "observerOverheadControl",
+    "baselineControlCandidateRunOrder",
+    "rawSamplesPaths",
+    "noiseEstimate",
+    "statistic",
+    "frozenThresholds",
+    "absoluteUsabilityGuard",
+    "reviewReceipt"
+  ],
+  "freeze": {
+    "frozenAt": null,
+    "independentPerformanceReview": null,
+    "candidateAcceptanceBegun": false
+  },
+  "audioScope": [
+    "cold/warm decode",
+    "AudioContext resume",
+    "combined paper/glass/Board motion",
+    "cancel/stale resume",
+    "hidden/disposal/mute",
+    "retired AudioNodes and callbacks",
+    "clock versus actual acoustic delivery"
+  ]
+}
