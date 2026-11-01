@@ -7,6 +7,7 @@ import { createFakeD1 } from './support/fake-d1.mjs';
 import { commandFingerprint } from '../../shared-types/src/sync-protocol.ts';
 import { boundedEngineOperation } from '../../game-engine/src/index.ts';
 import { projectOptimisticGame } from '../../../apps/web/shell/optimistic-live.js';
+import { boundedEngineOperation as boundedBrowserOperation } from '../../../apps/web/generated/packages/game-engine/src/index.js';
 
 const { state, action } = JSON.parse(readFileSync('packages/game-engine/test/fixtures/game-loading-follow.json', 'utf8'));
 const scenario = { formatVersion: 2, id: '85241980-65fc-4b88-b978-c42726181041', title: 'Retained follow', initialState: state, resultingState: state, moves: [] };
@@ -33,14 +34,14 @@ test('the seven-push follow projects, commits once and reconciles after a lost r
   assert.equal((await call('create', { gameId: 'follow', selfPlayMode: true })).status, 200);
   assert.equal((await call('load-scenario', { scenario })).status, 200);
   const before = DB.getGameState('follow');
-  const projected = projectOptimisticGame({ authoritativeGame: boundedEngineOperation(() => withViewModel(before, 'actor')), identityId: 'actor', queue: [{ kind: 'apply', action, notation: 'FOLLOW', queuedAt: new Date().toISOString(), clientCommandId: 'v2:follow-once' }] });
+  const projected = boundedBrowserOperation(() => projectOptimisticGame({ authoritativeGame: boundedEngineOperation(() => withViewModel(before, 'actor')), identityId: 'actor', queue: [{ kind: 'apply', action, notation: 'FOLLOW', queuedAt: new Date().toISOString(), clientCommandId: 'v2:follow-once' }] }));
   assert.equal(projected.ok, true);
   assert.equal(projected.game.legalActions.length, 45);
   assert.equal(projected.game.pendingMoves.length, 1);
   const command = { protocolVersion: 2, gameId: 'follow', identityId: 'actor', clientCommandId: 'v2:follow-once', kind: 'action', payload: { action, notation: 'FOLLOW' }, expectedState: before.board.state, expectedGameplayRevision: before.gameplayRevision };
   command.fingerprint = await commandFingerprint(command);
   DB.loseNextBatchResponse();
-  await assert.rejects(call('moves', command), /Lost batch/);
+  await assert.rejects(call('apply', command), /Lost batch/);
   room = new GameRoomDO(roomState, env);
   const recovered = await call('reconcile', { commands: [command], knownSnapshotEventSeq: 0 });
   assert.equal(recovered.status, 200);
@@ -51,7 +52,7 @@ test('the seven-push follow projects, commits once and reconciles after a lost r
   assert.deepEqual(persisted.board.state, projected.game.board.state);
   const receipt = DB.getReceipt('follow', command.clientCommandId);
   assert.equal(receipt.outcome, 'accepted');
-  const duplicate = await call('moves', command);
+  const duplicate = await call('apply', command);
   assert.equal(duplicate.duplicate, true);
   assert.deepEqual(DB.getReceipt('follow', command.clientCommandId), receipt);
   assert.deepEqual(DB.getGameState('follow'), persisted);
