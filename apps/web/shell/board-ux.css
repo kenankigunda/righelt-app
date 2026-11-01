@@ -5,15 +5,21 @@ body {display:flow-root;}
 .board-preview-label { min-height: max(3.1em, 44px); font-size: 1rem; line-height: 1.5; margin-block: .25rem .65rem; }
 .board-message-slot {display:grid;margin-block:.25rem .65rem;font-family:var(--font-family);font-size:1rem;min-width:0;container-name:board-message;container-type:inline-size;}
 .board-message-slot > .board-preview-label {grid-area:1 / 1;min-width:0;margin:0;}
-.board-message-live {grid-area:1 / 1;min-width:0;font-size:1rem;line-height:1.5;}
+.board-message-live {grid-area:1 / 1;min-width:0;font-size:1rem;line-height:var(--board-message-prose-line-height,1.5);}
 .board-message-live > .board-preview-label {display:inline;margin:0;}
 /* Coordinate boxes stay compact, while both token text runs share the prose
    baseline. The icon is excluded from the action's baseline-sharing group. */
 .board-message-slot :is(.board-preview-coordinate-chip,.board-preview-highlight-chip,.board-preview-retreat-chip) {vertical-align:baseline;height:1.25em;}
-.board-message-slot .board-preview-inline-button {vertical-align:baseline;height:auto;line-height:1.5;padding:.2em .48em;border-width:1px;}
+.board-message-slot .board-preview-inline-button {vertical-align:baseline;height:auto;font-size:calc(var(--board-inline-action-font-scale) * 1em);line-height:var(--board-inline-action-line-height);padding:calc(var(--board-inline-action-padding-block-em) * 1em) .48em;border-width:calc(var(--board-inline-action-border-px) * 1px);}
 /* Reserve the invisible 44px target plus native WebKit hit-test clearance inside each logical row, including wrapped
    replay+Pass messages. Replicas and live rows use the same exact spacing. */
 .board-message-slot {
+  --board-message-prose-line-height:1.5;
+  --board-inline-action-font-scale:.88;
+  --board-inline-action-line-height:1.5;
+  --board-inline-action-padding-block-em:.2;
+  --board-inline-action-border-px:1;
+  --board-routine-action-growth:max(0px,calc((var(--board-inline-action-font-scale) * (var(--board-inline-action-line-height) + 2 * var(--board-inline-action-padding-block-em)) - var(--board-message-prose-line-height)) * 1em + 2 * var(--board-inline-action-border-px) * 1px));
   --board-message-hit-half-px:23.0625;
   --board-message-hit-half-em:.836;
   /* Two action lines add 2 * (.88 * 1.9 - 1.5)em, two borders each,
@@ -167,7 +173,7 @@ body {display:flow-root;}
 
 /* Composition rows share the same metrics in live, primary and fallback copies.
    Rules separate meanings; replay/status controls belong below their own copy. */
-.board-message-row {position:relative;line-height:1.5;}
+.board-message-row {position:relative;line-height:var(--board-message-prose-line-height,1.5);}
 .board-message-row + .board-message-row {margin-block-start:.5em;}
 .board-message-row + .board-message-row::before {content:"";position:absolute;inset-inline:0;top:-.25em;border-top:1px solid var(--line);pointer-events:none;}
 .board-message-actions {display:flex;flex-wrap:wrap;align-items:baseline;gap:.5em;margin-block-start:.5em;padding-block:var(--board-action-hit-inset);}
@@ -178,15 +184,17 @@ body {display:flow-root;}
 .board-message-slot[data-height-managed="true"] {display:block;}
 .board-message-live {align-self:start;}
 .board-message-slot[data-height-managed="true"] > .board-message-sizing {position:absolute;inset-inline:0;top:0;min-height:0;}
-.board-message-slot .board-preview-label {min-height:0;}
+.board-message-slot .board-preview-label {min-height:0;line-height:var(--board-message-prose-line-height);}
 
 /* The five routine prompts need at most one line above14.5em in both
    families at100/200%: measured worst intrinsic frontier14.4943em,
    rounded outward to1/16em. Below that boundary retain two prose lines
-   for cold-font admission; taller native action/wrapped content still wins.
+   plus one actual inline-action growth for cold-font admission. The action
+   allowance derives from the same font/line/padding/border metrics as its
+   visible control; taller natural content still wins.
    This excludes narration, History and other extended messages. */
 @container board-message (width < 14.5em) {
   .board-message-slot > .board-message-sizing[data-sizing-variant^="routine:"] {
-    min-height:calc(3em + var(--board-action-hit-inset) + var(--board-action-hit-inset));
+    min-height:calc(2 * var(--board-message-prose-line-height) * 1em + var(--board-routine-action-growth) + var(--board-action-hit-inset) + var(--board-action-hit-inset));
   }
 }
