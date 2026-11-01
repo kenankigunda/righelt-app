@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('early opponent introduction survives initial guest session adoption', async ({ page }) => {
+test('early keyboard opponent introduction survives initial guest session adoption', async ({ page }) => {
   let release, entered, releaseModel, modelEntered;
   const held = new Promise(resolve => { release = resolve; });
   const intercepted = new Promise(resolve => { entered = resolve; });
@@ -29,7 +29,12 @@ test('early opponent introduction survives initial guest session adoption', asyn
     await page.goto('/');
     await intercepted;
     const trigger = page.locator('button[data-opponent="babs"]');
-    await trigger.click();
+    // Keep this native early-intent case inside the real bootstrap deadline.
+    // Pointer stability while the initial Home layout settles can consume that
+    // deadline before dispatch. Pointer-held adoption has its own cases below.
+    await trigger.focus();
+    await expect(trigger).toBeFocused();
+    await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Babs', exact: true });
     await expect(dialog).not.toBeVisible();
     expect(creates).toHaveLength(0);
