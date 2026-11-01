@@ -53,6 +53,7 @@ test('the seven-push follow projects, commits once and reconciles after a lost r
     clientCommandId: command.clientCommandId, fingerprint: command.fingerprint,
     outcome: 'accepted', reason: null, eventSeq: recovered.eventSeq,
     gameplayRevision: command.expectedGameplayRevision + 1,
+    result: { removedPieces: [], destroyedPieces: [] },
   });
   assert.equal(recovered.game.legalActions.length, 45);
   const persisted = DB.getGameState('follow');
