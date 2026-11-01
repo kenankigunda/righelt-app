@@ -70,6 +70,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "shell-host.test.mjs",
   "shell-render-stability.test.mjs",
   "sync-store.test.mjs",
+  "socket-recovery-ownership.test.mjs",
   "syntax-smoke.test.mjs",
   "ticket-workflow-docs.test.mjs",
   "test-layers.test.mjs",
