@@ -1,0 +1,102 @@
+import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import { importScenarioGame, switchGamePanel } from '../support/app.mjs';
+import { readProjectedGame } from '../support/computer-projection.mjs';
+import { applyAction, resolveToStability } from '../../apps/web/generated/packages/game-engine/src/index.js';
+import { CURRENT_COMPUTER_MODEL } from '../../packages/shared-types/src/computer-play.ts';
+import { STORAGE_GENERATION_HEADER } from '../../packages/shared-types/src/storage-policy.js';
+import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION } from '../../packages/shared-types/src/sync-protocol.js';
+
+const { state, action } = JSON.parse(readFileSync(new URL('../../packages/game-engine/test/fixtures/game-loading-follow.json', import.meta.url)));
+const scenario = { formatVersion: 2, id: '85241980-65fc-4b88-b978-c42726181042', title: 'Retained seven-push follow',
+  initialState: state, resultingState: resolveToStability(applyAction(state, action).state, { artifactMode: 'full' }),
+  moves: [{ turnIndex: state.turnIndex, turnMoveIndex: 0, actorSide: state.sideToMove, action, notation: 'FOLLOW' }] };
+
+const guestRequest = (page, route, body) => page.evaluate(async ({ route, body, storageHeader, actionHeader, actionVersion }) => {
+  const bootstrap = await fetch('/api/shell/bootstrap');
+  if (!bootstrap.ok) throw Error(`Bootstrap failed: ${bootstrap.status}`);
+  const generation = bootstrap.headers.get(storageHeader), identityId = localStorage.getItem('righelt.identity.id.v1');
+  if (!identityId) throw Error('Native guest identity missing');
+  const response = await fetch(route, { method: 'POST', headers: { 'content-type': 'application/json',
+    [actionHeader]: String(actionVersion), ...(generation ? { [storageHeader]: generation } : {}) },
+    body: JSON.stringify({ ...body, identityId, protocolVersion: 2 }) });
+  const result = await response.json();
+  if (!response.ok || result.ok === false) throw Error(`Local fixture request failed: ${response.status} ${JSON.stringify(result)}`);
+  return result;
+}, { route, body, storageHeader: STORAGE_GENERATION_HEADER, actionHeader: ACTION_CONTRACT_HEADER, actionVersion: ACTION_CONTRACT_VERSION });
+
+const projected = (page, id) => page.evaluate(readProjectedGame, { id, guest: true });
+const resumeHere = async page => {
+  await switchGamePanel(page, 'players');
+  await page.getByRole('button', { name: 'Horus, Red, Paused', exact: true }).click();
+  await page.getByRole('button', { name: 'Resume here', exact: true }).first().click();
+};
+const journalEntry = (page, command) => page.evaluate(envelope => new Promise((resolve, reject) => {
+  const open = indexedDB.open('righelt.online-commands.v2'); open.onerror = () => reject(open.error);
+  open.onsuccess = () => {
+    const db = open.result, read = db.transaction('commands').objectStore('commands').get([envelope.identityId, envelope.gameId, envelope.clientCommandId]);
+    read.onerror = () => { db.close(); reject(read.error); };
+    read.onsuccess = () => { db.close(); resolve(read.result ?? null); };
+  };
+}), command);
+
+test('the retained follow saves once, survives reload and resumes native Horus play', async ({ page, baseURL }, info) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  const { gameId: sourceId } = await importScenarioGame(page, scenario, baseURL, { open: false });
+  const source = await projected(page, sourceId);
+  const { game } = await guestRequest(page, '/api/shell/history/branch', { sourceGameId: sourceId,
+    sourceDecisionId: source.moves.at(-1).moveId, creatorSide: 'p2',
+    // Watch mode permits a later native decision regardless of which side the
+    // resumed continuation leaves active. The retained model itself is unchanged.
+    computer: { p1: 'horus', p2: 'horus' }, computerModelId: CURRENT_COMPUTER_MODEL.id });
+  expect(game.legalActions).toEqual([action]);
+  expect(game.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
+  const acquired = await guestRequest(page, `/api/shell/games/${game.id}/computer-control`, { action: 'acquire', deviceId: 'follow-fixture', generation: game.computer.generation });
+  await guestRequest(page, `/api/shell/games/${game.id}/computer-control`, { action: 'pause', deviceId: 'follow-fixture', generation: acquired.game.computer.generation });
+  await page.goto(`/?retained-follow=1#/game/${game.id}`);
+  const nextAccepted = minimumGeneration => page.waitForResponse(response => {
+    if (response.request().method() !== 'POST' || new URL(response.url()).pathname !== `/api/shell/games/${game.id}/apply`) return false;
+    return response.request().postDataJSON()?.payload?.computer?.generation > minimumGeneration;
+  });
+  const firstResponse = nextAccepted(-1);
+  await resumeHere(page);
+  const response = await firstResponse, command = response.request().postDataJSON(), saved = await response.json();
+  expect(response.ok()).toBe(true);
+  expect(command.payload.action).toEqual(action);
+  expect(command.payload.computer.modelId).toBe(game.computer.modelId);
+  expect(command.payload.computer.profile).toBe('horus');
+  expect(saved.commandOutcomes).toHaveLength(1);
+  const originalReceipt = saved.commandOutcomes[0];
+  expect(originalReceipt).toMatchObject({ gameId: game.id, identityId: command.identityId, clientCommandId: command.clientCommandId,
+    fingerprint: command.fingerprint, outcome: 'accepted', gameplayRevision: command.expectedGameplayRevision + 1 });
+  expect(saved.game.moves.filter(move => move.clientCommandId === command.clientCommandId)).toHaveLength(1);
+  // Pause through the real owned handler after acknowledgement, never altering
+  // the command, proof, generation or receipt that admitted the saved follow.
+  const current = await projected(page, game.id);
+  const paused = (await guestRequest(page, `/api/shell/games/${game.id}/computer-control`, {
+    action: 'pause', deviceId: current.computer.lease.deviceId, generation: current.computer.generation })).game;
+  await page.reload();
+  const reloaded = await projected(page, game.id);
+  expect(reloaded.moves.filter(move => move.clientCommandId === command.clientCommandId)).toHaveLength(1);
+  expect(reloaded.computer.modelId).toBe(game.computer.modelId);
+  await expect.poll(() => journalEntry(page, command)).toBeNull();
+  const resumedResponse = nextAccepted(paused.computer.generation);
+  await resumeHere(page);
+  const laterResponse = await resumedResponse, laterCommand = laterResponse.request().postDataJSON(), later = await laterResponse.json();
+  expect(laterResponse.ok()).toBe(true);
+  expect(laterCommand.clientCommandId).not.toBe(command.clientCommandId);
+  expect(laterCommand.payload.computer.modelId).toBe(game.computer.modelId);
+  expect(later.commandOutcomes[0]).toMatchObject({ clientCommandId: laterCommand.clientCommandId, fingerprint: laterCommand.fingerprint, outcome: 'accepted' });
+  expect(later.game.gameplayRevision).toBeGreaterThan(paused.gameplayRevision);
+  const reconciled = await guestRequest(page, `/api/shell/games/${game.id}/reconcile`, { knownSnapshotEventSeq: 0, commands: [command] });
+  expect(reconciled.commandOutcomes).toEqual([originalReceipt]);
+  expect(reconciled.game.moves.filter(move => move.clientCommandId === command.clientCommandId)).toHaveLength(1);
+  await expect.poll(() => journalEntry(page, command)).toBeNull();
+  const path = info.outputPath('retained-follow-save-reload.json');
+  await writeFile(path, JSON.stringify({ modelId: game.computer.modelId, command, originalReceipt, pausedRevision: paused.gameplayRevision,
+    reloadedRevision: reloaded.gameplayRevision, laterCommand, laterReceipt: later.commandOutcomes[0] }, null, 2));
+  await info.attach('retained-follow-save-reload', { path, contentType: 'application/json' });
+  await switchGamePanel(page, 'board');
+  await page.screenshot({ path: info.outputPath('retained-follow-resumed.png') });
+});
