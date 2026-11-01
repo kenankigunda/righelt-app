@@ -61,6 +61,7 @@ export type GameState = {
   continuation: ContinuationContext | null;
   outcome: Outcome;
   artifacts?: ResolveArtifacts;
+  terminalDisplacement?: TerminalDisplacement;
 };
 
 export type ActionType = "pass" | "end_turn" | "move" | "project" | "rush" | "push" | "follow" | "retreat";
@@ -71,6 +72,15 @@ export type Action = {
   from?: Coordinate;
   to?: Coordinate;
   targetId?: string;
+};
+
+/** Terminal-only, nonoccupying defender retained from an acknowledged push. */
+export type TerminalDisplacement = {
+  decisionId: string;
+  frameHash: string;
+  attackerId: string;
+  action: Action;
+  piece: Piece;
 };
 
 export type ArtifactMode = "minimal" | "full";

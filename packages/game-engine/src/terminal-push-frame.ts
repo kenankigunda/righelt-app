@@ -38,6 +38,7 @@ export function terminalPushFrame(state: GameState, outcome: Outcome, push?: Ack
   occupancy.continuation=null;
   occupancy.outcome=structuredClone(outcome);
   delete occupancy.artifacts; // No cached supply/command artifact may reference the displacement.
-  return {kind:'normalized',frame:{recorded,occupancy,displacement:{decisionId:push.decisionId,
-    frameHash:push.frameHash,attackerId:attacker.id,action:structuredClone(push.action),piece:structuredClone(defender)}}};
+  const displacement={decisionId:push.decisionId,frameHash:push.frameHash,attackerId:attacker.id,action:structuredClone(push.action),piece:structuredClone(defender)};
+  occupancy.terminalDisplacement=structuredClone(displacement);
+  return {kind:'normalized',frame:{recorded,occupancy,displacement}};
 }

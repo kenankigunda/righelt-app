@@ -1,3 +1,4 @@
+import {canonicalTerminalDisplacement} from './terminal-displacement';
 import type { GameState } from "./types";
 import { normalizeState } from "./deterministic";
 
@@ -34,11 +35,17 @@ function assertDeserializedStateShape(value: unknown): asserts value is GameStat
 }
 
 export function serializeState(state: GameState): string {
-  return JSON.stringify(stableSortObject(normalizeState(state)));
+  const metadata=canonicalTerminalDisplacement(state);
+  const normalized=normalizeState(state);
+  if(metadata!==undefined)normalized.terminalDisplacement=metadata;
+  return JSON.stringify(stableSortObject(normalized));
 }
 
 export function deserializeState(serialized: string): GameState {
   const parsed = JSON.parse(serialized) as unknown;
   assertDeserializedStateShape(parsed);
-  return normalizeState(parsed);
+  const metadata=canonicalTerminalDisplacement(parsed);
+  const normalized=normalizeState(parsed);
+  if(metadata!==undefined)normalized.terminalDisplacement=metadata;
+  return normalized;
 }
