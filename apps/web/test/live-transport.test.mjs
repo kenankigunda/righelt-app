@@ -3,6 +3,7 @@ import { IDBFactory } from "fake-indexeddb";
 import assert from "node:assert/strict";
 import { writeSync as writeCleanupFailure } from "node:fs";
 import { createLiveTransportStore as createActualTransportStore } from "../shell/live-transport.js";
+import { validSyncSnapshot } from "../shell/live-transport.js";
 import { projectOptimisticGame } from '../shell/optimistic-live.js';
 import { createCommandJournal } from '../shell/command-journal.js';
 import { issueDiagnostics } from '../shell/issue-diagnostics.js';
@@ -2558,4 +2559,85 @@ test('an in-flight automatic journal read cannot act after a conflicting storage
  await h.advance(500);await h.phase('list',held);await h.store.loadGamesPage();const network=clone(h.calls.network);
  gate.resolve();assert.equal((await h.settled('list',held)).ok,true);await new Promise(resolve=>setImmediate(resolve));
  assert.deepEqual(h.calls.network,network);assert.equal(h.calls.admit.length,1);assert.equal(h.view().storageBlocked,true);
+});
+
+test('position-first loading displays the saved board without acknowledging or enabling commands', async t => {
+  const game = buildLiveGame(); let complete, projections = 0, admissions = 0;
+  const position = { ...clone(game), positionOnly: true, legalActions: undefined, canRecordMove: false, canEndTurn: false, sharedMutationsBlocked: true };
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), commandJournal: { list: async () => [], admit: async () => { admissions++; } },
+    rulesExecutor: { asynchronous: true, project() { projections++; throw Error('Position-only command reached rules worker'); }, cancel() {}, cancelAll() {} },
+    fetcher: async url => url.includes('/position?')
+      ? Response.json({ ok: true, protocolVersion: 2, projection: 'position-v1', game: position, eventSeq: 7 })
+      : new Promise(resolve => { complete = resolve; }),
+  });
+  t.after(() => { store.retire(); t.diagnostic(`Position-only boundary: ${projections} rules projections, ${admissions} journal admissions`); });
+  store.setRulesActiveGame(game.id);
+  const pending = store.loadGame(game.id, { positionFirst: true });
+  await tick();
+  assert.equal(store.getGameViewModel(game.id).positionLoading, true);
+  assert.equal(store.getGameViewModel(game.id).canRecordMove, false);
+  assert.equal(store.getAuthoritativeGame(game.id), null);
+  assert.equal(store.getLastEventSeq(game.id), 0);
+  assert.equal(validSyncSnapshot(position, game.id), false);
+  const action = listLegalActions(game.board.state).find(action => action.type === 'move');
+  await assert.rejects(store.applyGameAction({ gameId: game.id, state: game.board.state, action }), { code: 'sync_recovering' });
+  await assert.rejects(store.applyGameAction({ gameId: game.id, state: game.board.state, action, computer: { generation: 0 } }), { code: 'sync_recovering' });
+  await assert.rejects(store.endTurn({ gameId: game.id }), { code: 'sync_recovering' });
+  assert.equal(store.getGameViewModel(game.id).gameplayMutationsBlocked, true);
+  assert.equal(projections, 0);
+  assert.equal(admissions, 0);
+  complete(Response.json({ ok: true, protocolVersion: 2, game, eventSeq: 7 }));
+  await pending;
+  assert.equal(store.getGameViewModel(game.id).positionOnly, undefined);
+  assert.equal(store.getAuthoritativeGame(game.id).id, game.id);
+  assert.equal(store.getLastEventSeq(game.id), 7);
+});
+
+test('failed complete loading preserves position and retry restores complete authority', async () => {
+  const game = buildLiveGame(); let fail = true;
+  const position = { ...clone(game), positionOnly: true, legalActions: undefined, canRecordMove: false, canEndTurn: false, sharedMutationsBlocked: true };
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), commandJournal: { list: async () => [] }, fetcher: async url => {
+    if (url.includes('/position?')) return Response.json({ ok: true, protocolVersion: 2, projection: 'position-v1', game: position, eventSeq: 3 });
+    return fail ? Response.json({ ok: false, error: 'rules_budget_exceeded' }, { status: 503 }) : Response.json({ ok: true, protocolVersion: 2, game, eventSeq: 3 });
+  } });
+  await assert.rejects(store.loadGame(game.id, { positionFirst: true }), { code: 'rules_budget_exceeded' });
+  assert.equal(store.getGameViewModel(game.id).positionError, true);
+  assert.equal(store.getGameViewModel(game.id).positionLoading, false);
+  assert.equal(store.getLastEventSeq(game.id), 0);
+  fail = false; await store.loadGame(game.id, { positionFirst: true });
+  assert.equal(store.getGameViewModel(game.id).positionOnly, undefined);
+});
+
+test('late position cannot replace a complete socket snapshot or cross account retirement', async () => {
+  for (const retired of [false, true]) {
+    const game = buildLiveGame(); let reply;
+    const store = createLiveTransportStore({ storage: createMemoryStorage(), commandJournal: { list: async () => [] },
+      fetcher: async () => new Promise(resolve => { reply = resolve; }),
+    });
+    const pending = store.loadGamePosition(game.id);
+    const rejected = retired ? assert.rejects(pending, { code: 'session_changed' }) : null;
+    await tick();
+    if (retired) store.retire(); else store.applyLiveGameUpdate({ game, eventSeq: 9 });
+    reply(Response.json({ ok: true, protocolVersion: 2, projection: 'position-v1', game: { ...game, positionOnly: true }, eventSeq: 7 }));
+    if (rejected) await rejected;
+    else {
+      await pending;
+      assert.equal(store.getGameViewModel(game.id).positionOnly, undefined);
+      assert.equal(store.getLastEventSeq(game.id), 9);
+    }
+  }
+});
+
+test('read-only position history remains inspectable without enabling play', async () => {
+  const game = buildLiveGame();
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), commandJournal: { list: async () => [] },
+    fetcher: async () => Response.json({ ok: true, protocolVersion: 2, projection: 'position-v1', game: { ...game, positionOnly: true }, eventSeq: 2 }),
+  });
+  await store.loadGamePosition(game.id);
+  store.selectHistoryMove({ gameId: game.id, moveIndex: 0 });
+  assert.equal(store.getGameViewModel(game.id).inHistoryMode, true);
+  assert.equal(store.getGameViewModel(game.id).canRecordMove, false);
+  store.returnToLive({ gameId: game.id });
+  assert.equal(store.getGameViewModel(game.id).canRecordMove, false);
+  assert.equal(store.getAuthoritativeGame(game.id), null);
 });

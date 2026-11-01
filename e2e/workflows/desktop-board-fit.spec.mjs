@@ -146,7 +146,7 @@ for(const [width,height,text]of[[1440,800,100],[390,740,100],[1440,800,200]])tes
   await route.fulfill({response,body});
  });
  await context.route(url=>url.pathname==='/assets/fonts/Manrope-variable.ttf'&&url.searchParams.has('desktop-cold'),async route=>{fontSeen=true;await fontHeld;await route.continue();});
- await context.route(new RegExp(`/api/shell/games/${gameId}(?:\\?|$|/reconcile(?:\\?|$))`),async route=>{if(route.request().method()==='GET'||new URL(route.request().url()).pathname.endsWith('/reconcile'))await held;await route.continue();});
+ await context.route(new RegExp(`/api/shell/games/${gameId}(?:\\?|$|/(?:reconcile|position)(?:\\?|$))`),async route=>{if(route.request().method()==='GET'||new URL(route.request().url()).pathname.endsWith('/reconcile'))await held;await route.continue();});
  await page.routeWebSocket(new RegExp(`/api/shell/games/${gameId}/ws`),socket=>{const server=socket.connectToServer();server.onMessage(async message=>{await held;if(!closing)socket.send(message);});});
  try{
   await page.reload({waitUntil:'domcontentloaded'});await expect(page.getByTestId('game-loading-shell')).toBeVisible();await expect.poll(()=>fontSeen).toBe(true);

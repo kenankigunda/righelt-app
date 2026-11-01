@@ -9,6 +9,15 @@ import {socketEnvironment} from './support/socket-environment.mjs';
 
 const storage=()=>{const data=new Map([[IDENTITY_KEY,'id-a']]);return{getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,String(value)),removeItem:key=>data.delete(key)};};
 const flush=async()=>{for(let i=0;i<100;i++)await Promise.resolve();};
+
+test('known incompatible clients cannot start a position-only read', async t => {
+ let reads = 0;
+ const store = createLiveTransportStore({ storage: storage(), fetcher: async () => { reads++; throw new Error('must not fetch'); } });
+ t.after(() => store.retire());
+ store.markUpgradeRequired('g');
+ await assert.rejects(store.loadGamePosition('g'), { code: 'upgrade_required' });
+ assert.equal(reads, 0);
+});
 function game(){
  const state=resolveToStability(createInitialState(),{artifactMode:'full'}),turn={index:0,startedAt:'2026-10-25T00:00:00Z',playerSeat:'Player 1',status:'active',moveIndexes:[]};
  return{id:'g',createdAt:turn.startedAt,updatedAt:turn.startedAt,gameplayRevision:0,player1:{identityId:'id-a'},player2:{identityId:'id-b'},myRole:'Player 1',viewers:[],turns:[turn],moves:[],currentTurn:turn,currentSnapshot:state,board:{state},legalActions:listLegalActions(state),canRecordMove:true,canEndTurn:true};
