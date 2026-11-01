@@ -1269,3 +1269,25 @@ test('turn summaries show owner routes, source ghosts and destruction without se
   adapter.unmount();
  });
 });
+
+
+test('History endpoint roles preserve shared-square roles without leaking into live summaries',async()=>{
+ await withFakeDocument(()=>{
+  const {adapter,boardEl}=createMountedAdapter();
+  const from={row:4,col:2},shared={row:4,col:3},to={row:5,col:3};
+  const snapshot={sideToMove:'P1',pieces:[{id:'a',owner:'P1',kind:'unit',position:shared,supplied:true,commanded:true}]};
+  const roles=[{...from,source:true,target:false},{...shared,source:true,target:true},{...to,source:false,target:true}];
+  const render=overlay=>adapter.render({snapshot,selection:{source:null,target:null,selectedPieceId:null},overlay,legalActions:[],selectedPieceMoves:[],interactionMode:'static'});
+  render({mode:'recorded-turn',presentationContext:'history',endpointRoles:roles,recordedActions:[]});
+  assert.equal(getCell(boardEl,4,2).classList.contains('history-role-source'),true);
+  assert.equal(getCell(boardEl,4,3).classList.contains('history-role-source'),true);
+  assert.equal(getCell(boardEl,4,3).classList.contains('history-role-target'),true);
+  assert.equal(getCell(boardEl,5,3).classList.contains('history-role-target'),true);
+  for(const cell of boardEl.children)for(const child of cell.children){assert.equal(child.classList.contains('axis-strong'),false);assert.equal(child.classList.contains('axis-medium'),false);}
+  render({mode:'recorded-turn',endpointRoles:roles,recordedActions:[]});
+  assert.equal(getCell(boardEl,4,3).classList.contains('history-role-source'),false);
+  assert.equal(getCell(boardEl,4,3).classList.contains('history-role-target'),false);
+  assert.equal(boardEl.getAttribute('data-presentation-context'),'default');
+  adapter.unmount();
+ });
+});
