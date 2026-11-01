@@ -5,6 +5,7 @@ import { createSyncStore, createLiveSyncClient } from '../shell/sync-store.js';
 import { createCommandJournal } from '../shell/command-journal.js';
 import { issueDiagnostics } from '../shell/issue-diagnostics.js';
 import { createLiveTransportStore } from '../shell/live-transport.js';
+import { ACTION_CONTRACT_VERSION, commandFingerprint } from '../generated/packages/shared-types/src/sync-protocol.js';
 import apiWorker from '../../api/index.js';
 import { createFakeD1 } from '../../../packages/api-handler/test/support/fake-d1.mjs';
 import { createFakeGameRooms } from '../../../packages/api-handler/test/support/fake-game-rooms.mjs';
@@ -181,9 +182,10 @@ test('readiness held in hydration cannot retire a newer HTTP owner on the same c
   const oldReady = f.transport.finishSocketRecovery(f.gameId, { isCurrent: () => true, beforeRetire: () => { commits++; } });
   await until(() => Boolean(releaseList));
   const newerRead = f.transport.reconcileGame(f.gameId);
-  await until(() => Boolean(releaseRead)); releaseList();
+  releaseList();
   assert.equal(await oldReady, false); assert.equal(commits, 0);
   assert.equal(f.store.getGameViewModel(f.gameId).recovering, true);
+  await until(() => Boolean(releaseRead));
   releaseRead(); await newerRead;
   assert.equal(await f.transport.finishSocketRecovery(f.gameId, { beforeRetire: () => { commits++; } }), true);
   assert.equal(commits, 1, 'a settled newer owner must not leave readiness permanently fenced');
@@ -213,5 +215,235 @@ test('socket readiness preserves an established protocol upgrade fence', async t
   f.transport.markUpgradeRequired(f.gameId);
   assert.equal(await f.transport.finishSocketRecovery(f.gameId, { beforeRetire: () => { commits++; } }), false);
   assert.equal(commits, 0); assert.equal(f.store.getGameViewModel(f.gameId).upgradeRequired, true);
+  assert.equal(f.store.getGameViewModel(f.gameId).sharedMutationsBlocked, true);
+});
+
+const saveMove = async f => {
+  const { game } = await f.current();
+  const envelope = { protocolVersion: 2, actionContractVersion: ACTION_CONTRACT_VERSION,
+    gameId: f.gameId, identityId: f.store.getIdentityId(), clientCommandId: `v2:${crypto.randomUUID()}`,
+    submittedAt: Date.now(), kind: 'action',
+    payload: { action: game.legalActions.find(action => action.type === 'move'), notation: 'saved move' },
+    expectedState: structuredClone(game.board.state), expectedGameplayRevision: game.gameplayRevision };
+  envelope.fingerprint = await commandFingerprint(envelope); await f.journal.admit(envelope); return envelope;
+};
+
+test('concurrent loading and socket readiness share the entire journal hydration and terminal cleanup', async t => {
+  let releaseList, lists = 0, applies = 0;
+  const removed = [];
+  const f = await transportFixture(t, {
+    journal: journal => ({ ...journal, list: async (...args) => {
+      const rows = await journal.list(...args);
+      if (++lists === 1) await new Promise(resolve => { releaseList = resolve; });
+      return rows;
+    }, remove: async envelope => { removed.push(envelope.clientCommandId); return journal.remove(envelope); } }),
+    fetcher: (url, init, actual) => { if (url.endsWith('/apply')) applies++; return actual(url, init); },
+  });
+  const original = await saveMove(f);
+  const loading = f.transport.loadGame(f.gameId); await until(() => Boolean(releaseList));
+  const readiness = f.transport.finishSocketRecovery(f.gameId);
+  await sleep(5); assert.equal(lists, 1, 'two current readers must share validation, adoption, and removal, not just read the same saved row');
+  releaseList(); await loading; await readiness;
+  await until(() => removed.length > 0);
+  assert.equal(applies, 1); assert.deepEqual(removed, [original.clientCommandId]);
+  assert.deepEqual(await f.journal.list(f.store.getIdentityId(), f.gameId), []);
+  assert.equal((await f.current()).game.gameplayRevision, 1);
+});
+
+test('a current caller replaces stale hydration without adopting its late saved rows', async t => {
+  let releaseOld, lists = 0, oldCurrent = true, applies = 0;
+  const removed = [];
+  const f = await transportFixture(t, {
+    journal: journal => ({ ...journal, list: async (...args) => {
+      const rows = await journal.list(...args);
+      if (++lists === 1) await new Promise(resolve => { releaseOld = resolve; });
+      return rows;
+    }, remove: async envelope => { removed.push(envelope.clientCommandId); return journal.remove(envelope); } }),
+    fetcher: (url, init, actual) => { if (url.endsWith('/apply')) applies++; return actual(url, init); },
+  });
+  const original = await saveMove(f);
+  const obsolete = f.transport.finishSocketRecovery(f.gameId, { isCurrent: () => oldCurrent });
+  await until(() => Boolean(releaseOld)); oldCurrent = false;
+  const readiness = f.transport.finishSocketRecovery(f.gameId);
+  await until(() => lists >= 2); await readiness;
+  releaseOld(); assert.equal(await obsolete, false);
+  await until(() => removed.length > 0);
+  assert.equal(applies, 1); assert.deepEqual(removed, [original.clientCommandId]);
+  assert.deepEqual(await f.journal.list(f.store.getIdentityId(), f.gameId), []);
+  assert.equal((await f.current()).game.gameplayRevision, 1);
+});
+
+test('a joined current waiter rereads the journal when the first hydration owner becomes stale', async t => {
+  let releaseOld, lists = 0, oldCurrent = true, applies = 0;
+  const removed = [];
+  const f = await transportFixture(t, {
+    journal: journal => ({ ...journal, list: async (...args) => {
+      const rows = await journal.list(...args);
+      if (++lists === 1) await new Promise(resolve => { releaseOld = resolve; });
+      return rows;
+    }, remove: async envelope => { removed.push(envelope.clientCommandId); return journal.remove(envelope); } }),
+    fetcher: (url, init, actual) => { if (url.endsWith('/apply')) applies++; return actual(url, init); },
+  });
+  const original = await saveMove(f);
+  const obsolete = f.transport.finishSocketRecovery(f.gameId, { isCurrent: () => oldCurrent });
+  await until(() => Boolean(releaseOld));
+  const waiting = f.transport.finishSocketRecovery(f.gameId);
+  await sleep(5); assert.equal(lists, 1);
+  oldCurrent = false; releaseOld(); assert.equal(await obsolete, false); await waiting;
+  await until(() => removed.length > 0);
+  assert.equal(lists, 2, 'a current waiter must establish its own fresh journal result');
+  assert.equal(applies, 1); assert.deepEqual(removed, [original.clientCommandId]);
+  assert.deepEqual(await f.journal.list(f.store.getIdentityId(), f.gameId), []);
+});
+
+for (const ineligible of ['signed-out session', 'legacy game in account mode']) {
+  test(`${ineligible} returns without journal work and does not claim hydration`, { timeout: 1000 }, async t => {
+    const f = await transportFixture(t), { game } = await f.current();
+    let lists = 0, writes = 0, sends = 0;
+    const auth = { enabled: true, session: { authenticated: ineligible !== 'signed-out session',
+      account: { id: f.store.getIdentityId() }, contextId: 'a'.repeat(64) } };
+    const transport = createLiveTransportStore({ auth,
+      commandJournal: { list: async () => { lists++; return []; }, admit: async () => { writes++; }, remove: async () => { writes++; } },
+      fetcher: async () => { sends++; throw new Error('ineligible hydration must not send'); },
+    });
+    t.after(() => transport.retire());
+    transport.applyLiveGameUpdate({ game: { ...game, ownershipMode: ineligible === 'signed-out session' ? 'account_v1' : 'legacy_guest' }, eventSeq: 1 });
+    await transport.finishSocketRecovery(game.id);
+    assert.equal(lists, 0); assert.equal(writes, 0); assert.equal(sends, 0);
+    // Becoming eligible must still perform the first real hydration pass.
+    auth.session.authenticated = true;
+    transport.applyLiveGameUpdate({ game: { ...game, ownershipMode: 'account_v1' }, eventSeq: 2 });
+    assert.equal(await transport.finishSocketRecovery(game.id), true);
+    assert.equal(lists, 1); assert.equal(writes, 0); assert.equal(sends, 0);
+  });
+}
+
+test('account eligibility lost during a shared hydration pass prevents adoption for every waiter', { timeout: 1000 }, async t => {
+  const f = await transportFixture(t), { game } = await f.current();
+  let release, lists = 0, writes = 0, sends = 0;
+  const auth = { enabled: true, session: { authenticated: true, account: { id: f.store.getIdentityId() }, contextId: 'a'.repeat(64) } };
+  const transport = createLiveTransportStore({ auth,
+    commandJournal: { list: async () => { if (++lists === 1) return new Promise(resolve => { release = resolve; }); return []; },
+      admit: async () => { writes++; }, remove: async () => { writes++; } },
+    fetcher: async () => { sends++; throw new Error('ineligible hydration must not send'); },
+  });
+  t.after(() => transport.retire());
+  transport.applyLiveGameUpdate({ game: { ...game, ownershipMode: 'account_v1' }, eventSeq: 1 });
+  const first = transport.finishSocketRecovery(game.id);
+  await until(() => Boolean(release)); const second = transport.finishSocketRecovery(game.id);
+  auth.session.authenticated = false; release([]);
+  assert.deepEqual(await Promise.all([first, second]), [false, false]);
+  assert.equal(lists, 1); assert.equal(writes, 0); assert.equal(sends, 0);
+  auth.session.authenticated = true;
+  assert.equal(await transport.finishSocketRecovery(game.id), true);
+  assert.equal(lists, 2, 'the ineligible shared pass must not mark the journal hydrated');
+});
+
+test('a receipt that cleans its journal row before a held hydration read returns is cleaned exactly once', async t => {
+  let releaseApply, releaseList, applies = 0, lists = 0;
+  const removed = [];
+  const f = await transportFixture(t, {
+    journal: journal => ({ ...journal, list: async (...args) => {
+      const rows = await journal.list(...args);
+      if (++lists === 1) await new Promise(resolve => { releaseList = resolve; }); return rows;
+    }, remove: async envelope => { removed.push(envelope.clientCommandId); return journal.remove(envelope); } }),
+    fetcher: async (url, init, actual) => {
+      if (!url.endsWith('/apply')) return actual(url, init);
+      applies++; const response = await actual(url, init);
+      await new Promise(resolve => { releaseApply = resolve; }); return response;
+    },
+  });
+  const game = f.store.getGameViewModel(f.gameId), action = game.legalActions.find(action => action.type === 'move');
+  const handle = await f.store.applyGameAction({ gameId: f.gameId, state: game.currentSnapshot, action });
+  await until(() => Boolean(releaseApply));
+  const [original] = await f.journal.list(f.store.getIdentityId(), f.gameId);
+  const readiness = f.transport.finishSocketRecovery(f.gameId);
+  await until(() => Boolean(releaseList));
+  releaseApply(); await handle.committed;
+  assert.deepEqual(await f.journal.list(f.store.getIdentityId(), f.gameId), []);
+  assert.deepEqual(removed, [original.clientCommandId]);
+  releaseList(); assert.equal(await readiness, true);
+  assert.equal(applies, 1); assert.equal((await f.current()).game.gameplayRevision, 1);
+  assert.deepEqual(removed, [original.clientCommandId], 'a stale captured row must not schedule a second terminal removal');
+  assert.equal(f.store.getGameViewModel(f.gameId).storageBlocked, false);
+  assert.equal(f.store.getGameViewModel(f.gameId).recoveryIssue, null);
+});
+
+const receiptBeforeHydration = async (t, { failRemoval = false, holdReadback = false, reinsertAfterAdditionalRemoval = false } = {}) => {
+  let releaseApply, releaseList, releaseReadback, applies = 0, lists = 0;
+  const removed = [], owner = { current: true };
+  const f = await transportFixture(t, {
+    journal: journal => ({ ...journal, list: async (...args) => {
+      const rows = await journal.list(...args); lists++;
+      if (lists === 1) await new Promise(resolve => { releaseList = resolve; });
+      if (lists === 2 && holdReadback) await new Promise(resolve => { releaseReadback = resolve; });
+      return rows;
+    }, remove: async envelope => {
+      removed.push(envelope.clientCommandId);
+      if (failRemoval) throw Object.assign(new Error('held cleanup storage failure'), { code: 'journal_timeout' });
+      const result = await journal.remove(envelope);
+      if (reinsertAfterAdditionalRemoval && removed.length > 1) await journal.admit(envelope);
+      return result;
+    } }),
+    fetcher: async (url, init, actual) => {
+      if (!url.endsWith('/apply')) return actual(url, init);
+      applies++; const response = await actual(url, init);
+      await new Promise(resolve => { releaseApply = resolve; }); return response;
+    },
+  });
+  const game = f.store.getGameViewModel(f.gameId), action = game.legalActions.find(action => action.type === 'move');
+  const handle = await f.store.applyGameAction({ gameId: f.gameId, state: game.currentSnapshot, action });
+  await until(() => Boolean(releaseApply));
+  const [original] = await f.journal.list(f.store.getIdentityId(), f.gameId);
+  const readiness = f.transport.finishSocketRecovery(f.gameId, { isCurrent: () => owner.current });
+  void readiness.catch(() => {}); // Each negative case observes the exact outcome below.
+  await until(() => Boolean(releaseList)); releaseApply(); await handle.committed;
+  if (failRemoval) await until(() => f.store.getGameViewModel(f.gameId).storageBlocked);
+  else assert.deepEqual(await f.journal.list(f.store.getIdentityId(), f.gameId), []);
+  return { ...f, original, readiness, removed, owner, applies: () => applies,
+    resumeHydration: () => releaseList(), readbackHeld: () => Boolean(releaseReadback), resumeReadback: () => releaseReadback() };
+};
+
+test('hydration joins a failed terminal cleanup without deleting again or clearing its storage fence', async t => {
+  const f = await receiptBeforeHydration(t, { failRemoval: true });
+  f.resumeHydration(); assert.equal(await f.readiness, false);
+  assert.deepEqual(f.removed, [f.original.clientCommandId]); assert.equal(f.applies(), 1);
+  assert.deepEqual(await f.journal.list(f.store.getIdentityId(), f.gameId), [f.original]);
+  assert.equal(f.store.getGameViewModel(f.gameId).storageBlocked, true);
+  assert.equal(f.store.getGameViewModel(f.gameId).sharedMutationsBlocked, true);
+});
+
+test('a changed durable row cannot be removed using an earlier terminal receipt', async t => {
+  const f = await receiptBeforeHydration(t);
+  const altered = structuredClone(f.original); altered.payload.notation = 'different saved intent';
+  altered.fingerprint = await commandFingerprint(altered); await f.journal.admit(altered);
+  const rejected = assert.rejects(f.readiness, { code: 'invalid_saved_command' });
+  f.resumeHydration(); await rejected;
+  assert.deepEqual(await f.journal.list(f.store.getIdentityId(), f.gameId), [altered]);
+  assert.deepEqual(f.removed, [f.original.clientCommandId]); assert.equal(f.applies(), 1);
+  assert.equal(f.store.getGameViewModel(f.gameId).storageBlocked, true);
+});
+
+test('stale cleanup readback cannot release a newer recovery context', async t => {
+  const f = await receiptBeforeHydration(t, { holdReadback: true });
+  f.resumeHydration(); await until(f.readbackHeld);
+  f.owner.current = false; f.transport.setConnectionRecovering(f.gameId, true);
+  f.resumeReadback(); assert.equal(await f.readiness, false);
+  assert.equal(f.store.getGameViewModel(f.gameId).recovering, true);
+  assert.deepEqual(f.removed, [f.original.clientCommandId]); assert.equal(f.applies(), 1);
+  assert.equal(await f.transport.finishSocketRecovery(f.gameId), true);
+  assert.deepEqual(await f.journal.list(f.store.getIdentityId(), f.gameId), []);
+});
+
+test('a row recreated after successful removal fails closed after one new cleanup attempt', { timeout: 1000 }, async t => {
+  const f = await receiptBeforeHydration(t, { reinsertAfterAdditionalRemoval: true });
+  await f.journal.admit(f.original);
+  const rejected = assert.rejects(f.readiness, { code: 'cleanup_unverified' });
+  f.resumeHydration(); await rejected;
+  assert.deepEqual(f.removed, [f.original.clientCommandId, f.original.clientCommandId],
+    'the original receipt cleanup may be followed by only one fresh-row cleanup attempt');
+  assert.equal(f.applies(), 1); assert.equal((await f.current()).game.gameplayRevision, 1);
+  assert.deepEqual(await f.journal.list(f.store.getIdentityId(), f.gameId), [f.original]);
+  assert.equal(f.store.getGameViewModel(f.gameId).storageBlocked, true);
   assert.equal(f.store.getGameViewModel(f.gameId).sharedMutationsBlocked, true);
 });

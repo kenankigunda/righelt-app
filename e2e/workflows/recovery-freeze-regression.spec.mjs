@@ -13,7 +13,8 @@ scenario.resultingState=structuredClone(scenario.initialState);
 
 test('late background HTTP failure preserves a restored socket and the selected move', async ({page}, info) => {
  let fault=false, closing=false, held=false, releaseOld, reconciles=0, applies=0, heldRequest, oldReadCancelled=false;
- const sockets=[], gate=new Promise(resolve=>releaseOld=resolve);
+ const sockets=[], pageErrors=[], gate=new Promise(resolve=>releaseOld=resolve);
+ page.on('pageerror',error=>pageErrors.push(error.message));
  page.on('requestfailed',request=>{if(request===heldRequest)oldReadCancelled=true;});
  await page.routeWebSocket(/\/api\/shell\/games\//, socket=>{
   const server=socket.connectToServer(), entry={socket,server,snapshot:null};sockets.push(entry);
@@ -70,6 +71,7 @@ test('late background HTTP failure preserves a restored socket and the selected 
   await expect.poll(async()=> (await currentGame(page,gameId)).gameplayRevision).toBe(initial.gameplayRevision+1);
   expect(applies).toBe(1);
   expect((await currentGame(page,gameId)).moves.at(-1).action).toEqual(action);
+  expect(pageErrors).toEqual([]);
   await page.screenshot({path:info.outputPath('socket-recovery-keeps-selected-move.png')});
  } finally {
   closing=true;fault=false;releaseOld();
