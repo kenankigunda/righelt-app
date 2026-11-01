@@ -1,5 +1,6 @@
 import type { Action, GameState, Outcome, Piece } from './types';
 import { deterministicStateHash } from './hash';
+import { canonicalTerminalDisplacement } from './terminal-displacement';
 
 // A terminal view cannot turn the displaced defender into an ordinary occupant
 // or a destruction. Keep the exact acknowledged frame and piece losslessly.
@@ -19,7 +20,7 @@ export function terminalPushFrame(state: GameState, outcome: Outcome, push?: Ack
   { kind: 'normalized'; frame: TerminalPushFrame } | { kind: 'unknown' } {
   if (state.outcome.status !== 'ongoing' || outcome.status === 'ongoing' || !push?.decisionId ||
       push.action.type !== 'push' || !push.action.actorId || !push.action.from || !push.action.to ||
-      push.frameHash !== deterministicStateHash(state)) return { kind: 'unknown' };
+      !push.frameHash) return { kind: 'unknown' };
   const continuation=state.continuation;
   if (continuation?.type !== 'push' || continuation.phase !== 'retreat' || !continuation.pushedPieceId ||
       !continuation.followPoint || continuation.followPoint.row !== push.action.from.row ||
@@ -33,12 +34,26 @@ export function terminalPushFrame(state: GameState, outcome: Outcome, push?: Ack
       (push.action.targetId && push.action.targetId!==defender.id) ||
       state.pieces.filter(piece=>piece.pushed).length!==1 ||
       state.pieces.filter(piece=>!piece.pushed&&atTarget(piece)).length!==1) return { kind:'unknown' };
+  const pieces=state.pieces.filter(piece=>piece.id!==defender.id);
+  let canonical;
+  try {
+    // Validate raw provenance before hashing or cloning recursive/extra metadata.
+    // The strict serialized contract remains the single representation authority.
+    canonical=canonicalTerminalDisplacement({...state,pieces,continuation:null,outcome,
+      terminalDisplacement:{decisionId:push.decisionId,frameHash:push.frameHash,attackerId:attacker.id,action:push.action,piece:defender}});
+  } catch(error) {
+    if(error instanceof Error&&error.message==='Invalid terminal displacement')return {kind:'unknown'};
+    throw error;
+  }
+  if(!canonical||push.frameHash!==deterministicStateHash(state))return {kind:'unknown'};
   const recorded=structuredClone(state),occupancy=structuredClone(state);
   occupancy.pieces=occupancy.pieces.filter(piece=>piece.id!==defender.id);
   occupancy.continuation=null;
   occupancy.outcome=structuredClone(outcome);
   delete occupancy.artifacts; // No cached supply/command artifact may reference the displacement.
-  const displacement={decisionId:push.decisionId,frameHash:push.frameHash,attackerId:attacker.id,action:structuredClone(push.action),piece:structuredClone(defender)};
+  // Cloning an entire graph preserves aliases. Split mutable provenance fields
+  // so action endpoints and the defender position stay independently editable.
+  const displacement={...canonical,action:{...canonical.action,from:structuredClone(canonical.action.from),to:structuredClone(canonical.action.to)},piece:structuredClone(canonical.piece)};
   occupancy.terminalDisplacement=structuredClone(displacement);
   return {kind:'normalized',frame:{recorded,occupancy,displacement}};
 }

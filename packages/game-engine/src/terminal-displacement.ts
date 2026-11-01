@@ -16,7 +16,7 @@ export function canonicalTerminalDisplacement(state: GameState): TerminalDisplac
  if(!record(action)||Object.keys(action).some(key=>!['type','actorId','from','to','targetId'].includes(key))||action.type!=='push'||action.actorId!==value.attackerId||!point(action.from)||!point(action.to))return fail();
  if(!record(piece)||Object.keys(piece).some(key=>!['id','owner','kind','position','supplied','commanded','displaySupplied','displayCommanded','pushed','shifted'].includes(key))||!text(piece.id)||!['P1','P2'].includes(String(piece.owner))||!['unit','commander'].includes(String(piece.kind))||!point(piece.position)||piece.pushed!==true||typeof piece.supplied!=='boolean'||typeof piece.commanded!=='boolean'||!same(action.to,piece.position)||
   (action.targetId!==undefined&&action.targetId!==piece.id))return fail();
- for(const key of ['displaySupplied','displayCommanded','shifted'])if(piece[key]!==undefined&&typeof piece[key]!=='boolean')return fail();
+ for(const key of ['displaySupplied','displayCommanded','shifted'] as const)if(piece[key]!==undefined&&typeof piece[key]!=='boolean')return fail();
  const attacker=state.pieces.filter(candidate=>candidate.id===value.attackerId);
  if(attacker.length!==1||state.pieces.some(candidate=>candidate.pushed)||state.pieces.filter(candidate=>same(candidate.position,piece.position)).length!==1||attacker[0].pushed||attacker[0].owner===piece.owner||!same(attacker[0].position,piece.position)||state.pieces.some(candidate=>candidate.id===piece.id))return fail();
  return structuredClone(value);
