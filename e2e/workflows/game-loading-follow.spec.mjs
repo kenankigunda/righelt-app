@@ -78,7 +78,7 @@ test.describe('retained Horus follow', () => {
   const nextCommand = minimumGeneration => page.waitForRequest(request => {
     if (request.method() !== 'POST' || new URL(request.url()).pathname !== `/api/shell/games/${game.id}/apply`) return false;
     return request.postDataJSON()?.payload?.computer?.generation > minimumGeneration;
-  }, { timeout: 30000 });
+  });
 
 test('the exact follow saves once and pauses with its durable receipt', async ({ baseURL }, info) => {
   await page.setViewportSize({ width: 390, height: 900 });
