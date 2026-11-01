@@ -640,8 +640,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     }
     if (rushGuidanceStatus === 'failed' && overlayMode === OVERLAY_MODE.INTERACTIVE && !hasInspection()
       && !selectedPieceId && host.canPresentActions?.(state) !== false && state?.continuation?.type === 'rush') {
-      const blocker = getRushContinuationBlockingPiece(state);
-      setBoardPreviewPromptHtml(`${blocker ? `Rush to reconnect piece at ${renderBoardPreviewCoordinate(blocker.position)}` : 'Select a rush'} · Hints unavailable ${renderBoardInlineAction({id:'retry-rush-guidance',label:'Try again'})}`);
+      const points=getRushUnsuppliedPieceIds(state).map(id=>getBoardPieceById(id)?.position).filter(Boolean).sort((a,b)=>a.row-b.row||a.col-b.col);
+      const coordinates=points.map(point=>renderCoordinateChip(point,'board-preview-coordinate-chip-rush-blocker')).join(', ');
+      if(!points.length){
+        const end=legalActions.some(action=>action.type==='end_turn')?` or ${renderBoardInlineAction({id:'end-turn',label:'End turn'},{preview:true})}`:'';
+        setBoardPreviewPromptHtml(`<span class="board-message-row">Select a rush${end}</span><span class="board-message-row">Hints unavailable<span class="board-message-actions">${renderBoardInlineAction({id:'retry-rush-guidance',label:'Try again'})}</span></span>`);
+        return;
+      }
+      setBoardPreviewPromptHtml(`<span class="board-message-row">Rush to restore supply to the ${points.length===1?'piece':'pieces'} at ${coordinates}<span class="board-message-actions"><span class="board-obligatory-pill">Obligatory</span></span></span><span class="board-message-row">Hints unavailable<span class="board-message-actions">${renderBoardInlineAction({id:'retry-rush-guidance',label:'Try again'})}</span></span>`);
       return;
     }
     if (overlayMode === OVERLAY_MODE.INTERACTIVE && !selectedPieceId && !hasInspection() && host.canPresentActions?.(state) !== false

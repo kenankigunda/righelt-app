@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createBoardRuntime } from '../board/runtime/board-runtime.js';
-import { analyzeRushSupplyGuidance, listLegalActions } from '../generated/packages/game-engine/src/index.js';
+import { analyzeRushSupplyGuidance, listLegalActions, createInitialState, getRushUnsuppliedPieceIds } from '../generated/packages/game-engine/src/index.js';
 
 const state=JSON.parse(readFileSync(new URL('../scenarios/catalog.json',import.meta.url))).scenarios.find(s=>s.id==='bc6fb68f-7b20-4be5-a717-086ff15ec15f').initialState;
 const legal=listLegalActions(state), result=analyzeRushSupplyGuidance(state);
@@ -38,9 +38,9 @@ test('guidance preserves a selection made while analysis runs',async()=>{
   f.complete();await flush();assert.equal(f.runtime.getSelection().selectedPieceId,'C1');
 });
 
-test('failed analysis restores the original reconnect copy and legal highlights',async()=>{
+test('failed analysis preserves all required-piece copy and retry without changing legal highlights',async()=>{
   const f=fixture();await f.runtime.loadSnapshot(state,{legalActions:legal});await flush();f.fail();await flush();
-  assert.match(f.html,/Rush to reconnect piece at/);assert.doesNotMatch(f.html,/Finding|Obligatory/);assert.match(f.html,/Hints unavailable/);assert.match(f.html,/Try again/);
+  assert.match(f.html,/Rush to restore supply/);assert.match(f.html,/Obligatory/);assert.doesNotMatch(f.html,/Finding/);assert.match(f.html,/Hints unavailable/);assert.match(f.html,/Try again/);
   assert.equal(f.render.rushSupplyGuidance,null);assert.deepEqual(f.runtime.getLegalActions(),legal);
 });
 
@@ -68,4 +68,17 @@ test('pageshow restarts guidance without a selection and rejects a canceled same
   jobs[1].resolve({...result,actions:[...result.actions,{action:legal.find(a=>a.actorId==='C1'),immediate:false}]});
   await flush();assert.equal(runtime.getSelection().selectedPieceId,null);assert.doesNotMatch(html,/Finding|board-rush-guidance-sizing/);assert.match(html,/Obligatory/);
   runtime.destroy();
+});
+
+test('a late hint failure with no remaining required pieces preserves optional rush and legal End turn',async()=>{
+ const snapshot=structuredClone(state),f=fixture();
+ await f.runtime.loadSnapshot(snapshot,{legalActions:[...legal,{type:'end_turn'}]});await flush();
+ // Exercise the defensive repaint boundary while a pending hint fails: the
+ // latest piece collection is now a real supplied optional continuation.
+ const current=f.runtime.getState();current.pieces=createInitialState().pieces;
+ current.continuation={type:'rush',owner:'P1',rushedPieceIds:[],chainLength:1};
+ assert.deepEqual(getRushUnsuppliedPieceIds(current),[]);
+ f.fail();await flush();
+ assert.match(f.html,/Select a rush/);assert.match(f.html,/End turn/);
+ assert.doesNotMatch(f.html,/Hints unavailable|Try again|Obligatory|restore supply to the pieces at/);
 });
