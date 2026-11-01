@@ -36,7 +36,11 @@ const acceptedReceipt = async (page, command) => {
     expect(result.commandOutcomes).toHaveLength(1);
     expect(result.commandOutcomes[0]).toMatchObject({ gameId: command.gameId, identityId: command.identityId,
       clientCommandId: command.clientCommandId, fingerprint: command.fingerprint });
-    return result.commandOutcomes[0].outcome;
+    const outcome = result.commandOutcomes[0];
+    if (outcome.outcome === 'rejected') throw Error(`Native command rejected: ${outcome.reason}`);
+    if (!['accepted', 'unknown'].includes(outcome.outcome)) throw Error('Malformed native command outcome');
+    if (outcome.outcome === 'unknown' && !['not_recorded', 'dependency_pending'].includes(outcome.reason)) throw Error(`Native command cannot recover: ${outcome.reason}`);
+    return outcome.outcome;
   }, { timeout: 30000, message: 'The exact native command must have a durable accepted receipt' }).toBe('accepted');
   return result;
 };
