@@ -601,4 +601,27 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 
 .player-kind-icon {display:inline-flex;align-items:center;color:var(--muted);}
 .player-kind-icon .righelt-icon {width:14px;height:14px;}
+.participant-identity[data-player-side="p1"] .participant-computer .player-name {color:var(--player-p1);}
+.participant-identity[data-player-side="p2"] .participant-computer .player-name {color:var(--player-p2);}
+[data-testid="participants-list"] .participant-computer {width:100%;min-height:44px;flex-wrap:nowrap;}
+[data-testid="participants-list"] .participant-computer .player-name-stack {flex:1;max-width:none;overflow:visible;}
+.computer-tab-status.computer-status-badge {position:relative;display:inline-flex;width:24px;height:24px;flex:0 0 24px;justify-content:center;align-items:center;color:var(--text-primary);overflow:visible;}
+.computer-status-badge > .righelt-icon {width:22px;height:22px;stroke-width:2;}
+.computer-status-mark {--status-bg:var(--connection-status-disconnected-bg);--status-ring:var(--connection-status-disconnected-ring);position:absolute;right:-2px;bottom:-2px;display:flex;align-items:center;justify-content:center;width:12px;height:12px;border-radius:50%;background:var(--status-bg);color:var(--computer-status-dark-symbol);box-shadow:inset 0 0 0 1px var(--status-ring),0 0 0 1.5px var(--surface-raised);}
+.computer-status-mark .righelt-icon {width:11px;height:11px;stroke-width:2.7;}
+.computer-status-badge:is([data-computer-activity="here"],[data-computer-activity="elsewhere"]) .computer-status-mark {--status-bg:var(--connection-status-connected-bg);--status-ring:var(--connection-status-connected-ring);}
+.computer-status-badge[data-computer-activity="paused"] .computer-status-mark {--status-bg:var(--computer-status-paused-bg);width:14px;height:14px;right:-3px;bottom:-3px;}
+.computer-status-badge[data-computer-activity="paused"] .computer-status-mark .righelt-icon {width:12px;height:12px;fill:currentColor;stroke-width:0;}
+.computer-status-badge:is([data-computer-activity="elsewhere"],[data-computer-activity="finished"],[data-computer-activity="attention"]) .computer-status-mark {width:15px;height:15px;right:-3px;bottom:-3px;}
+.computer-status-badge:is([data-computer-activity="elsewhere"],[data-computer-activity="finished"]) .computer-status-mark .righelt-icon {width:12px;height:12px;stroke-width:2.2;}
+.computer-status-badge[data-computer-activity="attention"] .computer-status-mark {--status-bg:var(--computer-status-attention-bg);}
+.computer-status-badge[data-computer-activity="attention"] .computer-status-mark .righelt-icon {width:13px;height:13px;}
+.computer-status-badge[data-computer-activity="attention"] .computer-status-mark path:first-child {fill:currentColor;stroke-width:0;}
+.computer-status-badge[data-computer-activity="attention"] .computer-status-mark path:last-child {stroke:var(--status-bg);stroke-width:2.6;stroke-linecap:round;}
+.computer-status-badge[data-computer-activity="finished"] .computer-status-mark {--status-bg:var(--computer-status-finished-bg);color:var(--computer-status-light-symbol);}
+.computer-status-badge[data-computer-activity="moving"] .computer-status-mark {--status-bg:var(--computer-status-moving-bg);color:var(--computer-status-light-symbol);}
+@media(forced-colors:active){
+  .computer-tab-status.computer-status-badge {color:CanvasText;}
+  .computer-status-mark {--status-bg:Canvas !important;--status-ring:CanvasText !important;color:CanvasText !important;forced-color-adjust:none;box-shadow:inset 0 0 0 1px CanvasText,0 0 0 1.5px Canvas;}
+}
 .history-result-summary {margin:0 0 var(--section-item-gap,12px);}

@@ -2162,6 +2162,8 @@ textarea:focus-visible {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.hover-tooltip {position:fixed;z-index:1000;pointer-events:none;padding:5px 8px;background:var(--surface-raised);color:var(--ink);border:1px solid var(--divider);font:400 .875rem/1.4 var(--font-family);white-space:normal;overflow-wrap:anywhere;box-shadow:var(--shadow-raised);}
+@media(forced-colors:active){.hover-tooltip{background:Canvas;color:CanvasText;border-color:CanvasText;}}
 .account-dialog select { width: 100%; min-height: 44px; font: inherit; }
 
 /* Autosave feedback occupies the same inline slot as shared input actions. */

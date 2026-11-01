@@ -27,8 +27,8 @@ for(const width of [390,1440])test(`completed computer games stay read-only and 
  });
  await page.goto(`/#/game/${finished.id}`);await expect(page.getByTestId('game-board')).toBeVisible();
  await switchGamePanel(page,'players');
- const computer=page.getByRole('button',{name:'Horus, Blue, Game finished',exact:true});await expect(computer).toBeVisible();await expect(computer).toHaveAccessibleDescription('Computer player');
- const mark=computer.locator('.player-kind-icon .righelt-icon');await expect(mark).toBeVisible();expect((await mark.boundingBox()).width).toBeLessThanOrEqual(16);
+ const computer=page.getByRole('button',{name:'Horus, Blue, Computer player, Game finished',exact:true});await expect(computer).toBeVisible();await expect(computer).toHaveAccessibleName('Horus, Blue, Computer player, Game finished');
+ const bot=computer.locator('.computer-status-badge > .righelt-icon');await expect(bot).toBeVisible();expect((await bot.boundingBox()).width).toBe(22);const mark=computer.locator('.computer-status-mark');await expect(mark).toBeVisible();expect((await mark.boundingBox()).width).toBe(15);await expect(computer.locator('[data-computer-activity]')).toHaveAttribute('data-computer-activity','finished');
  await expect(computer).not.toContainText('Computer');await computer.click();await expect(page.getByRole('button',{name:'Resume here',exact:true})).toHaveCount(0);
  await page.screenshot({path:info.outputPath('completed-computer-players.png')});
  await switchGamePanel(page,'history');const summary=page.getByTestId('history-result-summary');await expect(summary).toContainText('You won');await expect(summary).toContainText('Red');
