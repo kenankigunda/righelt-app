@@ -35,8 +35,8 @@ for (const width of [390, 1440]) test(`saved board remains visible while play lo
   });
   try {
     // A changed document URL retires Home's already-open sockets and cached authority.
+    await page.addInitScript(() => { globalThis.__positionRetryActivated = false; });
     await page.goto(`/?position-first=${width}${gameHash}`);
-    await page.evaluate(() => { globalThis.__positionRetryActivated = false; });
     await switchGamePanel(page, 'board');
     const board = page.getByTestId('game-board'), wrap = page.getByTestId('game-board-wrap');
     await expect(board.locator('[data-piece-id]')).toHaveCount(expectedState.pieces.length);
