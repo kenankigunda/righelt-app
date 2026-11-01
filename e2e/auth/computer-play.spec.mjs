@@ -1,3 +1,4 @@
+import {writeFile} from 'node:fs/promises';
 import { CURRENT_COMPUTER_MODEL } from '../../packages/shared-types/src/computer-play.ts';
 import { test, expect } from '@playwright/test';
 import { submitPlayableAction, switchGamePanel } from '../support/app.mjs';
@@ -292,3 +293,42 @@ test(`${profile} branches from a human decision and plays as Player 1 with the p
   } finally { await popup.close(); }
 });
 }
+
+
+test('authenticated human Pass stays available during a sanitized pending renewal',async({page},info)=>{
+  await registerComputerTester(page);
+  await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
+  const create=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST'&&response.request().postDataJSON()?.computer?.p2==='babs');
+  const initialControl=captureInitialComputerControl(page);
+  await page.getByRole('button',{name:'Play Babs',exact:true}).click();
+  const createdResponse=await create;expect(createdResponse.status()).toBe(200);const created=(await createdResponse.json()).game;
+  await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',created.id);await waitForInitialComputerControl(page,created,initialControl);
+  const before=await projected(page,created.id);expect(before.computer.lease.authContextId).toBeUndefined();
+  const pass=page.locator('#shell-board-preview-label [data-board-message-action="pass"], #shell-board-preview-label [data-board-preview-action="pass"]');
+  let renewal,headers,release;const held=new Promise(resolve=>{release=resolve;}),humanRequests=[];
+  const observe=request=>{if(request.method()==='POST'&&new URL(request.url()).pathname===`/api/shell/games/${created.id}/apply`){const value=request.postDataJSON();if(!value.payload?.computer)humanRequests.push(value);}};
+  page.on('request',observe);
+  await page.route(`**/api/shell/games/${created.id}/shared`,async route=>{
+    const value=route.request().postDataJSON();
+    if(!renewal&&value.payload?.operation==='computer-control'&&value.payload.values?.action==='renew'){
+      renewal=value;headers=Object.fromEntries(Object.entries(route.request().headers()).filter(([name])=>name==='content-type'||name.startsWith('x-righelt-')));await held;
+    }
+    await route.continue();
+  });
+  try{
+    await expect.poll(()=>Boolean(renewal)).toBe(true);expect(renewal.authContextId).toMatch(/^[a-f0-9]{64}$/);await expect(pass).toBeEnabled();
+    await page.screenshot({path:info.outputPath('authenticated-fresh-renewal.png')});
+    await pass.click();await expect(page.getByTestId('history-pending-move-item').filter({hasText:'PASS'})).toHaveCount(1);
+    expect(humanRequests).toHaveLength(0);release();
+    await expect.poll(()=>humanRequests.length).toBe(1);const admitted=humanRequests[0];
+    expect(admitted.authContextId).toBe(renewal.authContextId);expect(admitted.expectedGameplayRevision).toBe(before.gameplayRevision);
+    expect(admitted.predecessor).toEqual({clientCommandId:renewal.clientCommandId,fingerprint:renewal.fingerprint});
+    await expect.poll(async()=>(await projected(page,created.id)).moves.filter(move=>move.clientCommandId===admitted.clientCommandId)).toHaveLength(1);
+    const response=await page.request.post(`/api/shell/games/${created.id}/reconcile`,{headers,data:{protocolVersion:2,identityId:admitted.identityId,knownSnapshotEventSeq:0,commands:[renewal,admitted]}});
+    expect(response.status()).toBe(200);const body=await response.json();
+    expect(body.commandOutcomes).toContainEqual(expect.objectContaining({clientCommandId:renewal.clientCommandId,fingerprint:renewal.fingerprint,outcome:'accepted',gameplayRevision:before.gameplayRevision}));
+    expect(body.commandOutcomes).toContainEqual(expect.objectContaining({clientCommandId:admitted.clientCommandId,fingerprint:admitted.fingerprint,outcome:'accepted',gameplayRevision:before.gameplayRevision+1}));
+    expect(humanRequests).toHaveLength(1);await page.screenshot({path:info.outputPath('authenticated-pass-accepted.png')});
+    await writeFile(info.outputPath('authenticated-renewal-receipts.json'),JSON.stringify({beforeRevision:before.gameplayRevision,renewalId:renewal.clientCommandId,admittedId:admitted.clientCommandId,predecessor:admitted.predecessor,outcomes:body.commandOutcomes,humanRequestCount:humanRequests.length},null,2));
+  }finally{release();page.off('request',observe);await page.unrouteAll({behavior:'wait'});}
+});

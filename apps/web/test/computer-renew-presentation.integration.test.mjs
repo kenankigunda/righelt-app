@@ -93,21 +93,24 @@ test('quiet renewal keeps its durable envelope without disabling legal human-tur
  const finalMessage=boardMessage(final);assert.equal(finalMessage.text,narration.text);assert.equal(hasPass(finalMessage),true);
 });
 
-async function humanRenewalHarness(t,{gateProjection,controlAction='renew',initialState,startRenewal=true,rulesOverride}={}) {
+async function humanRenewalHarness(t,{gateProjection,controlAction='renew',initialState,startRenewal=true,rulesOverride,authenticated=false}={}) {
+ const auth=authenticated?{enabled:true,session:{authenticated:true,account:{id:'owner'},contextId:'a'.repeat(64)}}:undefined;
  const now=Date.now(),state=initialState??resolveToStability(createInitialState(),{artifactMode:'full'});
  let game={id:'human-renewal',createdAt:new Date(now).toISOString(),updatedAt:new Date(now).toISOString(),gameplayRevision:0,
   board:{state},currentSnapshot:state,moves:[],turns:[{index:0,playerSeat:'Player 1',status:'active',moveIndexes:[]}],currentTurn:{index:0,playerSeat:'Player 1',status:'active',moveIndexes:[]},myRole:'Player 1',player1:{identityId:'owner'},player2:{identityId:'owner'},
   canControlComputer:true,canRecordMove:true,canEndTurn:Boolean(state.continuation),legalActions:listLegalActions(state),viewers:[],pendingJoinRequests:[],sharedReceipts:true,
-  computer:changeComputerControl(createComputerControl('owner',{p1:null,p2:'babs'}),{action:'acquire',deviceId:'device',ownerId:'owner',authContextId:'',generation:0,turnIndex:0,now})};
+  ...(authenticated?{ownershipMode:'account_v1'}:{}),
+  computer:changeComputerControl(createComputerControl('owner',{p1:null,p2:'babs'}),{action:'acquire',deviceId:'device',ownerId:'owner',authContextId:auth?.session.contextId??'',generation:0,turnIndex:0,now})};
  let eventSeq=1,held,release;const actions=[];
  const journal=createCommandJournal({indexedDB:new IDBFactory()});
  const rules=rulesOverride??createRulesExecutor(),project=rules.project.bind(rules);
  rules.project=(scope,input)=>gateProjection&&scope.startsWith('admit:')?Promise.resolve(gateProjection()).then(()=>project(scope,input)):project(scope,input);
- const reply=body=>Response.json(body,{headers:{[ACTION_CONTRACT_HEADER]:String(ACTION_CONTRACT_VERSION)}});
- const store=createLiveTransportStore({shouldDeferCommandSend:()=>!startRenewal,commandJournal:journal,rulesExecutor:rules,storage:{getItem:key=>key===IDENTITY_KEY?'owner':null,setItem(){},removeItem(){}},fetcher:async(url,init={})=>{
+ const clientGame=value=>{const copy=structuredClone(value);if(authenticated&&copy.computer?.lease)delete copy.computer.lease.authContextId;return copy;};
+ const reply=body=>Response.json(body.game?{...body,game:clientGame(body.game)}:body,{headers:{[ACTION_CONTRACT_HEADER]:String(ACTION_CONTRACT_VERSION)}});
+ const store=createLiveTransportStore({auth,shouldDeferCommandSend:()=>!startRenewal,commandJournal:journal,rulesExecutor:rules,storage:{getItem:key=>key===IDENTITY_KEY?'owner':null,setItem(){},removeItem(){}},fetcher:async(url,init={})=>{
   if(init.method==='POST'&&url.endsWith('/shared')) {
    const command=JSON.parse(init.body);held=command;await new Promise(resolve=>{release=resolve;});
-   let reason=null;try{game={...game,computer:changeComputerControl(game.computer,{...command.payload.values,ownerId:'owner',authContextId:'',turnIndex:0,now:Date.now()})};}catch(error){reason=error.message;}eventSeq++;
+   let reason=null;try{game={...game,computer:changeComputerControl(game.computer,{...command.payload.values,ownerId:'owner',authContextId:command.authContextId??'',turnIndex:0,now:Date.now()})};}catch(error){reason=error.message;}eventSeq++;
    return reply({ok:true,protocolVersion:2,gameId:game.id,eventSeq,gameplayRevision:game.gameplayRevision,game,commandOutcomes:[{gameId:game.id,identityId:command.identityId,clientCommandId:command.clientCommandId,fingerprint:command.fingerprint,outcome:reason?'rejected':'accepted',reason,eventSeq,gameplayRevision:game.gameplayRevision}]});
   }
   if(init.method==='POST'&&(url.endsWith('/apply')||url.endsWith('/end-turn'))) {
@@ -125,7 +128,7 @@ async function humanRenewalHarness(t,{gateProjection,controlAction='renew',initi
  const renew=startRenewal?store.computerControl(game.id,{action:controlAction,deviceId:'device',generation:game.computer.generation}):Promise.resolve();
  renewOutcome=renew.then(()=>({ok:true}),error=>({ok:false,code:error.code}));
  if(startRenewal)await waitForBoundary(()=>held);
- return {store,journal,renew,renewOutcome,game:()=>game,held:()=>held,release:()=>release(),actions,update:mutate=>{game=mutate(structuredClone(game));eventSeq++;store.applyLiveGameUpdate({game,eventSeq});},renewNext:async()=>{held=null;const completion=store.computerControl(game.id,{action:'renew',deviceId:'device',generation:game.computer.generation});renewOutcome=completion.then(()=>({ok:true}),error=>({ok:false,code:error.code}));await waitForBoundary(()=>held);return {completion};}};
+ return {store,journal,auth,renew,renewOutcome,game:()=>game,held:()=>held,release:()=>release(),actions,update:mutate=>{game=mutate(structuredClone(game));eventSeq++;store.applyLiveGameUpdate({game:clientGame(game),eventSeq});},renewNext:async()=>{held=null;const completion=store.computerControl(game.id,{action:'renew',deviceId:'device',generation:game.computer.generation});renewOutcome=completion.then(()=>({ok:true}),error=>({ok:false,code:error.code}));await waitForBoundary(()=>held);return {completion};}};
 }
 
 test('an explicit human Pass during held renewal is visibly admitted once with the unchanged gameplay revision',async t=>{
@@ -283,4 +286,35 @@ test('terminal empty turns retain their completion fence without journaling',asy
  h.update(game=>({...game,canRecordMove:false,canEndTurn:false,board:{state:{...game.board.state,outcome:{status:'p1_win',reason:'p2_commander_destroyed'}}}}));
  await assert.rejects(h.store.endTurn({gameId:h.game().id}),{code:'sync_recovering'});
  assert.deepEqual(await h.journal.list('owner',h.game().id),[]);assert.deepEqual(h.actions,[]);
+});
+
+
+test('authenticated sanitized lease preserves legal human admission through fresh renewal',async t=>{
+ const h=await humanRenewalHarness(t,{authenticated:true});
+ assert.equal(h.store.getAuthoritativeGame(h.game().id).computer.lease.authContextId,undefined);
+ assert.equal(h.held().authContextId,h.auth.session.contextId);
+ assert.equal(h.store.getGameViewModel(h.game().id).canRecordMove,true);
+ const result=await h.store.applyGameAction({gameId:h.game().id,state:h.game().board.state,action:{type:'pass'}});
+ assert.equal(result.accepted,true);const pending=(await h.journal.list('owner',h.game().id)).find(value=>value.kind==='action');
+ assert.equal(pending.authContextId,h.auth.session.contextId);assert.deepEqual(pending.predecessor,{clientCommandId:h.held().clientCommandId,fingerprint:h.held().fingerprint});assert.equal(h.actions.length,0);
+ h.release();await h.renew;await waitForBoundary(()=>h.actions.length===1);assert.equal(h.actions[0].clientCommandId,pending.clientCommandId);
+});
+
+for(const change of ['context','account','signed-out','explicit-lease-mismatch'])test(`sanitized lease cannot bypass changed authenticated ${change}`,async t=>{
+ const h=await humanRenewalHarness(t,{authenticated:true});
+ if(change==='context')h.auth.session.contextId='b'.repeat(64);
+ else if(change==='account')h.auth.session.account={id:'another-account'};
+ else if(change==='signed-out')h.auth.session.authenticated=false;
+ else h.store.applyLiveGameUpdate({game:{...h.game(),computer:{...h.game().computer,lease:{...h.game().computer.lease,authContextId:'b'.repeat(64)}}},eventSeq:2});
+ assert.equal(h.store.getGameViewModel(h.game().id).canRecordMove,false);
+ await assert.rejects(h.store.applyGameAction({gameId:h.game().id,state:h.game().board.state,action:{type:'pass'}}),error=>['sync_recovering','invalid_credentials'].includes(error.code));
+ assert.equal((await h.journal.list('owner',h.game().id)).length,1);assert.equal(h.actions.length,0);
+});
+
+test('a missing guest lease context is not treated as authenticated proof',async t=>{
+ const h=await humanRenewalHarness(t);const game=structuredClone(h.game());delete game.computer.lease.authContextId;
+ h.store.applyLiveGameUpdate({game,eventSeq:2});
+ assert.equal(h.store.getGameViewModel(game.id).canRecordMove,false);
+ await assert.rejects(h.store.applyGameAction({gameId:game.id,state:game.board.state,action:{type:'pass'}}),{code:'sync_recovering'});
+ assert.equal((await h.journal.list('owner',game.id)).length,1);assert.equal(h.actions.length,0);
 });

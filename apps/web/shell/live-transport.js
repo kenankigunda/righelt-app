@@ -288,13 +288,21 @@ export const createLiveTransportStore = ({
       || optimistic.confirmationOverdue || optimistic.retryAttempt > 0 || optimistic.syncStatus === 'confirming') return false;
     const pending = optimistic.pendingCommands[0], envelope = pending.envelope, values = envelope?.payload?.values;
     const control = game.computer, state = game.board?.state, now = Date.now();
+    // Account projections intentionally redact the lease's private auth context.
+    // A redacted lease is compatible only with the exact currently signed-in
+    // owner and this locally admitted envelope, never an absent/mismatched session.
+    const currentAccountEnvelope = Boolean(auth?.enabled && auth.session.authenticated
+      && auth.session.account?.id === identityId && /^[a-f0-9]{64}$/.test(auth.session.contextId ?? '')
+      && envelope?.authContextId === auth.session.contextId);
+    const leaseContextMatches = control?.lease?.authContextId === (envelope?.authContextId ?? '')
+      || currentAccountEnvelope && control?.lease?.authContextId === undefined;
     if (pending.kind !== 'shared' || envelope?.payload?.operation !== 'computer-control' || values?.action !== 'renew'
       || !control || control.ownerId !== identityId || game.canControlComputer === false
       || !state || state.outcome?.status !== 'ongoing' || !(game.canRecordMove || game.canEndTurn)
       || control.paused || control.manual || values.generation !== control.generation
       || !control.lease || values.deviceId !== control.lease.deviceId || control.lease.expiresAt <= now
-      || envelope.identityId !== identityId || auth?.enabled && envelope.authContextId !== auth.session.contextId
-      || control.lease.authContextId !== (envelope.authContextId ?? '') || envelope.expectedGameplayRevision !== game.gameplayRevision
+      || envelope.identityId !== identityId || auth?.enabled && !currentAccountEnvelope
+      || !leaseContextMatches || envelope.expectedGameplayRevision !== game.gameplayRevision
       || serializeState(envelope.expectedState) !== serializeState(state)
       || !Number.isFinite(envelope.submittedAt) || envelope.submittedAt > now
       || now - envelope.submittedAt >= timing.confirmationBudgetMs
