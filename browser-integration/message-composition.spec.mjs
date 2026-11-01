@@ -10,7 +10,7 @@ test('semantic message controller preserves native press geometry and snaps metr
   await page.waitForFunction(()=>window.fixtureReady);
   await page.evaluate(async()=>{await window.boardFixture.setup('pass',false);window.compositionCopy=(long=false)=>({text:long?'An acknowledged opponent move needs a longer explanation with several coordinate descriptions so the same replay action wraps below this complete sentence.':'Acknowledged move',action:{id:'replay-next',label:'Next'}});window.boardFixture.message(window.compositionCopy());});
   const next=page.getByRole('button',{name:'Next',exact:true});
-  const settled=()=>page.waitForFunction(()=>!document.querySelector('.board-message-slot').getAnimations().some(a=>a.playState==='running'));
+  const settled=async()=>{await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));await page.waitForFunction(()=>!document.querySelector('.board-message-slot').getAnimations().some(a=>a.playState==='running'));};
   await expect(page.locator('.board-message-slot')).toHaveAttribute('data-height-managed','true');await settled();
   const results=[];
   for(const input of ['pointer','Enter','Space']){

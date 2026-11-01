@@ -37,6 +37,9 @@ export function createMessageHeightController(label) {
   if(!ownMessage&&!ownCell)return;
   if(event.type==='pointerdown')pointer=true;else if(event.key==='Enter'||event.key===' ')key=true;else return;
   pressedControl=ownMessage?button:null;
+  // A press can begin halfway through an earlier expansion/collapse. Freeze
+  // that actual interpolated box before any further native hit testing.
+  if(animation){const height=slot.getBoundingClientRect().height;animation.cancel();animation=null;slot.style.height=`${height}px`;lastTarget=null;}
  };
  const ends=event=>{if(event.type.startsWith('pointer'))pointer=false;else if(event.key==='Enter'||event.key===' ')key=false;schedule();};
  const retirePress=()=>{pointer=false;key=false;metricChange=true;schedule();};

@@ -18,7 +18,7 @@ function fixture(){
  const label={...events(),ownerDocument:doc,closest:()=>slot,contains:node=>node===button};
  const controller=createMessageHeightController(label);
  const flush=()=>{for(const fn of frames.values()){frames.clear();fn();}};
- return{controller,slot,label,doc,win,fonts,motion,animations,observers,frames,button,flush,setWidth:value=>{width=value;},change(height,liveHeight=height){current=height;rendered=liveHeight;observers[0].fn();flush();}};
+ return{controller,slot,label,doc,win,fonts,motion,animations,observers,frames,button,flush,setWidth:value=>{width=value;},setRendered:value=>{rendered=value;},change(height,liveHeight=height){current=height;rendered=liveHeight;observers[0].fn();flush();}};
 }
 test('controller preserves native press geometry, retargets from rendered height and cleans every owner',()=>{
  const f=fixture();assert.equal(f.slot.style.height,'75px');assert.equal(f.animations.length,0);
@@ -50,4 +50,12 @@ test('same action defers wrapping content until after release while changed avai
  assert.equal(f.controller.deferContent('Another prose Next',()=>published++),true);
  assert.equal(f.controller.deferContent('Next disabled',()=>published++),false);
  f.doc.handlers.get('keyup')({type:'keyup',key:' '});f.flush();assert.equal(published,1,'obsolete same-action prose is not published after genuine availability changes');f.controller.destroy();
+});
+
+test('press onset freezes an already running height animation at the actual interpolated box',()=>{
+ const f=fixture();f.change(160,75);f.setRendered(112);
+ f.doc.handlers.get('pointerdown')({type:'pointerdown',target:{closest:()=>f.button}});
+ assert.equal(f.animations[0].canceled,true);assert.equal(f.slot.style.height,'112px');
+ f.doc.handlers.get('pointerup')({type:'pointerup'});f.flush();
+ assert.deepEqual(f.animations[1].keys,[{height:'112px'},{height:'160px'}]);f.controller.destroy();
 });
