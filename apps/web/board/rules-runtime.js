@@ -13,6 +13,7 @@ export class RulesRuntime {
     this.jobs = new Map();
     this.running = null;
   }
+  rushGuidance(scope, input) { return this.request(scope, 'rush-guidance', input); }
   project(scope, input) { return this.request(scope, 'project', input); }
   equivalent(scope, input) { return this.request(scope, 'equivalent', input); }
   previews(scope, input) { return this.request(scope, 'previews', input); }
