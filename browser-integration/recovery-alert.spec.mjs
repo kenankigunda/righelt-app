@@ -65,7 +65,7 @@ for(const viewport of [{width:667,height:320},{width:390,height:460}]) test(`exp
  await page.getByRole('button',{name:'Details',exact:true}).click();await containedControls(page);
 });
 
-test('enlarged text retains alert actions and disclosure',async({page})=>{
+test('enlarged text retains alert actions and disclosure',async({page},info)=>{
  await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'});await openFixture(page);
  await page.evaluate(()=>{document.documentElement.style.fontSize='32px';window.renderMode('storage',{longMessage:true});});
  await containedControls(page);await page.getByRole('button',{name:'Details',exact:true}).click();await containedControls(page);
@@ -80,6 +80,16 @@ test('enlarged text retains alert actions and disclosure',async({page})=>{
  await expect(page.locator('.issue-details [role="status"]')).toHaveText('Full details copied.');
  expect(await page.evaluate(()=>window.copiedFullDetails)).toBe(expected);
  await expect(copy).toBeFocused();await containedControls(page);
+ await copy.press('Tab');const report=page.locator('.issue-details pre');await expect(report).toBeFocused();
+ const readable=()=>report.evaluate(pre=>{
+  const box=pre.getBoundingClientRect(),outer=pre.closest('.issue-details').getBoundingClientRect();
+  const line=parseFloat(getComputedStyle(pre).lineHeight);
+  return {height:box.height,visible:Math.max(0,Math.min(box.bottom,outer.bottom,innerHeight)-Math.max(box.top,outer.top,0)),line};
+ });
+ await expect.poll(async()=>{const box=await readable();return box.visible>=box.line;}).toBe(true);
+ const box=await readable();expect(box.height).toBeGreaterThanOrEqual(box.line);
+ await report.press('ArrowDown');await expect(report).toBeFocused();
+ await page.screenshot({path:info.outputPath('enlarged-readable-details.png')});
 });
 
 for(const reduced of [false,true]) test(`confirmation fades the board and sweeps right${reduced?' with static reduced motion':''}`,async({page},info)=>{
