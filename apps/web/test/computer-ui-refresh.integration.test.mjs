@@ -56,6 +56,7 @@ test('actual app wiring batches only raw progress and renders control notificati
   updateComputerUi:()=>rendered.push(state),
   createFramePresentation:options=>createFramePresentation({...options,visible:()=>true,requestFrame:callback=>{const next=id++;frames.set(next,callback);return next;},cancelFrame:id=>cancelled.push(id)}),
   createComputerSession:options=>{notify=options.onChange;return{tick(){},suspend(){}};},
+  createForcedFollow:()=>({tick(){},cancel(){}}),
   document:{addEventListener(){}},window:{addEventListener(){}},
  });
  new vm.Script(slice('const computerUiPresentation =',"window.addEventListener('hashchange'")).runInContext(context);

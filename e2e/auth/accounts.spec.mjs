@@ -36,6 +36,8 @@ async function register(page, username, { gate = false } = {}) {
   }
   // The game URL and Player 1 role are optimistic. Finish the real creation
   // before a caller can navigate away and cancel its pending mutation.
+  await expect(play).toBeVisible();
+  await expect(play).toBeEnabled();
   const [creation] = await Promise.all([
     page.waitForResponse(response => response.request().method() === "POST"
       && new URL(response.url()).pathname === "/api/shell/games", { timeout: 10000 }),

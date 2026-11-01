@@ -2,7 +2,7 @@ import {test as base,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {deterministicStateHash,resolveToStability,serializeState} from '../../apps/web/generated/packages/game-engine/src/index.js';
 import {ACTION_CONTRACT_HEADER,ACTION_CONTRACT_VERSION,SYNC_TIMING,commandFingerprint,isSyncCommand,isReconcileResponse,isCommandOutcome} from '../../apps/web/generated/packages/shared-types/src/sync-protocol.js';
-import {importScenarioGame,submitPlayableAction,switchGamePanel,ensureActionActorSelected} from '../support/app.mjs';
+import {importScenarioGame,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
 import {waitForComputerDecision} from '../support/computer-projection.mjs';
 import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
 import {makeRetreatScenario,readRetreatCapture,FOLLOW_ACTION,RETREAT_CAPTURE_SHA256} from '../support/retreat-completion-fixture.mjs';
@@ -17,7 +17,7 @@ const test=base.extend({acceptedRetreat:[async({page,baseURL},use)=>{
 
 const f=readRetreatCapture(),safe=f.alternatives.find(row=>row.completable);
 const computerRetreatWorkflow='the real computer defender records only the completion-preserving retreat';
-const computerFollowWorkflow='the real computer defender leaves a completion-preserving native Follow';
+const computerFollowWorkflow='the real computer retreat permits the completion-preserving automatic Follow';
 // Read existing recorder and DOM only. Never drive recovery or submit work.
 async function readRetreatDiagnostics(measurementName){
    const match=location.hash.match(/^#\/game\/([^?#/]+)/);
@@ -134,13 +134,28 @@ async function noClosure(page,game){
  await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toHaveCount(0);
  await expect(page.locator('[data-action="end-turn"],[data-board-preview-action="end-turn"]').filter({visible:true})).toHaveCount(0);
 }
+async function completedMandatoryFollow(page,id,retreatCommandId){
+ await expect.poll(async()=>{
+  const game=await current(page,id),index=game.moves.findIndex(move=>move.clientCommandId===retreatCommandId);
+  return index>=0&&game.moves.slice(index+1).some(move=>move.action.type==='follow');
+ }).toBe(true);
+ const game=await current(page,id),index=game.moves.findIndex(move=>move.clientCommandId===retreatCommandId),retreat=game.moves[index];
+ expect(retreat).toBeTruthy();expect(capturedHash(retreat.snapshot)).toBe(safe.stateHash);
+ const follows=game.moves.slice(index+1).filter(move=>move.action.type==='follow');
+ expect(follows).toHaveLength(1);expect(follows[0].action).toEqual(FOLLOW_ACTION);
+ expect(follows[0].selectionSnapshot).toEqual(retreat.snapshot);expect(follows[0].computerProof??null).toBeNull();
+ expect(follows[0].clientCommandId).not.toBe(retreatCommandId);
+ // The next computer turn may already be running. Validate the exact accepted
+ // follow frame rather than depending on the live board pausing at that frame.
+ completed({board:{state:follows[0].snapshot}});return game;
+}
 function completed(game){
  expect(game.board.state.continuation).toBeNull();expect(game.board.state.outcome.status).toBe('ongoing');
  const stable=resolveToStability(game.board.state);
  for(const id of ['U2-11','U2-15'])expect(stable.pieces.find(piece=>piece.id===id)).toMatchObject({owner:'P2',supplied:true});
 }
 
-test('human retreat excludes the stranded square and completes the native Follow',async({page,baseURL},info)=>{
+test('human retreat excludes the stranded square and automatically completes the mandatory Follow',async({page,baseURL},info)=>{
  const {gameId}=await importScenarioGame(page,makeRetreatScenario('human'),baseURL);await claimBoth(page);
  await atHash(page,gameId,f.push.beforeHash);await submit(page,gameId,f.push.action);
  const pushed=await atHash(page,gameId,f.push.afterHash);expect(pushed.legalActions).toEqual([safe.action]);await noClosure(page,pushed);
@@ -162,13 +177,14 @@ test('human retreat excludes the stranded square and completes the native Follow
  const rejected=await request(page,`/api/shell/games/${gameId}/apply`,unsafe);expect(rejected.accepted).toBe(false);
  expect((await receipt(page,gameId,unsafe,'rejected')).outcome.reason).toBe('SUPPLY_DESTINATION_UNSUPPLIED');
  const unchanged=await current(page,gameId);expect(unchanged.board).toEqual(pushed.board);expect(unchanged.gameplayRevision).toBe(pushed.gameplayRevision);expect(unchanged.moves).toEqual(pushed.moves);
- // Clicking an empty unhighlighted square deliberately clears selection.
- // Resume through the actual pushed-piece control before selecting its move.
- await ensureActionActorSelected(cell(page,safe.action.from));
- await submit(page,gameId,safe.action);const retreat=await atHash(page,gameId,safe.stateHash);
- expect(retreat.legalActions).toEqual([FOLLOW_ACTION]);await noClosure(page,retreat);
- await page.screenshot({path:info.outputPath('safe-retreat-awaits-follow.png')});
- await submit(page,gameId,FOLLOW_ACTION);completed(await current(page,gameId));
+ // The rejected decision publishes the unchanged authoritative position and
+ // restores its mandatory actor. Clicking during that publication can arrive
+ // after restoration and deliberately cycle the selected piece's overlay.
+ await expect(cell(page,safe.action.from)).toHaveClass(/(?:^|\s)source(?:\s|$)/);
+ const {command:retreatCommand}=await submit(page,gameId,safe.action);
+ await completedMandatoryFollow(page,gameId,retreatCommand.clientCommandId);
+ await expect(page.locator('[data-board-message-action="replay-push-sequence"]')).toBeVisible();
+ await page.screenshot({path:info.outputPath('safe-retreat-follow-completed.png')});
  await info.attach('captured-retreat-provenance',{body:JSON.stringify({sha256:RETREAT_CAPTURE_SHA256,provenance:f.provenance,unsafe,receipt:rejected.commandOutcomes},null,2),contentType:'application/json'});
 });
 
@@ -200,16 +216,16 @@ test(computerRetreatWorkflow,async({page,acceptedRetreat},info)=>{
  expect(attempt.proof).toEqual(move.computerProof);expect(attempt.fingerprint).toBe(deterministicStateHash(branched.board.state));expect(attempt.result.status).toBe('ready');expect(attempt.result.action).toEqual(safe.action);
  expect(attempt.result.legality).toMatchObject({complete:true,unknown:0,indices:[1144]});expect(attempt.result.actionIndex).toBe(1144);
  const archive=await request(page,`/api/shell/games/${branched.id}/decision-history`,{});expect(archive.items.some(item=>item.id===move.moveId)).toBe(true);
+ await switchGamePanel(page,'board');
+ await page.screenshot({path:info.outputPath('computer-safe-retreat-evidence.png')});
  await info.attach('accepted-computer-retreat',{body:JSON.stringify({command,move,attempt},null,2),contentType:'application/json'});
 });
 
 test(computerFollowWorkflow,async({page,acceptedRetreat},info)=>{
  const {branched,command,move}=acceptedRetreat;
- const ready=await atHash(page,branched.id,safe.stateHash);expect(ready.legalActions).toEqual([FOLLOW_ACTION]);await switchGamePanel(page,'board');await noClosure(page,ready);
- await page.screenshot({path:info.outputPath('computer-safe-retreat.png')});
- // Completion comes from the same validated authoritative reconciliation that
- // acknowledged this exact Follow; do not add a duplicate final snapshot fetch.
- const acknowledged=await submit(page,branched.id,FOLLOW_ACTION);completed(acknowledged.game);
+ await switchGamePanel(page,'board');
+ await completedMandatoryFollow(page,branched.id,command.clientCommandId);
+ await page.screenshot({path:info.outputPath('computer-safe-retreat-follow-completed.png')});
  await info.attach('accepted-computer-follow-source',{body:JSON.stringify({command,move},null,2),contentType:'application/json'});
 });
 
