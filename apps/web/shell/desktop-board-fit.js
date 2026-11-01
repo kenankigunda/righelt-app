@@ -58,7 +58,7 @@ export function createDesktopBoardFit({ appEl, requestLayout, onSizeChange = () 
         availableWidth,
         coarse: view.matchMedia?.('(pointer: coarse)').matches === true,
       });
-      if (side == null || side === lastSide) return false;
+      if (side == null || (side === lastSide && wrap.style.getPropertyValue('--desktop-board-side') === `${side}px`)) return false;
       const previousWidth = board.offsetWidth;
       const previousHeight = board.offsetHeight;
       lastSide = side;

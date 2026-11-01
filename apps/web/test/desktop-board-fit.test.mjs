@@ -21,7 +21,7 @@ test('controller applies loading/live geometry synchronously once, ignores scrol
  const values=new Map(),observed=new Set();let notifications=0,scheduled=0;
  const view={innerHeight:800,scrollY:0,getComputedStyle:()=>({paddingLeft:'24px',paddingRight:'24px'}),matchMedia:()=>({matches:false}),ResizeObserver:class{constructor(callback){this.callback=callback;}observe(el){observed.add(el);}disconnect(){observed.clear();}}};
  const board={get offsetWidth(){return Number.parseFloat(values.get('--desktop-board-side')??'506');},get offsetHeight(){return this.offsetWidth;}};
- const wrap={style:{setProperty:(key,value)=>values.set(key,value),removeProperty:key=>values.delete(key)},querySelector:()=>board};
+ const wrap={style:{setProperty:(key,value)=>values.set(key,value),getPropertyValue:key=>values.get(key)??'',removeProperty:key=>values.delete(key)},querySelector:()=>board};
  const track={offsetTop:149,offsetParent:null};const column={offsetTop:0,offsetParent:track};
  const panel={isConnected:true,offsetTop:0,offsetParent:column,clientWidth:554,get offsetHeight(){return board.offsetHeight+240;},closest:selector=>selector==='.game-shell-track'?track:column,querySelector:selector=>selector==='.board-wrap'?wrap:{}};
  let available=panel;
@@ -29,8 +29,13 @@ test('controller applies loading/live geometry synchronously once, ignores scrol
  const appEl={ownerDocument:{defaultView:view,fonts},querySelector:selector=>selector==='[data-shell-panel="board"]'?available:{}};
  const fit=createDesktopBoardFit({appEl,requestLayout:()=>scheduled++,onSizeChange:()=>notifications++});
  assert.equal(fit.sync({wide:true}),true);assert.equal(values.get('--desktop-board-side'),'396px');assert.equal(notifications,1);
- assert.equal(fit.sync({wide:true}),false);view.scrollY=600;assert.equal(fit.sync({wide:true}),false);assert.equal(notifications,1);
- view.innerHeight=900;fit.sync({wide:true});assert.equal(values.get('--desktop-board-side'),'495px');assert.equal(notifications,2);
+ // A surrounding presentation patch can retire the controller-owned inline
+ // value without replacing the wrap. Desired-size memoization must not leave
+ // the CSS fallback in effect until a later viewport change.
+ values.delete('--desktop-board-side');
+ assert.equal(fit.sync({wide:true}),true);assert.equal(values.get('--desktop-board-side'),'396px');
+ assert.equal(fit.sync({wide:true}),false);view.scrollY=600;assert.equal(fit.sync({wide:true}),false);assert.equal(notifications,2);
+ view.innerHeight=900;fit.sync({wide:true});assert.equal(values.get('--desktop-board-side'),'495px');assert.equal(notifications,3);
  listeners.get('loadingdone')();assert.equal(scheduled,1);
  available=null;fit.sync({wide:true});assert.equal(values.size,0);assert.equal(observed.size,0);
  fit.destroy();assert.equal(listeners.size,0);assert.equal(fit.sync({wide:true}),false);
