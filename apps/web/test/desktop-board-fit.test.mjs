@@ -36,7 +36,14 @@ test('controller applies loading/live geometry synchronously once, ignores scrol
  assert.equal(fit.sync({wide:true}),true);assert.equal(values.get('--desktop-board-side'),'396px');
  assert.equal(fit.sync({wide:true}),false);view.scrollY=600;assert.equal(fit.sync({wide:true}),false);assert.equal(notifications,2);
  view.innerHeight=900;fit.sync({wide:true});assert.equal(values.get('--desktop-board-side'),'495px');assert.equal(notifications,3);
+ // Loading→loading and loading→live replacement nodes must receive the
+ // measured size synchronously, before the scheduled layout frame.
+ const replacementValues=new Map();const replacementBoard={get offsetWidth(){return Number.parseFloat(replacementValues.get('--desktop-board-side')??'396');},get offsetHeight(){return this.offsetWidth;}};
+ const replacementWrap={style:{setProperty:(key,value)=>replacementValues.set(key,value),getPropertyValue:key=>replacementValues.get(key)??'',removeProperty:key=>replacementValues.delete(key)},querySelector:()=>replacementBoard};
+ available={...panel,get offsetHeight(){return replacementBoard.offsetHeight+240;},querySelector:selector=>selector==='.board-wrap'?replacementWrap:{}};
+ assert.equal(fit.sync({wide:true,onlyNew:true}),true);assert.equal(replacementValues.get('--desktop-board-side'),'495px');
+ assert.equal(fit.sync({wide:true,onlyNew:true}),false);assert.equal(notifications,4);
  listeners.get('loadingdone')();assert.equal(scheduled,1);
- available=null;fit.sync({wide:true});assert.equal(values.size,0);assert.equal(observed.size,0);
+ available=null;fit.sync({wide:true});assert.equal(values.size,0);assert.equal(replacementValues.size,0);assert.equal(observed.size,0);
  fit.destroy();assert.equal(listeners.size,0);assert.equal(fit.sync({wide:true}),false);
 });

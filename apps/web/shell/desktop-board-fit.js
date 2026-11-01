@@ -33,7 +33,7 @@ export function createDesktopBoardFit({ appEl, requestLayout, onSizeChange = () 
   };
   return {
     // Called synchronously inside the shell's existing layout rAF, before sticky checks.
-    sync({ wide }) {
+    sync({ wide, onlyNew = false }) {
       if (destroyed) return false;
       const nextPanel = wide ? appEl.querySelector('[data-shell-panel="board"]') : null;
       const track = nextPanel?.closest('.game-shell-track');
@@ -41,6 +41,7 @@ export function createDesktopBoardFit({ appEl, requestLayout, onSizeChange = () 
       const nextWrap = nextPanel?.querySelector('.board-wrap');
       const board = nextWrap?.querySelector('.board');
       if (!nextPanel || !track || !column || !nextWrap || !board) { clear(); return false; }
+      if (onlyNew && panel === nextPanel && wrap === nextWrap) return false;
       if (panel !== nextPanel || wrap !== nextWrap) {
         clear(); panel = nextPanel; wrap = nextWrap;
         fonts?.addEventListener('loadingdone', schedule);

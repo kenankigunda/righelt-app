@@ -205,12 +205,15 @@ function historyRouteHarness(t) {
     syncMountedGameShellPanelUi:()=>{mountedPanel=context.currentRoute.panel;},
     updateMountedHeader:noop,updateMountedFlyouts:()=>{flyoutPatches++;},syncFlyoutAwareLinks:noop,syncCopyInviteLinks:noop,
     updateHeaderFields:noop,reconcileMiniBoardPreviews:noop,animateHomeSectionTransitions:noop,syncScenarioAuthoringControls:noop,
-    scheduleGameShellStickyLayout:noop,syncShellLayoutMode:noop,applySharedMutationGates:noop,mountBoardForGame:noop,
+    createDesktopBoardFit:()=>({sync:options=>assert.equal(options.onlyNew,true)}),boardRuntime:null,
+    scheduleGameShellStickyLayout:noop,syncShellLayoutMode:()=>'narrow',applySharedMutationGates:noop,mountBoardForGame:noop,
     syncRenderedMarkupSnapshot:()=>{context.lastRenderedRouteKey=context.getRouteRenderKey();},
     viewingIntent:{saveScroll:noop,cancelUndo:noop,scrollTop:()=>0},replayRequests:{cancel:noop},replayController:null,mobileNavigation:null,
   };
   runInNewContext(`
     ${patchHelper}
+    let desktopBoardFit=null;
+    ${extract('const initializeDesktopBoardFit =','const applyGameShellStickyLayout =')}
     ${extract('const preparePanelTransition =','const getCurrentFlyoutState =')}
     ${extract('const renderHistoryPreview =','const renderHeader =')}
     ${extract('const renderAdditionalHistory =','const renderHistoryPanel =')}
