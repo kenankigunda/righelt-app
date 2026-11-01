@@ -1,5 +1,7 @@
 # Righelt story artwork
 
+Before generating, editing or accepting artwork, follow the [image generation and validation rules](../../../../docs/ai/IMAGE_VALIDATION.md). Put the relevant constraints into the prompt, inspect the result, correct failures and recheck preserved properties after every edit. Shape, footprint, game-state fidelity, crispness, clean alpha and the exact asset consumer are acceptance requirements.
+
 T-087 narrative illustrations generated with the built-in image-generation tool, revised October 6, 2026. Production WebP files are self-contained. `manifest.json` records scene IDs, descriptive text, dimensions, byte sizes, and generation provenance.
 
 ## Current visual contract

@@ -1,5 +1,7 @@
 # Righelt UX Principles
 
+Before generating, editing or accepting artwork, follow the [image generation and validation rules](ai/IMAGE_VALIDATION.md). Put the relevant constraints into the prompt, inspect the result, correct failures and recheck preserved properties after every edit. Shape, footprint, game-state fidelity, crispness, clean alpha and the exact asset consumer are acceptance requirements.
+
 Read the [selected marble and glass contract](ai/MATERIAL_UX_CONTRACT.md) before planning or changing material presentation. It owns the approved November 1 visual extension while preserving the latest approved product workflows. Selection does not imply implementation or deployment.
 
 This document defines the shared UX canon for the Righelt web app shell. It covers information architecture, visual identity, motion, feedback, sound, accessibility, and the overall quality bar for a slick, modern, non-generic experience.

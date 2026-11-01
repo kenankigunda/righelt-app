@@ -1,5 +1,7 @@
 # AGENTS.md
 
+Before generating, editing or accepting artwork, follow the [image generation and validation rules](docs/ai/IMAGE_VALIDATION.md). Put the relevant constraints into the prompt, inspect the result, correct failures and recheck preserved properties after every edit. Shape, footprint, game-state fidelity, crispness, clean alpha and the exact asset consumer are acceptance requirements.
+
 This file defines repo-specific operating rules for AI coding agents working in `/Users/kenankigunda/Documents/righelt/righelt-app`.
 
 If the parent workspace `/Users/kenankigunda/Documents/righelt` is what is currently opened in Codex or Claude, treat `righelt-app` as the default git-aware execution root unless the task explicitly targets the sibling backlog repo.
