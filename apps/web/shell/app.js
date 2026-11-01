@@ -2549,7 +2549,7 @@ const revealSelectedHistory = () => {
 };
 
 const renderHistoryPanel = (game) => {
-  if (game.positionOnly && game.positionHistoryPending) return `${renderHistoryLoading()}<p class="small" role="status">Loading game history</p>`;
+  if (game.positionOnly && game.positionHistoryPending) return renderHistorySlots({ rows: '', extra: `<p class="small" role="status">${game.positionError ? 'Game history could not finish loading. Try loading play again.' : 'Loading game history'}</p>` });
   const historyRows = renderTurnHistory(game);
   return renderHistorySlots({rows:historyRows,extra:renderAdditionalHistory(game),
     before:renderHistoryResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) + (game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? (game.historyLoadTurnIndex != null ? "Loading this turn" : "Loading this move") : (game.historyLoadTurnIndex != null ? "This turn couldn’t load. Your current view is still available." : "This move couldn’t load. Your current view is still available.")}</p>${game.historyLoadError ? `<button class="secondary mini-button" ${game.historyLoadTurnIndex != null ? `data-action="jump-history-turn" data-turn-index="${game.historyLoadTurnIndex}"` : `data-action="jump-history" data-move-index="${game.historyLoadIndex}"`} data-game-id="${escapeHtml(game.id)}">Retry</button>` : ""}</div>` : ""),

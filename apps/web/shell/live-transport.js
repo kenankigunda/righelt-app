@@ -1212,6 +1212,7 @@ export const createLiveTransportStore = ({
   // Read-only display state is deliberately outside gameById, event cursors,
   // command receipts, optimistic projection and journal hydration.
   const loadGamePosition = (gameId) => {
+    if (getOptimisticState(gameId).upgradeRequired) return Promise.reject(Object.assign(new Error("upgrade_required"), { code: "upgrade_required" }));
     if (gameById.has(gameId)) return Promise.resolve(getGameViewModel(gameId));
     if (positionGameId !== gameId) { positions.clear(); positionGameId = gameId; }
     if (positionFlights.has(gameId)) return positionFlights.get(gameId);
