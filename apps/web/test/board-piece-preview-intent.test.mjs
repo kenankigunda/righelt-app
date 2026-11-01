@@ -121,25 +121,27 @@ test('changing the selected actor fences the previous actor result',async()=>{
  assert.deepEqual(f.views.at(-1).selectedPieceMovePreviews,[blocked]);
 });
 
-test('a commander enters combined inspection while previews are pending and skips an empty command step',async()=>{
- const f=fixture();f.piece.kind='commander';const loading=f.selected([]);
- f.click();assert.equal(f.runtime.getInspection()?.kind,'combined');
- assert.match(f.label.innerHTML,/Supply and command lines for piece at/);
- f.finish([]);await loading;
- assert.equal(f.runtime.getInspection()?.kind,'combined');
- f.click();assert.equal(f.runtime.getInspection(),null);
- assert.match(f.label.innerHTML,/No moves/);
+test('a commander preserves move intent while pending then toggles one complete connection view',async()=>{
+ const f=fixture();f.piece.kind='commander';
+ f.state.artifacts={supply:[{player:'P1',shortestPathByPieceId:{A:[f.piece.position,{row:0,col:9}]}}]};
+ const loading=f.selected([]);f.click();
+ assert.equal(f.runtime.getInspection(),null);assert.match(f.label.innerHTML,/Select a move for piece at/);
+ f.finish([{...f.move,legal:false,blockedReason:'SUPPLY_DESTINATION_UNSUPPLIED'}]);await loading;
+ assert.equal(f.runtime.getInspection(),null,'completion does not invent a toggle');
+ f.click();assert.equal(f.runtime.getInspection()?.kind,'combined');assert.match(f.label.innerHTML,/Supply line for commander at/);
+ f.click();assert.equal(f.runtime.getInspection(),null);assert.match(f.label.innerHTML,/Select a move for piece at/);
+ assert.equal(f.queries.length,1);
 });
 
-test('the full commander cycle is independent of pending previews and transient admission',async()=>{
+test('the complete two-phase commander cycle survives transient admission without a third command step',async()=>{
  const f=fixture();f.piece.kind='commander';
  f.state.pieces.push({...f.piece,id:'B',kind:'unit',position:{row:4,col:5}});
- f.state.artifacts={command:{shortestPathToCommanderByPieceId:{B:[{row:4,col:5},f.piece.position]}}};
- const loading=f.selected([]);f.gate(false);
- f.click();assert.equal(f.runtime.getInspection()?.kind,'combined');
- f.click();assert.equal(f.runtime.getInspection()?.kind,'command');
- f.finish([]);await loading;
- assert.equal(f.runtime.getInspection()?.kind,'command');
- f.click();assert.equal(f.runtime.getInspection(),null);assert.match(f.label.innerHTML,/No moves/);
+ f.state.artifacts={supply:[{player:'P1',shortestPathByPieceId:{A:[f.piece.position,{row:0,col:9}]}}],command:{shortestPathToCommanderByPieceId:{B:[{row:4,col:5},f.piece.position]}}};
+ const loading=f.selected([]);f.gate(false);f.click();
+ assert.equal(f.runtime.getInspection(),null);assert.match(f.label.innerHTML,/Select a move for piece at/);
+ f.finish([{...f.move,legal:false,blockedReason:'SUPPLY_DESTINATION_UNSUPPLIED'}]);await loading;
+ f.click();assert.equal(f.runtime.getInspection()?.kind,'combined');assert.match(f.label.innerHTML,/Supply and command lines for piece at/);
+ f.gate(true);assert.equal(f.runtime.getInspection()?.kind,'combined');
+ f.click();assert.equal(f.runtime.getInspection(),null);assert.match(f.label.innerHTML,/Select a move for piece at/);
  assert.equal(f.queries.length,1);
 });

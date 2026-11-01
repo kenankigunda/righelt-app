@@ -10,7 +10,7 @@ for(const kind of ['unit','commander','late-unique'])test(`deferred ${kind} prev
   const state={boardSize:10,sideToMove:'P1',turnIndex:0,continuation:null,outcome:{status:'ongoing'},pieces:[piece]};
   if(kind==='commander'){
    state.pieces.push({...piece,id:'B',kind:'unit',position:{row:4,col:3}});
-   state.artifacts={command:{shortestPathToCommanderByPieceId:{B:[{row:4,col:3},piece.position]}}};
+   state.artifacts={supply:[{player:'P1',shortestPathByPieceId:{A:[piece.position,{row:0,col:9}]}}],command:{shortestPathToCommanderByPieceId:{B:[{row:4,col:3},piece.position]}}};
   }
   const blocked={type:'move',actorId:'A',from:piece.position,to:{row:5,col:2},legal:false,blockedReason:'SUPPLY_DESTINATION_UNSUPPLIED'};
   let release,queries=0,phase,started=null;const pending=new Promise(resolve=>{release=resolve;});
@@ -46,12 +46,17 @@ for(const kind of ['unit','commander','late-unique'])test(`deferred ${kind} prev
   const path=info.outputPath('native-preview-intent-proof.json');await writeFile(path,JSON.stringify(proof,null,2));
   await info.attach('late unique result preserves native move intent',{path,contentType:'application/json'});return;
  }
- await source.click();await expect(message).toContainText('Supply and command lines for piece at');
+ await source.click();
  if(kind==='commander'){
-  await source.click();await expect(message).toHaveText('Command lines');
- }
+  await expect(message).toContainText('Select a move for piece at');await expect(message).toHaveAttribute('aria-busy','true');
+  expect((await page.evaluate(()=>window.previewIntent.read())).inspection).toBeNull();
+ }else await expect(message).toContainText('Supply and command lines for piece at');
  await page.evaluate(()=>window.previewIntent.resolve());await expect(message).not.toHaveAttribute('aria-busy','true');
- await expect(message).toContainText(kind==='commander'?'Command lines':'Supply and command lines for piece at');
+ if(kind==='commander'){
+  await expect(message).toContainText('Select a move for piece at');
+  await source.click();await expect(message).toContainText('Supply and command lines for piece at');
+  expect((await page.evaluate(()=>window.previewIntent.read())).inspection?.kind).toBe('combined');
+ }else await expect(message).toContainText('Supply and command lines for piece at');
  await source.click();await expect(message).toContainText('Select a move for piece at');
  await page.locator('#board .cell[data-row="0"][data-col="0"]').click();
  await source.click();await expect(message).toContainText('Select a move for piece at');
