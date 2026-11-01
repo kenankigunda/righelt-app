@@ -595,3 +595,30 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .player-kind-icon {display:inline-flex;align-items:center;color:var(--muted);}
 .player-kind-icon .righelt-icon {width:14px;height:14px;}
 .history-result-summary {margin:0 0 var(--section-item-gap,12px);}
+
+/* Marble foundation: bounded, static vector material. Textures never own layout,
+   readiness or motion; the white base remains usable if either asset fails. */
+:root {
+ --marble-face:url('../assets/materials/marble-face.svg');
+ --marble-canvas:url('../assets/materials/marble-canvas.svg');
+ --stone-grain:var(--marble-face);
+ --marble-edge:#c7ccce;
+ --marble-contact-shadow:0 3px 4px rgb(36 46 55 / 14%);
+}
+body {background-color:var(--surface-foundation);background-image:var(--marble-canvas);background-size:1440px 960px;}
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,
+.story-modal,.game-result {
+ --stone-edge:var(--marble-edge);
+ filter:drop-shadow(var(--marble-contact-shadow));
+}
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::before,
+.story-modal::before,.game-result::before {
+ background:
+  linear-gradient(135deg,var(--corner-start) 0 16px,transparent 16px) top left / 40px 40px no-repeat,
+  linear-gradient(315deg,var(--corner-end) 0 24px,transparent 24px) bottom right / 40px 40px no-repeat,
+  var(--marble-face),linear-gradient(135deg,#fff,#f7f9f9);
+}
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::after,
+.story-modal::after,.game-result::after {background:linear-gradient(115deg,#e3e6e7,var(--marble-edge));}
+.home-refresh .mini-board-card::before {background:var(--marble-face),linear-gradient(135deg,#fff,#fafcfc);}
+@media(forced-colors:active) {body{background-image:none;}}

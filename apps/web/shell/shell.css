@@ -33,10 +33,7 @@
 }
 
 body {
-  background:
-    radial-gradient(circle at 12% 8%, #fdf6e5 0%, transparent 30%),
-    radial-gradient(circle at 88% 92%, #e8eef9 0%, transparent 36%),
-    var(--bg);
+  background: var(--surface-foundation, #f7f8f8);
   color: var(--ink);
 }
 

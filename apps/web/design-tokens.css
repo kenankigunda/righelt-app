@@ -1,10 +1,10 @@
 :root {
-  --surface-foundation: #f5f2e9;
-  --surface-raised: #fffdf6;
+  --surface-foundation: #f7f8f8;
+  --surface-raised: #fdfefe;
   --text-primary: #252b2d;
   --text-secondary: #5e6465;
   --warning: #a5630f;
-  --divider: #d4d1c7;
+  --divider: #ccd1d3;
   --surface-hover-quiet: rgb(37 43 45 / 6%);
   --player-red: #b42f36;
   --player-blue: #245e9b;
