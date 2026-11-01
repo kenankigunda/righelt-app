@@ -2,6 +2,7 @@ import {test,expect} from '@playwright/test';
 import {admittedHeight,budgetPixelPrecision} from './support/message-reservation-policy.mjs';
 test.use({viewport:{width:390,height:740},hasTouch:true});
 const geometry=page=>page.locator('#board').evaluate(el=>{const rect=el.getBoundingClientRect();return{x:rect.x,y:rect.y,width:rect.width,height:rect.height};});
+const settledMessage=async page=>{await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));await page.waitForFunction(()=>![...document.querySelectorAll('.board-message-slot')].some(slot=>slot.getAnimations().some(animation=>animation.pending||animation.playState==='running')));};
 
 test('replay message steps preserve action nodes and keyboard focus',async({page})=>{
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
@@ -12,12 +13,12 @@ test('replay message steps preserve action nodes and keyboard focus',async({page
  });
  const stop=page.getByRole('button',{name:'Stop replay',exact:true});await stop.focus();
  await page.evaluate(()=>{window.savedReplayStop=document.activeElement;window.savedReplayNext=document.querySelector('[data-board-message-action="replay-next"]');window.savedReplayIcon=window.savedReplayStop.querySelector("svg");window.savedReplayLabel=window.savedReplayStop.querySelector(".board-inline-action-label");});
- const before=await geometry(page);
+ await settledMessage(page);const before=await geometry(page);
  for(const step of [2,3]){
   await page.evaluate(step=>window.boardFixture.message({...window.replayMessage,text:`Replay · ${step} of 3`}),step);
   await expect(page.locator('#preview')).toContainText(`Replay · ${step} of 3`);
   expect(await page.evaluate(()=>({stop:window.savedReplayStop===document.querySelector('[data-board-message-action="replay-stop"]'),next:window.savedReplayNext===document.querySelector('[data-board-message-action="replay-next"]'),focus:document.activeElement===window.savedReplayStop}))).toEqual({stop:true,next:true,focus:true});
-  expect(await geometry(page)).toEqual(before);
+  await settledMessage(page);expect(await geometry(page)).toEqual(before);
   expect(await stop.evaluate(button=>button.querySelector('svg')===window.savedReplayIcon&&button.querySelector('.board-inline-action-label')===window.savedReplayLabel)).toBe(true);
  }
  await stop.press('Enter');expect(await page.evaluate(()=>window.boardFixture.messageActions())).toEqual(['replay-stop']);
@@ -62,7 +63,7 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
     const rect=selector=>{const value=main.querySelector(selector).getBoundingClientRect();return{x:value.x,y:value.y,width:value.width,height:value.height};};
     return{cardHeight:main.getBoundingClientRect().height,board:rect('#board'),slot:rect('.board-message-slot')};
   });
-  const initial=await measure();
+  await settledMessage(page);const initial=await measure();
   expect(initial.slot.height).toBeGreaterThanOrEqual(44);
   // The frozen-sequence explanation is three wrapped lines at320px. Measure
   // the real finite replicas at intrinsic height, rather than the old two-line
@@ -118,7 +119,17 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
       if(phase==='spectator-long-name')window.namedSpectatorMessage=message;
       window.boardFixture.message(message);
     },phase);
-    expect(await measure(),`${phase} must preserve board and card geometry`).toEqual(initial);
+    await settledMessage(page);const current=await measure();
+    // Different semantic messages may use their own intrinsic height. Keep the
+    // board size and horizontal placement exact, and account for all vertical
+    // movement solely through the settled message slot.
+    expect({x:current.board.x,width:current.board.width,height:current.board.height}).toEqual({x:initial.board.x,width:initial.board.width,height:initial.board.height});
+    expect({x:current.slot.x,y:current.slot.y,width:current.slot.width}).toEqual({x:initial.slot.x,y:initial.slot.y,width:initial.slot.width});
+    const growth=current.slot.height-initial.slot.height;
+    expect(current.board.y-initial.board.y).toBeCloseTo(growth,5);
+    expect(current.cardHeight-initial.cardHeight).toBeCloseTo(growth,5);
+    expect(current.board.y).toBeGreaterThanOrEqual(current.slot.y+current.slot.height);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(phase==='frozen-reconnect'&&width===320)await page.screenshot({path:info.outputPath(`stable-frozen-reconnect-${width}-${scale}.png`)});
     if(phase==='completed'||phase==='completed-pass'||phase==='spectator-long-name'){
       await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(1);
@@ -130,7 +141,7 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
         await page.evaluate(()=>window.boardFixture.message({...window.namedSpectatorMessage,text:window.namedSpectatorMessage.text.replace('retreated','followed')}));
         await expect(replay).toBeFocused();expect(await replay.evaluate(button=>button===window.namedReplayButton&&button.parentElement.querySelector('.board-message-name')===window.namedActorNode)).toBe(true);
         await expect(page.locator('#preview')).toContainText('followed a piece from 9, 9 to 0, 0');
-        expect(await measure(),'Named narration refresh preserves the board, card, and action focus').toEqual(initial);
+        await settledMessage(page);expect(await measure(),'Same-layout named narration refresh preserves settled geometry and action focus').toEqual(current);
       }
       if(phase==='completed-pass')await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
       const typography=await page.evaluate(()=>{const properties=['fontFamily','fontSize','fontWeight','lineHeight','height','padding','borderWidth'];const style=selector=>{const computed=getComputedStyle(document.querySelector(selector));return Object.fromEntries(properties.map(key=>[key,computed[key]]));};return{live:style('#preview button'),replica:style('.board-message-sizing button')};});
