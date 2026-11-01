@@ -45,13 +45,21 @@ test('the seven-push follow projects, commits once and reconciles after a lost r
   room = new GameRoomDO(roomState, env);
   const recovered = await call('reconcile', { commands: [command], knownSnapshotEventSeq: 0 });
   assert.equal(recovered.status, 200);
-  assert.equal(recovered.commandOutcomes[0].outcome, 'accepted');
+  assert.equal(recovered.gameId, command.gameId);
+  assert.equal(recovered.game.id, command.gameId);
+  assert.equal(recovered.commandOutcomes.length, 1);
+  assert.deepEqual(recovered.commandOutcomes[0], {
+    gameId: command.gameId, identityId: command.identityId,
+    clientCommandId: command.clientCommandId, fingerprint: command.fingerprint,
+    outcome: 'accepted', reason: null, eventSeq: recovered.eventSeq,
+    gameplayRevision: command.expectedGameplayRevision + 1,
+  });
   assert.equal(recovered.game.legalActions.length, 45);
   const persisted = DB.getGameState('follow');
   assert.equal(persisted.moves.filter(move => move.clientCommandId === command.clientCommandId).length, 1);
   assert.deepEqual(persisted.board.state, projected.game.board.state);
   const receipt = DB.getReceipt('follow', command.clientCommandId);
-  assert.equal(receipt.outcome, 'accepted');
+  for (const key of ['gameId', 'identityId', 'clientCommandId', 'fingerprint', 'outcome', 'eventSeq', 'gameplayRevision']) assert.equal(receipt[key], recovered.commandOutcomes[0][key], key);
   const duplicate = await call('apply', command);
   assert.equal(duplicate.duplicate, true);
   assert.deepEqual(DB.getReceipt('follow', command.clientCommandId), receipt);
