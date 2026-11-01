@@ -1,3 +1,8 @@
+/** Read-only presentation, deliberately distinct from a synchronization snapshot. */
+export const POSITION_PROJECTION = "position-v1" as const;
+export type PositionReadResponse<TGame = Record<string, unknown>> = {
+  ok: true; protocolVersion: 2; projection: typeof POSITION_PROJECTION; game: TGame; eventSeq: number;
+};
 /** Shared online command contract. Unknown is never a terminal outcome. */
 export const LIVE_HISTORY = Object.freeze({ requestHeader: "X-Righelt-Projection", requestValue: "history-v1", socketQuery: "historyProjection", snapshotValue: "summary-v1" });
 export const SHARED_OPERATIONS = Object.freeze(["revert-request", "revert-approve", "revert-reject", "revert-rescind", "computer-control"] as const);
