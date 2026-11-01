@@ -2561,14 +2561,17 @@ test('an in-flight automatic journal read cannot act after a conflicting storage
  assert.deepEqual(h.calls.network,network);assert.equal(h.calls.admit.length,1);assert.equal(h.view().storageBlocked,true);
 });
 
-test('position-first loading displays the saved board without acknowledging or enabling commands', async () => {
-  const game = buildLiveGame(); let complete;
+test('position-first loading displays the saved board without acknowledging or enabling commands', async t => {
+  const game = buildLiveGame(); let complete, projections = 0, admissions = 0;
   const position = { ...clone(game), positionOnly: true, legalActions: undefined, canRecordMove: false, canEndTurn: false, sharedMutationsBlocked: true };
-  const store = createLiveTransportStore({ storage: createMemoryStorage(), commandJournal: { list: async () => [] },
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), commandJournal: { list: async () => [], admit: async () => { admissions++; } },
+    rulesExecutor: { asynchronous: true, project() { projections++; throw Error('Position-only command reached rules worker'); }, cancel() {}, cancelAll() {} },
     fetcher: async url => url.includes('/position?')
       ? Response.json({ ok: true, protocolVersion: 2, projection: 'position-v1', game: position, eventSeq: 7 })
       : new Promise(resolve => { complete = resolve; }),
   });
+  t.after(() => { store.retire(); t.diagnostic(`Position-only boundary: ${projections} rules projections, ${admissions} journal admissions`); });
+  store.setRulesActiveGame(game.id);
   const pending = store.loadGame(game.id, { positionFirst: true });
   await tick();
   assert.equal(store.getGameViewModel(game.id).positionLoading, true);
@@ -2576,6 +2579,13 @@ test('position-first loading displays the saved board without acknowledging or e
   assert.equal(store.getAuthoritativeGame(game.id), null);
   assert.equal(store.getLastEventSeq(game.id), 0);
   assert.equal(validSyncSnapshot(position, game.id), false);
+  const action = listLegalActions(game.board.state).find(action => action.type === 'move');
+  await assert.rejects(store.applyGameAction({ gameId: game.id, state: game.board.state, action }), { code: 'sync_recovering' });
+  await assert.rejects(store.applyGameAction({ gameId: game.id, state: game.board.state, action, computer: { generation: 0 } }), { code: 'sync_recovering' });
+  await assert.rejects(store.endTurn({ gameId: game.id }), { code: 'sync_recovering' });
+  assert.equal(store.getGameViewModel(game.id).gameplayMutationsBlocked, true);
+  assert.equal(projections, 0);
+  assert.equal(admissions, 0);
   complete(Response.json({ ok: true, protocolVersion: 2, game, eventSeq: 7 }));
   await pending;
   assert.equal(store.getGameViewModel(game.id).positionOnly, undefined);

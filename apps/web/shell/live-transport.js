@@ -979,7 +979,7 @@ export const createLiveTransportStore = ({
       assertRulesContext(contextEpoch, gameId);
       if (auth?.enabled && (!auth.session.authenticated)) throw Object.assign(new Error("invalid_credentials"), { code: "invalid_credentials" });
       const current = getGameViewModel(gameId);
-      if (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked) throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
+      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
       const isClosure = command.kind === "end-turn" || command.action?.type === "end_turn";
       if (isClosure && serverActionContract !== ACTION_CONTRACT_VERSION) {
         markUpgradeRequired(gameId);
@@ -1805,7 +1805,7 @@ export const createLiveTransportStore = ({
       const position = clone(positions.get(gameId) ?? null);
       if (!position) return null;
       applyHistoryIntent(position, historyIntentByGameId.get(gameId), identityId);
-      return { ...position, canRecordMove: false, canEndTurn: false, canUndoLastMove: false, sharedMutationsBlocked: true,
+      return { ...position, canRecordMove: false, canEndTurn: false, canUndoLastMove: false, sharedMutationsBlocked: true, gameplayMutationsBlocked: true,
         historyLoading: clone(historyLoads.get(gameId) ?? null) };
 
     }
