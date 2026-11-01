@@ -1,0 +1,616 @@
+{
+  "baseline": "0ace3cb4cc0c4a5105c949844070a7e1ed79fb22",
+  "status": "explicit gaps, not inherited acceptance",
+  "items": [
+    {
+      "id": "V-01",
+      "kind": "view",
+      "scope": "Shared background/header, red/blue/unknown affiliation, logo animation, mute, narrow menu",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-02",
+      "kind": "view",
+      "scope": "Home populated, one/many personal games, your turn/waiting, one/both seats",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-03",
+      "kind": "view",
+      "scope": "Home empty, hidden sections, loading, partial refresh/error/retry, storage-reset notice",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-04",
+      "kind": "view",
+      "scope": "Home section pagination, last/first page, narrow/wide column counts",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-05",
+      "kind": "view",
+      "scope": "Start choices, all opponents, Friend and self-play entry",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-06",
+      "kind": "view",
+      "scope": "Completed games and Other games",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-07",
+      "kind": "view",
+      "scope": "Game summary, role/perspective, self-play, observer, view-only and maintenance",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-08",
+      "kind": "view",
+      "scope": "Players, open/occupied seats, presence, viewers, pending invitation and request",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-09",
+      "kind": "view",
+      "scope": "Computer player cards, prepare/download/error/retry, active work, pause/resume/takeover",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-10",
+      "kind": "view",
+      "scope": "Board idle, selected, source/target, hover, keyboard focus, touch preview",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-11",
+      "kind": "view",
+      "scope": "Forced rush, push/retreat/follow, continuation, grouped members and strength",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-12",
+      "kind": "view",
+      "scope": "Command/supply inspection, path overlays, owner colors, dynamic legend",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-13",
+      "kind": "view",
+      "scope": "Piece types, active/inactive, ghost, created, stacks and mask",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-14",
+      "kind": "view",
+      "scope": "Capture/removal/history destruction and last-action feedback",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-15",
+      "kind": "view",
+      "scope": "History grouped turns/decisions, selected entry, older data, errors, undo/revert",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-16",
+      "kind": "view",
+      "scope": "Computer replay and compact/inline history previews",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-17",
+      "kind": "view",
+      "scope": "Host invite copied/fallback/error, red/blue seat, dismissal",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-18",
+      "kind": "view",
+      "scope": "Invite arrival, taken seat, viewer, pending approval, approval/deny/error",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-19",
+      "kind": "view",
+      "scope": "Result victory/defeat/draw/neutral/self-play/observer, reopen",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-20",
+      "kind": "view",
+      "scope": "Rematch opponent/side choice, pending, failure/retry/cancel",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-21",
+      "kind": "view",
+      "scope": "Opponent stories and profile artwork, all scenes/readiness/revisit",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-22",
+      "kind": "view",
+      "scope": "Sign in, create account, validation, challenge, forgotten password",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-23",
+      "kind": "view",
+      "scope": "Account settings, autosave/retry, password change, signout/retirement",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-24",
+      "kind": "view",
+      "scope": "Public profiles, inline disclosure and long/bidirectional names",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-25",
+      "kind": "view",
+      "scope": "Scenarios list/import/capture/save/live/frozen",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-26",
+      "kind": "view",
+      "scope": "Debug/disclosures/analysis/notes/diagnostic details",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-27",
+      "kind": "view",
+      "scope": "Loading edges/skeletons, slow/failed requests, error/success notices",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-28",
+      "kind": "view",
+      "scope": "Offline/reconnect/storage blocked/upgrade/server/account unavailable",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-29",
+      "kind": "view",
+      "scope": "Phone navigation, portrait/landscape, swipes, auto-hide/reveal",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-30",
+      "kind": "view",
+      "scope": "Route cover/reveal, Back, flyout/modal entry/exit and size transitions",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-31",
+      "kind": "view",
+      "scope": "Tutorial and play-entry integration",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "V-32",
+      "kind": "view",
+      "scope": "Not found, missing game/invite and configuration-dependent routes",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "C-01",
+      "kind": "component",
+      "scope": "Page and header, V01",
+      "status": "gap",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
+      "proofRevision": null,
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/index.html",
+        "apps/web/design-tokens.css",
+        "apps/web/shell/brand.js",
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
+    },
+    {
+      "id": "C-02",
+      "kind": "component",
+      "scope": "Header menu, V01/29",
+      "status": "gap",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
+      "proofRevision": null,
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
+    },
+    {
+      "id": "C-03",
+      "kind": "component",
+      "scope": "Primary/secondary actions",
+      "status": "gap",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
+      "proofRevision": null,
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
+    },
+    {
+      "id": "C-04",
+      "kind": "component",
+      "scope": "Quiet/tertiary links and icons",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "C-05",
+      "kind": "component",
+      "scope": "Fields and inline editors",
+      "status": "gap",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
+      "proofRevision": null,
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
+    },
+    {
+      "id": "C-06",
+      "kind": "component",
+      "scope": "Native select/radio/checkbox",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "C-07",
+      "kind": "component",
+      "scope": "Choice cards",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "C-08",
+      "kind": "component",
+      "scope": "Supporting rows/chips/badges",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "C-09",
+      "kind": "component",
+      "scope": "Home cards, V02\u201306",
+      "status": "gap",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
+      "proofRevision": null,
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
+    },
+    {
+      "id": "C-10",
+      "kind": "component",
+      "scope": "Game sections, V07\u201309",
+      "status": "gap",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
+      "proofRevision": null,
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
+    },
+    {
+      "id": "C-11",
+      "kind": "component",
+      "scope": "Board and coordinates, V10\u201312",
+      "status": "gap",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
+      "proofRevision": null,
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/styles.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
+    },
+    {
+      "id": "C-12",
+      "kind": "component",
+      "scope": "Pieces and overlays, V13/14",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "C-13",
+      "kind": "component",
+      "scope": "Miniature consumers, V02/12/16/25",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "C-14",
+      "kind": "component",
+      "scope": "History and Undo, V15/16",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "C-15",
+      "kind": "component",
+      "scope": "Inline profiles/audience disclosures, V08/24",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "C-16",
+      "kind": "component",
+      "scope": "Host/incoming invitation and approval, V17/18",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "C-17",
+      "kind": "component",
+      "scope": "Result page and emblem, V19",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "C-18",
+      "kind": "component",
+      "scope": "Rematch/branch dialogs, V20",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "C-19",
+      "kind": "component",
+      "scope": "Opponent story dialogs and assets, V21",
+      "status": "gap",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
+      "proofRevision": null,
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/opponent-stories.js",
+        "apps/web/shell/story-artwork-motion.js",
+        "apps/web/assets/opponents/manifest.json"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
+    },
+    {
+      "id": "C-20",
+      "kind": "component",
+      "scope": "Friend asset split, V05/21",
+      "status": "gap",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
+      "proofRevision": null,
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/assets/opponents/friend-introduction.webp",
+        "apps/web/assets/opponents/friend-portrait.webp",
+        "apps/web/shell/opponent-stories.js"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
+    },
+    {
+      "id": "C-21",
+      "kind": "component",
+      "scope": "Login/create and Account auxiliary flows, V22/23",
+      "status": "gap",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
+      "proofRevision": null,
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
+    },
+    {
+      "id": "C-22",
+      "kind": "component",
+      "scope": "Utility flyouts, V23/25/26",
+      "status": "gap",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
+      "proofRevision": null,
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/refresh.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
+    },
+    {
+      "id": "C-23",
+      "kind": "component",
+      "scope": "Debug and diagnostics, V26/28",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "C-24",
+      "kind": "component",
+      "scope": "Skeletons/piece loaders/loading edge, V03/27",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "C-25",
+      "kind": "component",
+      "scope": "Notices/recovery/empty/error, V27/28/32",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    },
+    {
+      "id": "C-26",
+      "kind": "component",
+      "scope": "Phone bottom switcher, V29",
+      "status": "gap",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
+      "proofRevision": null,
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/board-ux.css"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
+    },
+    {
+      "id": "C-27",
+      "kind": "component",
+      "scope": "Motion and cover layers, V30",
+      "status": "gap",
+      "sourceAudit": "Initial source implemented/reviewed, not native acceptance",
+      "proofRevision": null,
+      "evidence": [],
+      "implementationSources": [
+        "apps/web/shell/story-artwork-motion.js"
+      ],
+      "remainingProof": "Actual contextual rendering/state/keyboard/touch/loading/performance at matched revision; status remains gap"
+    },
+    {
+      "id": "C-28",
+      "kind": "component",
+      "scope": "Learning/configuration routes, V31/32",
+      "status": "gap",
+      "sourceAudit": "pending actual consumer mapping",
+      "proofRevision": null,
+      "evidence": []
+    }
+  ],
+  "candidateRevision": "bd8b0f11",
+  "functionalBase": "ba5dc28385cb296b0ecda4b77b847cea05dbfd4d",
+  "foundationRemaining": [
+    "Native fullfoundation comparison before broad propagation",
+    "Flat piece material/miniature semantics inspection",
+    "Network-owned real vellum/audio integration",
+    "Canonical startup-guidance/PR215 ancestry reconciliation",
+    "Game/Players/Board/History and all32/28 stateproof",
+    "Matchedba5baseline repeatednoise/overhead+frozenbudgets before acceptancecomparisons",
+    "Fullweb/type/CI/pinned and combineddependencyproof"
+  ]
+}
