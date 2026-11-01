@@ -8,7 +8,15 @@
     "browserVersion": null,
     "hostAndLoad": null,
     "pressure": null,
-    "cacheNetworkProfile": null
+    "cacheNetworkProfile": null,
+    "runtimeVersion": null,
+    "dependencyLockfile": {
+      "path": "pnpm-lock.yaml",
+      "sha256": "6da31d8175b1b4a605479b24efe7c1d5fb8ba4088de96f653ce58e44a6d17c5f"
+    },
+    "installedDependencyIdentityReceipt": null,
+    "browserAutomationVersion": null,
+    "immutableEnvironmentReceipt": null
   },
   "functionalComparison": "Only matched functionality; if incoming logic differs, capture updated functional baseline without material changes",
   "workloads": [],
