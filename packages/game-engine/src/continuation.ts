@@ -771,14 +771,40 @@ export function isContinuationCompletable(state: GameState, memo?: Map<string, S
   return completedDecisionRule("continuation-v1", state, () => solveContinuation(state, new Map()));
 }
 
-// During a rush enemies stay put and friendly pieces never obstruct their own
-// supply. Ignoring every enemy command edge gives an optimistic supply region.
-// A required piece that has already rushed cannot escape outside this region.
+// Enemy pieces never move during a rush. Preserve only command barriers that
+// no remaining friendly actor can possibly interrupt, even with friendly
+// occupancy and enemy-adjacency restrictions relaxed. This overestimates future
+// supply: failure is a proof, while reachability is never a legality answer.
 function optimisticRushSupplyRegion(state: GameState): Set<string> {
   const owner = obligationOwner(state)!;
-  const blocked = new Set(buildSupplyCheckPieces(state)
-    .filter(piece => piece.owner !== owner)
-    .map(piece => coordinateKey(piece.position.row, piece.position.col)));
+  const enemies = state.pieces.filter(piece => piece.owner !== owner && !piece.pushed);
+  const blocked = new Set(enemies.map(piece => coordinateKey(piece.position.row, piece.position.col)));
+  const possibleBlockers = new Set<string>();
+  const moved = new Set(state.continuation?.rushedPieceIds ?? []);
+  for (const piece of state.pieces.filter(piece => piece.owner === owner && !piece.pushed)) {
+    possibleBlockers.add(coordinateKey(piece.position.row, piece.position.col));
+    if (moved.has(piece.id) || !isActivePieceInContext(state, piece)) continue;
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const to = { row: piece.position.row + dr, col: piece.position.col + dc };
+      if (!outOfBounds(to) && !blocked.has(coordinateKey(to.row, to.col))) {
+        possibleBlockers.add(coordinateKey(to.row, to.col));
+      }
+    }
+  }
+  for (const edge of buildCommandEdgesForPieces(enemies)) {
+    checkEngineComputation();
+    const interior: string[] = [];
+    if (edge.from.row === edge.to.row) {
+      for (let col = Math.min(edge.from.col, edge.to.col) + 1; col < Math.max(edge.from.col, edge.to.col); col++) {
+        interior.push(coordinateKey(edge.from.row, col));
+      }
+    } else if (edge.from.col === edge.to.col) {
+      for (let row = Math.min(edge.from.row, edge.to.row) + 1; row < Math.max(edge.from.row, edge.to.row); row++) {
+        interior.push(coordinateKey(row, edge.from.col));
+      }
+    }
+    if (!interior.some(key => possibleBlockers.has(key))) for (const key of interior) blocked.add(key);
+  }
   const point = SUPPLY_POINTS[owner];
   const visited = new Set<string>();
   const queue: Array<{ row: number; col: number }> = [point];
@@ -871,6 +897,7 @@ export function analyzeRushSupplyGuidance(state: GameState): RushSupplyGuidance 
     for (const key of haystack) if (needle[index] === key) index++;
     return index === needle.length;
   };
+  const rushSupplyRegion = optimisticRushSupplyRegion(state);
   const solutions: string[][] = [];
   const firstActions = new Map<string, { action: Action; immediate: boolean }>();
   const successors = new Map<string, { action: Action; state: GameState; closes: boolean }[]>();
@@ -878,12 +905,18 @@ export function analyzeRushSupplyGuidance(state: GameState): RushSupplyGuidance 
   while (frontier.length) {
     const nextFrontier: typeof frontier = [];
     for (const node of frontier) {
+      checkEngineComputation(true);
+      const moved = new Set(node.state.continuation?.rushedPieceIds ?? []);
+      const required = new Set(obligationPieceIdsForContinuation(node.state));
+      if (node.state.pieces.some(piece => required.has(piece.id) && moved.has(piece.id)
+        && !rushSupplyRegion.has(coordinateKey(piece.position.row, piece.position.col)))) continue;
       // A completed subsequence makes every extension redundant.
       if (solutions.some(route => isSubsequence(route, node.path))) continue;
       const key = continuationSearchKey(node.state);
       let edges = successors.get(key);
       if (!edges) {
         edges = buildRushSuccessorActions(node.state).map(action => {
+          checkEngineComputation(true);
           const next = buildContinuationSuccessorState(node.state, action);
           return { action, state: next, closes: canCloseContinuationNow(next) };
         });

@@ -2303,7 +2303,8 @@ const getHeaderAlertItems = game => {
     key:context.key,
     html:renderGameAlertCard({tone:'neutral',activity:'processing',body:`<span role="status">${escapeHtml(context.message)}</span>`,testId:'slow-loading-notice'}),
   }));
-  return [...(game?getGameAlertItems(game):[]),...slow];
+  const position = game?.positionOnly && game.positionError ? [{ key: "position-load", html: renderGameAlertCard({ tone: "warn", body: '<span role="status">The board is saved, but play could not finish loading.</span>', action: '<button class="secondary mini-button" data-action="retry-game-load">Try again</button>', testId: "position-load-error" }) }] : [];
+  return [...position,...(game?getGameAlertItems(game):[]),...slow];
 };
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
@@ -3264,13 +3265,13 @@ const getHistoryRecordedActionStartPiece = (game) => {
 let reconnectPresentationTimer;
 const updateReconnectPresentation = game => {
   const wrap = document.querySelector('[data-testid="game-board-wrap"]');
-  const recovering = isBoardRecoveryPending(game, { quietComputerRenewal: quietComputerRenewal(game) });
+  const recovering = game?.positionOnly ? game.positionLoading === true : isBoardRecoveryPending(game, { quietComputerRenewal: quietComputerRenewal(game) });
   if (wrap) {
     setActivityActor(wrap, activityActorSide(game));
     wrap.dataset.reconnecting = String(recovering);
     wrap.dataset.loadingState = recovering ? "pending" : "idle";
     // A retry or socket generation change does not restart an uninterrupted cue.
-    wrap.dataset.loadingKey = `recovery:${game.id}`;
+    wrap.dataset.loadingKey = `${game?.positionOnly ? "position" : "recovery"}:${game.id}`;
     wrap.dataset.loadingContext = "external";
     wrap.setAttribute("aria-busy", String(recovering));
   }
@@ -3364,7 +3365,7 @@ const mountBoardForGame = (game) => {
         canSelect: () => Boolean(currentRoute.scenarios && scenarioCapture?.gameId === game.id) || (hostInvite?.gameId !== game.id && Boolean(getBoardGame(transport.getGameViewModel(game.id))?.currentSnapshot)),
         canPresentActions: () => {
           const view = getBoardGame(transport.getGameViewModel(game.id));
-          return !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && ownsBoardActor(view, transport.getIdentityId());
+          return !view?.positionOnly && !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && ownsBoardActor(view, transport.getIdentityId());
         },
         canInteract: () => {
           const view = getBoardGame(transport.getGameViewModel(game.id));
@@ -3385,6 +3386,7 @@ const mountBoardForGame = (game) => {
           updateComputerBoardLoading(document.getElementById('shell-board-preview-label')?.parentElement.querySelector('.board-message-activity'), view, status, {
             replaying: Boolean(replay?.playing || replayFeedback?.gameId === game.id), inspecting: Boolean(selection.selectedPieceId || selection.inspection), scope: viewingScope(),
           });
+          if (view?.positionOnly) return { text: view.positionLoading ? "Loading play" : "Play could not finish loading" };
           if (replayFeedback?.gameId === game.id) return replayFeedback.phase === "loading"
             ? {text:"Preparing replay",action:{id:"replay-cancel",label:"Cancel replay"}}
             : {text:"Replay unavailable",actions:[{id:"replay-computer",label:"Try again"},{id:"replay-dismiss",label:"Dismiss"}]};
@@ -4717,6 +4719,7 @@ appEl.addEventListener("click", async (event) => {
   }
   if (action === "public-profile") { void inlineProfiles.open(actionEl.getAttribute("data-username"), actionEl); return; }
   if (action === "retry-account-continuation") { void retryAccountContinuation(); return; }
+  if (action === "retry-game-load") { startRouteSync(); return; }
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
   if (action === "account-open") {
     if (accountDialog.isOpen()) { void accountDialog.close(); return; }

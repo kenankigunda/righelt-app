@@ -48,7 +48,7 @@ test('an enclosed obligation that has not rushed can escape diagonally', () => {
     assert.equal(isContinuationCompletable(state), true);
   }
 });
-test('enemy command edges are ignored only by the impossibility proof, never by actual supply', () => {
+test('a breakable enemy command edge cannot prove impossibility', () => {
   // A friendly blocker can break the enemy line and restore a previously rushed piece.
   const pieces = [commander('C1','P1',0,9), unit('A','P1',4,3), unit('B','P1',5,3),
     commander('C2','P2',4,2), unit('E1','P2',0,4), unit('E2','P2',9,4), unit('E3','P2',6,5)];
@@ -57,6 +57,20 @@ test('enemy command edges are ignored only by the impossibility proof, never by 
   assert.equal(canCloseContinuationNow(state), false);
   assert.equal(bruteComplete(state), true);
   assert.equal(isContinuationCompletable(state), true);
+});
+
+test('permanent-edge pruning agrees with independent exhaustive completion across small boards', () => {
+  for (let index = 0; index < 128; index++) {
+    const row = 2 + index % 5, col = 2 + Math.floor(index / 5) % 5;
+    const coordinates = [[row, col], [row + 1, col], [row - 1, col - 1], [row - 1, col + 1], [row + 2, col - 1]];
+    const pieces = [commander('C1', 'P1', 0, 9), commander('C2', 'P2', 9, 0),
+      unit('A', 'P1', ...coordinates[0]), unit('B', 'P1', ...coordinates[1]),
+      ...coordinates.slice(2).filter((_, bit) => index & 1 << bit).map(([r, c], bit) => unit(`E${bit}`, 'P2', r, c))];
+    const state = normalizeState(makeState({ pieces, continuation: { type: 'rush', owner: 'P1', frozenOwner: 'P1', chainLength: 1,
+      rushedPieceIds: index & 8 ? ['A'] : [], rushChainPieceIds: ['A', 'B'],
+      frozenPieceStatesById: { A: { supplied: true, commanded: true }, B: { supplied: true, commanded: true }, C1: { supplied: true, commanded: false } } } }));
+    for (const candidate of [state, mirror(state)]) assert.equal(isContinuationCompletable(candidate), bruteComplete(candidate), `small board ${index}`);
+  }
 });
 test('small exhaustive continuations agree before and after additional rushes', () => {
   for (const moved of [false,true]) for (const [row,col] of [[9,0],[4,4],[3,3]]) {

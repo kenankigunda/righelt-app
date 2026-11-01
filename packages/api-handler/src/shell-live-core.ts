@@ -1,3 +1,4 @@
+import { boundedEngineOperation } from "../../game-engine/src/computation-guard";
 import {CURRENT_RETREAT_SEMANTICS,archivedRetreatSemantics,type RetreatSemantics} from '../../shared-types/src/retreat-rules';
 import { computerProfileFor, type ComputerControl, type ComputerProfile, type ComputerProof } from '../../shared-types/src/computer-play';
 import { destructionRecords, removalNotices, type RemovalEvent } from "../../game-engine/src/removals";
@@ -5,13 +6,17 @@ export { collectDestroyedPieceRecords } from "../../game-engine/src/removals";
 import { applyAction } from "../../game-engine/src/apply";
 import { BOARD_SIZE } from "../../game-engine/src/deterministic";
 import { deterministicStateHash } from "../../game-engine/src/hash";
-import { listLegalActions, validateAction } from "../../game-engine/src/legal";
+import { listLegalActions as enumerateLegalActions, validateAction as validateEngineAction } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import { createInitialState } from "../../game-engine/src/state";
 import { MAX_HISTORY } from "../../shared-types/src/history";
 import { finalizeResolvedTurn, getTurnOwnerSideForState } from "../../shared-types/src/shell-live-turn.js";
 import { isUuidV4 } from "../../shared-types/src/validation";
 import type { Action, GameState } from "../../game-engine/src/types";
+
+// Bound synchronous rules only, never a scope spanning database awaits.
+const listLegalActions: typeof enumerateLegalActions = (...args) => boundedEngineOperation(() => enumerateLegalActions(...args));
+const validateAction: typeof validateEngineAction = (...args) => boundedEngineOperation(() => validateEngineAction(...args));
 
 export type Participant = {
   computerProfile?: ComputerProfile | null;
@@ -847,7 +852,7 @@ export const toStaticGameCard = (
   };
 };
 
-export const withFullViewModel = (game: LiveGame, identityId: string) => {
+const buildViewModel = (game: LiveGame, identityId: string, includeLegalActions: boolean) => {
   const historyIndexByIdentity = game.historyIndexByIdentity ?? {};
   const moves = Array.isArray(game.moves) ? game.moves : [];
   const turns = Array.isArray(game.turns) ? game.turns : [];
@@ -895,7 +900,7 @@ export const withFullViewModel = (game: LiveGame, identityId: string) => {
   const sideToMoveIdentity = getSeatIdentity(game, controlSeat);
   const turnOwnerIdentity = getSeatIdentity(game, turnOwnerSeat);
   const isPlayer = myRole === "Player 1" || myRole === "Player 2";
-  const legalNow = listLegalActions(game.board.state);
+  const legalNow = includeLegalActions ? listLegalActions(game.board.state) : [];
   const computerTurn = computerProfileFor(game.computer, getSideForSeat(controlSeat), game.board.state.turnIndex ?? 0);
   const approvableRequesterIds = pendingJoinRequests
     .filter((request) => getApproverIdentityForSeat(game, request.requestedSeat) === identityId)
@@ -977,6 +982,17 @@ export const withFullViewModel = (game: LiveGame, identityId: string) => {
   };
 };
 
+export const withFullViewModel = (game: LiveGame, identityId: string) => buildViewModel(game, identityId, true);
+
+/** Presentation only. Never use this projection as command/reconciliation state. */
+export const withPositionViewModel = (game: LiveGame, identityId: string) => {
+  const view = buildViewModel(game, identityId, false);
+  return { ...view, legalActions: undefined, positionOnly: true as const,
+    canRecordMove: false, canEndTurn: false, canUndoLastMove: false,
+    canPlayAsBothPlayers: false, canControlComputer: false, canInvite: false, canJoinAsPlayer: false,
+    canJoinAsViewer: false, showJoinActions: false, inviteToken: null,
+    sharedMutationsBlocked: true };
+};
 export const withViewModel = withFullViewModel;
 
 const formatCoordinate = (coord: { row: number; col: number } | null | undefined) =>

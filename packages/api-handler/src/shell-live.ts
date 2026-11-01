@@ -1,3 +1,4 @@
+import { POSITION_PROJECTION } from "../../shared-types/src/sync-protocol";
 import { computerModelForCreation } from '../../shared-types/src/computer-play';
 import { storageRoomName } from "./storage-generation";
 import { AUTH_PROTOCOL_VERSION } from '../../shared-types/src/auth-policy.js';
@@ -10,9 +11,11 @@ import {
   asIdentity,
   asScenarioRecord,
   nextGameId,
+  withPositionViewModel,
 } from "./shell-live-core";
 import {
   countHomeSectionGames,
+  loadGameProjection,
   listHomeSectionStaticGameCardPage,
   resolveInvite,
   type D1DatabaseLike,
@@ -387,6 +390,17 @@ export const handleLiveGameRequest = async (
       if (!hasGameRoomsBinding(env)) return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
       const response = await fetchGameRoom(request, env, gameId, `/${route[2]}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(syncBody) });
       return { handled: true, response };
+    }
+    // A pure durable read stays independent of room queue/search work. Its
+    // distinct envelope cannot acknowledge a command or establish sync state.
+    if (request.method === "GET" && route.length === 3 && route[2] === "position") {
+      const identityId = asIdentity(url.searchParams.get("identityId")) ?? (authActive(env) ? "" : null);
+      if (identityId === null) return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
+      const projection = await loadGameProjection(env, gameId);
+      if (!projection) return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: CACHE_NO_STORE };
+      if (projection.kind === "invalid") return { handled: true, status: 500, body: { ok: false, error: "invalid_persisted_game" }, cacheControl: CACHE_NO_STORE };
+      const game = withPositionViewModel(projection.game, authActive(env) && projection.game.ownershipMode !== "account_v1" ? "" : identityId);
+      return { handled: true, status: 200, body: { ok: true, protocolVersion: 2, projection: POSITION_PROJECTION, game, eventSeq: projection.eventSeq }, cacheControl: CACHE_NO_STORE };
     }
     // Room replies are already personalized and checked there. Keep the outer
     // Worker independent of history size, including legacy full projections.
