@@ -56,3 +56,17 @@ test('terminal displacement cannot smuggle an occupant, ongoing obligation or re
  assert.throws(()=>serializeState(recursive),/Invalid terminal displacement/,'reject a recursive coordinate before semantic hashing');
  assert.equal(good.pieces.some(piece=>piece.id==='D'),false);
 });
+
+test('legacy clients stripping terminal displacement cannot preserve the semantic state contract',()=>{
+ const {state,push}=fixture();
+ const result=terminalPushFrame(state,{status:'p1_win',reason:'proof'},push);
+ assert.equal(result.kind,'normalized');
+ const current=deserializeState(serializeState(result.frame.occupancy));
+ const legacy=structuredClone(current);delete legacy.terminalDisplacement;
+ assert.notEqual(serializeState(legacy),serializeState(current));
+ assert.notEqual(deterministicStateHash(legacy),deterministicStateHash(current));
+ // This proves why delivery/write activation needs an explicit capability
+ // fence; it does not activate that fence or change the current wire version.
+ assert.deepEqual(current.pieces,legacy.pieces);
+ assert.deepEqual(current.outcome,legacy.outcome);
+});
