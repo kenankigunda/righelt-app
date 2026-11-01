@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createBoardRuntime} from '../board/runtime/board-runtime.js';
 
 const noop=()=>{};
-const fixture=()=>{
+const fixture=({canPresentActions}={})=>{
  const piece={id:'A',owner:'P1',kind:'unit',position:{row:4,col:4},supplied:true,commanded:true};
  const state={boardSize:10,sideToMove:'P1',turnIndex:0,continuation:null,outcome:{status:'ongoing'},pieces:[piece]};
  const move={type:'move',actorId:'A',from:piece.position,to:{row:4,col:5}};
@@ -14,7 +14,7 @@ const fixture=()=>{
   getPieceById:(snapshot,id)=>snapshot.pieces.find(p=>p.id===id),
   getSelectedPieceSummary:({selectedPieceId})=>selectedPieceId?{details:{owner:'P1'}}:null,
   nextSelectionForCell:({snapshot,clickedCoord})=>{const selected=snapshot.pieces.find(p=>p.position.row===clickedCoord.row&&p.position.col===clickedCoord.col);return {selection:{selectedPieceId:selected?.id??null,source:selected?.position??null,target:null},nextActionType:'move'};}},
-  host:{asyncPieceMoves:true,canSelect:()=>true,canInteract:()=>interactive,loadPieceMoves:(snapshot,pieceId)=>new Promise(resolve=>queries.push({snapshot,pieceId,resolve}))}});
+  host:{asyncPieceMoves:true,canPresentActions,canSelect:()=>true,canInteract:()=>interactive,loadPieceMoves:(snapshot,pieceId)=>new Promise(resolve=>queries.push({snapshot,pieceId,resolve}))}});
  runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
  return {runtime,piece,state,move,queries,views,label,click:at=>click(at??piece.position),gate:value=>{interactive=value;runtime.refreshStatus();},
   selected:actions=>runtime.loadSnapshot(state,{legalActions:actions,selectionState:{selectedPieceId:'A',source:piece.position,target:null}}),
@@ -144,4 +144,15 @@ test('the complete two-phase commander cycle survives transient admission withou
  f.gate(true);assert.equal(f.runtime.getInspection()?.kind,'combined');
  f.click();assert.equal(f.runtime.getInspection(),null);assert.match(f.label.innerHTML,/Select a move for piece at/);
  assert.equal(f.queries.length,1);
+});
+
+test('an empty explicit commander legend does not describe undrawn readonly connections',async()=>{
+ const f=fixture({canPresentActions:()=>false});f.piece.kind='commander';
+ f.state.artifacts={supply:[{player:'P1',shortestPathByPieceId:{A:[f.piece.position,{row:0,col:9}]}}]};
+ const loading=f.selected([]);f.finish([]);await loading;
+ assert.match(f.label.innerHTML,/Supply line for commander at/);
+ f.runtime.toggleNetworkInspection('command',{owner:'P1'});
+ assert.match(f.label.innerHTML,/Commander at .*No connections/);
+ assert.doesNotMatch(f.label.innerHTML,/Supply and command lines/);
+ assert.equal(f.views.at(-1).overlay.suppressPersonalConnections,true);
 });

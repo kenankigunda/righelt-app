@@ -726,6 +726,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     }
 
     if (pieceSummary && selectedPieceId && host.canPresentActions?.(state) === false) {
+      if (selectedSource && personalConnectionsCleared && getBoardPieceById(selectedPieceId)?.kind === 'commander') {
+        setBoardPreviewPromptHtml(`Commander at ${renderBoardPreviewCoordinate(selectedSource)}. No connections.`);
+        return;
+      }
       if (selectedSource) setBoardPreviewPromptHtml(`Supply and command lines for piece at ${renderBoardPreviewCoordinate(selectedSource)}`);
       else setBoardPreviewPrompt("Supply and command lines");
       return;
