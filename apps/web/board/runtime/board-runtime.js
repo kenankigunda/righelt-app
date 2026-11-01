@@ -1,3 +1,4 @@
+import {createGuidanceDiagnostics} from '../guidance-diagnostics.js';
 import { createRushSupplyGuidanceClient, rushActionKey } from '../rush-supply-guidance.js';
 import {boardMessagePresentation,renderBoardMessageHtml,renderBoardInlineAction,updateBoardInlineActionLabel,patchBoardMessage} from '../message-presentation.js';
 import { inspectionPaths, supplyOwnerAt, supplyPointForOwner } from "../inspection.js";
@@ -77,6 +78,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   let submitting = false;
   let destroyed = false;
   let legalActions = [];
+  const guidanceDiagnostics=createGuidanceDiagnostics(controls.onGuidanceDiagnostic);
   let rushGuidanceKey = null;
   let rushGuidanceGeneration = 0;
   let rushGuidance = null;
@@ -86,19 +88,24 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       && host.canPresentActions?.(state) !== false && getRushUnsuppliedPieceIds(state).length > 0;
     const key = eligible ? JSON.stringify(state) : null;
     if (key === rushGuidanceKey) return;
+    guidanceDiagnostics.retire();
     rushGuidanceClient.cancel();
     const generation = ++rushGuidanceGeneration;
     rushGuidanceKey = key;
     rushGuidance = null;
     rushGuidanceStatus = key ? 'loading' : 'idle';
     if (!key) return;
+    const diagnosticEpisode=guidanceDiagnostics.start();
+    let diagnosticPhase='request';
     const snapshot = structuredClone(state);
     Promise.resolve().then(() => {
       if (destroyed || rushGuidanceGeneration !== generation || rushGuidanceKey !== key) throw new Error('stale_rush_guidance');
       return rushGuidanceClient.analyze(snapshot);
     }).then(result => {
       if (destroyed || rushGuidanceGeneration !== generation || rushGuidanceKey !== key) return;
+      diagnosticPhase='result-validation';
       if (!result?.actions?.length) throw new Error('empty_rush_guidance');
+      diagnosticPhase='presentation';
       rushGuidance = result;
       rushGuidanceStatus = 'ready';
       const sources = new Set(result.actions.map(entry => entry.action.actorId));
@@ -113,8 +120,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
         }
       }
       renderBoard(); renderStatus();
-    }).catch(() => {
+      guidanceDiagnostics.resolved(diagnosticEpisode);
+    }).catch(error => {
       if (destroyed || rushGuidanceGeneration !== generation || rushGuidanceKey !== key) return;
+      guidanceDiagnostics.failed(diagnosticEpisode,error,diagnosticPhase);
       rushGuidanceStatus = 'failed'; rushGuidance = null;
       renderBoard(); renderStatus();
     });
@@ -1711,7 +1720,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   const onPreviewVisibility = () => {
     previewsSuspended = Boolean(document.hidden);
     if (previewsSuspended) {
-      rushGuidanceGeneration++; rushGuidanceClient.cancel(); rushGuidanceKey = null; rushGuidance = null; rushGuidanceStatus = 'idle';
+      guidanceDiagnostics.retire(); rushGuidanceGeneration++; rushGuidanceClient.cancel(); rushGuidanceKey = null; rushGuidance = null; rushGuidanceStatus = 'idle';
       invalidateSelectedPieceMovesRequests();
     } else if (!destroyed) {
       renderBoard(); renderStatus();
@@ -1720,7 +1729,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       });
     }
   };
-  const onPreviewPageHide = () => { rushGuidanceGeneration++; rushGuidanceClient.cancel(); rushGuidanceKey = null; rushGuidance = null; rushGuidanceStatus = 'idle'; previewsSuspended = true; invalidateSelectedPieceMovesRequests(); };
+  const onPreviewPageHide = () => { guidanceDiagnostics.retire(); rushGuidanceGeneration++; rushGuidanceClient.cancel(); rushGuidanceKey = null; rushGuidance = null; rushGuidanceStatus = 'idle'; previewsSuspended = true; invalidateSelectedPieceMovesRequests(); };
   let previewLifecycleBound = false;
   const bindPreviewLifecycle = () => {
     if (previewLifecycleBound) return;
@@ -1740,6 +1749,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
 
   const destroy = () => {
     destroyed = true;
+    guidanceDiagnostics.retire();
     rushGuidanceClient.destroy();
     snapshotRevision += 1;
     invalidateSelectedPieceMovesRequests({clearCache:true});
