@@ -1,4 +1,5 @@
 import { icon } from './ui.js';
+import {createStoryArtworkMotion} from './story-artwork-motion.js';
 export const OPPONENT_STORIES = Object.freeze({
   babs: { name: "Babs", difficulty: "Easy", bit: 1, story: "Babs discovered Righelt during a rainstorm and has been demanding rematches ever since. She plays on instinct, celebrates early, and considers every defeat valuable research. Her research collection is impressive.", scenes: [["babs-1-discovery", "Babs discovers the board during a rainstorm."], ["babs-2-rematch", "Babs eagerly invites another match."], ["babs-3-research", "Babs studies her growing collection of game notebooks."]] },
   tau: { name: "Tau", difficulty: "Medium", bit: 2, story: "Tau spent years tending the village gardens, where he learned that everything depends on a good supply line. He brought that lesson to the board. He calls it patience. Babs calls it taking forever.", scenes: [["tau-1-gardens", "Tau waters the village garden."], ["tau-2-connections", "Tau considers a board beside connected irrigation channels."], ["tau-3-patience", "Tau considers his move while Babs waits."]] },
@@ -21,7 +22,8 @@ export const shouldShowOpponentIntroduction = (opponent, introduced, readiness) 
 
 export const createOpponentStoryDialog = ({ createModal, document = globalThis.document, getReadiness, onPlay, onRetry = () => {}, onViewResult = () => {}, onPresentation = () => () => {}, onClose = () => {} }) => {
   let opponent, side, carousel, mode, gameId, busy = false, session = 0, destroyPresentation = () => {};
-  const modal = createModal({ document, labelId: "opponent-story-title", className: "opponent-story-modal", onClose: reason => { session++; busy = false; destroyPresentation(); destroyPresentation = () => {}; carousel?.destroy(); carousel = null; onClose(reason); } });
+  const artworkMotion=createStoryArtworkMotion();
+  const modal = createModal({ document, labelId: "opponent-story-title", className: "opponent-story-modal", onClose: reason => { artworkMotion.cancel(); session++; busy = false; destroyPresentation(); destroyPresentation = () => {}; carousel?.destroy(); carousel = null; onClose(reason); } });
   const refresh = () => {
     if (!modal.element.open) return;
     const readiness = getReadiness(opponent);
@@ -44,15 +46,7 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
       if (request !== session || carousel?.state().index !== index) return;
       const previousIndex=images.findIndex(image=>image.dataset.active==='true');
       const previous=images[previousIndex];
-      for(const image of images)image.getAnimations?.().forEach(animation=>animation.cancel());
-      if(previous && previous !== selected && !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches){
-        const direction=(index-previousIndex+3)%3===2?1:-1;
-        previous.animate?.([{opacity:1,transform:'perspective(900px) rotateY(0deg)',filter:'brightness(1)'},{opacity:0,transform:`perspective(900px) rotateY(${direction*18}deg)`,filter:'brightness(.94)'}],{duration:520,easing:'ease-in-out'});
-        const shade=modal.element.querySelector('.story-turn-shade');
-        shade?.getAnimations().forEach(animation=>animation.cancel());
-        shade?.animate([{transform:`translateX(${direction===1?-100:600}%)`,opacity:0},{opacity:.11,offset:.5},{transform:`translateX(${direction===1?600:-100}%)`,opacity:0}],{duration:520,easing:'ease-in-out'});
-        selected.animate?.([{opacity:0,transform:`perspective(900px) rotateY(${-direction*18}deg)`,filter:'brightness(.94)'},{opacity:1,transform:'perspective(900px) rotateY(0deg)',filter:'brightness(1)'}],{duration:520,easing:'ease-in-out'});
-      }
+      artworkMotion.swap(previous,selected,(index-previousIndex+3)%3===2?-1:1);
       images.forEach((image, i) => { image.dataset.active = String(i === index); image.setAttribute("aria-hidden", String(i !== index)); });
     };
     if (selected?.dataset.src) {
@@ -64,7 +58,7 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
     modal.element.querySelectorAll("[data-story-position]").forEach((button, i) => button.setAttribute("aria-pressed", String(i === index)));
     
   };
-  const onVisibility = () => carousel?.visibility(document.hidden);
+  const onVisibility = () => {if(document.hidden)artworkMotion.cancel();carousel?.visibility(document.hidden);};
   document.addEventListener("visibilitychange", onVisibility);
   modal.element.addEventListener('keydown',event=>{
     carousel?.keyboard();
@@ -96,7 +90,7 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
   });
   return {
     close: modal.close,
-    destroy() { document.removeEventListener("visibilitychange", onVisibility); modal.destroy(); },
+    destroy() { artworkMotion.cancel();document.removeEventListener("visibilitychange", onVisibility); modal.destroy(); },
     isOpen: () => modal.element.open,
     gameId: () => gameId,
     opponent: () => mode === "intro" ? opponent : null,
@@ -105,12 +99,12 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
     open(id, options = {}) {
       const story = id === "friend" ? FRIEND_STORY : OPPONENT_STORIES[id]; if (!story) return;
       const multipleScenes = story.scenes.length > 1;
-      session++; destroyPresentation(); carousel?.destroy(); opponent = id; side = options.side || "p1"; mode = options.mode || "intro"; gameId = options.gameId || null; busy = false;
+      artworkMotion.cancel();session++; destroyPresentation(); carousel?.destroy(); opponent = id; side = options.side || "p1"; mode = options.mode || "intro"; gameId = options.gameId || null; busy = false;
       destroyPresentation = mode === "intro" ? onPresentation() : () => {};
       const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches || false;
       modal.open(`<button class="ui-icon-button story-close" data-modal-close aria-label="Close opponent story">${icon('close')}</button>
         <div class="story-art-wrap" data-single-image="${!multipleScenes}">${multipleScenes ? `<button class="ui-icon-button story-caret" data-story-step="-1" aria-label="Previous story image">${icon('left')}</button>` : ""}
-        <div class="story-art">${story.scenes.map(([file, alt], i) => `<img data-story-image data-active="${i === 0}" aria-hidden="${i !== 0}" ${i ? "data-src" : "src"}="/assets/opponents/${file}.webp" width="960" height="640" alt="${alt}">`).join("")}<span class="story-turn-shade" aria-hidden="true"></span></div>
+        <div class="story-art">${story.scenes.map(([file, alt], i) => `<img data-story-image data-active="${i === 0}" aria-hidden="${i !== 0}" ${i ? "data-src" : "src"}="/assets/opponents/${file}.webp" width="960" height="640" alt="${alt}">`).join("")}</div>
         ${multipleScenes ? `<button class="ui-icon-button story-caret" data-story-step="1" aria-label="Next story image">${icon('right')}</button>` : ""}</div>
         <div class="story-copy"><div class="story-heading"><h2 id="opponent-story-title">${story.name}</h2><span>${story.difficulty}</span></div>
         <p class="opponent-story-copy">${story.story}</p><p role="status" data-story-readiness></p><div class="story-modal-actions">${mode === "intro" ? `<button data-story-play disabled>${icon('play')}${story.playLabel || `Play ${story.name}`}</button><button class="secondary" data-story-retry hidden>Retry</button>` : `<button data-modal-close>${icon('back')}Return to game</button><button data-story-result hidden>View result</button>`}</div></div>`, options.trigger, options.mode === "revisit" ? null : () => document.querySelector(`button[data-opponent="${id}"]`));
