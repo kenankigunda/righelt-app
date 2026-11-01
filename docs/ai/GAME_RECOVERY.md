@@ -6,7 +6,7 @@ After successful HTTP recovery, failed replacement sockets that never became rea
 
 ## Deadlines and lifecycle
 
-HTTP requests include body parsing within five seconds. Journal opening and each transaction have five-second deadlines. A complete recovery pass owns work for at most ten seconds, including hydration and existing attempts. Failure releases ownership and schedules another pass using bounded jittered backoff. Command overdue feedback starts fifteen seconds from durable submission metadata; retries and refresh restoration preserve that timestamp.
+HTTP requests include body parsing within five seconds. Journal opening and each transaction have five-second deadlines. A complete recovery pass owns work for at most ten seconds, including hydration and existing attempts. Failure releases ownership and schedules another pass using bounded jittered backoff. Durable submission timestamps survive retries and refresh for delivery, deadlines and diagnostics. They do not by themselves make an overdue notice eligible. Notice eligibility follows the active-visible-wait clock below.
 
 Manual reconnect supersedes older recovery and socket owners. Repeated button presses share the same attempt. It preserves identity, original command envelopes, dependencies, history selection, and durable journal records. Late hydration, responses, and callbacks are fenced. `pageshow`, visibility restoration, and online transitions resume recovery; retiring a client removes its listeners.
 
@@ -18,9 +18,19 @@ State, event, and receipt persistence remain atomic and serialized. Acknowledgme
 
 Request IDs are UUIDs forwarded through Pages and API, returned on HTTP responses, and correlated with command/revision/build timing logs. IDs confer no authority. Version metadata uses the Cloudflare version binding. No protocol version bump or database migration is needed.
 
+## Intent, computation and durable admission
+
+Approved safety and interaction contracts are separate from pending latency optimizations. A worker result is a projection, not submission authority. Tag work with its exact position, actor/control, lineage, account and request scope. Revalidate these after every asynchronous boundary and before durable admission or display. Ignore or cancel obsolete work. Harmless metadata updates must not erase valid player intent, but must not be assumed harmless without contract-aware comparison.
+
+Preserve selected piece, destination and inspection phase during a recoverable temporary admission fence. Do not interpret incomplete legal results, cancelled searches or worker deadlines as no legal moves. Coalesce exact-input work and reuse only compatible complete results. Real position/authority changes invalidate stale work and dependent intent. Stop obsolete workers, timers and presentation on retirement. Cache reuse never authorizes a write.
+
+Keep the original durable command and dependency identity through uncertain delivery. Never mint a replacement to escape an unknown result. Before journaling, a blocked user click is not queued. After journaling, reconcile its original receipt rather than silently dropping it. A known precommit rejection and an unknown outcome are different states. HTTP/socket completions settle only their owned attempt and cannot clear a newer recovery fence.
+
+Immediate input feedback, durable local admission, projected piece movement and authoritative acknowledgement are distinct milestones. Measure them separately before attributing a reported delay. Component timing and synthetic histories do not prove full-page physical paint or the cause of a production incident. Source contributors and proposed projection-reuse optimizations remain hypotheses until tested against the matching build. Provenance: [D01, D17](../UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
+
 ## Presentation and diagnostics
 
-Routine reconnecting uses a board background sweep immediately, the shared angular loading cue after 200 milliseconds, and a reconnecting alert after four continuous seconds. Retries preserve the episode clock. Recovery removes feedback immediately. Reduced motion uses a static treatment, and loading remains silent. Shared loading primitives match PR #129; recovery owns blocking and timers.
+Routine recovery stays in the background while useful state remains available. Its notice grace counts continuous active, visible blocked waiting, not elapsed time while hidden or inactive. Returning to the tab starts fresh visible-wait grace, so a stale overdue timestamp cannot immediately expose Still reconnecting. Repeated attempts within the same active wait do not restart that clock. The existing loading cue, four-second notice and fifteen-second no-progress severity retain their distinct purposes. Request deadlines, leases and safety fences continue on their own wall clocks. Real storage, authentication and upgrade failures remain actionable immediately. Recovery clears routine feedback promptly. Reduced motion keeps a static cue and loading stays silent. Detailed clocks and admission ownership belong to the recovery implementation, not Board instructional state. Provenance: [D01, D17](../UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
 
 Unexpected issues and overdue work expose a muted caret with a 44-pixel hit target. Details include a compact summary and Copy. Copies contain human-readable context plus versioned JSON; clipboard failure leaves selectable text. Open resolved reports stay available until dismissed, and Recent issues in the debug panel restores local reports after refresh.
 

@@ -15,6 +15,14 @@ The parent workspace files must make it obvious that `/Users/kenankigunda/Docume
 - Prefer explicit acceptance criteria, deterministic commands, and auditable logs.
 - Do not silently change conventions; propose first when in doubt.
 
+## Product decisions and documentation
+
+Before changing a player workflow, read [UX principles](docs/UX_PRINCIPLES.md), the affected [web app contract](docs/RIGHELT_WEB_APP_SPEC.md), and its linked domain contract. [The feedback decision index](docs/UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index) records final approvals and superseded choices. Approved requirements describe intended behavior, not deployment status. Verify the current implementation and exact release evidence separately.
+
+Before planning or changing material, depth, colors, forms, flyouts or mobile switcher presentation, read [the selected marble and glass contract](docs/ai/MATERIAL_UX_CONTRACT.md). It records approved intended design, not deployed behavior. Preserve current and incoming approved workflow decisions. The refresh requires independent UX-validator and product-tester review loops at planning and implementation, with repaired findings rechecked.
+
+Generalize new feedback in the existing canonical contract. Record its final approval and supersession in the decision index. Do not turn an early proposal, selected preview control or implementation recommendation into a requirement. Keep process details out of product UI and coordinate edits to shared contracts with their active owners.
+
 ## 2) Skills Contract
 
 - Skills are turn-scoped. Re-mention required skills in each turn where they should apply.
