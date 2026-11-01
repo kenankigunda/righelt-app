@@ -1,3 +1,4 @@
+import {createGuidanceIncidentSink} from './guidance-diagnostics.js';
 import {isOngoingGame} from './game-lifecycle.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
@@ -3374,6 +3375,7 @@ const mountBoardForGame = (game) => {
         },
       }),
       controls: {
+        onGuidanceDiagnostic: createGuidanceIncidentSink({gameId:game.id,diagnostics:issueDiagnostics}),
         onInteractionSound: event => gameSound.interaction(event),
         getTurnIndicator: state => {
           const view=getBoardGame(transport.getGameViewModel(game.id));
