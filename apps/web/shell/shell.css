@@ -2198,7 +2198,7 @@ textarea:focus-visible {
 @keyframes reconnect-sweep { from { transform: translateX(0); } to { transform: translateX(800%); } }
 [data-loading-hidden] .reconnect-background::before,
 [data-loading-hidden] .reconnect-background::after { animation-play-state: paused; }
-.issue-diagnostic > button.issue-caret { min-width: 44px; min-height: 44px; padding: 6px 10px; }
+.issue-diagnostic > button.issue-caret { background: transparent; color: inherit; box-shadow: none; border: 0; min-width: 44px; min-height: 44px; padding: 6px 10px; }
 .issue-details { font-size: 13px; line-height: 1.4; }
 .issue-details pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; user-select: text; }
 .shell-game-alert .issue-diagnostic { display: contents; }
