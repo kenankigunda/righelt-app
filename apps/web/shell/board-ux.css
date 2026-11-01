@@ -164,3 +164,10 @@ body {display:flow-root;}
 .board-message-name {display:inline-block;max-inline-size:12ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:top;unicode-bidi:isolate;}
 
 .board-message-row {display:block;}
+
+/* Composition rows share the same metrics in live, primary and fallback copies.
+   Rules separate meanings; replay/status controls belong below their own copy. */
+.board-message-row {position:relative;line-height:1.5;}
+.board-message-row + .board-message-row {margin-block-start:.5em;}
+.board-message-row + .board-message-row::before {content:"";position:absolute;inset-inline:0;top:-.25em;border-top:1px solid var(--line);pointer-events:none;}
+.board-message-actions {display:flex;flex-wrap:wrap;align-items:baseline;gap:.5em;margin-block-start:.5em;padding-block:var(--board-action-hit-inset);}
