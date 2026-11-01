@@ -334,7 +334,6 @@ test(`E05 intentional ${frozenRole} history survives disconnection and home navi
 
 test('E07 old protocol keeps a stable notice until the player refreshes their saved game',async({page},info)=>{
  const {gameId}=await createGameFromHome(page);await makeAnyLegalMove(page);const before=await digest(page);
- const fault=await wire(page);
  const presenceUrl=new URL(`/api/shell/games/${gameId}/presence`,page.url()).href;
  // Exercise the application's real JSON Blob beacon before navigation. WebKit
  // does not expose its body to route.fetch, so reconstructing it loses identity.
@@ -343,6 +342,9 @@ test('E07 old protocol keeps a stable notice until the player refreshes their sa
  const presence=await presenceResponse;
  expect(presence.status(),'The application presence beacon must reach the server with its identity and session').toBe(200);
  expect(await presence.json()).toMatchObject({ok:true,eventSeq:expect.any(Number)});
+ // WebKit enables native interception for every URL once any route is installed.
+ // Prove the real healthy Blob before installing faults, even excluded URLs.
+ const fault=await wire(page);
  // Keep the offline beacon fault explicit without intercepting healthy bodies.
  const blockPresence=route=>route.abort();await page.route(presenceUrl,blockPresence);
  fault.http=true;
