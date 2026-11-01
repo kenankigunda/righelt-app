@@ -57,9 +57,14 @@
     "clock versus actual acoustic delivery"
   ],
   "plannedFunctionalBaseline": {
+    "appRevision": "ba5dc28385cb296b0ecda4b77b847cea05dbfd4d",
+    "status": "actual merged main; matched capture not run",
+    "changesSinceHistoricalDe65": "PR216 bounded search and position-first game loading/authority readiness",
+    "comparisonRule": "Use identical216 search/loading/authority semantics on material baseline and candidate. Retain de65 raw diagnostic historically, never attribute new logic cost to marble. Numeric budgets UNMEASURED."
+  },
+  "historicalDiagnostic": {
     "appRevision": "de65ba1a6c4dde950baf4d4b2ccfe6e276d553ad",
-    "status": "actual merged main; capture not run",
-    "changesSinceHistorical0ace": "PR214 quiet-owned-renewal gameplay admission and durable projection compatibility",
-    "comparisonRule": "Compare materials on same214 functionality; do not attribute permission/worker policy differences to paint. Keep total user-visible authority latency separately."
+    "scope": "One Chromium1440 cold/warm actualHome+Account, capturemechanism only;95/18records dropped0",
+    "performanceBudgetAcceptance": false
   }
 }
