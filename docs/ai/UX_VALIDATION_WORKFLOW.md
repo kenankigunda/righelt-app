@@ -1,6 +1,6 @@
 # UX Validation Workflow
 
-The [marble and glass refresh](MATERIAL_UX_CONTRACT.md) requires independent UX-validator and product-tester loops during planning and implementation. Recheck repaired findings and preserve current and incoming approved workflows. Visual acceptance does not substitute for regression evidence.
+The [marble and glass refresh](MATERIAL_UX_CONTRACT.md) requires independent UX-validator, product-tester and performance planner/tester loops during planning and implementation. Recheck repaired findings and preserve current and incoming approved workflows. Visual acceptance does not substitute for regression evidence.
 
 This workflow defines how to turn UX goals into automated proof before implementation ships. Use it when a ticket touches UI, interaction, motion, accessibility, branding, layout stability, responsive behavior, or sound.
 
@@ -103,3 +103,5 @@ Retain actual DOM references across semantically unchanged refreshes. Verify fir
 Study QA establishes only its stated scope. It does not prove full-page geometry, real authentication, authoritative game creation, all-browser behavior, physical devices or deployment. Product acceptance needs the relevant contract assertions and exact candidate evidence. Preserve failures and raw originals. Independent review should cover the bounded coherent diff and changed findings, with unresolved gaps disclosed. Resource and final delivery procedures remain in [resource management](RESOURCE_MANAGEMENT.md), [PR workflow](PR_WORKFLOW.md) and the released validation skill. No schedule, email or publication action follows from this guidance.
 
 For the marble refresh, enforce both [selected-reference fidelity and product fidelity](MATERIAL_UX_CONTRACT.md#unite-reference-fidelity-and-product-fidelity). Require per-property dispositions and independent UX/product repair rechecks. A polished simplified mock or a functionally correct visual undershoot cannot pass.
+
+The marble refresh adds the independent [performance planner/tester lane](UI_PERFORMANCE.md) alongside UX and product review. It requires source-backed planning, bounded preexisting UI improvements, matched real-clock native workloads and measured budgets, then tester→repair→recheck at foundation/propagation/final integration. Existing observational fixture timing is not full-app performance acceptance.

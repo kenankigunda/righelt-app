@@ -28,7 +28,7 @@ Study evidence is bounded prototype proof, not native production acceptance. Imp
 
 Latest user instruction supersedes the earlier requirement to ask about implementation conflicts. The implementer must choose autonomously the option judged most consistent with the end goal: the full selected beauty together with intentional product workflows, icons, semantics and principles. First attempt an adaptation satisfying both. If a real tradeoff remains, compare alternatives, choose the best overall fit, implement it and validate it without waiting for user confirmation.
 
-Respect explicit latest selections and named scope boundaries. Do not treat convenience, old CSS or an incomplete mock as sufficient reason to abandon either obligation. Prefer the least disruptive adaptation that preserves intentional function and the selected visual character. Use UX-validator and product-tester feedback to improve the choice, repair actual defects and recheck the result. A documented design tradeoff does not require a separate user approval or reviewer waiver before shipping.
+Respect explicit latest selections and named scope boundaries. Do not treat convenience, old CSS or an incomplete mock as sufficient reason to abandon either obligation. Prefer the least disruptive adaptation that preserves intentional function and the selected visual character. Use UX-validator, product-tester and performance-tester feedback to improve the choice, repair actual defects and recheck the result. A documented design tradeoff does not require a separate user approval or reviewer waiver before shipping.
 
 Maintain a conflict register with: affected reference/component, competing requirements, considered options, chosen resolution, why it best serves the end goal, visible/behavioral consequences, evidence and revision, and any residual risk or follow-up. Include the complete list in the final delivery report, including conflicts already resolved during implementation. Report none explicitly when none occurred. Do not defer recording until details are lost.
 
@@ -120,12 +120,13 @@ The [T-118 test plan](https://github.com/kenankigunda/righelt-backlog/blob/main/
 
 ## Planning and implementation review
 
-Use the [UX validation workflow](UX_VALIDATION_WORKFLOW.md), repo testing strategy and installed released validation policy. This refresh requires two independent review lenses:
+Use the [UX validation workflow](UX_VALIDATION_WORKFLOW.md), repo testing strategy and installed released validation policy. This refresh requires three independent review lenses:
 
 1. UX validator: compare selected properties, effective code, real states and all responsive views. Report expected versus observed anatomy/material/interaction, repair drift and recheck changed findings.
 2. Product tester: compare workflow invariants, current and incoming approved decisions, test validity and cross-feature failure seams. Repair gaps and recheck the regression plan/evidence independently of aesthetic acceptance.
+3. Performance planner/tester: follow [UI performance guidance](UI_PERFORMANCE.md). Audit source and bounded preexisting fixes at planning, then independently verify measured baseline/candidate responsiveness, rendering, assets and resource lifecycles through implementation repair/recheck loops.
 
-At planning, establish the exact candidate/dependencies, decision ledger, source owners, test fixtures/hooks, semantic palette, layering/masking solution and measurable performance budget. At implementation, approve representative native primitives and desktop/phone states before propagation, then extend to every affected inventory row. Finish with exact-revision combined evidence and both review closures. Do not let one lane's approval substitute for the other.
+At planning, establish the exact candidate/dependencies, decision ledger, source owners, test fixtures/hooks, semantic palette, layering/masking solution and measurable performance budget. At implementation, approve representative native primitives and desktop/phone states before propagation, then extend to every affected inventory row. Finish with exact-revision combined evidence and all three implementation review closures. Do not let any lane's approval substitute for another.
 
 Distinguish source inspection, test-plan review, generated concept review, browser proof, CI, physical-device evidence, merge authorization and deployment activation. Unimplemented selected guidance does not mean deployed behavior. No new schedule, email or publication action is implied. Slate dark mode remains deferred under T-133.
 
@@ -174,3 +175,5 @@ Artwork-swap motion is now selected as draw back and slide, described above. Not
 Push the debrief, decisions and review repairs after each meaningful planning checkpoint. Do not wait until implementation to preserve them remotely. Include only selected authoritative reference images or accepted final delivery artwork under the delegated review process. Unselected candidates, rejected revisions and comparison alternatives stay in durable local exploration folders outside the tracked handoff. Preserve textual decision/supersession history without republishing those visuals.
 
 Where a selected option lives inside a comparison sheet, use the exact selected-panel crop authorized by the user, with no regeneration or resizing. Retain source SHA256, crop rectangle, output SHA256 and decoded pixel-equality verification. Preserve byte-identical explicitly selected masters. Inspect the staged image allowlist and commit exact owned paths so concurrent drafts cannot leak into a push. Existing Git history is not rewritten.
+
+Performance is required alongside beauty and functionality. Use UI_PERFORMANCE.md and the T118 performance plan for native workload/budget/evidence requirements and targeted preexisting UI improvements. Do not trade away the selected design or intentional workflows to pass a stripped-down benchmark.
