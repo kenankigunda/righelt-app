@@ -112,3 +112,34 @@ test('an urgent arrival cannot make focused or expanded notification controls in
   await expect(page.locator('[data-key="urgent"]')).toHaveClass(/is-active/);
   expect(await page.evaluate(()=>window.focusedNotice===document.querySelector('[data-key="processing"]'))).toBe(true);
 });
+
+for(const width of [1440,390])test(`notices stay above page overlays and below native modal dialogs at ${width}`,async({page},info)=>{
+  await page.setViewportSize({width,height:800});await open(page);
+  await page.evaluate(async()=>{
+    const sheet=document.createElement('link');sheet.rel='stylesheet';sheet.href='/apps/web/shell/loading-edge.css';
+    await new Promise((resolve,reject)=>{sheet.onload=resolve;sheet.onerror=reject;document.head.append(sheet);});
+    const edge=document.createElement('div');edge.className='loading-edge-layer';edge.dataset.layerProbe='edge';
+    edge.innerHTML='<svg width="100%" height="100%"><path d="M0 95H2000" stroke="red" stroke-width="4"/></svg>';
+    const ribbon=document.createElement('div');ribbon.className='shell-route-transition-layer';ribbon.dataset.active='true';ribbon.dataset.layerProbe='ribbon';ribbon.style.background='rgb(200 190 170 / 94%)';
+    const utility=document.createElement('dialog');utility.className='account-dialog';utility.dataset.presentation='flyout';utility.dataset.layerProbe='utility';
+    utility.style.cssText='inset:0;margin:0;width:100vw;max-width:none;animation:none;transform:none;';utility.innerHTML='<button>Utility action</button>';
+    document.body.append(edge,ribbon,utility);utility.show();
+    const modal=document.createElement('dialog');modal.className='account-dialog';modal.dataset.presentation='modal';modal.innerHTML='<button>Modal action</button>';document.body.append(modal);
+    window.layerProbe={edge,ribbon,utility,modal,clicks:0};
+    document.querySelector('[data-action="retry"]').addEventListener('click',()=>window.layerProbe.clicks++);
+  });
+  const retry=page.getByRole('button',{name:'Retry',exact:true});await retry.click();await expect.poll(()=>page.evaluate(()=>window.layerProbe.clicks)).toBe(1);
+  await retry.focus();await page.evaluate(()=>{window.layerProbe.button=document.activeElement;window.update([{key:'processing',body:'Still checking this move'}]);});
+  expect(await page.evaluate(()=>document.activeElement===window.layerProbe.button)).toBe(true);
+  const layering=await page.evaluate(()=>{
+    const status=document.querySelector('.shell-header-status'),{edge,ribbon,utility}=window.layerProbe;
+    return Object.fromEntries(Object.entries({status,edge,ribbon,utility}).map(([key,node])=>[key,Number(getComputedStyle(node).zIndex)]));
+  });
+  expect(layering.status).toBeGreaterThan(layering.edge);expect(layering.status).toBeGreaterThan(layering.ribbon);expect(layering.status).toBeGreaterThan(layering.utility);
+  await page.screenshot({path:info.outputPath(`notice-overlays-${width}.png`)});
+  await page.evaluate(()=>window.layerProbe.modal.showModal());await expect(page.getByRole('button',{name:'Modal action',exact:true})).toBeFocused();
+  expect(await retry.evaluate(button=>{const box=button.getBoundingClientRect();return document.elementFromPoint(box.x+box.width/2,box.y+box.height/2)?.closest('dialog')===window.layerProbe.modal;})).toBe(true);
+  await page.keyboard.press('Escape');await expect(retry).toBeFocused();
+  await retry.press('Enter');await expect.poll(()=>page.evaluate(()=>window.layerProbe.clicks)).toBe(2);
+  expect(await page.evaluate(()=>document.querySelector('.shell-header-status').closest('dialog'))).toBe(null);
+});

@@ -94,7 +94,7 @@ body {display:flow-root;}
 #app[data-shell-layout-mode="narrow"] .shell-header-title-link {width:min(100%,190px);}
 #app[data-shell-layout-mode="narrow"] .shell-header-actions {flex:0 0 auto;}
 #app[data-shell-layout-mode="narrow"] .shell-header-actions .nav-row {display:flex;flex-wrap:nowrap;gap:4px;width:auto;}
-#app[data-shell-layout-mode="narrow"] .shell-header-status {--recovery-effective-top:max(calc(var(--recovery-safe-area-top,env(safe-area-inset-top,0px)) + 8px),var(--recovery-space-top,calc(var(--recovery-safe-area-top,env(safe-area-inset-top,0px)) + 58px)));position:fixed;top:var(--recovery-effective-top);left:8px;right:8px;width:auto;max-width:none;min-height:0;transform:none;max-height:max(0px,calc(var(--recovery-viewport-bottom,100dvh) - var(--recovery-effective-top) - max(8px,env(safe-area-inset-bottom,0px))));z-index:30;pointer-events:none;}
+#app[data-shell-layout-mode="narrow"] .shell-header-status {--recovery-effective-top:max(calc(var(--recovery-safe-area-top,env(safe-area-inset-top,0px)) + 8px),var(--recovery-space-top,calc(var(--recovery-safe-area-top,env(safe-area-inset-top,0px)) + 58px)));position:fixed;top:var(--recovery-effective-top);left:8px;right:8px;width:auto;max-width:none;min-height:0;transform:none;max-height:max(0px,calc(var(--recovery-viewport-bottom,100dvh) - var(--recovery-effective-top) - max(8px,env(safe-area-inset-bottom,0px))));z-index:var(--shell-layer-notice);pointer-events:none;}
 #app[data-shell-layout-mode="narrow"] .shell-header-status > * {pointer-events:auto;}
 #app[data-shell-layout-mode="narrow"] .shell-header-menu-root {display:block;}
 #app[data-shell-route="game"][data-shell-layout-mode="narrow"] .shell-main-content {min-height:0;display:block;}
@@ -106,7 +106,7 @@ body {display:flow-root;}
 #app[data-shell-route="game"][data-shell-layout-mode="narrow"] [data-mobile-panel="board"][inert] {left:100%;}
 #app[data-shell-route="game"][data-shell-layout-mode="narrow"] [data-mobile-panel="history"][inert] {left:200%;}
 #app[data-shell-route="game"][data-shell-layout-mode="narrow"] .game-shell-mobile-panel:not([inert]) {position:relative;margin-left:calc(var(--shell-game-panel-index,1) * 100%);}
-#app[data-shell-route="game"][data-shell-layout-mode="narrow"] .shell-mobile-tabbar {position:fixed;inset:auto auto max(8px,env(safe-area-inset-bottom,0px)) 50%;transform:translateX(-50%);width:180px;display:block;padding:0;background:none;backdrop-filter:none;z-index:25;}
+#app[data-shell-route="game"][data-shell-layout-mode="narrow"] .shell-mobile-tabbar {position:fixed;inset:auto auto max(8px,env(safe-area-inset-bottom,0px)) 50%;transform:translateX(-50%);width:180px;display:block;padding:0;background:none;backdrop-filter:none;z-index:var(--shell-layer-navigation);}
 .mobile-nav-controls {display:flex;gap:4px;padding:3px 8px;background:var(--paper);border:1px solid var(--divider);clip-path:polygon(8px 0,calc(100% - 8px) 0,100% 8px,100% calc(100% - 8px),calc(100% - 8px) 100%,8px 100%,0 calc(100% - 8px),0 8px);transition:transform 180ms ease,opacity 180ms ease;}
 .shell-mobile-tabbar .shell-mobile-tab {display:grid;place-items:center;min-width:48px;min-height:44px;padding:8px;border:0;border-radius:0;background:transparent;}
 .shell-mobile-tabbar .righelt-icon {width:20px;height:20px;}

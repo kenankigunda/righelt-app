@@ -23,7 +23,7 @@ test("shell header wraps long mobile status and identity tokens instead of widen
 test("shell header stacks cleanly on narrow screens", () => {
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-status\s*\{[\s\S]*position:\s*fixed;[\s\S]*left:\s*0;[\s\S]*right:\s*0;[\s\S]*top:\s*0;[\s\S]*z-index:\s*20;/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-status\s*\{[\s\S]*position:\s*fixed;[\s\S]*left:\s*0;[\s\S]*right:\s*0;[\s\S]*top:\s*0;[\s\S]*z-index:\s*var\(--shell-layer-notice\);/s,
   );
   assert.match(
     shellStylesSource,
