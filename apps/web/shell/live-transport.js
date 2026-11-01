@@ -1137,6 +1137,50 @@ export const createLiveTransportStore = ({
     });
     optimistic.recoveryPromise = promise; return promise;
   };
+  const finishSocketRecovery = async (gameId, { isCurrent = () => true, beforeRetire = () => {} } = {}) => {
+    const current = () => active && isCurrent();
+    const optimistic = getOptimisticState(gameId);
+    let recoveryGeneration = optimistic.recoveryGeneration ?? 0;
+    const recoveryEpoch = optimistic.connectionRecoveryEpoch;
+    await hydrateJournal(gameId, current);
+    if (!current()) return false;
+    const admission = optimistic.admission;
+    await admission.catch(() => {});
+    const blocked = () => optimistic.storageBlocked || optimistic.unsavedCommand || optimistic.upgradeRequired
+      || ['session_changed', 'invalid_credentials'].includes(optimistic.recoveryIssue)
+      || auth?.enabled && !auth.session.authenticated;
+    const sameRecovery = () => (optimistic.recoveryGeneration ?? 0) === recoveryGeneration
+      && optimistic.connectionRecoveryEpoch === recoveryEpoch;
+    if (!current() || !sameRecovery() || optimistic.admission !== admission || blocked()) return false;
+    // A snapshot is not a receipt for saved intent. Hydrate first and keep the
+    // durable sender's existing ownership until every command is settled.
+    if (optimistic.pendingCommands.length || optimistic.forceSnapshot) {
+      const reconciliation = reconcileGame(gameId);
+      recoveryGeneration = optimistic.recoveryGeneration ?? 0;
+      await reconciliation;
+    }
+    if (!current() || !sameRecovery() || blocked() || optimistic.admission !== admission || optimistic.pendingCommands.length || optimistic.forceSnapshot
+      || optimistic.attempt?.commandId != null) return false;
+    const owner = optimistic.recoveryOwner;
+    const attempt = optimistic.attempt;
+    if (beforeRetire() === false || !current() || optimistic.recoveryOwner !== owner
+      || optimistic.attempt !== attempt || !sameRecovery()
+      || blocked() || optimistic.admission !== admission || optimistic.pendingCommands.length || optimistic.forceSnapshot) return false;
+    if (owner) {
+      owner.superseded = true;
+      owner.reject?.(Object.assign(new Error("recovery_superseded"), { code: "recovery_superseded" }));
+      optimistic.recoveryOwner = null; optimistic.recoveryPromise = null;
+    }
+    // Only an obsolete read can be cancelled here. Accepted or uncertain writes
+    // remain under the durable command journal, including their deadlines.
+    if (attempt && attempt.commandId === null) {
+      optimistic.attempt = null;
+      attempt.controller.abort(); attempt.finish();
+    }
+    setConnectionRecovering(gameId, false);
+    return true;
+  };
+
   const retrySavingOnce = async (gameId, optimistic, owner, mayRecover) => {
     const reasons = [...owner.reasons.keys()], jobs = [...owner.jobs.values()];
     const current = () => currentJournalOwner(gameId, optimistic, owner) && mayRecover();
@@ -1869,6 +1913,7 @@ export const createLiveTransportStore = ({
     loadGameLegalActions,
     loadGamePieceMoves,
     reconcileGame,
+    finishSocketRecovery,
     setConnectionRecovering,
     prepareSafeReconnect(gameId) {
       const optimistic = getOptimisticState(gameId);
