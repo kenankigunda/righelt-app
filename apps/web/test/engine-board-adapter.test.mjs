@@ -1114,7 +1114,7 @@ test("preview ghosts do not render inactive state from preview metadata", () => 
 });
 
 test("inactive pieces use the square fill color instead of transparency", () => {
-  assert.match(styleSource, /\.cell\s*\{[\s\S]*--cell-fill:\s*#fbf8f0;[\s\S]*background:\s*var\(--cell-fill\);/s);
+  assert.match(styleSource, /\.cell\s*\{[\s\S]*--cell-fill:\s*#f8fafa;[\s\S]*background:\s*var\(--cell-fill\);/s);
   assert.match(styleSource, /\.piece-token\.inactive\s*\{[\s\S]*background:\s*var\(--cell-fill, #fbf8f0\);/s);
   assert.match(styleSource, /\.cell\.group-member\s*\{[\s\S]*--cell-fill:\s*#eef8f1;/s);
   assert.match(styleSource, /\.cell\.continuation-moved\s*\{[\s\S]*--cell-fill:\s*#f5f7ef;/s);
