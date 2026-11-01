@@ -47,3 +47,17 @@ export function withEngineComputationGuard(guard, operation) {
         current = previous;
     }
 }
+/** An interrupted exact rule has no boolean answer and must remain retryable. */
+export class EngineComputationLimit extends Error {
+    code = "rules_budget_exceeded";
+    constructor() { super("Rules calculation exceeded its resource budget"); }
+}
+export function boundedEngineOperation(operation, maxExpansions = MAX_ENGINE_OPERATION_EXPANSIONS) {
+    if (!Number.isSafeInteger(maxExpansions) || maxExpansions < 1)
+        throw new TypeError("Invalid engine expansion budget");
+    let expansions = 0;
+    return withEngineComputationGuard(expansion => {
+        if (expansion && ++expansions > maxExpansions)
+            throw new EngineComputationLimit();
+    }, operation);
+}
