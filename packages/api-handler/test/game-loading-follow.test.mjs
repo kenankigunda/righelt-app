@@ -59,7 +59,8 @@ test('the seven-push follow projects, commits once and reconciles after a lost r
   assert.equal(persisted.moves.filter(move => move.clientCommandId === command.clientCommandId).length, 1);
   assert.deepEqual(persisted.board.state, projected.game.board.state);
   const receipt = DB.getReceipt('follow', command.clientCommandId);
-  for (const key of ['gameId', 'identityId', 'clientCommandId', 'fingerprint', 'outcome', 'eventSeq', 'gameplayRevision']) assert.equal(receipt[key], recovered.commandOutcomes[0][key], key);
+  const storedKeys = { gameId: 'game_id', identityId: 'actor_identity_id', clientCommandId: 'client_command_id', fingerprint: 'fingerprint', outcome: 'outcome', eventSeq: 'event_seq', gameplayRevision: 'gameplay_revision' };
+  for (const [key, storedKey] of Object.entries(storedKeys)) assert.equal(receipt[storedKey], recovered.commandOutcomes[0][key], key);
   const duplicate = await call('apply', command);
   assert.equal(duplicate.duplicate, true);
   assert.deepEqual(DB.getReceipt('follow', command.clientCommandId), receipt);
