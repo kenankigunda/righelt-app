@@ -1,3 +1,4 @@
+import {connectionLegendProperties,connectionStroke} from './board/connection-styles.js';
 export function getCommandLegendColor(snapshot, selectedPieceId = null) {
   const selectedPiece =
     snapshot?.pieces?.find?.((piece) => piece.id === selectedPieceId) ?? null;
@@ -6,7 +7,7 @@ export function getCommandLegendColor(snapshot, selectedPieceId = null) {
 }
 
 export function getCommandLegendSwatchStyle(snapshot, selectedPieceId = null) {
-  return `--swatch-command-color: ${getCommandLegendColor(snapshot, selectedPieceId)};`;
+  return `--swatch-command-color: ${getCommandLegendColor(snapshot, selectedPieceId)};${Object.entries(connectionLegendProperties()).map(([name,value])=>`${name}:${value};`).join('')}`;
 }
 
 export function applyCommandLegendSwatch(element, snapshot, selectedPieceId = null) {
@@ -14,6 +15,7 @@ export function applyCommandLegendSwatch(element, snapshot, selectedPieceId = nu
     return;
   }
   element.style.setProperty("--swatch-command-color", getCommandLegendColor(snapshot, selectedPieceId));
+  for(const [name,value] of Object.entries(connectionLegendProperties()))element.style.setProperty(name,value);
 }
 
 // Ignore identical visual updates so ordinary board renders cannot interrupt motion.
@@ -53,6 +55,7 @@ export function getInspectionLegendState(snapshot, {selectedPieceId=null,inspect
 export function updateInspectionLegend(legend, snapshot, context = {}) {
   if (!legend) return;
   const state=getInspectionLegendState(snapshot,context);
+  for(const [name,value] of Object.entries(connectionLegendProperties()))legend.style.setProperty(name,value);
   for (const kind of ['command','supply']) {
     const button=legend.querySelector(`[data-board-inspection="${kind}"]`),entry=state[kind];
     button?.setAttribute('aria-pressed',String(entry.selected));
@@ -61,6 +64,6 @@ export function updateInspectionLegend(legend, snapshot, context = {}) {
     button?.style.setProperty('--legend-owner-color',entry.color);
     const icon=button?.querySelector(kind==='command'?'.commander-key':'.supply-point');
     icon?.style.setProperty(kind==='command'?'--swatch-command-color':'--supply-owner',entry.color);
-    legend.querySelector(kind==='command'?'.swatch.command':'.swatch.supply')?.style.setProperty(kind==='command'?'--swatch-command-color':'--swatch-supply-color',entry.color);
+    legend.querySelector(kind==='command'?'.swatch.command':'.swatch.supply')?.style.setProperty(kind==='command'?'--swatch-command-color':'--swatch-supply-color',connectionStroke(kind,entry.owner));
   }
 }

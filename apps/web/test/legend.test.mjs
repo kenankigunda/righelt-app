@@ -40,7 +40,7 @@ test("command legend uses selected piece color when a piece is selected", () => 
 test("command legend swatch style exposes the CSS variable", () => {
   assert.equal(
     getCommandLegendSwatchStyle({ sideToMove: "P2", pieces: [] }),
-    "--swatch-command-color: var(--player-p2);",
+    "--swatch-command-color: var(--player-p2);--connection-sample-width:16px;--connection-line-width:3px;--connection-supply-sample:repeating-linear-gradient(to right,currentColor 0 5px,transparent 5px 9px);--connection-command-sample:repeating-linear-gradient(to right,currentColor 0 2px,transparent 2px 6px);",
   );
 });
 
@@ -50,14 +50,11 @@ test("shell command legend swatch is state-driven", () => {
   assert.match(shellAppSource, /updateInspectionLegend\(document\.querySelector\('.overlay-key'\),state,\{selectedPieceId,\.\.\.overlay\}\);/);
 });
 
-test("command legend swatch renders as a dashed line", () => {
-  assert.match(stylesSource, /\.swatch\.command\s*\{[\s\S]*color:\s*var\(--swatch-command-color, var\(--player-p1\)\);/s);
-  assert.match(stylesSource, /\.swatch\.command::before\s*\{[\s\S]*border-top:\s*3px dashed currentColor;/s);
-});
-
-test("supply legend swatch renders as an owner-colored dashed line", () => {
-  assert.match(stylesSource, /\.swatch\.supply\s*\{[\s\S]*color:\s*var\(--swatch-supply-color, var\(--player-p1\)\);/s);
-  assert.match(stylesSource, /\.swatch\.supply::before,\s*\.swatch\.command::before\s*\{[\s\S]*border-top:\s*3px dashed currentColor;/s);
+test("command and supply samples keep distinct role patterns and semantic supply color", () => {
+ assert.match(stylesSource,/\.swatch\.command\s*\{[\s\S]*color:\s*var\(--swatch-command-color, var\(--player-p1\)\);/s);
+ assert.match(stylesSource,/\.swatch\.supply\s*\{[\s\S]*color:\s*var\(--connection-supply\);/s);
+ assert.match(stylesSource,/background:var\(--connection-command-sample\);/);
+ assert.match(stylesSource,/\.swatch\.supply::before \{background:var\(--connection-supply-sample\);\}/);
 });
 
 
@@ -97,8 +94,8 @@ test('commander and supply colors and pressed states resolve independently',()=>
  assert.deepEqual(getInspectionLegendState(snapshot,context).supply,{owner:'P1',color:'var(--player-p1)',selected:false});
  const attrs={},style={},iconStyle={},lineStyle={};
  const button={setAttribute:(key,value)=>{attrs[key]=value},style:{setProperty:(key,value)=>{style[key]=value}},querySelector:()=>({style:{setProperty:(key,value)=>{iconStyle[key]=value}}})};
- const legend={querySelector:selector=>selector.includes('data-board-inspection')?button:{style:{setProperty:(key,value)=>{lineStyle[key]=value}}}};
+ const legend={style:{setProperty:(key,value)=>{lineStyle[key]=value}},querySelector:selector=>selector.includes('data-board-inspection')?button:{style:{setProperty:(key,value)=>{lineStyle[key]=value}}}};
  updateInspectionLegend(legend,snapshot,context);
  assert.equal(attrs['aria-pressed'],'false');assert.equal(attrs['aria-label'],'Red supply point inspection');
- assert.equal(style['--legend-owner-color'],'var(--player-p1)');assert.equal(iconStyle['--supply-owner'],'var(--player-p1)');assert.equal(lineStyle['--swatch-supply-color'],'var(--player-p1)');
+ assert.equal(style['--legend-owner-color'],'var(--player-p1)');assert.equal(iconStyle['--supply-owner'],'var(--player-p1)');assert.equal(lineStyle['--swatch-supply-color'],'var(--connection-supply)');assert.equal(lineStyle['--connection-supply-sample'],'repeating-linear-gradient(to right,currentColor 0 5px,transparent 5px 9px)');
 });

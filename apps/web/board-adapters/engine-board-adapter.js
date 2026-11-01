@@ -1,3 +1,4 @@
+import {CONNECTION_STYLE,connectionStroke} from '../board/connection-styles.js';
 import { rushActionKey } from '../board/rush-supply-guidance.js';
 import { REMOVAL_EFFECT_DURATION_MS, REMOVAL_FLASH_COUNT } from "../board/removal-timing.js";
 import {createSequenceStatusProjector} from '../board/sequence-status-preview.js';
@@ -27,7 +28,7 @@ const PREVIEW_OPACITY = {
   default: "0.35",
   selected: "0.7",
 };
-const OVERLAY_PARALLEL_SPLIT_OFFSET = 2.5;
+const OVERLAY_PARALLEL_SPLIT_OFFSET = CONNECTION_STYLE.parallelOffset;
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
 const isSupplyPoint = (row, col) =>
@@ -552,7 +553,7 @@ export function createEngineBoardAdapter() {
     };
   };
 
-  const drawPath = (path, stroke, dashPattern = null, offsetsBySegmentKey = null, legendKind = null) => {
+  const drawPath = (path, stroke, dashPattern = null, offsetsBySegmentKey = null, legendKind = null, owner = null) => {
     if (!overlayLinesEl || !path || path.length < 2) {
       return;
     }
@@ -575,9 +576,10 @@ export function createEngineBoardAdapter() {
       line.setAttribute("x2", String(end.x + offset.x));
       line.setAttribute("y2", String(end.y + offset.y));
       if (legendKind) line.setAttribute("data-legend-kind", legendKind);
+      if(owner)line.setAttribute("data-connection-owner",owner);
       line.setAttribute("stroke", stroke);
-      line.setAttribute("stroke-width", "3");
-      line.setAttribute("stroke-linecap", "round");
+      line.setAttribute("stroke-width", String(CONNECTION_STYLE.width));
+      line.setAttribute("stroke-linecap", CONNECTION_STYLE.linecap);
       if (dashPattern) {
         line.setAttribute("stroke-dasharray", dashPattern);
       }
@@ -738,7 +740,7 @@ export function createEngineBoardAdapter() {
       for (const segment of segments) {
         const key = getSegmentKey(segment.from, segment.to);
         const offset = supplyKeys.has(key) && commandKeys.has(key) ? (segment.kind === "supply" ? -OVERLAY_PARALLEL_SPLIT_OFFSET : OVERLAY_PARALLEL_SPLIT_OFFSET) : 0;
-        drawPath([segment.from, segment.to], PREVIEW_STROKE_BY_OWNER[segment.owner], "2 6", new Map([[key, offset]]), segment.kind);
+        drawPath([segment.from, segment.to], connectionStroke(segment.kind,segment.owner), CONNECTION_STYLE[segment.kind].dash, new Map([[key, offset]]), segment.kind, segment.owner);
       }
       const supplyInspection = overlay.inspection.kind === 'networks' ? overlay.inspection.supply : overlay.inspection.kind === 'supply' ? overlay.inspection : null;
       if (supplyInspection?.point) {
@@ -840,18 +842,18 @@ export function createEngineBoardAdapter() {
       }
     }
 
-    const drawSupplyCommand = selectedPieceOverlayPhase !== "actionPreviews";
+    const drawSupplyCommand = selectedPieceOverlayPhase !== "actionPreviews" && !overlay?.suppressPersonalConnections;
     const drawActionPreviews = selectedPieceOverlayPhase !== "supplyCommand";
     const supplyPath = normalizeOverlayPath(getSupplyPathForPiece(snapshot, piece));
     const commandPath = normalizeOverlayPath(getCommandPathForPiece(snapshot, piece));
-    const commandStroke = PREVIEW_STROKE_BY_OWNER[piece.owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
+    const commandStroke = connectionStroke("command",piece.owner);
     const { supplyOffsetsBySegmentKey, commandOffsetsBySegmentKey } = buildSharedPathSegmentOffsetMaps(
       supplyPath,
       commandPath,
     );
     if (drawSupplyCommand) {
-      drawPath(supplyPath, commandStroke, "2 6", supplyOffsetsBySegmentKey, "supply");
-      drawPath(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey, "command");
+      drawPath(supplyPath, connectionStroke("supply",piece.owner), CONNECTION_STYLE.supply.dash, supplyOffsetsBySegmentKey, "supply", piece.owner);
+      drawPath(commandPath, commandStroke, CONNECTION_STYLE.command.dash, commandOffsetsBySegmentKey, "command", piece.owner);
     }
 
     if (!drawActionPreviews) {
