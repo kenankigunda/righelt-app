@@ -1,3 +1,4 @@
+import {isCompletedGame} from '../shell/game-lifecycle.js';
 import {historyTurnSide} from '../shell/history-preview.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -7,7 +8,7 @@ import {buildMovePreview,buildTurnPreview} from '../shell/history-preview.js';
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const declaration=source.slice(source.indexOf('const renderHistoryPreview ='),source.indexOf('const renderHeader ='));
 const escape=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
-const context={buildMovePreview,buildTurnPreview,escapeHtml:escape,getShellLayoutMode:()=> 'narrow',toStableKey:JSON.stringify,
+const context={isCompletedGame,buildMovePreview,buildTurnPreview,escapeHtml:escape,getShellLayoutMode:()=> 'narrow',toStableKey:JSON.stringify,
  renderMiniBoardPreviewRoot:({overlay})=>`<div data-preview-mode="${overlay.mode}"></div>`,playerToneClassForSide:side=>`player-tone-${side}`,playerToneClassForSeat:()=>'',
  historyActorLabel:(_game,move)=>move.actorSide==='P2'?'Defender':'Attacker',historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:(_game,side)=>side==='Player 2'||side==='P2'?'Defender':'Attacker',
  transport:{getIdentityId:()=> 'me'},icon:()=>'',formatClientDateTime:String,expandedUndoneGroups:new Set(),liveHistoryLabel:()=> 'Waiting'};
@@ -55,4 +56,18 @@ test('archive entries share turn grouping, actor accessibility and inert selecte
  assert.match(html,/<div class="history-item-info history-archive-select"  data-game-id="g" data-decision-id="b" aria-current="true"/);
  assert.match(html,/data-preview-mode="recorded-action"/);
  assert.match(html,/data-action="inspect-history-archive"[^>]*data-decision-id="a"/);
+});
+
+test('completed history omits empty loser Turn48 while preserving final Turn47 and closed passes',()=>{
+ const finalMove={...moves[0],turnIndex:46,index:24,displayMoveNumber:25,notation:'PUSH (5,4) → (5,3)'};
+ const turns=[{index:45,playerSeat:'Player 2',endedAt:'passed',moveIndexes:[]},
+  {index:46,playerSeat:'Player 1',endedAt:'done',moveIndexes:[24]},
+  {index:47,playerSeat:'Player 2',endedAt:null,moveIndexes:[]}];
+ const completed={...game,moves:[finalMove],turns,currentTurn:turns[2],board:{state:{outcome:{status:'p1_win'}}}};
+ const html=context.render(completed);
+ assert.doesNotMatch(html,/Turn 48/);assert.match(html,/Turn 47/);assert.match(html,/Move 25: PUSH/);assert.match(html,/Turn 46/);
+ assert.match(context.render({...completed,board:{state:{outcome:{status:'ongoing'}}}}),/Turn 48/);
+ assert.match(context.render({...completed,moves:[finalMove,{...moves[2],turnIndex:47,moveId:'ack-final'}]}),/Turn 48/);
+ assert.doesNotMatch(context.render({...completed,inHistoryMode:true,currentSnapshot:{outcome:{status:'ongoing'}}}),/Turn 48/);
+ assert.match(context.render({...completed,turns:[...turns.slice(0,2),{...turns[2],endedAt:'real-pass'}]}),/Turn 48/);
 });
