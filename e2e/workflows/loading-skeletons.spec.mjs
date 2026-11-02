@@ -67,7 +67,7 @@ test("game route shows a skeleton while the initial game load is still in flight
     const delayedPage = await delayedContext.newPage();
     deferredRequest = await deferRequest(
       delayedContext,
-      ({ method, url }) => method === "GET" && url.pathname === `/api/shell/games/${gameId}`,
+      ({ method, url }) => method === "GET" && [ `/api/shell/games/${gameId}`, `/api/shell/games/${gameId}/position` ].includes(url.pathname),
     );
 
     let snapshotSeen = false;
