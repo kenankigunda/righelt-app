@@ -36,6 +36,17 @@ test('guardian detects launcher exit and cleans descendants',{skip:process.platf
  await writeFile(launcher,`import {spawn} from 'node:child_process';spawn(process.execPath,${JSON.stringify([cli,'run','--',process.execPath,f.script])},{stdio:'ignore'});setTimeout(()=>process.exit(0),1500);`);
  const p=spawn(process.execPath,[launcher],{env:{...process.env,RIGHELT_RESOURCE_RUN:"",RIGHELT_RESOURCE_KEEP:"",RIGHELT_RESOURCE_REGISTRY:path.join(f.dir,'registry')},stdio:'ignore'});t.after(()=>p.kill('SIGKILL'));
  const ids=await pids(f);await assertGone(ids);
+ // Worker exit precedes the guardian's final receipt write. Keep its private
+ // registry alive until that write and the guardian's own cleanup complete.
+ const record=await waitFor(async()=>{
+  const names=await readdir(path.join(f.dir,'registry'));
+  for(const name of names.filter(n=>n.endsWith('.json'))){
+   const r=JSON.parse(await readFile(path.join(f.dir,'registry',name),'utf8'));
+   if(r.status==='finished'&&r.cleanup==='verified')return r;
+  }
+  return false;
+ });
+ await waitFor(async()=>!(await processTable()).some(r=>sameProcessForTest(r,record.supervisor)&&live(r)));
 });
 test('injected critical pressure cancels heavy work as retryable incomplete',{skip:process.platform==='win32',timeout:15_000},async t=>{
  const f=await fixture(t),driver=path.join(f.dir,'pressure.mjs');
