@@ -261,14 +261,14 @@ test('admission changes preserve selection, sentence rows, baseline-aligned chip
  await expect(prompt.locator('.board-preview-coordinate-chip')).toHaveCount(2);
  await expect(prompt.locator('.board-message-row').nth(0)).toContainText('Show me again');
  await expect(prompt.locator('.board-message-row').nth(1)).toHaveText('Select a piece or Pass');
- const copy=await prompt.textContent(),before=await geometry(page);
+ await settledMessage(page);const copy=await prompt.textContent(),before=await geometry(page);
  for(const blocked of [true,false,true,false]){
   await page.evaluate(blocked=>{
    window.boardFixture.message(window.opponentMessage({...window.stableMessageGame,sharedMutationsBlocked:blocked,recovering:blocked},{}, {},{canInteract:!blocked}));
    window.boardFixture.gateInteraction(blocked);
   },blocked);
   if(blocked)await expect(pass).toBeDisabled();else await expect(pass).toBeEnabled();
-  expect(await prompt.textContent()).toBe(copy);expect(await geometry(page)).toEqual(before);
+  await settledMessage(page);expect(await prompt.textContent()).toBe(copy);expect(await geometry(page)).toEqual(before);
   if(blocked)await pass.evaluate(button=>button.click());
  }
  expect(await page.evaluate(()=>window.boardFixture.applied())).toEqual([]);
