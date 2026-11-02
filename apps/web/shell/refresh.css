@@ -594,16 +594,16 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .player-kind-icon .righelt-icon {width:14px;height:14px;}
 .history-result-summary {margin:0 0 var(--section-item-gap,12px);}
 
-/* Marble foundation: bounded, static vector material. Textures never own layout,
+/* Marble foundation: bounded, static material. Textures never own layout,
    readiness or motion; the white base remains usable if either asset fails. */
 :root {
- --marble-face:url('../assets/materials/marble-face.svg');
- --marble-canvas:url('../assets/materials/marble-canvas.svg');
+ --marble-face:linear-gradient(rgb(255 255 255 / 65%),rgb(255 255 255 / 65%)),url('../assets/materials/marble-white-raster-v1.webp');
+ --marble-canvas:url('../assets/materials/marble-canvas.svg'),url('../assets/materials/marble-white-raster-v1.webp');
  --stone-grain:var(--marble-face);
  --marble-edge:#c7ccce;
  --marble-contact-shadow:0 3px 4px rgb(36 46 55 / 14%);
 }
-body {background-color:var(--surface-foundation);background-image:var(--marble-canvas);background-size:1440px 960px;}
+body {background-color:var(--surface-foundation);background-image:var(--marble-canvas);background-size:1440px 960px,1024px 1024px;}
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,
 .story-modal,.game-result {
  --stone-edge:var(--marble-edge);
@@ -618,7 +618,9 @@ body {background-color:var(--surface-foundation);background-image:var(--marble-c
 }
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::after,
 .story-modal::after,.game-result::after {background:linear-gradient(115deg,#e3e6e7,var(--marble-edge));}
-.home-refresh .mini-board-card::before {background:var(--marble-face),linear-gradient(135deg,#fff,#fafcfc);}
+.home-refresh button.opponent-choice::before,.home-refresh .mini-board-card::before {background:var(--marble-face),linear-gradient(135deg,#fff,#fafcfc);}
+.home-refresh button.opponent-choice::after,.home-refresh .mini-board-card::after {background:var(--marble-edge);}
+[data-hover-capability="hover"] .home-refresh button.opponent-choice:not(:disabled):hover::before {background:linear-gradient(rgb(37 43 45 / 3%),rgb(37 43 45 / 3%)),var(--marble-face),#fff;}
 @media(forced-colors:active) {body{background-image:none;}}
 
 /* Foundation consumers preserve native modality, target sizes and input owners.
