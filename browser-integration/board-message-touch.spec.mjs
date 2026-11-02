@@ -11,12 +11,12 @@ const settledMessage=async page=>{await page.evaluate(()=>new Promise(resolve=>r
 const edgeDelta=(next,previous,slotNext,slotPrevious,label)=>{
  const inputs=[next,previous,slotNext,slotPrevious];
  const bound=inputs.reduce((sum,value)=>sum+(value!==0&&Math.fround(value)===value?2**(Math.floor(Math.log2(Math.abs(value)))-24):0),0);
- expect(Math.abs((next-previous)-(slotNext-slotPrevious)),label).toBeLessThanOrEqual(bound);
+ expect(Math.abs((next-previous)-(slotNext-slotPrevious)),`${label}: ${JSON.stringify({inputs,bound,float32:inputs.map(value=>Math.fround(value)===value)})}`).toBeLessThanOrEqual(bound);
  return{inputs,bound};
 };
 const measureSemanticGeometry=page=>page.locator('main').evaluate(main=>{
- const rect=node=>{const value=node.getBoundingClientRect();return{x:value.x,y:value.y,bottom:value.bottom,width:value.width,height:value.height};};
- return{card:rect(main),board:rect(main.querySelector('#board')),boardLayoutHeight:getComputedStyle(main.querySelector('#board')).height,slot:rect(main.querySelector('.board-message-slot'))};
+ const rect=node=>{const value=node.getBoundingClientRect();return{x:value.x,y:value.y,top:value.top,bottom:value.bottom,width:value.width,height:value.height,offsetHeight:node.offsetHeight};};
+ return{devicePixelRatio,card:rect(main),board:rect(main.querySelector('#board')),boardLayoutHeight:getComputedStyle(main.querySelector('#board')).height,cardLayoutHeight:getComputedStyle(main).height,slotLayoutHeight:getComputedStyle(main.querySelector('.board-message-slot')).height,slot:rect(main.querySelector('.board-message-slot'))};
 });
 const assertSemanticGeometry=(initial,current)=>{
  expect({x:current.board.x,width:current.board.width,layoutHeight:current.boardLayoutHeight}).toEqual({x:initial.board.x,width:initial.board.width,layoutHeight:initial.boardLayoutHeight});
@@ -52,13 +52,20 @@ test('replay message steps preserve action nodes and keyboard focus',async({page
 });
 
 test('vertical translation preserves exact board layout sizing',async({page},info)=>{
+ const evidence={};
+ const persist=async()=>{try{await writeFile(info.outputPath('semantic-edge-precision.json'),JSON.stringify(evidence,null,2));}catch(error){console.error(JSON.stringify({kind:'precision-evidence-incomplete',name:error?.name??'Error'}));}};
+ try{
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
  await page.evaluate(()=>window.boardFixture.setup('pass',false));await settledMessage(page);
  const before=await measureSemanticGeometry(page);
  await page.evaluate(()=>window.boardFixture.message({text:'An acknowledged move has a longer explanation with several coordinate descriptions. A second complete sentence needs additional natural space.',action:{id:'replay-next',label:'Next'}}));
  await settledMessage(page);const changed=await measureSemanticGeometry(page);
+ // Persist the raw measured operands before the first precision assertion.
+ // A failed hypothesis must retain its evidence, not only the screenshot.
+ Object.assign(evidence,{before,changed,status:'positive-assertion-pending'});
+ await persist();
  expect(changed.board.y).not.toBe(before.board.y);
- const positive=assertSemanticGeometry(before,changed);
+ const positive=assertSemanticGeometry(before,changed);evidence.positive=positive;
  let displacement=1/64;
  await page.locator('#board').evaluate((board,amount)=>{board.style.transform=`translateY(${amount}px)`;},displacement);
  let negative=await measureSemanticGeometry(page);
@@ -67,7 +74,9 @@ test('vertical translation preserves exact board layout sizing',async({page},inf
  expect(()=>assertSemanticGeometry(before,negative),'the same helper must reject independent real board movement').toThrow();
  await page.locator('#board').evaluate(board=>board.style.removeProperty('transform'));
  expect(await measureSemanticGeometry(page)).toEqual(changed);
- await writeFile(info.outputPath('semantic-edge-precision.json'),JSON.stringify({before,changed,positive,negative,displacement},null,2));
+ Object.assign(evidence,{positive,negative,displacement,status:'complete'});
+ }catch(error){evidence.failure=String(error);throw error;}
+ finally{await persist();}
 });
 
 test('compact Pass accepts actual touches at both ends of its 44px hit area without moving the board',async({page},info)=>{
