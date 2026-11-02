@@ -1,8 +1,31 @@
 import {test,expect} from '@playwright/test';
+import {writeFile} from 'node:fs/promises';
 import {admittedHeight,budgetPixelPrecision} from './support/message-reservation-policy.mjs';
 test.use({viewport:{width:390,height:740},hasTouch:true});
 const geometry=page=>page.locator('#board').evaluate(el=>{const rect=el.getBoundingClientRect();return{x:rect.x,y:rect.y,width:rect.width,height:rect.height};});
 const settledMessage=async page=>{await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));await page.waitForFunction(()=>![...document.querySelectorAll('.board-message-slot')].some(slot=>slot.getAnimations().some(animation=>animation.pending||animation.playState==='running')));};
+
+// All vertical arithmetic uses atomic viewport edges. Firefox can expose
+// float32 edges; allow only the sum of their half-ULP representation bounds.
+// Non-float32 inputs retain exact arithmetic, not an assumed pixel epsilon.
+const edgeDelta=(next,previous,slotNext,slotPrevious,label)=>{
+ const inputs=[next,previous,slotNext,slotPrevious];
+ const bound=inputs.reduce((sum,value)=>sum+(value!==0&&Math.fround(value)===value?2**(Math.floor(Math.log2(Math.abs(value)))-24):0),0);
+ expect(Math.abs((next-previous)-(slotNext-slotPrevious)),label).toBeLessThanOrEqual(bound);
+ return{inputs,bound};
+};
+const measureSemanticGeometry=page=>page.locator('main').evaluate(main=>{
+ const rect=node=>{const value=node.getBoundingClientRect();return{x:value.x,y:value.y,bottom:value.bottom,width:value.width,height:value.height};};
+ return{card:rect(main),board:rect(main.querySelector('#board')),boardLayoutHeight:getComputedStyle(main.querySelector('#board')).height,slot:rect(main.querySelector('.board-message-slot'))};
+});
+const assertSemanticGeometry=(initial,current)=>{
+ expect({x:current.board.x,width:current.board.width,layoutHeight:current.boardLayoutHeight}).toEqual({x:initial.board.x,width:initial.board.width,layoutHeight:initial.boardLayoutHeight});
+ expect({x:current.slot.x,y:current.slot.y,width:current.slot.width,cardTop:current.card.y}).toEqual({x:initial.slot.x,y:initial.slot.y,width:initial.slot.width,cardTop:initial.card.y});
+ const board=edgeDelta(current.board.y,initial.board.y,current.slot.bottom,initial.slot.bottom,'board movement must come only from semantic slot growth');
+ const card=edgeDelta(current.card.bottom,initial.card.bottom,current.slot.bottom,initial.slot.bottom,'card movement must come only from semantic slot growth');
+ expect(current.board.y).toBeGreaterThanOrEqual(current.slot.bottom);
+ return{board,card};
+};
 
 test('replay message steps preserve action nodes and keyboard focus',async({page})=>{
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
@@ -28,17 +51,23 @@ test('replay message steps preserve action nodes and keyboard focus',async({page
  await expect(page.locator('#preview')).toContainText('Finished <safely>');expect(await page.locator('#preview safely').count()).toBe(0);
 });
 
-test('vertical translation preserves exact board layout sizing',async({page})=>{
+test('vertical translation preserves exact board layout sizing',async({page},info)=>{
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
  await page.evaluate(()=>window.boardFixture.setup('pass',false));await settledMessage(page);
- const values=await page.locator('#board').evaluate(board=>{
-  const measure=()=>{const rect=board.getBoundingClientRect(),style=getComputedStyle(board);return{x:rect.x,y:rect.y,width:rect.width,height:rect.height,layoutHeight:style.height,boxSizing:style.boxSizing};};
-  const before=measure();board.style.transform='translateY(300px)';const translated=measure();board.style.removeProperty('transform');return{before,translated,restored:measure()};
- });
- expect(values.before.boxSizing).toBe('border-box');
- expect(values.translated.y).not.toBe(values.before.y);
- expect({x:values.translated.x,width:values.translated.width,layoutHeight:values.translated.layoutHeight}).toEqual({x:values.before.x,width:values.before.width,layoutHeight:values.before.layoutHeight});
- expect(values.restored).toEqual(values.before);
+ const before=await measureSemanticGeometry(page);
+ await page.evaluate(()=>window.boardFixture.message({text:'An acknowledged move has a longer explanation with several coordinate descriptions. A second complete sentence needs additional natural space.',action:{id:'replay-next',label:'Next'}}));
+ await settledMessage(page);const changed=await measureSemanticGeometry(page);
+ expect(changed.board.y).not.toBe(before.board.y);
+ const positive=assertSemanticGeometry(before,changed);
+ let displacement=1/64;
+ await page.locator('#board').evaluate((board,amount)=>{board.style.transform=`translateY(${amount}px)`;},displacement);
+ let negative=await measureSemanticGeometry(page);
+ if(negative.board.y===changed.board.y){displacement=1;await page.locator('#board').evaluate(board=>{board.style.transform='translateY(1px)';});negative=await measureSemanticGeometry(page);}
+ expect(negative.board.y).not.toBe(changed.board.y);
+ expect(()=>assertSemanticGeometry(before,negative),'the same helper must reject independent real board movement').toThrow();
+ await page.locator('#board').evaluate(board=>board.style.removeProperty('transform'));
+ expect(await measureSemanticGeometry(page)).toEqual(changed);
+ await writeFile(info.outputPath('semantic-edge-precision.json'),JSON.stringify({before,changed,positive,negative,displacement},null,2));
 });
 
 test('compact Pass accepts actual touches at both ends of its 44px hit area without moving the board',async({page},info)=>{
@@ -72,10 +101,7 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
     await window.boardFixture.setup('pass',false);
     await document.fonts.ready;
   },scale);
-  const measure=()=>page.locator('main').evaluate(main=>{
-    const rect=selector=>{const value=main.querySelector(selector).getBoundingClientRect();return{x:value.x,y:value.y,width:value.width,height:value.height};};
-    return{cardHeight:main.getBoundingClientRect().height,board:rect('#board'),boardLayoutHeight:getComputedStyle(main.querySelector('#board')).height,slot:rect('.board-message-slot')};
-  });
+  const measure=()=>measureSemanticGeometry(page);
   await settledMessage(page);const initial=await measure();
   expect(initial.slot.height).toBeGreaterThanOrEqual(44);
   // The frozen-sequence explanation is three wrapped lines at320px. Measure
@@ -136,12 +162,7 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
     // Different semantic messages may use their own intrinsic height. Keep the
     // board size and horizontal placement exact, and account for all vertical
     // movement solely through the settled message slot.
-    expect({x:current.board.x,width:current.board.width,layoutHeight:current.boardLayoutHeight}).toEqual({x:initial.board.x,width:initial.board.width,layoutHeight:initial.boardLayoutHeight});
-    expect({x:current.slot.x,y:current.slot.y,width:current.slot.width}).toEqual({x:initial.slot.x,y:initial.slot.y,width:initial.slot.width});
-    const growth=current.slot.height-initial.slot.height;
-    expect(current.board.y-initial.board.y).toBeCloseTo(growth,5);
-    expect(current.cardHeight-initial.cardHeight).toBeCloseTo(growth,5);
-    expect(current.board.y).toBeGreaterThanOrEqual(current.slot.y+current.slot.height);
+    assertSemanticGeometry(initial,current);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(phase==='frozen-reconnect'&&width===320)await page.screenshot({path:info.outputPath(`stable-frozen-reconnect-${width}-${scale}.png`)});
     if(phase==='completed'||phase==='completed-pass'||phase==='spectator-long-name'){
