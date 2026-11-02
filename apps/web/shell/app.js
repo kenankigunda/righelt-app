@@ -2905,6 +2905,16 @@ const reconcileMiniBoardPreviews = () => {
   });
 };
 
+// A replaced loading/live card must not expose the stylesheet's safe floor for
+// one frame before the normal layout rAF supplies its measured desktop size.
+const initializeDesktopBoardFit = () => {
+  desktopBoardFit ??= createDesktopBoardFit({
+    appEl, requestLayout: scheduleGameShellStickyLayout,
+    onSizeChange: () => boardRuntime?.refreshVisuals?.(),
+  });
+  desktopBoardFit.sync({wide: syncShellLayoutMode() === 'wide',onlyNew:true});
+};
+
 const applyGameShellStickyLayout = () => {
   if (!(appEl instanceof HTMLElement)) {
     return;
@@ -3025,6 +3035,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   });
   reconcileMiniBoardPreviews();
   syncMountedGameShellPanelUi(shellRoot);
+  initializeDesktopBoardFit();
   scheduleGameShellStickyLayout();
   return true;
 };
@@ -3943,10 +3954,12 @@ const renderContent = ({ animatePanels, includeBoard }) => {
       })) return;
     }
     mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
+    initializeDesktopBoardFit();
     scheduleGameShellStickyLayout();
   }
   if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
     mountBoardForGame(transport.getGameViewModel(resolvedInvite.gameId));
+    initializeDesktopBoardFit();
     scheduleGameShellStickyLayout();
   }
 };

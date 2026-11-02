@@ -27,7 +27,7 @@ function harness(){
  const root=new Element();root.querySelector=query;
  const appEl={querySelector:query};
  const renderParticipantsPanel=()=>renderPlayersPanel(game,{identityId:'me',expandedComputers:expandedComputerCards.get('g'),computerActivity:activity});
- const context={HTMLElement:Element,HTMLInputElement:class{},CSS:{escape:value=>value},document,appEl,expandedComputerCards,renderParticipantsPanel,
+ const context={createDesktopBoardFit:()=>({sync:options=>assert.equal(options.onlyNew,true)}),syncShellLayoutMode:()=> 'narrow',boardRuntime:null,HTMLElement:Element,HTMLInputElement:class{},CSS:{escape:value=>value},document,appEl,expandedComputerCards,renderParticipantsPanel,
   patchSectionContent:(current,next)=>{assert.equal(current,list);patches.push(['players',next.html]);if(!next.html.includes('>Resume here</button>'))resume.isConnected=false;},
   patchToolHtml:(current,html)=>{assert.equal(current,join);patches.push(['join',html]);},inlineProfiles:{sync(){}},
   transport:{getGameViewModel:()=>game},getMountedGameShellRoot:()=>root,window:{location:{origin:'https://local',pathname:'/'}},
@@ -35,7 +35,7 @@ function harness(){
   joinMarkupByElement:new Map(),routeTransition:null,panelPendingFocus:new Map(),panelSizeAnimations:new Map(),isButtonPending:()=>false,getCopyInviteButtonKey:()=> 'copy',
   applySharedMutationGates(){},FLYOUT_KEYS:[],reconcileMiniBoardPreviews(){},syncMountedGameShellPanelUi(){},scheduleGameShellStickyLayout(){},mountedBoardGameId:null,
  };
- runInNewContext(`${update}\n${mounted}\nglobalThis.toggle=()=>{const action='toggle-computer-card',actionEl={dataset:{gameId:'g',computerSide:'P2'}};${toggle}};globalThis.refresh=()=>updateMountedGameShell({game:${JSON.stringify(game)},includeBoard:false});`,context);
+ runInNewContext(`let desktopBoardFit=null;${source.slice(source.indexOf('const initializeDesktopBoardFit ='),source.indexOf('const applyGameShellStickyLayout ='))}${update}\n${mounted}\nglobalThis.toggle=()=>{const action='toggle-computer-card',actionEl={dataset:{gameId:'g',computerSide:'P2'}};${toggle}};globalThis.refresh=()=>updateMountedGameShell({game:${JSON.stringify(game)},includeBoard:false});`,context);
  return{context,game,patches,list,join,resume,toggleButton,document,setActivity:value=>{activity=value;}};
 }
 

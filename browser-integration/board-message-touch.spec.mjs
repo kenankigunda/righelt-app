@@ -1,7 +1,32 @@
 import {test,expect} from '@playwright/test';
+import {writeFile} from 'node:fs/promises';
 import {admittedHeight,budgetPixelPrecision} from './support/message-reservation-policy.mjs';
 test.use({viewport:{width:390,height:740},hasTouch:true});
 const geometry=page=>page.locator('#board').evaluate(el=>{const rect=el.getBoundingClientRect();return{x:rect.x,y:rect.y,width:rect.width,height:rect.height};});
+const settledMessage=async page=>{await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));await page.waitForFunction(()=>![...document.querySelectorAll('.board-message-slot')].some(slot=>slot.getAnimations().some(animation=>animation.pending||animation.playState==='running')));};
+
+// DOMRect.bottom can be a double sum of separately rounded top/height.
+// Verify that composition, cancel the unchanged origins, and bound only the
+// actual float32 primitives. Non-float32 primitives remain exact.
+const edgeDelta=(next,previous,slotNext,slotPrevious,primitives,label)=>{
+ const bound=primitives.reduce((sum,value)=>sum+(value!==0&&Math.fround(value)===value?2**(Math.floor(Math.log2(Math.abs(value)))-24):0),0);
+ expect(Math.abs((next-previous)-(slotNext-slotPrevious)),`${label}: ${JSON.stringify({edges:[next,previous,slotNext,slotPrevious],primitives,bound,float32:primitives.map(value=>Math.fround(value)===value)})}`).toBeLessThanOrEqual(bound);
+ return{edges:[next,previous,slotNext,slotPrevious],primitives,bound};
+};
+const measureSemanticGeometry=page=>page.locator('main').evaluate(main=>{
+ const rect=node=>{const value=node.getBoundingClientRect();return{x:value.x,y:value.y,top:value.top,bottom:value.bottom,width:value.width,height:value.height,offsetHeight:node.offsetHeight};};
+ return{devicePixelRatio,card:rect(main),board:rect(main.querySelector('#board')),boardLayoutHeight:getComputedStyle(main.querySelector('#board')).height,cardLayoutHeight:getComputedStyle(main).height,slotLayoutHeight:getComputedStyle(main.querySelector('.board-message-slot')).height,slot:rect(main.querySelector('.board-message-slot'))};
+});
+const assertSemanticGeometry=(initial,current)=>{
+ expect({x:current.board.x,width:current.board.width,layoutHeight:current.boardLayoutHeight}).toEqual({x:initial.board.x,width:initial.board.width,layoutHeight:initial.boardLayoutHeight});
+ expect({x:current.slot.x,y:current.slot.y,width:current.slot.width,cardTop:current.card.y}).toEqual({x:initial.slot.x,y:initial.slot.y,width:initial.slot.width,cardTop:initial.card.y});
+ for(const sample of [initial,current])for(const rect of [sample.card,sample.board,sample.slot])expect(rect.bottom,'viewport edge must retain its measured top+height provenance').toBe(rect.top+rect.height);
+ const slotHeights=[current.slot.height,initial.slot.height];
+ const board=edgeDelta(current.board.top,initial.board.top,current.slot.bottom,initial.slot.bottom,[current.board.top,initial.board.top,...slotHeights],'board movement must come only from semantic slot growth');
+ const card=edgeDelta(current.card.bottom,initial.card.bottom,current.slot.bottom,initial.slot.bottom,[current.card.height,initial.card.height,...slotHeights],'card movement must come only from semantic slot growth');
+ expect(current.board.y).toBeGreaterThanOrEqual(current.slot.bottom);
+ return{board,card};
+};
 
 test('replay message steps preserve action nodes and keyboard focus',async({page})=>{
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
@@ -12,12 +37,12 @@ test('replay message steps preserve action nodes and keyboard focus',async({page
  });
  const stop=page.getByRole('button',{name:'Stop replay',exact:true});await stop.focus();
  await page.evaluate(()=>{window.savedReplayStop=document.activeElement;window.savedReplayNext=document.querySelector('[data-board-message-action="replay-next"]');window.savedReplayIcon=window.savedReplayStop.querySelector("svg");window.savedReplayLabel=window.savedReplayStop.querySelector(".board-inline-action-label");});
- const before=await geometry(page);
+ await settledMessage(page);const before=await geometry(page);
  for(const step of [2,3]){
   await page.evaluate(step=>window.boardFixture.message({...window.replayMessage,text:`Replay · ${step} of 3`}),step);
   await expect(page.locator('#preview')).toContainText(`Replay · ${step} of 3`);
   expect(await page.evaluate(()=>({stop:window.savedReplayStop===document.querySelector('[data-board-message-action="replay-stop"]'),next:window.savedReplayNext===document.querySelector('[data-board-message-action="replay-next"]'),focus:document.activeElement===window.savedReplayStop}))).toEqual({stop:true,next:true,focus:true});
-  expect(await geometry(page)).toEqual(before);
+  await settledMessage(page);expect(await geometry(page)).toEqual(before);
   expect(await stop.evaluate(button=>button.querySelector('svg')===window.savedReplayIcon&&button.querySelector('.board-inline-action-label')===window.savedReplayLabel)).toBe(true);
  }
  await stop.press('Enter');expect(await page.evaluate(()=>window.boardFixture.messageActions())).toEqual(['replay-stop']);
@@ -25,6 +50,34 @@ test('replay message steps preserve action nodes and keyboard focus',async({page
  await page.evaluate(()=>window.boardFixture.message({text:'Finished <safely>',action:{id:'replay-computer',label:'Show me again'}}));
  await expect(stop).toHaveCount(0);await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
  await expect(page.locator('#preview')).toContainText('Finished <safely>');expect(await page.locator('#preview safely').count()).toBe(0);
+});
+
+test('vertical translation preserves exact board layout sizing',async({page},info)=>{
+ const evidence={};
+ const persist=async()=>{try{await writeFile(info.outputPath('semantic-edge-precision.json'),JSON.stringify(evidence,null,2));}catch(error){console.error(JSON.stringify({kind:'precision-evidence-incomplete',name:error?.name??'Error'}));}};
+ try{
+ await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
+ await page.evaluate(()=>window.boardFixture.setup('pass',false));await settledMessage(page);
+ const before=await measureSemanticGeometry(page);
+ await page.evaluate(()=>window.boardFixture.message({text:'An acknowledged move has a longer explanation with several coordinate descriptions. A second complete sentence needs additional natural space.',action:{id:'replay-next',label:'Next'}}));
+ await settledMessage(page);const changed=await measureSemanticGeometry(page);
+ // Persist the raw measured operands before the first precision assertion.
+ // A failed hypothesis must retain its evidence, not only the screenshot.
+ Object.assign(evidence,{before,changed,status:'positive-assertion-pending'});
+ await persist();
+ expect(changed.board.y).not.toBe(before.board.y);
+ const positive=assertSemanticGeometry(before,changed);evidence.positive=positive;
+ let displacement=1/64;
+ await page.locator('#board').evaluate((board,amount)=>{board.style.transform=`translateY(${amount}px)`;},displacement);
+ let negative=await measureSemanticGeometry(page);
+ if(negative.board.y===changed.board.y){displacement=1;await page.locator('#board').evaluate(board=>{board.style.transform='translateY(1px)';});negative=await measureSemanticGeometry(page);}
+ expect(negative.board.y).not.toBe(changed.board.y);
+ expect(()=>assertSemanticGeometry(before,negative),'the same helper must reject independent real board movement').toThrow();
+ await page.locator('#board').evaluate(board=>board.style.removeProperty('transform'));
+ expect(await measureSemanticGeometry(page)).toEqual(changed);
+ Object.assign(evidence,{positive,negative,displacement,status:'complete'});
+ }catch(error){evidence.failure=String(error);throw error;}
+ finally{await persist();}
 });
 
 test('compact Pass accepts actual touches at both ends of its 44px hit area without moving the board',async({page},info)=>{
@@ -58,11 +111,8 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
     await window.boardFixture.setup('pass',false);
     await document.fonts.ready;
   },scale);
-  const measure=()=>page.locator('main').evaluate(main=>{
-    const rect=selector=>{const value=main.querySelector(selector).getBoundingClientRect();return{x:value.x,y:value.y,width:value.width,height:value.height};};
-    return{cardHeight:main.getBoundingClientRect().height,board:rect('#board'),slot:rect('.board-message-slot')};
-  });
-  const initial=await measure();
+  const measure=()=>measureSemanticGeometry(page);
+  await settledMessage(page);const initial=await measure();
   expect(initial.slot.height).toBeGreaterThanOrEqual(44);
   // The frozen-sequence explanation is three wrapped lines at320px. Measure
   // the real finite replicas at intrinsic height, rather than the old two-line
@@ -118,7 +168,12 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
       if(phase==='spectator-long-name')window.namedSpectatorMessage=message;
       window.boardFixture.message(message);
     },phase);
-    expect(await measure(),`${phase} must preserve board and card geometry`).toEqual(initial);
+    await settledMessage(page);const current=await measure();
+    // Different semantic messages may use their own intrinsic height. Keep the
+    // board size and horizontal placement exact, and account for all vertical
+    // movement solely through the settled message slot.
+    assertSemanticGeometry(initial,current);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(phase==='frozen-reconnect'&&width===320)await page.screenshot({path:info.outputPath(`stable-frozen-reconnect-${width}-${scale}.png`)});
     if(phase==='completed'||phase==='completed-pass'||phase==='spectator-long-name'){
       await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(1);
@@ -130,7 +185,7 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
         await page.evaluate(()=>window.boardFixture.message({...window.namedSpectatorMessage,text:window.namedSpectatorMessage.text.replace('retreated','followed')}));
         await expect(replay).toBeFocused();expect(await replay.evaluate(button=>button===window.namedReplayButton&&button.parentElement.querySelector('.board-message-name')===window.namedActorNode)).toBe(true);
         await expect(page.locator('#preview')).toContainText('followed a piece from 9, 9 to 0, 0');
-        expect(await measure(),'Named narration refresh preserves the board, card, and action focus').toEqual(initial);
+        await settledMessage(page);expect(await measure(),'Same-layout named narration refresh preserves settled geometry and action focus').toEqual(current);
       }
       if(phase==='completed-pass')await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
       const typography=await page.evaluate(()=>{const properties=['fontFamily','fontSize','fontWeight','lineHeight','height','padding','borderWidth'];const style=selector=>{const computed=getComputedStyle(document.querySelector(selector));return Object.fromEntries(properties.map(key=>[key,computed[key]]));};return{live:style('#preview button'),replica:style('.board-message-sizing button')};});

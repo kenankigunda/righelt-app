@@ -2,50 +2,18 @@ import {isCompletedGame} from './game-lifecycle.js';
 import {renderBoardMessageHtml,renderBoardInlineAction} from '../board/message-presentation.js';
 import {BOARD_TURN_CAPTIONS} from './perspective-labels.js';
 import {computerActivityActorSide,setActivityActor} from './activity-affiliation.js';
-import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
-import { describeMove, describeTurn } from './computer-narration.js';
-import { SELECTED_PIECE_EXPLANATIONS,SELECTED_CONTINUATION_LABELS } from '../board/piece-explanations.js';
-import {renderCoordinateChip} from '../board/coordinate-chip.js';
 
 const escape = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
-// Exercise the real formatter for every action and whole-turn summary. The
-// bounded spectator name also reserves its actual unbreakable 12ch name box.
-const maximumPoint = {row:9,col:9};
-const maximumSpectatorName = 'W'.repeat(32);
-const sizingActors = [
-  ...['Your opponent','Red','Blue',...Object.values(COMPUTER_PROFILES).map(profile=>profile.name)].map(name=>({name})),
-  {name:maximumSpectatorName,actorName:maximumSpectatorName},
+// Routine grammar alone establishes the floor; current narration and History
+// content grow naturally instead of reserving every possible opponent summary.
+const maximumPoint={row:9,col:9};
+const routineMessages=[
+ {text:'Select a piece or',action:{id:'pass',label:'Pass'}},
+ {text:'Select a move for piece at (9, 9)',coordinates:[maximumPoint]},
+ {text:'Select a rush or',action:{id:'end-turn',label:'End turn'}},
+ {text:'Select a retreat'}, {text:'Select a follow'},
 ];
-const sizingDecision = (type,actorId) => ({action:{type,actorId,from:maximumPoint,to:maximumPoint}});
-const sizingSequences = [
-  [sizingDecision('rush','A'),sizingDecision('rush','B')],
-  [sizingDecision('push','A'),sizingDecision('follow','A')],
-  [sizingDecision('push','A'),sizingDecision('follow','A'),sizingDecision('follow','B')],
-];
-const narrationSizes = sizingActors.flatMap(({name,actorName}) => [
-  ...['move','project','rush','push','retreat','follow'].map(type=>({text:describeMove(sizingDecision(type,'A'),name),actorName})),
-  ...sizingSequences.map(moves=>({text:describeTurn(moves,name),actorName})),
-]);
-const maximumCoordinate=renderCoordinateChip({row:9,col:9});
-const explanationSizes = SELECTED_PIECE_EXPLANATIONS.flatMap(text => {
-  const base=`Piece at ${maximumCoordinate} – ${escape(text)}`;
-  return [
-    `${base} ${renderBoardInlineAction({id:"end-turn",label:"End turn"},{sizing:true})}`,
-    `${base} · ${SELECTED_CONTINUATION_LABELS.rushBlocker} ${maximumCoordinate}`,
-    `${base} · ${SELECTED_CONTINUATION_LABELS.retreat}`,
-    `${base} · ${SELECTED_CONTINUATION_LABELS.follow}`,
-  ];
-});
-
-// Both font families use this one real formatter. The fallback remains present
-// after Manrope loads, so a cold font swap cannot shrink the reserved message.
-// This finite set is 123 paragraphs per family, with no actionable replicas.
-const renderMessageSizing = fallback => {
-  const fontClass=fallback?' board-message-fallback-sizing':'';
-  const attrs=index=>`data-sizing-font="${fallback?'fallback':'primary'}" data-sizing-variant="${index}" aria-hidden="true" inert`;
-  return narrationSizes.map((message,index) => `<p class="board-preview-label board-message-sizing${fontClass}" ${attrs(`narration:${index}`)}>${renderBoardMessageHtml({rows:[{...message,coordinates:[maximumPoint],action:{id:"replay-computer",label:"Show me again"}},{text:"Select a piece or",action:{id:"pass",label:"Pass"}}]},{sizing:true})}</p>`).join('')
-    + explanationSizes.map((text,index) => `<p class="board-preview-label board-message-sizing board-explanation-sizing${fontClass}" ${attrs(`explanation:${index}`)}>${text}</p>`).join('');
-};
+const renderMessageSizing=fallback=>routineMessages.map((message,index)=>`<p class="board-preview-label board-message-sizing${fallback?' board-message-fallback-sizing':''}" data-sizing-font="${fallback?'fallback':'primary'}" data-sizing-variant="routine:${index}" aria-hidden="true" inert>${renderBoardMessageHtml(message,{sizing:true})}</p>`).join('');
 
 export function renderBoardMessageSlot({id, loading = false, loadingKey} = {}) {
   return `<div class="board-message-slot"><div class="board-message-live"><p class="board-preview-label"${id ? ` id="${escape(id)}"` : ''}${loading ? ' aria-hidden="true"' : ''}>${loading ? '' : 'Select a piece'}</p><span class="board-message-activity" aria-hidden="true" data-loading-state="${loading && loadingKey ? 'pending' : 'idle'}" data-loading-context="external"${loading && loadingKey ? ` data-loading-key="${escape(loadingKey)}"` : ''}></span></div>${renderMessageSizing(false)}${renderMessageSizing(true)}</div>`;

@@ -4,6 +4,9 @@ import {readFile} from 'node:fs/promises';
 // second table, then independently check intrinsic fit and cold/loaded anchors.
 const css=await readFile(new URL('../../apps/web/shell/board-ux.css',import.meta.url),'utf8');
 export const reservationBands=[...css.matchAll(/@container board-message \(min-width:([\d.]+)em\) and \(width < ([\d.]+)em\) \{\s*\.board-message-sizing \{--board-message-row-lines:([\d.]+);/g)].map(([,min,max,height])=>({min:Number(min),max:Number(max),height:Number(height)*1.5,lines:Number(height)}));
+const routineBoundary=css.match(/@container board-message \(width < ([\d.]+)em\) \{\s*\.board-message-slot > \.board-message-sizing\[data-sizing-variant\^="routine:"\]/);
+if(!routineBoundary)throw Error('Routine font reservation boundary is missing');
+export const routineFontBoundaryEm=Number(routineBoundary[1]);
 const base=css.match(/\.board-preview-label\s*\{[^}]*min-height:\s*max\(([\d.]+)em,\s*([\d.]+)px\)/);
 if(!reservationBands.length||!base)throw Error('Message reservation policy is missing');
 const metric=name=>{const match=css.match(new RegExp(`--board-message-${name}:([\\d.]+)`));if(!match)throw Error(`Message metric ${name} is missing`);return Number(match[1]);};
