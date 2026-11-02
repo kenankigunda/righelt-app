@@ -1,4 +1,5 @@
 import {expect} from '@playwright/test';
+import {writeFile} from 'node:fs/promises';
 import {edgeDelta,settledMessage} from '../../browser-integration/support/message-semantic-geometry.mjs';
 export {settledMessage};
 
@@ -23,4 +24,9 @@ export const assertSettledBoardMessageGrowth=(before,after)=>{
  expect(after.board.left).toBeGreaterThanOrEqual(-1);expect(after.board.right).toBeLessThanOrEqual(after.viewport.width+1);
  expect(after.board.top).toBeGreaterThanOrEqual(-1);expect(after.board.bottom).toBeLessThanOrEqual(after.viewport.height+1);
  return movement;
+};
+
+export const persistGeometryEvidence=async(info,name,evidence)=>{
+ try{await writeFile(info.outputPath(name),JSON.stringify(evidence,null,2));}
+ catch(error){console.error(JSON.stringify({kind:'board-geometry-evidence-incomplete',name:error?.name??'Error'}));}
 };

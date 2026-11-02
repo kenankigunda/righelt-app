@@ -1,7 +1,7 @@
 import {assertReplayIntegrity} from '../support/replay-write-contract.mjs';
 import {CURRENT_COMPUTER_MODEL} from '../../packages/shared-types/src/computer-play.ts';
-import {readFile,writeFile} from 'node:fs/promises';
-import {settledMessage} from '../support/board-message-geometry.mjs';
+import {readFile} from 'node:fs/promises';
+import {settledMessage,persistGeometryEvidence} from '../support/board-message-geometry.mjs';
 import {isOperationRequest,operationValues} from "../support/shared-request.mjs";
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {test,expect} from '@playwright/test';
@@ -142,21 +142,25 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   // Semantic copy may grow; its board-to-message gap and full fit may not drift.
   await settledMessage(page);
   const geometry=await page.evaluate(()=>{window.boardStatusGeometry.running=false;return window.boardStatusGeometry.samples;});
-  try{const path=info.outputPath('board-message-native-frames.json');await writeFile(path,JSON.stringify({scope:'All native frames, semantic message growth allowed, original 1px gap/viewport bounds retained',geometry},null,2));await info.attach('board-message-native-frames',{path,contentType:'application/json'});}catch(error){console.error(JSON.stringify({kind:'board-frame-evidence-incomplete',name:error?.name??'Error'}));}
-  expect(geometry.length).toBeGreaterThan(2);
-  const first=geometry[0];
-  for(const [index,sample] of geometry.entries()){
-    const evidence=JSON.stringify({index,sample,firstGap:first.gap,firstSlotTop:first.documentSlotTop});
-    expect(Boolean(sample.boardMissing),evidence).toBe(false);expect(Boolean(sample.slotMissing),evidence).toBe(false);
-    expect(sample.gap,evidence).toBeGreaterThanOrEqual(-1);
-    expect(Math.abs(sample.gap-first.gap),evidence).toBeLessThanOrEqual(1);
-    expect(Math.abs(sample.documentSlotTop-first.documentSlotTop),evidence).toBeLessThanOrEqual(1);
-    expect(sample.cells,evidence).toBe(100);
-    expect(sample.board.width,evidence).toBeGreaterThan(0);expect(sample.board.height,evidence).toBeGreaterThan(0);
-    expect(sample.board.left,evidence).toBeGreaterThanOrEqual(-1);expect(sample.board.right,evidence).toBeLessThanOrEqual(sample.viewport.width+1);
-    expect(sample.board.top,evidence).toBeGreaterThanOrEqual(-1);expect(sample.board.bottom,evidence).toBeLessThanOrEqual(sample.viewport.height+1);
-  }
-  await assertFullBoardGeometry(page,info,'after-computer');
+  const frames={scope:'All native frames, semantic message growth allowed, original 1px gap/viewport bounds retained',geometry};
+  try{
+    await persistGeometryEvidence(info,'board-message-native-frames.json',frames);
+    expect(geometry.length).toBeGreaterThan(2);
+    const first=geometry[0];
+    for(const [index,sample] of geometry.entries()){
+      const evidence=JSON.stringify({index,sample,firstGap:first.gap,firstSlotTop:first.documentSlotTop});
+      expect(Boolean(sample.boardMissing),evidence).toBe(false);expect(Boolean(sample.slotMissing),evidence).toBe(false);
+      expect(sample.gap,evidence).toBeGreaterThanOrEqual(-1);
+      expect(Math.abs(sample.gap-first.gap),evidence).toBeLessThanOrEqual(1);
+      expect(Math.abs(sample.documentSlotTop-first.documentSlotTop),evidence).toBeLessThanOrEqual(1);
+      expect(sample.cells,evidence).toBe(100);
+      expect(sample.board.width,evidence).toBeGreaterThan(0);expect(sample.board.height,evidence).toBeGreaterThan(0);
+      expect(sample.board.left,evidence).toBeGreaterThanOrEqual(-1);expect(sample.board.right,evidence).toBeLessThanOrEqual(sample.viewport.width+1);
+      expect(sample.board.top,evidence).toBeGreaterThanOrEqual(-1);expect(sample.board.bottom,evidence).toBeLessThanOrEqual(sample.viewport.height+1);
+    }
+    await assertFullBoardGeometry(page,info,'after-computer');frames.status='complete';
+  }catch(error){frames.failure=String(error);throw error;}
+  finally{await persistGeometryEvidence(info,'board-message-native-frames.json',frames);}
   const beforeReplay=await projected(page,initial.id);
   const writes=[];
   const observeReplay=request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/')){let body;try{body=request.postDataJSON();}catch{}writes.push({method:request.method(),path:new URL(request.url()).pathname,body});}};
