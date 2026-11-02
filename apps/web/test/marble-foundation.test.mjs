@@ -26,6 +26,24 @@ test('marble materials are small static vector resources without interactive or 
  assert.match(css,/@media\(forced-colors:active\) \{body\{background-image:none;\}\}/);
 });
 
+test('the shared raster material stays static, opaque and inside its frozen delivery budget',()=>{
+ const data=readFileSync(new URL('../assets/materials/marble-white-raster-v1.webp',import.meta.url));
+ assert.ok(data.length<=96*1024,'material transfer ceiling fixed before generation');
+ assert.equal(data.toString('ascii',0,4),'RIFF');assert.equal(data.toString('ascii',8,12),'WEBP');
+ let width,height,alpha=false;
+ for(let offset=12;offset+8<=data.length;){
+  const kind=data.toString('ascii',offset,offset+4),size=data.readUInt32LE(offset+4),start=offset+8;
+  assert.ok(start+size<=data.length,'complete WebP chunk');
+  assert.ok(!['ANIM','ANMF','ALPH','ICCP','EXIF','XMP '].includes(kind),'no animation, alpha or metadata payload');
+  if(kind==='VP8 '){assert.ok(size>=10);assert.equal(data.subarray(start+3,start+6).toString('hex'),'9d012a');width=data.readUInt16LE(start+6)&0x3fff;height=data.readUInt16LE(start+8)&0x3fff;}
+  if(kind==='VP8L'){assert.ok(size>=5);assert.equal(data[start],0x2f);const bits=data.readUInt32LE(start+1);width=(bits&0x3fff)+1;height=((bits>>>14)&0x3fff)+1;alpha=Boolean(bits&0x10000000);}
+  if(kind==='VP8X'){assert.ok(size>=10);alpha=Boolean(data[start]&0x10);}
+  offset=start+size+(size%2);
+ }
+ assert.ok(width>0&&height>0&&width<=1024&&height<=1024,'bounded texture dimensions');
+ assert.equal(alpha,false);assert.ok(width*height*4<=4*1024*1024,'decoded RGBA upper bound, not a measured heap claim');
+});
+
 
 test('only the exact fourteen approved delivery assets reach their mapped consumers',()=>{
  const manifest=JSON.parse(read('../../../docs/ai/marble/selected-assets.json'));
