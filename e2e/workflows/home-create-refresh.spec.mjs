@@ -201,7 +201,7 @@ test('bounded Home loading retires without growing its pending card',async({page
   // The existing read policy permits one retry. Observe its real request
   // before measuring retirement with the unchanged assertion budget.
   await expect.poll(()=>attempts).toBe(2);
-  await expect(page.getByTestId('slow-loading-notice')).toBeVisible();
+  await expect(page.locator('[data-alert-stack-card][data-notification-id$=":home:my"]').getByTestId('slow-loading-notice')).toBeVisible();
   await expect(card).toHaveCount(0);
   const frames=await page.evaluate(()=>window.boundedHomeFrames);
   expect(frames.length).toBeGreaterThan(2);
