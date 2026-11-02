@@ -5,14 +5,13 @@ test.use({viewport:{width:390,height:740},hasTouch:true});
 const geometry=page=>page.locator('#board').evaluate(el=>{const rect=el.getBoundingClientRect();return{x:rect.x,y:rect.y,width:rect.width,height:rect.height};});
 const settledMessage=async page=>{await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));await page.waitForFunction(()=>![...document.querySelectorAll('.board-message-slot')].some(slot=>slot.getAnimations().some(animation=>animation.pending||animation.playState==='running')));};
 
-// All vertical arithmetic uses atomic viewport edges. Firefox can expose
-// float32 edges; allow only the sum of their half-ULP representation bounds.
-// Non-float32 inputs retain exact arithmetic, not an assumed pixel epsilon.
-const edgeDelta=(next,previous,slotNext,slotPrevious,label)=>{
- const inputs=[next,previous,slotNext,slotPrevious];
- const bound=inputs.reduce((sum,value)=>sum+(value!==0&&Math.fround(value)===value?2**(Math.floor(Math.log2(Math.abs(value)))-24):0),0);
- expect(Math.abs((next-previous)-(slotNext-slotPrevious)),`${label}: ${JSON.stringify({inputs,bound,float32:inputs.map(value=>Math.fround(value)===value)})}`).toBeLessThanOrEqual(bound);
- return{inputs,bound};
+// DOMRect.bottom can be a double sum of separately rounded top/height.
+// Verify that composition, cancel the unchanged origins, and bound only the
+// actual float32 primitives. Non-float32 primitives remain exact.
+const edgeDelta=(next,previous,slotNext,slotPrevious,primitives,label)=>{
+ const bound=primitives.reduce((sum,value)=>sum+(value!==0&&Math.fround(value)===value?2**(Math.floor(Math.log2(Math.abs(value)))-24):0),0);
+ expect(Math.abs((next-previous)-(slotNext-slotPrevious)),`${label}: ${JSON.stringify({edges:[next,previous,slotNext,slotPrevious],primitives,bound,float32:primitives.map(value=>Math.fround(value)===value)})}`).toBeLessThanOrEqual(bound);
+ return{edges:[next,previous,slotNext,slotPrevious],primitives,bound};
 };
 const measureSemanticGeometry=page=>page.locator('main').evaluate(main=>{
  const rect=node=>{const value=node.getBoundingClientRect();return{x:value.x,y:value.y,top:value.top,bottom:value.bottom,width:value.width,height:value.height,offsetHeight:node.offsetHeight};};
@@ -21,8 +20,10 @@ const measureSemanticGeometry=page=>page.locator('main').evaluate(main=>{
 const assertSemanticGeometry=(initial,current)=>{
  expect({x:current.board.x,width:current.board.width,layoutHeight:current.boardLayoutHeight}).toEqual({x:initial.board.x,width:initial.board.width,layoutHeight:initial.boardLayoutHeight});
  expect({x:current.slot.x,y:current.slot.y,width:current.slot.width,cardTop:current.card.y}).toEqual({x:initial.slot.x,y:initial.slot.y,width:initial.slot.width,cardTop:initial.card.y});
- const board=edgeDelta(current.board.y,initial.board.y,current.slot.bottom,initial.slot.bottom,'board movement must come only from semantic slot growth');
- const card=edgeDelta(current.card.bottom,initial.card.bottom,current.slot.bottom,initial.slot.bottom,'card movement must come only from semantic slot growth');
+ for(const sample of [initial,current])for(const rect of [sample.card,sample.board,sample.slot])expect(rect.bottom,'viewport edge must retain its measured top+height provenance').toBe(rect.top+rect.height);
+ const slotHeights=[current.slot.height,initial.slot.height];
+ const board=edgeDelta(current.board.top,initial.board.top,current.slot.bottom,initial.slot.bottom,[current.board.top,initial.board.top,...slotHeights],'board movement must come only from semantic slot growth');
+ const card=edgeDelta(current.card.bottom,initial.card.bottom,current.slot.bottom,initial.slot.bottom,[current.card.height,initial.card.height,...slotHeights],'card movement must come only from semantic slot growth');
  expect(current.board.y).toBeGreaterThanOrEqual(current.slot.bottom);
  return{board,card};
 };
