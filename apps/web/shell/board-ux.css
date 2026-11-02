@@ -183,8 +183,8 @@ body {display:flow-root;}
 
 /* Replicas establish only the routine floor. The controller measures both font
    families plus live content, keeping replicas outside intrinsic grid sizing. */
-.board-message-slot {position:relative;}
-.board-message-slot[data-height-managed="true"] {display:block;box-sizing:border-box;padding-block:var(--board-message-paint-guard);overflow-x:visible;overflow-y:clip;}
+.board-message-slot {position:relative;box-sizing:border-box;padding-block:var(--board-message-paint-guard);}
+.board-message-slot[data-height-managed="true"] {display:block;overflow-x:visible;overflow-y:clip;}
 .board-message-live {align-self:start;}
 .board-message-slot[data-height-managed="true"] > .board-message-sizing {position:absolute;inset-inline:0;top:var(--board-message-paint-guard);min-height:0;}
 .board-message-slot .board-preview-label {min-height:0;line-height:var(--board-message-prose-line-height);}

@@ -11,6 +11,7 @@ const base=css.match(/\.board-preview-label\s*\{[^}]*min-height:\s*max\(([\d.]+)
 if(!reservationBands.length||!base)throw Error('Message reservation policy is missing');
 const metric=name=>{const match=css.match(new RegExp(`--board-message-${name}:([\\d.]+)`));if(!match)throw Error(`Message metric ${name} is missing`);return Number(match[1]);};
 export const actionReservationMetrics=Object.freeze({em:metric('action-extra-em'),px:metric('action-extra-px'),halfPx:metric('hit-half-px'),halfEm:metric('hit-half-em')});
+export const messagePaintGuard=fontSize=>2*Math.max(0,metric('focus-width')+metric('focus-offset')-Math.max(0,actionReservationMetrics.halfPx-actionReservationMetrics.halfEm*fontSize));
 export const actionRowAllowance=fontSize=>actionReservationMetrics.em*fontSize+actionReservationMetrics.px+4*Math.max(0,actionReservationMetrics.halfPx-actionReservationMetrics.halfEm*fontSize);
 // CSS bounds the primary-font reservation. A platform's permanent fallback can
 // intrinsically need more space. Admit only its independently measured natural

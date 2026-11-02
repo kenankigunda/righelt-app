@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
-import {admittedHeight,budgetPixelPrecision} from './support/message-reservation-policy.mjs';
+import {admittedHeight,budgetPixelPrecision,messagePaintGuard} from './support/message-reservation-policy.mjs';
 test.use({viewport:{width:390,height:740},hasTouch:true});
 const geometry=page=>page.locator('#board').evaluate(el=>{const rect=el.getBoundingClientRect();return{x:rect.x,y:rect.y,width:rect.width,height:rect.height};});
 const settledMessage=async page=>{await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));await page.waitForFunction(()=>![...document.querySelectorAll('.board-message-slot')].some(slot=>slot.getAnimations().some(animation=>animation.pending||animation.playState==='running')));};
@@ -129,8 +129,9 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
     });
     return {required:Math.max(...heights),intrinsicFallback:Math.max(...intrinsicFallback),lineHeight:parseFloat(getComputedStyle(slot.querySelector('.board-preview-label')).lineHeight)};
   });
-  expect(initial.slot.height).toBeCloseTo(reservation.required,5);
-  expect(budgetPixelPrecision(initial.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(admittedHeight(initial.slot.width,reservation.lineHeight/1.5,reservation.intrinsicFallback)));
+  const paintGuard=messagePaintGuard(reservation.lineHeight/1.5);
+  expect(initial.slot.height).toBeCloseTo(reservation.required+paintGuard,5);
+  expect(budgetPixelPrecision(initial.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(admittedHeight(initial.slot.width,reservation.lineHeight/1.5,reservation.intrinsicFallback)+paintGuard));
   await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(0);
   for(const phase of ['thinking','completed','completed-pass','multi-push','multi-rush','spectator-long-name','selection','frozen-reconnect','frozen-retreat','frozen-follow','loading','human']){
