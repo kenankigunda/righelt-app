@@ -3811,26 +3811,18 @@ const syncHomeSections = async (read = captureRouteRead(), isActive = () => true
   } finally { job.retire(); }
 };
 
-const scheduleResponsiveHomeSectionPageSizes = () => {
-  const previousJob = homeReadJob;
-  const read = captureRouteRead(); // Retire before a responsive input change can publish.
-  // Only input retirement of this exact full read owes an atomic replacement.
-  // An authority/route/visit change cannot transfer that obligation to a new owner.
-  if (previousJob && homeReadJob === null && previousJob.read.inputs !== read.inputs
-    && sameHomeReadScope(previousJob.read, read)) {
-    pendingResponsiveHomeRead = { job: previousJob, read, fulfilledByNewer: false };
-  } else if (pendingResponsiveHomeRead) {
-    pendingResponsiveHomeRead = sameHomeReadScope(pendingResponsiveHomeRead.read, read)
-      ? { ...pendingResponsiveHomeRead, read } : null;
-  }
+const queueResponsiveHomeSectionPageSizes = () => {
   window.cancelAnimationFrame(homeSectionResizeFrame);
   homeSectionResizeFrame = window.requestAnimationFrame(() => {
     homeSectionResizeFrame = 0;
     void (async () => {
       const replacement = pendingResponsiveHomeRead;
-      pendingResponsiveHomeRead = null; // Consume at most once, including stale intents.
       if (replacement) {
-        if (!routeReadIsCurrent(replacement.read)) return;
+        const current = routeReadIsCurrent(replacement.read);
+        // Validation can itself discover a newer input retirement. Consume only
+        // this snapshot; do not erase its freshly queued replacement.
+        if (pendingResponsiveHomeRead === replacement) pendingResponsiveHomeRead = null;
+        if (!current) return;
         // Fulfillment survives completion or terminal failure before this frame.
         // Do not start a third batch or fall through to standalone pagination.
         if (replacement.fulfilledByNewer || homeReadJob) return;
@@ -3848,6 +3840,11 @@ const scheduleResponsiveHomeSectionPageSizes = () => {
       render({ animatePanels: false, includeBoard: false });
     })();
   });
+};
+
+const scheduleResponsiveHomeSectionPageSizes = () => {
+  captureRouteRead(); // Input retirement queues its own exact replacement.
+  queueResponsiveHomeSectionPageSizes();
 };
 
 const renderGesture = createRenderGestureGate({ render: options => render(options) });
@@ -4160,7 +4157,27 @@ const captureRouteRead = () => {
     inputs: JSON.stringify([homeReadVisit, homeDebug, getVisibleHomeSectionKeys({ debug: homeDebug }).map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])]),
   };
   read.epoch = hydrateRoute.observe(read);
-  if (homeReadJob && !sameRouteRead(homeReadJob.read, read)) homeReadJob.retire();
+  if (homeReadJob && !sameRouteRead(homeReadJob.read, read)) {
+    const previousJob = homeReadJob;
+    previousJob.retire();
+    // Any caller can observe an input change, including an in-flight batch's
+    // current-owner predicate. Only this same Home authority owes a replacement.
+    if (previousJob.read.inputs !== read.inputs && sameHomeReadScope(previousJob.read, read)) {
+      pendingResponsiveHomeRead = { job: previousJob, read, fulfilledByNewer: false };
+      queueResponsiveHomeSectionPageSizes();
+    }
+  }
+  if (pendingResponsiveHomeRead) {
+    const pending = pendingResponsiveHomeRead;
+    if (!sameHomeReadScope(pending.read, read)) {
+      pendingResponsiveHomeRead = null;
+      window.cancelAnimationFrame(homeSectionResizeFrame);homeSectionResizeFrame = 0;
+    }
+    else if (pending.read.inputs !== read.inputs) {
+      pendingResponsiveHomeRead = { ...pending, read };
+      queueResponsiveHomeSectionPageSizes();
+    }
+  }
   if (homeReadRecovery && !sameRouteRead(homeReadRecovery.read, read)) homeReadRecovery = null;
   if (homeReadChoice && !sameRouteRead(homeReadChoice.read, read)) homeReadChoice = null;
   return read;

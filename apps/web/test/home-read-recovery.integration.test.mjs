@@ -714,3 +714,83 @@ test('fresh input retirement resets a fulfilled responsive obligation for the ne
     await Promise.allSettled([old,newer]);await flush();
   }
 });
+
+test('capture-only Home input retirement owes one current atomic replacement without a resize event',async t=>{
+ const f=await fixture(t),held=[];
+ f.context.currentRoute={...f.context.currentRoute,debug:true};
+ const before=JSON.stringify(f.h.sections());
+ f.respond(request=>{const wait=deferred();held.push({...request,...wait});return wait.promise;});
+ const old=observe(f.h.sync());
+ try{
+  await flush();assert.equal(held.length,3);
+  assert.deepEqual(held.map(request=>request.section).sort(),['my','other','smoke']);
+  // Existing helper changes only measured layout input then invokes the actual
+  // captureRouteRead. Do not call the responsive/window-resize scheduler.
+  f.setColumns(2);
+  assert.ok(held.every(request=>request.signal.aborted));
+  assert.equal(f.h.active(),false);
+  assert.equal(JSON.stringify(f.h.sections()),before);
+  assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+  f.flushScheduledFrames();await flush();
+  const fresh=held.slice(3);
+  assert.equal(fresh.length,3,'capture-only input retirement must replace all three sections');
+  assert.ok(fresh.every(request=>request.debug==='1'&&!request.signal.aborted));
+  for(const request of fresh)request.resolve(Response.json(pageBody(request.section)));
+  await flush();
+  for(const key of ['my','other','smoke']){
+   assert.deepEqual(f.h.sections()[key].gameIds,[`${key}-new`]);
+   assert.equal(f.h.sections()[key].visibleColumnCount,2);
+  }
+  assert.equal(f.h.active(),false);assert.ok(f.renders()>0);
+  f.flushScheduledFrames();await flush();assert.equal(held.length,6);
+  assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+ }finally{
+  for(const request of held)request.resolve(Response.json(pageBody(request.section,'obsolete')));
+  await Promise.allSettled([old]);await flush();
+ }
+});
+
+for(const kind of ['account','transport','route','visit'])test(`capture-only replacement cannot cross ${kind} retirement`,async t=>{
+ const f=await fixture(t),held=[];f.context.currentRoute={...f.context.currentRoute,debug:true};
+ const before=JSON.stringify(f.h.sections());f.respond(request=>{const wait=deferred();held.push({...request,...wait});return wait.promise;});const old=observe(f.h.sync());
+ try{
+  await flush();assert.equal(held.length,3);f.setColumns(2);assert.ok(held.every(r=>r.signal.aborted));
+  if(kind==='visit'){f.h.noteVisit();f.h.capture();}else f.change(kind);
+  f.flushScheduledFrames();await flush();assert.equal(held.length,3);
+  assert.equal(JSON.stringify(f.h.sections()),before);assert.equal(f.h.active(),false);assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+ }finally{for(const r of held)r.resolve(Response.json(pageBody(r.section,'obsolete')));await Promise.allSettled([old]);await flush();}
+});
+
+test('repeated capture-only inputs replace once for the latest layout',async t=>{
+ const f=await fixture(t),held=[];f.context.currentRoute={...f.context.currentRoute,debug:true};
+ f.respond(request=>{const wait=deferred();held.push({...request,...wait});return wait.promise;});const old=observe(f.h.sync());
+ try{
+  await flush();assert.equal(held.length,3);f.setColumns(2);f.setColumns(3);
+  assert.ok(held.every(r=>r.signal.aborted));f.flushScheduledFrames();await flush();const fresh=held.slice(3);assert.equal(fresh.length,3);
+  for(const r of fresh)r.resolve(Response.json(pageBody(r.section)));await flush();
+  for(const key of ['my','other','smoke'])assert.equal(f.h.sections()[key].visibleColumnCount,3);
+  f.flushScheduledFrames();await flush();assert.equal(held.length,6);assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+ }finally{for(const r of held)r.resolve(Response.json(pageBody(r.section,'obsolete')));await Promise.allSettled([old]);await flush();}
+});
+
+for(const newerActive of [false,true])test(`RAF validation preserves a newly discovered input obligation with newerActive=${newerActive}`,async t=>{
+ const f=await fixture(t),held=[];f.context.currentRoute={...f.context.currentRoute,debug:true};
+ f.respond(request=>{const wait=deferred();held.push({...request,...wait});return wait.promise;});const old=observe(f.h.sync());let newer;
+ try{
+  await flush();assert.equal(held.length,3);f.setColumns(2);
+  if(newerActive){newer=observe(f.h.sync());await flush();assert.equal(held.length,6);}
+  // Change the real input without delivering another capture or resize callback.
+  // The RAF's own validation is the first observer of this latest layout.
+  f.changeColumnsBeforeScheduling(3);f.flushScheduledFrames();await flush();
+  assert.ok(held.every(r=>r.signal.aborted));assert.equal(held.length,newerActive?6:3);
+  f.flushScheduledFrames();await flush();const fresh=held.slice(newerActive?6:3);assert.equal(fresh.length,3);
+  for(const r of fresh)r.resolve(Response.json(pageBody(r.section)));await flush();
+  for(const key of ['my','other','smoke'])assert.equal(f.h.sections()[key].visibleColumnCount,3);
+  f.flushScheduledFrames();await flush();assert.equal(held.length,newerActive?9:6);assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+ }finally{for(const r of held)r.resolve(Response.json(pageBody(r.section,'obsolete')));await Promise.allSettled([old,newer]);await flush();}
+});
+
+test('capture-only layout observation without a full job does not invent a full refresh',async t=>{
+ const f=await fixture(t);f.setColumns(2);f.flushScheduledFrames();await flush();
+ assert.equal(f.calls.length,0);assert.equal(f.h.active(),false);assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+});
