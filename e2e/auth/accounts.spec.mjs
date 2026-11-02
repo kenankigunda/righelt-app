@@ -158,7 +158,7 @@ test("registration helper waits for a failed bootstrap retry before submitting",
     await route.continue();
   });
   // Capture rejection immediately, including when demonstrating the old race.
-  const registration = register(page, uniqueName(), { gate: true, readRecovery: true }).then(value => ({ value }), error => ({ error }));
+  const registration = register(page, uniqueName(), { gate: true }).then(value => ({ value }), error => ({ error }));
   try {
     await retry;
     await expect(page.getByTestId("home-create-game")).toBeVisible();
@@ -198,7 +198,7 @@ test("registration helper retries one failed continuation read without repeating
     }
     await route.continue();
   });
-  const registration = register(page, uniqueName(), { gate: true }).then(value => ({ value }), error => ({ error }));
+  const registration = register(page, uniqueName(), { gate: true, readRecovery: true }).then(value => ({ value }), error => ({ error }));
   const stoppedBeforeRetry = registration.then(outcome => {
     throw outcome.error ?? new Error("Registration completed before the held continuation retry");
   });
