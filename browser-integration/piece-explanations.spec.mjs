@@ -1,4 +1,5 @@
 import {test, expect} from '@playwright/test';
+import {settledMessage,measureSemanticGeometry,assertSemanticGeometry} from './support/message-semantic-geometry.mjs';
 
 for (const width of [320, 390]) test(`selection explanations stay in the message at ${width}px with enlarged text`, async ({page}, info) => {
   await page.setViewportSize({width, height:1000});
@@ -9,8 +10,9 @@ for (const width of [320, 390]) test(`selection explanations stay in the message
     document.documentElement.style.fontSize = '200%';
     await document.fonts.ready;
   });
-  const top = () => page.locator('#board').evaluate(node => node.getBoundingClientRect().top);
-  const before = await top();
+  await settledMessage(page);
+  const before = await measureSemanticGeometry(page);
+  const accountMessageGrowth=async()=>{await settledMessage(page);assertSemanticGeometry(before,await measureSemanticGeometry(page));};
   const configure = async (kind, interactive = true) => page.evaluate(async ({kind, interactive}) => {
     const piece = {id:'A',owner:'P1',kind:'unit',position:{row:4,col:2},supplied:true,commanded:true};
     const state = {boardSize:10,sideToMove:'P1',turnIndex:0,outcome:{status:'ongoing'},pieces:[piece],continuation:null};
@@ -26,25 +28,25 @@ for (const width of [320, 390]) test(`selection explanations stay in the message
   }, {kind, interactive});
   await configure('inactive');
   await expect(page.locator('#preview')).toContainText('Inactive: no command connection');
-  expect(await top()).toBeCloseTo(before, 1);
+  await accountMessageGrowth();
   expect(await page.locator('.cell.selected-piece').evaluate(node => getComputedStyle(node, '::after').content)).toBe('none');
   await page.screenshot({path:info.outputPath(`inactive-${width}-200.png`)});
   await configure('frozen');
   await expect(page.locator('#preview')).toContainText('Cannot move: no command at start of rush');
   await expect(page.locator('#preview button')).toHaveText('End turn');
-  expect(await top()).toBeCloseTo(before, 1);
+  await accountMessageGrowth();
   await configure('frozen-blocker');
   await expect(page.locator('#preview')).toContainText('Cannot move: no command or supply at start of rush');
   await expect(page.locator('#preview')).toContainText('Reconnect piece at 9, 9');
   await expect(page.locator('#preview button')).toHaveCount(0);
-  expect(await top()).toBeCloseTo(before,1);
+  await accountMessageGrowth();
   await configure('frozen', false);
   await expect(page.locator('#preview')).toContainText('Cannot move');
   await expect(page.locator('#preview button')).toHaveCount(0);
   await page.evaluate(() => window.boardFixture.inspect({kind:'command',pieceId:'A'}));
   await expect(page.locator('#preview')).toContainText('Cannot move: no command at start of rush');
   await expect(page.locator('.board-event-label')).toHaveCount(0);
-  expect(await top()).toBeCloseTo(before, 1);
+  await accountMessageGrowth();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({path:info.outputPath(`frozen-inspection-${width}-200.png`)});
   await page.evaluate(async () => {
@@ -61,7 +63,7 @@ for (const width of [320, 390]) test(`selection explanations stay in the message
   await expect(page.locator('#preview')).toContainText('Destination would have no supply');
   await expect(page.locator('#preview button')).toHaveCount(0);
   expect(await page.locator('.cell.target').evaluate(node => getComputedStyle(node,'::after').content)).toBe('none');
-  expect(await top()).toBeCloseTo(before, 1);
+  await accountMessageGrowth();
   await page.screenshot({path:info.outputPath(`blocked-target-${width}-200.png`)});
 });
 

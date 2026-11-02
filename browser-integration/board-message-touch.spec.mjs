@@ -1,8 +1,9 @@
 import {test,expect} from '@playwright/test';
-import {admittedHeight,budgetPixelPrecision} from './support/message-reservation-policy.mjs';
+import {writeFile} from 'node:fs/promises';
+import {settledMessage,measureSemanticGeometry,assertSemanticGeometry} from './support/message-semantic-geometry.mjs';
+import {admittedHeight,budgetPixelPrecision,messagePaintGuard} from './support/message-reservation-policy.mjs';
 test.use({viewport:{width:390,height:740},hasTouch:true});
 const geometry=page=>page.locator('#board').evaluate(el=>{const rect=el.getBoundingClientRect();return{x:rect.x,y:rect.y,width:rect.width,height:rect.height};});
-
 test('replay message steps preserve action nodes and keyboard focus',async({page})=>{
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
  await page.evaluate(async()=>{
@@ -12,12 +13,12 @@ test('replay message steps preserve action nodes and keyboard focus',async({page
  });
  const stop=page.getByRole('button',{name:'Stop replay',exact:true});await stop.focus();
  await page.evaluate(()=>{window.savedReplayStop=document.activeElement;window.savedReplayNext=document.querySelector('[data-board-message-action="replay-next"]');window.savedReplayIcon=window.savedReplayStop.querySelector("svg");window.savedReplayLabel=window.savedReplayStop.querySelector(".board-inline-action-label");});
- const before=await geometry(page);
+ await settledMessage(page);const before=await geometry(page);
  for(const step of [2,3]){
   await page.evaluate(step=>window.boardFixture.message({...window.replayMessage,text:`Replay · ${step} of 3`}),step);
   await expect(page.locator('#preview')).toContainText(`Replay · ${step} of 3`);
   expect(await page.evaluate(()=>({stop:window.savedReplayStop===document.querySelector('[data-board-message-action="replay-stop"]'),next:window.savedReplayNext===document.querySelector('[data-board-message-action="replay-next"]'),focus:document.activeElement===window.savedReplayStop}))).toEqual({stop:true,next:true,focus:true});
-  expect(await geometry(page)).toEqual(before);
+  await settledMessage(page);expect(await geometry(page)).toEqual(before);
   expect(await stop.evaluate(button=>button.querySelector('svg')===window.savedReplayIcon&&button.querySelector('.board-inline-action-label')===window.savedReplayLabel)).toBe(true);
  }
  await stop.press('Enter');expect(await page.evaluate(()=>window.boardFixture.messageActions())).toEqual(['replay-stop']);
@@ -25,6 +26,34 @@ test('replay message steps preserve action nodes and keyboard focus',async({page
  await page.evaluate(()=>window.boardFixture.message({text:'Finished <safely>',action:{id:'replay-computer',label:'Show me again'}}));
  await expect(stop).toHaveCount(0);await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
  await expect(page.locator('#preview')).toContainText('Finished <safely>');expect(await page.locator('#preview safely').count()).toBe(0);
+});
+
+test('vertical translation preserves exact board layout sizing',async({page},info)=>{
+ const evidence={};
+ const persist=async()=>{try{await writeFile(info.outputPath('semantic-edge-precision.json'),JSON.stringify(evidence,null,2));}catch(error){console.error(JSON.stringify({kind:'precision-evidence-incomplete',name:error?.name??'Error'}));}};
+ try{
+ await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
+ await page.evaluate(()=>window.boardFixture.setup('pass',false));await settledMessage(page);
+ const before=await measureSemanticGeometry(page);
+ await page.evaluate(()=>window.boardFixture.message({text:'An acknowledged move has a longer explanation with several coordinate descriptions. A second complete sentence needs additional natural space.',action:{id:'replay-next',label:'Next'}}));
+ await settledMessage(page);const changed=await measureSemanticGeometry(page);
+ // Persist the raw measured operands before the first precision assertion.
+ // A failed hypothesis must retain its evidence, not only the screenshot.
+ Object.assign(evidence,{before,changed,status:'positive-assertion-pending'});
+ await persist();
+ expect(changed.board.y).not.toBe(before.board.y);
+ const positive=assertSemanticGeometry(before,changed);evidence.positive=positive;
+ let displacement=1/64;
+ await page.locator('#board').evaluate((board,amount)=>{board.style.transform=`translateY(${amount}px)`;},displacement);
+ let negative=await measureSemanticGeometry(page);
+ if(negative.board.y===changed.board.y){displacement=1;await page.locator('#board').evaluate(board=>{board.style.transform='translateY(1px)';});negative=await measureSemanticGeometry(page);}
+ expect(negative.board.y).not.toBe(changed.board.y);
+ expect(()=>assertSemanticGeometry(before,negative),'the same helper must reject independent real board movement').toThrow();
+ await page.locator('#board').evaluate(board=>board.style.removeProperty('transform'));
+ expect(await measureSemanticGeometry(page)).toEqual(changed);
+ Object.assign(evidence,{positive,negative,displacement,status:'complete'});
+ }catch(error){evidence.failure=String(error);throw error;}
+ finally{await persist();}
 });
 
 test('compact Pass accepts actual touches at both ends of its 44px hit area without moving the board',async({page},info)=>{
@@ -58,11 +87,8 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
     await window.boardFixture.setup('pass',false);
     await document.fonts.ready;
   },scale);
-  const measure=()=>page.locator('main').evaluate(main=>{
-    const rect=selector=>{const value=main.querySelector(selector).getBoundingClientRect();return{x:value.x,y:value.y,width:value.width,height:value.height};};
-    return{cardHeight:main.getBoundingClientRect().height,board:rect('#board'),slot:rect('.board-message-slot')};
-  });
-  const initial=await measure();
+  const measure=()=>measureSemanticGeometry(page);
+  await settledMessage(page);const initial=await measure();
   expect(initial.slot.height).toBeGreaterThanOrEqual(44);
   // The frozen-sequence explanation is three wrapped lines at320px. Measure
   // the real finite replicas at intrinsic height, rather than the old two-line
@@ -79,8 +105,9 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
     });
     return {required:Math.max(...heights),intrinsicFallback:Math.max(...intrinsicFallback),lineHeight:parseFloat(getComputedStyle(slot.querySelector('.board-preview-label')).lineHeight)};
   });
-  expect(initial.slot.height).toBeCloseTo(reservation.required,5);
-  expect(budgetPixelPrecision(initial.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(admittedHeight(initial.slot.width,reservation.lineHeight/1.5,reservation.intrinsicFallback)));
+  const paintGuard=messagePaintGuard(reservation.lineHeight/1.5);
+  expect(initial.slot.height).toBeCloseTo(reservation.required+paintGuard,5);
+  expect(budgetPixelPrecision(initial.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(admittedHeight(initial.slot.width,reservation.lineHeight/1.5,reservation.intrinsicFallback)+paintGuard));
   await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(0);
   for(const phase of ['thinking','completed','completed-pass','multi-push','multi-rush','spectator-long-name','selection','frozen-reconnect','frozen-retreat','frozen-follow','loading','human']){
@@ -118,7 +145,12 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
       if(phase==='spectator-long-name')window.namedSpectatorMessage=message;
       window.boardFixture.message(message);
     },phase);
-    expect(await measure(),`${phase} must preserve board and card geometry`).toEqual(initial);
+    await settledMessage(page);const current=await measure();
+    // Different semantic messages may use their own intrinsic height. Keep the
+    // board size and horizontal placement exact, and account for all vertical
+    // movement solely through the settled message slot.
+    assertSemanticGeometry(initial,current);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(phase==='frozen-reconnect'&&width===320)await page.screenshot({path:info.outputPath(`stable-frozen-reconnect-${width}-${scale}.png`)});
     if(phase==='completed'||phase==='completed-pass'||phase==='spectator-long-name'){
       await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(1);
@@ -130,7 +162,7 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
         await page.evaluate(()=>window.boardFixture.message({...window.namedSpectatorMessage,text:window.namedSpectatorMessage.text.replace('retreated','followed')}));
         await expect(replay).toBeFocused();expect(await replay.evaluate(button=>button===window.namedReplayButton&&button.parentElement.querySelector('.board-message-name')===window.namedActorNode)).toBe(true);
         await expect(page.locator('#preview')).toContainText('followed a piece from 9, 9 to 0, 0');
-        expect(await measure(),'Named narration refresh preserves the board, card, and action focus').toEqual(initial);
+        await settledMessage(page);expect(await measure(),'Same-layout named narration refresh preserves settled geometry and action focus').toEqual(current);
       }
       if(phase==='completed-pass')await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
       const typography=await page.evaluate(()=>{const properties=['fontFamily','fontSize','fontWeight','lineHeight','height','padding','borderWidth'];const style=selector=>{const computed=getComputedStyle(document.querySelector(selector));return Object.fromEntries(properties.map(key=>[key,computed[key]]));};return{live:style('#preview button'),replica:style('.board-message-sizing button')};});
@@ -192,7 +224,7 @@ test('computer loading pieces remain continuous, plain and motion-aware beside t
  expect(await page.locator('.board-message-sizing [data-loading-state],.board-message-sizing .loading-pieces').count()).toBe(0);
 });
 
-test('admission changes preserve selection, sentence rows, centered chips and disabled controls',async({page})=>{
+test('admission changes preserve selection, sentence rows, baseline-aligned chips and disabled controls',async({page})=>{
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
  await page.evaluate(async()=>{
   await window.boardFixture.setup('pass',false);
@@ -206,19 +238,19 @@ test('admission changes preserve selection, sentence rows, centered chips and di
  await expect(prompt.locator('.board-preview-coordinate-chip')).toHaveCount(2);
  await expect(prompt.locator('.board-message-row').nth(0)).toContainText('Show me again');
  await expect(prompt.locator('.board-message-row').nth(1)).toHaveText('Select a piece or Pass');
- const copy=await prompt.textContent(),before=await geometry(page);
+ await settledMessage(page);const copy=await prompt.textContent(),before=await geometry(page);
  for(const blocked of [true,false,true,false]){
   await page.evaluate(blocked=>{
    window.boardFixture.message(window.opponentMessage({...window.stableMessageGame,sharedMutationsBlocked:blocked,recovering:blocked},{}, {},{canInteract:!blocked}));
    window.boardFixture.gateInteraction(blocked);
   },blocked);
   if(blocked)await expect(pass).toBeDisabled();else await expect(pass).toBeEnabled();
-  expect(await prompt.textContent()).toBe(copy);expect(await geometry(page)).toEqual(before);
+  await settledMessage(page);expect(await prompt.textContent()).toBe(copy);expect(await geometry(page)).toEqual(before);
   if(blocked)await pass.evaluate(button=>button.click());
  }
  expect(await page.evaluate(()=>window.boardFixture.applied())).toEqual([]);
- expect(await prompt.locator('.board-preview-coordinate-chip').first().evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('middle');
- expect(await pass.evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('middle');
+ expect(await prompt.locator('.board-preview-coordinate-chip').first().evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('baseline');
+ expect(await pass.evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('baseline');
  // A prepared move remains a move preview while submission admission changes.
  await page.evaluate(async()=>{await window.boardFixture.setup('rush',false);});
  await page.locator('[data-row="4"][data-col="2"]').click();

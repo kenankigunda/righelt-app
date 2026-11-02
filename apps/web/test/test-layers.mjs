@@ -1,4 +1,7 @@
 export const WEB_UNIT_TEST_FILES = Object.freeze([
+  "message-composition.test.mjs",
+  "message-height.test.mjs",
+  "sequence-status-preview.test.mjs",
   "foreground-recovery.test.mjs",
   "game-lifecycle.test.mjs",
   "history-turn-preview.test.mjs",
@@ -8,6 +11,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "audio-observations.test.mjs",
   "computer-runtime.test.mjs",
   "rules-runtime.test.mjs",
+  "rush-supply-guidance.test.mjs",
   "computer-preparation.test.mjs",
   "decision-notes.test.mjs",
   "computer-view.test.mjs",
@@ -67,6 +71,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "shell-host.test.mjs",
   "shell-render-stability.test.mjs",
   "sync-store.test.mjs",
+  "socket-recovery-ownership.test.mjs",
   "syntax-smoke.test.mjs",
   "ticket-workflow-docs.test.mjs",
   "test-layers.test.mjs",

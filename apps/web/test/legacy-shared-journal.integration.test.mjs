@@ -114,3 +114,14 @@ for (const {fault, delayedSetup} of cases) test(`actual150 preserves a newer sha
   for (const sent of sharedSends) assert.deepEqual(sent, envelope);
   await journal.close();
 });
+
+
+test('actual150 browser fixture contains a complete historical board module graph', async t => {
+  const fixture = await legacyClientFixture(); t.after(() => fixture.close());
+  assert.ok(fixture.assetPaths.has('/board/runtime/board-runtime.js'));
+  assert.ok(fixture.assetPaths.has('/board-adapters/engine-board-adapter.js'));
+  assert.equal(typeof (await fixture.load('board/runtime/board-runtime.js')).createBoardRuntime, 'function');
+  assert.equal(typeof (await fixture.load('board-adapters/engine-board-adapter.js')).createEngineBoardAdapter, 'function');
+  assert.equal((await fixture.load('generated/packages/game-engine/src/continuation.js')).getRushUnsuppliedPieceIds, undefined,
+    'the legacy fixture must retain its real old engine API');
+});

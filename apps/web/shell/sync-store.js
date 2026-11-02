@@ -127,6 +127,7 @@ export const createLiveSyncClient = ({
   const generations = new Map();
   const connectionState = new Map();
   const repairOwners = new Map();
+  const repairVersions = new Map();
   const unsupportedProtocols = new Map();
   const httpRecoveredGames = new Set();
   const pollTimers = new Map();
@@ -371,6 +372,7 @@ export const createLiveSyncClient = ({
     const superseded = Boolean(previous && previous.background && !background);
     if (previous && !superseded && reason !== "manual_reconnect") return previous.promise;
     const owner = { background };
+    repairVersions.set(gameId, (repairVersions.get(gameId) ?? 0) + 1);
     if (!background || reason === "http_poll") clearPoll(gameId);
     repairOwners.set(gameId, owner);
     if (!background) httpRecoveredGames.delete(gameId);
@@ -453,13 +455,29 @@ export const createLiveSyncClient = ({
     };
     const finishInitial = () => {
       if (connection.initialDone) return;
+      const previousRepair = repairOwners.get(gameId);
+      const previousRepairVersion = repairVersions.get(gameId) ?? 0;
+      let repairRetired = false;
+      const retirePreviousRepair = () => {
+        const activeRepair = repairOwners.get(gameId);
+        if (repairRetired || !current() || (repairVersions.get(gameId) ?? 0) !== previousRepairVersion
+          || activeRepair !== undefined && activeRepair !== previousRepair) return false;
+        repairRetired = true;
+        repairOwners.delete(gameId);
+        return true;
+      };
       connection.initialDone = true;
       clearPoll(gameId); degradedStartedAt.delete(gameId);
       httpRecoveredGames.delete(gameId);
       reconnectAttemptsByGameId.set(gameId, 0);
       clearTimeout(connection.initialTimer);
       connection.resolveInitial();
-      void Promise.resolve(onReady({ gameId, generation, isCurrent: current })).catch(() => { if (current()) void repair(gameId, "reconciliation_failed"); });
+      // Socket readiness transfers recovery ownership only after journal and
+      // receipt reconciliation succeeds. Retire the captured fallback before
+      // its obsolete HTTP read is cancelled, never a newer repair.
+      void Promise.resolve(onReady({ gameId, generation, isCurrent: current, retirePreviousRepair }))
+        .then(ready => { if (ready !== false) retirePreviousRepair(); })
+        .catch(() => { if (current()) void repair(gameId, "reconciliation_failed"); });
     };
     recordMetric("socket_opened", { gameId, reconnectAttempts });
 
@@ -1247,9 +1265,11 @@ export const createSyncStore = ({
       if (!background) transport.setConnectionRecovering?.(gameId, true, { closeCode, closeClean, socketGeneration, advertisedEventSeq });
     },
     onReconcile: ({ gameId }) => transport.reconcileGame?.(gameId),
-    onReady: async ({ gameId, isCurrent = () => true }) => {
+    onReady: async ({ gameId, isCurrent = () => true, retirePreviousRepair = () => {} }) => {
+      if (transport.finishSocketRecovery) return transport.finishSocketRecovery(gameId, { isCurrent, beforeRetire: retirePreviousRepair });
       if (transport.getGameViewModel(gameId)?.pendingCommandCount > 0) await transport.reconcileGame?.(gameId);
-      if (isCurrent()) transport.setConnectionRecovering?.(gameId, false);
+      if (!isCurrent()) return false;
+      transport.setConnectionRecovering?.(gameId, false);
     },
     getLastEventSeq: (gameId) => (gameId ? transport.getLastEventSeq(gameId) : 0),
     onUnsupportedProtocol: ({ gameId }) => { if (active) transport.markUpgradeRequired?.(gameId); },
