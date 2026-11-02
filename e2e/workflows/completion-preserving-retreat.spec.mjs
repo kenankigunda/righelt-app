@@ -12,8 +12,10 @@ import {COMPUTER_UI_FRAME_MEASURE} from '../../apps/web/shell/frame-presentation
 // Artifact encoding is separate from the unchanged 60-second behavioral budget.
 // Linux WebKit completed every Follow assertion before its screenshot crossed it.
 const test=base.extend({
- acceptedRetreat:[async({page,baseURL},use)=>{
-  await use(await acceptedComputerRetreat(page,baseURL));
+ acceptedRetreat:[async({page,baseURL},use,info)=>{
+  const accepted=await acceptedComputerRetreat(page,baseURL,{captureFollow:info.title===computerFollowWorkflow});
+  try{await use(accepted);if(info.status===info.expectedStatus)accepted.followCapture?.assertSingle();}
+  finally{accepted.followCapture?.dispose();}
  },{timeout:60000}],
  followEvidence:[async({page},use,info)=>{
  let evidence;
@@ -122,12 +124,15 @@ async function receipt(page,id,command,outcome='accepted'){
  },{timeout:SYNC_TIMING.confirmationBudgetMs}).toBe(outcome);
  const own=body.commandOutcomes.filter(row=>row.clientCommandId===command.clientCommandId);expect(own).toHaveLength(1);
  expect(isCommandOutcome(own[0],command)).toBe(true);
- expect(own[0]).toMatchObject({outcome,fingerprint:command.fingerprint,identityId:command.identityId});return own[0];
+ expect(own[0]).toMatchObject({outcome,fingerprint:command.fingerprint,identityId:command.identityId});
+ expect(body.game?.id).toBe(id);expect(body.game.gameplayRevision).toBe(body.gameplayRevision);
+ if(outcome==='accepted')expect(own[0].gameplayRevision).toBe(body.gameplayRevision);
+ return {outcome:own[0],game:body.game};
 }
 async function submit(page,id,action){
  const sent=page.waitForRequest(req=>req.method()==='POST'&&new URL(req.url()).pathname===`/api/shell/games/${id}/apply`);
  await submitPlayableAction(page,action);const command=(await sent).postDataJSON();expect(command.payload.action).toEqual(action);
- await receipt(page,id,command);return command;
+ const acknowledged=await receipt(page,id,command);return {command,game:acknowledged.game};
 }
 async function claimBoth(page){
  await switchGamePanel(page,'players');
@@ -139,28 +144,40 @@ async function noClosure(page,game){
  await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toHaveCount(0);
  await expect(page.locator('[data-action="end-turn"],[data-board-preview-action="end-turn"]').filter({visible:true})).toHaveCount(0);
 }
-async function completedMandatoryFollow(page,id,retreatCommandId){
- // Keep the same 10s authoritative predicate, returning only its evidence.
- // Shipping a full game and nested assertions on every pass can consume that
- // clock after a Follow is already confirmed, under a busy native runner.
- await expect.poll(()=>page.evaluate(async({id,retreatCommandId,header,version})=>{
-  const identityId=localStorage.getItem('righelt.identity.id.v1');if(!identityId)throw Error('Native fixture identity missing');
-  const response=await fetch(`/api/shell/games/${id}?identityId=${encodeURIComponent(identityId)}`,{headers:{'content-type':'application/json',[header]:String(version)}});
-  const body=await response.json();
-  if(response.status!==200||body.ok!==true)throw Error(`Native fixture current-game response: HTTP ${response.status}, ok=${String(body.ok)}`);
-  const moves=body.game?.moves;if(!Array.isArray(moves))throw Error('Native fixture current-game moves missing');
-  const index=moves.findIndex(move=>move.clientCommandId===retreatCommandId);
-  return {status:response.status,ok:body.ok,follow:index>=0&&moves.slice(index+1).some(move=>move.action.type==='follow')};
- },{id,retreatCommandId,header:ACTION_CONTRACT_HEADER,version:ACTION_CONTRACT_VERSION})).toEqual({status:200,ok:true,follow:true});
- const game=await current(page,id),index=game.moves.findIndex(move=>move.clientCommandId===retreatCommandId),retreat=game.moves[index];
+// Passive observation only: never intercept, synthesize or resend a command.
+function captureMandatoryFollow(page,id){
+ const commands=[];
+ const observe=req=>{
+  if(req.method()!=='POST'||new URL(req.url()).pathname!==`/api/shell/games/${id}/apply`)return;
+  const command=req.postDataJSON();
+  if(command?.payload?.action?.type==='follow')commands.push(command);
+ };
+ page.on('request',observe);
+ return {commands,
+  assertSingle(){expect(commands,'Exactly one native Follow command must be observed').toHaveLength(1);},
+  dispose(){page.off('request',observe);}};
+}
+async function completedMandatoryFollow(page,id,retreatCommandId,capture){
+ // Preserve the original 10s observation budget and the unchanged main receipt
+ // contract. The same accepted reconciliation supplies every final-frame check.
+ await expect.poll(()=>capture.commands.length,{timeout:10000}).toBe(1);
+ capture.assertSingle();
+ const command=capture.commands[0];
+ expect(command.gameId).toBe(id);expect(command.kind).toBe('action');
+ expect(command.payload.action).toEqual(FOLLOW_ACTION);
+ expect(command.payload.computer).toBeUndefined();
+ expect(command.clientCommandId).not.toBe(retreatCommandId);
+ const acknowledged=await receipt(page,id,command);
+ capture.assertSingle();
+ const game=acknowledged.game,index=game.moves.findIndex(move=>move.clientCommandId===retreatCommandId),retreat=game.moves[index];
  expect(retreat).toBeTruthy();expect(capturedHash(retreat.snapshot)).toBe(safe.stateHash);
  const follows=game.moves.slice(index+1).filter(move=>move.action.type==='follow');
  expect(follows).toHaveLength(1);expect(follows[0].action).toEqual(FOLLOW_ACTION);
+ expect(follows[0].clientCommandId).toBe(command.clientCommandId);
  expect(follows[0].selectionSnapshot).toEqual(retreat.snapshot);expect(follows[0].computerProof??null).toBeNull();
  expect(follows[0].clientCommandId).not.toBe(retreatCommandId);
- // The next computer turn may already be running. Validate the exact accepted
- // follow frame rather than depending on the live board pausing at that frame.
- completed({board:{state:follows[0].snapshot}});return game;
+ expect(game.board.state).toEqual(follows[0].snapshot);
+ completed(game);completed({board:{state:follows[0].snapshot}});return game;
 }
 function completed(game){
  expect(game.board.state.continuation).toBeNull();expect(game.board.state.outcome.status).toBe('ongoing');
@@ -188,19 +205,23 @@ test('human retreat excludes the stranded square and automatically completes the
  const unsafe={protocolVersion:2,actionContractVersion:3,gameId,identityId,clientCommandId:`v2:${crypto.randomUUID()}`,kind:'action',payload:{action:f.retreat.action},expectedState:pushed.board.state,expectedGameplayRevision:pushed.gameplayRevision};
  unsafe.fingerprint=await commandFingerprint(unsafe);
  const rejected=await request(page,`/api/shell/games/${gameId}/apply`,unsafe);expect(rejected.accepted).toBe(false);
- expect((await receipt(page,gameId,unsafe,'rejected')).reason).toBe('SUPPLY_DESTINATION_UNSUPPLIED');
+ expect((await receipt(page,gameId,unsafe,'rejected')).outcome.reason).toBe('SUPPLY_DESTINATION_UNSUPPLIED');
  const unchanged=await current(page,gameId);expect(unchanged.board).toEqual(pushed.board);expect(unchanged.gameplayRevision).toBe(pushed.gameplayRevision);expect(unchanged.moves).toEqual(pushed.moves);
  // Clicking an empty unhighlighted square deliberately clears selection.
  // Resume through the actual pushed-piece control before selecting its move.
  await ensureActionActorSelected(cell(page,safe.action.from));
+ const followCapture=captureMandatoryFollow(page,gameId);
+ try{
  const retreatCommand=await submit(page,gameId,safe.action);
- await completedMandatoryFollow(page,gameId,retreatCommand.clientCommandId);
+ await completedMandatoryFollow(page,gameId,retreatCommand.command.clientCommandId,followCapture);
  await expect(page.locator('[data-board-message-action="replay-push-sequence"]')).toBeVisible();
  await page.screenshot({path:info.outputPath('safe-retreat-follow-completed.png')});
  await info.attach('captured-retreat-provenance',{body:JSON.stringify({sha256:RETREAT_CAPTURE_SHA256,provenance:f.provenance,unsafe,receipt:rejected.commandOutcomes},null,2),contentType:'application/json'});
+ followCapture.assertSingle();
+ }finally{followCapture.dispose();}
 });
 
-async function acceptedComputerRetreat(page,baseURL){
+async function acceptedComputerRetreat(page,baseURL,{captureFollow=false}={}){
  // This source exists only to branch its recorded decision. Open the actual
  // computer game once, avoiding an unused source runtime and journal lifecycle.
  const {gameId:sourceId}=await importScenarioGame(page,makeRetreatScenario('computer'),baseURL,{open:false});
@@ -210,6 +231,8 @@ async function acceptedComputerRetreat(page,baseURL){
  expect(branched.computer.modelId).toBe('initial-1554');expect(branched.computer.seats).toEqual({p1:'babs',p2:null});
  expect(capturedHash(branched.board.state)).toBe(f.push.afterHash);expect(branched.legalActions).toEqual([safe.action]);
  const sent=page.waitForRequest(req=>req.method()==='POST'&&new URL(req.url()).pathname===`/api/shell/games/${branched.id}/apply`&&Boolean(req.postDataJSON()?.payload?.computer));
+ const followCapture=captureFollow?captureMandatoryFollow(page,branched.id):null;
+ try{
  await page.goto(`${baseURL}/#/game/${encodeURIComponent(branched.id)}`);await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',branched.id);
  const accepted=await waitForComputerDecision(page,branched.id,'babs',{guest:true,modelId:'initial-1554'}),command=(await sent).postDataJSON();
  expect(command.payload.action).toEqual(safe.action);await receipt(page,branched.id,command);
@@ -217,7 +240,8 @@ async function acceptedComputerRetreat(page,baseURL){
  expect(move.action).toEqual(safe.action);expect(move.retreatSemantics).toBe('completion-preserving-retreat-v2');expect(move.computerProof).toEqual(command.payload.computer);
  expect(capturedHash(move.selectionSnapshot)).toBe(f.push.afterHash);expect(capturedHash(move.snapshot)).toBe(safe.stateHash);
  expect(command.expectedState).toEqual(branched.board.state);expect(move.selectionSnapshot).toEqual(branched.board.state);
- return {branched,command,move};
+ return {branched,command,move,followCapture};
+ }catch(error){followCapture?.dispose();throw error;}
 }
 
 // Evidence persistence and live completion are independent journeys. Keep each
@@ -232,9 +256,9 @@ test(computerRetreatWorkflow,async({page,acceptedRetreat},info)=>{
 });
 
 test(computerFollowWorkflow,async({page,acceptedRetreat,followEvidence})=>{
- const {branched,command,move}=acceptedRetreat;
+ const {branched,command,move,followCapture}=acceptedRetreat;
  await switchGamePanel(page,'board');
- await completedMandatoryFollow(page,branched.id,command.clientCommandId);
+ await completedMandatoryFollow(page,branched.id,command.clientCommandId,followCapture);
  followEvidence({command,move});
 });
 

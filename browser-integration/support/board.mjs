@@ -4,7 +4,7 @@ import { buildPieceMoveResponse } from "/apps/web/board/client-move-generation.j
 
 let state, actions, runtime, applied = [], pending = null, canInteract = true, canPresentActions = true, selectWhileBlocked = false, message = null, messageActions = [];
 const coord = (row, col) => ({ row, col });
-const setup = async (type = "rush", hover = true) => {
+const setup = async (type = "rush", hover = true, options = {}) => {
   runtime?.destroy();
   canInteract = true;
   canPresentActions = true;
@@ -16,7 +16,7 @@ const setup = async (type = "rush", hover = true) => {
   if (type === "follow") state.continuation = { type: "push", phase: "follow", followGroupPieceIds: ["A"] };
   actions = type === "pass" ? [{type:"pass"}] : [coord(4, 3), coord(5, 2)].map(to => ({ type, actorId: "A", from: coord(4, 2), to }));
   applied = [];
-  runtime = createBoardRuntime({ boardAdapter: createEngineBoardAdapter(), controls: { getSupportsHover: () => hover, getBoardMessage: () => message, onBoardMessageAction: action => messageActions.push(action) }, host: {
+  runtime = createBoardRuntime({ rushGuidanceClient: options.rushGuidanceClient, boardAdapter: createEngineBoardAdapter(), controls: { getSupportsHover: () => hover, getBoardMessage: () => message, onBoardMessageAction: action => messageActions.push(action) }, host: {
     canSelect: () => canInteract || selectWhileBlocked,
     canInteract: () => canInteract,
     canPresentActions: () => canPresentActions,

@@ -44,3 +44,12 @@ test('real recovery worker preserves semantic comparison for retained snapshots'
   assert.equal(await runtime.equivalent('retained',{left,right}),equivalentGameStates(left,right));
   right.pieces.pop();assert.equal(await runtime.equivalent('changed',{left,right}),equivalentGameStates(left,right));
 });
+
+test('real guidance worker identifies the reported supply-restoring rush', async t => {
+  const runtime=new RulesRuntime({workerFactory});t.after(()=>runtime.cancelAll());
+  const catalog=JSON.parse(readFileSync('apps/web/scenarios/catalog.json','utf8'));
+  const state=catalog.scenarios.find(s=>s.id==='bc6fb68f-7b20-4be5-a717-086ff15ec15f').initialState;
+  assert.deepEqual(await runtime.rushGuidance('supply',state),{
+    obligationPieceIds:['U1-3'],actions:[{action:{type:'rush',actorId:'U1-7',from:{row:6,col:4},to:{row:7,col:5}},immediate:true}],
+  });
+});

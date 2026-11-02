@@ -1,6 +1,6 @@
 import {createConfirmedFramePresenter} from './confirmed-frame-presenter.js';
 import {createConfirmedComputerPlayback} from './confirmed-computer-playback.js';
-import {isOngoingGame} from './game-lifecycle.js';
+import {isOngoingGame,isCompletedGame} from './game-lifecycle.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
@@ -782,7 +782,7 @@ const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
   return { selectionAction: matchingAction, selectionState: null };
 };
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
-const canControlLiveBoard = (game) => isOngoingGame(game) && account.canPlay() && !game?.sharedMutationsBlocked && Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
+const canControlLiveBoard = (game) => isOngoingGame(game) && account.canPlay() && !(game?.gameplayMutationsBlocked ?? game?.sharedMutationsBlocked) && Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
 const getVisibleHomeSectionKeys = (route = currentRoute) => (route?.debug ? ["my", "other", "smoke"] : ["my", "other"]);
 const getHomeSection = (sectionKey) => homeSections[sectionKey] ?? createHomeSectionState(sectionKey);
 const setHomeSection = (sectionKey, nextState) => {
@@ -1775,6 +1775,13 @@ const renderTurnHistory = (game) => {
     if (!turns.has(move.turnIndex)) turns.set(move.turnIndex,{index:move.turnIndex,moves:[]});
     turns.get(move.turnIndex).moves.push(move);
   }
+  // Finalization prepares the next active turn before discovering a terminal
+  // outcome. It is not a recorded turn until a decision or closure exists.
+  if (isCompletedGame(game)) {
+    for (const [index,turn] of turns) {
+      if (index === game.currentTurn?.index && !turn.moves.length && !turn.endedAt && !(turn.moveIndexes?.length)) turns.delete(index);
+    }
+  }
   const row = move => {
     const selected = game.inHistoryMode && (game.inspectedDecision?.moveId ? game.inspectedDecision.moveId === move.moveId : game.historyIndex === move.index);
     const pending = (game.pendingMoves ?? []).includes(move);
@@ -2337,7 +2344,8 @@ const getHeaderAlertItems = game => {
     key:context.key,
     html:renderGameAlertCard({tone:'neutral',activity:'processing',body:`<span role="status">${escapeHtml(context.message)}</span>`,testId:'slow-loading-notice'}),
   }));
-  return [...(game?getGameAlertItems(game):[]),...slow];
+  const position = game?.positionOnly && game.positionError ? [{ key: "position-load", html: renderGameAlertCard({ tone: "warn", body: '<span role="status">The board is saved, but play could not finish loading.</span>', action: '<button class="secondary mini-button" data-action="retry-game-load">Try again</button>', testId: "position-load-error" }) }] : [];
+  return [...position,...(game?getGameAlertItems(game):[]),...slow];
 };
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
@@ -2582,6 +2590,7 @@ const revealSelectedHistory = () => {
 };
 
 const renderHistoryPanel = (game) => {
+  if (game.positionOnly && game.positionHistoryPending) return renderHistorySlots({ rows: '', extra: `<p class="small" role="status">${game.positionError ? 'Game history could not finish loading. Try loading play again.' : 'Loading game history'}</p>` });
   const historyRows = renderTurnHistory(game);
   return renderHistorySlots({rows:historyRows,extra:renderAdditionalHistory(game),
     before:(game.confirmedPlayback?'':renderHistoryResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId())) + (game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? (game.historyLoadTurnIndex != null ? "Loading this turn" : "Loading this move") : (game.historyLoadTurnIndex != null ? "This turn couldn’t load. Your current view is still available." : "This move couldn’t load. Your current view is still available.")}</p>${game.historyLoadError ? `<button class="secondary mini-button" ${game.historyLoadTurnIndex != null ? `data-action="jump-history-turn" data-turn-index="${game.historyLoadTurnIndex}"` : `data-action="jump-history" data-move-index="${game.historyLoadIndex}"`} data-game-id="${escapeHtml(game.id)}">Retry</button>` : ""}</div>` : ""),
@@ -2632,8 +2641,8 @@ const renderGameShellFrame = (game, { loading = false } = {}) => `
     <div class="game-shell-track-wrap">
       <section class="layout-grid game-shell-track" data-game-shell-track>
         <div class="stack game-shell-mobile-panel" data-mobile-panel="players" data-shell-sticky-target="left" data-sticky-enabled="false">
-          <section class="panel" data-game-panel="summary">${loading ? renderSummaryLoading(`Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span>`) : ""}</section>
-          <section class="panel" data-game-panel="join">${loading ? renderPlayersLoading() : ""}</section>
+          <section class="panel" data-game-panel="summary">${loading ? renderSummaryLoading(`Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span>`) : renderGameSummaryPanel(game)}</section>
+          <section class="panel" data-game-panel="join">${loading ? renderPlayersLoading() : renderJoinInvitePanel(game, `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || game.id, getCurrentFlyoutState())}`)}</section>
 
         </div>
 
@@ -2644,7 +2653,7 @@ const renderGameShellFrame = (game, { loading = false } = {}) => `
         </div>
 
         <div class="stack game-shell-mobile-panel" data-mobile-panel="history">
-          <section class="panel" data-game-panel="history">${loading ? renderHistoryLoading() : ""}</section>
+          <section class="panel" data-game-panel="history">${loading ? renderHistoryLoading() : renderHistoryPanel(game)}</section>
         </div>
       </section>
     </div>
@@ -2930,6 +2939,16 @@ const reconcileMiniBoardPreviews = () => {
   });
 };
 
+// A replaced loading/live card must not expose the stylesheet's safe floor for
+// one frame before the normal layout rAF supplies its measured desktop size.
+const initializeDesktopBoardFit = () => {
+  desktopBoardFit ??= createDesktopBoardFit({
+    appEl, requestLayout: scheduleGameShellStickyLayout,
+    onSizeChange: () => boardRuntime?.refreshVisuals?.(),
+  });
+  desktopBoardFit.sync({wide: syncShellLayoutMode() === 'wide',onlyNew:true});
+};
+
 const applyGameShellStickyLayout = () => {
   if (!(appEl instanceof HTMLElement)) {
     return;
@@ -3050,6 +3069,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   });
   reconcileMiniBoardPreviews();
   syncMountedGameShellPanelUi(shellRoot);
+  initializeDesktopBoardFit();
   scheduleGameShellStickyLayout();
   return true;
 };
@@ -3298,13 +3318,13 @@ const getHistoryRecordedActionStartPiece = (game) => {
 let reconnectPresentationTimer;
 const updateReconnectPresentation = game => {
   const wrap = document.querySelector('[data-testid="game-board-wrap"]');
-  const recovering = isBoardRecoveryPending(game, { quietComputerRenewal: quietComputerRenewal(game) });
+  const recovering = game?.positionOnly ? game.positionLoading === true : isBoardRecoveryPending(game, { quietComputerRenewal: quietComputerRenewal(game) });
   if (wrap) {
     setActivityActor(wrap, activityActorSide(game));
     wrap.dataset.reconnecting = String(recovering);
     wrap.dataset.loadingState = recovering ? "pending" : "idle";
     // A retry or socket generation change does not restart an uninterrupted cue.
-    wrap.dataset.loadingKey = `recovery:${game.id}`;
+    wrap.dataset.loadingKey = `${game?.positionOnly ? "position" : "recovery"}:${game.id}`;
     wrap.dataset.loadingContext = "external";
     wrap.setAttribute("aria-busy", String(recovering));
   }
@@ -3399,7 +3419,7 @@ const mountBoardForGame = (game) => {
         canSelect: () => Boolean(currentRoute.scenarios && scenarioCapture?.gameId === game.id) || (hostInvite?.gameId !== game.id && Boolean(getBoardGame(transport.getGameViewModel(game.id))?.currentSnapshot)),
         canPresentActions: () => {
           const view = getBoardGame(transport.getGameViewModel(game.id));
-          return !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && ownsBoardActor(view, transport.getIdentityId());
+          return !view?.positionOnly && !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && ownsBoardActor(view, transport.getIdentityId());
         },
         canInteract: () => {
           const view = getBoardGame(transport.getGameViewModel(game.id));
@@ -3420,6 +3440,7 @@ const mountBoardForGame = (game) => {
           updateComputerBoardLoading(document.getElementById('shell-board-preview-label')?.parentElement.querySelector('.board-message-activity'), view, status, {
             replaying: Boolean(view?.confirmedPlayback || forcedFollowWorking(game.id) || replay?.playing || replayFeedback?.gameId === game.id), inspecting: Boolean(selection.selectedPieceId || selection.inspection), scope: viewingScope(),
           });
+          if (view?.positionOnly) return { text: view.positionLoading ? "Loading play" : "Play could not finish loading" };
           if(view?.confirmedPlayback){
             const actor=confirmedPlayback?.snapshot().current?.move?.actorSide;
             const actorName=playerDisplayName(view,actor);
@@ -3979,10 +4000,12 @@ const renderContent = ({ animatePanels, includeBoard }) => {
       })) return;
     }
     mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
+    initializeDesktopBoardFit();
     scheduleGameShellStickyLayout();
   }
   if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
     mountBoardForGame(transport.getGameViewModel(resolvedInvite.gameId));
+    initializeDesktopBoardFit();
     scheduleGameShellStickyLayout();
   }
 };
@@ -4047,7 +4070,7 @@ const syncRouteDataAndLiveChannels = (read = captureRouteRead()) => {
     if (read.route.name === "home") await syncHomeSections();
     if (read.route.name === "game") {
       resolvedInvite = null;
-      await read.owner.loadGame(read.route.gameId, { openAsViewer: false });
+      await read.owner.loadGame(read.route.gameId, { openAsViewer: false, positionFirst: true });
     }
     if (read.route.name === "invite") {
       const invite = await read.owner.resolveInvite(read.route.inviteToken);
@@ -4055,7 +4078,7 @@ const syncRouteDataAndLiveChannels = (read = captureRouteRead()) => {
       // Keep validated invitation routing metadata even if its board requires an
       // upgrade. It identifies the recovery fence without trusting a snapshot.
       resolvedInvite = invite;
-      await read.owner.loadGame(invite.gameId, { openAsViewer: false });
+      await read.owner.loadGame(invite.gameId, { openAsViewer: false, positionFirst: true });
       assertCurrentRouteRead(read, isActive);
     }
     assertCurrentRouteRead(read, isActive);
@@ -4840,6 +4863,7 @@ appEl.addEventListener("click", async (event) => {
   }
   if (action === "public-profile") { void inlineProfiles.open(actionEl.getAttribute("data-username"), actionEl); return; }
   if (action === "retry-account-continuation") { void retryAccountContinuation(); return; }
+  if (action === "retry-game-load") { startRouteSync(); return; }
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
   if (action === "account-open") {
     if (accountDialog.isOpen()) { void accountDialog.close(); return; }

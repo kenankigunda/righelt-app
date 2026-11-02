@@ -1,3 +1,4 @@
+import {partitionMessageActions} from './message-composition.js';
 import {renderCoordinateChip} from './coordinate-chip.js';
 import {icon} from '../icons.js';
 const escape = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
@@ -35,7 +36,9 @@ export function renderBoardMessageHtml(message, {sizing = false} = {}) {
   if (message.rows) return message.rows.map(row => `<span class="board-message-row">${renderBoardMessageHtml(row,{sizing})}</span>`).join('');
   const {text,actorName,rest,actions}=boardMessagePresentation(message);
   const copy=actorName?`<bdi class="board-message-name" dir="auto" title="${escape(actorName)}">${escape(actorName)}</bdi>${renderCopy(rest,message.coordinates)}`:renderCopy(text,message.coordinates);
-  return copy+actions.map(action=>` ${renderBoardInlineAction(action,{sizing})}`).join('');
+  const {inline,detached}=partitionMessageActions(actions);
+  const sentence=copy+inline.map(action=>` ${renderBoardInlineAction(action,{sizing})}`).join('');
+  return sentence+(detached.length?`<span class="board-message-actions">${detached.map(action=>renderBoardInlineAction(action,{sizing})).join(' ')}</span>`:'');
 }
 
 /** Patch changed narration without detaching its focused replay/action controls. */
@@ -47,7 +50,15 @@ export function patchBoardMessage(element, html) {
   const compatible = (left,right) => {
     if (left.nodeType !== right.nodeType || left.nodeName !== right.nodeName) return false;
     if (left.nodeType === 1) {
-      const attrs = node => [...node.attributes].filter(attr => attr.name !== 'title').map(attr => `${attr.name}=${attr.value}`).sort().join('|');
+      const attrs = node => [...node.attributes].filter(attr => attr.name !== 'title').map(attr => {
+        // Keep native press feedback on the live control through quiet refreshes.
+        // Semantic attributes (including disabled/action identity) still matter.
+        const inlineAction=node.matches?.('button[data-board-message-action],button[data-board-preview-action]');
+        const value=attr.name==='class'&&inlineAction
+          ? attr.value.split(/\s+/).filter(name=>name!=='is-pressing'&&name!=='is-releasing'&&name!=='button-release-bounce').join(' ')
+          : attr.value;
+        return `${attr.name}=${value}`;
+      }).sort().join('|');
       if (attrs(left) !== attrs(right)) return false;
     }
     return left.childNodes.length === right.childNodes.length && [...left.childNodes].every((child,index)=>compatible(child,right.childNodes[index]));

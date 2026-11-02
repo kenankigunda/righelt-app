@@ -1,3 +1,4 @@
+import { EngineComputationLimit, boundedEngineOperation } from "../../game-engine/src/computation-guard";
 import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, canonicalCommandJson } from '../../shared-types/src/sync-protocol';
 import { archiveStatements, readDecision, readDecisionPage, readAdditionalDecisionPage, parseHistoryCursor, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
 import { StorageWriteLimitError } from './storage-codec';
@@ -26,7 +27,7 @@ import type {
   ServerEvent,
   StateSyncEvent,
 } from "../../shared-types/src/events";
-import { listLegalActions } from "../../game-engine/src/legal";
+import { listLegalActions as enumerateLegalActions } from "../../game-engine/src/legal";
 import {
   addNotification,
   assignIdentityToScenarioSeat,
@@ -67,6 +68,8 @@ import {
   withViewModel,
 } from "./shell-live-core";
 import { loadGameProjection, persistGameState, resolveInvite, type D1Statement, type LiveGameEnv } from "./shell-live-db";
+
+const listLegalActions: typeof enumerateLegalActions = (...args) => boundedEngineOperation(() => enumerateLegalActions(...args));
 
 const HEARTBEAT_TIMEOUT_MS = 95_000;
 
@@ -342,6 +345,7 @@ export class GameRoomDO {
       });
     } catch (error) {
       if (error instanceof SyncBodyError) return json({ ok: false, error: error.message }, error.status);
+      if (error instanceof EngineComputationLimit) return json({ ok: false, error: error.code }, 503);
       if (authActive(this.env) || error instanceof AuthProblem) return authErrorResponse(error);
       throw error;
     }
