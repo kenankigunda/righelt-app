@@ -1,6 +1,6 @@
 import { selectSuiteArtifacts } from "../testing/select-artifacts.mjs";
 import path from "node:path";
-import { sourceIdentity, verifyFull, digest } from "../testing/receipts.mjs";
+import { sourceIdentity, verifyFull, digest, digestBuffer } from "../testing/receipts.mjs";
 import { fullLanes, laneKey } from "../testing/catalog.mjs";
 import { evidenceKey, fileDigest } from "./reuse.mjs";
 import { saveJSON } from "./io.mjs";
@@ -102,7 +102,7 @@ export async function importCatalogCI({
       maxOutputBytes: 1024,
     });
     const { readFile } = await import("node:fs/promises");
-    if (digest(await readFile(log)) !== r.logHash)
+    if (digestBuffer(await readFile(log)) !== r.logHash)
       throw Error("Primary suite log differs from receipt");
     evidence.push({
       lane: r.lane,
