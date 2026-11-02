@@ -27,7 +27,7 @@ test('mounted Players presence refresh patches the join subtree and retains the 
  Object.defineProperty(join,'innerHTML',{set(){assert.fail('Presence must not replace a focused Players subtree with innerHTML');}});
  const root=new Element();root.querySelector=selector=>selector==='[data-game-panel="join"]'?join:null;
  const rendered=[],patched=[];
- const context={HTMLElement:Element,HTMLInputElement:class{},CSS:{escape:value=>value},document,window:{location:{origin:'https://local',pathname:'/'}},
+ const context={createDesktopBoardFit:()=>({sync:options=>assert.equal(options.onlyNew,true)}),syncShellLayoutMode:()=> 'narrow',boardRuntime:null,appEl:{},HTMLElement:Element,HTMLInputElement:class{},CSS:{escape:value=>value},document,window:{location:{origin:'https://local',pathname:'/'}},
   getMountedGameShellRoot:()=>root,buildInviteHash:()=> '#/invite/g',getCurrentFlyoutState:()=>({}),
   renderJoinInvitePanel:()=>{const markup=`<h2>Players</h2>${renderPlayersPanel(game,{identityId:'me'})}`;rendered.push(markup);return markup;},
   patchToolHtml:(current,markup)=>{assert.equal(current,join);patched.push(markup);},
@@ -35,7 +35,7 @@ test('mounted Players presence refresh patches the join subtree and retains the 
   isButtonPending:()=>false,getCopyInviteButtonKey:()=> 'copy',applySharedMutationGates(){},FLYOUT_KEYS:[],
   reconcileMiniBoardPreviews(){},syncMountedGameShellPanelUi(){},scheduleGameShellStickyLayout(){},mountedBoardGameId:null,
  };
- runInNewContext(`${source.slice(start,end)};globalThis.refresh=game=>updateMountedGameShell({game,includeBoard:false});`,context);
+ runInNewContext(`let desktopBoardFit=null;${source.slice(source.indexOf('const initializeDesktopBoardFit ='),source.indexOf('const applyGameShellStickyLayout ='))}${source.slice(start,end)};globalThis.refresh=game=>updateMountedGameShell({game,includeBoard:false});`,context);
  assert.equal(context.refresh(game),true);
  const loadingProfile=profiles.open('Owner',owner);
  assert.equal(attributes.get('aria-expanded'),'true');
