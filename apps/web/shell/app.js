@@ -1,4 +1,4 @@
-import {isOngoingGame} from './game-lifecycle.js';
+import {isOngoingGame,isCompletedGame} from './game-lifecycle.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
@@ -1762,6 +1762,13 @@ const renderTurnHistory = (game) => {
     if (!turns.has(move.turnIndex)) turns.set(move.turnIndex,{index:move.turnIndex,moves:[]});
     turns.get(move.turnIndex).moves.push(move);
   }
+  // Finalization prepares the next active turn before discovering a terminal
+  // outcome. It is not a recorded turn until a decision or closure exists.
+  if (isCompletedGame(game)) {
+    for (const [index,turn] of turns) {
+      if (index === game.currentTurn?.index && !turn.moves.length && !turn.endedAt && !(turn.moveIndexes?.length)) turns.delete(index);
+    }
+  }
   const row = move => {
     const selected = game.inHistoryMode && (game.inspectedDecision?.moveId ? game.inspectedDecision.moveId === move.moveId : game.historyIndex === move.index);
     const pending = (game.pendingMoves ?? []).includes(move);
@@ -2919,6 +2926,16 @@ const reconcileMiniBoardPreviews = () => {
   });
 };
 
+// A replaced loading/live card must not expose the stylesheet's safe floor for
+// one frame before the normal layout rAF supplies its measured desktop size.
+const initializeDesktopBoardFit = () => {
+  desktopBoardFit ??= createDesktopBoardFit({
+    appEl, requestLayout: scheduleGameShellStickyLayout,
+    onSizeChange: () => boardRuntime?.refreshVisuals?.(),
+  });
+  desktopBoardFit.sync({wide: syncShellLayoutMode() === 'wide',onlyNew:true});
+};
+
 const applyGameShellStickyLayout = () => {
   if (!(appEl instanceof HTMLElement)) {
     return;
@@ -3039,6 +3056,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   });
   reconcileMiniBoardPreviews();
   syncMountedGameShellPanelUi(shellRoot);
+  initializeDesktopBoardFit();
   scheduleGameShellStickyLayout();
   return true;
 };
@@ -3958,10 +3976,12 @@ const renderContent = ({ animatePanels, includeBoard }) => {
       })) return;
     }
     mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
+    initializeDesktopBoardFit();
     scheduleGameShellStickyLayout();
   }
   if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
     mountBoardForGame(transport.getGameViewModel(resolvedInvite.gameId));
+    initializeDesktopBoardFit();
     scheduleGameShellStickyLayout();
   }
 };
