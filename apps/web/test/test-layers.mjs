@@ -76,6 +76,9 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "ui-guards.test.mjs",
 ]);
 
+export const WEB_INTEGRATION_TEST_FILES = Object.freeze(["home-read-recovery.integration.test.mjs"]);
+const WEB_INTEGRATION_TEST_FILE_SET = new Set(WEB_INTEGRATION_TEST_FILES);
+
 const WEB_UNIT_TEST_FILE_SET = new Set(WEB_UNIT_TEST_FILES);
 
-export const classifyWebTestFile = (fileName) => (WEB_UNIT_TEST_FILE_SET.has(fileName) ? "unit" : "integration");
+export const classifyWebTestFile = (fileName) => (WEB_INTEGRATION_TEST_FILE_SET.has(fileName) ? "integration" : WEB_UNIT_TEST_FILE_SET.has(fileName) ? "unit" : "integration");
