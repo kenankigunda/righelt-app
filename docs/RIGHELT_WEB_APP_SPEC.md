@@ -533,3 +533,10 @@ Deliberate Home navigation starts at the top while retaining list pages. Repeate
 ### Unique required follow and confirmed playback
 
 Automatically perform a required follow only when complete current legality proves exactly one choice. Multiple alternatives remain the player's decision. Show animation and movement sound as the acknowledged action is presented, and offer Show me again for the entire push/retreat/follow sequence. Replay is visual-only and never submits another action. Preserve durable dependency and receipt identity across recovery. Incomplete search, stale authority and a temporary admission fence must not manufacture a unique move or duplicate an earlier command. Scope changes cancel obsolete pre-journal work while already durable intent reconciles its original receipt. Provenance: [D07, D17](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
+
+
+### Stable human controls during computer maintenance
+
+A fresh, owned computer lease renewal that changes neither the human actor's position nor their authority must not disable a legal Pass, End turn, piece selection, or destination. Keep control-changing requests serialized. Exempt gameplay only while the exact renewal, owner, device, generation, lease, state/revision, and recovery episode remain valid. Storage uncertainty, overdue or failed requests, incompatible versions, lost permissions, changed positions, and independent recovery continue to disable unavailable actions; blocked input never creates deferred gameplay intent.
+
+An explicit permitted action still enters the ordinary durable journal and receipt chain. A shared predecessor does not advance gameplay revision. Compatible metadata arriving during that durable write may update a completed projection without another rules worker, but only after rechecking authority, permissions, queue lineage, recovery, and viewing context. Never publish a solid local move before durable admission, reuse a stale authority projection, or recompute an admitted command to conceal a failure.

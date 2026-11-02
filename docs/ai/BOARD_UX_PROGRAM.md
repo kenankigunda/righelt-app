@@ -11,7 +11,7 @@ This program follows the October 2026 product decisions. Independent healthy PRs
 - Play again and Create a new game here use mutually exclusive native opponent mini cards, with the current opponent selected. Portraits, cut corners, keyboard arrows, visible focus and 44-pixel labels follow the existing design. Readiness updates preserve selected controls and focus. Start stays disabled while the source game is recovering, and actual start errors persist through background updates.
 - Thinking, saving and related activity animations use the responsible player’s red or blue. Pending work keeps its captured actor after optimistic turn advancement, including defender-controlled retreats. Color updates preserve node identity and animation time. Unknown-actor page loading retains the dual-color brand treatment.
 - A valid unresolved receipt remains pending with its original durable command, retry ownership and deadline. Actionable authentication, storage and integrity failures appear immediately. Routine transport failures follow the active-visible-wait grace in [recovery](GAME_RECOVERY.md#presentation-and-diagnostics). Recovery offers icon-labeled Reload game and Home actions without discarding pending intent.
-- Ordinary thinking exposes no recovery CTA. Preparation detail starts after 5 seconds, Interrupt after 30 seconds, and save feedback after 10 seconds in the save phase. Actual failures appear immediately. Slow feedback lives outside the board card.
+- Ordinary thinking exposes no recovery CTA. Preparation detail starts after 5 seconds, Interrupt after 30 seconds, and save feedback after 10 seconds in the save phase. Actionable authentication, storage and integrity failures appear immediately. Routine transport failures retain the active-visible-wait grace above. Slow feedback lives outside the board card.
 
 ## Space and history
 
@@ -38,7 +38,7 @@ Use the pinned released validation tools, an explicit candidate checkout and exa
 | Area | Required proof |
 | --- | --- |
 | Rules and model | Engine legality, required obligations, optimistic/server parity, durable receipts, imported continuations, no fabricated history rows, original model/config identity and real shipped-model inference |
-| Computer UX | Frame-by-frame board geometry, independent think/save clocks, no early CTA/banner, immediate failures, full-turn narration, actual model reload and undo |
+| Computer UX | Frame-by-frame board geometry, independent think/save clocks, no early CTA/banner, immediate actionable failures and routine recovery grace, full-turn narration, actual model reload and undo |
 | Opponent picker | Current opponent and side, all five choices, native keyboard selection and focus, loaded portraits, narrow dialog actions, preparation and retry, source recovery, Cancel/reopen and stale completion |
 | Replay | Actual renderer, stacked push/retreat/follow/removal, source and destination transforms, cancellation, reduced motion, immutable live state and no API writes |
 | History and undo | Narrow after-state mini preview, hidden live Board updates, panel detours, resize, self-play and friend approval, unchanged intent, away-and-back, other viewers and archived restoration |

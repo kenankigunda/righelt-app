@@ -1,4 +1,5 @@
 import {test,expect,chromium} from '@playwright/test';
+import {writeFile} from 'node:fs/promises';
 import {browserLaunchOptions} from '../../scripts/playwright-launch-options.mjs';
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {selectPlayableAction,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
@@ -19,7 +20,7 @@ const createComputer=async page=>{
  await expect(page.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:20000});return game.id;
 };
 
-test('a human destination survives a real pending renewal and needs a fresh confirmation',async({page},info)=>{
+test('a human destination survives fresh renewal and its first confirmation reaches one receipt',async({page},info)=>{
  const id=await createComputer(page);await switchGamePanel(page,'board');
  const before=await projected(page,id),action=before.legalActions.find(value=>value.from&&value.to);
  expect(action).toBeTruthy();const target=await selectPlayableAction(page,action);
@@ -56,27 +57,32 @@ test('a human destination survives a real pending renewal and needs a fresh conf
   await info.attach('held-control-preclick-classes',{contentType:'application/json',body:JSON.stringify(preClickClasses)});
   const fenced=await projected(page,id);expect(fenced.board).toEqual(before.board);expect(fenced.moves).toEqual(before.moves);expect(fenced.gameplayRevision).toBe(before.gameplayRevision);
   expect(applies).toEqual([]);
+  await expect(source).toHaveClass(/(?:^|\s)source(?:\s|$)/);await expect(target).toHaveClass(/(?:^|\s)target(?:\s|$)/);
   await target.click();
-  await expect(source).toHaveClass(/(?:^|\s)source(?:\s|$)/);
-  await expect(target).toHaveClass(/(?:^|\s)target(?:\s|$)/);
+  const pendingAction=()=>page.evaluate(id=>new Promise((resolve,reject)=>{
+   const open=indexedDB.open('righelt.online-commands.v2');open.onerror=()=>reject(open.error);
+   open.onsuccess=()=>{const db=open.result,read=db.transaction('commands').objectStore('commands').getAll();read.onerror=()=>{db.close();reject(read.error);};read.onsuccess=()=>{db.close();resolve(read.result.filter(value=>value.gameId===id&&value.kind==='action'));};};
+  }),id);
+  await expect.poll(pendingAction).toHaveLength(1);const admitted=(await pendingAction())[0];
+  expect(admitted.payload.action).toEqual(action);expect(admitted.expectedGameplayRevision).toBe(before.gameplayRevision);
+  expect(admitted.predecessor).toEqual({clientCommandId:original.clientCommandId,fingerprint:original.fingerprint});
+  await expect(page.getByTestId('history-pending-move-item')).toHaveCount(1);
   expect(applies).toEqual([]);expect(await readJournal()).toEqual(original);
   const blocked=await projected(page,id);expect(blocked.board).toEqual(before.board);expect(blocked.moves).toEqual(before.moves);expect(blocked.gameplayRevision).toBe(before.gameplayRevision);
   for(const envelope of deliveries)expect(envelope).toEqual(original);
   release();await expect.poll(readJournal).toBe(null);
-  const response=await page.request.post(`/api/shell/games/${id}/reconcile`,{headers:originalHeaders,data:{protocolVersion:2,identityId:original.identityId,knownSnapshotEventSeq:0,commands:[original]}});
+  await expect.poll(()=>applies.length).toBe(1);expect(applies[0]).toEqual(admitted);
+  await expect.poll(async()=>(await projected(page,id)).moves.filter(move=>move.clientCommandId===admitted.clientCommandId).length).toBe(1);
+  const response=await page.request.post(`/api/shell/games/${id}/reconcile`,{headers:originalHeaders,data:{protocolVersion:2,identityId:original.identityId,knownSnapshotEventSeq:0,commands:[original,admitted]}});
   expect(response.ok()).toBe(true);const body=await response.json(),outcomes=body.commandOutcomes.filter(value=>value.clientCommandId===original.clientCommandId);
   expect(outcomes).toHaveLength(1);expect(outcomes[0]).toMatchObject({outcome:'accepted',fingerprint:original.fingerprint,gameplayRevision:before.gameplayRevision});
-  expect(applies).toEqual([],'settlement must not replay the blocked click');
-  await expect(source).toHaveClass(/(?:^|\s)source(?:\s|$)/);await expect(target).toHaveClass(/(?:^|\s)target(?:\s|$)/);await expect(target).not.toHaveClass(/unselectable/);
-  await target.click();
-  await expect.poll(()=>applies.length).toBe(1);expect(applies[0].payload.action).toEqual(action);
-  await expect.poll(async()=>(await projected(page,id)).moves.filter(move=>move.clientCommandId===applies[0].clientCommandId).length).toBe(1);
+  expect(body.commandOutcomes).toContainEqual(expect.objectContaining({clientCommandId:admitted.clientCommandId,fingerprint:admitted.fingerprint,outcome:'accepted',gameplayRevision:before.gameplayRevision+1}));
   const after=await projected(page,id),human=after.moves.filter(move=>move.clientCommandId===applies[0].clientCommandId);
   expect(human).toHaveLength(1);expect(human[0].action).toEqual(action);expect(after.gameplayRevision).toBeGreaterThanOrEqual(before.gameplayRevision+1);
   expect(applies).toHaveLength(1);
   const renewalById=new Map();
   for(const envelope of deliveries){const first=renewalById.get(envelope.clientCommandId);if(first)expect(envelope).toEqual(first);else renewalById.set(envelope.clientCommandId,envelope);}
-  await info.attach('blocked-renewal-and-explicit-confirmation',{contentType:'application/json',body:JSON.stringify({original,outcome:outcomes[0],action,submitted:applies[0]},null,2)});
+  await info.attach('fresh-renewal-and-first-confirmation',{contentType:'application/json',body:JSON.stringify({original,outcome:outcomes[0],action,submitted:applies[0]},null,2)});
  }finally{release();page.off('request',observe);await page.unrouteAll({behavior:'wait'});}
 });
 
@@ -294,15 +300,17 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   // Read-only observer persists in its closure, not in app state or a test hook.
   // Console samples are raw synchronous DOM reads, including the admission onset.
   observerReadyAt=await page.evaluate(({prefix,id})=>{
+   let firstPass=null;
    const read=()=>{
     const label=document.querySelector('#shell-board-preview-label'),card=document.querySelector('[data-computer-activity]'),wrap=document.querySelector('[data-testid="game-board-wrap"]');
+    const pass=label?.querySelector('[data-board-message-action="pass"], [data-board-preview-action="pass"]');if(!firstPass)firstPass=pass;
     return {at:Date.now(),gameId:document.querySelector('[data-testid="game-shell"]')?.getAttribute('data-game-id'),
      narration:label?[...label.childNodes].filter(node=>node.nodeType!==1||node.tagName!=='BUTTON').map(node=>node.textContent).join('').trim():'',
      activity:card?.getAttribute('data-computer-activity'),activityText:card?.textContent.trim(),connected:!!card?.querySelector('.is-connected'),
      announcement:document.querySelector('#shell-sync-announcement')?.textContent??'',
      reconnecting:wrap?.getAttribute('data-reconnecting'),busy:wrap?.getAttribute('aria-busy'),
      recovery:[...document.querySelectorAll('[data-testid="sync-recovery-banner"]')].map(node=>node.textContent),
-     pass:!!label?.querySelector('[data-board-message-action="pass"], [data-board-preview-action="pass"]')};
+     pass:!!pass,passEnabled:!!pass&&!pass.disabled,samePass:pass===firstPass};
    };
    window.readQuietRenewalFixture=read;
    let last='',count=0;const emit=()=>{const value=read(),key=JSON.stringify({...value,at:0});if(key!==last){last=key;count++;console.debug(prefix+JSON.stringify(count<=500?value:{at:Date.now(),overflow:true}));}};
@@ -323,23 +331,25 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   const firstSend=await page.evaluate(submittedAt=>new Promise(resolve=>setTimeout(()=>resolve(window.readQuietRenewalFixture()),Math.max(0,submittedAt+1000-Date.now()))),original.submittedAt);
   const sampledAt=firstSend.at;samples.push(firstSend);
   expect(sampledAt-original.submittedAt).toBeLessThan(5000);
-  await expect(pass).toBeVisible();await expect(pass).toBeDisabled();expect(await journalRecord()).toEqual(original);
+  await expect(pass).toBeVisible();await expect(pass).toBeEnabled();expect(await journalRecord()).toEqual(original);
   const early=samples.filter(sample=>sample.at>=original.submittedAt&&sample.at<=sampledAt);
   expect(early.length).toBeGreaterThan(0);expect(samples.some(sample=>sample.overflow)).toBe(false);
   const narration=samples[0].narration;expect(narration).toMatch(/Babs /);
   for(const sample of early){
    expect(sample.gameId).toBe(id);expect(sample.narration).toBe(narration);expect(sample.activity).toBe('here');expect(sample.activityText).toBe('Active here');expect(sample.connected).toBe(true);
-   expect(sample.pass).toBe(true);
+   expect(sample.pass).toBe(true);expect(sample.passEnabled).toBe(true);expect(sample.samePass).toBe(true);
    expect(sample.announcement).not.toMatch(/Updating computer play|Needs attention|Reconnecting|Saving/);
    expect(sample.recovery.join(' ')).not.toMatch(/Updating computer play|Needs attention/);expect(sample.reconnecting).not.toBe('true');expect(sample.busy).not.toBe('true');
   }
-  await info.attach('quiet-renew-first-send',{contentType:'image/png',body:await page.screenshot()});
+  await info.attach('quiet-renew-first-send',{contentType:'image/png',body:await page.screenshot({path:info.outputPath('quiet-renew-first-send.png')})});
+  await writeFile(info.outputPath('quiet-renew-first-send.json'),JSON.stringify({observerReadyAt,original,sampledAt,early},null,2));
   // Real request timeout and real server lease expiry must restore attention.
   await expect(page.getByRole('button',{name:'Babs, Blue, Needs attention',exact:true})).toBeVisible();
+  await expect(pass).toBeDisabled();
   await expect(page.getByTestId('sync-recovery-banner')).toContainText(/updating computer play|retry|details/i);
   await expect.poll(()=>Date.now()).toBeGreaterThanOrEqual(heldAuthority.computer.lease.expiresAt);
   await expect(page.getByRole('button',{name:'Babs, Blue, Needs attention',exact:true})).toBeVisible();
-  await info.attach('quiet-renew-expired-lease',{contentType:'image/png',body:await page.screenshot()});
+  await info.attach('quiet-renew-expired-lease',{contentType:'image/png',body:await page.screenshot({path:info.outputPath('quiet-renew-expired-lease.png')})});
   expect(await journalRecord()).toEqual(original);expect(writes).toEqual([]);
   const fenced=await projected(page,id);expect(fenced.board).toEqual(before.board);expect(fenced.moves).toEqual(before.moves);expect(fenced.gameplayRevision).toBe(before.gameplayRevision);
   for(const envelope of deliveries)expect(envelope).toEqual(original);
@@ -351,8 +361,50 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   expect(outcomes).toHaveLength(1);expect(outcomes[0]).toMatchObject({outcome:'rejected',reason:'computer_control_changed',fingerprint:original.fingerprint,gameplayRevision:before.gameplayRevision});
   await expect.poll(journalRecord).toBe(null);await expect(pass).toBeVisible();
   const after=await projected(page,id);expect(after.board).toEqual(before.board);expect(after.moves).toEqual(before.moves);expect(after.gameplayRevision).toBe(before.gameplayRevision);expect(writes).toEqual([]);
-  await info.attach('quiet-renew-real-journey',{contentType:'application/json',body:JSON.stringify({observerReadyAt,original,sampledAt,samples,outcome:outcomes[0],writes},null,2)});
+  await writeFile(info.outputPath('quiet-renew-real-journey.json'),JSON.stringify({observerReadyAt,original,sampledAt,samples,outcome:outcomes[0],writes},null,2));
+  await info.attach('quiet-renew-real-journey',{contentType:'application/json',path:info.outputPath('quiet-renew-real-journey.json')});
  }finally{
-  try{await info.attach('quiet-renew-raw-samples',{contentType:'application/json',body:JSON.stringify({observerReadyAt,original,samples},null,2)});}catch{}
+  try{await writeFile(info.outputPath('quiet-renew-raw-samples.json'),JSON.stringify({observerReadyAt,original,samples},null,2));await info.attach('quiet-renew-raw-samples',{contentType:'application/json',path:info.outputPath('quiet-renew-raw-samples.json')});}catch{}
   release();page.off('console',consoleSample);page.off('request',observeWrite);await page.unrouteAll({behavior:'wait'});}
+});
+
+test('an explicit human Pass during fresh renewal reaches one authoritative receipt',async({page},info)=>{
+ const id=await createComputer(page);await switchGamePanel(page,'board');
+ const initial=await projected(page,id);await submitPlayableAction(page,initial.legalActions.find(action=>action.from&&action.to));
+ if((await projected(page,id)).canEndTurn)await page.locator('[data-board-preview-action="end-turn"]').click();
+ await waitForComputerDecision(page,id,'babs',{guest:true,modelId:initial.computer.modelId});
+ await expect.poll(async()=>{const game=await projected(page,id);return game.board.state.sideToMove==='P1'&&!game.board.state.continuation;}).toBe(true);
+ const before=await projected(page,id),pass=page.locator('#shell-board-preview-label [data-board-message-action="pass"], #shell-board-preview-label [data-board-preview-action="pass"]');
+ let renewal,renewalHeaders,release;const held=new Promise(resolve=>{release=resolve;}),humanRequests=[];
+ const observe=request=>{if(request.method()!=='POST'||new URL(request.url()).pathname!==`/api/shell/games/${id}/apply`)return;const value=request.postDataJSON();if(!value.payload?.computer&&value.payload?.action?.type==='pass')humanRequests.push(value);};
+ page.on('request',observe);
+ await page.route(`**/api/shell/games/${id}/shared`,async route=>{
+  const value=route.request().postDataJSON();
+  if(!renewal&&value.payload?.operation==='computer-control'&&value.payload.values?.action==='renew'){renewal=value;renewalHeaders=Object.fromEntries(Object.entries(route.request().headers()).filter(([name])=>name==='content-type'||name.startsWith('x-righelt-')));await held;}
+  await route.continue();
+ });
+ const journal=()=>page.evaluate(id=>new Promise((resolve,reject)=>{
+  const open=indexedDB.open('righelt.online-commands.v2');open.onerror=()=>reject(open.error);
+  open.onsuccess=()=>{const db=open.result,read=db.transaction('commands').objectStore('commands').getAll();read.onerror=()=>{db.close();reject(read.error);};read.onsuccess=()=>{db.close();resolve(read.result.filter(value=>value.gameId===id));};};
+ }),id);
+ try{
+  await expect.poll(()=>Boolean(renewal)).toBe(true);await expect(pass).toBeEnabled();
+  await pass.click();
+  await expect.poll(async()=>(await journal()).filter(value=>value.kind==='action'&&value.payload?.action?.type==='pass')).toHaveLength(1);
+  const admitted=(await journal()).find(value=>value.kind==='action'&&value.payload?.action?.type==='pass');
+  expect(admitted.expectedGameplayRevision).toBe(before.gameplayRevision);expect(admitted.expectedState).toEqual(before.board.state);
+  expect(admitted.predecessor).toEqual({clientCommandId:renewal.clientCommandId,fingerprint:renewal.fingerprint});
+  await expect(page.getByTestId('history-pending-move-item').filter({hasText:'PASS'})).toHaveCount(1);
+  expect(humanRequests).toHaveLength(0);release();
+  // WebSocket acknowledgement may settle and cancel the HTTP delivery. Read
+  // the same durable receipts without resubmitting either command.
+  await expect.poll(async()=>(await projected(page,id)).moves.filter(move=>move.clientCommandId===admitted.clientCommandId)).toHaveLength(1);
+  const response=await page.request.post(`/api/shell/games/${id}/reconcile`,{headers:renewalHeaders,data:{protocolVersion:2,identityId:renewal.identityId,knownSnapshotEventSeq:0,commands:[renewal,admitted]}});
+  expect(response.status()).toBe(200);const body=await response.json();
+  expect(body.commandOutcomes).toContainEqual(expect.objectContaining({clientCommandId:renewal.clientCommandId,fingerprint:renewal.fingerprint,outcome:'accepted',gameplayRevision:before.gameplayRevision}));
+  expect(body.commandOutcomes).toContainEqual(expect.objectContaining({clientCommandId:admitted.clientCommandId,fingerprint:admitted.fingerprint,outcome:'accepted',gameplayRevision:before.gameplayRevision+1}));
+  expect(body.game.moves.filter(move=>move.clientCommandId===admitted.clientCommandId)).toHaveLength(1);expect(humanRequests).toEqual([admitted]);
+  await expect.poll(async()=>(await journal()).some(value=>value.clientCommandId===admitted.clientCommandId)).toBe(false);
+  await writeFile(info.outputPath('quiet-renew-explicit-pass.json'),JSON.stringify({beforeRevision:before.gameplayRevision,renewal,admitted,outcomes:body.commandOutcomes,humanRequests},null,2));
+ }finally{release();page.off('request',observe);await page.unrouteAll({behavior:'wait'});}
 });

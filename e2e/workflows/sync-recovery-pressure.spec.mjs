@@ -1,3 +1,4 @@
+import { POSITION_PROJECTION } from '../../packages/shared-types/src/sync-protocol.js';
 import {e2eControlPort} from '../../scripts/e2e-control.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {test as base, expect} from '@playwright/test';
@@ -24,7 +25,7 @@ async function wire(page) {
  const resources = owned.get(test.info());
  const faults = resources.faults.get(page.context()) || [];
  resources.faults.set(page.context(), [...faults, lifecycle]);
- const fault={receive:false,http:false,loseReply:false, requests:0,snapshots:0,bytes:0,networkResets:0,commands:[],outcomes:[],latency:100,lastInbound:0};
+ const fault={receive:false,http:false,loseReply:false, requests:0,snapshots:0,positionReads:0,bytes:0,networkResets:0,commands:[],outcomes:[],latency:100,lastInbound:0};
  await page.routeWebSocket(/\/api\/shell\/games\//, socket=>{
   const server=socket.connectToServer();
   server.onMessage(message=>{
@@ -54,7 +55,7 @@ async function wire(page) {
   if(lifecycle.disposed){await route.abort();return;}
   if(fault.legacy){try{const parsed=JSON.parse(body);if(parsed.game){parsed.protocolVersion=1;body=Buffer.from(JSON.stringify(parsed));}}catch{}}
   fault.bytes+=body.length;
-  try{const parsed=JSON.parse(body);if(parsed.game)fault.snapshots++;if(mutation)fault.outcomes.push(...(parsed.commandOutcomes??[]));}catch{}
+  try{const parsed=JSON.parse(body);if(parsed.game){if(parsed.projection===POSITION_PROJECTION && parsed.game.positionOnly===true)fault.positionReads++;else fault.snapshots++;}if(mutation)fault.outcomes.push(...(parsed.commandOutcomes??[]));}catch{}
   if(fault.interruptNextRecovery && isOperationRequest(route.request(),'reconcile')){
    fault.interruptNextRecovery=false;fault.interruptedRecoveries=(fault.interruptedRecoveries||0)+1;fault.http=true;await route.abort();return;
   }
@@ -85,7 +86,7 @@ async function party(browser,baseURL) {
  await openDirectGameLink(pages[1],baseURL,game.gameHash);await requestPlayerJoin(pages[1]);await acceptPendingRequest(pages[0]);
  await openDirectGameLink(pages[2],baseURL,game.gameHash);await joinAsViewer(pages[2]);
  for(const page of pages)await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
- faults.forEach(f=>{f.requests=0;f.snapshots=0;f.bytes=0;});
+ faults.forEach(f=>{f.requests=0;f.snapshots=0;f.positionReads=0;f.bytes=0;});
  return {...game,pages,faults,contexts};
  }catch(error){await cleanup(resources,contexts);throw error;}
 }
@@ -153,7 +154,7 @@ async function converged(pages) {
 }
 async function evidence(info, name, start, faults, extra={}) {
  const result={fault:name,restoredAt:new Date(start).toISOString(),convergenceMs:Date.now()-start,
-  requests:faults.reduce((a,f)=>a+f.requests,0),snapshots:faults.reduce((a,f)=>a+f.snapshots,0),applicationPayloadBytes:faults.reduce((a,f)=>a+f.bytes,0),networkResets:faults.reduce((a,f)=>a+f.networkResets,0),...extra};
+  requests:faults.reduce((a,f)=>a+f.requests,0),snapshots:faults.reduce((a,f)=>a+f.snapshots,0),positionReads:faults.reduce((a,f)=>a+f.positionReads,0),applicationPayloadBytes:faults.reduce((a,f)=>a+f.bytes,0),networkResets:faults.reduce((a,f)=>a+f.networkResets,0),...extra};
  expect(result.convergenceMs).toBeLessThanOrEqual(25000);
  await mkdir("test-results/sync-recovery",{recursive:true});
  await writeFile(`test-results/sync-recovery/${info.project.name}-${name}.json`,JSON.stringify(result,null,2));
@@ -422,6 +423,7 @@ test('I10 browser reconnect transfers one current snapshot after205 moves and30 
  await page.waitForTimeout(5500);
  // Initial socket owns current state; reconciliation acknowledges unchanged revision.
  expect(fault.snapshots).toBe(1);
+ expect(fault.positionReads).toBeLessThanOrEqual(1);
  await evidence(info,'long-history',start,[fault],{moves:205,duplicateSubmissions:result.duplicates.length});
 });
 

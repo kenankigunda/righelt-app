@@ -254,8 +254,9 @@ test.describe('narrow board and history',()=>{
     },{once:true}),textScale);
     let release;const held=new Promise(resolve=>{release=resolve;});
     // Either snapshot GET or durable reconciliation can win hydration. Hold
-    // both real responses so every browser observes the same cold boundary.
-    await context.route(new RegExp(`/api/shell/games/${gameId}(?:\\?|$|/reconcile(?:\\?|$))`),async route=>{
+    // all position/full responses so this placeholder geometry test observes
+    // the boundary before any board data arrives. Position-first has its own workflow.
+    await context.route(new RegExp(`/api/shell/games/${gameId}(?:\\?|$|/(?:reconcile|position)(?:\\?|$))`),async route=>{
       const request=route.request();
       if(request.method()==='GET'||new URL(request.url()).pathname.endsWith('/reconcile'))await held;
       await route.continue();

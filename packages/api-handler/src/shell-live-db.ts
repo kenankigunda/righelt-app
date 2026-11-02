@@ -745,6 +745,26 @@ const normalizePersistedStaticGameCard = (
   };
 };
 
+/** Presentation read: never decompress history or reconstruct archives in the outer Worker.
+ * SQLite removes large per-move snapshots before crossing the D1/Worker boundary.
+ * Compacted history remains available through the existing paginated read APIs.
+ */
+export const loadPositionProjection = async (env: LiveGameEnv, gameId: string): Promise<PersistedGameProjection | null> => {
+  const row = await env.DB.prepare(`SELECT game_id, created_at, updated_at,
+    CASE WHEN json_valid(state_json) THEN json_set(state_json, '$.moves', json(COALESCE(
+      (SELECT json_group_array(json(json_remove(value, '$.snapshot', '$.selectionSnapshot')))
+       FROM json_each(live_games.state_json, '$.moves')), '[]'))) ELSE state_json END AS state_json,
+    event_seq, gameplay_revision, ownership_mode, move_count FROM ${LIVE_GAMES_TABLE} WHERE game_id = ?1`).bind(gameId).first<PersistedGameRow & { move_count: number }>();
+  if (!row?.state_json) return null;
+  const projection = normalizePersistedGame(row, "single");
+  if (projection.kind === "ok") {
+    if (row.ownership_mode !== undefined) projection.game.ownershipMode = row.ownership_mode ?? "legacy_guest";
+    const game = { ...projection.game, positionHistoryPending: row.move_count > projection.game.moves.length };
+    return { ...projection, game };
+  }
+  return projection;
+};
+
 export const loadGameProjection = async (env: LiveGameEnv, gameId: string): Promise<PersistedGameProjection | null> => {
   // Current deployments require all migrations. A missing ownership column is
   // a deployment/schema error, never permission to read through an old schema.
