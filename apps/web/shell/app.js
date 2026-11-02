@@ -2719,6 +2719,18 @@ const patchHomeAroundCreateControl = (markup) => {
   if(!comparableControl.getAttribute("style"))comparableControl.removeAttribute("style");
   comparableControl.classList.remove("is-pressing");
   comparableControl.querySelectorAll(".is-pressing,.is-releasing").forEach(el=>el.classList.remove("is-pressing","is-releasing"));
+  // Recovery changes native availability, not the retained Home surface.
+  // Normalize only these known buttons for comparison; every other change
+  // still takes the existing replacement path.
+  const availabilitySelector = 'button[data-action="create-game"],button[data-action="create-self-play"]';
+  const currentAvailability = [...currentControl.querySelectorAll(availabilitySelector)];
+  const comparableAvailability = [...comparableControl.querySelectorAll(availabilitySelector)];
+  const nextAvailability = [...nextControl.querySelectorAll(availabilitySelector)];
+  if (currentAvailability.length !== nextAvailability.length) return false;
+  for (let index = 0; index < currentAvailability.length; index++) {
+    if (currentAvailability[index].dataset.action !== nextAvailability[index].dataset.action) return false;
+    comparableAvailability[index].disabled = nextAvailability[index].disabled;
+  }
   if (!comparableControl.isEqualNode(nextControl)) return false;
   const pathTo = (control, root) => {
     const path = [];
@@ -2727,6 +2739,8 @@ const patchHomeAroundCreateControl = (markup) => {
   };
   const currentPath = pathTo(currentControl, appEl), nextPath = pathTo(nextControl, nextRoot);
   if (currentPath.length !== nextPath.length || currentPath.some((node, index) => index > 0 && node.tagName !== nextPath[index].tagName)) return false;
+  // No mutation occurs until the complete control and ancestor path match.
+  for (let index = 0; index < currentAvailability.length; index++) currentAvailability[index].disabled = nextAvailability[index].disabled;
   for (let index = 0; index < currentPath.length - 1; index++) {
     const current = currentPath[index], next = nextPath[index], retained = currentPath[index + 1], replacement = nextPath[index + 1];
     if (index > 0) {
