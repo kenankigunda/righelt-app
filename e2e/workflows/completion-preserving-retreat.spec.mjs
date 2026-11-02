@@ -7,6 +7,7 @@ import {waitForComputerDecision} from '../support/computer-projection.mjs';
 import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
 import {makeRetreatScenario,readRetreatCapture,FOLLOW_ACTION,RETREAT_CAPTURE_SHA256} from '../support/retreat-completion-fixture.mjs';
 import {installJournalObservations} from '../support/journal-observations.mjs';
+import {settledBoardMessageCamera} from '../support/board-message-camera.mjs';
 import {COMPUTER_UI_FRAME_MEASURE} from '../../apps/web/shell/frame-presentation.js';
 
 // Artifact encoding is separate from the unchanged 60-second behavioral budget.
@@ -21,6 +22,7 @@ const test=base.extend({
  let evidence;
  await use(value=>{evidence=value;});
  if(!evidence)return;
+ await settledBoardMessageCamera(page,'replay-push-sequence',info);
  await page.screenshot({path:info.outputPath('computer-safe-retreat-follow-completed.png')});
  await info.attach('accepted-computer-follow-source',{body:JSON.stringify(evidence,null,2),contentType:'application/json'});
 },{timeout:20000}]});
@@ -215,6 +217,7 @@ test('human retreat excludes the stranded square and automatically completes the
  const retreatCommand=await submit(page,gameId,safe.action);
  await completedMandatoryFollow(page,gameId,retreatCommand.command.clientCommandId,followCapture);
  await expect(page.locator('[data-board-message-action="replay-push-sequence"]')).toBeVisible();
+ await settledBoardMessageCamera(page,'replay-push-sequence',info);
  await page.screenshot({path:info.outputPath('safe-retreat-follow-completed.png')});
  await info.attach('captured-retreat-provenance',{body:JSON.stringify({sha256:RETREAT_CAPTURE_SHA256,provenance:f.provenance,unsafe,receipt:rejected.commandOutcomes},null,2),contentType:'application/json'});
  followCapture.assertSingle();
