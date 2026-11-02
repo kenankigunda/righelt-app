@@ -74,10 +74,10 @@ test('guest computer finishes a catalog position and prepares a fresh rematch',a
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',fresh.id);
 });
 for (const width of [320, 390, 430, 1440]) test.describe(`retained guest computer game at ${width}px`, () => {
-  // Three distinct journeys share the actual browser, identity and accepted game.
+  // Four required journeys share the actual browser, identity and accepted game.
   // Each keeps the configured 60-second budget. Failures skip dependent journeys.
   test.describe.configure({mode:'serial'});
-  let owned, context, page, played, retained;
+  let owned, context, page, played, retained, replaySeed, replayWrites, observeReplay;
   test.beforeAll(async ({browser}, info) => {
     owned=ownedContexts(browser);
     const use=info.project.use;
@@ -88,8 +88,8 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   });
   // Playwright records all live contexts per test, including this retained one.
   // The ownership helper closes even partially completed context creation.
-  test.afterAll(async () => {await owned?.close();});
-  test(`guest computer prepares and replays a real turn at ${width}px`, async ({}, info) => {
+  test.afterAll(async () => {if(observeReplay)page?.off('request',observeReplay);await owned?.close();});
+  test(`guest computer prepares and records a real turn at ${width}px`, async ({}, info) => {
   // Observe both delivery channels: an accepted socket receipt may cancel HTTP.
   const renewals=new Map(),renewalReceipts=new Map();
   page.on('request',request=>{if(isOperationRequest(request,'computer-control')&&operationValues(request)?.action==='renew'){const command=request.postDataJSON();renewals.set(command.clientCommandId,command);}});
@@ -162,9 +162,22 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   }catch(error){frames.failure=String(error);throw error;}
   finally{await persistGeometryEvidence(info,'board-message-native-frames.json',frames);}
   const beforeReplay=await projected(page,initial.id);
-  const writes=[];
-  const observeReplay=request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/')){let body;try{body=request.postDataJSON();}catch{}writes.push({method:request.method(),path:new URL(request.url()).pathname,body});}};
+  expect(beforeReplay.id).toBe(initial.id);
+  expect(beforeReplay.moves.some(move=>move.computerProof?.modelId===initial.computer.modelId)).toBe(true);
+  replaySeed=Object.freeze({initialJSON:JSON.stringify(initial),beforeReplayJSON:JSON.stringify(beforeReplay),identityId});
+  replayWrites=[];
+  observeReplay=request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/')){let body;try{body=request.postDataJSON();}catch{}replayWrites.push({method:request.method(),path:new URL(request.url()).pathname,body});}};
   page.on('request',observeReplay);
+  });
+
+  // Read-only replay is a separate required 60-second contract. It starts from
+  // the exact accepted state and active observer, with no reload or new setup.
+  test(`the same guest computer game replays its accepted turn without writes at ${width}px`,async({},info)=>{
+  expect(replaySeed).toBeTruthy();
+  const initial=JSON.parse(replaySeed.initialJSON),beforeReplay=JSON.parse(replaySeed.beforeReplayJSON),{identityId}=replaySeed;
+  const writes=replayWrites;
+  await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',initial.id);
+  expect(await page.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'))).toBe(identityId);
   try {
     await page.getByRole('button',{name:'Show me again',exact:true}).click();
     await expect(page.locator('.computer-replay')).toBeVisible();
@@ -181,7 +194,7 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
     await page.getByRole('button',{name:'Stop replay',exact:true}).click();
     await assertReplayIntegrity({writes,before:beforeReplay,after:await projected(page,initial.id)});
     await page.emulateMedia({reducedMotion:'no-preference'});
-  } finally {page.off('request',observeReplay);}
+  } finally {page.off('request',observeReplay);observeReplay=null;}
   const saved = (await projected(page, initial.id)).moves.find(move=>move.computerProof);
   expect(initial.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
   expect(saved.computerProof.modelId).toBe(initial.computer.modelId);
