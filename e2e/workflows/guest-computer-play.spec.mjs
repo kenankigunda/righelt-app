@@ -1,6 +1,7 @@
 import {assertReplayIntegrity} from '../support/replay-write-contract.mjs';
 import {CURRENT_COMPUTER_MODEL} from '../../packages/shared-types/src/computer-play.ts';
-import {readFile} from 'node:fs/promises';
+import {readFile,writeFile} from 'node:fs/promises';
+import {settledMessage} from '../support/board-message-geometry.mjs';
 import {isOperationRequest,operationValues} from "../support/shared-request.mjs";
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {test,expect} from '@playwright/test';
@@ -116,7 +117,7 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   await assertFullBoardGeometry(page,info,'initial');
   await page.evaluate(() => {
     window.boardStatusGeometry={running:true,samples:[]};
-    const sample=()=>{const record=window.boardStatusGeometry;if(!record.running)return;const board=document.querySelector('#shell-board');if(board){const rect=board.getBoundingClientRect();record.samples.push({y:rect.top+scrollY,height:rect.height,message:document.querySelector('#shell-board-preview-label')?.textContent});}requestAnimationFrame(sample);};sample();
+    const sample=()=>{const record=window.boardStatusGeometry;if(!record.running)return;const board=document.querySelector('#shell-board');if(!board){record.samples.push({boardMissing:true});}else{const slotNode=board.closest('[data-shell-panel="board"]')?.querySelector('.board-message-slot');if(!slotNode){record.samples.push({slotMissing:true});}else{const rect=board.getBoundingClientRect(),slot=slotNode.getBoundingClientRect();record.samples.push({board:rect.toJSON(),slot:slot.toJSON(),documentSlotTop:slot.top+scrollY,gap:rect.top-slot.bottom,viewport:{width:document.documentElement.clientWidth,height:innerHeight},cells:board.querySelectorAll('.cell').length,message:document.querySelector('#shell-board-preview-label')?.textContent});}}requestAnimationFrame(sample);};sample();
   });
   await waitForPlayableBoard(page);
   const target=await selectPlayableAction(page,initial.legalActions.find(action=>action.from&&action.to));
@@ -137,10 +138,25 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-board-preview-action="end-turn"]').click();
   await waitForComputerDecision(page, initial.id, 'babs', {guest:true,modelId:initial.computer.modelId});
   await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible({timeout:30000});
+  // Keep every native frame through the final narration height transition.
+  // Semantic copy may grow; its board-to-message gap and full fit may not drift.
+  await settledMessage(page);
   const geometry=await page.evaluate(()=>{window.boardStatusGeometry.running=false;return window.boardStatusGeometry.samples;});
+  try{const path=info.outputPath('board-message-native-frames.json');await writeFile(path,JSON.stringify({scope:'All native frames, semantic message growth allowed, original 1px gap/viewport bounds retained',geometry},null,2));await info.attach('board-message-native-frames',{path,contentType:'application/json'});}catch(error){console.error(JSON.stringify({kind:'board-frame-evidence-incomplete',name:error?.name??'Error'}));}
   expect(geometry.length).toBeGreaterThan(2);
-  const topValues=geometry.map(sample=>sample.y);
-  expect(Math.max(...topValues)-Math.min(...topValues),JSON.stringify(geometry.filter((sample,index)=>index===0||sample.y!==geometry[index-1].y))).toBeLessThanOrEqual(1);
+  const first=geometry[0];
+  for(const [index,sample] of geometry.entries()){
+    const evidence=JSON.stringify({index,sample,firstGap:first.gap,firstSlotTop:first.documentSlotTop});
+    expect(Boolean(sample.boardMissing),evidence).toBe(false);expect(Boolean(sample.slotMissing),evidence).toBe(false);
+    expect(sample.gap,evidence).toBeGreaterThanOrEqual(-1);
+    expect(Math.abs(sample.gap-first.gap),evidence).toBeLessThanOrEqual(1);
+    expect(Math.abs(sample.documentSlotTop-first.documentSlotTop),evidence).toBeLessThanOrEqual(1);
+    expect(sample.cells,evidence).toBe(100);
+    expect(sample.board.width,evidence).toBeGreaterThan(0);expect(sample.board.height,evidence).toBeGreaterThan(0);
+    expect(sample.board.left,evidence).toBeGreaterThanOrEqual(-1);expect(sample.board.right,evidence).toBeLessThanOrEqual(sample.viewport.width+1);
+    expect(sample.board.top,evidence).toBeGreaterThanOrEqual(-1);expect(sample.board.bottom,evidence).toBeLessThanOrEqual(sample.viewport.height+1);
+  }
+  await assertFullBoardGeometry(page,info,'after-computer');
   const beforeReplay=await projected(page,initial.id);
   const writes=[];
   const observeReplay=request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/')){let body;try{body=request.postDataJSON();}catch{}writes.push({method:request.method(),path:new URL(request.url()).pathname,body});}};

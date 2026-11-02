@@ -4,7 +4,7 @@ export const settledMessage=async page=>{await page.evaluate(()=>new Promise(res
 // DOMRect.bottom can be a double sum of separately rounded top/height.
 // Verify that composition, cancel the unchanged origins, and bound only the
 // actual float32 primitives. Non-float32 primitives remain exact.
-const edgeDelta=(next,previous,slotNext,slotPrevious,primitives,label)=>{
+export const edgeDelta=(next,previous,slotNext,slotPrevious,primitives,label)=>{
  const bound=primitives.reduce((sum,value)=>sum+(value!==0&&Math.fround(value)===value?2**(Math.floor(Math.log2(Math.abs(value)))-24):0),0);
  expect(Math.abs((next-previous)-(slotNext-slotPrevious)),`${label}: ${JSON.stringify({edges:[next,previous,slotNext,slotPrevious],primitives,bound,float32:primitives.map(value=>Math.fround(value)===value)})}`).toBeLessThanOrEqual(bound);
  return{edges:[next,previous,slotNext,slotPrevious],primitives,bound};
