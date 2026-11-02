@@ -7,19 +7,28 @@ export const patchSectionContent = (current,next) => {
   }
   const persistent = current.hasAttribute('data-persist') && next.hasAttribute('data-persist');
   if (persistent && (current.dataset.decisionId !== next.dataset.decisionId || current.dataset.version !== next.dataset.version)) { current.replaceWith(next.cloneNode(true)); return; }
+  // Loading feedback owns its mounted cue. A fresh render of the same pending
+  // operation must not disconnect that child and restart its native animation.
+  const samePendingKey = current.dataset.loadingState === 'pending' && next.dataset.loadingState === 'pending'
+    && current.dataset.loadingKey && current.dataset.loadingKey === next.dataset.loadingKey;
+  const cues = samePendingKey ? [...current.children].filter(child => child.matches('.loading-pieces')) : [];
+  const retainedCue = cues.length === 1 && ![...next.children].some(child => child.matches('.loading-pieces')) ? cues[0] : null;
   for(const attr of [...current.attributes])if(!(persistent && attr.name === 'open') && !next.hasAttribute(attr.name))current.removeAttribute(attr.name);
   for(const attr of next.attributes)if(current.getAttribute(attr.name)!==attr.value)current.setAttribute(attr.name,attr.value);
   if (persistent && (current.tagName === 'TEXTAREA' || current.tagName === 'INPUT' || current.isContentEditable)) return;
-  const old=[...current.childNodes],fresh=[...next.childNodes];
+  const staticChildren = () => [...current.childNodes].filter(child => child !== retainedCue);
+  const staticChildAt = index => retainedCue ? staticChildren()[index] : current.childNodes[index];
+  const old=[...current.childNodes].filter(child => child !== retainedCue),fresh=[...next.childNodes];
   fresh.forEach((child,index)=>{
     const key = child.nodeType === Node.ELEMENT_NODE ? child.getAttribute('data-key') : null;
-    const existing = key ? old.find(node => node.nodeType === Node.ELEMENT_NODE && node.getAttribute('data-key') === key) : current.childNodes[index];
-    if (existing && current.childNodes[index] !== existing) current.insertBefore(existing, current.childNodes[index] ?? null);
-    if(!existing){current.insertBefore(child.cloneNode(true), current.childNodes[index] ?? null);return;}
+    const existing = key ? old.find(node => node.nodeType === Node.ELEMENT_NODE && node.getAttribute('data-key') === key) : staticChildAt(index);
+    if (existing && staticChildAt(index) !== existing) current.insertBefore(existing, staticChildAt(index) ?? retainedCue);
+    if(!existing){current.insertBefore(child.cloneNode(true), staticChildAt(index) ?? retainedCue);return;}
     if(existing.nodeType===child.nodeType && existing.nodeName===child.nodeName){
       if(child.nodeType===Node.TEXT_NODE){if(existing.textContent!==child.textContent)existing.textContent=child.textContent;}
       else if(child instanceof Element)patchSectionContent(existing,child);
     }else existing.replaceWith(child.cloneNode(true));
   });
-  while (current.childNodes.length > fresh.length) current.lastChild.remove();
+  if (retainedCue) { for (const child of staticChildren().slice(fresh.length)) child.remove(); }
+  else while (current.childNodes.length > fresh.length) current.lastChild.remove();
 };
