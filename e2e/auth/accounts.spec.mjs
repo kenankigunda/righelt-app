@@ -15,7 +15,13 @@ const control = async action => {
   expect(response.status).toBe(200);
 };
 test.beforeEach(async () => control("reset-limits"));
-async function register(page, username, { gate = false } = {}) {
+async function openRecoveredFriendChoice(page) {
+  const choice=page.locator('[data-testid="home-create-game"][data-action="create-game"]').first();
+  await expect(choice).toBeVisible();await expect(choice).toBeEnabled();
+  await choice.click();
+  await expect(page.getByRole('button',{name:'Start a friend game',exact:true})).toBeVisible();
+}
+async function register(page, username, { gate = false, readRecovery = false } = {}) {
   await page.goto("/");
   await waitForAccountStartup(page);
   await openPlaySignIn(page);
@@ -23,8 +29,28 @@ async function register(page, username, { gate = false } = {}) {
   await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
   await enterUsername(page, username);
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
-  await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
-  await expect(dialog(page)).not.toBeVisible();
+  let registrationStarted=false,recoveryObserved=false,recoveredReadComplete=false;
+  const recoveryReads=new WeakSet();
+  const trackRead=request=>{
+    const url=new URL(request.url());
+    if(request.method()==='POST'&&url.pathname==='/api/auth/register')registrationStarted=true;
+    if(registrationStarted&&request.method()==='GET'&&url.pathname==='/api/shell/games'&&url.searchParams.get('section')==='other')recoveryReads.add(request);
+  };
+  const failedRead=request=>{if(recoveryReads.has(request))recoveryObserved=true;};
+  const settledRead=response=>{
+    if(!recoveryReads.has(response.request()))return;
+    if(!response.ok()){recoveryObserved=true;return;}
+    void response.finished().then(async error=>{if(!error&&(await response.json()).ok!==false)recoveredReadComplete=true;}).catch(()=>{});
+  };
+  if(readRecovery){page.on('request',trackRead);page.on('requestfailed',failedRead);page.on('response',settledRead);}
+  try{
+    await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
+    await expect(dialog(page)).not.toBeVisible();
+    if(readRecovery){
+      await expect.poll(()=>({recoveryObserved,recoveredReadComplete})).toEqual({recoveryObserved:true,recoveredReadComplete:true});
+      await openRecoveredFriendChoice(page);
+    }
+  }finally{if(readRecovery){page.off('request',trackRead);page.off('requestfailed',failedRead);page.off('response',settledRead);}}
   const play = page.getByRole("button", { name: "Start a friend game", exact: true });
   const retry = page.locator('[data-action="retry-account-continuation"]');
   await expect(play.or(retry)).toBeVisible();
@@ -132,7 +158,7 @@ test("registration helper waits for a failed bootstrap retry before submitting",
     await route.continue();
   });
   // Capture rejection immediately, including when demonstrating the old race.
-  const registration = register(page, uniqueName(), { gate: true }).then(value => ({ value }), error => ({ error }));
+  const registration = register(page, uniqueName(), { gate: true, readRecovery: true }).then(value => ({ value }), error => ({ error }));
   try {
     await retry;
     await expect(page.getByTestId("home-create-game")).toBeVisible();
@@ -199,7 +225,8 @@ test("registration helper retries one failed continuation read without repeating
 });
 
 test("failed page reads after registration preserve the original action and resolved diagnostics", async ({page}) => {
-  let registered = false, failed = false, registrations = 0;
+  let registered = false, failedReads = 0, registrations = 0, creates = 0;
+  page.on('request',request=>{if(request.method()==='POST'&&new URL(request.url()).pathname==='/api/shell/games')creates++;});
   await page.route('**/api/auth/register', async route => {
     registrations++;
     const response = await route.fetch();
@@ -207,8 +234,8 @@ test("failed page reads after registration preserve the original action and reso
     await route.fulfill({response});
   });
   await page.route('**/api/shell/games?**', async route => {
-    if (registered && !failed && new URL(route.request().url()).searchParams.get('section') === 'other') {
-      failed = true;
+    if (registered && failedReads < 2 && new URL(route.request().url()).searchParams.get('section') === 'other') {
+      failedReads++;
       await route.fulfill({status:503,contentType:'application/json',headers:{'X-Righelt-Server-Build':'continuation-test-build'},body:JSON.stringify({ok:false,error:'local_api_unavailable'})});
     } else await route.continue();
   });
@@ -221,6 +248,7 @@ test("failed page reads after registration preserve the original action and reso
   const error = page.getByTestId('account-continuation-error');
   await expect(error).toContainText('We couldn’t finish loading. Please try again.');
   await expect(dialog(page)).not.toBeVisible();
+  expect(failedReads).toBe(2);expect(creates).toBe(0);
   const session = await page.evaluate(async () => (await (await fetch('/api/auth/session')).json()).contextId);
   expect(session).toBeTruthy();
   await error.getByRole('button',{name:'Diagnostic details'}).click();
@@ -232,11 +260,13 @@ test("failed page reads after registration preserve the original action and reso
   await expect(report).toContainText('durationMs');
   const incident = await report.getAttribute('data-incident-id');
   await error.getByRole('button',{name:'Try again',exact:true}).click();
-  await expect(page.getByRole('dialog',{name:'Friend',exact:true})).toBeVisible();
+  await expect(page.locator('[data-testid="home-create-game"][data-action="create-game"]').first()).toBeEnabled();
+  expect(creates).toBe(0);
   await expect(error).toHaveCount(0);
   await expect(page.locator(`.issue-diagnostic[data-incident-id="${incident}"]`)).toContainText('Resolved');
   expect(await page.evaluate(async () => (await (await fetch('/api/auth/session')).json()).contextId)).toBe(session);
   expect(registrations).toBe(1);
+  await openRecoveredFriendChoice(page);
   await continueFriendIntroduction(page);
   await expect(page.getByTestId('game-shell')).toBeVisible();
   expect(registrations).toBe(1);
@@ -943,6 +973,8 @@ test('a failed continuation read preserves the play choice for explicit retry', 
   expect(creates).toBe(0);
   denyReads = false;
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await openRecoveredFriendChoice(page);
+  expect(creates).toBe(0);
   await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
   await expect(page).toHaveURL(/#\/game\//);
   await expect(page.getByTestId('game-role')).toContainText('Player 1');

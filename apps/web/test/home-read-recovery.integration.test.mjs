@@ -66,7 +66,7 @@ async function fixture(t,{journalAdapter,seed=true}={}) {
       if(init.method==='POST'){writes.push({url,body:JSON.parse(init.body)});return Response.json({ok:true,protocolVersion:2,eventSeq:1,game});}
       const parsed=new URL(url,'http://fixture');
       if(parsed.pathname==='/api/shell/games'){
-        const request={section:parsed.searchParams.get('section'),page:Number(parsed.searchParams.get('page')),signal:init.signal};
+        const request={section:parsed.searchParams.get('section'),page:Number(parsed.searchParams.get('page')),debug:parsed.searchParams.get('debug'),signal:init.signal};
         calls.push(request);return responder(request);
       }
       return Response.json({ok:true,protocolVersion:2,eventSeq:1,game});
@@ -424,4 +424,47 @@ test('matched late app events cannot undo an account-generation cancellation',as
   // generation route read started by the event handler stays held independently.
   releaseHomePages(oldPages,'obsolete');releaseHomePages(freshPages.slice(0,2),'obsolete');await flush();
   assertNoOldPublication(f,before);assert.ok(freshPages.slice(0,2).every(request=>request.signal.aborted));
+});
+
+// The actual open-debug Home handler updates local utility state before it
+// synchronizes reads; the URL can still be the plain Home route.
+test('local Home Debug intent retains smoke reads when the URL has no Debug parameter',async t=>{
+  const f=await fixture(t);
+  f.context.currentRoute={...f.context.currentRoute,debug:true};
+  assert.equal(f.context.window.location.hash,'#/');
+  f.respond(({section})=>Response.json(pageBody(section)));
+  await f.h.sync();
+  assert.deepEqual(f.calls.map(call=>call.section).sort(),['my','other','smoke']);
+  assert.ok(f.calls.every(call=>call.debug==='1'));
+  assert.deepEqual(f.h.sections().smoke.gameIds,['smoke-new']);
+  assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+});
+
+
+test('closing local Home Debug retires a held read before any section publishes',async t=>{
+  const f=await fixture(t),held=[];
+  f.context.currentRoute={...f.context.currentRoute,debug:true};
+  const before=JSON.stringify(f.h.sections());
+  f.respond(request=>{const wait=deferred();held.push({...request,...wait});return wait.promise;});
+  const work=observe(f.h.sync());await flush();
+  assert.equal(held.length,3);
+  f.context.currentRoute={...f.context.currentRoute,debug:false};f.h.capture();
+  assert.ok(held.every(request=>request.signal.aborted));
+  for(const request of held)request.resolve(Response.json(pageBody(request.section)));
+  await assert.rejects(work,{code:'session_changed'});
+  assert.equal(JSON.stringify(f.h.sections()),before);
+  assert.equal(f.store.getHomeGameCard('smoke-new'),null);
+  assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+});
+
+test('a game URL cannot inherit stale local Home Debug visibility',async t=>{
+  const f=await fixture(t),before=JSON.stringify(f.h.sections());
+  f.context.currentRoute={...f.context.currentRoute,debug:true};
+  f.browserNavigate('#/game/created');
+  const read=f.h.capture();
+  assert.equal(read.route.name,'game');assert.equal(read.route.gameId,'created');
+  assert.equal(read.homeDebug,false);
+  await f.h.sync();
+  assert.equal(f.calls.length,0);assert.equal(JSON.stringify(f.h.sections()),before);
+  assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
 });

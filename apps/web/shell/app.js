@@ -3606,7 +3606,7 @@ const loadHomeSectionServerPage = async (
     section: sectionKey,
     page: serverPage,
     pageSize: HOME_SECTION_SERVER_PAGE_SIZE,
-    debug: read.route.debug === true,
+    debug: read.homeDebug === true,
   });
   if (adapter) adapter.assertCurrent(); else assertCurrentRouteRead(read);
   const normalizedServerPage = typeof response.page === "number" ? response.page : 0;
@@ -3755,7 +3755,7 @@ const syncHomeSections = async (read = captureRouteRead(), isActive = () => true
       const adapter = { read, readPage: options => attemptBatch.readPage(options), assertCurrent: assertAttemptCurrent,
         getSection: key => sectionMap[key] ?? createHomeSectionState(key),
         setSection: (key, value) => { sectionMap[key] = value; } };
-      const visibleSectionKeys = getVisibleHomeSectionKeys(read.route);
+      const visibleSectionKeys = getVisibleHomeSectionKeys({ debug: read.homeDebug });
       try {
         await Promise.all(visibleSectionKeys.map(async sectionKey => {
           const section = adapter.getSection(sectionKey);
@@ -3775,7 +3775,7 @@ const syncHomeSections = async (read = captureRouteRead(), isActive = () => true
         homeSections = sectionMap;
         // A successful count refresh can clamp our own page. Advance only this
         // proven read's input snapshot, never accept a concurrent user change.
-        read.inputs = JSON.stringify([homeReadVisit, getVisibleHomeSectionKeys().map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])]);
+        read.inputs = JSON.stringify([homeReadVisit, read.homeDebug, getVisibleHomeSectionKeys({ debug: read.homeDebug }).map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])]);
         if (continuation) continuation.inputs = read.inputs;
         homeReadRecovery = null;
         return { recovered };
@@ -4117,13 +4117,19 @@ const captureRouteRead = () => {
   // browser delivers hashchange. Keep the read and its deduplication key on
   // the same URL instead of sharing an old route's work under the new hash.
   const hash = window.location.hash;
+  const route = parseRouteFromHash(hash);
+  // Home utilities can change locally before a URL update. Keep visibility
+  // separate from the URL-derived route and its authority/visit ownership.
+  const homeDebug = route.name === "home"
+    && (currentRoute.name === "home" ? currentRoute.debug === true : route.debug === true);
   const read = {
     generation: account.snapshot().generation,
     hash,
     routeKey: routeReadKey(hash),
     owner: transport,
-    route: parseRouteFromHash(hash),
-    inputs: JSON.stringify([homeReadVisit, getVisibleHomeSectionKeys().map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])]),
+    route,
+    homeDebug,
+    inputs: JSON.stringify([homeReadVisit, homeDebug, getVisibleHomeSectionKeys({ debug: homeDebug }).map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])]),
   };
   read.epoch = hydrateRoute.observe(read);
   if (homeReadJob && !sameRouteRead(homeReadJob.read, read)) homeReadJob.retire();

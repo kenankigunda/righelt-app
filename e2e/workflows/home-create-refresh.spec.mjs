@@ -180,11 +180,11 @@ for (const input of ['pointer', 'keyboard']) test(`home refresh preserves ${inpu
 test('bounded Home loading retires without growing its pending card',async({page},info)=>{
  await page.setViewportSize({width:390,height:800});
  const errors=[];page.on('pageerror',error=>errors.push(error.message));
- let release,entered=false;const held=new Promise(resolve=>{release=resolve;});
+ let release,entered=false,attempts=0;const held=new Promise(resolve=>{release=resolve;});
  await page.route('**/api/shell/games?**',async route=>{
   const url=new URL(route.request().url());
   if(url.searchParams.get('section')!=='my')return route.continue();
-  const response=await route.fetch();expect(response.ok()).toBe(true);entered=true;
+  attempts++;const response=await route.fetch();expect(response.ok()).toBe(true);entered=true;
   await held;await route.fulfill({response});
  });
  try{
@@ -198,8 +198,10 @@ test('bounded Home loading retires without growing its pending card',async({page
    const sample=()=>{if(!node.isConnected)return;window.boundedHomeFrames.push({rect:node.getBoundingClientRect().toJSON(),same:node.querySelector(':scope > .loading-pieces')===cue&&cue.querySelector('i').getAnimations()[0]===clock,time:clock.currentTime,inlineContext:Boolean(node.querySelector('.loading-context'))});requestAnimationFrame(sample);};sample();
    return {rect,time:clock.currentTime,at:performance.now()};
   });
-  // Native request timeout retires the pending card. No test clock, widened
-  // network timeout, fabricated response or loading-policy override is used.
+  // The existing read policy permits one retry. Observe its real request
+  // before measuring retirement with the unchanged assertion budget.
+  await expect.poll(()=>attempts).toBe(2);
+  await expect(page.getByTestId('slow-loading-notice')).toBeVisible();
   await expect(card).toHaveCount(0);
   const frames=await page.evaluate(()=>window.boundedHomeFrames);
   expect(frames.length).toBeGreaterThan(2);
