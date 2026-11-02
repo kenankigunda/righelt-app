@@ -15,6 +15,9 @@ body {display:flow-root;}
    replay+Pass messages. Replicas and live rows use the same exact spacing. */
 .board-message-slot {
   --board-message-prose-line-height:1.5;
+  --board-message-focus-width:2px;
+  --board-message-focus-offset:2px;
+  --board-message-paint-guard:max(0px,calc(var(--board-message-focus-width) + var(--board-message-focus-offset) - var(--board-action-hit-inset)));
   --board-inline-action-font-scale:.88;
   --board-inline-action-line-height:1.5;
   --board-inline-action-padding-block-em:.2;
@@ -181,9 +184,9 @@ body {display:flow-root;}
 /* Replicas establish only the routine floor. The controller measures both font
    families plus live content, keeping replicas outside intrinsic grid sizing. */
 .board-message-slot {position:relative;}
-.board-message-slot[data-height-managed="true"] {display:block;}
+.board-message-slot[data-height-managed="true"] {display:block;box-sizing:border-box;padding-block:var(--board-message-paint-guard);overflow-x:visible;overflow-y:clip;}
 .board-message-live {align-self:start;}
-.board-message-slot[data-height-managed="true"] > .board-message-sizing {position:absolute;inset-inline:0;top:0;min-height:0;}
+.board-message-slot[data-height-managed="true"] > .board-message-sizing {position:absolute;inset-inline:0;top:var(--board-message-paint-guard);min-height:0;}
 .board-message-slot .board-preview-label {min-height:0;line-height:var(--board-message-prose-line-height);}
 
 /* The five routine prompts need at most one line above14.5em in both
@@ -198,3 +201,5 @@ body {display:flow-root;}
     min-height:calc(2 * var(--board-message-prose-line-height) * 1em + var(--board-routine-action-growth) + var(--board-action-hit-inset) + var(--board-action-hit-inset));
   }
 }
+
+.board-message-slot .board-preview-inline-button:focus-visible {outline-width:var(--board-message-focus-width);outline-offset:var(--board-message-focus-offset);}
