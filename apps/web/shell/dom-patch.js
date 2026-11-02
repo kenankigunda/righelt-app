@@ -13,7 +13,7 @@ export const patchSectionContent = (current,next) => {
     && current.dataset.loadingKey && current.dataset.loadingKey === next.dataset.loadingKey;
   const cues = samePendingKey ? [...current.children].filter(child => child.matches('.loading-pieces')) : [];
   const retainedCue = cues.length === 1 && ![...next.children].some(child => child.matches('.loading-pieces')) ? cues[0] : null;
-  for(const attr of [...current.attributes])if(!(persistent && attr.name === 'open') && !next.hasAttribute(attr.name))current.removeAttribute(attr.name);
+  for(const attr of [...current.attributes])if(!(persistent && attr.name === 'open') && !(retainedCue && attr.name === 'data-loading-phase') && !next.hasAttribute(attr.name))current.removeAttribute(attr.name);
   for(const attr of next.attributes)if(current.getAttribute(attr.name)!==attr.value)current.setAttribute(attr.name,attr.value);
   if (persistent && (current.tagName === 'TEXTAREA' || current.tagName === 'INPUT' || current.isContentEditable)) return;
   const staticChildren = () => [...current.childNodes].filter(child => child !== retainedCue);

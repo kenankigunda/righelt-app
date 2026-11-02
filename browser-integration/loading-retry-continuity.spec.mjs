@@ -24,18 +24,21 @@ test('same pending loading key keeps its mounted cue and animation through a fre
  expect(before.hasAnimation).toBe(true);expect(before.playState).toBe('running');expect(before.pending).toBe(false);expect(before.time).not.toBeNull();
  await page.evaluate(async()=>{
   const {patchSectionContent}=await import('/apps/web/shell/dom-patch.js');
-  patchSectionContent(document.querySelector('#region'),window.retryFreshSkeleton);
+  const node=document.querySelector('#region'),old=window.retryLoadingIdentity;
+  patchSectionContent(node,window.retryFreshSkeleton);
+  window.retryImmediate={phase:node.dataset.loadingPhase,playState:old.clock.playState,pending:old.clock.pending,hasTime:old.clock.currentTime!==null,sameCue:node.querySelector(':scope > .loading-pieces')===old.cue};
  });
  // Let the actual loading observer reconcile the patched DOM; no animation
  // substitution, clock override or synthetic user event participates.
  await expect(region).toHaveAttribute('data-loading-phase','visible');
  const after=await region.evaluate(node=>{
   const old=window.retryLoadingIdentity,cue=node.querySelector(':scope > .loading-pieces');
-  return {sameRegion:node===old.node,sameKey:node.dataset.loadingKey===old.key,
+  return {immediate:window.retryImmediate,sameRegion:node===old.node,sameKey:node.dataset.loadingKey===old.key,
    sameCue:cue===old.cue,sameAnimation:cue?.querySelector('i').getAnimations()[0]===old.clock,
    oldClockTime:old.clock.currentTime,currentTime:cue?.querySelector('i').getAnimations()[0]?.currentTime};
  });
  await info.attach('same-key-loading-retry',{body:JSON.stringify({before,after}),contentType:'application/json'});
+ expect(after.immediate).toEqual({phase:'visible',playState:'running',pending:false,hasTime:true,sameCue:true});
  expect(after.sameRegion).toBe(true);expect(after.sameKey).toBe(true);
  expect(after.sameCue).toBe(true);expect(after.sameAnimation).toBe(true);
  expect(after.oldClockTime).not.toBeNull();
