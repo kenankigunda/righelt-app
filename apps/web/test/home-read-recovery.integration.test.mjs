@@ -22,10 +22,10 @@ const part = (start,end) => {
 const script = new vm.Script([
   'let accountContinuation=null,accountContinuationError=false,accountContinuationIncidentId=null;',
   part('let homeReadJob = null;','const hydrateRoute ='),
-  'let routeHydrated=false,routeSyncRequestId=0,inviteLoadState=null,resolvedInvite=null;',
+  'let routeHydrated=false,routeSyncRequestId=0,inviteLoadState=null,resolvedInvite=null,homeSectionResizeFrame=0;',
   part('const createHomeSectionState =','const getPersistedDebugFlyoutOpen ='),
   part('const getVisibleHomeSectionKeys =','const resetRouteWsStatus ='),
-  part('const loadHomeSectionServerPage =','const scheduleResponsiveHomeSectionPageSizes ='),
+  part('const loadHomeSectionServerPage =','const renderGesture ='),
   part('const routeReadKey =','const syncScenarioCatalog ='),
   part('const navigateTo =','let previousLayoutMode ='),
   part('const renderHomeStartButton =','const renderHomeGameSection ='),
@@ -38,7 +38,7 @@ const script = new vm.Script([
     seed:sections=>{homeSections=structuredClone(sections);},
     changePage:(key,page)=>{setHomeSection(key,{...getHomeSection(key),page});captureRouteRead();},
     recovery:()=>homeReadRecovery,pending:()=>accountContinuation,
-    active:()=>Boolean(homeReadJob)};`,
+    active:()=>Boolean(homeReadJob),scheduleResponsive:scheduleResponsiveHomeSectionPageSizes};`,
 ].join('\n'));
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return{promise,resolve,reject};};
 const flush=async()=>{for(let n=0;n<12;n++)await new Promise(setImmediate);};
@@ -85,7 +85,9 @@ async function fixture(t,{journalAdapter,seed=true}={}) {
     const oldURL=href,next=new URL(href);next.hash=value;hashWriteProbe?.({oldURL,newURL:next.href});href=next.href;
     if(oldURL!==href)hashEvents.push({oldURL,newURL:href});
   }};
-  const browser={location,scrollTo(){},addEventListener:(name,handler)=>listeners.set(name,handler)};
+  const frames=new Map();let frameId=0;
+  const browser={location,scrollTo(){},addEventListener:(name,handler)=>listeners.set(name,handler),
+    requestAnimationFrame:callback=>{const id=++frameId;frames.set(id,callback);return id;},cancelAnimationFrame:id=>frames.delete(id)};
   let generation=1,pageSize=1,columnCount=1,clicks=0,renders=0,refreshes=0;
   const context=vm.createContext({structuredClone,URL,URLSearchParams,SYNC_TIMING,createRouteHydration,
     hydrateRoute:createRouteHydration(),window:browser,currentRoute:parseRouteFromHash('#/'),transport,
@@ -120,6 +122,8 @@ async function fixture(t,{journalAdapter,seed=true}={}) {
     change(kind){if(kind==='account')generation++;if(kind==='route'){browser.location.hash='#/game/created';context.currentRoute={name:'game',gameId:'created'};}
       if(kind==='transport')context.transport={...transport};if(kind==='inputs')pageSize=2;h.capture();},
     setColumns:value=>{columnCount=value;h.capture();},
+    changeColumnsBeforeScheduling:value=>{columnCount=value;},
+    flushScheduledFrames:()=>{const pending=[...frames.values()];frames.clear();for(const callback of pending)callback();},
     setPageSize:value=>{pageSize=value;h.capture();},
   };
 }
@@ -467,4 +471,246 @@ test('a game URL cannot inherit stale local Home Debug visibility',async t=>{
   await f.h.sync();
   assert.equal(f.calls.length,0);assert.equal(JSON.stringify(f.h.sections()),before);
   assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+});
+
+
+test('responsive Home input retirement restarts the current local Debug read',async t=>{
+  const f=await fixture(t),held=[];
+  f.context.currentRoute={...f.context.currentRoute,debug:true};
+  const before=JSON.stringify(f.h.sections());
+  f.respond(request=>{const wait=deferred();held.push({...request,...wait});return wait.promise;});
+  const old=observe(f.h.sync());
+  try{
+    await flush();assert.equal(held.length,3);
+    f.changeColumnsBeforeScheduling(2);
+    f.h.scheduleResponsive();
+    assert.ok(held.every(request=>request.signal.aborted),'the actual capture retires every old request');
+    assert.equal(JSON.stringify(f.h.sections()),before,'old partial data remains private');
+    f.flushScheduledFrames();await flush();
+    const fresh=held.slice(3);
+    assert.equal(fresh.length,3,'responsive retirement must start a fresh complete current Home read');
+    assert.deepEqual(fresh.map(request=>request.section).sort(),['my','other','smoke']);
+    assert.ok(fresh.every(request=>request.debug==='1'&&!request.signal.aborted));
+    for(const request of fresh)request.resolve(Response.json(pageBody(request.section)));
+    await flush();
+    assert.deepEqual(f.h.sections().smoke.gameIds,['smoke-new']);
+    assert.ok(f.renders()>0,'the current local Debug view reaches publication');
+    assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+  }finally{
+    for(const request of held)request.resolve(Response.json(pageBody(request.section)));
+    await Promise.allSettled([old]);await flush();
+  }
+});
+
+
+test('responsive debounce owes one atomic full read with the latest measured columns',async t=>{
+  const f=await fixture(t),held=[];
+  f.context.currentRoute={...f.context.currentRoute,debug:true};
+  const before=JSON.stringify(f.h.sections());
+  f.respond(request=>{const wait=deferred();held.push({...request,...wait});return wait.promise;});
+  const old=observe(f.h.sync());
+  try{
+    await flush();assert.equal(held.length,3);
+    const initial=f.h.capture();
+    f.changeColumnsBeforeScheduling(2);f.h.scheduleResponsive();
+    f.changeColumnsBeforeScheduling(3);f.h.scheduleResponsive();
+    const latest=f.h.capture();
+    assert.equal(latest.epoch,initial.epoch,'input changes never advance route authority');
+    assert.equal(latest.homeVisit,initial.homeVisit);
+    assert.ok(held.every(request=>request.signal.aborted));
+    assert.equal(JSON.stringify(f.h.sections()),before);
+    f.flushScheduledFrames();await flush();
+    const fresh=held.slice(3);assert.equal(fresh.length,3);
+    assert.deepEqual(fresh.map(request=>request.section).sort(),['my','other','smoke']);
+    assert.ok(fresh.every(request=>request.debug==='1'&&!request.signal.aborted));
+    for(const request of held.slice(0,3))request.resolve(Response.json(pageBody(request.section,'obsolete')));
+    await flush();assert.equal(JSON.stringify(f.h.sections()),before);
+    const first=fresh.find(request=>request.section==='my');
+    first.resolve(Response.json(pageBody('my')));await flush();
+    assert.equal(JSON.stringify(f.h.sections()),before,'fresh partial batch remains private');
+    assert.equal(f.store.getHomeGameCard('my-new'),null);
+    for(const request of fresh)if(request!==first)request.resolve(Response.json(pageBody(request.section)));
+    await flush();
+    for(const key of ['my','other','smoke']){
+      assert.deepEqual(f.h.sections()[key].gameIds,[`${key}-new`]);
+      assert.equal(f.h.sections()[key].visibleColumnCount,3);
+    }
+    assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+    f.flushScheduledFrames();await flush();assert.equal(held.length,6,'debounce intent consumed once');
+  }finally{
+    for(const request of held)request.resolve(Response.json(pageBody(request.section)));
+    await Promise.allSettled([old]);await flush();
+  }
+});
+
+for(const changed of ['account','transport','route','visit'])test(`responsive pending replacement cannot cross a ${changed} change`,async t=>{
+  const f=await fixture(t),held=[];
+  f.context.currentRoute={...f.context.currentRoute,debug:true};
+  const before=JSON.stringify(f.h.sections());
+  f.respond(request=>{const wait=deferred();held.push({...request,...wait});return wait.promise;});
+  const old=observe(f.h.sync());
+  try{
+    await flush();assert.equal(held.length,3);
+    f.changeColumnsBeforeScheduling(2);f.h.scheduleResponsive();
+    assert.ok(held.every(request=>request.signal.aborted));
+    const pending=f.h.capture();
+    if(changed==='visit'){
+      // Real app navigation advances the visit synchronously, before the two
+      // queued hashchange events; no unrelated navigation read is launched.
+      f.h.navigate('#/game/created');f.h.navigate('#/');
+      assert.equal(f.context.window.location.hash,'#/');
+      const returned=f.h.capture();
+      assert.equal(returned.epoch,pending.epoch,'no intermediate authority capture');
+      assert.notEqual(returned.homeVisit,pending.homeVisit,'identical URL is a new visit');
+    }else f.change(changed);
+    f.flushScheduledFrames();await flush();
+    assert.equal(held.length,3,'stale intent must not request a replacement');
+    assert.equal(f.h.active(),false);
+    for(const request of held)request.resolve(Response.json(pageBody(request.section,'obsolete')));
+    await Promise.allSettled([old]);await flush();
+    assert.equal(JSON.stringify(f.h.sections()),before);
+    assert.equal(f.store.getHomeGameCard('obsolete'),null);
+    assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+  }finally{
+    for(const request of held)request.resolve(Response.json(pageBody(request.section)));
+    await Promise.allSettled([old]);await flush();
+  }
+});
+
+test('a newer current full Home read survives an older pending responsive intent',async t=>{
+  const f=await fixture(t),held=[];
+  f.context.currentRoute={...f.context.currentRoute,debug:true};
+  f.respond(request=>{const wait=deferred();held.push({...request,...wait});return wait.promise;});
+  const old=observe(f.h.sync());let newer;
+  try{
+    await flush();assert.equal(held.length,3);
+    f.changeColumnsBeforeScheduling(2);f.h.scheduleResponsive();
+    assert.ok(held.every(request=>request.signal.aborted));
+    newer=observe(f.h.sync());await flush();
+    const fresh=held.slice(3);assert.equal(fresh.length,3);assert.equal(f.h.active(),true);
+    f.flushScheduledFrames();await flush();
+    assert.equal(held.length,6,'no duplicate or replacement of the newer job');
+    assert.equal(f.h.active(),true);assert.ok(fresh.every(request=>!request.signal.aborted));
+    for(const request of fresh)request.resolve(Response.json(pageBody(request.section)));
+    await newer;assert.deepEqual(f.h.sections().smoke.gameIds,['smoke-new']);
+    assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+  }finally{
+    for(const request of held)request.resolve(Response.json(pageBody(request.section)));
+    await Promise.allSettled([old,newer]);await flush();
+  }
+});
+
+test('responsive pagination without an active full read keeps independent section publication',async t=>{
+  const f=await fixture(t),held=deferred();
+  const seed={my:section('My games','my-cached'),other:section('Other games','other-cached'),smoke:section('Deploy smoke player','smoke-cached')};
+  seed.my.serverPageGameIdsByPage={};seed.other.serverPageGameIdsByPage={};f.h.seed(seed);
+  f.setPageSize(2);
+  f.respond(({section})=>section==='other'?held.promise:Response.json(pageBody(section,`${section}-standalone`,1)));
+  try{
+    assert.equal(f.h.active(),false);f.h.scheduleResponsive();f.flushScheduledFrames();await flush();
+    assert.deepEqual(f.calls.map(request=>request.section),['my','other']);
+    assert.deepEqual(f.h.sections().my.gameIds,['my-standalone']);
+    assert.deepEqual(f.h.sections().other.gameIds,['other-cached']);
+    assert.equal(f.h.active(),false,'standalone pagination does not become a full batch');
+    assert.notEqual(f.store.getHomeGameCard('my-standalone'),null);
+    held.resolve(Response.json(pageBody('other','other-standalone',1)));await flush();
+    assert.deepEqual(f.h.sections().other.gameIds,['other-standalone']);
+    assert.equal(f.h.sections().my.visiblePageSize,2);assert.equal(f.h.sections().other.visiblePageSize,2);
+    assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+  }finally{held.resolve(Response.json(pageBody('other','other-standalone',1)));await flush();}
+});
+
+
+test('a newer completed Home read fulfills the pending responsive obligation through RAF',async t=>{
+  const f=await fixture(t),held=[];
+  f.context.currentRoute={...f.context.currentRoute,debug:true};
+  f.respond(request=>{const wait=deferred();held.push({...request,...wait});return wait.promise;});
+  const old=observe(f.h.sync());let newer;
+  try{
+    await flush();assert.equal(held.length,3);
+    f.changeColumnsBeforeScheduling(2);f.h.scheduleResponsive();
+    assert.ok(held.every(request=>request.signal.aborted));
+    newer=observe(f.h.sync());await flush();
+    const fresh=held.slice(3);assert.equal(fresh.length,3);
+    assert.deepEqual(fresh.map(request=>request.section).sort(),['my','other','smoke']);
+    assert.ok(fresh.every(request=>request.debug==='1'&&!request.signal.aborted));
+    for(const request of fresh)request.resolve(Response.json(pageBody(request.section)));
+    await newer;await flush();assert.equal(f.h.active(),false);
+    for(const key of ['my','other','smoke'])assert.deepEqual(f.h.sections()[key].gameIds,[`${key}-new`]);
+    const committed=JSON.stringify(f.h.sections()),events=f.events.length,renders=f.renders();
+    // A same-input debounce after completion must preserve fulfilled status.
+    f.h.scheduleResponsive();f.flushScheduledFrames();await flush();
+    assert.equal(held.length,6,'old3 + newer3 only: no third full read');
+    assert.equal(f.h.active(),false);
+    assert.equal(JSON.stringify(f.h.sections()),committed);
+    assert.equal(f.events.length,events);assert.equal(f.renders(),renders,'no standalone pagination fallback');
+    assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+  }finally{
+    for(const request of held)request.resolve(Response.json(pageBody(request.section,'obsolete')));
+    await Promise.allSettled([old,newer]);await flush();
+  }
+});
+
+for(const outcome of ['terminal','exhausted'])test(`a newer ${outcome} Home failure fulfills resize intent without an extra automatic read`,async t=>{
+  const f=await fixture(t),held=[];
+  f.context.currentRoute={...f.context.currentRoute,debug:true};
+  t.mock.timers.enable({apis:['setTimeout']});
+  const before=JSON.stringify(f.h.sections());
+  f.respond(request=>{const wait=deferred();held.push({...request,...wait});return wait.promise;});
+  const old=observe(f.h.sync());let newer;
+  try{
+    await flush();assert.equal(f.calls.length,3);
+    f.changeColumnsBeforeScheduling(2);f.h.scheduleResponsive();
+    assert.ok(held.every(request=>request.signal.aborted));
+    f.respond(()=>outcome==='terminal'
+      ? Response.json({error:'invalid_credentials'},{status:401})
+      : Response.json({error:'temporary_unavailable'},{status:503}));
+    newer=observe(f.h.sync());
+    const failed=assert.rejects(newer,outcome==='terminal'?{code:'invalid_credentials'}:/temporary_unavailable/);
+    await flush();assert.equal(f.calls.length,6,'newer first attempt follows old3');
+    if(outcome==='exhausted'){t.mock.timers.tick(500);await flush();}
+    await failed;assert.equal(f.h.active(),false);
+    const expected=outcome==='terminal'?6:9;assert.equal(f.calls.length,expected);
+    assert.ok(f.h.recovery().error);assert.equal(JSON.stringify(f.h.sections()),before);
+    const renders=f.renders(),events=f.events.length;
+    f.flushScheduledFrames();await flush();
+    assert.equal(f.calls.length,expected,'RAF must not grant another full read or retry cycle');
+    assert.equal(f.h.active(),false);assert.equal(JSON.stringify(f.h.sections()),before);
+    assert.equal(f.events.length,events);assert.equal(f.renders(),renders,'no standalone partial fallback');
+    t.mock.timers.tick(50000);await flush();assert.equal(f.calls.length,expected);
+    assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+  }finally{
+    for(const request of held)request.resolve(Response.json(pageBody(request.section,'obsolete')));
+    await Promise.allSettled([old,newer]);await flush();
+  }
+});
+
+test('fresh input retirement resets a fulfilled responsive obligation for the newer job',async t=>{
+  const f=await fixture(t),held=[];
+  f.context.currentRoute={...f.context.currentRoute,debug:true};
+  const before=JSON.stringify(f.h.sections());
+  f.respond(request=>{const wait=deferred();held.push({...request,...wait});return wait.promise;});
+  const old=observe(f.h.sync());let newer;
+  try{
+    await flush();assert.equal(held.length,3);
+    f.changeColumnsBeforeScheduling(2);f.h.scheduleResponsive();
+    newer=observe(f.h.sync());await flush();assert.equal(held.length,6);
+    f.changeColumnsBeforeScheduling(3);f.h.scheduleResponsive();
+    assert.ok(held.every(request=>request.signal.aborted));
+    assert.equal(JSON.stringify(f.h.sections()),before);
+    f.flushScheduledFrames();await flush();
+    const fresh=held.slice(6);assert.equal(fresh.length,3,'latest retired job owes its own replacement');
+    assert.ok(fresh.every(request=>request.debug==='1'&&!request.signal.aborted));
+    for(const request of fresh)request.resolve(Response.json(pageBody(request.section)));
+    await flush();
+    for(const key of ['my','other','smoke']){
+      assert.deepEqual(f.h.sections()[key].gameIds,[`${key}-new`]);
+      assert.equal(f.h.sections()[key].visibleColumnCount,3);
+    }
+    f.flushScheduledFrames();await flush();assert.equal(held.length,9);
+    assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+  }finally{
+    for(const request of held)request.resolve(Response.json(pageBody(request.section,'obsolete')));
+    await Promise.allSettled([old,newer]);await flush();
+  }
 });

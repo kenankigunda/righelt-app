@@ -209,6 +209,7 @@ let accountContinuation = null;
 let accountContinuationError = false;
 let accountContinuationIncidentId = null;
 let homeReadJob = null;
+let pendingResponsiveHomeRead = null;
 let homeReadRecovery = null;
 let homeReadChoice = null;
 let homeReadVisit = 0;
@@ -3724,6 +3725,12 @@ const homeReadMayRetry = error => {
     || [500, 502, 503, 504].includes(error?.status);
 };
 const syncHomeSections = async (read = captureRouteRead(), isActive = () => true) => {
+  if (pendingResponsiveHomeRead) {
+    // Starting a newer full read fulfills the old resize obligation, regardless
+    // of its eventual success or failure. Retain the marker until RAF consumes it.
+    pendingResponsiveHomeRead = sameHomeReadScope(pendingResponsiveHomeRead.read, read)
+      ? { ...pendingResponsiveHomeRead, read, fulfilledByNewer: true } : null;
+  }
   homeReadJob?.retire();
   let retired = false, batch = null, delayTimer = null, rejectDelay = null;
   const job = {
@@ -3805,11 +3812,31 @@ const syncHomeSections = async (read = captureRouteRead(), isActive = () => true
 };
 
 const scheduleResponsiveHomeSectionPageSizes = () => {
-  captureRouteRead(); // Retire an in-flight Home read before a responsive input change can publish.
+  const previousJob = homeReadJob;
+  const read = captureRouteRead(); // Retire before a responsive input change can publish.
+  // Only input retirement of this exact full read owes an atomic replacement.
+  // An authority/route/visit change cannot transfer that obligation to a new owner.
+  if (previousJob && homeReadJob === null && previousJob.read.inputs !== read.inputs
+    && sameHomeReadScope(previousJob.read, read)) {
+    pendingResponsiveHomeRead = { job: previousJob, read, fulfilledByNewer: false };
+  } else if (pendingResponsiveHomeRead) {
+    pendingResponsiveHomeRead = sameHomeReadScope(pendingResponsiveHomeRead.read, read)
+      ? { ...pendingResponsiveHomeRead, read } : null;
+  }
   window.cancelAnimationFrame(homeSectionResizeFrame);
   homeSectionResizeFrame = window.requestAnimationFrame(() => {
     homeSectionResizeFrame = 0;
     void (async () => {
+      const replacement = pendingResponsiveHomeRead;
+      pendingResponsiveHomeRead = null; // Consume at most once, including stale intents.
+      if (replacement) {
+        if (!routeReadIsCurrent(replacement.read)) return;
+        // Fulfillment survives completion or terminal failure before this frame.
+        // Do not start a third batch or fall through to standalone pagination.
+        if (replacement.fulfilledByNewer || homeReadJob) return;
+        startRouteSync({ renderStart: false });
+        return;
+      }
       if (currentRoute.name !== "home") {
         return;
       }
@@ -4129,6 +4156,7 @@ const captureRouteRead = () => {
     owner: transport,
     route,
     homeDebug,
+    homeVisit: homeReadVisit,
     inputs: JSON.stringify([homeReadVisit, homeDebug, getVisibleHomeSectionKeys({ debug: homeDebug }).map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])]),
   };
   read.epoch = hydrateRoute.observe(read);
@@ -4140,6 +4168,11 @@ const captureRouteRead = () => {
 const sameRouteRead = (read, current) => read.generation === current.generation && read.routeKey === current.routeKey
   && read.owner === current.owner && read.epoch === current.epoch
   && (read.route.name !== "home" || read.inputs === current.inputs);
+// Compare only input changes through the same authority primitive. Home visit
+// is explicit because returning to an identical URL must not revive old work.
+const sameHomeReadScope = (read, current) => read.route.name === "home" && current.route.name === "home"
+  && read.homeVisit === current.homeVisit
+  && sameRouteRead({ ...read, inputs: current.inputs }, current);
 const routeReadIsCurrent = read => sameRouteRead(read, captureRouteRead());
 const assertCurrentRouteRead = (read, isActive = () => true) => {
   if (!routeReadIsCurrent(read) || !isActive()) throw Object.assign(new Error("session_changed"), { code: "session_changed" });
