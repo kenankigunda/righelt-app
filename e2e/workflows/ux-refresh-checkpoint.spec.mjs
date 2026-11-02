@@ -203,25 +203,47 @@ test('copy feedback preserves focus and collapses its space when empty',async({p
  await expect(page.getByText('Commander',{exact:true})).toBeVisible();
 });
 
-test('storybook turn animates artwork while story copy stays fixed',async({page})=>{
+test('storybook artwork draws back then slides while story copy stays fixed',async({page})=>{
  await page.goto('/');await page.locator('button[data-opponent="babs"]').click();
  const modal=page.getByRole('dialog',{name:'Babs',exact:true});await expect(modal).toBeVisible();
  await waitForOverlayEntry(modal);
  const copy=modal.locator('.opponent-story-copy');const before=await copy.boundingBox();
- // Record the real animation when it starts: CI may deliver the next
- // browser command after the 520ms animation has already finished.
- await modal.locator('.story-turn-shade').evaluate(el => {
-   const animate = el.animate.bind(el);
-   el.animate = (...args) => {
-     const animation = animate(...args);
-     el.dataset.observedAnimations = String(el.getAnimations().length);
-     return animation;
-   };
+ // Hold the actual owned image animations. This is geometry/keyframe proof,
+ // not a wall-clock performance measurement or a synthetic animation replica.
+ await modal.evaluate(el=>{
+   window.observedStoryAnimations=[];
+   for(const image of el.querySelectorAll('[data-story-image]')){
+     const animate=image.animate.bind(image);
+     image.animate=(...args)=>{
+       const animation=animate(...args);animation.pause();
+       window.observedStoryAnimations.push(animation);return animation;
+     };
+   }
  });
- await modal.getByRole('button',{name:'Next story image'}).click();
- await expect(modal.locator('[data-story-image]').nth(1)).toHaveAttribute('data-active','true');
- expect(Number(await modal.locator('.story-turn-shade').getAttribute('data-observed-animations'))).toBeGreaterThan(0);
- expect((await copy.boundingBox()).y).toBeCloseTo(before.y,0);
+ for(const [name,index,direction] of [['Next story image',1,1],['Previous story image',0,-1]]){
+   await modal.getByRole('button',{name}).click();
+   await expect(modal.locator('[data-story-image]').nth(index)).toHaveAttribute('data-active','true');
+   const held=await modal.evaluate(async el=>{
+     const animations=window.observedStoryAnimations;
+     await Promise.all(animations.map(animation=>animation.ready));
+     for(const animation of animations)animation.currentTime=animation.effect.getTiming().duration*.2;
+     const frames=animations.map(animation=>({duration:animation.effect.getTiming().duration,frames:animation.effect.getKeyframes().map(frame=>({transform:frame.transform,opacity:frame.opacity,offset:frame.offset}))}));
+     return {frames,shadeCount:el.querySelectorAll('.story-turn-shade').length};
+   });
+   expect(held.frames).toHaveLength(2);expect(held.shadeCount).toBe(0);
+   for(const animation of held.frames){expect(animation.duration).toBe(760);for(const frame of animation.frames)expect(Number(frame.opacity)).toBe(1);}
+   expect(held.frames[0].frames[1].transform).toBe(`translateX(${6*direction}%)`);
+   expect(held.frames[0].frames.at(-1).transform).toBe(`translateX(${-112*direction}%)`);
+   expect(held.frames[1].frames[1].transform).toBe(`translateX(${118*direction}%)`);
+   const current=await copy.boundingBox();
+   for(const key of ['x','y','width','height'])expect(current[key]).toBeCloseTo(before[key],0);
+   await modal.evaluate(async()=>{
+     const animations=window.observedStoryAnimations;window.observedStoryAnimations=[];
+     for(const animation of animations)animation.play();
+     await Promise.all(animations.map(animation=>animation.finished));
+   });
+   await expect.poll(()=>modal.locator('[data-story-image]').evaluateAll(images=>images.flatMap(image=>image.getAnimations()).length)).toBe(0);
+ }
 });
 
 for(const outcome of ['success','failure'])test(`Players restores the selected invitation role after delayed clipboard ${outcome}`,async({page})=>{

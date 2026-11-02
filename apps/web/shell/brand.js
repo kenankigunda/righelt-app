@@ -34,6 +34,8 @@ export const renderWordmark = ({ player = "red", cell = 0 } = {}) => `
     <path data-brand-cell="0" d="M525 81L562 44L599 81L562 118Z"/>
     <path data-brand-cell="1" d="M599 81L636 44L673 81L636 118Z"/>
     <path data-brand-cell="2" d="M673 81L710 44L747 81L710 118Z"/>
+    <path class="brand-cell-depth" d="M527 81L562 46L597 81M601 81L636 46L671 81M675 81L710 46L745 81"/>
+    <path class="brand-cell-light" d="M597 81L562 116L527 81M671 81L636 116L601 81M745 81L710 116L675 81"/>
     <circle class="brand-piece" cx="562" cy="81" r="17"/>
   </g>
 </svg>`;
@@ -81,42 +83,4 @@ export const createBrandController = ({ documentObject = document, windowObject 
       motion.removeEventListener("change", reconcile);
     },
   };
-};
-
-// The decorative grid uses the actual motif geometry rather than an unrelated CSS pitch.
-export const createBrandGrid = ({ documentObject = document, windowObject = window } = {}) => {
-  const ns='http://www.w3.org/2000/svg';
-  const grid=documentObject.createElementNS(ns,'svg');grid.classList.add('brand-grid');grid.setAttribute('aria-hidden','true');
-  grid.innerHTML='<defs><pattern id="brand-background-grid" patternUnits="userSpaceOnUse"><path fill="none" stroke="#252b2d" stroke-opacity=".14"/></pattern></defs><rect width="100%" height="100%" fill="url(#brand-background-grid)"/>';
-  documentObject.body.prepend(grid);
-  let frame=null, previousGeometry=null;
-  const setAttribute=(element,name,value)=>{
-    const next=String(value);
-    if(element.getAttribute(name)!==next)element.setAttribute(name,next);
-  };
-  const setStyle=(name,value)=>{
-    if(grid.style.getPropertyValue(name)!==value)grid.style.setProperty(name,value);
-  };
-  const update=()=>{
-    frame=null;
-    const logo=documentObject.querySelector('[data-brand-wordmark]');
-    if(!logo)return;
-    const r=logo.getBoundingClientRect(), geometry=[r.left,r.top,r.width,r.height];
-    // App subtrees update frequently without moving the logo. Rewriting an SVG
-    // pattern can invalidate its full-screen raster even when values are equal.
-    if(previousGeometry?.every((value,index)=>value===geometry[index]))return;
-    previousGeometry=geometry;
-    setStyle('--grid-origin-x',`${r.left+r.width*.72}px`);
-    setStyle('--grid-origin-y',`${Math.max(0,r.top+r.height*.5)}px`);
-    const scale=r.width/755, pitch=74*scale, half=pitch/2;
-    const pattern=grid.querySelector('pattern'), path=pattern.querySelector('path');
-    setAttribute(pattern,'width',pitch);setAttribute(pattern,'height',pitch);
-    setAttribute(pattern,'x',r.left+525*scale);setAttribute(pattern,'y',r.top+44*scale);
-    setAttribute(path,'d',`M0 ${half}L${half} 0L${pitch} ${half}L${half} ${pitch}Z`);
-    setAttribute(path,'stroke-width',Math.max(.65,2*scale));
-  };
-  const schedule=()=>{if(frame===null)frame=windowObject.requestAnimationFrame(update);};
-  const observer=new windowObject.MutationObserver(schedule);observer.observe(documentObject.getElementById('app'),{childList:true,subtree:true});
-  windowObject.addEventListener('resize',schedule);windowObject.addEventListener('scroll',schedule,{passive:true});schedule();
-  return ()=>{observer.disconnect();windowObject.removeEventListener('resize',schedule);windowObject.removeEventListener('scroll',schedule);if(frame!==null)windowObject.cancelAnimationFrame(frame);grid.remove();};
 };

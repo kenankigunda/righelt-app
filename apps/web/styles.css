@@ -3,8 +3,8 @@
 }
 
 :root {
-  --bg: #f8f4ec;
-  --paper: #fffdf8;
+  --bg: #f7f8f8;
+  --paper: #fdfefe;
   --ink: #172a2f;
   --muted: #4f6368;
   --line: #d5d1c6;
@@ -21,10 +21,7 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: "Avenir Next", "Segoe UI", sans-serif;
-  background:
-    radial-gradient(circle at 20% 10%, #fdf5df 0%, transparent 30%),
-    radial-gradient(circle at 85% 90%, #e8f0ff 0%, transparent 34%),
-    var(--bg);
+  background: var(--bg);
   color: var(--ink);
 }
 
@@ -98,7 +95,7 @@ body {
 }
 
 .board-preview-coordinate-chip {
-  border: 1px solid #cac7bd;
+  border: 1px solid #c7cecf;
   background: #fbf8f0;
   color: var(--ink);
 }
@@ -370,7 +367,7 @@ button {
 }
 
 .cell {
-  --cell-fill: #fbf8f0;
+  --cell-fill: #f8fafa;
   position: relative;
   display: grid;
   place-items: center;
@@ -380,6 +377,8 @@ button {
   border: 1px solid #cac7bd;
   color: var(--ink);
   background: var(--cell-fill);
+  background-image: var(--marble-face, none);
+  box-shadow: inset 1px 2px 3px rgb(44 57 66 / 17%), inset -1px -1px 0 rgb(255 255 255 / 90%);
 }
 
 /* Do not override border on source/target: they use border + inset shadow as one ring; changing

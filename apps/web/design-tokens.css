@@ -1,10 +1,10 @@
 :root {
-  --surface-foundation: #f5f2e9;
-  --surface-raised: #fffdf6;
+  --surface-foundation: #f7f8f8;
+  --surface-raised: #fdfefe;
   --text-primary: #252b2d;
   --text-secondary: #5e6465;
   --warning: #a5630f;
-  --divider: #d4d1c7;
+  --divider: #ccd1d3;
   --surface-hover-quiet: rgb(37 43 45 / 6%);
   --player-red: #b42f36;
   --player-blue: #245e9b;
@@ -79,6 +79,9 @@ body {
 .brand-dot-outline { fill: var(--paper); stroke: var(--ink); stroke-width: 2.5px; }
 .brand-current { fill: var(--brand-current); }
 .brand-motif path { fill: none; stroke: #858b98; stroke-width: 2px; }
+.brand-motif [data-brand-cell] {fill:#f1f5f6;stroke:#a6b0b9;}
+.brand-motif .brand-cell-depth {stroke:#8e9ba6;stroke-width:1.4px;stroke-opacity:.6;}
+.brand-motif .brand-cell-light {stroke:#fff;stroke-width:1.4px;}
 .brand-wordmark[data-cell="0"] [data-brand-cell="0"],
 .brand-wordmark[data-cell="1"] [data-brand-cell="1"],
 .brand-wordmark[data-cell="2"] [data-brand-cell="2"] { stroke: var(--brand-current); }

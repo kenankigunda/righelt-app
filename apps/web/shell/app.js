@@ -59,7 +59,7 @@ import { createAccountDialog } from './account-dialog.js';
 import { renderPieceSymbol } from '../piece-symbols.js';
 import { invitationOptions, renderInvitationSurface, createHostInvitation, hostInvitationSettled } from './invitations.js';
 import { createIntroductionPreferences, createOpponentSession } from './opponent-session.js';
-import { renderWordmark, createBrandController, createBrandGrid, resolveActionAffiliation } from './brand.js';
+import { renderWordmark, createBrandController, resolveActionAffiliation } from './brand.js';
 import { icon, soundToggle, headerActionContent } from './ui.js';
 import { createGameSound } from './sound.js';
 import { createModal } from './modal.js';
@@ -71,6 +71,7 @@ import { patchNotificationTree, patchNotificationHtml, replaceMainPreservingHead
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEngineBoardAdapter, createInitialBoardSnapshot, listBoardLegalActions } from "../board-adapters/engine-board-adapter.js";
 import { createMiniBoardPreview, syncMiniBoardPreviews } from "../board/mini-board-preview.js";
+import { collectMountedMiniPreviewPayloads } from "./mini-preview-payloads.js";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
@@ -219,7 +220,6 @@ const accountDialog = createAccountDialog({ controller: account, onSound:kind=>g
 });
 const gameSound = createGameSound({ storage, getIdentityId:()=>transport.getIdentityId() });
 const brand = createBrandController();
-createBrandGrid();
 document.addEventListener('pointerdown',()=>{gameSound.gesture();gameSound.cancelPreview();},{passive:true});
 document.addEventListener('keydown',()=>gameSound.gesture());
 document.addEventListener('visibilitychange',()=>gameSound.activityChanged());
@@ -2867,32 +2867,10 @@ const reconcileMiniBoardPreviews = () => {
   if (!(appEl instanceof HTMLElement)) {
     return;
   }
-  const previews = Array.from(appEl.querySelectorAll("[data-mini-board-preview]"))
-    .map((rootEl) => {
-      if (!(rootEl instanceof HTMLElement)) {
-        return null;
-      }
-      const previewId = rootEl.getAttribute("data-preview-id");
-      const payload = previewId ? renderedMiniBoardPreviewPayloads.get(previewId) : null;
-      if (!payload) {
-        return null;
-      }
-      return {
-        rootEl,
-        snapshot: payload.snapshot,
-        selection: payload.selection,
-        overlay: payload.overlay,
-        legalActions: payload.legalActions,
-        selectedPieceId: payload.selectedPieceId,
-        selectedPieceMoves: payload.selectedPieceMoves,
-        selectedPieceMovePreviews: payload.selectedPieceMovePreviews,
-        currentActionType: payload.currentActionType,
-        selectedPieceOverlayPhase: payload.selectedPieceOverlayPhase,
-        previewKey: payload.previewKey,
-        sizeVariant: payload.sizeVariant,
-      };
-    })
-    .filter(Boolean);
+  const previews = collectMountedMiniPreviewPayloads({
+    appEl,
+    payloads: renderedMiniBoardPreviewPayloads,
+  });
 
   syncMiniBoardPreviews({
     previews,
