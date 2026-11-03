@@ -1,3 +1,4 @@
+import {installCaseReadiness,finishCaseReadiness,attachNodeReadiness} from '../support/readiness-diagnostics.mjs';
 import {installBoardAdmissionDiagnostics} from '../support/board-admission-diagnostics.mjs';
 import {test as base,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
@@ -12,7 +13,11 @@ import {COMPUTER_UI_FRAME_MEASURE} from '../../apps/web/shell/frame-presentation
 
 // Worker/bootstrap preparation has an explicit fixture budget. The receipt and
 // native Follow journeys retain their complete existing 60-second body budget.
-const test=base.extend({acceptedRetreat:[async({page,baseURL},use)=>{
+const test=base.extend({readinessMeasurement:[async({context,baseURL},use,info)=>{
+ if(info.title!==computerFollowWorkflow){await use();return;}
+ const dispose=await installCaseReadiness(context,baseURL);
+ try{await use();}finally{await finishCaseReadiness(dispose,info);}
+},{auto:true}],acceptedRetreat:[async({page,baseURL},use)=>{
  await use(await acceptedComputerRetreat(page,baseURL));
 },{timeout:60000}]});
 
@@ -21,15 +26,18 @@ const computerRetreatWorkflow='the real computer defender records only the compl
 const computerFollowWorkflow='the real computer defender leaves a completion-preserving native Follow';
 // Read existing recorder and DOM only. Never drive recovery or submit work.
 async function readRetreatDiagnostics(measurementName){
+   let readinessPage;
+   try{readinessPage=globalThis.__righeltReadinessFreeze?.();}catch{readinessPage={incomplete:true,reason:'snapshot-unavailable'};}
+
    const match=location.hash.match(/^#\/game\/([^?#/]+)/);
-   if(!match)return{available:false,reason:'current-game-id-unavailable'};
+   if(!match)return{available:false,reason:'current-game-id-unavailable',...(readinessPage?{readinessPage}:{})};
    const gameId=decodeURIComponent(match[1]);
    // Live transport already imports this exact module. Read its current
    // in-memory incidents rather than waiting for localStorage persistence.
    const {issueDiagnostics}=await import('/shell/issue-diagnostics.js');
    const fields=['stage','code','operation','receipt','pendingCount','gameplayRevision','appliedEventSeq','advertisedEventSeq','at','generation','elapsedMs','deadlineMs'];
    const pick=value=>Object.fromEntries(fields.filter(key=>Object.hasOwn(value??{},key)).map(key=>[key,value[key]]));
-   return{available:true,gameId,journal:window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,historyRows:document.querySelectorAll('[data-testid="history-move-item"]').length,reports:issueDiagnostics.list().filter(report=>report.schemaVersion===1&&report.key===`recovery:${gameId}`).map(report=>({schemaVersion:1,startedAt:report.startedAt,resolvedAt:report.resolvedAt,initial:pick(report.initial),events:report.events.map(pick)}))};
+   return{available:true,gameId,...(readinessPage?{readinessPage}:{}),journal:window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,historyRows:document.querySelectorAll('[data-testid="history-move-item"]').length,reports:issueDiagnostics.list().filter(report=>report.schemaVersion===1&&report.key===`recovery:${gameId}`).map(report=>({schemaVersion:1,startedAt:report.startedAt,resolvedAt:report.resolvedAt,initial:pick(report.initial),events:report.events.map(pick)}))};
 }
 
 // Capture identity is explicitly minimal-artifact. Search and command
@@ -48,11 +56,15 @@ test.afterEach(async({page},info)=>{
  if(info.status===info.expectedStatus){
   let timer;
   try{
-   const journal=await Promise.race([page.evaluate(measurementName=>({...window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null}),COMPUTER_UI_FRAME_MEASURE),new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
+   const journal=await Promise.race([page.evaluate(measurementName=>{
+      let readinessPage;
+      try{readinessPage=globalThis.__righeltReadinessFreeze?.();}catch{readinessPage={incomplete:true,reason:'snapshot-unavailable'};}
+      return {...window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,...(readinessPage?{readinessPage}:{})};
+    },COMPUTER_UI_FRAME_MEASURE),new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
    const path=info.outputPath('native-journal-lifecycle.json');
-   await writeFile(path,JSON.stringify(journal??{unavailable:'not-installed'}));
+   await writeFile(path,JSON.stringify(attachNodeReadiness(journal??{unavailable:'not-installed'})));
    await info.attach('native-journal-lifecycle',{contentType:'application/json',path});
-  }catch{console.warn('[retreat-diagnostic] Journal lifecycle attachment unavailable.');}
+  }catch{console.warn('[retreat-diagnostic] Journal lifecycle attachment unavailable.');if(info.title===computerFollowWorkflow)console.warn('[readiness] incomplete: first-read-or-persistence-unavailable');}
   finally{clearTimeout(timer);}
   return;
  }
@@ -62,11 +74,12 @@ test.afterEach(async({page},info)=>{
   snapshot=page.isClosed()?{available:false,reason:'page-closed'}:await Promise.race([page.evaluate(readRetreatDiagnostics,COMPUTER_UI_FRAME_MEASURE),new Promise(resolve=>{diagnosticTimer=setTimeout(()=>resolve({available:false,reason:'diagnostic-read-timeout'}),2000);})]);
  }catch(error){snapshot={available:false,reason:'diagnostic-read-unavailable',errorKind:String(error?.name??'Error').slice(0,80)};}
  finally{clearTimeout(diagnosticTimer);}
+ snapshot=attachNodeReadiness(snapshot);
  try{
   const path=info.outputPath('local-recovery-incidents.json');await writeFile(path,JSON.stringify(snapshot));
   await info.attach('local-recovery-incidents',{contentType:'application/json',path});
  }
- catch{console.warn('[retreat-diagnostic] Diagnostic attachment unavailable; original test failure retained.');}
+ catch{console.warn('[retreat-diagnostic] Diagnostic attachment unavailable; original test failure retained.');if(info.title===computerFollowWorkflow)console.warn('[readiness] incomplete: persistence-unavailable');}
  if(![computerRetreatWorkflow,computerFollowWorkflow].includes(info.title)||!snapshot?.available)return;
  const started=Date.now(),maximumDrainMs=20000,samples=[];
  while(Date.now()-started<maximumDrainMs&&!page.isClosed()){

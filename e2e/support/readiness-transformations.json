@@ -1,0 +1,152 @@
+{
+  "/board/runtime/board-runtime.js": {
+    "file": "apps/web/board/runtime/board-runtime.js",
+    "sourceSha256": "f1c5662f8fa7b033c2c911218daadd78ae3a35a3eaa78021a45efdaa13f8d9c5",
+    "outputSha256": "505da8277b514eeae6045de7c9b4a974a35922e87f29389fd3c1ecd2699b08fd",
+    "operations": [
+      {
+        "start": 20471,
+        "end": 20471,
+        "before": "",
+        "after": "let readinessFinish,readinessCompleted=false;\n    try{readinessFinish=globalThis.__righeltReadinessBegin?.('render-board');}catch{}\n    try{\n    ",
+        "anchor": " (!state || !mounted) {\n      return;\n    }\n    syncRushGuidance();\n    const effectiveMoves = g",
+        "anchorCount": 1
+      },
+      {
+        "start": 21723,
+        "end": 21723,
+        "before": "",
+        "after": "\n    readinessCompleted=true;\n    }finally{try{readinessFinish?.(readinessCompleted);}catch{}}",
+        "anchor": "querySelector('.group-strength-badge')),\n    });\n  };\n\n  const disabledInlineActions = new Set()",
+        "anchorCount": 1
+      }
+    ]
+  },
+  "/board/sequence-status-preview.js": {
+    "file": "apps/web/board/sequence-status-preview.js",
+    "sourceSha256": "87a3a3be34ecfc4c8ef808fdb273e26f051bcfd8a0326f9355395e0616e30b39",
+    "outputSha256": "207330f34141da058c9534d6fd2f728d7725aeff3d7b0fe52d34375aaaba5d7b",
+    "operations": [
+      {
+        "start": 726,
+        "end": 730,
+        "before": "cons",
+        "after": "le",
+        "anchor": "mplete authoritative inputs, not selection.\n    const key=JSON.stringify(snapshot);\n    if (key===pr",
+        "anchorCount": 1
+      },
+      {
+        "start": 732,
+        "end": 732,
+        "before": "",
+        "after": "key,readinessKeyFinish,readinessKeyComplete=false;\n    try{readinessKeyFinish=globalThis.__righeltReadinessBegin?.('sequence-key');}catch{}\n    try{",
+        "anchor": " authoritative inputs, not selection.\n    const key=JSON.stringify(snapshot);\n    if (key===prev",
+        "anchorCount": 1
+      },
+      {
+        "start": 761,
+        "end": 761,
+        "before": "",
+        "after": "readinessKeyComplete=true;}",
+        "anchor": "lection.\n    const key=JSON.stringify(snapshot);\n    if (key===previousKey) return previousProje",
+        "anchorCount": 1
+      },
+      {
+        "start": 766,
+        "end": 766,
+        "before": "",
+        "after": "f",
+        "anchor": "on.\n    const key=JSON.stringify(snapshot);\n    if (key===previousKey) return previousProjection",
+        "anchorCount": 1
+      },
+      {
+        "start": 767,
+        "end": 768,
+        "before": "f",
+        "after": "nally{try{readinessKeyFinish?.(readinessKeyComplete);}catch{}}\n",
+        "anchor": "n.\n    const key=JSON.stringify(snapshot);\n    if (key===previousKey) return previousProjection;\n",
+        "anchorCount": 1
+      },
+      {
+        "start": 769,
+        "end": 770,
+        "before": "(",
+        "after": "   const readinessCacheHit=",
+        "anchor": "\n    const key=JSON.stringify(snapshot);\n    if (key===previousKey) return previousProjection;\n  ",
+        "anchorCount": 1
+      },
+      {
+        "start": 787,
+        "end": 787,
+        "before": "",
+        "after": ";\n    try{globalThis.__righeltReadinessBegin?.('sequence-cache')?.(true,readinessCacheHit);}catch{}\n    if (readinessCacheHit",
+        "anchor": "N.stringify(snapshot);\n    if (key===previousKey) return previousProjection;\n    const statusByP",
+        "anchorCount": 1
+      },
+      {
+        "start": 1075,
+        "end": 1079,
+        "before": "cons",
+        "after": "le",
+        "anchor": "yCommanded??piece.commanded??false,\n    });\n    const {nextState}=finalizeResolvedTurn({\n      state",
+        "anchorCount": 1
+      },
+      {
+        "start": 1081,
+        "end": 1082,
+        "before": "{",
+        "after": "resolved,readi",
+        "anchor": "nded??piece.commanded??false,\n    });\n    const {nextState}=finalizeResolvedTurn({\n      state:st",
+        "anchorCount": 1
+      },
+      {
+        "start": 1084,
+        "end": 1085,
+        "before": "x",
+        "after": "ssResolveFinish,readinessResolveComple",
+        "anchor": "d??piece.commanded??false,\n    });\n    const {nextState}=finalizeResolvedTurn({\n      state:struc",
+        "anchorCount": 1
+      },
+      {
+        "start": 1086,
+        "end": 1087,
+        "before": "S",
+        "after": "e=false;\n    ",
+        "anchor": "?piece.commanded??false,\n    });\n    const {nextState}=finalizeResolvedTurn({\n      state:structu",
+        "anchorCount": 1
+      },
+      {
+        "start": 1088,
+        "end": 1088,
+        "before": "",
+        "after": "ry{readinessResolveFinish=globalThis.__righeltReadinessBegin?.('sequence-resolver');}c",
+        "anchor": "iece.commanded??false,\n    });\n    const {nextState}=finalizeResolvedTurn({\n      state:structur",
+        "anchorCount": 1
+      },
+      {
+        "start": 1090,
+        "end": 1090,
+        "before": "",
+        "after": "ch{}\n    try{r",
+        "anchor": "ce.commanded??false,\n    });\n    const {nextState}=finalizeResolvedTurn({\n      state:structured",
+        "anchorCount": 1
+      },
+      {
+        "start": 1091,
+        "end": 1092,
+        "before": "}",
+        "after": "solved",
+        "anchor": "e.commanded??false,\n    });\n    const {nextState}=finalizeResolvedTurn({\n      state:structuredCl",
+        "anchorCount": 1
+      },
+      {
+        "start": 1404,
+        "end": 1404,
+        "before": "",
+        "after": "readinessResolveComplete=true;}\n    finally{try{readinessResolveFinish?.(readinessResolveComplete);}catch{}}\n    const {nextState}=resolved;",
+        "anchor": "iece);destroyedPieceIds.add(piece.id);},\n    });\n    for(const piece of nextState.pieces) rememb",
+        "anchorCount": 1
+      }
+    ]
+  }
+}
