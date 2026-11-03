@@ -24,7 +24,7 @@ export function installBoardAdmissionCollector({targetRow,targetCol}){
   if(!value || !['object','function'].includes(typeof value))return null;
   if(!subjects.has(value))subjects.set(value,++next);return subjects.get(value);
  };
- const scalarKeys=new Set(['value','row','col','revision','phase','moves','previews','type','kind','interactive','sameNodes','mounted','positionChanged','preservePiecePreviews','resetSelection','legalTarget','hasPreviewAtClicked','hasClickedPiece','allowFreeSelection','usesHoverTargetSelection','count','retryAttempt','reconcileFirst','hadRuntime','trusted','rootToken','callbackToken','eventToken','targetToken','currentTargetToken','currentRootToken','cellRootToken','targetConnected','currentRootConnected','pathContainsCurrentRoot','dispatchPhase','pointerId','connected']);
+ const scalarKeys=new Set(['value','row','col','revision','phase','moves','previews','type','kind','interactive','sameNodes','mounted','positionChanged','preservePiecePreviews','resetSelection','legalTarget','hasPreviewAtClicked','hasClickedPiece','allowFreeSelection','usesHoverTargetSelection','count','retryAttempt','reconcileFirst','hadRuntime','trusted','rootToken','callbackToken','eventToken','targetToken','currentTargetToken','currentRootToken','cellRootToken','targetConnected','currentRootConnected','pathContainsCurrentRoot','dispatchPhase','pointerId','connected','pieceChanged','hasSelectedPiece','requestId']);
  const sanitize=data=>{
   const safe={};
   for(const [key,value] of Object.entries(data)){
@@ -89,7 +89,7 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
    let observation=null,incomplete=errors.length>0;
    try{observation=await page.evaluate(()=>globalThis.__boardAdmissionObservation??null);if(!observation)incomplete=true;}catch{incomplete=true;}
    const missingModules=Object.keys(recipes).filter(pathname=>!transforms.some(row=>row.pathname===pathname));
-   const payload={caseTitle:info.title,observation,transforms,errors,missingModules,incomplete:incomplete||missingModules.length>0||Boolean(observation?.incomplete),clock:'page.performance/timeOrigin; Node persistence wall clock separate',nodePersistedAt:new Date().toISOString()};
+   const payload={caseTitle:info.title,observation,transforms,errors,missingModules,incomplete:incomplete||missingModules.length>0||!observation?.activation?.length||Boolean(observation?.incomplete),clock:'page.performance/timeOrigin; Node persistence wall clock separate',nodePersistedAt:new Date().toISOString()};
    try{await writeFile(info.outputPath('board-admission-observation.json'),JSON.stringify(payload,null,2));}
    catch{console.error('[board-admission-diagnostic] evidence-write-incomplete');}
    try{await info.attach('board-admission-observation',{body:JSON.stringify(payload),contentType:'application/json'});}

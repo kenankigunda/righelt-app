@@ -86,3 +86,46 @@ test('outside pointer release is retained separately from the remembered cell bo
  assert.ok(rows.some(row=>row.event==='native-pointerup'&&row.dispatchPhase==='bubble'));
  assert.ok(Array.isArray(release.pathTokens));assert.equal(release.pointerId,7);
 });
+
+test('preview echo guard preserves evaluated getter and serialization counts',()=>{
+ const recipe=recipes['/board/runtime/board-runtime.js'];
+ const operation=recipe.operations.find(op=>op.after.includes('preview-echo-present'));
+ const before=operation.before.split('\n').find(line=>line.includes('if (body.state &&'));
+ const after=operation.after.split('\n').find(line=>line.includes('preview-echo-present'));
+ const original=before.match(/if \((.*)\) return;/)[1],instrumented=after.match(/if \((.*)\) return;/)[1];
+ const run=(expression,present,matching)=>{
+  let reads=0,serializations=0;const state=present?{toJSON(){serializations++;return {same:matching};}}:null;
+  const body={get state(){reads++;return state;}};
+  const result=new Function('body','requestedSnapshot',recipe.prefix+'return Boolean('+expression+');')(body,'{"same":true}');
+  return {result,reads,serializations};
+ };
+ const previous=globalThis.__boardAdmissionRecord;globalThis.__boardAdmissionRecord=()=>{throw new Error('sink');};
+ try{
+  for(const args of [[false,false],[true,false],[true,true]])assert.deepEqual(run(instrumented,...args),run(original,...args));
+  assert.deepEqual(run(instrumented,true,true),{result:false,reads:2,serializations:1});
+  const failure=new Error('original getter');
+  for(const expression of [original,instrumented]){
+   let reads=0;const body={get state(){reads++;throw failure;}};
+   assert.throws(()=>new Function('body','requestedSnapshot',recipe.prefix+'return Boolean('+expression+');')(body,''),error=>error===failure);assert.equal(reads,1);
+  }
+ }finally{if(previous===undefined)delete globalThis.__boardAdmissionRecord;else globalThis.__boardAdmissionRecord=previous;}
+});
+test('preview lifetime discard operands retain original short-circuit decisions',()=>{
+ const recipe=recipes['/board/runtime/board-runtime.js'];
+ const operation=recipe.operations.find(op=>op.after.includes('preview-destroyed'));
+ const before=operation.before.split('\n').find(line=>line.includes('if (destroyed || revision !=='));
+ const after=operation.after.split('\n').find(line=>line.includes('preview-destroyed'));
+ const original=before.match(/if \((.*)\) return;/)[1],instrumented=after.match(/if \((.*)\) return;/)[1];
+ const names=['destroyed','revision','snapshotRevision','requestId','selectedPieceMovesRequestId','selectedPieceId','requestedPieceId'];
+ const cases=[[true,1,1,2,2,'p','p'],[false,1,3,2,2,'p','p'],[false,1,1,2,4,'p','p'],[false,1,1,2,2,'p','q'],[false,1,1,2,2,'p','p']];
+ const previous=globalThis.__boardAdmissionRecord;
+ try{
+  for(const [i,values] of cases.entries()){
+   const observed=[];globalThis.__boardAdmissionRecord=event=>observed.push(event);
+   const result=new Function(...names,recipe.prefix+'return Boolean('+instrumented+');')(...values);
+   assert.equal(result,new Function(...names,'return Boolean('+original+');')(...values));
+   const expected=['preview-destroyed','preview-revision-stale','preview-request-stale','preview-piece-stale'].slice(0,Math.min(i+1,4));
+   assert.deepEqual(observed,expected);
+  }
+ }finally{if(previous===undefined)delete globalThis.__boardAdmissionRecord;else globalThis.__boardAdmissionRecord=previous;}
+});

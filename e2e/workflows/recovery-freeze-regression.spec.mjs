@@ -397,7 +397,9 @@ test('slow rules worker leaves mobile navigation responsive and stops when leavi
 });
 
 
-test('Horus finishes a real turn and releases its worker before self-play and reload', async ({page},info) => {
+test('Horus finishes a real turn and releases its worker before self-play and reload', async ({page,baseURL},info) => {
+  const admissionDiagnostics=await installBoardAdmissionDiagnostics(page,info,{baseURL,targetRow:2,targetCol:6});
+  try {
   await page.setViewportSize({width:390,height:844});
   await page.addInitScript(()=>{
     window.ownedGameWorkers=[];
@@ -431,5 +433,6 @@ test('Horus finishes a real turn and releases its worker before self-play and re
   const reloaded=await currentGame(page,self.id);
   expect(reloaded.gameplayRevision).toBe(saved.gameplayRevision);expect(reloaded.board.state).toEqual(saved.board.state);
   await page.screenshot({path:info.outputPath('horus-to-self-play-reloaded.png')});
+  }finally{await admissionDiagnostics.persist();}
 });
 });
