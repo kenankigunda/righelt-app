@@ -86,3 +86,98 @@ test('outside pointer release is retained separately from the remembered cell bo
  assert.ok(rows.some(row=>row.event==='native-pointerup'&&row.dispatchPhase==='bubble'));
  assert.ok(Array.isArray(release.pathTokens));assert.equal(release.pointerId,7);
 });
+
+test('preview echo guard preserves evaluated getter and serialization counts',()=>{
+ const recipe=recipes['/board/runtime/board-runtime.js'];
+ const operation=recipe.operations.find(op=>op.after.includes('preview-echo-present'));
+ const before=operation.before.split('\n').find(line=>line.includes('if (body.state &&'));
+ const after=operation.after.split('\n').find(line=>line.includes('preview-echo-present'));
+ const original=before.match(/if \((.*)\) return;/)[1],instrumented=after.match(/if \((.*)\) return;/)[1];
+ const run=(expression,present,matching)=>{
+  let reads=0,serializations=0;const state=present?{toJSON(){serializations++;return {same:matching};}}:null;
+  const body={get state(){reads++;return state;}};
+  const result=new Function('body','requestedSnapshot',recipe.prefix+'return Boolean('+expression+');')(body,'{"same":true}');
+  return {result,reads,serializations};
+ };
+ const previous=globalThis.__boardAdmissionRecord;globalThis.__boardAdmissionRecord=()=>{throw new Error('sink');};
+ try{
+  for(const args of [[false,false],[true,false],[true,true]])assert.deepEqual(run(instrumented,...args),run(original,...args));
+  assert.deepEqual(run(instrumented,true,true),{result:false,reads:2,serializations:1});
+  const failure=new Error('original getter');
+  for(const expression of [original,instrumented]){
+   let reads=0;const body={get state(){reads++;throw failure;}};
+   assert.throws(()=>new Function('body','requestedSnapshot',recipe.prefix+'return Boolean('+expression+');')(body,''),error=>error===failure);assert.equal(reads,1);
+  }
+ }finally{if(previous===undefined)delete globalThis.__boardAdmissionRecord;else globalThis.__boardAdmissionRecord=previous;}
+});
+test('preview lifetime discard operands retain original short-circuit decisions',()=>{
+ const recipe=recipes['/board/runtime/board-runtime.js'];
+ const operation=recipe.operations.find(op=>op.after.includes('preview-destroyed'));
+ const before=operation.before.split('\n').find(line=>line.includes('if (destroyed || revision !=='));
+ const after=operation.after.split('\n').find(line=>line.includes('preview-destroyed'));
+ const original=before.match(/if \((.*)\) return;/)[1],instrumented=after.match(/if \((.*)\) return;/)[1];
+ const names=['destroyed','revision','snapshotRevision','requestId','selectedPieceMovesRequestId','selectedPieceId','requestedPieceId'];
+ const cases=[[true,1,1,2,2,'p','p'],[false,1,3,2,2,'p','p'],[false,1,1,2,4,'p','p'],[false,1,1,2,2,'p','q'],[false,1,1,2,2,'p','p']];
+ const previous=globalThis.__boardAdmissionRecord;
+ try{
+  for(const [i,values] of cases.entries()){
+   const observed=[];globalThis.__boardAdmissionRecord=event=>observed.push(event);
+   const result=new Function(...names,recipe.prefix+'return Boolean('+instrumented+');')(...values);
+   assert.equal(result,new Function(...names,'return Boolean('+original+');')(...values));
+   const expected=['preview-destroyed','preview-revision-stale','preview-request-stale','preview-piece-stale'].slice(0,Math.min(i+1,4));
+   assert.deepEqual(observed,expected);
+  }
+ }finally{if(previous===undefined)delete globalThis.__boardAdmissionRecord;else globalThis.__boardAdmissionRecord=previous;}
+});
+
+
+test('selected-piece toggle guard preserves identity getter and skipped toggle calls',()=>{
+ const recipe=recipes['/board/runtime/board-runtime.js'];
+ const op=recipe.operations.find(op=>op.after.includes('selected-piece-id-equal'));
+ const original=op.before.match(/if \((.*)\) \{/)[1];
+ const observed=op.after.match(/if \((.*)\) \{/)[1];
+ const run=(expression,equal)=>{
+  let reads=0,calls=0;const selectedPieceId='selected';
+  const clickedPiece={get id(){reads++;return equal?'selected':'other';}};
+  const canToggleSelectedPieceOverlay=()=>{calls++;return true;};
+  const result=new Function('clickedPiece','selectedPieceId','canToggleSelectedPieceOverlay',recipe.prefix+'return Boolean('+expression+');')(clickedPiece,selectedPieceId,canToggleSelectedPieceOverlay);
+  return {result,reads,calls};
+ };
+ const previous=globalThis.__boardAdmissionRecord;globalThis.__boardAdmissionRecord=()=>{throw new Error('sink');};
+ try{for(const equal of [false,true])assert.deepEqual(run(observed,equal),run(original,equal));
+ assert.deepEqual(run(observed,false),{result:false,reads:1,calls:0});
+ assert.deepEqual(run(observed,true),{result:true,reads:1,calls:1});
+ }finally{if(previous===undefined)delete globalThis.__boardAdmissionRecord;else globalThis.__boardAdmissionRecord=previous;}
+});
+
+test('actual ensure helper preserves a check-to-click restoration counterexample',async()=>{
+ const sourceText=await readFile(new URL('../../../e2e/support/app.mjs',import.meta.url),'utf8');
+ const begin=sourceText.indexOf('export const ensureActionActorSelected = ');
+ const end=sourceText.indexOf('export const selectPlayableAction',begin);
+ assert.ok(begin>=0&&end>begin);
+ const helperText=sourceText.slice(begin,end).replace('export const ensureActionActorSelected = ','');
+ const events=[];const sandbox={globalThis:null,expect:()=>({toHaveClass:async()=>{}})};
+ sandbox.globalThis=sandbox;sandbox.__boardAdmissionRecord=(...args)=>{events.push(args.slice(0,2));throw new Error('sink');};
+ vm.createContext(sandbox);
+ const helper=vm.runInContext('('+helperText.trim().replace(/;$/,'')+')',sandbox);
+ let selected=false,clicks=0,reads=0,toggled=false;
+ const element={classList:{contains:()=>{reads++;return selected;}}};
+ const source={evaluate:async callback=>{const value=callback(element);selected=true;return value;},click:async()=>{clicks++;if(selected)toggled=true;}};
+ await helper(source);
+ assert.equal(reads,1);assert.equal(clicks,1);assert.equal(toggled,true);
+ assert.equal(events[0][0],'fixture-ensure-source-read');assert.equal(events[0][1].value,false);
+ // This models the permitted boundary only. It does not prove the CI race,
+ // change the helper's choice, or suppress the user's explicit toggle click.
+});
+
+
+test('helper first and latest read snapshots survive bounded rolling eviction',()=>{
+ const {record,log}=collector();const node={};
+ record('fixture-ensure-source-read',{value:false},node);const first=log.firstSourceRead;
+ for(let i=0;i<200;i++)record('churn');
+ record('fixture-ensure-source-read',{value:true},node);
+ assert.equal(log.firstSourceRead,first);assert.equal(log.firstSourceRead.value,false);
+ assert.equal(log.lastSourceRead.value,true);assert.equal(log.sourceReadCount,2);
+ assert.equal(log.firstSourceRead.subjectToken,log.lastSourceRead.subjectToken);
+ assert.equal(log.incomplete,true);assert.ok(log.dropped>0);
+});
