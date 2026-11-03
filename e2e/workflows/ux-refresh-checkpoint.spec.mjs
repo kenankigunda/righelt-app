@@ -49,8 +49,12 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
  const ownProfile=page.getByTestId('participant-player-1').locator('[data-action="guest-profile"]');
  await expect(ownProfile).toHaveText('You');await expect(ownProfile).toHaveAccessibleName('You, Red, Connected');
- const supply=await page.locator('.supply-point-marker.supply-point-p1').first().evaluate(el=>({core:getComputedStyle(el.querySelector('svg')).fill}));
- expect(supply.core).toBe('rgb(194, 69, 47)');
+ // Resolve and measure the current connected SVG in one page turn. The driver
+ // must not carry a replaced marker handle into the style publication check.
+ await expect.poll(()=>page.evaluate(()=>{
+  const marker=document.querySelector('.supply-point-marker.supply-point-p1'),svg=marker?.querySelector('svg');
+  return marker?.isConnected&&svg?.isConnected?getComputedStyle(svg).fill:null;
+ })).toBe('rgb(194, 69, 47)');
  await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-phase','idle');
  expect(await page.evaluate(()=>window.entryPanelAnimations)).toEqual([]);
  const playersPanel=page.locator('[data-game-panel="join"]');
