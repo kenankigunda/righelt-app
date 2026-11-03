@@ -62,10 +62,10 @@ const journalEntry = (page, command) => page.evaluate(envelope => new Promise((r
 }), command);
 
 test.describe('retained Horus follow', () => {
-  // Keep the actual page, identity, game and receipt across both journeys. Each
+  // Keep the actual page, identity, game and receipt across all three phases. Each
   // native decision gets the existing test budget; failures skip its dependent.
   test.describe.configure({ mode: 'serial' });
-  let owned, page, game, command, originalReceipt, paused;
+  let owned, page, game, command, originalReceipt, paused, visualPhase;
   test.beforeAll(async ({ browser }, info) => {
     owned = ownedContexts(browser);
     const use = info.project.use;
@@ -146,6 +146,12 @@ test('the same saved follow survives reload and resumes a distinct native Horus 
   await writeFile(path, JSON.stringify({ modelId: game.computer.modelId, command, originalReceipt, pausedRevision: paused.gameplayRevision,
     reloadedRevision: reloaded.gameplayRevision, laterCommand, laterReceipt: later.commandOutcomes[0] }, null, 2));
   await info.attach('retained-follow-save-reload', { path, contentType: 'application/json' });
+  visualPhase = Object.freeze({ gameId: game.id });
+});
+
+// Required continuation on the same owned page; a skipped phase is incomplete.
+test('the resumed retained game completes its required board visual phase', async ({}, info) => {
+  expect(new URL(page.url()).hash.split("?")[0]).toBe(`#/game/${visualPhase.gameId}`);
   await switchGamePanel(page, 'board');
   await page.screenshot({ path: info.outputPath('retained-follow-resumed.png') });
 });
