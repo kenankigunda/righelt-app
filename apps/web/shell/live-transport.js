@@ -182,6 +182,7 @@ export const createLiveTransportStore = ({
   let games = [];
   let gameById = new Map();
   let homeGameCardById = new Map();
+  let activeHomeRead = null;
   const lastEventSeqByGameId = new Map();
   const positions = new Map();
   const positionFlights = new Map();
@@ -808,19 +809,29 @@ export const createLiveTransportStore = ({
     return result;
   };
 
-  const boundedRequest = async (url, init, controller = new AbortController()) => {
-    let timer;
+  const boundedRequest = async (url, init, controller = new AbortController(), cancelOnAbort = false) => {
+    let timer, onAbort;
     const evidence = {}, started = Date.now();
     try {
       return await Promise.race([
-        Promise.resolve().then(() => fetcher(url, { ...init, signal: controller.signal }, evidence)).then(mustOk),
+        Promise.resolve().then(() => {
+          if (cancelOnAbort && controller.signal.aborted) throw Object.assign(new Error("session_changed"), { code: "session_changed" });
+          return fetcher(url, { ...init, signal: controller.signal }, evidence);
+        }).then(mustOk),
         new Promise((_, reject) => { timer = setTimeout(() => {
           const diagnosticEvidence = { ...evidence, durationMs: Date.now() - started };
+          const error = Object.assign(new Error("request_timeout"), { code: "request_timeout", diagnosticEvidence });
+          if (cancelOnAbort) reject(error); // Home cancellation must not mask its timeout.
           controller.abort();
-          reject(Object.assign(new Error("request_timeout"), { code: "request_timeout", diagnosticEvidence }));
+          if (!cancelOnAbort) reject(error);
         }, timing.requestTimeoutMs); }),
+        ...(cancelOnAbort ? [new Promise((_, reject) => {
+          onAbort = () => reject(Object.assign(new Error("session_changed"), { code: "session_changed" }));
+          controller.signal.addEventListener("abort", onAbort, { once: true });
+          if (controller.signal.aborted) onAbort();
+        })] : []),
       ]);
-    } finally { clearTimeout(timer); }
+    } finally { clearTimeout(timer); if (onAbort) controller.signal.removeEventListener("abort", onAbort); }
   };
 
   const scheduleRetry = (gameId, retryAttempt, reconcileFirst = true, retryAfterMs = 0) => {
@@ -1346,34 +1357,85 @@ export const createLiveTransportStore = ({
     return work;
   };
 
-  const loadGamesPage = async ({ section, page = 0, pageSize = 6, debug = false } = {}) => {
-    const params = new URLSearchParams({
-      identityId,
-      section: String(section || ""),
-      page: String(page),
-      pageSize: String(pageSize),
-      debug: debug ? "1" : "0",
-    });
-    const body = await boundedRequest(`/api/shell/games?${params.toString()}`, {
-      method: "GET",
-      cache: "no-store",
-    });
-    const gamesPage = Array.isArray(body.games) ? body.games.map((game) => normalizeStaticGameCard(game)) : [];
-    for (const game of gamesPage) {
-      homeGameCardById.set(game.id, game);
-    }
-    // Home reloads must resume durable commands even when their game is not opened.
-    // Hydration starts bounded reconciliation; listing a page never waits on the network recovery.
+  // Journal work belongs to durable authority, not a Home presentation batch.
+  const hydrateHomeJournal = async (gamesPage = []) => {
+    const session = auth?.session, context = session?.contextId, owner = identityId;
+    const accountId = session?.account?.id, authenticated = session?.authenticated, storageGeneration = auth?.storageGeneration;
+    const current = () => active && owner === identityId && session === auth?.session && context === auth?.session?.contextId
+      && accountId === auth?.session?.account?.id && authenticated === auth?.session?.authenticated && storageGeneration === auth?.storageGeneration;
+    if (!current()) return;
     try {
-      const saved = await commandJournal.list(identityId);
+      const saved = await commandJournal.list(owner);
+      assertActive();
+      if (!current()) return;
       await Promise.all([...new Set(saved.map(command => command.gameId))].map(gameId => hydrateJournal(gameId).catch(() => {})));
     } catch (error) {
-      for (const game of gamesPage) blockStorage(game.id, error);
+      if (current()) {
+        for (const game of gamesPage) blockStorage(game.id, error);
+      }
     }
-    return {
-      ...body,
-      games: gamesPage.map(game => getHomeGameCard(game.id)),
+  };
+  const readGamesPage = async ({ section, page = 0, pageSize = 6, debug = false } = {}, controller, staged = false) => {
+    const params = new URLSearchParams({ identityId, section: String(section || ""), page: String(page), pageSize: String(pageSize), debug: debug ? "1" : "0" });
+    const body = await boundedRequest(`/api/shell/games?${params.toString()}`, { method: "GET", cache: "no-store" }, controller, staged);
+    if (staged && (!Array.isArray(body.games) || ![body.page, body.totalGames, body.totalPages].every(value => Number.isSafeInteger(value) && value >= 0)
+      || body.section !== undefined && body.section !== section || body.games.some(game => typeof game?.id !== "string" || !game.id))) {
+      throw Object.assign(new Error("invalid_home_page"), { code: "invalid_home_page" });
+    }
+    return { ...body, games: Array.isArray(body.games) ? body.games.map(game => normalizeStaticGameCard(game)) : [] };
+  };
+  const loadGamesPage = async (options = {}) => {
+    const body = await readGamesPage(options);
+    for (const game of body.games) homeGameCardById.set(game.id, game);
+    // Preserve standalone pagination's eager publication and awaited hydration.
+    await hydrateHomeJournal(body.games);
+    return { ...body, games: body.games.map(game => getHomeGameCard(game.id)) };
+  };
+  const createHomeRead = ({ isCurrent = () => true } = {}) => {
+    assertActive();
+    if (!isCurrent()) throw Object.assign(new Error("session_changed"), { code: "session_changed" });
+    activeHomeRead?.retire();
+    const session = auth?.session, context = session?.contextId, owner = identityId;
+    const authEnabled = auth?.enabled, storageGeneration = auth?.storageGeneration;
+    const authenticated = Boolean(session?.authenticated), accountId = session?.account?.id;
+    const cards = new Map(), controllers = new Set();
+    let retired = false, pending = 0, failed = false, failure = null;
+    const current = () => !retired && active && activeHomeRead === batch && owner === identityId
+      && auth?.enabled === authEnabled && auth?.storageGeneration === storageGeneration && auth?.session === session && auth?.session?.contextId === context
+      && Boolean(auth?.session?.authenticated) === authenticated && auth?.session?.account?.id === accountId && isCurrent();
+    const assertCurrent = () => { if (!current()) throw Object.assign(new Error("session_changed"), { code: "session_changed" }); };
+    const batch = {
+      async readPage(options) {
+        assertCurrent();
+        const controller = new AbortController(); controllers.add(controller); pending++;
+        try {
+          const body = await readGamesPage(options, controller, true);
+          assertCurrent();
+          for (const game of body.games) cards.set(game.id, game);
+          void hydrateHomeJournal(body.games);
+          return body;
+        } catch (error) { failed = true; failure ??= error; batch.retire(); throw failure; }
+        finally { pending--; controllers.delete(controller); }
+      },
+      commit() {
+        assertCurrent();
+        if (pending || failed) throw Object.assign(new Error("home_read_incomplete"), { code: "home_read_incomplete" });
+        // No emit, await, journal work or other user callback between card and
+        // section publication. The app installs its staged section map next.
+        for (const [id, card] of cards) homeGameCardById.set(id, card);
+        batch.retire();
+      },
+      retire() {
+        if (retired) return;
+        retired = true;
+        for (const controller of controllers) controller.abort();
+        cards.clear();
+        if (activeHomeRead === batch) activeHomeRead = null;
+      },
     };
+    activeHomeRead = batch;
+    void hydrateHomeJournal();
+    return batch;
   };
 
   const markUpgradeRequired = (gameId) => {
@@ -1965,6 +2027,7 @@ export const createLiveTransportStore = ({
   return {
     setRulesActiveGame,
     loadGamesPage,
+    createHomeRead,
     loadGame: loadCompleteGame,
     loadGamePosition,
     resolveInvite,
@@ -2038,6 +2101,7 @@ export const createLiveTransportStore = ({
     unsubscribe,
     retire() {
       active = false;
+      activeHomeRead?.retire();
       positions.clear(); positionFlights.clear();
       rulesExecutor.cancelAll();
       globalThis.document?.removeEventListener?.("visibilitychange", onRulesVisibility);
