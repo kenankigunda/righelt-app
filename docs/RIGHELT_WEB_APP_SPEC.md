@@ -472,8 +472,13 @@ This section is normative and applies to every new endpoint, page, and performan
 - Computer status uses human-facing phases: Waiting for the named computer, thinking, and saving their move. Preparation and control renewal remain waiting. Activity-dot ownership follows the computer named in the message rather than a pending human operation.
 - Narration describes the acknowledged sequence. Multiple rushed pieces use “X rushed several pieces”. Pushes name the victim’s original square and say “and had a piece follow” or “and had several pieces follow”.
 
-- Board-message height must admit the complete two-row grammar at every supported width. Reserve its measured font and width envelopes before first paint, including all turn summaries and the bounded spectator-name box. Changes to wording, fonts or inline pills require primary/fallback measurements at 100% and 200% text, boundary probes and exact cold/loaded/reload anchor checks. Natural wrapping may require four or more lines; a universal three-line cap is not the contract.
+- Board-message height must admit the complete message grammar at every supported width. Before first paint, reserve the measured routine-prompt minimum for the current font and width, using primary and fallback envelopes. Turn summaries, replay and bounded spectator-name content contribute their current measured height while present, never a permanent maximum reservation; follow [Board message composition and height](#board-message-composition-and-height) for retargeting, native-press freezes and immediate availability changes. Changes to wording, fonts or inline pills require primary/fallback measurements at 100% and 200% text, boundary probes and exact cold/loaded/reload anchor checks for an unchanged routine prompt; semantic narration changes account for actual message-height growth. Natural wrapping may require four or more lines; a universal three-line cap is not the contract.
 
+### Undo consent
+
+- Undo applies directly in self-play and against a computer controlled by the same human. While its durable receipt is pending, do not show an undo request, acceptance message, or approval controls. Confirm completion as “Move undone”.
+- Only another human controller must approve Undo. Keep that player's request, Accept, Reject and Cancel request flow. Use authoritative seat-controller identities, never display names, to distinguish these cases.
+- Direct Undo keeps the existing serialized command, receipt and recovery path. Computer work is paused and reconciled before restoration, then resumes under the acknowledged position and control generation. Reopening a completed game by explicit Undo retains these same safeguards.
 ### Projected status during a sequence
 
 - During a live rush or push sequence, show every piece's status as it would be after the turn ended at its current position. Recompute the projection after each acknowledged sequence step, including defender retreats and follows.

@@ -1478,6 +1478,8 @@ test("live transport: dual-seat identity auto-approves revert requests", async (
   const requestBody = await requestRevert.json();
   assert.equal(requestRevert.status, 200);
   assert.equal(requestBody.autoApproved, true);
+  assert.equal(requestBody.game.notifications[0], "Undo applied");
+  assert.equal(requestBody.game.notifications.some(note => /undo request/i.test(note)), false);
   assert.equal(requestBody.pendingApproval, undefined);
   assert.equal(requestBody.game.pendingRevertRequest, null);
   assert.equal(requestBody.game.moves[0].undone, true);
