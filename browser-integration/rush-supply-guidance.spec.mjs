@@ -87,19 +87,19 @@ for (const [width,fontScale] of [[390,100],[390,200],[1200,100]]) test(`multiple
   await expect(page.locator('.rush-guidance-source')).toHaveCount(3);
   await expect(page.locator('.cell.selected-piece')).toHaveCount(0);
   await expect(page.locator('#preview')).toContainText('pieces at 7, 1, 8, 2');
-  await settledMessage(page);const before=await measureSemanticGeometry(page);
+  await settledMessage(page,{publishedManagedHeight:info.project.name==='webkit'});const before=await measureSemanticGeometry(page);
   await page.locator('.cell[data-row="4"][data-col="5"]').click();
   await expect(page.locator('.rush-guidance-target')).toHaveCount(3);
   await page.locator('.cell[data-row="3"][data-col="4"]').click();
   await expect(page.locator('#preview')).toContainText('Restores required supply after further rushes');
   await expect(page.locator('.board-obligatory-pill')).toHaveCount(0);
-  await settledMessage(page);assertSemanticGeometry(before,await measureSemanticGeometry(page));
+  await settledMessage(page,{publishedManagedHeight:info.project.name==='webkit'});assertSemanticGeometry(before,await measureSemanticGeometry(page));
   await page.screenshot({path:info.outputPath('multiple-supply-options.png')});
   await page.locator('.cell[data-row="0"][data-col="0"]').click();
   await expect(page.locator('.cell.selected-piece')).toHaveCount(0);
   await expect(page.locator('.board-obligatory-pill')).toHaveText('Obligatory');
   await expect(page.locator('#preview')).toContainText('pieces at 7, 1, 8, 2');
-  await settledMessage(page);expect(await measureSemanticGeometry(page)).toEqual(before);
+  await settledMessage(page,{publishedManagedHeight:info.project.name==='webkit'});expect(await measureSemanticGeometry(page)).toEqual(before);
 });
 
 test('obligatory message retains inactive-piece and blocked-destination explanations',async({page})=>{
