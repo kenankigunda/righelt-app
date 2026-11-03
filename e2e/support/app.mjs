@@ -261,7 +261,11 @@ const getFirstPlayableAction = async (page) => page.evaluate(readPlayableAction)
 export const ensureActionActorSelected = async (source) => {
   // A late authoritative snapshot can restore a mandatory actor after a blank
   // square cleared it. Clicking that selected piece again toggles its overlay.
-  if (!await source.evaluate(element => element.classList.contains("source"))) await source.click();
+  if (!await source.evaluate(element => {
+    const selected = element.classList.contains("source");
+    try { globalThis.__boardAdmissionRecord?.("fixture-ensure-source-read", {value:selected}, element); } catch {}
+    return selected;
+  })) await source.click();
   await expect(source).toHaveClass(/(?:^|\s)source(?:\s|$)/);
 };
 
