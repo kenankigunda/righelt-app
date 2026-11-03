@@ -1,3 +1,4 @@
+import {installBoardAdmissionDiagnostics} from '../support/board-admission-diagnostics.mjs';
 import {waitForOpponentReady,waitForComputerDecision} from '../support/computer-projection.mjs';
 import { readFileSync } from 'node:fs';
 import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
@@ -121,6 +122,8 @@ test("lost move response recovers through identical submission while reconciliat
 });
 
 test("guest play-both push retreat follow recovers with healthy HTTP and unavailable sockets",async({page,baseURL},info)=>{
+ const admissionDiagnostics=await installBoardAdmissionDiagnostics(page,info,{baseURL,targetRow:4,targetCol:1});
+ try {
  let socketsUnavailable=false,losePush=true;const commands=[], sockets=[],pushProofs=[];
  const actionFor=command=>(command.kind==='shared'?command.payload.values:command).payload?.action;
  let holdConfirmation=false,releaseConfirmation,confirmationRequested=false;
@@ -210,6 +213,7 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
   await page.unrouteAll({behavior:"wait"});
   await info.attach("held-push-confirmations",{body:JSON.stringify(pushProofs,null,2),contentType:"application/json"});
  }
+ }finally{await admissionDiagnostics.persist();}
 });
 
 for(const reduced of [false,true])test(`routine reconnect stays quiet four seconds and preserves board${reduced?" with reduced motion":""}`,async({page},info)=>{
