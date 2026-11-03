@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
-import {installBoardAdmissionCollector,transformBoardAdmissionModule} from '../board-admission-diagnostics.mjs';
+import {installBoardAdmissionCollector,transformBoardAdmissionModule} from '../../../e2e/support/board-admission-diagnostics.mjs';
 
-const recipes=JSON.parse(await readFile(new URL('../board-admission-transformations.json',import.meta.url),'utf8'));
+const recipes=JSON.parse(await readFile(new URL('../../../e2e/support/board-admission-transformations.json',import.meta.url),'utf8'));
 for(const [pathname,recipe] of Object.entries(recipes))test(`exact source and protected transform ${pathname}`,async()=>{
  const source=await readFile(new URL('../../../'+recipe.file,import.meta.url),'utf8');
  // Resolve from repo root, not the support directory.
