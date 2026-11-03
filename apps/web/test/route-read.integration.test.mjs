@@ -9,7 +9,8 @@ const source = readFileSync(new URL('../shell/app.js', import.meta.url), 'utf8')
 const start = source.indexOf('const routeReadKey =');
 const end = source.indexOf('const retryAccountContinuation =', start);
 assert.ok(start > 0 && end > start);
-const script = new vm.Script(`${source.slice(start, end)};({captureRouteRead,syncRouteDataAndLiveChannels})`);
+const homeReadState=source.slice(source.indexOf("let homeReadJob = null;"),source.indexOf("const hydrateRoute ="));
+const script = new vm.Script(`${homeReadState}\n${source.slice(start, end)};({captureRouteRead,syncRouteDataAndLiveChannels})`);
 
 test('an authority microtask before hashchange cannot share a home read under an invitation URL', async () => {
   const calls = [], owner = {
@@ -21,7 +22,7 @@ test('an authority microtask before hashchange cannot share a home read under an
     transport:owner, currentRoute:parseRouteFromHash('#/'), resolvedInvite:null,
     getVisibleHomeSectionKeys:()=>[], getHomeSection:()=>{}, getHomeSectionVisiblePageSize:()=>0, getHomeSectionColumnCount:()=>1,
     hydrateRoute:createRouteHydration(), parseRouteFromHash,FLYOUT_KEYS,URLSearchParams,
-    syncHomeSections:async()=>{calls.push(['home']);}, syncLiveChannels:()=>{},
+    syncHomeSections:async()=>{calls.push(['home']);}, storyDialog:{refresh(){}}, syncLiveChannels:()=>{},
   });
   const api = script.runInContext(context);
   // Location has changed but the browser has not delivered hashchange yet.
