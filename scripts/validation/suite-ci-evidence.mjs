@@ -1,5 +1,8 @@
+import { cachedArtifact, artifactCacheKey } from "./ci-artifact-cache.mjs";
 import { selectSuiteArtifacts } from "../testing/select-artifacts.mjs";
 import path from "node:path";
+import {createReadStream} from "node:fs";
+import {createHash} from "node:crypto";
 import { sourceIdentity, verifyFull, digest } from "../testing/receipts.mjs";
 import { fullLanes, laneKey } from "../testing/catalog.mjs";
 import { evidenceKey, fileDigest } from "./reuse.mjs";
@@ -25,6 +28,18 @@ const groups = {
   Tooling: ["tooling"],
   Performance: ["performance"],
 };
+// Existing v1 seals hash JSON.stringify(Buffer), not raw log bytes. Preserve that
+// wire contract without materializing the log; each decimal-byte chunk is bounded.
+// fileDigest remains the independent raw primary-file hash stored in evidence.
+export async function sealedLogDigest(log) {
+  const hash = createHash("sha256").update('{"type":"Buffer","data":[');
+  let first = true;
+  for await (const chunk of createReadStream(log, {highWaterMark:64 * 1024})) {
+    const values = Array.from(chunk).join(",");
+    if (values) { hash.update((first ? "" : ",") + values); first = false; }
+  }
+  return hash.update("]}").digest("hex");
+}
 // Credit explicit suite receipts, never infer tests from command text or job names.
 export const canonicalCommands = {
   Typecheck: "typecheck",
@@ -56,15 +71,22 @@ export async function importCatalogCI({
   api,
   call,
   execute,
+  artifactCache,
 }) {
   const page = await api(`actions/runs/${run.id}/artifacts?per_page=100`);
   if (page.total_count > 100) throw Error("Unsupported artifact pagination");
+  if (artifactCache !== undefined && (!Array.isArray(page.artifacts) ||
+      !Number.isSafeInteger(page.total_count) || page.total_count !== page.artifacts.length))
+    throw Error("Incomplete current artifact inventory");
   const artifacts = selectSuiteArtifacts(page.artifacts, {
     runId: run.id,
     headSha: run.head_sha,
   });
   if (run.conclusion !== "success" || artifacts.length !== fullLanes().length)
     throw Error("Full current-attempt CI inventory unavailable");
+  // Validate all fresh selected metadata before downloading any cached archive.
+  if (artifactCache !== undefined)
+    for (const artifact of artifacts) artifactCacheKey({repository,run,artifact});
   const suiteReceipts = [],
     evidence = [];
   for (const a of artifacts) {
@@ -73,44 +95,47 @@ export async function importCatalogCI({
       a.workflow_run?.head_sha !== run.head_sha
     )
       throw Error("Artifact run/head mismatch");
-    const archive = path.join(outDir, `suite-${a.id}.zip`);
-    await execute(
-      [
-        "gh",
-        "api",
-        `repos/${repository}/actions/artifacts/${a.id}/zip`,
-        "--allow-escape-sequences",
-      ],
-      { cwd, log: archive, maxOutputBytes: 1024, logStdoutOnly: true },
+    const download = async archive => execute(
+      ["gh", "api", `repos/${repository}/actions/artifacts/${a.id}/zip`, "--allow-escape-sequences"],
+      {cwd, log:archive, maxOutputBytes:1024, logStdoutOnly:true},
     );
-    const names = (await call(["unzip", "-Z1", archive]))
-      .split("\n")
-      .filter((n) => n.endsWith(".receipt.json"));
-    if (
-      names.length !== 1 ||
-      !/^suites\/[\w.-]+\/[\d]+\.receipt\.json$/.test(names[0])
-    )
+    const inspect = async (archive, verify = async () => {}, executeArchive, trustedArchiveHash) => {
+    const archiveCall=async argv=>executeArchive?(await executeArchive(argv,{cwd})).output:call(argv);
+    const archiveExecute=(argv,options)=>executeArchive?executeArchive(argv,options):execute(argv,options);
+    await verify();
+    // Inspect the complete archive on every hit. Nothing from it is executed,
+    // and only the sole receipt and its primary log are streamed out by name.
+    const members = (await archiveCall(["unzip", "-Z1", archive])).split("\n").filter(Boolean);
+    await verify();
+    const names = members.filter(n => n.endsWith(".receipt.json"));
+    if (names.length !== 1 || !/^suites\/[\w.-]+\/[\d]+\.receipt\.json$/.test(names[0]))
       throw Error("Unexpected receipt archive inventory");
-    const r = JSON.parse(await call(["unzip", "-p", archive, names[0]]));
+    if (artifactCache !== undefined && (new Set(members).size !== members.length ||
+        members.some(n => n.startsWith("/") || /^[A-Za-z]:/.test(n) || /[\x00-\x1f]/.test(n) || n.includes("\\") || n.split("/").some(p => p === ".." || p === ".")) ||
+        !members.includes(names[0].replace(/[^/]+$/, "output.log"))))
+      throw Error("Unsafe or incomplete suite archive inventory");
+    const r = JSON.parse(await archiveCall(["unzip", "-p", archive, names[0]]));
+    await verify();
     suiteReceipts.push(r);
     const logName = names[0].replace(/[^/]+$/, "output.log");
     const log = path.join(outDir, `suite-${a.id}.log`);
-    await execute(["unzip", "-p", archive, logName], {
+    await archiveExecute(["unzip", "-p", archive, logName], {
       cwd,
       log,
       logStdoutOnly: true,
       maxOutputBytes: 1024,
     });
-    const { readFile } = await import("node:fs/promises");
-    if (digest(await readFile(log)) !== r.logHash)
+    await verify();
+    const logHash = await fileDigest(log);
+    if (await sealedLogDigest(log) !== r.logHash)
       throw Error("Primary suite log differs from receipt");
     evidence.push({
       lane: r.lane,
       checkout: r.revision,
       archive,
-      archiveHash: await fileDigest(archive),
+      archiveHash: trustedArchiveHash ?? await fileDigest(archive),
       log,
-      logHash: await fileDigest(log),
+      logHash,
       provenance: {
         testedTree: r.testedTree,
         checkout: r.revision,
@@ -118,6 +143,14 @@ export async function importCatalogCI({
         dependencies: r.dependencies,
       },
     });
+    await verify();
+    };
+    if (artifactCache === undefined) {
+      const archive = path.join(outDir, `suite-${a.id}.zip`);
+      await download(archive);
+      await inspect(archive);
+    } else await cachedArtifact({root:artifactCache,repository,run,artifact:a,download,consumptionDir:outDir},
+      ({archive,verify,executeArchive,archiveHash}) => inspect(archive,verify,executeArchive,archiveHash));
   }
   const identity = sourceIdentity(cwd),
     verified = verifyFull(suiteReceipts, identity);
