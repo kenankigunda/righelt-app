@@ -10,7 +10,7 @@ import { buildStaticGameCardFromGame, normalizeStaticGameCard } from "./static-g
 import { createCommandJournal } from "./command-journal.js";
 import { POSITION_PROJECTION, ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, SYNC_PROTOCOL_VERSION, SYNC_TIMING, SYNC_LIMITS, LIVE_HISTORY, SHARED_OPERATIONS, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
 
-import { applyHistoryIntent, historyMoveKey } from "./recovery-view.js";
+import { applyHistoryIntent, historyMoveKey, needsRecoveryAction } from "./recovery-view.js";
 import { activityStateActorSide } from "./activity-affiliation.js";
 
 const clone = (value) => structuredClone(value);
@@ -528,6 +528,21 @@ export const createLiveTransportStore = ({
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, mode: authoritative?.computer ? "computer" : authoritative?.selfPlayMode ? "play_both" : "multiplayer",
       deadlineMs: error?.code === "request_timeout" ? timing.requestTimeoutMs : stage.startsWith("journal") ? SYNC_TIMING.requestTimeoutMs : timing.confirmationBudgetMs,
     });
+  };
+  // Presentation may request details, but only the transport owns episode evidence.
+  // Capturing does not emit a store change or mutate admission/recovery state.
+  const ensureRecoveryIncident = (gameId) => {
+    if (!active || !gameById.has(gameId)) return null;
+    const game = getGameViewModel(gameId);
+    if (!needsRecoveryAction(game)) return null;
+    const optimistic = getOptimisticState(gameId);
+    const report = optimistic.incidentId ? issueDiagnostics.get(optimistic.incidentId) : null;
+    const existing = report && !report.resolvedAt && report.initial.gameId === gameId ? report.id : null;
+    const episode = optimistic.recoveryEpisodeId;
+    if (!episode || optimistic.noticePromotedEpisode === episode || report?.resolvedAt) return existing;
+    captureRecoveryIssue(gameId, 'notice_promoted');
+    optimistic.noticePromotedEpisode = episode;
+    return optimistic.incidentId;
   };
   const journalRecoveryState = (optimistic) => {
     if (!journalRecoveryByOwner.has(optimistic)) journalRecoveryByOwner.set(optimistic, {
@@ -1380,6 +1395,7 @@ export const createLiveTransportStore = ({
     const optimistic = getOptimisticState(gameId);
     if (optimistic.upgradeRequired) return;
     optimistic.upgradeRequired = true;
+    captureRecoveryIssue(gameId, 'upgrade_required', {code:'upgrade_required'});
     clearTimeout(optimistic.retryTimer); optimistic.retryTimer = null;
     clearTimeout(optimistic.recoveryRetryTimer); optimistic.recoveryRetryTimer = null;
     recalculateOptimisticGame(gameId);
@@ -1984,6 +2000,7 @@ export const createLiveTransportStore = ({
     loadGameLegalActions,
     loadGamePieceMoves,
     reconcileGame,
+    ensureRecoveryIncident,
     finishSocketRecovery,
     setConnectionRecovering,
     prepareSafeReconnect(gameId) {
