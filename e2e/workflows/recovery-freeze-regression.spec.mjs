@@ -1,3 +1,4 @@
+import {createFaultLifecycle,disposeFaultContexts,fetchFaultResponse} from '../support/fault-lifecycle.mjs';
 import {waitForOpponentReady,waitForComputerDecision} from '../support/computer-projection.mjs';
 import { readFileSync } from 'node:fs';
 import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
@@ -122,6 +123,8 @@ test("lost move response recovers through identical submission while reconciliat
 
 test("guest play-both push retreat follow recovers with healthy HTTP and unavailable sockets",async({page,baseURL},info)=>{
  let socketsUnavailable=false,losePush=true;const commands=[], sockets=[],pushProofs=[];
+ const faults=createFaultLifecycle();
+ const faultResources={faults:new Map([[page,[faults]]]),contexts:new Set()};
  const actionFor=command=>(command.kind==='shared'?command.payload.values:command).payload?.action;
  let holdConfirmation=false,releaseConfirmation,confirmationRequested=false;
  const confirmationGate=new Promise(resolve=>releaseConfirmation=resolve);
@@ -134,10 +137,11 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  await switchGamePanel(page,"players");
  await page.getByRole("button",{name:"Play both sides",exact:true}).click();
  await switchGamePanel(page,"board");
- await page.route(`**/api/shell/games/${gameId}/**`,async route=>{
+ await page.route(`**/api/shell/games/${gameId}/**`,route=>faults.run(async()=>{
   const request=route.request();
   if(isOperationRequest(request,'reconcile')){
-   const response=await route.fetch();
+   const response=await fetchFaultResponse(route);
+   if(!response)return;
    if(holdConfirmation){confirmationRequested=true;await confirmationGate;}
    await route.fulfill({response});return;
   }
@@ -146,7 +150,9 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
   if(values.payload?.action?.type!=='push'){await route.continue();return;}
   const first=losePush;
   if(first){holdConfirmation=true;socketsUnavailable=true;losePush=false;sockets.forEach(socket=>socket.close({code:1012,reason:"Test deployment transition"}));}
-  const response=await route.fetch(),body=await response.json();
+  const response=await fetchFaultResponse(route);
+  if(!response)return;
+  const body=await response.json();
   const accepted=body.commandOutcomes?.find(outcome=>outcome.clientCommandId===envelope.clientCommandId&&outcome.fingerprint===envelope.fingerprint&&outcome.outcome==='accepted');
   expect(accepted,'The healthy HTTP server must retain the accepted original push receipt').toBeTruthy();
   const proof={envelope,accepted,receivedAt:Date.now(),deliveredAt:null,lost:first};pushProofs.push(proof);
@@ -155,9 +161,9 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
   // reconcile lets its accepted reply legitimately unblock the next action.
   if(holdConfirmation)await confirmationGate;
   await route.fulfill({response});proof.deliveredAt=Date.now();
- });
- let game=await currentGame(page,gameId);const push=game.legalActions.find(a=>a.type==="push");expect(push).toBeTruthy();
+ }));
  try {
+ let game=await currentGame(page,gameId);const push=game.legalActions.find(a=>a.type==="push");expect(push).toBeTruthy();
 
  await submitPlayableAction(page,push);
  await expect.poll(async()=> (await currentGame(page,gameId)).moves.length,{timeout:10000}).toBe(1);
@@ -207,7 +213,7 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  } finally {
   holdConfirmation=false;releaseConfirmation();
   // Drain intercepted requests before the browser fixture closes.
-  await page.unrouteAll({behavior:"wait"});
+  await disposeFaultContexts(faultResources,[page]);
   await info.attach("held-push-confirmations",{body:JSON.stringify(pushProofs,null,2),contentType:"application/json"});
  }
 });
