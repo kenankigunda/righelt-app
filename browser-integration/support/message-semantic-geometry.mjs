@@ -1,5 +1,22 @@
 import {expect} from '@playwright/test';
-export const settledMessage=async page=>{await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));await page.waitForFunction(()=>![...document.querySelectorAll('.board-message-slot')].some(slot=>slot.getAnimations().some(animation=>animation.pending||animation.playState==='running')));};
+export const settledMessage=async(page,{publishedManagedHeight=false}={})=>{
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+ await page.waitForFunction(requirePublished=>{
+  const slots=[...document.querySelectorAll('.board-message-slot')];
+  if(requirePublished&&slots.length===0)return false;
+  return slots.every(slot=>{
+   if(slot.getAnimations().some(animation=>animation.pending||animation.playState==='running'))return false;
+   if(!requirePublished)return true;
+   // Controlled Rush fixtures use native measured 1/64px targets, border-box,
+   // and no border. Check publication and actual layout in this same page turn.
+   const target=Number.parseFloat(slot.style.height),style=getComputedStyle(slot);
+   return slot.dataset.heightManaged==='true'&&/^\d+(?:\.\d+)?px$/.test(slot.style.height)
+    &&Number.isFinite(target)&&target>0&&Number.isInteger(target*64)
+    &&style.boxSizing==='border-box'&&Number.parseFloat(style.borderTopWidth)===0&&Number.parseFloat(style.borderBottomWidth)===0
+    &&slot.getBoundingClientRect().height===target;
+  });
+ },publishedManagedHeight);
+};
 
 // DOMRect.bottom can be a double sum of separately rounded top/height.
 // Verify that composition, cancel the unchanged origins, and bound only the
