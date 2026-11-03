@@ -19,12 +19,12 @@ export const transformBoardAdmissionModule = (source, recipe) => {
 // tokens leave the page; original app objects and stable keys are never copied.
 export function installBoardAdmissionCollector({targetRow,targetCol}){
  const subjects=new WeakMap();let next=0,sequence=0,armed=false;
- const log={version:1,first:[],tail:[],firstActivation:[],activation:[],activationGeneration:0,supersededActivations:0,dropped:0,activationDropped:0,incomplete:false,timeOrigin:performance.timeOrigin};
+ const log={version:1,first:[],tail:[],firstActivation:[],activation:[],activationGeneration:0,supersededActivations:0,dropped:0,activationDropped:0,firstSourceRead:null,lastSourceRead:null,sourceReadCount:0,incomplete:false,timeOrigin:performance.timeOrigin};
  const token=value=>{
   if(!value || !['object','function'].includes(typeof value))return null;
   if(!subjects.has(value))subjects.set(value,++next);return subjects.get(value);
  };
- const scalarKeys=new Set(['value','row','col','revision','phase','moves','previews','type','kind','interactive','sameNodes','mounted','positionChanged','preservePiecePreviews','resetSelection','legalTarget','hasPreviewAtClicked','hasClickedPiece','allowFreeSelection','usesHoverTargetSelection','count','retryAttempt','reconcileFirst','hadRuntime','trusted','rootToken','callbackToken','eventToken','targetToken','currentTargetToken','currentRootToken','cellRootToken','targetConnected','currentRootConnected','pathContainsCurrentRoot','dispatchPhase','pointerId','connected']);
+ const scalarKeys=new Set(['value','row','col','revision','phase','moves','previews','type','kind','interactive','sameNodes','mounted','positionChanged','preservePiecePreviews','resetSelection','legalTarget','hasPreviewAtClicked','hasClickedPiece','allowFreeSelection','usesHoverTargetSelection','count','retryAttempt','reconcileFirst','hadRuntime','trusted','rootToken','callbackToken','eventToken','targetToken','currentTargetToken','currentRootToken','cellRootToken','targetConnected','currentRootConnected','pathContainsCurrentRoot','dispatchPhase','pointerId','connected','pieceChanged','hasSelectedPiece','requestId']);
  const sanitize=data=>{
   const safe={};
   for(const [key,value] of Object.entries(data)){
@@ -36,6 +36,7 @@ export function installBoardAdmissionCollector({targetRow,targetCol}){
  };
  const record=(event,data={},subject=null)=>{try{
   const row={sequence:++sequence,event,...sanitize(data),subjectToken:token(subject),now:performance.now(),timeOrigin:performance.timeOrigin};
+  if(event==='fixture-ensure-source-read'){log.sourceReadCount++;log.firstSourceRead??=row;log.lastSourceRead=row;}
   if(log.first.length<64)log.first.push(row);
   else{if(log.tail.length===64){log.tail.shift();log.dropped++;log.incomplete=true;}log.tail.push(row);}
   if(armed){
@@ -89,7 +90,7 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
    let observation=null,incomplete=errors.length>0;
    try{observation=await page.evaluate(()=>globalThis.__boardAdmissionObservation??null);if(!observation)incomplete=true;}catch{incomplete=true;}
    const missingModules=Object.keys(recipes).filter(pathname=>!transforms.some(row=>row.pathname===pathname));
-   const payload={caseTitle:info.title,observation,transforms,errors,missingModules,incomplete:incomplete||missingModules.length>0||Boolean(observation?.incomplete),clock:'page.performance/timeOrigin; Node persistence wall clock separate',nodePersistedAt:new Date().toISOString()};
+   const payload={caseTitle:info.title,observation,transforms,errors,missingModules,incomplete:incomplete||missingModules.length>0||!observation?.activation?.length||Boolean(observation?.incomplete),clock:'page.performance/timeOrigin; Node persistence wall clock separate',nodePersistedAt:new Date().toISOString()};
    try{await writeFile(info.outputPath('board-admission-observation.json'),JSON.stringify(payload,null,2));}
    catch{console.error('[board-admission-diagnostic] evidence-write-incomplete');}
    try{await info.attach('board-admission-observation',{body:JSON.stringify(payload),contentType:'application/json'});}

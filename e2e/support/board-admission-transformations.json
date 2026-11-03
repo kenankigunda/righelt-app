@@ -58,7 +58,7 @@
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",
     "sourceSha256": "f1c5662f8fa7b033c2c911218daadd78ae3a35a3eaa78021a45efdaa13f8d9c5",
-    "outputSha256": "eed5ffd0542ba0446ce24cc59c96c187d082ea34dac41b9102cb9cfcccec585b",
+    "outputSha256": "ac2d58d14c87d4fb775b657c5541e11d1c1a9dee70b8c0bcf9534ca79c84153e",
     "operations": [
       {
         "start": 22472,
@@ -82,6 +82,30 @@
         "before": "",
         "after": "    boardAdmissionProbe(\"runtime-piece-response-installed\", () => ({revision:snapshotRevision,moves:selectedPieceMoves.length,previews:selectedPieceMovePreviews.length}));\n",
         "anchor": "edPieceMoves;\n    selectedPieceMovesKnown = true;\n    // A late ordinary result fills choices; it ca",
+        "anchorCount": 1
+      },
+      {
+        "start": 44387,
+        "end": 44387,
+        "before": "",
+        "after": "      boardAdmissionProbe(\"runtime-piece-query-start\", () => ({requestId,revision}));\n",
+        "anchor": "l?.setAttribute?.('aria-busy', 'true');\n    try {\n      const body = await host.loadPieceMoves(state",
+        "anchorCount": 1
+      },
+      {
+        "start": 44458,
+        "end": 44687,
+        "before": "      if (destroyed || revision !== snapshotRevision || requestId !== selectedPieceMovesRequestId || selectedPieceId !== requestedPieceId) return;\n      if (body.state && JSON.stringify(body.state) !== requestedSnapshot) return;\n",
+        "after": "      boardAdmissionProbe(\"runtime-piece-query-return\", () => ({requestId,revision}));\n      if (boardAdmissionValue(\"preview-destroyed\", destroyed) || boardAdmissionValue(\"preview-revision-stale\", revision !== snapshotRevision) || boardAdmissionValue(\"preview-request-stale\", requestId !== selectedPieceMovesRequestId) || boardAdmissionValue(\"preview-piece-stale\", selectedPieceId !== requestedPieceId)) return;\n      if (boardAdmissionValue(\"preview-echo-present\", body.state) && boardAdmissionValue(\"preview-echo-mismatch\", JSON.stringify(body.state) !== requestedSnapshot)) return;\n",
+        "anchor": "ait host.loadPieceMoves(state, selectedPiece.id);\n      if (destroyed || revision !== snapshotRevision || requestId !== selectedPieceMovesRequestId || selectedPieceId !== requestedPieceId) return;\n      if (body.state && JSON.stringify(body.state) !== requestedSnapshot) return;\n      // Move queries describe their input snapsho",
+        "anchorCount": 1
+      },
+      {
+        "start": 45258,
+        "end": 45313,
+        "before": "      if (requestId === selectedPieceMovesRequestId) {\n",
+        "after": "      if (boardAdmissionValue(\"preview-finally-current\", requestId === selectedPieceMovesRequestId)) {\n",
+        "anchor": "PieceMovesRequestId) throw error;\n    } finally {\n      if (requestId === selectedPieceMovesRequestId) {\n        selectedPieceMovesLoading = false;\n       ",
         "anchorCount": 1
       },
       {
@@ -178,6 +202,22 @@
         "before": "",
         "after": "      boardAdmissionProbe(\"runtime-target-candidates\", () => ({ count: candidates.length }));\n",
         "anchor": "const candidates = actionsAtTarget(clickedCoord);\n      const nextType = pickBestActionTypeForTarget",
+        "anchorCount": 1
+      },
+      {
+        "start": 58631,
+        "end": 58714,
+        "before": "    if (clickedPiece?.id === selectedPieceId && canToggleSelectedPieceOverlay()) {\n",
+        "after": "    if (boardAdmissionValue(\"selected-piece-id-equal\", clickedPiece?.id === selectedPieceId) && boardAdmissionValue(\"selected-piece-can-toggle\", canToggleSelectedPieceOverlay())) {\n      boardAdmissionProbe(\"selected-piece-overlay-toggle-entry\");\n",
+        "anchor": "=== nextType));\n      }\n      return;\n    }\n\n    if (clickedPiece?.id === selectedPieceId && canToggleSelectedPieceOverlay()) {\n      selectedPieceOverlayPhase = selectedPie",
+        "anchorCount": 1
+      },
+      {
+        "start": 59701,
+        "end": 59701,
+        "before": "",
+        "after": "    boardAdmissionProbe(\"runtime-selection-commit\", () => ({revision:snapshotRevision,pieceChanged,hasSelectedPiece:Boolean(selectedPieceId),source:selectedSource?{row:selectedSource.row,col:selectedSource.col}:null,target:selectedTarget?{row:selectedTarget.row,col:selectedTarget.col}:null,phase:selectedPieceOverlayPhase}));\n",
+        "anchor": "ctedPieceId !== result.selection.selectedPieceId;\n    if(pieceChanged && selectedPieceId) controls.o",
         "anchorCount": 1
       },
       {
