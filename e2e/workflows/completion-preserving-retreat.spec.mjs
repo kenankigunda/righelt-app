@@ -1,3 +1,4 @@
+import {installBoardAdmissionDiagnostics} from '../support/board-admission-diagnostics.mjs';
 import {test as base,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {deterministicStateHash,resolveToStability,serializeState} from '../../apps/web/generated/packages/game-engine/src/index.js';
@@ -141,6 +142,8 @@ function completed(game){
 }
 
 test('human retreat excludes the stranded square and completes the native Follow',async({page,baseURL},info)=>{
+ const admissionDiagnostics=await installBoardAdmissionDiagnostics(page,info,{baseURL,targetRow:3,targetCol:0});
+ try {
  const {gameId}=await importScenarioGame(page,makeRetreatScenario('human'),baseURL);await claimBoth(page);
  await atHash(page,gameId,f.push.beforeHash);await submit(page,gameId,f.push.action);
  const pushed=await atHash(page,gameId,f.push.afterHash);expect(pushed.legalActions).toEqual([safe.action]);await noClosure(page,pushed);
@@ -170,6 +173,7 @@ test('human retreat excludes the stranded square and completes the native Follow
  await page.screenshot({path:info.outputPath('safe-retreat-awaits-follow.png')});
  await submit(page,gameId,FOLLOW_ACTION);completed(await current(page,gameId));
  await info.attach('captured-retreat-provenance',{body:JSON.stringify({sha256:RETREAT_CAPTURE_SHA256,provenance:f.provenance,unsafe,receipt:rejected.commandOutcomes},null,2),contentType:'application/json'});
+ }finally{await admissionDiagnostics.persist();}
 });
 
 async function acceptedComputerRetreat(page,baseURL){

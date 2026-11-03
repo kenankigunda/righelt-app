@@ -1,4 +1,5 @@
 import {createFaultLifecycle,disposeFaultContexts,fetchFaultResponse} from '../support/fault-lifecycle.mjs';
+import {installBoardAdmissionDiagnostics} from '../support/board-admission-diagnostics.mjs';
 import {waitForOpponentReady,waitForComputerDecision} from '../support/computer-projection.mjs';
 import { readFileSync } from 'node:fs';
 import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
@@ -122,6 +123,8 @@ test("lost move response recovers through identical submission while reconciliat
 });
 
 test("guest play-both push retreat follow recovers with healthy HTTP and unavailable sockets",async({page,baseURL},info)=>{
+ const admissionDiagnostics=await installBoardAdmissionDiagnostics(page,info,{baseURL,targetRow:4,targetCol:1});
+ try {
  let socketsUnavailable=false,losePush=true;const commands=[], sockets=[],pushProofs=[];
  const faults=createFaultLifecycle();
  const faultResources={faults:new Map([[page,[faults]]]),contexts:new Set()};
@@ -216,6 +219,7 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
   await disposeFaultContexts(faultResources,[page]);
   await info.attach("held-push-confirmations",{body:JSON.stringify(pushProofs,null,2),contentType:"application/json"});
  }
+ }finally{await admissionDiagnostics.persist();}
 });
 
 for(const reduced of [false,true])test(`routine reconnect stays quiet four seconds and preserves board${reduced?" with reduced motion":""}`,async({page},info)=>{
@@ -226,7 +230,12 @@ for(const reduced of [false,true])test(`routine reconnect stays quiet four secon
  const {gameId}=await createGameFromHome(page);await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  await page.route(`**/api/shell/games/${gameId}/**`,async route=>{
   if(!isOperationRequest(route.request(),'reconcile')){await route.continue();return;}
-  const response=await route.fetch();if(hold){held();await gate;}await route.fulfill({response});
+  // Reconcile is a POST. This fixture only observes an empty command batch,
+  // so an ECONNRESET may repeat the same read once without replaying a command.
+  const requestBody=route.request().postDataJSON();
+  expect(route.request().method()).toBe('POST');
+  expect(requestBody.protocolVersion).toBe(2);expect(requestBody.commands).toEqual([]);
+  const response=await route.fetch({maxRetries:1});if(hold){held();await gate;}await route.fulfill({response});
  });
  try {
  await switchGamePanel(page,"board");
