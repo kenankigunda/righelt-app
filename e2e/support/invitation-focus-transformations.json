@@ -1,0 +1,129 @@
+{
+  "pathname": "/shell/app.js",
+  "sourceSha256": "1576e560671e49480746721782d0a2f395ad4da4582e1763bda2b71129e3fc23",
+  "outputSha256": "bcfdfa7f63c768e370d23db52cba1352f53414fa9d3355db11944e147c7f2ec3",
+  "operations": [
+    {
+      "start": 2802,
+      "end": 2802,
+      "before": "",
+      "after": "const observeInviteFocus = (phase, detail) => { try { globalThis.__righeltInviteFocusProbe?.(phase, detail); } catch {} };\n",
+      "anchor": "};\nconst patchToolHtml = (element, html) => {\n",
+      "anchorCount": 1
+    },
+    {
+      "start": 205745,
+      "end": 205745,
+      "before": "",
+      "after": "    observeInviteFocus(\"render-before-replacement\");\n",
+      "anchor": "  if (nextMarkup !== lastRenderedMarkup) {\n    if (currentRoute.name !== \"home\" || !patchHomeAroundCreateControl(nextMarkup)) {\n",
+      "anchorCount": 1
+    },
+    {
+      "start": 206181,
+      "end": 206181,
+      "before": "",
+      "after": "    observeInviteFocus(\"render-after-replacement\");\n",
+      "anchor": "    }\n    restoreScenarioDraftFocus?.();\n",
+      "anchorCount": 1
+    },
+    {
+      "start": 209318,
+      "end": 209318,
+      "before": "",
+      "after": "  const observeFocus = phase => { if (typeof pendingKey === \"string\" && pendingKey.startsWith(\"copy-invite:\")) observeInviteFocus(phase); };\n  observeFocus(\"pending-before-set\");\n",
+      "anchor": "  const pendingGeneration=account.snapshot().generation;\n  pendingButtonKeys.add(pendingKey);\n",
+      "anchorCount": 1
+    },
+    {
+      "start": 209355,
+      "end": 209355,
+      "before": "",
+      "after": "  observeFocus(\"pending-after-set\");\n",
+      "anchor": "  pendingButtonKeys.add(pendingKey);\n  if (renderStart) {\n",
+      "anchorCount": 1
+    },
+    {
+      "start": 209376,
+      "end": 209376,
+      "before": "",
+      "after": "    observeFocus(\"pending-before-start-render\");\n",
+      "anchor": "  if (renderStart) {\n    render({ animatePanels: false, includeBoard: false });\n",
+      "anchorCount": 2
+    },
+    {
+      "start": 209435,
+      "end": 209435,
+      "before": "",
+      "after": "    observeFocus(\"pending-after-start-render\");\n",
+      "anchor": "    render({ animatePanels: false, includeBoard: false });\n  }\n",
+      "anchorCount": 7
+    },
+    {
+      "start": 209679,
+      "end": 209679,
+      "before": "",
+      "after": "    observeFocus(\"pending-before-clear\");\n",
+      "anchor": "    if(pendingGeneration!==account.snapshot().generation)return;\n    pendingButtonKeys.delete(pendingKey);\n",
+      "anchorCount": 1
+    },
+    {
+      "start": 209721,
+      "end": 209721,
+      "before": "",
+      "after": "    observeFocus(\"pending-after-clear\");\n",
+      "anchor": "    pendingButtonKeys.delete(pendingKey);\n    if (renderEnd) {\n",
+      "anchorCount": 1
+    },
+    {
+      "start": 209742,
+      "end": 209742,
+      "before": "",
+      "after": "      observeFocus(\"pending-before-end-render\");\n",
+      "anchor": "    if (renderEnd) {\n      render({ animatePanels: false, includeBoard: false });\n",
+      "anchorCount": 1
+    },
+    {
+      "start": 209803,
+      "end": 209803,
+      "before": "",
+      "after": "      observeFocus(\"pending-after-end-render\");\n",
+      "anchor": "      render({ animatePanels: false, includeBoard: false });\n    }\n",
+      "anchorCount": 9
+    },
+    {
+      "start": 229865,
+      "end": 230128,
+      "before": "    try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { if(!active())return;inviteFallback={gameId,link};setInviteFeedback('Copy the link below to share it.'); }\n",
+      "after": "    try { observeInviteFocus(\"clipboard-before-await\"); await navigator.clipboard.writeText(link); observeInviteFocus(\"clipboard-resolved\");if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { observeInviteFocus(\"clipboard-rejected\"); if(!active())return;inviteFallback={gameId,link};setInviteFeedback('Copy the link below to share it.'); }\n",
+      "anchor": "    window.__righeltLastInvite=link;\n    try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { if(!active())return;inviteFallback={gameId,link};setInviteFeedback('Copy the link below to share it.'); }\n  }catch(error){if(active()){ issueDiagnostics.capture(`invite:${gameId}`, { gameId, operation: 'create_invite', stage: 'failed', code: error.code ?? 'unavailable' }); setInviteFeedback('We couldn\u2019t create your invite link. Please try again.'); }}\n",
+      "anchorCount": 1
+    },
+    {
+      "start": 277533,
+      "end": 277533,
+      "before": "",
+      "after": "    observeInviteFocus(\"action-entry\", actionEl);\n",
+      "anchor": "    }\n    await withPendingButton(getCopyInviteButtonKey(gameId),()=>copyGameInvitation(gameId,actionEl.dataset.inviteRole || 'viewer'));\n",
+      "anchorCount": 1
+    }
+  ],
+  "originalNativeBodySha256": "759fedc40d2cb772748f9b3c08f4127ae6fd9d8d524d816963b87748ab940515",
+  "servedPathWitness": {
+    "kind": "retained-native-failed-focus-trace",
+    "revision": "674a1d975929cde8d1cad3af010d79271485c415",
+    "traceSha256": "5eb5728df637bb6036365586c21f501b733c65f90249b6d9697dfcc012cbcc65",
+    "method": "GET",
+    "pathname": "/shell/app.js",
+    "status": 200,
+    "responseBodyNotStored": true
+  },
+  "originalEarlyNativeBodySha256": "e0970355079018b8da2c74ba37e56ef2a2442470c949ee2e1c45b567f416f7fd",
+  "earlyCaseServedPathWitness": {
+    "revision": "14f903ff7aa5d5825c44bba71051ce2a216c7109",
+    "traceSha256": "0152dab5ab840faffd39920a8c7ff1300c46b2da90e314190649d479d41b0a01",
+    "method": "GET",
+    "pathname": "/shell/app.js",
+    "status": 200
+  }
+}
