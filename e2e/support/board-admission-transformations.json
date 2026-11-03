@@ -58,7 +58,7 @@
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",
     "sourceSha256": "f1c5662f8fa7b033c2c911218daadd78ae3a35a3eaa78021a45efdaa13f8d9c5",
-    "outputSha256": "2cb05feb0ca1f8932c08c477a878a56e7059940b6c0a76d07ebf4a2a2c813f96",
+    "outputSha256": "ac2d58d14c87d4fb775b657c5541e11d1c1a9dee70b8c0bcf9534ca79c84153e",
     "operations": [
       {
         "start": 22472,
@@ -202,6 +202,14 @@
         "before": "",
         "after": "      boardAdmissionProbe(\"runtime-target-candidates\", () => ({ count: candidates.length }));\n",
         "anchor": "const candidates = actionsAtTarget(clickedCoord);\n      const nextType = pickBestActionTypeForTarget",
+        "anchorCount": 1
+      },
+      {
+        "start": 58631,
+        "end": 58714,
+        "before": "    if (clickedPiece?.id === selectedPieceId && canToggleSelectedPieceOverlay()) {\n",
+        "after": "    if (boardAdmissionValue(\"selected-piece-id-equal\", clickedPiece?.id === selectedPieceId) && boardAdmissionValue(\"selected-piece-can-toggle\", canToggleSelectedPieceOverlay())) {\n      boardAdmissionProbe(\"selected-piece-overlay-toggle-entry\");\n",
+        "anchor": "=== nextType));\n      }\n      return;\n    }\n\n    if (clickedPiece?.id === selectedPieceId && canToggleSelectedPieceOverlay()) {\n      selectedPieceOverlayPhase = selectedPie",
         "anchorCount": 1
       },
       {

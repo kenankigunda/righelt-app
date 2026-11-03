@@ -19,7 +19,7 @@ export const transformBoardAdmissionModule = (source, recipe) => {
 // tokens leave the page; original app objects and stable keys are never copied.
 export function installBoardAdmissionCollector({targetRow,targetCol}){
  const subjects=new WeakMap();let next=0,sequence=0,armed=false;
- const log={version:1,first:[],tail:[],firstActivation:[],activation:[],activationGeneration:0,supersededActivations:0,dropped:0,activationDropped:0,incomplete:false,timeOrigin:performance.timeOrigin};
+ const log={version:1,first:[],tail:[],firstActivation:[],activation:[],activationGeneration:0,supersededActivations:0,dropped:0,activationDropped:0,firstSourceRead:null,lastSourceRead:null,sourceReadCount:0,incomplete:false,timeOrigin:performance.timeOrigin};
  const token=value=>{
   if(!value || !['object','function'].includes(typeof value))return null;
   if(!subjects.has(value))subjects.set(value,++next);return subjects.get(value);
@@ -36,6 +36,7 @@ export function installBoardAdmissionCollector({targetRow,targetCol}){
  };
  const record=(event,data={},subject=null)=>{try{
   const row={sequence:++sequence,event,...sanitize(data),subjectToken:token(subject),now:performance.now(),timeOrigin:performance.timeOrigin};
+  if(event==='fixture-ensure-source-read'){log.sourceReadCount++;log.firstSourceRead??=row;log.lastSourceRead=row;}
   if(log.first.length<64)log.first.push(row);
   else{if(log.tail.length===64){log.tail.shift();log.dropped++;log.incomplete=true;}log.tail.push(row);}
   if(armed){
