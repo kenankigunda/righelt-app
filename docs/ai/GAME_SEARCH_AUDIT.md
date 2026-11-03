@@ -1,0 +1,52 @@
+# Game loading and shared search audit
+
+## Reproduction
+
+Production game `game-8f591fc5b97c9b7d6afb7594c35851096461` stalled on its loading skeleton. Health, bootstrap, another game's full response, and this game's lightweight list preview responded normally. Its full GET exceeded a 20-second diagnostic timeout. Provider execution logs were unavailable, so a specific Cloudflare execution-limit failure remains unconfirmed.
+
+The recovered rules position and ordered actions are retained in `packages/game-engine/test/fixtures/game-loading-{rush,actions}.json`. The action baseline came from the unmodified generated engine at `0ace3cb4`, whose legal and continuation files matched the deployment during diagnosis. No player identities, credentials, or game history are retained in these artifacts.
+
+Cold local enumeration before optimization took about 3.2 seconds and 240,262 continuation expansions. One rejected rush, U2-2 from (4,5) to (5,6), used 240,174 expansions. After pruning, complete enumeration returned the same ordered 34 actions with 90 expansions in 14.9 milliseconds. Timings are diagnostic measurements, not portable latency guarantees. The regression enforces fewer than 1,000 expansions and exact baseline actions.
+
+## Broader catalog result
+
+The bounded diagnostic (`scripts/diagnose-rule-search.mjs`) covers 50 catalog/retained positions and 105 legal, stabilization, and applicable guidance operations. Its first pass found one additional required legal search exceeding 16,384 expansions: the resulting position of catalog scenario `5bbc0ebf-ed20-4e12-8143-67eaa5cc8676`, Push vs. project strategy endgame.
+
+The verified unmodified `0ace3cb4` engine did not finish that position within the 15-second diagnostic limit. That attempt is incomplete, not a negative legality answer. A concrete two-rush witness proves the problematic rush can complete: U1-2 (6,5) → (7,5), followed by U1-1 (5,5) → (6,5).
+
+The completion search had kept its initial optimistic supply region after actors spent their moves. Refreshing that conservative region at each uncached rush state prunes branches whose only possible rescuer has already moved elsewhere. This preserves every candidate, internal/public action ordering, guard accounting, and the resource ceiling. The resulting position now completes with 52 legal actions and 174 expansions (13.5ms in the diagnostic run). All 105 audited operations complete with zero unknown results and zero errors. The original reported game still returns its ordered 34 baseline actions with 90 expansions. These are bounded corpus results, not a guarantee for every possible board.
+
+## Retained follow save
+
+A later production-derived position exposed the same search cost after a seven-push chain. Its sole legal action was C1 following from (3,5) to (4,5). The deployed engine validated and applied that action quickly, but enumeration of the next position exceeded one million expansions without finishing. That interrupted probe supplies no complete baseline action set.
+
+The existing pruning fix returns 45 actions from that next position in 128 expansions. The first measured pass took 12.1ms and the second 7.8ms, after initial state resolution had already warmed the module. These are diagnostic timings. The regression validates every returned action and bounds expansions, but does not claim an independent completeness or ordering comparison with the interrupted baseline.
+
+The retained rules-only fixture also covers optimistic projection, server commit, a lost response, room restart, reconciliation of the exact command receipt, and duplicate protection. A native Chromium journey saved the exact follow once, reloaded at the same gameplay revision, and resumed a distinct accepted move under a newer control generation. The model remained `trained-20261029-1086`. That local journey uses Horus on both seats to permit later computer play after a side change. It differs from the reported single-computer game and does not establish production session or provider behavior.
+
+## Findings and changes
+
+| Path | Finding | Treatment |
+| --- | --- | --- |
+| Rush completion | Ignoring all enemy command edges made permanently trapped destinations appear potentially rescuable. | Retain only barriers that no remaining friendly actor can possibly interrupt. Reachability remains an overestimate, so only impossibility is inferred. |
+| Push completion and stabilization | Successor state construction was already lazy on main, and monotonic actor flags bound chains. | Preserve that implementation and exact candidate ordering. Run adjacent push, retreat, stabilization, and replay tests. |
+| Recursive memoization | Visiting/failure entries are local to a search; the existing decision cache stores completed outer calls with full rule inputs and bounded storage. | Preserve scope and keys. Do not introduce shared path-dependent negative results or an unbounded cross-game cache. |
+| Supply hints | Breadth-first guidance retains path history to preserve irredundant-route semantics. The frontier lacked cooperative expansion accounting. | Reuse sound rush pruning, tighten the relaxed region as actors spend their moves, and account for both visited nodes and constructed successors. Preserve immutable enemy-adjacency requirements while relaxing friendly occupancy. Budget interruption produces no partial hint result. |
+| API full views and legal/preview work | Ordinary synchronous rule calls lacked the computer player's operation budget. | Apply the shared 16,384-expansion ceiling. Exhaustion throws `rules_budget_exceeded`; room responses report retryable 503 without claiming illegality. |
+| Browser rules | Cancellation terminated workers, but general projection/preview workers lacked their own hard deadline. | Use the existing request deadline, terminate expired workers, release queued work, and ignore late results. Never fall back to synchronous browser execution. |
+| Computer selection | Existing engine guards and a bounded opt-in decision cache already protect model-guided operations. | Preserve model, policy, action encoding, default node/rule limits, and strategy. A validated lower-only rule-expansion cap makes fallback tests deterministic without depending on an inefficient position. Validate affected computer contracts rather than tune playing strength. |
+| Initial game loading | Complete view construction coupled saved-board visibility to legal enumeration. | Add a separately typed position-only read. Display it with the existing perimeter spinner while complete state loads. |
+
+## Position-only safety contract
+
+`GET /api/shell/games/:id/position` reads durable state without dispatching a room operation or mutating a game. It uses existing authorization, account-name enrichment, and sanitization. D1 strips per-move snapshots before returning row metadata and move summaries. The outer Worker never decompresses history payloads or reconstructs archives for this route. Compacted history remains accessible through the existing paginated read endpoints. The shared `position-v1` discriminator and `positionOnly` marker distinguish presentation from synchronization.
+
+The browser stores this view separately from authoritative games, event cursors, command receipts, and optimistic projection. The complete-snapshot validator rejects position-only views. Late position replies cannot replace a complete response or survive account retirement. Older full responses cannot replace a newer displayed position.
+
+Saved board and history remain readable. State-changing controls remain blocked until complete state is ready. Failure retains the board, stops its spinner, and offers manual retry without replaying a mutation. Optional hint failure preserves legal play and offers a separate hint retry.
+
+## Validation and release
+
+Focused engine, transport, API projection, worker deadline, and hint tests cover these contracts. The small-board pruning oracle explores completions independently of the new impossibility proof. Exact final checks, browser results, screenshots, and unresolved gates belong to the PR validation evidence rather than this static audit.
+
+Coordinate shared engine changes with automatic game ending and loading/notice changes with Feedback push 10/29. No GET migration writes or terminal-rule changes belong to this fix. Evidence publication and paused schedules remain paused. Merge and deployment coordination belongs to the designated Feedback chat after technical validation and review.

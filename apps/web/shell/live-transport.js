@@ -1,6 +1,6 @@
 import { activeDecisionLineage } from './decision-history.js';
 import { createRulesExecutor } from '../board/rules-runtime.js';
-import { CURRENT_COMPUTER_MODEL } from '../generated/packages/shared-types/src/computer-play.js';
+import { CURRENT_COMPUTER_MODEL, computerProfileFor } from '../generated/packages/shared-types/src/computer-play.js';
 import { STORAGE_GENERATION_HEADER } from "../generated/packages/shared-types/src/storage-policy.js";
 import { issueDiagnostics } from "./issue-diagnostics.js";
 import { serializeState, listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
@@ -8,7 +8,7 @@ import { loadIdentity, saveIdentity } from "./persistence.js";
 import { defaultNotationForAction, rebaseProjectedMetadata } from "./optimistic-live.js";
 import { buildStaticGameCardFromGame, normalizeStaticGameCard } from "./static-game-cards.js";
 import { createCommandJournal } from "./command-journal.js";
-import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, SYNC_PROTOCOL_VERSION, SYNC_TIMING, SYNC_LIMITS, LIVE_HISTORY, SHARED_OPERATIONS, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
+import { POSITION_PROJECTION, ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, SYNC_PROTOCOL_VERSION, SYNC_TIMING, SYNC_LIMITS, LIVE_HISTORY, SHARED_OPERATIONS, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
 
 import { applyHistoryIntent, historyMoveKey } from "./recovery-view.js";
 import { activityStateActorSide } from "./activity-affiliation.js";
@@ -16,6 +16,8 @@ import { activityStateActorSide } from "./activity-affiliation.js";
 const clone = (value) => structuredClone(value);
 const projectionControlKey = game => JSON.stringify({
   ownershipMode: game?.ownershipMode, selfPlayMode: game?.selfPlayMode,
+  canRecordMove: game?.canRecordMove, canEndTurn: game?.canEndTurn,
+  control: game?.control, canControlComputer: game?.canControlComputer,
   p1: game?.player1?.identityId, p2: game?.player2?.identityId,
   myRole: game?.myRole, myRoles: game?.myRoles,
   inHistoryMode: game?.inHistoryMode, historyIndex: game?.historyIndex, historyTurnIndex: game?.historyTurnIndex,
@@ -32,7 +34,7 @@ const sameProjectionAuthority = (left, right) => Boolean(left && right
 // A validated, unresolved receipt is pending durable intent, not a failed
 // request. Private identity prevents external error messages impersonating it.
 const unresolvedCommandOutcome = Symbol('unresolved-command-outcome');
-export const validSyncSnapshot = (game, gameId) => {
+const validGameShape = (game, gameId) => {
   const state = game?.board?.state;
   return typeof gameId === "string" && gameId.length > 0 && game?.id === gameId
     && typeof game.createdAt === "string" && Number.isFinite(Date.parse(game.createdAt))
@@ -41,6 +43,7 @@ export const validSyncSnapshot = (game, gameId) => {
     && ["P1", "P2"].includes(state.sideToMove) && isSyncRevision(state.turnIndex) && Array.isArray(state.pieces)
     && Array.isArray(game.moves) && Array.isArray(game.turns);
 };
+export const validSyncSnapshot = (game, gameId) => game?.positionOnly !== true && validGameShape(game, gameId);
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
 const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
@@ -179,7 +182,11 @@ export const createLiveTransportStore = ({
   let games = [];
   let gameById = new Map();
   let homeGameCardById = new Map();
+  let activeHomeRead = null;
   const lastEventSeqByGameId = new Map();
+  const positions = new Map();
+  const positionFlights = new Map();
+  let positionGameId = null;
   const optimisticStateByGameId = new Map();
   // Storage recovery owns asynchronous work separately from game projections.
   const journalRecoveryByOwner = new WeakMap();
@@ -276,6 +283,40 @@ export const createLiveTransportStore = ({
     optimistic.confirmDeadlineAt = 0;
   };
 
+  // A fresh lease renewal changes no gameplay or human authority. Keep shared
+  // mutations serialized, while admitting explicit human play through the normal
+  // durable command path. Any uncertain recovery or changed owner still fences it.
+  const hasOnlySafeHumanRenewal = (game, optimistic) => {
+    if (!game) return false;
+    if (optimistic.pendingCommands.length !== 1 || optimistic.storageBlocked || optimistic.unsavedCommand
+      || optimistic.forceSnapshot || optimistic.recoveryPromise || optimistic.recoveryIssue || optimistic.upgradeRequired
+      || optimistic.confirmationOverdue || optimistic.retryAttempt > 0 || optimistic.syncStatus === 'confirming') return false;
+    const pending = optimistic.pendingCommands[0], envelope = pending.envelope, values = envelope?.payload?.values;
+    const control = game.computer, state = game.board?.state, now = Date.now();
+    // Account projections intentionally redact the lease's private auth context.
+    // A redacted lease is compatible only with the exact currently signed-in
+    // owner and this locally admitted envelope, never an absent/mismatched session.
+    const currentAccountEnvelope = Boolean(auth?.enabled && auth.session.authenticated
+      && auth.session.account?.id === identityId && /^[a-f0-9]{64}$/.test(auth.session.contextId ?? '')
+      && envelope?.authContextId === auth.session.contextId);
+    const leaseContextMatches = control?.lease?.authContextId === (envelope?.authContextId ?? '')
+      || currentAccountEnvelope && control?.lease?.authContextId === undefined;
+    if (pending.kind !== 'shared' || envelope?.payload?.operation !== 'computer-control' || values?.action !== 'renew'
+      || !control || control.ownerId !== identityId || game.canControlComputer === false
+      || !state || state.outcome?.status !== 'ongoing' || !(game.canRecordMove || game.canEndTurn)
+      || control.paused || control.manual || values.generation !== control.generation
+      || !control.lease || values.deviceId !== control.lease.deviceId || control.lease.expiresAt <= now
+      || envelope.identityId !== identityId || auth?.enabled && !currentAccountEnvelope
+      || !leaseContextMatches || envelope.expectedGameplayRevision !== game.gameplayRevision
+      || serializeState(envelope.expectedState) !== serializeState(state)
+      || !Number.isFinite(envelope.submittedAt) || envelope.submittedAt > now
+      || now - envelope.submittedAt >= timing.confirmationBudgetMs
+      || optimistic.connectionRecovering && pending.sharedRecoveryEpoch !== optimistic.connectionRecoveryEpoch) return false;
+    const turnIndex = game.currentTurn?.index ?? state.turnIndex ?? 0;
+    const actor = activityStateActorSide(state);
+    return Boolean(actor && !computerProfileFor(control, actor, turnIndex));
+  };
+
   const decorateGameWithSync = (game, gameId) => {
     const optimistic = getOptimisticState(gameId);
     const next = clone(game);
@@ -313,8 +354,11 @@ export const createLiveTransportStore = ({
     next.storageLimitReached = optimistic.storageError?.code === "command_limit_reached" || /limit/.test(optimistic.storageError?.message ?? "");
     next.rulesChecking = Boolean(optimistic.admissionProjection || optimistic.projectionJob?.pending);
     next.sharedMutationsBlocked = next.rulesChecking || optimistic.storageBlocked || next.recovering || next.upgradeRequired || optimistic.pendingCommands.some(command=>command.kind === "shared");
+    const authoritative = gameById.get(gameId);
+    const humanPermissionWithdrawn = authoritative?.canRecordMove === false && authoritative?.canEndTurn !== true;
+    next.gameplayMutationsBlocked = humanPermissionWithdrawn || next.sharedMutationsBlocked && !(!next.rulesChecking && hasOnlySafeHumanRenewal(game, optimistic));
     applyHistoryIntent(next, historyIntentByGameId.get(gameId), identityId);
-    if (next.sharedMutationsBlocked) {
+    if (next.gameplayMutationsBlocked) {
       next.canRecordMove = false;
       next.canEndTurn = false;
     }
@@ -434,6 +478,9 @@ export const createLiveTransportStore = ({
       return null;
     }
 
+    const position = positions.get(game.id);
+    if (position && (game.gameplayRevision < position.gameplayRevision || (eventSeq !== null && eventSeq < position.positionEventSeq))) return null;
+    positions.delete(game.id);
     const nextEventSeq = typeof eventSeq === "number" && Number.isFinite(eventSeq) ? eventSeq : null;
     const currentEventSeq = nextEventSeq !== null ? lastEventSeqByGameId.get(game.id) ?? 0 : null;
     const staleSnapshotIgnored = nextEventSeq !== null && currentEventSeq !== null && nextEventSeq < currentEventSeq;
@@ -603,7 +650,7 @@ export const createLiveTransportStore = ({
   const startTerminalCleanup = (gameId, command, outcome) => {
     const optimistic = getOptimisticState(gameId), owner = journalRecoveryState(optimistic);
     const envelope = clone(command.envelope), receipt = clone(outcome), key = cleanupKey(envelope);
-    if (owner.jobs.has(key)) return;
+    if (owner.jobs.has(key)) return owner.jobs.get(key);
     // Register before the first removal: a manual repair may finish while that
     // original transaction is still pending, making its late failure obsolete.
     const job = { gameId, optimistic, owner, envelope, receipt, command, key, token: Symbol('terminal-cleanup'), retries: 0, retired: false, timer: null };
@@ -653,6 +700,57 @@ export const createLiveTransportStore = ({
       }
     };
     job.promise = attempt(true);
+    return job;
+  };
+  const settleHydratedTerminalRow = async (gameId, optimistic, envelope, outcome, isCurrent) => {
+    const owner = journalRecoveryState(optimistic), key = cleanupKey(envelope);
+    const current = () => isCurrent() && currentJournalOwner(gameId, optimistic, owner);
+    let joined = null, startedCleanup = false;
+    while (current()) {
+      if (!await validTerminalCleanup(gameId, optimistic, owner, envelope, outcome)) {
+        if (!current()) return false;
+        throw Object.assign(new Error("invalid_cleanup_receipt"), { code: "invalid_cleanup_receipt" });
+      }
+      if (!current()) return false;
+      const cleanup = owner.jobs.get(key);
+      if (cleanup && cleanup !== joined) { joined = cleanup; await cleanup.promise; }
+      if (!current()) return false;
+      // The captured hydration row may predate a successful receipt cleanup.
+      // Prove current presence before requesting any removal of that row.
+      const cleanupBeforeRead = owner.jobs.get(key);
+      const saved = await commandJournal.list(identityId, gameId);
+      if (!current()) return false;
+      const latestCleanup = owner.jobs.get(key);
+      if (latestCleanup !== cleanupBeforeRead) continue;
+      if (latestCleanup && latestCleanup !== joined) continue;
+      const retained = saved.find(value => value.clientCommandId === envelope.clientCommandId);
+      if (!retained) {
+        if (latestCleanup) {
+          if (!await verifyCleanupAbsence(latestCleanup, saved)) return false;
+          const hadReason = owner.reasons.has(latestCleanup.token);
+          retireCleanupJob(latestCleanup, { verified: true });
+          if (hadReason) {
+            refreshStorageReasons(optimistic, owner);
+            resolveRecoveryIfClear(gameId, optimistic);
+          }
+        }
+        return current();
+      }
+      if (!isSyncCommand(retained) || retained.fingerprint !== await commandFingerprint(retained)
+        || canonicalCommandJson(retained) !== canonicalCommandJson(envelope)) {
+        throw Object.assign(new Error("invalid_saved_command"), { code: "invalid_saved_command" });
+      }
+      if (!current()) return false;
+      if (owner.jobs.get(key) !== latestCleanup) continue;
+      // A failed cleanup still has its own blocker and retry owner. Hydration
+      // must not launch another delete or erase that owner's storage failure.
+      if (latestCleanup) return true;
+      if (startedCleanup) throw Object.assign(new Error("cleanup_unverified"), { code: "cleanup_unverified" });
+      startedCleanup = true;
+      joined = startTerminalCleanup(gameId, internalCommand(envelope), outcome);
+      await joined.promise;
+    }
+    return false;
   };
   const settleOutcome = (gameId, outcome, notifications = null) => {
     const optimistic = getOptimisticState(gameId);
@@ -711,19 +809,29 @@ export const createLiveTransportStore = ({
     return result;
   };
 
-  const boundedRequest = async (url, init, controller = new AbortController()) => {
-    let timer;
+  const boundedRequest = async (url, init, controller = new AbortController(), cancelOnAbort = false) => {
+    let timer, onAbort;
     const evidence = {}, started = Date.now();
     try {
       return await Promise.race([
-        Promise.resolve().then(() => fetcher(url, { ...init, signal: controller.signal }, evidence)).then(mustOk),
+        Promise.resolve().then(() => {
+          if (cancelOnAbort && controller.signal.aborted) throw Object.assign(new Error("session_changed"), { code: "session_changed" });
+          return fetcher(url, { ...init, signal: controller.signal }, evidence);
+        }).then(mustOk),
         new Promise((_, reject) => { timer = setTimeout(() => {
           const diagnosticEvidence = { ...evidence, durationMs: Date.now() - started };
+          const error = Object.assign(new Error("request_timeout"), { code: "request_timeout", diagnosticEvidence });
+          if (cancelOnAbort) reject(error); // Home cancellation must not mask its timeout.
           controller.abort();
-          reject(Object.assign(new Error("request_timeout"), { code: "request_timeout", diagnosticEvidence }));
+          if (!cancelOnAbort) reject(error);
         }, timing.requestTimeoutMs); }),
+        ...(cancelOnAbort ? [new Promise((_, reject) => {
+          onAbort = () => reject(Object.assign(new Error("session_changed"), { code: "session_changed" }));
+          controller.signal.addEventListener("abort", onAbort, { once: true });
+          if (controller.signal.aborted) onAbort();
+        })] : []),
       ]);
-    } finally { clearTimeout(timer); }
+    } finally { clearTimeout(timer); if (onAbort) controller.signal.removeEventListener("abort", onAbort); }
   };
 
   const scheduleRetry = (gameId, retryAttempt, reconcileFirst = true, retryAfterMs = 0) => {
@@ -747,13 +855,15 @@ export const createLiveTransportStore = ({
     const notifications = [];
     for (const outcome of body.commandOutcomes) settleOutcome(gameId, outcome, notifications);
     if (body.game) upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, publish: false });
-    for (const notification of notifications) emitChange(notification);
     if (body.commandOutcomes.some(outcome => outcome.reason === "upgrade_required")) {
+      for (const notification of notifications) emitChange(notification);
       markUpgradeRequired(gameId);
       throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
     }
     if (!optimistic.pendingCommands.length && !optimistic.forceSnapshot && (!sharedRecoveryOwners.length || sharedRecoveryOwners.some(epoch => epoch !== undefined && epoch === optimistic.connectionRecoveryEpoch))) setConnectionRecovering(gameId, false);
-
+    // Publish a settled receipt together with its owned recovery state. An
+    // intermediate pending=0/recovering=true frame disables legal controls.
+    for (const notification of notifications) emitChange(notification);
     emitChange({ type: "authoritative_update", gameId });
     void sendNextPendingCommand(gameId);
     return body;
@@ -880,9 +990,11 @@ export const createLiveTransportStore = ({
   };
 
   const internalCommand = (envelope) => ({ envelope, kind: envelope.kind === "shared" ? "shared" : envelope.kind === "action" ? "apply" : "end-turn", clientCommandId: envelope.clientCommandId, state: clone(envelope.expectedState), action: envelope.payload.action, notation: envelope.payload.notation, computer: envelope.payload.computer, queuedAt: Number.isFinite(envelope.submittedAt) ? new Date(envelope.submittedAt).toISOString() : new Date().toISOString() });
-  const hydrateJournal = async (gameId, isCurrent = () => true) => {
+  const mayHydrateJournal = gameId => !auth?.enabled
+    || auth.session.authenticated && gameById.get(gameId)?.ownershipMode === "account_v1";
+  const hydrateJournalOnce = async (gameId, isCurrent) => {
     assertActive();
-    if (auth?.enabled && (!auth.session.authenticated || gameById.get(gameId)?.ownershipMode !== "account_v1")) return;
+    if (!mayHydrateJournal(gameId)) return;
     const optimistic = getOptimisticState(gameId);
     if (optimistic.hydrated) return;
     try {
@@ -899,12 +1011,7 @@ export const createLiveTransportStore = ({
         if (!isCurrent()) return;
         const outcome = optimistic.outcomes.get(envelope.clientCommandId);
         if (outcome) {
-          const owner = journalRecoveryState(optimistic);
-          const valid = await validTerminalCleanup(gameId, optimistic, owner, envelope, outcome);
-          if (!isCurrent() || !currentJournalOwner(gameId, optimistic, owner)) return;
-          if (!valid) throw Object.assign(new Error("invalid_cleanup_receipt"), { code: "invalid_cleanup_receipt" });
-          await commandJournal.remove(envelope);
-          if (!isCurrent() || !currentJournalOwner(gameId, optimistic, owner)) return;
+          if (!await settleHydratedTerminalRow(gameId, optimistic, envelope, outcome, isCurrent)) return;
           continue;
         }
         if (!optimistic.pendingCommands.some((entry) => entry.clientCommandId === envelope.clientCommandId)) optimistic.pendingCommands.push(internalCommand(envelope));
@@ -923,6 +1030,29 @@ export const createLiveTransportStore = ({
     } catch (error) { if (isCurrent() && active) blockStorage(gameId, error); throw error; }
   };
 
+  const hydrateJournal = async (gameId, isCurrent = () => true) => {
+    assertActive();
+    const optimistic = getOptimisticState(gameId);
+    while (isCurrent() && mayHydrateJournal(gameId) && !optimistic.hydrated) {
+      assertActive();
+      let job = optimistic.hydrationJob;
+      if (!job || !job.isCurrent()) {
+        // Share the entire validation/adoption/terminal-cleanup pass. Two
+        // readers of the same saved row must not independently remove it.
+        job = { isCurrent: () => isCurrent() && mayHydrateJournal(gameId) };
+        optimistic.hydrationJob = job;
+        job.promise = Promise.resolve().then(() => hydrateJournalOnce(gameId, job.isCurrent))
+          .finally(() => { if (optimistic.hydrationJob === job) optimistic.hydrationJob = null; });
+      }
+      try { await job.promise; }
+      catch (error) {
+        if (!active || !isCurrent() || job.isCurrent()) throw error;
+        // A different caller's obsolete pass cannot establish this caller's
+        // storage result. Re-read under its still-current recovery owner.
+      }
+    }
+  };
+
   const enqueueOptimisticCommand = async ({ gameId, command }) => {
     const contextEpoch = rulesEpoch;
     const optimistic = getOptimisticState(gameId);
@@ -931,17 +1061,18 @@ export const createLiveTransportStore = ({
       assertRulesContext(contextEpoch, gameId);
       if (auth?.enabled && (!auth.session.authenticated)) throw Object.assign(new Error("invalid_credentials"), { code: "invalid_credentials" });
       const current = getGameViewModel(gameId);
-      if (current?.sharedMutationsBlocked) throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
+      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
       const isClosure = command.kind === "end-turn" || command.action?.type === "end_turn";
       if (isClosure && serverActionContract !== ACTION_CONTRACT_VERSION) {
         markUpgradeRequired(gameId);
         throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
       }
+      const admittedRenewal = !command.computer && hasOnlySafeHumanRenewal(gameById.get(gameId), optimistic) ? clone(optimistic.pendingCommands[0].envelope) : null;
       const predecessor = optimistic.pendingCommands.at(-1)?.envelope;
       const envelope = { protocolVersion: 2, actionContractVersion: ACTION_CONTRACT_VERSION, gameId, identityId, clientCommandId: command.clientCommandId, submittedAt: Date.parse(command.queuedAt) || Date.now(),
         ...(auth?.enabled ? { authContextId: auth.session.contextId } : {}),
         kind: command.kind === "apply" ? "action" : "end_turn", payload: command.kind === "apply" ? { action: command.action, notation: command.notation, ...(command.computer ? { computer: command.computer } : {}) } : {},
-        expectedState: clone(command.state ?? current.board.state), expectedGameplayRevision: predecessor ? predecessor.expectedGameplayRevision + 1 : (gameById.get(gameId)?.gameplayRevision ?? 0),
+        expectedState: clone(command.state ?? current.board.state), expectedGameplayRevision: predecessor ? predecessor.expectedGameplayRevision + (predecessor.kind === "shared" ? 0 : 1) : (gameById.get(gameId)?.gameplayRevision ?? 0),
         ...(command.kind === "end-turn" ? { expectedTurnIndex: current.board.state.turnIndex } : {}),
         ...(predecessor ? { predecessor: { clientCommandId: predecessor.clientCommandId, fingerprint: predecessor.fingerprint } } : {}),
       };
@@ -951,6 +1082,16 @@ export const createLiveTransportStore = ({
       command.envelope = envelope;
       const base = gameById.get(gameId);
       const pendingIds = optimistic.pendingCommands.map(entry => entry.clientCommandId).join("|");
+      const renewalSettled = () => {
+        const receipt = admittedRenewal && optimistic.outcomes.get(admittedRenewal.clientCommandId);
+        return Boolean(admittedRenewal && optimistic.pendingCommands.length === 0
+          && isCommandOutcome(receipt, admittedRenewal) && receipt.outcome === 'accepted');
+      };
+      const pendingStillMatches = () => optimistic.pendingCommands.map(entry => entry.clientCommandId).join("|") === pendingIds || renewalSettled();
+      const gameplayRecoveryBlocked = game => Boolean(optimistic.storageBlocked || optimistic.unsavedCommand
+        || optimistic.forceSnapshot || optimistic.upgradeRequired || optimistic.confirmationOverdue || optimistic.recoveryIssue
+        || optimistic.recoveryPromise || optimistic.syncStatus === 'confirming'
+        || optimistic.connectionRecovering && !hasOnlySafeHumanRenewal(game, optimistic));
       rulesExecutor.cancel(`project:${gameId}`);
       optimistic.projectionJob = null;
       optimistic.admissionProjection = true;
@@ -959,19 +1100,28 @@ export const createLiveTransportStore = ({
         assertActive();
         assertRulesContext(contextEpoch, gameId);
         const latest = gameById.get(gameId);
-        if (!sameProjectionAuthority(base, latest) || optimistic.pendingCommands.map(entry => entry.clientCommandId).join("|") !== pendingIds) {
+        if (!sameProjectionAuthority(base, latest) || !pendingStillMatches()) {
           throw Object.assign(new Error("stale_state"), { code: "stale_state" });
         }
+        if (gameplayRecoveryBlocked(latest)) throw Object.assign(new Error('sync_recovering'), {code:'sync_recovering'});
         if (!projection.ok) return projection;
         if (latest !== base) projection = rebaseProjectedMetadata(projection, latest);
         try { await commandJournal.admit(envelope); }
         catch (error) { optimistic.unsavedCommand = command; blockStorage(gameId, error); throw error; }
         assertActive();
+        const committedBase = gameById.get(gameId);
+        const contextStillCurrent = !rulesExecutor.asynchronous || rulesEpoch === contextEpoch && rulesGameId === gameId && rulesVisible;
+        // Admission is durable now. Reuse completed work only across unchanged
+        // authority/lineage and harmless metadata; changed authority still uses
+        // normal journal recovery and must never receive a stale projection.
+        const reuseProjection = contextStillCurrent && sameProjectionAuthority(latest, committedBase)
+          && pendingStillMatches() && !gameplayRecoveryBlocked(committedBase);
+        if (reuseProjection && committedBase !== latest) projection = rebaseProjectedMetadata(projection, committedBase);
         optimistic.pendingCommands.push(command);
-        optimistic.syncStatus = "applying-update";
+        if (optimistic.syncStatus !== 'confirming') optimistic.syncStatus = "applying-update";
         optimistic.admissionProjection = false;
-        if (gameById.get(gameId) === latest) {
-          optimistic.projectionJob = { base: latest, signature: optimistic.pendingCommands.filter(entry => entry.kind !== "shared").map(entry => entry.clientCommandId).join("|"), result: projection, pending: false };
+        if (reuseProjection) {
+          optimistic.projectionJob = { base: committedBase, signature: optimistic.pendingCommands.filter(entry => entry.kind !== "shared").map(entry => entry.clientCommandId).join("|"), result: projection, pending: false };
           installProjection(gameId, projection);
         } else recalculateOptimisticGame(gameId);
         emitChange({ type: "optimistic_enqueue", gameId, clientCommandId: command.clientCommandId });
@@ -1069,6 +1219,50 @@ export const createLiveTransportStore = ({
     });
     optimistic.recoveryPromise = promise; return promise;
   };
+  const finishSocketRecovery = async (gameId, { isCurrent = () => true, beforeRetire = () => {} } = {}) => {
+    const current = () => active && isCurrent();
+    const optimistic = getOptimisticState(gameId);
+    let recoveryGeneration = optimistic.recoveryGeneration ?? 0;
+    const recoveryEpoch = optimistic.connectionRecoveryEpoch;
+    await hydrateJournal(gameId, current);
+    if (!current()) return false;
+    const admission = optimistic.admission;
+    await admission.catch(() => {});
+    const blocked = () => optimistic.storageBlocked || optimistic.unsavedCommand || optimistic.upgradeRequired
+      || ['session_changed', 'invalid_credentials'].includes(optimistic.recoveryIssue)
+      || auth?.enabled && !auth.session.authenticated;
+    const sameRecovery = () => (optimistic.recoveryGeneration ?? 0) === recoveryGeneration
+      && optimistic.connectionRecoveryEpoch === recoveryEpoch;
+    if (!current() || !sameRecovery() || optimistic.admission !== admission || blocked()) return false;
+    // A snapshot is not a receipt for saved intent. Hydrate first and keep the
+    // durable sender's existing ownership until every command is settled.
+    if (optimistic.pendingCommands.length || optimistic.forceSnapshot) {
+      const reconciliation = reconcileGame(gameId);
+      recoveryGeneration = optimistic.recoveryGeneration ?? 0;
+      await reconciliation;
+    }
+    if (!current() || !sameRecovery() || blocked() || optimistic.admission !== admission || optimistic.pendingCommands.length || optimistic.forceSnapshot
+      || optimistic.attempt?.commandId != null) return false;
+    const owner = optimistic.recoveryOwner;
+    const attempt = optimistic.attempt;
+    if (beforeRetire() === false || !current() || optimistic.recoveryOwner !== owner
+      || optimistic.attempt !== attempt || !sameRecovery()
+      || blocked() || optimistic.admission !== admission || optimistic.pendingCommands.length || optimistic.forceSnapshot) return false;
+    if (owner) {
+      owner.superseded = true;
+      owner.reject?.(Object.assign(new Error("recovery_superseded"), { code: "recovery_superseded" }));
+      optimistic.recoveryOwner = null; optimistic.recoveryPromise = null;
+    }
+    // Only an obsolete read can be cancelled here. Accepted or uncertain writes
+    // remain under the durable command journal, including their deadlines.
+    if (attempt && attempt.commandId === null) {
+      optimistic.attempt = null;
+      attempt.controller.abort(); attempt.finish();
+    }
+    setConnectionRecovering(gameId, false);
+    return true;
+  };
+
   const retrySavingOnce = async (gameId, optimistic, owner, mayRecover) => {
     const reasons = [...owner.reasons.keys()], jobs = [...owner.jobs.values()];
     const current = () => currentJournalOwner(gameId, optimistic, owner) && mayRecover();
@@ -1163,34 +1357,85 @@ export const createLiveTransportStore = ({
     return work;
   };
 
-  const loadGamesPage = async ({ section, page = 0, pageSize = 6, debug = false } = {}) => {
-    const params = new URLSearchParams({
-      identityId,
-      section: String(section || ""),
-      page: String(page),
-      pageSize: String(pageSize),
-      debug: debug ? "1" : "0",
-    });
-    const body = await boundedRequest(`/api/shell/games?${params.toString()}`, {
-      method: "GET",
-      cache: "no-store",
-    });
-    const gamesPage = Array.isArray(body.games) ? body.games.map((game) => normalizeStaticGameCard(game)) : [];
-    for (const game of gamesPage) {
-      homeGameCardById.set(game.id, game);
-    }
-    // Home reloads must resume durable commands even when their game is not opened.
-    // Hydration starts bounded reconciliation; listing a page never waits on the network recovery.
+  // Journal work belongs to durable authority, not a Home presentation batch.
+  const hydrateHomeJournal = async (gamesPage = []) => {
+    const session = auth?.session, context = session?.contextId, owner = identityId;
+    const accountId = session?.account?.id, authenticated = session?.authenticated, storageGeneration = auth?.storageGeneration;
+    const current = () => active && owner === identityId && session === auth?.session && context === auth?.session?.contextId
+      && accountId === auth?.session?.account?.id && authenticated === auth?.session?.authenticated && storageGeneration === auth?.storageGeneration;
+    if (!current()) return;
     try {
-      const saved = await commandJournal.list(identityId);
+      const saved = await commandJournal.list(owner);
+      assertActive();
+      if (!current()) return;
       await Promise.all([...new Set(saved.map(command => command.gameId))].map(gameId => hydrateJournal(gameId).catch(() => {})));
     } catch (error) {
-      for (const game of gamesPage) blockStorage(game.id, error);
+      if (current()) {
+        for (const game of gamesPage) blockStorage(game.id, error);
+      }
     }
-    return {
-      ...body,
-      games: gamesPage.map(game => getHomeGameCard(game.id)),
+  };
+  const readGamesPage = async ({ section, page = 0, pageSize = 6, debug = false } = {}, controller, staged = false) => {
+    const params = new URLSearchParams({ identityId, section: String(section || ""), page: String(page), pageSize: String(pageSize), debug: debug ? "1" : "0" });
+    const body = await boundedRequest(`/api/shell/games?${params.toString()}`, { method: "GET", cache: "no-store" }, controller, staged);
+    if (staged && (!Array.isArray(body.games) || ![body.page, body.totalGames, body.totalPages].every(value => Number.isSafeInteger(value) && value >= 0)
+      || body.section !== undefined && body.section !== section || body.games.some(game => typeof game?.id !== "string" || !game.id))) {
+      throw Object.assign(new Error("invalid_home_page"), { code: "invalid_home_page" });
+    }
+    return { ...body, games: Array.isArray(body.games) ? body.games.map(game => normalizeStaticGameCard(game)) : [] };
+  };
+  const loadGamesPage = async (options = {}) => {
+    const body = await readGamesPage(options);
+    for (const game of body.games) homeGameCardById.set(game.id, game);
+    // Preserve standalone pagination's eager publication and awaited hydration.
+    await hydrateHomeJournal(body.games);
+    return { ...body, games: body.games.map(game => getHomeGameCard(game.id)) };
+  };
+  const createHomeRead = ({ isCurrent = () => true } = {}) => {
+    assertActive();
+    if (!isCurrent()) throw Object.assign(new Error("session_changed"), { code: "session_changed" });
+    activeHomeRead?.retire();
+    const session = auth?.session, context = session?.contextId, owner = identityId;
+    const authEnabled = auth?.enabled, storageGeneration = auth?.storageGeneration;
+    const authenticated = Boolean(session?.authenticated), accountId = session?.account?.id;
+    const cards = new Map(), controllers = new Set();
+    let retired = false, pending = 0, failed = false, failure = null;
+    const current = () => !retired && active && activeHomeRead === batch && owner === identityId
+      && auth?.enabled === authEnabled && auth?.storageGeneration === storageGeneration && auth?.session === session && auth?.session?.contextId === context
+      && Boolean(auth?.session?.authenticated) === authenticated && auth?.session?.account?.id === accountId && isCurrent();
+    const assertCurrent = () => { if (!current()) throw Object.assign(new Error("session_changed"), { code: "session_changed" }); };
+    const batch = {
+      async readPage(options) {
+        assertCurrent();
+        const controller = new AbortController(); controllers.add(controller); pending++;
+        try {
+          const body = await readGamesPage(options, controller, true);
+          assertCurrent();
+          for (const game of body.games) cards.set(game.id, game);
+          void hydrateHomeJournal(body.games);
+          return body;
+        } catch (error) { failed = true; failure ??= error; batch.retire(); throw failure; }
+        finally { pending--; controllers.delete(controller); }
+      },
+      commit() {
+        assertCurrent();
+        if (pending || failed) throw Object.assign(new Error("home_read_incomplete"), { code: "home_read_incomplete" });
+        // No emit, await, journal work or other user callback between card and
+        // section publication. The app installs its staged section map next.
+        for (const [id, card] of cards) homeGameCardById.set(id, card);
+        batch.retire();
+      },
+      retire() {
+        if (retired) return;
+        retired = true;
+        for (const controller of controllers) controller.abort();
+        cards.clear();
+        if (activeHomeRead === batch) activeHomeRead = null;
+      },
     };
+    activeHomeRead = batch;
+    void hydrateHomeJournal();
+    return batch;
   };
 
   const markUpgradeRequired = (gameId) => {
@@ -1201,6 +1446,47 @@ export const createLiveTransportStore = ({
     clearTimeout(optimistic.recoveryRetryTimer); optimistic.recoveryRetryTimer = null;
     recalculateOptimisticGame(gameId);
     emitChange({ type: "upgrade_required", gameId });
+  };
+  // Read-only display state is deliberately outside gameById, event cursors,
+  // command receipts, optimistic projection and journal hydration.
+  const loadGamePosition = (gameId) => {
+    if (getOptimisticState(gameId).upgradeRequired) return Promise.reject(Object.assign(new Error("upgrade_required"), { code: "upgrade_required" }));
+    if (gameById.has(gameId)) return Promise.resolve(getGameViewModel(gameId));
+    if (positionGameId !== gameId) { positions.clear(); positionGameId = gameId; }
+    if (positionFlights.has(gameId)) return positionFlights.get(gameId);
+    if (positions.has(gameId)) {
+      positions.set(gameId, { ...positions.get(gameId), positionLoading: true, positionError: false });
+      emitChange({ type: "position_loading", gameId });
+    }
+    const flight = boundedRequest(`/api/shell/games/${encodeURIComponent(gameId)}/position?identityId=${encodeURIComponent(identityId)}`, { method: "GET", cache: "no-store" })
+      .then(body => {
+        assertActive();
+        if (body.projection !== POSITION_PROJECTION || body.protocolVersion !== 2 || body.game?.positionOnly !== true
+          || !validGameShape(body.game, gameId) || !isSyncRevision(body.eventSeq)) throw new Error("invalid_position");
+        if (positionGameId === gameId && !gameById.has(gameId) && positionFlights.get(gameId) === flight) {
+          positions.set(gameId, { ...body.game, positionEventSeq: body.eventSeq, positionLoading: true, positionError: false });
+          emitChange({ type: "position_loaded", gameId });
+        }
+        return getGameViewModel(gameId);
+      }).finally(() => { if (positionFlights.get(gameId) === flight) positionFlights.delete(gameId); });
+    positionFlights.set(gameId, flight);
+    return flight;
+  };
+  const loadCompleteGame = async (gameId, options = {}) => {
+    const positionFlight = options.positionFirst ? loadGamePosition(gameId).catch(() => null) : Promise.resolve(null);
+    try {
+      const game = await loadGame(gameId, options);
+      if (!game || game.positionOnly) throw Object.assign(new Error("stale_snapshot"), { code: "stale_snapshot" });
+      return game;
+    }
+    catch (error) {
+      await positionFlight;
+      if (active && !gameById.has(gameId) && positions.has(gameId)) {
+        positions.set(gameId, { ...positions.get(gameId), positionLoading: false, positionError: true });
+        emitChange({ type: "position_failed", gameId });
+      }
+      throw error;
+    }
   };
   const loadGame = async (gameId, { openAsViewer = false } = {}) => {
     if (getOptimisticState(gameId).upgradeRequired) throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
@@ -1435,6 +1721,15 @@ export const createLiveTransportStore = ({
 
   const endTurn = async ({ gameId }) => {
     const current = getGameViewModel(gameId);
+    // An ordinary action may already have opened the next empty turn. Preserve
+    // that semantic refusal without admitting a command or treating the prior
+    // player's lack of turn permission as connection recovery.
+    if (active && (!auth?.enabled || auth.session.authenticated) && gameById.has(gameId)
+      && current?.positionOnly !== true && current?.board?.state?.outcome?.status === "ongoing"
+      && current?.currentTurn?.status === "active" && current.currentTurn.moveIndexes?.length === 0
+      && !current?.board?.state?.continuation) {
+      throw Object.assign(new Error("turn_has_no_moves"), { code: "turn_has_no_moves" });
+    }
     const command = {
       kind: "end-turn",
       clientCommandId: createClientCommandId({ gameId, identityId, random }),
@@ -1582,6 +1877,7 @@ export const createLiveTransportStore = ({
       const completion=new Promise((resolve,reject)=>sharedWaiters.set(envelope.clientCommandId,{resolve,reject}));
       const pending = internalCommand(envelope);
       optimistic.pendingCommands.push(pending);
+      pending.sharedRecoveryEpoch = (optimistic.connectionRecoveryEpoch ?? 0) + 1;
       setConnectionRecovering(gameId,true);
       pending.sharedRecoveryEpoch = optimistic.connectionRecoveryEpoch;
       void sendNextPendingCommand(gameId);
@@ -1683,7 +1979,12 @@ export const createLiveTransportStore = ({
       recalculateOptimisticGame(gameId);
     }
     if (!optimistic.derivedGame) {
-      return null;
+      const position = clone(positions.get(gameId) ?? null);
+      if (!position) return null;
+      applyHistoryIntent(position, historyIntentByGameId.get(gameId), identityId);
+      return { ...position, canRecordMove: false, canEndTurn: false, canUndoLastMove: false, sharedMutationsBlocked: true, gameplayMutationsBlocked: true,
+        historyLoading: clone(historyLoads.get(gameId) ?? null) };
+
     }
     // Browser suspension can advance deadlines before scheduled callbacks run.
     // Refresh time-dependent safety flags even when the board projection is cached.
@@ -1726,7 +2027,9 @@ export const createLiveTransportStore = ({
   return {
     setRulesActiveGame,
     loadGamesPage,
-    loadGame,
+    createHomeRead,
+    loadGame: loadCompleteGame,
+    loadGamePosition,
     resolveInvite,
     createGame,
     computerControl: (gameId, values) => decisionRequest(gameId, 'computer-control', values),
@@ -1744,6 +2047,7 @@ export const createLiveTransportStore = ({
     loadGameLegalActions,
     loadGamePieceMoves,
     reconcileGame,
+    finishSocketRecovery,
     setConnectionRecovering,
     prepareSafeReconnect(gameId) {
       const optimistic = getOptimisticState(gameId);
@@ -1797,6 +2101,8 @@ export const createLiveTransportStore = ({
     unsubscribe,
     retire() {
       active = false;
+      activeHomeRead?.retire();
+      positions.clear(); positionFlights.clear();
       rulesExecutor.cancelAll();
       globalThis.document?.removeEventListener?.("visibilitychange", onRulesVisibility);
       globalThis.window?.removeEventListener?.("pagehide", onRulesPageHide);

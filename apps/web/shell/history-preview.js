@@ -55,19 +55,36 @@ export const buildDestroyedPieceOverlays = ({ destroyedPieceRecords, preActionSn
 
 
 /** One presentation contract for desktop history, inline mobile history and replay summaries. */
-export const buildMovePreview = (move) => ({
+const historyRoleOverlay = (actions, context) => {
+  if (context !== 'history') return {};
+  const cells = new Map();
+  for (const action of actions) {
+    if (!action || ['end_turn','pass'].includes(action.type)) continue;
+    for (const [role, coordinate] of [['source', action?.from], ['target', action?.to]]) {
+      if (!coordinate || !Number.isInteger(coordinate.row) || !Number.isInteger(coordinate.col)) continue;
+      const key = `${coordinate.row},${coordinate.col}`;
+      const cell = cells.get(key) ?? {row:coordinate.row,col:coordinate.col,source:false,target:false};
+      cell[role] = true;
+      cells.set(key, cell);
+    }
+  }
+  return {presentationContext:'history', endpointRoles:[...cells.values()]};
+};
+
+export const buildMovePreview = (move, {context} = {}) => ({
   snapshot: move?.snapshot ?? move?.selectionSnapshot ?? null,
   overlay: {
     mode: "recorded-action",
+    ...historyRoleOverlay([move?.action], context),
     recordedAction: move?.action ?? null,
     recordedActionStartPiece: findRecordedActionStartPiece(move?.selectionSnapshot, move?.action),
     destroyedPieces: buildDestroyedPieceOverlays({destroyedPieceRecords: move?.destroyedPieces, preActionSnapshot: move?.selectionSnapshot}),
   },
 });
 
-export const buildTurnPreview = (moves) => {
+export const buildTurnPreview = (moves, {context} = {}) => {
   const ordered = [...(moves ?? [])].filter(move => !move.undone).sort((a,b) => (a.turnMoveIndex ?? a.index) - (b.turnMoveIndex ?? b.index));
-  const previews = ordered.map(buildMovePreview);
+  const previews = ordered.map(move => buildMovePreview(move));
   const routes = new Set();
   const actions = previews.flatMap(({overlay}) => {
     const action = overlay.recordedAction;
@@ -84,7 +101,7 @@ export const buildTurnPreview = (moves) => {
   });
   return {
     snapshot: previews.at(-1)?.snapshot ?? null,
-    overlay: {mode:'recorded-turn', recordedActions:actions, destroyedPieces:previews.flatMap(preview => preview.overlay.destroyedPieces)},
+    overlay: {mode:'recorded-turn', ...historyRoleOverlay(ordered.map(move => move.action), context), recordedActions:actions, destroyedPieces:previews.flatMap(preview => preview.overlay.destroyedPieces)},
   };
 };
 

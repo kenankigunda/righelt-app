@@ -353,3 +353,12 @@ test("deriveContinuationHighlightByPieceId ignores follow actions from outside t
 test("End Turn payload omits selected piece geometry", () => {
   assert.deepEqual(buildActionPayload("end_turn", { row: 3, col: 6 }, { row: 3, col: 7 }, "C1"), { type: "end_turn" });
 });
+
+test('rush supply guidance filters highlighted sources without filtering legal choices', () => {
+  const snapshot={continuation:{type:'rush',rushedPieceIds:['moved']}};
+  const legal=[{type:'rush',actorId:'useful'},{type:'rush',actorId:'other'}];
+  const guidance={actions:[{action:legal[0],immediate:true}]};
+  assert.deepEqual([...deriveContinuationHighlightByPieceId(snapshot,legal,guidance).pendingPieceIds],['useful']);
+  assert.deepEqual([...deriveContinuationHighlightByPieceId(snapshot,legal).pendingPieceIds],['useful','other']);
+  assert.equal(legal.length,2);
+});

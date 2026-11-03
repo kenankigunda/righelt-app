@@ -1,11 +1,12 @@
 import {assertReplayIntegrity} from '../support/replay-write-contract.mjs';
 import {CURRENT_COMPUTER_MODEL} from '../../packages/shared-types/src/computer-play.ts';
 import {readFile} from 'node:fs/promises';
+import {settledMessage,persistGeometryEvidence} from '../support/board-message-geometry.mjs';
 import {isOperationRequest,operationValues} from "../support/shared-request.mjs";
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {test,expect} from '@playwright/test';
 import {ownedContexts} from '../support/owned-contexts.mjs';
-import {submitPlayableAction,switchGamePanel,waitForLegacyIdentity} from '../support/app.mjs';
+import {submitPlayableAction,selectPlayableAction,switchGamePanel,waitForLegacyIdentity} from '../support/app.mjs';
 import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
 import {waitForPlayableBoard} from '../../scripts/validation/browser-navigation.mjs';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
@@ -89,6 +90,11 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   // The ownership helper closes even partially completed context creation.
   test.afterAll(async () => {await owned?.close();});
   test(`guest computer prepares and replays a real turn at ${width}px`, async ({}, info) => {
+  // Observe both delivery channels: an accepted socket receipt may cancel HTTP.
+  const renewals=new Map(),renewalReceipts=new Map();
+  page.on('request',request=>{if(isOperationRequest(request,'computer-control')&&operationValues(request)?.action==='renew'){const command=request.postDataJSON();renewals.set(command.clientCommandId,command);}});
+  page.on('response',async response=>{if(response.status()!==200||!isOperationRequest(response.request(),'computer-control'))return;try{const body=await response.json();for(const outcome of body.commandOutcomes??[])if(outcome.outcome==='accepted')renewalReceipts.set(outcome.clientCommandId,outcome);}catch{/* A native socket receipt can cancel the HTTP body. */}});
+  page.on('websocket',socket=>socket.on('framereceived',frame=>{try{const body=JSON.parse(String(frame.payload));if(body.commandOutcome?.outcome==='accepted')renewalReceipts.set(body.commandOutcome.clientCommandId,body.commandOutcome);}catch{/* Non-JSON frames do not contain command receipts. */}}));
   await page.setViewportSize({width,height:900});
   await page.goto('/');
   expect((await (await page.request.get('/api/shell/bootstrap')).json()).accountsRequired).toBe(false);
@@ -111,18 +117,50 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   await assertFullBoardGeometry(page,info,'initial');
   await page.evaluate(() => {
     window.boardStatusGeometry={running:true,samples:[]};
-    const sample=()=>{const record=window.boardStatusGeometry;if(!record.running)return;const board=document.querySelector('#shell-board');if(board){const rect=board.getBoundingClientRect();record.samples.push({y:rect.top+scrollY,height:rect.height,message:document.querySelector('#shell-board-preview-label')?.textContent});}requestAnimationFrame(sample);};sample();
+    const sample=()=>{const record=window.boardStatusGeometry;if(!record.running)return;const board=document.querySelector('#shell-board');if(!board){record.samples.push({boardMissing:true});}else{const slotNode=board.closest('[data-shell-panel="board"]')?.querySelector('.board-message-slot');if(!slotNode){record.samples.push({slotMissing:true});}else{const rect=board.getBoundingClientRect(),slot=slotNode.getBoundingClientRect();record.samples.push({board:rect.toJSON(),slot:slot.toJSON(),documentSlotTop:slot.top+scrollY,gap:rect.top-slot.bottom,viewport:{width:document.documentElement.clientWidth,height:innerHeight},cells:board.querySelectorAll('.cell').length,message:document.querySelector('#shell-board-preview-label')?.textContent});}}requestAnimationFrame(sample);};sample();
   });
   await waitForPlayableBoard(page);
-  await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
+  const target=await selectPlayableAction(page,initial.legalActions.find(action=>action.from&&action.to));
+  // Start the single confirmation inside a fresh acknowledged authority episode,
+  // rather than letting a periodic renewal fence a slow native click mid-flight.
+  // The held-renewal workflow separately proves disabled/no-queue semantics.
+  const previousRenewals=new Set(renewals.keys());
+  let renewal,receipt;
+  await expect.poll(()=>{for(const [id,command] of renewals)if(!previousRenewals.has(id)&&command.gameId===initial.id&&renewalReceipts.has(id)){renewal=command;receipt=renewalReceipts.get(id);return true;}return false;},{timeout:15000,message:'A new native renewal must receive an accepted authoritative receipt'}).toBe(true);
+  await expect.poll(()=>page.evaluate(envelope=>new Promise((resolve,reject)=>{
+    const open=indexedDB.open('righelt.online-commands.v2');open.onerror=()=>reject(open.error);
+    open.onsuccess=()=>{const db=open.result,read=db.transaction('commands').objectStore('commands').get([envelope.identityId,envelope.gameId,envelope.clientCommandId]);read.onerror=()=>{db.close();reject(read.error);};read.onsuccess=()=>{db.close();resolve(read.result??null);};};
+  }),renewal),{message:'Acknowledged renewal must leave its durable fence before native confirmation'}).toBeNull();
+  await expect.poll(()=>target.evaluate(node=>{const message=document.getElementById('shell-board-preview-label');return Boolean(message&&message.getAttribute('aria-busy')!=='true'&&node.classList.contains('target')&&!node.classList.contains('unselectable'));}),{timeout:2000,message:'The prepared destination must survive renewal and finish complete move checks'}).toBe(true);
+  await target.click();
+  await info.attach('fresh-confirmation-authority',{body:JSON.stringify({commandId:renewal.clientCommandId,eventSeq:receipt.eventSeq,gameplayRevision:receipt.gameplayRevision}),contentType:'application/json'});
   await expect.poll(async () => (await projected(page, initial.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-board-preview-action="end-turn"]').click();
   await waitForComputerDecision(page, initial.id, 'babs', {guest:true,modelId:initial.computer.modelId});
   await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible({timeout:30000});
+  // Keep every native frame through the final narration height transition.
+  // Semantic copy may grow; its board-to-message gap and full fit may not drift.
+  await settledMessage(page);
   const geometry=await page.evaluate(()=>{window.boardStatusGeometry.running=false;return window.boardStatusGeometry.samples;});
-  expect(geometry.length).toBeGreaterThan(2);
-  const topValues=geometry.map(sample=>sample.y);
-  expect(Math.max(...topValues)-Math.min(...topValues),JSON.stringify(geometry.filter((sample,index)=>index===0||sample.y!==geometry[index-1].y))).toBeLessThanOrEqual(1);
+  const frames={scope:'All native frames, semantic message growth allowed, original 1px gap/viewport bounds retained',geometry};
+  try{
+    await persistGeometryEvidence(info,'board-message-native-frames.json',frames);
+    expect(geometry.length).toBeGreaterThan(2);
+    const first=geometry[0];
+    for(const [index,sample] of geometry.entries()){
+      const evidence=JSON.stringify({index,sample,firstGap:first.gap,firstSlotTop:first.documentSlotTop});
+      expect(Boolean(sample.boardMissing),evidence).toBe(false);expect(Boolean(sample.slotMissing),evidence).toBe(false);
+      expect(sample.gap,evidence).toBeGreaterThanOrEqual(-1);
+      expect(Math.abs(sample.gap-first.gap),evidence).toBeLessThanOrEqual(1);
+      expect(Math.abs(sample.documentSlotTop-first.documentSlotTop),evidence).toBeLessThanOrEqual(1);
+      expect(sample.cells,evidence).toBe(100);
+      expect(sample.board.width,evidence).toBeGreaterThan(0);expect(sample.board.height,evidence).toBeGreaterThan(0);
+      expect(sample.board.left,evidence).toBeGreaterThanOrEqual(-1);expect(sample.board.right,evidence).toBeLessThanOrEqual(sample.viewport.width+1);
+      expect(sample.board.top,evidence).toBeGreaterThanOrEqual(-1);expect(sample.board.bottom,evidence).toBeLessThanOrEqual(sample.viewport.height+1);
+    }
+    await assertFullBoardGeometry(page,info,'after-computer');frames.status='complete';
+  }catch(error){frames.failure=String(error);throw error;}
+  finally{await persistGeometryEvidence(info,'board-message-native-frames.json',frames);}
   const beforeReplay=await projected(page,initial.id);
   const writes=[];
   const observeReplay=request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/')){let body;try{body=request.postDataJSON();}catch{}writes.push({method:request.method(),path:new URL(request.url()).pathname,body});}};

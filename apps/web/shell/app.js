@@ -1,4 +1,4 @@
-import {isOngoingGame} from './game-lifecycle.js';
+import {isOngoingGame,isCompletedGame} from './game-lifecycle.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
@@ -208,6 +208,15 @@ let storageResetNotice = false;
 let accountContinuation = null;
 let accountContinuationError = false;
 let accountContinuationIncidentId = null;
+let homeReadJob = null;
+let pendingResponsiveHomeRead = null;
+let homeReadRecovery = null;
+let homeReadChoice = null;
+let homeReadVisit = 0;
+// Bound pending browser acknowledgements, not read work or retry timing.
+const HOME_READ_TRANSITION_LIMIT = 16;
+const homeReadTransitions = [];
+let homeReadTransitionsTrusted = true;
 const hydrateRoute = createRouteHydration();
 const account = createAccountController({ storage,
   onTransition: (next, source) => { if (accountInitialized) { accountDialog.onTransition(source); resetAccountTransport(next); } },
@@ -752,7 +761,7 @@ const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
   return { selectionAction: matchingAction, selectionState: null };
 };
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
-const canControlLiveBoard = (game) => isOngoingGame(game) && account.canPlay() && !game?.sharedMutationsBlocked && Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
+const canControlLiveBoard = (game) => isOngoingGame(game) && account.canPlay() && !(game?.gameplayMutationsBlocked ?? game?.sharedMutationsBlocked) && Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
 const getVisibleHomeSectionKeys = (route = currentRoute) => (route?.debug ? ["my", "other", "smoke"] : ["my", "other"]);
 const getHomeSection = (sectionKey) => homeSections[sectionKey] ?? createHomeSectionState(sectionKey);
 const setHomeSection = (sectionKey, nextState) => {
@@ -1741,6 +1750,13 @@ const renderTurnHistory = (game) => {
     if (!turns.has(move.turnIndex)) turns.set(move.turnIndex,{index:move.turnIndex,moves:[]});
     turns.get(move.turnIndex).moves.push(move);
   }
+  // Finalization prepares the next active turn before discovering a terminal
+  // outcome. It is not a recorded turn until a decision or closure exists.
+  if (isCompletedGame(game)) {
+    for (const [index,turn] of turns) {
+      if (index === game.currentTurn?.index && !turn.moves.length && !turn.endedAt && !(turn.moveIndexes?.length)) turns.delete(index);
+    }
+  }
   const row = move => {
     const selected = game.inHistoryMode && (game.inspectedDecision?.moveId ? game.inspectedDecision.moveId === move.moveId : game.historyIndex === move.index);
     const pending = (game.pendingMoves ?? []).includes(move);
@@ -1755,7 +1771,7 @@ const renderTurnHistory = (game) => {
     const destroyed = destroyedPieces.map((record)=>`<li class="history-destruction-item ${playerToneClassForSide(record.ownerSeat === "p1" ? "P1" : record.ownerSeat === "p2" ? "P2" : "neutral")}" data-testid="history-destruction-item"><span class="history-destruction-label">DESTROYED (${record.position.row},${record.position.col})</span></li>`).join('');
     return `<li class="history-item ${playerToneClassForSide(move.actorSide)}${selected?' is-selected':liveSelected?' is-live-selected':''}${move.undone?' is-undone':''}${pending?' history-item-pending':''}${actions?' history-item-has-actions':''}" ${selected?'':`data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}" tabindex="0" role="button"`} data-key="${escapeHtml(move.moveId || move.clientCommandId || String(move.index))}" data-move-id="${escapeHtml(move.moveId || '')}" ${pending?'data-testid="history-pending-move-item"':'data-testid="history-move-item"'} aria-label="${escapeHtml(actor)} · Move ${move.displayMoveNumber ?? move.index+1}: ${escapeHtml(move.notation)}" ${selected?'aria-current="true"':''} ${pending?'aria-busy="true"':''}>
       <div class="history-item-info"><span class="history-move-line">Move ${move.displayMoveNumber ?? move.index+1}: ${escapeHtml(move.notation)}${pending?' · Pending':''}</span>${destroyedPieces.length > 0 ? `<ul class="history-destruction-list">${destroyed}</ul>` : ""}<span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span></div>
-      ${selected ? renderHistoryPreview(game,buildMovePreview(game.inspectedDecision ?? move),`history:${game.id}:${move.moveId}`) : ''}${actions}</li>`;
+      ${selected ? renderHistoryPreview(game,buildMovePreview(game.inspectedDecision ?? move,{context:'history'}),`history:${game.id}:${move.moveId}`) : ''}${actions}</li>`;
   };
   const groups = [...turns.values()].sort((a,b)=>b.index-a.index).map(turn=>{
     const ordered = turn.moves.sort((a,b)=>(a.turnMoveIndex ?? a.index)-(b.turnMoveIndex ?? b.index));
@@ -1769,7 +1785,7 @@ const renderTurnHistory = (game) => {
     const key = `${game.id}:turn:${turn.index}`;
     const expanded = expandedUndoneGroups.has(key);
     return `<li class="history-turn ${playerToneClassForSide(side)}" data-key="history-turn:${escapeHtml(game.id)}:${turn.index}" data-testid="history-turn"><div class="history-turn-heading${selected?' is-selected':''}" data-key="turn:${escapeHtml(game.id)}:${turn.index}" ${selected||!active?'':`data-action="jump-history-turn" data-game-id="${escapeHtml(game.id)}" data-turn-index="${turn.index}" tabindex="0" role="button"`} ${selected?'aria-current="true"':''}>Turn ${turn.index+1} · <span dir="auto">${escapeHtml(name)}</span></div>
-      ${selected?renderHistoryPreview(game,buildTurnPreview(game.historyTurnMoves),`turn:${game.id}:${turn.index}`):''}
+      ${selected?renderHistoryPreview(game,buildTurnPreview(game.historyTurnMoves,{context:'history'}),`turn:${game.id}:${turn.index}`):''}
       <ol class="history-list history-list-nested">${ordered.filter(move=>!move.undone).map(row).join('')}${undone.length?`<li class="history-item history-item-undone-group is-undone${expanded?' is-expanded':''}" data-action="toggle-undone-group" data-group-key="${escapeHtml(key)}" aria-expanded="${expanded}">${undone.length} move${undone.length===1?'':'s'} undone</li>${expanded?undone.map(row).join(''):''}`:''}</ol></li>`;
   }).join('');
   const live = game.inHistoryMode ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" data-testid="history-return-live">${icon('board')}Return to live view</button></li>` : '';
@@ -1787,7 +1803,7 @@ const renderHeader = () => `
     ${renderHeaderAlertZone()}
     ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
     ${account.snapshot().pendingLogout ? '<span role="status">Sign-out pending</span>' : ''}
-    ${accountContinuationError ? `<div role="alert" data-testid="account-continuation-error"><p>We couldn’t finish loading. Please try again.</p><button class="secondary" data-action="retry-account-continuation">Try again</button>${renderDiagnosticDisclosure(accountContinuationIncidentId)}</div>` : issueDiagnostics.list().filter(report => report.key === "account-continuation" && isDiagnosticOpen(report.id)).map(report => renderDiagnosticDisclosure(report.id)).join("")}
+    ${accountContinuationError || homeReadRecovery?.error ? `<div role="alert" data-testid="account-continuation-error"><p>We couldn’t finish loading. Please try again.</p><button class="secondary" data-action="${accountContinuation ? "retry-account-continuation" : "retry-home-read"}">Try again</button>${renderDiagnosticDisclosure(accountContinuationIncidentId)}</div>` : issueDiagnostics.list().filter(report => report.key === "account-continuation" && isDiagnosticOpen(report.id)).map(report => renderDiagnosticDisclosure(report.id)).join("")}
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
         ${soundToggle(gameSound.enabled())}
@@ -2243,7 +2259,7 @@ const renderHomeSectionControls = (sectionKey, section, { placement } = { placem
 </div>`;
 
 const renderHomeStartButton = () =>
-  `<button class="home-start-button" data-action="create-game" data-testid="home-create-game">Start new game</button>`;
+  `<button class="home-start-button" data-action="${homeReadChoice?.action ?? "create-game"}" data-testid="home-create-game" ${homeReadRecovery ? "disabled" : ""}>${homeReadChoice?.action === "create-self-play" ? "Start playing both sides" : "Start new game"}</button>`;
 
 const renderHomeGameSection = (sectionKey) => {
   const section = getHomeSection(sectionKey);
@@ -2294,7 +2310,7 @@ const scrollHomeSectionToTop = (sectionKey) => {
   });
 };
 
-const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Choose your opponent</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
+const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game" ${homeReadRecovery ? "disabled" : ""}><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Choose your opponent</span><button class="secondary" data-action="create-self-play" ${homeReadRecovery ? "disabled" : ""}>${icon('play')}Play both sides</button></div></section>`;
 const renderHome = () => `<section class="stack home-refresh">${storageResetNotice ? '<p class="small" role="status">The saved data was reset. You can start a new game.</p>' : ""}${renderHomeGameSection('my')}${renderStartChoices()}${getVisibleHomeSectionKeys().filter(key=>key!=='my').map(renderHomeGameSection).join('')}</section>`;
 
 const getHeaderAlertItems = game => {
@@ -2303,7 +2319,8 @@ const getHeaderAlertItems = game => {
     key:context.key,
     html:renderGameAlertCard({tone:'neutral',activity:'processing',body:`<span role="status">${escapeHtml(context.message)}</span>`,testId:'slow-loading-notice'}),
   }));
-  return [...(game?getGameAlertItems(game):[]),...slow];
+  const position = game?.positionOnly && game.positionError ? [{ key: "position-load", html: renderGameAlertCard({ tone: "warn", body: '<span role="status">The board is saved, but play could not finish loading.</span>', action: '<button class="secondary mini-button" data-action="retry-game-load">Try again</button>', testId: "position-load-error" }) }] : [];
+  return [...position,...(game?getGameAlertItems(game):[]),...slow];
 };
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
@@ -2500,10 +2517,10 @@ const renderAdditionalHistory = game => {
     const heading=`<div class="history-turn-heading${selectedTurn?' is-selected':''}" data-key="archive-turn:${escapeHtml(game.id)}:${index}" ${selectedTurn?'aria-current="true"':!selectableTurn?'':`data-action="jump-history-turn" data-game-id="${escapeHtml(game.id)}" data-turn-index="${index}" role="button" tabindex="0"`}>Turn ${index+1} · ${escapeHtml(COMPUTER_PROFILES[turnActor.computerProof?.profile]?.name ?? playerDisplayName(game,side))}</div>`;
     const contents=entries.sort((a,b)=>a.move.turnMoveIndex-b.move.turnMoveIndex).map(entry=>{
     const selected=Boolean(game.inHistoryMode&&game.inspectedDecision?.moveId===entry.id);
-    const preview=selected?renderHistoryPreview(game,buildMovePreview(game.inspectedDecision ?? entry.move),`archive:${game.id}:${entry.id}`):'';
+    const preview=selected?renderHistoryPreview(game,buildMovePreview(game.inspectedDecision ?? entry.move,{context:'history'}),`archive:${game.id}:${entry.id}`):'';
     return `<li class="history-item ${playerToneClassForSide(entry.move.actorSide)}${selected?' is-selected':''}${entry.move.undone?' is-undone':''}" data-key="archive:${escapeHtml(entry.id)}" data-archive-move-id="${escapeHtml(entry.id)}" aria-label="${escapeHtml(historyActorLabel(game,entry.move,{identityId:transport.getIdentityId()}))}"><${selected?'div':'button'} class="history-item-info history-archive-select" ${selected?'':'data-action="inspect-history-archive"'} data-game-id="${escapeHtml(game.id)}" data-decision-id="${escapeHtml(entry.id)}" aria-current="${selected?'true':'false'}"><span class="history-move-line">${escapeHtml(entry.move.notation)}${entry.move.undone?' · Undone':entry.historyStatus==='unknown'?' · Status unavailable':''}</span><span class="history-move-at small">${escapeHtml(formatClientDateTime(entry.at))}</span></${selected?'div':'button'}>${preview}</li>`;
     }).join('');
-    return `<li class="history-turn ${playerToneClassForSide(side)}" data-key="archive-history-turn:${escapeHtml(game.id)}:${index}">${heading}${selectedTurn?renderHistoryPreview(game,buildTurnPreview(game.historyTurnMoves),`archive-turn:${game.id}:${index}`):''}<ol class="history-list history-list-nested">${contents}</ol></li>`;
+    return `<li class="history-turn ${playerToneClassForSide(side)}" data-key="archive-history-turn:${escapeHtml(game.id)}:${index}">${heading}${selectedTurn?renderHistoryPreview(game,buildTurnPreview(game.historyTurnMoves,{context:'history'}),`archive-turn:${game.id}:${index}`):''}<ol class="history-list history-list-nested">${contents}</ol></li>`;
   }).join('');
   const action=state.error?`<p role="status">We couldn’t load more history</p><button class="secondary" data-action="retry-history-archive" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Retry</button>`
     : state.available&&(!state.loaded||state.cursor)?`<button class="secondary" data-action="load-history-archive" data-game-id="${escapeHtml(game.id)}" ${state.loading?'disabled aria-busy="true"':''}>${icon('history')}${state.loaded?'Load more history':'More game history'}</button>`:"";
@@ -2548,6 +2565,7 @@ const revealSelectedHistory = () => {
 };
 
 const renderHistoryPanel = (game) => {
+  if (game.positionOnly && game.positionHistoryPending) return renderHistorySlots({ rows: '', extra: `<p class="small" role="status">${game.positionError ? 'Game history could not finish loading. Try loading play again.' : 'Loading game history'}</p>` });
   const historyRows = renderTurnHistory(game);
   return renderHistorySlots({rows:historyRows,extra:renderAdditionalHistory(game),
     before:renderHistoryResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) + (game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? (game.historyLoadTurnIndex != null ? "Loading this turn" : "Loading this move") : (game.historyLoadTurnIndex != null ? "This turn couldn’t load. Your current view is still available." : "This move couldn’t load. Your current view is still available.")}</p>${game.historyLoadError ? `<button class="secondary mini-button" ${game.historyLoadTurnIndex != null ? `data-action="jump-history-turn" data-turn-index="${game.historyLoadTurnIndex}"` : `data-action="jump-history" data-move-index="${game.historyLoadIndex}"`} data-game-id="${escapeHtml(game.id)}">Retry</button>` : ""}</div>` : ""),
@@ -2598,8 +2616,8 @@ const renderGameShellFrame = (game, { loading = false } = {}) => `
     <div class="game-shell-track-wrap">
       <section class="layout-grid game-shell-track" data-game-shell-track>
         <div class="stack game-shell-mobile-panel" data-mobile-panel="players" data-shell-sticky-target="left" data-sticky-enabled="false">
-          <section class="panel" data-game-panel="summary">${loading ? renderSummaryLoading(`Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span>`) : ""}</section>
-          <section class="panel" data-game-panel="join">${loading ? renderPlayersLoading() : ""}</section>
+          <section class="panel" data-game-panel="summary">${loading ? renderSummaryLoading(`Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span>`) : renderGameSummaryPanel(game)}</section>
+          <section class="panel" data-game-panel="join">${loading ? renderPlayersLoading() : renderJoinInvitePanel(game, `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || game.id, getCurrentFlyoutState())}`)}</section>
 
         </div>
 
@@ -2610,7 +2628,7 @@ const renderGameShellFrame = (game, { loading = false } = {}) => `
         </div>
 
         <div class="stack game-shell-mobile-panel" data-mobile-panel="history">
-          <section class="panel" data-game-panel="history">${loading ? renderHistoryLoading() : ""}</section>
+          <section class="panel" data-game-panel="history">${loading ? renderHistoryLoading() : renderHistoryPanel(game)}</section>
         </div>
       </section>
     </div>
@@ -2702,6 +2720,18 @@ const patchHomeAroundCreateControl = (markup) => {
   if(!comparableControl.getAttribute("style"))comparableControl.removeAttribute("style");
   comparableControl.classList.remove("is-pressing");
   comparableControl.querySelectorAll(".is-pressing,.is-releasing").forEach(el=>el.classList.remove("is-pressing","is-releasing"));
+  // Recovery changes native availability, not the retained Home surface.
+  // Normalize only these known buttons for comparison; every other change
+  // still takes the existing replacement path.
+  const availabilitySelector = 'button[data-action="create-game"],button[data-action="create-self-play"]';
+  const currentAvailability = [...currentControl.querySelectorAll(availabilitySelector)];
+  const comparableAvailability = [...comparableControl.querySelectorAll(availabilitySelector)];
+  const nextAvailability = [...nextControl.querySelectorAll(availabilitySelector)];
+  if (currentAvailability.length !== nextAvailability.length) return false;
+  for (let index = 0; index < currentAvailability.length; index++) {
+    if (currentAvailability[index].dataset.action !== nextAvailability[index].dataset.action) return false;
+    comparableAvailability[index].disabled = nextAvailability[index].disabled;
+  }
   if (!comparableControl.isEqualNode(nextControl)) return false;
   const pathTo = (control, root) => {
     const path = [];
@@ -2710,6 +2740,8 @@ const patchHomeAroundCreateControl = (markup) => {
   };
   const currentPath = pathTo(currentControl, appEl), nextPath = pathTo(nextControl, nextRoot);
   if (currentPath.length !== nextPath.length || currentPath.some((node, index) => index > 0 && node.tagName !== nextPath[index].tagName)) return false;
+  // No mutation occurs until the complete control and ancestor path match.
+  for (let index = 0; index < currentAvailability.length; index++) currentAvailability[index].disabled = nextAvailability[index].disabled;
   for (let index = 0; index < currentPath.length - 1; index++) {
     const current = currentPath[index], next = nextPath[index], retained = currentPath[index + 1], replacement = nextPath[index + 1];
     if (index > 0) {
@@ -2896,6 +2928,16 @@ const reconcileMiniBoardPreviews = () => {
   });
 };
 
+// A replaced loading/live card must not expose the stylesheet's safe floor for
+// one frame before the normal layout rAF supplies its measured desktop size.
+const initializeDesktopBoardFit = () => {
+  desktopBoardFit ??= createDesktopBoardFit({
+    appEl, requestLayout: scheduleGameShellStickyLayout,
+    onSizeChange: () => boardRuntime?.refreshVisuals?.(),
+  });
+  desktopBoardFit.sync({wide: syncShellLayoutMode() === 'wide',onlyNew:true});
+};
+
 const applyGameShellStickyLayout = () => {
   if (!(appEl instanceof HTMLElement)) {
     return;
@@ -3016,6 +3058,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   });
   reconcileMiniBoardPreviews();
   syncMountedGameShellPanelUi(shellRoot);
+  initializeDesktopBoardFit();
   scheduleGameShellStickyLayout();
   return true;
 };
@@ -3264,13 +3307,13 @@ const getHistoryRecordedActionStartPiece = (game) => {
 let reconnectPresentationTimer;
 const updateReconnectPresentation = game => {
   const wrap = document.querySelector('[data-testid="game-board-wrap"]');
-  const recovering = isBoardRecoveryPending(game, { quietComputerRenewal: quietComputerRenewal(game) });
+  const recovering = game?.positionOnly ? game.positionLoading === true : isBoardRecoveryPending(game, { quietComputerRenewal: quietComputerRenewal(game) });
   if (wrap) {
     setActivityActor(wrap, activityActorSide(game));
     wrap.dataset.reconnecting = String(recovering);
     wrap.dataset.loadingState = recovering ? "pending" : "idle";
     // A retry or socket generation change does not restart an uninterrupted cue.
-    wrap.dataset.loadingKey = `recovery:${game.id}`;
+    wrap.dataset.loadingKey = `${game?.positionOnly ? "position" : "recovery"}:${game.id}`;
     wrap.dataset.loadingContext = "external";
     wrap.setAttribute("aria-busy", String(recovering));
   }
@@ -3307,7 +3350,7 @@ const mountBoardForGame = (game) => {
   updateRecoveryAnnouncement(game);
   const capturing = currentRoute.scenarios && scenarioCapture?.gameId === game.id;
   const snapshot = capturing ? capturePosition() : game.currentSnapshot ?? null;
-  const historyPreview = game.inHistoryMode ? (game.historyTurnIndex != null ? buildTurnPreview(game.historyTurnMoves) : buildMovePreview(game.inspectedDecision ?? game.moves?.find(move=>move.index===game.historyIndex))) : null;
+  const historyPreview = game.inHistoryMode ? (game.historyTurnIndex != null ? buildTurnPreview(game.historyTurnMoves,{context:'history'}) : buildMovePreview(game.inspectedDecision ?? game.moves?.find(move=>move.index===game.historyIndex),{context:'history'})) : null;
   const historyMoveIndex = game.inHistoryMode ? (game.historyTurnIndex != null ? `turn:${game.historyTurnIndex}` : game.historyIndex) : null;
   const historySelectionAction = game.inHistoryMode && !capturing ? game.historySelectionAction ?? null : null;
   const overlayMode = game.inHistoryMode && !capturing ? historyPreview.overlay.mode : "interactive";
@@ -3364,7 +3407,7 @@ const mountBoardForGame = (game) => {
         canSelect: () => Boolean(currentRoute.scenarios && scenarioCapture?.gameId === game.id) || (hostInvite?.gameId !== game.id && Boolean(getBoardGame(transport.getGameViewModel(game.id))?.currentSnapshot)),
         canPresentActions: () => {
           const view = getBoardGame(transport.getGameViewModel(game.id));
-          return !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && ownsBoardActor(view, transport.getIdentityId());
+          return !view?.positionOnly && !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && ownsBoardActor(view, transport.getIdentityId());
         },
         canInteract: () => {
           const view = getBoardGame(transport.getGameViewModel(game.id));
@@ -3385,6 +3428,7 @@ const mountBoardForGame = (game) => {
           updateComputerBoardLoading(document.getElementById('shell-board-preview-label')?.parentElement.querySelector('.board-message-activity'), view, status, {
             replaying: Boolean(replay?.playing || replayFeedback?.gameId === game.id), inspecting: Boolean(selection.selectedPieceId || selection.inspection), scope: viewingScope(),
           });
+          if (view?.positionOnly) return { text: view.positionLoading ? "Loading play" : "Play could not finish loading" };
           if (replayFeedback?.gameId === game.id) return replayFeedback.phase === "loading"
             ? {text:"Preparing replay",action:{id:"replay-cancel",label:"Cancel replay"}}
             : {text:"Replay unavailable",actions:[{id:"replay-computer",label:"Try again"},{id:"replay-dismiss",label:"Dismiss"}]};
@@ -3554,17 +3598,18 @@ const loadHomeSectionServerPage = async (
   {
     visiblePageSize = getHomeSectionVisiblePageSize(sectionKey),
     visibleColumnCount = getHomeSectionColumnCount(sectionKey),
+    adapter = null,
   } = {},
 ) => {
-  const previous = getHomeSection(sectionKey);
-  const read = captureRouteRead();
-  const response = await read.owner.loadGamesPage({
+  const read = adapter?.read ?? captureRouteRead();
+  const previous = (adapter?.getSection ?? getHomeSection)(sectionKey);
+  const response = await (adapter?.readPage ?? (options => read.owner.loadGamesPage(options)))({
     section: sectionKey,
     page: serverPage,
     pageSize: HOME_SECTION_SERVER_PAGE_SIZE,
-    debug: currentRoute.debug === true,
+    debug: read.homeDebug === true,
   });
-  assertCurrentRouteRead(read);
+  if (adapter) adapter.assertCurrent(); else assertCurrentRouteRead(read);
   const normalizedServerPage = typeof response.page === "number" ? response.page : 0;
   const serverPageGameIds = Array.isArray(response.games) ? response.games.map((game) => game.id) : [];
   const nextSection = {
@@ -3580,7 +3625,7 @@ const loadHomeSectionServerPage = async (
     visiblePageSize,
     visibleColumnCount,
   };
-  setHomeSection(sectionKey, nextSection);
+  (adapter?.setSection ?? setHomeSection)(sectionKey, nextSection);
   return nextSection;
 };
 
@@ -3591,10 +3636,11 @@ const loadHomeSectionPage = async (
     direction = "none",
     visiblePageSize = getHomeSectionVisiblePageSize(sectionKey),
     visibleColumnCount = getHomeSectionColumnCount(sectionKey),
+    adapter = null,
   } = {},
 ) => {
-  const read = captureRouteRead();
-  const previous = getHomeSection(sectionKey);
+  const read = adapter?.read ?? captureRouteRead();
+  const previous = (adapter?.getSection ?? getHomeSection)(sectionKey);
   let nextSection = {
     ...previous,
     visiblePageSize,
@@ -3603,7 +3649,7 @@ const loadHomeSectionPage = async (
   const initialServerPage = Math.floor((Math.max(0, page) * visiblePageSize) / HOME_SECTION_SERVER_PAGE_SIZE);
   const shouldPrimeCache = Object.keys(nextSection.serverPageGameIdsByPage ?? {}).length === 0;
   if (shouldPrimeCache) {
-    nextSection = await loadHomeSectionServerPage(sectionKey, initialServerPage, { visiblePageSize, visibleColumnCount });
+    nextSection = await loadHomeSectionServerPage(sectionKey, initialServerPage, { visiblePageSize, visibleColumnCount, adapter });
   }
   const requiredServerPages = getHomeSectionRequiredServerPages({
     totalGames: nextSection.totalGames,
@@ -3612,7 +3658,7 @@ const loadHomeSectionPage = async (
   });
   for (const serverPage of requiredServerPages) {
     if (!hasHomeSectionServerPages(nextSection, [serverPage])) {
-      nextSection = await loadHomeSectionServerPage(sectionKey, serverPage, { visiblePageSize, visibleColumnCount });
+      nextSection = await loadHomeSectionServerPage(sectionKey, serverPage, { visiblePageSize, visibleColumnCount, adapter });
     }
   }
   const normalizedPage = getHomeSectionSafePage(nextSection.totalGames, visiblePageSize, page);
@@ -3622,8 +3668,8 @@ const loadHomeSectionPage = async (
     visiblePageSize,
   }) ?? [];
   const nextDirection = normalizedTotalPages > 1 && normalizedPage !== previous.page ? direction : "none";
-  assertCurrentRouteRead(read);
-  setHomeSection(sectionKey, {
+  if (adapter) adapter.assertCurrent(); else assertCurrentRouteRead(read);
+  (adapter?.setSection ?? setHomeSection)(sectionKey, {
     ...nextSection,
     page: normalizedPage,
     totalPages: normalizedTotalPages,
@@ -3631,7 +3677,7 @@ const loadHomeSectionPage = async (
     slideDirection: nextDirection,
     animationToken: nextDirection === "none" ? previous.animationToken : previous.animationToken + 1,
   });
-  if(nextDirection !== "none")gameSound.play(nextDirection === "prev" ? "page-back" : "page");
+  if(!adapter && nextDirection !== "none")gameSound.play(nextDirection === "prev" ? "page-back" : "page");
 };
 
 const syncResponsiveHomeSectionPageSizes = async () => {
@@ -3672,54 +3718,117 @@ const syncResponsiveHomeSectionPageSizes = async () => {
   return updated;
 };
 
-const syncHomeSections = async () => {
-  const read = captureRouteRead();
-  const visibleSectionKeys = getVisibleHomeSectionKeys();
-  await Promise.all(
-    visibleSectionKeys.map(async (sectionKey) => {
-      const section = getHomeSection(sectionKey);
-      setHomeSection(sectionKey, {
-        ...section,
-        totalGames: 0,
-        totalPages: 0,
-        gameIds: [],
-        serverPage: 0,
-        serverTotalPages: 0,
-        serverPageGameIds: [],
-        serverPageGameIdsByPage: {},
-        visiblePageSize: getHomeSectionVisiblePageSize(sectionKey),
-        visibleColumnCount: getHomeSectionColumnCount(sectionKey),
-        slideDirection: "none",
-      });
-      await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
-    }),
-  );
-  assertCurrentRouteRead(read);
-  const hiddenSectionKeys = ["my", "other", "smoke"].filter((sectionKey) => !visibleSectionKeys.includes(sectionKey));
-  hiddenSectionKeys.forEach((sectionKey) => {
-    const section = getHomeSection(sectionKey);
-    setHomeSection(sectionKey, {
-      ...section,
-      page: 0,
-      totalPages: 0,
-      totalGames: 0,
-      gameIds: [],
-      serverPage: 0,
-      serverTotalPages: 0,
-      serverPageGameIds: [],
-      serverPageGameIdsByPage: {},
-      visiblePageSize: HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,
-      visibleColumnCount: 1,
-      slideDirection: "none",
-    });
-  });
+const homeReadMayRetry = error => {
+  const code = error?.code ?? "";
+  if (/auth|credential|session|protocol|schema|storage|upgrade|contract|invalid_home_page/i.test(code)) return false;
+  return code === "request_timeout" || !code && error?.diagnosticEvidence?.stage === "request_failed"
+    || [500, 502, 503, 504].includes(error?.status);
+};
+const syncHomeSections = async (read = captureRouteRead(), isActive = () => true) => {
+  if (pendingResponsiveHomeRead) {
+    // Starting a newer full read fulfills the old resize obligation, regardless
+    // of its eventual success or failure. Retain the marker until RAF consumes it.
+    pendingResponsiveHomeRead = sameHomeReadScope(pendingResponsiveHomeRead.read, read)
+      ? { ...pendingResponsiveHomeRead, read, fulfilledByNewer: true } : null;
+  }
+  homeReadJob?.retire();
+  let retired = false, batch = null, delayTimer = null, rejectDelay = null;
+  const job = {
+    read,
+    retire() {
+      retired = true; batch?.retire();
+      clearTimeout(delayTimer); delayTimer = null;
+      rejectDelay?.(Object.assign(new Error("session_changed"), { code: "session_changed" })); rejectDelay = null;
+      if (homeReadJob === job) homeReadJob = null;
+    },
+  };
+  homeReadJob = job;
+  const assertCurrent = () => {
+    assertCurrentRouteRead(read, () => !retired && homeReadJob === job && isActive());
+  };
+  let recovered = Boolean(homeReadRecovery);
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      assertCurrent();
+      batch = read.owner.createHomeRead({ isCurrent: () => !retired && homeReadJob === job && isActive() && routeReadIsCurrent(read) });
+      const attemptBatch = batch;
+      const assertAttemptCurrent = () => {
+        assertCurrent();
+        if (batch !== attemptBatch) throw Object.assign(new Error("session_changed"), { code: "session_changed" });
+      };
+      // Everything page filling can mutate, including caches/counts and hidden
+      // sections, lives in this attempt's map until the whole read is ready.
+      const sectionMap = structuredClone(homeSections);
+      const adapter = { read, readPage: options => attemptBatch.readPage(options), assertCurrent: assertAttemptCurrent,
+        getSection: key => sectionMap[key] ?? createHomeSectionState(key),
+        setSection: (key, value) => { sectionMap[key] = value; } };
+      const visibleSectionKeys = getVisibleHomeSectionKeys({ debug: read.homeDebug });
+      try {
+        await Promise.all(visibleSectionKeys.map(async sectionKey => {
+          const section = adapter.getSection(sectionKey);
+          adapter.setSection(sectionKey, { ...section, serverPageGameIdsByPage: {},
+            visiblePageSize: getHomeSectionVisiblePageSize(sectionKey), visibleColumnCount: getHomeSectionColumnCount(sectionKey), slideDirection: "none" });
+          await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none", adapter });
+        }));
+        for (const sectionKey of ["my", "other", "smoke"].filter(key => !visibleSectionKeys.includes(key))) {
+          adapter.setSection(sectionKey, { ...adapter.getSection(sectionKey), page: 0, totalPages: 0, totalGames: 0, gameIds: [],
+            serverPage: 0, serverTotalPages: 0, serverPageGameIds: [], serverPageGameIdsByPage: {},
+            visiblePageSize: HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT, visibleColumnCount: 1, slideDirection: "none" });
+        }
+        assertAttemptCurrent();
+        const continuation = accountContinuation && sameRouteRead(accountContinuation, read) ? accountContinuation : null;
+        // These adjacent synchronous publications have no await/emit gap.
+        attemptBatch.commit();
+        homeSections = sectionMap;
+        // A successful count refresh can clamp our own page. Advance only this
+        // proven read's input snapshot, never accept a concurrent user change.
+        read.inputs = JSON.stringify([homeReadVisit, read.homeDebug, getVisibleHomeSectionKeys({ debug: read.homeDebug }).map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])]);
+        if (continuation) continuation.inputs = read.inputs;
+        homeReadRecovery = null;
+        return { recovered };
+      } catch (error) {
+        attemptBatch.retire();
+        assertCurrent();
+        recovered = true;
+        homeReadRecovery ??= { read, error: null };
+        storyDialog.refresh();
+        if (accountContinuation && sameRouteRead(accountContinuation, read)) accountContinuation.recoveryEpisode = true;
+        if (attempt === 0 && homeReadMayRetry(error)) {
+          // Keep the same Home loading keys and recovery episode across retry;
+          // the existing Home owner retains its 200ms cue / 5s context clock.
+          render({ animatePanels: false, includeBoard: false });
+          await new Promise((resolve, reject) => {
+            rejectDelay = reject;
+            delayTimer = setTimeout(() => { delayTimer = null; rejectDelay = null; resolve(); }, SYNC_TIMING.retryDelaysMs[0]);
+          });
+          assertCurrent();
+          continue;
+        }
+        homeReadRecovery.error = error;
+        throw error;
+      }
+    }
+  } finally { job.retire(); }
 };
 
-const scheduleResponsiveHomeSectionPageSizes = () => {
+const queueResponsiveHomeSectionPageSizes = () => {
   window.cancelAnimationFrame(homeSectionResizeFrame);
   homeSectionResizeFrame = window.requestAnimationFrame(() => {
     homeSectionResizeFrame = 0;
     void (async () => {
+      const replacement = pendingResponsiveHomeRead;
+      if (replacement) {
+        const current = routeReadIsCurrent(replacement.read);
+        // Validation can itself discover a newer input retirement. Consume only
+        // this snapshot; do not erase its freshly queued replacement.
+        if (pendingResponsiveHomeRead === replacement) pendingResponsiveHomeRead = null;
+        if (!current) return;
+        // Fulfillment survives completion or terminal failure before this frame.
+        // Do not start a third batch or fall through to standalone pagination.
+        if (replacement.fulfilledByNewer || homeReadJob) return;
+        startRouteSync({ renderStart: false });
+        return;
+      }
       if (currentRoute.name !== "home") {
         return;
       }
@@ -3731,6 +3840,11 @@ const scheduleResponsiveHomeSectionPageSizes = () => {
       render({ animatePanels: false, includeBoard: false });
     })();
   });
+};
+
+const scheduleResponsiveHomeSectionPageSizes = () => {
+  captureRouteRead(); // Input retirement queues its own exact replacement.
+  queueResponsiveHomeSectionPageSizes();
 };
 
 const renderGesture = createRenderGestureGate({ render: options => render(options) });
@@ -3933,10 +4047,12 @@ const renderContent = ({ animatePanels, includeBoard }) => {
       })) return;
     }
     mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
+    initializeDesktopBoardFit();
     scheduleGameShellStickyLayout();
   }
   if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
     mountBoardForGame(transport.getGameViewModel(resolvedInvite.gameId));
+    initializeDesktopBoardFit();
     scheduleGameShellStickyLayout();
   }
 };
@@ -3972,36 +4088,123 @@ const routeReadKey = hash => {
   const text = params.toString();
   return `${path}${text ? `?${text}` : ""}`;
 };
+const advanceHomeReadVisit = () => {
+  homeReadVisit++;
+  homeReadJob?.retire();
+};
+const observeHomeReadNavigation = nextHash => {
+  const oldURL = window.location.href, destination = new URL(oldURL);
+  destination.hash = nextHash;
+  if (routeReadKey(new URL(oldURL).hash) === routeReadKey(destination.hash)) return;
+  // Retire BEFORE the app mutates the URL, including away-and-back in one task.
+  advanceHomeReadVisit();
+  if (!homeReadTransitionsTrusted) return;
+  if (homeReadTransitions.length >= HOME_READ_TRANSITION_LIMIT) {
+    // Lost acknowledgement order: fall back to invalidating every route event
+    // for this page lifetime. Never guess which old transition an event means.
+    homeReadTransitions.length = 0;
+    homeReadTransitionsTrusted = false;
+    return;
+  }
+  homeReadTransitions.push({ oldURL, newURL: destination.href });
+};
+const homeReadTransitionHash = value => {
+  if (typeof value !== "string") return null;
+  try { return new URL(value).hash; }
+  catch (error) { if (error instanceof TypeError) return null; throw error; }
+};
+const observeHomeReadVisit = event => {
+  const oldURL = event?.oldURL, newURL = event?.newURL;
+  const oldHash = homeReadTransitionHash(oldURL), newHash = homeReadTransitionHash(newURL);
+  if (oldHash === null || newHash === null) {
+    homeReadTransitions.length = 0;
+    homeReadTransitionsTrusted = false;
+    advanceHomeReadVisit();
+    return;
+  }
+  if (routeReadKey(oldHash) === routeReadKey(newHash)) return;
+  const expected = homeReadTransitions[0];
+  if (homeReadTransitionsTrusted && expected?.oldURL === oldURL && expected.newURL === newURL) {
+    homeReadTransitions.shift();
+    return; // This exact FIFO transition was observed before navigateTo wrote it.
+  }
+  if (expected) {
+    homeReadTransitions.length = 0;
+    homeReadTransitionsTrusted = false;
+  }
+  // Browser-owned, unmatched, out-of-order or duplicate route events invalidate;
+  // matching only the final URL would let stale work regain ownership.
+  advanceHomeReadVisit();
+};
 const captureRouteRead = () => {
   // A queued authority refresh can run after the URL changes but before the
   // browser delivers hashchange. Keep the read and its deduplication key on
   // the same URL instead of sharing an old route's work under the new hash.
   const hash = window.location.hash;
+  const route = parseRouteFromHash(hash);
+  // Home utilities can change locally before a URL update. Keep visibility
+  // separate from the URL-derived route and its authority/visit ownership.
+  const homeDebug = route.name === "home"
+    && (currentRoute.name === "home" ? currentRoute.debug === true : route.debug === true);
   const read = {
     generation: account.snapshot().generation,
     hash,
     routeKey: routeReadKey(hash),
     owner: transport,
-    route: parseRouteFromHash(hash),
-    inputs: JSON.stringify(getVisibleHomeSectionKeys().map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])),
+    route,
+    homeDebug,
+    homeVisit: homeReadVisit,
+    inputs: JSON.stringify([homeReadVisit, homeDebug, getVisibleHomeSectionKeys({ debug: homeDebug }).map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])]),
   };
   read.epoch = hydrateRoute.observe(read);
+  if (homeReadJob && !sameRouteRead(homeReadJob.read, read)) {
+    const previousJob = homeReadJob;
+    previousJob.retire();
+    // Any caller can observe an input change, including an in-flight batch's
+    // current-owner predicate. Only this same Home authority owes a replacement.
+    if (previousJob.read.inputs !== read.inputs && sameHomeReadScope(previousJob.read, read)) {
+      pendingResponsiveHomeRead = { job: previousJob, read, fulfilledByNewer: false };
+      queueResponsiveHomeSectionPageSizes();
+    }
+  }
+  if (pendingResponsiveHomeRead) {
+    const pending = pendingResponsiveHomeRead;
+    if (!sameHomeReadScope(pending.read, read)) {
+      pendingResponsiveHomeRead = null;
+      window.cancelAnimationFrame(homeSectionResizeFrame);homeSectionResizeFrame = 0;
+    }
+    else if (pending.read.inputs !== read.inputs) {
+      pendingResponsiveHomeRead = { ...pending, read };
+      queueResponsiveHomeSectionPageSizes();
+    }
+  }
+  if (homeReadRecovery && !sameRouteRead(homeReadRecovery.read, read)) homeReadRecovery = null;
+  if (homeReadChoice && !sameRouteRead(homeReadChoice.read, read)) homeReadChoice = null;
   return read;
 };
-const routeReadIsCurrent = read => {
-  const current = captureRouteRead();
-  return read.generation === current.generation && read.routeKey === current.routeKey && read.owner === current.owner && read.epoch === current.epoch;
-};
+const sameRouteRead = (read, current) => read.generation === current.generation && read.routeKey === current.routeKey
+  && read.owner === current.owner && read.epoch === current.epoch
+  && (read.route.name !== "home" || read.inputs === current.inputs);
+// Compare only input changes through the same authority primitive. Home visit
+// is explicit because returning to an identical URL must not revive old work.
+const sameHomeReadScope = (read, current) => read.route.name === "home" && current.route.name === "home"
+  && read.homeVisit === current.homeVisit
+  && sameRouteRead({ ...read, inputs: current.inputs }, current);
+const routeReadIsCurrent = read => sameRouteRead(read, captureRouteRead());
 const assertCurrentRouteRead = (read, isActive = () => true) => {
   if (!routeReadIsCurrent(read) || !isActive()) throw Object.assign(new Error("session_changed"), { code: "session_changed" });
 };
 const syncRouteDataAndLiveChannels = (read = captureRouteRead()) => {
   return hydrateRoute(read, async isActive => {
     assertCurrentRouteRead(read, isActive);
-    if (read.route.name === "home") await syncHomeSections();
+    let homeResult;
+    if (read.route.name === "home") {
+      homeResult = await syncHomeSections(read, isActive);
+      storyDialog.refresh();
+    }
     if (read.route.name === "game") {
       resolvedInvite = null;
-      await read.owner.loadGame(read.route.gameId, { openAsViewer: false });
+      await read.owner.loadGame(read.route.gameId, { openAsViewer: false, positionFirst: true });
     }
     if (read.route.name === "invite") {
       const invite = await read.owner.resolveInvite(read.route.inviteToken);
@@ -4009,11 +4212,12 @@ const syncRouteDataAndLiveChannels = (read = captureRouteRead()) => {
       // Keep validated invitation routing metadata even if its board requires an
       // upgrade. It identifies the recovery fence without trusting a snapshot.
       resolvedInvite = invite;
-      await read.owner.loadGame(invite.gameId, { openAsViewer: false });
+      await read.owner.loadGame(invite.gameId, { openAsViewer: false, positionFirst: true });
       assertCurrentRouteRead(read, isActive);
     }
     assertCurrentRouteRead(read, isActive);
     syncLiveChannels();
+    return homeResult;
   });
 };
 
@@ -4024,8 +4228,10 @@ const retryAccountContinuation = async () => {
   accountContinuationError = false;
   render({ animatePanels: false, includeBoard: false });
   try {
-    await syncRouteDataAndLiveChannels();
+    const result = await syncRouteDataAndLiveChannels();
+    if (result?.recovered) pending.recoveryEpisode = true;
   } catch (error) {
+    if (pending.route.name === "home") pending.recoveryEpisode = true;
     if (accountContinuation === pending && routeReadIsCurrent(pending)) {
       pending.running = false;
       accountContinuationError = true;
@@ -4041,6 +4247,14 @@ const retryAccountContinuation = async () => {
   issueDiagnostics.resolve("account-continuation");
   routeHydrated = true;
   render({ animatePanels: false });
+  // Recovery restores the retained choice. Only a new explicit Start may write.
+  if (pending.recoveryEpisode) {
+    if (pending.route.name === "home" && ["create-game", "create-self-play"].includes(pending.intent?.action)) {
+      homeReadChoice = { read: pending, action: pending.intent.action };
+      render({ animatePanels: false, includeBoard: false });
+    }
+    return;
+  }
   const intent = pending.intent;
   if (!intent || !account.canPlay() || intent.hash !== window.location.hash) return;
   if (intent.action === "rematch") {
@@ -4052,10 +4266,12 @@ const retryAccountContinuation = async () => {
   appEl.querySelector(selector)?.click();
 };
 const completeAccountContinuation = async intent => {
-  accountContinuation = { ...captureRouteRead(), intent, running: false };
+  accountContinuation = { ...captureRouteRead(), intent, running: false, recoveryEpisode: Boolean(homeReadRecovery) };
   await retryAccountContinuation();
 };
 const clearAccountContinuation = () => {
+  homeReadRecovery = null;
+  homeReadChoice = null;
   accountContinuation = null;
   accountContinuationError = false;
   issueDiagnostics.resolve("account-continuation");
@@ -4349,8 +4565,9 @@ const opponentSession = createOpponentSession({ preferences:createIntroductionPr
   navigateTo(buildGameHash(handle.result.id,null,getCurrentFlyoutState()));
   return handle.result;
 } });
-const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: opponent => opponent === 'friend' ? {state:'ready',message:'Send an invitation. Let the rivalry begin.'} : getComputerReadiness(),
+const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: opponent => homeReadRecovery ? {state:'preparing',message:'Your games are still reconnecting.'} : opponent === 'friend' ? {state:'ready',message:'Send an invitation. Let the rivalry begin.'} : getComputerReadiness(),
   onPlay: intent => {
+    if(homeReadRecovery)return {state:'error',message:'Reconnect your games before starting.'};
     if(intent.opponent !== 'friend') return opponentSession.play(intent);
     if(!account.canPlay()) return {state:'error',message:'Sign in to start your game.'};
     storyDialog.close('play');
@@ -4520,10 +4737,12 @@ const navigateTo = (hash) => {
     startRouteSync();
     return;
   }
+  observeHomeReadNavigation(nextHash);
   window.location.hash = nextHash;
 };
 
-window.addEventListener("hashchange", () => {
+window.addEventListener("hashchange", event => {
+  observeHomeReadVisit(event);
   joinFeedback.clear();
   clearAccountContinuation();
   const previousRoute = currentRoute;
@@ -4717,6 +4936,8 @@ appEl.addEventListener("click", async (event) => {
   }
   if (action === "public-profile") { void inlineProfiles.open(actionEl.getAttribute("data-username"), actionEl); return; }
   if (action === "retry-account-continuation") { void retryAccountContinuation(); return; }
+  if (action === "retry-home-read") { startRouteSync(); return; }
+  if (action === "retry-game-load") { startRouteSync(); return; }
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
   if (action === "account-open") {
     if (accountDialog.isOpen()) { void accountDialog.close(); return; }
@@ -4888,6 +5109,8 @@ appEl.addEventListener("click", async (event) => {
     gameSound.play('intro'); storyDialog.open(actionEl.dataset.opponent,{trigger:actionEl}); void prepareOpponent('intro',actionEl.dataset.opponent); return;
   }
   if (action === "create-game" || action === 'create-self-play') {
+    if (homeReadRecovery) return;
+    homeReadChoice = null;
     if(action === 'create-game'){gameSound.play('intro');storyDialog.open('friend',{trigger:actionEl});return;}
     const handle = transport.createGame({ selfPlayMode: action === 'create-self-play' });
     startGameEntryRouteTransition(handle.result.id, "home");

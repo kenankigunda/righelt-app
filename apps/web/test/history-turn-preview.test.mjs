@@ -49,3 +49,19 @@ test('aggregate includes end-turn finalization and destruction from durable arch
  assert.equal(preview.overlay.recordedActions[0].recordedAction.type,'move');
 
 });
+
+
+test('History opts into endpoint roles while replay and live summary callers retain their appearance',()=>{
+ const a={row:2,col:2},b={row:2,col:3},c={row:3,col:3};
+ const push=move(0,'push',a,b),retreat=move(1,'retreat',b,c,'P2'),follow=move(2,'follow',a,b);
+ const history=buildTurnPreview([follow,retreat,push],{context:'history'});
+ assert.equal(history.overlay.presentationContext,'history');
+ assert.deepEqual(history.overlay.endpointRoles,[{...a,source:true,target:false},{...b,source:true,target:true},{...c,source:false,target:true}]);
+ assert.deepEqual(history.overlay.recordedActions.map(x=>x.recordedAction.type),['push','retreat']);
+ assert.equal(history.snapshot,follow.snapshot);
+ const single=buildMovePreview(push,{context:'history'});
+ assert.deepEqual(single.overlay.endpointRoles,[{...a,source:true,target:false},{...b,source:false,target:true}]);
+ for(const preview of [buildMovePreview(push),buildTurnPreview([push,retreat,follow])]){
+  assert.equal(preview.overlay.presentationContext,undefined);assert.equal(preview.overlay.endpointRoles,undefined);
+ }
+});

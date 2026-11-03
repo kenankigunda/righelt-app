@@ -1,4 +1,7 @@
 export const WEB_UNIT_TEST_FILES = Object.freeze([
+  "message-composition.test.mjs",
+  "message-height.test.mjs",
+  "sequence-status-preview.test.mjs",
   "game-lifecycle.test.mjs",
   "history-turn-preview.test.mjs",
   "computer-activity.test.mjs",
@@ -7,6 +10,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "audio-observations.test.mjs",
   "computer-runtime.test.mjs",
   "rules-runtime.test.mjs",
+  "rush-supply-guidance.test.mjs",
   "computer-preparation.test.mjs",
   "decision-notes.test.mjs",
   "computer-view.test.mjs",
@@ -66,6 +70,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "shell-host.test.mjs",
   "shell-render-stability.test.mjs",
   "sync-store.test.mjs",
+  "socket-recovery-ownership.test.mjs",
   "syntax-smoke.test.mjs",
   "ticket-workflow-docs.test.mjs",
   "test-layers.test.mjs",
@@ -73,6 +78,9 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "ui-guards.test.mjs",
 ]);
 
+export const WEB_INTEGRATION_TEST_FILES = Object.freeze(["home-read-recovery.integration.test.mjs"]);
+const WEB_INTEGRATION_TEST_FILE_SET = new Set(WEB_INTEGRATION_TEST_FILES);
+
 const WEB_UNIT_TEST_FILE_SET = new Set(WEB_UNIT_TEST_FILES);
 
-export const classifyWebTestFile = (fileName) => (WEB_UNIT_TEST_FILE_SET.has(fileName) ? "unit" : "integration");
+export const classifyWebTestFile = (fileName) => (WEB_INTEGRATION_TEST_FILE_SET.has(fileName) ? "integration" : WEB_UNIT_TEST_FILE_SET.has(fileName) ? "unit" : "integration");
