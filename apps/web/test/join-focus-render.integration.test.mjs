@@ -23,7 +23,7 @@ const fixture=()=>{
  const root={querySelectorAll:()=>[mounted],querySelector:()=>null};
  const scheduled=new Map();let sequence=0,context;
  const gate=createRenderGestureGate({render:options=>context.render(options),schedule:fn=>{scheduled.set(++sequence,fn);return sequence;},cancel:id=>scheduled.delete(id)});
- context={syncRenderedMarkupSnapshot(){admissions.push({mounted,panelSynced:panelOwner===mounted});},resumeBoardContextReplay(){},document,appEl:root,joinFeedback:feedback,renderGesture:gate,preserveBoardFocus,getCurrentViewedGameId:()=> 'g',
+ context={historyHeadingFocus:{capture:()=>null,restore:()=>false},syncRenderedMarkupSnapshot(){admissions.push({mounted,panelSynced:panelOwner===mounted});},resumeBoardContextReplay(){},document,appEl:root,joinFeedback:feedback,renderGesture:gate,preserveBoardFocus,getCurrentViewedGameId:()=> 'g',
   utilityMemory:{capture(){},restore(){}},inlineProfiles:{sync(){}},syncMountedGameShellPanelUi(){panelOwner=mounted;},
   currentRoute:{gameId:'g'},pendingResultReviewFocus:null,getGamePanel:()=> 'board',
   renderContent(){renderCount++;mounted.isConnected=false;mounted=control();document.activeElement=body;}};

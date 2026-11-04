@@ -34,3 +34,26 @@ test('compact admission caps excess policy rounding while retaining permanent fa
  assert.equal(boundedPromptReservation({...base,intrinsicFallback:280}),280,'a larger permanent fallback remains admitted independently');
  for(const rowLines of [undefined,0,-1,2.5,8])assert.equal(boundedPromptReservation({...base,rowLines}),null);
 });
+
+// Authored private proposal regressions; UNRUN.
+test('only structurally tagged required retry receives its detached row cap',()=>{
+ const base={width:616,fontSize:32,metrics,rowLines:3,intrinsicFallback:126.96875,outerPadding:8};
+ assert(Math.abs(boundedPromptReservation(base)-155.008)<1e-9);
+ const tagged=boundedPromptReservation({...base,pattern:'required-retry'});
+ assert(Math.abs(tagged-171.504)<1e-9);
+ assert.equal(boundedPromptReservation({...base,pattern:'unknown'}),null);
+ assert.equal(boundedPromptReservation({...base,pattern:'required-retry',intrinsicFallback:300}),300);
+});
+test('detached cap adds paint once and leaves normal wide reservation unchanged',()=>{
+ const base={width:366.8125,fontSize:16,metrics,rowLines:4,intrinsicFallback:104.15625};
+ assert.equal(boundedPromptReservation({...base,pattern:'required-retry'}),104.25);
+ const tagged={width:616,fontSize:32,metrics,rowLines:3,intrinsicFallback:126.96875,pattern:'required-retry'};
+ assert.equal(boundedPromptReservation({...tagged,outerPadding:0}),boundedPromptReservation({...tagged,outerPadding:8}));
+});
+
+// Independent policy paint-accounting regression; authored UNRUN.
+test('typed independent compact policy adds paint after the permanent fallback maximum',async()=>{
+ const {admittedHeight}=await import('../../../browser-integration/support/message-reservation-policy.mjs');
+ assert.equal(admittedHeight(616,32,300,{pattern:'required-retry',outerPadding:8}),308);
+ assert.equal(admittedHeight(616,32,300),300,'untagged policy retains its original convention');
+});

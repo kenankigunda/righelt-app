@@ -1,11 +1,11 @@
 import {isCompletedGame} from './game-lifecycle.js';
-import {renderBoardMessageHtml,renderBoardInlineAction} from '../board/message-presentation.js';
+import {renderBoardMessageHtml,renderBoardInlineAction,boardPromptPattern} from '../board/message-presentation.js';
 import {BOARD_TURN_CAPTIONS} from './perspective-labels.js';
 import {computerActivityActorSide,setActivityActor} from './activity-affiliation.js';
 import {boardPromptSizingModels} from '../board/prompt-models.js';
 
 const escape = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
-const renderMessageSizing=(fallback,boardSize)=>boardPromptSizingModels({boardSize}).map((message,index)=>`<p class="board-preview-label board-message-sizing${fallback?' board-message-fallback-sizing':''}" data-sizing-font="${fallback?'fallback':'primary'}" data-sizing-variant="prompt:${index}" aria-hidden="true" inert>${renderBoardMessageHtml(message,{sizing:true})}</p>`).join('');
+const renderMessageSizing=(fallback,boardSize)=>boardPromptSizingModels({boardSize}).map((message,index)=>`<p class="board-preview-label board-message-sizing${fallback?' board-message-fallback-sizing':''}" data-sizing-font="${fallback?'fallback':'primary'}"${boardPromptPattern(message)?` data-prompt-pattern="${boardPromptPattern(message)}"`:""} data-sizing-variant="prompt:${index}" aria-hidden="true" inert>${renderBoardMessageHtml(message,{sizing:true})}</p>`).join('');
 
 export function renderBoardMessageSlot({id, loading = false, loadingKey,boardSize=10} = {}) {
   return `<div class="board-message-slot"><div class="board-message-live"${id ? ' role="region" aria-label="Board guidance" tabindex="-1"' : ''}><p class="board-preview-label"${id ? ` id="${escape(id)}"` : ''}${loading ? ' aria-hidden="true"' : ''}>${loading ? '' : 'Select a piece'}</p><span class="board-message-activity" aria-hidden="true" data-loading-state="${loading && loadingKey ? 'pending' : 'idle'}" data-loading-context="external"${loading && loadingKey ? ` data-loading-key="${escape(loadingKey)}"` : ''}></span></div>${renderMessageSizing(false,boardSize)}${renderMessageSizing(true,boardSize)}</div>`;

@@ -69,11 +69,16 @@ test('cold loading activity occupies the reserved message sibling and retires on
 
 test('fallback sizing permanently mirrors the same formatted messages and inert controls',()=>{
  const html=renderBoardMessageSlot();
- const paragraphs=[...html.matchAll(/<p class="[^"]*board-message-sizing[^"]*" data-sizing-font="(primary|fallback)" data-sizing-variant="([^"]+)" aria-hidden="true" inert>(.*?)<\/p>/g)];
- const primary=new Map(paragraphs.filter(row=>row[1]==='primary').map(row=>[row[2],row[3]]));
- const fallback=new Map(paragraphs.filter(row=>row[1]==='fallback').map(row=>[row[2],row[3]]));
+ const paragraphs=[...html.matchAll(/<p\b([^>]*)>([\s\S]*?)<\/p>/g)].map(([,opening,markup])=>({attributes:new Map([...opening.matchAll(/(?:^|\s)([\w-]+)(?:="([^"]*)")?/g)].map(([,name,value])=>[name,value])),markup})).filter(row=>(row.attributes.get('class')??'').split(/\s+/).includes('board-message-sizing'));
+ const copies=font=>paragraphs.filter(row=>row.attributes.get('data-sizing-font')===font);
+ const indexed=font=>new Map(copies(font).map(({attributes,markup})=>[attributes.get('data-sizing-variant'),{pattern:attributes.get('data-prompt-pattern')??null,markup}]));
+ const primary=indexed('primary'),fallback=indexed('fallback');
  assert.equal(primary.size,boardPromptSizingModels().length);assert.deepEqual(fallback,primary);
- for(const [, , ,markup]of paragraphs){assert.doesNotMatch(markup,/data-action=|data-board-message-action=|data-board-preview-action=/);}
+ assert.equal(paragraphs.length,2*boardPromptSizingModels().length);
+ for(const font of ['primary','fallback'])assert.equal(copies(font).length,68);
+ assert.deepEqual([...primary.keys()],boardPromptSizingModels().map((_,index)=>`prompt:${index}`));
+ assert.equal([...primary.values()].filter(row=>row.pattern==='required-retry').length,1);
+ for(const {attributes,markup}of paragraphs){assert.equal(attributes.get('aria-hidden'),'true');assert(attributes.has('inert'));assert.doesNotMatch(markup,/data-action=|data-board-message-action=|data-board-preview-action=/);}
  const tokens=readFileSync(new URL('../design-tokens.css',import.meta.url),'utf8');
  const css=readFileSync(new URL('../shell/board-ux.css',import.meta.url),'utf8');
  assert.match(tokens,/--font-family-fallback: "Avenir Next", sans-serif/);

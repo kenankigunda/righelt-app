@@ -1,5 +1,7 @@
 import {createBoardContextStore,renderBoardContext} from './board-context.js';
 import {createBoardContextLayout} from './board-context-layout.js';
+import {createBoardLoadingMessageOwner} from './board-loading-message-owner.js';
+import {createHistoryHeadingFocus} from "./history-heading-focus.js";
 import {createBoardContextOwner,createBoardContextFocus} from './board-context-owner.js';
 import {captureDisplayedReplay,displayedReplayIsCurrent,replayArchiveMatches} from './displayed-replay.js';
 import {BOARD_PROMPT} from '../board/prompt-models.js';
@@ -45,7 +47,7 @@ const patchToolHtml = (element, html) => {
 import { createDestructionTransitions } from "./destruction-transitions.js";
 import { isPassivePageClick } from "./passive-click.js";
 import {mountLoadingEdges} from './loading-edge.js';
-import {mountRecoverySpace} from './recovery-space.js';
+import {mountRecoverySpace,syncRecoverySpace} from './recovery-space.js';
 import { mountLoadingFeedback, loadingAttributes, LOADING_CUE_DELAY_MS } from "./loading.js";
 import { SYNC_TIMING } from "../generated/packages/shared-types/src/sync-protocol.js";
 import { latestRequestEvidence } from "./request-evidence.js";
@@ -147,6 +149,7 @@ const queueBoardContextRefresh=()=>{
   if(!game||appEl.querySelector('[data-game-shell-root]')?.dataset.gameId!==gameId)return;
   if(updateMountedHeader())syncRenderedMarkupSnapshot();
   const history=appEl.querySelector('[data-game-panel="history"]');if(history)patchToolHtml(history,renderHistoryPanel(game));
+  syncRecoverySpace(appEl);
   boardContextLayout.sync();
   const active=appEl.querySelector('[data-alert-stack-card].is-active [data-board-context]');
   const text=active&&boardContexts.takeAnnouncement(active.dataset.boardContext);if(text)contextAnnouncement.textContent=text;
@@ -209,6 +212,8 @@ const resumeBoardContextReplay=()=>{
 
 mountRecoverySpace(appEl);
 const utilityMemory = createUtilityMemory({ root: appEl, getScope: key => `${account.snapshot().generation}:${key === 'debug' ? getCurrentViewedGameId() ?? 'home' : 'scenarios'}` });
+const boardLoadingMessageOwner=createBoardLoadingMessageOwner(appEl);
+const historyHeadingFocus=createHistoryHeadingFocus({doc:document,getScope:()=>JSON.stringify([viewingScope(),boardContextVisit,currentRoute.name,currentRoute.gameId,getGamePanel()])});
 const dismissedRecoveryNotices = new Map();
 // This node survives header/panel rendering, including repeated heartbeat snapshots.
 const syncAnnouncement = document.createElement("div");
@@ -2748,6 +2753,7 @@ const getMountedGameShellRoot = () =>
   appEl?.querySelector?.("[data-game-shell-root]") instanceof HTMLElement ? appEl.querySelector("[data-game-shell-root]") : null;
 const syncMountedGameShellPanelUi = (shellRoot = getMountedGameShellRoot()) => {
   if (!(shellRoot instanceof HTMLElement)) {
+    boardLoadingMessageOwner.release();
     return;
   }
   const activePanel = getGamePanel();
@@ -2758,6 +2764,9 @@ const syncMountedGameShellPanelUi = (shellRoot = getMountedGameShellRoot()) => {
     panel.setAttribute('aria-hidden', String(inactive));
     panel.dataset.active = String(!inactive);
   });
+  // Admit the actual loading label after panel membership, before layout and
+  // focus consumers observe this committed frame.
+  boardLoadingMessageOwner.sync();
   mobileNavigation?.sync();
   shellRoot.querySelectorAll("[data-action='switch-game-panel'][data-panel]").forEach((buttonEl) => {
     if (!(buttonEl instanceof HTMLElement)) {
@@ -2978,6 +2987,7 @@ const shouldPatchMountedFlyouts = (routeKey = getRouteRenderKey(), baseRouteKey 
   appEl.querySelector(".shell-main-content") instanceof HTMLElement &&
   getMountedShellPageEl() instanceof HTMLElement;
 const syncRenderedMarkupSnapshot = () => {
+  syncRecoverySpace(appEl);
   boardContextLayout.sync();
   const mainContentEl = appEl?.querySelector?.(".shell-main-content");
   lastRenderedMainMarkup = mainContentEl instanceof HTMLElement ? mainContentEl.outerHTML : "";
@@ -3495,6 +3505,9 @@ const mountBoardForGame = (game) => {
     forceClickTargetSelection,
   });
 
+  // A patched frame may reuse its label. Release the loading owner before live
+  // binding so later cleanup cannot erase the runtime's newly admitted height.
+  boardLoadingMessageOwner.release();
   if (mountedBoardGameId !== game.id || !boardRuntime) {
     if (boardRuntime) {
       boardRuntime.destroy();
@@ -3981,6 +3994,7 @@ const captureScenarioDraftFocus = (baseRouteKey) => {
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (renderGesture.defer({ animatePanels, includeBoard })) return;
+  const historyFocus=historyHeadingFocus.capture();
   const previousJoinFocus = document.activeElement;
   utilityMemory.capture();
   const result = preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => {
@@ -3989,6 +4003,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     // Admit loading and live frames before restoring native Board focus.
     // Every committed path records the same layout-adjusted markup snapshot.
     syncRenderedMarkupSnapshot();
+    historyHeadingFocus.restore(historyFocus,()=>appEl.querySelector('[data-game-panel="history"] h2'));
     return committed;
   });
   utilityMemory.restore();
@@ -4792,6 +4807,7 @@ const subscribeToTransport = () => transport.subscribe((change) => {
 subscribeToTransport();
 accountInitialized = true;
 function resetAccountTransport(next) {
+  historyHeadingFocus.retire();
   boardContextOwner.retire();
   inviteLoadState = null;
   if (currentRoute.name === "invite") resolvedInvite = null;

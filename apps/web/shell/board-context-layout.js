@@ -28,8 +28,8 @@ export function createBoardContextLayout(doc=document) {
   if((pointer||nativeKey)&&frameOwner===frame)return;
   const anchor=app.querySelector('.shell-header-status'),heading=frame.querySelector('.board-heading');
   if(!anchor||!heading)return;
-  const style=win.getComputedStyle(frame),width=anchor.getBoundingClientRect().width;
-  const nextKey=`${win.innerWidth}:${win.innerHeight}:${width}:${style.fontSize}:${style.fontFamily}`;
+  const style=win.getComputedStyle(frame),anchorRect=anchor.getBoundingClientRect(),width=anchorRect.width;
+  const nextKey=`${win.innerWidth}:${win.innerHeight}:${width}:${anchorRect.top}:${style.fontSize}:${style.fontFamily}`;
   if(key===nextKey&&frameOwner===frame)return;
   if(!probe){
    probe=doc.createElement('div');probe.className='board-context-sizing';probe.setAttribute('aria-hidden','true');probe.inert=true;
@@ -39,7 +39,7 @@ export function createBoardContextLayout(doc=document) {
   probe.style.width=`${width}px`;
   const previous=parseFloat(frame.style.getPropertyValue('--board-context-reserve'))||0;
   const naturalTop=heading.getBoundingClientRect().top-previous;
-  const clearance=Math.max(0,Math.ceil(anchor.getBoundingClientRect().top+probe.getBoundingClientRect().height+12-naturalTop));
+  const clearance=Math.max(0,Math.ceil(anchorRect.top+probe.getBoundingClientRect().height+12-naturalTop));
   frame.style.setProperty('--board-context-reserve',`${clearance}px`);
   frameOwner=frame;key=nextKey;
  };

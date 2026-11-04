@@ -1,9 +1,13 @@
 export const WEB_UNIT_TEST_FILES = Object.freeze([
   "dismiss-control.test.mjs",
   "board-context.test.mjs",
+  "board-loading-message-owner.test.mjs",
+  "history-heading-focus.test.mjs",
   "message-composition.test.mjs",
   "message-height.test.mjs",
   "prompt-reservation.test.mjs",
+  "font-pattern-budget.test.mjs",
+  "font-envelope-codec.test.mjs",
   "sequence-status-preview.test.mjs",
   "game-lifecycle.test.mjs",
   "history-turn-preview.test.mjs",

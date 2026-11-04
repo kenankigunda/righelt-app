@@ -1,6 +1,18 @@
 import {boundedPromptReservation,readPromptMetrics} from './prompt-reservation.js';
 import {messageHeightTarget,messageHeightTransition} from './message-composition.js';
 
+// Group-local permanent fallback is part of typed qualification. Expose the
+// same pure admission boundary for mixed-grammar regression tests.
+export function promptPatternReservations({replicas,win,width,fontSize,metrics,outerPadding}){
+ const patterns=[...new Set(replicas.map(node=>node.dataset.promptPattern??''))];
+ return patterns.map(pattern=>{
+  const group=replicas.filter(node=>(node.dataset.promptPattern??'')===pattern);
+  const rowLines=parseFloat(win.getComputedStyle?.(group[0])?.getPropertyValue?.('--board-message-row-lines'));
+  const permanentFallback=Math.max(0,...group.filter(node=>node.dataset.sizingFont==='fallback').map(node=>node.getBoundingClientRect().height));
+  return {pattern:pattern||null,permanentFallback,reservation:boundedPromptReservation({width,fontSize,metrics,rowLines,intrinsicFallback:permanentFallback,outerPadding,pattern:pattern||null})};
+ });
+}
+
 // Own only presentation height. Authority and semantic message updates remain
 // synchronous; native presses defer board movement, never gameplay intent.
 export function createMessageHeightController(label) {
@@ -25,8 +37,8 @@ export function createMessageHeightController(label) {
   const slotStyle=win.getComputedStyle?.(slot);
   const outerPadding=(parseFloat(slotStyle?.paddingTop)||0)+(parseFloat(slotStyle?.paddingBottom)||0);
   const primary=floor('primary'),fallback=floor('fallback');
-  const rowLines=parseFloat(win.getComputedStyle?.(replicas[0])?.getPropertyValue?.('--board-message-row-lines'));
-  const reservation=boundedPromptReservation({width,fontSize:parseFloat(font?.fontSize),metrics:readPromptMetrics(slotStyle),rowLines,intrinsicFallback:fallback,outerPadding});
+  const groups=promptPatternReservations({replicas,win,width,fontSize:parseFloat(font?.fontSize),metrics:readPromptMetrics(slotStyle),outerPadding});
+  const reservation=groups.length&&groups.every(group=>group.reservation!==null)?Math.max(...groups.map(group=>group.reservation)):null;
   if(reservation===null)slot.dataset.promptReservationUnsupported='true';else delete slot.dataset.promptReservationUnsupported;
   // A too-small primary policy is degraded even when natural replica sizing
   // keeps content safe. Never report that reflow as fixed-height acceptance.

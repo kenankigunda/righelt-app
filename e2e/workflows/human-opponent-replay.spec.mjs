@@ -1,5 +1,7 @@
 import {test as base,expect} from '@playwright/test';
 import {ownedContexts} from '../support/owned-contexts.mjs';
+import {assertMobileBoardCellAccess} from '../support/mobile-board-cell-access.mjs';
+import {edgeDelta} from '../../browser-integration/support/message-semantic-geometry.mjs';
 // Teardown has Playwright's separate bounded fixture phase. Setup and every
 // behavior assertion retain the existing 60-second test budget.
 const test=base.extend({
@@ -61,7 +63,8 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
   expect(hitReadiness.after.finiteAnimations.filter(animation=>animation.pending||animation.playState==='running')).toHaveLength(0);
   await opponent.screenshot({path:info.outputPath(`native-gray-${width}.png`)});
   if(width===390){
-   const tallBoard=await opponent.getByTestId('game-board').boundingBox();
+   const tall=await opponent.getByTestId('game-board').evaluate(node=>{const style=getComputedStyle(node);return {rect:node.getBoundingClientRect().toJSON(),css:{width:style.width,height:style.height},offset:{width:node.offsetWidth,height:node.offsetHeight}};});
+   const tallBoard=tall.rect;
    await opponent.setViewportSize({width,height:740});await opponent.evaluate(()=>document.fonts.ready);
    const normal=await opponent.evaluate(()=>{
     const rect=selector=>{const node=document.querySelector(selector);return node?.getBoundingClientRect().toJSON()??null;};
@@ -70,15 +73,18 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
     const pass=document.querySelector('#shell-board-preview-label [data-board-message-action="pass"]');
     return {viewport:{width:innerWidth,height:innerHeight},scrollY,maxScroll:document.documentElement.scrollHeight-innerHeight,fonts:document.fonts.status,
      header:rect('.shell-header'),context:rect('[data-alert-stack-card].is-active'),contextBody:rect('.is-active .board-context-body'),contextReplay:rect('.is-active .board-context-replay'),contextDismiss:rect('.is-active .board-context-dismiss'),
-     panel:rect('[data-shell-panel="board"]'),heading:rect('.board-heading-slot'),slot:rect('.board-message-slot'),board:rect('#shell-board'),wrap:rect('[data-testid="game-board-wrap"]'),legend:rect('[data-shell-panel="board"] .overlay-key'),nav:rect('.shell-mobile-tabbar'),navVisible:document.querySelector('.shell-mobile-tabbar')?.dataset.visible,
+     panel:rect('[data-shell-panel="board"]'),heading:rect('.board-heading-slot'),slot:rect('.board-message-slot'),board:rect('#shell-board'),boardCss:{width:getComputedStyle(document.querySelector('#shell-board')).width,height:getComputedStyle(document.querySelector('#shell-board')).height},boardOffset:{width:document.querySelector('#shell-board').offsetWidth,height:document.querySelector('#shell-board').offsetHeight},wrap:rect('[data-testid="game-board-wrap"]'),legend:rect('[data-shell-panel="board"] .overlay-key'),nav:rect('.shell-mobile-tabbar'),navVisible:document.querySelector('.shell-mobile-tabbar')?.dataset.visible,
      frameReserve:document.querySelector('[data-game-shell-root]')?.style.getPropertyValue('--board-context-reserve'),cellCount:cells.length,minCellWidth:Math.min(...cells.map(r=>r.width)),minCellHeight:Math.min(...cells.map(r=>r.height)),
      pass:pass?.getBoundingClientRect().toJSON()??null,passHitHeight:pass?getComputedStyle(pass,'::before').height:null,
      metrics:Object.fromEntries(['[data-shell-panel="board"]','.board-heading-slot','.board-heading','.board-message-slot','.board-message-live','.board-wrap','.overlay-key','.board-context-body','.board-context-actions'].map(selector=>[selector,metrics(selector)]))};
    });
-   await info.attach('Normal390x740 Board and chrome geometry',{body:JSON.stringify({...normal,tallBoard}),contentType:'application/json'});
+   await info.attach('Normal390x740 Board and chrome geometry',{body:JSON.stringify({...normal,tallBoard,tall}),contentType:'application/json'});
    await opponent.screenshot({path:info.outputPath('native-gray-mobile-normal740.png')});
    expect(normal.cellCount).toBe(100);expect(normal.board.bottom).toBeLessThanOrEqual(normal.viewport.height+1);
-   expect({width:normal.board.width,height:normal.board.height}).toEqual({width:tallBoard.width,height:tallBoard.height});
+   expect(normal.boardCss).toEqual(tall.css);expect(normal.boardOffset).toEqual(tall.offset);
+   for(const rect of [normal.board,tallBoard]){expect(rect.right).toBe(rect.left+rect.width);expect(rect.bottom).toBe(rect.top+rect.height);}
+   for(const dimension of ['width','height'])edgeDelta(normal.board[dimension],tallBoard[dimension],0,0,[normal.board[dimension],tallBoard[dimension]],`unchanged Board ${dimension} across viewport heights`);
+   await assertMobileBoardCellAccess(opponent,info,{before:await projected(opponent,gameId),readState:()=>projected(opponent,gameId),assertUnchanged});
    await opponent.setViewportSize({width,height:600});
    await opponent.evaluate(()=>document.documentElement.style.fontSize='32px');
    await opponent.evaluate(()=>document.fonts.ready);

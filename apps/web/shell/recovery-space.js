@@ -6,6 +6,8 @@ export const recoverySpaceGeometry = ({headerBottom = 0, viewportTop = 0, viewpo
  return {top:Math.max(top+8,bottom+8),viewportBottom:top+height};
 };
 const mounted = new WeakMap();
+// Reuse the mounted owner before dependent synchronous layout admission.
+export const syncRecoverySpace = app => mounted.get(app)?.sync();
 export function mountRecoverySpace(app,{window:win=globalThis.window,document:doc=globalThis.document}={}) {
  if(!app||!win)return ()=>{};
  if(mounted.has(app))return mounted.get(app);
@@ -36,5 +38,7 @@ export function mountRecoverySpace(app,{window:win=globalThis.window,document:do
   names.forEach((name,index)=>previous[index]?app.style.setProperty(name,previous[index]):app.style.removeProperty(name));
   mounted.delete(app);
  };
+ // Preserve the callable disposer contract and coalesce its pending frame.
+ dispose.sync=()=>{if(disposed)return;if(frame!==null){win.cancelAnimationFrame(frame);frame=null;}measure();};
  mounted.set(app,dispose);schedule();return dispose;
 }

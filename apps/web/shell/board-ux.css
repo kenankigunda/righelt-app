@@ -29,6 +29,9 @@ body {display:flow-root;}
      and an outward 1/8em font/layout allowance. Logical rows own four insets. */
   --board-message-action-extra-em:.469;
   --board-message-action-extra-px:4;
+  --board-message-detached-gap-em:.5;
+  --board-message-rounding-allowance:max(0px,calc((var(--board-message-action-extra-em) - 2 * (var(--board-inline-action-font-scale) * (var(--board-inline-action-line-height) + 2 * var(--board-inline-action-padding-block-em)) - var(--board-message-prose-line-height))) * 1em));
+  --board-message-detached-allowance:calc(var(--board-message-detached-gap-em) * 1em + var(--board-routine-action-growth) + var(--board-message-rounding-allowance) + 4 * var(--board-action-hit-inset));
   --board-action-hit-inset:max(0px,calc(var(--board-message-hit-half-px) * 1px - var(--board-message-hit-half-em) * 1em));
   --board-message-action-allowance:calc(var(--board-message-action-extra-em) * 1em + var(--board-message-action-extra-px) * 1px + var(--board-action-hit-inset) + var(--board-action-hit-inset) + var(--board-action-hit-inset) + var(--board-action-hit-inset));
 }
@@ -41,6 +44,8 @@ body {display:flow-root;}
 .board-message-activity[data-loading-state="pending"] {display:inline-flex;vertical-align:middle;}
 .board-message-activity[data-loading-suppressed="true"] {display:none;}
 .board-message-sizing, .board-heading-sizing {visibility:hidden;pointer-events:none;user-select:none;}
+.board-message-sizing[data-prompt-pattern="required-retry"] {min-height:calc(var(--board-message-row-lines) * 1.5em + max(var(--board-message-action-allowance),var(--board-message-detached-allowance)));}
+.board-obligatory-pill[data-board-prompt-pattern="required-retry"] {vertical-align:top;}
 .board-message-fallback-sizing {font-family:var(--font-family-fallback);}
 .board-message-fallback-sizing :is(.board-preview-coordinate-chip,.board-preview-highlight-chip,.board-preview-retreat-chip,.board-preview-inline-button) {font-family:inherit;}
 /* Intrinsic primary-font row frontiers cover the two-row message grammar,
@@ -184,7 +189,7 @@ body {display:flow-root;}
 .board-message-row {position:relative;line-height:var(--board-message-prose-line-height,1.5);}
 .board-message-row + .board-message-row {margin-block-start:.5em;}
 .board-message-row + .board-message-row::before {content:"";position:absolute;inset-inline:0;top:-.25em;border-top:1px solid var(--line);pointer-events:none;}
-.board-message-actions {display:flex;flex-wrap:wrap;align-items:baseline;gap:.5em;margin-block-start:.5em;padding-block:var(--board-action-hit-inset);}
+.board-message-actions {display:flex;flex-wrap:wrap;align-items:baseline;gap:calc(var(--board-message-detached-gap-em) * 1em);margin-block-start:calc(var(--board-message-detached-gap-em) * 1em);padding-block:var(--board-action-hit-inset);}
 
 /* Replicas establish only the routine floor. The controller measures both font
    families plus live content, keeping replicas outside intrinsic grid sizing. */
@@ -223,7 +228,9 @@ body {display:flow-root;}
 .board-context-notice .board-context-replay {min-width:44px;min-height:44px;max-width:100%;background:#f7f7f7;color:#282828;border:1px solid #999;}
 .board-context-notice .board-preview-coordinate-chip {background:#f7f7f7;color:#282828;border-color:#999;}
 .board-context-notice .board-context-dismiss {position:absolute;top:12px;right:12px;}
-.board-context-notice::before {background:#666;}
+/* Keep the rotated7px marker inside the existing16px notice inset.
+   Its right edge then leaves more than3px before the text, without rewrapping. */
+.shell-game-alert.alert.board-context-notice::before {left:4px;background:#666;}
 
 .board-context-sizing .board-context-scroll-cue {display:block;}
 

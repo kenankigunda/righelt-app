@@ -11,6 +11,11 @@ export function boardMessagePresentation(message) {
   return {text,actorName,rest:actorName?text.slice(actorName.length):text,
     actions:Array.isArray(message.actions)?message.actions:message.action?[message.action]:[]};
 }
+export const DETACHED_REQUIRED_RETRY='required-retry';
+export function boardPromptPattern(message){
+ const actions=boardMessagePresentation(message).actions;
+ return message.badge&&partitionMessageActions(actions).detached.some(action=>action.id==='retry-rush-guidance')?DETACHED_REQUIRED_RETRY:null;
+}
 const actionIcons = {'replay-computer':'rematch','replay-next':'right','replay-stop':'close','replay-dismiss':'close',pass:'right','end-turn':'check'};
 // Sizing uses identical content without exposing an actionable data attribute.
 export function renderBoardInlineAction({id,label},{sizing=false,preview=false}={}) {
@@ -38,7 +43,7 @@ export function renderBoardMessageHtml(message, {sizing = false} = {}) {
   const {text,actorName,rest,actions}=boardMessagePresentation(message);
   const copy=actorName?`<bdi class="board-message-name" dir="auto" title="${escape(actorName)}">${escape(actorName)}</bdi>${renderCopy(rest,message.coordinates)}`:renderCopy(text,message.coordinates);
   const {inline,detached}=partitionMessageActions(actions);
-  const sentence=copy+(message.badge?` <span class="board-obligatory-pill">${escape(message.badge)}</span>`:'')+inline.map(action=>` ${renderBoardInlineAction(action,{sizing})}`).join('');
+  const sentence=copy+(message.badge?` <span class="board-obligatory-pill"${boardPromptPattern(message)?` data-board-prompt-pattern="${DETACHED_REQUIRED_RETRY}"`:""}>${escape(message.badge)}</span>`:'')+inline.map(action=>` ${renderBoardInlineAction(action,{sizing})}`).join('');
   return sentence+(detached.length?`<span class="board-message-actions">${detached.map(action=>renderBoardInlineAction(action,{sizing})).join(' ')}</span>`:'');
 }
 

@@ -61,7 +61,8 @@ test('background completion preserves manual selection and failure restores exis
   await expect(page.locator('.cell.selected-piece')).toHaveAttribute('data-col','6');
   await expect(page.locator('#preview .board-obligatory-pill')).toHaveCount(0);
   await open(page,{hold:true});await page.evaluate(()=>window.failGuidance());
-  await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Rush to restore supply for pieces at');
+  await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Rush to restore supply for piece at 7, 1');
+  await expect(page.locator('[data-board-context] .board-context-body .board-preview-coordinate-chip')).toHaveText('7, 1');
   await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Hints unavailable');
   await expect(page.locator('#preview .board-obligatory-pill')).toHaveText('Obligatory');
   await expect(page.locator('.continuation-pending')).toHaveCount(5);
@@ -107,11 +108,16 @@ test('obligatory message retains inactive-piece and blocked-destination explanat
   await open(page);await expect(page.locator('.rush-guidance-source')).toHaveCount(1);
   await page.locator('.cell[data-row="6"][data-col="0"]').click();
   await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Cannot move: no command at start of rush');
-  await expect(page.locator('#preview .board-obligatory-pill')).toHaveCount(0);
+  await expect(page.locator('#preview .board-obligatory-pill')).toHaveText('Obligatory');
+  await expect(page.locator('[data-board-context] .board-preview-coordinate-chip-rush-blocker')).toHaveText('7, 1');
+  await expect(page.locator('[data-board-context] .board-context-dismiss')).toHaveCount(0);
   await page.locator('.cell[data-row="6"][data-col="4"]').click();
   await page.locator('.cell[data-row="7"][data-col="3"]').click();
   await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Destination would have no supply');
-  await expect(page.locator('#preview .board-obligatory-pill')).toHaveCount(0);
+  await expect(page.locator('#preview .board-obligatory-pill')).toHaveText('Obligatory');
+  await expect(page.locator('[data-board-context] .board-preview-coordinate-chip-rush-blocker')).toHaveText('7, 1');
+  await expect(page.locator('[data-board-context] .board-context-dismiss')).toHaveCount(0);
+  expect(await page.evaluate(()=>window.boardFixture.applied())).toEqual([]);
 });
 
 for (const fontScale of [100,200]) test(`touch confirmation stays put across guidance choices at ${fontScale}% text`,async({page})=>{

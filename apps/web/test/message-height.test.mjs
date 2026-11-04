@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createMessageHeightController} from '../board/message-height.js';
 
-function fixture(initialPadding=0,initialFloor=75,{metrics=null,fontSize=16,initialWidth=400,rowLines=3}={}){
+function fixture(initialPadding=0,initialFloor=75,{metrics=null,fontSize=16,initialWidth=400,rowLines=3,pattern=null}={}){
  const events=()=>({handlers:new Map(),addEventListener(type,fn){this.handlers.set(type,fn);},removeEventListener(type){this.handlers.delete(type);}});
  const frames=new Map(),animations=[],observers=[];let id=0,current=40,rendered=initialFloor,width=initialWidth,padding=initialPadding,buttonTop=10,primary=initialFloor-5,fallback=initialFloor;
  const motion={...events(),matches:false},fonts=events(),doc={...events(),fonts};
@@ -12,7 +12,7 @@ function fixture(initialPadding=0,initialFloor=75,{metrics=null,fontSize=16,init
  doc.defaultView=win;
  win.getComputedStyle=node=>node===slot?{paddingTop:String(slot.dataset.heightManaged==='true'?padding:0),paddingBottom:String(slot.dataset.heightManaged==='true'?padding:0),getPropertyValue:name=>metrics?.[name]??''}:node===button?{outlineWidth:'2px',outlineOffset:'2px'}:{fontSize:`${fontSize}px`,fontFamily:'Manrope',lineHeight:'24px',getPropertyValue:name=>name==='--board-message-row-lines'?String(rowLines):''};
  const live={getBoundingClientRect:()=>({height:current})};
- const replicas=[['primary',70],['fallback',75]].map(([font,height])=>({dataset:{sizingFont:font},getBoundingClientRect:()=>({height:font==='primary'?primary:fallback})}));
+ const replicas=[['primary',70],['fallback',75]].map(([font,height])=>({dataset:{sizingFont:font,...(pattern?{promptPattern:pattern}:{})},getBoundingClientRect:()=>({height:font==='primary'?primary:fallback})}));
  const slot={dataset:{},isConnected:true,style:{removeProperty(key){delete this[key];}},querySelector:()=>live,querySelectorAll:()=>replicas,getBoundingClientRect:()=>({height:rendered,width,top:0,bottom:rendered}),animate(keys,options){const a={keys,options,cancel(){this.canceled=true;}};animations.push(a);return a;}};
  const button={matches:selector=>selector==='button',getBoundingClientRect:()=>({top:buttonTop,height:38}),disabled:false,textContent:'Next',hasAttribute:name=>name==='data-board-message-action',getAttribute:name=>name==='data-board-message-action'?'replay-next':null};
  doc.createElement=()=>({innerHTML:'',querySelectorAll(){return this.innerHTML.includes('Next')?[{disabled:this.innerHTML.includes('disabled'),textContent:'Next',getAttribute:name=>name==='data-board-message-action'?'replay-next':null}]:[];}});
@@ -102,7 +102,7 @@ const actualMetrics={
  '--board-message-prose-line-height':'1.5','--board-inline-action-font-scale':'.88',
  '--board-inline-action-line-height':'1.5','--board-inline-action-padding-block-em':'.2',
  '--board-inline-action-border-px':'1','--board-message-hit-half-px':'23.0625',
- '--board-message-hit-half-em':'.836','--board-message-action-extra-em':'.469','--board-message-action-extra-px':'4',
+ '--board-message-hit-half-em':'.836','--board-message-action-extra-em':'.469','--board-message-action-extra-px':'4','--board-message-detached-gap-em':'.5',
 };
 test('cold primary font growth is admitted before first paint without moving the Board',()=>{
  const f=fixture(4,174.96875,{metrics:actualMetrics,fontSize:32,initialWidth:334.375,rowLines:6});
@@ -138,4 +138,39 @@ test('the first cold admission respects the original compact ceiling when fallba
  const f=fixture(0,125.140625,{metrics:actualMetrics,fontSize:16,initialWidth:296.8125,rowLines:3});
  assert.equal(f.slot.style.height,'125.140625px');assert.equal(f.slot.dataset.promptPrimaryUnderreserved,undefined);
  f.fonts.handlers.get('loadingdone')();f.flush();assert.equal(f.slot.style.height,'125.140625px');f.controller.destroy();
+});
+
+// Authored private proposal owner controls; UNRUN.
+test('tagged finite grammar reserves detached row before a cold primary loads and counts paint once',()=>{
+ const f=fixture(4,126.96875,{metrics:actualMetrics,fontSize:32,initialWidth:616,rowLines:3,pattern:'required-retry'});
+ const admitted=parseFloat(f.slot.style.height);assert(Math.abs(admitted-179.504)<1e-9);
+ f.setFloors(167.484375,126.96875);f.fonts.handlers.get('loadingdone')();f.flush();
+ assert.equal(parseFloat(f.slot.style.height),admitted);assert.equal(f.slot.dataset.promptPrimaryUnderreserved,undefined);
+ f.setFloors(200,126.96875);f.fonts.handlers.get('loadingdone')();f.flush();
+ assert.equal(f.slot.dataset.promptPrimaryUnderreserved,'true');assert.equal(f.slot.style.height,'208px','unqualified growth stays safe but explicitly degraded');
+ f.controller.destroy();
+});
+test('unknown structural reservation pattern is safe but unsupported',()=>{
+ const f=fixture(0,75,{metrics:actualMetrics,pattern:'unknown'});
+ assert.equal(f.slot.dataset.promptReservationUnsupported,'true');assert.equal(f.slot.style.height,'75px');f.controller.destroy();
+});
+
+// Mixed grammar exercises the actual production group boundary, not a copy.
+test('mixed tagged and ordinary replicas retain distinct fallback ownership and fixed grammar maximum',async()=>{
+ const {promptPatternReservations}=await import('../board/message-height.js');
+ const {readPromptMetrics}=await import('../board/prompt-reservation.js');
+ const metrics=readPromptMetrics({getPropertyValue:name=>actualMetrics[name]??''});
+ const replica=(font,height,pattern)=>({dataset:{sizingFont:font,...(pattern?{promptPattern:pattern}:{})},height,getBoundingClientRect(){return {height:this.height};}});
+ const replicas=[replica('primary',140),replica('fallback',145),replica('primary',167.484375,'required-retry'),replica('fallback',126.96875,'required-retry')];
+ const win={getComputedStyle:()=>({getPropertyValue:()=> '3'})};
+ const measure=()=>promptPatternReservations({replicas,win,width:616,fontSize:32,metrics,outerPadding:8});
+ let groups=measure();assert.equal(groups.length,2);
+ assert.equal(groups[0].permanentFallback,145);assert(Math.abs(groups[0].reservation-155.008)<1e-9);
+ assert.equal(groups[1].permanentFallback,126.96875);assert(Math.abs(groups[1].reservation-171.504)<1e-9);
+ assert(Math.abs(Math.max(...groups.map(group=>group.reservation))+8-179.504)<1e-9);
+ replicas[1].height=300;groups=measure();assert.equal(groups[0].reservation,300);
+ assert(Math.abs(groups[1].reservation-171.504)<1e-9,'ordinary fallback cannot inflate the tagged group');
+ replicas[3].height=350;groups=measure();assert.equal(groups[1].reservation,350);
+ assert.equal(groups[0].reservation,300,'tagged fallback cannot inflate the ordinary group');
+ assert.equal(Math.max(...groups.map(group=>group.reservation))+8,358);
 });

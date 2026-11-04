@@ -1,9 +1,20 @@
 import {test,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
+import {fontEnvelopeBudget} from './support/font-pattern-budget.mjs';
+import {promptFrontiersEm} from '../apps/web/board/prompt-reservation.js';
 import {decodeFontBoundarySamples} from './support/font-envelope-codec.mjs';
 import {reservationBands,routineFontBoundaryEm,admittedHeight,budgetPixelPrecision,actionReservationMetrics} from './support/message-reservation-policy.mjs';
 const anchors=page=>page.evaluate(()=>window.fontAnchors());
 const sameAnchors=(a,b)=>{for(const target of ['heading','slot','board','panel'])for(const key of ['x','y','width','height'])expect(Math.abs(a[target][key]-b[target][key]),`${target}.${key}`).toBeLessThanOrEqual(.1);};
+const checkRows=(envelope,coldIntrinsic,label)=>{
+ expect(envelope.rows,`${label} complete grammar`).toHaveLength(136);
+ for(const row of envelope.rows)expect([null,'required-retry']).toContain(row.pattern??null);
+ const tagged=envelope.rows.filter(row=>row.pattern==='required-retry');
+ expect(tagged).toHaveLength(2);expect(tagged.map(row=>row.font).sort()).toEqual(['fallback','primary']);expect(new Set(tagged.map(row=>row.variant)).size).toBe(1);
+ const budget=fontEnvelopeBudget(envelope,coldIntrinsic);
+ for(let index=0;index<envelope.rows.length;index++)expect(budgetPixelPrecision(envelope.rows[index].height),`${label} ${envelope.rows[index].font}/${envelope.rows[index].variant}/${envelope.rows[index].pattern??'untagged'} source content cap`).toBeLessThanOrEqual(budgetPixelPrecision(budget.rows[index].contentMax));
+ return budget;
+};
 test('row budget retains a wider intrinsic fallback and rejects absent measurements',()=>{
  // Preserve an intrinsic fallback taller than the source width budget; an
  // absent measurement must never silently collapse to the primary-font floor.
@@ -22,7 +33,10 @@ for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(
   receipts.cold=await anchors(page);expect(receipts.cold.fontStatus).toBe('loading');
   expect(receipts.cold.slot.width).toBeGreaterThan(0);expect(Math.abs(receipts.cold.slot.width-receipts.cold.availableInlineSize)).toBeLessThanOrEqual(.1);
   receipts.coldEnvelope=await page.evaluate(()=>window.fontEnvelope());
-  receipts.coldIntrinsicFallback=await page.evaluate(()=>window.fontEnvelope(undefined,{intrinsic:true}).fallback);
+  receipts.coldIntrinsic=await page.evaluate(()=>window.fontEnvelope(undefined,{intrinsic:true}));
+  receipts.coldIntrinsicFallback=receipts.coldIntrinsic.fallback;
+  const coldBudget=checkRows(receipts.coldEnvelope,receipts.coldIntrinsic,'cold');
+  expect(budgetPixelPrecision(receipts.cold.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(coldBudget.slotMax));
   receipts.coldAfterMeasurement=await anchors(page);sameAnchors(receipts.cold,receipts.coldAfterMeasurement);
   receipts.probeIsolation=await page.evaluate(()=>{const wrapper=document.querySelector('[data-font-measurement-wrapper]'),rect=wrapper.getBoundingClientRect(),style=getComputedStyle(wrapper);return {width:rect.width,height:rect.height,position:style.position,overflowX:style.overflowX,overflowY:style.overflowY,inert:wrapper.inert,hidden:wrapper.getAttribute('aria-hidden'),scrollWidth:document.documentElement.scrollWidth,viewport:innerWidth};});
   expect(receipts.probeIsolation).toMatchObject({width:0,height:0,position:'fixed',overflowX:'hidden',overflowY:'hidden',inert:true,hidden:'true'});expect(receipts.probeIsolation.scrollWidth).toBeLessThanOrEqual(receipts.probeIsolation.viewport);
@@ -30,12 +44,14 @@ for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(
   receipts.loaded=await anchors(page);receipts.loadedEnvelope=await page.evaluate(()=>window.fontEnvelope());
   sameAnchors(receipts.cold,receipts.loaded);
   expect(await page.evaluate(()=>window.admitMessagePhases())).toEqual([]);
-  const lineHeight=receipts.loadedEnvelope.rows[0].lineHeight;
-  expect(budgetPixelPrecision(receipts.loaded.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(admittedHeight(receipts.loaded.slot.width,lineHeight/1.5,receipts.coldIntrinsicFallback)));
+  const loadedBudget=checkRows(receipts.loadedEnvelope,receipts.coldIntrinsic,'loaded');
+  expect(budgetPixelPrecision(receipts.loaded.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(loadedBudget.slotMax));
   // Routing disables HTTP caching. This witnesses settled reload consistency,
   // not cache-admitted first paint. The actual cache-warm E2E is separate.
   await page.reload();await page.waitForFunction(()=>window.fixtureReady);await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
-  receipts.warm=await anchors(page);sameAnchors(receipts.loaded,receipts.warm);
+  receipts.warm=await anchors(page);receipts.warmEnvelope=await page.evaluate(()=>window.fontEnvelope());sameAnchors(receipts.loaded,receipts.warm);
+  const warmBudget=checkRows(receipts.warmEnvelope,receipts.coldIntrinsic,'settled reload');
+  expect(budgetPixelPrecision(receipts.warm.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(warmBudget.slotMax));
   expect(await page.evaluate(()=>window.admitMessagePhases())).toEqual([]);
  }finally{hold=false;release();const path=info.outputPath('font-reservation-receipt.json');await writeFile(path,JSON.stringify(receipts,null,2));await info.attach('font-reservation',{path,contentType:'application/json'});}
 });
@@ -64,7 +80,11 @@ for(const scale of [100,200])for(const {font,fallbackFamily=null} of [{font:'pri
    }
    return {scale,font,fallbackFamily,fontSize,fontStatus:document.fonts.status,primaryFont:getComputedStyle(document.querySelector('[data-sizing-font="primary"]')).fontFamily,rows,measurements:cache.size};
   },{scale,font,fallbackFamily,extra:actionReservationMetrics}));
-  for(let width=280;width<=800;width+=16){const envelope=await page.evaluate(width=>window.fontEnvelope(width),width);if(envelope.primary>envelope.fallback+.1)failures.push({scale,...envelope});}
+  for(let width=280;width<=800;width+=16){
+   const {envelope,intrinsic}=await page.evaluate(({width,fallbackFamily})=>({envelope:window.fontEnvelope(width,{fallbackFamily}),intrinsic:window.fontEnvelope(width,{intrinsic:true,fallbackFamily})}),{width,fallbackFamily});
+   const budget=fontEnvelopeBudget(envelope,intrinsic),violations=envelope.rows.filter((row,index)=>budgetPixelPrecision(row.height)>budgetPixelPrecision(budget.rows[index].contentMax));
+   if(envelope.primary>envelope.fallback+.1||violations.length)failures.push({scale,...envelope,intrinsic,budget,violations});
+  }
  }
  }finally{const frontierPath=info.outputPath('intrinsic-primary-row-frontiers.json');await writeFile(frontierPath,JSON.stringify(frontiers,null,2));await info.attach('intrinsic-primary-row-frontiers',{path:frontierPath,contentType:'application/json'});}
  const path=info.outputPath('primary-over-fallback-envelopes.json');await writeFile(path,JSON.stringify(failures,null,2));await info.attach('primary-over-fallback',{path,contentType:'application/json'});
@@ -82,22 +102,23 @@ for(const scale of [100,200])test(`measured font boundaries keep cold, loaded an
   const result=[];
    await page.evaluate(scale=>{document.documentElement.style.fontSize=`${scale}%`;},scale);
    const before=await anchors(page);
-   const measured=await page.evaluate(({scale,bands,routineFontBoundaryEm})=>{
+   const measured=await page.evaluate(({scale,bands,routineFontBoundaryEm,promptFrontiersEm})=>{
     const size=parseFloat(getComputedStyle(document.querySelector('.board-message-slot')).fontSize);
-    const widths=[...new Set([272,273.59375,280,288,296,334.375,349.5,355.5,360,365,365.5,366.8,456,471.5,491.6,573,573.125,696,699.5,800,...(scale===200?[326.125,326.25,326.5,326.75,327]:[]),...[-.125,0,.125].map(delta=>routineFontBoundaryEm*size+delta),...bands.flatMap(([lower,upper])=>[lower*size-.125,lower*size,lower*size+.125,(lower+upper)*size/2,upper*size-.125,upper*size,upper*size+.125])])].filter(width=>width>=8.5*size&&width<=800).sort((a,b)=>a-b);
+    const widths=[...new Set([272,273.59375,280,288,296,334.375,349.5,355.5,360,365,365.5,366.8,456,471.5,491.6,573,573.125,696,699.5,800,...(scale===200?[326.125,326.25,326.5,326.75,327]:[]),...promptFrontiersEm.flatMap(frontier=>[-.125,0,.125].map(delta=>frontier*size+delta)),...[-.125,0,.125].map(delta=>routineFontBoundaryEm*size+delta),...bands.flatMap(([lower,upper])=>[lower*size-.125,lower*size,lower*size+.125,(lower+upper)*size/2,upper*size-.125,upper*size,upper*size+.125])])].filter(width=>width>=8.5*size&&width<=800).sort((a,b)=>a-b);
     let definitions;
     const samples=widths.map(width=>{
      const envelope=window.fontEnvelope(width);
      const intrinsic=window.fontEnvelope(width,{intrinsic:true});
      // Definitions are stable within this page/scale. Transfer them once while
      // retaining every fresh metric at every boundary, then restore full rows.
-     definitions??=envelope.rows.map(({font,variant,text})=>({font,variant,text}));
-     return {scale,width:envelope.width,primary:envelope.primary,fallback:envelope.fallback,
+     definitions??=envelope.rows.map(({font,variant,text,pattern})=>({font,variant,text,pattern}));
+     return {scale,width:envelope.width,outerPadding:envelope.outerPadding,primary:envelope.primary,fallback:envelope.fallback,
       rows:envelope.rows.map(({height,lineHeight,minHeight})=>[height,lineHeight,minHeight]),
+      intrinsicRows:intrinsic.rows.map(({height,lineHeight,minHeight})=>[height,lineHeight,minHeight]),
       intrinsicPrimary:intrinsic.primary,intrinsicFallback:intrinsic.fallback};
     });
     return {definitions,samples};
-   },{scale,bands,routineFontBoundaryEm});
+   },{scale,bands,routineFontBoundaryEm,promptFrontiersEm});
    result.push(...decodeFontBoundarySamples(measured));
    sameAnchors(before,await anchors(page));
   return result;
@@ -115,8 +136,11 @@ for(const scale of [100,200])test(`measured font boundaries keep cold, loaded an
    expect(loaded.intrinsicPrimary,`${label} intrinsic primary fits reservation`).toBeLessThanOrEqual(Math.max(loaded.primary,loaded.fallback)+.1);
    expect(Math.max(cold.primary,cold.fallback),`${label} cold to loaded`).toBeCloseTo(Math.max(loaded.primary,loaded.fallback),5);
    expect(Math.max(warm.primary,warm.fallback),`${label} settled reload`).toBeCloseTo(Math.max(loaded.primary,loaded.fallback),5);
-   const lineHeight=loaded.rows[0].lineHeight;
-   expect(budgetPixelPrecision(Math.max(loaded.primary,loaded.fallback)),`${label} reviewed source row budget and cold intrinsic fallback`).toBeLessThanOrEqual(budgetPixelPrecision(admittedHeight(cold.width,lineHeight/1.5,cold.intrinsicFallback)));
+   const coldIntrinsic={width:cold.width,rows:cold.intrinsicRows};
+   for(const [phase,sample]of [['cold',cold],['loaded',loaded],['settled reload',warm]]){
+    const budget=checkRows(sample,coldIntrinsic,`${label} ${phase}`);
+    expect(budgetPixelPrecision(Math.max(sample.primary,sample.fallback)),`${label} ${phase} source content maximum`).toBeLessThanOrEqual(budgetPixelPrecision(budget.contentMax));
+   }
   }
  }finally{hold=false;release();const path=info.outputPath('font-boundary-admission.json');await writeFile(path,JSON.stringify(receipts,null,2));await info.attach('font-boundary-admission',{path,contentType:'application/json'});}
 });

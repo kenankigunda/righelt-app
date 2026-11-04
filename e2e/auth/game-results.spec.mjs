@@ -1,3 +1,4 @@
+import {installResultReviewFocusObservation} from '../support/result-review-focus-observation.mjs';
 import {ownedContexts} from '../support/owned-contexts.mjs';
 import {switchGamePanel} from '../support/app.mjs';
 import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
@@ -15,16 +16,20 @@ for (const opponent of ["self", "friend"]) test.describe(`real ${opponent} retai
   // Two retained phases keep their original per-test60s budgets. This is not
   // a single60s end-to-end timing claim; no account/game/setup is repeated.
   test.describe.configure({mode:'serial'});
-  let owned,page,gameId;
+  let owned,page,gameId,resultReviewObservation;
   test.beforeAll(async({browser},info)=>{
     owned=ownedContexts(browser);const use=info.project.use;
     const context=await owned.create({...use.contextOptions,baseURL:use.baseURL,
       viewport:use.viewport,deviceScaleFactor:use.deviceScaleFactor,
       ignoreHTTPSErrors:use.ignoreHTTPSErrors,reducedMotion:use.reducedMotion,
       isMobile:use.isMobile,hasTouch:use.hasTouch,userAgent:use.userAgent});
+    resultReviewObservation=await installResultReviewFocusObservation({context,baseURL:use.baseURL});
     page=await context.newPage();
   });
-  test.afterAll(async()=>{await owned?.close();});
+  test.afterEach(async({},info)=>{
+    if(info.title==='the same completed game persists through review and swapped rematch')await resultReviewObservation?.finish(page,info);
+  });
+  test.afterAll(async({},info)=>{try{await resultReviewObservation?.finish(page,info);}finally{await owned?.close();}});
   test('terminal result preserves responsive controls and native reconnect focus',async({},testInfo)=>{
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/");

@@ -70,3 +70,19 @@ test('context coordinates retain their semantic roles through the escaped shared
  const unsafe=renderBoardMessageHtml({text:'At (1, 2)',coordinates:[{row:1,col:2,chipClass:'" onmouseover="bad'}]});
  assert(!unsafe.includes(' onmouseover="bad'));assert(unsafe.includes('&quot; onmouseover=&quot;bad'));
 });
+
+// Authored private proposal structural controls; UNRUN.
+test('required retry pattern depends on badge and semantic action, never copy or array index',async()=>{
+ const {boardPromptPattern,renderBoardMessageHtml}=await import('../board/message-presentation.js');
+ const tagged={text:'Different translated copy',badge:'Required',actions:[{id:'retry-rush-guidance',label:'Retry'}]};
+ assert.equal(boardPromptPattern(tagged),'required-retry');
+ assert.equal(boardPromptPattern({...tagged,badge:null}),null);
+ assert.equal(boardPromptPattern({...tagged,actions:[{id:'end-turn',label:'Retry'}]}),null);
+ assert.match(renderBoardMessageHtml(tagged),/data-board-prompt-pattern="required-retry"/);
+});
+test('finite replica markup propagates the semantic required retry tag to both font copies',async()=>{
+ const {renderBoardMessageSlot}=await import('../shell/board-message-layout.js');
+ const html=renderBoardMessageSlot({id:'test'});
+ assert.equal((html.match(/data-prompt-pattern="required-retry"/g)??[]).length,2);
+ assert.equal((html.match(/data-sizing-variant=/g)??[]).length,136);
+});
