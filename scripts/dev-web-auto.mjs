@@ -370,6 +370,8 @@ const startApiWrangler = () => {
       "wrangler.toml",
       "--port",
       localApiPort,
+      "--var",
+      `AUTH_ALLOWED_ORIGINS:http://127.0.0.1:${port},http://localhost:${port}${withHttps ? `,https://localhost:${port},https://127.0.0.1:${port}` : ''}`,
       "--persist-to",
       `../../${localApiPersistPath}`,
     ],

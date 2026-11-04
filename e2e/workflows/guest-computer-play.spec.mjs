@@ -163,7 +163,7 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   finally{await persistGeometryEvidence(info,'board-message-native-frames.json',frames);}
   const beforeReplay=await projected(page,initial.id);
   const writes=[];
-  const observeReplay=request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/')){let body;try{body=request.postDataJSON();}catch{}writes.push({method:request.method(),path:new URL(request.url()).pathname,body});}};
+  const observeReplay=request=>{const url=new URL(request.url());if(request.method()!=='GET'&&url.pathname.startsWith('/api/')){let body;try{body=request.postDataJSON();}catch{}writes.push({method:request.method(),path:url.pathname+url.search,body,rawBody:request.postData(),contentType:request.headers()['content-type']});}};
   page.on('request',observeReplay);
   try {
     await page.getByRole('button',{name:'Show me again',exact:true}).click();

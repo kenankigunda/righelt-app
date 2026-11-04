@@ -2,6 +2,7 @@ import {test,expect} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {importScenarioGame,switchGamePanel} from '../support/app.mjs';
 import {readProjectedGame} from '../support/computer-projection.mjs';
+import {assertOnlyDiagnosticWrites} from '../support/diagnostic-write-contract.mjs';
 
 for(const width of [390,1440])test(`legend independently inspects a blue commander and red supply point at ${width}px`,async({page,baseURL,browserName},info)=>{
  await page.setViewportSize({width,height:1000});
@@ -12,7 +13,7 @@ for(const width of [390,1440])test(`legend independently inspects a blue command
  const blueCommander=before.board.state.pieces.find(piece=>piece.kind==='commander'&&piece.owner==='P2');expect(blueCommander).toBeTruthy();
  const square=point=>page.locator(`#shell-board .cell[data-row="${point.row}"][data-col="${point.col}"]`);
  const legend=page.locator('.overlay-key'),command=legend.locator('[data-board-inspection="command"]'),supply=legend.locator('[data-board-inspection="supply"]');
- const writes=[];page.on('request',request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/'))writes.push({method:request.method(),path:new URL(request.url()).pathname});});
+ const writes=[];page.on('request',request=>{const url=new URL(request.url());if(request.method()!=='GET'&&url.pathname.startsWith('/api/')){let body;try{body=request.postDataJSON();}catch{}writes.push({method:request.method(),path:url.pathname+url.search,body,rawBody:request.postData(),contentType:request.headers()['content-type']});}});
  await square(blueCommander.position).click();await command.click();
  await expect(command).toHaveAttribute('aria-pressed','true');
  const redSupply=page.locator('#shell-board .cell:has(.supply-point-marker.supply-point-p1)');
@@ -37,5 +38,5 @@ for(const width of [390,1440])test(`legend independently inspects a blue command
  await supply.click();await expect(supply).toHaveAttribute('aria-pressed','false');await expect(command).toHaveAttribute('aria-pressed','true');await expect(redSupply).not.toHaveClass(/selected-supply-point/);
  await supply.click();await command.click();await expect(command).toHaveAttribute('aria-pressed','false');await expect(supply).toHaveAttribute('aria-pressed','true');await expect.poll(entriesMatch).toBe(true);
  await square({row:9,col:9}).focus();await page.keyboard.press(browserName==='webkit'?'Alt+Tab':'Tab');await expect(command).toBeFocused();await command.press('Space');await expect(command).toBeFocused();await expect(command).toHaveAttribute('aria-pressed','true');expect(await command.evaluate(button=>getComputedStyle(button).outlineStyle)).toBe('solid');await page.screenshot({path:info.outputPath(`legend-keyboard-focus-${width}.png`)});
- const after=await page.evaluate(readProjectedGame,{id:gameId,guest:true});expect(after.gameplayRevision).toBe(before.gameplayRevision);expect(after.board.state).toEqual(before.board.state);expect(after.moves).toEqual(before.moves);expect(writes).toEqual([]);
+ const after=await page.evaluate(readProjectedGame,{id:gameId,guest:true});expect(after.gameplayRevision).toBe(before.gameplayRevision);expect(after.board.state).toEqual(before.board.state);expect(after.moves).toEqual(before.moves);assertOnlyDiagnosticWrites(writes);
 });
