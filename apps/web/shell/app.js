@@ -3858,14 +3858,15 @@ const scheduleResponsiveHomeSectionPageSizes = () => {
 };
 
 const renderGesture = createRenderGestureGate({ render: options => render(options) });
-window.addEventListener("pointerdown", event => {
+// Firefox legacy mouse activation uses the same pressed-control lifetime.
+for (const type of ["pointerdown", "mousedown"]) window.addEventListener(type, event => {
   if (appEl.contains(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
 }, true);
 window.addEventListener("keydown", event => {
   if (!event.repeat && (event.key === " " || event.key === "Enter") && appEl.contains(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
 }, true);
 window.addEventListener("keyup", event => { if (event.key === " " || event.key === "Enter") renderGesture.end(); }, true);
-for (const type of ["pointerup", "pointercancel", "touchcancel", "lostpointercapture", "click"])
+for (const type of ["pointerup", "mouseup", "pointercancel", "touchcancel", "lostpointercapture", "click"])
   window.addEventListener(type, () => renderGesture.end(), true);
 window.addEventListener("blur", event => { if (event.target === window) renderGesture.end(); });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") renderGesture.end(); });
