@@ -24,7 +24,9 @@ Routine reconnecting uses a board background sweep immediately, the shared angul
 
 Unexpected issues and overdue work expose a muted caret with a 44-pixel hit target. Details include a compact summary and Copy. Copies contain human-readable context plus versioned JSON; clipboard failure leaves selectable text. Open resolved reports stay available until dismissed, and Recent issues in the debug panel restores local reports after refresh.
 
-Evidence is allowlisted and local only. It excludes credentials, authorization context, raw headers/bodies, player identities/names, invite secrets, IP/location, and unrelated history. Limits are 24 hours, 200 retained events, 20 reports, and one MiB. Initial evidence is immutable; recovery attempts append. Persistence is debounced, guarded, independent of the command journal, and falls back to memory. Clear diagnostics removes retained reports.
+Full issue reports remain allowlisted and local only. They exclude credentials, authorization context, raw headers/bodies, player identities/names, invite secrets, IP/location, and unrelated history. Limits are 24 hours, 200 retained events, 20 reports, and one MiB. Initial evidence is immutable; recovery attempts append. Persistence is debounced, guarded, independent of the command journal, and falls back to memory. Clear diagnostics removes local reports.
+
+A separate strict scalar projection sends bounded recovery transitions, blocked gates and delayed stalled-episode snapshots to first-party server logs. It never uploads full local reports, board state, actions, identity or authentication data. Uploads have independent deadlines and memory/rate limits, never use the gameplay journal, and cannot unblock or interrupt recovery. See [sync hardening and the remote contract](SYNC_RECOVERY_HARDENING.md). Provider retention and access rules apply to server logs, independently of clearing local reports.
 
 ## Investigation and release gates
 
