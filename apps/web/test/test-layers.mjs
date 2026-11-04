@@ -1,4 +1,5 @@
 export const WEB_UNIT_TEST_FILES = Object.freeze([
+  "dismiss-control.test.mjs",
   "message-composition.test.mjs",
   "message-height.test.mjs",
   "sequence-status-preview.test.mjs",

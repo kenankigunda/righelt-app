@@ -1,3 +1,4 @@
+import {renderDismissButton} from './dismiss-control.js';
 import {isOngoingGame,isCompletedGame} from './game-lifecycle.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
@@ -1990,7 +1991,7 @@ const renderFlyout = ({ title, variant, closeAction, body }) => `
   <aside class="shell-flyout shell-flyout-${variant} is-open" data-flyout="${variant}">
     <header class="shell-flyout-header">
       <h2>${title}</h2>
-      <button class="ui-icon-button flyout-close-button" type="button" aria-label="Close ${title}" data-action="${closeAction}">${icon('close')}</button>
+      ${renderDismissButton({label:`Close ${title}`,className:"flyout-close-button",attributes:{"data-action":closeAction}})}
     </header>
     <div class="shell-flyout-scroll shell-flyout-scroll-${variant}">
       ${body}
@@ -4498,7 +4499,7 @@ const copyGameInvitation = async (gameId, role, fromHost=false) => {
   }catch(error){if(active()){ issueDiagnostics.capture(`invite:${gameId}`, { gameId, operation: 'create_invite', stage: 'failed', code: error.code ?? 'unavailable' }); setInviteFeedback('We couldn’t create your invite link. Please try again.'); }}
 };
 const renderHostInvite = game => renderInvitationSurface({host:true,background:renderGameContent(game.id),content:`
-  <button class="ui-icon-button invite-close" data-action="close-invite" aria-label="Close invite">${icon('close')}</button>
+  ${renderDismissButton({label:"Close invite",className:"invite-close",attributes:{"data-action":"close-invite"}})}
   <p class="small invite-gate-kicker">Your game is ready</p><h2 id="invite-surface-title">Invite a friend</h2>
   <p>Copy a link and send it their way.</p>
   <div class="invite-choice-list">${invitationOptions(game).filter(option=>option.role!=="viewer").map(option=>`<button data-action="share-invite" data-invite-role="${option.role}" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:getCopyInviteButtonKey(game.id)})}>${icon('copy')}${option.label}</button>`).join('')}</div>
