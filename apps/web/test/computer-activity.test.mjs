@@ -50,14 +50,14 @@ test('expired leases and failed or uncertain sessions never claim Active here', 
 
 test('a retained local device lease needs acknowledgement in the current session scope',()=>{
  const c=context();c.controlAcknowledged=false;
- assert.equal(computerActivity(c).label,'Needs attention');assert.equal(computerActivity(c).showResume,true);
+ assert.equal(computerActivity(c).label,'Waiting');assert.equal(computerActivity(c).showResume,true);
  assert.equal(computerActivity(c).showRecoveryNotice,false);
 });
 
 test('a terminal protocol mismatch exposes disabled card recovery with a reload reason',()=>{
  for(const expiresAt of [115000,1]){
   const c=context();c.projection.upgradeRequired=true;c.game.computer.lease.expiresAt=expiresAt;
-  const result=computerActivity(c);assert.equal(result.activeHere,false);assert.equal(result.label,'Needs attention');assert.equal(result.showResume,true);
+  const result=computerActivity(c);assert.equal(result.activeHere,false);assert.equal(result.label,'Needs help');assert.equal(result.showResume,true);
   assert.match(result.disabledReason,/Reload the game/);assert.equal(result.showRecoveryNotice,false);
  }
 });
@@ -67,8 +67,8 @@ test('intentional background inactivity and an unclaimed human turn remain quiet
  assert.equal(computerActivity(c).label,'Inactive in this tab');assert.equal(computerActivity(c).showRecoveryNotice,false);
  c.visible=true;c.game.board.state.sideToMove='P1';
  assert.equal(computerActivity(c).label,'Waiting for a turn');assert.equal(computerActivity(c).showResume,true);assert.equal(computerActivity(c).showRecoveryNotice,false);
- c.game.board.state.sideToMove='P2';assert.equal(computerActivity(c).label,'Needs attention');assert.equal(computerActivity(c).showRecoveryNotice,true);
- c.game.board.state.sideToMove='P1';c.lastAcquisitionFailure={code:'session_changed'};assert.equal(computerActivity(c).label,'Needs attention');
+ c.game.board.state.sideToMove='P2';assert.equal(computerActivity(c).label,'Needs help');assert.equal(computerActivity(c).showRecoveryNotice,true);
+ c.game.board.state.sideToMove='P1';c.lastAcquisitionFailure={code:'session_changed'};assert.equal(computerActivity(c).label,'Needs help');
 });
 
 test('a retained unacknowledged lease stays quiet on the human turn without claiming local authority',()=>{
@@ -76,7 +76,7 @@ test('a retained unacknowledged lease stays quiet on the human turn without clai
  const human=computerActivity(c);
  assert.equal(human.label,'Waiting for a turn');assert.equal(human.activeHere,false);assert.equal(human.showResume,true);assert.equal(human.disabledReason,null);assert.equal(human.showRecoveryNotice,false);
  c.game.board.state.sideToMove='P2';const computer=computerActivity(c);
- assert.equal(computer.label,'Needs attention');assert.equal(computer.activeHere,false);assert.equal(computer.showResume,true);assert.equal(computer.showRecoveryNotice,false,'a still-live unacknowledged lease does not bypass the existing delayed recovery gate');
+ assert.equal(computer.label,'Waiting');assert.equal(computer.activeHere,false);assert.equal(computer.showResume,true);assert.equal(computer.showRecoveryNotice,false,'a still-live unacknowledged lease does not bypass the existing delayed recovery gate');
 });
 
 function freshRenewal() {
@@ -112,4 +112,16 @@ test('quiet renewal ends at lease expiry and rejects unknown, stale, manual and 
     c => c.projection.pendingComputerControlRequest = null,
   ];
   for (const change of changes) { const c = freshRenewal(); change(c); assert.equal(computerActivity(c).quietRenewal, false, change.toString()); }
+});
+
+test('routine confirmation and transient retry never mark the computer as needing intervention',()=>{
+ for(const update of [c=>c.projection.pendingCommandCount=1,c=>c.projection.sharedMutationsBlocked=true,c=>c.lastAcquisitionFailure={code:'request_timeout'},c=>c.projection.recoveryIssue='network_error']){
+ const c=context();update(c);const result=computerActivity(c);assert.notEqual(result.state,'attention');assert.equal(result.needsHelp,false);}
+ const c=context();c.projection.storageBlocked=true;assert.equal(computerActivity(c).needsHelp,true);c.projection.storageBlocked=false;assert.equal(computerActivity(c).needsHelp,false);
+});
+
+test('winning confirmed playback finishes presentation before the computer card becomes finished',()=>{
+ const c=context();c.game.board.state.outcome.status='p2_win';c.projection.confirmedPlayback={playing:true};assert.equal(computerActivity(c).label,'Making their move');
+ c.projection.confirmedPlayback.error='offline';assert.equal(computerActivity(c).label,'Needs help');assert.equal(computerActivity(c).showResume,false);
+ delete c.projection.confirmedPlayback;assert.equal(computerActivity(c).label,'Game finished');
 });

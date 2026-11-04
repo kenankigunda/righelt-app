@@ -57,188 +57,188 @@
   },
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",
-    "sourceSha256": "f1c5662f8fa7b033c2c911218daadd78ae3a35a3eaa78021a45efdaa13f8d9c5",
-    "outputSha256": "ac2d58d14c87d4fb775b657c5541e11d1c1a9dee70b8c0bcf9534ca79c84153e",
+    "sourceSha256": "4653cd479764a9aea09e0c65add62873884e9a928b21f02c99c4e880155cb8dd",
+    "outputSha256": "8e57f28a7277282c691728afc07202f86c33d49d5098d835573f2ea2f5132f30",
     "operations": [
       {
-        "start": 22472,
-        "end": 22472,
+        "start": 22599,
+        "end": 22599,
         "before": "",
         "after": "    boardAdmissionProbe(\"runtime-submitting\", () => ({value:Boolean(value),revision:snapshotRevision}));\n",
         "anchor": "etSubmitting = value => {\n    submitting = value;\n    restoreInlineActionAvailability();\n    syncInl",
         "anchorCount": 1
       },
       {
-        "start": 42567,
-        "end": 42567,
+        "start": 42971,
+        "end": 42971,
         "before": "",
         "after": "    boardAdmissionProbe(\"runtime-piece-response-entry\", () => ({revision:snapshotRevision}));\n",
         "anchor": "\n  };\n\n  const applyPieceMoveResponse = body => {\n    selectedPieceMoves = Array.isArray(body.action",
         "anchorCount": 1
       },
       {
-        "start": 42788,
-        "end": 42788,
+        "start": 43192,
+        "end": 43192,
         "before": "",
         "after": "    boardAdmissionProbe(\"runtime-piece-response-installed\", () => ({revision:snapshotRevision,moves:selectedPieceMoves.length,previews:selectedPieceMovePreviews.length}));\n",
         "anchor": "edPieceMoves;\n    selectedPieceMovesKnown = true;\n    // A late ordinary result fills choices; it ca",
         "anchorCount": 1
       },
       {
-        "start": 44387,
-        "end": 44387,
+        "start": 44791,
+        "end": 44791,
         "before": "",
         "after": "      boardAdmissionProbe(\"runtime-piece-query-start\", () => ({requestId,revision}));\n",
         "anchor": "l?.setAttribute?.('aria-busy', 'true');\n    try {\n      const body = await host.loadPieceMoves(state",
         "anchorCount": 1
       },
       {
-        "start": 44458,
-        "end": 44687,
+        "start": 44862,
+        "end": 45091,
         "before": "      if (destroyed || revision !== snapshotRevision || requestId !== selectedPieceMovesRequestId || selectedPieceId !== requestedPieceId) return;\n      if (body.state && JSON.stringify(body.state) !== requestedSnapshot) return;\n",
         "after": "      boardAdmissionProbe(\"runtime-piece-query-return\", () => ({requestId,revision}));\n      if (boardAdmissionValue(\"preview-destroyed\", destroyed) || boardAdmissionValue(\"preview-revision-stale\", revision !== snapshotRevision) || boardAdmissionValue(\"preview-request-stale\", requestId !== selectedPieceMovesRequestId) || boardAdmissionValue(\"preview-piece-stale\", selectedPieceId !== requestedPieceId)) return;\n      if (boardAdmissionValue(\"preview-echo-present\", body.state) && boardAdmissionValue(\"preview-echo-mismatch\", JSON.stringify(body.state) !== requestedSnapshot)) return;\n",
         "anchor": "ait host.loadPieceMoves(state, selectedPiece.id);\n      if (destroyed || revision !== snapshotRevision || requestId !== selectedPieceMovesRequestId || selectedPieceId !== requestedPieceId) return;\n      if (body.state && JSON.stringify(body.state) !== requestedSnapshot) return;\n      // Move queries describe their input snapsho",
         "anchorCount": 1
       },
       {
-        "start": 45258,
-        "end": 45313,
+        "start": 45662,
+        "end": 45717,
         "before": "      if (requestId === selectedPieceMovesRequestId) {\n",
         "after": "      if (boardAdmissionValue(\"preview-finally-current\", requestId === selectedPieceMovesRequestId)) {\n",
         "anchor": "PieceMovesRequestId) throw error;\n    } finally {\n      if (requestId === selectedPieceMovesRequestId) {\n        selectedPieceMovesLoading = false;\n       ",
         "anchorCount": 1
       },
       {
-        "start": 49142,
-        "end": 49292,
+        "start": 49546,
+        "end": 49696,
         "before": "    if (!state || destroyed || interactionBlocked || submitting || overlayMode !== OVERLAY_MODE.INTERACTIVE || host.canInteract?.(state) === false) {\n",
         "after": "    if (boardAdmissionValue(\"submit-no-state\", !state) || boardAdmissionValue(\"submit-destroyed\", destroyed) || boardAdmissionValue(\"submit-blocked\", interactionBlocked) || boardAdmissionValue(\"submit-submitting\", submitting) || boardAdmissionValue(\"submit-overlay-blocked\", overlayMode !== OVERLAY_MODE.INTERACTIVE) || boardAdmissionValue(\"submit-interaction-denied\", host.canInteract?.(state) === false)) {\n",
         "anchor": "urrentAction = async (actionOverride = null) => {\n    if (!state || destroyed || interactionBlocked || submitting || overlayMode !== OVERLAY_MODE.INTERACTIVE || host.canInteract?.(state) === false) {\n      return;\n    }\n\n    controls.onInteractionSou",
         "anchorCount": 1
       },
       {
-        "start": 49495,
-        "end": 49495,
+        "start": 49899,
+        "end": 49899,
         "before": "",
         "after": "    boardAdmissionProbe(\"runtime-submit-action\", () => ({ type: action.type }));\n",
         "anchor": "selectedSource, selectedTarget, selectedPieceId);\n    const previousState = state;\n    let revision ",
         "anchorCount": 1
       },
       {
-        "start": 49671,
-        "end": 49671,
+        "start": 50075,
+        "end": 50075,
         "before": "",
         "after": "      boardAdmissionProbe(\"runtime-before-host-apply\");\n",
         "anchor": ";\n    setResult(\"Applying action...\");\n\n    try {\n      const body = await host.applyAction(state, a",
         "anchorCount": 1
       },
       {
-        "start": 49729,
-        "end": 49729,
+        "start": 50133,
+        "end": 50133,
         "before": "",
         "after": "      boardAdmissionProbe(\"runtime-after-host-apply\");\n",
         "anchor": "nst body = await host.applyAction(state, action);\n      if (destroyed || revision !== snapshotRevisi",
         "anchorCount": 1
       },
       {
-        "start": 49792,
-        "end": 49819,
+        "start": 50196,
+        "end": 50223,
         "before": "      if (body.accepted) {\n",
         "after": "      if (boardAdmissionValue(\"runtime-body-accepted\", body.accepted)) {\n",
         "anchor": "troyed || revision !== snapshotRevision) return;\n\n      if (body.accepted) {\n        snapshotRevision += 1;\n        revision = ",
         "anchorCount": 1
       },
       {
-        "start": 51717,
-        "end": 51717,
+        "start": 52121,
+        "end": 52121,
         "before": "",
         "after": "      boardAdmissionProbe(\"runtime-host-error\");\n",
         "anchor": "wait refreshLegalActions();\n    } catch (error) {\n      if (!destroyed && revision === snapshotRevis",
         "anchorCount": 1
       },
       {
-        "start": 53760,
-        "end": 53796,
+        "start": 54172,
+        "end": 54208,
         "before": "    if (interactionBlocked) return;\n",
         "after": "    boardAdmissionProbe(\"runtime-click-entry\", () => ({ revision: snapshotRevision, phase: selectedPieceOverlayPhase, source: selectedSource ? { row: selectedSource.row, col: selectedSource.col } : null, target: selectedTarget ? { row: selectedTarget.row, col: selectedTarget.col } : null, clicked: { row: clickedCoord.row, col: clickedCoord.col }, moves: selectedPieceMoves.length, previews: selectedPieceMovePreviews.length }), handleBoardCellClick);\n    if (boardAdmissionValue(\"click-interaction-blocked\", interactionBlocked)) return;\n",
         "anchor": " const handleBoardCellClick = (clickedCoord) => {\n    if (interactionBlocked) return;\n    if (overlayMode === OVERLAY_MODE.RECORDED_ACTI",
         "anchorCount": 1
       },
       {
-        "start": 54266,
-        "end": 54436,
+        "start": 54678,
+        "end": 54848,
         "before": "    if (!state || destroyed || interactionBlocked || submitting || overlayMode !== OVERLAY_MODE.INTERACTIVE || (host.canSelect ?? host.canInteract)?.(state) === false) {\n",
         "after": "    if (boardAdmissionValue(\"click-no-state\", !state) || boardAdmissionValue(\"click-destroyed\", destroyed) || boardAdmissionValue(\"click-blocked\", interactionBlocked) || boardAdmissionValue(\"click-submitting\", submitting) || boardAdmissionValue(\"click-overlay-blocked\", overlayMode !== OVERLAY_MODE.INTERACTIVE) || boardAdmissionValue(\"click-selection-denied\", (host.canSelect ?? host.canInteract)?.(state) === false)) {\n",
         "anchor": "point:clickedCoord});\n      }\n      return;\n    }\n    if (!state || destroyed || interactionBlocked || submitting || overlayMode !== OVERLAY_MODE.INTERACTIVE || (host.canSelect ?? host.canInteract)?.(state) === false) {\n      return;\n    }\n\n    controls.onInteractionSou",
         "anchorCount": 1
       },
       {
-        "start": 55279,
-        "end": 55435,
+        "start": 55691,
+        "end": 55847,
         "before": "    if (selectedSource && !hasInspection() && selectedPieceOverlayPhase === \"actionPreviews\" && legalTarget && host.canInteract?.(state) === false) return;\n",
         "after": "    if (boardAdmissionValue(\"target-has-source\", selectedSource) && boardAdmissionValue(\"target-no-inspection\", !hasInspection()) && boardAdmissionValue(\"target-action-phase\", selectedPieceOverlayPhase === \"actionPreviews\") && boardAdmissionValue(\"target-legal\", legalTarget) && boardAdmissionValue(\"target-interaction-denied\", host.canInteract?.(state) === false)) return;\n",
         "anchor": "on a later explicit confirmation; never queue it.\n    if (selectedSource && !hasInspection() && selectedPieceOverlayPhase === \"actionPreviews\" && legalTarget && host.canInteract?.(state) === false) return;\n    if (!clickedPiece && ownerAtPoint && !legalTar",
         "anchorCount": 1
       },
       {
-        "start": 57357,
-        "end": 57357,
+        "start": 57769,
+        "end": 57769,
         "before": "",
         "after": "    boardAdmissionProbe(\"runtime-computed-target\", () => ({ legalTarget, hasPreviewAtClicked, hasClickedPiece: Boolean(clickedPiece), allowFreeSelection, usesHoverTargetSelection, phase: selectedPieceOverlayPhase }));\n",
         "anchor": "ow && action.to.col === clickedCoord.col,\n    );\n\n    if (!allowFreeSelection && !clickedPiece && !h",
         "anchorCount": 1
       },
       {
-        "start": 57846,
-        "end": 57846,
+        "start": 58258,
+        "end": 58258,
         "before": "",
         "after": "      boardAdmissionProbe(\"runtime-target-candidates\", () => ({ count: candidates.length }));\n",
         "anchor": "const candidates = actionsAtTarget(clickedCoord);\n      if (candidates.length > 0) {\n        const n",
         "anchorCount": 1
       },
       {
-        "start": 58316,
-        "end": 58316,
+        "start": 58728,
+        "end": 58728,
         "before": "",
         "after": "      boardAdmissionProbe(\"runtime-target-candidates\", () => ({ count: candidates.length }));\n",
         "anchor": "const candidates = actionsAtTarget(clickedCoord);\n      const nextType = pickBestActionTypeForTarget",
         "anchorCount": 1
       },
       {
-        "start": 58631,
-        "end": 58714,
+        "start": 59043,
+        "end": 59126,
         "before": "    if (clickedPiece?.id === selectedPieceId && canToggleSelectedPieceOverlay()) {\n",
         "after": "    if (boardAdmissionValue(\"selected-piece-id-equal\", clickedPiece?.id === selectedPieceId) && boardAdmissionValue(\"selected-piece-can-toggle\", canToggleSelectedPieceOverlay())) {\n      boardAdmissionProbe(\"selected-piece-overlay-toggle-entry\");\n",
         "anchor": "=== nextType));\n      }\n      return;\n    }\n\n    if (clickedPiece?.id === selectedPieceId && canToggleSelectedPieceOverlay()) {\n      selectedPieceOverlayPhase = selectedPie",
         "anchorCount": 1
       },
       {
-        "start": 59701,
-        "end": 59701,
+        "start": 60113,
+        "end": 60113,
         "before": "",
         "after": "    boardAdmissionProbe(\"runtime-selection-commit\", () => ({revision:snapshotRevision,pieceChanged,hasSelectedPiece:Boolean(selectedPieceId),source:selectedSource?{row:selectedSource.row,col:selectedSource.col}:null,target:selectedTarget?{row:selectedTarget.row,col:selectedTarget.col}:null,phase:selectedPieceOverlayPhase}));\n",
         "anchor": "ctedPieceId !== result.selection.selectedPieceId;\n    if(pieceChanged && selectedPieceId) controls.o",
         "anchorCount": 1
       },
       {
-        "start": 64803,
-        "end": 64803,
+        "start": 65411,
+        "end": 65411,
         "before": "",
         "after": "    boardAdmissionProbe(\"runtime-bind\", () => ({sameNodes,mounted}), nextElements.boardEl);\n",
         "anchor": "dicatorEl === nextElements.boardTurnIndicatorEl;\n\n    if (sameNodes) {\n      return;\n    }\n\n    if (",
         "anchorCount": 1
       },
       {
-        "start": 68465,
-        "end": 68465,
+        "start": 69073,
+        "end": 69073,
         "before": "",
         "after": "    boardAdmissionProbe(\"runtime-snapshot-commit\", () => ({revision:snapshotRevision,positionChanged,preservePiecePreviews,resetSelection}));\n",
         "anchor": "ull}) === JSON.stringify(getCurrentSelection()));\n    if (!preservePiecePreviews) snapshotRevision +",
         "anchorCount": 1
       },
       {
-        "start": 74400,
-        "end": 74400,
+        "start": 75008,
+        "end": 75008,
         "before": "",
         "after": "    boardAdmissionProbe(\"runtime-destroy\", () => ({revision:snapshotRevision}), handleBoardCellClick);\n",
         "anchor": "Actions ?? [] });\n  };\n\n  const destroy = () => {\n    destroyed = true;\n    messageHeightController?",
@@ -249,52 +249,52 @@
   },
   "/shell/live-transport.js": {
     "file": "apps/web/shell/live-transport.js",
-    "sourceSha256": "16cc89b248bd087f0e8802fa179e40d93ebfbb8f966a24f11fc3d2658d5af34e",
-    "outputSha256": "4711ff9b259046594e3d0b54e340639eea5001b6e0d419ff0326455121b1da9c",
+    "sourceSha256": "bfc817f3a4eb70a38c28876ec8cb9caa91d464ade351d41c664b5d64769a2ed8",
+    "outputSha256": "360e488618a78f93bdc8c978ed5a74296a117af1da878372e29c88c8be10958b",
     "operations": [
       {
-        "start": 53250,
-        "end": 53250,
+        "start": 53985,
+        "end": 53985,
         "before": "",
         "after": "    boardAdmissionProbe(\"transport-send-entry\", () => ({retryAttempt,reconcileFirst}));\n",
         "anchor": "yAttempt = 0, reconcileFirst = false } = {}) => {\n    if (!active) return;\n    const optimistic = ge",
         "anchorCount": 1
       },
       {
-        "start": 64090,
-        "end": 64090,
+        "start": 64825,
+        "end": 64825,
         "before": "",
         "after": "    boardAdmissionProbe(\"transport-enqueue\", () => ({ kind: command.kind, type: command.action?.type ?? null }));\n",
         "anchor": "imisticCommand = async ({ gameId, command }) => {\n    const contextEpoch = rulesEpoch;\n    const opt",
         "anchorCount": 1
       },
       {
-        "start": 64256,
-        "end": 64256,
+        "start": 64991,
+        "end": 64991,
         "before": "",
         "after": "      boardAdmissionProbe(\"transport-admission-entry\");\n",
         "anchor": "stic.admission.catch(() => {}).then(async () => {\n      assertActive();\n      assertRulesContext(con",
         "anchorCount": 1
       },
       {
-        "start": 64520,
-        "end": 64734,
+        "start": 65407,
+        "end": 65621,
         "before": "      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) throw Object.assign(new Error(\"sync_recovering\"), { code: \"sync_recovering\" });\n",
         "after": "      if (boardAdmissionValue(\"transport-position-only\", current?.positionOnly === true) || (boardAdmissionValue(\"transport-computer\", command.computer) ? boardAdmissionValue(\"transport-shared-blocked\", current?.sharedMutationsBlocked) : boardAdmissionValue(\"transport-gameplay-blocked\", current?.gameplayMutationsBlocked))) throw Object.assign(new Error(\"sync_recovering\"), { code: \"sync_recovering\" });\n",
-        "anchor": ";\n      const current = getGameViewModel(gameId);\n      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) throw Object.assign(new Error(\"sync_recovering\"), { code: \"sync_recovering\" });\n      const isClosure = command.kind === \"end-turn",
+        "anchor": "row Object.assign(Error('playback_in_progress'),{code:'playback_in_progress'});\n      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) throw Object.assign(new Error(\"sync_recovering\"), { code: \"sync_recovering\" });\n      const isClosure = command.kind === \"end-turn\" || command.action?.type === ",
         "anchorCount": 1
       },
       {
-        "start": 68217,
-        "end": 68264,
+        "start": 69104,
+        "end": 69151,
         "before": "        if (!projection.ok) return projection;\n",
         "after": "        if (!boardAdmissionValue(\"transport-admission-projection-ok\", projection.ok)) return projection;\n",
         "anchor": "or('sync_recovering'), {code:'sync_recovering'});\n        if (!projection.ok) return projection;\n        if (latest !== base) projection = rebasePr",
         "anchorCount": 1
       },
       {
-        "start": 68351,
-        "end": 68405,
+        "start": 69238,
+        "end": 69292,
         "before": "        try { await commandJournal.admit(envelope); }\n",
         "after": "        try { boardAdmissionProbe(\"transport-before-journal\"); await commandJournal.admit(envelope); boardAdmissionProbe(\"transport-after-journal\"); }\n",
         "anchor": "on = rebaseProjectedMetadata(projection, latest);\n        try { await commandJournal.admit(envelope); }\n        catch (error) { optimistic.unsavedCommand ",
@@ -321,44 +321,44 @@
   },
   "/shell/app.js": {
     "file": "apps/web/shell/app.js",
-    "sourceSha256": "1576e560671e49480746721782d0a2f395ad4da4582e1763bda2b71129e3fc23",
-    "outputSha256": "de44e9891810a9464cd94544f788e86f531d9a79392ce15e67bcad2142fca660",
+    "sourceSha256": "1c1250d8e3875dde1439a35e51ac9fff3f5c63a2625ebe4645362822bdc709fe",
+    "outputSha256": "a85462079ebf94c8e964e3444ead4354a941b13d321349ed0ca46141d4ea979b",
     "operations": [
       {
-        "start": 175777,
-        "end": 175777,
+        "start": 178573,
+        "end": 178573,
         "before": "",
         "after": "    boardAdmissionProbe(\"shell-runtime-replace\", () => ({hadRuntime:Boolean(boardRuntime)}), boardRuntime);\n",
         "anchor": "ountedBoardGameId !== game.id || !boardRuntime) {\n    if (boardRuntime) {\n      boardRuntime.destroy",
         "anchorCount": 1
       },
       {
-        "start": 199133,
-        "end": 199201,
+        "start": 202932,
+        "end": 203000,
         "before": "  if (renderGesture.defer({ animatePanels, includeBoard })) return;\n",
         "after": "  if (boardAdmissionValue(\"shell-render-deferred\", renderGesture.defer({ animatePanels, includeBoard }))) return;\n",
-        "anchor": "tePanels = true, includeBoard = true } = {}) => {\n  if (renderGesture.defer({ animatePanels, includeBoard })) return;\n  const previousJoinFocus = document.activeElement",
+        "anchor": "};\n};\n\nconst render = ({ animatePanels = true, includeBoard = true } = {}) => {\n  if (renderGesture.defer({ animatePanels, includeBoard })) return;\n  recoveryPresentationOptions(currentRoute.name === 'game' ? transport.getGameVi",
         "anchorCount": 1
       },
       {
-        "start": 251985,
-        "end": 252055,
+        "start": 264609,
+        "end": 264679,
         "before": "  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n",
         "after": "  if (boardAdmissionValue(\"shell-on-board\", event.target.closest?.(\"#shell-board\")) && boardAdmissionValue(\"shell-account-denied\", !account.canPlay())) {\n",
         "anchor": "\nappEl.addEventListener(\"pointerdown\", event => {\n  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n    event.preventDefault();event.stopImmediateProp",
         "anchorCount": 1
       },
       {
-        "start": 252250,
-        "end": 252320,
+        "start": 264874,
+        "end": 264944,
         "before": "  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n",
         "after": "  if (boardAdmissionValue(\"shell-on-board\", event.target.closest?.(\"#shell-board\")) && boardAdmissionValue(\"shell-account-denied\", !account.canPlay())) {\n",
         "anchor": "true);\nappEl.addEventListener(\"click\", event => {\n  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n    event.preventDefault();event.stopImmediateProp",
         "anchorCount": 1
       },
       {
-        "start": 295744,
-        "end": 295744,
+        "start": 308547,
+        "end": 308547,
         "before": "",
         "after": "    boardAdmissionProbe(\"shell-release-bounce\", () => ({connected:Boolean(pressedControlEl.isConnected)}), pressedControlEl);\n",
         "anchor": "\n  if (pressedControlEl instanceof HTMLElement) {\n    playControlReleaseBounce(pressedControlEl);\n  ",

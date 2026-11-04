@@ -181,3 +181,35 @@ test('helper first and latest read snapshots survive bounded rolling eviction',(
  assert.equal(log.firstSourceRead.subjectToken,log.lastSourceRead.subjectToken);
  assert.equal(log.incomplete,true);assert.ok(log.dropped>0);
 });
+
+test('current playback fence stays before authority getters and transformed admission preserves every evaluated read',async()=>{
+ const recipe=recipes['/shell/live-transport.js'];
+ const source=await readFile(new URL('../../../'+recipe.file,import.meta.url),'utf8');
+ const op=recipe.operations.find(row=>row.after.includes('transport-position-only'));
+ const begin=source.lastIndexOf('const current = getGameViewModel(gameId);',op.start);
+ assert.ok(begin>=0);
+ const original=source.slice(begin,op.end);
+ assert.ok(original.includes("computerDisplays.get(gameId)?.pending"));
+ const observed=source.slice(begin,op.start)+op.after;
+ const run=(body,{computer=false,pending=false,positionOnly=false,blocked=false,getterError=null}={})=>{
+  const reads={view:0,computer:0,display:0,pending:0,position:0,human:0,shared:0};
+  const command={get computer(){reads.computer++;return computer;}};
+  const current={get positionOnly(){reads.position++;if(getterError)throw getterError;return positionOnly;},get gameplayMutationsBlocked(){reads.human++;return blocked;},get sharedMutationsBlocked(){reads.shared++;return blocked;}};
+  const computerDisplays={get(){reads.display++;return {get pending(){reads.pending++;return pending;}};}};
+  const getGameViewModel=()=>{reads.view++;return current;};
+  let value,error;
+  try{value=new Function('getGameViewModel','gameId','command','computerDisplays',recipe.prefix+body+'return "admitted";')(getGameViewModel,'test-game',command,computerDisplays);}
+  catch(caught){error=caught;}
+  return {reads,value,error};
+ };
+ const previous=globalThis.__boardAdmissionRecord;globalThis.__boardAdmissionRecord=()=>{throw Error('diagnostic sink');};
+ try{
+  for(const input of [{pending:true},{positionOnly:true},{},{computer:true,pending:true},{computer:true,positionOnly:true},{blocked:true},{computer:true,blocked:true}]){
+   const a=run(original,input),b=run(observed,input);assert.deepEqual(b.reads,a.reads);assert.equal(b.value,a.value);assert.equal(b.error?.code,a.error?.code);
+  }
+  assert.deepEqual(run(observed,{pending:true}).reads,{view:1,computer:1,display:1,pending:1,position:0,human:0,shared:0});
+  assert.equal(run(observed,{pending:true}).error.code,'playback_in_progress');
+  const computer=run(observed,{computer:true,pending:true});assert.equal(computer.reads.display,0);assert.equal(computer.reads.human,0);assert.equal(computer.reads.shared,1);
+  const failure=Error('original authority getter');assert.equal(run(original,{getterError:failure}).error,failure);assert.equal(run(observed,{getterError:failure}).error,failure);
+ }finally{if(previous===undefined)delete globalThis.__boardAdmissionRecord;else globalThis.__boardAdmissionRecord=previous;}
+});

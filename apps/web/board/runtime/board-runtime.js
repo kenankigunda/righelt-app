@@ -291,14 +291,17 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     element.classList.add("player-tone-neutral");
   };
 
+  let transientStatus = false;
   const setBoardPreviewPrompt = (text) => {
-    if(messageHeightController?.deferContent?.(escapeHtml(text),()=>renderStatus()))return;
+    const transient = transientStatus;
+    if(messageHeightController?.deferContent?.(escapeHtml(text),()=>renderStatus(transient)))return;
     if (elements.boardPreviewLabelEl && elements.boardPreviewLabelEl.textContent !== text) {
       elements.boardPreviewLabelEl.textContent = text;
     }
   };
 
   const setBoardPreviewPromptHtml = (html) => {
+    const transient = transientStatus;
     // A real selected destination owns its confirmation. Only known effects
     // receive their own semantic message; hover never restores a global warning.
     if (selectedPieceId && selectedTarget && state?.continuation?.type === 'rush' && !hasInspection()) {
@@ -306,7 +309,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       const entry=action&&rushGuidance?.actions.find(value=>rushActionKey(value.action)===rushActionKey(action));
       if(entry)html=`<span class="board-message-row">${html}</span><span class="board-message-row">${escapeHtml(entry.immediate?RUSH_SUPPLY_EFFECT.immediate:RUSH_SUPPLY_EFFECT.further)}</span>`;
     }
-    if(messageHeightController?.deferContent?.(html,()=>renderStatus()))return;
+    if(messageHeightController?.deferContent?.(html,()=>renderStatus(transient)))return;
     if (elements.boardPreviewLabelEl && elements.boardPreviewLabelEl.innerHTML !== html) {
       if(!patchBoardMessage(elements.boardPreviewLabelEl,html))elements.boardPreviewLabelEl.innerHTML = html;
     }
@@ -563,6 +566,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   };
 
   const renderStatusContent = () => {
+    const transient = transientStatus;
     const inspection = getInspectionView();
     if (!state) {
       return;
@@ -608,7 +612,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     if (externalMessage) {
       const message = typeof externalMessage === "string" ? {text: externalMessage} : externalMessage;
       const {actorName,rest,actions} = boardMessagePresentation(message);
-      if(messageHeightController?.deferContent?.(renderBoardMessageHtml(message),()=>renderStatus()))return;
+      if(messageHeightController?.deferContent?.(renderBoardMessageHtml(message),()=>renderStatus(transient)))return;
       const label = elements.boardPreviewLabelEl;
       const buttons = Array.from(label?.querySelectorAll?.(':scope > button[data-board-message-action]') ?? []);
       // A replay counter changes while its controls stay the same. Patch the
@@ -807,12 +811,15 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     setBoardPreviewAction(actionPreviewLabel(preferredPreview.type, state, selectedTarget));
   };
 
-  const renderStatus = () => {
+  const renderStatus = (transient = false) => {
+    const previousTransientStatus = transientStatus;
+    transientStatus = transient;
+    messageHeightController?.setTransientContent?.(transient);
     // Remove only our temporary disabled attributes before comparing HTML. This
     // keeps unchanged buttons and their focus stable through status refreshes.
     restoreInlineActionAvailability();
     try { renderStatusContent(); }
-    finally { syncInlineActionAvailability(); }
+    finally { try { syncInlineActionAvailability(); } finally { transientStatus = previousTransientStatus; } }
   };
 
   const refreshSelectionLabels = () => {
@@ -1236,7 +1243,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     }
     refreshSelectionLabels();
     renderBoard();
-    renderStatus();
+    renderStatus(true);
     return true;
   };
 
@@ -1250,7 +1257,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     setSelectedTarget(null);
     refreshSelectionLabels();
     renderBoard();
-    renderStatus();
+    renderStatus(true);
     return true;
   };
 
@@ -1447,8 +1454,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     const externalAction = event.target.closest("[data-board-message-action]");
     if (externalAction) {
       const action=externalAction.getAttribute("data-board-message-action");
-      if (action === "retry-rush-guidance") { rushGuidanceKey = null; syncRushGuidance(); renderStatusContent(); }
+      if (action === "retry-rush-guidance") { rushGuidanceKey = null; syncRushGuidance(); messageHeightController?.setTransientContent?.(false); renderStatusContent(); }
       else if (action === "pass") submitPass();
+      else if (action === "end-turn") { if (!inspection && legalActions.some(action => action.type === "end_turn")) void endCurrentTurn(); }
       else controls.onBoardMessageAction?.(action);
       return;
     }

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {createMessageHeightController} from '../board/message-height.js';
 
 function fixture(initialPadding=0){
@@ -87,4 +88,64 @@ test('focused publication does not resurrect a disabled or removed action and al
  assert.throws(()=>f.controller.deferContent('Next',()=>{throw Error('publication');}),/publication/);
  assert.equal(f.controller.deferContent('Next',()=>{f.doc.activeElement=null;}),true);
  assert.equal(f.slot.style.height,'75px');f.controller.destroy();
+});
+
+test('transient hover keeps the selected-message floor across repeated enter and exit',()=>{
+ const f=fixture();f.change(140,75);f.setRendered(140);
+ const before=f.animations.length;
+ for(let i=0;i<3;i++){
+  f.controller.setTransientContent?.(true);f.change(90,140);
+  assert.equal(f.slot.style.height,'140px');
+  f.controller.setTransientContent?.(true);f.change(140,140);
+  assert.equal(f.slot.style.height,'140px');
+ }
+ assert.equal(f.animations.length,before,'hover does not repeatedly animate the board layout');
+ f.controller.destroy();
+});
+
+test('transient taller copy raises only its episode floor and ordinary publication releases it',()=>{
+ const f=fixture();f.controller.setTransientContent?.(true);f.change(160,75);
+ assert.equal(f.slot.style.height,'160px');f.setRendered(160);
+ const before=f.animations.length;f.controller.setTransientContent?.(true);f.change(90,160);
+ assert.equal(f.slot.style.height,'160px');assert.equal(f.animations.length,before);
+ f.controller.setTransientContent?.(false);f.change(90,160);
+ assert.equal(f.slot.style.height,'90px');assert.equal(f.animations.at(-1).options.duration,280);
+ f.controller.destroy();
+});
+
+test('transient floor rebases on actual metrics and preserves press and reduced motion policies',()=>{
+ for(const metric of ['width','font']){
+  const f=fixture();f.change(180,75);f.setRendered(180);f.controller.setTransientContent?.(true);f.change(90,180);
+  if(metric==='width'){f.setWidth(300);f.change(100,180);}else{f.setCurrent(100);f.fonts.handlers.get('loadingdone')();f.flush();}
+  assert.equal(f.slot.style.height,'100px','old pixel floor must not reseed after metric invalidation');
+  f.setRendered(100);f.controller.setTransientContent?.(true);f.change(80,100);assert.equal(f.slot.style.height,'100px');
+  f.doc.handlers.get('pointerdown')({type:'pointerdown',target:{closest:()=>f.button}});
+  f.change(210,100);assert.equal(f.slot.style.height,'100px');
+  f.motion.matches=true;f.doc.handlers.get('pointerup')({type:'pointerup'});f.flush();
+  assert.equal(f.slot.style.height,'210px');f.controller.setTransientContent?.(false);f.change(90,210);
+  assert.equal(f.slot.style.height,'90px');f.controller.destroy();
+ }
+});
+
+test('runtime transient publication survives its existing deferred callback and defaults to release',async()=>{
+ const source=await readFile(new URL('../board/runtime/board-runtime.js',import.meta.url),'utf8');
+ const prompt=source.slice(source.indexOf('  const setBoardPreviewPrompt ='),source.indexOf('  const setBoardPreviewPromptHtml ='));
+ const status=source.slice(source.indexOf('  const renderStatus ='),source.indexOf('  const refreshSelectionLabels ='));
+ const retained=[];let deferred;
+ const controller={setTransientContent:value=>retained.push(value),deferContent(_html,publish){deferred=publish;return true;}};
+ const render=Function('messageHeightController','escapeHtml',`let transientStatus=false; const restoreInlineActionAvailability=()=>{};const syncInlineActionAvailability=()=>{}; ${prompt} const renderStatusContent=()=>setBoardPreviewPrompt('current');${status}return renderStatus;`)(controller,value=>value);
+ render(true);deferred();assert.deepEqual(retained,[true,true]);render();assert.equal(retained.at(-1),false);
+ assert.equal(source.match(/renderStatus\(true\);/g)?.length,2,'only hover enter and exit opt in');
+});
+
+test('direct guidance retry releases hover geometry and thrown status publication restores ambient intent',async()=>{
+ const source=await readFile(new URL('../board/runtime/board-runtime.js',import.meta.url),'utf8');
+ const status=source.slice(source.indexOf('  const renderStatus ='),source.indexOf('  const refreshSelectionLabels ='));
+ const retry=source.split('\n').find(line=>line.includes('if (action === "retry-rush-guidance")'));
+ assert.equal(typeof retry,'string','actual direct retry branch must be extracted');
+ assert(retry.trim().length>0);
+ const expected=Error('publication');const values=[];
+ const run=Function('messageHeightController','error',`let transientStatus=false,rushGuidanceKey='old';const syncRushGuidance=()=>{};const restoreInlineActionAvailability=()=>{};const syncInlineActionAvailability=()=>{};let fail=true;const renderStatusContent=()=>{if(fail)throw error;return transientStatus;};${status}return {render:renderStatus,ambient:()=>transientStatus,retry(){fail=false;const action='retry-rush-guidance';${retry}return transientStatus;}};`)({setTransientContent:value=>values.push(value)},expected);
+ assert.throws(()=>run.render(true),error=>error===expected);assert.equal(run.ambient(),false);
+ assert.equal(run.retry(),false);assert.deepEqual(values,[true,false]);
 });

@@ -121,7 +121,7 @@ const slice = (from, to) => {
 };
 const undoSelectionScript = new vm.Script(`
   ${slice('const getSelectionHydrationGame =','const isPlayerRole =')}
-  ${slice('const maybeReturnAfterUndo =','const subscribeToTransport =')}
+  ${slice('const maybeReturnAfterUndo =','const syncConfirmedPlayback =')}
   globalThis.returnAfterUndo = () => maybeReturnAfterUndo('g');
   globalThis.hydrate = () => {
     const game = transport.getAuthoritativeGame('g');

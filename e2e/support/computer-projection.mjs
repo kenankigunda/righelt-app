@@ -25,7 +25,7 @@ export async function waitForOpponentReady(page, {timeoutMs = 45_000} = {}) {
         if (!lastBytes || lastBytes.received !== received || lastBytes.total !== total) byteSamples++;
         lastBytes = {received, total};
       }
-      if (/\b\d+s\b/.test(lastMessage) && (bytes || /Getting ready to play/.test(lastMessage))) detailed = true;
+      if (/\b\d+s\b/.test(lastMessage) && (bytes || /Loading your opponent|Getting ready to play/.test(lastMessage))) detailed = true;
       if (play && !play.disabled) {
         const elapsedMs = performance.now() - started;
         if (elapsedMs >= detailAfterMs + 1000 && !detailed) throw Error('Slow opponent preparation did not expose detailed progress');

@@ -50,7 +50,7 @@ test('every profile keeps plain board copy and a persistent cue while ordinary e
    const status={profile,phase,attemptId:'thinking-attempt',detailed:false};
    assert.equal(renderComputerProgress(game,status),'',`${profile}/${phase} has no early external notice or CTA`);
    const message=computerBoardMessage(game,status);
-   assert.equal(message,['preparing','initializing-verified-runtime'].includes(phase)?`Waiting for ${name}`:`${name} is thinking`);
+   assert.equal(message,['preparing','initializing-verified-runtime'].includes(phase)?`Waiting for ${name}`:phase==='saving'?`${name} is saving their move`:`${name} is thinking`);
    assert.doesNotMatch(message,/…|\.\.\./);
    updateComputerBoardLoading(cue,game,status);
    assert.equal(cue.dataset.loadingState,'pending');
@@ -120,4 +120,30 @@ test('recovery and pause identify configured opponents even on a human turn',()=
  const watch={id:'watch',canControlComputer:true,computerTurn:null,computer:{seats:{p1:'babs',p2:'horus'},modelId:CURRENT_COMPUTER_MODEL.id,takeoverTurn:null}};
  assert.match(renderComputerProgress(watch,{phase:'idle'}),/Watching Babs and Horus/);
  assert.match(renderComputerProgress({...watch,computer:{...watch.computer,paused:true}},{phase:'paused'}),/Babs and Horus are paused/);
+});
+
+
+test('automatic retry notices stay outside the board and offer Retry after foreground grace', () => {
+  const game = { id: 'g', canControlComputer: true, computerTurn: 'horus', computer: { seats: { p1: null, p2: 'horus' }, modelId: CURRENT_COMPUTER_MODEL.id } };
+  const render = (waitMs, canRetry = true) => renderComputerProgress(game, { phase: 'idle', activity: { showRecoveryNotice: true }, automaticRetry: { waitMs, canRetry } });
+  assert.equal(render(3999), '');
+  assert.match(render(4000), /Horus is waiting/); assert.doesNotMatch(render(4000), /data-control="retry"/);
+  assert.match(render(15000), /data-control="retry"/);
+  assert.match(render(15000, false), /data-control="retry" disabled/);
+});
+
+test('an active notes editor keeps its decision and draft as confirmed playback advances',()=>{
+ const first={moveId:'human-first',index:0,action:{type:'pass'}},next={moveId:'computer-next',index:1,action:{type:'pass'}};
+ const state={drafts:new Map([['human-first',{text:'Still typing',flagged:true}]]),notes:[],attempts:new Map(),open:new Set(['notes']),items:[],noteDecisionId:first.moveId};
+ const game={id:'g',moves:[first,next],currentSnapshot:{sideToMove:'P1',turnIndex:1}};
+ const html=renderDecisionDebug({game,status:{},state,signedIn:true});
+ const notes=html.split('data-debug-section="notes"')[1].split('data-debug-section="history"')[0];
+ assert.match(notes,/data-decision-id="human-first"/);
+ assert.doesNotMatch(notes,/data-decision-id="computer-next"/);
+ assert.match(notes,/Still typing/);
+ assert.match(notes,/data-action="debug-save-note" data-decision-id="human-first"/);
+ assert.match(html,/computer-next/,'decision evidence continues tracking the current displayed decision');
+ delete state.noteDecisionId;
+ const latest=renderDecisionDebug({game,status:{},state,signedIn:true}).split('data-debug-section="notes"')[1].split('data-debug-section="history"')[0];
+ assert.match(latest,/data-decision-id="computer-next"/,'deliberately leaving the editor permits a fresh current decision');
 });
