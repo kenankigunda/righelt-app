@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
-import {installBoardAdmissionCollector,transformBoardAdmissionModule} from '../../../e2e/support/board-admission-diagnostics.mjs';
+import {createHash} from 'node:crypto';
+import {installBoardAdmissionCollector,transformBoardAdmissionModule,installBoardAdmissionDiagnostics,cloneBoardSourceHandoff,createBoardSourceConsoleRetention,SOURCE_PRESS_PREFIX,SOURCE_PRESS_MAX_BYTES} from '../../../e2e/support/board-admission-diagnostics.mjs';
 
 const recipes=JSON.parse(await readFile(new URL('../../../e2e/support/board-admission-transformations.json',import.meta.url),'utf8'));
 for(const [pathname,recipe] of Object.entries(recipes))test(`exact source and protected transform ${pathname}`,async()=>{
@@ -50,10 +51,11 @@ test('transport conditional observes only the original human or computer branch'
  assert.deepEqual(run(true,false),[]);assert.deepEqual(run(false,false),['human']);assert.deepEqual(run(false,true),['computer']);
 });
 
-const collector=()=>{
- const listeners=new Map(),root={isConnected:true};const sandbox={performance:{timeOrigin:123,now:()=>456},document:{querySelector:()=>root,addEventListener:(type,listener,options)=>listeners.set(type+':'+(options.capture?'capture':'bubble'),listener)}};
- vm.createContext(sandbox);vm.runInContext('('+installBoardAdmissionCollector.toString()+')({targetRow:3,targetCol:0})',sandbox);
- return {sandbox,listeners,root,log:sandbox.__boardAdmissionObservation,record:sandbox.__boardAdmissionRecord};
+const collector=(options={},overrides={})=>{
+ const messages=[],listeners=new Map(),root={isConnected:true};const sandbox={TextEncoder,cloneBoardSourceHandoff,SOURCE_PRESS_PREFIX,SOURCE_PRESS_MAX_BYTES,console:{debug:value=>messages.push(value)},addEventListener:(type,fn)=>listeners.set('window:'+type,fn),performance:{timeOrigin:123,now:()=>456},document:{querySelector:()=>root,addEventListener:(type,listener,options)=>listeners.set(type+':'+(options.capture?'capture':'bubble'),listener)}};
+ Object.assign(sandbox,overrides);
+ vm.createContext(sandbox);vm.runInContext('('+installBoardAdmissionCollector.toString()+')('+JSON.stringify({targetRow:3,targetCol:0,...options})+')',sandbox);
+ return {sandbox,listeners,root,messages,log:sandbox.__boardAdmissionObservation,record:sandbox.__boardAdmissionRecord};
 };
 test('bounded collection exposes drops and cannot leak arbitrary payload fields',()=>{
  const {record,log}=collector();for(let i=0;i<300;i++)record('test',{value:true,rawState:'secret',gameId:'secret'},{});
@@ -180,4 +182,161 @@ test('helper first and latest read snapshots survive bounded rolling eviction',(
  assert.equal(log.lastSourceRead.value,true);assert.equal(log.sourceReadCount,2);
  assert.equal(log.firstSourceRead.subjectToken,log.lastSourceRead.subjectToken);
  assert.equal(log.incomplete,true);assert.ok(log.dropped>0);
+});
+
+const sourceCell=(root,row=3,col=6)=>{const cell={dataset:{row:String(row),col:String(col)},isConnected:true};cell.closest=selector=>selector==='.cell'?cell:root;return cell;};
+const nativeEvent=(type,target,root,document)=>({type,isTrusted:true,pointerId:7,button:0,buttons:type.endsWith('down')?1:0,target,currentTarget:document,composedPath:()=>[target,root,document]});
+const armSource=h=>{const first=sourceCell(h.root),second=sourceCell(h.root);h.sandbox.__boardAdmissionSourceRead(false,first);h.sandbox.__boardAdmissionSourceRead(false,second);return second;};
+
+test('actual source callback preserves one class read, click choice, errors and skipped branches',async()=>{
+ const text=await readFile(new URL('../../../e2e/support/app.mjs',import.meta.url),'utf8');
+ const begin=text.indexOf('export const selectPlayableAction = '),end=text.indexOf('export const submitPlayableAction',begin);assert.ok(begin>0&&end>begin);
+ const body=text.slice(begin,end).replace('export const selectPlayableAction = ','').trim().replace(/;$/,'');
+ for(const selected of [false,true]){
+  let reads=0,contains=0,clicks=0,probes=0;
+  const element={get classList(){reads++;return {contains:()=>{contains++;return selected;}};}};
+  const source={evaluate:async fn=>fn(element),click:async()=>clicks++};
+  const target={evaluate:async fn=>fn({classList:{contains:()=>true}})};
+  const sandbox={expect:()=>({not:{toHaveAttribute:async()=>{}},toHaveClass:async()=>{}}),__boardAdmissionSourceRead:()=>{probes++;throw Error('secret-sink');}};
+  const fn=vm.runInNewContext('('+body+')',sandbox);
+  const page={locator:selector=>selector==='html'?{getAttribute:async()=> 'none'}:selector.includes('data-row="3"')?source:target};
+  assert.equal(await fn(page,{type:'move',from:{row:3,col:6},to:{row:2,col:6}}),target);
+  assert.equal(reads,1);assert.equal(contains,1);assert.equal(clicks,selected?0:1);assert.equal(probes,1);
+  reads=0;probes=0;await fn(page,{type:'retreat',from:{row:3,col:6},to:{row:2,col:6}});assert.equal(reads,0);assert.equal(probes,0);
+  const failure=Error('original-getter');Object.defineProperty(element,'classList',{get(){throw failure;}});
+  await assert.rejects(fn(page,{type:'move',from:{row:3,col:6},to:{row:2,col:6}}),error=>error===failure);
+ }
+});
+test('second source read arms before input and mouse/pointer duplicates never replace it',()=>{
+ const h=collector({sourceAttemptOrdinal:2});const first=sourceCell(h.root);h.sandbox.__boardAdmissionSourceRead(true,first);
+ assert.equal(h.log.sourceWindow.observed,false);assert.equal(h.log.sourceWindow.incomplete,true);
+ const source=sourceCell(h.root);h.sandbox.__boardAdmissionSourceRead(false,source);
+ const marker=h.log.sourceWindow.first[0];assert.equal(marker.value,false);assert.equal(marker.count,2);assert.equal(marker.event,'fixture-source-class-read');
+ for(const type of ['mousedown','pointerdown','mouseup','pointerup','click'])h.listeners.get(type+':capture')(nativeEvent(type,source,h.root,h.sandbox.document));
+ assert.equal(h.log.sourceWindow.first[0],marker);assert.equal(h.log.sourceWindow.attemptsObserved,2);assert.equal(h.log.sourceWindow.markerRecorded,true);
+ assert.equal(h.log.activationGeneration,0);assert.equal(h.log.sourceWindow.incomplete,false);
+ assert.ok(h.log.sourceWindow.first.some(row=>row.event==='native-mousedown'));
+});
+test('source window retains earliest press and latest rows with explicit bounds and privacy',()=>{
+ const h=collector({sourceAttemptOrdinal:2});armSource(h);const marker=h.log.sourceWindow.first[0];
+ for(let i=0;i<300;i++)h.record('churn',{value:true,gameId:'secret-token',rawState:'secret-token'});
+ assert.equal(h.log.sourceWindow.first.length,64);assert.equal(h.log.sourceWindow.tail.length,64);assert.equal(h.log.sourceWindow.dropped,173);
+ assert.equal(h.log.sourceWindow.first[0],marker);assert.equal(h.log.sourceWindow.incomplete,true);assert.equal(h.log.incomplete,true);
+ assert.equal(JSON.stringify(h.log.sourceWindow).includes('secret-token'),false);
+});
+test('missing, collected or unsupported weak source stays nullable and incomplete',()=>{
+ for(const WeakRef of [undefined,class{deref(){return undefined;}},class{deref(){throw Error('secret-reference');}}]){
+  const h=collector({sourceAttemptOrdinal:2},{WeakRef});const source=armSource(h);
+  assert.doesNotThrow(()=>h.listeners.get('mousedown:capture')(nativeEvent('mousedown',source,h.root,h.sandbox.document)));
+  assert.equal(h.log.sourceWindow.incomplete,true);assert.ok(h.log.sourceWindow.projectionFailures>0);
+  assert.equal(h.log.sourceWindow.first.at(-1).sourceConnected,null);assert.equal(JSON.stringify(h.log).includes('secret-reference'),false);
+ }
+});
+test('source and native metadata projection errors are nonthrowing and explicitly incomplete',()=>{
+ const h=collector({sourceAttemptOrdinal:2});h.sandbox.__boardAdmissionSourceRead(false,sourceCell(h.root));
+ const broken={get dataset(){throw Error('secret-source');}};
+ assert.doesNotThrow(()=>h.sandbox.__boardAdmissionSourceRead(false,broken));assert.equal(h.log.sourceWindow.markerRecorded,false);assert.equal(h.log.sourceWindow.incomplete,true);
+ const event={get target(){throw Error('secret-event');}};
+ assert.doesNotThrow(()=>h.listeners.get('mouseup:capture')(event));assert.equal(h.log.sourceWindow.lastFailure,'native-projection-failed');
+ assert.equal(JSON.stringify(h.log).includes('secret-'),false);
+});
+test('source absence stays unobserved and invalid ordinals fail closed',()=>{
+ const h=collector({sourceAttemptOrdinal:2});h.sandbox.__boardAdmissionSourceRead(false,sourceCell(h.root));
+ assert.equal(h.log.sourceWindow.observed,false);assert.equal(h.log.sourceWindow.markerRecorded,false);assert.equal(h.log.sourceWindow.incomplete,true);
+ for(const sourceAttemptOrdinal of [0,-1,1.5,'2'])assert.throws(()=>collector({sourceAttemptOrdinal}),/Invalid source attempt ordinal/);
+ const normal=collector();assert.equal(normal.sandbox.__boardAdmissionSourceRead,undefined);assert.equal(normal.listeners.has('mousedown:capture'),false);
+});
+test('source window measures distinct press, replacement and release roots without synthesizing state',()=>{
+ const h=collector({sourceAttemptOrdinal:2});const oldSource=armSource(h);
+ h.listeners.get('mousedown:capture')(nativeEvent('mousedown',oldSource,h.root,h.sandbox.document));
+ const nextRoot={isConnected:true},nextSource=sourceCell(nextRoot);oldSource.isConnected=false;h.sandbox.document.querySelector=()=>nextRoot;
+ h.record('runtime-bind',{sameNodes:false},nextRoot);
+ h.listeners.get('mouseup:capture')(nativeEvent('mouseup',nextSource,nextRoot,h.sandbox.document));
+ const rows=Array.from(h.log.sourceWindow.first),down=rows.find(row=>row.event==='native-mousedown'),bind=rows.find(row=>row.event==='runtime-bind'),up=rows.find(row=>row.event==='native-mouseup');
+ assert.ok(down.sequence<bind.sequence&&bind.sequence<up.sequence);assert.equal(down.sourceConnected,true);assert.equal(up.sourceConnected,false);
+ assert.notEqual(down.cellRootToken,up.cellRootToken);assert.equal(h.log.sourceWindow.incomplete,false);
+});
+test('case source opt-in leaves the original two move actions and assertion body byte-identical',async()=>{
+ const current=await readFile(new URL('../../../e2e/workflows/recovery-freeze-regression.spec.mjs',import.meta.url),'utf8');
+ // Reviewed 0a959 fixture bytes, independent of the checkout's current HEAD.
+ const normalized=current.replace(',sourceAttemptOrdinal:2','').replace('  await admissionDiagnostics.checkpoint();\n','');
+ assert.equal(createHash('sha256').update(normalized).digest('hex'),'165ec16bb620c0038a8059a2d513401a5a258069ea6ae397130bb58fb5844d30');
+ const body=current.slice(current.indexOf("test('Horus finishes a real turn"));assert.equal(body.split('await submitPlayableAction(page,').length-1,2);
+ assert.equal(current.split('sourceAttemptOrdinal:2').length-1,1);
+});
+
+
+const sourcePacket=()=>{const h=collector({sourceAttemptOrdinal:2});armSource(h);return cloneBoardSourceHandoff({version:1,timeOrigin:123,sourceWindow:h.log.sourceWindow});};
+const consolePage=()=>{const listeners=new Set(),foreign=()=>{};listeners.add(foreign);return {listeners,foreign,on(type,fn){assert.equal(type,'console');listeners.add(fn);},off(type,fn){assert.equal(type,'console');listeners.delete(fn);},emit(text){for(const fn of [...listeners])fn({text:()=>text});}};};
+
+test('native pagehide emits once only after an observed marker without invoking toJSON or getters',()=>{
+ const h=collector({sourceAttemptOrdinal:2});const hide=h.listeners.get('window:pagehide');
+ hide({isTrusted:true});assert.equal(h.messages.length,0);armSource(h);
+ vm.runInContext('globalThis.jsonCalls=0;Object.prototype.toJSON=function(){jsonCalls++;throw Error("custom-json");};Array.prototype.toJSON=Object.prototype.toJSON;',h.sandbox);
+ hide({isTrusted:false});assert.equal(h.messages.length,0);hide({isTrusted:true});hide({isTrusted:true});
+ assert.equal(h.messages.length,1);assert.equal(h.sandbox.jsonCalls,0);
+ const packet=cloneBoardSourceHandoff(JSON.parse(h.messages[0].slice(SOURCE_PRESS_PREFIX.length)));
+ assert.equal(packet.sourceWindow.observed,true);assert.equal(packet.timeOrigin,123);
+ const broken=collector({sourceAttemptOrdinal:2});armSource(broken);let gets=0;
+ Object.defineProperty(broken.log.sourceWindow.first[0],'now',{get(){gets++;throw Error('secret-getter');}});
+ assert.doesNotThrow(()=>broken.listeners.get('window:pagehide')({isTrusted:true}));assert.equal(gets,0);assert.equal(broken.messages.length,0);assert.equal(broken.log.sourceWindow.incomplete,true);
+ const consoleBroken=collector({sourceAttemptOrdinal:2},{console:{debug(){throw Error('secret-console');}}});armSource(consoleBroken);
+ assert.doesNotThrow(()=>consoleBroken.listeners.get('window:pagehide')({isTrusted:true}));assert.equal(consoleBroken.log.sourceWindow.incomplete,true);
+});
+test('first immutable handoff survives reload without merging epochs or replacing it on duplicates',()=>{
+ const page=consolePage(),capture=createBoardSourceConsoleRetention(page,2),packet=sourcePacket();
+ page.emit(SOURCE_PRESS_PREFIX+JSON.stringify(packet));packet.sourceWindow.first[0].value=true;
+ const live=collector({sourceAttemptOrdinal:2});live.log.timeOrigin=456;
+ const first=capture.snapshot(live.log);assert.equal(first.retainedPreReloadSourceWindow.sourceWindow.first[0].value,false);
+ assert.equal(Object.isFrozen(first.retainedPreReloadSourceWindow.sourceWindow.first),true);assert.equal(first.retention.retainedTimeOrigin,123);assert.equal(first.retention.liveTimeOrigin,456);assert.equal(first.retention.epochsMerged,false);assert.equal(first.retention.incomplete,false);
+ page.emit(SOURCE_PRESS_PREFIX+JSON.stringify(sourcePacket()));assert.equal(capture.snapshot(live.log).retention.lastFailure,'handoff-duplicate');
+ const other=JSON.parse(JSON.stringify(sourcePacket()));other.timeOrigin=456;for(const row of [...other.sourceWindow.first,...other.sourceWindow.tail])row.timeOrigin=456;
+ page.emit(SOURCE_PRESS_PREFIX+JSON.stringify(other));const after=capture.snapshot(live.log);
+ assert.equal(after.retainedPreReloadSourceWindow,first.retainedPreReloadSourceWindow);assert.equal(after.retention.lastFailure,'handoff-epoch-conflict');assert.equal(after.retention.incomplete,true);
+ capture.stop();capture.stop();assert.deepEqual([...page.listeners],[page.foreign]);
+});
+test('handoff parser rejects malformed, oversized, unknown, nonfinite and out-of-bound data',()=>{
+ const valid=()=>JSON.parse(JSON.stringify(sourcePacket()));
+ const wrongVersion=valid();wrongVersion.version=2;
+ const secret=valid();secret.sourceWindow.first[0].rawState='secret-token';
+ const nonfinite=valid();nonfinite.timeOrigin=null;
+ const overflow=valid();overflow.sourceWindow.first=Array(65).fill(overflow.sourceWindow.first[0]);
+ const wrongOrdinal=valid();wrongOrdinal.sourceWindow.expectedOrdinal=3;
+ const epoch=valid();epoch.sourceWindow.first[0].timeOrigin=456;
+ const invalid=['{',... [wrongVersion,secret,nonfinite,overflow,wrongOrdinal,epoch].map(value=>JSON.stringify(value)),'x'.repeat(SOURCE_PRESS_MAX_BYTES+1)];
+ for(const body of invalid){const page=consolePage(),capture=createBoardSourceConsoleRetention(page,2);assert.doesNotThrow(()=>page.emit(SOURCE_PRESS_PREFIX+body));const snapshot=capture.snapshot(null);assert.equal(snapshot.retainedPreReloadSourceWindow,null);assert.equal(snapshot.retention.incomplete,true);assert.equal(JSON.stringify(snapshot).includes('secret-token'),false);capture.stop();}
+ const accessor=sourcePacket();let reads=0;Object.defineProperty(accessor.sourceWindow,'observed',{get(){reads++;throw Error('secret');}});
+ assert.throws(()=>cloneBoardSourceHandoff(accessor),/Invalid source-window/);assert.equal(reads,0);
+});
+test('actual serialized bootstrap retains old-window handoff and removes only its owned listener on failure',async()=>{
+ const page=consolePage();let context,definition,attachment;
+ const createDocument=epoch=>{const root={isConnected:true},events=new Map(),sandbox={TextEncoder,performance:{timeOrigin:epoch,now:()=>456},document:{querySelector:()=>root,addEventListener(){}},addEventListener:(type,fn)=>events.set(type,fn),console:{debug:text=>page.emit(text)}};vm.createContext(sandbox);return {sandbox,events,root};};
+ context=createDocument(123);
+ page.addInitScript=async value=>{definition=value;vm.runInContext(value.content,context.sandbox);};page.route=async()=>{};
+ page.evaluate=async()=>context.sandbox.__boardAdmissionObservation;page.unroute=async()=>{throw Error('intentional-route-fault');};
+ const info={title:'Horus finishes a real turn and releases its worker before self-play and reload',outputPath(){throw Error('intentional-write-fault');},async attach(name,value){attachment=JSON.parse(value.body);}};
+ const capture=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://127.0.0.1:10193',targetRow:2,targetCol:6,sourceAttemptOrdinal:2});
+ const first=sourceCell(context.root),second=sourceCell(context.root);context.sandbox.__boardAdmissionSourceRead(false,first);context.sandbox.__boardAdmissionSourceRead(false,second);
+ context.events.get('pagehide')({isTrusted:true});context=createDocument(456);vm.runInContext(definition.content,context.sandbox);
+ await assert.doesNotReject(capture.persist());
+ assert.equal(attachment.retainedPreReloadSourceWindow.timeOrigin,123);assert.equal(attachment.observation.timeOrigin,456);assert.equal(attachment.retention.epochsMerged,false);assert.equal(attachment.retention.incomplete,false);
+ assert.equal(attachment.observation.sourceWindow.observed,false);assert.equal(attachment.retainedPreReloadSourceWindow.sourceWindow.observed,true);
+ assert.equal(attachment.incomplete,true); // Missing module/activation coverage is never waived.
+ assert.deepEqual([...page.listeners],[page.foreign]);
+ const badInfo={get title(){throw Error('secret-info');},outputPath(){throw Error('secret-path');},async attach(){throw Error('secret-attach');}};
+ const secondCapture=await installBoardAdmissionDiagnostics(page,badInfo,{baseURL:'http://127.0.0.1:10193',targetRow:2,targetCol:6,sourceAttemptOrdinal:2});
+ const priorError=console.error;
+ try{console.error=()=>{throw Error('secret-console');};await assert.doesNotReject(secondCapture.persist());}
+ finally{console.error=priorError;}
+ assert.deepEqual([...page.listeners],[page.foreign]);
+});
+
+test('explicit checkpoint keeps immutable source epoch without relying on pagehide',async()=>{
+ const page=consolePage();let document=collector({sourceAttemptOrdinal:2});armSource(document);
+ page.addInitScript=async()=>{};page.route=async()=>{};page.unroute=async()=>{};
+ let reads=0,attachment;page.evaluate=async()=>{reads++;return reads===1?document.sandbox.__boardAdmissionSourceSnapshot():document.log;};
+ const info={title:'Horus finishes a real turn and releases its worker before self-play and reload',outputPath(){throw Error('intentional-write');},async attach(name,value){attachment=JSON.parse(value.body);}};
+ const capture=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://127.0.0.1:10193',targetRow:2,targetCol:6,sourceAttemptOrdinal:2});
+ await capture.checkpoint();assert.equal(reads,1);document=collector({sourceAttemptOrdinal:2});document.log.timeOrigin=456;
+ await capture.persist();assert.equal(reads,2);assert.equal(attachment.retainedPreReloadSourceWindow.timeOrigin,123);assert.equal(attachment.observation.timeOrigin,456);assert.equal(attachment.retention.incomplete,false);assert.equal(attachment.retention.epochsMerged,false);assert.deepEqual([...page.listeners],[page.foreign]);
 });
