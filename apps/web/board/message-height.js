@@ -6,7 +6,7 @@ export function createMessageHeightController(label) {
  const slot=label?.closest?.('.board-message-slot'),doc=label?.ownerDocument,win=doc?.defaultView;
  if(!slot||!win?.ResizeObserver||!win?.MutationObserver)return {destroy(){}};
  const live=slot.querySelector('.board-message-live'),replicas=[...slot.querySelectorAll('.board-message-sizing')];
- let disposed=false,frame=null,animation=null,initial=true,metricChange=true,pointer=false,key=false,lastTarget=null,lastWidth=null,lastFont=null,pressedControl=null,pendingContent=null,publishingContent=false;
+ let disposed=false,frame=null,animation=null,initial=true,metricChange=true,pointer=false,key=false,lastTarget=null,lastWidth=null,lastFont=null,pressedControl=null,pendingContent=null,publishingContent=false,transientContent=false,transientFloor=null;
  const measure=(forceSnap=false)=>{
   if(forceSnap&&frame!==null)win.cancelAnimationFrame(frame);
   frame=null;if(disposed||!slot.isConnected)return;
@@ -23,7 +23,12 @@ export function createMessageHeightController(label) {
   const floor=font=>Math.max(0,...replicas.filter(node=>node.dataset.sizingFont===font).map(node=>node.getBoundingClientRect().height));
   const slotStyle=win.getComputedStyle?.(slot);
   const outerPadding=(parseFloat(slotStyle?.paddingTop)||0)+(parseFloat(slotStyle?.paddingBottom)||0);
-  const target=messageHeightTarget({primaryRoutine:floor('primary'),fallbackRoutine:floor('fallback'),current:live.getBoundingClientRect().height})+outerPadding;
+  const naturalTarget=messageHeightTarget({primaryRoutine:floor('primary'),fallbackRoutine:floor('fallback'),current:live.getBoundingClientRect().height})+outerPadding;
+  // Hover copy shares one presentation floor, not a lifetime maximum. Metrics
+  // invalidate old pixel measurements before rebuilding from current content.
+  if(metricChange||forceSnap)transientFloor=null;
+  if(transientContent)transientFloor=Math.max(transientFloor??0,naturalTarget);
+  const target=transientContent?transientFloor:naturalTarget;
   if(target===lastTarget&&!metricChange&&!forceSnap)return;
   const from=slot.getBoundingClientRect().height;
   const change=messageHeightTransition({from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key});
@@ -54,6 +59,11 @@ export function createMessageHeightController(label) {
  const motion=win.matchMedia('(prefers-reduced-motion: reduce)');motion.addEventListener?.('change',metrics);
  measure();
  return {
+ setTransientContent(value){
+  if(value&&!transientContent)transientFloor=lastTarget;
+  if(!value)transientFloor=null;
+  transientContent=Boolean(value);
+ },
  deferContent(html,publish){
   if(publishingContent)return false;
   const active=doc.activeElement;

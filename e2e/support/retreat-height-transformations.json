@@ -1,0 +1,146 @@
+{
+  "/board-adapters/engine-board-adapter.js": {
+    "file": "apps/web/board-adapters/engine-board-adapter.js",
+    "sourceSha256": "393d52db41abc903ee0f8402c6fa86f028562017cfbacf307dd97e5f6ad675ae",
+    "prefix": "const __retreatHeightProbe=(event,data,owner)=>{try{const sink=globalThis.__retreatHeightRecord;if(typeof sink==='function')sink(event,typeof data==='function'?data():data,owner);}catch{}};\nconst __retreatHeightValue=(event,value,data=null,owner=null)=>{__retreatHeightProbe(event,data??(()=>({value})),owner);return value;};\n",
+    "operations": [
+      {
+        "start": 33318,
+        "end": 33367,
+        "before": "onCellHoverStart(readCoordFromCell(currentCell));",
+        "after": "onCellHoverStart(__retreatHeightValue('hover-start',readCoordFromCell(currentCell),null,currentCell));",
+        "anchor": "onCellHoverStart(readCoordFromCell(currentCell));",
+        "anchorCount": 1
+      },
+      {
+        "start": 33636,
+        "end": 33683,
+        "before": "onCellHoverEnd(readCoordFromCell(currentCell));",
+        "after": "onCellHoverEnd(__retreatHeightValue('hover-end',readCoordFromCell(currentCell),null,currentCell));",
+        "anchor": "onCellHoverEnd(readCoordFromCell(currentCell));",
+        "anchorCount": 1
+      }
+    ],
+    "outputSha256": "46d250efb8112f8b054e8acf06a5efdc184fedaa9bcdaa5e22e0395802604b0d"
+  },
+  "/board/runtime/board-runtime.js": {
+    "file": "apps/web/board/runtime/board-runtime.js",
+    "sourceSha256": "4653cd479764a9aea09e0c65add62873884e9a928b21f02c99c4e880155cb8dd",
+    "prefix": "const __retreatHeightProbe=(event,data,owner)=>{try{const sink=globalThis.__retreatHeightRecord;if(typeof sink==='function')sink(event,typeof data==='function'?data():data,owner);}catch{}};\nconst __retreatHeightValue=(event,value,data=null,owner=null)=>{__retreatHeightProbe(event,data??(()=>({value})),owner);return value;};\n",
+    "operations": [
+      {
+        "start": 9978,
+        "end": 10214,
+        "before": "  const setSelectedTarget = (target, origin = null) => {\n    if (!target) {\n      selectedTarget = null;\n      selectedTargetOrigin = null;\n      return;\n    }\n    selectedTarget = { ...target };\n    selectedTargetOrigin = origin;\n  };\n",
+        "after": "  const setSelectedTarget = (target, origin = null) => {\n    if (!target) {\n      selectedTarget = __retreatHeightValue('target-clear',null);\n      selectedTargetOrigin = __retreatHeightValue('origin-clear',null);\n      return;\n    }\n    selectedTarget = __retreatHeightValue('target-set',{ ...target });\n    selectedTargetOrigin = __retreatHeightValue('origin-set',origin);\n  };\n",
+        "anchor": "  const setSelectedTarget = (target, origin = null) => {\n    if (!target) {\n      selectedTarget = null;\n      selectedTargetOrigin = null;\n      return;\n    }\n    selectedTarget = { ...target };\n    selectedTargetOrigin = origin;\n  };\n",
+        "anchorCount": 1
+      },
+      {
+        "start": 31160,
+        "end": 31201,
+        "before": "    if (explanation && !selectedTarget) {",
+        "after": "    if (explanation && !__retreatHeightValue('status-target',selectedTarget)) {\n      __retreatHeightProbe('status-explanation',()=>({}));",
+        "anchor": "    if (explanation && !selectedTarget) {",
+        "anchorCount": 1
+      },
+      {
+        "start": 36113,
+        "end": 36205,
+        "before": "    setBoardPreviewAction(actionPreviewLabel(preferredPreview.type, state, selectedTarget));",
+        "after": "    setBoardPreviewAction(actionPreviewLabel(__retreatHeightValue('status-confirmation-type',preferredPreview.type), state, selectedTarget));",
+        "anchor": "    setBoardPreviewAction(actionPreviewLabel(preferredPreview.type, state, selectedTarget));",
+        "anchorCount": 1
+      },
+      {
+        "start": 60735,
+        "end": 60790,
+        "before": "  const handleBoardCellHoverStart = (hoveredCoord) => {",
+        "after": "  const handleBoardCellHoverStart = (hoveredCoord) => {\n    __retreatHeightProbe('runtime-hover-start',()=>({coord:hoveredCoord}));",
+        "anchor": "  const handleBoardCellHoverStart = (hoveredCoord) => {",
+        "anchorCount": 1
+      },
+      {
+        "start": 61135,
+        "end": 61188,
+        "before": "  const handleBoardCellHoverEnd = (hoveredCoord) => {",
+        "after": "  const handleBoardCellHoverEnd = (hoveredCoord) => {\n    __retreatHeightProbe('runtime-hover-end',()=>({coord:hoveredCoord}));",
+        "anchor": "  const handleBoardCellHoverEnd = (hoveredCoord) => {",
+        "anchorCount": 1
+      }
+    ],
+    "outputSha256": "9bec048414d029d08a362ea4745ccfdb47ae7d5db14d6b54994332fe890f6960"
+  },
+  "/board/message-height.js": {
+    "file": "apps/web/board/message-height.js",
+    "sourceSha256": "5adb92ae6fc8bc472d7a26f451689db98ec66d8b2399ff2c9ad8a7bf8520f9f8",
+    "prefix": "const __retreatHeightProbe=(event,data,owner)=>{try{const sink=globalThis.__retreatHeightRecord;if(typeof sink==='function')sink(event,typeof data==='function'?data():data,owner);}catch{}};\nconst __retreatHeightValue=(event,value,data=null,owner=null)=>{__retreatHeightProbe(event,data??(()=>({value})),owner);return value;};\n",
+    "operations": [
+      {
+        "start": 1207,
+        "end": 1254,
+        "before": "const width=slot.getBoundingClientRect().width;",
+        "after": "const width=__retreatHeightValue('height-width',slot.getBoundingClientRect().width,null,slot);",
+        "anchor": "const width=slot.getBoundingClientRect().width;",
+        "anchorCount": 1
+      },
+      {
+        "start": 1831,
+        "end": 1997,
+        "before": "const naturalTarget=messageHeightTarget({primaryRoutine:floor('primary'),fallbackRoutine:floor('fallback'),current:live.getBoundingClientRect().height})+outerPadding;",
+        "after": "const naturalTarget=__retreatHeightValue('height-natural-target',messageHeightTarget({primaryRoutine:floor('primary'),fallbackRoutine:floor('fallback'),current:live.getBoundingClientRect().height})+outerPadding,null,slot);",
+        "anchor": "const naturalTarget=messageHeightTarget({primaryRoutine:floor('primary'),fallbackRoutine:floor('fallback'),current:live.getBoundingClientRect().height})+outerPadding;",
+        "anchorCount": 1
+      },
+      {
+        "before": "const target=transientContent?transientFloor:naturalTarget;",
+        "after": "const target=__retreatHeightValue('height-target',transientContent?transientFloor:naturalTarget,null,slot);",
+        "anchor": "const target=transientContent?transientFloor:naturalTarget;",
+        "anchorCount": 1,
+        "start": 2288,
+        "end": 2347
+      },
+      {
+        "start": 2410,
+        "end": 2457,
+        "before": "const from=slot.getBoundingClientRect().height;",
+        "after": "const from=__retreatHeightValue('height-from',slot.getBoundingClientRect().height,null,slot);",
+        "anchor": "const from=slot.getBoundingClientRect().height;",
+        "anchorCount": 1
+      },
+      {
+        "start": 2460,
+        "end": 2655,
+        "before": "const change=messageHeightTransition({from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key});",
+        "after": "const change=messageHeightTransition(__retreatHeightValue('height-input',{from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key},null,slot));",
+        "anchor": "const change=messageHeightTransition({from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key});",
+        "anchorCount": 1
+      },
+      {
+        "start": 2658,
+        "end": 2690,
+        "before": "if(change.kind==='defer')return;",
+        "after": "if(__retreatHeightValue('height-kind',change.kind,null,slot)==='defer')return;",
+        "anchor": "if(change.kind==='defer')return;",
+        "anchorCount": 1
+      },
+      {
+        "start": 2693,
+        "end": 2812,
+        "before": "animation?.cancel();animation=null;slot.dataset.heightManaged='true';slot.style.height=`${target}px`;lastTarget=target;",
+        "after": "__retreatHeightProbe('height-write',()=>({from,to:target}),slot);\n  animation?.cancel();animation=null;slot.dataset.heightManaged='true';slot.style.height=`${target}px`;lastTarget=target;",
+        "anchor": "animation?.cancel();animation=null;slot.dataset.heightManaged='true';slot.style.height=`${target}px`;lastTarget=target;",
+        "anchorCount": 1
+      },
+      {
+        "start": 2815,
+        "end": 2974,
+        "before": "if(change.kind==='animate'&&slot.animate)animation=slot.animate([{height:`${from}px`},{height:`${target}px`}],{duration:change.duration,easing:change.easing});",
+        "after": "if(__retreatHeightValue('height-animation-kind',change.kind,null,slot)==='animate'&&slot.animate)animation=__retreatHeightValue('animation-created',slot.animate([{height:`${from}px`},{height:`${target}px`}],{duration:change.duration,easing:change.easing}),()=>({}),slot);",
+        "anchor": "if(change.kind==='animate'&&slot.animate)animation=slot.animate([{height:`${from}px`},{height:`${target}px`}],{duration:change.duration,easing:change.easing});",
+        "anchorCount": 1
+      }
+    ],
+    "outputSha256": "8379c26cde0d57ae1101586d899d5f13f8c31d513ce68217531f818295eb2e0f"
+  }
+}

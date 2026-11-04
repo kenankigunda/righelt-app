@@ -1,8 +1,10 @@
-import { test, expect } from '@playwright/test';
+import { test as base, expect } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import { createInitialState, resolveToStability } from '../../apps/web/generated/packages/game-engine/src/index.js';
 import { importScenarioGame, submitPlayableAction, switchGamePanel } from '../support/app.mjs';
 import { readProjectedGame } from '../support/computer-projection.mjs';
+import {retreatHeightFixture,finishRetreatHeightDiagnostics} from '../support/retreat-height-diagnostics.mjs';
+const test=base.extend({retreatHeightDiagnostics:[retreatHeightFixture,{auto:true}]});
 
 const piece=(id,owner,kind,row,col)=>({id,owner,kind,position:{row,col},supplied:true,commanded:true});
 const initialState=resolveToStability({...createInitialState(),pieces:[piece('C1','P1','commander',3,6),piece('C2','P2','commander',6,3),piece('A1','P1','unit',4,1),piece('A2','P1','unit',3,1),piece('D1','P2','unit',4,2)]});
@@ -23,7 +25,7 @@ const instrument=()=>{
   Element.prototype.animate=function(frames,options){const result=Reflect.apply(animate,this,[frames,options]);if(this.closest('.computer-replay')&&this.dataset.pieceId)window.forcedFollowProbe.motions.push({at:performance.now(),pieceId:this.dataset.pieceId,frames,options});return result;};
 };
 
-for(const fault of ['none','lost reply','refresh pending'])test(`mandatory follow and exact sequence replay (${fault})`,async({page,baseURL},info)=>{
+for(const fault of ['none','lost reply','refresh pending'])test(`mandatory follow and exact sequence replay (${fault})`,async({page,baseURL,retreatHeightDiagnostics},info)=>{
   await page.setViewportSize({width:fault==='none'?390:1440,height:1000});
   await page.addInitScript(instrument);
   if(fault!=='none')await page.addInitScript(()=>{window.WebSocket=undefined;});
@@ -88,5 +90,5 @@ for(const fault of ['none','lost reply','refresh pending'])test(`mandatory follo
     const proof=JSON.stringify({fault,requests,holds,follow,probe,liveSelection,retreatCell},null,2);
     await writeFile(info.outputPath('forced-follow-proof.json'),proof);
     await info.attach('forced-follow-proof',{contentType:'application/json',body:proof});
-  }finally{release();await page.unrouteAll({behavior:'wait'});}
+  }finally{await finishRetreatHeightDiagnostics(retreatHeightDiagnostics);release();await page.unrouteAll({behavior:'wait'});}
 });
