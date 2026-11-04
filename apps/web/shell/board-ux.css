@@ -143,6 +143,11 @@ body {display:flow-root;}
 #app[data-shell-layout-mode="wide"] [data-shell-panel="board"] {padding-block:.5rem;}
 #app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board-heading {margin-block-end:0;}
 #app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board-message-slot {margin-block-end:0;}
+/* Narrow cards share the fixed heading/prompt slots. Their default bottom
+   margins duplicate that reservation and push a normal-height Board offscreen.
+   Reclaim only static spacing, preserving cell sizes and action hit clearance. */
+#app[data-shell-layout-mode="narrow"] [data-shell-panel="board"] .board-heading {margin-block-end:0;}
+#app[data-shell-layout-mode="narrow"] [data-shell-panel="board"] .board-message-slot {margin-block-end:0;}
 /* Desktop squares fit beneath stable chrome; short windows keep usable cells and scroll. */
 #app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board-wrap:not(.computer-replay-wrap) {
   width:min(100%,var(--desktop-board-side,max(396px,calc(100dvh - 25.5rem))));

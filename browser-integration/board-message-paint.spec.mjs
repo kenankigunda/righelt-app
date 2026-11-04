@@ -1,5 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
+import {settledMessage} from './support/message-semantic-geometry.mjs';
 // DOMRect edges are composed from the measured top/height primitives. Only
 // actual float32-representable primitives contribute representational error.
 const primitiveError=value=>value!==0&&Math.fround(value)===value?2**(Math.floor(Math.log2(Math.abs(value)))-24):0;
@@ -15,6 +16,33 @@ const focusedFootprint=sample=>{
  const upperBound=upperPrimitives.reduce((sum,value)=>sum+primitiveError(value),0);
  return{top,bottom,lowerPrimitives,upperPrimitives,lowerBound,upperBound,fits:top>=slot.top-lowerBound&&bottom<=slot.bottom+upperBound};
 };
+for(const scale of [100,200])test(`shared narrow heading and prompt slots reclaim only redundant spacing at ${scale}%`,async({page},info)=>{
+ await page.setViewportSize({width:390,height:740});await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
+ await page.evaluate(async scale=>{document.documentElement.style.fontSize=`${scale}%`;const {renderBoardHeadingSlot}=await import('/apps/web/shell/board-message-layout.js');document.querySelector('main > h2').outerHTML=renderBoardHeadingSlot({loading:true});await document.fonts.ready;await window.boardFixture.setup('pass',false);},scale);
+ await settledMessage(page);
+ const samples=await page.evaluate(async()=>{
+  const {renderBoardHeadingSlot}=await import('/apps/web/shell/board-message-layout.js');
+  const samples=[];
+  for(const phase of ['loading-heading','live-heading','replay','pass']){
+   const previous=document.querySelector('main > .board-heading-slot,main > h2');previous.outerHTML=renderBoardHeadingSlot({loading:phase==='loading-heading'});
+   const turn=document.querySelector('#shell-board-turn-indicator');if(turn)turn.textContent='Your turn to play';
+   window.boardFixture.message(phase==='replay'?{text:'Watch replay',action:{id:'replay-stop',label:'Stop replay'}}:{text:'Select a piece or',action:{id:'pass',label:'Pass'}});
+   const rect=node=>node.getBoundingClientRect().toJSON(),slot=document.querySelector('.board-message-slot'),board=document.querySelector('#board'),button=document.querySelector('#preview button'),r=button.getBoundingClientRect(),center=r.top+r.height/2,half=Math.max(44,r.height)/2;
+   const cells=[...board.children].map(cell=>({width:cell.getBoundingClientRect().width,height:cell.getBoundingClientRect().height}));
+   samples.push({phase,heading:rect(document.querySelector('.board-heading:not([aria-hidden])')),headingSlot:rect(document.querySelector('.board-heading-slot')),slot:rect(slot),board:rect(board),cells,
+    target:{width:r.width,top:center-half,bottom:center+half,lowerHit:document.elementFromPoint(r.left+r.width/2,center+Math.min(21,half-1))?.closest('button')===button},
+    overflow:slot.dataset.promptOverflow??null,unmapped:document.querySelector('#preview').dataset.promptUnmapped??null});
+  }
+  return samples;
+ });
+ await info.attach('Shared narrow slot geometry',{body:JSON.stringify({scale,samples}),contentType:'application/json'});
+ for(const sample of samples){
+  expect(sample.heading.bottom).toBe(sample.headingSlot.bottom);expect(sample.slot.top).toBe(sample.headingSlot.bottom);expect(sample.board.top).toBe(sample.slot.bottom);
+  expect(sample.board).toEqual(samples[0].board);expect(sample.cells).toHaveLength(100);expect(sample.cells).toEqual(samples[0].cells);
+  expect(sample.target.width).toBeGreaterThanOrEqual(44);expect(sample.target.top).toBeGreaterThanOrEqual(sample.slot.top);expect(sample.target.bottom).toBeLessThanOrEqual(sample.slot.bottom);expect(sample.target.lowerHit).toBe(true);
+  expect(sample.overflow).toBeNull();expect(sample.unmapped).toBeNull();
+ }
+});
 for(const scale of [100,200])test(`native fixed prompt changes keep board paint and hits separate at ${scale}%`,async({page},info)=>{
  const evidence={scope:'Fixed finite grammar before/after native rendering, with independent real paint-interception negative',scale,samples:[]};
  const persist=async()=>{try{await writeFile(info.outputPath('paint-containment.json'),JSON.stringify(evidence,null,2));}catch(error){console.error(JSON.stringify({kind:'paint-evidence-incomplete',name:error?.name??'Error'}));}};
