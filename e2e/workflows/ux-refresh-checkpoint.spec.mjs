@@ -22,7 +22,15 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  const sound=page.getByRole('button',{name:'Mute sound',exact:true});
  await sound.locator('svg').click();
  await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeFocused();
+ // Observe this new document's real Home reads before advancing its clock.
+ const reloadedHomeReads=['my','other'].map(section=>page.waitForResponse(response=>{
+  const url=new URL(response.url());
+  return response.request().method()==='GET'&&url.pathname==='/api/shell/games'&&url.searchParams.get('section')===section&&response.status()===200;
+ }));
  await page.reload();await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeVisible();
+ for(const response of await Promise.all(reloadedHomeReads))expect(await response.finished()).toBeNull();
+ await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+ await expect(page.getByTestId('home-create-game')).toBeEnabled();
  // Model preparation may exceed the carousel interval. Hold autoplay while
  // checking the manual caret, then restore normal time once that click stops it.
  await page.clock.pauseAt(new Date('2026-01-01T01:00:00Z'));
