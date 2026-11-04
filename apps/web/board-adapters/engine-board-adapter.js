@@ -1458,7 +1458,7 @@ export function createEngineBoardAdapter() {
           const source = findPieceById(snapshot, entry.action.actorId);
           const cell = source && cellByCoordinateKey.get(coordKey(source.position));
           cell?.classList.add('rush-guidance-source');
-          cell?.setAttribute('aria-label', `Piece at (${source.position.row}, ${source.position.col}), supply-restoring rush available`);
+          cell?.setAttribute('aria-label', `Supply-restoring rush available for piece at (${source.position.row}, ${source.position.col})`);
         }
         for (const action of selectedPieceMoves ?? []) {
           if (action.type !== 'rush' || !action.to) continue;

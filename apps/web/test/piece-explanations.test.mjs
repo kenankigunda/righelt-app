@@ -8,7 +8,7 @@ test('selected-piece explanations separate display connectivity from frozen sequ
   const piece = {id:'A', supplied:true, commanded:true};
   assert.equal(getSelectedPieceExplanation(piece, {}), null);
   assert.equal(getSelectedPieceExplanation(null, {}), null);
-  assert.equal(getSelectedPieceExplanation({...piece, displayCommanded:false}, {}), 'Inactive: no command connection');
+  assert.equal(getSelectedPieceExplanation({...piece, displayCommanded:false}, {}), 'No command connection');
   assert.equal(getSelectedPieceExplanation({...piece, displaySupplied:false}, {continuation:{type:'rush'}}), 'No supply connection');
   for (const type of ['rush','push']) {
     const state = {continuation:{type, frozenPieceStatesById:{A:{supplied:false,commanded:false}}}};

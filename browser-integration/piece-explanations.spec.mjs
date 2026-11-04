@@ -27,7 +27,7 @@ for (const width of [320, 390]) test(`selection explanations stay in the message
     });
   }, {kind, interactive});
   await configure('inactive');
-  await expect(page.locator('#preview')).toContainText('Inactive: no command connection');
+  await expect(page.locator('#preview')).toContainText('No command connection');
   await accountMessageGrowth();
   expect(await page.locator('.cell.selected-piece').evaluate(node => getComputedStyle(node, '::after').content)).toBe('none');
   await page.screenshot({path:info.outputPath(`inactive-${width}-200.png`)});
@@ -37,7 +37,7 @@ for (const width of [320, 390]) test(`selection explanations stay in the message
   await accountMessageGrowth();
   await configure('frozen-blocker');
   await expect(page.locator('#preview')).toContainText('Cannot move: no command or supply at start of rush');
-  await expect(page.locator('#preview')).toContainText('Reconnect piece at 9, 9');
+  await expect(page.locator('#preview')).toContainText('Restore connection for piece at 9, 9');
   await expect(page.locator('#preview button')).toHaveCount(0);
   await accountMessageGrowth();
   await configure('frozen', false);
