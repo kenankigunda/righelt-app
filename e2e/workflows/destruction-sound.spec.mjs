@@ -111,7 +111,14 @@ test('real audio destruction batches deduplicate local receipts while mute and r
   await retain('owner',owner,'before-mute');await retain('viewer',viewer,'history-and-replay');
   await owner.bringToFront();await owner.getByRole('button',{name:'Mute sound',exact:true}).click();
   const muted=await importScenarioGame(owner,{...scenario,id:'b71f581c-6cfe-4c5a-9827-1687a23ace33'},baseURL);await owner.bringToFront();
-  await submitPlayableAction(owner,fixture.action);await owner.locator('[data-board-preview-action="end-turn"]').click();await expect.poll(async()=>(await projected(owner,muted.gameId)).moves[0].destroyedPieces.length).toBe(2);
+  await submitPlayableAction(owner,fixture.action);
+  // A native confirmation can return before its accepted move is published.
+  // Match the earlier phase's positive history boundary before closing the turn.
+  await expect(owner.getByTestId('history-move-item')).toHaveCount(1);
+  await expect.poll(async()=>(await projected(owner,muted.gameId)).moves.length).toBe(1);
+  const mutedEndRequest=owner.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname===`/api/shell/games/${muted.gameId}/end-turn`);
+  await owner.locator('[data-board-preview-action="end-turn"]').click();await mutedEndRequest;
+  await expect.poll(async()=>(await projected(owner,muted.gameId)).moves[0].destroyedPieces.length).toBe(2);
   expect(await crackStarts(owner)).toHaveLength(0);expect(await owner.evaluate(()=>localStorage.getItem('righelt.device.sound-enabled'))).toBe('false');
   await retain('owner',owner,'muted-confirmed');
   await owner.reload();await expect(owner.getByTestId('game-shell')).toBeVisible();await expect(owner.getByRole('button',{name:'Enable sound',exact:true})).toBeVisible();expect(await crackStarts(owner)).toHaveLength(0);

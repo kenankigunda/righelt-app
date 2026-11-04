@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { IDBFactory } from 'fake-indexeddb';
+import { createCommandJournal } from '../shell/command-journal.js';
 import { createLiveTransportStore } from '../shell/live-transport.js';
 import { createGameSound } from '../shell/sound.js';
 import { createInitialState } from '../generated/packages/game-engine/src/state.js';
@@ -17,8 +19,9 @@ const game = (revision, moves) => ({ id: 'g', createdAt: '2026-10-30T00:00:00Z',
 
 test('real transport WS, HTTP refresh and reconciliation share one authoritative incoming sound boundary', async t => {
   const f = audioFixture(), storage = new Map(); let response = { game: game(0, []), eventSeq: 1 };
-  const store = createLiveTransportStore({ storage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) }, fetcher: async () => new Response(JSON.stringify({ ...response, protocolVersion: 2, gameId: 'g', gameplayRevision: response.game.gameplayRevision, commandOutcomes: [] }), { headers: { 'Content-Type': 'application/json' } }) });
-  t.after(() => store.retire());
+  const commandJournal = createCommandJournal({ indexedDB: new IDBFactory(), databaseName: 'opponent-sound-fixture' });
+  const store = createLiveTransportStore({ commandJournal, storage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) }, fetcher: async () => new Response(JSON.stringify({ ...response, protocolVersion: 2, gameId: 'g', gameplayRevision: response.game.gameplayRevision, commandOutcomes: [] }), { headers: { 'Content-Type': 'application/json' } }) });
+  t.after(async () => { store.retire(); await commandJournal.close(); });
   store.subscribe(change => { if (['authoritative_update', 'history_mode_changed'].includes(change.type)) f.sound.authoritative(store.getAuthoritativeGame(change.gameId), { sequence: store.getLastEventSeq(change.gameId) }); });
   store.applyLiveGameUpdate(response); assert.deepEqual(f.notes, []);
   response = { game: game(1, [move('a')]), eventSeq: 2 };

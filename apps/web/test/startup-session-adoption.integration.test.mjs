@@ -100,6 +100,7 @@ function fixture() {
   // Keep the VM's exported bindings, including the same modal instance.
   const vmContext = { ...context, trigger };
   runInNewContext(`
+    ${source.includes("let homeReadJob = null;") ? extract("let homeReadJob = null;", "const hydrateRoute =") : ""}
     ${extract('const storyDialog = createOpponentStoryDialog', "\n\ndocument.addEventListener('visibilitychange'")}
     ${extract('const waitForAccountGate = async', 'const openBoardAccountGate = async')}
     ${extract('let startupFlight = false', 'window.addEventListener("offline", () => clearTimeout(startupRetryTimer))')}

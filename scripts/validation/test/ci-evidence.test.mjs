@@ -134,3 +134,8 @@ test('CI runtime contract rejects a different full patch on the aggregator',()=>
  setup.with['node-version']=`${major}.${minor}.${Number(patch)+1}`;
  assert.throws(()=>requireExactSharedNodePatch(document),/same exact Node patch/);
 });
+
+test('legacy CI workflow rejects artifact cache before legacy evidence import',async t=>{
+ const {args}=await fixture(t);
+ await assert.rejects(importCI({...args,artifactCache:path.join(args.cwd,'cache')}),/only for catalog CI/);
+});
