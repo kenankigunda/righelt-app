@@ -61,6 +61,7 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
   expect(hitReadiness.after.finiteAnimations.filter(animation=>animation.pending||animation.playState==='running')).toHaveLength(0);
   await opponent.screenshot({path:info.outputPath(`native-gray-${width}.png`)});
   if(width===390){
+   const tallBoard=await opponent.getByTestId('game-board').boundingBox();
    await opponent.setViewportSize({width,height:740});await opponent.evaluate(()=>document.fonts.ready);
    const normal=await opponent.evaluate(()=>{
     const rect=selector=>{const node=document.querySelector(selector);return node?.getBoundingClientRect().toJSON()??null;};
@@ -74,9 +75,10 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
      pass:pass?.getBoundingClientRect().toJSON()??null,passHitHeight:pass?getComputedStyle(pass,'::before').height:null,
      metrics:Object.fromEntries(['[data-shell-panel="board"]','.board-heading-slot','.board-heading','.board-message-slot','.board-message-live','.board-wrap','.overlay-key','.board-context-body','.board-context-actions'].map(selector=>[selector,metrics(selector)]))};
    });
-   await info.attach('Normal390x740 Board and chrome geometry',{body:JSON.stringify(normal),contentType:'application/json'});
+   await info.attach('Normal390x740 Board and chrome geometry',{body:JSON.stringify({...normal,tallBoard}),contentType:'application/json'});
    await opponent.screenshot({path:info.outputPath('native-gray-mobile-normal740.png')});
    expect(normal.cellCount).toBe(100);expect(normal.board.bottom).toBeLessThanOrEqual(normal.viewport.height+1);
+   expect({width:normal.board.width,height:normal.board.height}).toEqual({width:tallBoard.width,height:tallBoard.height});
    await opponent.setViewportSize({width,height:600});
    await opponent.evaluate(()=>document.documentElement.style.fontSize='32px');
    await opponent.evaluate(()=>document.fonts.ready);
