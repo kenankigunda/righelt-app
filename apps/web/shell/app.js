@@ -3021,7 +3021,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
       const animateJoin = animatePanels && !routeTransition && joinMarkupByElement.has(joinEl);
       const oldHeight=joinEl.getBoundingClientRect().height;
       const focus=joinEl.contains(document.activeElement)?document.activeElement:null;
-      const selector=focus?.dataset.action==='copy-invite'?null:focus?.matches('.invite-link-field')?'.invite-link-field':focus?.dataset.action?`[data-action="${CSS.escape(focus.dataset.action)}"]${focus.dataset.inviteRole?`[data-invite-role="${CSS.escape(focus.dataset.inviteRole)}"]`:''}${focus.dataset.profileKey?`[data-profile-key="${CSS.escape(focus.dataset.profileKey)}"]`:''}${focus.dataset.computerSide?`[data-computer-side="${CSS.escape(focus.dataset.computerSide)}"]`:''}`:null;
+      const selector=focus?.dataset.action==='copy-invite'&&isButtonPending(getCopyInviteButtonKey(game.id))?null:focus?.matches('.invite-link-field')?'.invite-link-field':focus?.dataset.action?`[data-action="${CSS.escape(focus.dataset.action)}"]${focus.dataset.inviteRole?`[data-invite-role="${CSS.escape(focus.dataset.inviteRole)}"]`:''}${focus.dataset.profileKey?`[data-profile-key="${CSS.escape(focus.dataset.profileKey)}"]`:''}${focus.dataset.computerSide?`[data-computer-side="${CSS.escape(focus.dataset.computerSide)}"]`:''}`:null;
       const selection=focus instanceof HTMLInputElement?[focus.selectionStart,focus.selectionEnd]:null;
       if(selector)panelPendingFocus.set(joinEl,{selector,selection});
       else if(document.activeElement !== document.body)panelPendingFocus.delete(joinEl);

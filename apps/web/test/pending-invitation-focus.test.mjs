@@ -48,10 +48,34 @@ test('actual app panel patch cannot restore a pointer-retired pending copy',asyn
  f.original.dataset={action:'copy-invite',inviteRole:'viewer'};f.original.matches=()=>false;
  join.contains=node=>node===current;join.querySelector=()=>current;f.original.closest=()=>join;
  map.set(join,{selector:'[data-action="copy-invite"]',selection:null});
- const context={actionEl:f.original,gameId:'a',HTMLElement:Element,HTMLInputElement:Input,panelPendingFocus:map,pendingInvitationFocus:f.manager,getCopyInviteButtonKey:()=> 'copy:a',document:f.document,joinEl:join,markup:'pending',joinMarkupByElement:new WeakMap(),CSS:{escape:x=>x},isButtonPending:()=>true,patchToolHtml:()=>{current.disabled=true;f.document.activeElement=f.document.body;}};
+ const context={actionEl:f.original,gameId:'a',game:{id:'a'},HTMLElement:Element,HTMLInputElement:Input,panelPendingFocus:map,pendingInvitationFocus:f.manager,getCopyInviteButtonKey:()=> 'copy:a',document:f.document,joinEl:join,markup:'pending',joinMarkupByElement:new WeakMap(),CSS:{escape:x=>x},isButtonPending:()=>true,patchToolHtml:()=>{current.disabled=true;f.document.activeElement=f.document.body;}};
  vm.runInNewContext(`(()=>{${source.slice(beginStart,beginEnd)}})()`,context);assert.equal(map.has(join),false);
  vm.runInNewContext(`(()=>{${source.slice(start,end)}})()`,context);assert.equal(map.has(join),false);
  f.manager.notePointer({closest:()=>null});f.finish();context.isButtonPending=()=>false;context.patchToolHtml=()=>{current.disabled=false;};
  vm.runInNewContext(`(()=>{${source.slice(start,end)}})()`,context);
  assert.equal(map.has(join),false);assert.equal(f.restore(),false);assert.equal(f.document.activeElement,f.document.body);
+});
+
+test('actual app preserves nonpending viewer role focus when an occupied seat removes its preceding invite',async()=>{
+ const {readFile}=await import('node:fs/promises');const vm=await import('node:vm');
+ const {invitationOptions}=await import('../shell/invitations.js');
+ const game={id:'a',player1:{identityId:'owner'},player2:null};
+ assert.deepEqual(invitationOptions(game).map(x=>x.role),['blue','viewer']);
+ const source=await readFile(new URL('../shell/app.js',import.meta.url),'utf8');
+ const start=source.indexOf('      const focus=joinEl.contains(document.activeElement)');
+ const end=source.indexOf('      if (animateJoin)',start);assert.ok(start>0&&end>start);
+ class Element{};class Input extends Element{};
+ const f=fixture(),join=new Element(),map=new WeakMap(),original=f.original;
+ original.dataset={action:'copy-invite',inviteRole:'viewer'};original.matches=()=>false;
+ let current=original;
+ join.contains=node=>node===original;
+ join.querySelector=selector=>{assert.equal(selector,'[data-action="copy-invite"][data-invite-role="viewer"]');return current;};
+ // Model only the DOM patch boundary: the positional patch removes the old
+ // second button after Blue is occupied; the real app must restore by role.
+ const context={game,HTMLElement:Element,HTMLInputElement:Input,panelPendingFocus:map,document:f.document,joinEl:join,markup:'occupied-seat',joinMarkupByElement:new WeakMap(),CSS:{escape:x=>x},isButtonPending:()=>false,getCopyInviteButtonKey:id=>`copy:${id}`,patchToolHtml:()=>{original.isConnected=false;current=f.control();f.setNodes([current]);f.document.activeElement=f.document.body;}};
+ game.player2={identityId:'friend'};assert.deepEqual(invitationOptions(game).map(x=>x.role),['viewer']);
+ // No manager.begin: the user only focused Viewer, never started clipboard work.
+ f.finish();vm.runInNewContext(`(()=>{${source.slice(start,end)}})()`,context);
+ assert.equal(original.isConnected,false);assert.equal(current.isConnected,true);assert.notEqual(current,original);
+ f.restore();assert.equal(f.document.activeElement,current);
 });
