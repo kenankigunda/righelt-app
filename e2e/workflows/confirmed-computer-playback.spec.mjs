@@ -115,22 +115,22 @@ for(const [width,height,covered] of [[390,450,true],[1440,1100,false]]){
  await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveText('Active here');
   await use(game);
  },{timeout:60000}]});
- utilityTest(`utility visibility keeps computer cues aligned with Live Board (${covered?'covered':'docked'})`,async({page,context,utilityGame:game},info)=>{
+ utilityTest(`utility visibility keeps computer cues aligned with Live Board (${covered?'center-occluded':'docked'})`,async({page,context,utilityGame:game},info)=>{
  let release,command;const held=new Promise(resolve=>release=resolve);
  await context.route('**/apply',async route=>{const body=route.request().postDataJSON();if(body?.payload?.computer&&!command){command=body;await held;}await route.continue();});
  await context.route('**/reconcile',async route=>{if(command&&route.request().postDataJSON()?.commands?.some(item=>item.clientCommandId===command.clientCommandId))await held;await route.continue();});
  try{
   await page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true}).click();await expect.poll(()=>Boolean(command),{timeout:30000}).toBe(true);
   const navigation=page.getByRole('button',{name:'Open navigation menu',exact:true});if(await navigation.isVisible())await navigation.click();await page.getByRole('button',{name:'Debug',exact:true}).click();
-  const debug=page.locator('[data-flyout="debug"]');await expect(debug).toBeVisible();
+  const debug=page.locator('[data-flyout="debug"]');await expect(debug).toBeVisible();await expect.poll(()=>debug.evaluate(element=>element.getAnimations().every(animation=>!animation.pending&&animation.playState!=='running'))).toBe(true);await expect(debug).toHaveCSS('opacity','1');
   if(covered){
    await page.mouse.move(20,20);await page.mouse.wheel(0,-1000);await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
-   await expect.poll(()=>page.getByTestId('game-board').evaluate(board=>{const r=board.getBoundingClientRect(),f=document.querySelector('[data-flyout="debug"]').getBoundingClientRect(),left=Math.max(0,r.left),right=Math.min(innerWidth,r.right),top=Math.max(0,r.top),bottom=Math.min(innerHeight,r.bottom);return right>left&&bottom>top&&f.left<=left&&f.right>=right&&f.top<=top&&f.bottom>=bottom&&!board.closest('[data-testid="game-board-wrap"]').contains(document.elementFromPoint((left+right)/2,(top+bottom)/2));})).toBe(true);
+   await expect.poll(()=>page.getByTestId('game-board').evaluate(board=>{const r=board.getBoundingClientRect(),flyout=document.querySelector('[data-flyout="debug"]'),f=flyout.getBoundingClientRect(),left=Math.max(0,r.left),right=Math.min(innerWidth,r.right),top=Math.max(0,r.top),bottom=Math.min(innerHeight,r.bottom);return right>left&&bottom>top&&f.left<=(left+right)/2&&f.right>=(left+right)/2&&f.top<=(top+bottom)/2&&f.bottom>=(top+bottom)/2&&flyout.contains(document.elementFromPoint((left+right)/2,(top+bottom)/2))&&!board.closest('[data-testid="game-board-wrap"]').contains(document.elementFromPoint((left+right)/2,(top+bottom)/2));})).toBe(true);
   }else{
    await expect(debug).toHaveCSS('opacity','1');
    expect(await page.getByTestId('game-board').evaluate(board=>{const r=board.getBoundingClientRect();return board.closest('[data-testid="game-board-wrap"]').contains(document.elementFromPoint((Math.max(0,r.left)+Math.min(innerWidth,r.right))/2,(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2));})).toBe(true);
   }
-  await page.screenshot({path:info.outputPath(`utility-${covered?'covered':'docked'}-live-board.png`)});await page.evaluate(()=>window.moveNotes=[]);
+  await page.screenshot({path:info.outputPath(`utility-${covered?'center-occluded':'docked'}-live-board.png`)});await page.evaluate(()=>window.moveNotes=[]);
   release();
   if(covered){
    await expect.poll(()=>page.evaluate(()=>window.moveNotes.filter(note=>note.frequency===460).length),{timeout:15000}).toBe(1);
