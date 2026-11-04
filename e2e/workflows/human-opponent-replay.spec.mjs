@@ -17,7 +17,7 @@ const label=page=>page.locator('#shell-board-preview-label');
 const context=page=>page.locator('#app [data-board-context]:has(.board-context-replay)');
 const replayButton=page=>context(page).getByRole('button',{name:'Show me again',exact:true});
 const assertUnchanged=(before,after)=>{expect(after.gameplayRevision).toBe(before.gameplayRevision);expect(after.board.state).toEqual(before.board.state);expect(after.moves.map(move=>({id:move.moveId,undone:move.undone}))).toEqual(before.moves.map(move=>({id:move.moveId,undone:move.undone})));};
-for(const width of [390,1440])test(`human opponent replay preserves authority and read-only inspection at ${width}px`,async({ownedRoleContext,baseURL},info)=>{
+for(const width of [390,1440])test(`human opponent replay preserves authority and read-only inspection at ${width}px`,async({ownedRoleContext,baseURL,browserName},info)=>{
  const contexts=await Promise.all([0,1,2].map(()=>ownedRoleContext({viewport:{width,height:900}})));
  const [owner,opponent,viewer]=await Promise.all(contexts.map(context=>context.newPage()));
   // Replay owns native roles and moves. Repeated Friend-story creation has
@@ -56,8 +56,13 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
    const primary=label(opponent).getByRole('button',{name:'Pass',exact:true});
    const initial=await primary.boundingBox();
    // Keep the selected top layout's initial below-fold condition visible in
-   // evidence. Native Tab, not notice arrival, owns the visibility correction.
-   for(let index=0;index<40&&!await primary.evaluate(el=>el===document.activeElement);index++)await opponent.keyboard.press('Tab');
+   // evidence. Native keyboard traversal owns the visibility correction.
+   // macOS WebKit's default keyboard profile skips native buttons with Tab.
+   // Option+Tab visits all controls without changing OS preferences or markup.
+   // Linux CI retains plain Tab and the same clearance assertions below.
+   const traversalKey=process.platform==='darwin'&&browserName==='webkit'?'Alt+Tab':'Tab';
+   await info.attach('Native keyboard traversal profile',{body:JSON.stringify({platform:process.platform,browserName,traversalKey}),contentType:'application/json'});
+   for(let index=0;index<40&&!await primary.evaluate(el=>el===document.activeElement);index++)await opponent.keyboard.press(traversalKey);
    await expect(primary).toBeFocused();
    const clearance=await primary.evaluate(button=>{
     const notice=document.querySelector('[data-alert-stack-card].is-active'),nav=document.querySelector('.shell-mobile-tabbar'),rect=button.getBoundingClientRect();
