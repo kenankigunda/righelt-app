@@ -50,9 +50,9 @@ test('transport conditional observes only the original human or computer branch'
  assert.deepEqual(run(true,false),[]);assert.deepEqual(run(false,false),['human']);assert.deepEqual(run(false,true),['computer']);
 });
 
-const collector=()=>{
+const collector=(options={})=>{
  const listeners=new Map(),root={isConnected:true};const sandbox={performance:{timeOrigin:123,now:()=>456},document:{querySelector:()=>root,addEventListener:(type,listener,options)=>listeners.set(type+':'+(options.capture?'capture':'bubble'),listener)}};
- vm.createContext(sandbox);vm.runInContext('('+installBoardAdmissionCollector.toString()+')({targetRow:3,targetCol:0})',sandbox);
+ sandbox.collectorOptions={targetRow:3,targetCol:0,...options};vm.createContext(sandbox);vm.runInContext('('+installBoardAdmissionCollector.toString()+')(collectorOptions)',sandbox);
  return {sandbox,listeners,root,log:sandbox.__boardAdmissionObservation,record:sandbox.__boardAdmissionRecord};
 };
 test('bounded collection exposes drops and cannot leak arbitrary payload fields',()=>{
@@ -180,4 +180,48 @@ test('helper first and latest read snapshots survive bounded rolling eviction',(
  assert.equal(log.lastSourceRead.value,true);assert.equal(log.sourceReadCount,2);
  assert.equal(log.firstSourceRead.subjectToken,log.lastSourceRead.subjectToken);
  assert.equal(log.incomplete,true);assert.ok(log.dropped>0);
+});
+
+
+test('preview click instrumentation preserves lookup order and stops before end-turn when blocked',()=>{
+ const recipe=recipes['/board/runtime/board-runtime.js'],op=recipe.operations.find(op=>op.after.includes('runtime-preview-entry'));
+ const run=(body,blocked,{external=false,action='end-turn',throwLookup=false}={})=>{
+  const calls=[],failure=new Error('lookup');let entries=0;
+  const button={getAttribute(name){calls.push(name);return action;}};
+  const target={closest(selector){calls.push(selector);if(throwLookup)throw failure;return selector.includes('message')?(external?button:null):button;}};
+  const event={target,isTrusted:false,currentTarget:{}};
+  const names=['interactionBlocked','elements','controls','submitPass','endCurrentTurn','rushGuidanceKey','syncRushGuidance','renderStatusContent'];
+  const handler=new Function(...names,recipe.prefix+body+';return handleBoardPreviewClick;')(blocked,{boardPreviewLabelEl:event.currentTarget},{onBoardMessageAction:()=>calls.push('external')},()=>calls.push('pass'),()=>{entries++;},null,()=>{},()=>{});
+  try{handler(event);return{calls,entries};}catch(error){assert.equal(error,failure);return{calls,entries,threw:true};}
+ };
+ for(const blocked of [true,false])for(const options of [{},{external:true},{action:'pass'},{throwLookup:true}])assert.deepEqual(run(op.after,blocked,options),run(op.before,blocked,options));
+ assert.equal(run(op.after,true).entries,0);assert.equal(run(op.after,false).entries,1);
+});
+test('end-turn guard instrumentation preserves every original short-circuit getter count and thrown identity',()=>{
+ const recipe=recipes['/board/runtime/board-runtime.js'],op=recipe.operations.find(op=>op.after.includes('runtime-end-turn-entry'));
+ const expression=body=>body.match(/if \((.*)\) \{/)[1],names=['state','destroyed','interactionBlocked','submitting','overlayMode','OVERLAY_MODE','host'];
+ const run=(body,stop,throws=false)=>{
+  const reads=[],failure=new Error('host getter');
+  const host={get endTurn(){reads.push('endTurn');if(throws)throw failure;return stop===5?null:()=>{};},get canInteract(){reads.push('canInteract');return()=>{reads.push('permission call');return stop!==6;};}};
+  const values=[stop===0?null:{},stop===1,stop===2,stop===3,stop===4?'recorded':'interactive',{INTERACTIVE:'interactive'},host];
+  try{return{result:new Function(...names,recipe.prefix+'return Boolean('+expression(body)+');')(...values),reads};}catch(error){assert.equal(error,failure);return{threw:true,reads};}
+ };
+ for(let stop=0;stop<8;stop++)for(const throwing of [false,true])assert.deepEqual(run(op.after,stop,throwing),run(op.before,stop,throwing));
+});
+test('opt-in end-turn collection arms only the original untrusted actual button click',()=>{
+ const {log,listeners}=collector({armAction:'end-turn'}),cell={dataset:{row:'3',col:'0'},closest:()=>null};
+ listeners.get('pointerdown:capture')({type:'pointerdown',isTrusted:true,target:{closest:()=>cell}});assert.equal(log.activationGeneration,0);
+ const button={dataset:{boardPreviewAction:'end-turn'},closest:()=>null};
+ listeners.get('click:capture')({type:'click',isTrusted:true,target:button});assert.equal(log.activationGeneration,0);
+ listeners.get('click:capture')({type:'click',isTrusted:false,target:button});assert.equal(log.activationGeneration,1);assert.equal(log.activation[0].trusted,false);
+ const ordinary=collector();ordinary.listeners.get('click:capture')({type:'click',isTrusted:false,target:button});assert.equal(ordinary.log.activationGeneration,0);
+});
+test('preview observation records weak stale versus current label equality without exporting nodes',()=>{
+ const {sandbox,record,log}=collector({armAction:'end-turn'}),r=recipes['/board/runtime/board-runtime.js'],op=r.operations.find(op=>op.after.includes('runtime-preview-entry'));
+ const prefix=op.after.slice(op.after.indexOf('    boardAdmissionProbe'),op.after.indexOf('    const externalAction'));
+ const current={},stale={};sandbox.current=current;sandbox.stale=stale;
+ vm.runInContext(r.prefix+`const elements={boardPreviewLabelEl:current};for(const label of [current,stale]){const event={isTrusted:false,currentTarget:label};${prefix}}`,sandbox);
+ const entries=log.first.filter(row=>row.event==='runtime-preview-entry'),labels=log.first.filter(row=>row.event==='runtime-preview-live-label');
+ assert.equal(entries[0].sameNodes,true);assert.equal(entries[1].sameNodes,false);assert.equal(entries[0].subjectToken,labels[0].subjectToken);assert.notEqual(entries[1].subjectToken,labels[1].subjectToken);
+ record('privacy',{owner:current,gameId:'secret',state:{private:true}},current);assert(!JSON.stringify(log).includes('private'));assert(!JSON.stringify(log).includes('secret'));
 });

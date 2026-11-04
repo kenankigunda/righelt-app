@@ -471,7 +471,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       const rushBlocker = getRushContinuationBlockingPiece(snapshot);
       if (rushBlocker) {
         setBoardPreviewPromptHtml(
-          `Rush to reconnect piece at ${renderBoardPreviewCoordinate(rushBlocker.position)}`,
+          `Restore connection for piece at ${renderBoardPreviewCoordinate(rushBlocker.position)} with a rush`,
         );
         return;
       }
@@ -500,7 +500,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     if (!pushedPiece) {
       return null;
     }
-    return `Piece at ${renderBoardPreviewCoordinate(pushedPiece.position)} – Select a retreat`;
+    return `Select a retreat for piece at ${renderBoardPreviewCoordinate(pushedPiece.position)}`;
   };
 
   const clearRemovalEffects = () => {
@@ -663,7 +663,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     }
     const explanation = pieceSummary?.details?.explanation;
     const setPieceExplanation = () => {
-      const text = selectedSource ? `Piece at ${renderBoardPreviewCoordinate(selectedSource)} – ${escapeHtml(explanation)}` : escapeHtml(explanation);
+      const text = selectedSource ? `${escapeHtml(explanation)} for piece at ${renderBoardPreviewCoordinate(selectedSource)}` : escapeHtml(explanation);
       let continuation = "";
       if (host.canPresentActions?.(state) !== false) {
         if (state.continuation?.type === "rush") {
@@ -737,15 +737,15 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       } else if (pieceSummary.details.owner !== state.sideToMove) {
         if (selectedSource) {
           setBoardPreviewPromptHtml(
-            `Opponent piece at ${renderBoardPreviewCoordinate(selectedSource)}`,
+            `Opponent’s supply and command lines for piece at ${renderBoardPreviewCoordinate(selectedSource)}`,
           );
         } else {
-          setBoardPreviewPrompt("Opponent piece");
+          setBoardPreviewPrompt("Opponent’s supply and command lines");
         }
       } else if (!canOverlayToggle && selectedPieceMovesKnown && selectedPieceOverlayPhase !== "supplyCommand") {
         if (selectedSource) {
           setBoardPreviewPromptHtml(
-            `Piece at ${renderBoardPreviewCoordinate(selectedSource)} – No moves`,
+            `No moves for piece at ${renderBoardPreviewCoordinate(selectedSource)}`,
           );
         } else {
           setBoardPreviewPrompt("No moves");
@@ -778,7 +778,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
 
     if (!preferredPreview || preferredPreview.legal === false) {
       if (preferredPreview?.legal === false) {
-        setBoardPreviewPromptHtml(`Piece at ${renderBoardPreviewCoordinate(selectedSource)} – ${escapeHtml(getBlockedMoveExplanation(preferredPreview.blockedReason))}`);
+        setBoardPreviewPromptHtml(`${escapeHtml(getBlockedMoveExplanation(preferredPreview.blockedReason))} for piece at ${renderBoardPreviewCoordinate(selectedSource)}`);
         return;
       }
       if (canOverlayToggle && selectedPieceOverlayPhase === "supplyCommand" && selectedSource) {
@@ -1101,7 +1101,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
         pieceId: piece.id,
         position: { row: record.row, col: record.col },
         reason: "history_destroyed",
-        message: `Piece at (${record.row}, ${record.col}) destroyed.`,
+        message: `Destruction for piece at (${record.row}, ${record.col}).`,
         piece,
       };
     });

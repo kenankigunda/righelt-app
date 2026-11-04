@@ -7,6 +7,15 @@ import {createBoardRuntime} from '../board/runtime/board-runtime.js';
 const record=(id)=>({eventId:`command:${id}`,pieceId:id,position:{row:6,col:4},reason:'loss_of_supply',piece:{id,owner:'P1',kind:'unit',position:{row:6,col:4},supplied:false,commanded:false}});
 const game=(records=[])=>({id:'g',moves:[{clientCommandId:'command',destroyedPieces:records}]});
 
+test('destruction copy leads with the event and preserves cause, coordinates and identity',()=>{
+ for(const [reason,cause] of [['loss_of_supply','due to loss of supply'],['no_retreat','because it could not retreat']]){
+  const transitions=createDestructionTransitions();transitions.update(game());
+  const original={...record('A'),reason},effect=transitions.update(game([original])).effects[0];
+  assert.equal(effect.message,`Destruction for piece at (6, 4) ${cause}`);
+  for(const key of ['eventId','pieceId','position','reason','piece'])assert.deepEqual(effect[key],original[key]);
+ }
+});
+
 test('new live records play once, including append on turn completion and pending confirmation',()=>{
  const t=createDestructionTransitions();
  assert.deepEqual(t.update(game()).effects,[]);

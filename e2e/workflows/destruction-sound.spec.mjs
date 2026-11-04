@@ -1,4 +1,5 @@
 import {test as base,expect} from '@playwright/test';
+import {installBoardAdmissionDiagnostics} from '../support/board-admission-diagnostics.mjs';
 import {installPassiveAudioObservations} from '../support/audio-observations.mjs';
 import {readFile,writeFile} from 'node:fs/promises';
 import {importScenarioGame,openDirectGameLink,joinAsViewer,submitPlayableAction,switchGamePanel,returnToLive,closeContextQuietly} from '../support/app.mjs';
@@ -65,13 +66,17 @@ const withObservedAudio=async({ownerContext,viewerContext},info,run)=>{
  await ownerContext.addInitScript(installPassiveAudioObservations);await viewerContext.addInitScript(installPassiveAudioObservations);
  await ownerContext.addInitScript(instrument);await viewerContext.addInitScript(instrument);
  const owner=await ownerContext.newPage(),viewer=await viewerContext.newPage();
+ const admission=info.title==='real audio remote finalization deduplicates its durable receipt while its owner stays muted'
+  ? await installBoardAdmissionDiagnostics(owner,info,{baseURL:info.project.use.baseURL,armAction:'end-turn'}) : null;
  const observations={owner:[],viewer:[]};
  const retain=async(label,page,phase)=>{observations[label].push({phase,...await page.evaluate(()=>({timeline:window.passiveAudioObservations,probe:window.destructionAudioProbe,ui:window.passiveAudioUiState?.()})).catch(error=>({readError:String(error)}))});};
  try{await run({owner,viewer,retain});}finally{
+  try{
    for(const [label,page]of[['owner',owner],['viewer',viewer]]){
     await retain(label,page,'final');
     const path=info.outputPath(`audio-observations-${label}.json`);await writeFile(path,JSON.stringify(observations[label],null,2));await info.attach(`Passive native audio ${label}`,{path,contentType:'application/json'});
    }
+  }finally{await admission?.persist();}
  }
 };
 const sendEndTurn=(page,gameId,body,generation)=>page.evaluate(async({gameId,body,generation,header})=>{

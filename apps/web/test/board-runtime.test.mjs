@@ -1,8 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
+import {SELECTED_PIECE_EXPLANATIONS} from '../board/piece-explanations.js';
 
 const noop = () => {};
+
+test('piece explanations and blocked causes precede the unchanged coordinate chip',async()=>{
+ const point={row:4,col:2};
+ const variants=[...SELECTED_PIECE_EXPLANATIONS.map(explanation=>({explanation,expected:explanation})),
+  {owner:'P2',expected:'Opponent’s supply and command lines'},
+  {expected:'No moves'},
+  ...[['SUPPLY_DESTINATION_UNSUPPLIED','Destination would have no supply'],['PUSH_STRENGTH_TOO_WEAK','Group too weak to push'],['UNKNOWN_PRIVATE_RULE','Move unavailable']].map(([reason,expected])=>({reason,expected}))];
+ for(const variant of variants){
+  let html='';const label={addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
+  const piece={id:'A',owner:variant.owner??'P1',kind:'unit',position:point,supplied:true,commanded:true};
+  const state={sideToMove:'P1',turnIndex:0,continuation:null,pieces:[piece]};
+  const preview=variant.reason?{type:'move',actorId:'A',from:point,to:{row:4,col:3},legal:false,blockedReason:variant.reason}:null;
+  const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getPieceById:(snapshot,id)=>snapshot.pieces.find(p=>p.id===id),getSelectedPieceSummary:({selectedPieceId})=>selectedPieceId?{details:{owner:piece.owner,explanation:variant.explanation??null}}:null},host:{canInteract:()=>true,loadPieceMoves:async()=>({actions:[],previewActions:preview?[preview]:[]})}});
+  runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+  await runtime.loadSnapshot(state,{legalActions:[],selectionState:{selectedPieceId:'A',source:point,target:preview?.to??null}});
+  const text=html.replace(/<[^>]+>/g,'');
+  assert.equal(text,`${variant.expected} for piece at 4, 2`,JSON.stringify(variant));
+  assert.match(html,/board-preview-coordinate-chip/);
+  assert.doesNotMatch(html,/data-board-preview-action/);
+  destroyUninitializedNodeRuntime(runtime);
+ }
+});
 const destroyUninitializedNodeRuntime = runtime => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
   try {
@@ -1133,6 +1156,7 @@ test("board runtime uses retreat chip styling for push retreat actor coordinate 
     { legalActions: [{ type: "retreat", actorId: "D1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } }] },
   );
 
+  assert.match(previewHtml, /^Select a retreat for piece at /);
   assert.match(previewHtml, /board-preview-coordinate-chip-retreat/);
   assert.match(previewHtml, />4, 2</);
   assert.equal(previewHtml.includes("board-preview-coordinate-chip-continuation-pending"), false);
