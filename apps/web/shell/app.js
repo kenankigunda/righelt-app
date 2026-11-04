@@ -189,19 +189,22 @@ const dispatchBoardMessageAction=(id,{trigger=null,descriptor=null}={})=>{
 };
 
 const cancelPendingBoardContextReplay=()=>{
- const pending=pendingBoardContextReplay;pendingBoardContextReplay=null;pending?.focusReturn.release();
+ const pending=pendingBoardContextReplay;pendingBoardContextReplay=null;pending?.activation.release();pending?.focusReturn.release();
 };
 const resumeBoardContextReplay=()=>{
  const pending=pendingBoardContextReplay;if(!pending)return;
- if(!pending.focusReturn.current()||!canReplayDisplayed(pending.descriptor)){
-  pending.focusReturn.release();pendingBoardContextReplay=null;return;
+ if(!pending.activation.current()||!canReplayDisplayed(pending.descriptor)){
+  cancelPendingBoardContextReplay();return;
  }
  const root=appEl.querySelector('[data-testid="game-board-wrap"]');
  if(!routeHydrated||currentRoute.name!=='game'||getGamePanel()!=='board'||mountedBoardGameId!==pending.descriptor.gameId||!root?.isConnected||root.closest('[inert]'))return;
  pendingBoardContextReplay=null;
- void pending.focusReturn.restore(boardFocusTarget).then(trigger=>{
-  if(trigger&&document.activeElement===trigger&&boardContextOwner.current(pending.intent)&&canReplayDisplayed(pending.descriptor))dispatchBoardMessageAction('replay-computer',{descriptor:pending.descriptor,trigger});
- });
+ // Consume the explicit activation at the mounted boundary, with no async gap
+ // in which a later user intent could be mistaken for this action. Returning
+ // focus is optional and retains its separate, stricter ownership check.
+ if(!pending.activation.consume()){pending.focusReturn.release();return;}
+ const trigger=pending.focusReturn.restoreNow(boardFocusTarget);
+ if(boardContextOwner.current(pending.intent)&&canReplayDisplayed(pending.descriptor))dispatchBoardMessageAction('replay-computer',{descriptor:pending.descriptor,trigger});
 };
 
 mountRecoverySpace(appEl);
@@ -5459,7 +5462,7 @@ appEl.addEventListener("click", async (event) => {
     if(context?.gameId!==getCurrentViewedGameId()||!contextReplayEnabled(context.replay))return;
     if(actionEl.closest('.history-live-replay')&&getShellLayoutMode()==='narrow'&&getGamePanel()!=='board'){
       cancelPendingBoardContextReplay();
-      pendingBoardContextReplay={descriptor:context.replay,focusReturn:boardContextFocus.begin(actionEl,{allowRemoval:true,onRetire:cancelPendingBoardContextReplay}),intent:boardContextOwner.capture()};
+      pendingBoardContextReplay={descriptor:context.replay,activation:boardContextFocus.activate(actionEl,{allowRemoval:true,onRetire:cancelPendingBoardContextReplay}),focusReturn:boardContextFocus.begin(actionEl,{allowRemoval:true}),intent:boardContextOwner.capture()};
       // Consumption happens at the actual post-render mounted Board boundary,
       // including same-hash navigation and render-gesture deferral.
       navigateTo(buildGameHash(context.gameId,null,getCurrentGameHashState('board')));

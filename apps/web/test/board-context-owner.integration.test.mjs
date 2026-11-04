@@ -103,18 +103,38 @@ test('same-intent replay completion returns focus with explicit pointer-mode vis
  const f=fixture(t);f.button.focus();const pending=f.c.replay(f.descriptor(),f.button);f.releaseArchive();await pending;await f.flush();assert.equal(f.plays.length,1);assert.equal(f.doc.activeElement,f.button);assert.deepEqual(f.reveals,[f.button]);
 });
 
-for(const cancellation of [null,'new pointer','new account','new view','new frame','failed navigation'])test(`actual LIVE History fallback waits for mounted Board once, cancellation ${cancellation}`,async t=>{
+for(const focused of [true,false])for(const cancellation of [null,'new pointer','new focus','new key','blur','hidden','new account','new view','new intent','new route','new frame','failed navigation'])test(`actual LIVE History fallback waits for mounted Board once, native focus ${focused}, cancellation ${cancellation}`,async t=>{
  const f=fixture(t);f.c.ack(f.context.view,{}, {identityId:'me',canInteract:true});const ack=f.c.store.channel('acknowledged');assert(ack?.replay);f.c.store.dismiss(ack.key);
- f.context.currentRoute.panel='history';f.button.closest=selector=>selector==='.history-live-replay'?{}:null;f.button.dataset.boardContextKey=ack.key;f.button.focus();
+ f.context.currentRoute.panel='history';f.button.closest=selector=>selector==='.history-live-replay'?{}:null;f.button.dataset.boardContextKey=ack.key;if(focused)f.button.focus();
  f.context.routeHydrated=false;f.context.mountedBoardGameId=null;
  await f.c.replayAction(f.button);assert(f.c.pending());assert.equal(f.plays.length,0);assert.equal(f.requests.snapshot(),null);
  f.context.currentRoute.panel='board';f.c.resume();assert(f.c.pending());assert.equal(f.plays.length,0);
  if(cancellation==='new pointer')f.doc.fire('pointerdown',{target:{}});
+ if(cancellation==='new focus'){const outside={isConnected:true};f.doc.activeElement=outside;f.doc.fire('focusin',{target:outside});}
+ if(cancellation==='new key')f.doc.fire('keydown',{target:f.doc.activeElement,key:'Tab'});
+ if(cancellation==='blur')f.win.fire('blur');
+ if(cancellation==='hidden'){f.doc.hidden=true;f.doc.fire('visibilitychange');f.doc.hidden=false;}
  if(cancellation==='new account')f.context.scopeGeneration='accountC';
  if(cancellation==='new view')f.c.retire();
+ if(cancellation==='new intent')f.c.receive(null,{...f.meta(1),selectedPieceId:'different'});
+ if(cancellation==='new route')f.context.currentRoute={name:'home'};
  if(cancellation==='new frame')f.context.view={...f.context.view,gameplayRevision:5};
  if(cancellation==='failed navigation'){f.c.routeSync();await f.flush();}
  f.context.routeHydrated=true;f.context.mountedBoardGameId='game';f.c.resume();f.c.resume();await f.flush();
  if(cancellation){assert.equal(f.c.pending(),null);assert.equal(f.requests.snapshot(),null);assert.equal(f.plays.length,0);return;}
  assert.equal(f.requests.snapshot().phase,'loading');f.releaseArchive();for(let i=0;i<4;i++)await Promise.resolve();await f.flush();assert.equal(f.plays.length,1);assert.equal(f.c.pending(),null);
+ assert.equal(f.doc.activeElement,focused?f.board:f.doc.body);assert.deepEqual([...new Set(f.reveals)],focused?[f.board]:[]);
+});
+
+for(const boundary of ['trigger removed','focus target unavailable'])test(`actual History activation survives optional focus return boundary: ${boundary}`,async t=>{
+ const f=fixture(t);f.c.ack(f.context.view,{}, {identityId:'me',canInteract:true});const ack=f.c.store.channel('acknowledged');
+ f.context.currentRoute.panel='history';f.button.closest=selector=>selector==='.history-live-replay'?{}:null;f.button.dataset.boardContextKey=ack.key;f.button.focus();
+ f.context.routeHydrated=false;await f.c.replayAction(f.button);assert(f.c.pending());
+ if(boundary==='trigger removed'){f.button.isConnected=false;f.doc.activeElement=f.doc.body;}
+ else f.board.focus=()=>{};
+ f.context.currentRoute.panel='board';f.context.routeHydrated=true;f.c.resume();f.c.resume();await f.flush();
+ assert.equal(f.requests.snapshot()?.phase,'loading');f.releaseArchive();for(let i=0;i<4;i++)await Promise.resolve();await f.flush();
+ assert.equal(f.plays.length,1);assert.equal(f.c.pending(),null);
+ if(boundary==='focus target unavailable'){assert.equal(f.doc.activeElement,f.button);assert.equal(f.reveals.length,0);}
+ f.c.resume();await f.flush();assert.equal(f.plays.length,1);
 });

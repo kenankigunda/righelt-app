@@ -26,9 +26,9 @@ export function createBoardContextOwner({store,getScope,onRetire=()=>{},onIntent
 // Replacing a host alone never turns body focus into permission to steal focus.
 export function createBoardContextFocus({doc,owner,reveal=()=>{},enqueue=queueMicrotask}) {
  const win=doc.defaultView,returns=new Set();let disposed=false;
- const begin=(trigger,{allows=()=>false,allowRemoval=false,onRetire=()=>{}}={})=>{
+ const begin=(trigger,{allows=()=>false,allowRemoval=false,onRetire=()=>{}}={},activation=false)=>{
   const token=owner.capture(),original=doc.activeElement;
-  let live=!disposed&&original===trigger&&Boolean(trigger?.isConnected);
+  let live=!disposed&&(activation||original===trigger)&&Boolean(trigger?.isConnected);
   const owned=target=>target===trigger||allows(target);
   const retire=()=>{if(!live)return;live=false;onRetire();};
   const focus=event=>{if(!owned(event.target))retire();};
@@ -44,19 +44,25 @@ export function createBoardContextFocus({doc,owner,reveal=()=>{},enqueue=queueMi
   };
   returns.add(release);
   const current=()=>live&&!disposed&&!doc.hidden&&owner.current(token)
-   &&(owned(doc.activeElement)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]'))));
+   &&(owned(doc.activeElement)||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]'))));
+  const restoreNow=resolve=>{
+   if(!current()){release();return null;}
+   const target=resolve();
+   if(target?.isConnected&&!target.disabled&&!target.closest?.('[inert]')){
+    target.focus({preventScroll:true});
+    if(doc.activeElement===target)reveal(target,()=>!disposed&&owner.current(token)&&doc.activeElement===target&&!doc.hidden);
+   }
+   release();return doc.activeElement===target?target:null;
+  };
   return {
-   current,release,
-   restore(resolve){return new Promise(done=>enqueue(()=>{
-    if(!current()){release();done(null);return;}
-    const target=resolve();
-    if(target?.isConnected&&!target.disabled&&!target.closest?.('[inert]')){
-     target.focus({preventScroll:true});
-     if(doc.activeElement===target)reveal(target,()=>!disposed&&owner.current(token)&&doc.activeElement===target&&!doc.hidden);
-    }
-    release();done(doc.activeElement===target?target:null);
-   }));},
+   current,release,restoreNow,
+   consume(){const valid=current();release();return valid;},
+   restore(resolve){return new Promise(done=>enqueue(()=>done(restoreNow(resolve))));},
   };
  };
- return {begin,retire(){for(const release of [...returns])release();},destroy(){disposed=true;this.retire();}};
+ return {begin,
+  // Explicit activation owns its continuation even on browsers that leave
+  // native buttons unfocused. It grants no permission to move focus.
+  activate(trigger,options){const {current,release,consume}=begin(trigger,options,true);return {current,release,consume};},
+  retire(){for(const release of [...returns])release();},destroy(){disposed=true;this.retire();}};
 }
