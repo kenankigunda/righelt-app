@@ -44,7 +44,21 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
   const gray=await context(opponent).evaluate(notice=>({face:getComputedStyle(notice).backgroundColor,border:getComputedStyle(notice).borderColor,ink:getComputedStyle(notice).color,marker:getComputedStyle(notice,'::before').backgroundColor}));
   expect(gray).toEqual({face:'rgb(236, 236, 236)',border:'rgb(170, 170, 170)',ink:'rgb(40, 40, 40)',marker:'rgb(102, 102, 102)'});
   const close=context(opponent).getByRole('button',{name:'Dismiss Board context',exact:true});
-  expect(await close.evaluate(button=>({width:button.getBoundingClientRect().width,height:button.getBoundingClientRect().height,icon:button.querySelector('svg').getBoundingClientRect().width,background:getComputedStyle(button).backgroundColor}))).toMatchObject({width:44,height:44,icon:16,background:'rgba(0, 0, 0, 0)'});
+  const hitReadiness=await close.evaluate(async button=>{
+   const notice=button.closest('[data-board-context]'),card=button.closest('[data-alert-stack-card]');
+   const finite=()=>card.getAnimations({subtree:true}).filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime));
+   const sample=()=>{const r=button.getBoundingClientRect(),s=getComputedStyle(button);return {width:r.width,height:r.height,icon:button.querySelector('svg').getBoundingClientRect().width,background:s.backgroundColor,
+    offsetWidth:button.offsetWidth,offsetHeight:button.offsetHeight,cssWidth:s.width,cssHeight:s.height,zoom:s.zoom,devicePixelRatio,
+    buttonTransform:s.transform,noticeTransform:getComputedStyle(notice).transform,cardTransform:getComputedStyle(card).transform,
+    connected:button.isConnected,current:document.querySelector('#app [data-board-context]:has(.board-context-replay)')===notice,active:card.classList.contains('is-active'),
+    finiteAnimations:finite().map(animation=>({kind:animation.constructor.name,name:animation.animationName??animation.transitionProperty??null,playState:animation.playState,pending:animation.pending,currentTime:animation.currentTime}))};};
+   const before=sample(),animations=finite();
+   const outcomes=await Promise.allSettled(animations.map(animation=>animation.finished));
+   return {before,waited:animations.length,outcomes:outcomes.map(result=>result.status),after:sample()};
+  });
+  await info.attach('Native dismiss geometry before and after finite notification animations',{body:JSON.stringify(hitReadiness),contentType:'application/json'});
+  expect(hitReadiness.after).toMatchObject({connected:true,current:true,active:true,width:44,height:44,icon:16,background:'rgba(0, 0, 0, 0)'});
+  expect(hitReadiness.after.finiteAnimations.filter(animation=>animation.pending||animation.playState==='running')).toHaveLength(0);
   await opponent.screenshot({path:info.outputPath(`native-gray-${width}.png`)});
   if(width===390){
    await opponent.setViewportSize({width,height:740});await opponent.evaluate(()=>document.fonts.ready);
