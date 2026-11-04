@@ -74,10 +74,11 @@ test('guest computer finishes a catalog position and prepares a fresh rematch',a
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',fresh.id);
 });
 for (const width of [320, 390, 430, 1440]) test.describe(`retained guest computer game at ${width}px`, () => {
-  // Three distinct journeys share the actual browser, identity and accepted game.
-  // Each keeps the configured 60-second budget. Failures skip dependent journeys.
+  // Four required phases share the actual browser, identity and accepted game.
+  // Each keeps the configured 60-second budget, for four budgets in aggregate.
+  // Failures skip dependent phases; replay cannot substitute a newly created game.
   test.describe.configure({mode:'serial'});
-  let owned, context, page, played, retained;
+  let owned, context, page, prepared, played, retained;
   test.beforeAll(async ({browser}, info) => {
     owned=ownedContexts(browser);
     const use=info.project.use;
@@ -89,7 +90,7 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   // Playwright records all live contexts per test, including this retained one.
   // The ownership helper closes even partially completed context creation.
   test.afterAll(async () => {await owned?.close();});
-  test(`guest computer prepares and replays a real turn at ${width}px`, async ({}, info) => {
+  test(`guest computer prepares and accepts a real turn at ${width}px`, async ({}, info) => {
   // Observe both delivery channels: an accepted socket receipt may cancel HTTP.
   const renewals=new Map(),renewalReceipts=new Map();
   page.on('request',request=>{if(isOperationRequest(request,'computer-control')&&operationValues(request)?.action==='renew'){const command=request.postDataJSON();renewals.set(command.clientCommandId,command);}});
@@ -162,6 +163,17 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   }catch(error){frames.failure=String(error);throw error;}
   finally{await persistGeometryEvidence(info,'board-message-native-frames.json',frames);}
   const beforeReplay=await projected(page,initial.id);
+  prepared=Object.freeze({initialJSON:JSON.stringify(initial),beforeReplayJSON:JSON.stringify(beforeReplay),identityId});
+  });
+  test(`the same accepted guest turn replays without writes at ${width}px`,async ({},info)=>{
+  // This is a required continuation of the same accepted native game. Missing
+  // preparation fails, and no reload, navigation or replacement game is allowed.
+  expect(prepared).toBeTruthy();
+  const initial=JSON.parse(prepared.initialJSON),beforeReplay=JSON.parse(prepared.beforeReplayJSON),identityId=prepared.identityId;
+  await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',initial.id);
+  expect(await page.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'))).toBe(identityId);
+  expect(beforeReplay.id).toBe(initial.id);
+  expect(beforeReplay.moves.some(move=>move.computerProof?.modelId===initial.computer.modelId)).toBe(true);
   const writes=[];
   const observeReplay=request=>{const url=new URL(request.url());if(request.method()!=='GET'&&url.pathname.startsWith('/api/')){let body;try{body=request.postDataJSON();}catch{}writes.push({method:request.method(),path:url.pathname+url.search,body,rawBody:request.postData(),contentType:request.headers()['content-type']});}};
   page.on('request',observeReplay);
