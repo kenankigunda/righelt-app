@@ -63,3 +63,10 @@ test('replay controls sit below their own message while grammatical turn actions
  const sizing=renderBoardMessageHtml({text:'Select a rush or',action:{id:'end-turn',label:'End turn'}},{sizing:true});
  assert.doesNotMatch(sizing,/board-message-actions|data-board-message-action/);
 });
+
+test('context coordinates retain their semantic roles through the escaped shared renderer',()=>{
+ const html=renderBoardMessageHtml({text:'Recorded move from (1, 2) to (3, 4)',coordinates:[{row:1,col:2,chipClass:'board-preview-coordinate-chip-selected-piece'},{row:3,col:4,chipClass:'board-preview-coordinate-chip-target'}]});
+ assert.match(html,/chip-selected-piece[^>]*>1, 2/);assert.match(html,/chip-target[^>]*>3, 4/);
+ const unsafe=renderBoardMessageHtml({text:'At (1, 2)',coordinates:[{row:1,col:2,chipClass:'" onmouseover="bad'}]});
+ assert(!unsafe.includes(' onmouseover="bad'));assert(unsafe.includes('&quot; onmouseover=&quot;bad'));
+});

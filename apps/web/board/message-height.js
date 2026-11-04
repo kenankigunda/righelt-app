@@ -23,7 +23,21 @@ export function createMessageHeightController(label) {
   const floor=font=>Math.max(0,...replicas.filter(node=>node.dataset.sizingFont===font).map(node=>node.getBoundingClientRect().height));
   const slotStyle=win.getComputedStyle?.(slot);
   const outerPadding=(parseFloat(slotStyle?.paddingTop)||0)+(parseFloat(slotStyle?.paddingBottom)||0);
-  const target=messageHeightTarget({primaryRoutine:floor('primary'),fallbackRoutine:floor('fallback'),current:live.getBoundingClientRect().height})+outerPadding;
+  const grammar=messageHeightTarget({primaryRoutine:floor('primary'),fallbackRoutine:floor('fallback')});
+  const natural=live.getBoundingClientRect().height;
+  let required=natural;
+  const active=doc.activeElement;
+  if(active?.matches?.('button')&&label.contains(active)){
+   const rect=active.getBoundingClientRect(),box=slot.getBoundingClientRect(),style=win.getComputedStyle?.(active);
+   const ring=(parseFloat(style?.outlineWidth)||0)+Math.max(0,parseFloat(style?.outlineOffset)||0);
+   required=Math.max(required,rect.top+rect.height/2+Math.max(44,rect.height)/2+ring-box.top-(parseFloat(slotStyle?.paddingTop)||0));
+  }
+  // An unsupported font or an unmapped producer must never clip an action.
+  // This observable fallback is a failed fixed-height acceptance condition,
+  // not permission for ordinary message content to determine the slot.
+  const overflow=required>grammar+1;
+  if(overflow)slot.dataset.promptOverflow='true';else delete slot.dataset.promptOverflow;
+  const target=Math.max(grammar,overflow?required:0)+outerPadding;
   if(target===lastTarget&&!metricChange&&!forceSnap)return;
   const from=slot.getBoundingClientRect().height;
   const change=messageHeightTransition({from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key});
@@ -87,5 +101,5 @@ export function createMessageHeightController(label) {
   }finally{publishingContent=false;}
   return true;
  },
- destroy(){disposed=true;pendingContent=null;pressedControl=null;if(frame!==null)win.cancelAnimationFrame(frame);animation?.cancel();resize.disconnect();mutations.disconnect();doc.removeEventListener('pointerdown',starts,true);doc.removeEventListener('keydown',starts,true);for(const type of ['pointerup','pointercancel','keyup'])doc.removeEventListener(type,ends,true);win.removeEventListener('resize',metrics);win.removeEventListener('blur',retirePress);doc.removeEventListener('visibilitychange',retirePress);doc.fonts?.removeEventListener?.('loadingdone',metrics);motion.removeEventListener?.('change',metrics);slot.style.removeProperty('height');delete slot.dataset.heightManaged;}};
+ destroy(){disposed=true;pendingContent=null;pressedControl=null;if(frame!==null)win.cancelAnimationFrame(frame);animation?.cancel();resize.disconnect();mutations.disconnect();doc.removeEventListener('pointerdown',starts,true);doc.removeEventListener('keydown',starts,true);for(const type of ['pointerup','pointercancel','keyup'])doc.removeEventListener(type,ends,true);win.removeEventListener('resize',metrics);win.removeEventListener('blur',retirePress);doc.removeEventListener('visibilitychange',retirePress);doc.fonts?.removeEventListener?.('loadingdone',metrics);motion.removeEventListener?.('change',metrics);slot.style.removeProperty('height');delete slot.dataset.heightManaged;delete slot.dataset.promptOverflow;}};
 }

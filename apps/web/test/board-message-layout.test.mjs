@@ -5,12 +5,13 @@ import {renderBoardHeadingSlot,renderBoardMessageSlot,updateComputerBoardLoading
 import {COMPUTER_PROFILES} from '../generated/packages/shared-types/src/computer-play.js';
 import {describeComputerMove,describeMove} from '../shell/computer-narration.js';
 import {renderBoardMessageHtml} from '../board/message-presentation.js';
+import {boardPromptSizingModels} from '../board/prompt-models.js';
 import {SELECTED_PIECE_EXPLANATIONS} from '../board/piece-explanations.js';
 
-test('routine-only reservation mirrors live grammar without opponent or replay maxima',()=>{
+test('complete finite prompt reservation excludes unbounded narration and actionable replicas',()=>{
  const html=renderBoardMessageSlot({id:'shell-board-preview-label'});
  assert.equal((html.match(/id=/g)??[]).length,1);
- assert.equal((html.match(/board-message-sizing/g)??[]).length,10);
+ assert.equal((html.match(/board-message-sizing/g)??[]).length,boardPromptSizingModels().length*2);
  assert.doesNotMatch(html,/data-board-message-action=|data-board-preview-action=|Show me again|rushed several|had several pieces follow/);
  for(const copy of ['Select a piece or','Select a move for piece at','Select a rush or','Select a retreat','Select a follow'])assert(html.includes(copy));
  assert.match(html,/disabled tabindex="-1"/);
@@ -22,7 +23,7 @@ test('loading retains identical sizing replicas without a visible prompt or iden
  assert(!loading.includes(' id='));
  const app=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
  assert(app.includes('renderBoardMessageSlot({loading:true,loadingKey:`game:${gameId}`})'));
- assert(app.includes('renderBoardMessageSlot({id:"shell-board-preview-label"})'));
+ assert(app.includes('renderBoardMessageSlot({id:"shell-board-preview-label",boardSize:game.currentSnapshot?.boardSize??10})'));
  assert(app.includes('document.getElementById("shell-board-preview-label")'));
 });
 
@@ -71,7 +72,7 @@ test('fallback sizing permanently mirrors the same formatted messages and inert 
  const paragraphs=[...html.matchAll(/<p class="[^"]*board-message-sizing[^"]*" data-sizing-font="(primary|fallback)" data-sizing-variant="([^"]+)" aria-hidden="true" inert>(.*?)<\/p>/g)];
  const primary=new Map(paragraphs.filter(row=>row[1]==='primary').map(row=>[row[2],row[3]]));
  const fallback=new Map(paragraphs.filter(row=>row[1]==='fallback').map(row=>[row[2],row[3]]));
- assert.equal(primary.size,5);assert.deepEqual(fallback,primary);
+ assert.equal(primary.size,boardPromptSizingModels().length);assert.deepEqual(fallback,primary);
  for(const [, , ,markup]of paragraphs){assert.doesNotMatch(markup,/data-action=|data-board-message-action=|data-board-preview-action=/);}
  const tokens=readFileSync(new URL('../design-tokens.css',import.meta.url),'utf8');
  const css=readFileSync(new URL('../shell/board-ux.css',import.meta.url),'utf8');

@@ -29,15 +29,16 @@ const renderCopy = (text, coordinates = []) => {
   return String(text).split(/(\(\d+,\s*\d+\))/g).map(part => {
     const match = part.match(/^\((\d+),\s*(\d+)\)$/);
     const point = match && known.get(`${Number(match[1])},${Number(match[2])}`);
-    return point ? renderCoordinateChip(point) : escape(part);
+    return point ? renderCoordinateChip(point,point.chipClass) : escape(part);
   }).join('');
 };
 export function renderBoardMessageHtml(message, {sizing = false} = {}) {
   if (message.rows) return message.rows.map(row => `<span class="board-message-row">${renderBoardMessageHtml(row,{sizing})}</span>`).join('');
+  if(message.confirmation)return `${escape(message.text??'Confirm')} <strong>${escape(message.confirmation.text)} ${renderCoordinateChip(message.confirmation.point,message.confirmation.pointClass)}</strong>`;
   const {text,actorName,rest,actions}=boardMessagePresentation(message);
   const copy=actorName?`<bdi class="board-message-name" dir="auto" title="${escape(actorName)}">${escape(actorName)}</bdi>${renderCopy(rest,message.coordinates)}`:renderCopy(text,message.coordinates);
   const {inline,detached}=partitionMessageActions(actions);
-  const sentence=copy+inline.map(action=>` ${renderBoardInlineAction(action,{sizing})}`).join('');
+  const sentence=copy+(message.badge?` <span class="board-obligatory-pill">${escape(message.badge)}</span>`:'')+inline.map(action=>` ${renderBoardInlineAction(action,{sizing})}`).join('');
   return sentence+(detached.length?`<span class="board-message-actions">${detached.map(action=>renderBoardInlineAction(action,{sizing})).join(' ')}</span>`:'');
 }
 

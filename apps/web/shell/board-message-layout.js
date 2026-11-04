@@ -2,21 +2,13 @@ import {isCompletedGame} from './game-lifecycle.js';
 import {renderBoardMessageHtml,renderBoardInlineAction} from '../board/message-presentation.js';
 import {BOARD_TURN_CAPTIONS} from './perspective-labels.js';
 import {computerActivityActorSide,setActivityActor} from './activity-affiliation.js';
+import {boardPromptSizingModels} from '../board/prompt-models.js';
 
 const escape = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
-// Routine grammar alone establishes the floor; current narration and History
-// content grow naturally instead of reserving every possible opponent summary.
-const maximumPoint={row:9,col:9};
-const routineMessages=[
- {text:'Select a piece or',action:{id:'pass',label:'Pass'}},
- {text:'Select a move for piece at (9, 9)',coordinates:[maximumPoint]},
- {text:'Select a rush or',action:{id:'end-turn',label:'End turn'}},
- {text:'Select a retreat'}, {text:'Select a follow'},
-];
-const renderMessageSizing=fallback=>routineMessages.map((message,index)=>`<p class="board-preview-label board-message-sizing${fallback?' board-message-fallback-sizing':''}" data-sizing-font="${fallback?'fallback':'primary'}" data-sizing-variant="routine:${index}" aria-hidden="true" inert>${renderBoardMessageHtml(message,{sizing:true})}</p>`).join('');
+const renderMessageSizing=(fallback,boardSize)=>boardPromptSizingModels({boardSize}).map((message,index)=>`<p class="board-preview-label board-message-sizing${fallback?' board-message-fallback-sizing':''}" data-sizing-font="${fallback?'fallback':'primary'}" data-sizing-variant="prompt:${index}" aria-hidden="true" inert>${renderBoardMessageHtml(message,{sizing:true})}</p>`).join('');
 
-export function renderBoardMessageSlot({id, loading = false, loadingKey} = {}) {
-  return `<div class="board-message-slot"><div class="board-message-live"><p class="board-preview-label"${id ? ` id="${escape(id)}"` : ''}${loading ? ' aria-hidden="true"' : ''}>${loading ? '' : 'Select a piece'}</p><span class="board-message-activity" aria-hidden="true" data-loading-state="${loading && loadingKey ? 'pending' : 'idle'}" data-loading-context="external"${loading && loadingKey ? ` data-loading-key="${escape(loadingKey)}"` : ''}></span></div>${renderMessageSizing(false)}${renderMessageSizing(true)}</div>`;
+export function renderBoardMessageSlot({id, loading = false, loadingKey,boardSize=10} = {}) {
+  return `<div class="board-message-slot"><div class="board-message-live"${id ? ' role="region" aria-label="Board guidance" tabindex="-1"' : ''}><p class="board-preview-label"${id ? ` id="${escape(id)}"` : ''}${loading ? ' aria-hidden="true"' : ''}>${loading ? '' : 'Select a piece'}</p><span class="board-message-activity" aria-hidden="true" data-loading-state="${loading && loadingKey ? 'pending' : 'idle'}" data-loading-context="external"${loading && loadingKey ? ` data-loading-key="${escape(loadingKey)}"` : ''}></span></div>${renderMessageSizing(false,boardSize)}${renderMessageSizing(true,boardSize)}</div>`;
 }
 
 export function renderBoardHeadingSlot({loading = false} = {}) {
