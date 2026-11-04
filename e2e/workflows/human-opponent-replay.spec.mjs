@@ -47,6 +47,22 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
   expect(await close.evaluate(button=>({width:button.getBoundingClientRect().width,height:button.getBoundingClientRect().height,icon:button.querySelector('svg').getBoundingClientRect().width,background:getComputedStyle(button).backgroundColor}))).toMatchObject({width:44,height:44,icon:16,background:'rgba(0, 0, 0, 0)'});
   await opponent.screenshot({path:info.outputPath(`native-gray-${width}.png`)});
   if(width===390){
+   await opponent.setViewportSize({width,height:740});await opponent.evaluate(()=>document.fonts.ready);
+   const normal=await opponent.evaluate(()=>{
+    const rect=selector=>{const node=document.querySelector(selector);return node?.getBoundingClientRect().toJSON()??null;};
+    const metrics=selector=>{const node=document.querySelector(selector);if(!node)return null;const s=getComputedStyle(node);return {padding:s.padding,margin:s.margin,gap:s.gap,fontSize:s.fontSize,lineHeight:s.lineHeight,minHeight:s.minHeight};};
+    const cells=[...document.querySelectorAll('#shell-board > .cell')].map(node=>{const r=node.getBoundingClientRect();return {width:r.width,height:r.height};});
+    const pass=document.querySelector('#shell-board-preview-label [data-board-message-action="pass"]');
+    return {viewport:{width:innerWidth,height:innerHeight},scrollY,maxScroll:document.documentElement.scrollHeight-innerHeight,fonts:document.fonts.status,
+     header:rect('.shell-header'),context:rect('[data-alert-stack-card].is-active'),contextBody:rect('.is-active .board-context-body'),contextReplay:rect('.is-active .board-context-replay'),contextDismiss:rect('.is-active .board-context-dismiss'),
+     panel:rect('[data-shell-panel="board"]'),heading:rect('.board-heading-slot'),slot:rect('.board-message-slot'),board:rect('#shell-board'),wrap:rect('[data-testid="game-board-wrap"]'),legend:rect('[data-shell-panel="board"] .overlay-key'),nav:rect('.shell-mobile-tabbar'),navVisible:document.querySelector('.shell-mobile-tabbar')?.dataset.visible,
+     frameReserve:document.querySelector('[data-game-shell-root]')?.style.getPropertyValue('--board-context-reserve'),cellCount:cells.length,minCellWidth:Math.min(...cells.map(r=>r.width)),minCellHeight:Math.min(...cells.map(r=>r.height)),
+     pass:pass?.getBoundingClientRect().toJSON()??null,passHitHeight:pass?getComputedStyle(pass,'::before').height:null,
+     metrics:Object.fromEntries(['[data-shell-panel="board"]','.board-heading-slot','.board-heading','.board-message-slot','.board-message-live','.board-wrap','.overlay-key','.board-context-body','.board-context-actions'].map(selector=>[selector,metrics(selector)]))};
+   });
+   await info.attach('Normal390x740 Board and chrome geometry',{body:JSON.stringify(normal),contentType:'application/json'});
+   await opponent.screenshot({path:info.outputPath('native-gray-mobile-normal740.png')});
+   expect(normal.cellCount).toBe(100);expect(normal.board.bottom).toBeLessThanOrEqual(normal.viewport.height+1);
    await opponent.setViewportSize({width,height:600});
    await opponent.evaluate(()=>document.documentElement.style.fontSize='32px');
    await opponent.evaluate(()=>document.fonts.ready);
