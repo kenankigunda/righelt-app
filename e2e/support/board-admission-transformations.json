@@ -58,7 +58,7 @@
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",
     "sourceSha256": "eda8bc2affe9541a886aa2374574864f8432cfb845c86ea9da2d1602838a20c1",
-    "outputSha256": "ab1853ce44b3b4e46a1d82fb088818e1dd2b802bd88a2816c07b0131c1dd9df5",
+    "outputSha256": "37b4035c5fb8cabf5fc7a0846904c567a0b6a430c380b4d9ce6c02460fdb0f2b",
     "operations": [
       {
         "start": 22491,
@@ -218,6 +218,22 @@
         "before": "",
         "after": "    boardAdmissionProbe(\"runtime-selection-commit\", () => ({revision:snapshotRevision,pieceChanged,hasSelectedPiece:Boolean(selectedPieceId),source:selectedSource?{row:selectedSource.row,col:selectedSource.col}:null,target:selectedTarget?{row:selectedTarget.row,col:selectedTarget.col}:null,phase:selectedPieceOverlayPhase}));\n",
         "anchor": "ctedPieceId !== result.selection.selectedPieceId;\n    if(pieceChanged && selectedPieceId) controls.o",
+        "anchorCount": 1
+      },
+      {
+        "start": 62235,
+        "end": 63112,
+        "before": "  const handleBoardPreviewClick = (event) => {\n    const externalAction = event.target.closest(\"[data-board-message-action]\");\n    if (externalAction) {\n      const action=externalAction.getAttribute(\"data-board-message-action\");\n      if (action === \"retry-rush-guidance\") { rushGuidanceKey = null; syncRushGuidance(); renderStatusContent(); }\n      else if (action === \"pass\") submitPass();\n      else controls.onBoardMessageAction?.(action);\n      return;\n    }\n    if (interactionBlocked) return;\n    const actionButton = event.target.closest(\"[data-board-preview-action]\");\n    if (!actionButton) {\n      return;\n    }\n    const previewAction = actionButton.getAttribute(\"data-board-preview-action\");\n    if (previewAction === \"pass\") {\n      submitPass();\n      return;\n    }\n    if (previewAction === \"end-turn\") {\n      void endCurrentTurn();\n      return;\n    }\n  };\n\n",
+        "after": "  const handleBoardPreviewClick = (event) => {\n    boardAdmissionProbe(\"runtime-preview-entry\", () => ({trusted:event.isTrusted,sameNodes:event.currentTarget===elements.boardPreviewLabelEl}), event.currentTarget);\n    boardAdmissionProbe(\"runtime-preview-live-label\", () => ({}), elements.boardPreviewLabelEl);\n    const externalAction = event.target.closest(\"[data-board-message-action]\");\n    boardAdmissionProbe(\"runtime-preview-external\", () => ({value:Boolean(externalAction)}), externalAction);\n    if (externalAction) {\n      const action=externalAction.getAttribute(\"data-board-message-action\");\n      if (action === \"retry-rush-guidance\") { rushGuidanceKey = null; syncRushGuidance(); renderStatusContent(); }\n      else if (action === \"pass\") submitPass();\n      else controls.onBoardMessageAction?.(action);\n      return;\n    }\n    if (boardAdmissionValue(\"preview-click-interaction-blocked\", interactionBlocked)) return;\n    const actionButton = event.target.closest(\"[data-board-preview-action]\");\n    boardAdmissionProbe(\"runtime-preview-action-button\", () => ({value:Boolean(actionButton)}), actionButton);\n    if (!actionButton) {\n      return;\n    }\n    const previewAction = actionButton.getAttribute(\"data-board-preview-action\");\n    boardAdmissionProbe(\"runtime-preview-action-kind\", () => ({kind:previewAction==='pass'?'pass':previewAction==='end-turn'?'end-turn':'other'}));\n    if (previewAction === \"pass\") {\n      submitPass();\n      return;\n    }\n    if (previewAction === \"end-turn\") {\n      void endCurrentTurn();\n      return;\n    }\n  };\n\n",
+        "anchor": "  const handleBoardPreviewClick = (event) => {\n    const externalAction = event.target.closest(\"[data-board-message-action]\");\n    if (externalAction) {\n      const action=externalAction.getAttribute(\"data-board-message-action\");\n      if (action === \"retry-rush-guidance\") { rushGuidanceKey = null; syncRushGuidance(); renderStatusContent(); }\n      else if (action === \"pass\") submitPass();\n      else controls.onBoardMessageAction?.(action);\n      return;\n    }\n    if (interactionBlocked) return;\n    const actionButton = event.target.closest(\"[data-board-preview-action]\");\n    if (!actionButton) {\n      return;\n    }\n    const previewAction = actionButton.getAttribute(\"data-board-preview-action\");\n    if (previewAction === \"pass\") {\n      submitPass();\n      return;\n    }\n    if (previewAction === \"end-turn\") {\n      void endCurrentTurn();\n      return;\n    }\n  };\n\n",
+        "anchorCount": 1
+      },
+      {
+        "start": 63112,
+        "end": 63359,
+        "before": "  const endCurrentTurn = async () => {\n    if (!state || destroyed || interactionBlocked || submitting || overlayMode !== OVERLAY_MODE.INTERACTIVE || typeof host.endTurn !== \"function\" || host.canInteract?.(state) === false) {\n      return;\n    }\n",
+        "after": "  const endCurrentTurn = async () => {\n    boardAdmissionProbe(\"runtime-end-turn-entry\", () => ({revision:snapshotRevision}));\n    if (boardAdmissionValue(\"end-turn-no-state\", !state) || boardAdmissionValue(\"end-turn-destroyed\", destroyed) || boardAdmissionValue(\"end-turn-interaction-blocked\", interactionBlocked) || boardAdmissionValue(\"end-turn-submitting\", submitting) || boardAdmissionValue(\"end-turn-overlay-blocked\", overlayMode !== OVERLAY_MODE.INTERACTIVE) || boardAdmissionValue(\"end-turn-no-host\", typeof host.endTurn !== \"function\") || boardAdmissionValue(\"end-turn-permission-blocked\", host.canInteract?.(state) === false)) {\n      return;\n    }\n",
+        "anchor": "  const endCurrentTurn = async () => {\n    if (!state || destroyed || interactionBlocked || submitting || overlayMode !== OVERLAY_MODE.INTERACTIVE || typeof host.endTurn !== \"function\" || host.canInteract?.(state) === false) {\n      return;\n    }\n",
         "anchorCount": 1
       },
       {

@@ -17,7 +17,7 @@ export const transformBoardAdmissionModule = (source, recipe) => {
 
 // Serialized by Playwright. Only allowlisted scalars and local weak equality
 // tokens leave the page; original app objects and stable keys are never copied.
-export function installBoardAdmissionCollector({targetRow,targetCol}){
+export function installBoardAdmissionCollector({targetRow,targetCol,armAction=null}){
  const subjects=new WeakMap();let next=0,sequence=0,armed=false;
  const log={version:1,first:[],tail:[],firstActivation:[],activation:[],activationGeneration:0,supersededActivations:0,dropped:0,activationDropped:0,firstSourceRead:null,lastSourceRead:null,sourceReadCount:0,incomplete:false,timeOrigin:performance.timeOrigin};
  const token=value=>{
@@ -52,7 +52,10 @@ export function installBoardAdmissionCollector({targetRow,targetCol}){
   const currentRoot=document.querySelector?.('[data-testid="game-board"]')??null;
   const cellRoot=cell?.closest?.('[data-testid="game-board"]')??null;
   const path=event.composedPath?.()??[];
-  if(dispatchPhase==='capture' && event.isTrusted && event.type==='pointerdown' && row===targetRow && col===targetCol){
+  const matchingActivation=armAction==='end-turn'
+   ? event.type==='click'&&event.isTrusted===false&&target?.dataset?.boardPreviewAction==='end-turn'
+   : armAction===null&&event.isTrusted&&event.type==='pointerdown'&&row===targetRow&&col===targetCol;
+  if(dispatchPhase==='capture' && matchingActivation){
    if(armed){log.supersededActivations++;log.incomplete=true;}
    armed=true;log.activationGeneration++;log.activation=[];log.activationDropped=0;
   }
@@ -65,11 +68,11 @@ export function installBoardAdmissionCollector({targetRow,targetCol}){
 
 }
 
-export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targetCol,baseURL}){
+export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targetCol,baseURL,armAction=null}){
  const recipes=JSON.parse(await readFile(new URL('./board-admission-transformations.json',import.meta.url),'utf8'));
  const transforms=[],errors=[];let installed=false;
  const origin=new URL(baseURL).origin;
- await page.addInitScript(installBoardAdmissionCollector,{targetRow,targetCol});
+ await page.addInitScript(installBoardAdmissionCollector,{targetRow,targetCol,armAction});
  const handler=async route=>{
   const pathname=new URL(route.request().url()).pathname,recipe=recipes[pathname];
   if(!recipe){await route.continue();return;}
