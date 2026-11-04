@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createBoardContextLayout} from '../shell/board-context-layout.js';
 
-const events=()=>{const listeners=new Map();return{addEventListener(type,fn){if(!listeners.has(type))listeners.set(type,new Set());listeners.get(type).add(fn);},removeEventListener(type,fn){listeners.get(type)?.delete(fn);},fire(type){for(const fn of [...listeners.get(type)??[]])fn({});},count(){return [...listeners.values()].reduce((n,set)=>n+set.size,0);}};};
+const events=()=>{const listeners=new Map();return{addEventListener(type,fn){if(!listeners.has(type))listeners.set(type,new Set());listeners.get(type).add(fn);},removeEventListener(type,fn){listeners.get(type)?.delete(fn);},fire(type,event={}){for(const fn of [...listeners.get(type)??[]])fn(event);},count(){return [...listeners.values()].reduce((n,set)=>n+set.size,0);}};};
 function fixture(t){
  const observers=[],frames=[],fonts=events(),win={...events(),ResizeObserver:class{
   constructor(callback){this.callback=callback;this.nodes=new Set();this.disconnected=false;observers.push(this);}
@@ -34,4 +34,68 @@ test('context replacement prunes body and natural-content observation owners and
  const f=fixture(t),a=f.body(),b=f.body(48,96);f.setBodies([a,b]);f.layout.sync();assert.equal(f.observers[0].nodes.size,4);
  f.setBodies([b]);f.layout.sync();assert(!f.observers[0].nodes.has(a));assert(!f.observers[0].nodes.has(a.firstElementChild));assert.equal(f.observers[0].nodes.size,2);
  f.layout.destroy();b.scrollHeight=0;f.sample();assert.equal(b.tabIndex,0);assert.equal(f.observers[0].nodes.size,0);
+});
+
+function mountedFixture(t){
+ const f=fixture(t);let top=58;
+ const makeFrame=()=>{
+  const values=new Map();const style={getPropertyValue:key=>values.get(key)??'',setProperty:(key,value)=>values.set(key,value),removeProperty:key=>values.delete(key)};
+  return {style,querySelector:()=>({getBoundingClientRect:()=>({top:90+(parseFloat(style.getPropertyValue('--board-context-reserve'))||0)})})};
+ };
+ let frame=makeFrame();
+ const anchor={getBoundingClientRect:()=>({top,width:366})};
+ const app={dataset:{shellLayoutMode:'narrow'},querySelector:selector=>selector==='[data-game-shell-root]'?frame:anchor};
+ f.win.innerWidth=390;f.win.innerHeight=740;f.win.getComputedStyle=()=>({fontSize:'16px',fontFamily:'Manrope'});
+ f.doc.getElementById=()=>app;f.doc.body={append(){}};
+ f.doc.createElement=()=>({style:{},setAttribute(){},getBoundingClientRect:()=>({height:180}),remove(){}});
+ return {...f,app,current:()=>frame,moveAnchor:value=>{top=value;},replace:()=>{frame=makeFrame();return frame;}};
+}
+for(const input of ['pointer','Enter',' '])test(`a replacement frame admits reserve during held ${JSON.stringify(input)} without moving the existing frame`,t=>{
+ const f=mountedFixture(t);f.layout.sync();const previous=f.current();
+ assert.equal(previous.style.getPropertyValue('--board-context-reserve'),'160px');
+ if(input==='pointer')f.doc.fire('pointerdown');else f.doc.fire('keydown',{key:input});
+ f.moveAnchor(90);f.layout.sync();
+ assert.equal(previous.style.getPropertyValue('--board-context-reserve'),'160px','the existing native press keeps its admitted geometry');
+ const next=f.replace();f.layout.sync();
+ assert.equal(next.style.getPropertyValue('--board-context-reserve'),'192px','the unpainted replacement cannot wait for release to admit its reserve');
+ if(input==='pointer')f.doc.fire('pointerup');else f.doc.fire('keyup',{key:input});
+ f.flush();assert.equal(next.style.getPropertyValue('--board-context-reserve'),'192px');
+});
+test('new loading and live frames share reserve and desktop clears the current owner',t=>{
+ const f=mountedFixture(t);f.layout.sync();const first=f.current().style.getPropertyValue('--board-context-reserve');
+ const live=f.replace();f.layout.sync();assert.equal(live.style.getPropertyValue('--board-context-reserve'),first);
+ f.app.dataset.shellLayoutMode='wide';f.layout.sync();assert.equal(live.style.getPropertyValue('--board-context-reserve'),'');
+});
+
+function revealFixture(t){
+ const win={...events(),innerHeight:600,requestAnimationFrame(){return 1;},cancelAnimationFrame(){}};
+ let calls=0;
+ const notice={getBoundingClientRect:()=>({bottom:333.734375})},nav={getBoundingClientRect:()=>({top:540,height:60})};
+ let frame={dataset:{gameId:'g'}};
+ const app={dataset:{shellLayoutMode:'narrow'},querySelector:selector=>selector==='[data-game-shell-root]'?frame:selector.includes('is-active')?notice:nav};
+ const doc={...events(),defaultView:win,fonts:events(),getElementById:()=>app,querySelectorAll:()=>[],activeElement:null};
+ const target={isConnected:true,style:{},matches:()=>true,getBoundingClientRect:()=>({top:271.640625,bottom:327.125}),scrollIntoView(options){assert.deepEqual(options,{block:'nearest',inline:'nearest',behavior:'instant'});calls++;}};
+ const layout=createBoardContextLayout(doc);t.after(()=>layout.destroy());
+ const focus=()=>{doc.activeElement=target;doc.fire('focusin',{target});};
+ return {win,doc,target,layout,focus,calls:()=>calls,frame:()=>frame,replaceFrame(){frame={dataset:{gameId:'g'}};}};
+}
+test('native Tab reveals its still-focused action even when a background page does not run animation frames',async t=>{
+ const f=revealFixture(t);f.doc.fire('keydown',{key:'Tab'});f.focus();assert.equal(f.calls(),0,'wait until native focus finishes');
+ await Promise.resolve();assert.equal(f.calls(),1);assert.equal(f.target.style.scrollMarginBlockStart,'341.734375px');assert.equal(f.target.style.scrollMarginBlockEnd,'68px');
+});
+for(const interruption of ['other-focus','pointer','disconnect','destroy','blur','hidden','new-key','new-frame','new-game'])test(`queued native focus reveal yields to ${interruption}`,async t=>{
+ const f=revealFixture(t);f.doc.fire('keydown',{key:'Tab'});f.focus();
+ if(interruption==='other-focus')f.doc.activeElement={};
+ if(interruption==='pointer')f.doc.fire('pointerdown');
+ if(interruption==='disconnect')f.target.isConnected=false;
+ if(interruption==='destroy')f.layout.destroy();
+ if(interruption==='blur')f.win.fire('blur');
+ if(interruption==='hidden')f.doc.hidden=true;
+ if(interruption==='new-key')f.doc.fire('keydown',{key:'Escape'});
+ if(interruption==='new-frame')f.replaceFrame();
+ if(interruption==='new-game')f.frame().dataset.gameId='other';
+ await Promise.resolve();assert.equal(f.calls(),0);
+});
+test('programmatic focus and passive metrics never initiate a focus reveal',async t=>{
+ const f=revealFixture(t);f.focus();f.doc.fonts.fire('loadingdone');f.win.fire('resize');await Promise.resolve();assert.equal(f.calls(),0);
 });

@@ -19,7 +19,7 @@ async function open(page, {width=1200, hold=false}={}) {
 
 for (const width of [390,1200]) test(`obligatory supply guidance preserves choices and fits at ${width}px`,async({page},info)=>{
   await open(page,{width});
-  const pill=page.locator('.board-obligatory-pill');
+  const pill=page.locator('#preview .board-obligatory-pill');
   await expect(page.locator('.rush-guidance-source')).toHaveCount(1);
   await expect(page.locator('.cell.selected-piece')).toHaveAttribute('data-row','6');
   await expect(page.locator('.cell.selected-piece')).toHaveAttribute('data-col','4');
@@ -27,9 +27,10 @@ for (const width of [390,1200]) test(`obligatory supply guidance preserves choic
   const target=page.locator('.rush-guidance-target');
   await expect(target).toHaveCount(1);await expect(target).toHaveAttribute('data-row','7');await expect(target).toHaveAttribute('data-col','5');
   await target.click();
-  await expect(page.locator('#preview')).toContainText('Restores required supply');
+  await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Restores required supply');
   await expect(pill).toHaveCount(0);
-  await expect(page.locator('.board-message-row')).toHaveCount(2);
+  await expect(page.locator('#preview .board-message-row')).toHaveCount(0);
+  await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Restores required supply');
   const geometry=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('*')].filter(el=>el.getBoundingClientRect().right>innerWidth).map(el=>({tag:el.tagName,id:el.id,cls:el.className,right:el.getBoundingClientRect().right})).slice(0,10)}));
   expect(geometry.scroll,JSON.stringify(geometry)).toBeLessThanOrEqual(geometry.width);
   await page.screenshot({path:info.outputPath(`obligatory-supply-${width}.png`)});
@@ -46,10 +47,10 @@ for (const width of [390,1200]) test(`obligatory supply guidance preserves choic
 
 test('background completion preserves manual selection and failure restores existing guidance',async({page})=>{
   await open(page,{hold:true});
-  await expect(page.locator('#preview')).toContainText('Finding rushes that restore supply');
+  await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Finding rushes that restore supply');
   const globalCopy=await page.locator('#preview').textContent();
-  await expect(page.locator('.board-obligatory-pill')).toHaveText('Obligatory');
-  expect(await page.locator('.board-obligatory-pill').evaluate(el=>getComputedStyle(el).color)).toBe('rgb(117, 69, 6)');
+  await expect(page.locator('#preview .board-obligatory-pill')).toHaveText('Obligatory');
+  expect(await page.locator('#preview .board-obligatory-pill').evaluate(el=>getComputedStyle(el).color)).toBe('rgb(117, 69, 6)');
   await page.locator('.cell[data-row="4"][data-col="6"]').hover();
   await expect(page.locator('.cell.selected-piece')).toHaveCount(0);
   await expect(page.locator('#preview')).toHaveText(globalCopy);
@@ -58,11 +59,11 @@ test('background completion preserves manual selection and failure restores exis
   await expect(page.locator('.rush-guidance-source')).toHaveCount(1);
   await expect(page.locator('.cell.selected-piece')).toHaveAttribute('data-row','4');
   await expect(page.locator('.cell.selected-piece')).toHaveAttribute('data-col','6');
-  await expect(page.locator('.board-obligatory-pill')).toHaveCount(0);
+  await expect(page.locator('#preview .board-obligatory-pill')).toHaveCount(0);
   await open(page,{hold:true});await page.evaluate(()=>window.failGuidance());
-  await expect(page.locator('#preview')).toContainText('Rush to restore supply to the');
-  await expect(page.locator('#preview')).toContainText('Hints unavailable');
-  await expect(page.locator('.board-obligatory-pill')).toHaveText('Obligatory');
+  await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Rush to restore supply for pieces at');
+  await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Hints unavailable');
+  await expect(page.locator('#preview .board-obligatory-pill')).toHaveText('Obligatory');
   await expect(page.locator('.continuation-pending')).toHaveCount(5);
   await page.evaluate(()=>{window.previousFinishGuidance=window.finishGuidance;});
   await page.getByRole('button',{name:'Try again',exact:true}).click();
@@ -70,7 +71,7 @@ test('background completion preserves manual selection and failure restores exis
   await page.evaluate(()=>window.finishGuidance());
   await expect(page.locator('.rush-guidance-source')).toHaveCount(1);
   await expect(page.locator('.cell.selected-piece')).toHaveCount(1);
-  await expect(page.locator('.board-obligatory-pill')).toHaveCount(0);
+  await expect(page.locator('#preview .board-obligatory-pill')).toHaveCount(0);
   expect(await page.evaluate(()=>window.boardFixture.applied())).toEqual([]);
 });
 
@@ -86,31 +87,31 @@ for (const [width,fontScale] of [[390,100],[390,200],[1200,100]]) test(`multiple
   });
   await expect(page.locator('.rush-guidance-source')).toHaveCount(3);
   await expect(page.locator('.cell.selected-piece')).toHaveCount(0);
-  await expect(page.locator('#preview')).toContainText('pieces at 7, 1, 8, 2');
+  await expect(page.locator('[data-board-context] .board-context-body')).toContainText('pieces at 7, 1, 8, 2');
   await settledMessage(page,{publishedManagedHeight:info.project.name==='webkit'});const before=await measureSemanticGeometry(page);
   await page.locator('.cell[data-row="4"][data-col="5"]').click();
   await expect(page.locator('.rush-guidance-target')).toHaveCount(3);
   await page.locator('.cell[data-row="3"][data-col="4"]').click();
-  await expect(page.locator('#preview')).toContainText('Restores required supply after further rushes');
-  await expect(page.locator('.board-obligatory-pill')).toHaveCount(0);
+  await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Restores required supply after further rushes');
+  await expect(page.locator('#preview .board-obligatory-pill')).toHaveCount(0);
   await settledMessage(page,{publishedManagedHeight:info.project.name==='webkit'});assertSemanticGeometry(before,await measureSemanticGeometry(page));
   await page.screenshot({path:info.outputPath('multiple-supply-options.png')});
   await page.locator('.cell[data-row="0"][data-col="0"]').click();
   await expect(page.locator('.cell.selected-piece')).toHaveCount(0);
-  await expect(page.locator('.board-obligatory-pill')).toHaveText('Obligatory');
-  await expect(page.locator('#preview')).toContainText('pieces at 7, 1, 8, 2');
+  await expect(page.locator('#preview .board-obligatory-pill')).toHaveText('Obligatory');
+  await expect(page.locator('[data-board-context] .board-context-body')).toContainText('pieces at 7, 1, 8, 2');
   await settledMessage(page,{publishedManagedHeight:info.project.name==='webkit'});expect(await measureSemanticGeometry(page)).toEqual(before);
 });
 
 test('obligatory message retains inactive-piece and blocked-destination explanations',async({page})=>{
   await open(page);await expect(page.locator('.rush-guidance-source')).toHaveCount(1);
   await page.locator('.cell[data-row="6"][data-col="0"]').click();
-  await expect(page.locator('#preview')).toContainText('Cannot move: no command at start of rush');
-  await expect(page.locator('.board-obligatory-pill')).toHaveCount(0);
+  await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Cannot move: no command at start of rush');
+  await expect(page.locator('#preview .board-obligatory-pill')).toHaveCount(0);
   await page.locator('.cell[data-row="6"][data-col="4"]').click();
   await page.locator('.cell[data-row="7"][data-col="3"]').click();
-  await expect(page.locator('#preview')).toContainText('Destination would have no supply');
-  await expect(page.locator('.board-obligatory-pill')).toHaveCount(0);
+  await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Destination would have no supply');
+  await expect(page.locator('#preview .board-obligatory-pill')).toHaveCount(0);
 });
 
 for (const fontScale of [100,200]) test(`touch confirmation stays put across guidance choices at ${fontScale}% text`,async({page})=>{
@@ -125,10 +126,10 @@ for (const fontScale of [100,200]) test(`touch confirmation stays put across gui
   await expect(page.locator('.rush-guidance-source')).toHaveCount(1);
   await settledMessage(page);const before=await measureSemanticGeometry(page);
   await page.locator('.cell[data-row="6"][data-col="0"]').click();
-  await expect(page.locator('#preview')).toContainText('Cannot move: no command at start of rush');
+  await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Cannot move: no command at start of rush');
   await settledMessage(page);assertSemanticGeometry(before,await measureSemanticGeometry(page));
   await page.locator('.cell[data-row="6"][data-col="4"]').click();
   await page.locator('.cell[data-row="7"][data-col="3"]').click();
-  await expect(page.locator('#preview')).toContainText('Destination would have no supply');
+  await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Destination would have no supply');
   await settledMessage(page);assertSemanticGeometry(before,await measureSemanticGeometry(page));
 });

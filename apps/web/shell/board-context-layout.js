@@ -4,7 +4,7 @@ import {renderBoardContext} from './board-context.js';
 // and dismissal never participate in this measurement or move the Board.
 export function createBoardContextLayout(doc=document) {
  const win=doc.defaultView;
- let key=null,frameOwner=null,probe=null,raf=null,pointer=false,keyboard=false,nativeKey=false,probeObserver=null,disposed=false;
+ let key=null,frameOwner=null,probe=null,raf=null,pointer=false,keyboard=false,nativeKey=false,probeObserver=null,disposed=false,intentEpoch=0;
  const observedBodies=new Set();
  const syncOverflow=()=>{
   if(disposed)return;
@@ -20,9 +20,12 @@ export function createBoardContextLayout(doc=document) {
  };
  const bodyObserver=win.ResizeObserver?new win.ResizeObserver(syncOverflow):null;
  const measure=()=>{
-  raf=null;if(disposed||pointer||nativeKey)return;
+  raf=null;if(disposed)return;
   const app=doc.getElementById('app'),frame=app?.querySelector('[data-game-shell-root]');
   if(!frame||app.dataset.shellLayoutMode!=='narrow'){frame?.style.removeProperty('--board-context-reserve');frameOwner=null;key=null;return;}
+  // A replacement frame has not painted yet and needs its initial reservation.
+  // Existing frames still defer metric changes throughout a native press.
+  if((pointer||nativeKey)&&frameOwner===frame)return;
   const anchor=app.querySelector('.shell-header-status'),heading=frame.querySelector('.board-heading');
   if(!anchor||!heading)return;
   const style=win.getComputedStyle(frame),width=anchor.getBoundingClientRect().width;
@@ -43,8 +46,10 @@ export function createBoardContextLayout(doc=document) {
  const schedule=()=>{if(!disposed&&raf===null)raf=win.requestAnimationFrame(measure);};
  const metrics=()=>{syncOverflow();key=null;schedule();};
  const reveal=(original,isCurrent=()=>doc.activeElement===original,{immediate=false}={})=>{
+  const epoch=intentEpoch,frame=doc.getElementById('app')?.querySelector('[data-game-shell-root]'),gameId=frame?.dataset?.gameId;
   const apply=()=>{
-   if(disposed||pointer||!isCurrent()||doc.activeElement!==original||!original.isConnected)return;
+   const currentFrame=doc.getElementById('app')?.querySelector('[data-game-shell-root]');
+   if(disposed||doc.hidden||epoch!==intentEpoch||currentFrame!==frame||currentFrame?.dataset?.gameId!==gameId||pointer||!isCurrent()||doc.activeElement!==original||!original.isConnected)return;
    const app=doc.getElementById('app'),notice=app?.querySelector('[data-alert-stack-card].is-active'),nav=app?.querySelector('.shell-mobile-tabbar');
    if(app?.dataset.shellLayoutMode!=='narrow')return;
    const top=notice?.getBoundingClientRect().bottom??0,navRect=nav?.getBoundingClientRect();
@@ -55,18 +60,18 @@ export function createBoardContextLayout(doc=document) {
    // Only explicit native focus or a still-owned user action may reveal Board.
    original.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'});
   };
-  if(immediate)apply();else win.requestAnimationFrame(apply);
+  if(immediate)apply();else queueMicrotask(apply);
  };
  const focus=event=>{
   const target=event.target;
   if(!keyboard||pointer||!target?.matches?.('#shell-board-preview-label button,#shell-board .cell,#shell-board,.board-message-live'))return;
   reveal(target);
  };
- const down=()=>{pointer=true;keyboard=false;};
+ const down=()=>{intentEpoch++;pointer=true;keyboard=false;};
  const up=()=>{pointer=false;schedule();};
  const keyup=event=>{if(event.key==='Enter'||event.key===' '){nativeKey=false;schedule();}};
- const retire=()=>{pointer=false;nativeKey=false;key=null;schedule();};
- const keys=event=>{if(!['Shift','Control','Alt','Meta'].includes(event.key))keyboard=true;if(event.key==='Enter'||event.key===' ')nativeKey=true;};
+ const retire=()=>{intentEpoch++;pointer=false;nativeKey=false;key=null;schedule();};
+ const keys=event=>{intentEpoch++;if(!['Shift','Control','Alt','Meta'].includes(event.key))keyboard=true;if(event.key==='Enter'||event.key===' ')nativeKey=true;};
  doc.addEventListener('focusin',focus);doc.addEventListener('pointerdown',down,true);
  doc.addEventListener('pointerup',up,true);doc.addEventListener('pointercancel',up,true);doc.addEventListener('keydown',keys,true);doc.addEventListener('keyup',keyup,true);
  win.addEventListener('blur',retire);doc.addEventListener('visibilitychange',retire);win.addEventListener('resize',metrics);doc.fonts?.addEventListener?.('loadingdone',metrics);

@@ -18,17 +18,18 @@ const fixture=()=>{
  const control=()=>({disabled:busy,isConnected:true,matches:()=>false,closest(){return this;},
   getAttribute:name=>name==='data-action'?'accept-invite-player':name==='data-game-id'?'g':null,
   focus(){document.activeElement=this;feedback.noteFocus(this);}});
+ const admissions=[];let panelOwner=null;
  let mounted=control();document.activeElement=mounted;
  const root={querySelectorAll:()=>[mounted],querySelector:()=>null};
  const scheduled=new Map();let sequence=0,context;
  const gate=createRenderGestureGate({render:options=>context.render(options),schedule:fn=>{scheduled.set(++sequence,fn);return sequence;},cancel:id=>scheduled.delete(id)});
- context={document,appEl:root,joinFeedback:feedback,renderGesture:gate,preserveBoardFocus,getCurrentViewedGameId:()=> 'g',
-  utilityMemory:{capture(){},restore(){}},inlineProfiles:{sync(){}},syncMountedGameShellPanelUi(){},
+ context={syncRenderedMarkupSnapshot(){admissions.push({mounted,panelSynced:panelOwner===mounted});},resumeBoardContextReplay(){},document,appEl:root,joinFeedback:feedback,renderGesture:gate,preserveBoardFocus,getCurrentViewedGameId:()=> 'g',
+  utilityMemory:{capture(){},restore(){}},inlineProfiles:{sync(){}},syncMountedGameShellPanelUi(){panelOwner=mounted;},
   currentRoute:{gameId:'g'},pendingResultReviewFocus:null,getGamePanel:()=> 'board',
   renderContent(){renderCount++;mounted.isConnected=false;mounted=control();document.activeElement=body;}};
  runInNewContext(`${source.slice(start,end)}\nglobalThis.render=render;`,context);
  const flush=()=>{const jobs=[...scheduled.values()];scheduled.clear();for(const fn of jobs)fn();};
- return {feedback,document,body,gate,context,flush,button:()=>mounted,renders:()=>renderCount,
+ return {admissions,feedback,document,body,gate,context,flush,button:()=>mounted,renders:()=>renderCount,
   change:values=>Object.assign(scope,values),busy:value=>busy=value};
 };
 
@@ -68,3 +69,25 @@ for(const mode of ['other-focus','pointer-body','account','owner','visit','route
   f.gate.end();f.flush();
   assert.equal(f.document.activeElement,f.body);assert.equal(f.button().disabled,false);
  });
+
+// The production wrapper must admit a replacement shell before returning. A
+// deferred render cannot admit the old DOM instead of the newly committed one.
+test('committed render admits the current shell after deferred replacement',()=>{
+ const f=fixture(),original=f.button();f.gate.begin();
+ f.context.render({animatePanels:false,includeBoard:false});
+ assert.equal(f.admissions.length,0);assert.equal(f.button(),original);
+ f.gate.end();f.flush();assert.equal(f.admissions.length,1);
+ assert.equal(f.admissions[0].panelSynced,true);assert.equal(f.admissions[0].mounted,f.button());assert.notEqual(f.button(),original);
+});
+
+test('shell admission occurs before Board, utility and join focus restoration',()=>{
+ const f=fixture(),order=[];
+ f.context.preserveBoardFocus=(_options,commit)=>{const result=commit();order.push('Board focus');return result;};
+ const admit=f.context.syncRenderedMarkupSnapshot;
+ f.context.syncRenderedMarkupSnapshot=()=>{admit();order.push('admission');};
+ f.context.utilityMemory.restore=()=>order.push('utility focus');
+ f.context.joinFeedback.restoreFocus=()=>order.push('join focus');
+ f.context.render({animatePanels:false,includeBoard:false});
+ assert.deepEqual(order,['admission','Board focus','utility focus','join focus']);
+ assert.equal(f.admissions[0].panelSynced,true);
+});

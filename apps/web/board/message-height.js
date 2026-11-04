@@ -1,3 +1,4 @@
+import {boundedPromptReservation,readPromptMetrics} from './prompt-reservation.js';
 import {messageHeightTarget,messageHeightTransition} from './message-composition.js';
 
 // Own only presentation height. Authority and semantic message updates remain
@@ -23,7 +24,14 @@ export function createMessageHeightController(label) {
   const floor=font=>Math.max(0,...replicas.filter(node=>node.dataset.sizingFont===font).map(node=>node.getBoundingClientRect().height));
   const slotStyle=win.getComputedStyle?.(slot);
   const outerPadding=(parseFloat(slotStyle?.paddingTop)||0)+(parseFloat(slotStyle?.paddingBottom)||0);
-  const grammar=messageHeightTarget({primaryRoutine:floor('primary'),fallbackRoutine:floor('fallback')});
+  const primary=floor('primary'),fallback=floor('fallback');
+  const rowLines=parseFloat(win.getComputedStyle?.(replicas[0])?.getPropertyValue?.('--board-message-row-lines'));
+  const reservation=boundedPromptReservation({width,fontSize:parseFloat(font?.fontSize),metrics:readPromptMetrics(slotStyle),rowLines,intrinsicFallback:fallback,outerPadding});
+  if(reservation===null)slot.dataset.promptReservationUnsupported='true';else delete slot.dataset.promptReservationUnsupported;
+  // A too-small primary policy is degraded even when natural replica sizing
+  // keeps content safe. Never report that reflow as fixed-height acceptance.
+  if(reservation!==null&&primary>reservation+.1)slot.dataset.promptPrimaryUnderreserved='true';else delete slot.dataset.promptPrimaryUnderreserved;
+  const grammar=Math.max(reservation??0,messageHeightTarget({primaryRoutine:primary,fallbackRoutine:fallback}));
   const natural=live.getBoundingClientRect().height;
   let required=natural;
   const active=doc.activeElement;
@@ -101,5 +109,5 @@ export function createMessageHeightController(label) {
   }finally{publishingContent=false;}
   return true;
  },
- destroy(){disposed=true;pendingContent=null;pressedControl=null;if(frame!==null)win.cancelAnimationFrame(frame);animation?.cancel();resize.disconnect();mutations.disconnect();doc.removeEventListener('pointerdown',starts,true);doc.removeEventListener('keydown',starts,true);for(const type of ['pointerup','pointercancel','keyup'])doc.removeEventListener(type,ends,true);win.removeEventListener('resize',metrics);win.removeEventListener('blur',retirePress);doc.removeEventListener('visibilitychange',retirePress);doc.fonts?.removeEventListener?.('loadingdone',metrics);motion.removeEventListener?.('change',metrics);slot.style.removeProperty('height');delete slot.dataset.heightManaged;delete slot.dataset.promptOverflow;}};
+ destroy(){disposed=true;pendingContent=null;pressedControl=null;if(frame!==null)win.cancelAnimationFrame(frame);animation?.cancel();resize.disconnect();mutations.disconnect();doc.removeEventListener('pointerdown',starts,true);doc.removeEventListener('keydown',starts,true);for(const type of ['pointerup','pointercancel','keyup'])doc.removeEventListener(type,ends,true);win.removeEventListener('resize',metrics);win.removeEventListener('blur',retirePress);doc.removeEventListener('visibilitychange',retirePress);doc.fonts?.removeEventListener?.('loadingdone',metrics);motion.removeEventListener?.('change',metrics);slot.style.removeProperty('height');delete slot.dataset.heightManaged;delete slot.dataset.promptOverflow;delete slot.dataset.promptReservationUnsupported;delete slot.dataset.promptPrimaryUnderreserved;}};
 }

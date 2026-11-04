@@ -89,7 +89,7 @@ async function fixture(t,{journalAdapter,seed=true}={}) {
   const browser={location,scrollTo(){},addEventListener:(name,handler)=>listeners.set(name,handler),
     requestAnimationFrame:callback=>{const id=++frameId;frames.set(id,callback);return id;},cancelAnimationFrame:id=>frames.delete(id)};
   let generation=1,pageSize=1,columnCount=1,clicks=0,renders=0,refreshes=0;
-  const context=vm.createContext({structuredClone,URL,URLSearchParams,SYNC_TIMING,createRouteHydration,
+  const context=vm.createContext({cancelPendingBoardContextReplay(){},pendingBoardContextReplay:null,structuredClone,URL,URLSearchParams,SYNC_TIMING,createRouteHydration,
     hydrateRoute:createRouteHydration(),window:browser,currentRoute:parseRouteFromHash('#/'),transport,
     account:{snapshot:()=>({generation}),canPlay:()=>true},
     parseRouteFromHash,buildHashForRoute,FLYOUT_KEYS,HOME_SECTION_SERVER_PAGE_SIZE:6,HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT:1,

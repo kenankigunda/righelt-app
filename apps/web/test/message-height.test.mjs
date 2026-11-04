@@ -2,15 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createMessageHeightController} from '../board/message-height.js';
 
-function fixture(initialPadding=0,initialFloor=75){
+function fixture(initialPadding=0,initialFloor=75,{metrics=null,fontSize=16,initialWidth=400,rowLines=3}={}){
  const events=()=>({handlers:new Map(),addEventListener(type,fn){this.handlers.set(type,fn);},removeEventListener(type){this.handlers.delete(type);}});
- const frames=new Map(),animations=[],observers=[];let id=0,current=40,rendered=initialFloor,width=400,padding=initialPadding,buttonTop=10,primary=initialFloor-5,fallback=initialFloor;
+ const frames=new Map(),animations=[],observers=[];let id=0,current=40,rendered=initialFloor,width=initialWidth,padding=initialPadding,buttonTop=10,primary=initialFloor-5,fallback=initialFloor;
  const motion={...events(),matches:false},fonts=events(),doc={...events(),fonts};
  const win={...events(),requestAnimationFrame(fn){frames.set(++id,fn);return id;},cancelAnimationFrame(key){frames.delete(key);},matchMedia:()=>motion,
   ResizeObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(){}disconnect(){this.closed=true;}},
   MutationObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(){}disconnect(){this.closed=true;}}};
  doc.defaultView=win;
- win.getComputedStyle=node=>node===slot?{paddingTop:String(slot.dataset.heightManaged==='true'?padding:0),paddingBottom:String(slot.dataset.heightManaged==='true'?padding:0)}:node===button?{outlineWidth:'2px',outlineOffset:'2px'}:{fontSize:'16px',fontFamily:'Manrope',lineHeight:'24px'};
+ win.getComputedStyle=node=>node===slot?{paddingTop:String(slot.dataset.heightManaged==='true'?padding:0),paddingBottom:String(slot.dataset.heightManaged==='true'?padding:0),getPropertyValue:name=>metrics?.[name]??''}:node===button?{outlineWidth:'2px',outlineOffset:'2px'}:{fontSize:`${fontSize}px`,fontFamily:'Manrope',lineHeight:'24px',getPropertyValue:name=>name==='--board-message-row-lines'?String(rowLines):''};
  const live={getBoundingClientRect:()=>({height:current})};
  const replicas=[['primary',70],['fallback',75]].map(([font,height])=>({dataset:{sizingFont:font},getBoundingClientRect:()=>({height:font==='primary'?primary:fallback})}));
  const slot={dataset:{},isConnected:true,style:{removeProperty(key){delete this[key];}},querySelector:()=>live,querySelectorAll:()=>replicas,getBoundingClientRect:()=>({height:rendered,width,top:0,bottom:rendered}),animate(keys,options){const a={keys,options,cancel(){this.canceled=true;}};animations.push(a);return a;}};
@@ -96,4 +96,46 @@ test('unsupported live content exposes a failed grammar condition while retainin
  const f=fixture();f.doc.activeElement=f.button;
  assert(f.controller.deferContent('Longer Next',()=>{f.setCurrent(180);f.setButtonTop(130);}));
  assert.equal(f.slot.dataset.promptOverflow,'true');assert.equal(f.slot.style.height,'180px');assert.equal(f.doc.activeElement,f.button);assert.equal(f.animations.length,0);f.controller.destroy();
+});
+
+const actualMetrics={
+ '--board-message-prose-line-height':'1.5','--board-inline-action-font-scale':'.88',
+ '--board-inline-action-line-height':'1.5','--board-inline-action-padding-block-em':'.2',
+ '--board-inline-action-border-px':'1','--board-message-hit-half-px':'23.0625',
+ '--board-message-hit-half-em':'.836','--board-message-action-extra-em':'.469','--board-message-action-extra-px':'4',
+};
+test('cold primary font growth is admitted before first paint without moving the Board',()=>{
+ const f=fixture(4,174.96875,{metrics:actualMetrics,fontSize:32,initialWidth:334.375,rowLines:6});
+ const cold=f.slot.style.height;assert(parseFloat(cold)>=217.9375+8);
+ f.setFloors(217.9375,174.96875);f.fonts.handlers.get('loadingdone')();f.flush();
+ assert.equal(f.slot.style.height,cold);assert.equal(f.slot.dataset.promptOverflow,undefined);assert.equal(f.slot.dataset.promptReservationUnsupported,undefined);
+ f.controller.destroy();
+});
+test('missing metrics and out-of-domain widths expose degraded reservation instead of fixed-height success',()=>{
+ for(const options of [{},{metrics:actualMetrics,fontSize:32,initialWidth:270},{metrics:actualMetrics,fontSize:33}]){
+  const f=fixture(0,75,options);assert.equal(f.slot.dataset.promptReservationUnsupported,'true');
+  f.change(200,75);assert.equal(f.slot.style.height,'200px');assert.equal(f.slot.dataset.promptOverflow,'true');
+  f.controller.destroy();assert.equal(f.slot.dataset.promptReservationUnsupported,undefined);
+ }
+});
+
+test('a primary font beyond the static policy stays safe and exposes degraded fixed-height admission',()=>{
+ const f=fixture(0,105,{metrics:actualMetrics,fontSize:16,initialWidth:400});
+ f.setFloors(180,105);f.change(160,105);
+ assert.equal(f.slot.style.height,'180px');assert.equal(f.slot.dataset.promptOverflow,undefined,'live content fits the full natural primary replica');
+ assert.equal(f.slot.dataset.promptPrimaryUnderreserved,'true','natural sizing cannot hide an underreserved primary policy');
+ f.setFloors(104,105);f.change(100,180);assert.equal(f.slot.dataset.promptPrimaryUnderreserved,undefined);
+ f.controller.destroy();assert.equal(f.slot.dataset.promptPrimaryUnderreserved,undefined);
+});
+test('altered finite CSS metrics never receive fixed-height qualification',()=>{
+ for(const change of [{...actualMetrics,'--board-inline-action-font-scale':'-.88'},{...actualMetrics,'--board-message-prose-line-height':'1.6'}]){
+  const f=fixture(0,75,{metrics:change});assert.equal(f.slot.dataset.promptReservationUnsupported,'true');
+  f.change(180,75);assert.equal(f.slot.style.height,'180px');f.controller.destroy();
+ }
+});
+
+test('the first cold admission respects the original compact ceiling when fallback is already sufficient',()=>{
+ const f=fixture(0,125.140625,{metrics:actualMetrics,fontSize:16,initialWidth:296.8125,rowLines:3});
+ assert.equal(f.slot.style.height,'125.140625px');assert.equal(f.slot.dataset.promptPrimaryUnderreserved,undefined);
+ f.fonts.handlers.get('loadingdone')();f.flush();assert.equal(f.slot.style.height,'125.140625px');f.controller.destroy();
 });

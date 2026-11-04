@@ -160,7 +160,11 @@ const acknowledgedBoardMessage=(view,status,options)=>{
  if(!body){if(boardContexts.update('acknowledged',null))queueBoardContextRefresh();return;}
  const replay=body.action?.id==='replay-computer'?captureDisplayedReplay({game:view,owner:transport,scope:boardContextScope(),identityId:transport.getIdentityId(),visible:!document.hidden}):null;
  const context={gameId:view.id,key:replay?.key??JSON.stringify([boardContextScope(),view.id,view.gameplayRevision,'completion']),message:body,replay,mandatory:false,transient:false};
- if(boardContexts.update('acknowledged',context))queueBoardContextRefresh();
+ const previousKey=boardContexts.channel('acknowledged')?.key;
+ const changed=boardContexts.update('acknowledged',context);
+ const piece=boardContexts.channel('piece');
+ if(previousKey!==context.key&&!boardContexts.isDismissed(context.key)&&!(piece?.gameId===view.id&&piece.message&&!piece.transient&&!boardContexts.isDismissed(piece.key)))notificationStack.prefer(view.id,`board-context:${context.key}`);
+ if(changed)queueBoardContextRefresh();
 };
 const receiveBoardContext=(context,meta)=>{
  const game=displayedReplayFrame();if(!game)return;
@@ -168,7 +172,9 @@ const receiveBoardContext=(context,meta)=>{
  const key=JSON.stringify([...frame,context?.mandatory?'required-rush':meta.selectedPieceId,meta.phase,meta.continuationPhase,context?.mandatory?context.message.coordinates:null]);
  if(!meta.transient){
   boardContextOwner.commit(JSON.stringify([...frame,meta.selectedPieceId,meta.phase,meta.continuationPhase,meta.intentVersion]));
-  notificationStack.prefer(game.id,meta.selectedPieceId||context?.mandatory||context?.kind==='replay-progress'?`board-context:${key}`:null);
+  const acknowledged=boardContexts.channel('acknowledged');
+  const fallback=acknowledged?.gameId===game.id&&acknowledged.message&&!boardContexts.isDismissed(acknowledged.key)?`board-context:${acknowledged.key}`:null;
+  notificationStack.prefer(game.id,context?.message&&!boardContexts.isDismissed(key)&&(meta.selectedPieceId||context.mandatory||context.kind==='replay-progress')?`board-context:${key}`:fallback);
  }
  const focused=appEl.querySelector('[data-board-context]')?.contains(document.activeElement);
  if(context&&meta.transient&&focused)return;
@@ -1746,7 +1752,7 @@ const getGameAlertItems = (game) => {
   if (request) {
     const move = game.moves?.find(entry => entry.moveId === request.targetMoveId);
     const attrs = `data-game-id="${escapeHtml(game.id)}" data-request-id="${escapeHtml(request.requestId)}"`;
-    items.push({key:`undo-request:${request.requestId}`, html:renderGameAlertCard({activity:'waiting', actorSide:undoApprovalActorSide(game,request), testId:approval?'undo-approval-notice':'undo-waiting-notice',
+    items.push({key:`undo-request:${request.requestId}`, priority:items.some(item=>item.priority==='urgent')?'normal':'urgent', html:renderGameAlertCard({activity:'waiting', actorSide:undoApprovalActorSide(game,request), testId:approval?'undo-approval-notice':'undo-waiting-notice',
       body:approval ? `Undo requested before ${escapeHtml(move?.notation ?? 'this move')}` : 'Waiting for undo approval',
       action:approval ? `<button data-action="accept-revert-request" ${attrs}>${icon('check')}Accept</button><button class="secondary" data-action="reject-revert-request" ${attrs}>${icon('close')}Reject</button>` : `<button class="secondary" data-action="rescind-revert-request" ${attrs}>${icon('close')}Cancel request</button>`})});
   }
@@ -3974,10 +3980,16 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (renderGesture.defer({ animatePanels, includeBoard })) return;
   const previousJoinFocus = document.activeElement;
   utilityMemory.capture();
-  const result = preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => renderContent({ animatePanels, includeBoard }));
+  const result = preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => {
+    const committed = renderContent({ animatePanels, includeBoard });
+    syncMountedGameShellPanelUi();
+    // Admit loading and live frames before restoring native Board focus.
+    // Every committed path records the same layout-adjusted markup snapshot.
+    syncRenderedMarkupSnapshot();
+    return committed;
+  });
   utilityMemory.restore();
   inlineProfiles.sync();
-  syncMountedGameShellPanelUi();
   if (pendingResultReviewFocus === currentRoute.gameId && getGamePanel() === "history") {
     const heading = appEl.querySelector('[data-game-panel="history"] h2');
     if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }
