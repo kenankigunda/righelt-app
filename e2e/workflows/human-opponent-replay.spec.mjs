@@ -68,8 +68,8 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
     const notice=document.querySelector('[data-alert-stack-card].is-active'),nav=document.querySelector('.shell-mobile-tabbar'),rect=button.getBoundingClientRect();
     return {top:rect.top,bottom:rect.bottom,noticeBottom:notice?.getBoundingClientRect().bottom??0,navTop:nav?.getBoundingClientRect().top??innerHeight,scrollY,unmapped:document.querySelectorAll('[data-prompt-unmapped="true"]').length,overflow:document.querySelectorAll('[data-prompt-overflow="true"]').length};
    });
-   expect(clearance.unmapped).toBe(0);expect(clearance.overflow).toBe(0);expect(clearance.top).toBeGreaterThanOrEqual(clearance.noticeBottom+8);expect(clearance.bottom).toBeLessThanOrEqual(clearance.navTop-8);
    await info.attach('Selected top short200 initial and native focus clearance',{body:JSON.stringify({initial,clearance}),contentType:'application/json'});
+   expect(clearance.unmapped).toBe(0);expect(clearance.overflow).toBe(0);expect(clearance.top).toBeGreaterThanOrEqual(clearance.noticeBottom+8);expect(clearance.bottom).toBeLessThanOrEqual(clearance.navTop-8);
    await opponent.screenshot({path:info.outputPath('native-gray-mobile-short200-keyboard.png')});
    await opponent.evaluate(()=>document.documentElement.style.fontSize='');await opponent.setViewportSize({width,height:900});
   }
@@ -108,7 +108,24 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
   await switchGamePanel(viewer,'history');
   const fallback=viewer.locator('.history-live-replay').getByRole('button',{name:'Show me again',exact:true});
   await expect(fallback).toBeVisible();await expect(fallback).toHaveCount(1);
-  await fallback.click();await expect(viewer.locator('.computer-replay')).toBeVisible();
+  // Observe the real native activation before the app's delegated handler.
+  // Keep only bounded booleans/counts, with no game, identity or URL data.
+  await viewer.evaluate(()=>{
+   const state={seen:0,first:null};
+   const capture=event=>{
+    const target=event.target.closest?.('.history-live-replay [data-action="replay-board-context"]');if(!target)return;
+    state.seen=Math.min(2,state.seen+1);
+    state.first??={trusted:event.isTrusted,targetFocused:document.activeElement===target,documentFocused:document.hasFocus(),hidden:document.hidden};
+   };
+   document.addEventListener('click',capture,{capture:true,passive:true});
+   globalThis.__historyReplayActivation={state,dispose:()=>document.removeEventListener('click',capture,true)};
+  });
+  let activationError=null,activation={incomplete:true};
+  try{await fallback.click();}catch(error){activationError=error;}
+  try{activation=await viewer.evaluate(()=>{const owned=globalThis.__historyReplayActivation;try{return owned?.state??{incomplete:true};}finally{owned?.dispose();delete globalThis.__historyReplayActivation;}});}catch(error){activationError??=error;}
+  try{await info.attach('Native History replay activation before app handler',{body:JSON.stringify(activation),contentType:'application/json'});}catch(error){activationError??=error;}
+  if(activationError)throw activationError;
+  await expect(viewer.locator('.computer-replay')).toBeVisible();
   if(width===390)await expect(viewer.locator('[data-mobile-panel="board"]')).toHaveAttribute('data-active','true');
   await label(viewer).getByRole('button',{name:'Stop replay',exact:true}).click();await expect(viewer.locator('.computer-replay')).toHaveCount(0);
 

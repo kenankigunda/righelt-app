@@ -55,8 +55,11 @@ export function createBoardContextLayout(doc=document) {
    const top=notice?.getBoundingClientRect().bottom??0,navRect=nav?.getBoundingClientRect();
    const bottom=navRect?.height?navRect.top:win.innerHeight,rect=original.getBoundingClientRect();
    if(rect.top>=top+8&&rect.bottom<=bottom-8)return;
-   original.style.scrollMarginBlockStart=`${top+8}px`;
-   original.style.scrollMarginBlockEnd=`${Math.max(0,win.innerHeight-bottom)+8}px`;
+   // Native window scrolling may round to whole CSS pixels. Round the needed
+   // distance outward so a fractional control edge still clears the full 8px.
+   // The margin includes that rounding without a second scroll or retry loop.
+   original.style.scrollMarginBlockStart=`${rect.top-Math.floor(rect.top-(top+8))}px`;
+   original.style.scrollMarginBlockEnd=`${win.innerHeight-rect.bottom+Math.ceil(rect.bottom-(bottom-8))}px`;
    // Only explicit native focus or a still-owned user action may reveal Board.
    original.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'});
   };

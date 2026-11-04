@@ -81,7 +81,7 @@ function revealFixture(t){
 }
 test('native Tab reveals its still-focused action even when a background page does not run animation frames',async t=>{
  const f=revealFixture(t);f.doc.fire('keydown',{key:'Tab'});f.focus();assert.equal(f.calls(),0,'wait until native focus finishes');
- await Promise.resolve();assert.equal(f.calls(),1);assert.equal(f.target.style.scrollMarginBlockStart,'341.734375px');assert.equal(f.target.style.scrollMarginBlockEnd,'68px');
+ await Promise.resolve();assert.equal(f.calls(),1);assert.equal(f.target.style.scrollMarginBlockStart,'342.640625px');assert.equal(f.target.style.scrollMarginBlockEnd,'68.875px');
 });
 for(const interruption of ['other-focus','pointer','disconnect','destroy','blur','hidden','new-key','new-frame','new-game'])test(`queued native focus reveal yields to ${interruption}`,async t=>{
  const f=revealFixture(t);f.doc.fire('keydown',{key:'Tab'});f.focus();
@@ -98,4 +98,29 @@ for(const interruption of ['other-focus','pointer','disconnect','destroy','blur'
 });
 test('programmatic focus and passive metrics never initiate a focus reveal',async t=>{
  const f=revealFixture(t);f.focus();f.doc.fonts.fire('loadingdone');f.win.fire('resize');await Promise.resolve();assert.equal(f.calls(),0);
+});
+
+for(const sample of [
+ {name:'fractional bottom overrun',top:476.640625,bottom:532.125,scroll:158,expected:159},
+ {name:'fractional top overrun',top:271.640625,bottom:327.125,scroll:158,expected:87},
+ {name:'exact bottom boundary',top:476.515625,bottom:532,scroll:158,expected:158},
+ {name:'exact top boundary',top:341.734375,bottom:397.21875,scroll:158,expected:158},
+ {name:'whole-pixel bottom overrun',top:477.515625,bottom:533,scroll:158,expected:159},
+ {name:'clamped upper scroll boundary',top:271.640625,bottom:327.125,scroll:0,expected:0},
+ {name:'clamped lower scroll boundary',top:476.640625,bottom:532.125,scroll:1000,expected:1000},
+])test(`actual native reveal rounds outward once: ${sample.name}`,async t=>{
+ const f=revealFixture(t);let scroll=sample.scroll,nativeCalls=0;
+ f.target.getBoundingClientRect=()=>({top:sample.top+sample.scroll-scroll,bottom:sample.bottom+sample.scroll-scroll});
+ f.target.scrollIntoView=()=>{
+  nativeCalls++;const rect=f.target.getBoundingClientRect();
+  const upper=parseFloat(f.target.style.scrollMarginBlockStart),lower=f.win.innerHeight-parseFloat(f.target.style.scrollMarginBlockEnd);
+  const delta=rect.top<upper?rect.top-upper:rect.bottom>lower?rect.bottom-lower:0;
+  // Model native whole-pixel scroll quantization and document bounds.
+  scroll=Math.max(0,Math.min(1000,Math.round(scroll+delta)));
+ };
+ f.doc.fire('keydown',{key:'Tab'});f.focus();await Promise.resolve();
+ assert.equal(scroll,sample.expected);assert(nativeCalls<=1,'clamping cannot cause a retry loop');
+ const rect=f.target.getBoundingClientRect();
+ if(!sample.name.startsWith('clamped')){assert(rect.top>=341.734375);assert(rect.bottom<=532);}
+ else assert(rect.top<341.734375||rect.bottom>532,'a document clamp remains an unmet clearance, never a claimed repair');
 });
