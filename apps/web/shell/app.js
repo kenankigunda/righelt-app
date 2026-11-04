@@ -1,3 +1,4 @@
+import { createPendingInvitationFocus } from './pending-invitation-focus.js';
 import {isOngoingGame,isCompletedGame} from './game-lifecycle.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
@@ -2487,6 +2488,15 @@ const updateParticipantCards = game => {
 const joinFeedback=createJoinFeedback({getScope:gameId=>({gameId,owner:transport,generation:account.snapshot().generation,visit:inviteVisit,route:window.location.hash})});
 // A deliberate focus or pointer move retires only the join's focus intent.
 document.addEventListener('focusin',event=>joinFeedback.noteFocus(event.target));
+const pendingInvitationFocus = createPendingInvitationFocus({
+  document,
+  getScope: () => ({ owner: transport, generation: account.snapshot().generation, visit: inviteVisit, route: window.location.hash, panel: getGamePanel() }),
+});
+document.addEventListener('focusin', event => pendingInvitationFocus.noteFocus(event.target));
+document.addEventListener('pointerdown', event => pendingInvitationFocus.notePointer(event.target), true);
+window.addEventListener('blur', () => pendingInvitationFocus.clear());
+document.addEventListener('visibilitychange', () => { if (document.hidden) pendingInvitationFocus.clear(); });
+
 document.addEventListener('pointerdown',event=>joinFeedback.noteFocus(event.target),true);
 const additionalHistory=createAdditionalHistory({
   getScope:gameId=>{const game=transport.getAuthoritativeGame(gameId),state=account.snapshot();return canReadAdditionalHistory(game,state)?{gameId,owner:transport,generation:state.generation,revision:game.gameplayRevision}:null;},
@@ -3011,7 +3021,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
       const animateJoin = animatePanels && !routeTransition && joinMarkupByElement.has(joinEl);
       const oldHeight=joinEl.getBoundingClientRect().height;
       const focus=joinEl.contains(document.activeElement)?document.activeElement:null;
-      const selector=focus?.matches('.invite-link-field')?'.invite-link-field':focus?.dataset.action?`[data-action="${CSS.escape(focus.dataset.action)}"]${focus.dataset.inviteRole?`[data-invite-role="${CSS.escape(focus.dataset.inviteRole)}"]`:''}${focus.dataset.profileKey?`[data-profile-key="${CSS.escape(focus.dataset.profileKey)}"]`:''}${focus.dataset.computerSide?`[data-computer-side="${CSS.escape(focus.dataset.computerSide)}"]`:''}`:null;
+      const selector=focus?.dataset.action==='copy-invite'?null:focus?.matches('.invite-link-field')?'.invite-link-field':focus?.dataset.action?`[data-action="${CSS.escape(focus.dataset.action)}"]${focus.dataset.inviteRole?`[data-invite-role="${CSS.escape(focus.dataset.inviteRole)}"]`:''}${focus.dataset.profileKey?`[data-profile-key="${CSS.escape(focus.dataset.profileKey)}"]`:''}${focus.dataset.computerSide?`[data-computer-side="${CSS.escape(focus.dataset.computerSide)}"]`:''}`:null;
       const selection=focus instanceof HTMLInputElement?[focus.selectionStart,focus.selectionEnd]:null;
       if(selector)panelPendingFocus.set(joinEl,{selector,selection});
       else if(document.activeElement !== document.body)panelPendingFocus.delete(joinEl);
@@ -3889,6 +3899,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }
   }
   joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });
+  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });
   return result;
 };
 const renderContent = ({ animatePanels, includeBoard }) => {
@@ -5298,6 +5309,9 @@ appEl.addEventListener("click", async (event) => {
     if (!gameId) {
       return;
     }
+    const invitationPanel = actionEl.closest('[data-game-panel="join"]');
+    if (invitationPanel instanceof HTMLElement) panelPendingFocus.delete(invitationPanel);
+    pendingInvitationFocus.begin(actionEl, getCopyInviteButtonKey(gameId));
     await withPendingButton(getCopyInviteButtonKey(gameId),()=>copyGameInvitation(gameId,actionEl.dataset.inviteRole || 'viewer'));
 
     return;
