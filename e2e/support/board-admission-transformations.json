@@ -249,52 +249,52 @@
   },
   "/shell/live-transport.js": {
     "file": "apps/web/shell/live-transport.js",
-    "sourceSha256": "16cc89b248bd087f0e8802fa179e40d93ebfbb8f966a24f11fc3d2658d5af34e",
-    "outputSha256": "4711ff9b259046594e3d0b54e340639eea5001b6e0d419ff0326455121b1da9c",
+    "sourceSha256": "cb31e8a4ac830516fda50331c1abb58e649e319c5add3870ba352ff9babb30e0",
+    "outputSha256": "ef8a4ea9e5cf4ccc122daf76d7db1c191b490ed1f8e4f59b89bb232a3b374387",
     "operations": [
       {
-        "start": 53250,
-        "end": 53250,
+        "start": 56116,
+        "end": 56116,
         "before": "",
         "after": "    boardAdmissionProbe(\"transport-send-entry\", () => ({retryAttempt,reconcileFirst}));\n",
         "anchor": "yAttempt = 0, reconcileFirst = false } = {}) => {\n    if (!active) return;\n    const optimistic = ge",
         "anchorCount": 1
       },
       {
-        "start": 64090,
-        "end": 64090,
+        "start": 66956,
+        "end": 66956,
         "before": "",
         "after": "    boardAdmissionProbe(\"transport-enqueue\", () => ({ kind: command.kind, type: command.action?.type ?? null }));\n",
         "anchor": "imisticCommand = async ({ gameId, command }) => {\n    const contextEpoch = rulesEpoch;\n    const opt",
         "anchorCount": 1
       },
       {
-        "start": 64256,
-        "end": 64256,
+        "start": 67122,
+        "end": 67122,
         "before": "",
         "after": "      boardAdmissionProbe(\"transport-admission-entry\");\n",
         "anchor": "stic.admission.catch(() => {}).then(async () => {\n      assertActive();\n      assertRulesContext(con",
         "anchorCount": 1
       },
       {
-        "start": 64520,
-        "end": 64734,
-        "before": "      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) throw Object.assign(new Error(\"sync_recovering\"), { code: \"sync_recovering\" });\n",
-        "after": "      if (boardAdmissionValue(\"transport-position-only\", current?.positionOnly === true) || (boardAdmissionValue(\"transport-computer\", command.computer) ? boardAdmissionValue(\"transport-shared-blocked\", current?.sharedMutationsBlocked) : boardAdmissionValue(\"transport-gameplay-blocked\", current?.gameplayMutationsBlocked))) throw Object.assign(new Error(\"sync_recovering\"), { code: \"sync_recovering\" });\n",
-        "anchor": ";\n      const current = getGameViewModel(gameId);\n      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) throw Object.assign(new Error(\"sync_recovering\"), { code: \"sync_recovering\" });\n      const isClosure = command.kind === \"end-turn",
+        "start": 67386,
+        "end": 67522,
+        "before": "      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) {\n",
+        "after": "      if (boardAdmissionValue(\"transport-position-only\", current?.positionOnly === true) || (boardAdmissionValue(\"transport-computer\", command.computer) ? boardAdmissionValue(\"transport-shared-blocked\", current?.sharedMutationsBlocked) : boardAdmissionValue(\"transport-gameplay-blocked\", current?.gameplayMutationsBlocked))) {\n",
+        "anchor": "      const current = getGameViewModel(gameId);\n      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) {\n        reportRecoveryDiagnostic(gameId, 'admiss",
         "anchorCount": 1
       },
       {
-        "start": 68217,
-        "end": 68264,
+        "start": 71313,
+        "end": 71360,
         "before": "        if (!projection.ok) return projection;\n",
         "after": "        if (!boardAdmissionValue(\"transport-admission-projection-ok\", projection.ok)) return projection;\n",
-        "anchor": "or('sync_recovering'), {code:'sync_recovering'});\n        if (!projection.ok) return projection;\n        if (latest !== base) projection = rebasePr",
+        "anchor": "overing'), {code:'sync_recovering'});\n        }\n        if (!projection.ok) return projection;\n        if (latest !== base) projection = rebase",
         "anchorCount": 1
       },
       {
-        "start": 68351,
-        "end": 68405,
+        "start": 71447,
+        "end": 71501,
         "before": "        try { await commandJournal.admit(envelope); }\n",
         "after": "        try { boardAdmissionProbe(\"transport-before-journal\"); await commandJournal.admit(envelope); boardAdmissionProbe(\"transport-after-journal\"); }\n",
         "anchor": "on = rebaseProjectedMetadata(projection, latest);\n        try { await commandJournal.admit(envelope); }\n        catch (error) { optimistic.unsavedCommand ",
@@ -321,44 +321,44 @@
   },
   "/shell/app.js": {
     "file": "apps/web/shell/app.js",
-    "sourceSha256": "23149ae3a410db04571037eef9832164d89d8cb0759b1278f3a147da72247582",
-    "outputSha256": "19ff66c97ba43a9a921d6ca5a09df18763b5942205379edab64f7e07e5aed000",
+    "sourceSha256": "6c18722c9e2a5061e2fa1458cd92c9fdc15c8b3aaf0d00d149f11d5601bab7f9",
+    "outputSha256": "b2876483a3666b0fa8ea4b290ef7fcd3a8b13a5ad3295ee5ec5c247fcb4176f6",
     "operations": [
       {
-        "start": 183638,
-        "end": 183638,
+        "start": 183715,
+        "end": 183715,
         "before": "",
         "after": "    boardAdmissionProbe(\"shell-runtime-replace\", () => ({hadRuntime:Boolean(boardRuntime)}), boardRuntime);\n",
         "anchor": "ountedBoardGameId !== game.id || !boardRuntime) {\n    if (boardRuntime) {\n      boardRuntime.destroy",
         "anchorCount": 1
       },
       {
-        "start": 207187,
-        "end": 207255,
+        "start": 207264,
+        "end": 207332,
         "before": "  if (renderGesture.defer({ animatePanels, includeBoard })) return;\n",
         "after": "  if (boardAdmissionValue(\"shell-render-deferred\", renderGesture.defer({ animatePanels, includeBoard }))) return;\n",
         "anchor": "tePanels = true, includeBoard = true } = {}) => {\n  if (renderGesture.defer({ animatePanels, includeBoard })) return;\n  const previousJoinFocus = document.activeElement",
         "anchorCount": 1
       },
       {
-        "start": 261785,
-        "end": 261855,
+        "start": 261904,
+        "end": 261974,
         "before": "  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n",
         "after": "  if (boardAdmissionValue(\"shell-on-board\", event.target.closest?.(\"#shell-board\")) && boardAdmissionValue(\"shell-account-denied\", !account.canPlay())) {\n",
         "anchor": "\nappEl.addEventListener(\"pointerdown\", event => {\n  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n    event.preventDefault();event.stopImmediateProp",
         "anchorCount": 1
       },
       {
-        "start": 262050,
-        "end": 262120,
+        "start": 262169,
+        "end": 262239,
         "before": "  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n",
         "after": "  if (boardAdmissionValue(\"shell-on-board\", event.target.closest?.(\"#shell-board\")) && boardAdmissionValue(\"shell-account-denied\", !account.canPlay())) {\n",
         "anchor": "true);\nappEl.addEventListener(\"click\", event => {\n  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n    event.preventDefault();event.stopImmediateProp",
         "anchorCount": 1
       },
       {
-        "start": 306880,
-        "end": 306880,
+        "start": 306999,
+        "end": 306999,
         "before": "",
         "after": "    boardAdmissionProbe(\"shell-release-bounce\", () => ({connected:Boolean(pressedControlEl.isConnected)}), pressedControlEl);\n",
         "anchor": "\n  if (pressedControlEl instanceof HTMLElement) {\n    playControlReleaseBounce(pressedControlEl);\n  ",
