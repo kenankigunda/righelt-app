@@ -1,31 +1,30 @@
 import {test,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {settledMessage,measureSemanticGeometry,assertSemanticGeometry} from './support/message-semantic-geometry.mjs';
-import {admittedHeight,budgetPixelPrecision,messagePaintGuard} from './support/message-reservation-policy.mjs';
 test.use({viewport:{width:390,height:740},hasTouch:true});
 const geometry=page=>page.locator('#board').evaluate(el=>{const rect=el.getBoundingClientRect();return{x:rect.x,y:rect.y,width:rect.width,height:rect.height};});
 test('replay message steps preserve action nodes and keyboard focus',async({page})=>{
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
  await page.evaluate(async()=>{
   await window.boardFixture.setup('pass',false);
-  window.replayMessage={text:'Replay · 1 of 3',actions:[{id:'replay-next',label:'Next'},{id:'replay-stop',label:'Stop replay'}]};
+  window.replayMessage={text:'Next',context:{kind:'replay-progress',message:{text:'Replay · 1 of 3'}},actions:[{id:'replay-next',label:'Next'},{id:'replay-stop',label:'Stop replay'}]};
   window.boardFixture.message(window.replayMessage);
  });
  const stop=page.getByRole('button',{name:'Stop replay',exact:true});await stop.focus();
  await page.evaluate(()=>{window.savedReplayStop=document.activeElement;window.savedReplayNext=document.querySelector('[data-board-message-action="replay-next"]');window.savedReplayIcon=window.savedReplayStop.querySelector("svg");window.savedReplayLabel=window.savedReplayStop.querySelector(".board-inline-action-label");});
  await settledMessage(page);const before=await geometry(page);
  for(const step of [2,3]){
-  await page.evaluate(step=>window.boardFixture.message({...window.replayMessage,text:`Replay · ${step} of 3`}),step);
-  await expect(page.locator('#preview')).toContainText(`Replay · ${step} of 3`);
+  await page.evaluate(step=>window.boardFixture.message({...window.replayMessage,context:{kind:'replay-progress',message:{text:`Replay · ${step} of 3`}}}),step);
+  await expect(page.locator('#fixture-context')).toContainText(`Replay · ${step} of 3`);await expect(page.locator('#preview')).not.toContainText('Replay ·');
   expect(await page.evaluate(()=>({stop:window.savedReplayStop===document.querySelector('[data-board-message-action="replay-stop"]'),next:window.savedReplayNext===document.querySelector('[data-board-message-action="replay-next"]'),focus:document.activeElement===window.savedReplayStop}))).toEqual({stop:true,next:true,focus:true});
   await settledMessage(page);expect(await geometry(page)).toEqual(before);
   expect(await stop.evaluate(button=>button.querySelector('svg')===window.savedReplayIcon&&button.querySelector('.board-inline-action-label')===window.savedReplayLabel)).toBe(true);
  }
  await stop.press('Enter');expect(await page.evaluate(()=>window.boardFixture.messageActions())).toEqual(['replay-stop']);
  expect(await page.evaluate(()=>window.boardFixture.applied())).toEqual([]);
- await page.evaluate(()=>window.boardFixture.message({text:'Finished <safely>',action:{id:'replay-computer',label:'Show me again'}}));
+ await page.evaluate(()=>window.boardFixture.message({text:'Review the game in History',context:{text:'Finished <safely>',action:{id:'replay-computer',label:'Show me again'}}}));
  await expect(stop).toHaveCount(0);await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
- await expect(page.locator('#preview')).toContainText('Finished <safely>');expect(await page.locator('#preview safely').count()).toBe(0);
+ await expect(page.locator('#fixture-context')).toContainText('Finished <safely>');expect(await page.locator('#fixture-context safely').count()).toBe(0);await expect(page.locator('#preview')).toHaveText('Review the game in History');
 });
 
 test('vertical translation preserves exact board layout sizing',async({page},info)=>{
@@ -90,24 +89,13 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
   const measure=()=>measureSemanticGeometry(page);
   await settledMessage(page);const initial=await measure();
   expect(initial.slot.height).toBeGreaterThanOrEqual(44);
-  // The frozen-sequence explanation is three wrapped lines at320px. Measure
-  // the real finite replicas at intrinsic height, rather than the old two-line
-  // minimum that predates mandatory reconnect/retreat/follow explanations.
-  const reservation=await page.locator('.board-message-slot').evaluate(slot=>{
-    const width=slot.getBoundingClientRect().width;
-    const heights=[...slot.querySelectorAll('.board-message-sizing')].map(node=>{
-      const copy=node.cloneNode(true);copy.style.cssText=`position:absolute;inline-size:${width}px;height:auto;align-self:start;margin:0`;
-      slot.append(copy);const height=copy.getBoundingClientRect().height;copy.remove();return height;
-    });
-    const intrinsicFallback=[...slot.querySelectorAll('.board-message-fallback-sizing')].map(node=>{
-      const copy=node.cloneNode(true);copy.style.cssText=`position:absolute;inline-size:${width}px;height:auto;min-height:0;align-self:start;margin:0`;
-      slot.append(copy);const height=copy.getBoundingClientRect().height;copy.remove();return height;
-    });
-    return {required:Math.max(...heights),intrinsicFallback:Math.max(...intrinsicFallback),lineHeight:parseFloat(getComputedStyle(slot.querySelector('.board-preview-label')).lineHeight)};
-  });
-  const paintGuard=messagePaintGuard(reservation.lineHeight/1.5);
-  expect(initial.slot.height).toBeCloseTo(reservation.required+paintGuard,5);
-  expect(budgetPixelPrecision(initial.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(admittedHeight(initial.slot.width,reservation.lineHeight/1.5,reservation.intrinsicFallback)+paintGuard));
+  // The actual finite primary/fallback replicas reserve the short grammar.
+  // Extended narration and obligations have a separate controlled context host.
+  const reservation=await page.locator('.board-message-slot').evaluate(slot=>({
+    required:Math.max(...[...slot.querySelectorAll('.board-message-sizing')].map(node=>node.getBoundingClientRect().height)),
+    padding:parseFloat(getComputedStyle(slot).paddingTop)+parseFloat(getComputedStyle(slot).paddingBottom),
+  }));
+  expect(initial.slot.height).toBeCloseTo(reservation.required+reservation.padding,5);
   await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(0);
   for(const phase of ['thinking','completed','completed-pass','multi-push','multi-rush','spectator-long-name','selection','frozen-reconnect','frozen-retreat','frozen-follow','loading','human']){
@@ -120,13 +108,13 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
         const {describeTurn,moveCoordinates}=await import('/apps/web/shell/computer-narration.js');
         const point=(row,col)=>({row,col}),move=(type,actorId,from,to)=>({action:{type,actorId,from,to}});
         const moves=phase==='multi-push'?[move('push','a',point(9,9),point(0,0)),move('follow','a',point(0,0),point(1,0)),move('follow','b',point(1,1),point(0,1))]:[move('rush','a',point(9,9),point(0,0)),move('rush','b',point(9,8),point(0,1))];
-        window.boardFixture.message({rows:[{text:describeTurn(moves,'Your opponent'),coordinates:moveCoordinates(moves),action:{id:'replay-computer',label:'Show me again'}},{text:'Select a piece or',action:{id:'pass',label:'Pass'}}]});return;
+        window.boardFixture.message({text:'Select a piece or',action:{id:'pass',label:'Pass'},context:{text:describeTurn(moves,'Your opponent'),coordinates:moveCoordinates(moves),action:{id:'replay-computer',label:'Show me again'}}});return;
       }
       if(phase==='thinking')game.computerTurn='horus';
       window.updateComputerBoardLoading(document.querySelector('.board-message-activity'),game,{phase:'looking-ahead'});
       const preview=document.querySelector('#preview');
-      if(phase==='loading'){preview.closest('.board-message-slot').outerHTML=renderBoardMessageSlot({id:'preview',loading:true});return;}
-      if(phase==='selection'){preview.textContent='Piece at (9, 9) – Select a move';return;}
+      if(phase==='loading'){window.boardFixture.message({text:'Loading play'});return;}
+      if(phase==='selection'){window.boardFixture.message({text:'Select a move for piece at (9, 9)',coordinates:[{row:9,col:9}]});return;}
       if(phase.startsWith('frozen-')){
         const {getSelectedPieceExplanation,SELECTED_CONTINUATION_LABELS}=await import('/apps/web/board/piece-explanations.js');
         const {renderCoordinateChip}=await import('/apps/web/board/coordinate-chip.js');
@@ -134,39 +122,43 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
         const explanation=getSelectedPieceExplanation(piece,{continuation:{type,frozenPieceStatesById:{selected:{supplied:false,commanded:false}}}});
         if(typeof explanation!=='string'||!explanation.trim())throw Error('Frozen continuation must produce a real piece explanation');
         const coordinate=renderCoordinateChip({row:9,col:9}),continuation=phase==='frozen-reconnect'?`${SELECTED_CONTINUATION_LABELS.rushBlocker} ${coordinate}`:phase==='frozen-retreat'?SELECTED_CONTINUATION_LABELS.retreat:SELECTED_CONTINUATION_LABELS.follow;
-        preview.innerHTML=`Piece at ${coordinate} – ${explanation} · ${continuation}`;return;
+        window.boardFixture.message({text:phase==='frozen-reconnect'?'Select a rush to restore supply':phase==='frozen-retreat'?'Select a retreat for piece at (9, 9)':'Select a follow',coordinates:phase==='frozen-retreat'?[{row:9,col:9}]:[],context:{text:`${explanation} for piece at (9, 9) · ${continuation.replace(/<[^>]+>/g,'')}`,coordinates:[{row:9,col:9}],mandatory:phase==='frozen-reconnect'}});return;
       }
 
-      if(phase==='human'){const {renderBoardInlineAction}=await import('/apps/web/board/message-presentation.js');preview.innerHTML=`Select a piece ${renderBoardInlineAction({id:'pass',label:'Pass'},{preview:true})}`;return;}
+      if(phase==='human'){window.boardFixture.message({text:'Select a piece or',action:{id:'pass',label:'Pass'}});return;}
       if(phase==='thinking')game.computerTurn='horus';
       const longName='界'.repeat(16)+'W'.repeat(16);
-      const message=phase==='spectator-long-name'?opponentBoardMessage({id:'named-viewer',myRole:'Viewer',myRoles:['Viewer'],player1:{identityId:'p1',profile:{displayName:longName}},player2:{identityId:'p2'},controlSeat:'Player 2',board:{state:{turnIndex:1,sideToMove:'P2'}},turns:[{index:0,status:'complete',playerSeat:'Player 1'}],moves:[{turnIndex:0,actorSide:'P1',action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]},{},{},{canInteract:false,identityId:'viewer'}):phase==='completed-pass'?opponentBoardMessage({...game,myRoles:['Player 2'],legalActions:[{type:'pass'}],computer:null,turns:[{index:0,status:'complete',playerSeat:'Player 1'}],moves:[{turnIndex:0,actorSide:'P1',action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]},{},{},{canInteract:true}):computerBoardMessage(game,{});
-      if(phase==='spectator-long-name'&&(!message?.text?.startsWith(`${longName} `)||message.action?.label!=='Show me again'))throw Error('Spectator narration must retain the actual full name and replay action');
+      const rawMessage=phase==='spectator-long-name'?opponentBoardMessage({id:'named-viewer',myRole:'Viewer',myRoles:['Viewer'],player1:{identityId:'p1',profile:{displayName:longName}},player2:{identityId:'p2'},controlSeat:'Player 2',board:{state:{turnIndex:1,sideToMove:'P2'}},turns:[{index:0,status:'complete',playerSeat:'Player 1'}],moves:[{turnIndex:0,actorSide:'P1',action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]},{},{},{canInteract:false,identityId:'viewer'}):phase==='completed-pass'?opponentBoardMessage({...game,myRoles:['Player 2'],legalActions:[{type:'pass'}],computer:null,turns:[{index:0,status:'complete',playerSeat:'Player 1'}],moves:[{turnIndex:0,actorSide:'P1',action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]},{},{},{canInteract:true}):computerBoardMessage(game,{});
+      const message=rawMessage&&typeof rawMessage==='object'&&rawMessage.action?.id==='replay-computer'?{text:'Select a piece',context:rawMessage}:rawMessage;
+      if(phase==='spectator-long-name'&&(!message?.context?.text?.startsWith(`${longName} `)||message.context.action?.label!=='Show me again'))throw Error('Spectator narration must retain the actual full name and replay action');
       if(phase==='spectator-long-name')window.namedSpectatorMessage=message;
       window.boardFixture.message(message);
     },phase);
     await settledMessage(page);const current=await measure();
-    // Different semantic messages may use their own intrinsic height. Keep the
-    // board size and horizontal placement exact, and account for all vertical
-    // movement solely through the settled message slot.
-    assertSemanticGeometry(initial,current);
+    assertSemanticGeometry(initial,current);expect(current.board).toEqual(initial.board);
+    expect(await page.locator('[data-prompt-overflow="true"],[data-prompt-unmapped="true"]').count()).toBe(0);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(phase==='frozen-reconnect'&&width===320)await page.screenshot({path:info.outputPath(`stable-frozen-reconnect-${width}-${scale}.png`)});
     if(phase==='completed'||phase==='completed-pass'||phase==='spectator-long-name'){
       await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(1);
       if(phase==='spectator-long-name'){
-        const name=page.locator('#preview .board-message-name'),replay=page.getByRole('button',{name:'Show me again',exact:true});
+        const name=page.locator('#fixture-context .board-message-name'),replay=page.getByRole('button',{name:'Show me again',exact:true});
         await expect(name).toHaveAttribute('dir','auto');await expect(name).toHaveAttribute('title','界'.repeat(16)+'W'.repeat(16));await expect(name).toHaveText('界'.repeat(16)+'W'.repeat(16));
         expect(await name.evaluate(el=>el.scrollWidth>el.clientWidth)).toBe(true);
-        await replay.focus();await replay.evaluate(button=>{window.namedReplayButton=button;window.namedActorNode=button.parentElement.querySelector('.board-message-name');});
-        await page.evaluate(()=>window.boardFixture.message({...window.namedSpectatorMessage,text:window.namedSpectatorMessage.text.replace('retreated','followed')}));
-        await expect(replay).toBeFocused();expect(await replay.evaluate(button=>button===window.namedReplayButton&&button.parentElement.querySelector('.board-message-name')===window.namedActorNode)).toBe(true);
-        await expect(page.locator('#preview')).toContainText('followed a piece from 9, 9 to 0, 0');
+        await replay.focus();await replay.evaluate(button=>{window.namedReplayButton=button;window.namedActorNode=button.closest('[data-board-context]').querySelector('.board-message-name');});
+        await page.evaluate(()=>window.boardFixture.message({...window.namedSpectatorMessage,context:{...window.namedSpectatorMessage.context,text:window.namedSpectatorMessage.context.text.replace('retreated','followed')}}));
+        await expect(replay).toBeFocused();expect(await replay.evaluate(button=>button===window.namedReplayButton&&button.closest('[data-board-context]').querySelector('.board-message-name')===window.namedActorNode)).toBe(true);
+        await expect(page.locator('#fixture-context')).toContainText('followed a piece from 9, 9 to 0, 0');
         await settledMessage(page);expect(await measure(),'Same-layout named narration refresh preserves settled geometry and action focus').toEqual(current);
       }
       if(phase==='completed-pass')await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
-      const typography=await page.evaluate(()=>{const properties=['fontFamily','fontSize','fontWeight','lineHeight','height','padding','borderWidth'];const style=selector=>{const computed=getComputedStyle(document.querySelector(selector));return Object.fromEntries(properties.map(key=>[key,computed[key]]));};return{live:style('#preview button'),replica:style('.board-message-sizing button')};});
-      expect(typography.live).toEqual(typography.replica);
+      const replay=page.getByRole('button',{name:'Show me again',exact:true});
+      const replayBox=await replay.boundingBox();expect(replayBox.width).toBeGreaterThanOrEqual(44);expect(replayBox.height).toBeGreaterThanOrEqual(44);
+      expect(await replay.evaluate(button=>button.closest('#preview')===null)).toBe(true);
+      if(phase==='completed-pass'){
+       const typography=await page.evaluate(()=>{const properties=['fontFamily','fontSize','fontWeight','lineHeight','height','padding','borderWidth'];const style=selector=>{const computed=getComputedStyle(document.querySelector(selector));return Object.fromEntries(properties.map(key=>[key,computed[key]]));};return{live:style('#preview button'),replica:style('.board-message-sizing button')};});
+       expect(typography.live).toEqual(typography.replica);
+      }
       await page.screenshot({path:info.outputPath(`stable-${phase}-${width}-${scale}.png`)});
     }
   }
@@ -224,7 +216,7 @@ test('computer loading pieces remain continuous, plain and motion-aware beside t
  expect(await page.locator('.board-message-sizing [data-loading-state],.board-message-sizing .loading-pieces').count()).toBe(0);
 });
 
-test('admission changes preserve selection, sentence rows, baseline-aligned chips and disabled controls',async({page})=>{
+test('admission changes preserve independent context, selection, baseline-aligned chips and disabled controls',async({page})=>{
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
  await page.evaluate(async()=>{
   await window.boardFixture.setup('pass',false);
@@ -234,10 +226,10 @@ test('admission changes preserve selection, sentence rows, baseline-aligned chip
   window.boardFixture.message(opponentBoardMessage(game,{}, {},{canInteract:true}));
  });
  const prompt=page.locator('#preview'),pass=page.getByRole('button',{name:'Pass',exact:true});
- await expect(prompt.locator('.board-message-row')).toHaveCount(2);
- await expect(prompt.locator('.board-preview-coordinate-chip')).toHaveCount(2);
- await expect(prompt.locator('.board-message-row').nth(0)).toContainText('Show me again');
- await expect(prompt.locator('.board-message-row').nth(1)).toHaveText('Select a piece or Pass');
+ await expect(prompt.locator('.board-message-row')).toHaveCount(0);
+ await expect(page.locator('#fixture-context .board-preview-coordinate-chip')).toHaveCount(2);
+ await expect(page.locator('#fixture-context')).toContainText('Show me again');
+ await expect(prompt).toHaveText('Select a piece or Pass');
  await settledMessage(page);const copy=await prompt.textContent(),before=await geometry(page);
  for(const blocked of [true,false,true,false]){
   await page.evaluate(blocked=>{
@@ -249,13 +241,13 @@ test('admission changes preserve selection, sentence rows, baseline-aligned chip
   if(blocked)await pass.evaluate(button=>button.click());
  }
  expect(await page.evaluate(()=>window.boardFixture.applied())).toEqual([]);
- expect(await prompt.locator('.board-preview-coordinate-chip').first().evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('baseline');
  expect(await pass.evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('baseline');
  // A prepared move remains a move preview while submission admission changes.
  await page.evaluate(async()=>{await window.boardFixture.setup('rush',false);});
  await page.locator('[data-row="4"][data-col="2"]').click();
  const selectedCopy=await prompt.textContent(),selection=await page.evaluate(()=>window.boardFixture.selection());
  expect(selectedCopy).toContain('Select a move for piece at');
+ expect(await prompt.locator('.board-preview-coordinate-chip').first().evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('baseline');
  for(const blocked of [true,false,true,false]){
   await page.evaluate(blocked=>window.boardFixture.gateInteraction(blocked),blocked);
   expect(await prompt.textContent()).toBe(selectedCopy);
