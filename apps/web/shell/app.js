@@ -3858,18 +3858,50 @@ const scheduleResponsiveHomeSectionPageSizes = () => {
 };
 
 const renderGesture = createRenderGestureGate({ render: options => render(options) });
-// Firefox legacy mouse activation uses the same pressed-control lifetime.
-for (const type of ["pointerdown", "mousedown"]) window.addEventListener(type, event => {
-  if (appEl.contains(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
+// Compatibility mouse events alias their admitted pointer control, so one
+// physical release cannot leave an alias held or release another input.
+const pointerPresses = new Map(), mousePresses = new Map();
+const pressedControl = event => appEl.contains(event.target) ? event.target.closest?.("button, a, [data-action]") : null;
+const mouseButton = event => event.button ?? 0;
+const pointerKey = event => event.pointerId ?? "legacy-pointer";
+const retireRenderPress = owner => {
+  if (!owner) return;
+  for (const [id, press] of pointerPresses) if (press.owner === owner) pointerPresses.delete(id);
+  for (const [button, held] of mousePresses) if (held === owner) mousePresses.delete(button);
+  renderGesture.end(owner);
+};
+window.addEventListener("pointerdown", event => {
+  const control = pressedControl(event);
+  if (!control) return;
+  const id = pointerKey(event), owner = Symbol("pointer-press");
+  retireRenderPress(pointerPresses.get(id)?.owner);
+  pointerPresses.set(id, {owner, control, button: mouseButton(event), kind: event.pointerType ?? "mouse", primary: event.isPrimary !== false});
+  renderGesture.begin(owner);
+}, true);
+window.addEventListener("mousedown", event => {
+  const control = pressedControl(event);
+  if (!control) return;
+  const button = mouseButton(event);
+  const pointer = [...pointerPresses.values()].reverse().find(press => press.primary && press.control === control && press.button === button);
+  const owner = pointer?.owner ?? mousePresses.get(button) ?? Symbol("mouse-press");
+  mousePresses.set(button, owner);
+  renderGesture.begin(owner);
 }, true);
 window.addEventListener("keydown", event => {
-  if (!event.repeat && (event.key === " " || event.key === "Enter") && appEl.contains(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
+  if (!event.repeat && (event.key === " " || event.key === "Enter") && pressedControl(event)) renderGesture.begin(`key:${event.code || event.key}`);
 }, true);
-window.addEventListener("keyup", event => { if (event.key === " " || event.key === "Enter") renderGesture.end(); }, true);
-for (const type of ["pointerup", "mouseup", "pointercancel", "touchcancel", "lostpointercapture", "click"])
-  window.addEventListener(type, () => renderGesture.end(), true);
-window.addEventListener("blur", event => { if (event.target === window) renderGesture.end(); });
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") renderGesture.end(); });
+window.addEventListener("keyup", event => {
+  if (event.key === " " || event.key === "Enter") renderGesture.end(`key:${event.code || event.key}`);
+}, true);
+for (const type of ["pointerup", "pointercancel", "lostpointercapture"])
+  window.addEventListener(type, event => retireRenderPress(pointerPresses.get(pointerKey(event))?.owner), true);
+window.addEventListener("mouseup", event => retireRenderPress(mousePresses.get(mouseButton(event))), true);
+window.addEventListener("touchcancel", () => {
+  for (const press of [...pointerPresses.values()]) if (press.kind === "touch") retireRenderPress(press.owner);
+}, true);
+const cancelRenderPresses = () => { pointerPresses.clear(); mousePresses.clear(); renderGesture.cancelAll(); };
+window.addEventListener("blur", event => { if (event.target === window) cancelRenderPresses(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") cancelRenderPresses(); });
 
 // Background shell updates must not interrupt an in-progress scenario draft.
 const captureScenarioDraftFocus = (baseRouteKey) => {

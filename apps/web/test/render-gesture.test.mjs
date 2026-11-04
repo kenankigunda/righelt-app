@@ -100,8 +100,69 @@ test('registered pointer and compatibility mouse events share one release', asyn
 test('registered mouse fallback excludes outside and noncontrol targets and releases on cancellation', async () => {
   for(const options of [{inside:false},{control:false}]){const h=await registeredGesture();h.emit('mousedown',{target:h.target(options)});assert.equal(h.gate.defer({}),false);}
   for(const type of ['pointercancel','touchcancel','lostpointercapture','blur','visibilitychange']){
-    const h=await registeredGesture();h.emit('mousedown',{target:h.target()});assert.equal(h.gate.defer({includeBoard:true}),true);
+    const h=await registeredGesture(),target=h.target();
+    if(['pointercancel','lostpointercapture','touchcancel'].includes(type))h.emit('pointerdown',{target,pointerId:7,pointerType:type==='touchcancel'?'touch':'mouse',button:0});
+    h.emit('mousedown',{target,button:0});assert.equal(h.gate.defer({includeBoard:true}),true);
     if(type==='visibilitychange')h.document.visibilityState='hidden';
-    h.emit(type,{target:type==='blur'?h.window:h.target()});h.flush();assert.equal(h.renders.length,1,type);assert.equal(h.gate.defer({}),false);
+    h.emit(type,{target:type==='blur'?h.window:target,pointerId:7});h.flush();assert.equal(h.renders.length,1,type);assert.equal(h.gate.defer({}),false);
+  }
+});
+
+
+test('registered mouse hold survives an unrelated keyboard release', async () => {
+  const h=await registeredGesture(),target=h.target();
+  h.emit('mousedown',{target,button:0});assert.equal(h.gate.defer({includeBoard:true}),true);
+  h.emit('keyup',{target,key:'Enter',code:'Enter'});h.flush();
+  assert.equal(h.renders.length,0,'unowned key release must not remove a still-pressed mouse control');
+  assert.equal(h.gate.defer({includeBoard:false}),true);
+  h.emit('mouseup',{target,button:0});h.emit('click',{target,button:0});h.flush();assert.equal(h.renders.length,1);
+});
+
+test('registered keyboard hold survives unrelated mouse release and click', async () => {
+  const h=await registeredGesture(),target=h.target();
+  h.emit('keydown',{target,key:'Enter',code:'Enter',repeat:false});assert.equal(h.gate.defer({includeBoard:true}),true);
+  h.emit('mouseup',{target,button:0});h.emit('click',{target,button:0});h.flush();
+  assert.equal(h.renders.length,0,'unowned mouse release must not remove a still-pressed keyboard control');
+  h.emit('keyup',{target,key:'Enter',code:'Enter'});h.flush();assert.equal(h.renders.length,1);
+});
+
+
+test('registered pointer aliases share control identity and cancel without retiring keyboard ownership', async () => {
+  for(const type of ['pointercancel','lostpointercapture']){
+    const h=await registeredGesture(),control=h.target();
+    const child=()=>({inside:true,closest:()=>control});
+    h.emit('pointerdown',{target:child(),pointerId:7,pointerType:'mouse',isPrimary:true,button:0});
+    h.emit('mousedown',{target:child(),button:0});
+    h.emit('keydown',{target:control,key:'Enter',code:'Enter',repeat:false});assert.equal(h.gate.defer({includeBoard:true}),true);
+    h.emit(type,{pointerId:7,button:-1});h.flush();assert.equal(h.renders.length,0,'keyboard remains held');
+    h.emit('keyup',{target:control,key:'Enter',code:'Enter'});h.flush();assert.equal(h.renders.length,1);assert.equal(h.gate.defer({}),false,'no compatibility alias remains stuck');
+  }
+});
+
+test('registered independent mouse buttons and keys keep distinct ownership', async () => {
+  const h=await registeredGesture(),target=h.target();
+  h.emit('mousedown',{target,button:0});h.emit('mousedown',{target,button:2});
+  h.emit('keydown',{target,key:' ',code:'Space',repeat:false});assert.equal(h.gate.defer({includeBoard:true}),true);
+  h.emit('mouseup',{target,button:0});h.emit('click',{target,button:0});h.flush();assert.equal(h.renders.length,0);
+  h.emit('keyup',{target,key:' ',code:'Space'});h.flush();assert.equal(h.renders.length,0,'second button still owns its press');
+  h.emit('mouseup',{target,button:2});h.flush();assert.equal(h.renders.length,1);assert.equal(h.gate.defer({}),false);
+});
+
+test('registered touch cancellation preserves independent mouse and keyboard holds', async () => {
+  const h=await registeredGesture(),control=h.target(),other=h.target();
+  h.emit('pointerdown',{target:control,pointerId:9,pointerType:'touch',isPrimary:true,button:0});h.emit('mousedown',{target:control,button:0});
+  h.emit('mousedown',{target:other,button:2});h.emit('keydown',{target:other,key:'Enter',code:'Enter',repeat:false});h.gate.defer({includeBoard:true});
+  h.emit('touchcancel',{});h.flush();assert.equal(h.renders.length,0);
+  h.emit('mouseup',{target:other,button:2});h.flush();assert.equal(h.renders.length,0);
+  h.emit('keyup',{target:other,key:'Enter',code:'Enter'});h.flush();assert.equal(h.renders.length,1);assert.equal(h.gate.defer({}),false);
+});
+
+test('registered unowned pointer cancellation does not release a legacy mouse hold and global retirement clears all', async () => {
+  for(const type of ['blur','visibilitychange']){
+    const h=await registeredGesture(),target=h.target();h.emit('mousedown',{target,button:0});h.gate.defer({includeBoard:true});
+    h.emit('pointercancel',{pointerId:44});h.flush();assert.equal(h.renders.length,0);
+    h.emit('keydown',{target,key:'Enter',code:'Enter',repeat:false});
+    if(type==='visibilitychange')h.document.visibilityState='hidden';
+    h.emit(type,{target:h.window});h.flush();assert.equal(h.renders.length,1);assert.equal(h.gate.defer({}),false);
   }
 });
