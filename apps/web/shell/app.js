@@ -1,4 +1,5 @@
 import { createPendingInvitationFocus } from './pending-invitation-focus.js';
+import {renderDismissButton} from './dismiss-control.js';
 import {isOngoingGame,isCompletedGame} from './game-lifecycle.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
@@ -45,6 +46,7 @@ import { mountLoadingFeedback, loadingAttributes, LOADING_CUE_DELAY_MS } from ".
 import { SYNC_TIMING } from "../generated/packages/shared-types/src/sync-protocol.js";
 import { latestRequestEvidence } from "./request-evidence.js";
 import { issueDiagnostics } from "./issue-diagnostics.js";
+import { createRecoveryTelemetry } from './recovery-telemetry.js';
 import { renderDiagnosticDisclosure, handleDiagnosticAction, isDiagnosticOpen, closeDiagnostic } from "./diagnostic-disclosure.js";
 import { patchSectionContent } from "./dom-patch.js";
 import { SWIPE_EASING_CSS } from './navigation-motion.js';
@@ -113,7 +115,7 @@ import { createTutorialController } from "./tutorial.js";
 let slowLoadingContexts=[];
 const loadingContextScope=()=>`${account.snapshot().generation}:${activeStorageGeneration}:${window.location.hash}`;
 mountLoadingEdges(document);
-void fetch("/deploy-meta.json", { cache: "no-store", signal: AbortSignal.timeout(5000) }).then(response => response.json()).then(meta => { globalThis.__righeltClientBuild = meta.sha ?? meta.commitSha ?? "unavailable"; }).catch(() => {});
+void fetch("/deploy-meta.json", { cache: "no-store", signal: AbortSignal.timeout(5000) }).then(response => response.json()).then(meta => { globalThis.__righeltObservedDeploymentSha = meta.sha ?? meta.commitSha ?? "unavailable"; }).catch(() => {});
 const appEl = document.getElementById("app");
 mountRecoverySpace(appEl);
 const utilityMemory = createUtilityMemory({ root: appEl, getScope: key => `${account.snapshot().generation}:${key === 'debug' ? getCurrentViewedGameId() ?? 'home' : 'scenarios'}` });
@@ -1990,7 +1992,7 @@ const renderFlyout = ({ title, variant, closeAction, body }) => `
   <aside class="shell-flyout shell-flyout-${variant} is-open" data-flyout="${variant}">
     <header class="shell-flyout-header">
       <h2>${title}</h2>
-      <button class="ui-icon-button flyout-close-button" type="button" aria-label="Close ${title}" data-action="${closeAction}">${icon('close')}</button>
+      ${renderDismissButton({label:`Close ${title}`,className:"flyout-close-button",attributes:{"data-action":closeAction}})}
     </header>
     <div class="shell-flyout-scroll shell-flyout-scroll-${variant}">
       ${body}
@@ -2493,7 +2495,7 @@ const pendingInvitationFocus = createPendingInvitationFocus({
   getScope: () => ({ owner: transport, generation: account.snapshot().generation, visit: inviteVisit, route: window.location.hash, panel: getGamePanel() }),
 });
 document.addEventListener('focusin', event => pendingInvitationFocus.noteFocus(event.target));
-document.addEventListener('pointerdown', event => pendingInvitationFocus.notePointer(event.target), true);
+for (const type of ['pointerdown', 'mousedown']) document.addEventListener(type, event => pendingInvitationFocus.notePointer(event.target), true);
 window.addEventListener('blur', () => pendingInvitationFocus.clear());
 document.addEventListener('visibilitychange', () => { if (document.hidden) pendingInvitationFocus.clear(); });
 
@@ -4390,6 +4392,7 @@ const syncScenarioCatalog = async () => {
 const makeAccountSyncStore = auth => createSyncStore({
   storage,
   auth,
+  diagnostics: createRecoveryTelemetry(),
   fetcher: account.fetch,
   onAuthLost: () => account.authorityLost(),
   onEvent: (payload, context = {}) => {
@@ -4540,7 +4543,7 @@ const copyGameInvitation = async (gameId, role, fromHost=false) => {
   }catch(error){if(active()){ issueDiagnostics.capture(`invite:${gameId}`, { gameId, operation: 'create_invite', stage: 'failed', code: error.code ?? 'unavailable' }); setInviteFeedback('We couldn’t create your invite link. Please try again.'); }}
 };
 const renderHostInvite = game => renderInvitationSurface({host:true,background:renderGameContent(game.id),content:`
-  <button class="ui-icon-button invite-close" data-action="close-invite" aria-label="Close invite">${icon('close')}</button>
+  ${renderDismissButton({label:"Close invite",className:"invite-close",attributes:{"data-action":"close-invite"}})}
   <p class="small invite-gate-kicker">Your game is ready</p><h2 id="invite-surface-title">Invite a friend</h2>
   <p>Copy a link and send it their way.</p>
   <div class="invite-choice-list">${invitationOptions(game).filter(option=>option.role!=="viewer").map(option=>`<button data-action="share-invite" data-invite-role="${option.role}" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:getCopyInviteButtonKey(game.id)})}>${icon('copy')}${option.label}</button>`).join('')}</div>

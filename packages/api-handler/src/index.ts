@@ -17,6 +17,7 @@ import { handleLiveGameRequest, handleLiveGameWebSocketUpgrade } from "./shell-l
 import type { D1DatabaseLike } from "./shell-live-db";
 import { assertStorageGeneration } from "./storage-generation";
 import { STORAGE_GENERATION_HEADER } from "../../shared-types/src/storage-policy";
+import { diagnosticRoute, handleRecoveryDiagnosticsRequest } from './recovery-diagnostics';
 export type { D1DatabaseLike } from "./shell-live-db";
 
 export type ApiEnv = CutoverEnv & {
@@ -54,6 +55,10 @@ const parseJsonBody = async (request: Request): Promise<Record<string, unknown>>
 };
 
 const handleApiRequestInternal = async (request: Request, env: ApiEnv): Promise<Response> => {
+  // Diagnostics remain usable during storage-reset, auth and policy failures.
+  // This separate path never reads identity or gameplay state.
+  const diagnostics = await handleRecoveryDiagnosticsRequest(request, { allowedOrigins: env.AUTH_ALLOWED_ORIGINS });
+  if (diagnostics) return diagnostics;
   assertStorageGeneration(request, env);
   env = await withCutoverPolicy(env);
   const url = new URL(request.url);
@@ -157,7 +162,9 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
     headers.set("X-Righelt-Server-Build", String((env as ApiEnv & { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? "unavailable"));
     response = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   }
-  console.info(JSON.stringify({ event: "api_request_completed", requestId, path: new URL(request.url).pathname, status: response.status, serverBuild: (env as ApiEnv & { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? "unavailable", durationMs: Date.now() - started }));
+  // Logging is best effort. An unavailable sink cannot turn a committed game
+  // operation into a failed response, and dynamic routes can contain secrets.
+  try { console.info(JSON.stringify({ event: "api_request_completed", requestId, path: diagnosticRoute(new URL(request.url).pathname), status: response.status, serverBuild: (env as ApiEnv & { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? "unavailable", durationMs: Date.now() - started })); } catch {}
   return response;
 };
 export { GameRoomDO };

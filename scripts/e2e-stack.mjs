@@ -219,6 +219,7 @@ const run = async () => {
       "--port",
       apiPort,
       "--var",`STORAGE_GENERATION:${generation}`,
+      "--var",`AUTH_ALLOWED_ORIGINS:${webOrigin}`,
       "--persist-to",
       apiPersistPath,
     ],

@@ -79,3 +79,40 @@ test('actual app preserves nonpending viewer role focus when an occupied seat re
  assert.equal(original.isConnected,false);assert.equal(current.isConnected,true);assert.notEqual(current,original);
  f.restore();assert.equal(f.document.activeElement,current);
 });
+
+// Execute the actual registration boundary with the real intent owner. Calling
+// manager.notePointer directly would miss a legacy mouse-only registration gap.
+async function registeredPendingFocusFixture(sourceUrl=new URL('../shell/app.js',import.meta.url)) {
+ const {readFile}=await import('node:fs/promises');const vm=await import('node:vm');
+ const source=await readFile(sourceUrl,'utf8');
+ const start=source.indexOf('const pendingInvitationFocus = createPendingInvitationFocus({');
+ const end=source.indexOf("document.addEventListener('pointerdown',event=>joinFeedback.noteFocus",start);
+ assert.ok(start>0&&end>start,'Actual invitation intent registration boundary is required');
+ const f=fixture(),listeners=new Map();let factoryCalls=0,pending=true,nodes=[f.original];
+ f.document.addEventListener=(type,handler)=>listeners.set(type,[...(listeners.get(type)??[]),handler]);
+ const window={location:{hash:f.scope.route},addEventListener(){}};
+ const context={document:f.document,window,transport:f.scope.owner,account:{snapshot:()=>({generation:f.scope.generation})},inviteVisit:f.scope.visit,getGamePanel:()=>f.scope.panel,
+  createPendingInvitationFocus:options=>{factoryCalls++;return createPendingInvitationFocus(options);}};
+ vm.runInNewContext(source.slice(start,end)+'\nglobalThis.actualPendingFocus=pendingInvitationFocus;',context);
+ assert.equal(factoryCalls,1);assert.equal(listeners.get('pointerdown')?.length,1);
+ const manager=context.actualPendingFocus;manager.begin(f.original,'copy:a');
+ return {...f,manager,listeners,dispatch:(type,target)=>{for(const handler of listeners.get(type)??[])handler({target});},
+  replace:()=>{f.original.disabled=true;f.original.isConnected=false;f.document.activeElement=f.document.body;const next=f.control();nodes=[next];return next;},
+  complete:()=>{pending=false;return manager.restore({root:{querySelectorAll:()=>nodes},pending:()=>pending});}};
+}
+test('registered legacy mouse-only foreign press retires pending copy intent',async()=>{
+ const f=await registeredPendingFocusFixture(),next=f.replace();
+ assert.equal(f.document.activeElement,f.document.body);assert.equal(next.isConnected,true);
+ f.dispatch('mousedown',{closest:()=>null});
+ assert.equal(f.complete(),false);assert.equal(f.document.activeElement,f.document.body);
+});
+test('registered legacy mouse-only matching invitation preserves pending copy intent',async()=>{
+ const f=await registeredPendingFocusFixture();f.dispatch('mousedown',f.original);const next=f.replace();
+ assert.equal(f.complete(),true);assert.equal(f.document.activeElement,next);
+});
+test('registered pointer and compatibility mouse foreign events retire the same intent idempotently',async()=>{
+ const f=await registeredPendingFocusFixture(),next=f.replace(),foreign={closest:()=>null};
+ f.dispatch('pointerdown',foreign);f.dispatch('mousedown',foreign);
+ assert.equal(f.complete(),false);assert.equal(f.document.activeElement,f.document.body);
+ assert.equal(next.isConnected,true);
+});

@@ -137,14 +137,16 @@ export const createLiveSyncClient = ({
   let visibilitySuspendTimer = null;
   let suspendedForInvisibility = false;
 
+  const reportError = error => { try { onError(error); } catch { /* Error reporting is observational. */ } };
+
   const recordMetric = (type, extra = {}) => {
-    onMetric({
+    try { onMetric({
       type,
       identityId,
       activeSocketCount: sockets.size,
       desiredSocketCount: desiredGameIds.size,
       ...extra,
-    });
+    }); } catch { /* Diagnostic consumers cannot interrupt connection ownership. */ }
   };
 
   const isDocumentHidden = () =>
@@ -398,7 +400,7 @@ export const createLiveSyncClient = ({
       if (repairOwners.get(gameId) !== owner) return;
       httpRecoveredGames.delete(gameId);
       if (background) onRecovery({ gameId, reason: "reconciliation_failed" });
-      onError(error);
+      reportError(error);
       scheduleReconnect(gameId);
     }).finally(() => { if (repairOwners.get(gameId) === owner) repairOwners.delete(gameId); });
     return owner.promise;
@@ -421,7 +423,7 @@ export const createLiveSyncClient = ({
     }
 
     if (typeof WebSocket === "undefined") {
-      onError(new Error("websocket_unavailable"));
+      reportError(new Error("websocket_unavailable"));
       void repair(gameId,"websocket_unavailable");
       return;
     }
@@ -435,12 +437,19 @@ export const createLiveSyncClient = ({
     lastEventSeqByGameId.set(gameId, lastEventSeq);
     onStatus({ state: "connecting", gameId, reconnectAttempts });
 
-    const ws = new WebSocket(createWsUrl({ identityId, gameId, sessionId, lastEventSeq, auth }));
+    let ws;
+    try { ws = new WebSocket(createWsUrl({ identityId, gameId, sessionId, lastEventSeq, auth })); }
+    catch {
+      recordMetric("socket_constructor_failed", { gameId });
+      reportError(new Error("websocket_constructor_failed"));
+      void repair(gameId, "websocket_unavailable");
+      return;
+    }
     sockets.set(gameId, ws);
     const generation = (generations.get(gameId) ?? 0) + 1;
     generations.set(gameId, generation);
     const current = () => sockets.get(gameId) === ws && generations.get(gameId) === generation;
-    const connection = { generation, initialDone: false, lastInboundAt: Date.now() };
+    const connection = { generation, initialDone: false, readinessDone: false, readinessPending: null, lastInboundAt: Date.now() };
     connection.initial = new Promise((resolve) => { connection.resolveInitial = resolve; });
     connectionState.set(gameId, connection);
     const reconnectGate = reconnectGates.get(gameId);
@@ -454,7 +463,18 @@ export const createLiveSyncClient = ({
       connection.watchdog.unref?.();
     };
     const finishInitial = () => {
-      if (connection.initialDone) return;
+      if (!connection.initialDone) {
+        connection.initialDone = true;
+        clearPoll(gameId); degradedStartedAt.delete(gameId);
+        httpRecoveredGames.delete(gameId);
+        reconnectAttemptsByGameId.set(gameId, 0);
+        clearTimeout(connection.initialTimer);
+        connection.resolveInitial();
+      }
+      // Receiving state and completing journal recovery are distinct. A benign
+      // admission/epoch race can defer readiness. The next valid current frame
+      // rechecks it, under one owner, without reopening the healthy socket.
+      if (connection.readinessDone || connection.readinessPending) return;
       const previousRepair = repairOwners.get(gameId);
       const previousRepairVersion = repairVersions.get(gameId) ?? 0;
       let repairRetired = false;
@@ -466,18 +486,19 @@ export const createLiveSyncClient = ({
         repairOwners.delete(gameId);
         return true;
       };
-      connection.initialDone = true;
-      clearPoll(gameId); degradedStartedAt.delete(gameId);
-      httpRecoveredGames.delete(gameId);
-      reconnectAttemptsByGameId.set(gameId, 0);
-      clearTimeout(connection.initialTimer);
-      connection.resolveInitial();
       // Socket readiness transfers recovery ownership only after journal and
       // receipt reconciliation succeeds. Retire the captured fallback before
       // its obsolete HTTP read is cancelled, never a newer repair.
-      void Promise.resolve(onReady({ gameId, generation, isCurrent: current, retirePreviousRepair }))
-        .then(ready => { if (ready !== false) retirePreviousRepair(); })
-        .catch(() => { if (current()) void repair(gameId, "reconciliation_failed"); });
+      const pending = Promise.resolve().then(() => current()
+        ? onReady({ gameId, generation, isCurrent: current, retirePreviousRepair }) : false)
+        .then(ready => {
+          if (!current()) return;
+          if (ready !== false) connection.readinessDone = repairRetired || retirePreviousRepair();
+          recordMetric(connection.readinessDone ? "socket_readiness_accepted" : "socket_readiness_deferred", { gameId, socketGeneration: generation });
+        })
+        .catch(() => { if (current()) void repair(gameId, "reconciliation_failed"); })
+        .finally(() => { if (connection.readinessPending === pending) connection.readinessPending = null; });
+      connection.readinessPending = pending;
     };
     recordMetric("socket_opened", { gameId, reconnectAttempts });
 
@@ -533,7 +554,7 @@ export const createLiveSyncClient = ({
       if (!current()) return;
       void repair(gameId, "socket_error");
       recordMetric("socket_error", { gameId });
-      onError(new Error("websocket_error"));
+      reportError(new Error("websocket_error"));
       onStatus({ state: "error", gameId, reconnectAttempts: reconnectAttemptsByGameId.get(gameId) ?? 0 });
     });
 
@@ -1003,10 +1024,12 @@ export const createSyncStore = ({
   onMetric = () => {},
   commandJournal,
   timing,
+  diagnostics = null,
   createTransportStore = createLiveTransportStore,
   createSyncClient = createLiveSyncClient,
 } = {}) => {
   let active = true;
+  const reportDiagnostic = event => { try { if (active) diagnostics?.record(event); } catch {} };
   // Capture this store's authenticated public identity, never a later global
   // account. It may seed only seats owned by the same transport identity.
   const account = auth?.enabled && auth.session?.authenticated ? auth.session.account : null;
@@ -1071,6 +1094,7 @@ export const createSyncStore = ({
     random,
     commandJournal,
     timing,
+    onDiagnostic: reportDiagnostic,
     beforeReconcile: (gameId, options) => options?.initialLoad && liveSync.prepareInitialLoad
       ? liveSync.prepareInitialLoad(gameId) : Promise.resolve(),
     shouldDeferCommandSend: (gameId, command) => {
@@ -1260,9 +1284,9 @@ export const createSyncStore = ({
     initialSnapshotTimeoutMs: timing?.requestTimeoutMs,
     inboundTimeoutMs: timing?.inboundTimeoutMs,
     heartbeatMs: timing?.heartbeatIntervalMs,
-    onRecovery: ({ gameId, background, superseded, closeCode, closeClean, socketGeneration, advertisedEventSeq }) => {
+    onRecovery: ({ gameId, reason, background, superseded, closeCode, closeClean, socketGeneration, advertisedEventSeq }) => {
       if (superseded) transport.prepareSafeReconnect?.(gameId);
-      if (!background) transport.setConnectionRecovering?.(gameId, true, { closeCode, closeClean, socketGeneration, advertisedEventSeq });
+      if (!background) transport.setConnectionRecovering?.(gameId, true, { reason, closeCode, closeClean, socketGeneration, advertisedEventSeq });
     },
     onReconcile: ({ gameId }) => transport.reconcileGame?.(gameId),
     onReady: async ({ gameId, isCurrent = () => true, retirePreviousRepair = () => {} }) => {
@@ -1291,7 +1315,18 @@ export const createSyncStore = ({
     },
     onError,
     onStatus,
-    onMetric,
+    onMetric: metric => {
+      const types = { recovery_started: 'recovery_started', recovery_reconciled: 'health',
+        socket_opened: 'socket', socket_error: 'socket', socket_closed: 'socket', socket_constructor_failed: 'socket',
+        socket_readiness_deferred: 'readiness', socket_readiness_accepted: 'readiness',
+        network_hint: 'lifecycle', connections_suspended: 'lifecycle' };
+      if (types[metric.type]) reportDiagnostic({ type: types[metric.type], gameId: metric.gameId,
+        ...(metric.type === 'socket_readiness_accepted' ? { gate: 'ready' } : metric.type === 'socket_readiness_deferred' ? { gate: 'unknown' } : {}),
+        reason: metric.reason ?? (metric.type === 'network_hint' ? 'network_hint' : metric.type === 'socket_constructor_failed' ? 'websocket_constructor_failed' : undefined),
+        retry: metric.reconnectAttempts, socketGeneration: metric.socketGeneration,
+        online: metric.online });
+      onMetric(metric);
+    },
   });
 
   const syncActiveGame = () => {
@@ -1300,10 +1335,8 @@ export const createSyncStore = ({
       liveSync.disconnectAll();
       return;
     }
-    if (typeof navigator !== "undefined" && navigator.onLine === false) {
-      liveSync.disconnectAll();
-      return;
-    }
+    // navigator.onLine is only a hint. Keep the active route desired so current
+    // sockets and bounded HTTP recovery can prove connectivity themselves.
     if (!activeGameId) {
       liveSync.disconnectAll();
       return;
@@ -1355,9 +1388,7 @@ export const createSyncStore = ({
     listenToStore("online", () => {
       syncActiveGame();
     });
-    listenToStore("offline", () => {
-      liveSync.disconnectAll();
-    });
+    listenToStore("pagehide", () => { try { void diagnostics?.flush({ keepalive: true }); } catch {} });
   }
 
   return {
@@ -1368,7 +1399,7 @@ export const createSyncStore = ({
       const attempt = Promise.resolve(liveSync.reconnectSafely?.(gameId) ?? transport.reconcileGame(gameId)).finally(() => { if (manualRecoveries.get(gameId) === attempt) manualRecoveries.delete(gameId); });
       manualRecoveries.set(gameId, attempt); return attempt;
     },
-    retire() { active = false; storeListeners.splice(0).forEach(remove => remove()); activeGameId = null; liveSync.retire?.(); liveSync.disconnectAll(); transport.retire?.(); },
+    retire() { active = false; try { diagnostics?.retire(); } catch {} storeListeners.splice(0).forEach(remove => remove()); activeGameId = null; liveSync.retire?.(); liveSync.disconnectAll(); transport.retire?.(); },
     loadGame: async (gameId, options = {}) => {
       const localPendingGame = transport.getGameViewModel(gameId) ?? getStoredPendingLocalGame(gameId);
       const hasPendingOperation = operationManager.getPendingOperations(gameId).length > 0;

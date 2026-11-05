@@ -43,12 +43,59 @@ test('value wrapper preserves getter identity and skipped guard branches with a 
 test('transport conditional observes only the original human or computer branch',()=>{
  const recipe=recipes['/shell/live-transport.js'];
  const op=recipe.operations.find(op=>op.after.includes('transport-position-only'));
- const expression=op.after.match(/if \((.*)\) throw/)[1];
+ const expression=op.after.match(/if \((.*)\) \{/)[1];
  const run=(positionOnly,computer)=>{
   const reads=[];const current={positionOnly,get gameplayMutationsBlocked(){reads.push('human');return false;},get sharedMutationsBlocked(){reads.push('computer');return false;}};
   new Function('current','command',recipe.prefix+'return Boolean('+expression+');')(current,{computer});return reads;
  };
  assert.deepEqual(run(true,false),[]);assert.deepEqual(run(false,false),['human']);assert.deepEqual(run(false,true),['computer']);
+});
+
+test('transport admission instrumentation retains the diagnostic body and original getter decisions',async()=>{
+ const recipe=recipes['/shell/live-transport.js'];
+ const operation=recipe.operations.find(op=>op.after.includes('transport-position-only'));
+ const source=await readFile(new URL('../../../'+recipe.file,import.meta.url),'utf8');
+ const start=source.indexOf(operation.before);
+ const end=source.indexOf('      const isClosure = ',start);
+ assert.ok(start>=0&&end>start);
+ const original=source.slice(start,end);
+ const instrumented=operation.after+original.slice(operation.before.length);
+ const retainedBody='        reportRecoveryDiagnostic(gameId, \'admission_blocked\', { reason: \'sync_recovering\' });\n        throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });\n      }\n';
+ assert.equal(original.slice(operation.before.length),retainedBody);
+ assert.equal(instrumented.slice(operation.after.length),retainedBody);
+ const run=(code,{positionOnly,computer,blocked})=>{
+  const reads=[],reports=[];
+  const current={get positionOnly(){reads.push('position');return positionOnly;},
+   get gameplayMutationsBlocked(){reads.push('human');return blocked;},
+   get sharedMutationsBlocked(){reads.push('computer');return blocked;}};
+  const command={get computer(){reads.push('kind');return computer;}};
+  const reportRecoveryDiagnostic=(...args)=>reports.push(args);
+  let result;
+  try{result=new Function('current','command','reportRecoveryDiagnostic','gameId',recipe.prefix+code+'return "admitted";')(current,command,reportRecoveryDiagnostic,'test-game');}
+  catch(error){result={message:error.message,code:error.code};}
+  return {result,reads,reports};
+ };
+ const previous=globalThis.__boardAdmissionRecord;globalThis.__boardAdmissionRecord=()=>{throw new Error('sink');};
+ try{
+  for(const input of [{positionOnly:true,computer:false,blocked:false},
+   {positionOnly:false,computer:false,blocked:false},{positionOnly:false,computer:false,blocked:true},
+   {positionOnly:false,computer:true,blocked:false},{positionOnly:false,computer:true,blocked:true}]){
+   assert.deepEqual(run(instrumented,input),run(original,input));
+  }
+  assert.deepEqual(run(instrumented,{positionOnly:true,computer:false,blocked:false}),{
+   result:{message:'sync_recovering',code:'sync_recovering'},reads:['position'],
+   reports:[['test-game','admission_blocked',{reason:'sync_recovering'}]],
+  });
+  assert.deepEqual(run(instrumented,{positionOnly:false,computer:false,blocked:true}).reads,['position','kind','human']);
+  assert.deepEqual(run(instrumented,{positionOnly:false,computer:true,blocked:true}).reads,['position','kind','computer']);
+  const failure=new Error('original transport getter');
+  for(const code of [original,instrumented]){
+   let reads=0;const current={get positionOnly(){reads++;throw failure;}};
+   const invoke=new Function('current','command','reportRecoveryDiagnostic','gameId',recipe.prefix+code);
+   assert.throws(()=>invoke(current,{computer:false},()=>{},'test-game'),error=>error===failure);
+   assert.equal(reads,1);
+  }
+ }finally{if(previous===undefined)delete globalThis.__boardAdmissionRecord;else globalThis.__boardAdmissionRecord=previous;}
 });
 
 const collector=(options={},overrides={})=>{

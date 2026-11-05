@@ -224,7 +224,7 @@ test("Close and outside clicks dismiss without treating padding or an inside dra
   f.element.getBoundingClientRect = () => ({ left: 100, top: 100, right: 500, bottom: 500 });
   f.element.closest = () => null;
   const point = (x, y) => ({ button: 0, target: f.element, clientX: x, clientY: y });
-  assert.match(f.element.innerHTML, /data-cancel aria-label="Close"/);
+  assert.match(f.element.innerHTML, /<button\b(?=[^>]*\bdata-cancel(?:\s|>))(?=[^>]*\baria-label="Close")[^>]*>/);
   assert.doesNotMatch(f.element.innerHTML, />Cancel<\/button>/);
   f.listeners.get("pointerdown")(point(110, 110));
   await f.listeners.get("click")(point(110, 110)); assert.equal(f.dialog.isOpen(), true);

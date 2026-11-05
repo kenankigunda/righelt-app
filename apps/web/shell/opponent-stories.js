@@ -1,3 +1,4 @@
+import {renderDismissButton} from './dismiss-control.js';
 import { icon } from './ui.js';
 export const OPPONENT_STORIES = Object.freeze({
   babs: { name: "Babs", difficulty: "Easy", bit: 1, story: "Babs discovered Righelt during a rainstorm and has been demanding rematches ever since. She plays on instinct, celebrates early, and considers every defeat valuable research. Her research collection is impressive.", scenes: [["babs-1-discovery", "Babs discovers the board during a rainstorm."], ["babs-2-rematch", "Babs eagerly invites another match."], ["babs-3-research", "Babs studies her growing collection of game notebooks."]] },
@@ -108,7 +109,7 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
       session++; destroyPresentation(); carousel?.destroy(); opponent = id; side = options.side || "p1"; mode = options.mode || "intro"; gameId = options.gameId || null; busy = false;
       destroyPresentation = mode === "intro" ? onPresentation() : () => {};
       const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches || false;
-      modal.open(`<button class="ui-icon-button story-close" data-modal-close aria-label="Close opponent story">${icon('close')}</button>
+      modal.open(`${renderDismissButton({label:"Close opponent story",className:"story-close",attributes:{"data-modal-close":true}})}
         <div class="story-art-wrap" data-single-image="${!multipleScenes}">${multipleScenes ? `<button class="ui-icon-button story-caret" data-story-step="-1" aria-label="Previous story image">${icon('left')}</button>` : ""}
         <div class="story-art">${story.scenes.map(([file, alt], i) => `<img data-story-image data-active="${i === 0}" aria-hidden="${i !== 0}" ${i ? "data-src" : "src"}="/assets/opponents/${file}.webp" width="960" height="640" alt="${alt}">`).join("")}<span class="story-turn-shade" aria-hidden="true"></span></div>
         ${multipleScenes ? `<button class="ui-icon-button story-caret" data-story-step="1" aria-label="Next story image">${icon('right')}</button>` : ""}</div>
