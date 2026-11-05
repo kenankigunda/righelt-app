@@ -188,7 +188,8 @@ export const createFakeD1 = () => {
           normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq FROM live_games WHERE game_id = ?1") ||
           normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision FROM live_games WHERE game_id = ?1") ||
           normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision, ownership_mode FROM live_games WHERE game_id = ?1") ||
-          normalized.includes("SELECT state_json, event_seq FROM live_games WHERE game_id = ?1")
+          normalized.includes("SELECT state_json, event_seq FROM live_games WHERE game_id = ?1") ||
+          normalized.includes("AS state_json, event_seq, gameplay_revision, ownership_mode, move_count FROM live_games WHERE game_id = ?1")
         ) {
           selectGameByIdCount += 1;
           const gameId = params[0];
@@ -213,7 +214,9 @@ export const createFakeD1 = () => {
                 game_id: row.game_id,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
-                state_json: row.state_json,
+                state_json: normalized.includes("json_remove(value") ? JSON.stringify({ ...JSON.parse(row.state_json), moves: (JSON.parse(row.state_json).moves ?? []).map(({snapshot, selectionSnapshot, ...summary}) => summary) }) : row.state_json,
+                move_count: row.move_count,
+                ownership_mode: row.ownership_mode,
                 event_seq: row.event_seq ?? 0,
                 gameplay_revision: row.gameplay_revision ?? 0,
               }

@@ -21,7 +21,15 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  const sound=page.getByRole('button',{name:'Mute sound',exact:true});
  await sound.locator('svg').click();
  await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeFocused();
+ // Observe this new document's real Home reads before advancing its clock.
+ const reloadedHomeReads=['my','other'].map(section=>page.waitForResponse(response=>{
+  const url=new URL(response.url());
+  return response.request().method()==='GET'&&url.pathname==='/api/shell/games'&&url.searchParams.get('section')===section&&response.status()===200;
+ }));
  await page.reload();await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeVisible();
+ for(const response of await Promise.all(reloadedHomeReads))expect(await response.finished()).toBeNull();
+ await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+ await expect(page.getByTestId('home-create-game')).toBeEnabled();
  // Model preparation may exceed the carousel interval. Hold autoplay while
  // checking the manual caret, then restore normal time once that click stops it.
  await page.clock.pauseAt(new Date('2026-01-01T01:00:00Z'));
@@ -49,8 +57,12 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
  const ownProfile=page.getByTestId('participant-player-1').locator('[data-action="guest-profile"]');
  await expect(ownProfile).toHaveText('You');await expect(ownProfile).toHaveAccessibleName('You, Red, Connected');
- const supply=await page.locator('.supply-point-marker.supply-point-p1').first().evaluate(el=>({core:getComputedStyle(el.querySelector('svg')).fill}));
- expect(supply.core).toBe('rgb(194, 69, 47)');
+ // Resolve and measure the current connected SVG in one page turn. The driver
+ // must not carry a replaced marker handle into the style publication check.
+ await expect.poll(()=>page.evaluate(()=>{
+  const marker=document.querySelector('.supply-point-marker.supply-point-p1'),svg=marker?.querySelector('svg');
+  return marker?.isConnected&&svg?.isConnected?getComputedStyle(svg).fill:null;
+ })).toBe('rgb(194, 69, 47)');
  await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-phase','idle');
  expect(await page.evaluate(()=>window.entryPanelAnimations)).toEqual([]);
  const playersPanel=page.locator('[data-game-panel="join"]');

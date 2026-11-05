@@ -16,6 +16,7 @@ test('actual summary and history renderers use shared content flow without chang
  for(const html of [summary,slots.renderSummaryLoading('Game known')]){
   assert.equal((html.match(/<p class="small"/g)||[]).length,4);assert.match(html,/section-stack/);assert.match(html,/section-followup/);
  }
+ assert.match(context.history({id:'known'}),/<h2 tabindex="-1">History<\/h2>/);
  assert.match(context.history({id:'known'}),/Actual move<\/li><\/ol><div>Additional/);
 });
 test('unknown loading placeholders have no identities, enabled controls or authority',()=>{

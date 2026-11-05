@@ -1,3 +1,4 @@
+import {ownedContexts} from '../support/owned-contexts.mjs';
 import {switchGamePanel} from '../support/app.mjs';
 import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { test, expect } from "@playwright/test";
@@ -5,8 +6,26 @@ import { readFileSync } from "node:fs";
 import { expectRematchRadioGeometry } from "../support/rematch-layout.mjs";
 import { AUTH_PROTOCOL_HEADER, AUTH_PROTOCOL_VERSION, SESSION_CONTEXT_HEADER } from '../../packages/shared-types/src/auth-policy.js';
 const scenario = JSON.parse(readFileSync(new URL("../../apps/web/scenarios/catalog.json", import.meta.url))).scenarios.find(s => s.title === "Capture supply point to win by unsupplying the commander");
-test.beforeEach(async () => { expect((await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`, { method: "POST" })).ok).toBe(true); });
-for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game has persistent result, review and swapped rematch`, async ({ page }, testInfo) => {
+test.beforeEach(async ({},info) => {
+  // The serial continuation retains its existing account/game and fixture state.
+  if(info.annotations.some(entry=>entry.type==='retained-result-continuation'))return;
+  expect((await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`, { method: "POST" })).ok).toBe(true);
+});
+for (const opponent of ["self", "friend"]) test.describe(`real ${opponent} retained terminal journey`,()=>{
+  // Two retained phases keep their original per-test60s budgets. This is not
+  // a single60s end-to-end timing claim; no account/game/setup is repeated.
+  test.describe.configure({mode:'serial'});
+  let owned,page,gameId;
+  test.beforeAll(async({browser},info)=>{
+    owned=ownedContexts(browser);const use=info.project.use;
+    const context=await owned.create({...use.contextOptions,baseURL:use.baseURL,
+      viewport:use.viewport,deviceScaleFactor:use.deviceScaleFactor,
+      ignoreHTTPSErrors:use.ignoreHTTPSErrors,reducedMotion:use.reducedMotion,
+      isMobile:use.isMobile,hasTouch:use.hasTouch,userAgent:use.userAgent});
+    page=await context.newPage();
+  });
+  test.afterAll(async()=>{await owned?.close();});
+  test('terminal result preserves responsive controls and native reconnect focus',async({},testInfo)=>{
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/");
   const creation = page.waitForResponse(response => response.ok() && response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/shell/games');
@@ -22,7 +41,7 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   await expect(page.getByTestId("game-shell")).toBeVisible();
   // The optimistic invitation shell can precede the authenticated create request.
   // Its accepted response supplies both the real target and its protocol headers.
-  const acceptedCreation = await creation, gameId = (await acceptedCreation.json()).game.id;
+  const acceptedCreation = await creation; gameId = (await acceptedCreation.json()).game.id;
   const creationHeaders = Object.fromEntries(Object.entries(acceptedCreation.request().headers()).filter(([name]) => name.startsWith('x-righelt-')));
   await expect(page.getByTestId("game-shell")).toHaveAttribute("data-game-id", gameId);
   const loaded = await page.evaluate(async ({ scenario, gameId, headers }) => {
@@ -67,6 +86,10 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await (await reconnectedAgain).waitForEvent("framereceived");
   await expect(home).toBeFocused();
+  });
+  test('the same completed game persists through review and swapped rematch',
+    {annotation:{type:'retained-result-continuation',description:'Same owned page/account/game; no second fixture reset'}},
+    async({},testInfo)=>{
   await page.reload();
   await expect(page.getByTestId("game-shell")).toBeVisible();
   await expect(page.getByTestId("game-result")).toHaveCount(0);
@@ -128,6 +151,7 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   await expect(page.getByTestId("game-shell")).toHaveAttribute("data-game-id", fresh.id);
   if (opponent === "friend") await expect(page.locator("#app")).toHaveAttribute("data-action-affiliation", "blue");
   else expect(fresh.selfPlayStartSide).toBe("p2");
+  });
 });
 
 test('a retained legacy commander destruction explains the actual cause without rewriting its stored reason',async({page},info)=>{
