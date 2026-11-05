@@ -1,18 +1,16 @@
-import {test,expect} from '@playwright/test';
+import {test as base,expect} from '@playwright/test';
+import {controlledHeightPublication} from './support/height-publication-test-fixture.mjs';
+const test=base.extend({publicationOwner:controlledHeightPublication});
 import {writeFile} from 'node:fs/promises';
-import {fontEnvelopeBudget} from './support/font-pattern-budget.mjs';
+import {fontEnvelopeBudgetForBrowser,validateFontEnvelope} from './support/font-pattern-budget.mjs';
 import {promptFrontiersEm} from '../apps/web/board/prompt-reservation.js';
 import {decodeFontBoundarySamples} from './support/font-envelope-codec.mjs';
 import {reservationBands,routineFontBoundaryEm,admittedHeight,budgetPixelPrecision,actionReservationMetrics} from './support/message-reservation-policy.mjs';
 const anchors=page=>page.evaluate(()=>window.fontAnchors());
 const sameAnchors=(a,b)=>{for(const target of ['heading','slot','board','panel'])for(const key of ['x','y','width','height'])expect(Math.abs(a[target][key]-b[target][key]),`${target}.${key}`).toBeLessThanOrEqual(.1);};
-const checkRows=(envelope,coldIntrinsic,label)=>{
- expect(envelope.rows,`${label} complete grammar`).toHaveLength(136);
- for(const row of envelope.rows)expect([null,'required-retry']).toContain(row.pattern??null);
- const tagged=envelope.rows.filter(row=>row.pattern==='required-retry');
- expect(tagged).toHaveLength(2);expect(tagged.map(row=>row.font).sort()).toEqual(['fallback','primary']);expect(new Set(tagged.map(row=>row.variant)).size).toBe(1);
- const budget=fontEnvelopeBudget(envelope,coldIntrinsic);
- for(let index=0;index<envelope.rows.length;index++)expect(budgetPixelPrecision(envelope.rows[index].height),`${label} ${envelope.rows[index].font}/${envelope.rows[index].variant}/${envelope.rows[index].pattern??'untagged'} source content cap`).toBeLessThanOrEqual(budgetPixelPrecision(budget.rows[index].contentMax));
+const checkRows=(envelope,coldIntrinsic,label,browserName)=>{
+ const {budget,violations}=validateFontEnvelope(envelope,coldIntrinsic,{browserName});
+ expect(violations,`${label} complete grammar, structural groups and every own row cap`).toEqual([]);
  return budget;
 };
 test('row budget retains a wider intrinsic fallback and rejects absent measurements',()=>{
@@ -21,7 +19,7 @@ test('row budget retains a wider intrinsic fallback and rejects absent measureme
  expect(admittedHeight(163,16,280)).toBe(280);
  for(const missing of [undefined,NaN,Infinity,-Infinity,0])expect(()=>admittedHeight(163,16,missing)).toThrow('intrinsic fallback measurement');
 });
-for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(`cold and settled-reload message reservation at ${width}px and ${scale}%`,async({page},info)=>{
+for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(`cold and settled-reload message reservation at ${width}px and ${scale}%`,async({page,browserName,publicationOwner},info)=>{
  await page.setViewportSize({width,height:900});
  const key=`font-admission-${width}-${scale}`,fontUrl=`/apps/web/assets/fonts/Manrope-variable.ttf?${key}`;
  let release,seen=false,hold=true;const held=new Promise(resolve=>{release=resolve;});
@@ -29,13 +27,13 @@ for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(
  await page.route(url=>url.pathname==='/apps/web/assets/fonts/Manrope-variable.ttf'&&url.searchParams.has(key),async route=>{seen=true;if(hold)await held;await route.continue();});
  const receipts={};
  try{
-  await page.goto(`/browser-integration/support/message-font-admission.html?scale=${scale}`,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.fixtureReady);await expect.poll(()=>seen).toBe(true);
-  receipts.cold=await anchors(page);expect(receipts.cold.fontStatus).toBe('loading');
+  await page.goto(`/browser-integration/support/message-font-admission.html?scale=${scale}`,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.fixtureReady&&window.currentFontAdmission?.().ready===true);await expect.poll(()=>seen).toBe(true);
+  receipts.coldAdmission=await page.evaluate(()=>window.currentFontAdmission());receipts.cold=await anchors(page);expect(receipts.cold.fontStatus).toBe('loading');
   expect(receipts.cold.slot.width).toBeGreaterThan(0);expect(Math.abs(receipts.cold.slot.width-receipts.cold.availableInlineSize)).toBeLessThanOrEqual(.1);
   receipts.coldEnvelope=await page.evaluate(()=>window.fontEnvelope());
   receipts.coldIntrinsic=await page.evaluate(()=>window.fontEnvelope(undefined,{intrinsic:true}));
   receipts.coldIntrinsicFallback=receipts.coldIntrinsic.fallback;
-  const coldBudget=checkRows(receipts.coldEnvelope,receipts.coldIntrinsic,'cold');
+  const coldBudget=checkRows(receipts.coldEnvelope,receipts.coldIntrinsic,'cold',browserName);
   expect(budgetPixelPrecision(receipts.cold.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(coldBudget.slotMax));
   receipts.coldAfterMeasurement=await anchors(page);sameAnchors(receipts.cold,receipts.coldAfterMeasurement);
   receipts.probeIsolation=await page.evaluate(()=>{const wrapper=document.querySelector('[data-font-measurement-wrapper]'),rect=wrapper.getBoundingClientRect(),style=getComputedStyle(wrapper);return {width:rect.width,height:rect.height,position:style.position,overflowX:style.overflowX,overflowY:style.overflowY,inert:wrapper.inert,hidden:wrapper.getAttribute('aria-hidden'),scrollWidth:document.documentElement.scrollWidth,viewport:innerWidth};});
@@ -44,21 +42,21 @@ for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(
   receipts.loaded=await anchors(page);receipts.loadedEnvelope=await page.evaluate(()=>window.fontEnvelope());
   sameAnchors(receipts.cold,receipts.loaded);
   expect(await page.evaluate(()=>window.admitMessagePhases())).toEqual([]);
-  const loadedBudget=checkRows(receipts.loadedEnvelope,receipts.coldIntrinsic,'loaded');
+  const loadedBudget=checkRows(receipts.loadedEnvelope,receipts.coldIntrinsic,'loaded',browserName);
   expect(budgetPixelPrecision(receipts.loaded.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(loadedBudget.slotMax));
   // Routing disables HTTP caching. This witnesses settled reload consistency,
   // not cache-admitted first paint. The actual cache-warm E2E is separate.
-  await page.reload();await page.waitForFunction(()=>window.fixtureReady);await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+  await page.reload();await page.waitForFunction(()=>window.fixtureReady&&window.currentFontAdmission?.().ready===true);await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
   receipts.warm=await anchors(page);receipts.warmEnvelope=await page.evaluate(()=>window.fontEnvelope());sameAnchors(receipts.loaded,receipts.warm);
-  const warmBudget=checkRows(receipts.warmEnvelope,receipts.coldIntrinsic,'settled reload');
+  const warmBudget=checkRows(receipts.warmEnvelope,receipts.coldIntrinsic,'settled reload',browserName);
   expect(budgetPixelPrecision(receipts.warm.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(warmBudget.slotMax));
   expect(await page.evaluate(()=>window.admitMessagePhases())).toEqual([]);
  }finally{hold=false;release();const path=info.outputPath('font-reservation-receipt.json');await writeFile(path,JSON.stringify(receipts,null,2));await info.attach('font-reservation',{path,contentType:'application/json'});}
 });
 
-for(const scale of [100,200])for(const {font,fallbackFamily=null} of [{font:'primary'},{font:'fallback'},{font:'fallback',fallbackFamily:'sans-serif'}])test(`loaded message width envelope at ${scale}% / ${font} / ${fallbackFamily??'native'}`,async({page},info)=>{
- const failures=[];
- await page.goto('/browser-integration/support/message-font-admission.html');await page.waitForFunction(()=>window.fixtureReady);
+for(const scale of [100,200])for(const {font,fallbackFamily=null} of [{font:'primary'},{font:'fallback'},{font:'fallback',fallbackFamily:'sans-serif'}])test(`loaded message width envelope at ${scale}% / ${font} / ${fallbackFamily??'native'}`,async({page,browserName,publicationOwner},info)=>{
+ const failures=[],samples=[];
+ await page.goto(`/browser-integration/support/message-font-admission.html?scale=${scale}`);await page.waitForFunction(()=>window.fixtureReady&&window.currentFontAdmission?.().ready===true);
  const frontiers=[];
  try{
  {
@@ -82,26 +80,29 @@ for(const scale of [100,200])for(const {font,fallbackFamily=null} of [{font:'pri
   },{scale,font,fallbackFamily,extra:actionReservationMetrics}));
   for(let width=280;width<=800;width+=16){
    const {envelope,intrinsic}=await page.evaluate(({width,fallbackFamily})=>({envelope:window.fontEnvelope(width,{fallbackFamily}),intrinsic:window.fontEnvelope(width,{intrinsic:true,fallbackFamily})}),{width,fallbackFamily});
-   const budget=fontEnvelopeBudget(envelope,intrinsic),violations=envelope.rows.filter((row,index)=>budgetPixelPrecision(row.height)>budgetPixelPrecision(budget.rows[index].contentMax));
+   samples.push({scale,width,envelope,intrinsic});
+   const budget=fontEnvelopeBudgetForBrowser(envelope,intrinsic,{browserName}),violations=envelope.rows.filter((row,index)=>budgetPixelPrecision(row.height)>budgetPixelPrecision(budget.rows[index].contentMax));
    if(envelope.primary>envelope.fallback+.1||violations.length)failures.push({scale,...envelope,intrinsic,budget,violations});
   }
  }
- }finally{const frontierPath=info.outputPath('intrinsic-primary-row-frontiers.json');await writeFile(frontierPath,JSON.stringify(frontiers,null,2));await info.attach('intrinsic-primary-row-frontiers',{path:frontierPath,contentType:'application/json'});}
+ }finally{const rawPath=info.outputPath('loaded-width-envelope-raw.json');await writeFile(rawPath,JSON.stringify(samples));await info.attach('loaded-width-envelope-raw',{path:rawPath,contentType:'application/json'});const frontierPath=info.outputPath('intrinsic-primary-row-frontiers.json');await writeFile(frontierPath,JSON.stringify(frontiers,null,2));await info.attach('intrinsic-primary-row-frontiers',{path:frontierPath,contentType:'application/json'});}
  const path=info.outputPath('primary-over-fallback-envelopes.json');await writeFile(path,JSON.stringify(failures,null,2));await info.attach('primary-over-fallback',{path,contentType:'application/json'});
  expect(failures.map(({scale,width,primary,fallback})=>({scale,width,primary,fallback})),'Any uncovered primary bin must be reviewed before adding a measured floor').toEqual([]);
 });
 
 
-for(const scale of [100,200])test(`measured font boundaries keep cold, loaded and settled-reload row envelopes identical at ${scale}%`,async({page},info)=>{
+for(const scale of [100,200])test(`measured font boundaries keep cold, loaded and settled-reload row envelopes identical at ${scale}%`,async({page,browserName,publicationOwner},info)=>{
  const bands=reservationBands.map(({min,max})=>[min,max]);
  const receipts={cold:[],loaded:[],warm:[]};let release,seen=false,hold=true;const held=new Promise(resolve=>{release=resolve;});
  const key='message-boundary-admission',fontUrl=`/apps/web/assets/fonts/Manrope-variable.ttf?${key}`;
  await page.route('**/apps/web/shell/refresh.css',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text()).replace('../assets/fonts/Manrope-variable.ttf',fontUrl)});});
  await page.route(url=>url.pathname==='/apps/web/assets/fonts/Manrope-variable.ttf'&&url.searchParams.has(key),async route=>{seen=true;if(hold)await held;await route.continue();});
- const measure=async()=>{
-  const result=[];
+ const measure=async phase=>{
+  const result=[],attempt={phase,admission:null,before:null,samples:null,after:null};
+  (receipts.measurements??=[]).push(attempt);
    await page.evaluate(scale=>{document.documentElement.style.fontSize=`${scale}%`;},scale);
-   const before=await anchors(page);
+   const admission=attempt.admission=await page.evaluate(()=>window.currentFontAdmission());expect(admission.ready,'Current scale must already have a genuine owner publication while the font remains held').toBe(true);
+   const before=attempt.before=await anchors(page);
    const measured=await page.evaluate(({scale,bands,routineFontBoundaryEm,promptFrontiersEm})=>{
     const size=parseFloat(getComputedStyle(document.querySelector('.board-message-slot')).fontSize);
     const widths=[...new Set([272,273.59375,280,288,296,334.375,349.5,355.5,360,365,365.5,366.8,456,471.5,491.6,573,573.125,696,699.5,800,...(scale===200?[326.125,326.25,326.5,326.75,327]:[]),...promptFrontiersEm.flatMap(frontier=>[-.125,0,.125].map(delta=>frontier*size+delta)),...[-.125,0,.125].map(delta=>routineFontBoundaryEm*size+delta),...bands.flatMap(([lower,upper])=>[lower*size-.125,lower*size,lower*size+.125,(lower+upper)*size/2,upper*size-.125,upper*size,upper*size+.125])])].filter(width=>width>=8.5*size&&width<=800).sort((a,b)=>a-b);
@@ -112,24 +113,24 @@ for(const scale of [100,200])test(`measured font boundaries keep cold, loaded an
      // Definitions are stable within this page/scale. Transfer them once while
      // retaining every fresh metric at every boundary, then restore full rows.
      definitions??=envelope.rows.map(({font,variant,text,pattern})=>({font,variant,text,pattern}));
-     return {scale,width:envelope.width,outerPadding:envelope.outerPadding,primary:envelope.primary,fallback:envelope.fallback,
+     return {scale,width:envelope.width,outerPadding:envelope.outerPadding,probeWidth:envelope.probeWidth,usedMinimumProfile:envelope.usedMinimumProfile,usedSize:envelope.usedSize,primary:envelope.primary,fallback:envelope.fallback,
       rows:envelope.rows.map(({height,lineHeight,minHeight})=>[height,lineHeight,minHeight]),
       intrinsicRows:intrinsic.rows.map(({height,lineHeight,minHeight})=>[height,lineHeight,minHeight]),
       intrinsicPrimary:intrinsic.primary,intrinsicFallback:intrinsic.fallback};
     });
     return {definitions,samples};
    },{scale,bands,routineFontBoundaryEm,promptFrontiersEm});
-   result.push(...decodeFontBoundarySamples(measured));
-   sameAnchors(before,await anchors(page));
+   attempt.samples=decodeFontBoundarySamples(measured);result.push(...attempt.samples);
+   attempt.after=await anchors(page);sameAnchors(before,attempt.after);
   return result;
  };
  try{
-  await page.goto('/browser-integration/support/message-font-admission.html',{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.fixtureReady);await expect.poll(()=>seen).toBe(true);
-  expect(await page.evaluate(()=>document.fonts.status)).toBe('loading');receipts.cold=await measure();
-  hold=false;release();await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});receipts.loaded=await measure();
+  await page.goto(`/browser-integration/support/message-font-admission.html?scale=${scale}`,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.fixtureReady&&window.currentFontAdmission?.().ready===true);await expect.poll(()=>seen).toBe(true);
+  expect(await page.evaluate(()=>document.fonts.status)).toBe('loading');receipts.cold=await measure('cold');
+  hold=false;release();await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});receipts.loaded=await measure('loaded');
   // Routing disables HTTP caching. This witnesses settled reload consistency,
   // not cache-admitted first paint. The actual cache-warm E2E is separate.
-  await page.reload();await page.waitForFunction(()=>window.fixtureReady);await page.evaluate(()=>document.fonts.ready);receipts.warm=await measure();
+  await page.reload();await page.waitForFunction(()=>window.fixtureReady&&window.currentFontAdmission?.().ready===true);await page.evaluate(()=>document.fonts.ready);receipts.warm=await measure('settled reload');
   for(let index=0;index<receipts.cold.length;index++){
    const cold=receipts.cold[index],loaded=receipts.loaded[index],warm=receipts.warm[index],label=`${cold.scale}% / ${cold.width}px`;
    expect(loaded.primary,`${label} primary fits permanent fallback`).toBeLessThanOrEqual(loaded.fallback+.1);
@@ -138,7 +139,7 @@ for(const scale of [100,200])test(`measured font boundaries keep cold, loaded an
    expect(Math.max(warm.primary,warm.fallback),`${label} settled reload`).toBeCloseTo(Math.max(loaded.primary,loaded.fallback),5);
    const coldIntrinsic={width:cold.width,rows:cold.intrinsicRows};
    for(const [phase,sample]of [['cold',cold],['loaded',loaded],['settled reload',warm]]){
-    const budget=checkRows(sample,coldIntrinsic,`${label} ${phase}`);
+    const budget=checkRows(sample,coldIntrinsic,`${label} ${phase}`,browserName);
     expect(budgetPixelPrecision(Math.max(sample.primary,sample.fallback)),`${label} ${phase} source content maximum`).toBeLessThanOrEqual(budgetPixelPrecision(budget.contentMax));
    }
   }
@@ -146,8 +147,8 @@ for(const scale of [100,200])test(`measured font boundaries keep cold, loaded an
 });
 
 
-test('coordinate pills keep every board digit atomic and equal in both font families',async({page})=>{
- await page.goto('/browser-integration/support/message-font-admission.html');await page.waitForFunction(()=>window.fixtureReady);await page.evaluate(()=>document.fonts.ready);
+test('coordinate pills keep every board digit atomic and equal in both font families',async({page,browserName,publicationOwner})=>{
+ await page.goto('/browser-integration/support/message-font-admission.html?scale=100');await page.waitForFunction(()=>window.fixtureReady&&window.currentFontAdmission?.().ready===true);await page.evaluate(()=>document.fonts.ready);
  for(const scale of [100,200]){
   const widths=await page.evaluate(async scale=>{
    document.documentElement.style.fontSize=`${scale}%`;

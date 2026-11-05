@@ -1,14 +1,29 @@
+import {readFileSync} from 'node:fs';
+import {installOwnedFocusObservation} from '../support/owned-replay-focus-observer.mjs';
+const ownedFocusRecipes=JSON.parse(readFileSync(new URL('../support/owned-replay-focus-recipes.json',import.meta.url),'utf8'));
 import {test as base,expect} from '@playwright/test';
 import {ownedContexts} from '../support/owned-contexts.mjs';
+import {installNativeFocusTrail,nativeFocusCheckpoint,finishNativeFocusTrail} from '../support/native-focus-trail.mjs';
+import {boardActionTraversalKey,readBoardTraversalStart} from '../support/native-board-keyboard.mjs';
 import {assertMobileBoardCellAccess} from '../support/mobile-board-cell-access.mjs';
 import {edgeDelta} from '../../browser-integration/support/message-semantic-geometry.mjs';
 // Teardown has Playwright's separate bounded fixture phase. Setup and every
 // behavior assertion retain the existing 60-second test budget.
 const test=base.extend({
- ownedRoleContext:async({browser},use)=>{
-  const owned=ownedContexts(browser);
-  try{await use(options=>owned.create(options));}
-  finally{await owned.close();}
+ ownedRoleContext:async({browser,baseURL,browserName},use,info)=>{
+  const owned=ownedContexts(browser),observations=[];let roleIndex=0;
+  try{await use(async options=>{
+   const role=roleIndex++,context=await owned.create(options);
+   if(process.env.RIGHELT_OWNED_REPLAY_FOCUS_OBSERVER==='1'&&browserName==='firefox'&&info.title==='human opponent replay preserves authority and read-only inspection at 390px'&&role===1){
+    observations.push(await installOwnedFocusObservation(context,{baseURL,recipes:ownedFocusRecipes}));
+   }
+   return context;
+  });}
+  finally{
+   try{for(const observation of observations)await observation.finish(info);}
+   catch{console.error('owned-replay-focus-finalization-incomplete');}
+   finally{await owned.close();}
+  }
  },
 });
 import {createGamesViaApi,createGameFromHome,openDirectGameLink,requestPlayerJoin,acceptPendingRequest,joinAsViewer,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
@@ -85,31 +100,8 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
    for(const rect of [normal.board,tallBoard]){expect(rect.right).toBe(rect.left+rect.width);expect(rect.bottom).toBe(rect.top+rect.height);}
    for(const dimension of ['width','height'])edgeDelta(normal.board[dimension],tallBoard[dimension],0,0,[normal.board[dimension],tallBoard[dimension]],`unchanged Board ${dimension} across viewport heights`);
    await assertMobileBoardCellAccess(opponent,info,{before:await projected(opponent,gameId),readState:()=>projected(opponent,gameId),assertUnchanged});
-   await opponent.setViewportSize({width,height:600});
-   await opponent.evaluate(()=>document.documentElement.style.fontSize='32px');
-   await opponent.evaluate(()=>document.fonts.ready);
-   const explanation=context(opponent).getByRole('region',{name:'Board explanation',exact:true});
-   await expect(explanation).toHaveAttribute('tabindex','0');
-   await expect(context(opponent).locator('.board-context-scroll-cue')).toBeVisible();
-   const primary=label(opponent).getByRole('button',{name:'Pass',exact:true});
-   const initial=await primary.boundingBox();
-   // Keep the selected top layout's initial below-fold condition visible in
-   // evidence. Native keyboard traversal owns the visibility correction.
-   // macOS WebKit's default keyboard profile skips native buttons with Tab.
-   // Option+Tab visits all controls without changing OS preferences or markup.
-   // Linux CI retains plain Tab and the same clearance assertions below.
-   const traversalKey=process.platform==='darwin'&&browserName==='webkit'?'Alt+Tab':'Tab';
-   await info.attach('Native keyboard traversal profile',{body:JSON.stringify({platform:process.platform,browserName,traversalKey}),contentType:'application/json'});
-   for(let index=0;index<40&&!await primary.evaluate(el=>el===document.activeElement);index++)await opponent.keyboard.press(traversalKey);
-   await expect(primary).toBeFocused();
-   const clearance=await primary.evaluate(button=>{
-    const notice=document.querySelector('[data-alert-stack-card].is-active'),nav=document.querySelector('.shell-mobile-tabbar'),rect=button.getBoundingClientRect();
-    return {top:rect.top,bottom:rect.bottom,noticeBottom:notice?.getBoundingClientRect().bottom??0,navTop:nav?.getBoundingClientRect().top??innerHeight,scrollY,unmapped:document.querySelectorAll('[data-prompt-unmapped="true"]').length,overflow:document.querySelectorAll('[data-prompt-overflow="true"]').length};
-   });
-   await info.attach('Selected top short200 initial and native focus clearance',{body:JSON.stringify({initial,clearance}),contentType:'application/json'});
-   expect(clearance.unmapped).toBe(0);expect(clearance.overflow).toBe(0);expect(clearance.top).toBeGreaterThanOrEqual(clearance.noticeBottom+8);expect(clearance.bottom).toBeLessThanOrEqual(clearance.navTop-8);
-   await opponent.screenshot({path:info.outputPath('native-gray-mobile-short200-keyboard.png')});
-   await opponent.evaluate(()=>document.documentElement.style.fontSize='');await opponent.setViewportSize({width,height:900});
+   // Preserve the existing 900px manual Next/Stop replay viewport.
+   await opponent.setViewportSize({width,height:900});
   }
 
 
@@ -124,6 +116,60 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
   await opponent.screenshot({path:info.outputPath('human-replay-manual.png')});
   await label(opponent).getByRole('button',{name:'Next',exact:true}).click();await expect(opponent.locator('.computer-replay')).toHaveCount(0);
   await replayButton(opponent).click();await label(opponent).getByRole('button',{name:'Stop replay',exact:true}).click();await expect(opponent.locator('.computer-replay')).toHaveCount(0);
+  if(width===390){
+   await opponent.setViewportSize({width,height:600});
+   await opponent.evaluate(()=>document.documentElement.style.fontSize='32px');
+   await opponent.evaluate(()=>document.fonts.ready);
+   const explanation=context(opponent).getByRole('region',{name:'Board explanation',exact:true});
+   await expect(explanation).toHaveAttribute('tabindex','0');
+   await expect(context(opponent).locator('.board-context-scroll-cue')).toBeVisible();
+   const primary=label(opponent).getByRole('button',{name:'Pass',exact:true});
+   const initial=await primary.boundingBox();
+   // Keep the selected top layout's initial below-fold condition visible in
+   // evidence. Native keyboard traversal owns the visibility correction.
+   // macOS WebKit's default keyboard profile skips native buttons with Tab.
+   // Option+Tab visits all controls without changing OS preferences or markup.
+   // Other engine profiles retain their existing native key choice.
+   // Existing Stop replay owns a return to the current Show me again control,
+   // before Pass in document order. Native traversal must not rely on wrapping
+   // past navigation or crossing the 100 cell buttons in reverse. Keep all cells
+   // and the original gesture bound and focus/clearance oracles.
+   const traversalKey=boardActionTraversalKey({platform:process.platform,browserName});
+   let traversalStart,startFailure;
+   try{
+    // Wait only for the existing owned Stop return. Never establish focus here.
+    if(browserName==='firefox')await expect(replayButton(opponent)).toBeFocused();
+   }catch(error){startFailure=error;throw error;}
+   finally{
+    try{
+     traversalStart=browserName==='firefox'?await primary.evaluate(readBoardTraversalStart):null;
+     await info.attach('Native keyboard traversal profile',{body:JSON.stringify({platform:process.platform,browserName,traversalKey,traversalStart}),contentType:'application/json'});
+    }catch(error){if(!startFailure)throw error;console.error('native-start-evidence-incomplete');}
+   }
+   if(browserName==='firefox')expect(traversalStart,'Existing owned replay return is the current eligible control before Pass').toMatchObject({ready:true});
+   const observeFocus=process.env.RIGHELT_FF_TRAVERSAL_OBSERVER==='1';
+   if(observeFocus)await primary.evaluate(installNativeFocusTrail,{platform:process.platform,browserName,traversalKey});
+   let traversalFailure;
+   try{
+    for(let index=0;index<40&&!await primary.evaluate(observeFocus?nativeFocusCheckpoint:el=>el===document.activeElement);index++)await opponent.keyboard.press(traversalKey);
+    await expect(primary).toBeFocused();
+   }catch(error){traversalFailure=error;throw error;}
+   finally{
+    if(observeFocus){
+     let observationError;
+     try{const trail=await opponent.evaluate(finishNativeFocusTrail);await info.attach('Native focus trail',{body:JSON.stringify(trail),contentType:'application/json'});if(!trail.complete)throw Error('Native focus trail truncated');}catch(error){observationError=error;}
+     if(observationError){try{await info.attach('Native focus observation incomplete',{body:String(observationError),contentType:'text/plain'});}catch(error){console.error(JSON.stringify({kind:'native-focus-observation-attachment-failed',name:error?.name??'Error'}));}if(!traversalFailure)throw observationError;}
+    }
+   }
+   const clearance=await primary.evaluate(button=>{
+    const notice=document.querySelector('[data-alert-stack-card].is-active'),nav=document.querySelector('.shell-mobile-tabbar'),rect=button.getBoundingClientRect();
+    return {top:rect.top,bottom:rect.bottom,noticeBottom:notice?.getBoundingClientRect().bottom??0,navTop:nav?.getBoundingClientRect().top??innerHeight,scrollY,unmapped:document.querySelectorAll('[data-prompt-unmapped="true"]').length,overflow:document.querySelectorAll('[data-prompt-overflow="true"]').length};
+   });
+   await info.attach('Selected top short200 initial and native focus clearance',{body:JSON.stringify({initial,clearance}),contentType:'application/json'});
+   expect(clearance.unmapped).toBe(0);expect(clearance.overflow).toBe(0);expect(clearance.top).toBeGreaterThanOrEqual(clearance.noticeBottom+8);expect(clearance.bottom).toBeLessThanOrEqual(clearance.navTop-8);
+   await opponent.screenshot({path:info.outputPath('native-gray-mobile-short200-keyboard.png')});
+   await opponent.evaluate(()=>document.documentElement.style.fontSize='');await opponent.setViewportSize({width,height:900});
+  }
   await opponent.emulateMedia({reducedMotion:'no-preference'});await replayButton(opponent).click();await expect(opponent.locator('.computer-replay')).toBeVisible();await expect(opponent.locator('.computer-replay')).toHaveCount(0);
   assertUnchanged(before,await projected(opponent,gameId));expect(writes).toEqual([]);opponent.off('request',listen);
   // A real new revision from the active player cancels a spectator's visual replay.

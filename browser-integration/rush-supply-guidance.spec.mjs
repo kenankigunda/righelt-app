@@ -1,4 +1,6 @@
-import {test,expect} from '@playwright/test';
+import {test as base,expect} from '@playwright/test';
+import {controlledHeightPublication} from './support/height-publication-test-fixture.mjs';
+const test=base.extend({publicationOwner:controlledHeightPublication});
 import {settledMessage,measureSemanticGeometry,assertSemanticGeometry} from './support/message-semantic-geometry.mjs';
 import {readFileSync} from 'node:fs';
 const state=JSON.parse(readFileSync('apps/web/scenarios/catalog.json','utf8')).scenarios.find(s=>s.id==='bc6fb68f-7b20-4be5-a717-086ff15ec15f').initialState;
@@ -17,7 +19,7 @@ async function open(page, {width=1200, hold=false}={}) {
   },{state,hold});
 }
 
-for (const width of [390,1200]) test(`obligatory supply guidance preserves choices and fits at ${width}px`,async({page},info)=>{
+for (const width of [390,1200]) test(`obligatory supply guidance preserves choices and fits at ${width}px`,async({page,publicationOwner},info)=>{
   await open(page,{width});
   const pill=page.locator('#preview .board-obligatory-pill');
   await expect(page.locator('.rush-guidance-source')).toHaveCount(1);
@@ -45,7 +47,7 @@ for (const width of [390,1200]) test(`obligatory supply guidance preserves choic
   await expect.poll(()=>page.evaluate(()=>window.boardFixture.applied().length)).toBe(applied+1);
 });
 
-test('background completion preserves manual selection and failure restores existing guidance',async({page})=>{
+test('background completion preserves manual selection and failure restores existing guidance',async({page,publicationOwner})=>{
   await open(page,{hold:true});
   await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Finding rushes that restore supply');
   const globalCopy=await page.locator('#preview').textContent();
@@ -76,7 +78,7 @@ test('background completion preserves manual selection and failure restores exis
   expect(await page.evaluate(()=>window.boardFixture.applied())).toEqual([]);
 });
 
-for (const [width,fontScale] of [[390,100],[390,200],[1200,100]]) test(`multiple useful sources and multi-step previews at ${width}px / ${fontScale}%`,async({page},info)=>{
+for (const [width,fontScale] of [[390,100],[390,200],[1200,100]]) test(`multiple useful sources and multi-step previews at ${width}px / ${fontScale}%`,async({page,publicationOwner},info)=>{
   await open(page,{width});
   await page.evaluate(async scale=>{document.documentElement.style.fontSize=`${scale}%`;await document.fonts.ready;},fontScale);
   await page.evaluate(async()=>{
@@ -89,22 +91,22 @@ for (const [width,fontScale] of [[390,100],[390,200],[1200,100]]) test(`multiple
   await expect(page.locator('.rush-guidance-source')).toHaveCount(3);
   await expect(page.locator('.cell.selected-piece')).toHaveCount(0);
   await expect(page.locator('[data-board-context] .board-context-body')).toContainText('pieces at 7, 1, 8, 2');
-  await settledMessage(page,{publishedManagedHeight:info.project.name==='webkit'});const before=await measureSemanticGeometry(page);
+  await settledMessage(page,{publishedManagedHeight:info.project.name==='webkit',info});const before=await measureSemanticGeometry(page);
   await page.locator('.cell[data-row="4"][data-col="5"]').click();
   await expect(page.locator('.rush-guidance-target')).toHaveCount(3);
   await page.locator('.cell[data-row="3"][data-col="4"]').click();
   await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Restores required supply after further rushes');
   await expect(page.locator('#preview .board-obligatory-pill')).toHaveCount(0);
-  await settledMessage(page,{publishedManagedHeight:info.project.name==='webkit'});assertSemanticGeometry(before,await measureSemanticGeometry(page));
+  await settledMessage(page,{publishedManagedHeight:info.project.name==='webkit',info});assertSemanticGeometry(before,await measureSemanticGeometry(page));
   await page.screenshot({path:info.outputPath('multiple-supply-options.png')});
   await page.locator('.cell[data-row="0"][data-col="0"]').click();
   await expect(page.locator('.cell.selected-piece')).toHaveCount(0);
   await expect(page.locator('#preview .board-obligatory-pill')).toHaveText('Obligatory');
   await expect(page.locator('[data-board-context] .board-context-body')).toContainText('pieces at 7, 1, 8, 2');
-  await settledMessage(page,{publishedManagedHeight:info.project.name==='webkit'});expect(await measureSemanticGeometry(page)).toEqual(before);
+  await settledMessage(page,{publishedManagedHeight:info.project.name==='webkit',info});expect(await measureSemanticGeometry(page)).toEqual(before);
 });
 
-test('obligatory message retains inactive-piece and blocked-destination explanations',async({page})=>{
+test('obligatory message retains inactive-piece and blocked-destination explanations',async({page,publicationOwner})=>{
   await open(page);await expect(page.locator('.rush-guidance-source')).toHaveCount(1);
   await page.locator('.cell[data-row="6"][data-col="0"]').click();
   await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Cannot move: no command at start of rush');
@@ -120,7 +122,7 @@ test('obligatory message retains inactive-piece and blocked-destination explanat
   expect(await page.evaluate(()=>window.boardFixture.applied())).toEqual([]);
 });
 
-for (const fontScale of [100,200]) test(`touch confirmation stays put across guidance choices at ${fontScale}% text`,async({page})=>{
+for (const fontScale of [100,200]) test(`touch confirmation stays put across guidance choices at ${fontScale}% text`,async({page,publicationOwner})=>{
   await open(page,{width:390});
   await page.evaluate(async fontScale=>{
     document.documentElement.style.fontSize=`${fontScale}%`;await document.fonts.ready;

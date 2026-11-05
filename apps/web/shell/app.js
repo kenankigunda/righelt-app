@@ -4578,7 +4578,11 @@ const startComputerReplay = async (requested=null,trigger=null) => {
     if(activeReplayFocusCleanup===focusReturn.release)activeReplayFocusCleanup=null;
   };
   replayController=createComputerReplay({rootEl,createAdapter:()=>createEngineBoardAdapter(),reducedMotion:prefersReducedMotion,
-    onChange:replay=>{boardRuntime?.setInteractionBlocked(replay.playing);boardRuntime?.refreshStatus();queueBoardContextRefresh();},onFinish:finish});
+    onChange:replay=>{
+      const playing=replay.playing;
+      const refresh=()=>{boardRuntime?.setInteractionBlocked(playing);boardRuntime?.refreshStatus();queueBoardContextRefresh();};
+      if(playing)refresh();else focusReturn.renderOwnedRemoval(refresh);
+    },onFinish:finish});
   try{await replayController.play(payload);}catch{replayController.stop('error');replayRequests.fail(token,currentReplayContext());}
 };
 const updateComputerUi = () => {

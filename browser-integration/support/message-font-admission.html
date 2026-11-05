@@ -3,6 +3,8 @@
 <link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css">
 </head><body><main id="app" class="app-root" data-shell-route="game"><div class="shell-main-content"></div></main>
 <script type="module">
+import {measurePatternUsedMinimum} from './pattern-used-minimum.mjs';
+import {currentScalePublication} from './fixture-publication.mjs';
 import {renderBoardMessageSlot,renderBoardHeadingSlot} from '/apps/web/shell/board-message-layout.js';
 import {renderSummaryLoading,renderPlayersLoading,renderHistoryLoading} from '/apps/web/shell/panel-loading.js';
 import {boundedPromptReservation,readPromptMetrics} from '/apps/web/board/prompt-reservation.js';
@@ -20,6 +22,7 @@ app.querySelector('.shell-main-content').innerHTML=frame({id:'font-admission'},{
 layout();window.addEventListener('resize',layout);
 // Match the production runtime owner before any cold-font anchor is measured.
 window.messageHeightController=createMessageHeightController(document.querySelector('#font-message'));
+window.currentFontAdmission=()=>currentScalePublication(()=>document.querySelector('#font-message')?.closest('.board-message-slot'));
 window.fontAnchors=()=>{const rect=selector=>document.querySelector(selector).getBoundingClientRect().toJSON();const panel=document.querySelector('[data-shell-panel="board"]'),style=getComputedStyle(panel);return {availableInlineSize:panel.getBoundingClientRect().width-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight)-parseFloat(style.borderLeftWidth)-parseFloat(style.borderRightWidth),slot:rect('.board-message-slot'),board:rect('#font-board'),panel:rect('[data-shell-panel="board"]'),heading:rect('.board-heading-slot'),headingCaptions:[...document.querySelectorAll('.board-heading-slot > .board-heading')].map(node=>{const style=getComputedStyle(node);return {font:node.dataset.headingSizingFont??'live',caption:node.dataset.headingSizingCaption??null,text:node.textContent,rect:node.getBoundingClientRect().toJSON(),fontFamily:style.fontFamily,fontSize:style.fontSize,lineHeight:style.lineHeight,flexBasis:getComputedStyle(node.lastElementChild??node).flexBasis};}),fontStatus:document.fonts.status,fallback:getComputedStyle(document.querySelector('[data-sizing-font="fallback"]')).fontFamily,primary:getComputedStyle(document.querySelector('[data-sizing-font="primary"]')).fontFamily};};
 // These two canonical replica probes persist only in this fixture. The fixed,
 // zero-size clipped wrapper cannot contribute to page flow or scroll bounds.
@@ -44,7 +47,10 @@ window.fontEnvelope=(width,{intrinsic=false,primaryOnly=false,fallbackFamily=nul
  // exact fresh geometry reads without computing unused fallback/style details.
  if(primaryOnly)return {width:size,outerPadding,primary:Math.max(...copies.filter(copy=>copy.dataset.sizingFont==='primary').map(copy=>copy.getBoundingClientRect().height))};
  const rows=copies.map(copy=>{const style=getComputedStyle(copy);return {font:copy.dataset.sizingFont,variant:copy.dataset.sizingVariant,pattern:copy.dataset.promptPattern??null,text:copy.textContent,height:copy.getBoundingClientRect().height,lineHeight:parseFloat(style.lineHeight),minHeight:parseFloat(style.minHeight)};});
- return {width:size,outerPadding,primary:Math.max(...rows.filter(row=>row.font==='primary').map(row=>row.height)),fallback:Math.max(...rows.filter(row=>row.font==='fallback').map(row=>row.height)),rows};
+ const usedMinimumProfile=globalThis.__fontUsedSizeProfile??null,probeWidth=probe.getBoundingClientRect().width;
+ let usedSize=null;
+ if(!intrinsic&&usedMinimumProfile==='firefox')try{usedSize=measurePatternUsedMinimum({container:probe,copies,intrinsicRows:intrinsicEnvelope.rows,outerPadding});}catch(error){usedSize={error:String(error)};}
+ return {width:size,outerPadding,probeWidth,usedMinimumProfile,usedSize,primary:Math.max(...rows.filter(row=>row.font==='primary').map(row=>row.height)),fallback:Math.max(...rows.filter(row=>row.font==='fallback').map(row=>row.height)),rows};
 };
 window.admitMessagePhases=()=>{
  const slot=document.querySelector('.board-message-slot'),live=slot.querySelector('#font-message'),before=window.fontAnchors(),failures=[];

@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {settledMessage} from './support/message-semantic-geometry.mjs';
+import {finalizeEdgeEvidence,persistEdgeEvidence} from './support/paint-edge-provenance.mjs';
 // DOMRect edges are composed from the measured top/height primitives. Only
 // actual float32-representable primitives contribute representational error.
 const primitiveError=value=>value!==0&&Math.fround(value)===value?2**(Math.floor(Math.log2(Math.abs(value)))-24):0;
@@ -16,22 +17,32 @@ const focusedFootprint=sample=>{
  const upperBound=upperPrimitives.reduce((sum,value)=>sum+primitiveError(value),0);
  return{top,bottom,lowerPrimitives,upperPrimitives,lowerBound,upperBound,fits:top>=slot.top-lowerBound&&bottom<=slot.bottom+upperBound};
 };
-for(const scale of [100,200])test(`shared narrow heading and prompt slots reclaim only redundant spacing at ${scale}%`,async({page},info)=>{
+for(const scale of [100,200])test(`shared narrow heading and prompt slots reclaim only redundant spacing at ${scale}%`,async({page,browser,browserName},info)=>{
+ const sourceProfile={browserName,version:browser.version(),platform:process.platform,geckoSourceRevision:'d0f4d17d5aefe7ca5aa97afbcafcdc641cbd9f93',sourceApplicability:'UPSTREAM pin only; actual patched binary equivalence NOT established'};
+ let samples=[];
+ try{
  await page.setViewportSize({width:390,height:740});await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
  await page.evaluate(async scale=>{document.documentElement.style.fontSize=`${scale}%`;const {renderBoardHeadingSlot}=await import('/apps/web/shell/board-message-layout.js');document.querySelector('main > h2').outerHTML=renderBoardHeadingSlot({loading:true});await document.fonts.ready;await window.boardFixture.setup('pass',false);},scale);
  await settledMessage(page);
- const samples=await page.evaluate(async()=>{
+ samples=await page.evaluate(async()=>{
   const {renderBoardHeadingSlot}=await import('/apps/web/shell/board-message-layout.js');
+  const {enrichEdgeSample}=await import('/browser-integration/support/paint-edge-provenance.mjs');
   const samples=[];
+  // Test-owned bounded retention lets finally recover completed phases if this evaluation fails.
+  window.__paintEdgeDiagnosticSamples=samples;
   for(const phase of ['loading-heading','live-heading','replay','pass']){
    const previous=document.querySelector('main > .board-heading-slot,main > h2');previous.outerHTML=renderBoardHeadingSlot({loading:phase==='loading-heading'});
    const turn=document.querySelector('#shell-board-turn-indicator');if(turn)turn.textContent='Your turn to play';
    window.boardFixture.message(phase==='replay'?{text:'Watch replay',action:{id:'replay-stop',label:'Stop replay'}}:{text:'Select a piece or',action:{id:'pass',label:'Pass'}});
    const rect=node=>node.getBoundingClientRect().toJSON(),slot=document.querySelector('.board-message-slot'),board=document.querySelector('#board'),button=document.querySelector('#preview button'),r=button.getBoundingClientRect(),center=r.top+r.height/2,half=Math.max(44,r.height)/2;
    const cells=[...board.children].map(cell=>({width:cell.getBoundingClientRect().width,height:cell.getBoundingClientRect().height}));
-   samples.push({phase,heading:rect(document.querySelector('.board-heading:not([aria-hidden])')),headingSlot:rect(document.querySelector('.board-heading-slot')),slot:rect(slot),board:rect(board),cells,
+   // Finish ALL original geometry/hit reads, in their original order, before diagnostic reads.
+   const headingNode=document.querySelector('.board-heading:not([aria-hidden])'),headingSlotNode=document.querySelector('.board-heading-slot');
+   const sample={phase,heading:rect(headingNode),headingSlot:rect(headingSlotNode),slot:rect(slot),board:rect(board),cells,
     target:{width:r.width,top:center-half,bottom:center+half,lowerHit:document.elementFromPoint(r.left+r.width/2,center+Math.min(21,half-1))?.closest('button')===button},
-    overflow:slot.dataset.promptOverflow??null,unmapped:document.querySelector('#preview').dataset.promptUnmapped??null});
+    overflow:slot.dataset.promptOverflow??null,unmapped:document.querySelector('#preview').dataset.promptUnmapped??null};
+   samples.push(sample);
+   enrichEdgeSample(sample,headingNode,headingSlotNode);
   }
   return samples;
  });
@@ -41,6 +52,17 @@ for(const scale of [100,200])test(`shared narrow heading and prompt slots reclai
   expect(sample.board).toEqual(samples[0].board);expect(sample.cells).toHaveLength(100);expect(sample.cells).toEqual(samples[0].cells);
   expect(sample.target.width).toBeGreaterThanOrEqual(44);expect(sample.target.top).toBeGreaterThanOrEqual(sample.slot.top);expect(sample.target.bottom).toBeLessThanOrEqual(sample.slot.bottom);expect(sample.target.lowerHit).toBe(true);
   expect(sample.overflow).toBeNull();expect(sample.unmapped).toBeNull();
+ }
+ }finally{
+  // Best effort only; diagnostic failure must never replace the original assertion.
+  let persistenceError=null;
+  try{if(samples.length===0)samples=await page.evaluate(()=>window.__paintEdgeDiagnosticSamples??[]);}catch{persistenceError='partial-page-unavailable';}
+  const evidence=finalizeEdgeEvidence({schema:1,scale,sourceProfile,samples,incomplete:samples.length!==4||Boolean(persistenceError),persistenceError});
+  await persistEdgeEvidence(evidence,{
+   write:body=>writeFile(info.outputPath('paint-edge-provenance.json'),body),
+   attach:body=>info.attach('Paint edge provenance',{body,contentType:'application/json'}),
+   onError:()=>console.error('Paint edge diagnostic persistence incomplete')
+  });
  }
 });
 for(const scale of [100,200])test(`native fixed prompt changes keep board paint and hits separate at ${scale}%`,async({page},info)=>{

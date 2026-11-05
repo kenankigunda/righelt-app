@@ -28,9 +28,10 @@ export function createBoardContextFocus({doc,owner,reveal=()=>{},enqueue=queueMi
  const win=doc.defaultView,returns=new Set();let disposed=false;
  const begin=(trigger,{allows=()=>false,allowRemoval=false,onRetire=()=>{}}={},activation=false)=>{
   const token=owner.capture(),original=doc.activeElement;
+  let removedControl=null;
   let live=!disposed&&(activation||original===trigger)&&Boolean(trigger?.isConnected);
   const owned=target=>target===trigger||allows(target);
-  const retire=()=>{if(!live)return;live=false;onRetire();};
+  const retire=()=>{removedControl=null;if(!live)return;live=false;onRetire();};
   const focus=event=>{if(!owned(event.target))retire();};
   const pointer=event=>{if(!owned(event.target))retire();};
   const key=event=>{if(!owned(event.target)||event.key==='Tab')retire();};
@@ -38,13 +39,30 @@ export function createBoardContextFocus({doc,owner,reveal=()=>{},enqueue=queueMi
   doc.addEventListener('focusin',focus);doc.addEventListener('pointerdown',pointer,true);doc.addEventListener('keydown',key,true);
   doc.addEventListener('visibilitychange',visibility);win.addEventListener('blur',retire);
   const release=()=>{
-   retire();returns.delete(release);
-   doc.removeEventListener('focusin',focus);doc.removeEventListener('pointerdown',pointer,true);doc.removeEventListener('keydown',key,true);
-   doc.removeEventListener('visibilitychange',visibility);win.removeEventListener('blur',retire);
+   try{retire();}
+   finally{
+    returns.delete(release);
+    doc.removeEventListener('focusin',focus);doc.removeEventListener('pointerdown',pointer,true);doc.removeEventListener('keydown',key,true);
+    doc.removeEventListener('visibilitychange',visibility);win.removeEventListener('blur',retire);
+   }
   };
   returns.add(release);
   const current=()=>live&&!disposed&&!doc.hidden&&owner.current(token)
-   &&(owned(doc.activeElement)||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]'))));
+   &&(owned(doc.activeElement)||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]')))||(removedControl!==null&&doc.activeElement===doc.body&&!removedControl.isConnected));
+  // Only this synchronous renderer can grant a one-shot return after removing
+  // its currently focused replay control. Initial body focus, an earlier
+  // removal, a connected control or another active element grants nothing.
+  const renderOwnedRemoval=render=>{
+   removedControl=null;
+   const control=doc.activeElement;
+   const eligible=current()&&control!==trigger&&control?.isConnected&&!control.disabled&&!control.closest?.('[inert]')&&allows(control)&&doc.activeElement===control;
+   let completed=false,result;
+   try{result=render();completed=true;return result;}
+   finally{
+    if(!completed){try{release();}catch{}}
+    else if(result===undefined&&eligible&&live&&!disposed&&!doc.hidden&&owner.current(token)&&doc.activeElement===doc.body&&!control.isConnected)removedControl=control;
+   }
+  };
   const restoreNow=resolve=>{
    if(!current()){release();return null;}
    const target=resolve();
@@ -55,7 +73,7 @@ export function createBoardContextFocus({doc,owner,reveal=()=>{},enqueue=queueMi
    release();return doc.activeElement===target?target:null;
   };
   return {
-   current,release,restoreNow,
+   current,release,restoreNow,renderOwnedRemoval,
    consume(){const valid=current();release();return valid;},
    restore(resolve){return new Promise(done=>enqueue(()=>done(restoreNow(resolve))));},
   };

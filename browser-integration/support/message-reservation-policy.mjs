@@ -1,3 +1,5 @@
+import {admittedHeightFromSource} from './message-reservation-arithmetic.mjs';
+import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 
 // CSS is the policy source. Tests probe its boundaries without maintaining a
@@ -16,22 +18,8 @@ export const actionRowAllowance=fontSize=>actionReservationMetrics.em*fontSize+a
 // CSS bounds the primary-font reservation. A platform's permanent fallback can
 // intrinsically need more space. Admit only its independently measured natural
 // height, never the current slot or a replica with the CSS minimum applied.
-export const admittedHeight=(width,fontSize,intrinsicFallback,{pattern=null,outerPadding=0}={})=>{
- if(!Number.isFinite(intrinsicFallback)||intrinsicFallback<=0)throw Error('A nonempty positive intrinsic fallback measurement is required');
- const original=Math.max(intrinsicFallback,Number(base[1])*fontSize,Number(base[2]),3*fontSize+actionRowAllowance(fontSize),...reservationBands.filter(band=>width>=band.min*fontSize&&width<band.max*fontSize).map(band=>band.height*fontSize+actionRowAllowance(fontSize)));
- if(pattern!=='required-retry')return original;
- // Independent CSS-derived compact check, not the production implementation.
- const buttonScale=Number(css.match(/--board-inline-action-font-scale:([\d.]+)/)[1]);
- const actionLine=Number(css.match(/--board-inline-action-line-height:([\d.]+)/)[1]);
- const actionPad=Number(css.match(/--board-inline-action-padding-block-em:([\d.]+)/)[1]);
- const border=Number(css.match(/--board-inline-action-border-px:([\d.]+)/)[1]);
- const gap=metric('detached-gap-em')*fontSize;
- const growth=Math.max(0,buttonScale*(actionLine+2*actionPad)*fontSize+2*border-1.5*fontSize);
- const rounding=Math.max(0,actionReservationMetrics.em-2*(buttonScale*(actionLine+2*actionPad)-1.5))*fontSize;
- const inset=4*Math.max(0,actionReservationMetrics.halfPx-actionReservationMetrics.halfEm*fontSize);
- const rowHeight=Math.max(3*fontSize,...reservationBands.filter(band=>width>=band.min*fontSize&&width<band.max*fontSize).map(band=>band.height*fontSize));
- return Math.max(original,rowHeight+gap+growth+rounding+inset)+outerPadding;
-};
+export const originalPolicyInputs=Object.freeze({schema:1,sourceSha256:createHash('sha256').update(css).digest('hex'),bands:Object.freeze(reservationBands.map(({min,max,height})=>Object.freeze({min,max,height}))),baseEm:Number(base[1]),basePx:Number(base[2]),actionEm:actionReservationMetrics.em,actionPx:actionReservationMetrics.px,halfPx:actionReservationMetrics.halfPx,halfEm:actionReservationMetrics.halfEm,buttonScale:Number(css.match(/--board-inline-action-font-scale:([\d.]+)/)[1]),actionLine:Number(css.match(/--board-inline-action-line-height:([\d.]+)/)[1]),actionPad:Number(css.match(/--board-inline-action-padding-block-em:([\d.]+)/)[1]),border:Number(css.match(/--board-inline-action-border-px:([\d.]+)/)[1]),gapEm:metric('detached-gap-em')});
+export const admittedHeight=(width,fontSize,intrinsicFallback,options={})=>admittedHeightFromSource(originalPolicyInputs,width,fontSize,intrinsicFallback,options);
 
 // DOMRect serialization can differ from an ideal CSS minimum by millionths of
 // a pixel (Firefox: 49.600006 vs 49.6). Normalize only budget arithmetic below

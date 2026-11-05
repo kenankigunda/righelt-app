@@ -26,9 +26,9 @@ test('cold first admission uses actual header before any frame and later frame i
  syncRecoverySpace(f.app);f.layout.sync();assert.equal(f.values.get('--recovery-space-top'),'76px');assert.equal(f.reserve(),'178px');
  assert.equal(f.anchorReads(),1,'anchor rect read once for both key and clearance');const writes=f.writes();f.flush();f.layout.sync();assert.equal(f.reserve(),'178px');assert.equal(f.writes(),writes);f.close();
 });
-test('same-frame top-only change invalidates context cache without font or width changes',()=>{
- const f=fixture();f.layout.sync();assert.equal(f.reserve(),'160px','model old fallback before header admission');
- syncRecoverySpace(f.app);f.layout.sync();assert.equal(f.reserve(),'178px','position-only admission must invalidate old key');
+test('context admission refreshes the existing header owner before measuring its effective anchor',()=>{
+ const f=fixture();f.layout.sync();assert.equal(f.reserve(),'178px','standalone metric admission also uses the mounted header owner');
+ f.setBottom(120);f.layout.sync();assert.equal(f.reserve(),'230px','current header geometry must invalidate the old key without an app render');
  f.close();
 });
 test('single existing recovery owner follows replacement header and coalesces font/viewport updates',()=>{

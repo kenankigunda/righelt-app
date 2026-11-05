@@ -1,5 +1,12 @@
-import {test,expect} from '@playwright/test';
+import {captureControlledMessageBox,qualifyControlledMessageBox} from './support/controlled-message-box-contract.mjs';
+import {test as base,expect} from '@playwright/test';
+import {controlledHeightPublication} from './support/height-publication-test-fixture.mjs';
+const test=base.extend({publicationOwner:controlledHeightPublication});
 import {writeFile} from 'node:fs/promises';
+import {readFileSync} from 'node:fs';
+const geckoSourceProfile=JSON.parse(readFileSync(new URL('./support/gecko-source-profile.json',import.meta.url),'utf8'));
+import {fontEnvelopeBudgetForBrowser} from './support/font-pattern-budget.mjs';
+import {budgetPixelPrecision} from './support/message-reservation-policy.mjs';
 import {settledMessage,measureSemanticGeometry,assertSemanticGeometry} from './support/message-semantic-geometry.mjs';
 test.use({viewport:{width:390,height:740},hasTouch:true});
 const geometry=page=>page.locator('#board').evaluate(el=>{const rect=el.getBoundingClientRect();return{x:rect.x,y:rect.y,width:rect.width,height:rect.height};});
@@ -27,15 +34,19 @@ test('replay message steps preserve action nodes and keyboard focus',async({page
  await expect(page.locator('#fixture-context')).toContainText('Finished <safely>');expect(await page.locator('#fixture-context safely').count()).toBe(0);await expect(page.locator('#preview')).toHaveText('Review the game in History');
 });
 
-test('vertical translation preserves exact board layout sizing',async({page},info)=>{
- const evidence={};
+test('vertical translation preserves exact board layout sizing',async({page,browser,browserName},info)=>{
+ const geckoProfile=browserName==='firefox'?{engine:browserName,version:browser.version(),upstreamRevision:geckoSourceProfile.upstreamRevision,officialSourceManifestSha256:geckoSourceProfile.officialSourceManifestSha256}:null;
+ const rawCaptureBinding=browserName==='firefox'?'__geckoSemanticRawOwner':null;
+ const measure=()=>measureSemanticGeometry(page,{geckoProfile,rawCaptureBinding});
+ const evidence={geckoProfile};
  const persist=async()=>{try{await writeFile(info.outputPath('semantic-edge-precision.json'),JSON.stringify(evidence,null,2));}catch(error){console.error(JSON.stringify({kind:'precision-evidence-incomplete',name:error?.name??'Error'}));}};
  try{
+ if(rawCaptureBinding)await page.exposeFunction(rawCaptureBinding,async raw=>{(evidence.rawBeforeWitness??=[]).push(raw);await writeFile(info.outputPath('semantic-edge-precision.json'),JSON.stringify(evidence,null,2));});
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
  await page.evaluate(()=>window.boardFixture.setup('pass',false));await settledMessage(page);
- const before=await measureSemanticGeometry(page);
+ const before=await measure();
  await page.evaluate(()=>window.boardFixture.message({text:'An acknowledged move has a longer explanation with several coordinate descriptions. A second complete sentence needs additional natural space.',action:{id:'replay-next',label:'Next'}}));
- await settledMessage(page);const changed=await measureSemanticGeometry(page);
+ await settledMessage(page);const changed=await measure();
  // Persist the raw measured operands before the first precision assertion.
  // A failed hypothesis must retain its evidence, not only the screenshot.
  Object.assign(evidence,{before,changed,status:'positive-assertion-pending'});
@@ -44,13 +55,20 @@ test('vertical translation preserves exact board layout sizing',async({page},inf
  const positive=assertSemanticGeometry(before,changed);evidence.positive=positive;
  let displacement=1/64;
  await page.locator('#board').evaluate((board,amount)=>{board.style.transform=`translateY(${amount}px)`;},displacement);
- let negative=await measureSemanticGeometry(page);
- if(negative.board.y===changed.board.y){displacement=1;await page.locator('#board').evaluate(board=>{board.style.transform='translateY(1px)';});negative=await measureSemanticGeometry(page);}
+ let negative=await measure();
+ if(negative.board.y===changed.board.y){displacement=1;await page.locator('#board').evaluate(board=>{board.style.transform='translateY(1px)';});negative=await measure();}
  expect(negative.board.y).not.toBe(changed.board.y);
  expect(()=>assertSemanticGeometry(before,negative),'the same helper must reject independent real board movement').toThrow();
+ const additionalNegatives=[];
+ for(const amount of [1,-1/64,-1].filter(amount=>amount!==displacement)){
+  await page.locator('#board').evaluate((board,amount)=>{board.style.transform=`translateY(${amount}px)`;},amount);
+  const sample=await measure();additionalNegatives.push({amount,sample});Object.assign(evidence,{negative,displacement,additionalNegatives});await persist();
+  expect(sample.board.y).not.toBe(changed.board.y);
+  expect(()=>assertSemanticGeometry(before,sample),'fresh witness must reject every independent Board movement').toThrow();
+ }
  await page.locator('#board').evaluate(board=>board.style.removeProperty('transform'));
- expect(await measureSemanticGeometry(page)).toEqual(changed);
- Object.assign(evidence,{positive,negative,displacement,status:'complete'});
+ expect(await measure()).toEqual(changed);
+ Object.assign(evidence,{positive,negative,displacement,additionalNegatives,status:'complete'});
  }catch(error){evidence.failure=String(error);throw error;}
  finally{await persist();}
 });
@@ -77,7 +95,7 @@ test('compact Pass accepts actual touches at both ends of its 44px hit area with
   await page.screenshot({path:info.outputPath('compact-pass-expanded-touch.png')});
 });
 
-for(const width of [320,390])for(const scale of ['100%','200%'])test(`board messages keep their geometry at ${width}px and ${scale} text`,async({page},info)=>{
+for(const width of [320,390])for(const scale of ['100%','200%'])test(`board messages keep their geometry at ${width}px and ${scale} text`,async({page,browserName,publicationOwner},info)=>{
   await page.setViewportSize({width,height:1000});
   await page.goto('/browser-integration/support/board-message.html');
   await page.waitForFunction(()=>window.fixtureReady);
@@ -88,14 +106,31 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
   },scale);
   const measure=()=>measureSemanticGeometry(page);
   await settledMessage(page);const initial=await measure();
+  const boxContract=await page.evaluate(captureControlledMessageBox);
+  await info.attach('Controlled message actual box and policy domain',{body:JSON.stringify(boxContract),contentType:'application/json'});
+  const boxAdmission=qualifyControlledMessageBox(boxContract,{expectedFontSize:Number.parseFloat(scale)*.16});
+  expect(boxAdmission.qualified,JSON.stringify(boxAdmission)).toBe(true);
   expect(initial.slot.height).toBeGreaterThanOrEqual(44);
-  // The actual finite primary/fallback replicas reserve the short grammar.
-  // Extended narration and obligations have a separate controlled context host.
-  const reservation=await page.locator('.board-message-slot').evaluate(slot=>({
-    required:Math.max(...[...slot.querySelectorAll('.board-message-sizing')].map(node=>node.getBoundingClientRect().height)),
-    padding:parseFloat(getComputedStyle(slot).paddingTop)+parseFloat(getComputedStyle(slot).paddingBottom),
-  }));
-  expect(initial.slot.height).toBeCloseTo(reservation.required+reservation.padding,5);
+  // Natural replicas bound content below the cold reservation. A managed
+  // slot also reserves the independently qualified source font policy.
+  const reservation=await page.locator('.board-message-slot').evaluate(slot=>{
+    const style=getComputedStyle(slot),rows=[...slot.querySelectorAll('.board-message-sizing')].map(node=>{const s=getComputedStyle(node);return {font:node.dataset.sizingFont,variant:node.dataset.sizingVariant,pattern:node.dataset.promptPattern??null,height:node.getBoundingClientRect().height,lineHeight:parseFloat(s.lineHeight),minHeight:parseFloat(s.minHeight)};});
+    const width=slot.getBoundingClientRect().width,outerPadding=parseFloat(style.paddingTop)+parseFloat(style.paddingBottom),usedMinimumProfile=globalThis.__fontUsedSizeProfile??null;
+    let usedSize=null;
+    if(usedMinimumProfile==='firefox')try{usedSize=window.measurePatternUsedMinimum({container:slot,copies:[...slot.querySelectorAll('.board-message-sizing')],intrinsicRows:rows,outerPadding});}catch(error){usedSize={error:String(error)};}
+    return {width,probeWidth:width,outerPadding,usedMinimumProfile,usedSize,rows};
+  });
+  await info.attach('touch-reservation-raw',{body:JSON.stringify({reservation,physicalSlotHeight:initial.slot.height}),contentType:'application/json'});
+  expect(reservation.rows).toHaveLength(136);
+  for(const font of ['primary','fallback'])expect(reservation.rows.filter(row=>row.font===font)).toHaveLength(68);
+  expect(reservation.rows.every(row=>row.minHeight===0),'Fallback input is natural geometry, never a CSS-reserved replica').toBe(true);
+  const sourceBudget=fontEnvelopeBudgetForBrowser(reservation,reservation,{browserName});
+  await info.attach('touch-reservation-contract',{body:JSON.stringify({reservation,sourceBudget,physicalSlotHeight:initial.slot.height}),contentType:'application/json'});
+  const rowViolations=reservation.rows.flatMap((row,index)=>budgetPixelPrecision(row.height)>budgetPixelPrecision(sourceBudget.rows[index].contentMax)?[{font:row.font,variant:row.variant,pattern:row.pattern,height:row.height,contentMax:sourceBudget.rows[index].contentMax}]:[]);
+  expect(rowViolations,'Every natural row fits its own structural content cap').toEqual([]);
+  const natural=Math.max(...reservation.rows.map(row=>row.height))+reservation.outerPadding;
+  expect(budgetPixelPrecision(initial.slot.height),'Every natural replica fits inside the physical reservation').toBeGreaterThanOrEqual(budgetPixelPrecision(natural));
+  expect(budgetPixelPrecision(initial.slot.height),'Cold policy remains inside independent per-pattern compact bounds').toBeLessThanOrEqual(budgetPixelPrecision(sourceBudget.slotMax));
   await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(0);
   for(const phase of ['thinking','completed','completed-pass','multi-push','multi-rush','spectator-long-name','selection','frozen-reconnect','frozen-retreat','frozen-follow','loading','human']){
@@ -136,7 +171,7 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
     },phase);
     await settledMessage(page);const current=await measure();
     assertSemanticGeometry(initial,current);expect(current.board).toEqual(initial.board);
-    expect(await page.locator('[data-prompt-overflow="true"],[data-prompt-unmapped="true"]').count()).toBe(0);
+    expect(await page.locator('[data-prompt-overflow="true"],[data-prompt-unmapped="true"],[data-prompt-primary-underreserved="true"],[data-prompt-reservation-unsupported="true"]').count()).toBe(0);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(phase==='frozen-reconnect'&&width===320)await page.screenshot({path:info.outputPath(`stable-frozen-reconnect-${width}-${scale}.png`)});
     if(phase==='completed'||phase==='completed-pass'||phase==='spectator-long-name'){

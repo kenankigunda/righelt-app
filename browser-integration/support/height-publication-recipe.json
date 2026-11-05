@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "file": "apps/web/board/message-height.js",
+  "servedPath": "/apps/web/board/message-height.js",
+  "sourceSha256": "523f34c001180a78da339055830eecbb5455e2aebf2875143437d8788f63e0eb",
+  "outputSha256": "c85c51c6c09bac5fcd1c41f1f80f8e366ab7caa6b210031e8b91b66ec48f1f1a",
+  "operation": {
+    "start": 5015,
+    "end": 5065,
+    "before": "slot.style.height=`${target}px`;lastTarget=target;",
+    "after": "slot.style.height=`${target}px`;lastTarget=target;try{const probe=Object.getOwnPropertyDescriptor(globalThis,'__heightPublication')?.value;if(typeof probe?.record==='function')probe.record(slot,target,fontKey,width);}catch{}"
+  }
+}

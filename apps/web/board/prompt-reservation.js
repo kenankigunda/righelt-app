@@ -1,7 +1,7 @@
 // Cold-font reservation for the finite short-prompt grammar. Width frontiers
 // are rounded outward to 1/16em across the pinned primary and fallback fonts.
 // They are independent of arrival order, live content and font loading state.
-export const promptFrontiersEm=Object.freeze([8.5625,10.875,11.8125,19.375]);
+export const promptFrontiersEm=Object.freeze([8.5625,10.875,11.875,19.375]);
 const properties={prose:'--board-message-prose-line-height',scale:'--board-inline-action-font-scale',line:'--board-inline-action-line-height',padding:'--board-inline-action-padding-block-em',border:'--board-inline-action-border-px',halfPx:'--board-message-hit-half-px',halfEm:'--board-message-hit-half-em',extraEm:'--board-message-action-extra-em',extraPx:'--board-message-action-extra-px',detachedGap:'--board-message-detached-gap-em'};
 // Qualification receipt for the measured CSS contract, not an alternative
 // source for layout values. A CSS metric change needs a new font qualification.

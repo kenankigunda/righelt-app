@@ -57,3 +57,19 @@ test('typed independent compact policy adds paint after the permanent fallback m
  assert.equal(admittedHeight(616,32,300,{pattern:'required-retry',outerPadding:8}),308);
  assert.equal(admittedHeight(616,32,300),300,'untagged policy retains its original convention');
 });
+
+// Fresh Linux431 full-grammar receipt: untagged optional End turn + retry at
+// exactly189px exceeds the previous analytic branch. This is a frontier
+// refinement inside the original compact cap, not a new structural allowance.
+test('outward replay frontier covers the measured untagged189px primary and keeps original compact caps',()=>{
+ const base={width:189,fontSize:16,metrics,rowLines:5,intrinsicFallback:104.15625,outerPadding:0};
+ const value=boundedPromptReservation(base);
+ assert(Number.isFinite(value));assert(value>=128.15625,'measured untagged189px primary must fit before font admission');
+ assert.equal(value,136.25);assert(value<=170.25,'original independent untagged compact ceiling retained');
+ for(const size of [16,32])for(const delta of [-.125,0,.125]){
+  const width=11.8125*size+delta,reserve=boundedPromptReservation({width,fontSize:size,metrics,rowLines:delta<0?6:5,intrinsicFallback:size===16?104.15625:155,outerPadding:size===16?0:8});
+  assert(Number.isFinite(reserve));assert(reserve>0);
+ }
+ assert.equal(promptReservation(366.8125,16,metrics),104.25,'normal390 geometry estimate is unchanged');
+ assert.equal(boundedPromptReservation({...base,pattern:'unknown'}),null);
+});

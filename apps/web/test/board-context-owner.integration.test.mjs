@@ -7,6 +7,7 @@ import {createBoardContextOwner,createBoardContextFocus} from '../shell/board-co
 import {captureDisplayedReplay,displayedReplayIsCurrent,replayArchiveMatches} from '../shell/displayed-replay.js';
 import {createReplayRequest} from '../shell/replay-request.js';
 import {opponentBoardMessage} from '../shell/opponent-narration.js';
+import {syncRecoverySpace} from '../shell/recovery-space.js';
 
 // Execute the production app owners, including their callback ordering and
 // queued dismissal. Browser boundaries are controlled, not copied app logic.
@@ -27,7 +28,7 @@ const events=()=>{
 };
 const accepted=()=>({id:'game',gameplayRevision:4,myRoles:['Player 2'],player1:{identityId:'other'},player2:{identityId:'me'},board:{state:{turnIndex:1,sideToMove:'P2'}},turns:[{index:0,playerSeat:'Player 1',status:'complete'}],moves:[{moveId:'move',turnIndex:0,actorSide:'P1',action:{type:'move',from:{row:1,col:2},to:{row:2,col:2}}}]});
 function fixture(t){
- const queued=[],reveals=[],plays=[],win=events(),doc={...events(),defaultView:win,hidden:false};
+ const queued=[],reveals=[],plays=[],admissions=[],win=events(),doc={...events(),defaultView:win,hidden:false};
  const node=(kind)=>({kind,isConnected:true,disabled:false,dataset:{},setAttribute(){},append(){},closest(selector){return selector.includes('data-board-context')&&kind==='dismiss'?{contains:value=>value===this}:null;},focus(){doc.activeElement=this;doc.fire('focusin',{target:this});}});
  doc.body=node('body');doc.activeElement=doc.body;doc.createElement=()=>node('announcement');
  const board=node('board-guidance'),button=node('replay'),dismiss=node('dismiss');
@@ -37,7 +38,8 @@ function fixture(t){
  const transport={getGameViewModel:()=>context.view,getAuthoritativeGame:()=>context.view,getIdentityId:()=>'me',decisionHistory:()=>archive};
  const requests=createReplayRequest();
  const context=vm.createContext({view:accepted(),scopeGeneration:'accountA:storageA',document:doc,appEl:app,queueMicrotask:fn=>queued.push(fn),
- createBoardContextStore,createBoardContextOwner,createBoardContextFocus,createBoardContextLayout:()=>({sync(){},reveal:(target,current)=>{if(current())reveals.push(target);}}),
+ syncRecoverySpace(app){syncRecoverySpace(app);admissions.push('recovery');},
+ createBoardContextStore,createBoardContextOwner,createBoardContextFocus,createBoardContextLayout:()=>({sync(){admissions.push('layout');},reveal:(target,current)=>{if(current())reveals.push(target);}}),
  captureDisplayedReplay,displayedReplayIsCurrent,replayArchiveMatches,opponentBoardMessage,transport,replayRequests:requests,
  window:win,captureRouteRead:()=>({route:context.currentRoute}),routeReadIsCurrent:()=>true,syncLiveChannels(){},render(){},syncRouteDataAndLiveChannels:async()=>{throw new Error('navigation failed');},issueDiagnostics:{resolve(){},capture(){}},invitationLoadFailureKind:()=> 'network',maybeRevealRouteTransition(){},
  routeHydrated:true,mountedBoardGameId:'game',getShellLayoutMode:()=>'narrow',getGamePanel:()=>context.currentRoute.panel??'board',getCurrentGameHashState:panel=>({panel}),buildGameHash:()=> '#/game/game/board',navigateTo:()=>{},
@@ -57,10 +59,19 @@ function fixture(t){
   // its real queued return, matching production FIFO ordering.
   while(queued.length)queued.shift()();await Promise.resolve();
   while(queued.length)queued.shift()();await Promise.resolve();
- };while(queued.length)queued.shift()();
+ };while(queued.length)queued.shift()();admissions.length=0;
  t.after(()=>{c.focus.destroy();assert.equal(doc.count(),0);assert.equal(win.count(),0);});
- return {c,doc,win,context,board,button,dismiss,root,requests,plays,reveals,meta,flush,releaseArchive:()=>resolveArchive({items:[{...context.view.moves[0],archived:true}],nextCursor:null}),descriptor:()=>captureDisplayedReplay({game:context.view,owner:transport,scope:c.scope(),identityId:'me'})};
+ return {c,doc,win,context,board,button,dismiss,root,requests,plays,reveals,admissions,meta,flush,releaseArchive:()=>resolveArchive({items:[{...context.view.moves[0],archived:true}],nextCursor:null}),descriptor:()=>captureDisplayedReplay({game:context.view,owner:transport,scope:c.scope(),identityId:'me'})};
 }
+
+test('actual queued context refresh invokes the real recovery helper before layout and coalesces changes',async t=>{
+ const f=fixture(t);
+ f.c.receive({message:{text:'First explanation'}},{...f.meta(1),selectedPieceId:'first'});
+ f.c.receive({message:{text:'Current explanation'}},{...f.meta(2),selectedPieceId:'second'});
+ assert.deepEqual(f.admissions,[],'presentation remains in the original queue');
+ await f.flush();assert.deepEqual(f.admissions,['recovery','layout']);
+ assert.equal(f.c.store.channel('piece').message.text,'Current explanation');
+});
 
 test('actual app callback retires a pending archive on the first committed selection before response release',async t=>{
  const f=fixture(t);f.button.focus();

@@ -64,10 +64,12 @@ for(const width of [320,390,1440])test(`finite Board prompt geometry and require
  // scrollport's border box remains the same. No app/status refresh intervenes.
  await page.evaluate(()=>{document.documentElement.style.fontSize='16px';window.promptFixture.overflow();window.beforeOverflowFocus=document.activeElement;window.beforeOverflowScroll=scrollY;});
  const explanation=page.getByRole('region',{name:'Board explanation',exact:true});await expect(explanation).toHaveAttribute('tabindex','-1');
- const capped=await explanation.boundingBox();
+ // Compare the same DOMRect height primitive on both observations.
+ // The protocol bounding box can derive height from separately rounded edges.
+ const capped=await explanation.evaluate(node=>node.getBoundingClientRect().height);
  await explanation.locator('.board-context-content').evaluate(content=>content.textContent+=' '+Array(60).fill('Coordinate guidance').join(' '));
  await expect(explanation).toHaveAttribute('tabindex','0');await expect(page.locator('[data-context-overflow="true"] .board-context-scroll-cue')).toBeVisible();
- expect((await explanation.boundingBox()).height).toBe(capped.height);
+ expect(await explanation.evaluate(node=>node.getBoundingClientRect().height)).toBe(capped);
  expect(await page.evaluate(()=>({sameFocus:document.activeElement===window.beforeOverflowFocus,sameScroll:scrollY===window.beforeOverflowScroll}))).toEqual({sameFocus:true,sameScroll:true});
  await page.evaluate(()=>document.documentElement.style.fontSize='32px');await expect(explanation).toHaveAttribute('tabindex','0');await expect(page.locator('[data-context-overflow="true"] .board-context-scroll-cue')).toBeVisible();
  await page.evaluate(()=>window.promptFixture.required());
