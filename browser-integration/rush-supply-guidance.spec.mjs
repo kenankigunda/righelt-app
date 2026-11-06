@@ -125,9 +125,8 @@ test('obligatory message retains inactive-piece and blocked-destination explanat
 for (const fontScale of [100,200]) test(`touch confirmation stays put across guidance choices at ${fontScale}% text`,async({page,publicationOwner},info)=>{
   let primary;
   try {
-  if (fontScale !== 200) await open(page,{width:390});
-  else {
-    // Same original open sequence. Only this case observes the real client.
+  {
+    // Same original open sequence. Observe the real client in each scale's separate page.
     await page.setViewportSize({width:390,height:1000});
     await page.goto('/browser-integration/support/board-message.html');
     await page.waitForFunction(()=>window.fixtureReady);
@@ -211,7 +210,7 @@ for (const fontScale of [100,200]) test(`touch confirmation stays put across gui
   await settledMessage(page);assertSemanticGeometry(before,await measureSemanticGeometry(page));
   } catch(error) { primary=error;throw error; }
   finally {
-    if(fontScale===200)try{
+    try{
       const observation=await page.evaluate(()=>window.__rushGuidanceCaseObservation?.finish()??{incomplete:true,reason:'observation-not-installed'});
       await info.attach('Real rush-guidance case observation',{body:JSON.stringify(observation),contentType:'application/json'});
       if(!primary)expect(observation.incomplete,'Read-only measurement must be complete').toBe(false);
