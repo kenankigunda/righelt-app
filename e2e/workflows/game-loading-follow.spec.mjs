@@ -4,6 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { importScenarioGame, switchGamePanel } from '../support/app.mjs';
 import { readProjectedGame } from '../support/computer-projection.mjs';
 import { ownedContexts } from '../support/owned-contexts.mjs';
+import { boardActionTraversalKey } from '../support/native-board-keyboard.mjs';
 import { applyAction, resolveToStability } from '../../apps/web/generated/packages/game-engine/src/index.js';
 import { CURRENT_COMPUTER_MODEL } from '../../packages/shared-types/src/computer-play.ts';
 import { STORAGE_GENERATION_HEADER } from '../../packages/shared-types/src/storage-policy.js';
@@ -158,20 +159,40 @@ test('the resumed retained game completes its required board visual phase', asyn
     // An already selected panel needs no navigation click. The controls can be
     // collapsed while the current panel stays visible and ready.
     if (await tab.getAttribute('aria-pressed') !== 'true') {
+      // Select a native input path before opening navigation. A no-hover
+      // profile must not wait for hover before it can establish keyboard focus.
+      const hoverMedia = await page.evaluate(() => matchMedia('(hover:hover)').matches);
       const reveal = page.getByRole('button',{name:'Show game navigation',exact:true});
       // Refresh the idle window even when the bar is about to hide.
       if (await reveal.count()) await reveal.click();
-      // Keep native pointer ownership through the owner's existing idle policy.
+      // Establish native input ownership through the owner's existing idle policy.
       // Hover protects idle expiry, not downward scrolling or blocked navigation.
-      await tab.hover();
+      if (hoverMedia) await tab.hover();
+      else {
+        // The real no-hover profile has no pointer idle protection. Traverse
+        // from the clicked reveal through Players to Board using native keys.
+        await expect(reveal).toBeFocused();
+        const traversalKey = boardActionTraversalKey({ platform: process.platform, browserName: info.project.name });
+        await page.keyboard.press(traversalKey);
+        await expect(page.locator('[data-action="switch-game-panel"][data-panel="players"]')).toBeFocused();
+        await page.keyboard.press(traversalKey);
+        await expect(tab).toBeFocused();
+      }
       const ownership = await tab.evaluate(tab => {
         const nav = tab.closest('.shell-mobile-tabbar');
         return { hover: nav.matches(':hover'), hoverMedia: matchMedia('(hover:hover)').matches,
+          keyboardFocus: nav.contains(document.activeElement) && document.activeElement.matches(':focus-visible'),
+          tabFocused: document.activeElement === tab,
           visible: nav.dataset.visible, inert: nav.querySelector('[data-mobile-nav-controls]').inert,
           expanded: nav.querySelector('[data-mobile-nav-reveal]').getAttribute('aria-expanded') };
       });
-      await info.attach('retained-board-navigation-ownership', { body: JSON.stringify(ownership), contentType: 'application/json' });
-      expect(ownership).toEqual({ hover: true, hoverMedia: true, visible: 'true', inert: false, expanded: 'true' });
+      await info.attach('retained-board-navigation-ownership', { body: JSON.stringify({ inputMethod: hoverMedia ? 'pointer' : 'keyboard', ...ownership }), contentType: 'application/json' });
+      expect(ownership.hoverMedia).toBe(hoverMedia);
+      expect(ownership.visible).toBe('true');
+      expect(ownership.inert).toBe(false);
+      expect(ownership.expanded).toBe('true');
+      if (hoverMedia) expect(ownership.hover && ownership.hoverMedia).toBe(true);
+      else expect(ownership.keyboardFocus && ownership.tabFocused).toBe(true);
       await tab.click();
     }
     await expect(tab).toHaveAttribute('aria-pressed','true');

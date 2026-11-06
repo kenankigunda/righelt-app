@@ -3,7 +3,7 @@ import { boardActionTraversalKey } from '../e2e/support/native-board-keyboard.mj
 
 // Product-owner integration. Native input and the production owner/CSS stay real.
 // Only the clock is advanced on this isolated page, never on the retained game.
-for (const protection of ['hover', 'keyboard']) test(`mobile navigation protects ${protection} ownership across idle expiry`, async ({ page, browserName }, info) => {
+for (const protection of ['pointer', 'keyboard']) test(`mobile navigation applies native ${protection} capability across idle expiry`, async ({ page, browserName }, info) => {
   await page.setViewportSize({ width: 390, height: 740 });
   await page.route('**/mobile-navigation-owner-fixture', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"></head><body>
@@ -34,7 +34,7 @@ for (const protection of ['hover', 'keyboard']) test(`mobile navigation protects
   try {
     const outside = page.locator('#outside');
     await outside.click();
-    if (protection === 'hover') {
+    if (protection === 'pointer') {
       await page.getByRole('button', { name: 'Show game navigation', exact: true }).click();
       await page.locator('[data-panel="board"]').hover();
     } else {
@@ -45,9 +45,9 @@ for (const protection of ['hover', 'keyboard']) test(`mobile navigation protects
     expect(before.visible).toBe('true');
     expect(before.inert).toBe(false);
     expect(before.expanded).toBe('true');
-    if (protection === 'hover') {
+    if (protection === 'pointer') {
       expect(before.hover).toBe(true);
-      expect(before.hoverMedia).toBe(true);
+      expect(typeof before.hoverMedia).toBe('boolean');
       expect(before.keyboardFocus).toBe(false);
     } else {
       expect(before.hover).toBe(false);
@@ -57,10 +57,15 @@ for (const protection of ['hover', 'keyboard']) test(`mobile navigation protects
     const owned = await sample('owned-after-expiry');
     expect(owned.now - before.now).toBeGreaterThanOrEqual(idleMs + 1);
     expect(owned.scrollY).toBe(before.scrollY);
-    expect(owned.visible).toBe('true');
-    expect(owned.inert).toBe(false);
-    expect(owned.expanded).toBe('true');
-    expect(protection === 'hover' ? owned.hover && owned.hoverMedia : owned.keyboardFocus).toBe(true);
+    // Native pointer hover protects idle only when the browser reports hover
+    // capability. A real no-hover profile must expire despite pointer overlap.
+    const protectedAtExpiry = protection === 'keyboard' || before.hoverMedia;
+    expect(owned.hoverMedia).toBe(before.hoverMedia);
+    expect(owned.visible).toBe(String(protectedAtExpiry));
+    expect(owned.inert).toBe(!protectedAtExpiry);
+    expect(owned.expanded).toBe(String(protectedAtExpiry));
+    if (protection === 'keyboard') expect(owned.keyboardFocus).toBe(true);
+    else if (before.hoverMedia) expect(owned.hover).toBe(true);
     // Negative control: the same real owner must hide after ownership is removed.
     await outside.click();
     const released = await sample('released-before-expiry');
