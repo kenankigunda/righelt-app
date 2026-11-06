@@ -20,14 +20,31 @@ for(const scale of [100,200])test(`controlled heading owns unchanged leading ins
   }finally{owned.style.cssText=originalCssText;}
   if(owned.style.cssText!==originalCssText)throw Error('Candidate declaration restore mismatch');
   const after=read();
+  // Deliberate physical regressions must be rejected by the same exact oracles.
+  const negativeControls=[];
+  for(const [name,property,value] of [['heading-margin','margin-block-start','1px'],['heading-padding','padding-block-start','calc(0.83em + 1px)']]){
+   let perturbed;try{owned.style.setProperty(property,value);perturbed=read();}
+   finally{owned.style.cssText=originalCssText;}
+   if(owned.style.cssText!==originalCssText)throw Error('Negative control declaration restore mismatch');
+   negativeControls.push({name,perturbed,restored:read(),restoredCssText:owned.style.cssText});
+  }
   // A production .panel descendant must retain its separate zero-margin contract.
   const panel=document.createElement('section');panel.className='panel';panel.innerHTML=renderBoardHeadingSlot({loading:true});document.body.append(panel);const ph=panel.querySelector('.board-heading'),style=getComputedStyle(ph),production={margin:style.marginTop,padding:style.paddingTop};panel.remove();
-  return {before,after,production,baseline:{mode:'pinned-original-cascade-candidate-declarations-disabled',originalCssText,restoredCssText:owned.style.cssText}};
+  return {before,after,negativeControls,production,baseline:{mode:'pinned-original-cascade-candidate-declarations-disabled',originalCssText,restoredCssText:owned.style.cssText}};
  },scale);
  await info.attach('Controlled leading inset old and owned',{body:JSON.stringify(samples),contentType:'application/json'});
  expect(samples.after.heading.bottom).toBe(samples.after.slot.bottom);
  expect(samples.after.slot).toEqual(samples.before.slot);expect(samples.after.board).toEqual(samples.before.board);
  expect(samples.after.textTop).toBe(samples.before.textTop);expect(samples.after.font).toBe(samples.before.font);expect(samples.after.line).toBe(samples.before.line);
- expect(samples.after.margin).toBe('0px');expect(parseFloat(samples.after.padding)).toBe(parseFloat(samples.before.margin));
+ // CSSOM may expose a used UA margin and a computed padding at different stages.
+ // Compare the owned physical box directly, with exact text/Board anchors above.
+ expect(samples.after.margin).toBe('0px');expect(samples.after.heading).toEqual(samples.after.slot);
+ expect(samples.negativeControls.map(control=>control.name)).toEqual(['heading-margin','heading-padding']);
+ for(const control of samples.negativeControls){
+  if(control.name==='heading-margin')expect(control.perturbed.heading).not.toEqual(control.perturbed.slot);
+  else{expect(control.perturbed.textTop).not.toBe(samples.after.textTop);expect(control.perturbed.board).not.toEqual(samples.after.board);}
+  expect(control.restored).toEqual(samples.after);
+  expect(control.restoredCssText).toBe(samples.baseline.originalCssText);
+ }
  expect(samples.production).toEqual({margin:'0px',padding:'0px'});
 });

@@ -67,6 +67,7 @@ for(const width of [390,1440])test(`human opponent replay preserves authority an
    const sample=()=>{const r=button.getBoundingClientRect(),s=getComputedStyle(button);return {width:r.width,height:r.height,icon:button.querySelector('svg').getBoundingClientRect().width,background:s.backgroundColor,
     offsetWidth:button.offsetWidth,offsetHeight:button.offsetHeight,cssWidth:s.width,cssHeight:s.height,zoom:s.zoom,devicePixelRatio,
     buttonTransform:s.transform,noticeTransform:getComputedStyle(notice).transform,cardTransform:getComputedStyle(card).transform,
+    cardRect:card.getBoundingClientRect().toJSON(),noticeRect:notice.getBoundingClientRect().toJSON(),headerRect:notice.closest('.shell-header-status')?.getBoundingClientRect().toJSON()??null,
     connected:button.isConnected,current:document.querySelector('#app [data-board-context]:has(.board-context-replay)')===notice,active:card.classList.contains('is-active'),
     finiteAnimations:finite().map(animation=>({kind:animation.constructor.name,name:animation.animationName??animation.transitionProperty??null,playState:animation.playState,pending:animation.pending,currentTime:animation.currentTime}))};};
    const before=sample(),animations=finite();
