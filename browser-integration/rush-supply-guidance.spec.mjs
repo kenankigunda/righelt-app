@@ -122,8 +122,77 @@ test('obligatory message retains inactive-piece and blocked-destination explanat
   expect(await page.evaluate(()=>window.boardFixture.applied())).toEqual([]);
 });
 
-for (const fontScale of [100,200]) test(`touch confirmation stays put across guidance choices at ${fontScale}% text`,async({page,publicationOwner})=>{
-  await open(page,{width:390});
+for (const fontScale of [100,200]) test(`touch confirmation stays put across guidance choices at ${fontScale}% text`,async({page,publicationOwner},info)=>{
+  let primary;
+  try {
+  if (fontScale !== 200) await open(page,{width:390});
+  else {
+    // Same original open sequence. Only this case observes the real client.
+    await page.setViewportSize({width:390,height:1000});
+    await page.goto('/browser-integration/support/board-message.html');
+    await page.waitForFunction(()=>window.fixtureReady);
+    await page.evaluate(async state=>{
+      const [{listLegalActions},{createRushSupplyGuidanceClient},{RulesRuntime}]=await Promise.all([
+        import('/apps/web/generated/packages/game-engine/src/index.js'),
+        import('/apps/web/board/rush-supply-guidance.js'),import('/apps/web/board/rules-runtime.js')]);
+      const rows=[],limit=96,cleanup=[];let dropped=0,errors=0,sequence=0,phase=null,enabled=true,lastDOM='';
+      const executor=new RulesRuntime(),factory=executor.workerFactory,cancelAll=executor.cancelAll;
+      const board=document.querySelector('#board');
+      const record=(kind,data={})=>{try{if(!enabled)return;if(rows.length>=limit){dropped++;return;}rows.push({at:performance.now(),kind,...data});}catch{errors++;}};
+      const job=()=>({id:executor.running?.id??null,scope:executor.running?.scope??null,type:executor.running?.type??null,jobs:executor.jobs.size});
+      const readDOM=()=>{
+        const current=document.querySelector('#board'),value={sameBoard:current===board,hidden:document.hidden,
+          sources:current?.querySelectorAll('.rush-guidance-source').length??null,
+          selection:window.boardFixture.selection(),context:document.querySelector('#fixture-context')?.textContent?.slice(0,1024)??'',
+          prompt:document.querySelector('#preview')?.textContent?.slice(0,1024)??''};
+        const key=JSON.stringify(value);if(key!==lastDOM){lastDOM=key;record('dom-presentation',value);}
+      };
+      executor.workerFactory=function(...args){
+        const worker=Reflect.apply(factory,this,args),terminate=worker.terminate;
+        record('worker-created',job());
+        if(cleanup.length>=limit){dropped++;return worker;}
+        const onMessage=event=>record('worker-message',{...job(),responseId:event.data?.id??null,responseScope:event.data?.scope??null,
+          responseType:event.data?.type??null,errorCode:event.data?.error?.code??null,errorMessage:event.data?.error?.message??null,
+          actions:Array.isArray(event.data?.result?.actions)?event.data.result.actions.length:null});
+        const onError=event=>record('worker-error',{...job(),message:event.message??null});
+        const onMessageError=()=>record('worker-messageerror',job());
+        worker.addEventListener('message',onMessage);worker.addEventListener('error',onError);worker.addEventListener('messageerror',onMessageError);
+        worker.terminate=function(...args){record('worker-terminate',job());return Reflect.apply(terminate,this,args);};
+        cleanup.push(()=>{worker.removeEventListener('message',onMessage);worker.removeEventListener('error',onError);worker.removeEventListener('messageerror',onMessageError);worker.terminate=terminate;});
+        return worker;
+      };
+      executor.cancelAll=function(...args){record('executor-cancelAll',{...job(),publicPhase:phase,
+        caller:new Error('read-only cancellation boundary').stack?.split('\n').slice(1,5).join('\n')??null});return Reflect.apply(cancelAll,this,args);};
+      const real=createRushSupplyGuidanceClient({executor});
+      const observed={
+        analyze(snapshot){
+          const id=++sequence;record('analyze-enter',{id,inputKey:JSON.stringify(snapshot)});phase='analyze';let pending;
+          try{pending=Reflect.apply(real.analyze,real,[snapshot]);}
+          catch(error){record('analyze-throw',{id,code:error?.code??null,message:error?.message??null});throw error;}finally{phase=null;}
+          // Observe a side branch but return the exact original promise.
+          pending.then(result=>record('analyze-resolve',{id,actions:Array.isArray(result?.actions)?result.actions.length:null}),
+            error=>record('analyze-reject',{id,code:error?.code??null,message:error?.message??null}));
+          return pending;
+        },
+        cancel(...args){record('client-cancel',job());phase='cancel';try{return Reflect.apply(real.cancel,real,args);}finally{phase=null;}},
+        destroy(...args){record('client-destroy',job());phase='destroy';try{return Reflect.apply(real.destroy,real,args);}finally{phase=null;}},
+      };
+      const onVisibility=()=>record('visibilitychange',{hidden:document.hidden,...job()});
+      const onPageHide=()=>record('pagehide',{hidden:document.hidden,...job()});
+      document.addEventListener('visibilitychange',onVisibility);window.addEventListener('pagehide',onPageHide);
+      const mutation=new MutationObserver(()=>{try{readDOM();}catch{errors++;}});
+      mutation.observe(document.querySelector('#app'),{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['class']});
+      window.__rushGuidanceCaseObservation={finish(){
+        try{readDOM();}catch{errors++;}mutation.disconnect();document.removeEventListener('visibilitychange',onVisibility);window.removeEventListener('pagehide',onPageHide);
+        for(const dispose of cleanup)try{dispose();}catch{errors++;}
+        executor.workerFactory=factory;executor.cancelAll=cancelAll;enabled=false;
+        return{timeOrigin:performance.timeOrigin,rows,dropped,errors,incomplete:dropped>0||errors>0,analysisCalls:sequence,
+          scope:'Real-client events and rendered DOM only. Private owner generation/key/ready assignment are not directly observed.'};
+      }};
+      await window.boardFixture.setup('rush',false,{rushGuidanceClient:observed});
+      await window.boardFixture.configure(state,listLegalActions(state));
+    },state);
+  }
   await page.evaluate(async fontScale=>{
     document.documentElement.style.fontSize=`${fontScale}%`;await document.fonts.ready;
     const {scenarios}=await(await fetch('/apps/web/scenarios/catalog.json')).json();
@@ -140,4 +209,12 @@ for (const fontScale of [100,200]) test(`touch confirmation stays put across gui
   await page.locator('.cell[data-row="7"][data-col="3"]').click();
   await expect(page.locator('[data-board-context] .board-context-body')).toContainText('Destination would have no supply');
   await settledMessage(page);assertSemanticGeometry(before,await measureSemanticGeometry(page));
+  } catch(error) { primary=error;throw error; }
+  finally {
+    if(fontScale===200)try{
+      const observation=await page.evaluate(()=>window.__rushGuidanceCaseObservation?.finish()??{incomplete:true,reason:'observation-not-installed'});
+      await info.attach('Real rush-guidance case observation',{body:JSON.stringify(observation),contentType:'application/json'});
+      if(!primary)expect(observation.incomplete,'Read-only measurement must be complete').toBe(false);
+    }catch(error){console.error(JSON.stringify({kind:'rush-guidance-observation-incomplete',name:error?.name??'Error'}));if(!primary)throw error;}
+  }
 });
