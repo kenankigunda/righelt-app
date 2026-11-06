@@ -12,7 +12,16 @@ import {COMPUTER_UI_FRAME_MEASURE} from '../../apps/web/shell/frame-presentation
 
 // Worker/bootstrap preparation has an explicit fixture budget. The receipt and
 // native Follow journeys retain their complete existing 60-second body budget.
-const test=base.extend({acceptedRetreat:[async({page,baseURL},use)=>{
+const test=base.extend({
+ // This fixture depends on page, so its bounded diagnostic teardown finishes
+ // before Playwright tears that page down. The original test body keeps 60s.
+ humanRetreatAdmissionDiagnostics:[async({page,baseURL},use,info)=>{
+  if(info.title!=='human retreat excludes the stranded square and completes the native Follow')throw Error('Human retreat diagnostic fixture title mismatch');
+  const diagnostic=await installBoardAdmissionDiagnostics(page,info,{baseURL,targetRow:3,targetCol:0});
+  try{await use();}
+  finally{try{await diagnostic.persist();}catch(error){if(info.status===info.expectedStatus)throw error;console.error('[board-admission-diagnostic] fixture-persistence-incomplete');}}
+ },{timeout:5000}],
+ acceptedRetreat:[async({page,baseURL},use)=>{
  await use(await acceptedComputerRetreat(page,baseURL));
 },{timeout:60000}]});
 
@@ -141,9 +150,7 @@ function completed(game){
  for(const id of ['U2-11','U2-15'])expect(stable.pieces.find(piece=>piece.id===id)).toMatchObject({owner:'P2',supplied:true});
 }
 
-test('human retreat excludes the stranded square and completes the native Follow',async({page,baseURL},info)=>{
- const admissionDiagnostics=await installBoardAdmissionDiagnostics(page,info,{baseURL,targetRow:3,targetCol:0});
- try {
+test('human retreat excludes the stranded square and completes the native Follow',async({page,baseURL,humanRetreatAdmissionDiagnostics},info)=>{
  const {gameId}=await importScenarioGame(page,makeRetreatScenario('human'),baseURL);await claimBoth(page);
  await atHash(page,gameId,f.push.beforeHash);await submit(page,gameId,f.push.action);
  const pushed=await atHash(page,gameId,f.push.afterHash);expect(pushed.legalActions).toEqual([safe.action]);await noClosure(page,pushed);
@@ -173,7 +180,6 @@ test('human retreat excludes the stranded square and completes the native Follow
  await page.screenshot({path:info.outputPath('safe-retreat-awaits-follow.png')});
  await submit(page,gameId,FOLLOW_ACTION);completed(await current(page,gameId));
  await info.attach('captured-retreat-provenance',{body:JSON.stringify({sha256:RETREAT_CAPTURE_SHA256,provenance:f.provenance,unsafe,receipt:rejected.commandOutcomes},null,2),contentType:'application/json'});
- }finally{await admissionDiagnostics.persist();}
 });
 
 async function acceptedComputerRetreat(page,baseURL){
