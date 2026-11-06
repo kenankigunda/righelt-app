@@ -66,12 +66,34 @@ for(const width of [320,390,1440])test(`finite Board prompt geometry and require
  const explanation=page.getByRole('region',{name:'Board explanation',exact:true});await expect(explanation).toHaveAttribute('tabindex','-1');
  // Compare the same DOMRect height primitive on both observations.
  // The protocol bounding box can derive height from separately rounded edges.
- const cappedRecord=await explanation.evaluate(node=>{
+ // This oracle compares the settled scrollport, not the notice's entry motion.
+ // Use the existing expect budget. Keep the actual owner identity across both reads.
+ const entryOwner=await explanation.evaluateHandle(node=>node.closest('.board-context-notice'));
+ let entryPrimary;
+ try{
+ let entryInvalid;
+ await expect.poll(async()=>{
+  if(entryInvalid)return entryInvalid;
+  const state=await entryOwner.evaluate(notice=>{
+  if(!notice?.isConnected||!notice.matches('.board-context-notice[data-board-context="overflow"]'))return{settled:false,reason:'missing-or-replaced-owner'};
+  const animations=notice.getAnimations({subtree:false});
+  if(animations.length>8)return{settled:false,reason:'animation-bound-exceeded'};
+  for(const animation of animations){
+   const timing=animation.effect?.getComputedTiming();
+   if(animation.effect?.target!==notice||animation.animationName!=='shell-game-alert-reveal'||!Number.isFinite(timing?.endTime)||!Number.isFinite(timing?.iterations)||timing.iterations!==1||!Number.isFinite(animation.playbackRate)||animation.playbackRate<=0)return{settled:false,reason:'unexpected-or-unbounded-animation'};
+  }
+  return{settled:animations.length===0};
+ });
+  if(state.reason)entryInvalid=state;
+  return state;
+ },{message:'Original context notice must finish its finite entry animation'}).toEqual({settled:true});
+ const cappedRecord=await explanation.evaluate((node,entryOwner)=>{
   // Preserve the scalar from this single original DOMRect read. Metadata follows it.
   const rect=node.getBoundingClientRect(),height=rect.height;
   const record={height,rect:{x:rect.x,y:rect.y,top:rect.top,right:rect.right,bottom:rect.bottom,left:rect.left,width:rect.width,height},at:performance.now(),incomplete:false};
   try{
    const style=getComputedStyle(node),notice=node.closest('.board-context-notice');
+   record.entrySettled=notice===entryOwner&&notice?.isConnected===true&&notice.getAnimations({subtree:false}).length===0;
    record.scroll={x:scrollX,y:scrollY,nodeTop:node.scrollTop,nodeLeft:node.scrollLeft,scrollHeight:node.scrollHeight,scrollWidth:node.scrollWidth,clientHeight:node.clientHeight,clientWidth:node.clientWidth};
    record.viewport={width:innerWidth,height:innerHeight,dpr:devicePixelRatio,visual:visualViewport?{offsetTop:visualViewport.offsetTop,offsetLeft:visualViewport.offsetLeft,pageTop:visualViewport.pageTop,pageLeft:visualViewport.pageLeft,scale:visualViewport.scale}:null};
    record.box=Object.fromEntries(['height','width','minBlockSize','maxBlockSize','boxSizing','paddingTop','paddingBottom','borderTopWidth','borderBottomWidth','overflowX','overflowY','scrollbarGutter','writingMode','position','transform','transformOrigin','translate','rotate','scale','zoom'].map(key=>[key,style[key]]));
@@ -85,16 +107,17 @@ for(const width of [320,390,1440])test(`finite Board prompt geometry and require
    record.incomplete=record.ancestorTruncated||record.animationTruncated;record.finishedAt=performance.now();
   }catch(error){record.incomplete=true;record.error={name:error?.name??null,message:error?.message??null};}
   return record;
- });
+ },entryOwner);
  const capped=cappedRecord.height;
  await explanation.locator('.board-context-content').evaluate(content=>content.textContent+=' '+Array(60).fill('Coordinate guidance').join(' '));
  await expect(explanation).toHaveAttribute('tabindex','0');await expect(page.locator('[data-context-overflow="true"] .board-context-scroll-cue')).toBeVisible();
- const changedRecord=await explanation.evaluate(node=>{
+ const changedRecord=await explanation.evaluate((node,entryOwner)=>{
   // Preserve the scalar from this single original DOMRect read. Metadata follows it.
   const rect=node.getBoundingClientRect(),height=rect.height;
   const record={height,rect:{x:rect.x,y:rect.y,top:rect.top,right:rect.right,bottom:rect.bottom,left:rect.left,width:rect.width,height},at:performance.now(),incomplete:false};
   try{
    const style=getComputedStyle(node),notice=node.closest('.board-context-notice');
+   record.entrySettled=notice===entryOwner&&notice?.isConnected===true&&notice.getAnimations({subtree:false}).length===0;
    record.scroll={x:scrollX,y:scrollY,nodeTop:node.scrollTop,nodeLeft:node.scrollLeft,scrollHeight:node.scrollHeight,scrollWidth:node.scrollWidth,clientHeight:node.clientHeight,clientWidth:node.clientWidth};
    record.viewport={width:innerWidth,height:innerHeight,dpr:devicePixelRatio,visual:visualViewport?{offsetTop:visualViewport.offsetTop,offsetLeft:visualViewport.offsetLeft,pageTop:visualViewport.pageTop,pageLeft:visualViewport.pageLeft,scale:visualViewport.scale}:null};
    record.box=Object.fromEntries(['height','width','minBlockSize','maxBlockSize','boxSizing','paddingTop','paddingBottom','borderTopWidth','borderBottomWidth','overflowX','overflowY','scrollbarGutter','writingMode','position','transform','transformOrigin','translate','rotate','scale','zoom'].map(key=>[key,style[key]]));
@@ -108,12 +131,14 @@ for(const width of [320,390,1440])test(`finite Board prompt geometry and require
    record.incomplete=record.ancestorTruncated||record.animationTruncated;record.finishedAt=performance.now();
   }catch(error){record.incomplete=true;record.error={name:error?.name??null,message:error?.message??null};}
   return record;
- });
+ },entryOwner);
  let observationError;
  try{await info.attach(`Original paired context height observations ${width}px`,{body:JSON.stringify({width,before:cappedRecord,after:changedRecord}),contentType:'application/json'});}catch(error){observationError=error;}
  expect(changedRecord.height).toBe(capped);
  if(observationError)throw observationError;
  expect(cappedRecord.incomplete||changedRecord.incomplete,'Paired height observation must be complete').toBe(false);
+ expect(cappedRecord.entrySettled&&changedRecord.entrySettled,'Same context notice must remain settled at both original reads').toBe(true);
+ }catch(error){entryPrimary=error;throw error;}finally{try{await entryOwner.dispose();}catch(error){if(!entryPrimary)throw error;}}
  expect(await page.evaluate(()=>({sameFocus:document.activeElement===window.beforeOverflowFocus,sameScroll:scrollY===window.beforeOverflowScroll}))).toEqual({sameFocus:true,sameScroll:true});
  await page.evaluate(()=>document.documentElement.style.fontSize='32px');await expect(explanation).toHaveAttribute('tabindex','0');await expect(page.locator('[data-context-overflow="true"] .board-context-scroll-cue')).toBeVisible();
  await page.evaluate(()=>window.promptFixture.required());
