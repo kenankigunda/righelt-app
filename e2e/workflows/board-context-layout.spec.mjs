@@ -66,10 +66,54 @@ for(const width of [320,390,1440])test(`finite Board prompt geometry and require
  const explanation=page.getByRole('region',{name:'Board explanation',exact:true});await expect(explanation).toHaveAttribute('tabindex','-1');
  // Compare the same DOMRect height primitive on both observations.
  // The protocol bounding box can derive height from separately rounded edges.
- const capped=await explanation.evaluate(node=>node.getBoundingClientRect().height);
+ const cappedRecord=await explanation.evaluate(node=>{
+  // Preserve the scalar from this single original DOMRect read. Metadata follows it.
+  const rect=node.getBoundingClientRect(),height=rect.height;
+  const record={height,rect:{x:rect.x,y:rect.y,top:rect.top,right:rect.right,bottom:rect.bottom,left:rect.left,width:rect.width,height},at:performance.now(),incomplete:false};
+  try{
+   const style=getComputedStyle(node),notice=node.closest('.board-context-notice');
+   record.scroll={x:scrollX,y:scrollY,nodeTop:node.scrollTop,nodeLeft:node.scrollLeft,scrollHeight:node.scrollHeight,scrollWidth:node.scrollWidth,clientHeight:node.clientHeight,clientWidth:node.clientWidth};
+   record.viewport={width:innerWidth,height:innerHeight,dpr:devicePixelRatio,visual:visualViewport?{offsetTop:visualViewport.offsetTop,offsetLeft:visualViewport.offsetLeft,pageTop:visualViewport.pageTop,pageLeft:visualViewport.pageLeft,scale:visualViewport.scale}:null};
+   record.box=Object.fromEntries(['height','width','minBlockSize','maxBlockSize','boxSizing','paddingTop','paddingBottom','borderTopWidth','borderBottomWidth','overflowX','overflowY','scrollbarGutter','writingMode','position','transform','transformOrigin','translate','rotate','scale','zoom'].map(key=>[key,style[key]]));
+   record.font={family:style.fontFamily,size:style.fontSize,lineHeight:style.lineHeight,weight:style.fontWeight,letterSpacing:style.letterSpacing,status:document.fonts.status};
+   record.cap={tabindex:node.getAttribute('tabindex'),overflow:notice?.getAttribute('data-context-overflow')??null,contextKey:notice?.getAttribute('data-board-context')??null,inlineStyle:node.getAttribute('style')};
+   record.ancestors=[];let current=node;
+   while(current&&record.ancestors.length<16){const computed=getComputedStyle(current);record.ancestors.push({tag:current.tagName,id:current.id,className:typeof current.className==='string'?current.className:null,transform:computed.transform,transformOrigin:computed.transformOrigin,translate:computed.translate,rotate:computed.rotate,scale:computed.scale,zoom:computed.zoom,position:computed.position,scrollTop:current.scrollTop,scrollLeft:current.scrollLeft});current=current.parentElement;}
+   record.ancestorTruncated=!!current;
+   const animations=document.getAnimations();record.animationCount=animations.length;record.animationTruncated=animations.length>8;
+   record.animations=animations.slice(0,8).map(animation=>{const target=animation.effect?.target;return{playState:animation.playState,currentTime:typeof animation.currentTime==='number'?animation.currentTime:null,playbackRate:animation.playbackRate,target:target?{tag:target.tagName,id:target.id,className:typeof target.className==='string'?target.className:null}:null,timing:animation.effect?.getComputedTiming()??null};});
+   record.incomplete=record.ancestorTruncated||record.animationTruncated;record.finishedAt=performance.now();
+  }catch(error){record.incomplete=true;record.error={name:error?.name??null,message:error?.message??null};}
+  return record;
+ });
+ const capped=cappedRecord.height;
  await explanation.locator('.board-context-content').evaluate(content=>content.textContent+=' '+Array(60).fill('Coordinate guidance').join(' '));
  await expect(explanation).toHaveAttribute('tabindex','0');await expect(page.locator('[data-context-overflow="true"] .board-context-scroll-cue')).toBeVisible();
- expect(await explanation.evaluate(node=>node.getBoundingClientRect().height)).toBe(capped);
+ const changedRecord=await explanation.evaluate(node=>{
+  // Preserve the scalar from this single original DOMRect read. Metadata follows it.
+  const rect=node.getBoundingClientRect(),height=rect.height;
+  const record={height,rect:{x:rect.x,y:rect.y,top:rect.top,right:rect.right,bottom:rect.bottom,left:rect.left,width:rect.width,height},at:performance.now(),incomplete:false};
+  try{
+   const style=getComputedStyle(node),notice=node.closest('.board-context-notice');
+   record.scroll={x:scrollX,y:scrollY,nodeTop:node.scrollTop,nodeLeft:node.scrollLeft,scrollHeight:node.scrollHeight,scrollWidth:node.scrollWidth,clientHeight:node.clientHeight,clientWidth:node.clientWidth};
+   record.viewport={width:innerWidth,height:innerHeight,dpr:devicePixelRatio,visual:visualViewport?{offsetTop:visualViewport.offsetTop,offsetLeft:visualViewport.offsetLeft,pageTop:visualViewport.pageTop,pageLeft:visualViewport.pageLeft,scale:visualViewport.scale}:null};
+   record.box=Object.fromEntries(['height','width','minBlockSize','maxBlockSize','boxSizing','paddingTop','paddingBottom','borderTopWidth','borderBottomWidth','overflowX','overflowY','scrollbarGutter','writingMode','position','transform','transformOrigin','translate','rotate','scale','zoom'].map(key=>[key,style[key]]));
+   record.font={family:style.fontFamily,size:style.fontSize,lineHeight:style.lineHeight,weight:style.fontWeight,letterSpacing:style.letterSpacing,status:document.fonts.status};
+   record.cap={tabindex:node.getAttribute('tabindex'),overflow:notice?.getAttribute('data-context-overflow')??null,contextKey:notice?.getAttribute('data-board-context')??null,inlineStyle:node.getAttribute('style')};
+   record.ancestors=[];let current=node;
+   while(current&&record.ancestors.length<16){const computed=getComputedStyle(current);record.ancestors.push({tag:current.tagName,id:current.id,className:typeof current.className==='string'?current.className:null,transform:computed.transform,transformOrigin:computed.transformOrigin,translate:computed.translate,rotate:computed.rotate,scale:computed.scale,zoom:computed.zoom,position:computed.position,scrollTop:current.scrollTop,scrollLeft:current.scrollLeft});current=current.parentElement;}
+   record.ancestorTruncated=!!current;
+   const animations=document.getAnimations();record.animationCount=animations.length;record.animationTruncated=animations.length>8;
+   record.animations=animations.slice(0,8).map(animation=>{const target=animation.effect?.target;return{playState:animation.playState,currentTime:typeof animation.currentTime==='number'?animation.currentTime:null,playbackRate:animation.playbackRate,target:target?{tag:target.tagName,id:target.id,className:typeof target.className==='string'?target.className:null}:null,timing:animation.effect?.getComputedTiming()??null};});
+   record.incomplete=record.ancestorTruncated||record.animationTruncated;record.finishedAt=performance.now();
+  }catch(error){record.incomplete=true;record.error={name:error?.name??null,message:error?.message??null};}
+  return record;
+ });
+ let observationError;
+ try{await info.attach(`Original paired context height observations ${width}px`,{body:JSON.stringify({width,before:cappedRecord,after:changedRecord}),contentType:'application/json'});}catch(error){observationError=error;}
+ expect(changedRecord.height).toBe(capped);
+ if(observationError)throw observationError;
+ expect(cappedRecord.incomplete||changedRecord.incomplete,'Paired height observation must be complete').toBe(false);
  expect(await page.evaluate(()=>({sameFocus:document.activeElement===window.beforeOverflowFocus,sameScroll:scrollY===window.beforeOverflowScroll}))).toEqual({sameFocus:true,sameScroll:true});
  await page.evaluate(()=>document.documentElement.style.fontSize='32px');await expect(explanation).toHaveAttribute('tabindex','0');await expect(page.locator('[data-context-overflow="true"] .board-context-scroll-cue')).toBeVisible();
  await page.evaluate(()=>window.promptFixture.required());
