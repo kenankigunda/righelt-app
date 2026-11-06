@@ -152,7 +152,32 @@ test('the same saved follow survives reload and resumes a distinct native Horus 
 // Required continuation on the same owned page; a skipped phase is incomplete.
 test('the resumed retained game completes its required board visual phase', async ({}, info) => {
   expect(new URL(page.url()).hash.split("?")[0]).toBe(`#/game/${visualPhase.gameId}`);
-  await switchGamePanel(page, 'board');
+  if (await page.locator('#app').getAttribute('data-shell-layout-mode') === 'narrow') {
+    const key = 'board';
+    const tab = page.locator(`[data-action="switch-game-panel"][data-panel="${key}"]`);
+    // An already selected panel needs no navigation click. The controls can be
+    // collapsed while the current panel stays visible and ready.
+    if (await tab.getAttribute('aria-pressed') !== 'true') {
+      const reveal = page.getByRole('button',{name:'Show game navigation',exact:true});
+      // Refresh the idle window even when the bar is about to hide.
+      if (await reveal.count()) await reveal.click();
+      // Keep native pointer ownership through the owner's existing idle policy.
+      // Hover protects idle expiry, not downward scrolling or blocked navigation.
+      await tab.hover();
+      const ownership = await tab.evaluate(tab => {
+        const nav = tab.closest('.shell-mobile-tabbar');
+        return { hover: nav.matches(':hover'), hoverMedia: matchMedia('(hover:hover)').matches,
+          visible: nav.dataset.visible, inert: nav.querySelector('[data-mobile-nav-controls]').inert,
+          expanded: nav.querySelector('[data-mobile-nav-reveal]').getAttribute('aria-expanded') };
+      });
+      await info.attach('retained-board-navigation-ownership', { body: JSON.stringify(ownership), contentType: 'application/json' });
+      expect(ownership).toEqual({ hover: true, hoverMedia: true, visible: 'true', inert: false, expanded: 'true' });
+      await tab.click();
+    }
+    await expect(tab).toHaveAttribute('aria-pressed','true');
+    await expect.poll(()=>page.locator(`[data-mobile-panel="${key}"]`).evaluate(el=>el.closest('.game-shell-track').getAnimations().some(animation=>animation.playState==='running'||animation.pending)),{message:'Expected the panel transition to finish'}).toBe(false);
+    await expect.poll(()=>page.locator(`[data-mobile-panel="${key}"]`).evaluate(el=>Math.abs(el.getBoundingClientRect().left-el.closest('.game-shell-track-wrap').getBoundingClientRect().left)),{message:'Expected the selected panel to finish its horizontal transition'}).toBeLessThanOrEqual(1);
+  }
   await page.screenshot({ path: info.outputPath('retained-follow-resumed.png') });
 });
 });
