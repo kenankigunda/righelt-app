@@ -2641,3 +2641,100 @@ test('read-only position history remains inspectable without enabling play', asy
   assert.equal(store.getGameViewModel(game.id).canRecordMove, false);
   assert.equal(store.getAuthoritativeGame(game.id), null);
 });
+
+
+// CONTRACT-GAP PROBE: expected pass, not a deterministic reproduction of the
+// retained WebKit rejection. No exception category was retained in that failure.
+test('contract-gap probe: original push confirmation admits retreat and Follow exactly once through async checking', {timeout:15000}, async t => {
+  const phases=cleanupPhaseLog(t), storage=createMemoryStorage();
+  storage.setItem(IDENTITY_KEY,'id-a');
+  const state=resolveToStability({boardSize:10,sideToMove:'P1',turnIndex:0,continuation:null,
+    outcome:{status:'ongoing'},pieces:[
+      {id:'C1',owner:'P1',kind:'commander',position:{row:3,col:1},supplied:true,commanded:true},
+      {id:'C2',owner:'P2',kind:'commander',position:{row:4,col:4},supplied:true,commanded:true},
+      {id:'A1',owner:'P1',kind:'unit',position:{row:4,col:1},supplied:true,commanded:true},
+      {id:'D1',owner:'P2',kind:'unit',position:{row:4,col:2},supplied:true,commanded:true},
+    ]},{artifactMode:'full'});
+  const currentTurn={index:0,playerSeat:'Player 1',status:'active',moveIndexes:[],
+    startedAt:'2026-02-26T00:00:00.000Z',endedAt:null,lastMoveAt:null};
+  let game={...buildGameForIdentity({gameId:'contract-gap-push-retreat-follow',identityId:'id-a',
+    myRole:'Player 1',state,currentTurn}),selfPlayMode:true,player2:{identityId:'id-a',connected:true},canRecordMove:true};
+  const durable=createCommandJournal({indexedDB:new IDBFactory()}), admissions=[], sends=[], outcomes=new Map(), rulesCalls=[];
+  let releaseConfirmation;const confirmation=new Promise(resolve=>{releaseConfirmation=resolve;});
+  let lostPush=false,eventSeq=1;
+  const journal={list:(...args)=>durable.list(...args),remove:envelope=>durable.remove(envelope),close:()=>durable.close(),
+    admit:async envelope=>{await durable.admit(envelope);admissions.push(clone(envelope));}};
+  const rulesExecutor={asynchronous:true,
+    async project(scope,input){rulesCalls.push({scope,action:clone(input.queue.at(-1).action)});return projectOptimisticGame(input);},
+    cancel(){},cancelAll(){}};
+  const store=createLiveTransportStore({storage,commandJournal:journal,rulesExecutor,
+    fetcher:async(url,init)=>{
+      if(init.method==='GET')return Response.json({ok:true,protocolVersion:2,game:clone(game),eventSeq},
+        {headers:{[ACTION_CONTRACT_HEADER]:String(ACTION_CONTRACT_VERSION)}});
+      const body=JSON.parse(init.body), apply=String(url).endsWith('/apply'), reconcile=String(url).endsWith('/reconcile');
+      assert.ok(apply||reconcile,'only original action and reconciliation APIs belong to this probe');
+      if(apply){
+        sends.push(clone(body));
+        if(!outcomes.has(body.clientCommandId)){
+          game=buildAcknowledgedGame(game,body.payload.action);
+          game.moves.at(-1).clientCommandId=body.clientCommandId;
+          outcomes.set(body.clientCommandId,{gameId:game.id,identityId:body.identityId,clientCommandId:body.clientCommandId,
+            fingerprint:body.fingerprint,outcome:'accepted',reason:null,eventSeq:++eventSeq,gameplayRevision:game.gameplayRevision});
+        }else assert.equal(outcomes.get(body.clientCommandId).fingerprint,body.fingerprint);
+        if(body.payload.action.type==='push'&&!lostPush){lostPush=true;throw Error('lost original push reply');}
+      }
+      if(reconcile&&lostPush&&game.gameplayRevision===1){
+        phases.record('held-original-confirmation',{commands:clone(body.commands)});
+        await confirmation;
+      }
+      // Any same-ID push retry is genuine confirmation authority, held by the
+      // same original gate. There is no invented duplicate after the retreat.
+      if(apply&&body.payload.action.type==='push')await confirmation;
+      const commandOutcomes=apply?[clone(outcomes.get(body.clientCommandId))]:(body.commands??[]).map(command=>{
+        const accepted=outcomes.get(command.clientCommandId);
+        if(accepted){assert.equal(accepted.fingerprint,command.fingerprint);return clone(accepted);}
+        return {gameId:game.id,identityId:command.identityId,clientCommandId:command.clientCommandId,
+          fingerprint:command.fingerprint,outcome:'unknown',reason:'not_recorded',eventSeq,gameplayRevision:game.gameplayRevision};
+      });
+      return Response.json({ok:true,accepted:true,protocolVersion:2,gameId:game.id,game:clone(game),
+        eventSeq,gameplayRevision:game.gameplayRevision,commandOutcomes},
+        {headers:{[ACTION_CONTRACT_HEADER]:String(ACTION_CONTRACT_VERSION)}});
+    }});
+  t.after(async()=>{releaseConfirmation();store.retire();await durable.close();});
+  const recordView=()=>{const view=store.getGameViewModel(game.id);if(view)phases.record('public-view',{
+    revision:view.gameplayRevision,recovering:view.recovering,pending:view.pendingCommandCount});};
+  const unsubscribe=store.subscribe(recordView);t.after(unsubscribe);
+  store.setRulesActiveGame(game.id);await store.loadGame(game.id);
+  const push=game.legalActions.find(action=>action.type==='push');assert.ok(push);
+  const first=await store.applyGameAction({gameId:game.id,state:store.getGameViewModel(game.id).board.state,action:push});
+  assert.equal(first.accepted,true);
+  await phases.wait('held-original-confirmation');
+  const original=clone(admissions[0]), originalReceipt=clone(outcomes.get(first.clientCommandId));
+  assert.equal(originalReceipt.outcome,'accepted');assert.equal(originalReceipt.gameplayRevision,1);
+  assert.equal(store.getGameViewModel(game.id).recovering,true);
+  releaseConfirmation();
+  await phases.wait('public-view',1,value=>value.revision===1&&value.pending===0&&value.recovering===false);
+  assert.deepEqual(store.getCommandOutcome(game.id,first.clientCommandId),originalReceipt);
+  for(const type of ['retreat','follow']){
+    const view=store.getGameViewModel(game.id), action=view.legalActions.find(candidate=>candidate.type===type);
+    assert.ok(action,`${type} must come from the real engine's current legal actions`);
+    const result=await store.applyGameAction({gameId:game.id,state:view.board.state,action});
+    assert.equal(result.accepted,true);
+    const revision=type==='retreat'?2:3;
+    await phases.wait('public-view',1,value=>value.revision===revision&&value.pending===0&&value.recovering===false);
+    assert.equal(store.getCommandOutcome(game.id,result.clientCommandId).outcome,'accepted');
+  }
+  const final=store.getGameViewModel(game.id);
+  assert.equal(final.gameplayRevision,3);assert.equal(final.moves.length,3);
+  assert.deepEqual(final.moves.map(move=>move.action.type),['push','retreat','follow']);
+  assert.equal(new Set(final.moves.map(move=>move.clientCommandId)).size,3);
+  assert.equal(final.board.state.continuation,null);
+  assert.equal(admissions.length,3);assert.equal(admissions.filter(e=>e.payload.action.type==='follow').length,1);
+  assert.equal(sends.filter(e=>e.payload.action.type==='follow').length,1);
+  assert.deepEqual(admissions[0],original);
+  assert.deepEqual(store.getCommandOutcome(game.id,first.clientCommandId),originalReceipt);
+  assert.ok(sends.filter(e=>e.payload.action.type==='push').every(e=>e.clientCommandId===original.clientCommandId&&e.fingerprint===original.fingerprint));
+  const admissionChecks=rulesCalls.filter(call=>call.scope===`admit:${game.id}`);
+  assert.equal(admissionChecks.length,3);assert.deepEqual(admissionChecks.map(call=>call.action.type),['push','retreat','follow']);
+  assert.deepEqual(await durable.list('id-a',game.id),[]);
+});
