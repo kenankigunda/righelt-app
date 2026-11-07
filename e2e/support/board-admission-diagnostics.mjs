@@ -1,5 +1,5 @@
 import {readFile, writeFile} from 'node:fs/promises';
-import {createHash} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 export const transformBoardAdmissionModule = (source, recipe) => {
@@ -86,13 +86,68 @@ export function createBoardSourceConsoleRetention(page,expectedOrdinal){
  }catch{fail('retention-snapshot-failed');return {retainedPreReloadSourceWindow:first,retention:{incomplete:true,failures,lastFailure,epochsMerged:false}};}}};
 }
 
+// Node-only owner of the one existing final afterEach read. No browser operation.
+export function createComputerRecoveryHandoff(page,namespace){
+ let gameId,ticket,result,consumed=false,documentGeneration=0;
+ const fail=reason=>{if(!result?.incomplete)result={incomplete:true,reason,observation:null};};
+ const navigated=frame=>{if(frame===page.mainFrame()){documentGeneration++;if(ticket)fail('foreign-document');}};
+ page.on('framenavigated',navigated);
+ const copy=(value,seen=new Set(),depth=0)=>{
+  if(value===null||typeof value==='boolean'||typeof value==='string'&&value.length<=2048||typeof value==='number'&&Number.isFinite(value))return value;
+  if(!value||typeof value!=='object'||depth>12||seen.has(value))throw Error('Invalid diagnostic data');
+  seen.add(value);const descriptors=Object.getOwnPropertyDescriptors(value),out=Array.isArray(value)?[]:Object.create(null);
+  for(const key of Reflect.ownKeys(descriptors)){
+   if(typeof key!=='string'||!Object.hasOwn(descriptors[key],'value'))throw Error('Invalid diagnostic descriptor');
+   if(Array.isArray(value)&&key==='length')continue;
+   Object.defineProperty(out,key,{value:copy(descriptors[key].value,seen,depth+1),enumerable:true,writable:false,configurable:false});
+  }
+  seen.delete(value);return Object.freeze(out);
+ };
+ return {
+  bindGame(id){if(gameId||typeof id!=='string'||!id)throw Error('Recovery game scope unavailable');gameId=id;},
+  begin(owner){if(owner!==page||!gameId||ticket||consumed)throw Error('Recovery final read scope unavailable');ticket=Object.freeze({namespace,readId:randomUUID(),gameId,documentGeneration});return ticket;},
+  capture(owner,packet){
+   if(consumed||result){fail('handoff-reused');return;}
+   if(owner!==page){fail('foreign-page');return;}
+   try{
+    if(!ticket||!packet){fail('handoff-missing');return;}
+    const envelope=copy(packet);
+    if(envelope.namespace!==namespace||envelope.readId!==ticket.readId||envelope.gameId!==gameId||envelope.documentGeneration!==documentGeneration){fail('foreign-handoff');return;}
+    const observation=envelope.observation;
+    if(!Number.isFinite(envelope.timeOrigin)||envelope.timeOrigin<=0||!Number.isFinite(observation?.timeOrigin)||observation.timeOrigin<=0||typeof envelope.documentNonce!=='string'||!envelope.documentNonce||envelope.documentNonce.length>128||observation.documentNonce!==envelope.documentNonce||observation?.recoveryNamespace!==namespace||observation?.version!==1){fail('foreign-document');return;}
+    const immutable=observation,serialized=JSON.stringify(envelope);if(serialized.length>SOURCE_PRESS_MAX_BYTES||Buffer.byteLength(serialized,'utf8')>SOURCE_PRESS_MAX_BYTES)throw Error('Oversize diagnostic');
+    result=Object.freeze({incomplete:false,reason:null,namespace,readId:ticket.readId,gameId,documentGeneration,documentNonce:envelope.documentNonce,timeOrigin:envelope.timeOrigin,observationTimeOrigin:observation.timeOrigin,observation:immutable});
+   }catch{fail('handoff-invalid');}
+  },
+  failed(reason){fail(['read-failed','read-timed-out','read-missing'].includes(reason)?reason:'read-failed');},
+  consume(){if(consumed)return Object.freeze({incomplete:true,reason:'handoff-reused',observation:null});consumed=true;
+   if(result&&!result.incomplete&&result.documentGeneration!==documentGeneration)fail('foreign-document');
+   let cleanupIncomplete=false;try{page.off('framenavigated',navigated);}catch{cleanupIncomplete=true;fail('handoff-listener-cleanup-failed');}
+   return Object.freeze({...result??{incomplete:true,reason:'handoff-missing',observation:null},cleanupIncomplete});},
+ };
+}
+export async function persistComputerRecoveryEvidence({handoff,info,payload,write=writeFile,removeRoute,primaryError}){
+ const failures=[];
+ for(const operation of [()=>write(info.outputPath('board-admission-observation.json'),JSON.stringify(payload,null,2)),()=>info.attach('board-admission-observation',{body:JSON.stringify(payload),contentType:'application/json'}),removeRoute]){
+  try{await operation();}catch(error){failures.push(error);}
+ }
+ if(handoff.incomplete)failures.unshift(Error('Computer recovery final handoff incomplete: '+handoff.reason));
+ if(handoff.cleanupIncomplete)failures.push(Error('Computer recovery handoff listener cleanup incomplete'));
+ if(failures.length)throw new AggregateError([...(primaryError?[primaryError]:[]),...failures],'Computer recovery evidence incomplete');
+}
+
 // Serialized by Playwright. Only allowlisted scalars and local weak equality
 // tokens leave the page; original app objects and stable keys are never copied.
-export function installBoardAdmissionCollector({targetRow,targetCol,sourceAttemptOrdinal,recoveryCategories}){
+export function installBoardAdmissionCollector({targetRow,targetCol,sourceAttemptOrdinal,recoveryCategories,recoveryNamespace}){
  if(sourceAttemptOrdinal!==undefined&&(!Number.isSafeInteger(sourceAttemptOrdinal)||sourceAttemptOrdinal<1))throw Error('Invalid source attempt ordinal');
  const sourceEnabled=sourceAttemptOrdinal!==undefined;let sourceActive=false,sourceRef=null,sourceReads=0;
  const subjects=new WeakMap();let next=0,sequence=0,armed=false;
  const log={version:1,first:[],tail:[],firstActivation:[],activation:[],activationGeneration:0,supersededActivations:0,dropped:0,activationDropped:0,firstSourceRead:null,lastSourceRead:null,sourceReadCount:0,incomplete:false,timeOrigin:performance.timeOrigin};
+ if(recoveryNamespace){
+  const documentNonce=crypto.randomUUID();
+  Object.defineProperty(globalThis,'__boardAdmissionRecoveryDocument',{value:documentNonce,writable:false,configurable:false});
+  log.recoveryNamespace=recoveryNamespace;log.documentNonce=documentNonce;
+ }
  if(sourceEnabled)log.sourceWindow={expectedOrdinal:sourceAttemptOrdinal,attemptsObserved:0,observed:false,markerRecorded:false,first:[],tail:[],dropped:0,projectionFailures:0,incomplete:true,lastFailure:'source-attempt-unobserved'};
  const sourceFailure=category=>{try{log.incomplete=true;if(sourceActive){log.sourceWindow.incomplete=true;log.sourceWindow.projectionFailures++;log.sourceWindow.lastFailure=category;}}catch{}};
  const token=value=>{
@@ -204,6 +259,8 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
  if(sourceAttemptOrdinal!==undefined&&(!Number.isSafeInteger(sourceAttemptOrdinal)||sourceAttemptOrdinal<1))throw Error('Invalid source attempt ordinal');
  const recipes=JSON.parse(await readFile(new URL(computerSessionRecovery?'./computer-session-recovery-transformation.json':'./board-admission-transformations.json',import.meta.url),'utf8'));
  const transforms=[],errors=[];let installed=false;
+ const recoveryNamespace=computerSessionRecovery?randomUUID():null;
+ const recoveryHandoff=computerSessionRecovery?createComputerRecoveryHandoff(page,recoveryNamespace):null;
  const origin=new URL(baseURL).origin;
  const sourceRetention=sourceAttemptOrdinal===undefined?null:createBoardSourceConsoleRetention(page,sourceAttemptOrdinal);
  const handler=async route=>{
@@ -222,11 +279,12 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
  };
  const pattern=url=>url.origin===origin && Object.hasOwn(recipes,url.pathname);
  try{
-  if(sourceAttemptOrdinal===undefined)await page.addInitScript(installBoardAdmissionCollector,{targetRow,targetCol,...(computerSessionRecovery?{recoveryCategories:COMPUTER_RECOVERY_CATEGORIES}:{})});
+  if(sourceAttemptOrdinal===undefined)await page.addInitScript(installBoardAdmissionCollector,{targetRow,targetCol,...(computerSessionRecovery?{recoveryCategories:COMPUTER_RECOVERY_CATEGORIES,recoveryNamespace}:{})});
   else await page.addInitScript({content:`(()=>{const SOURCE_PRESS_PREFIX=${JSON.stringify(SOURCE_PRESS_PREFIX)};const SOURCE_PRESS_MAX_BYTES=${SOURCE_PRESS_MAX_BYTES};const cloneBoardSourceHandoff=(${cloneBoardSourceHandoff.toString()});(${installBoardAdmissionCollector.toString()})(${JSON.stringify({targetRow,targetCol,sourceAttemptOrdinal})});})();`});
   await page.route(pattern,handler);installed=true;
- }catch(error){sourceRetention?.stop();throw error;}
+ }catch(error){sourceRetention?.stop();const disposed=recoveryHandoff?.consume();if(disposed?.cleanupIncomplete)throw new AggregateError([error,Error('Computer recovery handoff listener cleanup incomplete')],'Diagnostic setup and cleanup failed');throw error;}
  return {
+  finalRecoveryHandoff:recoveryHandoff,
   async checkpoint(){
    if(!sourceRetention)return;
    sourceRetention.stop();
@@ -234,6 +292,12 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
    catch{sourceRetention.failed();}
   },
   async persist(){
+   if(recoveryHandoff){
+    const handoff=recoveryHandoff.consume(),observation=handoff.observation;
+    const missingModules=Object.keys(recipes).filter(pathname=>!transforms.some(row=>row.pathname===pathname));
+    const payload={caseTitle:info.title,observation,handoff:{...handoff,observation:undefined},transforms,errors,missingModules,incomplete:handoff.incomplete||errors.length>0||missingModules.length>0||!observation?.activation?.length||Boolean(observation?.incomplete),clock:'page.performance/timeOrigin; Node persistence wall clock separate',nodePersistedAt:new Date().toISOString()};
+    await persistComputerRecoveryEvidence({handoff,info,payload,removeRoute:async()=>{if(installed)await page.unroute(pattern,handler);}});return;
+   }
    try{
    let observation=null,incomplete=errors.length>0;
    try{observation=await page.evaluate(()=>globalThis.__boardAdmissionObservation??null);if(!observation)incomplete=true;}catch{incomplete=true;}
