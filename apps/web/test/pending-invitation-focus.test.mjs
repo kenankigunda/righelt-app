@@ -116,3 +116,59 @@ test('registered pointer and compatibility mouse foreign events retire the same 
  assert.equal(f.complete(),false);assert.equal(f.document.activeElement,f.document.body);
  assert.equal(next.isConnected,true);
 });
+
+test('actual render wrapper preserves completed copy focus through a later same-view shell replacement',async()=>{
+ const {readFile}=await import('node:fs/promises');const vm=await import('node:vm');
+ const source=await readFile(new URL('../shell/app.js',import.meta.url),'utf8');
+ const start=source.indexOf('const render = ({ animatePanels = true, includeBoard = true } = {}) => {');
+ const end=source.indexOf('const renderContent =',start);assert.ok(start>0&&end>start);
+ const f=fixture();f.manager.begin(f.original,'copy:a');f.finish();let current=f.original,replacements=0;
+ const context={document:f.document,pendingInvitationFocus:f.manager,isButtonPending:()=>false,
+  renderGesture:{defer:()=>false},utilityMemory:{capture(){},restore(){}},inlineProfiles:{sync(){}},syncMountedGameShellPanelUi(){},
+  currentRoute:{gameId:'a'},pendingResultReviewFocus:null,getGamePanel:()=>f.scope.panel,getCurrentViewedGameId:()=> 'a',
+  preserveBoardFocus:(_options,render)=>render(),joinFeedback:{restoreFocus(){}},
+  appEl:{querySelectorAll:()=>[current]},renderContent:()=>{
+   current.isConnected=false;current=f.control();f.document.activeElement=f.document.body;replacements++;
+  },
+ };
+ vm.runInNewContext(source.slice(start,end)+'\nglobalThis.renderActual=render;',context);
+ context.renderActual();const first=current;assert.equal(f.document.activeElement,first);
+ context.renderActual();assert.equal(replacements,2);assert.notEqual(current,first);
+ assert.equal(first.isConnected,false);assert.equal(f.document.activeElement,current);
+});
+
+test('completed focus follows repeated replacements but yields a blur of the still-mounted control',()=>{
+ const f=fixture();f.manager.begin(f.original,'copy:a');f.finish();assert.equal(f.restore(),true);
+ for(let i=0;i<3;i++){
+  f.document.activeElement.isConnected=false;f.document.activeElement=f.document.body;
+  const next=f.control();f.setNodes([next]);assert.equal(f.restore(),true);assert.equal(f.document.activeElement,next);
+ }
+ const mounted=f.document.activeElement;f.document.activeElement=f.document.body;
+ assert.equal(mounted.isConnected,true);assert.equal(f.restore(),false);
+ mounted.isConnected=false;f.setNodes([f.control()]);assert.equal(f.restore(),false);
+ assert.equal(f.document.activeElement,f.document.body);
+});
+
+for(const movement of ['focus','pointer','clear','owner','generation','visit','route','panel','hidden','document-blur'])test(`completed invitation focus yields ${movement} before a later replacement`,()=>{
+ const f=fixture();f.manager.begin(f.original,'copy:a');f.finish();assert.equal(f.restore(),true);
+ if(movement==='focus'){const other={};f.document.activeElement=other;f.manager.noteFocus(other);}
+ if(movement==='pointer')f.manager.notePointer({closest:()=>null});
+ if(movement==='clear')f.manager.clear();
+ if(['owner','generation','visit','route','panel'].includes(movement))f.scope[movement]=movement==='owner'?{}:'changed';
+ if(movement==='hidden')f.document.hidden=true;
+ if(movement==='document-blur')f.document.hasFocus=()=>false;
+ f.original.isConnected=false;f.document.activeElement=f.document.body;f.setNodes([f.control()]);
+ assert.equal(f.restore(),false);assert.equal(f.document.activeElement,f.document.body);
+ f.document.hidden=false;f.document.hasFocus=()=>true;assert.equal(f.restore(),false);
+});
+
+test('a new copy supersedes completed focus intent and refuses an absent selected role',()=>{
+ const f=fixture();f.manager.begin(f.original,'copy:a');f.finish();assert.equal(f.restore(),true);
+ const player=f.control('player');f.document.activeElement=player;f.manager.begin(player,'copy:a');
+ f.original.isConnected=false;player.isConnected=false;f.document.activeElement=f.document.body;
+ const nextPlayer=f.control('player'),nextViewer=f.control();f.setNodes([nextViewer,nextPlayer]);
+ assert.equal(f.restore(),true);assert.equal(f.document.activeElement,nextPlayer);
+ nextPlayer.isConnected=false;f.document.activeElement=f.document.body;f.setNodes([nextViewer]);
+ assert.equal(f.restore(),false);assert.equal(f.document.activeElement,f.document.body);
+ f.setNodes([nextViewer,f.control('player')]);assert.equal(f.restore(),false);
+});
