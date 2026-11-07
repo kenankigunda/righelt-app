@@ -1,7 +1,7 @@
 {
   "pathname": "/shell/app.js",
-  "sourceSha256": "7663f782c9dcbcd8f82b1687f3d30c3da79b94a33a05a155d1c184f1d01cb459",
-  "outputSha256": "1b2e751d802675792e162a33cd80fae0d694811a99be7f4ca800ded095d2a941",
+  "sourceSha256": "c1c54d5705e98d71af5baaba210bfd4cebc53f910814f6a4856dc6d5a5d899f2",
+  "outputSha256": "d63b2b6fce6d2324539e9af14ce36a2a7ff76eaea295f72c99d979240d1d6eca",
   "operations": [
     {
       "start": 3520,
@@ -12,96 +12,96 @@
       "anchorCount": 1
     },
     {
-      "start": 220825,
-      "end": 220825,
+      "start": 221137,
+      "end": 221137,
       "before": "",
       "after": "    observeInviteFocus(\"render-before-replacement\");\n",
       "anchor": "  if (nextMarkup !== lastRenderedMarkup) {\n    if (currentRoute.name !== \"home\" || !patchHomeAroundCreateControl(nextMarkup)) {\n",
       "anchorCount": 1
     },
     {
-      "start": 221261,
-      "end": 221261,
+      "start": 221573,
+      "end": 221573,
       "before": "",
       "after": "    observeInviteFocus(\"render-after-replacement\");\n",
       "anchor": "    }\n    restoreScenarioDraftFocus?.();\n",
       "anchorCount": 1
     },
     {
-      "start": 224398,
-      "end": 224398,
+      "start": 224710,
+      "end": 224710,
       "before": "",
       "after": "  const observeFocus = phase => { if (typeof pendingKey === \"string\" && pendingKey.startsWith(\"copy-invite:\")) observeInviteFocus(phase); };\n  observeFocus(\"pending-before-set\");\n",
       "anchor": "  const pendingGeneration=account.snapshot().generation;\n  pendingButtonKeys.add(pendingKey);\n",
       "anchorCount": 1
     },
     {
-      "start": 224435,
-      "end": 224435,
+      "start": 224747,
+      "end": 224747,
       "before": "",
       "after": "  observeFocus(\"pending-after-set\");\n",
       "anchor": "  pendingButtonKeys.add(pendingKey);\n  if (renderStart) {\n",
       "anchorCount": 1
     },
     {
-      "start": 224456,
-      "end": 224456,
+      "start": 224768,
+      "end": 224768,
       "before": "",
       "after": "    observeFocus(\"pending-before-start-render\");\n",
       "anchor": "  if (renderStart) {\n    render({ animatePanels: false, includeBoard: false });\n",
       "anchorCount": 2
     },
     {
-      "start": 224515,
-      "end": 224515,
+      "start": 224827,
+      "end": 224827,
       "before": "",
       "after": "    observeFocus(\"pending-after-start-render\");\n",
       "anchor": "    render({ animatePanels: false, includeBoard: false });\n  }\n",
       "anchorCount": 7
     },
     {
-      "start": 224759,
-      "end": 224759,
+      "start": 225071,
+      "end": 225071,
       "before": "",
       "after": "    observeFocus(\"pending-before-clear\");\n",
       "anchor": "    if(pendingGeneration!==account.snapshot().generation)return;\n    pendingButtonKeys.delete(pendingKey);\n",
       "anchorCount": 1
     },
     {
-      "start": 224801,
-      "end": 224801,
+      "start": 225113,
+      "end": 225113,
       "before": "",
       "after": "    observeFocus(\"pending-after-clear\");\n",
       "anchor": "    pendingButtonKeys.delete(pendingKey);\n    if (renderEnd) {\n",
       "anchorCount": 1
     },
     {
-      "start": 224822,
-      "end": 224822,
+      "start": 225134,
+      "end": 225134,
       "before": "",
       "after": "      observeFocus(\"pending-before-end-render\");\n",
       "anchor": "    if (renderEnd) {\n      render({ animatePanels: false, includeBoard: false });\n",
       "anchorCount": 1
     },
     {
-      "start": 224883,
-      "end": 224883,
+      "start": 225195,
+      "end": 225195,
       "before": "",
       "after": "      observeFocus(\"pending-after-end-render\");\n",
       "anchor": "      render({ animatePanels: false, includeBoard: false });\n    }\n",
       "anchorCount": 9
     },
     {
-      "start": 246873,
-      "end": 247141,
+      "start": 247185,
+      "end": 247453,
       "before": "    try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { if(!active())return;inviteFallback={gameId,link,role};setInviteFeedback('Copy the link below to share it.'); }\n",
       "after": "    try { observeInviteFocus(\"clipboard-before-await\"); await navigator.clipboard.writeText(link); observeInviteFocus(\"clipboard-resolved\");if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { observeInviteFocus(\"clipboard-rejected\"); if(!active())return;inviteFallback={gameId,link,role};setInviteFeedback('Copy the link below to share it.'); }\n",
       "anchor": "    window.__righeltLastInvite=link;\n    try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { if(!active())return;inviteFallback={gameId,link,role};setInviteFeedback('Copy the link below to share it.'); }\n  }catch(error){if(active()){ issueDiagnostics.capture(`invite:${gameId}`, { gameId, operation: 'create_invite', stage: 'failed', code: error.code ?? 'unavailable' }); setInviteFeedback('We couldn\u2019t create your invite link. Please try again.'); }}\n",
       "anchorCount": 1
     },
     {
-      "start": 294346,
-      "end": 294346,
+      "start": 294658,
+      "end": 294658,
       "before": "",
       "after": "    observeInviteFocus(\"action-entry\", actionEl);\n",
       "anchor": "    }\n    const invitationPanel = actionEl.closest('[data-game-panel=\"join\"]');\n    if (invitationPanel instanceof HTMLElement) panelPendingFocus.delete(invitationPanel);\n    pendingInvitationFocus.begin(actionEl, getCopyInviteButtonKey(gameId));\n    await withPendingButton(getCopyInviteButtonKey(gameId),()=>copyGameInvitation(gameId,actionEl.dataset.inviteRole || 'viewer'));\n",
