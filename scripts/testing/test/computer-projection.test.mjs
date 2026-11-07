@@ -217,3 +217,28 @@ test('already-ready open dialog has no added wait', async () => {
   assert.equal((await waitForOpponentReady(page)).elapsedMs, 0);
   assert.equal(observed.pauses, 0);
 });
+
+
+// Execute the actual local account setup helper without importing its browser suite.
+const accountSpecURL=new URL('../../../e2e/auth/computer-play.spec.mjs',import.meta.url);
+async function accountSetupSource(){const source=await(await import('node:fs/promises')).readFile(accountSpecURL,'utf8');const start=source.indexOf('async function registerComputerTester('),end=source.indexOf("\ntest('ordinary computer play",start);assert(start>=0&&end>start);return{source,helper:source.slice(start,end)};}
+function accountSetupHarness(helper,{authAck=true,dialogClosed=true,startupError=null,registerError=null,resetOk=true}={}){
+ const calls=[];let authenticated=false;
+ const entry={async click(){calls.push('account-entry');},kind:'entry'};
+ const account={kind:'dialog',getByRole(role,{name}){assert.equal(role,'button');return{async click(){calls.push(name);if(name==='Create account & continue'){if(registerError)throw registerError;authenticated=true;}}};},getByLabel(name){return{async fill(value){calls.push([name,value]);}};}};
+ const page={async goto(url){calls.push(['goto',url]);},getByRole(role,{name}){assert.equal(name,'Play both sides');return{async click(){calls.push('incidental-self-play');}};},getByTestId(id){assert(['account-dialog','game-shell'].includes(id));return id==='account-dialog'?account:{kind:'game'};}};
+ const expect=value=>({toBe(expected){assert.equal(value,expected);},async toBeVisible(){assert.equal(value.kind,'game');calls.push('game-visible');},async toHaveAttribute(name,expected){calls.push(['auth-ack',name,expected]);assert.equal(value,entry);assert.equal(authenticated&&authAck,true);assert.equal(name,'data-authenticated');assert.equal(expected,'true');},not:{async toBeVisible(){calls.push('dialog-closed');assert.equal(value,account);assert.equal(authenticated&&dialogClosed,true);}}});
+ const fn=runInNewContext(helper+';registerComputerTester',{expect,AUTH_CONTROL_ORIGIN:'http://fixture',fetch:async(url,options)=>{calls.push(['reset',url,options.method]);return{ok:resetOk};},Date:{now:()=>42},waitForAccountStartup:async value=>{assert.equal(value,page);calls.push('startup');if(startupError)throw startupError;},revealAccountEntry:async value=>{assert.equal(value,page);calls.push('reveal-account');return entry;}});
+ return{calls,run:options=>fn(page,options)};
+}
+test('actual computer account-only setup uses public registration without creating an incidental self-play game',async()=>{
+ const{helper}=await accountSetupSource(),h=accountSetupHarness(helper);await h.run({accountOnly:true});
+ assert.deepEqual(h.calls,[['reset','http://fixture/reset-limits','POST'],['goto','/'],'startup','reveal-account','account-entry','Create account',['Username','Computer_16'],['Password','A computer play password 482'],'Create account & continue','dialog-closed',['auth-ack','data-authenticated','true']]);
+});
+test('actual default computer registration keeps its original incidental-game and optional Home behavior',async()=>{
+ const{helper}=await accountSetupSource();for(const options of[undefined,{home:false}]){const h=accountSetupHarness(helper);await h.run(options);assert.deepEqual(h.calls,[['reset','http://fixture/reset-limits','POST'],['goto','/'],'incidental-self-play','Create account',['Username','Computer_16'],['Password','A computer play password 482'],'Create account & continue','game-visible',...(options?[]:[['goto','/#/']])]);}
+});
+for(const failure of['startup','registration','dialog','auth','reset'])test(`actual account-only setup refuses ${failure} failure before reporting authenticated completion`,async()=>{
+ const{helper}=await accountSetupSource(),primary=Error(failure),h=accountSetupHarness(helper,{startupError:failure==='startup'?primary:null,registerError:failure==='registration'?primary:null,dialogClosed:failure!=='dialog',authAck:failure!=='auth',resetOk:failure!=='reset'});
+ await assert.rejects(h.run({accountOnly:true}),error=>failure==='startup'||failure==='registration'?error===primary:error instanceof assert.AssertionError);assert.equal(h.calls.includes('incidental-self-play'),false);
+});
