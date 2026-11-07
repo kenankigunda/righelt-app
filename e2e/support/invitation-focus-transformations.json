@@ -1,107 +1,107 @@
 {
   "pathname": "/shell/app.js",
-  "sourceSha256": "8997cc0e58b05c451e5a002fbe4d5c171f504ca383054d49b730753922d2bab3",
-  "outputSha256": "462f44b00cbe76182c89f615a9420667e2bae84395b41cba622b9aaa612410cc",
+  "sourceSha256": "14e0f3b63b338d6fef74fdb015d0e56f4ec6874b7b13ffff84e7e229bf09f210",
+  "outputSha256": "84d92a23434b05c805eac9eb8eb514a3a7c65bcf9dcd433f178d297f0d97f532",
   "operations": [
     {
-      "start": 2938,
-      "end": 2938,
+      "start": 3520,
+      "end": 3520,
       "before": "",
       "after": "const observeInviteFocus = (phase, detail) => { try { globalThis.__righeltInviteFocusProbe?.(phase, detail); } catch {} };\n",
       "anchor": "};\nconst patchToolHtml = (element, html) => {\n",
       "anchorCount": 1
     },
     {
-      "start": 208602,
-      "end": 208602,
+      "start": 218903,
+      "end": 218903,
       "before": "",
       "after": "    observeInviteFocus(\"render-before-replacement\");\n",
       "anchor": "  if (nextMarkup !== lastRenderedMarkup) {\n    if (currentRoute.name !== \"home\" || !patchHomeAroundCreateControl(nextMarkup)) {\n",
       "anchorCount": 1
     },
     {
-      "start": 209038,
-      "end": 209038,
+      "start": 219339,
+      "end": 219339,
       "before": "",
       "after": "    observeInviteFocus(\"render-after-replacement\");\n",
       "anchor": "    }\n    restoreScenarioDraftFocus?.();\n",
       "anchorCount": 1
     },
     {
-      "start": 212175,
-      "end": 212175,
+      "start": 222476,
+      "end": 222476,
       "before": "",
       "after": "  const observeFocus = phase => { if (typeof pendingKey === \"string\" && pendingKey.startsWith(\"copy-invite:\")) observeInviteFocus(phase); };\n  observeFocus(\"pending-before-set\");\n",
       "anchor": "  const pendingGeneration=account.snapshot().generation;\n  pendingButtonKeys.add(pendingKey);\n",
       "anchorCount": 1
     },
     {
-      "start": 212212,
-      "end": 212212,
+      "start": 222513,
+      "end": 222513,
       "before": "",
       "after": "  observeFocus(\"pending-after-set\");\n",
       "anchor": "  pendingButtonKeys.add(pendingKey);\n  if (renderStart) {\n",
       "anchorCount": 1
     },
     {
-      "start": 212233,
-      "end": 212233,
+      "start": 222534,
+      "end": 222534,
       "before": "",
       "after": "    observeFocus(\"pending-before-start-render\");\n",
       "anchor": "  if (renderStart) {\n    render({ animatePanels: false, includeBoard: false });\n",
       "anchorCount": 2
     },
     {
-      "start": 212292,
-      "end": 212292,
+      "start": 222593,
+      "end": 222593,
       "before": "",
       "after": "    observeFocus(\"pending-after-start-render\");\n",
       "anchor": "    render({ animatePanels: false, includeBoard: false });\n  }\n",
       "anchorCount": 7
     },
     {
-      "start": 212536,
-      "end": 212536,
+      "start": 222837,
+      "end": 222837,
       "before": "",
       "after": "    observeFocus(\"pending-before-clear\");\n",
       "anchor": "    if(pendingGeneration!==account.snapshot().generation)return;\n    pendingButtonKeys.delete(pendingKey);\n",
       "anchorCount": 1
     },
     {
-      "start": 212578,
-      "end": 212578,
+      "start": 222879,
+      "end": 222879,
       "before": "",
       "after": "    observeFocus(\"pending-after-clear\");\n",
       "anchor": "    pendingButtonKeys.delete(pendingKey);\n    if (renderEnd) {\n",
       "anchorCount": 1
     },
     {
-      "start": 212599,
-      "end": 212599,
+      "start": 222900,
+      "end": 222900,
       "before": "",
       "after": "      observeFocus(\"pending-before-end-render\");\n",
       "anchor": "    if (renderEnd) {\n      render({ animatePanels: false, includeBoard: false });\n",
       "anchorCount": 1
     },
     {
-      "start": 212660,
-      "end": 212660,
+      "start": 222961,
+      "end": 222961,
       "before": "",
       "after": "      observeFocus(\"pending-after-end-render\");\n",
       "anchor": "      render({ animatePanels: false, includeBoard: false });\n    }\n",
       "anchorCount": 9
     },
     {
-      "start": 232764,
-      "end": 233027,
+      "start": 244895,
+      "end": 245158,
       "before": "    try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { if(!active())return;inviteFallback={gameId,link};setInviteFeedback('Copy the link below to share it.'); }\n",
       "after": "    try { observeInviteFocus(\"clipboard-before-await\"); await navigator.clipboard.writeText(link); observeInviteFocus(\"clipboard-resolved\");if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { observeInviteFocus(\"clipboard-rejected\"); if(!active())return;inviteFallback={gameId,link};setInviteFeedback('Copy the link below to share it.'); }\n",
       "anchor": "    window.__righeltLastInvite=link;\n    try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { if(!active())return;inviteFallback={gameId,link};setInviteFeedback('Copy the link below to share it.'); }\n  }catch(error){if(active()){ issueDiagnostics.capture(`invite:${gameId}`, { gameId, operation: 'create_invite', stage: 'failed', code: error.code ?? 'unavailable' }); setInviteFeedback('We couldn\u2019t create your invite link. Please try again.'); }}\n",
       "anchorCount": 1
     },
     {
-      "start": 280664,
-      "end": 280664,
+      "start": 292857,
+      "end": 292857,
       "before": "",
       "after": "    observeInviteFocus(\"action-entry\", actionEl);\n",
       "anchor": "    }\n    const invitationPanel = actionEl.closest('[data-game-panel=\"join\"]');\n    if (invitationPanel instanceof HTMLElement) panelPendingFocus.delete(invitationPanel);\n    pendingInvitationFocus.begin(actionEl, getCopyInviteButtonKey(gameId));\n    await withPendingButton(getCopyInviteButtonKey(gameId),()=>copyGameInvitation(gameId,actionEl.dataset.inviteRole || 'viewer'));\n",

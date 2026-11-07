@@ -1,3 +1,4 @@
+import {observeReadinessEvaluation} from '../support/readiness-diagnostics.mjs';
 import {installBoardAdmissionDiagnostics} from '../support/board-admission-diagnostics.mjs';
 import {waitForOpponentReady,waitForComputerDecision} from '../support/computer-projection.mjs';
 import { readFileSync } from 'node:fs';
@@ -426,7 +427,79 @@ test('Horus finishes a real turn and releases its worker before self-play and re
   await page.locator('[data-action="create-self-play"]').click();
   const self=(await (await selfCreated).json()).game;
   await expect(page.getByTestId('game-board')).toBeVisible();
-  await submitPlayableAction(page,self.legalActions.find(action=>action.type==='move'));
+  { // Begin case-local expansion of the existing second submitPlayableAction.
+  const action=self.legalActions.find(action=>action.type==='move');
+  const cell = position => page.locator(`[data-testid="game-board"] .cell[data-row="${position.row}"][data-col="${position.col}"]`);
+  const target = cell(action.to);
+  const source = cell(action.from);
+  // Continuations select their required actor automatically. Clicking it again
+  // cycles the overlay away from action previews instead of selecting a move.
+  // Case-local observation: capture actual original nodes, never mutate/focus them.
+  const sourceAdmissionHandle = await source.evaluateHandle(el => {
+    const root=el.closest('[data-testid="game-board"]');
+    const selected=el.classList.contains("source");
+    try { globalThis.__boardAdmissionSourceRead?.(selected,el); } catch {}
+    return {cell:el,root,before:{selected,className:el.className,
+      cellConnected:el.isConnected,rootConnected:root?.isConnected===true}};
+  });
+  let sourceAdmissionError=null;
+  try {
+    const selectedBefore=await sourceAdmissionHandle.evaluate(saved=>saved.before.selected);
+    if (!["retreat", "follow"].includes(action.type) && !selectedBefore) await source.click();
+  } catch(error) { sourceAdmissionError=error; }
+  try {
+    const sourceAdmission=await sourceAdmissionHandle.evaluate((saved,from)=>{
+      const cell=document.querySelector(`[data-testid="game-board"] .cell[data-row="${from.row}"][data-col="${from.col}"]`);
+      const root=document.querySelector('[data-testid="game-board"]');
+      return {before:saved.before,after:{selected:cell?.classList.contains('source')===true,className:cell?.className??null,
+        cellConnected:cell?.isConnected===true,rootConnected:root?.isConnected===true,
+        originalCellConnected:saved.cell.isConnected,originalRootConnected:saved.root?.isConnected===true,
+        sameCell:cell===saved.cell,sameRoot:root===saved.root},incomplete:!cell||!root,
+        scope:'Immediate source admission only; no mouse press/release or causal attribution'};
+    },action.from);
+    // Persist before the immediate non-polling oracle, independently attempt both channels.
+    let persistenceError=null;
+    try { await info.attach('self-play-source-admission',{body:JSON.stringify(sourceAdmission),contentType:'application/json'}); }
+    catch(error) { persistenceError=error; }
+    try { await (await import('node:fs/promises')).writeFile(info.outputPath('self-play-source-admission.json'),JSON.stringify(sourceAdmission,null,2)); }
+    catch(error) { persistenceError??=error; }
+    if(sourceAdmissionError)throw sourceAdmissionError;
+    if(persistenceError)throw persistenceError;
+    expect(sourceAdmission.incomplete,'Source admission observation must be available').toBe(false);
+    expect(sourceAdmission.after.cellConnected&&sourceAdmission.after.rootConnected,'Current source and Board must remain connected').toBe(true);
+    expect(sourceAdmission.after.selected,'Existing source click must admit its source before any destination action').toBe(true);
+  } catch(error) { throw sourceAdmissionError??error; }
+  finally { await sourceAdmissionHandle.dispose().catch(()=>{}); }
+  // Complete piece previews are asynchronous. The runtime deliberately ignores
+  // a destination tap while that check is pending, so wait before selecting it.
+  await expect(page.locator('#shell-board-preview-label')).not.toHaveAttribute('aria-busy', 'true');
+  const supportsHover = await page.locator('html').getAttribute('data-hover-capability') === 'hover';
+  // A single forced follow can already select its destination. Its next tap
+  // confirms the move, so do not submit it while trying to select it.
+  if (supportsHover) {
+    // A blocked tap can leave the pointer on this square during recovery.
+    // Enter it again so the runtime receives a fresh hover event.
+    await page.mouse.move(0, 0);
+    await target.hover();
+  } else if (!await target.evaluate(el => el.classList.contains("target"))) await target.click();
+  await expect(target, "The supported pointer interaction must select the legal destination before confirmation").toHaveClass(/(?:^|\s)target(?:\s|$)/, { timeout: 2000 });
+
+  // A shared control or fresh complete-move check can fence confirmation
+  // after hover or a tap prepared the destination.
+  // Wait for visual readiness, then perform exactly one native confirmation.
+  // Admission can change during the click; the runtime still checks it live.
+  await expect.poll(() => observeReadinessEvaluation(() => page.evaluate(to => {
+    let readinessFinish,readinessComplete=false,readinessResult;
+    try{readinessFinish=globalThis.__righeltReadinessBegin?.('readiness-callback',true);}catch{}
+    try{
+    const node=document.querySelector(`[data-testid="game-board"] .cell[data-row="${to.row}"][data-col="${to.col}"]`);
+    const message=document.getElementById('shell-board-preview-label');
+    readinessResult=Boolean(node?.isConnected && message?.isConnected && message.getAttribute('aria-busy')!=='true' && node.classList.contains('target') && !node.classList.contains('unselectable'));
+    readinessComplete=true;return readinessResult;
+    }finally{try{readinessFinish?.(readinessComplete,readinessResult);}catch{}}
+  },action.to)),{timeout:2000,message:'Complete move checks and the prepared destination must be ready at confirmation'}).toBe(true);
+  await target.click();
+  } // End case-local expansion.
   await expect.poll(async()=>(await currentGame(page,self.id)).moves.length).toBe(1);
   const saved=await currentGame(page,self.id);
   await admissionDiagnostics.checkpoint();

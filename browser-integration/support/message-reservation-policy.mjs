@@ -1,3 +1,5 @@
+import {admittedHeightFromSource} from './message-reservation-arithmetic.mjs';
+import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 
 // CSS is the policy source. Tests probe its boundaries without maintaining a
@@ -16,10 +18,8 @@ export const actionRowAllowance=fontSize=>actionReservationMetrics.em*fontSize+a
 // CSS bounds the primary-font reservation. A platform's permanent fallback can
 // intrinsically need more space. Admit only its independently measured natural
 // height, never the current slot or a replica with the CSS minimum applied.
-export const admittedHeight=(width,fontSize,intrinsicFallback)=>{
- if(!Number.isFinite(intrinsicFallback)||intrinsicFallback<=0)throw Error('A nonempty positive intrinsic fallback measurement is required');
- return Math.max(intrinsicFallback,Number(base[1])*fontSize,Number(base[2]),3*fontSize+actionRowAllowance(fontSize),...reservationBands.filter(band=>width>=band.min*fontSize&&width<band.max*fontSize).map(band=>band.height*fontSize+actionRowAllowance(fontSize)));
-};
+export const originalPolicyInputs=Object.freeze({schema:1,sourceSha256:createHash('sha256').update(css).digest('hex'),bands:Object.freeze(reservationBands.map(({min,max,height})=>Object.freeze({min,max,height}))),baseEm:Number(base[1]),basePx:Number(base[2]),actionEm:actionReservationMetrics.em,actionPx:actionReservationMetrics.px,halfPx:actionReservationMetrics.halfPx,halfEm:actionReservationMetrics.halfEm,buttonScale:Number(css.match(/--board-inline-action-font-scale:([\d.]+)/)[1]),actionLine:Number(css.match(/--board-inline-action-line-height:([\d.]+)/)[1]),actionPad:Number(css.match(/--board-inline-action-padding-block-em:([\d.]+)/)[1]),border:Number(css.match(/--board-inline-action-border-px:([\d.]+)/)[1]),gapEm:metric('detached-gap-em')});
+export const admittedHeight=(width,fontSize,intrinsicFallback,options={})=>admittedHeightFromSource(originalPolicyInputs,width,fontSize,intrinsicFallback,options);
 
 // DOMRect serialization can differ from an ideal CSS minimum by millionths of
 // a pixel (Firefox: 49.600006 vs 49.6). Normalize only budget arithmetic below

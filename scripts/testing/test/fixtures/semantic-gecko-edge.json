@@ -1,0 +1,69 @@
+{
+  "scope": "Retained original Firefox primitive regression, model inputs only. Not runtime profile qualification.",
+  "before": {
+    "devicePixelRatio": 1,
+    "card": {
+      "x": 5.1999969482421875,
+      "y": 16,
+      "top": 16,
+      "bottom": 562.9166870117188,
+      "width": 379.6000061035156,
+      "height": 546.9166870117188,
+      "offsetHeight": 547
+    },
+    "board": {
+      "x": 11.600006103515625,
+      "y": 196.0833282470703,
+      "top": 196.0833282470703,
+      "bottom": 562.9166717529297,
+      "width": 366.79998779296875,
+      "height": 366.8333435058594,
+      "offsetHeight": 367
+    },
+    "boardLayoutHeight": "366.833px",
+    "cardLayoutHeight": "546.917px",
+    "slotLayoutHeight": "104.25px",
+    "slot": {
+      "x": 11.600006103515625,
+      "y": 91.83332824707031,
+      "top": 91.83332824707031,
+      "bottom": 196.0833282470703,
+      "width": 366.79998779296875,
+      "height": 104.25,
+      "offsetHeight": 104
+    }
+  },
+  "changed": {
+    "devicePixelRatio": 1,
+    "card": {
+      "x": 5.1999969482421875,
+      "y": 16,
+      "top": 16,
+      "bottom": 630.1500244140625,
+      "width": 379.6000061035156,
+      "height": 614.1500244140625,
+      "offsetHeight": 614
+    },
+    "board": {
+      "x": 11.600006103515625,
+      "y": 263.316650390625,
+      "top": 263.316650390625,
+      "bottom": 630.1499633789062,
+      "width": 366.79998779296875,
+      "height": 366.83331298828125,
+      "offsetHeight": 367
+    },
+    "boardLayoutHeight": "366.833px",
+    "cardLayoutHeight": "614.15px",
+    "slotLayoutHeight": "171.483px",
+    "slot": {
+      "x": 11.600006103515625,
+      "y": 91.83332824707031,
+      "top": 91.83332824707031,
+      "bottom": 263.31666564941406,
+      "width": 366.79998779296875,
+      "height": 171.48333740234375,
+      "offsetHeight": 171
+    }
+  }
+}

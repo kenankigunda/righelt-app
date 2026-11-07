@@ -25,3 +25,15 @@ test('compact font boundary decoding rejects missing rows and metric fields',()=
  assert.throws(()=>decodeFontBoundarySamples({definitions,samples:[{rows:[]}]}),/row count changed/);
  assert.throws(()=>decodeFontBoundarySamples({definitions,samples:[{rows:[[20,24]]}]}),/Complete font boundary metrics/);
 });
+
+test('compact font boundary decoding preserves structural patterns and fresh intrinsic coordinates',()=>{
+ const definitions=[{font:'primary',variant:'prompt:20',text:'Required move',pattern:'required-retry'},{font:'fallback',variant:'prompt:0',text:'Select a piece',pattern:null}];
+ const samples=[100,200].map(scale=>({scale,width:616,outerPadding:scale===100?0:8,rows:[[scale+1,scale+2,scale+3],[scale+4,scale+5,scale+6]],intrinsicRows:[[scale+7,scale+8,0],[scale+9,scale+10,0]]}));
+ const result=decodeFontBoundarySamples({definitions,samples});
+ for(let index=0;index<2;index++)for(const field of ['rows','intrinsicRows'])for(let row=0;row<2;row++){
+  assert.deepEqual(result[index][field][row],{...definitions[row],height:samples[index][field][row][0],lineHeight:samples[index][field][row][1],minHeight:samples[index][field][row][2]});
+ }
+ assert.equal(result[0].outerPadding,0);assert.equal(result[1].outerPadding,8);
+ assert.notStrictEqual(result[0].rows[0],result[0].intrinsicRows[0]);
+ assert.throws(()=>decodeFontBoundarySamples({definitions,samples:[{...samples[0],intrinsicRows:[]}]}),/row count changed/);
+});

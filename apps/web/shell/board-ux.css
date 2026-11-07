@@ -29,6 +29,9 @@ body {display:flow-root;}
      and an outward 1/8em font/layout allowance. Logical rows own four insets. */
   --board-message-action-extra-em:.469;
   --board-message-action-extra-px:4;
+  --board-message-detached-gap-em:.5;
+  --board-message-rounding-allowance:max(0px,calc((var(--board-message-action-extra-em) - 2 * (var(--board-inline-action-font-scale) * (var(--board-inline-action-line-height) + 2 * var(--board-inline-action-padding-block-em)) - var(--board-message-prose-line-height))) * 1em));
+  --board-message-detached-allowance:calc(var(--board-message-detached-gap-em) * 1em + var(--board-routine-action-growth) + var(--board-message-rounding-allowance) + 4 * var(--board-action-hit-inset));
   --board-action-hit-inset:max(0px,calc(var(--board-message-hit-half-px) * 1px - var(--board-message-hit-half-em) * 1em));
   --board-message-action-allowance:calc(var(--board-message-action-extra-em) * 1em + var(--board-message-action-extra-px) * 1px + var(--board-action-hit-inset) + var(--board-action-hit-inset) + var(--board-action-hit-inset) + var(--board-action-hit-inset));
 }
@@ -41,6 +44,8 @@ body {display:flow-root;}
 .board-message-activity[data-loading-state="pending"] {display:inline-flex;vertical-align:middle;}
 .board-message-activity[data-loading-suppressed="true"] {display:none;}
 .board-message-sizing, .board-heading-sizing {visibility:hidden;pointer-events:none;user-select:none;}
+.board-message-sizing[data-prompt-pattern="required-retry"] {min-height:calc(var(--board-message-row-lines) * 1.5em + max(var(--board-message-action-allowance),var(--board-message-detached-allowance)));}
+.board-obligatory-pill[data-board-prompt-pattern="required-retry"] {vertical-align:top;}
 .board-message-fallback-sizing {font-family:var(--font-family-fallback);}
 .board-message-fallback-sizing :is(.board-preview-coordinate-chip,.board-preview-highlight-chip,.board-preview-retreat-chip,.board-preview-inline-button) {font-family:inherit;}
 /* Intrinsic primary-font row frontiers cover the two-row message grammar,
@@ -143,6 +148,11 @@ body {display:flow-root;}
 #app[data-shell-layout-mode="wide"] [data-shell-panel="board"] {padding-block:.5rem;}
 #app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board-heading {margin-block-end:0;}
 #app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board-message-slot {margin-block-end:0;}
+/* Narrow cards share the fixed heading/prompt slots. Their default bottom
+   margins duplicate that reservation and push a normal-height Board offscreen.
+   Reclaim only static spacing, preserving cell sizes and action hit clearance. */
+#app[data-shell-layout-mode="narrow"] [data-shell-panel="board"] .board-heading {margin-block-end:0;}
+#app[data-shell-layout-mode="narrow"] [data-shell-panel="board"] .board-message-slot {margin-block-end:0;}
 /* Desktop squares fit beneath stable chrome; short windows keep usable cells and scroll. */
 #app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board-wrap:not(.computer-replay-wrap) {
   width:min(100%,var(--desktop-board-side,max(396px,calc(100dvh - 25.5rem))));
@@ -179,7 +189,7 @@ body {display:flow-root;}
 .board-message-row {position:relative;line-height:var(--board-message-prose-line-height,1.5);}
 .board-message-row + .board-message-row {margin-block-start:.5em;}
 .board-message-row + .board-message-row::before {content:"";position:absolute;inset-inline:0;top:-.25em;border-top:1px solid var(--line);pointer-events:none;}
-.board-message-actions {display:flex;flex-wrap:wrap;align-items:baseline;gap:.5em;margin-block-start:.5em;padding-block:var(--board-action-hit-inset);}
+.board-message-actions {display:flex;flex-wrap:wrap;align-items:baseline;gap:calc(var(--board-message-detached-gap-em) * 1em);margin-block-start:calc(var(--board-message-detached-gap-em) * 1em);padding-block:var(--board-action-hit-inset);}
 
 /* Replicas establish only the routine floor. The controller measures both font
    families plus live content, keeping replicas outside intrinsic grid sizing. */
@@ -204,3 +214,24 @@ body {display:flow-root;}
 }
 
 .board-message-slot .board-preview-inline-button:focus-visible {outline-width:var(--board-message-focus-width);outline-offset:var(--board-message-focus-offset);}
+
+/* The short prompt grammar owns a fixed slot. Context is independently sized. */
+.board-message-sizing[data-sizing-variant^="prompt:"] {min-height:0;}
+#app[data-shell-layout-mode="narrow"] [data-game-shell-root] {padding-block-start:var(--board-context-reserve,0px);}
+.board-context-sizing {position:absolute;inset:0 auto auto -10000px;visibility:hidden;pointer-events:none;}
+.shell-game-alert.alert.board-context-notice:not(.warn):not(.danger) {--info:#666;--ink:#282828;--muted:#626262;display:block;padding:12px 16px;color:#282828;background:#ececec;border-color:#aaa;box-shadow:inset 0 -2px #bdbdbd;max-height:calc(100dvh - var(--recovery-effective-top,58px) - 60px - 4rem);}
+.board-context-body {box-sizing:border-box;min-block-size:3em;max-block-size:3em;padding-inline-end:52px;overflow:auto;overscroll-behavior:contain;line-height:1.5;scrollbar-gutter:stable;}
+.board-context-body:focus-visible {outline:2px solid #282828;outline-offset:2px;}
+.board-context-scroll-cue {display:none;font-size:.75em;line-height:1.5;color:#626262;}
+[data-context-overflow="true"] > .board-context-scroll-cue {display:block;}
+.board-context-actions {margin-block-start:8px;}
+.board-context-notice .board-context-replay {min-width:44px;min-height:44px;max-width:100%;background:#f7f7f7;color:#282828;border:1px solid #999;}
+.board-context-notice .board-preview-coordinate-chip {background:#f7f7f7;color:#282828;border-color:#999;}
+.board-context-notice .board-context-dismiss {position:absolute;top:12px;right:12px;}
+/* Keep the rotated7px marker inside the existing16px notice inset.
+   Its right edge then leaves more than3px before the text, without rewrapping. */
+.shell-game-alert.alert.board-context-notice::before {left:4px;background:#666;}
+
+.board-context-sizing .board-context-scroll-cue {display:block;}
+
+.board-message-live:focus-visible,#shell-board:focus-visible {outline:2px solid var(--ink);outline-offset:4px;}

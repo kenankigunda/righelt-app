@@ -1,0 +1,1260 @@
+{
+  "raw": {
+    "reservation": {
+      "width": 296.79998779296875,
+      "probeWidth": 296.79998779296875,
+      "outerPadding": 0,
+      "usedMinimumProfile": "firefox",
+      "usedSize": {
+        "policySource": {
+          "pattern": "required-retry",
+          "minHeight": 125.498,
+          "rowLines": 3,
+          "width": 296.79998779296875,
+          "childNodes": 0,
+          "variantPresent": false,
+          "previewClassPresent": false,
+          "managedParent": false,
+          "removed": true
+        },
+        "contentProofs": [
+          {
+            "font": "primary",
+            "variant": "prompt:20",
+            "pattern": "required-retry",
+            "proof": {
+              "schema": 1,
+              "declarationProof": null,
+              "pseudoFree": true,
+              "pseudoBeforeContent": "none",
+              "pseudoAfterContent": "none",
+              "pseudoBeforeDisplay": "none",
+              "pseudoAfterDisplay": "none",
+              "ideal": 125.498,
+              "property": "min-height",
+              "width": 296.79998779296875,
+              "assignedValue": "125.498px",
+              "computedMinHeight": 125.498,
+              "computedHeight": 125.5,
+              "rectHeight": 125.5,
+              "offsetHeight": 126,
+              "children": 0,
+              "childNodes": 0,
+              "textLength": 0,
+              "flowFootprint": 0,
+              "boxSizing": "border-box",
+              "transform": "none",
+              "zoom": 1,
+              "maxHeight": "none",
+              "contractMatch": true,
+              "ancestorsUntransformed": true,
+              "padding": {
+                "top": "9.6865px",
+                "bottom": "9.6865px",
+                "left": "0px",
+                "right": "0px"
+              },
+              "border": {
+                "top": "0px",
+                "bottom": "0px",
+                "left": "0px",
+                "right": "0px"
+              },
+              "assignedWidth": "296.8px",
+              "computedWidth": "296.8px",
+              "removed": true
+            }
+          },
+          {
+            "font": "fallback",
+            "variant": "prompt:20",
+            "pattern": "required-retry",
+            "proof": {
+              "schema": 1,
+              "declarationProof": null,
+              "pseudoFree": true,
+              "pseudoBeforeContent": "none",
+              "pseudoAfterContent": "none",
+              "pseudoBeforeDisplay": "none",
+              "pseudoAfterDisplay": "none",
+              "ideal": 125.498,
+              "property": "min-height",
+              "width": 296.79998779296875,
+              "assignedValue": "125.498px",
+              "computedMinHeight": 125.498,
+              "computedHeight": 125.5,
+              "rectHeight": 125.5,
+              "offsetHeight": 126,
+              "children": 0,
+              "childNodes": 0,
+              "textLength": 0,
+              "flowFootprint": 0,
+              "boxSizing": "border-box",
+              "transform": "none",
+              "zoom": 1,
+              "maxHeight": "none",
+              "contractMatch": true,
+              "ancestorsUntransformed": true,
+              "padding": {
+                "top": "9.6865px",
+                "bottom": "9.6865px",
+                "left": "0px",
+                "right": "0px"
+              },
+              "border": {
+                "top": "0px",
+                "bottom": "0px",
+                "left": "0px",
+                "right": "0px"
+              },
+              "assignedWidth": "296.8px",
+              "computedWidth": "296.8px",
+              "removed": true
+            }
+          }
+        ],
+        "slotProofs": [
+          {
+            "pattern": "required-retry",
+            "proof": {
+              "schema": 1,
+              "declarationProof": null,
+              "pseudoFree": true,
+              "pseudoBeforeContent": "none",
+              "pseudoAfterContent": "none",
+              "pseudoBeforeDisplay": "none",
+              "pseudoAfterDisplay": "none",
+              "ideal": 125.498,
+              "property": "min-height",
+              "width": 296.79998779296875,
+              "assignedValue": "125.498px",
+              "computedMinHeight": 125.498,
+              "computedHeight": 125.5,
+              "rectHeight": 125.5,
+              "offsetHeight": 126,
+              "children": 0,
+              "childNodes": 0,
+              "textLength": 0,
+              "flowFootprint": 0,
+              "boxSizing": "border-box",
+              "transform": "none",
+              "zoom": 1,
+              "maxHeight": "none",
+              "contractMatch": true,
+              "ancestorsUntransformed": true,
+              "padding": {
+                "top": "0px",
+                "bottom": "0px",
+                "left": "0px",
+                "right": "0px"
+              },
+              "border": {
+                "top": "0px",
+                "bottom": "0px",
+                "left": "0px",
+                "right": "0px"
+              },
+              "assignedWidth": "296.8px",
+              "computedWidth": "296.8px",
+              "removed": true
+            }
+          }
+        ]
+      },
+      "rows": [
+        {
+          "font": "primary",
+          "variant": "prompt:0",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:1",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:2",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:3",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:4",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:5",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:6",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:7",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:8",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:9",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:10",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:11",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:12",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:13",
+          "pattern": null,
+          "height": 48.116668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:14",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:15",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:16",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:17",
+          "pattern": null,
+          "height": 67.36666870117188,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:18",
+          "pattern": null,
+          "height": 67.36666870117188,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:19",
+          "pattern": null,
+          "height": 48.116668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:20",
+          "pattern": "required-retry",
+          "height": 123.75,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:21",
+          "pattern": null,
+          "height": 104.23333740234375,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:22",
+          "pattern": null,
+          "height": 99.48333740234375,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:23",
+          "pattern": null,
+          "height": 99.48333740234375,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:24",
+          "pattern": null,
+          "height": 99.48333740234375,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:25",
+          "pattern": null,
+          "height": 99.48333740234375,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:26",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:27",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:28",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:29",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:30",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:31",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:32",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:33",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:34",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:35",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:36",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:37",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:38",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:39",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:40",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:41",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:42",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:43",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:44",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:45",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:46",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:47",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:48",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:49",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:50",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:51",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:52",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:53",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:54",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:55",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:56",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:57",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:58",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:59",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:60",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:61",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:62",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:63",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:64",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:65",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:66",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "primary",
+          "variant": "prompt:67",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:0",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:1",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:2",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:3",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:4",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:5",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:6",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:7",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:8",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:9",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:10",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:11",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:12",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:13",
+          "pattern": null,
+          "height": 48.116668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:14",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:15",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:16",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:17",
+          "pattern": null,
+          "height": 67.36666870117188,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:18",
+          "pattern": null,
+          "height": 67.36666870117188,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:19",
+          "pattern": null,
+          "height": 48.116668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:20",
+          "pattern": "required-retry",
+          "height": 123.75,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:21",
+          "pattern": null,
+          "height": 104.23333740234375,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:22",
+          "pattern": null,
+          "height": 99.48333740234375,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:23",
+          "pattern": null,
+          "height": 99.48333740234375,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:24",
+          "pattern": null,
+          "height": 99.48333740234375,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:25",
+          "pattern": null,
+          "height": 99.48333740234375,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:26",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:27",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:28",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:29",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:30",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:31",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:32",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:33",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:34",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:35",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:36",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:37",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:38",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:39",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:40",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:41",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:42",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:43",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:44",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:45",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:46",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:47",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:48",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:49",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:50",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:51",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:52",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:53",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:54",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:55",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:56",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:57",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:58",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:59",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:60",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:61",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:62",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:63",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:64",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:65",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:66",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        },
+        {
+          "font": "fallback",
+          "variant": "prompt:67",
+          "pattern": null,
+          "height": 43.366668701171875,
+          "lineHeight": 24,
+          "minHeight": 0
+        }
+      ]
+    },
+    "physicalSlotHeight": 125.5
+  },
+  "rawSha256": "6c90031f3ec5c11ab312db2c1127ae777793e9c0942b21785fd6a3afa117af72",
+  "oldAdmittedSource": "const admittedHeight=(width,fontSize,intrinsicFallback,{pattern=null,outerPadding=0}={})=>{\n if(!Number.isFinite(intrinsicFallback)||intrinsicFallback<=0)throw Error('A nonempty positive intrinsic fallback measurement is required');\n const original=Math.max(intrinsicFallback,Number(base[1])*fontSize,Number(base[2]),3*fontSize+actionRowAllowance(fontSize),...reservationBands.filter(band=>width>=band.min*fontSize&&width<band.max*fontSize).map(band=>band.height*fontSize+actionRowAllowance(fontSize)));\n if(pattern!=='required-retry')return original;\n // Independent CSS-derived compact check, not the production implementation.\n const buttonScale=Number(css.match(/--board-inline-action-font-scale:([\\d.]+)/)[1]);\n const actionLine=Number(css.match(/--board-inline-action-line-height:([\\d.]+)/)[1]);\n const actionPad=Number(css.match(/--board-inline-action-padding-block-em:([\\d.]+)/)[1]);\n const border=Number(css.match(/--board-inline-action-border-px:([\\d.]+)/)[1]);\n const gap=metric('detached-gap-em')*fontSize;\n const growth=Math.max(0,buttonScale*(actionLine+2*actionPad)*fontSize+2*border-1.5*fontSize);\n const rounding=Math.max(0,actionReservationMetrics.em-2*(buttonScale*(actionLine+2*actionPad)-1.5))*fontSize;\n const inset=4*Math.max(0,actionReservationMetrics.halfPx-actionReservationMetrics.halfEm*fontSize);\n const rowHeight=Math.max(3*fontSize,...reservationBands.filter(band=>width>=band.min*fontSize&&width<band.max*fontSize).map(band=>band.height*fontSize));\n return Math.max(original,rowHeight+gap+growth+rounding+inset)+outerPadding;\n};\nadmittedHeight;",
+  "oldPolicyFileSha256": "46e45b0b0925cb5b6f44d9359a830a39738ec85d16e8c7d70fb03e80b0e6d2f6"
+}

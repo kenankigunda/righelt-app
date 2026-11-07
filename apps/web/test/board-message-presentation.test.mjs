@@ -63,3 +63,26 @@ test('replay controls sit below their own message while grammatical turn actions
  const sizing=renderBoardMessageHtml({text:'Select a rush or',action:{id:'end-turn',label:'End turn'}},{sizing:true});
  assert.doesNotMatch(sizing,/board-message-actions|data-board-message-action/);
 });
+
+test('context coordinates retain their semantic roles through the escaped shared renderer',()=>{
+ const html=renderBoardMessageHtml({text:'Recorded move from (1, 2) to (3, 4)',coordinates:[{row:1,col:2,chipClass:'board-preview-coordinate-chip-selected-piece'},{row:3,col:4,chipClass:'board-preview-coordinate-chip-target'}]});
+ assert.match(html,/chip-selected-piece[^>]*>1, 2/);assert.match(html,/chip-target[^>]*>3, 4/);
+ const unsafe=renderBoardMessageHtml({text:'At (1, 2)',coordinates:[{row:1,col:2,chipClass:'" onmouseover="bad'}]});
+ assert(!unsafe.includes(' onmouseover="bad'));assert(unsafe.includes('&quot; onmouseover=&quot;bad'));
+});
+
+// Authored private proposal structural controls; UNRUN.
+test('required retry pattern depends on badge and semantic action, never copy or array index',async()=>{
+ const {boardPromptPattern,renderBoardMessageHtml}=await import('../board/message-presentation.js');
+ const tagged={text:'Different translated copy',badge:'Required',actions:[{id:'retry-rush-guidance',label:'Retry'}]};
+ assert.equal(boardPromptPattern(tagged),'required-retry');
+ assert.equal(boardPromptPattern({...tagged,badge:null}),null);
+ assert.equal(boardPromptPattern({...tagged,actions:[{id:'end-turn',label:'Retry'}]}),null);
+ assert.match(renderBoardMessageHtml(tagged),/data-board-prompt-pattern="required-retry"/);
+});
+test('finite replica markup propagates the semantic required retry tag to both font copies',async()=>{
+ const {renderBoardMessageSlot}=await import('../shell/board-message-layout.js');
+ const html=renderBoardMessageSlot({id:'test'});
+ assert.equal((html.match(/data-prompt-pattern="required-retry"/g)??[]).length,2);
+ assert.equal((html.match(/data-sizing-variant=/g)??[]).length,136);
+});

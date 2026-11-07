@@ -1,0 +1,120 @@
+[
+  {
+    "file": "apps/web/shell/board-context-owner.js",
+    "servedPath": "/shell/board-context-owner.js",
+    "sourceSha256": "386d4a61ad1af199b791e9b67d0eb9ef3484f65beba20f12b449c25993bb6fbc",
+    "outputSha256": "aada3fe5897e54a52297d71dab3491205c43f3d6b8fd1a2c29ebbe5f6aa1e987",
+    "operations": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "const __ownedFocusValue=(kind,value,scope)=>{try{globalThis.__ownedFocusProbe?.record(kind,value,scope);}catch{}return value;};\n"
+      },
+      {
+        "start": 750,
+        "end": 779,
+        "before": "return {scope:sync(),intent};",
+        "after": "return {scope:__ownedFocusValue(\"capture-scope\",(sync()),null),intent:__ownedFocusValue(\"capture-intent\",(intent),null)};"
+      },
+      {
+        "start": 799,
+        "end": 851,
+        "before": "return token?.scope===sync()&&token.intent===intent;",
+        "after": "return __ownedFocusValue(\"current-token-scope\",(token?.scope),token)===__ownedFocusValue(\"current-owner-scope\",(sync()),token)&&__ownedFocusValue(\"current-token-intent\",(token.intent),token)===__ownedFocusValue(\"current-owner-intent\",(intent),token);"
+      },
+      {
+        "start": 1390,
+        "end": 1417,
+        "before": "original=doc.activeElement;",
+        "after": "original=__ownedFocusValue(\"begin-active\",(doc.activeElement),trigger);"
+      },
+      {
+        "start": 1447,
+        "end": 1531,
+        "before": "let live=!disposed&&(activation||original===trigger)&&Boolean(trigger?.isConnected);",
+        "after": "let live=__ownedFocusValue(\"begin-live\",(!disposed&&(activation||original===trigger)&&Boolean(trigger?.isConnected)),trigger);"
+      },
+      {
+        "start": 1628,
+        "end": 1666,
+        "before": "if(!live)return;live=false;onRetire();",
+        "after": "if(!__ownedFocusValue(\"retire-live\",(live),trigger))return;live=false;onRetire();"
+      },
+      {
+        "start": 1671,
+        "end": 1726,
+        "before": "const focus=event=>{if(!owned(event.target))retire();};",
+        "after": "const focus=event=>{if(!__ownedFocusValue(\"focus-owned\",(owned(__ownedFocusValue(\"focus-target\",(event.target),trigger))),trigger))retire();};"
+      },
+      {
+        "start": 1729,
+        "end": 1786,
+        "before": "const pointer=event=>{if(!owned(event.target))retire();};",
+        "after": "const pointer=event=>{if(!__ownedFocusValue(\"pointer-owned\",(owned(__ownedFocusValue(\"pointer-target\",(event.target),trigger))),trigger))retire();};"
+      },
+      {
+        "start": 1807,
+        "end": 1859,
+        "before": "if(!owned(event.target)||event.key==='Tab')retire();",
+        "after": "if(!__ownedFocusValue(\"key-owned\",(owned(__ownedFocusValue(\"key-target\",(event.target),trigger))),trigger)||__ownedFocusValue(\"key-tab\",(event.key==='Tab'),trigger))retire();"
+      },
+      {
+        "start": 1886,
+        "end": 1909,
+        "before": "if(doc.hidden)retire();",
+        "after": "if(__ownedFocusValue(\"visibility-hidden\",(doc.hidden),trigger))retire();"
+      },
+      {
+        "start": 2492,
+        "end": 2821,
+        "before": "const current=()=>live&&!disposed&&!doc.hidden&&owner.current(token)\n   &&(owned(doc.activeElement)||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]')))||(removedControl!==null&&doc.activeElement===doc.body&&!removedControl.isConnected));",
+        "after": "const current=()=>__ownedFocusValue(\"return-current\",(__ownedFocusValue(\"return-live\",(live),trigger)&&!disposed&&!doc.hidden&&__ownedFocusValue(\"return-owner-current\",(owner.current(token)),trigger)\n   &&(owned(__ownedFocusValue(\"return-active\",(doc.activeElement),trigger))||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]')))||(removedControl!==null&&doc.activeElement===doc.body&&!removedControl.isConnected))),trigger);"
+      },
+      {
+        "start": 3708,
+        "end": 3731,
+        "before": "const target=resolve();",
+        "after": "const target=__ownedFocusValue(\"return-target\",(resolve()),trigger);"
+      },
+      {
+        "start": 3852,
+        "end": 3889,
+        "before": "if(doc.activeElement===target)reveal(",
+        "after": "if(__ownedFocusValue(\"after-focus-active\",(doc.activeElement),trigger)===target)reveal("
+      }
+    ]
+  },
+  {
+    "file": "apps/web/shell/app.js",
+    "servedPath": "/shell/app.js",
+    "sourceSha256": "14e0f3b63b338d6fef74fdb015d0e56f4ec6874b7b13ffff84e7e229bf09f210",
+    "outputSha256": "ad2155b81ca4f864ad94acdfdcfa2f1c0f6e4c82673ada4026cae0afb8763273",
+    "operations": [
+      {
+        "start": 78,
+        "end": 78,
+        "before": "",
+        "after": "const __ownedFocusValue=(kind,value,scope)=>{try{globalThis.__ownedFocusProbe?.record(kind,value,scope);}catch{}return value;};\n"
+      },
+      {
+        "start": 238393,
+        "end": 238451,
+        "before": "const focusReturn=boardContextFocus.begin(trigger,{allows:",
+        "after": "const focusReturn=boardContextFocus.begin(__ownedFocusValue(\"replay-trigger\",(trigger),null),{allows:"
+      },
+      {
+        "start": 240222,
+        "end": 240345,
+        "before": "const finish=()=>{\n    boardRuntime?.setInteractionBlocked(false);boardRuntime?.refreshStatus();queueBoardContextRefresh();",
+        "after": "const finish=()=>{\n    __ownedFocusValue(\"finish-enter\",(trigger),focusReturn);\n    boardRuntime?.setInteractionBlocked(false);boardRuntime?.refreshStatus();queueBoardContextRefresh();\n    __ownedFocusValue(\"finish-after-render\",(trigger),focusReturn);"
+      },
+      {
+        "start": 241218,
+        "end": 241497,
+        "before": "onChange:replay=>{\n      const playing=replay.playing;\n      const refresh=()=>{boardRuntime?.setInteractionBlocked(playing);boardRuntime?.refreshStatus();queueBoardContextRefresh();};\n      if(playing)refresh();else focusReturn.renderOwnedRemoval(refresh);\n    },onFinish:finish",
+        "after": "onChange:replay=>{\n      const playing=__ownedFocusValue(\"change-playing\",(replay.playing),focusReturn);\n      const refresh=()=>{boardRuntime?.setInteractionBlocked(playing);boardRuntime?.refreshStatus();queueBoardContextRefresh();__ownedFocusValue(\"change-after-render\",(trigger),focusReturn);};\n      if(playing)refresh();else focusReturn.renderOwnedRemoval(refresh);\n    },onFinish:finish"
+      }
+    ]
+  }
+]
