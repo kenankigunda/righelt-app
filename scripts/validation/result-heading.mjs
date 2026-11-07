@@ -37,15 +37,16 @@ export function capturedResultHeading(game,{contract,viewerSide=null,controlsBot
   assert.ok(['p1_win','p2_win','draw'].includes(outcome),'Expected an acknowledged terminal game');
   const winner=outcome==='draw'?null:outcome.slice(0,2);
   const person=side=>game[side==='p1'?'player1':'player2'];
-  const profile=side=>person(side)?.computerProfile || game.computer?.seats?.[side];
+  const profile=side=>person(side)?.computerProfile ?? game.computer?.seats?.[side];
   const computerNames={babs:'Babs',tau:'Tau',horus:'Horus'};
   const name=side=>{
-    if(profile(side)){assert.ok(computerNames[profile(side)],'Unrecognized captured computer profile');return computerNames[profile(side)];}
+    const computerProfile=profile(side);
+    if(computerProfile!=null){assert.ok(typeof computerProfile==='string'&&Object.hasOwn(computerNames,computerProfile),'Unrecognized captured computer profile');return computerNames[computerProfile];}
     const named=person(side)?.profile;
-    const pair=['p1','p2'].every(owner=>Boolean(person(owner))&&!profile(owner)&&!person(owner)?.profile?.displayName&&!person(owner)?.profile?.username);
+    const pair=['p1','p2'].every(owner=>Boolean(person(owner))&&profile(owner)==null&&!person(owner)?.profile?.displayName&&!person(owner)?.profile?.username);
     return named?.displayName || named?.username || (pair?`Guest ${side==='p1'?1:2}`:'Guest');
   };
-  const selfPlay=Boolean(game.selfPlayMode && game.player1?.identityId && game.player1.identityId===game.player2?.identityId && !profile('p1')&&!profile('p2'));
+  const selfPlay=Boolean(game.selfPlayMode && game.player1?.identityId && game.player1.identityId===game.player2?.identityId && profile('p1')==null&&profile('p2')==null);
   return {contract,outcome,viewerSide,controlsBothSides,selfPlay,...(winner?{winnerName:name(winner)}:{})};
 }
 

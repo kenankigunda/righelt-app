@@ -70,3 +70,43 @@ test('acknowledged result context keeps human identities and computer profiles d
  assert.throws(()=>capturedResultHeading({...game,computer:{seats:{p1:'unknown'}}},options));
  assert.throws(()=>capturedResultHeading({...game,board:{state:{outcome:{status:'ongoing'}}}},options));
 });
+
+test('captured computer profiles reject inherited lookup keys even for the winning seat',()=>{
+ for(const profile of ['constructor','toString','__proto__'])for(const viewerSide of ['p1','p2',null]){
+  const game={computer:{seats:{p1:profile}},board:{state:{outcome:{status:'p1_win'}}}};
+  assert.throws(()=>capturedResultHeading(game,{contract:'named-perspective-v3',viewerSide}),/Unrecognized captured computer profile/);
+ }
+});
+
+test('captured computer profiles reject nonstrings without coercing a known key',()=>{
+ let coerced=0;
+ const profile={toString(){coerced++;return 'babs';}};
+ const game={computer:{seats:{p1:profile}},board:{state:{outcome:{status:'p1_win'}}}};
+ assert.throws(()=>capturedResultHeading(game,{contract:'named-perspective-v3',viewerSide:'p1'}),/Unrecognized captured computer profile/);
+ assert.equal(coerced,0);
+});
+
+test('all canonical computer profiles retain exact winning, losing and observer headings',()=>{
+ for(const [profile,name]of [['babs','Babs'],['tau','Tau'],['horus','Horus']])for(const viewerSide of ['p1','p2',null]){
+  const game={computer:{seats:{p1:profile}},board:{state:{outcome:{status:'p1_win'}}}};
+  const captured=capturedResultHeading(game,{contract:'named-perspective-v3',viewerSide});
+  assert.equal(captured.winnerName,name);
+  assert.equal(expectedResultHeading(captured),viewerSide==='p1'?'Red: You won':`Red: ${name} won`);
+ }
+});
+
+test('only null and undefined profiles are absent; malformed falsy values cannot hide behind a winning seat or fallback',()=>{
+ const base={player1:{identityId:'a'},player2:{identityId:'b'},board:{state:{outcome:{status:'p1_win'}}}};
+ for(const profile of [0,false,''])for(const source of ['participant','seat']){
+  const game=source==='participant'
+   ? {...base,player1:{...base.player1,computerProfile:profile},computer:{seats:{p1:'babs'}}}
+   : {...base,computer:{seats:{p1:profile}}};
+  assert.throws(()=>capturedResultHeading(game,{contract:'named-perspective-v3',viewerSide:'p1'}),/Unrecognized captured computer profile/);
+ }
+ for(const absent of [null,undefined]){
+  const human={...base,player1:{...base.player1,computerProfile:absent},computer:{seats:{p1:absent}}};
+  assert.equal(capturedResultHeading(human,{contract:'named-perspective-v3'}).winnerName,'Guest 1');
+  const computer={...human,computer:{seats:{p1:'babs'}}};
+  assert.equal(capturedResultHeading(computer,{contract:'named-perspective-v3'}).winnerName,'Babs');
+ }
+});
