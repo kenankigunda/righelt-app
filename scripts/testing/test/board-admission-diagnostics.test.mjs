@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
-import {installBoardAdmissionCollector,transformBoardAdmissionModule,installBoardAdmissionDiagnostics,cloneBoardSourceHandoff,createBoardSourceConsoleRetention,SOURCE_PRESS_PREFIX,SOURCE_PRESS_MAX_BYTES,COMPUTER_RECOVERY_CATEGORIES,createComputerRecoveryHandoff,persistComputerRecoveryEvidence} from '../../../e2e/support/board-admission-diagnostics.mjs';
+import {installBoardAdmissionCollector,transformBoardAdmissionModule,installBoardAdmissionDiagnostics,cloneBoardSourceHandoff,createBoardSourceConsoleRetention,SOURCE_PRESS_PREFIX,SOURCE_PRESS_MAX_BYTES,COMPUTER_RECOVERY_CATEGORIES,createComputerRecoveryHandoff,persistComputerRecoveryEvidence,runComputerRecoveryPersistence,COMPUTER_RECOVERY_FIXTURE_BUDGET_MS,COMPUTER_RECOVERY_CLEANUP_RESERVE_MS} from '../../../e2e/support/board-admission-diagnostics.mjs';
 
 const recipes=JSON.parse(await readFile(new URL('../../../e2e/support/board-admission-transformations.json',import.meta.url),'utf8'));
 for(const [pathname,recipe] of Object.entries(recipes))test(`exact source and protected transform ${pathname}`,async()=>{
@@ -602,16 +602,16 @@ test('computer evidence persistence attempts independent sinks and owned route c
  await assert.rejects(persistComputerRecoveryEvidence({handoff:{incomplete:false},payload:{},primaryError:primary,info:{outputPath:()=>'/owned/evidence',attach:async()=>{calls.push('attach');throw attachError;}},write:async()=>{calls.push('write');throw writeError;},removeRoute:async()=>{calls.push('route');throw routeError;}}),error=>{assert.deepEqual(error.errors,[primary,writeError,attachError,routeError]);return true;});assert.deepEqual(calls,['write','attach','route']);
 });
 
-async function finalReadFixture({computer=true,timeout=false,readFailure=false}={}){
- const files=[],attached=[],events=[],timers=[];let reads=0,unroutes=0,init;
- const page={...recoveryPage(),async addInitScript(fn,arg){init=arg;},async route(){},async unroute(){unroutes++;},async evaluate(fn,arg){reads++;events.push('browser-read');if(timeout)return new Promise(()=>{});if(readFailure)throw Error('original read failed');const observation={version:1,documentNonce:'controlled-document',timeOrigin:123,recoveryNamespace:init.recoveryNamespace,first:[],tail:[],activation:[],incomplete:false,firstComputerRecovery:null};return vm.runInNewContext(`(${fn.toString()})(argument)`,{argument:arg,globalThis:{__boardAdmissionObservation:observation,__boardAdmissionRecoveryDocument:'controlled-document'},window:{retreatJournalObservations:{}},location:{hash:'#/game/owned'},performance:{timeOrigin:123,getEntriesByName:()=>[]}});}};
+async function finalReadFixture({computer=true,timeout=false,readFailure=false,deferred=false}={}){
+ const files=[],attached=[],events=[],timers=[];let reads=0,unroutes=0,init,release;const deferredRead=new Promise(resolve=>{release=resolve;});
+ const page={...recoveryPage(),async addInitScript(fn,arg){init=arg;},async route(){},async unroute(){unroutes++;},async evaluate(fn,arg){reads++;events.push('browser-read');if(timeout&&!deferred)return new Promise(()=>{});if(readFailure)throw Error('original read failed');const observation={version:1,documentNonce:'controlled-document',timeOrigin:123,recoveryNamespace:init.recoveryNamespace,first:[],tail:[],activation:[],incomplete:false,firstComputerRecovery:null};if(deferred)await deferredRead;return vm.runInNewContext(`(${fn.toString()})(argument)`,{argument:arg,globalThis:{__boardAdmissionObservation:observation,__boardAdmissionRecoveryDocument:'controlled-document'},window:{retreatJournalObservations:{}},location:{hash:'#/game/owned'},performance:{timeOrigin:123,getEntriesByName:()=>[]}});}};
  const info={title:'the real computer defender leaves a completion-preserving native Follow',status:'passed',expectedStatus:'passed',outputPath:name=>'/owned/'+name,async attach(name,value){attached.push({name,...value});}};
  const owner=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://owned',computerSessionRecovery:computer});owner.finalRecoveryHandoff?.bindGame('owned');
  const source=await readFile(new URL('../../../e2e/workflows/completion-preserving-retreat.spec.mjs',import.meta.url),'utf8');let afterEach;
  const start=source.indexOf('test.afterEach('),end=source.indexOf('\nasync function request(',start);
  vm.runInNewContext(source.slice(start,end),{test:{afterEach:fn=>{afterEach=fn;}},COMPUTER_UI_FRAME_MEASURE:'measure',computerFollowWorkflow:info.title,computerRetreatWorkflow:'other',writeFile:async(file,body)=>{files.push({file,body});},attachNodeReadiness:x=>x,console:{warn(){}},setTimeout(fn,ms){timers.push(ms);if(timeout)queueMicrotask(fn);return 1;},clearTimeout(){}});
  await afterEach({page,computerRecoveryAdmission:computer?owner:undefined},info);
- return{page,info,owner,files,attached,events,timers,reads:()=>reads,unroutes:()=>unroutes};
+ return{page,info,owner,files,attached,events,timers,release,reads:()=>reads,unroutes:()=>unroutes};
 }
 test('actual existing final afterEach read hands off recovery once; computer persist never performs duplicate read',async()=>{
  const f=await finalReadFixture();assert.equal(f.reads(),1);
@@ -668,4 +668,62 @@ test('browser init creates an opaque readonly document nonce; exact nonce accept
  const observation=structuredClone(context.__boardAdmissionObservation);owner.capture(page,{...ticket,documentNonce:marker.value,timeOrigin:1001,observation});const delivered=owner.consume();
  assert.equal(delivered.incomplete,false,'same document is accepted despite the demonstrated1ms clock difference');assert.equal(delivered.timeOrigin,1001);assert.equal(delivered.observationTimeOrigin,1000);assert.equal(delivered.observation.timeOrigin,1000);
  const foreignPage=recoveryPage(),foreign=createComputerRecoveryHandoff(foreignPage,'nonce');foreign.bindGame('owned');const otherTicket=foreign.begin(foreignPage);foreign.capture(foreignPage,{...otherTicket,documentNonce:'current-document',timeOrigin:1000,observation});assert.equal(foreign.consume().reason,'foreign-document','equal clocks cannot qualify a different document nonce');
+});
+
+test('actual 2s journal timeout stays immutable while its same original read can deliver within computer ownership',async()=>{
+ const f=await finalReadFixture({timeout:true,deferred:true}),fs=await import('node:fs/promises'),temp=await fs.mkdtemp((await import('node:os')).tmpdir()+'/computer-late-');f.info.outputPath=name=>temp+'/'+name;
+ try{
+  assert.equal(JSON.parse(f.files[0].body).unavailable,'diagnostic-read-timeout');assert.deepEqual(f.timers,[2000]);
+  f.release();await Promise.resolve();await Promise.resolve();
+  await f.owner.persist({remainingMs:()=>5000});
+  const value=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));
+  assert.equal(value.handoff.incomplete,false);assert.equal(value.handoff.journalReadTimedOut,true);
+  assert.equal(JSON.parse(f.files[0].body).unavailable,'diagnostic-read-timeout');assert.equal(f.reads(),1);assert.equal(f.unroutes(),1);
+ }finally{await fs.rm(temp,{recursive:true,force:true});}
+});
+
+const flushDelivery=async()=>{for(let n=0;n<12;n++)await Promise.resolve();};
+function virtualRecoveryBudget({setupElapsedMs=1000,writeNever=false,listenerThrows=false}={}){
+ let time=0,sequence=0,resolve,reject;const timers=new Map(),calls=[],page=recoveryPage();
+ if(listenerThrows)page.off=()=>{throw Error('listener cleanup');};
+ const handoff=createComputerRecoveryHandoff(page,'budget-namespace');handoff.bindGame('owned');const ticket=handoff.begin(page);
+ const original=new Promise((yes,no)=>{resolve=yes;reject=no;});handoff.retain(page,original);
+ let payload;
+ const diagnostic={finalRecoveryHandoff:handoff,async persist(options){
+  await handoff.awaitDelivery(options);const value=handoff.consume();payload={handoff:value};
+  return persistComputerRecoveryEvidence({handoff:value,payload,info:{outputPath:()=>'/controlled',attach:async()=>{calls.push('attach');}},write:async()=>{calls.push('write');if(writeNever)await new Promise(()=>{});},removeRoute:async()=>{calls.push('route');}});
+ }};
+ const clock={now:()=>time,setTimer(fn,ms){const id=++sequence;timers.set(id,{at:time+ms,fn});return id;},clearTimer(id){timers.delete(id);}};
+ let outcome={pending:true};const work=runComputerRecoveryPersistence(diagnostic,{setupElapsedMs,...clock});work.then(value=>{outcome={value};},error=>{outcome={error};});
+ return {handoff,page,calls,ticket,resolve:()=>resolve({boardRecovery:recoveryPacket(ticket)}),reject,work,get outcome(){return outcome;},get payload(){return payload;},timers,async advance(ms){time+=ms;for(const[id,timer]of [...timers])if(timer.at<=time){timers.delete(id);timer.fn();}await flushDelivery();}};
+}
+test('shared fixture budget debits setup, excludes body, and reserves approved cleanup inside the original5s',async()=>{
+ assert.equal(COMPUTER_RECOVERY_FIXTURE_BUDGET_MS,5000);assert.equal(COMPUTER_RECOVERY_CLEANUP_RESERVE_MS,750);
+ const f=virtualRecoveryBudget();await flushDelivery();assert.deepEqual([...f.timers.values()].map(x=>x.at).sort((a,b)=>a-b),[3250,4000]);
+ await f.advance(3249);f.resolve();await flushDelivery();await f.work;
+ assert.equal(f.payload.handoff.incomplete,false);assert.deepEqual(f.calls,['write','attach','route']);assert.equal(f.page.listenerCount(),0);assert.equal(f.timers.size,0);
+});
+test('never-resolving original delivery explicitly expires before cleanup reserve and cannot be rescued late',async()=>{
+ const f=virtualRecoveryBudget();await flushDelivery();await f.advance(3250);
+ await assert.rejects(f.work,/Computer recovery evidence incomplete/);assert.equal(f.payload.handoff.reason,'read-budget-exhausted');assert.deepEqual(f.calls,['write','attach','route']);
+ f.resolve();await flushDelivery();assert.equal(f.handoff.consume().reason,'handoff-reused');assert.equal(f.payload.handoff.incomplete,true);assert.equal(f.page.listenerCount(),0);assert.equal(f.timers.size,0);
+});
+test('hard shared remaining deadline fails hanging sink while independent route and listener cleanup have been attempted',async()=>{
+ const f=virtualRecoveryBudget({writeNever:true});await flushDelivery();f.resolve();await flushDelivery();assert.deepEqual(f.calls,['write','attach','route']);
+ await f.advance(4000);await assert.rejects(f.work,/fixture budget exhausted/);assert.equal(f.page.listenerCount(),0);assert.equal(f.timers.size,0);
+});
+test('actual original read rejection and same-Page navigation remain sticky across later delivery',async()=>{
+ for(const kind of ['reject','navigate']){
+  const f=virtualRecoveryBudget();await flushDelivery();if(kind==='reject')f.reject(Error('original response rejected'));else{f.page.navigate();f.resolve();}await flushDelivery();
+  await assert.rejects(f.work,/Computer recovery evidence incomplete/);assert.equal(f.payload.handoff.reason,kind==='reject'?'read-failed':'foreign-document');assert.equal(f.page.listenerCount(),0);assert.deepEqual(f.calls,['write','attach','route']);
+ }
+});
+test('fixture ownership end rejects late delivery and preserves listener cleanup failure',async()=>{
+ const page=recoveryPage(),owner=createComputerRecoveryHandoff(page,'end');owner.bindGame('owned');const ticket=owner.begin(page);let finish;owner.retain(page,new Promise(resolve=>{finish=resolve;}));owner.end();finish({boardRecovery:recoveryPacket(ticket)});await flushDelivery();assert.equal(owner.consume().reason,'fixture-ended');assert.equal(page.listenerCount(),0);
+ const f=virtualRecoveryBudget({listenerThrows:true});await flushDelivery();await f.advance(4000);await assert.rejects(f.work,error=>error instanceof AggregateError&&error.errors.some(e=>e.message.includes('fixture budget'))&&error.errors.some(e=>e.message.includes('listener cleanup')));
+});
+test('actual fixture source shares the one5s constant and debits setup before excluding the use body',async()=>{
+ const source=await readFile(new URL('../../../e2e/workflows/completion-preserving-retreat.spec.mjs',import.meta.url),'utf8');
+ assert(source.includes('const setupStarted=performance.now();'));assert(source.includes('const setupElapsedMs=performance.now()-setupStarted;'));
+ assert(source.includes('try{await use(diagnostic);}finally{await runComputerRecoveryPersistence(diagnostic,{setupElapsedMs});}'));assert(source.includes('{timeout:COMPUTER_RECOVERY_FIXTURE_BUDGET_MS}'));
 });

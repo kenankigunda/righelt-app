@@ -1,7 +1,7 @@
 import {installCaseReadiness,finishCaseReadiness,attachNodeReadiness} from '../support/readiness-diagnostics.mjs';
 import {performance} from 'node:perf_hooks';
 import {installClientSettlementObserver} from '../support/client-settlement-observer.mjs';
-import {installBoardAdmissionDiagnostics} from '../support/board-admission-diagnostics.mjs';
+import {installBoardAdmissionDiagnostics,runComputerRecoveryPersistence,COMPUTER_RECOVERY_FIXTURE_BUDGET_MS} from '../support/board-admission-diagnostics.mjs';
 import {test as base,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {deterministicStateHash,resolveToStability,serializeState} from '../../apps/web/generated/packages/game-engine/src/index.js';
@@ -18,9 +18,11 @@ import {COMPUTER_UI_FRAME_MEASURE} from '../../apps/web/shell/frame-presentation
 const test=base.extend({
  computerRecoveryAdmission:[async({page,baseURL},use,info)=>{
   if(![computerRetreatWorkflow,computerFollowWorkflow].includes(info.title)){await use();return;}
+  const setupStarted=performance.now();
   const diagnostic=await installBoardAdmissionDiagnostics(page,info,{baseURL,computerSessionRecovery:true});
-  try{await use(diagnostic);}finally{await diagnostic.persist();}
- },{timeout:5000}],
+  const setupElapsedMs=performance.now()-setupStarted;
+  try{await use(diagnostic);}finally{await runComputerRecoveryPersistence(diagnostic,{setupElapsedMs});}
+ },{timeout:COMPUTER_RECOVERY_FIXTURE_BUDGET_MS}],
  // Shared 5s fixture slot covers setup AND teardown, separate from the 60s body.
  // Depending on page makes this persistence precede base-page teardown.
  humanAdmission:[async({page,baseURL},use,testInfo)=>{
@@ -79,19 +81,21 @@ test.afterEach(async({page,computerRecoveryAdmission},info)=>{
  const deliver=value=>{
   if(!finalRecovery)return;
   delivered=true;
-  if(value?.boardRecovery)finalRecovery.capture(page,value.boardRecovery);
-  else finalRecovery.failed(value?.unavailable==='diagnostic-read-timeout'||value?.reason==='diagnostic-read-timeout'?'read-timed-out':'read-missing');
+  if(value?.unavailable==='diagnostic-read-timeout'||value?.reason==='diagnostic-read-timeout')finalRecovery.journalTimedOut();
+  else if(!value?.boardRecovery)finalRecovery.failed('read-missing');
  };
  if(info.status===info.expectedStatus){
   let timer;
   try{
-   const journal=await Promise.race([page.evaluate(({measurementName,recoveryRead})=>{
+   const originalRead=page.evaluate(({measurementName,recoveryRead})=>{
       let readinessPage;
       try{readinessPage=globalThis.__righeltReadinessFreeze?.();}catch{readinessPage={incomplete:true,reason:'snapshot-unavailable'};}
       const match=location.hash.match(/^#\/game\/([^?#/]+)/);
       const boardRecovery=recoveryRead?{...recoveryRead,gameId:match?decodeURIComponent(match[1]):null,documentNonce:globalThis.__boardAdmissionRecoveryDocument??null,timeOrigin:performance.timeOrigin,observation:globalThis.__boardAdmissionObservation??null}:null;
       return {...window.retreatJournalObservations,...(boardRecovery?{boardRecovery}:{}),presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,...(readinessPage?{readinessPage}:{})};
-    },{measurementName:COMPUTER_UI_FRAME_MEASURE,recoveryRead}),new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
+    },{measurementName:COMPUTER_UI_FRAME_MEASURE,recoveryRead});
+   finalRecovery?.retain(page,originalRead);
+   const journal=await Promise.race([originalRead,new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
    deliver(journal);
    const path=info.outputPath('native-journal-lifecycle.json');
    await writeFile(path,JSON.stringify(attachNodeReadiness(journal??{unavailable:'not-installed'})));
@@ -103,7 +107,9 @@ test.afterEach(async({page,computerRecoveryAdmission},info)=>{
  if(!['failed','timedOut','interrupted'].includes(info.status))return;
  let snapshot,diagnosticTimer;
  try{
-  snapshot=page.isClosed()?{available:false,reason:'page-closed'}:await Promise.race([page.evaluate(readRetreatDiagnostics,{measurementName:COMPUTER_UI_FRAME_MEASURE,recoveryRead}),new Promise(resolve=>{diagnosticTimer=setTimeout(()=>resolve({available:false,reason:'diagnostic-read-timeout'}),2000);})]);
+  const originalRead=page.isClosed()?null:page.evaluate(readRetreatDiagnostics,{measurementName:COMPUTER_UI_FRAME_MEASURE,recoveryRead});
+  if(originalRead)finalRecovery?.retain(page,originalRead);
+  snapshot=originalRead?await Promise.race([originalRead,new Promise(resolve=>{diagnosticTimer=setTimeout(()=>resolve({available:false,reason:'diagnostic-read-timeout'}),2000);})]):{available:false,reason:'page-closed'};
  }catch(error){snapshot={available:false,reason:'diagnostic-read-unavailable',errorKind:String(error?.name??'Error').slice(0,80)};}
  finally{clearTimeout(diagnosticTimer);}
  deliver(snapshot);
