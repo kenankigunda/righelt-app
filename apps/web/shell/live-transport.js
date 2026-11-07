@@ -1579,6 +1579,10 @@ export const createLiveTransportStore = ({
     }
   };
   const loadGame = async (gameId, { openAsViewer = false } = {}) => {
+    const loadIdentity = identityId, loadSession = auth?.session, loadContext = loadSession?.contextId;
+    const loadAuthEnabled = auth?.enabled, loadAuthenticated = loadSession?.authenticated;
+    const loadStorageGeneration = auth?.storageGeneration;
+    const loadAccountId = loadSession?.account?.id;
     if (getOptimisticState(gameId).upgradeRequired) throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
     // A fresh route already opened its socket. Its bounded initial snapshot owns recovery;
     // only fall back to HTTP after that generation has been retired by the connection owner.
@@ -1593,12 +1597,34 @@ export const createLiveTransportStore = ({
         return getGameViewModel(gameId);
       }
       if (socketOwned) {
+        const recovery = getOptimisticState(gameId);
+        let generation, connectionEpoch;
         try {
-          await reconcileGame(gameId);
+          const reconciliation = reconcileGame(gameId);
+          generation = recovery.recoveryGeneration; connectionEpoch = recovery.connectionRecoveryEpoch;
+          await reconciliation;
           const recovered = getGameViewModel(gameId);
           if (!recovered) throw new Error("invalid_snapshot");
           return recovered;
         } catch (error) {
+          // A ready replacement socket may retire this exact read. It is not
+          // a receipt for a write or permission to use an old/partial snapshot.
+          const sameOwner = active && identityId === loadIdentity && auth?.enabled === loadAuthEnabled
+            && auth?.storageGeneration === loadStorageGeneration && auth?.session === loadSession
+            && auth?.session?.contextId === loadContext && auth?.session?.account?.id === loadAccountId
+            && auth?.session?.authenticated === loadAuthenticated
+            && (!loadAuthEnabled || auth?.session?.authenticated === true);
+          const replacement = gameById.get(gameId);
+          if (error?.code === "recovery_superseded" && sameOwner && getOptimisticState(gameId) === recovery
+            && recovery.recoveryGeneration === generation && recovery.connectionRecoveryEpoch === connectionEpoch
+            && !recovery.connectionRecovering && !recovery.recoveryOwner && !recovery.recoveryPromise
+            && !recovery.storageBlocked && !recovery.unsavedCommand && !recovery.upgradeRequired
+            && !recovery.forceSnapshot && !recovery.pendingCommands.length && recovery.attempt?.commandId == null
+            && !["session_changed", "invalid_credentials"].includes(recovery.recoveryIssue)
+            && validSyncSnapshot(replacement, gameId) && isSyncRevision(lastEventSeqByGameId.get(gameId))) {
+            const current = getGameViewModel(gameId);
+            if (current && !current.positionOnly) return current;
+          }
           // Retain bounded protocol discovery until terminal-protocol recovery
           // supplies its replacement. A read never decides a command outcome.
           if (error.status !== 404 && error.status !== 405) throw error;
