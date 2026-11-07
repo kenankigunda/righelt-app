@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
+import {createPendingInvitationFocus} from '../shell/pending-invitation-focus.js';
 import {createHistoryHeadingFocus} from '../shell/history-heading-focus.js';
 import {createRenderGestureGate,preserveBoardFocus} from '../shell/render-gesture.js';
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
@@ -21,13 +22,15 @@ function fixture(){
   resultPresentation:{clear(){}},buildGameHash:(_id,_move,state)=>state.panel,getCurrentGameHashState:panel=>({panel}),
   renderContent(){count++;if(replace){if(current){current.isConnected=false;if(doc.activeElement===current)doc.activeElement=doc.body;}current=element(true);}during?.();return true;},
  };
+ context.pendingInvitationFocus=createPendingInvitationFocus({document:doc,getScope:()=>({owner:context.currentRoute.gameId,generation:context.generation,visit:context.visit,route:context.currentRoute.name,panel:context.currentRoute.panel})});
+ context.isButtonPending=()=>false;
  context.historyHeadingFocus=createHistoryHeadingFocus({doc,getScope:()=>JSON.stringify([context.generation,context.visit,context.currentRoute.gameId,context.currentRoute.panel])});
  context.renderGesture=createRenderGestureGate({render:options=>context.renderActual(options),schedule:fn=>{jobs.set(++sequence,fn);return sequence;},cancel:id=>jobs.delete(id)});
  runInNewContext(extract('const render = (','const renderContent =')+'\nglobalThis.renderActual=render;globalThis.analysis=()=>{const action="analysis",actionGameId="g";'+extract('  if (action === "analysis")','  if (action === "rematch")')+'};',context);
  context.navigateTo=panel=>{context.currentRoute.panel=panel;context.renderActual({animatePanels:false});};
  return {context,doc,win,element,heading:()=>current,count:()=>count,
   enter(){context.renderGesture.begin();context.analysis();context.renderGesture.end();for(const [id,fn]of [...jobs]){jobs.delete(id);fn();}},
-  render(){context.renderActual({animatePanels:false});},patch(){replace=false;},during(fn){during=fn;},close(){context.historyHeadingFocus.destroy();}};
+  render(){context.renderActual({animatePanels:false});},patch(){replace=false;},during(fn){during=fn;},close(){context.pendingInvitationFocus.clear();context.historyHeadingFocus.destroy();}};
 }
 test('actual Review focus survives the next full shell replacement after successful native focus',()=>{
  const f=fixture();f.enter();const first=f.heading();assert.equal(f.doc.activeElement,first);assert.equal(f.context.pendingResultReviewFocus,null);assert.equal(first.focusCalls.length,1);
