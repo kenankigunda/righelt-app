@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm, writeFile, readdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { processTable, live } from '../system.mjs';
+import { processTable, live, sameProcess } from '../system.mjs';
 import { POLICY } from '../policy.mjs';
 const cli = fileURLToPath(new URL('../cli.mjs',import.meta.url));
 const supervisorModule = fileURLToPath(new URL('../supervisor.mjs',import.meta.url));
@@ -31,11 +31,37 @@ test('unrelated process survives cleanup and missing probes do not disable clean
  const unrelated=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});t.after(()=>unrelated.kill('SIGKILL'));
  const f=await fixture(t),{done}=launch(f,[],{COMPLETE:'1'});const ids=await pids(f);assert.equal((await done).code,0);await assertGone(ids);assert.equal(unrelated.exitCode,null);
 });
+// Begin exact test-owned guardian teardown predicates.
+function selectOwnedGuardian(records, workloadIdentities) {
+ if (!workloadIdentities.length || workloadIdentities.some(i => !Number.isSafeInteger(i.pid) || typeof i.start !== 'string' || !i.start)) return null;
+ const matches=records.filter(record => /^[a-zA-Z0-9-]{1,100}$/.test(record.id ?? '') && Number.isSafeInteger(record.supervisor?.pid) && typeof record.supervisor?.start === 'string' && record.supervisor.start && workloadIdentities.every(identity => (record.members ?? []).some(member => sameProcess(member,identity))));
+ return matches.length===1 ? {id:matches[0].id,supervisor:{...matches[0].supervisor}} : null;
+}
+function ownedGuardianSettled(bound,record,rows) {
+ return record?.id===bound.id && sameProcess(record.supervisor,bound.supervisor) && record.status==='finished' && record.cleanup==='verified' && !rows.some(row => sameProcess(row,bound.supervisor) && live(row));
+}
+// End exact test-owned guardian teardown predicates.
+async function bindOwnedGuardian(f,ids) {
+ const rows=await processTable(),identities=ids.map(pid=>rows.find(row=>row.pid===pid && live(row)));
+ assert(identities.every(Boolean),'Workload identity must be captured while the original processes are live');
+ return waitFor(async()=>{
+  const names=await readdir(path.join(f.dir,'registry'));
+  const records=await Promise.all(names.filter(name=>/^[a-zA-Z0-9-]+\.json$/.test(name)).map(async name=>{try{return JSON.parse(await readFile(path.join(f.dir,'registry',name),'utf8'));}catch(error){if(error.code==='ENOENT')return null;throw error;}}));
+  return selectOwnedGuardian(records.filter(Boolean),identities);
+ });
+}
+async function waitForOwnedGuardian(f,bound) {
+ await waitFor(async()=>{
+  let record;try{record=JSON.parse(await readFile(path.join(f.dir,'registry',bound.id+'.json'),'utf8'));}catch(error){if(error.code==='ENOENT')return false;throw error;}
+  return ownedGuardianSettled(bound,record,await processTable());
+ });
+}
 test('guardian detects launcher exit and cleans descendants',{skip:process.platform==='win32',timeout:20_000},async t=>{
  const f=await fixture(t), launcher=path.join(f.dir,'launcher.mjs');
  await writeFile(launcher,`import {spawn} from 'node:child_process';spawn(process.execPath,${JSON.stringify([cli,'run','--',process.execPath,f.script])},{stdio:'ignore'});setTimeout(()=>process.exit(0),1500);`);
  const p=spawn(process.execPath,[launcher],{env:{...process.env,RIGHELT_RESOURCE_RUN:"",RIGHELT_RESOURCE_KEEP:"",RIGHELT_RESOURCE_REGISTRY:path.join(f.dir,'registry')},stdio:'ignore'});t.after(()=>p.kill('SIGKILL'));
- const ids=await pids(f);await assertGone(ids);
+ const ids=await pids(f),guardian=await bindOwnedGuardian(f,ids);await assertGone(ids);
+ await waitForOwnedGuardian(f,guardian);
 });
 test('injected critical pressure cancels heavy work as retryable incomplete',{skip:process.platform==='win32',timeout:15_000},async t=>{
  const f=await fixture(t),driver=path.join(f.dir,'pressure.mjs');
