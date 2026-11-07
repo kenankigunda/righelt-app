@@ -596,7 +596,7 @@ test("sync store exposes rollback notices through the shared failed-operation AP
   assert.deepEqual(store.getFailedOperations("game-rollback"), []);
 });
 
-for(const delivery of ['event','already-settled'])for(const computer of [false,true])for(const reason of ['computer_control_changed','stale_state','state_capacity_exceeded'])test(`obsolete computer rollback does not become a human failed-operation banner delivery=${delivery} computer=${computer} reason=${reason}`,async()=>{
+for(const delivery of ['event','already-settled'])for(const computer of [false,true])for(const reason of ['computer_control_changed','stale_state','state_capacity_exceeded','unknown_rejection','invalid_attempt','storage_blocked'])test(`obsolete computer rollback does not become a human failed-operation banner delivery=${delivery} computer=${computer} reason=${reason}`,async()=>{
  const {transport,games,listeners}=createTransportHarness();const game={...createRevertReadyGame(),id:'quiet-retry'};games.set(game.id,game);
  transport.applyGameAction=async()=>({ok:true,accepted:true,clientCommandId:'quiet-command',game});
  if(delivery==='already-settled')transport.getCommandOutcome=()=>({outcome:'rejected',reason});

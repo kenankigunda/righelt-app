@@ -67,17 +67,13 @@ test('computer save failures take priority while the delayed saving notice stays
     await expect(acceptedContext).toHaveCount(1);
     const acceptedContextKey=await acceptedContext.getAttribute('data-board-context');
     expect(acceptedContextKey).toBeTruthy();
-    // The expired original command remains an urgent, actionable rejection.
-    // The accepted replacement turn has its own context, reached through the
-    // actual notification control instead of assuming old inline narration.
-    const rejection=page.getByTestId('sync-failure-banner');
-    await expect(rejection).toContainText('Board changed before your move was recorded. Check it and try again.');
-    const activeRejection=page.locator('[data-alert-stack-card].is-active:has([data-testid="sync-failure-banner"])');
-    await expect(activeRejection).toHaveAttribute('data-stack-count','2');
-    await activeRejection.press('Enter');
+    // The validated obsolete computer rejection is quiet; the accepted
+    // replacement has its own current context without a human retry prompt.
+    await expect(page.getByTestId('sync-failure-banner')).toHaveCount(0);
+    await expect(page.locator('[data-alert-stack-card]')).toHaveCount(1);
+    await expect(page.locator('[data-alert-stack-card].is-active')).toHaveAttribute('data-stack-count','1');
     await expect(acceptedContext).toBeVisible();
     await expect(acceptedContext).toHaveAttribute('data-board-context',acceptedContextKey);
-    await expect(page.locator('[data-alert-stack-card]:has([data-testid="sync-failure-banner"])')).toHaveAttribute('inert','');
     await expect(acceptedContext.getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
     await settledMessage(page);
     const growth={scope:'Accepted narration geometry only; notices retained their original exact geometry checks',before:beforeMessage,after:await measureBoardMessageGeometry(page)};

@@ -1156,7 +1156,7 @@ test("live transport store notifies subscribers for optimistic enqueue and autho
   assert.equal(changes.some((change) => change.type === "authoritative_update" && change.gameId === baseGame.id), true);
 });
 
-for(const computer of [false,true])for(const reason of ['computer_control_changed','stale_state','state_capacity_exceeded'])test(`computer rollback notices remain quiet only for transient computer outcomes computer=${computer} reason=${reason}`,async t=>{
+for(const computer of [false,true])for(const reason of ['computer_control_changed','stale_state','state_capacity_exceeded','unknown_rejection','invalid_attempt','storage_blocked'])test(`computer rollback notices remain quiet only for transient computer outcomes computer=${computer} reason=${reason}`,async t=>{
  const game=buildLiveGame(),storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
  let resolveRollback;const rollback=new Promise(resolve=>resolveRollback=resolve);let sent;
  const store=createLiveTransportStore({storage,fetcher:async(url,init={})=>{

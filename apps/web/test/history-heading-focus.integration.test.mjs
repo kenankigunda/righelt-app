@@ -17,6 +17,7 @@ function fixture(){
  const element=(isHeading=false)=>({isConnected:true,focusCalls:[],matches:selector=>isHeading&&selector==='[data-game-panel="history"] h2',contains(target){return target===this;},closest(){return isHeading&&context.currentRoute.panel!=='history'?{}:null;},focus(options){this.focusCalls.push(options);doc.activeElement=this;doc.emit('focusin',{target:this});}});
  const jobs=new Map();let sequence=0;
  context={document:doc,appEl:{querySelector:()=>current},currentRoute:{name:'game',gameId:'g',panel:'board'},generation:1,visit:1,pendingResultReviewFocus:null,activeResultGameId:'g',
+  recoveryPresentationOptions:()=>({}),transport:{getGameViewModel:()=>null},
   getGamePanel:()=>context.currentRoute.panel,getCurrentViewedGameId:()=>context.currentRoute.gameId,preserveBoardFocus,
   utilityMemory:{capture(){},restore(){}},inlineProfiles:{sync(){}},syncMountedGameShellPanelUi(){},syncRenderedMarkupSnapshot(){},joinFeedback:{restoreFocus(){}},resumeBoardContextReplay(){},
   resultPresentation:{clear(){}},buildGameHash:(_id,_move,state)=>state.panel,getCurrentGameHashState:panel=>({panel}),
