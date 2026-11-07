@@ -14,6 +14,11 @@ import {COMPUTER_UI_FRAME_MEASURE} from '../../apps/web/shell/frame-presentation
 // Worker/bootstrap preparation has an explicit fixture budget. The receipt and
 // native Follow journeys retain their complete existing 60-second body budget.
 const test=base.extend({
+ computerRecoveryAdmission:[async({page,baseURL},use,info)=>{
+  if(info.title!==computerRetreatWorkflow){await use();return;}
+  const diagnostic=await installBoardAdmissionDiagnostics(page,info,{baseURL,computerSessionRecovery:true});
+  try{await use();}finally{await diagnostic.persist();}
+ },{timeout:5000}],
  // Shared 5s fixture slot covers setup AND teardown, separate from the 60s body.
  // Depending on page makes this persistence precede base-page teardown.
  humanAdmission:[async({page,baseURL},use,testInfo)=>{
@@ -24,7 +29,7 @@ const test=base.extend({
  if(info.title!==computerFollowWorkflow){await use();return;}
  const dispose=await installCaseReadiness(context,baseURL);
  try{await use();}finally{await finishCaseReadiness(dispose,info);}
-},{auto:true}],acceptedRetreat:[async({page,baseURL},use)=>{
+},{auto:true}],acceptedRetreat:[async({page,baseURL,computerRecoveryAdmission},use)=>{
  await use(await acceptedComputerRetreat(page,baseURL));
 },{timeout:60000}]});
 

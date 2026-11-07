@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
-import {installBoardAdmissionCollector,transformBoardAdmissionModule,installBoardAdmissionDiagnostics,cloneBoardSourceHandoff,createBoardSourceConsoleRetention,SOURCE_PRESS_PREFIX,SOURCE_PRESS_MAX_BYTES} from '../../../e2e/support/board-admission-diagnostics.mjs';
+import {installBoardAdmissionCollector,transformBoardAdmissionModule,installBoardAdmissionDiagnostics,cloneBoardSourceHandoff,createBoardSourceConsoleRetention,SOURCE_PRESS_PREFIX,SOURCE_PRESS_MAX_BYTES,COMPUTER_RECOVERY_CATEGORIES} from '../../../e2e/support/board-admission-diagnostics.mjs';
 
 const recipes=JSON.parse(await readFile(new URL('../../../e2e/support/board-admission-transformations.json',import.meta.url),'utf8'));
 for(const [pathname,recipe] of Object.entries(recipes))test(`exact source and protected transform ${pathname}`,async()=>{
@@ -515,4 +515,28 @@ test('explicit checkpoint keeps immutable source epoch without relying on pagehi
  const capture=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://127.0.0.1:10193',targetRow:2,targetCol:6,sourceAttemptOrdinal:2});
  await capture.checkpoint();assert.equal(reads,1);document=collector({sourceAttemptOrdinal:2});document.log.timeOrigin=456;
  await capture.persist();assert.equal(reads,2);assert.equal(attachment.retainedPreReloadSourceWindow.timeOrigin,123);assert.equal(attachment.observation.timeOrigin,456);assert.equal(attachment.retention.incomplete,false);assert.equal(attachment.retention.epochsMerged,false);assert.deepEqual([...page.listeners],[page.foreign]);
+});
+
+// Case-local recovery observation never changes the original catch or default recipes.
+test('closed computer recovery descriptors, retention and original catch semantics',async()=>{
+ const recipe=JSON.parse(await readFile(new URL('../../../e2e/support/computer-session-recovery-transformation.json',import.meta.url),'utf8'))['/shell/computer-session.js'];
+ const source=await readFile(new URL('../../../apps/web/shell/computer-session.js',import.meta.url),'utf8');
+ transformBoardAdmissionModule(source,recipe);
+ assert.throws(()=>transformBoardAdmissionModule(source+' ',recipe),/source hash/);
+ assert.throws(()=>transformBoardAdmissionModule(source,{...recipe,outputSha256:'0'.repeat(64)}),/output hash/);
+ const bad=structuredClone(recipe);bad.operations[0].start++;assert.throws(()=>transformBoardAdmissionModule(source,bad),/range/);
+ const known=COMPUTER_RECOVERY_CATEGORIES.map(code=>({code}));let getters=0;
+ const unsafe=[new Proxy({message:'stale_state'},{getOwnPropertyDescriptor(target,key){if(key==='code')throw Error('PRIVATE');return Object.getOwnPropertyDescriptor(target,key);}}),{code:'PRIVATE-ID'},Object.create({code:'stale_state'}),{get code(){getters++;return 'stale_state';}},new Proxy({},{getOwnPropertyDescriptor(){throw Error('PRIVATE');}}),42,null,{code:()=>{}},{message:'PRIVATE'}];
+ for(const [error,wanted] of [...known.map(e=>[e,e.code]),...unsafe.map(e=>[e,null])]){
+  const h=collector({recoveryCategories:COMPUTER_RECOVERY_CATEGORIES});h.sandbox.__boardAdmissionRecovery(error);
+  const row=h.sandbox.__boardAdmissionObservation.firstComputerRecovery;assert.equal(row.observed,true);assert.equal(row.errorCategory,wanted);assert(!JSON.stringify(row).includes('PRIVATE'));
+  h.sandbox.__boardAdmissionRecovery({code:'storage_reset'});assert.equal(row.errorCategory,wanted);
+ }
+ assert.equal(getters,0);
+ const injected=collector({recoveryCategories:COMPUTER_RECOVERY_CATEGORIES});injected.sandbox.__boardAdmissionRecord('computer-session-recovery-error',{errorCategory:'PRIVATE',message:'PRIVATE',identityId:'PRIVATE'});assert(!JSON.stringify(injected.sandbox.__boardAdmissionObservation).includes('PRIVATE'));
+ const op=recipe.operations[0];
+ for(const sinkThrows of [false,true]){
+  const original=Error('stale_state'),seen=[];const env={run:1,epoch:1,error:original,context:{key:'k'},recovery:null,publish:value=>seen.push(value),__boardAdmissionRecovery(){if(sinkThrows)throw Error('sink');}};env.globalThis=env;
+  vm.runInNewContext(op.after,env);assert.equal(env.error,original);assert.equal(env.recovery,'k');assert.equal(seen.length,1);assert.equal(seen[0].message,original.message);
+ }
 });

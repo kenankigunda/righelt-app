@@ -17,6 +17,7 @@ export const transformBoardAdmissionModule = (source, recipe) => {
 
 export const SOURCE_PRESS_PREFIX='[righelt-source-window-v1]';
 export const SOURCE_PRESS_MAX_BYTES=512*1024;
+export const COMPUTER_RECOVERY_CATEGORIES=Object.freeze(['rules_timeout','stale_state','session_changed','sync_recovering','journal_timeout','storage_reset','invalid_credentials','invalid_action','move-not-submitted','computer_control_changed','invalid_rules_response','upgrade_required']);
 const safeBoardDiagnostic=category=>{try{console.error(`[board-admission-diagnostic] ${category}`);}catch{}};
 
 // Shared producer/receiver codec. Own data descriptors are copied into
@@ -87,7 +88,7 @@ export function createBoardSourceConsoleRetention(page,expectedOrdinal){
 
 // Serialized by Playwright. Only allowlisted scalars and local weak equality
 // tokens leave the page; original app objects and stable keys are never copied.
-export function installBoardAdmissionCollector({targetRow,targetCol,sourceAttemptOrdinal}){
+export function installBoardAdmissionCollector({targetRow,targetCol,sourceAttemptOrdinal,recoveryCategories}){
  if(sourceAttemptOrdinal!==undefined&&(!Number.isSafeInteger(sourceAttemptOrdinal)||sourceAttemptOrdinal<1))throw Error('Invalid source attempt ordinal');
  const sourceEnabled=sourceAttemptOrdinal!==undefined;let sourceActive=false,sourceRef=null,sourceReads=0;
  const subjects=new WeakMap();let next=0,sequence=0,armed=false;
@@ -108,6 +109,7 @@ export function installBoardAdmissionCollector({targetRow,targetCol,sourceAttemp
   }catch{return null;}
  };
  const sanitize=(data,event)=>{
+  if(event==='computer-session-recovery-error')return{errorCategory:errorField(data,'errorCategory',recoveryCategories??[])};
   if(event==='runtime-host-error')return{errorName:errorField(data,'errorName',errorNames),errorCode:errorField(data,'errorCode',errorCategories),errorMessage:errorField(data,'errorMessage',errorCategories)};
   const safe={};
   for(const [key,value] of Object.entries(data)){
@@ -133,6 +135,20 @@ export function installBoardAdmissionCollector({targetRow,targetCol,sourceAttemp
    else{if(window.tail.length===64){window.tail.shift();window.dropped++;window.incomplete=true;}window.tail.push(row);}
   }
  }catch{sourceFailure('record-projection-failed');}};
+ if(recoveryCategories){
+  log.firstComputerRecovery=null;
+  globalThis.__boardAdmissionRecovery=error=>{try{
+   let category=null;
+   for(const key of ['code','message']){
+    let descriptor;try{descriptor=error&&(typeof error==='object'||typeof error==='function')?Object.getOwnPropertyDescriptor(error,key):null;}catch{category=null;break;}
+    if(!descriptor||!Object.hasOwn(descriptor,'value')||typeof descriptor.value!=='string')continue;
+    category=recoveryCategories.find(value=>value===descriptor.value)??(key==='message'&&descriptor.value==='Rules calculation timed out'?'rules_timeout':null);
+    if(category!==null)break;
+   }
+   log.firstComputerRecovery??={observed:true,errorCategory:category};
+   record('computer-session-recovery-error',{errorCategory:category});
+  }catch{log.incomplete=true;}};
+ }
  globalThis.__boardAdmissionRecord=record;
  globalThis.__boardAdmissionObservation=log;
  if(sourceEnabled)globalThis.__boardAdmissionSourceRead=(value,element)=>{try{
@@ -184,9 +200,9 @@ export function installBoardAdmissionCollector({targetRow,targetCol,sourceAttemp
 
 }
 
-export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targetCol,baseURL,sourceAttemptOrdinal}){
+export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targetCol,baseURL,sourceAttemptOrdinal,computerSessionRecovery=false}){
  if(sourceAttemptOrdinal!==undefined&&(!Number.isSafeInteger(sourceAttemptOrdinal)||sourceAttemptOrdinal<1))throw Error('Invalid source attempt ordinal');
- const recipes=JSON.parse(await readFile(new URL('./board-admission-transformations.json',import.meta.url),'utf8'));
+ const recipes=JSON.parse(await readFile(new URL(computerSessionRecovery?'./computer-session-recovery-transformation.json':'./board-admission-transformations.json',import.meta.url),'utf8'));
  const transforms=[],errors=[];let installed=false;
  const origin=new URL(baseURL).origin;
  const sourceRetention=sourceAttemptOrdinal===undefined?null:createBoardSourceConsoleRetention(page,sourceAttemptOrdinal);
@@ -205,7 +221,7 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
  };
  const pattern=url=>url.origin===origin && Object.hasOwn(recipes,url.pathname);
  try{
-  if(sourceAttemptOrdinal===undefined)await page.addInitScript(installBoardAdmissionCollector,{targetRow,targetCol});
+  if(sourceAttemptOrdinal===undefined)await page.addInitScript(installBoardAdmissionCollector,{targetRow,targetCol,...(computerSessionRecovery?{recoveryCategories:COMPUTER_RECOVERY_CATEGORIES}:{})});
   else await page.addInitScript({content:`(()=>{const SOURCE_PRESS_PREFIX=${JSON.stringify(SOURCE_PRESS_PREFIX)};const SOURCE_PRESS_MAX_BYTES=${SOURCE_PRESS_MAX_BYTES};const cloneBoardSourceHandoff=(${cloneBoardSourceHandoff.toString()});(${installBoardAdmissionCollector.toString()})(${JSON.stringify({targetRow,targetCol,sourceAttemptOrdinal})});})();`});
   await page.route(pattern,handler);installed=true;
  }catch(error){sourceRetention?.stop();throw error;}
