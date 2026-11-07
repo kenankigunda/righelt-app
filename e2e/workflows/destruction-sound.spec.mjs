@@ -150,6 +150,7 @@ test.describe('retained local destruction audio',()=>{
   // Match the earlier phase's positive history boundary before closing the turn.
   await expect(owner.getByTestId('history-move-item')).toHaveCount(1);
   await expect.poll(async()=>(await projected(owner,muted.gameId)).moves.length).toBe(1);
+  await expect(owner.locator('#shell-board-preview-label')).not.toHaveAttribute('aria-busy','true');
   const mutedEndRequest=owner.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname===`/api/shell/games/${muted.gameId}/end-turn`);
   await owner.locator('[data-board-preview-action="end-turn"]').click();await mutedEndRequest;
   await expect.poll(async()=>(await projected(owner,muted.gameId)).moves[0].destroyedPieces.length).toBe(2);

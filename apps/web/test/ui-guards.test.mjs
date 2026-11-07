@@ -275,7 +275,7 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /visibleColumnCount:\s*getHomeSectionColumnCount\(sectionKey\),/);
   assert.match(source, /<div class="home-games-carousel" data-home-carousel="\$\{escapeHtml\(sectionKey\)\}">/);
   assert.match(source, /getVisibleHomeSectionKeys\(\)\.filter\(key=>key!=='my'\)\.map\(renderHomeGameSection\)\.join\(''\)/);
-  assert.match(source, /<section class="panel home-games-section" data-home-section-root="\$\{escapeHtml\(sectionKey\)\}">/);
+  assert.match(source, /<section class="panel home-games-section" data-loading-context-group data-home-section-root="\$\{escapeHtml\(sectionKey\)\}">/);
   assert.match(source, /<h2>\$\{sectionKey === "my" \? "Continue playing" : escapeHtml\(section\.title\)\}<\/h2>/);
   assert.match(source, /<div class="mini-board-card-list" data-game-count="\$\{games\.length\}">/);
   assert.doesNotMatch(source, /class="panel home-start-panel"/);
