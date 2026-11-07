@@ -1,4 +1,6 @@
 import {installCaseReadiness,finishCaseReadiness,attachNodeReadiness} from '../support/readiness-diagnostics.mjs';
+import {performance} from 'node:perf_hooks';
+import {installClientSettlementObserver} from '../support/client-settlement-observer.mjs';
 import {installBoardAdmissionDiagnostics} from '../support/board-admission-diagnostics.mjs';
 import {test as base,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
@@ -15,7 +17,7 @@ import {COMPUTER_UI_FRAME_MEASURE} from '../../apps/web/shell/frame-presentation
 // native Follow journeys retain their complete existing 60-second body budget.
 const test=base.extend({
  computerRecoveryAdmission:[async({page,baseURL},use,info)=>{
-  if(info.title!==computerRetreatWorkflow){await use();return;}
+  if(![computerRetreatWorkflow,computerFollowWorkflow].includes(info.title)){await use();return;}
   const diagnostic=await installBoardAdmissionDiagnostics(page,info,{baseURL,computerSessionRecovery:true});
   try{await use();}finally{await diagnostic.persist();}
  },{timeout:5000}],
@@ -23,8 +25,13 @@ const test=base.extend({
  // Depending on page makes this persistence precede base-page teardown.
  humanAdmission:[async({page,baseURL},use,testInfo)=>{
   if(testInfo.title!=='human retreat excludes the stranded square and completes the native Follow')throw Error('Human admission fixture title mismatch');
-  const diagnostic=await installBoardAdmissionDiagnostics(page,testInfo,{baseURL,targetRow:3,targetCol:0});
-  try{await use();}finally{try{await diagnostic.persist();}catch(error){if(testInfo.status===testInfo.expectedStatus)throw error;console.error('[board-admission-diagnostic] fixture-persistence-incomplete');}}
+  const settlement=await installClientSettlementObserver(page,testInfo);
+  const diagnostic=await installBoardAdmissionDiagnostics(page,testInfo,{baseURL,targetRow:3,targetCol:0,moduleTransform:settlement.transform});
+  try{await use(settlement);}finally{
+   const saved=await Promise.allSettled([settlement.persist(),diagnostic.persist()]);
+   const failed=saved.find(result=>result.status==='rejected');
+   if(failed){if(testInfo.status===testInfo.expectedStatus)throw failed.reason;console.error('[board-admission-diagnostic] fixture-persistence-incomplete');}
+  }
  },{timeout:5000}],readinessMeasurement:[async({context,baseURL},use,info)=>{
  if(info.title!==computerFollowWorkflow){await use();return;}
  const dispose=await installCaseReadiness(context,baseURL);
@@ -143,7 +150,7 @@ async function receipt(page,id,command,outcome='accepted'){
  expect(own[0]).toMatchObject({outcome,fingerprint:command.fingerprint,identityId:command.identityId});
  expect(body.game?.id).toBe(id);expect(body.game.gameplayRevision).toBe(body.gameplayRevision);
  if(outcome==='accepted')expect(own[0].gameplayRevision).toBe(body.gameplayRevision);
- return {outcome:own[0],game:body.game};
+ return {outcome:own[0],game:body.game,eventSeq:body.eventSeq};
 }
 async function submit(page,id,action){
  const sent=page.waitForRequest(req=>req.method()==='POST'&&new URL(req.url()).pathname===`/api/shell/games/${id}/apply`);
@@ -185,9 +192,15 @@ test('human retreat excludes the stranded square and completes the native Follow
  const identityId=await page.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'));
  const unsafe={protocolVersion:2,actionContractVersion:3,gameId,identityId,clientCommandId:`v2:${crypto.randomUUID()}`,kind:'action',payload:{action:f.retreat.action},expectedState:pushed.board.state,expectedGameplayRevision:pushed.gameplayRevision};
  unsafe.fingerprint=await commandFingerprint(unsafe);
+ const clientScope=await humanAdmission.scope(gameId);
  const rejected=await request(page,`/api/shell/games/${gameId}/apply`,unsafe);expect(rejected.accepted).toBe(false);
- expect((await receipt(page,gameId,unsafe,'rejected')).outcome.reason).toBe('SUPPLY_DESTINATION_UNSUPPLIED');
- const unchanged=await current(page,gameId);expect(unchanged.board).toEqual(pushed.board);expect(unchanged.gameplayRevision).toBe(pushed.gameplayRevision);expect(unchanged.moves).toEqual(pushed.moves);
+ const settlementDeadline=performance.now()+SYNC_TIMING.confirmationBudgetMs;
+ const rejectedReceipt=await receipt(page,gameId,unsafe,'rejected');expect(rejectedReceipt.outcome.reason).toBe('SUPPLY_DESTINATION_UNSUPPLIED');
+ const unchangedResponse=await request(page,`/api/shell/games/${gameId}`),unchanged=unchangedResponse.game;expect(unchanged.board).toEqual(pushed.board);expect(unchanged.gameplayRevision).toBe(pushed.gameplayRevision);expect(unchanged.moves).toEqual(pushed.moves);
+ const rejectedOutcomes=rejected.commandOutcomes.filter(row=>row.clientCommandId===unsafe.clientCommandId);expect(rejectedOutcomes).toHaveLength(1);expect(isCommandOutcome(rejectedOutcomes[0],unsafe)).toBe(true);
+ const knownSeqs=[rejected.eventSeq,rejectedOutcomes[0].eventSeq,rejectedReceipt.eventSeq,rejectedReceipt.outcome.eventSeq,unchangedResponse.eventSeq];
+ expect(knownSeqs.every(value=>Number.isSafeInteger(value)&&value>=0)).toBe(true);
+ await humanAdmission.wait(clientScope,Math.max(...knownSeqs),settlementDeadline);
  // Clicking an empty unhighlighted square deliberately clears selection.
  // Resume through the actual pushed-piece control before selecting its move.
  await ensureActionActorSelected(cell(page,safe.action.from));
