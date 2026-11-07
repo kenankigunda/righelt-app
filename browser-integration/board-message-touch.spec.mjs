@@ -294,19 +294,29 @@ test('admission changes preserve independent context, selection, baseline-aligne
 });
 
 
-test('context target measurement waits for its original finite entrance and keeps the strict minimum',async({page,publicationOwner})=>{
+test('context target measurement waits for its original finite entrance and keeps the strict minimum',async({page,publicationOwner},info)=>{
  await page.setViewportSize({width:390,height:1000});
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
  await page.evaluate(async()=>{await window.boardFixture.setup('pass',false);await document.fonts.ready;});await settledMessage(page);
- await page.evaluate(()=>window.boardFixture.message({text:'Select a piece',context:{text:'Recorded move details',action:{id:'replay-computer',label:'Show me again'}}}));
- const replay=page.getByRole('button',{name:'Show me again',exact:true}),notice=replay.locator('xpath=ancestor::*[@data-board-context]');
- const entrance=await notice.evaluate(node=>{
-  const animations=node.getAnimations().filter(animation=>animation.animationName==='shell-game-alert-reveal');
+ const setup=await page.evaluate(async()=>{
+  window.boardFixture.message({text:'Select a piece',context:{text:'Recorded move details',action:{id:'replay-computer',label:'Show me again'}}});
+  // Capture and pause the newly rendered original in this same page turn.
+  // A separate locator lookup can outlast its real 180ms entrance under load.
+  const notice=document.querySelector('#fixture-context [data-board-context="fixture-host"]');
+  if(!notice?.isConnected)throw Error('Current original context notice is required');
+  const animations=notice.getAnimations().filter(animation=>animation.animationName==='shell-game-alert-reveal');
   if(animations.length!==1)throw Error('Original finite context entrance is required');
   const animation=animations[0];animation.pause();animation.currentTime=60;
-  return {endTime:animation.effect.getComputedTiming().endTime,playState:animation.playState};
+  const sample=()=>({endTime:animation.effect.getComputedTiming().endTime,playState:animation.playState,currentTime:animation.currentTime});
+  const before=sample(),startedAt=performance.now();
+  // Hold the response beyond the original duration as a driver-latency control.
+  await new Promise(resolve=>setTimeout(resolve,200));
+  return {before,after:sample(),responseDelayMs:performance.now()-startedAt};
  });
- expect(entrance).toEqual({endTime:180,playState:'paused'});
+ await info.attach('atomic original entrance and delayed response',{body:JSON.stringify(setup),contentType:'application/json'});
+ expect(setup.before).toEqual({endTime:180,playState:'paused',currentTime:60});
+ expect(setup.after).toEqual(setup.before);expect(setup.responseDelayMs).toBeGreaterThanOrEqual(180);
+ const replay=page.getByRole('button',{name:'Show me again',exact:true}),notice=replay.locator('xpath=ancestor::*[@data-board-context]');
  let completed=false;
  const pending=settleContextTarget(replay).then(()=>{completed=true;});
  try{
