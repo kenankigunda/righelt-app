@@ -1,3 +1,4 @@
+import { createPendingInvitationFocus } from './pending-invitation-focus.js';
 import {renderDismissButton} from './dismiss-control.js';
 import {isOngoingGame,isCompletedGame} from './game-lifecycle.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
@@ -2489,6 +2490,15 @@ const updateParticipantCards = game => {
 const joinFeedback=createJoinFeedback({getScope:gameId=>({gameId,owner:transport,generation:account.snapshot().generation,visit:inviteVisit,route:window.location.hash})});
 // A deliberate focus or pointer move retires only the join's focus intent.
 document.addEventListener('focusin',event=>joinFeedback.noteFocus(event.target));
+const pendingInvitationFocus = createPendingInvitationFocus({
+  document,
+  getScope: () => ({ owner: transport, generation: account.snapshot().generation, visit: inviteVisit, route: window.location.hash, panel: getGamePanel() }),
+});
+document.addEventListener('focusin', event => pendingInvitationFocus.noteFocus(event.target));
+for (const type of ['pointerdown', 'mousedown']) document.addEventListener(type, event => pendingInvitationFocus.notePointer(event.target), true);
+window.addEventListener('blur', () => pendingInvitationFocus.clear());
+document.addEventListener('visibilitychange', () => { if (document.hidden) pendingInvitationFocus.clear(); });
+
 document.addEventListener('pointerdown',event=>joinFeedback.noteFocus(event.target),true);
 const additionalHistory=createAdditionalHistory({
   getScope:gameId=>{const game=transport.getAuthoritativeGame(gameId),state=account.snapshot();return canReadAdditionalHistory(game,state)?{gameId,owner:transport,generation:state.generation,revision:game.gameplayRevision}:null;},
@@ -3013,7 +3023,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
       const animateJoin = animatePanels && !routeTransition && joinMarkupByElement.has(joinEl);
       const oldHeight=joinEl.getBoundingClientRect().height;
       const focus=joinEl.contains(document.activeElement)?document.activeElement:null;
-      const selector=focus?.matches('.invite-link-field')?'.invite-link-field':focus?.dataset.action?`[data-action="${CSS.escape(focus.dataset.action)}"]${focus.dataset.inviteRole?`[data-invite-role="${CSS.escape(focus.dataset.inviteRole)}"]`:''}${focus.dataset.profileKey?`[data-profile-key="${CSS.escape(focus.dataset.profileKey)}"]`:''}${focus.dataset.computerSide?`[data-computer-side="${CSS.escape(focus.dataset.computerSide)}"]`:''}`:null;
+      const selector=focus?.dataset.action==='copy-invite'&&isButtonPending(getCopyInviteButtonKey(game.id))?null:focus?.matches('.invite-link-field')?'.invite-link-field':focus?.dataset.action?`[data-action="${CSS.escape(focus.dataset.action)}"]${focus.dataset.inviteRole?`[data-invite-role="${CSS.escape(focus.dataset.inviteRole)}"]`:''}${focus.dataset.profileKey?`[data-profile-key="${CSS.escape(focus.dataset.profileKey)}"]`:''}${focus.dataset.computerSide?`[data-computer-side="${CSS.escape(focus.dataset.computerSide)}"]`:''}`:null;
       const selection=focus instanceof HTMLInputElement?[focus.selectionStart,focus.selectionEnd]:null;
       if(selector)panelPendingFocus.set(joinEl,{selector,selection});
       else if(document.activeElement !== document.body)panelPendingFocus.delete(joinEl);
@@ -3850,17 +3860,50 @@ const scheduleResponsiveHomeSectionPageSizes = () => {
 };
 
 const renderGesture = createRenderGestureGate({ render: options => render(options) });
+// Compatibility mouse events alias their admitted pointer control, so one
+// physical release cannot leave an alias held or release another input.
+const pointerPresses = new Map(), mousePresses = new Map();
+const pressedControl = event => appEl.contains(event.target) ? event.target.closest?.("button, a, [data-action]") : null;
+const mouseButton = event => event.button ?? 0;
+const pointerKey = event => event.pointerId ?? "legacy-pointer";
+const retireRenderPress = owner => {
+  if (!owner) return;
+  for (const [id, press] of pointerPresses) if (press.owner === owner) pointerPresses.delete(id);
+  for (const [button, held] of mousePresses) if (held === owner) mousePresses.delete(button);
+  renderGesture.end(owner);
+};
 window.addEventListener("pointerdown", event => {
-  if (appEl.contains(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
+  const control = pressedControl(event);
+  if (!control) return;
+  const id = pointerKey(event), owner = Symbol("pointer-press");
+  retireRenderPress(pointerPresses.get(id)?.owner);
+  pointerPresses.set(id, {owner, control, button: mouseButton(event), kind: event.pointerType ?? "mouse", primary: event.isPrimary !== false});
+  renderGesture.begin(owner);
+}, true);
+window.addEventListener("mousedown", event => {
+  const control = pressedControl(event);
+  if (!control) return;
+  const button = mouseButton(event);
+  const pointer = [...pointerPresses.values()].reverse().find(press => press.primary && press.control === control && press.button === button);
+  const owner = pointer?.owner ?? mousePresses.get(button) ?? Symbol("mouse-press");
+  mousePresses.set(button, owner);
+  renderGesture.begin(owner);
 }, true);
 window.addEventListener("keydown", event => {
-  if (!event.repeat && (event.key === " " || event.key === "Enter") && appEl.contains(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
+  if (!event.repeat && (event.key === " " || event.key === "Enter") && pressedControl(event)) renderGesture.begin(`key:${event.code || event.key}`);
 }, true);
-window.addEventListener("keyup", event => { if (event.key === " " || event.key === "Enter") renderGesture.end(); }, true);
-for (const type of ["pointerup", "pointercancel", "touchcancel", "lostpointercapture", "click"])
-  window.addEventListener(type, () => renderGesture.end(), true);
-window.addEventListener("blur", event => { if (event.target === window) renderGesture.end(); });
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") renderGesture.end(); });
+window.addEventListener("keyup", event => {
+  if (event.key === " " || event.key === "Enter") renderGesture.end(`key:${event.code || event.key}`);
+}, true);
+for (const type of ["pointerup", "pointercancel", "lostpointercapture"])
+  window.addEventListener(type, event => retireRenderPress(pointerPresses.get(pointerKey(event))?.owner), true);
+window.addEventListener("mouseup", event => retireRenderPress(mousePresses.get(mouseButton(event))), true);
+window.addEventListener("touchcancel", () => {
+  for (const press of [...pointerPresses.values()]) if (press.kind === "touch") retireRenderPress(press.owner);
+}, true);
+const cancelRenderPresses = () => { pointerPresses.clear(); mousePresses.clear(); renderGesture.cancelAll(); };
+window.addEventListener("blur", event => { if (event.target === window) cancelRenderPresses(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") cancelRenderPresses(); });
 
 // Background shell updates must not interrupt an in-progress scenario draft.
 const captureScenarioDraftFocus = (baseRouteKey) => {
@@ -3891,6 +3934,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }
   }
   joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });
+  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });
   return result;
 };
 const renderContent = ({ animatePanels, includeBoard }) => {
@@ -5301,6 +5345,9 @@ appEl.addEventListener("click", async (event) => {
     if (!gameId) {
       return;
     }
+    const invitationPanel = actionEl.closest('[data-game-panel="join"]');
+    if (invitationPanel instanceof HTMLElement) panelPendingFocus.delete(invitationPanel);
+    pendingInvitationFocus.begin(actionEl, getCopyInviteButtonKey(gameId));
     await withPendingButton(getCopyInviteButtonKey(gameId),()=>copyGameInvitation(gameId,actionEl.dataset.inviteRole || 'viewer'));
 
     return;

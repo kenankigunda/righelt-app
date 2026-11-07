@@ -80,20 +80,29 @@ test.describe('retained Horus follow', () => {
     return request.postDataJSON()?.payload?.computer?.generation > minimumGeneration;
   });
 
-test('the exact follow saves once and pauses with its durable receipt', async ({ baseURL }, info) => {
-  await page.setViewportSize({ width: 390, height: 900 });
-  const { gameId: sourceId } = await importScenarioGame(page, scenario, baseURL, { open: false });
-  const source = await projected(page, sourceId);
-  ({ game } = await guestRequest(page, '/api/shell/history/branch', { sourceGameId: sourceId,
-    sourceDecisionId: source.moves.at(-1).moveId, creatorSide: 'p2',
-    // Watch mode permits a later native decision regardless of which side the
-    // resumed continuation leaves active. The retained model itself is unchanged.
-    computer: { p1: 'horus', p2: 'horus' }, computerModelId: CURRENT_COMPUTER_MODEL.id }));
-  expect(game.legalActions).toEqual([action]);
-  expect(game.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
-  const acquired = await guestRequest(page, `/api/shell/games/${game.id}/computer-control`, { action: 'acquire', deviceId: 'follow-fixture', generation: game.computer.generation });
-  await guestRequest(page, `/api/shell/games/${game.id}/computer-control`, { action: 'pause', deviceId: 'follow-fixture', generation: acquired.game.computer.generation });
-  await page.goto(`/?retained-follow=1#/game/${game.id}`);
+  // Only this first required phase uses the bounded prerequisite fixture.
+  // Its setup and teardown share 40s, separately from the original 60s body:
+  // 100s in aggregate here, rather than the former shared 60s budget.
+  const preparedFollowTest = test.extend({
+    preparedFollow: [async ({ baseURL }, use) => {
+      await page.setViewportSize({ width: 390, height: 900 });
+      const { gameId: sourceId } = await importScenarioGame(page, scenario, baseURL, { open: false });
+      const source = await projected(page, sourceId);
+      ({ game } = await guestRequest(page, '/api/shell/history/branch', { sourceGameId: sourceId,
+        sourceDecisionId: source.moves.at(-1).moveId, creatorSide: 'p2',
+        // Watch mode permits a later native decision regardless of which side the
+        // resumed continuation leaves active. The retained model itself is unchanged.
+        computer: { p1: 'horus', p2: 'horus' }, computerModelId: CURRENT_COMPUTER_MODEL.id }));
+      expect(game.legalActions).toEqual([action]);
+      expect(game.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
+      const acquired = await guestRequest(page, `/api/shell/games/${game.id}/computer-control`, { action: 'acquire', deviceId: 'follow-fixture', generation: game.computer.generation });
+      await guestRequest(page, `/api/shell/games/${game.id}/computer-control`, { action: 'pause', deviceId: 'follow-fixture', generation: acquired.game.computer.generation });
+      await page.goto(`/?retained-follow=1#/game/${game.id}`);
+      await use({ page, game });
+    }, { timeout: 40000 }],
+  });
+
+preparedFollowTest('the exact follow saves once and pauses with its durable receipt', async ({ preparedFollow }, info) => {
   const firstRequest = nextCommand(-1);
   await resumeHere(page, game.id);
   command = (await firstRequest).postDataJSON();

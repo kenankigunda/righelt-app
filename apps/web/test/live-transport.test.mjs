@@ -1,4 +1,6 @@
 import test, { beforeEach } from "node:test";
+import { createComputerSession } from '../shell/computer-session.js';
+import { createComputerControl, changeComputerControl, parseComputerControl, COMPUTER_CAPABILITIES } from '../generated/packages/shared-types/src/computer-play.js';
 import { IDBFactory } from "fake-indexeddb";
 import assert from "node:assert/strict";
 import { writeSync as writeCleanupFailure } from "node:fs";
@@ -2640,4 +2642,72 @@ test('read-only position history remains inspectable without enabling play', asy
   store.returnToLive({ gameId: game.id });
   assert.equal(store.getGameViewModel(game.id).canRecordMove, false);
   assert.equal(store.getAuthoritativeGame(game.id), null);
+});
+
+// Public transport/session composition only; this does not identify a native CI cause.
+for (const expires of [false, true]) test(`real resume joins pending reconciliation; deadline=${expires}`, async t => {
+  const storage = createMemoryStorage(); storage.setItem(IDENTITY_KEY, 'id-a');
+  let game = buildLiveGame();
+  game.sharedReceipts = true;
+  game.computerCapabilities = { resumeHere: COMPUTER_CAPABILITIES.resumeHere };
+  game.computer = createComputerControl('id-a', { p1: 'babs', p2: null });
+  let hold = true, release, eventSeq = 1;
+  const hydration = new Promise(resolve => { release = resolve; });
+  const controls = [];
+  const store = createLiveTransportStore({ storage,
+    commandJournal: { list: () => hold ? hydration : Promise.resolve([]), admit: async () => {}, remove: async () => {}, close: async () => {} },
+    timing: { requestTimeoutMs: 1000, recoveryPassMs: expires ? 20 : 5000, retryDelaysMs: [10000], retryJitter: 0 },
+    fetcher: async (url, init = {}) => {
+      if (init.method === 'GET') return Response.json({ ok: true, protocolVersion: 2, game, eventSeq });
+      const envelope = JSON.parse(init.body);
+      if (url.endsWith('/reconcile')) return Response.json({ ok: true, protocolVersion: 2, gameId: game.id,
+        game, eventSeq, gameplayRevision: game.gameplayRevision, commandOutcomes: [] });
+      assert.ok(url.endsWith('/shared'), 'only the original shared control endpoint is admitted');
+      assert.equal(envelope.payload.operation, 'computer-control');
+      assert.equal(envelope.payload.values.action, 'resume-here');
+      assert.equal(Object.hasOwn(envelope.payload.values, 'authContextId'), false, 'client does not supply server authentication context');
+      controls.push(envelope);
+      game = { ...game, computer: changeComputerControl(game.computer, { ...envelope.payload.values,
+        ownerId: 'id-a', authContextId: 'server-resume-fixture-context', now: Date.now(), turnIndex: game.board.state.turnIndex }) };
+      game = { ...game, computer: parseComputerControl(game.computer) };
+      eventSeq++;
+      return Response.json({ ok: true, protocolVersion: 2, gameId: game.id, game, eventSeq,
+        gameplayRevision: game.gameplayRevision, accepted: true, commandOutcomes: [{ gameId: game.id,
+          identityId: envelope.identityId, clientCommandId: envelope.clientCommandId, fingerprint: envelope.fingerprint,
+          outcome: 'accepted', reason: null, eventSeq, gameplayRevision: game.gameplayRevision }] });
+    } });
+  store.applyLiveGameUpdate({ game, eventSeq });
+  const runtime = { cancel() {}, compute() { throw Error('resume composition must not run inference'); } };
+  const session = createComputerSession({ deviceId: 'resume-composition-device', runtime, analysisRuntime: runtime,
+    timers: { setInterval() { return 1; }, clearInterval() {} },
+    getContext: () => ({ game: store.getGameViewModel(game.id), transport: store,
+      accountGeneration: 1, authenticated: true, visible: true }) });
+  t.after(() => { session.destroy(); store.retire(); });
+  const recovery = store.reconcileGame(game.id);
+  assert.equal(store.reconcileGame(game.id), recovery, 'the real store exposes its existing pending pass');
+  const observedRecovery = recovery.then(() => ({ ok: true }), error => ({ ok: false, error }));
+  const first = session.action('resume-here').then(() => ({ ok: true }), error => ({ ok: false, error }));
+  const second = session.action('resume-here').then(() => ({ ok: true }), error => ({ ok: false, error }));
+  await tick();
+  assert.equal(controls.length, 0, 'no resume control may cross held journal reconciliation');
+  if (expires) {
+    const failed = await observedRecovery;
+    assert.equal(failed.ok, false); assert.equal(failed.error.code, 'recovery_timeout');
+    for (const result of await Promise.all([first, second])) {
+      assert.equal(result.ok, false); assert.equal(result.error.code, 'recovery_timeout');
+    }
+    assert.equal(controls.length, 0, 'a failed bounded pass cannot authorize control');
+    hold = false; release([]); await tick();
+    await store.reconcileGame(game.id);
+    await session.action('resume-here');
+  } else {
+    hold = false; release([]);
+    assert.equal((await observedRecovery).ok, true);
+    for (const result of await Promise.all([first, second])) assert.equal(result.ok, true);
+  }
+  assert.equal(controls.length, 1, 'same-scope overlapping requests produce exactly one resume control');
+  const current = store.getGameViewModel(game.id);
+  assert.equal(current.computer.ownerId, 'id-a');
+  assert.equal(current.computer.lease.deviceId, 'resume-composition-device');
+  assert.equal(current.sharedMutationsBlocked, false);
 });

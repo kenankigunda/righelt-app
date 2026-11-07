@@ -398,7 +398,7 @@ test('slow rules worker leaves mobile navigation responsive and stops when leavi
 
 
 test('Horus finishes a real turn and releases its worker before self-play and reload', async ({page,baseURL},info) => {
-  const admissionDiagnostics=await installBoardAdmissionDiagnostics(page,info,{baseURL,targetRow:2,targetCol:6});
+  const admissionDiagnostics=await installBoardAdmissionDiagnostics(page,info,{baseURL,targetRow:2,targetCol:6,sourceAttemptOrdinal:2});
   try {
   await page.setViewportSize({width:390,height:844});
   await page.addInitScript(()=>{
@@ -429,6 +429,7 @@ test('Horus finishes a real turn and releases its worker before self-play and re
   await submitPlayableAction(page,self.legalActions.find(action=>action.type==='move'));
   await expect.poll(async()=>(await currentGame(page,self.id)).moves.length).toBe(1);
   const saved=await currentGame(page,self.id);
+  await admissionDiagnostics.checkpoint();
   await page.reload();await expect(page.getByTestId('game-board')).toBeVisible();
   const reloaded=await currentGame(page,self.id);
   expect(reloaded.gameplayRevision).toBe(saved.gameplayRevision);expect(reloaded.board.state).toEqual(saved.board.state);
