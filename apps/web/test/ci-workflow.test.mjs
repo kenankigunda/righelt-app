@@ -16,7 +16,8 @@ test('full gate always runs and depends on every lane, installs are frozen and p
   assert.ok(job.steps.some(s=>s.run==='pnpm install --frozen-lockfile'));
   assert.ok(job.steps.some(s=>s.uses==='pnpm/action-setup@v4'&&s.with.version==='9.15.9'));
  }
- assert.ok(actual.on.pull_request.types.includes('ready_for_review'));assert.ok(actual.on.workflow_dispatch);assert.equal(actual.on.pull_request.paths,undefined);
+ assert.deepEqual(actual.on.pull_request,{types:['opened','synchronize','reopened']},'PR source lifecycle events run full CI without repeating unchanged checks on ready status');
+ assert.deepEqual(actual.on.push,{branches:['main']});assert.deepEqual(actual.on.workflow_dispatch,{});
 });
 
 test('model CI installs pinned pnpm before Node cache discovery and uses the frozen lock',()=>{

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import {writeFile} from 'node:fs/promises';
 
 import {
   closeContextQuietly,
@@ -7,6 +8,39 @@ import {
   getHistoryMoveCount,
   makeAnyLegalMove,
 } from "../support/app.mjs";
+
+const assertPagingFits = async controls => {
+  await expect(controls).toHaveCount(1);
+  await expect.poll(()=>controls.evaluate(element=>{
+    const panelNode=element.closest('.panel');
+    if(!element.isConnected||!panelNode?.isConnected)return null;
+    const bounds=element.getBoundingClientRect(),panel=panelNode.getBoundingClientRect();
+    const parts=[...element.children].map(child=>child.getBoundingClientRect());
+    const centers=parts.map(rect=>rect.top+rect.height/2);
+    return {count:parts.length,aligned:Math.max(...centers)-Math.min(...centers)<1,
+      contained:parts.every(rect=>rect.left>=bounds.left-.1&&rect.right<=bounds.right+.1&&rect.left>=panel.left-.1&&rect.right<=panel.right+.1),
+      touchTargets:[parts[0],parts[2]].every(rect=>rect.width>=44&&rect.height>=44)};
+  })).toEqual({count:3,aligned:true,contained:true,touchTargets:true});
+};
+
+test('home pagination remains contained with page zoom at the smallest viewport',async({page},info)=>{
+ await createGamesViaApi(page,28);
+ await page.setViewportSize({width:320,height:900});await page.goto('/');
+ await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+ await page.evaluate(()=>document.fonts.ready);
+ await page.evaluate(()=>document.documentElement.style.zoom='2');
+ const controls=page.locator('[data-home-section-root="my"] .home-games-section-controls:visible');
+ await info.attach('page-zoom-pager-geometry',{body:JSON.stringify(await controls.evaluate(el=>{
+  const measure=node=>{const r=node.getBoundingClientRect(),s=getComputedStyle(node);return{left:r.left,right:r.right,width:r.width,fontSize:s.fontSize,gap:s.gap,padding:s.padding,minWidth:s.minWidth};};
+  return{controls:measure(el),panel:measure(el.closest('.panel')),parts:[...el.children].map(measure),scrollWidth:document.documentElement.scrollWidth,viewport:innerWidth};
+ })),contentType:'application/json'});
+ await assertPagingFits(controls);
+ await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBeLessThanOrEqual(1);
+ await expect(controls.locator('.sr-only')).toHaveText('Page 1 of 10');
+ await expect(controls.locator('.home-page-label-compact')).toHaveText('1 of 10');
+ await expect(controls.locator('.home-page-label-compact')).toBeVisible();
+ await controls.screenshot({path:info.outputPath('page-zoom-compact-pager.png')});
+});
 
 test("home pagination refreshes correctly when a moved game reorders onto an earlier page", async ({ browser }) => {
   const { context, page } = await createIsolatedPage(browser);
@@ -74,12 +108,14 @@ test("home header pagination is visible at narrow viewport with a multi-column g
 test("home pagination keeps both arrows and its label on one line across layouts", async ({ browser }, testInfo) => {
   const { context, page } = await createIsolatedPage(browser);
   try {
-    await createGamesViaApi(page, 5);
+    await createGamesViaApi(page, 49);
     await page.goto("/");
     const section = page.locator('[data-home-section-root="my"]');
-    for (const width of [1440, 1100, 901, 900, 850, 600, 390, 320]) {
+    for (const scale of [100,200])for (const width of [1440, 1100, 901, 900, 850, 600, 390, 320]) {
+      await page.evaluate(scale=>{document.documentElement.style.fontSize=`${scale}%`;},scale);
       await page.setViewportSize({ width, height: 1100 });
       const controls = section.locator('.home-games-section-controls:visible');
+      await assertPagingFits(controls);
       await expect(controls).toHaveCount(1);
       await expect.poll(() => controls.evaluate(element => {
         const parts = [...element.children].map(child => child.getBoundingClientRect());
@@ -88,19 +124,78 @@ test("home pagination keeps both arrows and its label on one line across layouts
       }), { message: `Pagination must share a line at ${width}px` }).toBeLessThan(1);
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
       if (width === 1440 || width === 390) {
-        await section.screenshot({ path: testInfo.outputPath(`pagination-${width}.png`) });
+        await section.screenshot({ path: testInfo.outputPath(`pagination-${width}-${scale}.png`) });
       }
     }
+
+  } finally {
+    await closeContextQuietly(context);
+  }
+});
+
+
+test("home pagination fits pending, final-page, and delayed-font controls at enlarged text size", async ({ browser }, testInfo) => {
+  const { context, page } = await createIsolatedPage(browser);
+  try {
+    await createGamesViaApi(page, 28);
+    await page.goto("/");
+    const section = page.locator('[data-home-section-root="my"]');
     await page.setViewportSize({ width: 390, height: 1100 });
     await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
     const controls = section.locator('.home-games-section-controls:visible');
+    await assertPagingFits(controls);
     await expect.poll(() => controls.evaluate(element => {
       const centers = [...element.children].map(child => { const r = child.getBoundingClientRect(); return r.top + r.height / 2; });
       return Math.max(...centers) - Math.min(...centers);
     })).toBeLessThan(1);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
-    await controls.locator('[data-action="home-page-next"]').click();
-    await expect(section).toContainText('Page 2 of');
+    let releasePage,completePage,heldRequests=0;
+    const pageHandled=new Promise(resolve=>{completePage=resolve;});
+    const pageGate=new Promise(resolve=>{releasePage=resolve;});
+    const pagePattern=/\/api\/shell\/games\?/;
+    const holdPage=async route=>{
+      const url=new URL(route.request().url());
+      const held=url.searchParams.get('section')==='my'&&url.searchParams.get('page')!=='0';
+      if(held){heldRequests++;await pageGate;}
+      try{await route.continue();}finally{if(held)completePage();}
+    };
+    await page.route(pagePattern,holdPage);
+    try{
+      await controls.locator('[data-action="home-page-next"]').click();
+      await expect.poll(()=>heldRequests).toBeGreaterThan(0);
+      const next=controls.locator('[data-action="home-page-next"]');
+      await expect(next).toBeDisabled();await expect(next).toHaveAttribute('data-loading-phase',/visible|slow/);
+      await expect(next.locator('.loading-icon-slot > svg')).toHaveCount(1);
+      await expect(next.locator('.loading-icon-slot > .loading-pieces')).toBeVisible();
+      await assertPagingFits(controls);
+      await controls.screenshot({path:testInfo.outputPath('pagination-pending-390-200.png')});
+    }finally{releasePage();if(heldRequests)await pageHandled;await page.unroute(pagePattern,holdPage);}
+    await expect(section).toContainText('Page 2 of 10');
+    await expect(controls.locator('[data-action="home-page-next"]')).toBeEnabled();
+    for(let number=3;number<=10;number++){
+      await controls.locator('[data-action="home-page-next"]').click();
+      await expect(section).toContainText(`Page ${number} of 10`);
+      await expect(controls.locator('[data-action="home-page-prev"]')).toBeEnabled();
+    }
+    await assertPagingFits(controls);
+    await controls.screenshot({path:testInfo.outputPath('pagination-last-page-390-200.png')});
+
+    let releaseFont,fontSeen=false;
+    const fontGate=new Promise(resolve=>{releaseFont=resolve;});
+    await page.route('**/shell/refresh.css',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text()).replace('../assets/fonts/Manrope-variable.ttf','../assets/fonts/Manrope-variable.ttf?pagination-zoom-cold')+'\n:root{font-size:200%}'});});
+    await page.route(url=>url.pathname.endsWith('/Manrope-variable.ttf')&&url.searchParams.has('pagination-zoom-cold'),async route=>{fontSeen=true;await fontGate;await route.continue();});
+    const fontProof={};
+    try{
+      await page.reload({waitUntil:'domcontentloaded'});await expect.poll(()=>fontSeen).toBe(true);
+      await expect(section).toContainText('Page 1 of 10');
+      expect(await page.evaluate(()=>document.fonts.status)).toBe('loading');
+      await assertPagingFits(controls);
+      fontProof.cold=await controls.evaluate(element=>({font:document.fonts.status,buttons:[...element.querySelectorAll('button')].map(button=>{const rect=button.getBoundingClientRect();return {width:rect.width,height:rect.height};})}));
+      releaseFont();await page.evaluate(()=>document.fonts.ready);await assertPagingFits(controls);
+      fontProof.loaded=await controls.evaluate(element=>({font:document.fonts.status,buttons:[...element.querySelectorAll('button')].map(button=>{const rect=button.getBoundingClientRect();return {width:rect.width,height:rect.height};})}));
+      expect(fontProof.loaded.buttons).toEqual(fontProof.cold.buttons);
+      await controls.screenshot({path:testInfo.outputPath('pagination-loaded-390-200.png')});
+    }finally{releaseFont();const path=testInfo.outputPath('pagination-font-proof.json');await writeFile(path,JSON.stringify(fontProof,null,2));await testInfo.attach('cold and loaded pager geometry',{path,contentType:'application/json'});}
   } finally {
     await closeContextQuietly(context);
   }

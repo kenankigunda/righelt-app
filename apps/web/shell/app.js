@@ -2376,17 +2376,19 @@ const renderHomeSectionControls = (sectionKey, section, { placement } = { placem
 >
   <button
     ${renderPendingStateAttributes({ className: "secondary", pending: isHomeSectionPending(sectionKey) })}
+    data-loading-context="group"
     data-action="home-page-prev"
     data-home-section="${escapeHtml(sectionKey)}"
     aria-label="Previous ${escapeHtml(section.title)} page"
-  >&larr;</button>
-  <p class="small home-games-section-page-label">Page ${section.page + 1} of ${section.totalPages}</p>
+  >${icon('left')}</button>
+  <p class="small home-games-section-page-label"><span class="sr-only">Page ${section.page + 1} of ${section.totalPages}</span><span class="home-page-label-full" aria-hidden="true">Page ${section.page + 1} of ${section.totalPages}</span><span class="home-page-label-compact" aria-hidden="true">${section.page + 1} of ${section.totalPages}</span></p>
   <button
     ${renderPendingStateAttributes({ className: "secondary", pending: isHomeSectionPending(sectionKey) })}
+    data-loading-context="group"
     data-action="home-page-next"
     data-home-section="${escapeHtml(sectionKey)}"
     aria-label="Next ${escapeHtml(section.title)} page"
-  >&rarr;</button>
+  >${icon('right')}</button>
 </div>`;
 
 const renderHomeStartButton = () =>
@@ -2405,7 +2407,7 @@ const renderHomeGameSection = (sectionKey) => {
   const showHeaderPaging = showPaging && section.visibleColumnCount > 1;
   const showFooterPaging = showPaging && section.visibleColumnCount === 1;
   const hasHeaderAction = false;
-  return `<section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}">
+  return `<section class="panel home-games-section" data-loading-context-group data-home-section-root="${escapeHtml(sectionKey)}">
       <div class="home-games-section-header" data-home-header-has-action="${hasHeaderAction ? "true" : "false"}" data-home-header-paging="${showHeaderPaging ? "true" : "false"}">
       <div class="home-games-section-heading">
         <h2>${sectionKey === "my" ? "Continue playing" : escapeHtml(section.title)}</h2>
@@ -2441,7 +2443,7 @@ const scrollHomeSectionToTop = (sectionKey) => {
   });
 };
 
-const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game" ${homeReadRecovery ? "disabled" : ""}><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Choose your opponent</span><button class="secondary" data-action="create-self-play" ${homeReadRecovery ? "disabled" : ""}>${icon('play')}Play both sides</button></div></section>`;
+const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game" ${homeReadRecovery ? "disabled" : ""}><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><button class="secondary" data-action="create-self-play" ${homeReadRecovery ? "disabled" : ""}>${icon('play')}Play both sides</button></div></section>`;
 const renderHome = () => `<section class="stack home-refresh">${storageResetNotice ? '<p class="small" role="status">The saved data was reset. You can start a new game.</p>' : ""}${renderHomeGameSection('my')}${renderStartChoices()}${getVisibleHomeSectionKeys().filter(key=>key!=='my').map(renderHomeGameSection).join('')}</section>`;
 
 const getHeaderAlertItems = game => {

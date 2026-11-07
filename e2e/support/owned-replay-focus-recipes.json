@@ -88,8 +88,8 @@
   {
     "file": "apps/web/shell/app.js",
     "servedPath": "/shell/app.js",
-    "sourceSha256": "8744e7b897f18aeb42319819c75125706d05dab6beb98e3d4d16b626ea4d9f9e",
-    "outputSha256": "7d32eb4fc0db06f4a87eebcaa2dd75e6dcbf80953a7b5760c363de095cd8f13d",
+    "sourceSha256": "11ec8ff77564581e2267cd601c6104da177ca6e0404d1c9a12f0fb7527895641",
+    "outputSha256": "3af1f357a98dfe2cb5db79d1cebf37a6fe46fe64eaac23238dfc2d610585d0eb",
     "operations": [
       {
         "start": 78,
@@ -98,20 +98,20 @@
         "after": "const __ownedFocusValue=(kind,value,scope)=>{try{globalThis.__ownedFocusProbe?.record(kind,value,scope);}catch{}return value;};\n"
       },
       {
-        "start": 241638,
-        "end": 241696,
+        "start": 241950,
+        "end": 242008,
         "before": "const focusReturn=boardContextFocus.begin(trigger,{allows:",
         "after": "const focusReturn=boardContextFocus.begin(__ownedFocusValue(\"replay-trigger\",(trigger),null),{allows:"
       },
       {
-        "start": 243467,
-        "end": 243590,
+        "start": 243779,
+        "end": 243902,
         "before": "const finish=()=>{\n    boardRuntime?.setInteractionBlocked(false);boardRuntime?.refreshStatus();queueBoardContextRefresh();",
         "after": "const finish=()=>{\n    __ownedFocusValue(\"finish-enter\",(trigger),focusReturn);\n    boardRuntime?.setInteractionBlocked(false);boardRuntime?.refreshStatus();queueBoardContextRefresh();\n    __ownedFocusValue(\"finish-after-render\",(trigger),focusReturn);"
       },
       {
-        "start": 244463,
-        "end": 244742,
+        "start": 244775,
+        "end": 245054,
         "before": "onChange:replay=>{\n      const playing=replay.playing;\n      const refresh=()=>{boardRuntime?.setInteractionBlocked(playing);boardRuntime?.refreshStatus();queueBoardContextRefresh();};\n      if(playing)refresh();else focusReturn.renderOwnedRemoval(refresh);\n    },onFinish:finish",
         "after": "onChange:replay=>{\n      const playing=__ownedFocusValue(\"change-playing\",(replay.playing),focusReturn);\n      const refresh=()=>{boardRuntime?.setInteractionBlocked(playing);boardRuntime?.refreshStatus();queueBoardContextRefresh();__ownedFocusValue(\"change-after-render\",(trigger),focusReturn);};\n      if(playing)refresh();else focusReturn.renderOwnedRemoval(refresh);\n    },onFinish:finish"
       }
