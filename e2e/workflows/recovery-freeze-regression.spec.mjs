@@ -1,3 +1,4 @@
+import {observeReadinessEvaluation} from '../support/readiness-diagnostics.mjs';
 import {installBoardAdmissionDiagnostics} from '../support/board-admission-diagnostics.mjs';
 import {waitForOpponentReady,waitForComputerDecision} from '../support/computer-projection.mjs';
 import { readFileSync } from 'node:fs';
@@ -398,7 +399,7 @@ test('slow rules worker leaves mobile navigation responsive and stops when leavi
 
 
 test('Horus finishes a real turn and releases its worker before self-play and reload', async ({page,baseURL},info) => {
-  const admissionDiagnostics=await installBoardAdmissionDiagnostics(page,info,{baseURL,targetRow:2,targetCol:6});
+  const admissionDiagnostics=await installBoardAdmissionDiagnostics(page,info,{baseURL,targetRow:2,targetCol:6,sourceAttemptOrdinal:2});
   try {
   await page.setViewportSize({width:390,height:844});
   await page.addInitScript(()=>{
@@ -436,7 +437,9 @@ test('Horus finishes a real turn and releases its worker before self-play and re
   // Case-local observation: capture actual original nodes, never mutate/focus them.
   const sourceAdmissionHandle = await source.evaluateHandle(el => {
     const root=el.closest('[data-testid="game-board"]');
-    return {cell:el,root,before:{selected:el.classList.contains('source'),className:el.className,
+    const selected=el.classList.contains("source");
+    try { globalThis.__boardAdmissionSourceRead?.(selected,el); } catch {}
+    return {cell:el,root,before:{selected,className:el.className,
       cellConnected:el.isConnected,rootConnected:root?.isConnected===true}};
   });
   let sourceAdmissionError=null;
@@ -485,15 +488,21 @@ test('Horus finishes a real turn and releases its worker before self-play and re
   // after hover or a tap prepared the destination.
   // Wait for visual readiness, then perform exactly one native confirmation.
   // Admission can change during the click; the runtime still checks it live.
-  await expect.poll(() => page.evaluate(to => {
+  await expect.poll(() => observeReadinessEvaluation(() => page.evaluate(to => {
+    let readinessFinish,readinessComplete=false,readinessResult;
+    try{readinessFinish=globalThis.__righeltReadinessBegin?.('readiness-callback',true);}catch{}
+    try{
     const node=document.querySelector(`[data-testid="game-board"] .cell[data-row="${to.row}"][data-col="${to.col}"]`);
     const message=document.getElementById('shell-board-preview-label');
-    return Boolean(node?.isConnected && message?.isConnected && message.getAttribute('aria-busy')!=='true' && node.classList.contains('target') && !node.classList.contains('unselectable'));
-  },action.to),{timeout:2000,message:'Complete move checks and the prepared destination must be ready at confirmation'}).toBe(true);
+    readinessResult=Boolean(node?.isConnected && message?.isConnected && message.getAttribute('aria-busy')!=='true' && node.classList.contains('target') && !node.classList.contains('unselectable'));
+    readinessComplete=true;return readinessResult;
+    }finally{try{readinessFinish?.(readinessComplete,readinessResult);}catch{}}
+  },action.to)),{timeout:2000,message:'Complete move checks and the prepared destination must be ready at confirmation'}).toBe(true);
   await target.click();
   } // End case-local expansion.
   await expect.poll(async()=>(await currentGame(page,self.id)).moves.length).toBe(1);
   const saved=await currentGame(page,self.id);
+  await admissionDiagnostics.checkpoint();
   await page.reload();await expect(page.getByTestId('game-board')).toBeVisible();
   const reloaded=await currentGame(page,self.id);
   expect(reloaded.gameplayRevision).toBe(saved.gameplayRevision);expect(reloaded.board.state).toEqual(saved.board.state);
