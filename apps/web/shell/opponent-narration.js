@@ -1,4 +1,5 @@
 import {isCompletedGame} from './game-lifecycle.js';
+import {BOARD_PROMPT} from '../board/prompt-models.js';
 import {playerDisplayName} from './perspective-labels.js';
 import {computerBoardMessage, describeTurn, moveCoordinates} from './computer-narration.js';
 import {activityStateActorSide, normalizeActivitySide} from './activity-affiliation.js';
@@ -35,16 +36,20 @@ export function ownsBoardActor(game, identityId) {
 export function opponentBoardMessage(game, status, selection = {}, {canInteract = false, identityId} = {}) {
   if (!game || game.inHistoryMode) return null;
   if (selection.selectedPieceId || selection.inspection) return null;
-  if (isCompletedGame(game) && game.pendingComputerSaveStartedAt == null) return 'Game complete';
+  if (isCompletedGame(game) && game.pendingComputerSaveStartedAt == null) return {text:BOARD_PROMPT.complete,context:{text:'Game complete'}};
   if (game.computerTurn || game.pendingComputerSaveStartedAt != null) return computerBoardMessage(game, status, selection);
-  if ((game.board?.state?.outcome?.status && game.board.state.outcome.status !== 'ongoing') || game.status === 'finished') return 'Game complete';
+  if ((game.board?.state?.outcome?.status && game.board.state.outcome.status !== 'ongoing') || game.status === 'finished') return {text:BOARD_PROMPT.complete,context:{text:'Game complete'}};
   const localTurn = canInteract || ownsBoardActor(game,identityId);
   if (canInteract && game.control === 'opponent' && !game.board?.state?.continuation) return null;
   if (localTurn && game.board?.state?.continuation) return null;
   const withPrompt = message => {
-    if (!message || typeof message !== 'object' || !localTurn || game.board?.state?.continuation) return message;
-    const pass = game.legalActions?.some(action => action.type === 'pass');
-    return {...message, rows:[message,{text:pass?'Select a piece or':'Select a piece',actions:pass?[{id:'pass',label:'Pass'}]:[]}]};
+    if(!message||typeof message!=='object'||game.board?.state?.continuation)return message;
+    if(localTurn){
+      const pass=game.legalActions?.some(action=>action.type==='pass');
+      return {text:pass?'Select a piece or':BOARD_PROMPT.piece,actions:pass?[{id:'pass',label:'Pass'}]:[],context:message};
+    }
+    const actorName=actor?playerDisplayName(game,actor):null;
+    return {text:actorName?`${actorName} to play`:'Waiting for the game',...(actorName?{actorName}:{}),context:message};
   };
   const own = roles(game,identityId);
   const actor = normalizeActivitySide(game.controlSeat) ?? activityStateActorSide(game.board?.state);
@@ -59,7 +64,7 @@ export function opponentBoardMessage(game, status, selection = {}, {canInteract 
   if (!own.size) {
     if (completed && !started) {
       const actorName=playerDisplayName(game,completed.side);
-      return {text:describeTurn(completed.moves,actorName),coordinates:moveCoordinates(completed.moves),actorName,action:{id:'replay-computer',label:'Show me again'}};
+      return withPrompt({text:describeTurn(completed.moves,actorName),coordinates:moveCoordinates(completed.moves),actorName,action:{id:'replay-computer',label:'Show me again'}});
     }
     if (!actor) return 'Waiting for the game';
     const actorName=playerDisplayName(game,actor);

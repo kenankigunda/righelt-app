@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {renderBoardMessageHtml} from '../board/message-presentation.js';
 import {createBoardRuntime} from '../board/runtime/board-runtime.js';
 
 const noop=()=>{};
@@ -7,16 +8,16 @@ const fixture=()=>{
  const piece={id:'A',owner:'P1',kind:'unit',position:{row:4,col:4},supplied:true,commanded:true};
  const state={boardSize:10,sideToMove:'P1',turnIndex:0,continuation:null,outcome:{status:'ongoing'},pieces:[piece]};
  const move={type:'move',actorId:'A',from:piece.position,to:{row:4,col:5}};
- const queries=[],views=[];let click,interactive=true;
+ const queries=[],views=[];let click,interactive=true,context=null;
  const label={innerHTML:'',textContent:'',setAttribute:noop,removeAttribute:noop,addEventListener:noop,removeEventListener:noop};
  const runtime=createBoardRuntime({boardAdapter:{mount:({onCellClick})=>{click=onCellClick;},render:view=>views.push(view),
   getPieceAt:(snapshot,at)=>snapshot.pieces.find(p=>p.position.row===at.row&&p.position.col===at.col),
   getPieceById:(snapshot,id)=>snapshot.pieces.find(p=>p.id===id),
   getSelectedPieceSummary:({selectedPieceId})=>selectedPieceId?{details:{owner:'P1'}}:null,
   nextSelectionForCell:({snapshot,clickedCoord})=>{const selected=snapshot.pieces.find(p=>p.position.row===clickedCoord.row&&p.position.col===clickedCoord.col);return {selection:{selectedPieceId:selected?.id??null,source:selected?.position??null,target:null},nextActionType:'move'};}},
-  host:{asyncPieceMoves:true,canSelect:()=>true,canInteract:()=>interactive,loadPieceMoves:(snapshot,pieceId)=>new Promise(resolve=>queries.push({snapshot,pieceId,resolve}))}});
+  controls:{onBoardContext:value=>{context=value;}},host:{asyncPieceMoves:true,canSelect:()=>true,canInteract:()=>interactive,loadPieceMoves:(snapshot,pieceId)=>new Promise(resolve=>queries.push({snapshot,pieceId,resolve}))}});
  runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
- return {runtime,piece,state,move,queries,views,label,click:at=>click(at??piece.position),gate:value=>{interactive=value;runtime.refreshStatus();},
+ return {runtime,piece,state,move,queries,views,label,get contextHtml(){return context?renderBoardMessageHtml(context.message):'';},click:at=>click(at??piece.position),gate:value=>{interactive=value;runtime.refreshStatus();},
   selected:actions=>runtime.loadSnapshot(state,{legalActions:actions,selectionState:{selectedPieceId:'A',source:piece.position,target:null}}),
   finish:previews=>queries.forEach(query=>query.resolve({state,actions:previews.filter(a=>a.legal!==false),previewActions:previews}))};
 };
@@ -50,9 +51,9 @@ test('the synchronous legal subset is visible before a full preview query comple
 
 test('No moves appears only after the complete empty result is known',async()=>{
  const f=fixture(),loading=f.selected([]);
- assert.doesNotMatch(f.label.innerHTML,/No moves/);
+ assert.doesNotMatch(f.label.innerHTML,/No moves/);assert.doesNotMatch(f.contextHtml,/No moves/);
  f.finish([]);await loading;
- assert.match(f.label.innerHTML,/No moves/);
+ assert.match(f.contextHtml,/No moves/);assert.doesNotMatch(f.label.innerHTML,/No moves/);
 });
 
 test('a native piece click starts one preview query and repeated reloads share it',async()=>{
@@ -99,7 +100,7 @@ test('changed authoritative inputs fence pending results and completed preview r
  f.queries[0].resolve({state:f.state,actions:[f.move],previewActions:[f.move]});await loading;
  assert.deepEqual(f.views.at(-1).selectedPieceMovePreviews,[]);
  f.queries[1].resolve({state:changed,actions:[],previewActions:[]});await next;
- assert.match(f.label.innerHTML,/No moves/);
+ assert.match(f.contextHtml,/No moves/);assert.doesNotMatch(f.label.innerHTML,/No moves/);
 });
 
 test('changed legality invalidates a completed preview even at the same position',async()=>{
@@ -107,7 +108,7 @@ test('changed legality invalidates a completed preview even at the same position
  const next=f.runtime.loadSnapshot(f.state,{legalActions:[f.move],resetSelection:false,selectionState:{selectedPieceId:'A',source:f.piece.position,target:null}});
  assert.equal(f.queries.length,2);
  f.queries[1].resolve({state:f.state,actions:[],previewActions:[]});await next;
- assert.match(f.label.innerHTML,/No moves/);
+ assert.match(f.contextHtml,/No moves/);assert.doesNotMatch(f.label.innerHTML,/No moves/);
 });
 
 test('changing the selected actor fences the previous actor result',async()=>{
@@ -128,7 +129,7 @@ test('a commander enters combined inspection while previews are pending and skip
  f.finish([]);await loading;
  assert.equal(f.runtime.getInspection()?.kind,'combined');
  f.click();assert.equal(f.runtime.getInspection(),null);
- assert.match(f.label.innerHTML,/No moves/);
+ assert.match(f.contextHtml,/No moves/);assert.doesNotMatch(f.label.innerHTML,/No moves/);
 });
 
 test('the full commander cycle is independent of pending previews and transient admission',async()=>{
@@ -140,6 +141,6 @@ test('the full commander cycle is independent of pending previews and transient 
  f.click();assert.equal(f.runtime.getInspection()?.kind,'command');
  f.finish([]);await loading;
  assert.equal(f.runtime.getInspection()?.kind,'command');
- f.click();assert.equal(f.runtime.getInspection(),null);assert.match(f.label.innerHTML,/No moves/);
+ f.click();assert.equal(f.runtime.getInspection(),null);assert.match(f.contextHtml,/No moves/);assert.doesNotMatch(f.label.innerHTML,/No moves/);
  assert.equal(f.queries.length,1);
 });

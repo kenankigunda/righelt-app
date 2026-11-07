@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Native dismiss control</title>
+<link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css">
+<body><main style="padding:24px"><button id="open">Open dialog</button><div id="controls"></div><form id="form"><div class="account-form" id="account"></div><button id="submit" type="submit">Submit</button></form><p id="events" role="status"></p></main>
+<script type="module">
+import {renderDismissButton} from '/apps/web/shell/dismiss-control.js';
+import {createModal} from '/apps/web/shell/modal.js';
+document.documentElement.dataset.hoverCapability=matchMedia("(hover: hover)").matches?"hover":"none";
+window.counts={dismiss:0,submit:0};
+document.querySelector('#account').innerHTML=renderDismissButton({label:'Close',className:'account-close',attributes:{'data-cancel':true}});
+document.querySelector('#form').onsubmit=e=>{e.preventDefault();window.counts.submit++};
+document.querySelector('[data-cancel]').onclick=()=>window.counts.dismiss++;
+document.querySelector('#controls').innerHTML=renderDismissButton({label:'Close invite',className:'invite-close',attributes:{'data-action':'close-invite'}})+renderDismissButton({label:'Close History',className:'flyout-close-button',attributes:{'data-action':'close-history'}});
+const modal=createModal({labelId:'dialog-title',className:'opponent-story-modal'});
+document.querySelector('#open').onclick=e=>modal.open(`<h2 id="dialog-title">Dismiss fixture</h2>${renderDismissButton({label:'Close opponent story',className:'story-close',attributes:{'data-modal-close':true}})}<button id="inside">Inside dialog</button>`,e.currentTarget);
+window.fixtureReady=true;
+</script></body></html>

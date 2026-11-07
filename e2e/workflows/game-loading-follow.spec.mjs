@@ -4,6 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { importScenarioGame, switchGamePanel } from '../support/app.mjs';
 import { readProjectedGame } from '../support/computer-projection.mjs';
 import { ownedContexts } from '../support/owned-contexts.mjs';
+import { boardActionTraversalKey } from '../support/native-board-keyboard.mjs';
 import { applyAction, resolveToStability } from '../../apps/web/generated/packages/game-engine/src/index.js';
 import { CURRENT_COMPUTER_MODEL } from '../../packages/shared-types/src/computer-play.ts';
 import { STORAGE_GENERATION_HEADER } from '../../packages/shared-types/src/storage-policy.js';
@@ -80,20 +81,29 @@ test.describe('retained Horus follow', () => {
     return request.postDataJSON()?.payload?.computer?.generation > minimumGeneration;
   });
 
-test('the exact follow saves once and pauses with its durable receipt', async ({ baseURL }, info) => {
-  await page.setViewportSize({ width: 390, height: 900 });
-  const { gameId: sourceId } = await importScenarioGame(page, scenario, baseURL, { open: false });
-  const source = await projected(page, sourceId);
-  ({ game } = await guestRequest(page, '/api/shell/history/branch', { sourceGameId: sourceId,
-    sourceDecisionId: source.moves.at(-1).moveId, creatorSide: 'p2',
-    // Watch mode permits a later native decision regardless of which side the
-    // resumed continuation leaves active. The retained model itself is unchanged.
-    computer: { p1: 'horus', p2: 'horus' }, computerModelId: CURRENT_COMPUTER_MODEL.id }));
-  expect(game.legalActions).toEqual([action]);
-  expect(game.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
-  const acquired = await guestRequest(page, `/api/shell/games/${game.id}/computer-control`, { action: 'acquire', deviceId: 'follow-fixture', generation: game.computer.generation });
-  await guestRequest(page, `/api/shell/games/${game.id}/computer-control`, { action: 'pause', deviceId: 'follow-fixture', generation: acquired.game.computer.generation });
-  await page.goto(`/?retained-follow=1#/game/${game.id}`);
+  // Only this first required phase uses the bounded prerequisite fixture.
+  // Its setup and teardown share 40s, separately from the original 60s body:
+  // 100s in aggregate here, rather than the former shared 60s budget.
+  const preparedFollowTest = test.extend({
+    preparedFollow: [async ({ baseURL }, use) => {
+      await page.setViewportSize({ width: 390, height: 900 });
+      const { gameId: sourceId } = await importScenarioGame(page, scenario, baseURL, { open: false });
+      const source = await projected(page, sourceId);
+      ({ game } = await guestRequest(page, '/api/shell/history/branch', { sourceGameId: sourceId,
+        sourceDecisionId: source.moves.at(-1).moveId, creatorSide: 'p2',
+        // Watch mode permits a later native decision regardless of which side the
+        // resumed continuation leaves active. The retained model itself is unchanged.
+        computer: { p1: 'horus', p2: 'horus' }, computerModelId: CURRENT_COMPUTER_MODEL.id }));
+      expect(game.legalActions).toEqual([action]);
+      expect(game.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
+      const acquired = await guestRequest(page, `/api/shell/games/${game.id}/computer-control`, { action: 'acquire', deviceId: 'follow-fixture', generation: game.computer.generation });
+      await guestRequest(page, `/api/shell/games/${game.id}/computer-control`, { action: 'pause', deviceId: 'follow-fixture', generation: acquired.game.computer.generation });
+      await page.goto(`/?retained-follow=1#/game/${game.id}`);
+      await use({ page, game });
+    }, { timeout: 40000 }],
+  });
+
+preparedFollowTest('the exact follow saves once and pauses with its durable receipt', async ({ preparedFollow }, info) => {
   const firstRequest = nextCommand(-1);
   await resumeHere(page, game.id);
   command = (await firstRequest).postDataJSON();
@@ -152,7 +162,52 @@ test('the same saved follow survives reload and resumes a distinct native Horus 
 // Required continuation on the same owned page; a skipped phase is incomplete.
 test('the resumed retained game completes its required board visual phase', async ({}, info) => {
   expect(new URL(page.url()).hash.split("?")[0]).toBe(`#/game/${visualPhase.gameId}`);
-  await switchGamePanel(page, 'board');
+  if (await page.locator('#app').getAttribute('data-shell-layout-mode') === 'narrow') {
+    const key = 'board';
+    const tab = page.locator(`[data-action="switch-game-panel"][data-panel="${key}"]`);
+    // An already selected panel needs no navigation click. The controls can be
+    // collapsed while the current panel stays visible and ready.
+    if (await tab.getAttribute('aria-pressed') !== 'true') {
+      // Select a native input path before opening navigation. A no-hover
+      // profile must not wait for hover before it can establish keyboard focus.
+      const hoverMedia = await page.evaluate(() => matchMedia('(hover:hover)').matches);
+      const reveal = page.getByRole('button',{name:'Show game navigation',exact:true});
+      // Refresh the idle window even when the bar is about to hide.
+      if (await reveal.count()) await reveal.click();
+      // Establish native input ownership through the owner's existing idle policy.
+      // Hover protects idle expiry, not downward scrolling or blocked navigation.
+      if (hoverMedia) await tab.hover();
+      else {
+        // The real no-hover profile has no pointer idle protection. Traverse
+        // from the clicked reveal through Players to Board using native keys.
+        await expect(reveal).toBeFocused();
+        const traversalKey = boardActionTraversalKey({ platform: process.platform, browserName: info.project.name });
+        await page.keyboard.press(traversalKey);
+        await expect(page.locator('[data-action="switch-game-panel"][data-panel="players"]')).toBeFocused();
+        await page.keyboard.press(traversalKey);
+        await expect(tab).toBeFocused();
+      }
+      const ownership = await tab.evaluate(tab => {
+        const nav = tab.closest('.shell-mobile-tabbar');
+        return { hover: nav.matches(':hover'), hoverMedia: matchMedia('(hover:hover)').matches,
+          keyboardFocus: nav.contains(document.activeElement) && document.activeElement.matches(':focus-visible'),
+          tabFocused: document.activeElement === tab,
+          visible: nav.dataset.visible, inert: nav.querySelector('[data-mobile-nav-controls]').inert,
+          expanded: nav.querySelector('[data-mobile-nav-reveal]').getAttribute('aria-expanded') };
+      });
+      await info.attach('retained-board-navigation-ownership', { body: JSON.stringify({ inputMethod: hoverMedia ? 'pointer' : 'keyboard', ...ownership }), contentType: 'application/json' });
+      expect(ownership.hoverMedia).toBe(hoverMedia);
+      expect(ownership.visible).toBe('true');
+      expect(ownership.inert).toBe(false);
+      expect(ownership.expanded).toBe('true');
+      if (hoverMedia) expect(ownership.hover && ownership.hoverMedia).toBe(true);
+      else expect(ownership.keyboardFocus && ownership.tabFocused).toBe(true);
+      await tab.click();
+    }
+    await expect(tab).toHaveAttribute('aria-pressed','true');
+    await expect.poll(()=>page.locator(`[data-mobile-panel="${key}"]`).evaluate(el=>el.closest('.game-shell-track').getAnimations().some(animation=>animation.playState==='running'||animation.pending)),{message:'Expected the panel transition to finish'}).toBe(false);
+    await expect.poll(()=>page.locator(`[data-mobile-panel="${key}"]`).evaluate(el=>Math.abs(el.getBoundingClientRect().left-el.closest('.game-shell-track-wrap').getBoundingClientRect().left)),{message:'Expected the selected panel to finish its horizontal transition'}).toBeLessThanOrEqual(1);
+  }
   await page.screenshot({ path: info.outputPath('retained-follow-resumed.png') });
 });
 });

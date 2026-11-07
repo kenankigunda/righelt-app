@@ -1,3 +1,4 @@
+import {observeReadinessEvaluation} from './readiness-diagnostics.mjs';
 import {readPlayableAction} from "./read-playable-action.mjs";
 import { expect, test } from "@playwright/test";
 
@@ -275,7 +276,11 @@ export const selectPlayableAction = async (page, action) => {
   const source = cell(action.from);
   // Continuations select their required actor automatically. Clicking it again
   // cycles the overlay away from action previews instead of selecting a move.
-  if (!["retreat", "follow"].includes(action.type) && !await source.evaluate(el => el.classList.contains("source"))) await source.click();
+  if (!["retreat", "follow"].includes(action.type) && !await source.evaluate(el => {
+    const selected=el.classList.contains("source");
+    try { globalThis.__boardAdmissionSourceRead?.(selected,el); } catch {}
+    return selected;
+  })) await source.click();
   // Complete piece previews are asynchronous. The runtime deliberately ignores
   // a destination tap while that check is pending, so wait before selecting it.
   await expect(page.locator('#shell-board-preview-label')).not.toHaveAttribute('aria-busy', 'true');
@@ -298,11 +303,16 @@ export const submitPlayableAction = async (page, action) => {
   // after hover or a tap prepared the destination.
   // Wait for visual readiness, then perform exactly one native confirmation.
   // Admission can change during the click; the runtime still checks it live.
-  await expect.poll(() => page.evaluate(to => {
+  await expect.poll(() => observeReadinessEvaluation(() => page.evaluate(to => {
+    let readinessFinish,readinessComplete=false,readinessResult;
+    try{readinessFinish=globalThis.__righeltReadinessBegin?.('readiness-callback',true);}catch{}
+    try{
     const node=document.querySelector(`[data-testid="game-board"] .cell[data-row="${to.row}"][data-col="${to.col}"]`);
     const message=document.getElementById('shell-board-preview-label');
-    return Boolean(node?.isConnected && message?.isConnected && message.getAttribute('aria-busy')!=='true' && node.classList.contains('target') && !node.classList.contains('unselectable'));
-  },action.to),{timeout:2000,message:'Complete move checks and the prepared destination must be ready at confirmation'}).toBe(true);
+    readinessResult=Boolean(node?.isConnected && message?.isConnected && message.getAttribute('aria-busy')!=='true' && node.classList.contains('target') && !node.classList.contains('unselectable'));
+    readinessComplete=true;return readinessResult;
+    }finally{try{readinessFinish?.(readinessComplete,readinessResult);}catch{}}
+  },action.to)),{timeout:2000,message:'Complete move checks and the prepared destination must be ready at confirmation'}).toBe(true);
   await target.click();
 };
 

@@ -63,7 +63,7 @@ export async function readProjectedGame({ id, expectedComputer, wait = false, gu
       move.computerProof?.modelId === expectedComputer.modelId && move.computerProof?.profile === expectedComputer.profile)) return game;
     if (!wait) return false;
     const shell = document.querySelector('[data-testid="game-shell"]');
-    if (shell?.getAttribute('data-game-id') === id && document.querySelector('[data-computer-status] [data-control="retry"]')) {
+    if (shell?.getAttribute('data-game-id') === id && document.querySelector('[data-computer-status] [data-control="retry"], [data-computer-status] [data-action="computer-branch"]')) {
       throw Error('Computer entered recovery before an accepted decision');
     }
     // One outstanding read, no swallowed failures. Existing test/context teardown

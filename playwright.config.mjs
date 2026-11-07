@@ -53,7 +53,7 @@ const config = defineConfig({
 
 for (const project of config.projects) {
   if (project.name === "firefox" || project.name === "webkit") {
-    project.testMatch = [project.testMatch, "**/completion-preserving-retreat.spec.mjs"];
+    project.testMatch = [project.testMatch, "**/completion-preserving-retreat.spec.mjs", "**/sync-hardening.spec.mjs"];
   }
 }
 

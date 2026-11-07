@@ -1,3 +1,4 @@
+import {createBoardContextStore} from '../shell/board-context.js';
 import {isCompletedGame} from '../shell/game-lifecycle.js';
 import {renderHistoryResult} from '../shell/game-result.js';
 import {historyTurnSide} from '../shell/history-preview.js';
@@ -147,7 +148,7 @@ test("computer seats have distinct human, watch, history and result labels despi
 });
 
 test("retained historical turns keep an exit even after undo removes the live turn", () => {
-  const context = {isCompletedGame,renderHistoryResult,icon,liveHistoryLabel,transport:{getIdentityId:()=>"me"},escapeHtml:String,getControlSeatForTurn:(_state,seat)=>seat,
+  const context = {boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',isCompletedGame,renderHistoryResult,icon,liveHistoryLabel,transport:{getIdentityId:()=>"me"},escapeHtml:String,getControlSeatForTurn:(_state,seat)=>seat,
     historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:()=>"You",playerToneClassForSide:()=>"",playerToneClassForSeat:()=>"",formatClientDateTime:String,expandedUndoneGroups:new Set()};
   runInNewContext(`${extract("const renderTurnHistory =", "const renderHeader =")}\n globalThis.history = renderTurnHistory;`, context);
   for (const turns of [[], [{index:0,playerSeat:"Player 1",moveIndexes:[]}]]) {
@@ -185,7 +186,7 @@ function historyRouteHarness(t) {
     moves:[0,1].map(index=>({index,moveId:`m${index}`,snapshot:snapshot(index),selectionSnapshot:snapshot(index),notation:'MOVE',at:'2026-01-01'}))}});
   transport.selectHistoryMove({gameId:'g',moveIndex:0});
   const noop=()=>{};
-  const context={isCompletedGame,renderHistoryResult,HTMLElement:Element,appEl,transport,currentRoute:{name:'game',gameId:'g',panel:'history'},
+  const context={pendingBoardContextReplay:null,cancelPendingBoardContextReplay:noop,boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',isCompletedGame,renderHistoryResult,HTMLElement:Element,appEl,transport,currentRoute:{name:'game',gameId:'g',panel:'history'},
     lastRenderedRouteKey:'g|history|debug:false',lastRenderedBaseRouteKey:'g',lastRenderedTransitionPhaseKey:'idle',
     activeResultGameId:null,mountedBoardGameId:null,FLYOUT_KEYS:[],
     getGamePanel:route=>(route??context.currentRoute).panel,

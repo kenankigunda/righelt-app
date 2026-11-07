@@ -1,3 +1,4 @@
+import {installInvitationFocusDiagnostics} from '../support/invitation-focus-diagnostics.mjs';
 import { waitForOverlayEntry } from "../support/overlay-motion.mjs";
 import { switchGamePanel } from '../support/app.mjs';
 import {test,expect} from '@playwright/test';
@@ -21,7 +22,15 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  const sound=page.getByRole('button',{name:'Mute sound',exact:true});
  await sound.locator('svg').click();
  await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeFocused();
+ // Observe this new document's real Home reads before advancing its clock.
+ const reloadedHomeReads=['my','other'].map(section=>page.waitForResponse(response=>{
+  const url=new URL(response.url());
+  return response.request().method()==='GET'&&url.pathname==='/api/shell/games'&&url.searchParams.get('section')===section&&response.status()===200;
+ }));
  await page.reload();await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeVisible();
+ for(const response of await Promise.all(reloadedHomeReads))expect(await response.finished()).toBeNull();
+ await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+ await expect(page.getByTestId('home-create-game')).toBeEnabled();
  // Model preparation may exceed the carousel interval. Hold autoplay while
  // checking the manual caret, then restore normal time once that click stops it.
  await page.clock.pauseAt(new Date('2026-01-01T01:00:00Z'));
@@ -101,7 +110,9 @@ test('home refresh preserves a pressed opponent and first home sound starts with
  expect(await page.evaluate(()=>window.audioCues.length)).toBe(2);await page.unrouteAll({behavior:'ignoreErrors'});
 });
 
-test('Players viewer invitation preserves focus through pending copy and failure',async({page})=>{
+test('Players viewer invitation preserves focus through pending copy and failure',async({page,baseURL},info)=>{
+ const focusDiagnostics=await installInvitationFocusDiagnostics(page,info,{baseURL});
+ try {
  await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:()=>new Promise((resolve,reject)=>{window.finishCopy=resolve;window.failCopy=reject;})}}));
  await page.goto('/');await page.getByTestId('home-create-game').click();await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
  const modal=page.getByRole('dialog',{name:'Invite a friend'});await expect(modal).toBeVisible();
@@ -117,6 +128,7 @@ test('Players viewer invitation preserves focus through pending copy and failure
  await page.evaluate(()=>window.failCopy(new Error('Clipboard denied')));
  await expect(panel.getByRole('textbox',{name:'Invitation link'})).toBeVisible();await expect(viewer).toBeFocused();
  await expect(panel.getByRole('textbox',{name:'Invitation link'})).toHaveValue(/as=viewer/);
+ }finally{await focusDiagnostics.persist();}
 });
 
 test('carousel keeps cycling under hover and focus but stops after a caret',async({page})=>{
@@ -228,7 +240,9 @@ test('storybook turn animates artwork while story copy stays fixed',async({page}
  expect((await copy.boundingBox()).y).toBeCloseTo(before.y,0);
 });
 
-for(const outcome of ['success','failure'])test(`Players restores the selected invitation role after delayed clipboard ${outcome}`,async({page})=>{
+for(const outcome of ['success','failure'])test(`Players restores the selected invitation role after delayed clipboard ${outcome}`,async({page,baseURL},info)=>{
+ const focusDiagnostics=await installInvitationFocusDiagnostics(page,info,{baseURL});
+ try {
  await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:()=>new Promise((resolve,reject)=>{window.completeClipboard=resolve;window.failClipboard=()=>reject(new Error('Clipboard unavailable'));})}}));
  await page.goto('/');await page.getByTestId('home-create-game').click();await page.getByRole('button',{name:'Start a friend game',exact:true}).click();await page.getByRole('button',{name:'Close invite',exact:true}).click();
  const panel=page.locator('[data-game-panel="join"]');const viewer=panel.locator('[data-invite-role="viewer"]');await viewer.focus();await page.keyboard.press('Enter');
@@ -236,6 +250,7 @@ for(const outcome of ['success','failure'])test(`Players restores the selected i
  await page.evaluate(outcome=>outcome==='success'?window.completeClipboard():window.failClipboard(),outcome);
  await expect(viewer).not.toHaveAttribute('aria-busy','true');await expect(viewer).toBeFocused();
  if(outcome==='failure')await expect(panel.getByRole('textbox',{name:'Invitation link'})).toBeVisible();
+ }finally{await focusDiagnostics.persist();}
 });
 
 for (const opponent of ['babs','tau','horus']) test(`${opponent} story has no decorative scroll overflow`,async({page})=>{

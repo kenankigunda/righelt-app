@@ -17,6 +17,8 @@ The parent workspace files must make it obvious that `/Users/kenankigunda/Docume
 
 ## 2) Skills Contract
 
+For UI controls, follow `docs/ai/UI_CONTROL_CONTRACT.md`. All icon-only close/dismiss controls must use the shared `renderDismissButton` helper and its accessibility contract.
+
 - Skills are turn-scoped. Re-mention required skills in each turn where they should apply.
 - Non-default workflows belong in dedicated docs under `docs/ai/`.
 - If a referenced skill is missing or unreadable:

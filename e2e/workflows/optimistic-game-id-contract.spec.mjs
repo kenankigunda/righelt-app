@@ -1,4 +1,7 @@
 import { test, expect } from "@playwright/test";
+import {readFileSync} from "node:fs";
+import {installPopupObservation} from "../support/optimistic-popup-selection-observer.mjs";
+const popupRecipes=JSON.parse(readFileSync(new URL("../support/optimistic-popup-selection-recipes.json",import.meta.url),"utf8"));
 
 import {
   closeContextQuietly,
@@ -46,10 +49,12 @@ test("optimistic create-game keeps route id, server id, and first apply target a
   }
 });
 
-test("optimistic history branch keeps popup route id, server id, and first apply target aligned", async ({ browser }) => {
+test("optimistic history branch keeps popup route id, server id, and first apply target aligned", async ({ browser,baseURL },info) => {
   const { context, page } = await createIsolatedPage(browser);
 
+  let popupObserver;
   try {
+    popupObserver=await installPopupObservation(context,{baseURL,recipes:popupRecipes});
     await createGameFromHome(page);
     await makeAnyLegalMove(page, "p1");
 
@@ -83,6 +88,7 @@ test("optimistic history branch keeps popup route id, server id, and first apply
       .toBeGreaterThan(branchHistoryCount);
 
   } finally {
+    try{await popupObserver?.finish(info);}catch{console.error("popup-selection-finalization-incomplete");}
     await closeContextQuietly(context);
   }
 });

@@ -1,3 +1,12 @@
+import { createPendingInvitationFocus } from './pending-invitation-focus.js';
+import {createBoardContextStore,renderBoardContext} from './board-context.js';
+import {createBoardContextLayout} from './board-context-layout.js';
+import {createBoardLoadingMessageOwner} from './board-loading-message-owner.js';
+import {createHistoryHeadingFocus} from "./history-heading-focus.js";
+import {createBoardContextOwner,createBoardContextFocus} from './board-context-owner.js';
+import {captureDisplayedReplay,displayedReplayIsCurrent,replayArchiveMatches} from './displayed-replay.js';
+import {BOARD_PROMPT} from '../board/prompt-models.js';
+import {renderDismissButton} from './dismiss-control.js';
 import {isOngoingGame,isCompletedGame} from './game-lifecycle.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
@@ -24,7 +33,7 @@ let computerSession = null;
 const viewingIntent = createViewingIntent();
 let mobileNavigation = null;
 let replayController = null;
-const replayRequests = createReplayRequest({onChange:() => boardRuntime?.refreshStatus()});
+const replayRequests = createReplayRequest({onChange:() => {boardRuntime?.refreshStatus();queueBoardContextRefresh();}});
 const viewingScope = () => `${account.snapshot().generation}:${activeStorageGeneration}`;
 const getBoardGame = game => deriveBoardView(game, { narrow: getShellLayoutMode() === "narrow", identityId: transport.getIdentityId() });
 const decisionDebugStates = new Map();
@@ -39,11 +48,12 @@ const patchToolHtml = (element, html) => {
 import { createDestructionTransitions } from "./destruction-transitions.js";
 import { isPassivePageClick } from "./passive-click.js";
 import {mountLoadingEdges} from './loading-edge.js';
-import {mountRecoverySpace} from './recovery-space.js';
+import {mountRecoverySpace,syncRecoverySpace} from './recovery-space.js';
 import { mountLoadingFeedback, loadingAttributes, LOADING_CUE_DELAY_MS } from "./loading.js";
 import { SYNC_TIMING } from "../generated/packages/shared-types/src/sync-protocol.js";
 import { latestRequestEvidence } from "./request-evidence.js";
 import { issueDiagnostics } from "./issue-diagnostics.js";
+import { createRecoveryTelemetry } from './recovery-telemetry.js';
 import { renderDiagnosticDisclosure, handleDiagnosticAction, isDiagnosticOpen, closeDiagnostic } from "./diagnostic-disclosure.js";
 import { patchSectionContent } from "./dom-patch.js";
 import { SWIPE_EASING_CSS } from './navigation-motion.js';
@@ -112,10 +122,99 @@ import { createTutorialController } from "./tutorial.js";
 let slowLoadingContexts=[];
 const loadingContextScope=()=>`${account.snapshot().generation}:${activeStorageGeneration}:${window.location.hash}`;
 mountLoadingEdges(document);
-void fetch("/deploy-meta.json", { cache: "no-store", signal: AbortSignal.timeout(5000) }).then(response => response.json()).then(meta => { globalThis.__righeltClientBuild = meta.sha ?? meta.commitSha ?? "unavailable"; }).catch(() => {});
+void fetch("/deploy-meta.json", { cache: "no-store", signal: AbortSignal.timeout(5000) }).then(response => response.json()).then(meta => { globalThis.__righeltObservedDeploymentSha = meta.sha ?? meta.commitSha ?? "unavailable"; }).catch(() => {});
 const appEl = document.getElementById("app");
+const boardContexts=createBoardContextStore();
+const boardContextLayout=createBoardContextLayout(document);
+let boardContextRefreshPending=false,activeDisplayedReplay=null,activeReplayFocusCleanup=null,boardContextVisit=0,pendingBoardContextReplay=null;
+const boardContextOwner=createBoardContextOwner({store:boardContexts,getScope:()=>{
+ const game=displayedReplayFrame();
+ return {owner:transport,key:JSON.stringify([viewingScope(),boardContextVisit,currentRoute.name,currentRoute.gameId,game?.inHistoryMode?[game.historyIndex,game.historyTurnIndex]:'live'])};
+},onRetire:()=>{
+ activeDisplayedReplay=null;cancelPendingBoardContextReplay();boardContextFocus.retire();contextAnnouncement.textContent='';
+ replayRequests.cancel();replayController?.stop('view-changed');
+},onIntentChange:()=>{
+ cancelPendingBoardContextReplay();
+ if(activeDisplayedReplay){activeDisplayedReplay=null;activeReplayFocusCleanup?.();activeReplayFocusCleanup=null;replayRequests.cancel();replayController?.stop('selection-changed');}
+}});
+const boardContextFocus=createBoardContextFocus({doc:document,owner:boardContextOwner,reveal:(target,current)=>boardContextLayout.reveal(target,current,{immediate:true})});
+const boardContextScope=()=>boardContextOwner.scope();
+const boardFocusTarget=()=>appEl.querySelector('#shell-board-preview-label button:not(:disabled),#shell-board .cell.selected-piece')??appEl.querySelector('.board-message-live');
+const contextAnnouncement=document.createElement('div');contextAnnouncement.className='sr-only';contextAnnouncement.setAttribute('role','status');contextAnnouncement.setAttribute('aria-live','polite');contextAnnouncement.setAttribute('aria-atomic','true');document.body.append(contextAnnouncement);
+const queueBoardContextRefresh=()=>{
+ if(boardContextRefreshPending)return;boardContextRefreshPending=true;
+ queueMicrotask(()=>{
+  boardContextRefreshPending=false;
+  boardContextScope();
+  const gameId=getCurrentViewedGameId(),game=gameId?transport.getGameViewModel(gameId):null;
+  if(!game||appEl.querySelector('[data-game-shell-root]')?.dataset.gameId!==gameId)return;
+  if(updateMountedHeader())syncRenderedMarkupSnapshot();
+  const history=appEl.querySelector('[data-game-panel="history"]');if(history)patchToolHtml(history,renderHistoryPanel(game));
+  syncRecoverySpace(appEl);
+  boardContextLayout.sync();
+  const active=appEl.querySelector('[data-alert-stack-card].is-active [data-board-context]');
+  const text=active&&boardContexts.takeAnnouncement(active.dataset.boardContext);if(text)contextAnnouncement.textContent=text;
+ });
+};
+const displayedReplayFrame=()=>getBoardGame(transport.getGameViewModel(getCurrentViewedGameId()));
+const canReplayDisplayed=descriptor=>displayedReplayIsCurrent(descriptor,{game:displayedReplayFrame(),context:currentReplayContext()});
+const contextReplayEnabled=descriptor=>canReplayDisplayed(descriptor)&&!replayRequests.snapshot()&&!replayController?.snapshot().playing;
+const acknowledgedBoardMessage=(view,status,options)=>{
+ const message=opponentBoardMessage(view,status,{},options),body=message?.context;
+ if(!body){if(boardContexts.update('acknowledged',null))queueBoardContextRefresh();return;}
+ const replay=body.action?.id==='replay-computer'?captureDisplayedReplay({game:view,owner:transport,scope:boardContextScope(),identityId:transport.getIdentityId(),visible:!document.hidden}):null;
+ const context={gameId:view.id,key:replay?.key??JSON.stringify([boardContextScope(),view.id,view.gameplayRevision,'completion']),message:body,replay,mandatory:false,transient:false};
+ const previousKey=boardContexts.channel('acknowledged')?.key;
+ const changed=boardContexts.update('acknowledged',context);
+ const piece=boardContexts.channel('piece');
+ if(previousKey!==context.key&&!boardContexts.isDismissed(context.key)&&!(piece?.gameId===view.id&&piece.message&&!piece.transient&&!boardContexts.isDismissed(piece.key)))notificationStack.prefer(view.id,`board-context:${context.key}`);
+ if(changed)queueBoardContextRefresh();
+};
+const receiveBoardContext=(context,meta)=>{
+ const game=displayedReplayFrame();if(!game)return;
+ const frame=[boardContextScope(),game.id,game.gameplayRevision,game.inHistoryMode?[game.historyIndex,game.historyTurnIndex]:'live'];
+ const key=JSON.stringify([...frame,context?.mandatory?'required-rush':meta.selectedPieceId,meta.phase,meta.continuationPhase,context?.mandatory?context.message.coordinates:null]);
+ if(!meta.transient){
+  boardContextOwner.commit(JSON.stringify([...frame,meta.selectedPieceId,meta.phase,meta.continuationPhase,meta.intentVersion]));
+  const acknowledged=boardContexts.channel('acknowledged');
+  const fallback=acknowledged?.gameId===game.id&&acknowledged.message&&!boardContexts.isDismissed(acknowledged.key)?`board-context:${acknowledged.key}`:null;
+  notificationStack.prefer(game.id,context?.message&&!boardContexts.isDismissed(key)&&(meta.selectedPieceId||context.mandatory||context.kind==='replay-progress')?`board-context:${key}`:fallback);
+ }
+ const focused=appEl.querySelector('[data-board-context]')?.contains(document.activeElement);
+ if(context&&meta.transient&&focused)return;
+ const value=context?{...context,key,gameId:game.id,transient:context.mandatory?false:meta.transient}:meta.selectedPieceId?{key,gameId:game.id,message:null,transient:false}:null;
+ if(boardContexts.update('piece',value))queueBoardContextRefresh();
+};
+const dispatchBoardMessageAction=(id,{trigger=null,descriptor=null}={})=>{
+ if(id==='replay-computer')void startComputerReplay(descriptor??boardContexts.channel('acknowledged')?.replay??activeDisplayedReplay,trigger);
+ if(id==='replay-stop')replayController?.stop('stopped');
+ if(id==='replay-next')replayController?.next();
+ if(id==='replay-cancel'||id==='replay-dismiss'){activeDisplayedReplay=null;activeReplayFocusCleanup?.();activeReplayFocusCleanup=null;replayRequests.cancel();}
+};
+
+const cancelPendingBoardContextReplay=()=>{
+ const pending=pendingBoardContextReplay;pendingBoardContextReplay=null;pending?.activation.release();pending?.focusReturn.release();
+};
+const resumeBoardContextReplay=()=>{
+ const pending=pendingBoardContextReplay;if(!pending)return;
+ if(!pending.activation.current()||!canReplayDisplayed(pending.descriptor)){
+  cancelPendingBoardContextReplay();return;
+ }
+ const root=appEl.querySelector('[data-testid="game-board-wrap"]');
+ if(!routeHydrated||currentRoute.name!=='game'||getGamePanel()!=='board'||mountedBoardGameId!==pending.descriptor.gameId||!root?.isConnected||root.closest('[inert]'))return;
+ pendingBoardContextReplay=null;
+ // Consume the explicit activation at the mounted boundary, with no async gap
+ // in which a later user intent could be mistaken for this action. Returning
+ // focus is optional and retains its separate, stricter ownership check.
+ if(!pending.activation.consume()){pending.focusReturn.release();return;}
+ const trigger=pending.focusReturn.restoreNow(boardFocusTarget);
+ if(boardContextOwner.current(pending.intent)&&canReplayDisplayed(pending.descriptor))dispatchBoardMessageAction('replay-computer',{descriptor:pending.descriptor,trigger});
+};
+
 mountRecoverySpace(appEl);
 const utilityMemory = createUtilityMemory({ root: appEl, getScope: key => `${account.snapshot().generation}:${key === 'debug' ? getCurrentViewedGameId() ?? 'home' : 'scenarios'}` });
+const boardLoadingMessageOwner=createBoardLoadingMessageOwner(appEl);
+const historyHeadingFocus=createHistoryHeadingFocus({doc:document,getScope:()=>JSON.stringify([viewingScope(),boardContextVisit,currentRoute.name,currentRoute.gameId,getGamePanel()])});
 const dismissedRecoveryNotices = new Map();
 // This node survives header/panel rendering, including repeated heartbeat snapshots.
 const syncAnnouncement = document.createElement("div");
@@ -1150,6 +1249,8 @@ const getAdjacentGamePanel = (panel = getGamePanel(), direction = 0) => {
   return GAME_PANEL_KEYS[nextIndex];
 };
 const preparePanelTransition = (previous, next) => {
+  if(pendingBoardContextReplay&&(next.name!=='game'||next.gameId!==pendingBoardContextReplay.descriptor.gameId||getGamePanel(next)!=='board'))cancelPendingBoardContextReplay();
+  if(previous.name!==next.name||previous.gameId!==next.gameId){boardContextVisit++;boardContextOwner.retire();}
   if (previous.name === 'game' && (next.gameId !== previous.gameId || getGamePanel(previous) !== getGamePanel(next))) {
     viewingIntent.saveScroll(previous.gameId, getGamePanel(previous), window.scrollY);
   }
@@ -1660,7 +1761,7 @@ const getGameAlertItems = (game) => {
   if (request) {
     const move = game.moves?.find(entry => entry.moveId === request.targetMoveId);
     const attrs = `data-game-id="${escapeHtml(game.id)}" data-request-id="${escapeHtml(request.requestId)}"`;
-    items.push({key:`undo-request:${request.requestId}`, html:renderGameAlertCard({activity:'waiting', actorSide:undoApprovalActorSide(game,request), testId:approval?'undo-approval-notice':'undo-waiting-notice',
+    items.push({key:`undo-request:${request.requestId}`, priority:items.some(item=>item.priority==='urgent')?'normal':'urgent', html:renderGameAlertCard({activity:'waiting', actorSide:undoApprovalActorSide(game,request), testId:approval?'undo-approval-notice':'undo-waiting-notice',
       body:approval ? `Undo requested before ${escapeHtml(move?.notation ?? 'this move')}` : 'Waiting for undo approval',
       action:approval ? `<button data-action="accept-revert-request" ${attrs}>${icon('check')}Accept</button><button class="secondary" data-action="reject-revert-request" ${attrs}>${icon('close')}Reject</button>` : `<button class="secondary" data-action="rescind-revert-request" ${attrs}>${icon('close')}Cancel request</button>`})});
   }
@@ -1674,6 +1775,8 @@ const getGameAlertItems = (game) => {
     });
   }
 
+  boardContextScope();
+  for(const context of boardContexts.items(game.id))items.push({key:`board-context:${context.key}`,priority:'normal',html:renderBoardContext(context,{replayEnabled:contextReplayEnabled(context.replay)})});
   return items;
 };
 
@@ -1792,7 +1895,11 @@ const renderTurnHistory = (game) => {
   const state = game.currentSnapshot ?? game.board?.state;
   const current = !game.inHistoryMode && game.currentTurn;
   const waiting = current && (state?.continuation || !current.moveIndexes?.length) ? `<li class="history-item history-item-waiting ${playerToneClassForSeat(game.controlSeat ?? current.playerSeat)} is-live-selected" aria-disabled="true"><span class="history-move-line">${escapeHtml(liveHistoryLabel(game,state,{identityId:transport.getIdentityId()}))}</span></li>` : '';
-  return live + waiting + groups;
+  boardContextScope();
+  const acknowledged=boardContexts.channel('acknowledged');
+  const replayFallback=!game.inHistoryMode&&acknowledged?.gameId===game.id&&acknowledged.replay&&boardContexts.isDismissed(acknowledged.key)&&canReplayDisplayed(acknowledged.replay)
+    ?`<li class="history-live-replay" data-key="live-replay:${escapeHtml(acknowledged.key)}"><button type="button" class="secondary" data-action="replay-board-context" data-board-context-key="${escapeHtml(acknowledged.key)}"${contextReplayEnabled(acknowledged.replay)?'':' disabled'}>Show me again</button></li>`:'';
+  return live + waiting + replayFallback + groups;
 };
 
 const renderHeader = () => `
@@ -1989,7 +2096,7 @@ const renderFlyout = ({ title, variant, closeAction, body }) => `
   <aside class="shell-flyout shell-flyout-${variant} is-open" data-flyout="${variant}">
     <header class="shell-flyout-header">
       <h2>${title}</h2>
-      <button class="ui-icon-button flyout-close-button" type="button" aria-label="Close ${title}" data-action="${closeAction}">${icon('close')}</button>
+      ${renderDismissButton({label:`Close ${title}`,className:"flyout-close-button",attributes:{"data-action":closeAction}})}
     </header>
     <div class="shell-flyout-scroll shell-flyout-scroll-${variant}">
       ${body}
@@ -2487,6 +2594,15 @@ const updateParticipantCards = game => {
 const joinFeedback=createJoinFeedback({getScope:gameId=>({gameId,owner:transport,generation:account.snapshot().generation,visit:inviteVisit,route:window.location.hash})});
 // A deliberate focus or pointer move retires only the join's focus intent.
 document.addEventListener('focusin',event=>joinFeedback.noteFocus(event.target));
+const pendingInvitationFocus = createPendingInvitationFocus({
+  document,
+  getScope: () => ({ owner: transport, generation: account.snapshot().generation, visit: inviteVisit, route: window.location.hash, panel: getGamePanel() }),
+});
+document.addEventListener('focusin', event => pendingInvitationFocus.noteFocus(event.target));
+for (const type of ['pointerdown', 'mousedown']) document.addEventListener(type, event => pendingInvitationFocus.notePointer(event.target), true);
+window.addEventListener('blur', () => pendingInvitationFocus.clear());
+document.addEventListener('visibilitychange', () => { if (document.hidden) pendingInvitationFocus.clear(); });
+
 document.addEventListener('pointerdown',event=>joinFeedback.noteFocus(event.target),true);
 const additionalHistory=createAdditionalHistory({
   getScope:gameId=>{const game=transport.getAuthoritativeGame(gameId),state=account.snapshot();return canReadAdditionalHistory(game,state)?{gameId,owner:transport,generation:state.generation,revision:game.gameplayRevision}:null;},
@@ -2577,9 +2693,9 @@ const renderBoardPanel = (game) => `
   ${game.ownershipMode === "legacy_guest" && account.snapshot().enabled ? '<p class="alert" role="status">This older guest game is view-only. <button data-action="create-game">Start new game</button></p>' : ''}
   ${account.snapshot().enabled && account.snapshot().available && !account.snapshot().maintenance && !account.canPlay() ? '<p class="alert" role="status">Sign in to play or analyze. The board remains available to view.</p>' : ''}
   ${renderBoardHeadingSlot()}
-  ${renderBoardMessageSlot({id:"shell-board-preview-label"})}
+  ${renderBoardMessageSlot({id:"shell-board-preview-label",boardSize:game.currentSnapshot?.boardSize??10})}
   <div class="board-wrap" data-testid="game-board-wrap">
-    <div id="shell-board" class="board" data-testid="game-board"></div>
+    <div id="shell-board" class="board" data-testid="game-board" role="region" aria-label="Game Board" tabindex="-1"></div>
     <div class="reconnect-background" aria-hidden="true"></div>
     <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
   </div>
@@ -2647,6 +2763,7 @@ const getMountedGameShellRoot = () =>
   appEl?.querySelector?.("[data-game-shell-root]") instanceof HTMLElement ? appEl.querySelector("[data-game-shell-root]") : null;
 const syncMountedGameShellPanelUi = (shellRoot = getMountedGameShellRoot()) => {
   if (!(shellRoot instanceof HTMLElement)) {
+    boardLoadingMessageOwner.release();
     return;
   }
   const activePanel = getGamePanel();
@@ -2657,6 +2774,9 @@ const syncMountedGameShellPanelUi = (shellRoot = getMountedGameShellRoot()) => {
     panel.setAttribute('aria-hidden', String(inactive));
     panel.dataset.active = String(!inactive);
   });
+  // Admit the actual loading label after panel membership, before layout and
+  // focus consumers observe this committed frame.
+  boardLoadingMessageOwner.sync();
   mobileNavigation?.sync();
   shellRoot.querySelectorAll("[data-action='switch-game-panel'][data-panel]").forEach((buttonEl) => {
     if (!(buttonEl instanceof HTMLElement)) {
@@ -2877,6 +2997,8 @@ const shouldPatchMountedFlyouts = (routeKey = getRouteRenderKey(), baseRouteKey 
   appEl.querySelector(".shell-main-content") instanceof HTMLElement &&
   getMountedShellPageEl() instanceof HTMLElement;
 const syncRenderedMarkupSnapshot = () => {
+  syncRecoverySpace(appEl);
+  boardContextLayout.sync();
   const mainContentEl = appEl?.querySelector?.(".shell-main-content");
   lastRenderedMainMarkup = mainContentEl instanceof HTMLElement ? mainContentEl.outerHTML : "";
   lastRenderedFlyoutMarkup = renderFlyouts();
@@ -3011,7 +3133,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
       const animateJoin = animatePanels && !routeTransition && joinMarkupByElement.has(joinEl);
       const oldHeight=joinEl.getBoundingClientRect().height;
       const focus=joinEl.contains(document.activeElement)?document.activeElement:null;
-      const selector=focus?.matches('.invite-link-field')?'.invite-link-field':focus?.dataset.action?`[data-action="${CSS.escape(focus.dataset.action)}"]${focus.dataset.inviteRole?`[data-invite-role="${CSS.escape(focus.dataset.inviteRole)}"]`:''}${focus.dataset.profileKey?`[data-profile-key="${CSS.escape(focus.dataset.profileKey)}"]`:''}${focus.dataset.computerSide?`[data-computer-side="${CSS.escape(focus.dataset.computerSide)}"]`:''}`:null;
+      const selector=focus?.dataset.action==='copy-invite'&&isButtonPending(getCopyInviteButtonKey(game.id))?null:focus?.matches('.invite-link-field')?'.invite-link-field':focus?.dataset.action?`[data-action="${CSS.escape(focus.dataset.action)}"]${focus.dataset.inviteRole?`[data-invite-role="${CSS.escape(focus.dataset.inviteRole)}"]`:''}${focus.dataset.profileKey?`[data-profile-key="${CSS.escape(focus.dataset.profileKey)}"]`:''}${focus.dataset.computerSide?`[data-computer-side="${CSS.escape(focus.dataset.computerSide)}"]`:''}`:null;
       const selection=focus instanceof HTMLInputElement?[focus.selectionStart,focus.selectionEnd]:null;
       if(selector)panelPendingFocus.set(joinEl,{selector,selection});
       else if(document.activeElement !== document.body)panelPendingFocus.delete(joinEl);
@@ -3393,6 +3515,9 @@ const mountBoardForGame = (game) => {
     forceClickTargetSelection,
   });
 
+  // A patched frame may reuse its label. Release the loading owner before live
+  // binding so later cleanup cannot erase the runtime's newly admitted height.
+  boardLoadingMessageOwner.release();
   if (mountedBoardGameId !== game.id || !boardRuntime) {
     if (boardRuntime) {
       boardRuntime.destroy();
@@ -3421,9 +3546,13 @@ const mountBoardForGame = (game) => {
           return boardTurnCaption(view,state,{identityId:transport.getIdentityId()});
         },
         getBoardMessage: selection => {
+          boardContextScope();
+          const view = getBoardGame(transport.getGameViewModel(game.id));
+          if(activeDisplayedReplay&&!canReplayDisplayed(activeDisplayedReplay)){
+            activeDisplayedReplay=null;replayRequests.cancel();replayController?.stop('context-changed');
+          }
           const replayFeedback = replayRequests.snapshot();
           const replay = replayController?.snapshot();
-          const view = getBoardGame(transport.getGameViewModel(game.id));
           const status = computerSession?.snapshot();
           updateComputerBoardLoading(document.getElementById('shell-board-preview-label')?.parentElement.querySelector('.board-message-activity'), view, status, {
             replaying: Boolean(replay?.playing || replayFeedback?.gameId === game.id), inspecting: Boolean(selection.selectedPieceId || selection.inspection), scope: viewingScope(),
@@ -3432,21 +3561,18 @@ const mountBoardForGame = (game) => {
           if (replayFeedback?.gameId === game.id) return replayFeedback.phase === "loading"
             ? {text:"Preparing replay",action:{id:"replay-cancel",label:"Cancel replay"}}
             : {text:"Replay unavailable",actions:[{id:"replay-computer",label:"Try again"},{id:"replay-dismiss",label:"Dismiss"}]};
-          if (replay?.playing) return { text:`Replay · ${Math.max(1,replay.step)} of ${replay.total}`, actions:[...(replay.manual ? [{id:'replay-next',label:'Next'}] : []),{id:'replay-stop',label:'Stop replay'}] };
-          return opponentBoardMessage(view,status,selection,{canInteract:!(currentRoute.scenarios && scenarioCapture?.mode === "frozen" && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && canControlLiveBoard(view),identityId:transport.getIdentityId()});
+          if (replay?.playing) return {text:replay.manual?BOARD_PROMPT.manualReplay:BOARD_PROMPT.replay,actions:[...(replay.manual?[{id:'replay-next',label:'Next'}]:[]),{id:'replay-stop',label:'Stop replay'}],context:{kind:'replay-progress',message:{text:`Replay · ${Math.max(1,replay.step)} of ${replay.total}`}}};
+          const options={canInteract:!(currentRoute.scenarios&&scenarioCapture?.mode==='frozen'&&scenarioCapture.gameId===game.id)&&hostInvite?.gameId!==game.id&&canControlLiveBoard(view),identityId:transport.getIdentityId()};
+          acknowledgedBoardMessage(view,status,options);
+          return opponentBoardMessage(view,status,selection,options);
         },
-        onBoardMessageAction: id => {
-          if (id === 'replay-computer') void startComputerReplay();
-          if (id === 'replay-stop') replayController?.stop('stopped');
-          if (id === 'replay-next') replayController?.next();
-          if (id === 'replay-cancel' || id === 'replay-dismiss') replayRequests.cancel();
-        },
+        onBoardMessageAction:(id,source)=>dispatchBoardMessageAction(id,source),
+        onBoardContext:receiveBoardContext,
         getAllowFreeSelection: () => Boolean(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id),
         getSupportsHover: () => hoverCapability.getSupportsHover(),
         getForceClickTargetSelection: () => Boolean(currentRoute.scenarios && scenarioCapture?.gameId === game.id),
         onVisualsUpdated: visible => { updateLegendVisibility(document.querySelector('.overlay-key'), visible, prefersReducedMotion()); updateInspectionLegend(document.querySelector('.overlay-key'),boardRuntime?.getState(),{selectedPieceId:boardRuntime?.getSelection()?.selectedPieceId,...visible}); },
         onStateUpdated: ({ state, selectedPieceId, selectedSource, selectedTarget, overlay }) => {
-          if (selectedPieceId && replayRequests.snapshot()) replayRequests.cancel();
           if (currentRoute.scenarios && scenarioCapture?.gameId === game.id && toStableKey(state) === toStableKey(capturePosition())) {
             scenarioCapture.selection = buildSavedSelectionFromRuntimeSelection({ source: selectedSource, target: selectedTarget }, state);
           }
@@ -3550,7 +3676,7 @@ const mountBoardForGame = (game) => {
 
 const destroyMountedBoardRuntime = () => {
   replayRequests.cancel();
-  replayController?.destroy();
+  replayController?.destroy();activeReplayFocusCleanup?.();activeReplayFocusCleanup=null;activeDisplayedReplay=null;
   replayController = null;
   mountedBoardGameId = null;
   mountedHistoryMoveIndex = null;
@@ -3848,17 +3974,50 @@ const scheduleResponsiveHomeSectionPageSizes = () => {
 };
 
 const renderGesture = createRenderGestureGate({ render: options => render(options) });
+// Compatibility mouse events alias their admitted pointer control, so one
+// physical release cannot leave an alias held or release another input.
+const pointerPresses = new Map(), mousePresses = new Map();
+const pressedControl = event => appEl.contains(event.target) ? event.target.closest?.("button, a, [data-action]") : null;
+const mouseButton = event => event.button ?? 0;
+const pointerKey = event => event.pointerId ?? "legacy-pointer";
+const retireRenderPress = owner => {
+  if (!owner) return;
+  for (const [id, press] of pointerPresses) if (press.owner === owner) pointerPresses.delete(id);
+  for (const [button, held] of mousePresses) if (held === owner) mousePresses.delete(button);
+  renderGesture.end(owner);
+};
 window.addEventListener("pointerdown", event => {
-  if (appEl.contains(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
+  const control = pressedControl(event);
+  if (!control) return;
+  const id = pointerKey(event), owner = Symbol("pointer-press");
+  retireRenderPress(pointerPresses.get(id)?.owner);
+  pointerPresses.set(id, {owner, control, button: mouseButton(event), kind: event.pointerType ?? "mouse", primary: event.isPrimary !== false});
+  renderGesture.begin(owner);
+}, true);
+window.addEventListener("mousedown", event => {
+  const control = pressedControl(event);
+  if (!control) return;
+  const button = mouseButton(event);
+  const pointer = [...pointerPresses.values()].reverse().find(press => press.primary && press.control === control && press.button === button);
+  const owner = pointer?.owner ?? mousePresses.get(button) ?? Symbol("mouse-press");
+  mousePresses.set(button, owner);
+  renderGesture.begin(owner);
 }, true);
 window.addEventListener("keydown", event => {
-  if (!event.repeat && (event.key === " " || event.key === "Enter") && appEl.contains(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
+  if (!event.repeat && (event.key === " " || event.key === "Enter") && pressedControl(event)) renderGesture.begin(`key:${event.code || event.key}`);
 }, true);
-window.addEventListener("keyup", event => { if (event.key === " " || event.key === "Enter") renderGesture.end(); }, true);
-for (const type of ["pointerup", "pointercancel", "touchcancel", "lostpointercapture", "click"])
-  window.addEventListener(type, () => renderGesture.end(), true);
-window.addEventListener("blur", event => { if (event.target === window) renderGesture.end(); });
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") renderGesture.end(); });
+window.addEventListener("keyup", event => {
+  if (event.key === " " || event.key === "Enter") renderGesture.end(`key:${event.code || event.key}`);
+}, true);
+for (const type of ["pointerup", "pointercancel", "lostpointercapture"])
+  window.addEventListener(type, event => retireRenderPress(pointerPresses.get(pointerKey(event))?.owner), true);
+window.addEventListener("mouseup", event => retireRenderPress(mousePresses.get(mouseButton(event))), true);
+window.addEventListener("touchcancel", () => {
+  for (const press of [...pointerPresses.values()]) if (press.kind === "touch") retireRenderPress(press.owner);
+}, true);
+const cancelRenderPresses = () => { pointerPresses.clear(); mousePresses.clear(); renderGesture.cancelAll(); };
+window.addEventListener("blur", event => { if (event.target === window) cancelRenderPresses(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") cancelRenderPresses(); });
 
 // Background shell updates must not interrupt an in-progress scenario draft.
 const captureScenarioDraftFocus = (baseRouteKey) => {
@@ -3878,17 +4037,27 @@ const captureScenarioDraftFocus = (baseRouteKey) => {
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (renderGesture.defer({ animatePanels, includeBoard })) return;
+  const historyFocus=historyHeadingFocus.capture();
   const previousJoinFocus = document.activeElement;
   utilityMemory.capture();
-  const result = preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => renderContent({ animatePanels, includeBoard }));
+  const result = preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => {
+    const committed = renderContent({ animatePanels, includeBoard });
+    syncMountedGameShellPanelUi();
+    // Admit loading and live frames before restoring native Board focus.
+    // Every committed path records the same layout-adjusted markup snapshot.
+    syncRenderedMarkupSnapshot();
+    historyHeadingFocus.restore(historyFocus,()=>appEl.querySelector('[data-game-panel="history"] h2'));
+    return committed;
+  });
   utilityMemory.restore();
   inlineProfiles.sync();
-  syncMountedGameShellPanelUi();
   if (pendingResultReviewFocus === currentRoute.gameId && getGamePanel() === "history") {
     const heading = appEl.querySelector('[data-game-panel="history"] h2');
     if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }
   }
   joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });
+  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });
+  resumeBoardContextReplay();
   return result;
 };
 const renderContent = ({ animatePanels, includeBoard }) => {
@@ -4304,6 +4473,7 @@ const startRouteSync = ({ renderStart = true } = {}) => {
       }
     } catch (error) {
       if (requestId !== routeSyncRequestId || !routeReadIsCurrent(read)) return;
+      cancelPendingBoardContextReplay();
       window.__righeltLastError = error instanceof Error ? error.message : String(error);
       if (read.route.name === "invite" && error?.code !== "upgrade_required") {
         resolvedInvite = null;
@@ -4346,6 +4516,7 @@ const syncScenarioCatalog = async () => {
 const makeAccountSyncStore = auth => createSyncStore({
   storage,
   auth,
+  diagnostics: createRecoveryTelemetry(),
   fetcher: account.fetch,
   onAuthLost: () => account.authorityLost(),
   onEvent: (payload, context = {}) => {
@@ -4404,39 +4575,59 @@ mountLoadingFeedback(document,{
 });
 const currentReplayContext = () => {
   const gameId=getCurrentViewedGameId(),game=transport.getAuthoritativeGame(gameId);
-  return {owner:transport,scope:viewingScope(),gameId,revision:game?.gameplayRevision,lineageHead:game?.moves?.filter(move=>!move.undone).at(-1)?.moveId ?? null,visible:!document.hidden};
+  return {owner:transport,scope:boardContextScope(),gameId,revision:game?.gameplayRevision,lineageHead:game?.moves?.filter(move=>!move.undone).at(-1)?.moveId ?? null,visible:!document.hidden};
 };
-const startComputerReplay = async () => {
+const startComputerReplay = async (requested=null,trigger=null) => {
+  const descriptor=requested??captureDisplayedReplay({game:displayedReplayFrame(),owner:transport,scope:boardContextScope(),identityId:transport.getIdentityId(),visible:!document.hidden});
+  if(!canReplayDisplayed(descriptor)||replayController?.snapshot().playing||replayRequests.snapshot()?.phase==='loading')return;
   const context=currentReplayContext(),{gameId,owner,revision,lineageHead}=context;
-  const game=owner.getAuthoritativeGame(gameId),completed=latestOpponentTurn(game,{identityId:owner.getIdentityId()});
-  if (!completed || replayController?.snapshot().playing) return;
+  activeReplayFocusCleanup?.();
+  const focusReturn=boardContextFocus.begin(trigger,{allows:target=>Boolean(target?.closest?.('#shell-board-preview-label [data-board-message-action^="replay-"]'))});
+  activeReplayFocusCleanup=focusReturn.release;
+  activeDisplayedReplay=descriptor;
+  const intent=boardContextOwner.capture();
   const token=replayRequests.begin(context);
-  const stillCurrent=()=>replayRequests.current(token,currentReplayContext());
-  let moves=game.moves;
-  let payload=buildTurnReplay({moves,completedTurnIndex:completed.turn.index,gameId,revision,lineageHead});
-  if (!payload) {
+  const stillCurrent=()=>boardContextOwner.current(intent)&&replayRequests.current(token,currentReplayContext())&&canReplayDisplayed(descriptor);
+  let moves=descriptor.moves;
+  let payload=buildTurnReplay({moves,completedTurnIndex:descriptor.turnIndex,gameId,revision,lineageHead});
+  if(!payload){
     let entries=[],cursor=null;
-    try {
-      do {
+    try{
+      do{
         const page=await owner.decisionHistory(gameId,cursor);
-        if(!stillCurrent())return;
+        if(!stillCurrent()){focusReturn.release();return;}
         entries.push(...page.items);cursor=page.nextCursor;
-      } while(cursor);
+      }while(cursor);
       moves=activeDecisionLineage(entries);
-      payload=buildTurnReplay({moves,completedTurnIndex:completed.turn.index,gameId,revision,lineageHead});
-    } catch {replayRequests.fail(token,currentReplayContext());return;}
+      if(!replayArchiveMatches(descriptor,moves)){replayRequests.fail(token,currentReplayContext());focusReturn.release();return;}
+      payload=buildTurnReplay({moves,completedTurnIndex:descriptor.turnIndex,gameId,revision,lineageHead});
+    }catch{replayRequests.fail(token,currentReplayContext());focusReturn.release();return;}
   }
-  if (!stillCurrent()) {replayRequests.reconcile(currentReplayContext());return;}
-  if (!payload) {replayRequests.fail(token,currentReplayContext());return;}
-  if(!replayRequests.ready(token,currentReplayContext()))return;
+  if(!stillCurrent()){replayRequests.reconcile(currentReplayContext());focusReturn.release();return;}
+  if(!payload){replayRequests.fail(token,currentReplayContext());focusReturn.release();return;}
+  if(!replayRequests.ready(token,currentReplayContext())){focusReturn.release();return;}
   replayController?.destroy();
-  const rootEl=appEl.querySelector('[data-testid="game-board-wrap"]');
-  if(!rootEl)return;
+  const rootEl=appEl.querySelector('[data-testid="game-board-wrap"]');if(!rootEl){focusReturn.release();return;}
+  const host=trigger?.closest('.history-live-replay')?'history':trigger?.closest('[data-board-context]')?'context':'board';
+  const finish=()=>{
+    boardRuntime?.setInteractionBlocked(false);boardRuntime?.refreshStatus();queueBoardContextRefresh();
+    activeDisplayedReplay=null;
+    if(canReplayDisplayed(descriptor))focusReturn.restore(()=>{
+      const selector=`[data-board-context-key="${CSS.escape(descriptor.key)}"]`;
+      const target=trigger?.isConnected?trigger:host==='context'?appEl.querySelector(`[data-board-context] ${selector}`):host==='history'?appEl.querySelector(`.history-live-replay ${selector}`):null;
+      // A native replay control may disappear when playback completes. The Board
+      // region is a meaningful return owner for observer/completed states too.
+      return target&&!target.closest('[inert]')?target:boardFocusTarget();
+    });else focusReturn.release();
+    if(activeReplayFocusCleanup===focusReturn.release)activeReplayFocusCleanup=null;
+  };
   replayController=createComputerReplay({rootEl,createAdapter:()=>createEngineBoardAdapter(),reducedMotion:prefersReducedMotion,
-    onChange:replay=>{boardRuntime?.setInteractionBlocked(replay.playing);boardRuntime?.refreshStatus();},
-    onFinish:()=>{boardRuntime?.setInteractionBlocked(false);boardRuntime?.refreshStatus();appEl.querySelector('[data-board-message-action="replay-computer"]')?.focus({preventScroll:true});}
-  });
-  try {await replayController.play(payload);} catch {replayController.stop('error');replayRequests.fail(token,currentReplayContext());}
+    onChange:replay=>{
+      const playing=replay.playing;
+      const refresh=()=>{boardRuntime?.setInteractionBlocked(playing);boardRuntime?.refreshStatus();queueBoardContextRefresh();};
+      if(playing)refresh();else focusReturn.renderOwnedRemoval(refresh);
+    },onFinish:finish});
+  try{await replayController.play(payload);}catch{replayController.stop('error');replayRequests.fail(token,currentReplayContext());}
 };
 const updateComputerUi = () => {
   boardRuntime?.refreshStatus?.();
@@ -4496,7 +4687,7 @@ const copyGameInvitation = async (gameId, role, fromHost=false) => {
   }catch(error){if(active()){ issueDiagnostics.capture(`invite:${gameId}`, { gameId, operation: 'create_invite', stage: 'failed', code: error.code ?? 'unavailable' }); setInviteFeedback('We couldn’t create your invite link. Please try again.'); }}
 };
 const renderHostInvite = game => renderInvitationSurface({host:true,background:renderGameContent(game.id),content:`
-  <button class="ui-icon-button invite-close" data-action="close-invite" aria-label="Close invite">${icon('close')}</button>
+  ${renderDismissButton({label:"Close invite",className:"invite-close",attributes:{"data-action":"close-invite"}})}
   <p class="small invite-gate-kicker">Your game is ready</p><h2 id="invite-surface-title">Invite a friend</h2>
   <p>Copy a link and send it their way.</p>
   <div class="invite-choice-list">${invitationOptions(game).filter(option=>option.role!=="viewer").map(option=>`<button data-action="share-invite" data-invite-role="${option.role}" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:getCopyInviteButtonKey(game.id)})}>${icon('copy')}${option.label}</button>`).join('')}</div>
@@ -4664,6 +4855,8 @@ const subscribeToTransport = () => transport.subscribe((change) => {
 subscribeToTransport();
 accountInitialized = true;
 function resetAccountTransport(next) {
+  historyHeadingFocus.retire();
+  boardContextOwner.retire();
   inviteLoadState = null;
   if (currentRoute.name === "invite") resolvedInvite = null;
   joinFeedback.clear();
@@ -5298,6 +5491,9 @@ appEl.addEventListener("click", async (event) => {
     if (!gameId) {
       return;
     }
+    const invitationPanel = actionEl.closest('[data-game-panel="join"]');
+    if (invitationPanel instanceof HTMLElement) panelPendingFocus.delete(invitationPanel);
+    pendingInvitationFocus.begin(actionEl, getCopyInviteButtonKey(gameId));
     await withPendingButton(getCopyInviteButtonKey(gameId),()=>copyGameInvitation(gameId,actionEl.dataset.inviteRole || 'viewer'));
 
     return;
@@ -5328,6 +5524,29 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if(action==='replay-board-context'){
+    const context=boardContexts.get(actionEl.dataset.boardContextKey);
+    if(context?.gameId!==getCurrentViewedGameId()||!contextReplayEnabled(context.replay))return;
+    if(actionEl.closest('.history-live-replay')&&getShellLayoutMode()==='narrow'&&getGamePanel()!=='board'){
+      cancelPendingBoardContextReplay();
+      pendingBoardContextReplay={descriptor:context.replay,activation:boardContextFocus.activate(actionEl,{allowRemoval:true,onRetire:cancelPendingBoardContextReplay}),focusReturn:boardContextFocus.begin(actionEl,{allowRemoval:true}),intent:boardContextOwner.capture()};
+      // Consumption happens at the actual post-render mounted Board boundary,
+      // including same-hash navigation and render-gesture deferral.
+      navigateTo(buildGameHash(context.gameId,null,getCurrentGameHashState('board')));
+      resumeBoardContextReplay();
+      return;
+    }
+    dispatchBoardMessageAction('replay-computer',{descriptor:context.replay,trigger:actionEl});
+    return;
+  }
+  if(action==='dismiss-board-context'){
+    const context=boardContexts.get(actionEl.dataset.boardContextKey);
+    if(context?.gameId!==getCurrentViewedGameId()||!boardContexts.dismiss(context?.key))return;
+    const focusReturn=boardContextFocus.begin(actionEl,{allowRemoval:true});
+    queueBoardContextRefresh();
+    focusReturn.restore(boardFocusTarget);
+    return;
+  }
   if (action === "cycle-game-alert-stack") {
     const gameId = actionEl.getAttribute("data-game-id");
     if (!gameId) {

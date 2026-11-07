@@ -3,6 +3,7 @@ import { createRulesExecutor } from '../board/rules-runtime.js';
 import { CURRENT_COMPUTER_MODEL, computerProfileFor } from '../generated/packages/shared-types/src/computer-play.js';
 import { STORAGE_GENERATION_HEADER } from "../generated/packages/shared-types/src/storage-policy.js";
 import { issueDiagnostics } from "./issue-diagnostics.js";
+import { RECOVERY_DIAGNOSTICS } from '../generated/packages/shared-types/src/recovery-diagnostics.js';
 import { serializeState, listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
 import { loadIdentity, saveIdentity } from "./persistence.js";
 import { defaultNotationForAction, rebaseProjectedMetadata } from "./optimistic-live.js";
@@ -118,9 +119,11 @@ export const createLiveTransportStore = ({
   auth = null,
   timing = SYNC_TIMING,
   beforeReconcile = async () => {},
+  onDiagnostic = () => {},
   rulesExecutor = createRulesExecutor(),
 } = {}) => {
   let active = true;
+  const recoveryDiagnosticTimers = new Map();
   let rulesGameId = null;
   let rulesVisible = !globalThis.document?.hidden;
   let rulesEpoch = 0;
@@ -529,6 +532,36 @@ export const createLiveTransportStore = ({
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, mode: authoritative?.computer ? "computer" : authoritative?.selfPlayMode ? "play_both" : "multiplayer",
       deadlineMs: error?.code === "request_timeout" ? timing.requestTimeoutMs : stage.startsWith("journal") ? SYNC_TIMING.requestTimeoutMs : timing.confirmationBudgetMs,
     });
+    reportRecoveryDiagnostic(gameId, 'recovery_blocked', { stage, ...(error?.diagnosticEvidence ?? {}),
+      requestRelationship: error?.diagnosticEvidence ? 'failure' : 'latest_observed' });
+  };
+  // Read existing scalar ownership only. Remote evidence never includes the
+  // board, command envelope, identity, arbitrary error text or local issue report.
+  const reportRecoveryDiagnostic = (gameId, type, extra = {}) => {
+    try {
+      if (!active) return;
+      const optimistic = getOptimisticState(gameId), game = gameById.get(gameId);
+      const evidence = optimistic.requestEvidence ?? {};
+      const command = optimistic.pendingCommands[0] ?? optimistic.unsavedCommand;
+      const rulesChecking = Boolean(optimistic.admissionProjection || optimistic.projectionJob?.pending);
+      const sharedPending = optimistic.pendingCommands.some(command => command.kind === 'shared');
+      const recovering = Boolean(optimistic.connectionRecovering || optimistic.syncStatus === 'confirming' || optimistic.confirmationOverdue);
+      onDiagnostic({ type, gameId, episodeId: optimistic.recoveryEpisodeId,
+        requestId: evidence.requestId, requestKind: evidence.requestKind, requestPhase: evidence.requestPhase,
+        requestRelationship: 'latest_observed', commandId: command?.clientCommandId,
+        status: evidence.status, serverBuild: evidence.serverBuild,
+        pendingCount: optimistic.pendingCommands.length, appliedEventSeq: lastEventSeqByGameId.get(gameId),
+        advertisedEventSeq: optimistic.connectionEvidence?.advertisedEventSeq,
+        socketGeneration: optimistic.connectionEvidence?.socketGeneration,
+        gameplayRevision: game?.gameplayRevision, recoveryGeneration: optimistic.recoveryGeneration ?? 0,
+        ageMs: Math.min(RECOVERY_DIAGNOSTICS.maximumAgeMs, Math.max(0, Date.now() - (optimistic.recoveryStartedAt ?? Date.now()))),
+        rulesChecking, sharedPending, recovering, connectionRecovering: optimistic.connectionRecovering === true,
+        storageBlocked: optimistic.storageBlocked === true, forceSnapshot: optimistic.forceSnapshot === true,
+        upgradeRequired: optimistic.upgradeRequired === true, confirmationOverdue: optimistic.confirmationOverdue === true,
+        sharedMutationsBlocked: Boolean(rulesChecking || optimistic.storageBlocked || recovering || optimistic.upgradeRequired || sharedPending),
+        syncStatus: optimistic.syncStatus, mode: game?.computer ? 'computer' : game?.selfPlayMode ? 'play_both' : 'multiplayer',
+        retry: Math.max(optimistic.retryAttempt ?? 0, optimistic.recoveryRetryAttempt ?? 0), ...extra });
+    } catch { /* Diagnostics cannot acquire, clear or interrupt recovery authority. */ }
   };
   const journalRecoveryState = (optimistic) => {
     if (!journalRecoveryByOwner.has(optimistic)) journalRecoveryByOwner.set(optimistic, {
@@ -1061,7 +1094,10 @@ export const createLiveTransportStore = ({
       assertRulesContext(contextEpoch, gameId);
       if (auth?.enabled && (!auth.session.authenticated)) throw Object.assign(new Error("invalid_credentials"), { code: "invalid_credentials" });
       const current = getGameViewModel(gameId);
-      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
+      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) {
+        reportRecoveryDiagnostic(gameId, 'admission_blocked', { reason: 'sync_recovering' });
+        throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
+      }
       const isClosure = command.kind === "end-turn" || command.action?.type === "end_turn";
       if (isClosure && serverActionContract !== ACTION_CONTRACT_VERSION) {
         markUpgradeRequired(gameId);
@@ -1103,7 +1139,10 @@ export const createLiveTransportStore = ({
         if (!sameProjectionAuthority(base, latest) || !pendingStillMatches()) {
           throw Object.assign(new Error("stale_state"), { code: "stale_state" });
         }
-        if (gameplayRecoveryBlocked(latest)) throw Object.assign(new Error('sync_recovering'), {code:'sync_recovering'});
+        if (gameplayRecoveryBlocked(latest)) {
+          reportRecoveryDiagnostic(gameId, 'admission_blocked', { reason: 'sync_recovering' });
+          throw Object.assign(new Error('sync_recovering'), {code:'sync_recovering'});
+        }
         if (!projection.ok) return projection;
         if (latest !== base) projection = rebaseProjectedMetadata(projection, latest);
         try { await commandJournal.admit(envelope); }
@@ -1136,6 +1175,8 @@ export const createLiveTransportStore = ({
 
   const setConnectionRecovering = (gameId, recovering, evidence = {}) => {
     const optimistic = getOptimisticState(gameId);
+    const wasRecovering = optimistic.connectionRecovering;
+    const recoveryAgeMs = Math.min(RECOVERY_DIAGNOSTICS.maximumAgeMs, Math.max(0, Date.now() - (optimistic.recoveryStartedAt ?? Date.now())));
     if (recovering && !optimistic.recoveryStartedAt) {
       optimistic.recoveryStartedAt = Date.now();
       optimistic.recoveryEpisodeId = crypto.randomUUID();
@@ -1143,11 +1184,29 @@ export const createLiveTransportStore = ({
     optimistic.connectionEvidence = { ...optimistic.connectionEvidence, ...evidence };
     if (recovering) optimistic.connectionRecoveryEpoch = (optimistic.connectionRecoveryEpoch ?? 0) + 1;
     optimistic.connectionRecovering = recovering || optimistic.forceSnapshot === true;
+    if (optimistic.connectionRecovering && !wasRecovering) {
+      reportRecoveryDiagnostic(gameId, 'recovery_started', { reason: evidence.reason });
+      if (!recoveryDiagnosticTimers.has(gameId)) {
+        const timer = setTimeout(() => {
+          recoveryDiagnosticTimers.delete(gameId);
+          if (active && getOptimisticState(gameId).connectionRecovering) reportRecoveryDiagnostic(gameId, 'recovery_blocked', { stage: 'actionable_recovery' });
+        }, timing.confirmationBudgetMs);
+        timer.unref?.(); recoveryDiagnosticTimers.set(gameId, timer);
+      }
+    } else if (!optimistic.connectionRecovering) {
+      clearTimeout(recoveryDiagnosticTimers.get(gameId)); recoveryDiagnosticTimers.delete(gameId);
+    }
     if (!optimistic.connectionRecovering && !optimistic.pendingCommands.length) {
       optimistic.syncStatus = "ready";
       optimistic.recoveryStartedAt = null; optimistic.recoveryIssue = null;
       clearTimeout(optimistic.recoveryRetryTimer); optimistic.recoveryRetryTimer = null; optimistic.recoveryRetryAttempt = 0;
       resolveRecoveryIfClear(gameId, optimistic);
+    }
+    if (wasRecovering && !optimistic.connectionRecovering && !optimistic.pendingCommands.length
+      && !optimistic.storageBlocked && !optimistic.unsavedCommand && !optimistic.forceSnapshot
+      && !optimistic.upgradeRequired && !optimistic.confirmationOverdue
+      && !optimistic.admissionProjection && !optimistic.projectionJob?.pending) {
+      reportRecoveryDiagnostic(gameId, 'recovery_completed', { ageMs: recoveryAgeMs });
     }
     recalculateOptimisticGame(gameId);
     emitChange({ type: "connection_recovery_changed", gameId, recovering });
@@ -1222,10 +1281,11 @@ export const createLiveTransportStore = ({
   const finishSocketRecovery = async (gameId, { isCurrent = () => true, beforeRetire = () => {} } = {}) => {
     const current = () => active && isCurrent();
     const optimistic = getOptimisticState(gameId);
+    const deferred = gate => { reportRecoveryDiagnostic(gameId, 'readiness', { gate }); return false; };
     let recoveryGeneration = optimistic.recoveryGeneration ?? 0;
     const recoveryEpoch = optimistic.connectionRecoveryEpoch;
     await hydrateJournal(gameId, current);
-    if (!current()) return false;
+    if (!current()) return deferred('stale_connection');
     const admission = optimistic.admission;
     await admission.catch(() => {});
     const blocked = () => optimistic.storageBlocked || optimistic.unsavedCommand || optimistic.upgradeRequired
@@ -1233,7 +1293,12 @@ export const createLiveTransportStore = ({
       || auth?.enabled && !auth.session.authenticated;
     const sameRecovery = () => (optimistic.recoveryGeneration ?? 0) === recoveryGeneration
       && optimistic.connectionRecoveryEpoch === recoveryEpoch;
-    if (!current() || !sameRecovery() || optimistic.admission !== admission || blocked()) return false;
+    const blockedGate = () => optimistic.storageBlocked || optimistic.unsavedCommand ? 'storage'
+      : optimistic.upgradeRequired ? 'upgrade' : 'session';
+    if (!current()) return deferred('stale_connection');
+    if (!sameRecovery()) return deferred('recovery_changed');
+    if (optimistic.admission !== admission) return deferred('admission_changed');
+    if (blocked()) return deferred(blockedGate());
     // A snapshot is not a receipt for saved intent. Hydrate first and keep the
     // durable sender's existing ownership until every command is settled.
     if (optimistic.pendingCommands.length || optimistic.forceSnapshot) {
@@ -1241,13 +1306,18 @@ export const createLiveTransportStore = ({
       recoveryGeneration = optimistic.recoveryGeneration ?? 0;
       await reconciliation;
     }
-    if (!current() || !sameRecovery() || blocked() || optimistic.admission !== admission || optimistic.pendingCommands.length || optimistic.forceSnapshot
-      || optimistic.attempt?.commandId != null) return false;
+    if (!current()) return deferred('stale_connection');
+    if (!sameRecovery()) return deferred('recovery_changed');
+    if (blocked()) return deferred(blockedGate());
+    if (optimistic.admission !== admission) return deferred('admission_changed');
+    if (optimistic.pendingCommands.length) return deferred('pending_command');
+    if (optimistic.forceSnapshot) return deferred('snapshot_required');
+    if (optimistic.attempt?.commandId != null) return deferred('command_inflight');
     const owner = optimistic.recoveryOwner;
     const attempt = optimistic.attempt;
     if (beforeRetire() === false || !current() || optimistic.recoveryOwner !== owner
       || optimistic.attempt !== attempt || !sameRecovery()
-      || blocked() || optimistic.admission !== admission || optimistic.pendingCommands.length || optimistic.forceSnapshot) return false;
+      || blocked() || optimistic.admission !== admission || optimistic.pendingCommands.length || optimistic.forceSnapshot) return deferred('repair_changed');
     if (owner) {
       owner.superseded = true;
       owner.reject?.(Object.assign(new Error("recovery_superseded"), { code: "recovery_superseded" }));
@@ -1260,6 +1330,7 @@ export const createLiveTransportStore = ({
       attempt.controller.abort(); attempt.finish();
     }
     setConnectionRecovering(gameId, false);
+    reportRecoveryDiagnostic(gameId, 'readiness', { gate: 'ready' });
     return true;
   };
 
@@ -2101,6 +2172,8 @@ export const createLiveTransportStore = ({
     unsubscribe,
     retire() {
       active = false;
+      for (const timer of recoveryDiagnosticTimers.values()) clearTimeout(timer);
+      recoveryDiagnosticTimers.clear();
       activeHomeRead?.retire();
       positions.clear(); positionFlights.clear();
       rulesExecutor.cancelAll();

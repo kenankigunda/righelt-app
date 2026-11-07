@@ -6,6 +6,8 @@ export const recoverySpaceGeometry = ({headerBottom = 0, viewportTop = 0, viewpo
  return {top:Math.max(top+8,bottom+8),viewportBottom:top+height};
 };
 const mounted = new WeakMap();
+// Reuse the mounted owner before dependent synchronous layout admission.
+export const syncRecoverySpace = app => mounted.get(app)?.sync();
 export function mountRecoverySpace(app,{window:win=globalThis.window,document:doc=globalThis.document}={}) {
  if(!app||!win)return ()=>{};
  if(mounted.has(app))return mounted.get(app);
@@ -20,8 +22,16 @@ export function mountRecoverySpace(app,{window:win=globalThis.window,document:do
   const next=app.querySelector('.shell-header');
   if(next!==header){if(header)resize.unobserve(header);header=next;if(header)resize.observe(header);}
   const viewport=win.visualViewport;
-  const geometry=recoverySpaceGeometry({headerBottom:header?.getBoundingClientRect().bottom,viewportTop:viewport?.offsetTop??0,viewportHeight:viewport?.height??win.innerHeight});
+  const headerBottom=header?.getBoundingClientRect().bottom;
+  const input={headerBottom,viewportTop:viewport?.offsetTop??0,viewportHeight:viewport?.height??win.innerHeight};
+  const geometry=recoverySpaceGeometry(input);
   write(names[0],`${geometry.top}px`);write(names[1],`${geometry.viewportBottom}px`);
+  // Fixed notices follow the visible header. Static Board space follows its
+  // document position, using the same header read and document origin. Visual
+  // viewport panning only changes the visible notice clipping, never this space.
+  const scrollY=Number.isFinite(win.scrollY)?win.scrollY:0;
+  const documentTop=recoverySpaceGeometry({...input,viewportTop:0,headerBottom:Number.isFinite(headerBottom)?headerBottom+scrollY:headerBottom}).top;
+  return {...geometry,documentTop};
  };
  // Only child changes discover replacement headers. Observing our own style
  // variables would schedule an unnecessary second layout on every measurement.
@@ -36,5 +46,7 @@ export function mountRecoverySpace(app,{window:win=globalThis.window,document:do
   names.forEach((name,index)=>previous[index]?app.style.setProperty(name,previous[index]):app.style.removeProperty(name));
   mounted.delete(app);
  };
+ // Preserve the callable disposer contract and coalesce its pending frame.
+ dispose.sync=()=>{if(disposed)return;if(frame!==null){win.cancelAnimationFrame(frame);frame=null;}return measure();};
  mounted.set(app,dispose);schedule();return dispose;
 }
