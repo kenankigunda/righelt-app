@@ -1,16 +1,16 @@
 {
   "/shell/computer-session.js": {
     "file": "apps/web/shell/computer-session.js",
-    "sourceSha256": "db36fbb8933e8a54323d85c5f4d6c9c96f932bf88e1265b52f28b35ee31ef757",
-    "outputSha256": "7748d3e9fe16f9ae7e610dfcc761ea7bc4f5c11d695d48ed6ffc6f2da2849a79",
+    "sourceSha256": "6dbbc3e98274d54e8512abffd3648923c95b0d0b8188984b4c15076e28225a11",
+    "outputSha256": "7ffd42caf3f7d842f4e6e0076f320529f7901c426d60d5211ef8e18a2adb305c",
     "prefix": "",
     "operations": [
       {
-        "start": 22378,
-        "end": 22489,
-        "before": "if (run === epoch) { recovery = context.key; publish({ phase: 'recovery', message: error.message }, context); }",
-        "after": "if (run === epoch) { try{globalThis.__boardAdmissionRecovery?.(error);}catch{} recovery = context.key; publish({ phase: 'recovery', message: error.message }, context); }",
-        "anchor": "if (run === epoch) { recovery = context.key; publish({ phase: 'recovery', message: error.message }, context); }",
+        "start": 25616,
+        "end": 25749,
+        "before": "if (run === epoch) { decisionRetry = null; recovery = context.key; publish({ phase: 'recovery', message: error.message }, context); }",
+        "after": "if (run === epoch) { decisionRetry = null; try{globalThis.__boardAdmissionRecovery?.(error);}catch{} recovery = context.key; publish({ phase: 'recovery', message: error.message }, context); }",
+        "anchor": "if (run === epoch) { decisionRetry = null; recovery = context.key; publish({ phase: 'recovery', message: error.message }, context); }",
         "anchorCount": 1
       }
     ]
