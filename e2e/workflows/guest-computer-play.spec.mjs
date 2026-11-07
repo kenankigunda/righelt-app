@@ -78,7 +78,7 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   // Each keeps the configured 60-second budget, for four budgets in aggregate.
   // Failures skip dependent phases; replay cannot substitute a newly created game.
   test.describe.configure({mode:'serial'});
-  let owned, context, page, prepared, played, retained;
+  let owned, context, page, prepared, played, retained, writes, observeReplay;
   test.beforeAll(async ({browser}, info) => {
     owned=ownedContexts(browser);
     const use=info.project.use;
@@ -89,7 +89,7 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   });
   // Playwright records all live contexts per test, including this retained one.
   // The ownership helper closes even partially completed context creation.
-  test.afterAll(async () => {await owned?.close();});
+  test.afterAll(async () => {if(observeReplay)page?.off('request',observeReplay);await owned?.close();});
   test(`guest computer prepares and accepts a real turn at ${width}px`, async ({}, info) => {
   // Observe both delivery channels: an accepted socket receipt may cancel HTTP.
   const renewals=new Map(),renewalReceipts=new Map();
@@ -164,6 +164,10 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   finally{await persistGeometryEvidence(info,'board-message-native-frames.json',frames);}
   const beforeReplay=await projected(page,initial.id);
   prepared=Object.freeze({initialJSON:JSON.stringify(initial),beforeReplayJSON:JSON.stringify(beforeReplay),identityId});
+  // Observe the required read-only continuation before crossing its phase boundary.
+  writes=[];
+  observeReplay=request=>{const url=new URL(request.url());if(request.method()!=='GET'&&url.pathname.startsWith('/api/')){let body;try{body=request.postDataJSON();}catch{}writes.push({method:request.method(),path:url.pathname+url.search,body,rawBody:request.postData(),contentType:request.headers()['content-type']});}};
+  page.on('request',observeReplay);
   });
   test(`the same accepted guest turn replays without writes at ${width}px`,async ({},info)=>{
   // This is a required continuation of the same accepted native game. Missing
@@ -174,9 +178,6 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   expect(await page.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'))).toBe(identityId);
   expect(beforeReplay.id).toBe(initial.id);
   expect(beforeReplay.moves.some(move=>move.computerProof?.modelId===initial.computer.modelId)).toBe(true);
-  const writes=[];
-  const observeReplay=request=>{const url=new URL(request.url());if(request.method()!=='GET'&&url.pathname.startsWith('/api/')){let body;try{body=request.postDataJSON();}catch{}writes.push({method:request.method(),path:url.pathname+url.search,body,rawBody:request.postData(),contentType:request.headers()['content-type']});}};
-  page.on('request',observeReplay);
   try {
     await page.getByRole('button',{name:'Show me again',exact:true}).click();
     await expect(page.locator('.computer-replay')).toBeVisible();
@@ -193,7 +194,7 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
     await page.getByRole('button',{name:'Stop replay',exact:true}).click();
     await assertReplayIntegrity({writes,before:beforeReplay,after:await projected(page,initial.id)});
     await page.emulateMedia({reducedMotion:'no-preference'});
-  } finally {page.off('request',observeReplay);}
+  } finally {page.off('request',observeReplay);observeReplay=null;}
   const saved = (await projected(page, initial.id)).moves.find(move=>move.computerProof);
   expect(initial.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
   expect(saved.computerProof.modelId).toBe(initial.computer.modelId);
