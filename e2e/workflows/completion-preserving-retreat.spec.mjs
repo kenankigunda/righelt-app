@@ -19,7 +19,7 @@ const test=base.extend({
  computerRecoveryAdmission:[async({page,baseURL},use,info)=>{
   if(![computerRetreatWorkflow,computerFollowWorkflow].includes(info.title)){await use();return;}
   const diagnostic=await installBoardAdmissionDiagnostics(page,info,{baseURL,computerSessionRecovery:true});
-  try{await use();}finally{await diagnostic.persist();}
+  try{await use(diagnostic);}finally{await diagnostic.persist();}
  },{timeout:5000}],
  // Shared 5s fixture slot covers setup AND teardown, separate from the 60s body.
  // Depending on page makes this persistence precede base-page teardown.
@@ -37,14 +37,15 @@ const test=base.extend({
  const dispose=await installCaseReadiness(context,baseURL);
  try{await use();}finally{await finishCaseReadiness(dispose,info);}
 },{auto:true}],acceptedRetreat:[async({page,baseURL,computerRecoveryAdmission},use)=>{
- await use(await acceptedComputerRetreat(page,baseURL));
+ await use(await acceptedComputerRetreat(page,baseURL,computerRecoveryAdmission));
 },{timeout:60000}]});
 
 const f=readRetreatCapture(),safe=f.alternatives.find(row=>row.completable);
 const computerRetreatWorkflow='the real computer defender records only the completion-preserving retreat';
 const computerFollowWorkflow='the real computer defender leaves a completion-preserving native Follow';
 // Read existing recorder and DOM only. Never drive recovery or submit work.
-async function readRetreatDiagnostics(measurementName){
+async function readRetreatDiagnostics(input){
+   const {measurementName,recoveryRead}=typeof input==='string'?{measurementName:input}:input;
    let readinessPage;
    try{readinessPage=globalThis.__righeltReadinessFreeze?.();}catch{readinessPage={incomplete:true,reason:'snapshot-unavailable'};}
 
@@ -56,7 +57,7 @@ async function readRetreatDiagnostics(measurementName){
    const {issueDiagnostics}=await import('/shell/issue-diagnostics.js');
    const fields=['stage','code','operation','receipt','pendingCount','gameplayRevision','appliedEventSeq','advertisedEventSeq','at','generation','elapsedMs','deadlineMs'];
    const pick=value=>Object.fromEntries(fields.filter(key=>Object.hasOwn(value??{},key)).map(key=>[key,value[key]]));
-   return{available:true,gameId,...(readinessPage?{readinessPage}:{}),journal:window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,historyRows:document.querySelectorAll('[data-testid="history-move-item"]').length,reports:issueDiagnostics.list().filter(report=>report.schemaVersion===1&&report.key===`recovery:${gameId}`).map(report=>({schemaVersion:1,startedAt:report.startedAt,resolvedAt:report.resolvedAt,initial:pick(report.initial),events:report.events.map(pick)}))};
+   return{available:true,gameId,...(recoveryRead?{boardRecovery:{...recoveryRead,gameId,documentNonce:globalThis.__boardAdmissionRecoveryDocument??null,timeOrigin:performance.timeOrigin,observation:globalThis.__boardAdmissionObservation??null}}:{}),...(readinessPage?{readinessPage}:{}),journal:window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,historyRows:document.querySelectorAll('[data-testid="history-move-item"]').length,reports:issueDiagnostics.list().filter(report=>report.schemaVersion===1&&report.key===`recovery:${gameId}`).map(report=>({schemaVersion:1,startedAt:report.startedAt,resolvedAt:report.resolvedAt,initial:pick(report.initial),events:report.events.map(pick)}))};
 }
 
 // Capture identity is explicitly minimal-artifact. Search and command
@@ -71,28 +72,41 @@ const capturedHash=state=>{
 const board=page=>page.getByTestId('game-board');
 const cell=(page,at)=>board(page).locator(`.cell[data-row="${at.row}"][data-col="${at.col}"]`);
 test.beforeEach(async({page})=>{await page.addInitScript(installJournalObservations);});
-test.afterEach(async({page},info)=>{
+test.afterEach(async({page,computerRecoveryAdmission},info)=>{
+ const finalRecovery=computerRecoveryAdmission?.finalRecoveryHandoff;
+ let recoveryRead,delivered=false;
+ try{recoveryRead=finalRecovery?.begin(page);}catch{finalRecovery?.failed('read-missing');}
+ const deliver=value=>{
+  if(!finalRecovery)return;
+  delivered=true;
+  if(value?.boardRecovery)finalRecovery.capture(page,value.boardRecovery);
+  else finalRecovery.failed(value?.unavailable==='diagnostic-read-timeout'||value?.reason==='diagnostic-read-timeout'?'read-timed-out':'read-missing');
+ };
  if(info.status===info.expectedStatus){
   let timer;
   try{
-   const journal=await Promise.race([page.evaluate(measurementName=>{
+   const journal=await Promise.race([page.evaluate(({measurementName,recoveryRead})=>{
       let readinessPage;
       try{readinessPage=globalThis.__righeltReadinessFreeze?.();}catch{readinessPage={incomplete:true,reason:'snapshot-unavailable'};}
-      return {...window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,...(readinessPage?{readinessPage}:{})};
-    },COMPUTER_UI_FRAME_MEASURE),new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
+      const match=location.hash.match(/^#\/game\/([^?#/]+)/);
+      const boardRecovery=recoveryRead?{...recoveryRead,gameId:match?decodeURIComponent(match[1]):null,documentNonce:globalThis.__boardAdmissionRecoveryDocument??null,timeOrigin:performance.timeOrigin,observation:globalThis.__boardAdmissionObservation??null}:null;
+      return {...window.retreatJournalObservations,...(boardRecovery?{boardRecovery}:{}),presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,...(readinessPage?{readinessPage}:{})};
+    },{measurementName:COMPUTER_UI_FRAME_MEASURE,recoveryRead}),new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
+   deliver(journal);
    const path=info.outputPath('native-journal-lifecycle.json');
    await writeFile(path,JSON.stringify(attachNodeReadiness(journal??{unavailable:'not-installed'})));
    await info.attach('native-journal-lifecycle',{contentType:'application/json',path});
-  }catch{console.warn('[retreat-diagnostic] Journal lifecycle attachment unavailable.');if(info.title===computerFollowWorkflow)console.warn('[readiness] incomplete: first-read-or-persistence-unavailable');}
+  }catch{if(!delivered)finalRecovery?.failed('read-failed');console.warn('[retreat-diagnostic] Journal lifecycle attachment unavailable.');if(info.title===computerFollowWorkflow)console.warn('[readiness] incomplete: first-read-or-persistence-unavailable');}
   finally{clearTimeout(timer);}
   return;
  }
  if(!['failed','timedOut','interrupted'].includes(info.status))return;
  let snapshot,diagnosticTimer;
  try{
-  snapshot=page.isClosed()?{available:false,reason:'page-closed'}:await Promise.race([page.evaluate(readRetreatDiagnostics,COMPUTER_UI_FRAME_MEASURE),new Promise(resolve=>{diagnosticTimer=setTimeout(()=>resolve({available:false,reason:'diagnostic-read-timeout'}),2000);})]);
+  snapshot=page.isClosed()?{available:false,reason:'page-closed'}:await Promise.race([page.evaluate(readRetreatDiagnostics,{measurementName:COMPUTER_UI_FRAME_MEASURE,recoveryRead}),new Promise(resolve=>{diagnosticTimer=setTimeout(()=>resolve({available:false,reason:'diagnostic-read-timeout'}),2000);})]);
  }catch(error){snapshot={available:false,reason:'diagnostic-read-unavailable',errorKind:String(error?.name??'Error').slice(0,80)};}
  finally{clearTimeout(diagnosticTimer);}
+ deliver(snapshot);
  snapshot=attachNodeReadiness(snapshot);
  try{
   const path=info.outputPath('local-recovery-incidents.json');await writeFile(path,JSON.stringify(snapshot));
@@ -211,13 +225,14 @@ test('human retreat excludes the stranded square and completes the native Follow
  await info.attach('captured-retreat-provenance',{body:JSON.stringify({sha256:RETREAT_CAPTURE_SHA256,provenance:f.provenance,unsafe,receipt:rejected.commandOutcomes},null,2),contentType:'application/json'});
 });
 
-async function acceptedComputerRetreat(page,baseURL){
+async function acceptedComputerRetreat(page,baseURL,computerRecoveryAdmission){
  // This source exists only to branch its recorded decision. Open the actual
  // computer game once, avoiding an unused source runtime and journal lifecycle.
  const {gameId:sourceId}=await importScenarioGame(page,makeRetreatScenario('computer'),baseURL,{open:false});
  const source=await current(page,sourceId);expect(capturedHash(source.board.state)).toBe(safe.stateHash);
  const sourceDecisionId=source.moves.at(-1).moveId;
  const branched=(await request(page,'/api/shell/history/branch',{sourceGameId:sourceId,sourceDecisionId,creatorSide:'p2',computer:{p1:'babs',p2:null},computerModelId:'initial-1554'})).game;
+ computerRecoveryAdmission.finalRecoveryHandoff.bindGame(branched.id);
  expect(branched.computer.modelId).toBe('initial-1554');expect(branched.computer.seats).toEqual({p1:'babs',p2:null});
  expect(capturedHash(branched.board.state)).toBe(f.push.afterHash);expect(branched.legalActions).toEqual([safe.action]);
  const sent=page.waitForRequest(req=>req.method()==='POST'&&new URL(req.url()).pathname===`/api/shell/games/${branched.id}/apply`&&Boolean(req.postDataJSON()?.payload?.computer));

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
-import {installBoardAdmissionCollector,transformBoardAdmissionModule,installBoardAdmissionDiagnostics,cloneBoardSourceHandoff,createBoardSourceConsoleRetention,SOURCE_PRESS_PREFIX,SOURCE_PRESS_MAX_BYTES,COMPUTER_RECOVERY_CATEGORIES} from '../../../e2e/support/board-admission-diagnostics.mjs';
+import {installBoardAdmissionCollector,transformBoardAdmissionModule,installBoardAdmissionDiagnostics,cloneBoardSourceHandoff,createBoardSourceConsoleRetention,SOURCE_PRESS_PREFIX,SOURCE_PRESS_MAX_BYTES,COMPUTER_RECOVERY_CATEGORIES,createComputerRecoveryHandoff,persistComputerRecoveryEvidence} from '../../../e2e/support/board-admission-diagnostics.mjs';
 
 const recipes=JSON.parse(await readFile(new URL('../../../e2e/support/board-admission-transformations.json',import.meta.url),'utf8'));
 for(const [pathname,recipe] of Object.entries(recipes))test(`exact source and protected transform ${pathname}`,async()=>{
@@ -577,4 +577,95 @@ test('closed computer recovery descriptors, retention and original catch semanti
   const original=Error('stale_state'),seen=[];const env={run:1,epoch:1,error:original,context:{key:'k'},recovery:null,publish:value=>seen.push(value),__boardAdmissionRecovery(){if(sinkThrows)throw Error('sink');}};env.globalThis=env;
   vm.runInNewContext(op.after,env);assert.equal(env.error,original);assert.equal(env.recovery,'k');assert.equal(seen.length,1);assert.equal(seen[0].message,original.message);
  }
+});
+
+const recoveryPage=()=>{const listeners=new Map(),frame={};return{mainFrame:()=>frame,on(type,fn){listeners.set(type,fn);},off(type,fn){assert.equal(listeners.get(type),fn);listeners.delete(type);},navigate(){listeners.get('framenavigated')?.(frame);},listenerCount:()=>listeners.size};};
+const recoveryPacket=ticket=>({...ticket,documentNonce:'controlled-document',timeOrigin:123,observation:{version:1,documentNonce:'controlled-document',timeOrigin:123,recoveryNamespace:ticket.namespace,first:[],tail:[],activation:[],incomplete:false,firstComputerRecovery:null}});
+test('final computer recovery handoff is immutable, page/game/document-bound and consumed once',()=>{
+ const page=recoveryPage(),owner=createComputerRecoveryHandoff(page,'nonce');owner.bindGame('owned');const ticket=owner.begin(page),packet=recoveryPacket(ticket);owner.capture(page,packet);packet.observation.firstComputerRecovery={observed:true,errorCategory:'rules_timeout'};
+ const value=owner.consume();assert.equal(value.incomplete,false);assert.equal(value.observation.firstComputerRecovery,null);assert(Object.isFrozen(value.observation));assert.throws(()=>{value.observation.timeOrigin=999;},TypeError);assert.equal(owner.consume().reason,'handoff-reused');
+});
+test('missing, failed, timed out, foreign or reused final delivery cannot mean no error',()=>{
+ const make=()=>{const page=recoveryPage(),owner=createComputerRecoveryHandoff(page,'nonce');owner.bindGame('owned');return{page,owner,ticket:owner.begin(page)};};
+ for(const reason of ['read-failed','read-timed-out','read-missing']){const{owner}=make();owner.failed(reason);assert.equal(owner.consume().reason,reason);}
+ for(const change of [p=>p.namespace='foreign',p=>p.readId='foreign',p=>p.gameId='foreign',p=>p.observation.documentNonce='foreign-document',p=>p.observation.recoveryNamespace='foreign']){const{page,owner,ticket}=make(),packet=recoveryPacket(ticket);change(packet);owner.capture(page,packet);assert.equal(owner.consume().incomplete,true);}
+ const absent=make();assert.equal(absent.owner.consume().reason,'handoff-missing');const foreign=make();foreign.owner.capture({},recoveryPacket(foreign.ticket));assert.equal(foreign.owner.consume().reason,'foreign-page');
+ const reused=make();reused.owner.capture(reused.page,recoveryPacket(reused.ticket));reused.owner.capture(reused.page,recoveryPacket(reused.ticket));assert.equal(reused.owner.consume().reason,'handoff-reused');
+});
+test('handoff rejects callable/accessor/cyclic data without invoking it or adding browser work',()=>{
+ for(const alter of [v=>{Object.defineProperty(v,'namespace',{get(){assert.fail('envelope accessor invoked');},enumerable:true});},v=>{v.observation.bad=()=>{};},v=>{Object.defineProperty(v.observation,'bad',{get(){assert.fail('accessor invoked');},enumerable:true});},v=>{v.observation.bad=v.observation;}]){
+  const page=recoveryPage(),owner=createComputerRecoveryHandoff(page,'nonce');owner.bindGame('owned');const packet=recoveryPacket(owner.begin(page));alter(packet);owner.capture(page,packet);assert.equal(owner.consume().reason,'handoff-invalid');
+ }
+});
+test('computer evidence persistence attempts independent sinks and owned route cleanup, preserving primary and secondary errors',async()=>{
+ const primary=Error('original'),writeError=Error('write'),attachError=Error('attach'),routeError=Error('route'),calls=[];
+ await assert.rejects(persistComputerRecoveryEvidence({handoff:{incomplete:false},payload:{},primaryError:primary,info:{outputPath:()=>'/owned/evidence',attach:async()=>{calls.push('attach');throw attachError;}},write:async()=>{calls.push('write');throw writeError;},removeRoute:async()=>{calls.push('route');throw routeError;}}),error=>{assert.deepEqual(error.errors,[primary,writeError,attachError,routeError]);return true;});assert.deepEqual(calls,['write','attach','route']);
+});
+
+async function finalReadFixture({computer=true,timeout=false,readFailure=false}={}){
+ const files=[],attached=[],events=[],timers=[];let reads=0,unroutes=0,init;
+ const page={...recoveryPage(),async addInitScript(fn,arg){init=arg;},async route(){},async unroute(){unroutes++;},async evaluate(fn,arg){reads++;events.push('browser-read');if(timeout)return new Promise(()=>{});if(readFailure)throw Error('original read failed');const observation={version:1,documentNonce:'controlled-document',timeOrigin:123,recoveryNamespace:init.recoveryNamespace,first:[],tail:[],activation:[],incomplete:false,firstComputerRecovery:null};return vm.runInNewContext(`(${fn.toString()})(argument)`,{argument:arg,globalThis:{__boardAdmissionObservation:observation,__boardAdmissionRecoveryDocument:'controlled-document'},window:{retreatJournalObservations:{}},location:{hash:'#/game/owned'},performance:{timeOrigin:123,getEntriesByName:()=>[]}});}};
+ const info={title:'the real computer defender leaves a completion-preserving native Follow',status:'passed',expectedStatus:'passed',outputPath:name=>'/owned/'+name,async attach(name,value){attached.push({name,...value});}};
+ const owner=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://owned',computerSessionRecovery:computer});owner.finalRecoveryHandoff?.bindGame('owned');
+ const source=await readFile(new URL('../../../e2e/workflows/completion-preserving-retreat.spec.mjs',import.meta.url),'utf8');let afterEach;
+ const start=source.indexOf('test.afterEach('),end=source.indexOf('\nasync function request(',start);
+ vm.runInNewContext(source.slice(start,end),{test:{afterEach:fn=>{afterEach=fn;}},COMPUTER_UI_FRAME_MEASURE:'measure',computerFollowWorkflow:info.title,computerRetreatWorkflow:'other',writeFile:async(file,body)=>{files.push({file,body});},attachNodeReadiness:x=>x,console:{warn(){}},setTimeout(fn,ms){timers.push(ms);if(timeout)queueMicrotask(fn);return 1;},clearTimeout(){}});
+ await afterEach({page,computerRecoveryAdmission:computer?owner:undefined},info);
+ return{page,info,owner,files,attached,events,timers,reads:()=>reads,unroutes:()=>unroutes};
+}
+test('actual existing final afterEach read hands off recovery once; computer persist never performs duplicate read',async()=>{
+ const f=await finalReadFixture();assert.equal(f.reads(),1);
+ // Persist uses a controlled file sink; original implementation would add the
+ // second page.evaluate seen in the primary CI trace. No browser timing claim.
+ const originalWritePath=f.info.outputPath;const directory=await import('node:os').then(x=>x.tmpdir());const temp=await import('node:fs/promises').then(x=>x.mkdtemp(directory+'/recovery-handoff-'));f.info.outputPath=name=>temp+'/'+name;
+ try{await f.owner.persist();assert.equal(f.reads(),1);assert.equal(f.unroutes(),1);const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));assert.equal(payload.handoff.incomplete,false);assert.equal(payload.observation.firstComputerRecovery,null);}finally{f.info.outputPath=originalWritePath;await import('node:fs/promises').then(x=>x.rm(temp,{recursive:true,force:true}));}
+});
+test('actual original 2s timeout or failed final read produces incomplete Node persistence with no fallback browser read',async()=>{
+ for(const settings of [{timeout:true},{readFailure:true}]){
+  const f=await finalReadFixture(settings),directory=await import('node:os').then(x=>x.tmpdir()),temp=await import('node:fs/promises').then(x=>x.mkdtemp(directory+'/recovery-handoff-'));f.info.outputPath=name=>temp+'/'+name;
+  try{await assert.rejects(f.owner.persist(),/Computer recovery evidence incomplete/);assert.equal(f.reads(),1);assert.equal(f.unroutes(),1);const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));assert.equal(payload.handoff.incomplete,true);assert.equal(payload.observation,null);if(settings.timeout)assert.deepEqual(f.timers,[2000]);}finally{await import('node:fs/promises').then(x=>x.rm(temp,{recursive:true,force:true}));}
+ }
+});
+test('generic/default persistence retains its existing browser read and is not redirected to computer handoff',async()=>{
+ let reads=0,unroutes=0;const temp=await import('node:fs/promises').then(async fs=>fs.mkdtemp((await import('node:os')).tmpdir()+'/board-default-'));
+ const page={async addInitScript(){},async route(){},async evaluate(){reads++;return{activation:[],incomplete:false};},async unroute(){unroutes++;}},info={title:'generic',outputPath:name=>temp+'/'+name,async attach(){}};
+ try{const diagnostic=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://owned'});assert.equal(diagnostic.finalRecoveryHandoff,null);await diagnostic.persist();assert.equal(reads,1);assert.equal(unroutes,1);}finally{await import('node:fs/promises').then(x=>x.rm(temp,{recursive:true,force:true}));}
+});
+test('controlled old duplicate-read premise uses two browser evaluations after the same existing final read',async()=>{
+ const f=await finalReadFixture({computer:false}),temp=await import('node:fs/promises').then(async fs=>fs.mkdtemp((await import('node:os')).tmpdir()+'/board-old-read-'));f.info.outputPath=name=>temp+'/'+name;
+ try{assert.equal(f.reads(),1);await f.owner.persist();assert.equal(f.reads(),2,'unchanged generic path demonstrates the old second terminal read');assert.throws(()=>assert.equal(f.reads(),1),assert.AssertionError,'old duplicate-read premise fails the single-read regression');}finally{await import('node:fs/promises').then(x=>x.rm(temp,{recursive:true,force:true}));}
+});
+
+test('same-Page document replacement invalidates delivered or pending handoff; late timeout delivery cannot repopulate it',()=>{
+ for(const beforeCapture of [true,false]){const page=recoveryPage(),owner=createComputerRecoveryHandoff(page,'nonce');owner.bindGame('owned');const packet=recoveryPacket(owner.begin(page));if(!beforeCapture)owner.capture(page,packet);page.navigate();if(beforeCapture)owner.capture(page,packet);assert.equal(owner.consume().reason,'foreign-document');assert.equal(page.listenerCount(),0);}
+ const page=recoveryPage(),owner=createComputerRecoveryHandoff(page,'nonce');owner.bindGame('owned');const packet=recoveryPacket(owner.begin(page));owner.failed('read-timed-out');owner.capture(page,packet);assert.equal(owner.consume().reason,'read-timed-out');assert.equal(page.listenerCount(),0);
+});
+
+test('computer setup failure releases only owned navigation listener and preserves original setup error',async()=>{
+ const primary=Error('init failed'),page={...recoveryPage(),async addInitScript(){throw primary;}};
+ await assert.rejects(installBoardAdmissionDiagnostics(page,{},{baseURL:'http://owned',computerSessionRecovery:true}),error=>error===primary);assert.equal(page.listenerCount(),0);
+ const cleanup=Error('off failed'),broken={...recoveryPage(),off(){throw cleanup;},async addInitScript(){throw primary;}};
+ await assert.rejects(installBoardAdmissionDiagnostics(broken,{},{baseURL:'http://owned',computerSessionRecovery:true}),error=>error instanceof AggregateError&&error.errors[0]===primary&&error.errors.length===2);
+});
+test('actual computer installer keeps empty activation coverage incomplete despite complete final delivery',async()=>{
+ let init,handler;const page={...recoveryPage(),async addInitScript(fn,value){init=value;},async route(pattern,value){handler=value;},async unroute(){}};
+ const temp=await import('node:fs/promises').then(async fs=>fs.mkdtemp((await import('node:os')).tmpdir()+'/computer-coverage-')),info={title:'computer',outputPath:name=>temp+'/'+name,async attach(){}};
+ try{
+  const diagnostic=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://owned',computerSessionRecovery:true});
+  const source=await readFile(new URL('../../../apps/web/shell/computer-session.js',import.meta.url),'utf8');
+  await handler({request:()=>({url:()=> 'http://owned/shell/computer-session.js'}),fetch:async()=>({text:async()=>source}),fulfill:async()=>{},abort:async()=>assert.fail('actual module must transform')});
+  diagnostic.finalRecoveryHandoff.bindGame('owned');const ticket=diagnostic.finalRecoveryHandoff.begin(page);assert.equal(init.recoveryNamespace,ticket.namespace);diagnostic.finalRecoveryHandoff.capture(page,recoveryPacket(ticket));
+  await diagnostic.persist();const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));
+  assert.deepEqual(payload.missingModules,[]);assert.deepEqual(payload.errors,[]);assert.equal(payload.observation.incomplete,false);assert.deepEqual(payload.observation.activation,[]);
+  assert.equal(payload.handoff.incomplete,false,'final delivery is complete');assert.equal(payload.incomplete,true,'original generic activation coverage limitation is preserved');
+ }finally{await import('node:fs/promises').then(fs=>fs.rm(temp,{recursive:true,force:true}));}
+});
+test('browser init creates an opaque readonly document nonce; exact nonce accepts clock jitter and rejects a different document with equal clocks',()=>{
+ const document={addEventListener(){},querySelector(){return null;}},context={document,performance:{timeOrigin:1000},crypto:{randomUUID:()=> 'browser-owned-opaque-document'}};
+ vm.createContext(context);vm.runInContext(`(${installBoardAdmissionCollector.toString()})({recoveryCategories:${JSON.stringify(COMPUTER_RECOVERY_CATEGORIES)},recoveryNamespace:'nonce'});`,context);
+ const marker=Object.getOwnPropertyDescriptor(context,'__boardAdmissionRecoveryDocument');assert.equal(marker.value,'browser-owned-opaque-document');assert.equal(marker.writable,false);assert.equal(marker.configurable,false);assert.equal(context.__boardAdmissionObservation.documentNonce,marker.value);
+ const page=recoveryPage(),owner=createComputerRecoveryHandoff(page,'nonce');owner.bindGame('owned');const ticket=owner.begin(page);
+ const observation=structuredClone(context.__boardAdmissionObservation);owner.capture(page,{...ticket,documentNonce:marker.value,timeOrigin:1001,observation});const delivered=owner.consume();
+ assert.equal(delivered.incomplete,false,'same document is accepted despite the demonstrated1ms clock difference');assert.equal(delivered.timeOrigin,1001);assert.equal(delivered.observationTimeOrigin,1000);assert.equal(delivered.observation.timeOrigin,1000);
+ const foreignPage=recoveryPage(),foreign=createComputerRecoveryHandoff(foreignPage,'nonce');foreign.bindGame('owned');const otherTicket=foreign.begin(foreignPage);foreign.capture(foreignPage,{...otherTicket,documentNonce:'current-document',timeOrigin:1000,observation});assert.equal(foreign.consume().reason,'foreign-document','equal clocks cannot qualify a different document nonce');
 });
