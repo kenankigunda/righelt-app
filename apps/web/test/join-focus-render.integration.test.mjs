@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import {createJoinFeedback} from '../shell/join-feedback.js';
+import {createPendingInvitationFocus} from '../shell/pending-invitation-focus.js';
 import {createRenderGestureGate,preserveBoardFocus} from '../shell/render-gesture.js';
 
 // Exercise the production render wrapper with the real gesture and feedback
@@ -15,6 +16,7 @@ const fixture=()=>{
  let scope={owner:{},generation:1,visit:1,route:'#/invite/a'},busy=false,renderCount=0;
  const body={},document={body,activeElement:body,hidden:false,hasFocus:()=>true};
  const feedback=createJoinFeedback({getScope:gameId=>({gameId,...scope})});
+ const pendingInvitationFocus=createPendingInvitationFocus({document,getScope:()=>({...scope,panel:'players'})});
  const control=()=>({disabled:busy,isConnected:true,matches:()=>false,closest(){return this;},
   getAttribute:name=>name==='data-action'?'accept-invite-player':name==='data-game-id'?'g':null,
   focus(){document.activeElement=this;feedback.noteFocus(this);}});
@@ -22,7 +24,7 @@ const fixture=()=>{
  const root={querySelectorAll:()=>[mounted],querySelector:()=>null};
  const scheduled=new Map();let sequence=0,context;
  const gate=createRenderGestureGate({render:options=>context.render(options),schedule:fn=>{scheduled.set(++sequence,fn);return sequence;},cancel:id=>scheduled.delete(id)});
- context={document,appEl:root,joinFeedback:feedback,renderGesture:gate,preserveBoardFocus,getCurrentViewedGameId:()=> 'g',
+ context={document,appEl:root,joinFeedback:feedback,pendingInvitationFocus,isButtonPending:()=>busy,renderGesture:gate,preserveBoardFocus,getCurrentViewedGameId:()=> 'g',
   utilityMemory:{capture(){},restore(){}},inlineProfiles:{sync(){}},syncMountedGameShellPanelUi(){},
   currentRoute:{gameId:'g'},pendingResultReviewFocus:null,getGamePanel:()=> 'board',
   renderContent(){renderCount++;mounted.isConnected=false;mounted=control();document.activeElement=body;}};
