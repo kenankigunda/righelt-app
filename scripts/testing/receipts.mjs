@@ -4,6 +4,32 @@ import { readFileSync, readdirSync, lstatSync, readlinkSync } from "node:fs";
 import { catalogDigest, fullLanes, laneKey, suiteKind } from "./catalog.mjs";
 export const digest = (value) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
+
+const bufferChunkBytes = 16 * 1024;
+const typedArrayLength = Object.getOwnPropertyDescriptor(
+  Object.getPrototypeOf(Uint8Array.prototype), "length",
+).get;
+
+/** Trusted Buffer contract: hash the legacy STANDARD Buffer JSON encoding,
+ * ignoring any own, prototype or subclass toJSON override. This is deliberately
+ * separate from digest(), which retains arbitrary JSON serialization behavior.
+ * Call only for stable, locally read bytes (for example readFile(log)).
+ */
+export function digestBuffer(value) {
+  if (!Buffer.isBuffer(value)) throw new TypeError("digestBuffer requires a Buffer");
+  // Use the native length, not a possibly shadowed instance/prototype property.
+  const length = typedArrayLength.call(value);
+  const hash = createHash("sha256");
+  hash.update('{"type":"Buffer","data":[');
+  for (let offset = 0; offset < length; offset += bufferChunkBytes) {
+    const end = Math.min(offset + bufferChunkBytes, length);
+    let chunk = "";
+    for (let index = offset; index < end; index++)
+      chunk += `${index === 0 ? "" : ","}${value[index]}`;
+    hash.update(chunk);
+  }
+  return hash.update("]}").digest("hex");
+}
 export function sourceIdentity(cwd) {
   const git = (...a) =>
     execFileSync("git", a, { cwd, encoding: "utf8" }).trim();

@@ -3,7 +3,7 @@ import { spawn, execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { catalogDigest, laneKey, suiteById, suiteKind } from "./catalog.mjs";
-import { digest, sourceIdentity, sealReceipt } from "./receipts.mjs";
+import { digest, digestBuffer, sourceIdentity, sealReceipt } from "./receipts.mjs";
 export async function runSuite(
   lane,
   {
@@ -187,7 +187,7 @@ export async function runSuite(
     inventory,
     stack: stackState,
     log,
-    logHash: digest(await readFile(log).catch(() => Buffer.from(""))),
+    logHash: digestBuffer(await readFile(log).catch(() => Buffer.from(""))),
   });
   const file = path.join(dir, `${Date.now()}.receipt.json`);
   await writeFile(file, JSON.stringify(receipt, null, 2));
