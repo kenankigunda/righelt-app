@@ -35,6 +35,7 @@ for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(
   // Routing disables HTTP caching. This witnesses settled reload consistency,
   // not cache-admitted first paint. The actual cache-warm E2E is separate.
   await page.reload();await page.waitForFunction(()=>window.fixtureReady);await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+  await expect.poll(()=>page.evaluate(()=>{const track=document.querySelector('.game-shell-track');return Boolean(track)&&!track.getAnimations().some(animation=>animation.pending||animation.playState==='running');})).toBe(true);
   receipts.warm=await anchors(page);sameAnchors(receipts.loaded,receipts.warm);
   expect(await page.evaluate(()=>window.admitMessagePhases())).toEqual([]);
  }finally{hold=false;release();const path=info.outputPath('font-reservation-receipt.json');await writeFile(path,JSON.stringify(receipts,null,2));await info.attach('font-reservation',{path,contentType:'application/json'});}
