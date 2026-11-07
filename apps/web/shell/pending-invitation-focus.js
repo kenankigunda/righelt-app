@@ -31,12 +31,16 @@ export function createPendingInvitationFocus({ document, getScope }) {
       if (!sameScope(saved.scope, getScope()) || document.hidden || document.hasFocus?.() === false) { clear(); return false; }
       const active = document.activeElement;
       if (active !== document.body && !matches(active, saved)) { clear(); return false; }
+      // Completion can precede a queued shell replacement. Retain its focused
+      // node until that replacement, but yield a blur while it is still mounted.
+      if (active === document.body && saved.restoredTarget?.isConnected) { clear(); return false; }
       if (pending(saved.pendingKey)) return false;
       const target = [...root.querySelectorAll('[data-action="copy-invite"]')].find(node => matches(node, saved));
-      clear();
-      if (!target || !target.isConnected || target.disabled || target.getAttribute('aria-disabled') === 'true' || target.closest('[inert], [aria-hidden="true"]')) return false;
+      if (!target || !target.isConnected || target.disabled || target.getAttribute('aria-disabled') === 'true' || target.closest('[inert], [aria-hidden="true"]')) { clear(); return false; }
       target.focus({ preventScroll: true });
-      return document.activeElement === target;
+      if (document.activeElement !== target) { clear(); return false; }
+      saved.restoredTarget = target;
+      return true;
     },
   };
 }

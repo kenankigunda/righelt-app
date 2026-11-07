@@ -22,19 +22,24 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
   await page.evaluate(()=>{
    window.destructionMotionProof=new Promise((resolve,reject)=>{
     let first,nextNodeId=0;
+    const witness=window.destructionMotionWitness={startedAt:performance.now(),frames:[],outcome:'pending'};
+    let previousFrameAt=witness.startedAt;
+    const fail=message=>{witness.outcome='failed';witness.message=message;reject(Error(message));};
     const nodeIds=new WeakMap(),expectedSignatures=['6,4:Red unit','7,4:Red unit'];
     const frame=()=>{
+     const at=performance.now(),gap=at-previousFrameAt;previousFrameAt=at;
      const samples=[...document.querySelectorAll('#shell-board .removal-piece')].map(node=>{
       const animation=node.getAnimations()[0],timing=animation?.effect.getComputedTiming();
       const cell=node.closest('[data-row][data-col]');
       if(!nodeIds.has(node))nodeIds.set(node,++nextNodeId);
       return {signature:`${cell?.dataset.row},${cell?.dataset.col}:${node.getAttribute('aria-label')}`,nodeId:nodeIds.get(node),duration:timing?.activeDuration,elapsed:typeof animation?.currentTime==='number'?animation.currentTime-(timing?.delay??0):null};
      }).sort((a,b)=>a.signature.localeCompare(b.signature));
+     if(samples.length||first){witness.frames.push({at,gap,samples});if(witness.frames.length>32)witness.frames.shift();}
      if(samples.length===2&&samples.every((sample,index)=>sample.signature===expectedSignatures[index]&&sample.duration===2400&&Number.isFinite(sample.elapsed))){
-      if(!first)first=samples;
-      else if(samples.every((sample,index)=>sample.elapsed>first[index].elapsed)){resolve({first,next:samples});return;}
-      else if(samples.some((sample,index)=>sample.elapsed<first[index].elapsed)){reject(Error(`Destruction timeline reset: ${JSON.stringify({first,next:samples})}`));return;}
-     }else if(first){reject(Error('Destruction effect expired before advancing'));return;}
+      if(!first){first=samples;witness.first={at,samples};}
+      else if(samples.every((sample,index)=>sample.elapsed>first[index].elapsed)){witness.outcome='advanced';witness.next={at,samples};resolve({first,next:samples});return;}
+      else if(samples.some((sample,index)=>sample.elapsed<first[index].elapsed)){fail(`Destruction timeline reset: ${JSON.stringify({first,next:samples})}`);return;}
+     }else if(first){fail('Destruction effect expired before advancing');return;}
      requestAnimationFrame(frame);
     };requestAnimationFrame(frame);
    });
@@ -75,7 +80,11 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
    await expect(page.locator('#shell-board .history-destruction-piece')).toHaveCount(2);
    await page.screenshot({path:testInfo.outputPath('history-removals.png')});
   }
- }finally{await owner.close();await observer.close();}
+ }finally{
+  const witness=await page.evaluate(()=>window.destructionMotionWitness??null).catch(error=>({readError:String(error)}));
+  await testInfo.attach('destruction-motion-witness',{body:JSON.stringify(witness,null,2),contentType:'application/json'});
+  await owner.close();await observer.close();
+ }
 });
 
 const projectFixture=JSON.parse(fs.readFileSync(new URL('../../packages/game-engine/test/fixtures/destruction-project.json',import.meta.url)));

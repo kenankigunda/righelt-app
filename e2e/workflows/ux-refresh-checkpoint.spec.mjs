@@ -391,8 +391,29 @@ test('legend follows rendered overlays and commander follows selected ownership'
   const legend=document.querySelector('.overlay-key');return ['command','supply','group'].every(kind=>{const drawn=kind==='group'?document.querySelector('#shell-board .group-strength-badge'):document.querySelector(`#shell-overlay-lines [data-legend-kind="${kind}"]`);return !legend.querySelector(`[data-legend-entry="${kind}"]`).hidden===Boolean(drawn);});
  })).toBe(true);};
  await page.locator('#shell-board .cell:has(.piece-token.p2)').first().click();await check();
- expect(await legend.locator('.commander-key').evaluate(el=>getComputedStyle(el).color)).toBe(await legend.locator('.command').evaluate(el=>getComputedStyle(el).color));
- expect(await legend.locator('.supply-point svg').evaluate(el=>getComputedStyle(el).fill)).toBe(await legend.locator('.commander-key').evaluate(el=>getComputedStyle(el).color));
+ // Separate evaluations do not establish same-render node validity.
+ // Sample current connected nodes together, keeping exact color/ownership comparisons.
+ const readLegendOwnershipColors = () => {
+  const root=document.querySelector('.overlay-key'),board=document.querySelector('#shell-board');
+  const commander=root?.querySelector('.commander-key'),command=root?.querySelector('.command'),supply=root?.querySelector('.supply-point svg');
+  const selected=board?.querySelector('.cell.selected-piece .piece-token');
+  const nodes=[root,board,commander,command,supply,selected];
+  if(nodes.some(node=>!node?.isConnected || node.ownerDocument!==document || node.getRootNode()!==document)
+   || document.querySelector('.overlay-key')!==root || document.querySelector('#shell-board')!==board
+   || ![commander,command,supply].every(node=>root.contains(node)) || !board.contains(selected))return {valid:false};
+  const owner=selected.classList.contains('p2')?'P2':selected.classList.contains('p1')?'P1':null;
+  const commandOwner=root.querySelector('[data-board-inspection="command"]')?.getAttribute('data-inspection-owner');
+  const supplyOwner=root.querySelector('[data-board-inspection="supply"]')?.getAttribute('data-inspection-owner');
+  const commanderStyle=getComputedStyle(commander),commandStyle=getComputedStyle(command),supplyStyle=getComputedStyle(supply);
+  const commanderColor=commanderStyle.color,commandColor=commandStyle.color,supplyFill=supplyStyle.fill;
+  const ownerToken=owner?getComputedStyle(document.documentElement).getPropertyValue(owner==='P2'?'--player-p2':'--player-p1').trim():'';
+  return {valid:true,owner,commandOwner,supplyOwner,commanderColor,commandColor,supplyFill,
+   colorsAgree:Boolean(commanderColor && commandColor && supplyFill) && commanderColor===commandColor && supplyFill===commanderColor,
+   ownerColorsAgree:Boolean(ownerToken) && commanderStyle.getPropertyValue('--swatch-command-color').trim()===ownerToken
+    && commandStyle.getPropertyValue('--swatch-command-color').trim()===ownerToken && supplyStyle.getPropertyValue('--supply-owner').trim()===ownerToken};
+ };
+ const checkColors=async()=>{await expect.poll(()=>page.evaluate(readLegendOwnershipColors)).toMatchObject({valid:true,owner:'P2',commandOwner:'P2',supplyOwner:'P2',colorsAgree:true,ownerColorsAgree:true});};
+ await checkColors();
  await page.locator('#shell-board .cell:has(.piece-token.p1)').first().click();await check();
  await page.locator('#shell-board .cell:has(.piece-token.p1)').first().click();await check();
 });

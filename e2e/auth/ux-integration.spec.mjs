@@ -66,10 +66,9 @@ test('self-play profile controls preserve focus and expansion across viewer pres
  const viewerName=`Viewer_${Date.now().toString(36)}`;await entry.getByLabel('Username',{exact:true}).fill(viewerName);await entry.getByLabel('Password',{exact:true}).fill('Another account password 482');
  await entry.getByRole('button',{name:'Create account & continue',exact:true}).click();await expect(entry).not.toBeVisible();
  await guest.goto(page.url());await guest.getByTestId('join-viewer').click();
- const summary=page.getByRole('button',{name:`Viewers: ${viewerName}`,exact:true});await expect(summary).toBeVisible();await expect(summary).toHaveAttribute('aria-expanded','false');
- await expect(page.getByTestId('participant-viewer')).toHaveCount(0);
+ const viewers=page.getByTestId('viewers-section');await expect(viewers.getByRole('heading',{name:'Viewers',exact:true})).toBeVisible();
+ await expect(viewers.locator('summary')).toHaveCount(0);await expect(viewers.getByTestId('participant-viewer')).toHaveCount(1);
  await expect(blue).toBeFocused();await expect(blue).toHaveAttribute('aria-expanded','true');await expect(blue).toHaveText('You');await expect(blue).toHaveAttribute('data-username',username);
- await summary.click();await expect(summary).toHaveAttribute('aria-expanded','true');
  const viewerRow=page.getByTestId('participant-viewer');await expect(viewerRow).toBeVisible();await expect(viewerRow.getByRole('button')).toHaveAttribute('data-username',viewerName);await expect(viewerRow).toHaveText(viewerName);
  await expect(blue).toHaveAttribute('aria-expanded','true');await blue.focus();}finally{await watcher.close();}
  await blue.click();await expect(profile).toHaveCount(0);

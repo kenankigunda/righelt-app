@@ -1,0 +1,40 @@
+import {test as base,expect} from '@playwright/test';
+import {ownedContexts} from '../support/owned-contexts.mjs';
+import {createGamesViaApi,openDirectGameLink,joinAsViewer,switchGamePanel} from '../support/app.mjs';
+const test=base.extend({ownedRoleContext:async({browser},use)=>{const contexts=ownedContexts(browser);try{await use(options=>contexts.create(options));}finally{await contexts.close();}}});
+
+for(const width of [390,1440])test(`Players groups real viewer updates and invitations at ${width}px`,async({ownedRoleContext,baseURL},info)=>{
+ const owner=await ownedRoleContext({baseURL,viewport:{width,height:1000}}),page=await owner.newPage();
+ await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedViewerLink=text;}}}));
+ const [firstId,nextId]=await createGamesViaApi(page,2);
+ await page.goto(`/#/game/${firstId}`);await expect(page.getByTestId('game-shell')).toBeVisible();await switchGamePanel(page,'players');
+ const panel=page.locator('[data-game-panel="join"]'),section=page.getByTestId('viewers-section'),summary=section.locator('summary');
+ await expect(panel.getByRole('heading',{name:'Players',exact:true})).toBeVisible();await expect(section.getByRole('heading',{name:'Viewers',exact:true})).toBeVisible();
+ await expect.poll(()=>section.getByTestId('copy-viewer-invite').locator('.loading-icon-slot .righelt-icon').evaluate(el=>getComputedStyle(el).color)).toBe('rgb(112, 72, 165)');
+ await expect(section).toContainText('None');await expect(summary).toHaveCount(0);
+ expect(await panel.evaluate(el=>{const play=el.querySelector('[data-invite-role="blue"]'),viewers=el.querySelector('h3');return play&&play.getBoundingClientRect().bottom<=viewers.getBoundingClientRect().top;})).toBe(true);
+ const gameplay=[];page.on('request',request=>{if(request.method()==='POST'&&/\/(apply|end-turn|commands)$/.test(new URL(request.url()).pathname))gameplay.push(request.url());});
+ const joinViewer=async()=>{
+  const context=await ownedRoleContext({baseURL,viewport:{width,height:1000}}),viewer=await context.newPage();
+  await openDirectGameLink(viewer,baseURL,`#/game/${firstId}`);await joinAsViewer(viewer);await expect(viewer.getByTestId('game-role')).toContainText('Viewer');await page.bringToFront();
+ };
+ await joinViewer();await expect(section.getByTestId('participant-viewer')).toHaveCount(1);await expect(summary).toHaveCount(0);
+ await joinViewer();await expect(summary).toBeVisible();await expect(summary).toHaveAccessibleName('Guest and Guest');
+ await summary.focus();await page.keyboard.press('Enter');await expect(section.locator('details')).toHaveAttribute('open','');await expect(summary).toHaveAccessibleName('2 viewers');
+ await summary.evaluate(el=>{window.originalAudienceControl=el;});
+ await joinViewer();await expect(summary).toHaveAccessibleName('3 viewers');await expect(section.getByTestId('participant-viewer')).toHaveCount(3);await expect(summary).toBeFocused();
+ expect(await summary.evaluate(el=>el===window.originalAudienceControl)).toBe(true);
+ const expandedInvite=section.getByTestId('copy-viewer-invite');
+ for(let step=0;step<4;step++)await page.keyboard.press(info.project.name==='webkit'?'Alt+Tab':'Tab');
+ await expect(expandedInvite).toBeFocused();await expect(expandedInvite).toBeInViewport({ratio:1});
+ expect(await expandedInvite.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})).toBe(true);
+ await page.screenshot({path:info.outputPath(`players-viewers-expanded-${width}.png`),fullPage:true});
+ await summary.focus();await page.keyboard.press('Space');await expect(section.locator('details')).not.toHaveAttribute('open','');await expect(summary).toHaveAccessibleName('Guest, Guest and 1 other');
+ const invite=section.getByTestId('copy-viewer-invite');await invite.focus();await page.keyboard.press('Enter');await expect(invite).toBeFocused();
+ await expect(section.getByRole('status')).toHaveText('Link copied! Ready to share.');await expect(panel.getByRole('status').filter({hasText:'Link copied! Ready to share.'})).toHaveCount(1);
+ expect(await page.evaluate(()=>window.copiedViewerLink)).toContain('as=viewer');
+ await summary.focus();await page.keyboard.press('Enter');await expect(section.locator('details')).toHaveAttribute('open','');
+ await page.getByRole('link',{name:'Righelt',exact:true}).click();await page.locator(`.mini-board-card-link-surface[data-game-id="${nextId}"]`).click();await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',nextId);await switchGamePanel(page,'players');await expect(page.getByTestId('viewers-section')).toContainText('None');
+ await page.getByRole('link',{name:'Righelt',exact:true}).click();await page.locator(`.mini-board-card-link-surface[data-game-id="${firstId}"]`).click();await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',firstId);await switchGamePanel(page,'players');await expect(page.getByTestId('viewers-section').locator('details')).not.toHaveAttribute('open','');
+ await page.screenshot({path:info.outputPath(`players-viewers-compact-${width}.png`),fullPage:true});expect(gameplay).toEqual([]);
+});

@@ -59,8 +59,13 @@ test('a confirmed missing invitation offers Home without a retry loop',async({pa
 test('a late successful lookup cannot replace a different current invitation',async({page,browser,baseURL})=>{
   const {gameId}=await createGameFromHome(page),invite=await invitationFor(page,gameId);
   const context=await browser.newContext({baseURL,viewport:{width:390,height:844}}),viewer=await context.newPage();
-  let releaseFirst,firstRequest,delayedResponse;
+  let releaseFirst,releaseCurrent,firstRequest,delayedResponse,currentRequest;
   const observed=new Promise(resolve=>delayedResponse=resolve);
+  const currentObserved=new Promise(resolve=>currentRequest=resolve);
+  await viewer.route(`**/api/shell/invites/${encodeURIComponent(invite.player)}`,async route=>{
+    await new Promise(resolve=>{releaseCurrent=resolve;currentRequest();});
+    await route.continue();
+  });
   await viewer.route(`**/api/shell/invites/${encodeURIComponent(invite.viewer)}`,async route=>{
     firstRequest=route.request();const response=await route.fetch();expect(response.status()).toBe(200);
     await new Promise(resolve=>{releaseFirst=resolve;delayedResponse();});
@@ -69,8 +74,12 @@ test('a late successful lookup cannot replace a different current invitation',as
   try{
     await viewer.goto(`/#/invite/${encodeURIComponent(invite.viewer)}?as=viewer`);await observed;
     await viewer.goto(`/#/invite/${encodeURIComponent(invite.player)}?as=blue`);
-    await expect(viewer.getByRole('button',{name:'Play as Blue',exact:true})).toBeEnabled();
+    // Release the obsolete real success as soon as the new lookup is pending,
+    // before the old request's real five-second deadline can expire.
+    await currentObserved;
     const delivered=viewer.waitForResponse(response=>response.request()===firstRequest);releaseFirst();expect((await delivered).status()).toBe(200);
+    await expect(viewer.getByTestId('invite-join-viewer')).toHaveCount(0);
+    releaseCurrent();
     await expect(viewer.getByRole('button',{name:'Play as Blue',exact:true})).toBeEnabled();await expect(viewer.getByTestId('invite-load-recovery')).toHaveCount(0);
-  }finally{releaseFirst?.();await context.close();}
+  }finally{releaseFirst?.();releaseCurrent?.();await context.close();}
 });
