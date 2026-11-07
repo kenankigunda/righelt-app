@@ -1,5 +1,6 @@
 import {readFile, writeFile} from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
+import {performance} from 'node:perf_hooks';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 export const transformBoardAdmissionModule = (source, recipe) => {
@@ -86,9 +87,25 @@ export function createBoardSourceConsoleRetention(page,expectedOrdinal){
  }catch{fail('retention-snapshot-failed');return {retainedPreReloadSourceWindow:first,retention:{incomplete:true,failures,lastFailure,epochsMerged:false}};}}};
 }
 
+// The runner's existing fixture slot includes setup and teardown, never body.
+export const COMPUTER_RECOVERY_FIXTURE_BUDGET_MS=5000;
+export const COMPUTER_RECOVERY_CLEANUP_RESERVE_MS=750;
+export async function runComputerRecoveryPersistence(diagnostic,{setupElapsedMs,now=()=>performance.now(),setTimer=setTimeout,clearTimer=clearTimeout}={}){
+ const start=now(),setup=Number.isFinite(setupElapsedMs)&&setupElapsedMs>=0?setupElapsedMs:COMPUTER_RECOVERY_FIXTURE_BUDGET_MS;
+ const remainingMs=()=>Math.max(0,COMPUTER_RECOVERY_FIXTURE_BUDGET_MS-setup-(now()-start));
+ let timer;const expired=()=>{const state=diagnostic.finalRecoveryHandoff?.end(),error=Error('Computer recovery fixture budget exhausted');return state?.cleanupIncomplete?new AggregateError([error,Error('Computer recovery handoff listener cleanup incomplete')],'Computer recovery fixture budget and cleanup failed'):error;};
+ const deadline=new Promise((_,reject)=>{timer=setTimer(()=>reject(expired()),remainingMs());});
+ // Own both promises even when the deadline wins. Persist still attempts each
+ // sink/route independently; an overrun can never become a successful fixture.
+ const work=Promise.resolve().then(()=>diagnostic.persist({remainingMs,setTimer,clearTimer}));
+ let primary;try{const value=await Promise.race([work,deadline]);if(remainingMs()<=0)throw expired();return value;}
+ catch(error){primary=error;throw error;}
+ finally{clearTimer(timer);const state=diagnostic.finalRecoveryHandoff?.end();if(state?.cleanupAttemptedHere&&state.cleanupIncomplete)throw new AggregateError([...(primary?[primary]:[]),Error('Computer recovery handoff listener cleanup incomplete')],'Computer recovery fixture cleanup failed');}
+}
+
 // Node-only owner of the one existing final afterEach read. No browser operation.
 export function createComputerRecoveryHandoff(page,namespace){
- let gameId,ticket,result,consumed=false,documentGeneration=0;
+ let gameId,ticket,result,delivery,retained=false,consumed=false,ended=false,listenerRemoved=false,cleanupIncomplete=false,journalReadTimedOut=false,documentGeneration=0;
  const fail=reason=>{if(!result?.incomplete)result={incomplete:true,reason,observation:null};};
  const navigated=frame=>{if(frame===page.mainFrame()){documentGeneration++;if(ticket)fail('foreign-document');}};
  page.on('framenavigated',navigated);
@@ -103,11 +120,9 @@ export function createComputerRecoveryHandoff(page,namespace){
   }
   seen.delete(value);return Object.freeze(out);
  };
- return {
-  bindGame(id){if(gameId||typeof id!=='string'||!id)throw Error('Recovery game scope unavailable');gameId=id;},
-  begin(owner){if(owner!==page||!gameId||ticket||consumed)throw Error('Recovery final read scope unavailable');ticket=Object.freeze({namespace,readId:randomUUID(),gameId,documentGeneration});return ticket;},
-  capture(owner,packet){
-   if(consumed||result){fail('handoff-reused');return;}
+ const capture=(owner,packet)=>{
+   if(ended||consumed){return;}
+   if(result){fail('handoff-reused');return;}
    if(owner!==page){fail('foreign-page');return;}
    try{
     if(!ticket||!packet){fail('handoff-missing');return;}
@@ -118,19 +133,43 @@ export function createComputerRecoveryHandoff(page,namespace){
     const immutable=observation,serialized=JSON.stringify(envelope);if(serialized.length>SOURCE_PRESS_MAX_BYTES||Buffer.byteLength(serialized,'utf8')>SOURCE_PRESS_MAX_BYTES)throw Error('Oversize diagnostic');
     result=Object.freeze({incomplete:false,reason:null,namespace,readId:ticket.readId,gameId,documentGeneration,documentNonce:envelope.documentNonce,timeOrigin:envelope.timeOrigin,observationTimeOrigin:observation.timeOrigin,observation:immutable});
    }catch{fail('handoff-invalid');}
+  };
+ const removeListener=()=>{if(listenerRemoved)return;listenerRemoved=true;try{page.off('framenavigated',navigated);}catch{cleanupIncomplete=true;fail('handoff-listener-cleanup-failed');}};
+ return {
+  bindGame(id){if(gameId||typeof id!=='string'||!id)throw Error('Recovery game scope unavailable');gameId=id;},
+  begin(owner){if(owner!==page||!gameId||ticket||consumed||ended)throw Error('Recovery final read scope unavailable');ticket=Object.freeze({namespace,readId:randomUUID(),gameId,documentGeneration});return ticket;},
+  capture,
+  retain(owner,promise){
+   if(owner!==page||!ticket||retained||consumed||ended){fail('foreign-handoff');return;}
+   retained=true;
+   // The original promise owns rejection even if journal persistence fails first.
+   delivery=Promise.resolve(promise).then(value=>{
+    if(ended||consumed)return;
+    if(value?.boardRecovery)capture(owner,value.boardRecovery);else fail('read-missing');
+   },()=>{if(!ended&&!consumed)fail('read-failed');});
+  },
+  journalTimedOut(){journalReadTimedOut=true;},
+  async awaitDelivery({remainingMs=()=>0,setTimer=setTimeout,clearTimer=clearTimeout}={}){
+   if(result||!delivery)return;
+   const wait=Math.max(0,remainingMs()-COMPUTER_RECOVERY_CLEANUP_RESERVE_MS);
+   if(!Number.isFinite(wait)||wait<=0){fail('read-budget-exhausted');return;}
+   let timer;try{
+    await Promise.race([delivery,new Promise(resolve=>{timer=setTimer(()=>{fail('read-budget-exhausted');resolve();},wait);})]);
+   }finally{clearTimer(timer);}
   },
   failed(reason){fail(['read-failed','read-timed-out','read-missing'].includes(reason)?reason:'read-failed');},
+  end(){ended=true;if(!consumed)fail('fixture-ended');const cleanupAttemptedHere=!listenerRemoved;removeListener();return{cleanupIncomplete,cleanupAttemptedHere};},
   consume(){if(consumed)return Object.freeze({incomplete:true,reason:'handoff-reused',observation:null});consumed=true;
    if(result&&!result.incomplete&&result.documentGeneration!==documentGeneration)fail('foreign-document');
-   let cleanupIncomplete=false;try{page.off('framenavigated',navigated);}catch{cleanupIncomplete=true;fail('handoff-listener-cleanup-failed');}
-   return Object.freeze({...result??{incomplete:true,reason:'handoff-missing',observation:null},cleanupIncomplete});},
+   removeListener();
+   return Object.freeze({...result??{incomplete:true,reason:'handoff-missing',observation:null},journalReadTimedOut,cleanupIncomplete});},
  };
 }
 export async function persistComputerRecoveryEvidence({handoff,info,payload,write=writeFile,removeRoute,primaryError}){
  const failures=[];
- for(const operation of [()=>write(info.outputPath('board-admission-observation.json'),JSON.stringify(payload,null,2)),()=>info.attach('board-admission-observation',{body:JSON.stringify(payload),contentType:'application/json'}),removeRoute]){
-  try{await operation();}catch(error){failures.push(error);}
- }
+ const operations=[()=>write(info.outputPath('board-admission-observation.json'),JSON.stringify(payload,null,2)),()=>info.attach('board-admission-observation',{body:JSON.stringify(payload),contentType:'application/json'}),removeRoute];
+ const settled=await Promise.allSettled(operations.map(operation=>Promise.resolve().then(operation)));
+ for(const value of settled)if(value.status==='rejected')failures.push(value.reason);
  if(handoff.incomplete)failures.unshift(Error('Computer recovery final handoff incomplete: '+handoff.reason));
  if(handoff.cleanupIncomplete)failures.push(Error('Computer recovery handoff listener cleanup incomplete'));
  if(failures.length)throw new AggregateError([...(primaryError?[primaryError]:[]),...failures],'Computer recovery evidence incomplete');
@@ -291,8 +330,9 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
    try{sourceRetention.capture(await page.evaluate(()=>globalThis.__boardAdmissionSourceSnapshot?.()??null));}
    catch{sourceRetention.failed();}
   },
-  async persist(){
+  async persist(options={}){
    if(recoveryHandoff){
+    await recoveryHandoff.awaitDelivery(options);
     const handoff=recoveryHandoff.consume(),observation=handoff.observation;
     const missingModules=Object.keys(recipes).filter(pathname=>!transforms.some(row=>row.pathname===pathname));
     const payload={caseTitle:info.title,observation,handoff:{...handoff,observation:undefined},transforms,errors,missingModules,incomplete:handoff.incomplete||errors.length>0||missingModules.length>0||!observation?.activation?.length||Boolean(observation?.incomplete),clock:'page.performance/timeOrigin; Node persistence wall clock separate',nodePersistedAt:new Date().toISOString()};
