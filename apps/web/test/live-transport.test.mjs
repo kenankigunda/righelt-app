@@ -1,8 +1,11 @@
 import test, { beforeEach } from "node:test";
+import { createComputerSession } from '../shell/computer-session.js';
+import { createComputerControl, changeComputerControl, parseComputerControl, COMPUTER_CAPABILITIES } from '../generated/packages/shared-types/src/computer-play.js';
 import { IDBFactory } from "fake-indexeddb";
 import assert from "node:assert/strict";
 import { writeSync as writeCleanupFailure } from "node:fs";
 import { createLiveTransportStore as createActualTransportStore } from "../shell/live-transport.js";
+import { validSyncSnapshot } from "../shell/live-transport.js";
 import { projectOptimisticGame } from '../shell/optimistic-live.js';
 import { createCommandJournal } from '../shell/command-journal.js';
 import { issueDiagnostics } from '../shell/issue-diagnostics.js';
@@ -2558,4 +2561,250 @@ test('an in-flight automatic journal read cannot act after a conflicting storage
  await h.advance(500);await h.phase('list',held);await h.store.loadGamesPage();const network=clone(h.calls.network);
  gate.resolve();assert.equal((await h.settled('list',held)).ok,true);await new Promise(resolve=>setImmediate(resolve));
  assert.deepEqual(h.calls.network,network);assert.equal(h.calls.admit.length,1);assert.equal(h.view().storageBlocked,true);
+});
+
+test('position-first loading displays the saved board without acknowledging or enabling commands', async t => {
+  const game = buildLiveGame(); let complete, projections = 0, admissions = 0;
+  const position = { ...clone(game), positionOnly: true, legalActions: undefined, canRecordMove: false, canEndTurn: false, sharedMutationsBlocked: true };
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), commandJournal: { list: async () => [], admit: async () => { admissions++; } },
+    rulesExecutor: { asynchronous: true, project() { projections++; throw Error('Position-only command reached rules worker'); }, cancel() {}, cancelAll() {} },
+    fetcher: async url => url.includes('/position?')
+      ? Response.json({ ok: true, protocolVersion: 2, projection: 'position-v1', game: position, eventSeq: 7 })
+      : new Promise(resolve => { complete = resolve; }),
+  });
+  t.after(() => { store.retire(); t.diagnostic(`Position-only boundary: ${projections} rules projections, ${admissions} journal admissions`); });
+  store.setRulesActiveGame(game.id);
+  const pending = store.loadGame(game.id, { positionFirst: true });
+  await tick();
+  assert.equal(store.getGameViewModel(game.id).positionLoading, true);
+  assert.equal(store.getGameViewModel(game.id).canRecordMove, false);
+  assert.equal(store.getAuthoritativeGame(game.id), null);
+  assert.equal(store.getLastEventSeq(game.id), 0);
+  assert.equal(validSyncSnapshot(position, game.id), false);
+  const action = listLegalActions(game.board.state).find(action => action.type === 'move');
+  await assert.rejects(store.applyGameAction({ gameId: game.id, state: game.board.state, action }), { code: 'sync_recovering' });
+  await assert.rejects(store.applyGameAction({ gameId: game.id, state: game.board.state, action, computer: { generation: 0 } }), { code: 'sync_recovering' });
+  await assert.rejects(store.endTurn({ gameId: game.id }), { code: 'sync_recovering' });
+  assert.equal(store.getGameViewModel(game.id).gameplayMutationsBlocked, true);
+  assert.equal(projections, 0);
+  assert.equal(admissions, 0);
+  complete(Response.json({ ok: true, protocolVersion: 2, game, eventSeq: 7 }));
+  await pending;
+  assert.equal(store.getGameViewModel(game.id).positionOnly, undefined);
+  assert.equal(store.getAuthoritativeGame(game.id).id, game.id);
+  assert.equal(store.getLastEventSeq(game.id), 7);
+});
+
+test('failed complete loading preserves position and retry restores complete authority', async () => {
+  const game = buildLiveGame(); let fail = true;
+  const position = { ...clone(game), positionOnly: true, legalActions: undefined, canRecordMove: false, canEndTurn: false, sharedMutationsBlocked: true };
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), commandJournal: { list: async () => [] }, fetcher: async url => {
+    if (url.includes('/position?')) return Response.json({ ok: true, protocolVersion: 2, projection: 'position-v1', game: position, eventSeq: 3 });
+    return fail ? Response.json({ ok: false, error: 'rules_budget_exceeded' }, { status: 503 }) : Response.json({ ok: true, protocolVersion: 2, game, eventSeq: 3 });
+  } });
+  await assert.rejects(store.loadGame(game.id, { positionFirst: true }), { code: 'rules_budget_exceeded' });
+  assert.equal(store.getGameViewModel(game.id).positionError, true);
+  assert.equal(store.getGameViewModel(game.id).positionLoading, false);
+  assert.equal(store.getLastEventSeq(game.id), 0);
+  fail = false; await store.loadGame(game.id, { positionFirst: true });
+  assert.equal(store.getGameViewModel(game.id).positionOnly, undefined);
+});
+
+test('late position cannot replace a complete socket snapshot or cross account retirement', async () => {
+  for (const retired of [false, true]) {
+    const game = buildLiveGame(); let reply;
+    const store = createLiveTransportStore({ storage: createMemoryStorage(), commandJournal: { list: async () => [] },
+      fetcher: async () => new Promise(resolve => { reply = resolve; }),
+    });
+    const pending = store.loadGamePosition(game.id);
+    const rejected = retired ? assert.rejects(pending, { code: 'session_changed' }) : null;
+    await tick();
+    if (retired) store.retire(); else store.applyLiveGameUpdate({ game, eventSeq: 9 });
+    reply(Response.json({ ok: true, protocolVersion: 2, projection: 'position-v1', game: { ...game, positionOnly: true }, eventSeq: 7 }));
+    if (rejected) await rejected;
+    else {
+      await pending;
+      assert.equal(store.getGameViewModel(game.id).positionOnly, undefined);
+      assert.equal(store.getLastEventSeq(game.id), 9);
+    }
+  }
+});
+
+test('read-only position history remains inspectable without enabling play', async () => {
+  const game = buildLiveGame();
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), commandJournal: { list: async () => [] },
+    fetcher: async () => Response.json({ ok: true, protocolVersion: 2, projection: 'position-v1', game: { ...game, positionOnly: true }, eventSeq: 2 }),
+  });
+  await store.loadGamePosition(game.id);
+  store.selectHistoryMove({ gameId: game.id, moveIndex: 0 });
+  assert.equal(store.getGameViewModel(game.id).inHistoryMode, true);
+  assert.equal(store.getGameViewModel(game.id).canRecordMove, false);
+  store.returnToLive({ gameId: game.id });
+  assert.equal(store.getGameViewModel(game.id).canRecordMove, false);
+  assert.equal(store.getAuthoritativeGame(game.id), null);
+});
+
+
+// CONTRACT-GAP PROBE: expected pass, not a deterministic reproduction of the
+// retained WebKit rejection. No exception category was retained in that failure.
+test('contract-gap probe: original push confirmation admits retreat and Follow exactly once through async checking', {timeout:15000}, async t => {
+  const phases=cleanupPhaseLog(t), storage=createMemoryStorage();
+  storage.setItem(IDENTITY_KEY,'id-a');
+  const state=resolveToStability({boardSize:10,sideToMove:'P1',turnIndex:0,continuation:null,
+    outcome:{status:'ongoing'},pieces:[
+      {id:'C1',owner:'P1',kind:'commander',position:{row:3,col:1},supplied:true,commanded:true},
+      {id:'C2',owner:'P2',kind:'commander',position:{row:4,col:4},supplied:true,commanded:true},
+      {id:'A1',owner:'P1',kind:'unit',position:{row:4,col:1},supplied:true,commanded:true},
+      {id:'D1',owner:'P2',kind:'unit',position:{row:4,col:2},supplied:true,commanded:true},
+    ]},{artifactMode:'full'});
+  const currentTurn={index:0,playerSeat:'Player 1',status:'active',moveIndexes:[],
+    startedAt:'2026-02-26T00:00:00.000Z',endedAt:null,lastMoveAt:null};
+  let game={...buildGameForIdentity({gameId:'contract-gap-push-retreat-follow',identityId:'id-a',
+    myRole:'Player 1',state,currentTurn}),selfPlayMode:true,player2:{identityId:'id-a',connected:true},canRecordMove:true};
+  const durable=createCommandJournal({indexedDB:new IDBFactory()}), admissions=[], sends=[], outcomes=new Map(), rulesCalls=[];
+  let releaseConfirmation;const confirmation=new Promise(resolve=>{releaseConfirmation=resolve;});
+  let lostPush=false,eventSeq=1;
+  const journal={list:(...args)=>durable.list(...args),remove:envelope=>durable.remove(envelope),close:()=>durable.close(),
+    admit:async envelope=>{await durable.admit(envelope);admissions.push(clone(envelope));}};
+  const rulesExecutor={asynchronous:true,
+    async project(scope,input){rulesCalls.push({scope,action:clone(input.queue.at(-1).action)});return projectOptimisticGame(input);},
+    cancel(){},cancelAll(){}};
+  const store=createLiveTransportStore({storage,commandJournal:journal,rulesExecutor,
+    fetcher:async(url,init)=>{
+      if(init.method==='GET')return Response.json({ok:true,protocolVersion:2,game:clone(game),eventSeq},
+        {headers:{[ACTION_CONTRACT_HEADER]:String(ACTION_CONTRACT_VERSION)}});
+      const body=JSON.parse(init.body), apply=String(url).endsWith('/apply'), reconcile=String(url).endsWith('/reconcile');
+      assert.ok(apply||reconcile,'only original action and reconciliation APIs belong to this probe');
+      if(apply){
+        sends.push(clone(body));
+        if(!outcomes.has(body.clientCommandId)){
+          game=buildAcknowledgedGame(game,body.payload.action);
+          game.moves.at(-1).clientCommandId=body.clientCommandId;
+          outcomes.set(body.clientCommandId,{gameId:game.id,identityId:body.identityId,clientCommandId:body.clientCommandId,
+            fingerprint:body.fingerprint,outcome:'accepted',reason:null,eventSeq:++eventSeq,gameplayRevision:game.gameplayRevision});
+        }else assert.equal(outcomes.get(body.clientCommandId).fingerprint,body.fingerprint);
+        if(body.payload.action.type==='push'&&!lostPush){lostPush=true;throw Error('lost original push reply');}
+      }
+      if(reconcile&&lostPush&&game.gameplayRevision===1){
+        phases.record('held-original-confirmation',{commands:clone(body.commands)});
+        await confirmation;
+      }
+      // Any same-ID push retry is genuine confirmation authority, held by the
+      // same original gate. There is no invented duplicate after the retreat.
+      if(apply&&body.payload.action.type==='push')await confirmation;
+      const commandOutcomes=apply?[clone(outcomes.get(body.clientCommandId))]:(body.commands??[]).map(command=>{
+        const accepted=outcomes.get(command.clientCommandId);
+        if(accepted){assert.equal(accepted.fingerprint,command.fingerprint);return clone(accepted);}
+        return {gameId:game.id,identityId:command.identityId,clientCommandId:command.clientCommandId,
+          fingerprint:command.fingerprint,outcome:'unknown',reason:'not_recorded',eventSeq,gameplayRevision:game.gameplayRevision};
+      });
+      return Response.json({ok:true,accepted:true,protocolVersion:2,gameId:game.id,game:clone(game),
+        eventSeq,gameplayRevision:game.gameplayRevision,commandOutcomes},
+        {headers:{[ACTION_CONTRACT_HEADER]:String(ACTION_CONTRACT_VERSION)}});
+    }});
+  t.after(async()=>{releaseConfirmation();store.retire();await durable.close();});
+  const recordView=()=>{const view=store.getGameViewModel(game.id);if(view)phases.record('public-view',{
+    revision:view.gameplayRevision,recovering:view.recovering,pending:view.pendingCommandCount});};
+  const unsubscribe=store.subscribe(recordView);t.after(unsubscribe);
+  store.setRulesActiveGame(game.id);await store.loadGame(game.id);
+  const push=game.legalActions.find(action=>action.type==='push');assert.ok(push);
+  const first=await store.applyGameAction({gameId:game.id,state:store.getGameViewModel(game.id).board.state,action:push});
+  assert.equal(first.accepted,true);
+  await phases.wait('held-original-confirmation');
+  const original=clone(admissions[0]), originalReceipt=clone(outcomes.get(first.clientCommandId));
+  assert.equal(originalReceipt.outcome,'accepted');assert.equal(originalReceipt.gameplayRevision,1);
+  assert.equal(store.getGameViewModel(game.id).recovering,true);
+  releaseConfirmation();
+  await phases.wait('public-view',1,value=>value.revision===1&&value.pending===0&&value.recovering===false);
+  assert.deepEqual(store.getCommandOutcome(game.id,first.clientCommandId),originalReceipt);
+  for(const type of ['retreat','follow']){
+    const view=store.getGameViewModel(game.id), action=view.legalActions.find(candidate=>candidate.type===type);
+    assert.ok(action,`${type} must come from the real engine's current legal actions`);
+    const result=await store.applyGameAction({gameId:game.id,state:view.board.state,action});
+    assert.equal(result.accepted,true);
+    const revision=type==='retreat'?2:3;
+    await phases.wait('public-view',1,value=>value.revision===revision&&value.pending===0&&value.recovering===false);
+    assert.equal(store.getCommandOutcome(game.id,result.clientCommandId).outcome,'accepted');
+  }
+  const final=store.getGameViewModel(game.id);
+  assert.equal(final.gameplayRevision,3);assert.equal(final.moves.length,3);
+  assert.deepEqual(final.moves.map(move=>move.action.type),['push','retreat','follow']);
+  assert.equal(new Set(final.moves.map(move=>move.clientCommandId)).size,3);
+  assert.equal(final.board.state.continuation,null);
+  assert.equal(admissions.length,3);assert.equal(admissions.filter(e=>e.payload.action.type==='follow').length,1);
+  assert.equal(sends.filter(e=>e.payload.action.type==='follow').length,1);
+  assert.deepEqual(admissions[0],original);
+  assert.deepEqual(store.getCommandOutcome(game.id,first.clientCommandId),originalReceipt);
+  assert.ok(sends.filter(e=>e.payload.action.type==='push').every(e=>e.clientCommandId===original.clientCommandId&&e.fingerprint===original.fingerprint));
+  const admissionChecks=rulesCalls.filter(call=>call.scope===`admit:${game.id}`);
+  assert.equal(admissionChecks.length,3);assert.deepEqual(admissionChecks.map(call=>call.action.type),['push','retreat','follow']);
+  assert.deepEqual(await durable.list('id-a',game.id),[]);
+});
+
+// Public transport/session composition only; this does not identify a native CI cause.
+for (const expires of [false, true]) test(`real resume joins pending reconciliation; deadline=${expires}`, async t => {
+  const storage = createMemoryStorage(); storage.setItem(IDENTITY_KEY, 'id-a');
+  let game = buildLiveGame();
+  game.sharedReceipts = true;
+  game.computerCapabilities = { resumeHere: COMPUTER_CAPABILITIES.resumeHere };
+  game.computer = createComputerControl('id-a', { p1: 'babs', p2: null });
+  let hold = true, release, eventSeq = 1;
+  const hydration = new Promise(resolve => { release = resolve; });
+  const controls = [];
+  const store = createLiveTransportStore({ storage,
+    commandJournal: { list: () => hold ? hydration : Promise.resolve([]), admit: async () => {}, remove: async () => {}, close: async () => {} },
+    timing: { requestTimeoutMs: 1000, recoveryPassMs: expires ? 20 : 5000, retryDelaysMs: [10000], retryJitter: 0 },
+    fetcher: async (url, init = {}) => {
+      if (init.method === 'GET') return Response.json({ ok: true, protocolVersion: 2, game, eventSeq });
+      const envelope = JSON.parse(init.body);
+      if (url.endsWith('/reconcile')) return Response.json({ ok: true, protocolVersion: 2, gameId: game.id,
+        game, eventSeq, gameplayRevision: game.gameplayRevision, commandOutcomes: [] });
+      assert.ok(url.endsWith('/shared'), 'only the original shared control endpoint is admitted');
+      assert.equal(envelope.payload.operation, 'computer-control');
+      assert.equal(envelope.payload.values.action, 'resume-here');
+      assert.equal(Object.hasOwn(envelope.payload.values, 'authContextId'), false, 'client does not supply server authentication context');
+      controls.push(envelope);
+      game = { ...game, computer: changeComputerControl(game.computer, { ...envelope.payload.values,
+        ownerId: 'id-a', authContextId: 'server-resume-fixture-context', now: Date.now(), turnIndex: game.board.state.turnIndex }) };
+      game = { ...game, computer: parseComputerControl(game.computer) };
+      eventSeq++;
+      return Response.json({ ok: true, protocolVersion: 2, gameId: game.id, game, eventSeq,
+        gameplayRevision: game.gameplayRevision, accepted: true, commandOutcomes: [{ gameId: game.id,
+          identityId: envelope.identityId, clientCommandId: envelope.clientCommandId, fingerprint: envelope.fingerprint,
+          outcome: 'accepted', reason: null, eventSeq, gameplayRevision: game.gameplayRevision }] });
+    } });
+  store.applyLiveGameUpdate({ game, eventSeq });
+  const runtime = { cancel() {}, compute() { throw Error('resume composition must not run inference'); } };
+  const session = createComputerSession({ deviceId: 'resume-composition-device', runtime, analysisRuntime: runtime,
+    timers: { setInterval() { return 1; }, clearInterval() {} },
+    getContext: () => ({ game: store.getGameViewModel(game.id), transport: store,
+      accountGeneration: 1, authenticated: true, visible: true }) });
+  t.after(() => { session.destroy(); store.retire(); });
+  const recovery = store.reconcileGame(game.id);
+  assert.equal(store.reconcileGame(game.id), recovery, 'the real store exposes its existing pending pass');
+  const observedRecovery = recovery.then(() => ({ ok: true }), error => ({ ok: false, error }));
+  const first = session.action('resume-here').then(() => ({ ok: true }), error => ({ ok: false, error }));
+  const second = session.action('resume-here').then(() => ({ ok: true }), error => ({ ok: false, error }));
+  await tick();
+  assert.equal(controls.length, 0, 'no resume control may cross held journal reconciliation');
+  if (expires) {
+    const failed = await observedRecovery;
+    assert.equal(failed.ok, false); assert.equal(failed.error.code, 'recovery_timeout');
+    for (const result of await Promise.all([first, second])) {
+      assert.equal(result.ok, false); assert.equal(result.error.code, 'recovery_timeout');
+    }
+    assert.equal(controls.length, 0, 'a failed bounded pass cannot authorize control');
+    hold = false; release([]); await tick();
+    await store.reconcileGame(game.id);
+    await session.action('resume-here');
+  } else {
+    hold = false; release([]);
+    assert.equal((await observedRecovery).ok, true);
+    for (const result of await Promise.all([first, second])) assert.equal(result.ok, true);
+  }
+  assert.equal(controls.length, 1, 'same-scope overlapping requests produce exactly one resume control');
+  const current = store.getGameViewModel(game.id);
+  assert.equal(current.computer.ownerId, 'id-a');
+  assert.equal(current.computer.lease.deviceId, 'resume-composition-device');
+  assert.equal(current.sharedMutationsBlocked, false);
 });

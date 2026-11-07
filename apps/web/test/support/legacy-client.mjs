@@ -11,13 +11,18 @@ export async function legacyClientFixture() {
   const root = fileURLToPath(new URL('../../../..', import.meta.url));
   const directory = await mkdtemp(join(tmpdir(), 'righelt-legacy-client-'));
   try {
-    const archive = execFileSync('git', ['archive', LEGACY_CLIENT_REVISION,
-      'apps/web/shell', 'apps/web/generated', 'apps/web/main.js', 'apps/web/local-dev-ports.js'], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
+    // Archive the complete historical module graph. Mixing a current board
+    // runtime with an old engine can fail at module linking before the actual
+    // legacy transport/journal behavior is exercised.
+    const modules = execFileSync('git', ['ls-tree', '-r', '--name-only', LEGACY_CLIENT_REVISION, 'apps/web'], { cwd: root, encoding: 'utf8' })
+      .trim().split('\n').filter(file => /\.m?js$/.test(file));
+    const archive = execFileSync('git', ['archive', LEGACY_CLIENT_REVISION, ...modules], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
     execFileSync('tar', ['-x', '-C', directory], { input: archive });
     await writeFile(join(directory, 'package.json'), '{"type":"module"}');
     const web = join(directory, 'apps/web');
     const source = await readFile(join(web, 'shell/live-transport.js'));
     return { web, revision: LEGACY_CLIENT_REVISION,
+      assetPaths: new Set(modules.map(file => `/${file.slice('apps/web/'.length)}`)),
       transportHash: createHash('sha256').update(source).digest('hex'),
       load: relative => import(pathToFileURL(join(web, relative)).href),
       close: () => rm(directory, { recursive: true, force: true }) };

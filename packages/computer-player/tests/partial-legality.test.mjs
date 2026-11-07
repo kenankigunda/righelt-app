@@ -4,15 +4,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { selectMove, verifyLegalSubset, transition, encodeAction } from '../src/index.ts';
-import { deterministicStateHash, MAX_ENGINE_OPERATION_EXPANSIONS } from '../../game-engine/src/index.ts';
+import { deterministicStateHash, listLegalActions, MAX_ENGINE_OPERATION_EXPANSIONS } from '../../game-engine/src/index.ts';
 import { decisionProvenance, validateDecisionProvenance } from '../../../tools/ai-trainer/decision-provenance.mjs';
 const state=JSON.parse(readFileSync(new URL('./fixtures/partial-root-legality.json',import.meta.url)));
 const evaluator=async()=>{const policyLogits=new Float32Array(2801);policyLogits[2800]=5;return{policyLogits,value:.125};};
 
-test('retained root failure yields a verified executable fallback with honest subset provenance',async()=>{
+test('a constrained root budget yields a verified executable fallback with honest subset provenance',async()=>{
   const before=JSON.stringify(state);
-  const result=await selectMove({state,seed:107,deadlineMs:performance.now()+4000},evaluator);
+  const result=await selectMove({state,seed:107,maxEngineExpansions:8,deadlineMs:performance.now()+4000},evaluator);
   assert.equal(result.status,'ready');assert.equal(result.legality.complete,false);
+  assert.equal(result.engineBudget.perOperationLimit,8);
   assert.ok(result.legality.indices.length>1);assert.ok(result.legality.unknown>0);
   assert.equal(result.fallback.reason,'legality-incomplete');assert.equal(result.policyMask,false);
   assert.deepEqual(result.policy,[]);assert.ok(result.legality.indices.includes(encodeAction(result.action)));
@@ -39,4 +40,17 @@ test('partial-root fallback never survives cancellation or invalid model output'
   const controller=new AbortController();
   await assert.rejects(selectMove({state,seed:2,signal:controller.signal},async()=>{controller.abort();return evaluator();}),{name:'AbortError'});
   await assert.rejects(selectMove({state,seed:2},async()=>({policyLogits:new Float32Array(2801),value:Infinity})),/Invalid model/);
+});
+
+
+test('the retained position now enumerates complete legality at the unchanged default ceiling', async () => {
+  const result = await selectMove({ state, seed: 107, simulations: 1, deadlineMs: performance.now() + 4000 }, evaluator);
+  assert.equal(result.status, 'ready');
+  assert.equal(result.legality.complete, true);
+  assert.equal(result.legality.unknown, 0);
+  assert.equal(result.engineBudget.perOperationLimit, MAX_ENGINE_OPERATION_EXPANSIONS);
+  assert.deepEqual([...result.legality.indices].sort((a,b) => a-b), listLegalActions(state).map(encodeAction).sort((a,b) => a-b));
+  for (const maxEngineExpansions of [0, -1, NaN, MAX_ENGINE_OPERATION_EXPANSIONS + 1]) {
+    await assert.rejects(selectMove({ state, seed: 107, maxEngineExpansions }, evaluator), /Invalid search limits/);
+  }
 });

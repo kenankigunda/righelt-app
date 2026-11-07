@@ -48,7 +48,7 @@ function environment(job,log){
  const browser=job.steps.flatMap(s=>s.commands).find(c=>c.startsWith('pnpm exec playwright install --with-deps '));
  return {runner:job.runner,nodeMajor:job.nodeMajor,pnpmMajor:job.pnpmMajor,dependencyPolicy:install==='pnpm install --frozen-lockfile'?'frozen':install==='pnpm install --frozen-lockfile=false'?'manifest-compatible-unfrozen':'unsupported',browserInstall:browser?browser.slice('pnpm exec playwright install --with-deps '.length).split(' '):[]};
 }
-export async function importCI({repository,runId,cwd,outDir,expected,execute=command}){
+export async function importCI({repository,runId,cwd,outDir,expected,artifactCache,execute=command}){
  if(!/^[\w.-]+\/[\w.-]+$/.test(repository)||!Number.isSafeInteger(Number(runId))||Number(runId)<1)throw Error('Invalid repository or run ID');
  await mkdir(outDir,{recursive:true,mode:0o700});
  const call=async argv=>(await execute(argv,{cwd})).output;
@@ -60,7 +60,8 @@ export async function importCI({repository,runId,cwd,outDir,expected,execute=com
  const pkg=JSON.parse(await readFile(path.join(cwd,'package.json'),'utf8'));
  const workflowAtHead=await api(`contents/.github/workflows/ci.yml?ref=${run.head_sha}`);
  const workflow=Buffer.from(workflowAtHead.content??'','base64').toString('utf8');if(!workflow)throw Error('Workflow source unavailable');
- if(workflow.trimStart().startsWith('{'))return importCatalogCI({repository,run,cwd,outDir,expected,api,call,execute});
+ if(workflow.trimStart().startsWith('{'))return importCatalogCI({repository,run,cwd,outDir,expected,api,call,execute,artifactCache});
+ if(artifactCache!==undefined)throw Error('Artifact cache is supported only for catalog CI workflows');
  const definitions=workflowJobs(workflow);
  const jobsPage=await api(`actions/runs/${runId}/jobs?filter=latest&per_page=100`);
  if(jobsPage.total_count>100)throw Error('Unsupported job pagination');

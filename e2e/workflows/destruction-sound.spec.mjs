@@ -1,5 +1,6 @@
 import {test as base,expect} from '@playwright/test';
 import {installPassiveAudioObservations} from '../support/audio-observations.mjs';
+import {ownedContexts} from '../support/owned-contexts.mjs';
 import {readFile,writeFile} from 'node:fs/promises';
 import {importScenarioGame,openDirectGameLink,joinAsViewer,submitPlayableAction,switchGamePanel,returnToLive,closeContextQuietly} from '../support/app.mjs';
 import {readProjectedGame} from '../support/computer-projection.mjs';
@@ -61,26 +62,44 @@ test('native audio resumes and advances after a trusted pointer gesture without 
   await page.evaluate(()=>{void window.nativeAudioContext?.close().catch(()=>{});});
  }
 });
-const withObservedAudio=async({ownerContext,viewerContext},info,run)=>{
+const createObservedAudioSession=async({ownerContext,viewerContext})=>{
  await ownerContext.addInitScript(installPassiveAudioObservations);await viewerContext.addInitScript(installPassiveAudioObservations);
  await ownerContext.addInitScript(instrument);await viewerContext.addInitScript(instrument);
  const owner=await ownerContext.newPage(),viewer=await viewerContext.newPage();
  const observations={owner:[],viewer:[]};
  const retain=async(label,page,phase)=>{observations[label].push({phase,...await page.evaluate(()=>({timeline:window.passiveAudioObservations,probe:window.destructionAudioProbe,ui:window.passiveAudioUiState?.()})).catch(error=>({readError:String(error)}))});};
- try{await run({owner,viewer,retain});}finally{
-   for(const [label,page]of[['owner',owner],['viewer',viewer]]){
-    await retain(label,page,'final');
-    const path=info.outputPath(`audio-observations-${label}.json`);await writeFile(path,JSON.stringify(observations[label],null,2));await info.attach(`Passive native audio ${label}`,{path,contentType:'application/json'});
-   }
- }
+ return {owner,viewer,retain,async attach(info){
+  for(const [label,page]of[['owner',owner],['viewer',viewer]]){
+   await retain(label,page,'final');
+   const path=info.outputPath(`audio-observations-${label}.json`);await writeFile(path,JSON.stringify(observations[label],null,2));await info.attach(`Passive native audio ${label}`,{path,contentType:'application/json'});
+  }
+ }};
+};
+const withObservedAudio=async(contexts,info,run)=>{
+ const session=await createObservedAudioSession(contexts);
+ try{await run(session);}finally{await session.attach(info);}
 };
 const sendEndTurn=(page,gameId,body,generation)=>page.evaluate(async({gameId,body,generation,header})=>{
  const response=await fetch(`/api/shell/games/${gameId}/end-turn`,{method:'POST',headers:{'Content-Type':'application/json',...(generation?{[header]:generation}:{})},body:JSON.stringify(body)});
  return {status:response.status,body:await response.json()};
 },{gameId,body,generation,header:STORAGE_GENERATION_HEADER});
 
-test('real audio destruction batches deduplicate local receipts while mute and replays stay silent',async({audioContexts,baseURL,browserName},info)=>{
- await withObservedAudio(audioContexts,info,async({owner,viewer,retain})=>{
+test.describe('retained local destruction audio',()=>{
+ // Two required phases retain the actual pages and identity. Each has the
+ // configured60-second budget, so the aggregate workflow now has two budgets.
+ test.describe.configure({mode:'serial'});
+ let owned,session,accepted;
+ test.beforeAll(async({browser},info)=>{
+  owned=ownedContexts(browser);
+  const use=info.project.use;
+  const options={...use.contextOptions,baseURL:use.baseURL,viewport:{width:1440,height:1100},deviceScaleFactor:use.deviceScaleFactor,isMobile:use.isMobile,hasTouch:use.hasTouch,userAgent:use.userAgent};
+  const ownerContext=await owned.create(options),viewerContext=await owned.create(options);
+  session=await createObservedAudioSession({ownerContext,viewerContext});
+ });
+ test.afterAll(async()=>{await owned?.close();});
+ test('real audio destruction batches deduplicate local receipts while reload, history and replay stay silent',async({baseURL,browserName},info)=>{
+  const {owner,viewer,retain}=session;
+  try{
   const first=await importScenarioGame(owner,scenario,baseURL);await switchGamePanel(owner,'board');
   await openDirectGameLink(viewer,baseURL,first.gameHash);await joinAsViewer(viewer);await switchGamePanel(viewer,'board');
   await owner.bringToFront();await expect.poll(()=>owner.evaluate(()=>document.hasFocus()&&!document.hidden)).toBe(true);
@@ -105,19 +124,43 @@ test('real audio destruction batches deduplicate local receipts while mute and r
   await viewer.bringToFront();await viewer.reload();await expect(viewer.getByTestId('game-shell')).toBeVisible();expect(await crackStarts(viewer)).toHaveLength(0);
   await switchGamePanel(viewer,'history');await viewer.getByTestId('history-move-item').first().locator('.history-move-line').click();await expect(viewer.locator('#shell-board .history-destruction-piece')).toHaveCount(2);expect(await crackStarts(viewer)).toHaveLength(0);
   await returnToLive(viewer);await switchGamePanel(viewer,'board');await viewer.emulateMedia({reducedMotion:'reduce'});
-  await viewer.locator('#shell-board-preview-label').getByRole('button',{name:'Show me again',exact:true}).click();await expect(viewer.locator('.computer-replay')).toBeVisible();
+  await viewer.locator('#app [data-board-context]').getByRole('button',{name:'Show me again',exact:true}).click();await expect(viewer.locator('.computer-replay')).toBeVisible();
   await viewer.locator('#shell-board-preview-label').getByRole('button',{name:'Stop replay',exact:true}).click();expect(await crackStarts(viewer)).toHaveLength(0);
-  // Deliberate in-app mute persists; no system output setting is read or changed.
   await retain('owner',owner,'before-mute');await retain('viewer',viewer,'history-and-replay');
+  accepted=Object.freeze({gameId:first.gameId,identityId:await owner.evaluate(()=>localStorage.getItem('righelt.identity.id.v1')),gameplayRevision:(await projected(owner,first.gameId)).gameplayRevision,viewerInitiallyActive});
+  const proof=JSON.stringify({browserName,phase:'unmuted',localCracks:1,initialViewerActive:viewerInitiallyActive,initialViewerCracks:viewerInitiallyActive?1:0,nativeBackgroundObserved:!viewerInitiallyActive,duplicateCracks:0,reloadHistoryReplayCracks:0,systemMute:'unchanged; no audible audition claimed'},null,2);
+  await writeFile(info.outputPath('audio-unmuted-receipt-proof.json'),proof);
+  await info.attach('Real WebAudio unmuted destruction receipt proof',{path:info.outputPath('audio-unmuted-receipt-proof.json'),contentType:'application/json'});
+  }finally{await session.attach(info);}
+ });
+ test('the same observed owner stays muted through a new destruction game and reload',async({baseURL,browserName},info)=>{
+  const {owner,retain}=session;
+  try{
+  // Missing retained acceptance is a failure, never an optional muted check.
+  expect(accepted).toBeTruthy();
+  await expect(owner.getByTestId('game-shell')).toHaveAttribute('data-game-id',accepted.gameId);
+  expect(await owner.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'))).toBe(accepted.identityId);
+  expect((await projected(owner,accepted.gameId)).gameplayRevision).toBe(accepted.gameplayRevision);
+  expect(await crackStarts(owner)).toHaveLength(1);
+  // Preserve the original audible-cue -> native Mute -> new-game progression.
   await owner.bringToFront();await owner.getByRole('button',{name:'Mute sound',exact:true}).click();
   const muted=await importScenarioGame(owner,{...scenario,id:'b71f581c-6cfe-4c5a-9827-1687a23ace33'},baseURL);await owner.bringToFront();
-  await submitPlayableAction(owner,fixture.action);await owner.locator('[data-board-preview-action="end-turn"]').click();await expect.poll(async()=>(await projected(owner,muted.gameId)).moves[0].destroyedPieces.length).toBe(2);
+  await submitPlayableAction(owner,fixture.action);
+  // A native confirmation can return before its accepted move is published.
+  // Match the earlier phase's positive history boundary before closing the turn.
+  await expect(owner.getByTestId('history-move-item')).toHaveCount(1);
+  await expect.poll(async()=>(await projected(owner,muted.gameId)).moves.length).toBe(1);
+  const mutedEndRequest=owner.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname===`/api/shell/games/${muted.gameId}/end-turn`);
+  await owner.locator('[data-board-preview-action="end-turn"]').click();await mutedEndRequest;
+  await expect.poll(async()=>(await projected(owner,muted.gameId)).moves[0].destroyedPieces.length).toBe(2);
   expect(await crackStarts(owner)).toHaveLength(0);expect(await owner.evaluate(()=>localStorage.getItem('righelt.device.sound-enabled'))).toBe('false');
   await retain('owner',owner,'muted-confirmed');
   await owner.reload();await expect(owner.getByTestId('game-shell')).toBeVisible();await expect(owner.getByRole('button',{name:'Enable sound',exact:true})).toBeVisible();expect(await crackStarts(owner)).toHaveLength(0);
-  const proof=JSON.stringify({browserName,localCracks:1,initialViewerActive:viewerInitiallyActive,initialViewerCracks:viewerInitiallyActive?1:0,nativeBackgroundObserved:!viewerInitiallyActive,duplicateCracks:0,reloadHistoryReplayCracks:0,mutedCracks:0,systemMute:'unchanged; no audible audition claimed'},null,2);
+  const {viewerInitiallyActive}=accepted;
+  const proof=JSON.stringify({browserName,phases:'required unmuted then muted, same owner/viewer pages',localCracks:1,initialViewerActive:viewerInitiallyActive,initialViewerCracks:viewerInitiallyActive?1:0,nativeBackgroundObserved:!viewerInitiallyActive,duplicateCracks:0,reloadHistoryReplayCracks:0,mutedCracks:0,systemMute:'unchanged; no audible audition claimed'},null,2);
   await writeFile(info.outputPath('audio-receipt-proof.json'),proof);
   await info.attach('Real WebAudio local destruction receipt proof',{path:info.outputPath('audio-receipt-proof.json'),contentType:'application/json'});
+  }finally{await session.attach(info);}
  });
 });
 

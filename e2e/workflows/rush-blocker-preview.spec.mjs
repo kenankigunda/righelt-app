@@ -23,8 +23,14 @@ test("rush blocker preview chip matches the highlighted square", async ({ browse
 
     const previewLabel = page.locator("#shell-board-preview-label");
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
-    await expect(previewLabel).toContainText("Rush to reconnect piece at");
-    const blockerChip = previewLabel.locator(".board-preview-coordinate-chip-rush-blocker");
+    await expect(previewLabel.locator(".board-obligatory-pill")).toHaveText("Obligatory");
+    await expect(previewLabel).toContainText("Select a rush to restore supply");
+    const requiredContext=page.locator('[data-alert-stack-card].is-active [data-board-context][aria-label="Required Board guidance"]');
+    await expect(requiredContext).toBeVisible();
+    await expect(requiredContext.locator('.board-context-content')).toHaveText("Rush to restore supply for piece at 4, 3");
+    await expect(requiredContext.locator('[data-action="dismiss-board-context"]')).toHaveCount(0);
+    await expect(page.locator(".rush-guidance-source")).toHaveCount(2);
+    const blockerChip = requiredContext.locator(".board-preview-coordinate-chip-rush-blocker");
     await expect(blockerChip).toHaveText("4, 3");
 
     const blockerCell = page.locator('[data-testid="game-board"] .cell[data-row="4"][data-col="3"]');
@@ -39,7 +45,7 @@ test("rush blocker preview chip matches the highlighted square", async ({ browse
       const next=await page.evaluate(readProjectedGame,{id:gameId,guest:true});
       return {canEndTurn:next.canEndTurn,endTurnLegal:next.legalActions.some(action=>action.type==='end_turn')};
     }).toEqual({canEndTurn:true,endTurnLegal:true});
-    await expect(previewLabel.locator('.board-preview-coordinate-chip-rush-blocker')).toHaveCount(0);
+    await expect(page.locator('[data-board-context][aria-label="Required Board guidance"]')).toHaveCount(0);
 
   } finally {
     await closeContextQuietly(context);

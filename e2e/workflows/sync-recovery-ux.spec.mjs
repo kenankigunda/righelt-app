@@ -108,7 +108,7 @@ test("pending feedback reaches overdue once, then clears or explains definitive 
   if(mode==="accept"){await route.continue();return;}
   const payload=route.request().postDataJSON();
   const commands=operationValues(route.request()).commands??[payload];
-  const response=await page.request.get(`/api/shell/games/${gameId}?identityId=${payload.identityId}`);
+  const response=await page.request.get(`/api/shell/games/${gameId}?identityId=${payload.identityId}`,{maxRetries:1});
   const current=await response.json();
   if(mode==="hold")unknownResponses++;
   await route.fulfill({json:{...current,protocolVersion:2,gameId,gameplayRevision:current.game.gameplayRevision,

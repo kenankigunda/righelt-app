@@ -13,6 +13,8 @@ export type Evaluator = (input: Float32Array, context: {
 }) => Promise<Evaluation>;
 export type SearchRequest = {
   state: GameState; seed: number; simulations?: number; temperature?: number;
+  /** Hosts may lower the shared ceiling; they cannot increase it. */
+  maxEngineExpansions?: number;
   maxValueGap?: number; maxNodes?: number; deadlineMs?: number; signal?: AbortSignal; decisionCache?: boolean; observeEngine?: EngineComputationObserver;
   onProgress?: (progress: { phase: "checking" | "looking-ahead"; simulations: number; total: number; nodes: number }) => void;
   /** Training self-play/development screen only. Browser and evaluation omit it. */
@@ -82,12 +84,13 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
   const valueGap = request.maxValueGap ?? 0;
   if ((request.decisionCache !== undefined && typeof request.decisionCache !== "boolean") || !Number.isSafeInteger(request.seed) || !Number.isSafeInteger(simulations) || simulations < 1 ||
       !Number.isSafeInteger(maxNodes) || maxNodes < 1 || maxNodes > config.search.maxNodes ||
+      (request.maxEngineExpansions !== undefined && (!Number.isSafeInteger(request.maxEngineExpansions) || request.maxEngineExpansions < 1 || request.maxEngineExpansions > MAX_ENGINE_OPERATION_EXPANSIONS)) ||
       !Number.isFinite(temperature) || temperature < 0 || !Number.isFinite(valueGap) || valueGap < 0 ||
       (request.deadlineMs !== undefined && !Number.isFinite(request.deadlineMs))) throw new Error("Invalid search limits");
   // Actual PUCT/tree nodes retain the approved 2,048 ceiling. Internal rule
   // enumeration has its own finite per-call allocation bound and same deadline.
   let nodes = 1;
-  const engineBudget: EngineBudget = { perOperationLimit: MAX_ENGINE_OPERATION_EXPANSIONS,
+  const engineBudget: EngineBudget = { perOperationLimit: request.maxEngineExpansions ?? MAX_ENGINE_OPERATION_EXPANSIONS,
     peakExpansions: 0, totalExpansions: 0, limitReached: false };
   let completed = 0;
   let stopped: "complete" | "deadline" | "node-limit" = "complete";

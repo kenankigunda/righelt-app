@@ -1,30 +1,76 @@
-import {test,expect} from '@playwright/test';
-import {admittedHeight,budgetPixelPrecision} from './support/message-reservation-policy.mjs';
+import {captureControlledMessageBox,qualifyControlledMessageBox} from './support/controlled-message-box-contract.mjs';
+import {test as base,expect} from '@playwright/test';
+import {controlledHeightPublication} from './support/height-publication-test-fixture.mjs';
+const test=base.extend({publicationOwner:controlledHeightPublication});
+import {writeFile} from 'node:fs/promises';
+import {readFileSync} from 'node:fs';
+const geckoSourceProfile=JSON.parse(readFileSync(new URL('./support/gecko-source-profile.json',import.meta.url),'utf8'));
+import {fontEnvelopeBudgetForBrowser} from './support/font-pattern-budget.mjs';
+import {budgetPixelPrecision} from './support/message-reservation-policy.mjs';
+import {settledMessage,measureSemanticGeometry,assertSemanticGeometry} from './support/message-semantic-geometry.mjs';
 test.use({viewport:{width:390,height:740},hasTouch:true});
 const geometry=page=>page.locator('#board').evaluate(el=>{const rect=el.getBoundingClientRect();return{x:rect.x,y:rect.y,width:rect.width,height:rect.height};});
-
 test('replay message steps preserve action nodes and keyboard focus',async({page})=>{
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
  await page.evaluate(async()=>{
   await window.boardFixture.setup('pass',false);
-  window.replayMessage={text:'Replay · 1 of 3',actions:[{id:'replay-next',label:'Next'},{id:'replay-stop',label:'Stop replay'}]};
+  window.replayMessage={text:'Next',context:{kind:'replay-progress',message:{text:'Replay · 1 of 3'}},actions:[{id:'replay-next',label:'Next'},{id:'replay-stop',label:'Stop replay'}]};
   window.boardFixture.message(window.replayMessage);
  });
  const stop=page.getByRole('button',{name:'Stop replay',exact:true});await stop.focus();
  await page.evaluate(()=>{window.savedReplayStop=document.activeElement;window.savedReplayNext=document.querySelector('[data-board-message-action="replay-next"]');window.savedReplayIcon=window.savedReplayStop.querySelector("svg");window.savedReplayLabel=window.savedReplayStop.querySelector(".board-inline-action-label");});
- const before=await geometry(page);
+ await settledMessage(page);const before=await geometry(page);
  for(const step of [2,3]){
-  await page.evaluate(step=>window.boardFixture.message({...window.replayMessage,text:`Replay · ${step} of 3`}),step);
-  await expect(page.locator('#preview')).toContainText(`Replay · ${step} of 3`);
+  await page.evaluate(step=>window.boardFixture.message({...window.replayMessage,context:{kind:'replay-progress',message:{text:`Replay · ${step} of 3`}}}),step);
+  await expect(page.locator('#fixture-context')).toContainText(`Replay · ${step} of 3`);await expect(page.locator('#preview')).not.toContainText('Replay ·');
   expect(await page.evaluate(()=>({stop:window.savedReplayStop===document.querySelector('[data-board-message-action="replay-stop"]'),next:window.savedReplayNext===document.querySelector('[data-board-message-action="replay-next"]'),focus:document.activeElement===window.savedReplayStop}))).toEqual({stop:true,next:true,focus:true});
-  expect(await geometry(page)).toEqual(before);
+  await settledMessage(page);expect(await geometry(page)).toEqual(before);
   expect(await stop.evaluate(button=>button.querySelector('svg')===window.savedReplayIcon&&button.querySelector('.board-inline-action-label')===window.savedReplayLabel)).toBe(true);
  }
  await stop.press('Enter');expect(await page.evaluate(()=>window.boardFixture.messageActions())).toEqual(['replay-stop']);
  expect(await page.evaluate(()=>window.boardFixture.applied())).toEqual([]);
- await page.evaluate(()=>window.boardFixture.message({text:'Finished <safely>',action:{id:'replay-computer',label:'Show me again'}}));
+ await page.evaluate(()=>window.boardFixture.message({text:'Review the game in History',context:{text:'Finished <safely>',action:{id:'replay-computer',label:'Show me again'}}}));
  await expect(stop).toHaveCount(0);await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
- await expect(page.locator('#preview')).toContainText('Finished <safely>');expect(await page.locator('#preview safely').count()).toBe(0);
+ await expect(page.locator('#fixture-context')).toContainText('Finished <safely>');expect(await page.locator('#fixture-context safely').count()).toBe(0);await expect(page.locator('#preview')).toHaveText('Review the game in History');
+});
+
+test('vertical translation preserves exact board layout sizing',async({page,browser,browserName},info)=>{
+ const geckoProfile=browserName==='firefox'?{engine:browserName,version:browser.version(),upstreamRevision:geckoSourceProfile.upstreamRevision,officialSourceManifestSha256:geckoSourceProfile.officialSourceManifestSha256}:null;
+ const rawCaptureBinding=browserName==='firefox'?'__geckoSemanticRawOwner':null;
+ const measure=()=>measureSemanticGeometry(page,{geckoProfile,rawCaptureBinding});
+ const evidence={geckoProfile};
+ const persist=async()=>{try{await writeFile(info.outputPath('semantic-edge-precision.json'),JSON.stringify(evidence,null,2));}catch(error){console.error(JSON.stringify({kind:'precision-evidence-incomplete',name:error?.name??'Error'}));}};
+ try{
+ if(rawCaptureBinding)await page.exposeFunction(rawCaptureBinding,async raw=>{(evidence.rawBeforeWitness??=[]).push(raw);await writeFile(info.outputPath('semantic-edge-precision.json'),JSON.stringify(evidence,null,2));});
+ await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
+ await page.evaluate(()=>window.boardFixture.setup('pass',false));await settledMessage(page);
+ const before=await measure();
+ await page.evaluate(()=>window.boardFixture.message({text:'An acknowledged move has a longer explanation with several coordinate descriptions. A second complete sentence needs additional natural space.',action:{id:'replay-next',label:'Next'}}));
+ await settledMessage(page);const changed=await measure();
+ // Persist the raw measured operands before the first precision assertion.
+ // A failed hypothesis must retain its evidence, not only the screenshot.
+ Object.assign(evidence,{before,changed,status:'positive-assertion-pending'});
+ await persist();
+ expect(changed.board.y).not.toBe(before.board.y);
+ const positive=assertSemanticGeometry(before,changed);evidence.positive=positive;
+ let displacement=1/64;
+ await page.locator('#board').evaluate((board,amount)=>{board.style.transform=`translateY(${amount}px)`;},displacement);
+ let negative=await measure();
+ if(negative.board.y===changed.board.y){displacement=1;await page.locator('#board').evaluate(board=>{board.style.transform='translateY(1px)';});negative=await measure();}
+ expect(negative.board.y).not.toBe(changed.board.y);
+ expect(()=>assertSemanticGeometry(before,negative),'the same helper must reject independent real board movement').toThrow();
+ const additionalNegatives=[];
+ for(const amount of [1,-1/64,-1].filter(amount=>amount!==displacement)){
+  await page.locator('#board').evaluate((board,amount)=>{board.style.transform=`translateY(${amount}px)`;},amount);
+  const sample=await measure();additionalNegatives.push({amount,sample});Object.assign(evidence,{negative,displacement,additionalNegatives});await persist();
+  expect(sample.board.y).not.toBe(changed.board.y);
+  expect(()=>assertSemanticGeometry(before,sample),'fresh witness must reject every independent Board movement').toThrow();
+ }
+ await page.locator('#board').evaluate(board=>board.style.removeProperty('transform'));
+ expect(await measure()).toEqual(changed);
+ Object.assign(evidence,{positive,negative,displacement,additionalNegatives,status:'complete'});
+ }catch(error){evidence.failure=String(error);throw error;}
+ finally{await persist();}
 });
 
 test('compact Pass accepts actual touches at both ends of its 44px hit area without moving the board',async({page},info)=>{
@@ -49,7 +95,7 @@ test('compact Pass accepts actual touches at both ends of its 44px hit area with
   await page.screenshot({path:info.outputPath('compact-pass-expanded-touch.png')});
 });
 
-for(const width of [320,390])for(const scale of ['100%','200%'])test(`board messages keep their geometry at ${width}px and ${scale} text`,async({page},info)=>{
+for(const width of [320,390])for(const scale of ['100%','200%'])test(`board messages keep their geometry at ${width}px and ${scale} text`,async({page,browserName,publicationOwner},info)=>{
   await page.setViewportSize({width,height:1000});
   await page.goto('/browser-integration/support/board-message.html');
   await page.waitForFunction(()=>window.fixtureReady);
@@ -58,29 +104,33 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
     await window.boardFixture.setup('pass',false);
     await document.fonts.ready;
   },scale);
-  const measure=()=>page.locator('main').evaluate(main=>{
-    const rect=selector=>{const value=main.querySelector(selector).getBoundingClientRect();return{x:value.x,y:value.y,width:value.width,height:value.height};};
-    return{cardHeight:main.getBoundingClientRect().height,board:rect('#board'),slot:rect('.board-message-slot')};
-  });
-  const initial=await measure();
+  const measure=()=>measureSemanticGeometry(page);
+  await settledMessage(page);const initial=await measure();
+  const boxContract=await page.evaluate(captureControlledMessageBox);
+  await info.attach('Controlled message actual box and policy domain',{body:JSON.stringify(boxContract),contentType:'application/json'});
+  const boxAdmission=qualifyControlledMessageBox(boxContract,{expectedFontSize:Number.parseFloat(scale)*.16});
+  expect(boxAdmission.qualified,JSON.stringify(boxAdmission)).toBe(true);
   expect(initial.slot.height).toBeGreaterThanOrEqual(44);
-  // The frozen-sequence explanation is three wrapped lines at320px. Measure
-  // the real finite replicas at intrinsic height, rather than the old two-line
-  // minimum that predates mandatory reconnect/retreat/follow explanations.
+  // Natural replicas bound content below the cold reservation. A managed
+  // slot also reserves the independently qualified source font policy.
   const reservation=await page.locator('.board-message-slot').evaluate(slot=>{
-    const width=slot.getBoundingClientRect().width;
-    const heights=[...slot.querySelectorAll('.board-message-sizing')].map(node=>{
-      const copy=node.cloneNode(true);copy.style.cssText=`position:absolute;inline-size:${width}px;height:auto;align-self:start;margin:0`;
-      slot.append(copy);const height=copy.getBoundingClientRect().height;copy.remove();return height;
-    });
-    const intrinsicFallback=[...slot.querySelectorAll('.board-message-fallback-sizing')].map(node=>{
-      const copy=node.cloneNode(true);copy.style.cssText=`position:absolute;inline-size:${width}px;height:auto;min-height:0;align-self:start;margin:0`;
-      slot.append(copy);const height=copy.getBoundingClientRect().height;copy.remove();return height;
-    });
-    return {required:Math.max(...heights),intrinsicFallback:Math.max(...intrinsicFallback),lineHeight:parseFloat(getComputedStyle(slot.querySelector('.board-preview-label')).lineHeight)};
+    const style=getComputedStyle(slot),rows=[...slot.querySelectorAll('.board-message-sizing')].map(node=>{const s=getComputedStyle(node);return {font:node.dataset.sizingFont,variant:node.dataset.sizingVariant,pattern:node.dataset.promptPattern??null,height:node.getBoundingClientRect().height,lineHeight:parseFloat(s.lineHeight),minHeight:parseFloat(s.minHeight)};});
+    const width=slot.getBoundingClientRect().width,outerPadding=parseFloat(style.paddingTop)+parseFloat(style.paddingBottom),usedMinimumProfile=globalThis.__fontUsedSizeProfile??null;
+    let usedSize=null;
+    if(usedMinimumProfile==='firefox')try{usedSize=window.measurePatternUsedMinimum({container:slot,copies:[...slot.querySelectorAll('.board-message-sizing')],intrinsicRows:rows,outerPadding});}catch(error){usedSize={error:String(error)};}
+    return {width,probeWidth:width,outerPadding,usedMinimumProfile,usedSize,rows};
   });
-  expect(initial.slot.height).toBeCloseTo(reservation.required,5);
-  expect(budgetPixelPrecision(initial.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(admittedHeight(initial.slot.width,reservation.lineHeight/1.5,reservation.intrinsicFallback)));
+  await info.attach('touch-reservation-raw',{body:JSON.stringify({reservation,physicalSlotHeight:initial.slot.height}),contentType:'application/json'});
+  expect(reservation.rows).toHaveLength(136);
+  for(const font of ['primary','fallback'])expect(reservation.rows.filter(row=>row.font===font)).toHaveLength(68);
+  expect(reservation.rows.every(row=>row.minHeight===0),'Fallback input is natural geometry, never a CSS-reserved replica').toBe(true);
+  const sourceBudget=fontEnvelopeBudgetForBrowser(reservation,reservation,{browserName});
+  await info.attach('touch-reservation-contract',{body:JSON.stringify({reservation,sourceBudget,physicalSlotHeight:initial.slot.height}),contentType:'application/json'});
+  const rowViolations=reservation.rows.flatMap((row,index)=>budgetPixelPrecision(row.height)>budgetPixelPrecision(sourceBudget.rows[index].contentMax)?[{font:row.font,variant:row.variant,pattern:row.pattern,height:row.height,contentMax:sourceBudget.rows[index].contentMax}]:[]);
+  expect(rowViolations,'Every natural row fits its own structural content cap').toEqual([]);
+  const natural=Math.max(...reservation.rows.map(row=>row.height))+reservation.outerPadding;
+  expect(budgetPixelPrecision(initial.slot.height),'Every natural replica fits inside the physical reservation').toBeGreaterThanOrEqual(budgetPixelPrecision(natural));
+  expect(budgetPixelPrecision(initial.slot.height),'Cold policy remains inside independent per-pattern compact bounds').toBeLessThanOrEqual(budgetPixelPrecision(sourceBudget.slotMax));
   await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(0);
   for(const phase of ['thinking','completed','completed-pass','multi-push','multi-rush','spectator-long-name','selection','frozen-reconnect','frozen-retreat','frozen-follow','loading','human']){
@@ -93,13 +143,13 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
         const {describeTurn,moveCoordinates}=await import('/apps/web/shell/computer-narration.js');
         const point=(row,col)=>({row,col}),move=(type,actorId,from,to)=>({action:{type,actorId,from,to}});
         const moves=phase==='multi-push'?[move('push','a',point(9,9),point(0,0)),move('follow','a',point(0,0),point(1,0)),move('follow','b',point(1,1),point(0,1))]:[move('rush','a',point(9,9),point(0,0)),move('rush','b',point(9,8),point(0,1))];
-        window.boardFixture.message({rows:[{text:describeTurn(moves,'Your opponent'),coordinates:moveCoordinates(moves),action:{id:'replay-computer',label:'Show me again'}},{text:'Select a piece or',action:{id:'pass',label:'Pass'}}]});return;
+        window.boardFixture.message({text:'Select a piece or',action:{id:'pass',label:'Pass'},context:{text:describeTurn(moves,'Your opponent'),coordinates:moveCoordinates(moves),action:{id:'replay-computer',label:'Show me again'}}});return;
       }
       if(phase==='thinking')game.computerTurn='horus';
       window.updateComputerBoardLoading(document.querySelector('.board-message-activity'),game,{phase:'looking-ahead'});
       const preview=document.querySelector('#preview');
-      if(phase==='loading'){preview.closest('.board-message-slot').outerHTML=renderBoardMessageSlot({id:'preview',loading:true});return;}
-      if(phase==='selection'){preview.textContent='Piece at (9, 9) – Select a move';return;}
+      if(phase==='loading'){window.boardFixture.message({text:'Loading play'});return;}
+      if(phase==='selection'){window.boardFixture.message({text:'Select a move for piece at (9, 9)',coordinates:[{row:9,col:9}]});return;}
       if(phase.startsWith('frozen-')){
         const {getSelectedPieceExplanation,SELECTED_CONTINUATION_LABELS}=await import('/apps/web/board/piece-explanations.js');
         const {renderCoordinateChip}=await import('/apps/web/board/coordinate-chip.js');
@@ -107,34 +157,43 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
         const explanation=getSelectedPieceExplanation(piece,{continuation:{type,frozenPieceStatesById:{selected:{supplied:false,commanded:false}}}});
         if(typeof explanation!=='string'||!explanation.trim())throw Error('Frozen continuation must produce a real piece explanation');
         const coordinate=renderCoordinateChip({row:9,col:9}),continuation=phase==='frozen-reconnect'?`${SELECTED_CONTINUATION_LABELS.rushBlocker} ${coordinate}`:phase==='frozen-retreat'?SELECTED_CONTINUATION_LABELS.retreat:SELECTED_CONTINUATION_LABELS.follow;
-        preview.innerHTML=`Piece at ${coordinate} – ${explanation} · ${continuation}`;return;
+        window.boardFixture.message({text:phase==='frozen-reconnect'?'Select a rush to restore supply':phase==='frozen-retreat'?'Select a retreat for piece at (9, 9)':'Select a follow',coordinates:phase==='frozen-retreat'?[{row:9,col:9}]:[],context:{text:`${explanation} for piece at (9, 9) · ${continuation.replace(/<[^>]+>/g,'')}`,coordinates:[{row:9,col:9}],mandatory:phase==='frozen-reconnect'}});return;
       }
 
-      if(phase==='human'){const {renderBoardInlineAction}=await import('/apps/web/board/message-presentation.js');preview.innerHTML=`Select a piece ${renderBoardInlineAction({id:'pass',label:'Pass'},{preview:true})}`;return;}
+      if(phase==='human'){window.boardFixture.message({text:'Select a piece or',action:{id:'pass',label:'Pass'}});return;}
       if(phase==='thinking')game.computerTurn='horus';
       const longName='界'.repeat(16)+'W'.repeat(16);
-      const message=phase==='spectator-long-name'?opponentBoardMessage({id:'named-viewer',myRole:'Viewer',myRoles:['Viewer'],player1:{identityId:'p1',profile:{displayName:longName}},player2:{identityId:'p2'},controlSeat:'Player 2',board:{state:{turnIndex:1,sideToMove:'P2'}},turns:[{index:0,status:'complete',playerSeat:'Player 1'}],moves:[{turnIndex:0,actorSide:'P1',action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]},{},{},{canInteract:false,identityId:'viewer'}):phase==='completed-pass'?opponentBoardMessage({...game,myRoles:['Player 2'],legalActions:[{type:'pass'}],computer:null,turns:[{index:0,status:'complete',playerSeat:'Player 1'}],moves:[{turnIndex:0,actorSide:'P1',action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]},{},{},{canInteract:true}):computerBoardMessage(game,{});
-      if(phase==='spectator-long-name'&&(!message?.text?.startsWith(`${longName} `)||message.action?.label!=='Show me again'))throw Error('Spectator narration must retain the actual full name and replay action');
+      const rawMessage=phase==='spectator-long-name'?opponentBoardMessage({id:'named-viewer',myRole:'Viewer',myRoles:['Viewer'],player1:{identityId:'p1',profile:{displayName:longName}},player2:{identityId:'p2'},controlSeat:'Player 2',board:{state:{turnIndex:1,sideToMove:'P2'}},turns:[{index:0,status:'complete',playerSeat:'Player 1'}],moves:[{turnIndex:0,actorSide:'P1',action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]},{},{},{canInteract:false,identityId:'viewer'}):phase==='completed-pass'?opponentBoardMessage({...game,myRoles:['Player 2'],legalActions:[{type:'pass'}],computer:null,turns:[{index:0,status:'complete',playerSeat:'Player 1'}],moves:[{turnIndex:0,actorSide:'P1',action:{type:'retreat',from:{row:9,col:9},to:{row:0,col:0}}}]},{},{},{canInteract:true}):computerBoardMessage(game,{});
+      const message=rawMessage&&typeof rawMessage==='object'&&rawMessage.action?.id==='replay-computer'?{text:'Select a piece',context:rawMessage}:rawMessage;
+      if(phase==='spectator-long-name'&&(!message?.context?.text?.startsWith(`${longName} `)||message.context.action?.label!=='Show me again'))throw Error('Spectator narration must retain the actual full name and replay action');
       if(phase==='spectator-long-name')window.namedSpectatorMessage=message;
       window.boardFixture.message(message);
     },phase);
-    expect(await measure(),`${phase} must preserve board and card geometry`).toEqual(initial);
+    await settledMessage(page);const current=await measure();
+    assertSemanticGeometry(initial,current);expect(current.board).toEqual(initial.board);
+    expect(await page.locator('[data-prompt-overflow="true"],[data-prompt-unmapped="true"],[data-prompt-primary-underreserved="true"],[data-prompt-reservation-unsupported="true"]').count()).toBe(0);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(phase==='frozen-reconnect'&&width===320)await page.screenshot({path:info.outputPath(`stable-frozen-reconnect-${width}-${scale}.png`)});
     if(phase==='completed'||phase==='completed-pass'||phase==='spectator-long-name'){
       await expect(page.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(1);
       if(phase==='spectator-long-name'){
-        const name=page.locator('#preview .board-message-name'),replay=page.getByRole('button',{name:'Show me again',exact:true});
+        const name=page.locator('#fixture-context .board-message-name'),replay=page.getByRole('button',{name:'Show me again',exact:true});
         await expect(name).toHaveAttribute('dir','auto');await expect(name).toHaveAttribute('title','界'.repeat(16)+'W'.repeat(16));await expect(name).toHaveText('界'.repeat(16)+'W'.repeat(16));
         expect(await name.evaluate(el=>el.scrollWidth>el.clientWidth)).toBe(true);
-        await replay.focus();await replay.evaluate(button=>{window.namedReplayButton=button;window.namedActorNode=button.parentElement.querySelector('.board-message-name');});
-        await page.evaluate(()=>window.boardFixture.message({...window.namedSpectatorMessage,text:window.namedSpectatorMessage.text.replace('retreated','followed')}));
-        await expect(replay).toBeFocused();expect(await replay.evaluate(button=>button===window.namedReplayButton&&button.parentElement.querySelector('.board-message-name')===window.namedActorNode)).toBe(true);
-        await expect(page.locator('#preview')).toContainText('followed a piece from 9, 9 to 0, 0');
-        expect(await measure(),'Named narration refresh preserves the board, card, and action focus').toEqual(initial);
+        await replay.focus();await replay.evaluate(button=>{window.namedReplayButton=button;window.namedActorNode=button.closest('[data-board-context]').querySelector('.board-message-name');});
+        await page.evaluate(()=>window.boardFixture.message({...window.namedSpectatorMessage,context:{...window.namedSpectatorMessage.context,text:window.namedSpectatorMessage.context.text.replace('retreated','followed')}}));
+        await expect(replay).toBeFocused();expect(await replay.evaluate(button=>button===window.namedReplayButton&&button.closest('[data-board-context]').querySelector('.board-message-name')===window.namedActorNode)).toBe(true);
+        await expect(page.locator('#fixture-context')).toContainText('followed a piece from 9, 9 to 0, 0');
+        await settledMessage(page);expect(await measure(),'Same-layout named narration refresh preserves settled geometry and action focus').toEqual(current);
       }
       if(phase==='completed-pass')await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
-      const typography=await page.evaluate(()=>{const properties=['fontFamily','fontSize','fontWeight','lineHeight','height','padding','borderWidth'];const style=selector=>{const computed=getComputedStyle(document.querySelector(selector));return Object.fromEntries(properties.map(key=>[key,computed[key]]));};return{live:style('#preview button'),replica:style('.board-message-sizing button')};});
-      expect(typography.live).toEqual(typography.replica);
+      const replay=page.getByRole('button',{name:'Show me again',exact:true});
+      const replayBox=await replay.boundingBox();expect(replayBox.width).toBeGreaterThanOrEqual(44);expect(replayBox.height).toBeGreaterThanOrEqual(44);
+      expect(await replay.evaluate(button=>button.closest('#preview')===null)).toBe(true);
+      if(phase==='completed-pass'){
+       const typography=await page.evaluate(()=>{const properties=['fontFamily','fontSize','fontWeight','lineHeight','height','padding','borderWidth'];const style=selector=>{const computed=getComputedStyle(document.querySelector(selector));return Object.fromEntries(properties.map(key=>[key,computed[key]]));};return{live:style('#preview button'),replica:style('.board-message-sizing button')};});
+       expect(typography.live).toEqual(typography.replica);
+      }
       await page.screenshot({path:info.outputPath(`stable-${phase}-${width}-${scale}.png`)});
     }
   }
@@ -192,7 +251,7 @@ test('computer loading pieces remain continuous, plain and motion-aware beside t
  expect(await page.locator('.board-message-sizing [data-loading-state],.board-message-sizing .loading-pieces').count()).toBe(0);
 });
 
-test('admission changes preserve selection, sentence rows, centered chips and disabled controls',async({page})=>{
+test('admission changes preserve independent context, selection, baseline-aligned chips and disabled controls',async({page})=>{
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
  await page.evaluate(async()=>{
   await window.boardFixture.setup('pass',false);
@@ -202,28 +261,28 @@ test('admission changes preserve selection, sentence rows, centered chips and di
   window.boardFixture.message(opponentBoardMessage(game,{}, {},{canInteract:true}));
  });
  const prompt=page.locator('#preview'),pass=page.getByRole('button',{name:'Pass',exact:true});
- await expect(prompt.locator('.board-message-row')).toHaveCount(2);
- await expect(prompt.locator('.board-preview-coordinate-chip')).toHaveCount(2);
- await expect(prompt.locator('.board-message-row').nth(0)).toContainText('Show me again');
- await expect(prompt.locator('.board-message-row').nth(1)).toHaveText('Select a piece or Pass');
- const copy=await prompt.textContent(),before=await geometry(page);
+ await expect(prompt.locator('.board-message-row')).toHaveCount(0);
+ await expect(page.locator('#fixture-context .board-preview-coordinate-chip')).toHaveCount(2);
+ await expect(page.locator('#fixture-context')).toContainText('Show me again');
+ await expect(prompt).toHaveText('Select a piece or Pass');
+ await settledMessage(page);const copy=await prompt.textContent(),before=await geometry(page);
  for(const blocked of [true,false,true,false]){
   await page.evaluate(blocked=>{
    window.boardFixture.message(window.opponentMessage({...window.stableMessageGame,sharedMutationsBlocked:blocked,recovering:blocked},{}, {},{canInteract:!blocked}));
    window.boardFixture.gateInteraction(blocked);
   },blocked);
   if(blocked)await expect(pass).toBeDisabled();else await expect(pass).toBeEnabled();
-  expect(await prompt.textContent()).toBe(copy);expect(await geometry(page)).toEqual(before);
+  await settledMessage(page);expect(await prompt.textContent()).toBe(copy);expect(await geometry(page)).toEqual(before);
   if(blocked)await pass.evaluate(button=>button.click());
  }
  expect(await page.evaluate(()=>window.boardFixture.applied())).toEqual([]);
- expect(await prompt.locator('.board-preview-coordinate-chip').first().evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('middle');
- expect(await pass.evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('middle');
+ expect(await pass.evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('baseline');
  // A prepared move remains a move preview while submission admission changes.
  await page.evaluate(async()=>{await window.boardFixture.setup('rush',false);});
  await page.locator('[data-row="4"][data-col="2"]').click();
  const selectedCopy=await prompt.textContent(),selection=await page.evaluate(()=>window.boardFixture.selection());
  expect(selectedCopy).toContain('Select a move for piece at');
+ expect(await prompt.locator('.board-preview-coordinate-chip').first().evaluate(el=>getComputedStyle(el).verticalAlign)).toBe('baseline');
  for(const blocked of [true,false,true,false]){
   await page.evaluate(blocked=>window.boardFixture.gateInteraction(blocked),blocked);
   expect(await prompt.textContent()).toBe(selectedCopy);

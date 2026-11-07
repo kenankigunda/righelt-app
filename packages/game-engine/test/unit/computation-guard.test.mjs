@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { withEngineComputationGuard, checkEngineComputation, buildContinuationSuccessorState,
+import { boundedEngineOperation, EngineComputationLimit, withEngineComputationGuard, checkEngineComputation, buildContinuationSuccessorState,
   isContinuationCompletable, listLegalActions, withEngineComputationObserver,
   isEngineComputationObserved, observeEngineComputation } from '../../src/index.ts';
 import { commander, makeState, unit } from '../helpers/state-builders.mjs';
@@ -91,4 +91,11 @@ test('diagnostic observer scopes restore nesting and reject asynchronous context
   assert.equal(isEngineComputationObserved(),false);
   observeEngineComputation({type:'successor'});
   assert.equal(calls.length,3);
+});
+
+
+test('bounded operations preserve unknown on exhaustion and restore the enclosing scope', () => {
+  assert.throws(() => boundedEngineOperation(() => { checkEngineComputation(true); checkEngineComputation(true); return false; }, 1), EngineComputationLimit);
+  assert.equal(boundedEngineOperation(() => { checkEngineComputation(true); return true; }, 1), true);
+  for (const budget of [0, -1, NaN, Infinity]) assert.throws(() => boundedEngineOperation(() => true, budget), /Invalid engine expansion budget/);
 });

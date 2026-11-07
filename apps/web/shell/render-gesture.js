@@ -4,18 +4,24 @@ export const createRenderGestureGate = ({
   schedule = setTimeout,
   cancel = clearTimeout,
 }) => {
+  const defaultOwner = Symbol("render-gesture"), owners = new Set();
   let held = false,
     pending = null,
     releaseTimer = null;
   const flush = () => {
     releaseTimer = null;
+    if (owners.size) return;
     held = false;
     const options = pending;
     pending = null;
     if (options) render(options);
   };
+  const release = () => {
+    if (!owners.size && releaseTimer === null) releaseTimer = schedule(flush, 0);
+  };
   return {
-    begin() {
+    begin(owner = defaultOwner) {
+      owners.add(owner);
       cancel(releaseTimer);
       releaseTimer = null;
       held = true;
@@ -28,13 +34,19 @@ export const createRenderGestureGate = ({
       };
       return true;
     },
-    end() {
-      // pointerup and click run before the next task. Cancellation and drags
-      // without a click also release the gate instead of leaving it held.
-      if (releaseTimer === null) releaseTimer = schedule(flush, 0);
+    end(owner = defaultOwner) {
+      if (!owners.delete(owner)) return;
+      // The final matching release keeps activation ahead of the next task.
+      release();
+    },
+    cancelAll() {
+      owners.clear();
+      release();
     },
     destroy() {
       cancel(releaseTimer);
+      releaseTimer = null;
+      owners.clear();
       held = false;
       pending = null;
     },

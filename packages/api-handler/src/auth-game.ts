@@ -252,7 +252,9 @@ export function sanitizeGameView(
   const legacy = game.ownershipMode !== "account_v1";
   const identity = !legacy && authority ? authority.accountId : "";
   const projected =
-    !legacy && authority && Array.isArray(value.myRoles)
+    value.positionOnly === true
+      ? withPositionViewModel(game, identity) as Record<string, unknown>
+      : !legacy && authority && Array.isArray(value.myRoles)
       ? structuredClone(value)
       : (withFullViewModel(game, identity) as Record<string, unknown>);
   if (
@@ -298,7 +300,7 @@ export function sanitizeGameView(
   projected.ownershipMode = legacy ? "legacy_guest" : "account_v1";
   return projected;
 }
-import { withFullViewModel } from "./shell-live-core";
+import { withFullViewModel, withPositionViewModel } from "./shell-live-core";
 export function sanitizeGameResponse(
   body: Record<string, unknown>,
   authority: GameAuthority | null,

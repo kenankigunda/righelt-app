@@ -14,6 +14,10 @@ body { font-family:var(--font-family); background:var(--surface-foundation); }
 :is(.shell-header,.shell-flyout,.home-refresh,.story-modal,.panel:not([data-shell-panel="board"])) :is(button,.button-link):not(.secondary):not(.ui-icon-button):not(.opponent-choice):not(.participant-profile):not(.danger):not(.warn) { background:var(--action-color); color:white; }
 :is(.shell-header,.shell-flyout,.home-refresh,.story-modal,.panel:not([data-shell-panel="board"])) button.secondary { background:transparent; border-color:var(--divider); color:var(--ink); }
 button.ui-icon-button { display:inline-flex; justify-content:center; align-items:center; width:44px; height:44px; padding:10px; border:0; border-radius:50%; color:var(--ink); background:transparent; flex:none; box-shadow:none; }
+/* A small visible x retains a full native target. See UI_CONTROL_CONTRACT.md. */
+html button.ui-icon-button.ui-dismiss-button {width:44px;min-width:44px;height:44px;min-height:44px;padding:14px;border:0;border-radius:0;background:transparent;color:var(--muted);box-shadow:none;}
+html button.ui-icon-button.ui-dismiss-button > svg {width:16px;height:16px;flex:none;}
+[data-hover-capability="hover"] button.ui-icon-button.ui-dismiss-button:not(:disabled):hover {background:var(--surface-hover-quiet);color:var(--ink);box-shadow:none;}
 .ui-icon-button svg { width:24px; height:24px; }
 [data-hover-capability="hover"] button.ui-icon-button:hover { background:var(--surface-hover-quiet); }
 button:disabled { opacity:1; }

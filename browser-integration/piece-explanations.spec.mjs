@@ -1,6 +1,7 @@
 import {test, expect} from '@playwright/test';
+import {settledMessage,measureSemanticGeometry,assertSemanticGeometry} from './support/message-semantic-geometry.mjs';
 
-for (const width of [320, 390]) test(`selection explanations stay in the message at ${width}px with enlarged text`, async ({page}, info) => {
+for (const width of [320, 390]) test(`selection explanations retain their actual context owner at ${width}px with enlarged text`, async ({page}, info) => {
   await page.setViewportSize({width, height:1000});
   await page.goto('/browser-integration/support/board-message.html');
   await page.waitForFunction(() => window.fixtureReady);
@@ -9,42 +10,49 @@ for (const width of [320, 390]) test(`selection explanations stay in the message
     document.documentElement.style.fontSize = '200%';
     await document.fonts.ready;
   });
-  const top = () => page.locator('#board').evaluate(node => node.getBoundingClientRect().top);
-  const before = await top();
+  await settledMessage(page);
+  const before = await measureSemanticGeometry(page);
+  const accountMessageGrowth=async()=>{await settledMessage(page);assertSemanticGeometry(before,await measureSemanticGeometry(page));};
   const configure = async (kind, interactive = true) => page.evaluate(async ({kind, interactive}) => {
     const piece = {id:'A',owner:'P1',kind:'unit',position:{row:4,col:2},supplied:true,commanded:true};
     const state = {boardSize:10,sideToMove:'P1',turnIndex:0,outcome:{status:'ongoing'},pieces:[piece],continuation:null};
     if (kind === 'inactive') piece.commanded = false;
     if (kind.startsWith('frozen')) {
       piece.displayCommanded = false;
-      state.continuation = {type:'rush',rushedPieceIds:[],frozenPieceStatesById:{A:{supplied:true,commanded:false}}};
+      state.continuation = {type:'rush',owner:state.sideToMove,rushChainPieceIds:[],rushedPieceIds:[],frozenPieceStatesById:{A:{supplied:true,commanded:false}}};
     }
     if(kind==='frozen-blocker'){state.continuation.frozenPieceStatesById.A.supplied=false;state.pieces.push({id:'B',owner:'P1',kind:'unit',position:{row:9,col:9},supplied:false,commanded:true},...[[8,9],[9,8]].map(([row,col],index)=>({id:`wall-${index}`,owner:'P2',kind:'unit',position:{row,col},supplied:true,commanded:true})));Object.assign(state.continuation,{owner:'P1',rushChainPieceIds:['B'],rushedPieceIds:['B']});}
+    const {canCloseContinuationNow}=await import('/apps/web/generated/packages/game-engine/src/continuation.js');
+    if(kind==='frozen'&&!canCloseContinuationNow(state))throw Error('Optional frozen fixture must be a real closable continuation before injecting End turn');
+    if(kind==='frozen-blocker'&&canCloseContinuationNow(state))throw Error('Required supply fixture must not admit End turn');
     await window.boardFixture.configure(state, kind === 'frozen' ? [{type:'end_turn'}] : [], {
       interactive, selectionState:{selectedPieceId:'A',source:{row:4,col:2},target:null},
     });
   }, {kind, interactive});
   await configure('inactive');
-  await expect(page.locator('#preview')).toContainText('Inactive: no command connection');
-  expect(await top()).toBeCloseTo(before, 1);
+  await expect(page.locator('#fixture-context')).toContainText('Inactive: no command connection for piece at 4, 2');
+  await expect(page.locator('#preview')).not.toContainText('Inactive:');
+  await accountMessageGrowth();
   expect(await page.locator('.cell.selected-piece').evaluate(node => getComputedStyle(node, '::after').content)).toBe('none');
   await page.screenshot({path:info.outputPath(`inactive-${width}-200.png`)});
   await configure('frozen');
-  await expect(page.locator('#preview')).toContainText('Cannot move: no command at start of rush');
+  await expect(page.locator('#fixture-context')).toContainText('Cannot move: no command at start of rush for piece at 4, 2');
   await expect(page.locator('#preview button')).toHaveText('End turn');
-  expect(await top()).toBeCloseTo(before, 1);
+  await accountMessageGrowth();
   await configure('frozen-blocker');
-  await expect(page.locator('#preview')).toContainText('Cannot move: no command or supply at start of rush');
-  await expect(page.locator('#preview')).toContainText('Reconnect piece at 9, 9');
+  await expect(page.locator('#fixture-context')).toContainText('Cannot move: no command or supply at start of rush for piece at 4, 2');
+  await expect(page.locator('#fixture-context')).toContainText('9, 9');
+  await expect(page.locator('#fixture-context [aria-label="Required Board guidance"]')).toHaveCount(1);
+  await expect(page.locator('#fixture-context [aria-label="Required Board guidance"] .board-context-dismiss')).toHaveCount(0);
   await expect(page.locator('#preview button')).toHaveCount(0);
-  expect(await top()).toBeCloseTo(before,1);
+  await accountMessageGrowth();
   await configure('frozen', false);
-  await expect(page.locator('#preview')).toContainText('Cannot move');
+  await expect(page.locator('#fixture-context')).toContainText('Cannot move');
   await expect(page.locator('#preview button')).toHaveCount(0);
   await page.evaluate(() => window.boardFixture.inspect({kind:'command',pieceId:'A'}));
-  await expect(page.locator('#preview')).toContainText('Cannot move: no command at start of rush');
+  await expect(page.locator('#fixture-context')).toContainText('Cannot move: no command at start of rush for piece at 4, 2');
   await expect(page.locator('.board-event-label')).toHaveCount(0);
-  expect(await top()).toBeCloseTo(before, 1);
+  await accountMessageGrowth();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({path:info.outputPath(`frozen-inspection-${width}-200.png`)});
   await page.evaluate(async () => {
@@ -58,10 +66,12 @@ for (const width of [320, 390]) test(`selection explanations stay in the message
       {type:'pass'}, ...[{row:3,col:4},{row:5,col:4},{row:4,col:3}].map(to => ({type:'move',actorId:'C1',from:{row:4,col:4},to})),
     ], {selectionState:{selectedPieceId:'C1',source:{row:4,col:4},target:{row:4,col:5}}});
   });
-  await expect(page.locator('#preview')).toContainText('Destination would have no supply');
+  await expect(page.locator('#fixture-context')).toContainText('Destination would have no supply for piece at 4, 4');
+  await expect(page.locator('#fixture-context .board-preview-coordinate-chip')).toHaveText('4, 4');
+  await expect(page.locator('#preview')).not.toContainText('Destination would have no supply');
   await expect(page.locator('#preview button')).toHaveCount(0);
   expect(await page.locator('.cell.target').evaluate(node => getComputedStyle(node,'::after').content)).toBe('none');
-  expect(await top()).toBeCloseTo(before, 1);
+  await accountMessageGrowth();
   await page.screenshot({path:info.outputPath(`blocked-target-${width}-200.png`)});
 });
 

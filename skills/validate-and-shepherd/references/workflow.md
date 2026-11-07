@@ -94,3 +94,47 @@ Explicit merge approval supplies human acceptance without image-by-image sign-of
 ## Resource interruption
 
 Check commands are supervised under the released resource policy. A memory-pressure cancellation is recorded as incomplete (exit 75), retains its private log, and must not create a successful reuse receipt. Retry only after recovery. Close owned temporary preview tabs through supported tools and report unavailable UI cleanup. See `docs/ai/RESOURCE_MANAGEMENT.md`.
+
+### Optional catalog CI source-archive cache
+
+`import-ci --artifact-cache /absolute/private/path` opts into an owner-private
+archive cache for catalog CI only. Legacy workflow imports reject the option.
+Without the flag the existing download/report path is preserved. Current run
+metadata and the complete artifact inventory are refreshed first. Selected numeric
+attempt, repository, run ID, artifact ID and fresh GitHub SHA256 digest bind each
+entry; archive byte size and streamed SHA256 must match on misses and every hit.
+Missing trusted metadata, corruption, unsafe paths and concurrent writers fail
+closed without retries, fallback download, purge or overwrite. An exclusive writer
+lock and task-owned `.part` preserve incomplete bytes with categorical status.
+Promotion uses a same-filesystem atomic no-replace hard link, followed by removal
+of the task-owned temporary name; no dependency resolver links are introduced.
+Cache paths and every ancestor must be real directories. Existing cache and
+consumption roots must be owner-owned mode0700, and archives mode0600 regular
+non-symlink files.0755/0750 directories and0644/0640 files are rejected; the
+importer never silently chmods existing paths.
+
+The importer holds the verified source descriptor and keeps a mode0600 named
+copy only as ordinary primary archive evidence. Archive consumers never open
+that pathname. A second snapshot is reopened read-only, verified against the
+trusted GitHub digest, and unlinked before consumption. Each unzip child inherits
+that descriptor as stdio3 and reads `/dev/fd/3`. Replacing and restoring a parent
+namespace cannot redirect that inherited object. Descriptor identity, unlink
+status, permissions and streamed bytes remain checked before and after each
+operation. Exact0700 roots,0600 evidence files and the same-key writer lock remain
+required. Source-name substitution during part promotion still fails closed.
+The private named evidence copy survives for later evidence rehash, not credit.
+Its recorded archive hash is the trusted GitHub digest already verified through
+the held descriptor, never a fresh hash of a replaceable name. Later receipt
+loading still rehashes the named evidence and rejects any different bytes.
+The inherited-descriptor consumer requires `/dev/fd` support and fails if absent;
+it never falls back to a pathname. This is not a general same-UID sandbox.
+
+The cache stores archives, never proof credit. Every invocation inventories the
+archive anew and validates complete lanes, seals, result/exit/incomplete state,
+catalog, source identity/checkout/tree, runtime/dependencies and the primary log.
+Existing v1 receipt log seals hash JSON-encoded Buffer bytes; the importer streams
+that exact legacy representation in bounded chunks. It separately uses streaming
+`fileDigest` for the raw log evidence hash. Neither hash reads the whole log.
+Normal integrity receipts retain their 24-hour expiry. Cross-platform, retained,
+CI, merge and tool installation gates remain separate. An unreleased private
+candidate must not be used to shortcut an active import.

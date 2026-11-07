@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
+import {renderBoardMessageHtml} from "../board/message-presentation.js";
 
 const noop = () => {};
 const destroyUninitializedNodeRuntime = runtime => {
@@ -119,7 +120,9 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
     removeEventListener: noop,
   };
 
+  let context=null;
   const runtime = createBoardRuntime({
+    controls:{onBoardContext:value=>context=value},
     boardAdapter: {
       mount: noop,
       render: (payload) => renderCalls.push(payload),
@@ -186,7 +189,9 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
   assert.equal(renderCalls.at(-1)?.overlay?.mode, "recorded-action");
   assert.deepEqual(renderCalls.at(-1)?.overlay?.recordedAction, recordedAction);
   assert.deepEqual(renderCalls.at(-1)?.overlay?.recordedActionStartPiece, recordedActionStartPiece);
-  assert.match(boardPreviewLabelEl.innerHTML || boardPreviewLabelEl.textContent, /Recorded move from.*board-preview-coordinate-chip-selected-piece.*4,\s*2.*board-preview-coordinate-chip-target.*4,\s*3/);
+  assert.equal(boardPreviewLabelEl.innerHTML || boardPreviewLabelEl.textContent,'Choose a move in History');
+  assert.equal(context.kind,'history');
+  assert.match(renderBoardMessageHtml(context.message), /Recorded move from.*board-preview-coordinate-chip-selected-piece.*4,\s*2.*board-preview-coordinate-chip-target.*4,\s*3/);
 });
 
 test("board runtime starts history destruction in the removal-effects layer before the settled overlay appears", async () => {
@@ -467,7 +472,9 @@ test("board runtime uses the same concise End turn CTA at narrow and wide widths
 test("board runtime omits end-turn CTA when the rush chain is not yet closable", async () => {
   let previewHtml = "";
 
+  let context=null;
   const runtime = createBoardRuntime({
+    controls:{onBoardContext:value=>context=value},
     boardAdapter: {
       mount: noop,
       render: noop,
@@ -587,17 +594,20 @@ test("board runtime omits end-turn CTA when the rush chain is not yet closable",
     },
   );
 
-  assert.doesNotMatch(previewHtml, /data-board-preview-action="end-turn"/);
-  assert.match(previewHtml, /Rush to reconnect|Select a rush/);
-  assert.match(previewHtml, /to reconnect piece at/);
-  assert.match(previewHtml, /board-preview-coordinate-chip-rush-blocker/);
-  assert.match(previewHtml, />4, 3</);
+  assert.doesNotMatch(previewHtml, /data-board-(?:preview|message)-action="end-turn"/);
+  assert.match(previewHtml,/Select a rush to restore supply/);assert.match(previewHtml,/Obligatory/);
+  assert.equal(context.mandatory,true);
+  const contextHtml=renderBoardMessageHtml(context.message);
+  assert.match(contextHtml,/restore supply for piece at/);
+  assert.match(contextHtml,/board-preview-coordinate-chip-rush-blocker/);assert.match(contextHtml,/>4, 3</);
 });
 
 test("board runtime rush blocker prompt prefers the most recently rushed unsupplied piece", async () => {
   let previewHtml = "";
 
+  let context=null;
   const runtime = createBoardRuntime({
+    controls:{onBoardContext:value=>context=value},
     boardAdapter: {
       mount: noop,
       render: noop,
@@ -667,8 +677,10 @@ test("board runtime rush blocker prompt prefers the most recently rushed unsuppl
     },
   );
 
-  assert.match(previewHtml, /board-preview-coordinate-chip-rush-blocker/);
-  assert.match(previewHtml, />5, 1</);
+  assert.match(previewHtml,/Select a rush to restore supply/);assert.match(previewHtml,/Obligatory/);
+  assert.equal(context.mandatory,true);
+  assert.match(renderBoardMessageHtml(context.message),/board-preview-coordinate-chip-rush-blocker/);
+  assert.match(renderBoardMessageHtml(context.message),/>5, 1</);
 });
 
 test("board runtime falls back to generic rush prompt when blocker lookup yields no piece", async () => {
@@ -742,7 +754,7 @@ test("board runtime falls back to generic rush prompt when blocker lookup yields
     },
   );
 
-  assert.match(previewHtml, /Rush to reconnect|Select a rush/);
+  assert.match(previewHtml, /Rush to reconnect|Rush to restore supply|Select a rush/);
   assert.doesNotMatch(previewHtml, /to reconnect piece at/);
   assert.doesNotMatch(previewHtml, /board-preview-coordinate-chip-rush-blocker/);
 });

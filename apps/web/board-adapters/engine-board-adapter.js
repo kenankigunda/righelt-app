@@ -1,4 +1,6 @@
+import { rushActionKey } from '../board/rush-supply-guidance.js';
 import { REMOVAL_EFFECT_DURATION_MS, REMOVAL_FLASH_COUNT } from "../board/removal-timing.js";
+import {createSequenceStatusProjector} from '../board/sequence-status-preview.js';
 import { createBoardEventLabels } from "../board/event-label-controller.js";
 import { getPieceRenderStatus, getSelectedPieceExplanation } from "../board/piece-explanations.js";
 export { getPieceRenderStatus } from "../board/piece-explanations.js";
@@ -413,10 +415,10 @@ function getGroupInfoForPiece(snapshot, piece) {
   };
 }
 
-function applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey) {
+function applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey, rushSupplyGuidance) {
   const { groupMemberPieceIds, movedPieceIds, pendingPieceIds } = deriveContinuationHighlightByPieceId(
     snapshot,
-    legalActions,
+    legalActions, rushSupplyGuidance,
   );
   const continuationGroupMembers = [...groupMemberPieceIds]
     .map((pieceId) => findPieceById(snapshot, pieceId))
@@ -514,6 +516,11 @@ function isPushContinuationGroupMember(snapshot, piece) {
 }
 
 export function createEngineBoardAdapter() {
+  const projectSequenceStatus=createSequenceStatusProjector();
+  const displayPiece=(piece,projection)=>{
+    const status=projection?.statusByPieceId.get(piece?.id);
+    return status?{...piece,displaySupplied:status.supplied,displayCommanded:status.commanded}:piece;
+  };
   let boardEl = null;
   let eventLabels = null;
   let overlayLinesEl = null;
@@ -708,11 +715,13 @@ export function createEngineBoardAdapter() {
     snapshot,
     overlay,
     legalActions,
+    rushSupplyGuidance,
     selectedPieceId,
     selectedPieceMoves,
     selectedPieceMovePreviews,
     currentActionType: overlayActionType,
     selectedPieceOverlayPhase,
+    sequenceProjection,
   }) => {
     if (!overlayLinesEl) {
       return;
@@ -799,7 +808,7 @@ export function createEngineBoardAdapter() {
 
     const piece = findPieceById(snapshot, selectedPieceId);
     if (!piece) {
-      applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey);
+      applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey, rushSupplyGuidance);
       if (snapshot?.continuation?.type === "push" && snapshot.continuation.phase === "retreat") {
         const pushedPiece = findPieceById(snapshot, snapshot.continuation.pushedPieceId);
         if (pushedPiece) {
@@ -812,7 +821,7 @@ export function createEngineBoardAdapter() {
     const pieceCell = cellByCoordinateKey.get(coordKey(piece.position));
     if (pieceCell) {
       pieceCell.classList.add("selected-piece");
-      const tooltipLabel = getSelectedPieceTooltipLabel(piece, snapshot);
+      const tooltipLabel = getSelectedPieceTooltipLabel(displayPiece(piece,sequenceProjection), snapshot);
       if (tooltipLabel) {
         pieceCell.classList.add("inactive-selected-piece");
         pieceCell.setAttribute("data-inactive-label", tooltipLabel);
@@ -823,7 +832,7 @@ export function createEngineBoardAdapter() {
       applyGroupDecorations(snapshot, piece, cellByCoordinateKey);
     }
 
-    applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey);
+    applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey, rushSupplyGuidance);
     if (snapshot?.continuation?.type === "push" && snapshot.continuation.phase === "retreat") {
       const pushedPiece = findPieceById(snapshot, snapshot.continuation.pushedPieceId);
       if (pushedPiece) {
@@ -1106,6 +1115,7 @@ export function createEngineBoardAdapter() {
       selection,
       overlay,
       legalActions,
+      rushSupplyGuidance,
       selectedPieceMoves,
       selectedPieceMovePreviews,
       removalEffects,
@@ -1137,7 +1147,7 @@ export function createEngineBoardAdapter() {
         (Array.isArray(overlay?.destroyedPieces) ? overlay.destroyedPieces : []).map((record) => [coordKey(record), record]),
       );
 
-      const continuationHighlight = deriveContinuationHighlightByPieceId(snapshot, legalActions);
+      const continuationHighlight = deriveContinuationHighlightByPieceId(snapshot, legalActions, rushSupplyGuidance);
       const isContinuationHighlightedSquare = (row, col) => {
         const piecesHere = findPiecesAt(snapshot, row, col);
         return piecesHere.some(
@@ -1147,6 +1157,18 @@ export function createEngineBoardAdapter() {
         );
       };
       const isLiveInteractiveBoard = !["recorded-action", "recorded-turn"].includes(overlay?.mode);
+      const sequenceProjection=isLiveInteractiveBoard?projectSequenceStatus(snapshot):null;
+      const buildLivePieceToken=piece=>{
+        const token=buildPieceToken(displayPiece(piece,sequenceProjection));
+        if(sequenceProjection?.destroyedPieceIds.has(piece.id)){
+          // Keep the real token and its cell available for legal sequence
+          // actions. This is a forecast, never a removal event or overlay.
+          token.classList.add('projected-destruction-piece');
+          token.setAttribute('aria-label',`${piece.owner==='P1'?'Red':'Blue'} ${piece.kind}, will be destroyed if the turn ends now`);
+        }
+        return token;
+      };
+
       // History explicitly opts in. Recorded overlays also serve live summaries,
       // whose appearance must remain independent of History's role treatment.
       const historyRoles = overlay?.presentationContext === 'history' && !isLiveInteractiveBoard
@@ -1158,6 +1180,7 @@ export function createEngineBoardAdapter() {
           const existingCell = cellByCoordinateKey.get(key);
           const cell = existingCell ?? document.createElement(effectiveInteractionMode === "static" ? "div" : "button");
           cell.innerHTML = "";
+          cell.removeAttribute('aria-label');
           cell.removeAttribute("data-removal-label");
           cell.removeAttribute("data-disallow-reason");
           cell.removeAttribute("data-inactive-label");
@@ -1279,7 +1302,7 @@ export function createEngineBoardAdapter() {
               return left.id.localeCompare(right.id);
             });
             for (const [index, pieceInStack] of sortedPieces.entries()) {
-              const token = buildPieceToken(pieceInStack);
+              const token = buildLivePieceToken(pieceInStack);
               token.classList.add("stacked-piece");
               if (index === 0 && pieceInStack.pushed) {
                 token.classList.add("stacked-underlay");
@@ -1296,7 +1319,7 @@ export function createEngineBoardAdapter() {
             const stack = document.createElement("span");
             stack.className = "piece-stack";
             stack.dataset.pushPreviewStack = "1";
-            const defenderToken = buildPieceToken(cellPiece);
+            const defenderToken = buildLivePieceToken(cellPiece);
             defenderToken.classList.add("stacked-piece", "stacked-underlay", "stacked-pushed");
             stack.appendChild(defenderToken);
             cell.appendChild(stack);
@@ -1312,7 +1335,7 @@ export function createEngineBoardAdapter() {
               overlay?.recordedAction?.from?.col === col &&
               cellPiece?.id === recordedActionStartPiece.id;
             const markerPiece = shouldRenderRecordedActionStartPiece ? recordedActionStartPiece : cellPiece;
-            const marker = markerPiece ? buildPieceToken(markerPiece) : document.createElement("span");
+            const marker = markerPiece ? buildLivePieceToken(markerPiece) : document.createElement("span");
             if (!markerPiece) {
               marker.className = "piece-empty";
               marker.setAttribute("aria-hidden", "true");
@@ -1421,12 +1444,35 @@ export function createEngineBoardAdapter() {
         snapshot,
         overlay,
         legalActions,
+        rushSupplyGuidance,
         selectedPieceId: selection.selectedPieceId,
         selectedPieceMoves,
         selectedPieceMovePreviews,
         currentActionType,
         selectedPieceOverlayPhase,
+        sequenceProjection,
       });
+      if (rushSupplyGuidance && overlay?.mode === 'interactive' && !overlay?.inspection) {
+        const entries = new Map(rushSupplyGuidance.actions.map(entry => [rushActionKey(entry.action), entry]));
+        for (const entry of rushSupplyGuidance.actions) {
+          const source = findPieceById(snapshot, entry.action.actorId);
+          const cell = source && cellByCoordinateKey.get(coordKey(source.position));
+          cell?.classList.add('rush-guidance-source');
+          cell?.setAttribute('aria-label', `Piece at (${source.position.row}, ${source.position.col}), supply-restoring rush available`);
+        }
+        for (const action of selectedPieceMoves ?? []) {
+          if (action.type !== 'rush' || !action.to) continue;
+          const cell = cellByCoordinateKey.get(coordKey(action.to));
+          const entry = entries.get(rushActionKey(action));
+          cell?.classList.add(entry ? 'rush-guidance-target' : 'rush-guidance-other');
+          cell?.setAttribute('aria-label', `Rush to (${action.to.row}, ${action.to.col}): ${entry ? entry.immediate ? 'Restores required supply' : 'Restores required supply after further rushes' : 'Other legal rush'}`);
+        }
+        for (const cell of cellByCoordinateKey.values()) if (cell.classList.contains('rush-blocker')) cell.classList.remove('rush-blocker');
+        for (const id of rushSupplyGuidance.obligationPieceIds) {
+          const piece = findPieceById(snapshot, id);
+          if (piece) cellByCoordinateKey.get(coordKey(piece.position))?.classList.add('rush-blocker');
+        }
+      }
       eventLabels?.update({
         scope: boardEl,
         enabled: effectiveInteractionMode === "interactive" && !["recorded-action", "recorded-turn"].includes(overlay?.mode),
@@ -1456,17 +1502,18 @@ export function createEngineBoardAdapter() {
       }
 
       const groupInfo = getGroupInfoForPiece(snapshot, selectedPiece);
+      const shownPiece=displayPiece(selectedPiece,projectSequenceStatus(snapshot));
       return {
         details: {
           id: selectedPiece.id,
           owner: selectedPiece.owner,
           kind: selectedPiece.kind,
           position: selectedPiece.position,
-          supplied: getPieceRenderStatus(selectedPiece).supplied,
-          commanded: getPieceRenderStatus(selectedPiece).commanded,
+          supplied: getPieceRenderStatus(shownPiece).supplied,
+          commanded: getPieceRenderStatus(shownPiece).commanded,
           actionableSupplied: selectedPiece.supplied,
           actionableCommanded: selectedPiece.commanded,
-          explanation: getSelectedPieceExplanation(selectedPiece, snapshot),
+          explanation: getSelectedPieceExplanation(shownPiece, snapshot),
           groupComponentId: groupInfo.componentId,
           groupStrength: groupInfo.strength,
         },

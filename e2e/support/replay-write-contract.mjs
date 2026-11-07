@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {isSyncCommand,commandFingerprint} from '../../apps/web/generated/packages/shared-types/src/sync-protocol.js';
+import {isLogOnlyDiagnosticWrite} from './diagnostic-write-contract.mjs';
 
 const authScope = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const assertRenewalValues = (values,before,{legacy=false}={}) => {
@@ -18,6 +19,7 @@ const assertRenewalValues = (values,before,{legacy=false}={}) => {
 // any acquire/switch/pause/resume/control operation of its own.
 export async function assertReplayIntegrity({writes,before,after}) {
   for(const write of writes){
+    if(isLogOnlyDiagnosticWrite(write))continue;
     assert.equal(write.method,'POST');
     assert.ok(before.computer.ownerId && before.computer.lease?.deviceId);
     if(write.path===`/api/shell/games/${before.id}/computer-control`){

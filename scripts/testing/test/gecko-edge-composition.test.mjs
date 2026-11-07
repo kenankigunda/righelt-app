@@ -1,0 +1,18 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {layoutPrimitiveCandidates,qualifyGeckoSharedEdge,appUnitEdgeCandidates} from '../../../browser-integration/support/gecko-edge-composition.mjs';
+const profile={engine:'firefox',version:'148.0.2',upstreamRevision:'d0f4d17d5aefe7ca5aa97afbcafcdc641cbd9f93',sourceQualified:true};
+const raw={boardTop:263.316650390625,slotTop:91.83332824707031,slotHeight:171.48333740234375,slotBottom:263.31666564941406,profile};
+test('retained actual primitive lattice permits a common pre-narrowing layout edge',()=>{const r=qualifyGeckoSharedEdge(raw);assert.equal(r.qualified,true);assert.deepEqual(r.candidateUnits.shared,[17256721]);assert.deepEqual(r.candidateUnits.board,[17256721]);assert.equal(r.appUnitEdges.board,15799);assert.equal(r.appUnitEdges.slotBottom,15799);assert.notEqual(raw.boardTop,raw.slotBottom);});
+test('positive exact old adjacency remains a singleton shared edge',()=>{const r=qualifyGeckoSharedEdge({...raw,boardTop:196.0833282470703,slotHeight:104.25,slotBottom:196.0833282470703});assert.deepEqual(r.candidateUnits.shared,[12850517]);});
+test('deliberate original 1/64 and 1px movements remain detectable in BOTH directions',()=>{for(const delta of [1/64,-1/64,1,-1]){const r=qualifyGeckoSharedEdge({...raw,boardTop:raw.boardTop+delta});assert.equal(r.qualified,false);}});
+test('no engine or source binding can be inferred from representable numbers',()=>{for(const p of [null,{...profile,sourceQualified:false},{...profile,engine:'webkit'},{...profile,version:'149'},{...profile,upstreamRevision:'other'}])assert.equal(qualifyGeckoSharedEdge({...raw,profile:p}).reason,'unqualified-engine-source');});
+test('nonfinite, nonfloat32, excessive and candidate-heavy primitives fail closed',()=>{for(const v of [NaN,Infinity,-Infinity,0.1,2**21,2**20])assert.equal(layoutPrimitiveCandidates(v),null);});
+test('changed original bottom or negative height cannot borrow a proof',()=>{assert.equal(qualifyGeckoSharedEdge({...raw,slotBottom:264}).reason,'original-edge-composition');assert.equal(qualifyGeckoSharedEdge({...raw,slotHeight:-1,slotBottom:raw.slotTop-1}).qualified,false);});
+test('round-to-even inverse membership is checked by the actual Float32 conversion, not inclusive midpoint alone',()=>{const values=layoutPrimitiveCandidates(raw.boardTop);assert.deepEqual(values,[17256719,17256720,17256721]);for(const i of values)assert.equal(Math.fround(i/65536),raw.boardTop);assert.notEqual(Math.fround(17256722/65536),raw.boardTop);});
+test('negative coordinates and zero are bounded without sign or arbitrary-padding assumptions',()=>{assert.deepEqual(layoutPrimitiveCandidates(0),[0]);const r=qualifyGeckoSharedEdge({boardTop:-10,slotTop:-20,slotHeight:10,slotBottom:-10,profile});assert.equal(r.qualified,true);});
+
+test('existential Float32 aliases are rejected unless an integer app-unit edge actually produces them',()=>{assert.deepEqual(appUnitEdgeCandidates(17256719),[]);assert.deepEqual(appUnitEdgeCandidates(17256720),[]);assert.deepEqual(appUnitEdgeCandidates(17256721),[15799]);assert.deepEqual(appUnitEdgeCandidates(6018389),[5510]);});
+test('adjacent actual app-unit overlap is rejected rather than hidden within Float32 aliases',()=>{const q=Math.floor(15798*(65536/60)+.5),r=qualifyGeckoSharedEdge({...raw,boardTop:Math.fround(q/65536)});assert.equal(r.qualified,false);assert.equal(r.reason,'distinct-layout-edges');});
+
+test('exported app-unit inverse enforces actual INT32 limits',()=>{for(const n of [-(2**31),2**31-1]){const q=Math.floor(n*(65536/60)+.5);assert(appUnitEdgeCandidates(q).includes(n));}for(const n of [-(2**31)-1,2**31,2**40,-(2**40)]){const q=Math.floor(n*(65536/60)+.5);assert.deepEqual(appUnitEdgeCandidates(q),[]);}});

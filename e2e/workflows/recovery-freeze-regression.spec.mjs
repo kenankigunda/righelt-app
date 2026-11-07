@@ -1,8 +1,10 @@
+import {observeReadinessEvaluation} from '../support/readiness-diagnostics.mjs';
+import {installBoardAdmissionDiagnostics} from '../support/board-admission-diagnostics.mjs';
 import {waitForOpponentReady,waitForComputerDecision} from '../support/computer-projection.mjs';
 import { readFileSync } from 'node:fs';
 import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
 import {test,expect} from "@playwright/test";
-import {createGameFromHome,importScenarioGame,submitPlayableAction,switchGamePanel,waitForLegacyIdentity} from "../support/app.mjs";
+import {createGameFromHome,importScenarioGame,submitPlayableAction,selectPlayableAction,switchGamePanel,waitForLegacyIdentity} from "../support/app.mjs";
 
 const currentGame=(page,gameId)=>page.evaluate(async id=>{
  const identityId=localStorage.getItem("righelt.identity.id.v1");return (await (await fetch(`/api/shell/games/${id}?identityId=${identityId}`)).json()).game;
@@ -10,6 +12,75 @@ const currentGame=(page,gameId)=>page.evaluate(async id=>{
 const piece=(id,owner,kind,row,col)=>({id,owner,kind,position:{row,col},supplied:true,commanded:true});
 const scenario={formatVersion:2,id:"6288b956-a647-4e40-9c89-e45c5ea4cf22",title:"Recovery continuation regression",description:"Disposable push retreat follow fixture",incorrect:false,initialState:{boardSize:10,sideToMove:"P1",turnIndex:0,continuation:null,outcome:{status:"ongoing"},pieces:[piece("C1","P1","commander",3,1),piece("C2","P2","commander",4,4),piece("A1","P1","unit",4,1),piece("D1","P2","unit",4,2)]},moves:[],expectedFinalStateHash:"hash-placeholder",expectedOutcome:"ongoing",savedSelection:null};
 scenario.resultingState=structuredClone(scenario.initialState);
+
+test('late background HTTP failure preserves a restored socket and the selected move', async ({page}, info) => {
+ let fault=false, closing=false, held=false, releaseOld, reconciles=0, applies=0, heldRequest, oldReadCancelled=false;
+ const sockets=[], pageErrors=[], gate=new Promise(resolve=>releaseOld=resolve);
+ page.on('pageerror',error=>pageErrors.push(error.message));
+ page.on('requestfailed',request=>{if(request===heldRequest)oldReadCancelled=true;});
+ await page.routeWebSocket(/\/api\/shell\/games\//, socket=>{
+  const server=socket.connectToServer(), entry={socket,server,snapshot:null};sockets.push(entry);
+  server.onMessage(message=>{
+   try {if(JSON.parse(message)?.type==='state_sync')entry.snapshot=message;}catch{}
+   if(!fault&&!closing)socket.send(message);
+  });
+ });
+ const {gameId}=await createGameFromHome(page);
+ await switchGamePanel(page,'board');
+ const initial=await currentGame(page,gameId);
+ const action=initial.legalActions.find(action=>action.type==='move');expect(action).toBeTruthy();
+ const target=await selectPlayableAction(page,action);
+ await page.route(`**/api/shell/games/${gameId}/**`,async route=>{
+  if(isOperationRequest(route.request(),'apply'))applies++;
+  if(!isOperationRequest(route.request(),'reconcile')){await route.continue();return;}
+  reconciles++;
+  if(reconciles!==2){await route.continue();return;}
+  // The real server has answered. Only delivery of the old poll is held.
+  heldRequest=route.request();await route.fetch();held=true;await gate;
+  await route.fulfill({status:503,json:{ok:false,error:'temporarily_unavailable'}});
+ });
+ try {
+  fault=true;await sockets.at(-1).socket.close({code:1012,reason:'Test connection transition'});
+  await expect.poll(()=>reconciles).toBe(1);
+  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0);
+  await expect.poll(()=>held).toBe(true);
+  const replacement=sockets.at(-1);expect(replacement.snapshot).toBeTruthy();
+  fault=false;replacement.socket.send(replacement.snapshot);
+  // Cancelling this exact no-command poll is the observable readiness commit,
+  // after hydration and receipt gates, not merely the already-clear HTTP UI.
+  await expect.poll(()=>oldReadCancelled).toBe(true);
+  const issues=await page.evaluate(async id=>(await import('/shell/issue-diagnostics.js')).issueDiagnostics.list()
+   .filter(report=>report.initial.gameId===id),gameId);
+  const heldRequestId=heldRequest.headers()['x-righelt-request-id'];expect(heldRequestId).toBeTruthy();
+  expect(issues.flatMap(report=>[report.initial,...report.events])
+   .filter(event=>event.code==='request_timeout'&&event.requestId===heldRequestId)).toEqual([]);
+  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0);
+  await page.evaluate(()=>{
+   window.restoredBoard=document.querySelector('[data-testid="game-board"]');
+   window.falseRecovery=[];
+   const wrapper=document.querySelector('.board-wrap');
+   new MutationObserver(records=>{for(const record of records)if(record.oldValue==='true'||wrapper.dataset.reconnecting==='true')window.falseRecovery.push(true);})
+    .observe(wrapper,{attributes:true,attributeFilter:['data-reconnecting'],attributeOldValue:true});
+  });
+  releaseOld();
+  await page.waitForTimeout(1200); // Include the old poll's first automatic retry if it wrongly survives.
+  expect(reconciles).toBe(2);
+  expect(await page.evaluate(()=>window.falseRecovery)).toEqual([]);
+  expect(await page.evaluate(()=>document.querySelector('[data-testid="game-board"]')===window.restoredBoard)).toBe(true);
+  await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
+  expect(applies).toBe(0);
+  await target.click();
+  await expect.poll(async()=> (await currentGame(page,gameId)).gameplayRevision).toBe(initial.gameplayRevision+1);
+  expect(applies).toBe(1);
+  expect((await currentGame(page,gameId)).moves.at(-1).action).toEqual(action);
+  expect(pageErrors).toEqual([]);
+  await page.screenshot({path:info.outputPath('socket-recovery-keeps-selected-move.png')});
+ } finally {
+  closing=true;fault=false;releaseOld();
+  await page.unrouteAll({behavior:'wait'});
+  await Promise.allSettled(sockets.flatMap(({socket,server})=>[socket.close(),server.close()]));
+ }
+});
 
 test("lost move response recovers through identical submission while reconciliation stays stalled", async ({page}, info) => {
  let dropInbound = false, first = true, release;
@@ -52,6 +123,8 @@ test("lost move response recovers through identical submission while reconciliat
 });
 
 test("guest play-both push retreat follow recovers with healthy HTTP and unavailable sockets",async({page,baseURL},info)=>{
+ const admissionDiagnostics=await installBoardAdmissionDiagnostics(page,info,{baseURL,targetRow:4,targetCol:1});
+ try {
  let socketsUnavailable=false,losePush=true;const commands=[], sockets=[],pushProofs=[];
  const actionFor=command=>(command.kind==='shared'?command.payload.values:command).payload?.action;
  let holdConfirmation=false,releaseConfirmation,confirmationRequested=false;
@@ -141,6 +214,7 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
   await page.unrouteAll({behavior:"wait"});
   await info.attach("held-push-confirmations",{body:JSON.stringify(pushProofs,null,2),contentType:"application/json"});
  }
+ }finally{await admissionDiagnostics.persist();}
 });
 
 for(const reduced of [false,true])test(`routine reconnect stays quiet four seconds and preserves board${reduced?" with reduced motion":""}`,async({page},info)=>{
@@ -324,7 +398,9 @@ test('slow rules worker leaves mobile navigation responsive and stops when leavi
 });
 
 
-test('Horus finishes a real turn and releases its worker before self-play and reload', async ({page},info) => {
+test('Horus finishes a real turn and releases its worker before self-play and reload', async ({page,baseURL},info) => {
+  const admissionDiagnostics=await installBoardAdmissionDiagnostics(page,info,{baseURL,targetRow:2,targetCol:6,sourceAttemptOrdinal:2});
+  try {
   await page.setViewportSize({width:390,height:844});
   await page.addInitScript(()=>{
     window.ownedGameWorkers=[];
@@ -351,12 +427,86 @@ test('Horus finishes a real turn and releases its worker before self-play and re
   await page.locator('[data-action="create-self-play"]').click();
   const self=(await (await selfCreated).json()).game;
   await expect(page.getByTestId('game-board')).toBeVisible();
-  await submitPlayableAction(page,self.legalActions.find(action=>action.type==='move'));
+  { // Begin case-local expansion of the existing second submitPlayableAction.
+  const action=self.legalActions.find(action=>action.type==='move');
+  const cell = position => page.locator(`[data-testid="game-board"] .cell[data-row="${position.row}"][data-col="${position.col}"]`);
+  const target = cell(action.to);
+  const source = cell(action.from);
+  // Continuations select their required actor automatically. Clicking it again
+  // cycles the overlay away from action previews instead of selecting a move.
+  // Case-local observation: capture actual original nodes, never mutate/focus them.
+  const sourceAdmissionHandle = await source.evaluateHandle(el => {
+    const root=el.closest('[data-testid="game-board"]');
+    const selected=el.classList.contains("source");
+    try { globalThis.__boardAdmissionSourceRead?.(selected,el); } catch {}
+    return {cell:el,root,before:{selected,className:el.className,
+      cellConnected:el.isConnected,rootConnected:root?.isConnected===true}};
+  });
+  let sourceAdmissionError=null;
+  try {
+    const selectedBefore=await sourceAdmissionHandle.evaluate(saved=>saved.before.selected);
+    if (!["retreat", "follow"].includes(action.type) && !selectedBefore) await source.click();
+  } catch(error) { sourceAdmissionError=error; }
+  try {
+    const sourceAdmission=await sourceAdmissionHandle.evaluate((saved,from)=>{
+      const cell=document.querySelector(`[data-testid="game-board"] .cell[data-row="${from.row}"][data-col="${from.col}"]`);
+      const root=document.querySelector('[data-testid="game-board"]');
+      return {before:saved.before,after:{selected:cell?.classList.contains('source')===true,className:cell?.className??null,
+        cellConnected:cell?.isConnected===true,rootConnected:root?.isConnected===true,
+        originalCellConnected:saved.cell.isConnected,originalRootConnected:saved.root?.isConnected===true,
+        sameCell:cell===saved.cell,sameRoot:root===saved.root},incomplete:!cell||!root,
+        scope:'Immediate source admission only; no mouse press/release or causal attribution'};
+    },action.from);
+    // Persist before the immediate non-polling oracle, independently attempt both channels.
+    let persistenceError=null;
+    try { await info.attach('self-play-source-admission',{body:JSON.stringify(sourceAdmission),contentType:'application/json'}); }
+    catch(error) { persistenceError=error; }
+    try { await (await import('node:fs/promises')).writeFile(info.outputPath('self-play-source-admission.json'),JSON.stringify(sourceAdmission,null,2)); }
+    catch(error) { persistenceError??=error; }
+    if(sourceAdmissionError)throw sourceAdmissionError;
+    if(persistenceError)throw persistenceError;
+    expect(sourceAdmission.incomplete,'Source admission observation must be available').toBe(false);
+    expect(sourceAdmission.after.cellConnected&&sourceAdmission.after.rootConnected,'Current source and Board must remain connected').toBe(true);
+    expect(sourceAdmission.after.selected,'Existing source click must admit its source before any destination action').toBe(true);
+  } catch(error) { throw sourceAdmissionError??error; }
+  finally { await sourceAdmissionHandle.dispose().catch(()=>{}); }
+  // Complete piece previews are asynchronous. The runtime deliberately ignores
+  // a destination tap while that check is pending, so wait before selecting it.
+  await expect(page.locator('#shell-board-preview-label')).not.toHaveAttribute('aria-busy', 'true');
+  const supportsHover = await page.locator('html').getAttribute('data-hover-capability') === 'hover';
+  // A single forced follow can already select its destination. Its next tap
+  // confirms the move, so do not submit it while trying to select it.
+  if (supportsHover) {
+    // A blocked tap can leave the pointer on this square during recovery.
+    // Enter it again so the runtime receives a fresh hover event.
+    await page.mouse.move(0, 0);
+    await target.hover();
+  } else if (!await target.evaluate(el => el.classList.contains("target"))) await target.click();
+  await expect(target, "The supported pointer interaction must select the legal destination before confirmation").toHaveClass(/(?:^|\s)target(?:\s|$)/, { timeout: 2000 });
+
+  // A shared control or fresh complete-move check can fence confirmation
+  // after hover or a tap prepared the destination.
+  // Wait for visual readiness, then perform exactly one native confirmation.
+  // Admission can change during the click; the runtime still checks it live.
+  await expect.poll(() => observeReadinessEvaluation(() => page.evaluate(to => {
+    let readinessFinish,readinessComplete=false,readinessResult;
+    try{readinessFinish=globalThis.__righeltReadinessBegin?.('readiness-callback',true);}catch{}
+    try{
+    const node=document.querySelector(`[data-testid="game-board"] .cell[data-row="${to.row}"][data-col="${to.col}"]`);
+    const message=document.getElementById('shell-board-preview-label');
+    readinessResult=Boolean(node?.isConnected && message?.isConnected && message.getAttribute('aria-busy')!=='true' && node.classList.contains('target') && !node.classList.contains('unselectable'));
+    readinessComplete=true;return readinessResult;
+    }finally{try{readinessFinish?.(readinessComplete,readinessResult);}catch{}}
+  },action.to)),{timeout:2000,message:'Complete move checks and the prepared destination must be ready at confirmation'}).toBe(true);
+  await target.click();
+  } // End case-local expansion.
   await expect.poll(async()=>(await currentGame(page,self.id)).moves.length).toBe(1);
   const saved=await currentGame(page,self.id);
+  await admissionDiagnostics.checkpoint();
   await page.reload();await expect(page.getByTestId('game-board')).toBeVisible();
   const reloaded=await currentGame(page,self.id);
   expect(reloaded.gameplayRevision).toBe(saved.gameplayRevision);expect(reloaded.board.state).toEqual(saved.board.state);
   await page.screenshot({path:info.outputPath('horus-to-self-play-reloaded.png')});
+  }finally{await admissionDiagnostics.persist();}
 });
 });

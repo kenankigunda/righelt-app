@@ -1,4 +1,14 @@
 export const WEB_UNIT_TEST_FILES = Object.freeze([
+  "dismiss-control.test.mjs",
+  "board-context.test.mjs",
+  "board-loading-message-owner.test.mjs",
+  "history-heading-focus.test.mjs",
+  "message-composition.test.mjs",
+  "message-height.test.mjs",
+  "prompt-reservation.test.mjs",
+  "font-pattern-budget.test.mjs",
+  "font-envelope-codec.test.mjs",
+  "sequence-status-preview.test.mjs",
   "game-lifecycle.test.mjs",
   "history-turn-preview.test.mjs",
   "computer-activity.test.mjs",
@@ -7,6 +17,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "audio-observations.test.mjs",
   "computer-runtime.test.mjs",
   "rules-runtime.test.mjs",
+  "rush-supply-guidance.test.mjs",
   "computer-preparation.test.mjs",
   "decision-notes.test.mjs",
   "computer-view.test.mjs",
@@ -52,6 +63,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "hover-capability.test.mjs",
   "interaction.test.mjs",
   "issue-diagnostics.test.mjs",
+  "recovery-telemetry.test.mjs",
   "legend.test.mjs",
   "passive-click.test.mjs",
   "loading.test.mjs",
@@ -66,6 +78,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "shell-host.test.mjs",
   "shell-render-stability.test.mjs",
   "sync-store.test.mjs",
+  "socket-recovery-ownership.test.mjs",
   "syntax-smoke.test.mjs",
   "ticket-workflow-docs.test.mjs",
   "test-layers.test.mjs",
@@ -73,6 +86,9 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "ui-guards.test.mjs",
 ]);
 
+export const WEB_INTEGRATION_TEST_FILES = Object.freeze(["home-read-recovery.integration.test.mjs","board-context-owner.integration.test.mjs","board-context-layout.integration.test.mjs","board-context-undo.integration.test.mjs","board-context-acknowledged.integration.test.mjs"]);
+const WEB_INTEGRATION_TEST_FILE_SET = new Set(WEB_INTEGRATION_TEST_FILES);
+
 const WEB_UNIT_TEST_FILE_SET = new Set(WEB_UNIT_TEST_FILES);
 
-export const classifyWebTestFile = (fileName) => (WEB_UNIT_TEST_FILE_SET.has(fileName) ? "unit" : "integration");
+export const classifyWebTestFile = (fileName) => (WEB_INTEGRATION_TEST_FILE_SET.has(fileName) ? "integration" : WEB_UNIT_TEST_FILE_SET.has(fileName) ? "unit" : "integration");

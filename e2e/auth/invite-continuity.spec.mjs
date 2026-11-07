@@ -1,8 +1,40 @@
 import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
-import { test, expect } from "@playwright/test";
+import { test as base, expect } from "@playwright/test";
+import { ownedContexts } from "../support/owned-contexts.mjs";
 import { getHistoryMoveCount, submitPlayableAction, switchGamePanel } from "../support/app.mjs";
 import { AUTH_REQUEST_HEADER, AUTH_PROTOCOL_HEADER, AUTH_PROTOCOL_VERSION, SESSION_CONTEXT_HEADER } from "../../packages/shared-types/src/auth-policy.js";
+
+// These non-auto fixtures own only visitor cleanup. Context/page creation stays
+// at its original position inside the unchanged 60-second journey body.
+// Aggregate added fixture budget is 5 seconds: release 2s, then close 3s.
+const test = base.extend({
+  inviteVisitorContext: [async ({ browser, page }, use, info) => {
+    const contexts = ownedContexts(browser);
+    const owner = { contexts, visitor: null };
+    try { await use(owner); }
+    finally {
+      try { await contexts.close(); }
+      catch (error) {
+        if (info.status === info.expectedStatus) throw error;
+        console.error("[invite-visitor-cleanup] secondary-context-close-failure");
+      }
+    }
+  }, { timeout: 3000 }],
+  inviteVisitorCleanup: [async ({ inviteVisitorContext }, use, info) => {
+    try { await use(inviteVisitorContext); }
+    finally {
+      const visitor = inviteVisitorContext.visitor;
+      if (visitor && !visitor.isClosed()) {
+        try { await visitor.evaluate(() => window.__releaseInviteRead?.()); }
+        catch (error) {
+          if (info.status === info.expectedStatus) throw error;
+          console.error("[invite-visitor-cleanup] secondary-held-read-release-failure");
+        }
+      }
+    }
+  }, { timeout: 2000 }],
+});
 
 const password = "A long invite test password 482";
 const dialog = page => page.getByTestId("account-dialog");
@@ -97,12 +129,11 @@ async function playHostMove(host) {
 }
 
 for (const method of ["login", "registration"]) {
-  test(`a shared player invite survives ${method} and preserves its destination`, async ({ page, browser, request, baseURL }) => {
+  test(`a shared player invite survives ${method} and preserves its destination`, async ({ page, browser, request, baseURL, inviteVisitorCleanup }) => {
     const invite = await sharedInvite(page);
-    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const context = await inviteVisitorCleanup.contexts.create({ ignoreHTTPSErrors: true });
     let visitor;
-    try {
-      visitor = await context.newPage();
+      visitor = inviteVisitorCleanup.visitor = await context.newPage();
       await visitor.addInitScript(() => {
         const fetch = window.fetch.bind(window);
         window.fetch = async (...args) => {
@@ -174,9 +205,5 @@ for (const method of ["login", "registration"]) {
       expect(joins[0].mode).toBe("player");
       expect(joins[0].inviteToken).toBe(decodeURIComponent(new URL(invite.url).hash.match(/^#\/invite\/([^?]+)/)[1]));
       await expect(page.getByTestId("game-role")).toContainText("Player 1");
-    } finally {
-      if (visitor && !visitor.isClosed()) await visitor.evaluate(() => window.__releaseInviteRead?.());
-      await context.close();
-    }
   });
 }

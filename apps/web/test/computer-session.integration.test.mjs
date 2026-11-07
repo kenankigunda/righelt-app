@@ -1,3 +1,4 @@
+import {readProjectedGame} from '../../../e2e/support/computer-projection.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createComputerSession } from '../shell/computer-session.js';
@@ -821,4 +822,20 @@ test('completed-game historical analysis retains hidden-tab cancellation',async 
  const f=fixture({analysisRuntime});t.after(()=>f.session.destroy());f.game().board.state.outcome={status:'p1_win'};
  const work=f.session.analyze(createInitialState());await new Promise(resolve=>setImmediate(resolve));const before=cancellations;f.hide();await f.session.tick();await work;
  assert.equal(cancellations,before+1);assert.notEqual(f.session.snapshot().analysis.phase,'computing');assert.deepEqual(f.controls,[]);assert.equal(f.computations(),0);
+});
+
+test('actual session recovery markup stops projection for retry and resume variants without acting',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ f.transport.applyGameAction=async()=>{throw Error('stale_state');};const work=f.session.tick();f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;
+ assert.equal(f.session.snapshot().phase,'recovery');f.game().canControlComputer=true;
+ const savedDocument=globalThis.document;t.after(()=>{if(savedDocument===undefined)delete globalThis.document;else globalThis.document=savedDocument;});
+ let game={id:'g',moves:[]};t.mock.method(globalThis,'fetch',async url=>new Response(JSON.stringify(url==='/api/auth/session'?{contextId:'ctx'}:{game})));
+ t.mock.method(globalThis,'setTimeout',()=>{throw Error('still waiting');});
+ const observe=html=>{globalThis.document={querySelector(selector){if(selector==='[data-testid="game-shell"]')return{getAttribute:()=> 'g'};
+  // DOM boundary model derives each required attribute from the actual renderer output.
+  return selector.split(',').some(part=>[...part.matchAll(/\[([\w-]+)(?:="([^"]*)")?\]/g)].every(([,key,value])=>html.includes(value===undefined?key:`${key}="${value}"`)))?{}:null;
+ }};return readProjectedGame({id:'g',expectedComputer:{modelId:'initial-1554',profile:'babs'},wait:true});};
+ for(const disabledReason of [null,'disabled']){const html=renderComputerProgress(f.game(),{...f.session.snapshot(),activity:{disabledReason}});assert(html.includes('data-action="computer-branch"'));await assert.rejects(observe(html),/Computer entered recovery/);}
+ for(const status of [{phase:'preparing'},{phase:'idle',activity:{showRecoveryNotice:true}},{phase:'idle'}]){const html=renderComputerProgress({...f.game(),computer:{...f.game().computer,paused:status.phase==='idle'&&!status.activity}},status);assert(!html.includes('data-action="computer-branch"'));await assert.rejects(observe(html),/still waiting/);}
+ game={id:'g',moves:[{computerProof:{modelId:'initial-1554',profile:'babs'}}]};assert.equal((await observe(renderComputerProgress(f.game(),f.session.snapshot()))).moves.length,1);
 });

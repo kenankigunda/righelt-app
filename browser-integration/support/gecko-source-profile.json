@@ -1,0 +1,55 @@
+{
+  "engine": "firefox",
+  "upstreamRevision": "d0f4d17d5aefe7ca5aa97afbcafcdc641cbd9f93",
+  "officialSourceManifestSha256": "bce7a096c337db1f2f1cf0ea58403b66494b21d11e60bf5fb95ac16ea0943a2b",
+  "expectedBrowserVersion": "148.0.2",
+  "reviewedPlaywrightVersion": "1.59.1",
+  "scope": "Reviewed official source facts. Actual browser.version plus fresh sample domain and independent calibration required. No sourceQualified flag supplied here.",
+  "officialSources": [
+    {
+      "url": "https://raw.githubusercontent.com/mozilla-firefox/firefox/d0f4d17d5aefe7ca5aa97afbcafcdc641cbd9f93/dom/base/Element.cpp",
+      "sha256": "aaf7759a07c1770862c8bd926a26887ee0cf0e77a07eb8a1b26a810a68f7605d",
+      "bytes": 194010
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mozilla-firefox/firefox/d0f4d17d5aefe7ca5aa97afbcafcdc641cbd9f93/dom/base/DOMRect.cpp",
+      "sha256": "6f3e5ea3cd218f4d3744aaf22244818a13a96db65bf1148bdfa8c08592c82c58",
+      "bytes": 5688
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mozilla-firefox/firefox/d0f4d17d5aefe7ca5aa97afbcafcdc641cbd9f93/dom/base/DOMRect.h",
+      "sha256": "456f87213605c8ddeafc21d6530e6ba4ed3a576e1c432175dd722dd94db2b19a",
+      "bytes": 5363
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mozilla-firefox/firefox/d0f4d17d5aefe7ca5aa97afbcafcdc641cbd9f93/gfx/src/nsCoord.h",
+      "sha256": "b8b91427098a4c61351707326ac76823c584e598d801b53e950c013cd5ff80eb",
+      "bytes": 12099
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mozilla-firefox/firefox/d0f4d17d5aefe7ca5aa97afbcafcdc641cbd9f93/gfx/src/nsRect.h",
+      "sha256": "befbb7ccad86c108df414f0d5da4901aa86630a6ef21fd1f5accfad968d2a182",
+      "bytes": 19713
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mozilla-firefox/firefox/d0f4d17d5aefe7ca5aa97afbcafcdc641cbd9f93/gfx/src/AppUnits.h",
+      "sha256": "ac6bd7270882282a9918f51e36539c79d67a225d824b61d6a3e4ef15684f8a0d",
+      "bytes": 625
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mozilla-firefox/firefox/d0f4d17d5aefe7ca5aa97afbcafcdc641cbd9f93/layout/generic/nsIFrame.cpp",
+      "sha256": "1a962c54b51c365102ed8f00d3fb85ddeb12060b1eafcc123318849a072974fe",
+      "bytes": 474824
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mozilla-firefox/firefox/d0f4d17d5aefe7ca5aa97afbcafcdc641cbd9f93/layout/base/nsLayoutUtils.cpp",
+      "sha256": "cdb0ec3fc3c9d4ce73694afd6233fd6378140776c6b2f124edfc3a08bb8962c7",
+      "bytes": 379197
+    },
+    {
+      "url": "https://raw.githubusercontent.com/microsoft/playwright/v1.59.1/browser_patches/firefox/UPSTREAM_CONFIG.sh",
+      "sha256": "5b1c1d70129555f26cb302dbd9545e22a274d494c2d17a65474263d6b19e16bf",
+      "bytes": 135
+    }
+  ]
+}
