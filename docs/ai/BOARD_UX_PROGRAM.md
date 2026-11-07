@@ -12,6 +12,7 @@ This program follows the October 2026 product decisions. Independent healthy PRs
 - Thinking, saving and related activity animations use the responsible player’s red or blue. Pending work keeps its captured actor after optimistic turn advancement, including defender-controlled retreats. Color updates preserve node identity and animation time. Unknown-actor page loading retains the dual-color brand treatment.
 - A valid unresolved receipt remains pending with its original durable command, retry ownership and deadline. Actual request failures show an immediate static error. Recovery offers icon-labeled Reload game and Home actions without discarding pending intent.
 - Ordinary thinking exposes no recovery CTA. Preparation detail starts after 5 seconds, Interrupt after 30 seconds, and save feedback after 10 seconds in the save phase. Actual failures appear immediately. Slow feedback lives outside the board card.
+- Connection recovery notices count only visible time waiting on blocked live play in the active game. Show a quiet notice after 4 seconds and stronger recovery actions after 15 seconds. Returning from a hidden tab, changing games or accounts, entering history, and settled recovery reset this presentation wait. An overdue background command cannot bypass the fresh grace. Durable command deadlines, lease authority and retry timing remain wall-clock based. Authentication, update, invalid-response and local-storage failures remain immediately actionable. Recovery notices stay separate from board task messages.
 
 ## Space and history
 

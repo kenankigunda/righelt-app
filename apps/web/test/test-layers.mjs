@@ -9,6 +9,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "font-pattern-budget.test.mjs",
   "font-envelope-codec.test.mjs",
   "sequence-status-preview.test.mjs",
+  "foreground-recovery.test.mjs",
   "game-lifecycle.test.mjs",
   "history-turn-preview.test.mjs",
   "computer-activity.test.mjs",
