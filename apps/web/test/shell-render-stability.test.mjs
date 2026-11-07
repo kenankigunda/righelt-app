@@ -398,7 +398,7 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /<div class="mini-board-card-copy">/);
   assert.match(source, /<div class="mini-board-card-meta mini-board-card-meta-primary">/);
   assert.match(source, /const moveLabel = `Move \$\{game\.moveCount \+ 1\}`;/);
-  assert.match(source, /reconcileMiniBoardPreviews\(\);\s*syncMountedGameShellPanelUi\(shellRoot\);\s*scheduleGameShellStickyLayout\(\);/);
+  assert.match(source, /reconcileMiniBoardPreviews\(\);\s*syncMountedGameShellPanelUi\(shellRoot\);\s*initializeDesktopBoardFit\(\);\s*scheduleGameShellStickyLayout\(\);/);
 });
 
 test("app uses route skeleton sync and localized loading instead of a global busy wrapper", () => {

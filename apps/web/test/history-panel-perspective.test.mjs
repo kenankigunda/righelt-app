@@ -1,3 +1,4 @@
+import {isCompletedGame} from '../shell/game-lifecycle.js';
 import {renderHistoryResult} from '../shell/game-result.js';
 import {historyTurnSide} from '../shell/history-preview.js';
 import {icon} from '../shell/ui.js';
@@ -34,7 +35,7 @@ test('history hydration retains the selected view and exposes scoped retry befor
 });
 
 test('actual history action icons preserve labels, selected-move guards and viewer permissions',()=>{
- const context={renderHistoryResult,icon,escapeHtml:String,getControlSeatForTurn:(_state,seat)=>seat,
+ const context={isCompletedGame,renderHistoryResult,icon,escapeHtml:String,getControlSeatForTurn:(_state,seat)=>seat,
   renderHistoryPreview:()=>'',buildMovePreview:()=>({}),buildTurnPreview:()=>({}),historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:()=> 'You',playerToneClassForSide:()=>'',playerToneClassForSeat:()=>'',formatClientDateTime:String,
   expandedUndoneGroups:new Set(),historyActorLabel:()=> 'You',transport:{getIdentityId:()=> 'me'},getShellLayoutMode:()=> 'wide'};
  const declaration=source.slice(source.indexOf('const renderTurnHistory ='),source.indexOf('const renderHeader ='));

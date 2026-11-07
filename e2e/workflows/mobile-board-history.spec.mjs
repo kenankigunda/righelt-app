@@ -207,7 +207,13 @@ test.describe('narrow board and history',()=>{
       await page.getByRole('button',{name:'Undo before this move',exact:true}).tap();
       await expect(page.getByTestId('undo-waiting-notice')).toBeVisible();
       await expect(guest.getByTestId('undo-approval-notice')).toBeVisible();
-      await firstRow.click();await secondRow.click();await firstRow.click();await expect(firstRow).toHaveClass(/is-selected/);
+      await firstRow.click();
+      await expect(firstRow).toHaveClass(/is-selected/);
+      await expect(firstRow.getByTestId('history-inline-preview')).toBeVisible();
+      await secondRow.click();
+      await expect(secondRow).toHaveClass(/is-selected/);
+      await expect(secondRow.getByTestId('history-inline-preview')).toBeVisible();
+      await firstRow.click();await expect(firstRow).toHaveClass(/is-selected/);
       await guestContext.route(/\/(shared|revert-approve)$/,async route=>{
         if(!isOperationRequest(route.request(),'revert-approve'))return route.continue();
         approvalSeen=true;await held;await route.continue();
@@ -254,8 +260,9 @@ test.describe('narrow board and history',()=>{
     },{once:true}),textScale);
     let release;const held=new Promise(resolve=>{release=resolve;});
     // Either snapshot GET or durable reconciliation can win hydration. Hold
-    // both real responses so every browser observes the same cold boundary.
-    await context.route(new RegExp(`/api/shell/games/${gameId}(?:\\?|$|/reconcile(?:\\?|$))`),async route=>{
+    // all position/full responses so this placeholder geometry test observes
+    // the boundary before any board data arrives. Position-first has its own workflow.
+    await context.route(new RegExp(`/api/shell/games/${gameId}(?:\\?|$|/(?:reconcile|position)(?:\\?|$))`),async route=>{
       const request=route.request();
       if(request.method()==='GET'||new URL(request.url()).pathname.endsWith('/reconcile'))await held;
       await route.continue();

@@ -54,3 +54,12 @@ test('structured narration uses coordinate chips and separate natural-wrapping i
  const inert=renderBoardMessageHtml({rows:[{text:'Select a piece or',action:{id:'pass',label:'Pass'}}]},{sizing:true});
  assert.doesNotMatch(inert,/data-board-message-action/);assert.match(inert,/disabled tabindex="-1"/);
 });
+
+test('replay controls sit below their own message while grammatical turn actions stay inline',()=>{
+ const html=renderBoardMessageHtml({rows:[{text:'Babs moved a piece',action:{id:'replay-computer',label:'Show me again'}},{text:'Select a piece or',action:{id:'pass',label:'Pass'}}]});
+ assert.match(html,/Babs moved a piece<span class="board-message-actions">/);
+ assert.match(html,/Select a piece or <button/);
+ assert.equal((html.match(/class="board-message-actions"/g)||[]).length,1);
+ const sizing=renderBoardMessageHtml({text:'Select a rush or',action:{id:'end-turn',label:'End turn'}},{sizing:true});
+ assert.doesNotMatch(sizing,/board-message-actions|data-board-message-action/);
+});

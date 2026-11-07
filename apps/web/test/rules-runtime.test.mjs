@@ -55,3 +55,18 @@ test('worker faults and invalid replies reject without running rules on the call
     await rejected; assert.equal(worker.terminated, true);
   }
 });
+
+test('a blocked worker times out, releases the queue and cannot deliver a late answer', async () => {
+  const callbacks = new Map(); let next = 0; const workers = [];
+  const runtime = new RulesRuntime({ timeoutMs: 25,
+    timers: { setTimeout(fn) { callbacks.set(++next, fn); return next; }, clearTimeout(id) { callbacks.delete(id); } },
+    workerFactory() { const worker = { postMessage(message) { this.message = message; }, terminate() { this.terminated = true; } }; workers.push(worker); return worker; },
+  });
+  const first = runtime.project('first', {}), second = runtime.previews('second', {});
+  const failed = assert.rejects(first, { code: 'rules_timeout' });
+  callbacks.values().next().value(); await failed;
+  assert.equal(workers[0].terminated, true); assert.equal(workers.length, 2);
+  workers[0].onmessage({ data: { ...workers[0].message, result: 'stale' } });
+  workers[1].onmessage({ data: { ...workers[1].message, result: 'current' } });
+  assert.equal(await second, 'current'); assert.equal(callbacks.size, 0);
+});

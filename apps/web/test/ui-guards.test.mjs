@@ -106,7 +106,7 @@ test("invite choice commit suppresses repeat game-route invite gate and join act
   assert.match(source, /if \(routeName === "game" && inviteChoiceCommittedByGameId\.has\(game\.id\)\) \{\s*return null;\s*\}/s);
   assert.match(source, /if \(action === "join-viewer" \|\| action === "accept-invite-viewer"\)[\s\S]*?markInviteChoiceCommitted\(gameId\);/s);
   assert.match(source, /if \(action === "join-player" \|\| action === "accept-invite-player"\)[\s\S]*?markInviteChoiceCommitted\(gameId\);/s);
-  assert.match(source, /if \(read\.route\.name === "game"\) \{\s*resolvedInvite = null;\s*await read\.owner\.loadGame\(read\.route\.gameId, \{ openAsViewer: false \}\);\s*\}/s);
+  assert.match(source, /if \(read\.route\.name === "game"\) \{\s*resolvedInvite = null;\s*await read\.owner\.loadGame\(read\.route\.gameId, \{ openAsViewer: false, positionFirst: true \}\);\s*\}/s);
   assert.match(source, /const startRouteSync = \(\{ renderStart = true \} = \{\}\) => \{/);
   assert.match(source, /routeHydrated = false;\s*syncLiveChannels\(\);/s);
   assert.match(source, /const initialRender = async \(\) => \{[\s\S]*?routeHydrated = false;\s*render\(\{ animatePanels: false, includeBoard: false \}\);[\s\S]*?await account\.start\(\);/s);
@@ -260,7 +260,7 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /sectionEl\.scrollIntoView\(\{\s*behavior: "smooth",\s*block: "start",\s*\}\);/s);
   assert.match(
     source,
-    /const loadHomeSectionServerPage = async \(\s*sectionKey,\s*serverPage,\s*\{\s*visiblePageSize = getHomeSectionVisiblePageSize\(sectionKey\),\s*visibleColumnCount = getHomeSectionColumnCount\(sectionKey\),\s*\} = \{\},\s*\) => \{/s,
+    /const loadHomeSectionServerPage = async \(\s*sectionKey,\s*serverPage,\s*\{\s*visiblePageSize = getHomeSectionVisiblePageSize\(sectionKey\),\s*visibleColumnCount = getHomeSectionColumnCount\(sectionKey\),\s*adapter = null,\s*\} = \{\},\s*\) => \{/s,
   );
   assert.match(source, /pageSize:\s*HOME_SECTION_SERVER_PAGE_SIZE,/);
   assert.match(source, /serverPageGameIdsByPage:\s*\{\s*\.\.\.previous\.serverPageGameIdsByPage,\s*\[normalizedServerPage\]: serverPageGameIds,/s);
@@ -329,7 +329,7 @@ test("home visible game cache stitches 4-item server pages into 3-item single-co
 });
 
 test("responsive home pagination reanchors from 2-column pages to 1-column pages using the leading visible game", async () => {
-  const segment = extractSourceSegment("const syncResponsiveHomeSectionPageSizes = async () => {", "const syncHomeSections = async () => {");
+  const segment = extractSourceSegment("const syncResponsiveHomeSectionPageSizes = async () => {", "const homeReadMayRetry =");
   const createSyncResponsiveHomeSectionPageSizes = new Function(
     "getVisibleHomeSectionKeys",
     "getHomeSection",
@@ -392,7 +392,7 @@ test("responsive home pagination avoids reload when 3-column and 1-column modes 
     `${totalPagesHelpers}
     return { getHomeSectionVisibleTotalPages };`,
   )();
-  const segment = extractSourceSegment("const syncResponsiveHomeSectionPageSizes = async () => {", "const syncHomeSections = async () => {");
+  const segment = extractSourceSegment("const syncResponsiveHomeSectionPageSizes = async () => {", "const homeReadMayRetry =");
   const createSyncResponsiveHomeSectionPageSizes = new Function(
     "getVisibleHomeSectionKeys",
     "getHomeSection",

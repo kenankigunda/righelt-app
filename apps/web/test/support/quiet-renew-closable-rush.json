@@ -1,0 +1,220 @@
+{
+  "provenance": {
+    "revision": "3b27dcdb",
+    "builder": "supplyBarriers({crossing:true})",
+    "action": {
+      "type": "rush",
+      "actorId": "A",
+      "from": {
+        "row": 4,
+        "col": 5
+      },
+      "to": {
+        "row": 5,
+        "col": 4
+      }
+    }
+  },
+  "state": {
+    "boardSize": 10,
+    "sideToMove": "P1",
+    "turnIndex": 0,
+    "pieces": [
+      {
+        "id": "C1",
+        "owner": "P1",
+        "kind": "commander",
+        "position": {
+          "row": 2,
+          "col": 8
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true
+      },
+      {
+        "id": "A",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 5,
+          "col": 4
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true
+      },
+      {
+        "id": "B",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 3,
+          "col": 5
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true
+      },
+      {
+        "id": "C",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 4,
+          "col": 7
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true
+      },
+      {
+        "id": "X",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 7,
+          "col": 1
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true
+      },
+      {
+        "id": "C2",
+        "owner": "P2",
+        "kind": "commander",
+        "position": {
+          "row": 9,
+          "col": 0
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true
+      },
+      {
+        "id": "E0",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 0,
+          "col": 4
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true
+      },
+      {
+        "id": "E1",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 9,
+          "col": 4
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true
+      },
+      {
+        "id": "E2",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 5,
+          "col": 0
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true
+      },
+      {
+        "id": "E3",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 5,
+          "col": 9
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true
+      },
+      {
+        "id": "E4",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 4,
+          "col": 4
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true
+      },
+      {
+        "id": "E5",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 5,
+          "col": 8
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true
+      }
+    ],
+    "continuation": {
+      "type": "rush",
+      "owner": "P1",
+      "chainLength": 2,
+      "frozenOwner": "P1",
+      "rushedPieceIds": [
+        "A",
+        "X"
+      ],
+      "rushChainPieceIds": [
+        "A",
+        "X"
+      ],
+      "frozenPieceStatesById": {
+        "A": {
+          "supplied": true,
+          "commanded": true
+        },
+        "B": {
+          "supplied": true,
+          "commanded": true
+        },
+        "C": {
+          "supplied": true,
+          "commanded": true
+        },
+        "C1": {
+          "supplied": true,
+          "commanded": false
+        },
+        "X": {
+          "supplied": true,
+          "commanded": true
+        }
+      }
+    },
+    "outcome": {
+      "status": "ongoing"
+    }
+  }
+}

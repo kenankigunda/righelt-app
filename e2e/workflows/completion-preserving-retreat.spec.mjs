@@ -1,3 +1,5 @@
+import {installCaseReadiness,finishCaseReadiness,attachNodeReadiness} from '../support/readiness-diagnostics.mjs';
+import {installBoardAdmissionDiagnostics} from '../support/board-admission-diagnostics.mjs';
 import {test as base,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {deterministicStateHash,resolveToStability,serializeState} from '../../apps/web/generated/packages/game-engine/src/index.js';
@@ -11,7 +13,18 @@ import {COMPUTER_UI_FRAME_MEASURE} from '../../apps/web/shell/frame-presentation
 
 // Worker/bootstrap preparation has an explicit fixture budget. The receipt and
 // native Follow journeys retain their complete existing 60-second body budget.
-const test=base.extend({acceptedRetreat:[async({page,baseURL},use)=>{
+const test=base.extend({
+ // Shared 5s fixture slot covers setup AND teardown, separate from the 60s body.
+ // Depending on page makes this persistence precede base-page teardown.
+ humanAdmission:[async({page,baseURL},use,testInfo)=>{
+  if(testInfo.title!=='human retreat excludes the stranded square and completes the native Follow')throw Error('Human admission fixture title mismatch');
+  const diagnostic=await installBoardAdmissionDiagnostics(page,testInfo,{baseURL,targetRow:3,targetCol:0});
+  try{await use();}finally{await diagnostic.persist();}
+ },{timeout:5000}],readinessMeasurement:[async({context,baseURL},use,info)=>{
+ if(info.title!==computerFollowWorkflow){await use();return;}
+ const dispose=await installCaseReadiness(context,baseURL);
+ try{await use();}finally{await finishCaseReadiness(dispose,info);}
+},{auto:true}],acceptedRetreat:[async({page,baseURL},use)=>{
  await use(await acceptedComputerRetreat(page,baseURL));
 },{timeout:60000}]});
 
@@ -20,15 +33,18 @@ const computerRetreatWorkflow='the real computer defender records only the compl
 const computerFollowWorkflow='the real computer defender leaves a completion-preserving native Follow';
 // Read existing recorder and DOM only. Never drive recovery or submit work.
 async function readRetreatDiagnostics(measurementName){
+   let readinessPage;
+   try{readinessPage=globalThis.__righeltReadinessFreeze?.();}catch{readinessPage={incomplete:true,reason:'snapshot-unavailable'};}
+
    const match=location.hash.match(/^#\/game\/([^?#/]+)/);
-   if(!match)return{available:false,reason:'current-game-id-unavailable'};
+   if(!match)return{available:false,reason:'current-game-id-unavailable',...(readinessPage?{readinessPage}:{})};
    const gameId=decodeURIComponent(match[1]);
    // Live transport already imports this exact module. Read its current
    // in-memory incidents rather than waiting for localStorage persistence.
    const {issueDiagnostics}=await import('/shell/issue-diagnostics.js');
    const fields=['stage','code','operation','receipt','pendingCount','gameplayRevision','appliedEventSeq','advertisedEventSeq','at','generation','elapsedMs','deadlineMs'];
    const pick=value=>Object.fromEntries(fields.filter(key=>Object.hasOwn(value??{},key)).map(key=>[key,value[key]]));
-   return{available:true,gameId,journal:window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,historyRows:document.querySelectorAll('[data-testid="history-move-item"]').length,reports:issueDiagnostics.list().filter(report=>report.schemaVersion===1&&report.key===`recovery:${gameId}`).map(report=>({schemaVersion:1,startedAt:report.startedAt,resolvedAt:report.resolvedAt,initial:pick(report.initial),events:report.events.map(pick)}))};
+   return{available:true,gameId,...(readinessPage?{readinessPage}:{}),journal:window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,historyRows:document.querySelectorAll('[data-testid="history-move-item"]').length,reports:issueDiagnostics.list().filter(report=>report.schemaVersion===1&&report.key===`recovery:${gameId}`).map(report=>({schemaVersion:1,startedAt:report.startedAt,resolvedAt:report.resolvedAt,initial:pick(report.initial),events:report.events.map(pick)}))};
 }
 
 // Capture identity is explicitly minimal-artifact. Search and command
@@ -47,11 +63,15 @@ test.afterEach(async({page},info)=>{
  if(info.status===info.expectedStatus){
   let timer;
   try{
-   const journal=await Promise.race([page.evaluate(measurementName=>({...window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null}),COMPUTER_UI_FRAME_MEASURE),new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
+   const journal=await Promise.race([page.evaluate(measurementName=>{
+      let readinessPage;
+      try{readinessPage=globalThis.__righeltReadinessFreeze?.();}catch{readinessPage={incomplete:true,reason:'snapshot-unavailable'};}
+      return {...window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,...(readinessPage?{readinessPage}:{})};
+    },COMPUTER_UI_FRAME_MEASURE),new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
    const path=info.outputPath('native-journal-lifecycle.json');
-   await writeFile(path,JSON.stringify(journal??{unavailable:'not-installed'}));
+   await writeFile(path,JSON.stringify(attachNodeReadiness(journal??{unavailable:'not-installed'})));
    await info.attach('native-journal-lifecycle',{contentType:'application/json',path});
-  }catch{console.warn('[retreat-diagnostic] Journal lifecycle attachment unavailable.');}
+  }catch{console.warn('[retreat-diagnostic] Journal lifecycle attachment unavailable.');if(info.title===computerFollowWorkflow)console.warn('[readiness] incomplete: first-read-or-persistence-unavailable');}
   finally{clearTimeout(timer);}
   return;
  }
@@ -61,11 +81,12 @@ test.afterEach(async({page},info)=>{
   snapshot=page.isClosed()?{available:false,reason:'page-closed'}:await Promise.race([page.evaluate(readRetreatDiagnostics,COMPUTER_UI_FRAME_MEASURE),new Promise(resolve=>{diagnosticTimer=setTimeout(()=>resolve({available:false,reason:'diagnostic-read-timeout'}),2000);})]);
  }catch(error){snapshot={available:false,reason:'diagnostic-read-unavailable',errorKind:String(error?.name??'Error').slice(0,80)};}
  finally{clearTimeout(diagnosticTimer);}
+ snapshot=attachNodeReadiness(snapshot);
  try{
   const path=info.outputPath('local-recovery-incidents.json');await writeFile(path,JSON.stringify(snapshot));
   await info.attach('local-recovery-incidents',{contentType:'application/json',path});
  }
- catch{console.warn('[retreat-diagnostic] Diagnostic attachment unavailable; original test failure retained.');}
+ catch{console.warn('[retreat-diagnostic] Diagnostic attachment unavailable; original test failure retained.');if(info.title===computerFollowWorkflow)console.warn('[readiness] incomplete: persistence-unavailable');}
  if(![computerRetreatWorkflow,computerFollowWorkflow].includes(info.title)||!snapshot?.available)return;
  const started=Date.now(),maximumDrainMs=20000,samples=[];
  while(Date.now()-started<maximumDrainMs&&!page.isClosed()){
@@ -114,12 +135,15 @@ async function receipt(page,id,command,outcome='accepted'){
  },{timeout:SYNC_TIMING.confirmationBudgetMs}).toBe(outcome);
  const own=body.commandOutcomes.filter(row=>row.clientCommandId===command.clientCommandId);expect(own).toHaveLength(1);
  expect(isCommandOutcome(own[0],command)).toBe(true);
- expect(own[0]).toMatchObject({outcome,fingerprint:command.fingerprint,identityId:command.identityId});return own[0];
+ expect(own[0]).toMatchObject({outcome,fingerprint:command.fingerprint,identityId:command.identityId});
+ expect(body.game?.id).toBe(id);expect(body.game.gameplayRevision).toBe(body.gameplayRevision);
+ if(outcome==='accepted')expect(own[0].gameplayRevision).toBe(body.gameplayRevision);
+ return {outcome:own[0],game:body.game};
 }
 async function submit(page,id,action){
  const sent=page.waitForRequest(req=>req.method()==='POST'&&new URL(req.url()).pathname===`/api/shell/games/${id}/apply`);
  await submitPlayableAction(page,action);const command=(await sent).postDataJSON();expect(command.payload.action).toEqual(action);
- await receipt(page,id,command);return command;
+ const acknowledged=await receipt(page,id,command);return {command,game:acknowledged.game};
 }
 async function claimBoth(page){
  await switchGamePanel(page,'players');
@@ -137,7 +161,7 @@ function completed(game){
  for(const id of ['U2-11','U2-15'])expect(stable.pieces.find(piece=>piece.id===id)).toMatchObject({owner:'P2',supplied:true});
 }
 
-test('human retreat excludes the stranded square and completes the native Follow',async({page,baseURL},info)=>{
+test('human retreat excludes the stranded square and completes the native Follow',async({page,baseURL,humanAdmission},info)=>{
  const {gameId}=await importScenarioGame(page,makeRetreatScenario('human'),baseURL);await claimBoth(page);
  await atHash(page,gameId,f.push.beforeHash);await submit(page,gameId,f.push.action);
  const pushed=await atHash(page,gameId,f.push.afterHash);expect(pushed.legalActions).toEqual([safe.action]);await noClosure(page,pushed);
@@ -157,7 +181,7 @@ test('human retreat excludes the stranded square and completes the native Follow
  const unsafe={protocolVersion:2,actionContractVersion:3,gameId,identityId,clientCommandId:`v2:${crypto.randomUUID()}`,kind:'action',payload:{action:f.retreat.action},expectedState:pushed.board.state,expectedGameplayRevision:pushed.gameplayRevision};
  unsafe.fingerprint=await commandFingerprint(unsafe);
  const rejected=await request(page,`/api/shell/games/${gameId}/apply`,unsafe);expect(rejected.accepted).toBe(false);
- expect((await receipt(page,gameId,unsafe,'rejected')).reason).toBe('SUPPLY_DESTINATION_UNSUPPLIED');
+ expect((await receipt(page,gameId,unsafe,'rejected')).outcome.reason).toBe('SUPPLY_DESTINATION_UNSUPPLIED');
  const unchanged=await current(page,gameId);expect(unchanged.board).toEqual(pushed.board);expect(unchanged.gameplayRevision).toBe(pushed.gameplayRevision);expect(unchanged.moves).toEqual(pushed.moves);
  // Clicking an empty unhighlighted square deliberately clears selection.
  // Resume through the actual pushed-piece control before selecting its move.
@@ -204,7 +228,9 @@ test(computerFollowWorkflow,async({page,acceptedRetreat},info)=>{
  const {branched,command,move}=acceptedRetreat;
  const ready=await atHash(page,branched.id,safe.stateHash);expect(ready.legalActions).toEqual([FOLLOW_ACTION]);await switchGamePanel(page,'board');await noClosure(page,ready);
  await page.screenshot({path:info.outputPath('computer-safe-retreat.png')});
- await submit(page,branched.id,FOLLOW_ACTION);completed(await current(page,branched.id));
+ // Completion comes from the same validated authoritative reconciliation that
+ // acknowledged this exact Follow; do not add a duplicate final snapshot fetch.
+ const acknowledged=await submit(page,branched.id,FOLLOW_ACTION);completed(acknowledged.game);
  await info.attach('accepted-computer-follow-source',{body:JSON.stringify({command,move},null,2),contentType:'application/json'});
 });
 

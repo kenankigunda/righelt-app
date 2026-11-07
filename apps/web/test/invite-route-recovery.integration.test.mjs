@@ -42,9 +42,9 @@ function fixture({staleInvite=false}={}) {
   const diagnostics=createIssueDiagnostics({schedule:()=>1,environment:()=>({})});
   const context=vm.createContext({
     expandedViewerGames:new Set(),account:{snapshot:()=>({generation})},transport:owner,currentRoute:parseRouteFromHash('#/invite/first'),
-    window:{location:{hash:'#/invite/first'},addEventListener:(name,fn)=>events[name]=fn,history:{replaceState:(_state,_title,hash)=>{context.window.location.hash=hash;}}},parseRouteFromHash,buildHashForRoute,FLYOUT_KEYS,URLSearchParams,hydrateRoute:createRouteHydration(),
+    window:{location:{hash:'#/invite/first'},addEventListener:(name,fn)=>events[name]=fn,history:{replaceState:(_state,_title,hash)=>{context.window.location.hash=hash;}}},parseRouteFromHash,buildHashForRoute,FLYOUT_KEYS,URL,URLSearchParams,hydrateRoute:createRouteHydration(),
     appEl:{querySelectorAll:()=>[{classList:{add:noop}}],addEventListener:(_name,fn)=>clicks.push(fn)},
-    joinFeedback:{clear:noop},clearAccountContinuation:noop,closeHeaderMenu:noop,gameSound:{leaveGame:noop,play:noop,cancelPreview:noop},
+    storyDialog:{refresh:noop},joinFeedback:{clear:noop},clearAccountContinuation:noop,closeHeaderMenu:noop,gameSound:{leaveGame:noop,play:noop,cancelPreview:noop},
     inlineProfiles:{close:noop},resultPresentation:{clear:noop},rematchDialog:{close:noop},retireTutorialSave:noop,
     normalizeRouteFlyoutState:route=>layout==='narrow'?{...route,scenarios:false}:route,preparePanelTransition:noop,syncRouteTransitionForCurrentRoute:noop,
     syncFlyoutRenderOrder:noop,getGamePanel:route=>route.panel||'board',getRouteTransitionRenderKey:()=>'',
@@ -62,6 +62,7 @@ function fixture({staleInvite=false}={}) {
   const api=new vm.Script(`
     let inviteLoadState=null,resolvedInvite=${staleInvite?"{gameId:'stale-game'}":'null'},routeSyncRequestId=0,routeHydrated=false;
     let hostInvite=null,inviteVisit=0,activeResultGameId=null,pendingResultReviewFocus=null,routeTransition=null,restoreHomePending=false,flyoutRenderOrder=[];
+    ${source.includes("let homeReadJob = null;") ? extract("let homeReadJob = null;", "const hydrateRoute =") : ""}
     ${routeComparisons}
     ${cachedRoute}
     ${routeFunctions}
