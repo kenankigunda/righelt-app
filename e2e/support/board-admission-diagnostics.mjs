@@ -200,7 +200,7 @@ export function installBoardAdmissionCollector({targetRow,targetCol,sourceAttemp
 
 }
 
-export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targetCol,baseURL,sourceAttemptOrdinal,computerSessionRecovery=false}){
+export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targetCol,baseURL,sourceAttemptOrdinal,computerSessionRecovery=false,moduleTransform}){
  if(sourceAttemptOrdinal!==undefined&&(!Number.isSafeInteger(sourceAttemptOrdinal)||sourceAttemptOrdinal<1))throw Error('Invalid source attempt ordinal');
  const recipes=JSON.parse(await readFile(new URL(computerSessionRecovery?'./computer-session-recovery-transformation.json':'./board-admission-transformations.json',import.meta.url),'utf8'));
  const transforms=[],errors=[];let installed=false;
@@ -211,7 +211,8 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
   if(!recipe){await route.continue();return;}
   try{
    const response=await route.fetch();const source=await response.text();
-   const body=transformBoardAdmissionModule(source,recipe);
+   const transformed=transformBoardAdmissionModule(source,recipe);
+   const body=moduleTransform?moduleTransform(pathname,source,transformed):transformed;
    transforms.push({pathname,sourceSha256:hash(source),outputSha256:hash(body),matches:recipe.operations.length});
    await route.fulfill({response,body});
   }catch{

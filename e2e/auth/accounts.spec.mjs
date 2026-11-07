@@ -5,6 +5,7 @@ import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { AUTH_REQUEST_HEADER, AUTH_PROTOCOL_HEADER, AUTH_PROTOCOL_VERSION, SESSION_CONTEXT_HEADER } from "../../packages/shared-types/src/auth-policy.js";
 import { getHistoryMoveCount, submitPlayableAction, switchGamePanel } from "../support/app.mjs";
+import { passwordSessionResourcesFixture } from "../support/password-session-resources.mjs";
 
 const password = "A long browser test password 482";
 const replacement = "A different browser test password 963";
@@ -15,6 +16,7 @@ const control = async action => {
   expect(response.status).toBe(200);
 };
 test.beforeEach(async () => control("reset-limits"));
+const passwordSessionTest = test.extend({passwordSessionResources: passwordSessionResourcesFixture});
 async function openRecoveredFriendChoice(page) {
   const choice=page.locator('[data-testid="home-create-game"][data-action="create-game"]').first();
   await expect(choice).toBeVisible();await expect(choice).toBeEnabled();
@@ -342,35 +344,33 @@ test("account forms support autofill, keyboard focus, narrow layouts and cancell
   expect(new URL(page.url()).hash).not.toContain("game/");
 });
 
-test("password change revokes old sessions while retaining the current browser", async ({ page, browser }) => {
+passwordSessionTest("password change revokes old sessions while retaining the current browser", async ({ page, passwordSessionResources }) => {
   const username = uniqueName();
   await register(page, username, { gate: true });
   const gameUrl = page.url();
-  const sibling = await page.context().newPage();
+  const sibling = await passwordSessionResources.newSiblingPage();
   await sibling.goto(gameUrl);
-  const separate = await browser.newContext({ ignoreHTTPSErrors: true });
-  try {
-    const other = await separate.newPage();
-    await other.goto(gameUrl);
-    await signIn(other, username);
-    await account(page);
-    await dialog(page).getByRole("button", { name: "Change password", exact: true }).click();
-    await expect(dialog(page).getByLabel("Current password", { exact: true })).toHaveCount(0);
-    await expect(dialog(page).getByLabel("New password", { exact: true })).toHaveAttribute("type", "text");
-    await expect(dialog(page).getByTestId("password-requirements")).toBeVisible();
-    await dialog(page).getByLabel("New password", { exact: true }).fill(replacement);
-    await expect(dialog(page).getByTestId("password-requirements").locator('[data-state="met"]')).toHaveCount(3);
-    await dialog(page).getByRole("button", { name: "Change password", exact: true }).click();
-    await expect(dialog(page)).not.toBeVisible();
-    await expect(other.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false", { timeout: 15000 });
-    await expect(other.getByTestId("game-board")).toBeVisible();
-    await other.reload();
-    await expect(other.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
-    await signIn(other, username, replacement);
-    await expect(other.getByTestId("game-role")).toContainText("Player 1");
-    await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
-    await expect(sibling.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
-  } finally { await sibling.close(); await separate.close(); }
+  const separate = await passwordSessionResources.newIndependentContext();
+  const other = await separate.newPage();
+  await other.goto(gameUrl);
+  await signIn(other, username);
+  await account(page);
+  await dialog(page).getByRole("button", { name: "Change password", exact: true }).click();
+  await expect(dialog(page).getByLabel("Current password", { exact: true })).toHaveCount(0);
+  await expect(dialog(page).getByLabel("New password", { exact: true })).toHaveAttribute("type", "text");
+  await expect(dialog(page).getByTestId("password-requirements")).toBeVisible();
+  await dialog(page).getByLabel("New password", { exact: true }).fill(replacement);
+  await expect(dialog(page).getByTestId("password-requirements").locator('[data-state="met"]')).toHaveCount(3);
+  await dialog(page).getByRole("button", { name: "Change password", exact: true }).click();
+  await expect(dialog(page)).not.toBeVisible();
+  await expect(other.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false", { timeout: 15000 });
+  await expect(other.getByTestId("game-board")).toBeVisible();
+  await other.reload();
+  await expect(other.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
+  await signIn(other, username, replacement);
+  await expect(other.getByTestId("game-role")).toContainText("Player 1");
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
+  await expect(sibling.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
 });
 
 test("browser logout revokes shared tabs but retains an independent session", async ({ page, browser }) => {
