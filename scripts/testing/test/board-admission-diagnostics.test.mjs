@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
+import {createHash} from 'node:crypto';
 import {installBoardAdmissionCollector,transformBoardAdmissionModule} from '../../../e2e/support/board-admission-diagnostics.mjs';
 
 const recipes=JSON.parse(await readFile(new URL('../../../e2e/support/board-admission-transformations.json',import.meta.url),'utf8'));
@@ -227,4 +228,83 @@ test('helper first and latest read snapshots survive bounded rolling eviction',(
  assert.equal(log.lastSourceRead.value,true);assert.equal(log.sourceReadCount,2);
  assert.equal(log.firstSourceRead.subjectToken,log.lastSourceRead.subjectToken);
  assert.equal(log.incomplete,true);assert.ok(log.dropped>0);
+});
+
+
+// Closed observation categories are an external diagnostic/privacy contract, not runtime policy.
+const approvedErrorNames=['Error','TypeError','RangeError','ReferenceError','SyntaxError','URIError','EvalError','AggregateError'];
+const approvedErrorCategories=['rules_cancelled','invalid_rules_response','rules_worker_failed','rules_timeout','session_changed','stale_state','journal_timeout','sync_recovering','storage_reset','storage_generation_unverified','invalid_saved_command','cleanup_unverified','untracked_saved_command','invalid_cleanup_receipt'];
+test('runtime error fields accept only closed local categories and never arbitrary strings or extra payload',()=>{
+ const {record,log}=collector();
+ for(const name of approvedErrorNames)record('runtime-host-error',{errorName:name,errorCode:'stale_state',errorMessage:'journal_timeout'});
+ for(const code of approvedErrorCategories)record('runtime-host-error',{errorName:'Error',errorCode:code,errorMessage:code});
+ for(const [index,name] of approvedErrorNames.entries())assert.equal(log.first[index].errorName,name);
+ for(const [index,code] of approvedErrorCategories.entries()){const row=log.first[approvedErrorNames.length+index];assert.equal(row.errorCode,code);assert.equal(row.errorMessage,code);}
+ const privateText='person@example.invalid game-private-secret';
+ for(const value of [privateText,'rules_cancelled-extra','x'.repeat(64),'x'.repeat(4096),{},3,false,undefined]){
+  record('runtime-host-error',{errorName:value,errorCode:value,errorMessage:value,value:privateText,gameId:privateText,rawState:privateText});
+  const row=log.first.at(-1);assert.equal(row.errorName,null);assert.equal(row.errorCode,null);assert.equal(row.errorMessage,null);
+  assert.equal('value' in row,false);assert.equal('gameId' in row,false);assert.equal('rawState' in row,false);
+ }
+ assert.equal(JSON.stringify(log).includes(privateText),false);
+});
+test('runtime error collector reads only own data descriptors and tolerates throwing proxies',()=>{
+ const {record,log}=collector();let getterReads=0,traps=0;
+ const data={};for(const key of ['errorName','errorCode','errorMessage','rawState'])Object.defineProperty(data,key,{enumerable:true,get(){getterReads++;throw new Error('private getter');}});
+ record('runtime-host-error',data);assert.equal(getterReads,0);
+ record('runtime-host-error',Object.create({errorName:'Error',errorCode:'stale_state',errorMessage:'stale_state'}));
+ record('runtime-host-error',new Proxy({},{getOwnPropertyDescriptor(){traps++;throw new Error('private trap');}}));assert.equal(traps,3);
+ for(const row of log.first){assert.equal(row.errorName,null);assert.equal(row.errorCode,null);assert.equal(row.errorMessage,null);}
+ assert.equal(log.incomplete,false);
+});
+test('actual transformed host catch preserves original object, getter counts and finally with unsafe errors',async()=>{
+ const recipe=recipes['/board/runtime/board-runtime.js'];
+ const source=await readFile(new URL('../../../'+recipe.file,import.meta.url),'utf8');
+ const transformed=transformBoardAdmissionModule(source,recipe);
+ const segment=text=>{const start=text.indexOf('    } catch (error) {',text.indexOf('const body = await host.applyAction'));const end=text.indexOf('\n  };',start);assert.ok(start>=0&&end>start);return text.slice(start,end);};
+ const original=segment(source),observed=segment(transformed),operation=recipe.operations.find(op=>op.after.includes('runtime-host-error'));
+ assert.equal(observed.replace(operation.after,''),original);
+ const run=(body,make,sinkThrows=false)=>{
+  const reads={message:0,name:0,code:0,traps:0};const sentinel={};const error=make(reads,sentinel),effects=[],rows=[];
+  const previous=globalThis.__boardAdmissionRecord;globalThis.__boardAdmissionRecord=(event,data)=>{rows.push({event,data});if(sinkThrows)throw new Error('private sink');};
+  let propagated;
+  try{new Function('failure','setResult','setSubmitting','renderStatus','destroyed','revision','snapshotRevision',recipe.prefix+'try { throw failure;\n'+body)(error,value=>effects.push(['result',value]),value=>effects.push(['submitting',value]),()=>effects.push(['render']),false,1,1);}
+  catch(value){propagated=value;}
+  finally{if(previous===undefined)delete globalThis.__boardAdmissionRecord;else globalThis.__boardAdmissionRecord=previous;}
+  return{error,effects,rows,reads,propagated,sentinel};
+ };
+ const cases=[
+  ()=>Object.assign(new Error('rules_cancelled'),{name:'TypeError',code:'rules_cancelled'}),
+  ()=>new TypeError('private person@example.invalid'),
+  reads=>{const error=new Error();for(const key of ['message','name','code'])Object.defineProperty(error,key,{get(){reads[key]++;return key==='message'?'stale_state':'private getter';},configurable:true});return error;},
+  ()=>42,
+  ()=>Object.create({name:'Error',message:'stale_state',code:'stale_state'}),
+  reads=>new Proxy(new Error('stale_state'),{getOwnPropertyDescriptor(){reads.traps++;throw new Error('private trap');}}),
+  (reads,sentinel)=>{const error=new Error();Object.defineProperty(error,'message',{get(){reads.message++;throw sentinel;}});return error;},
+ ];
+ for(const make of cases){
+  const baseline=run(original,make),actual=run(observed,make),throwingSink=run(observed,make,true);
+  assert.deepEqual(actual.effects,baseline.effects);assert.deepEqual(throwingSink.effects,baseline.effects);
+  for(const key of ['message','name','code'])assert.equal(actual.reads[key],baseline.reads[key]);
+  assert.equal(actual.rows.length,1);assert.equal(actual.rows[0].event,'runtime-host-error');
+  if(baseline.propagated){assert.equal(baseline.propagated,baseline.sentinel);assert.equal(actual.propagated,actual.sentinel);assert.equal(throwingSink.propagated,throwingSink.sentinel);}else{assert.equal(actual.propagated,undefined);assert.equal(throwingSink.propagated,undefined);}
+  assert.deepEqual(actual.effects.slice(-2),[['submitting',false],['render']]);
+  assert.equal(JSON.stringify(actual.rows).includes('private'),false);
+ }
+ const data=run(observed,cases[0]);assert.deepEqual(data.rows[0].data,{errorName:'TypeError',errorCode:'rules_cancelled',errorMessage:'rules_cancelled'});
+ const primitive=run(observed,cases[3]);assert.deepEqual(primitive.rows[0].data,{errorName:null,errorCode:null,errorMessage:null});
+ const proxy=run(observed,cases[5]);assert.equal(proxy.reads.traps,3);assert.deepEqual(proxy.rows[0].data,{errorName:null,errorCode:null,errorMessage:null});
+ const timeout=run(observed,()=>Object.assign(new Error('Rules calculation timed out'),{code:'rules_timeout'}));assert.deepEqual(timeout.rows[0].data,{errorName:null,errorCode:'rules_timeout',errorMessage:'rules_timeout'});
+ for(const code of approvedErrorCategories){const row=run(observed,()=>Object.assign(new Error(code),{code})).rows[0].data;assert.equal(row.errorCode,code);assert.equal(row.errorMessage,code);}
+});
+test('error categories remain source-derived and changed output remains hash protected',async()=>{
+ const sources=await Promise.all(['apps/web/board/rules-runtime.js','apps/web/shell/live-transport.js','apps/web/shell/command-journal.js'].map(file=>readFile(new URL('../../../'+file,import.meta.url),'utf8')));
+ for(const category of approvedErrorCategories)assert.ok(sources.some(source=>source.includes("'"+category+"'")||source.includes('"'+category+'"')),category);
+ const recipe=recipes['/board/runtime/board-runtime.js'],source=await readFile(new URL('../../../'+recipe.file,import.meta.url),'utf8');
+ const altered={...recipe,operations:recipe.operations.map(op=>op.after.includes('runtime-host-error')?{...op,after:op.after+' '}:op)};
+ assert.throws(()=>transformBoardAdmissionModule(source,altered),/output hash mismatch/);
+ const wrongOutput={...recipe,outputSha256:'0'.repeat(64)};assert.throws(()=>transformBoardAdmissionModule(source,wrongOutput),/output hash mismatch/);
+ assert.equal(recipe.operations.filter(op=>op.after.includes('runtime-host-error')).length,1);assert.equal(recipe.operations.length,23);
+ const unchanged={"/board-adapters/engine-board-adapter.js":"37ae4d7c79eb76c04725868ffd98d53a3951eec9f9613851709688deb9e6a769","/shell/live-transport.js":"bb99f37831cf1acd3e0a3c6b43016a49ef8d3c40863e472ca9cf57d92d5255a1","/board/hosts/shell-host.js":"6f8f475dfe5108ead572c51375b3bafb85a94ee998ef91e2abd01f738cd575db","/shell/app.js":"f82bab11aeca8158dbbce13d81a591f9d567212f0c0c08fc459bc1d52d8f3781"};
+ for(const [key,expected] of Object.entries(unchanged)){assert.equal(createHash('sha256').update(JSON.stringify(recipes[key])).digest('hex'),expected);}
 });

@@ -25,7 +25,16 @@ export function installBoardAdmissionCollector({targetRow,targetCol}){
   if(!subjects.has(value))subjects.set(value,++next);return subjects.get(value);
  };
  const scalarKeys=new Set(['value','row','col','revision','phase','moves','previews','type','kind','interactive','sameNodes','mounted','positionChanged','preservePiecePreviews','resetSelection','legalTarget','hasPreviewAtClicked','hasClickedPiece','allowFreeSelection','usesHoverTargetSelection','count','retryAttempt','reconcileFirst','hadRuntime','trusted','rootToken','callbackToken','eventToken','targetToken','currentTargetToken','currentRootToken','cellRootToken','targetConnected','currentRootConnected','pathContainsCurrentRoot','dispatchPhase','pointerId','connected','pieceChanged','hasSelectedPiece','requestId']);
- const sanitize=data=>{
+ // Runtime errors have a dedicated closed schema. No arbitrary error strings or getters.
+ const errorNames=["Error","TypeError","RangeError","ReferenceError","SyntaxError","URIError","EvalError","AggregateError"], errorCategories=["rules_cancelled","invalid_rules_response","rules_worker_failed","rules_timeout","session_changed","stale_state","journal_timeout","sync_recovering","storage_reset","storage_generation_unverified","invalid_saved_command","cleanup_unverified","untracked_saved_command","invalid_cleanup_receipt"];
+ const errorField=(data,key,allowed)=>{
+  try{
+   const descriptor=data!==null&&['object','function'].includes(typeof data)?Object.getOwnPropertyDescriptor(data,key):null;
+   return descriptor&&Object.hasOwn(descriptor,'value')&&typeof descriptor.value==='string'?allowed.find(value=>value===descriptor.value)??null:null;
+  }catch{return null;}
+ };
+ const sanitize=(data,event)=>{
+  if(event==='runtime-host-error')return{errorName:errorField(data,'errorName',errorNames),errorCode:errorField(data,'errorCode',errorCategories),errorMessage:errorField(data,'errorMessage',errorCategories)};
   const safe={};
   for(const [key,value] of Object.entries(data)){
    if(key==='pathTokens'&&Array.isArray(value))safe.pathTokens=value.slice(0,8).filter(item=>Number.isSafeInteger(item)&&item>0);
@@ -35,7 +44,7 @@ export function installBoardAdmissionCollector({targetRow,targetCol}){
   return safe;
  };
  const record=(event,data={},subject=null)=>{try{
-  const row={sequence:++sequence,event,...sanitize(data),subjectToken:token(subject),now:performance.now(),timeOrigin:performance.timeOrigin};
+  const row={sequence:++sequence,event,...sanitize(data,event),subjectToken:token(subject),now:performance.now(),timeOrigin:performance.timeOrigin};
   if(event==='fixture-ensure-source-read'){log.sourceReadCount++;log.firstSourceRead??=row;log.lastSourceRead=row;}
   if(log.first.length<64)log.first.push(row);
   else{if(log.tail.length===64){log.tail.shift();log.dropped++;log.incomplete=true;}log.tail.push(row);}
