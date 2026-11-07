@@ -12,6 +12,7 @@ export function mountLoadingFeedback(document, { now = () => performance.now(), 
   const selector = '[data-loading-key], [data-loading-state]';
   const episodes = new Map();
   const contexts = new Map();
+  const groupedContexts = new Map();
   let timer = null, destroyed = false, scope = null, published = '[]', serial = 0;
   const sourceIds = new WeakMap();
   const publish = descriptors => {
@@ -24,8 +25,9 @@ export function mountLoadingFeedback(document, { now = () => performance.now(), 
     if (timer !== null) clearTimer(timer);
     timer = null;
     const nextScope=String(getScope());
-    if(nextScope!==scope){for(const status of contexts.values())status.remove();contexts.clear();episodes.clear();scope=nextScope;}
+    if(nextScope!==scope){for(const status of contexts.values())status.remove();contexts.clear();for(const status of groupedContexts.values())status.remove();groupedContexts.clear();episodes.clear();scope=nextScope;}
     const slowContexts=new Map();
+    const activeGroups=new Set();
     const active = new Set();
     let next = Infinity;
     for (const element of document.querySelectorAll(selector)) {
@@ -60,12 +62,19 @@ export function mountLoadingFeedback(document, { now = () => performance.now(), 
         contexts.get(key)?.remove();contexts.delete(key);
       }
       if (isButton && phase === 'slow' && element.dataset.loadingContext !== 'external') {
-        let status = contexts.get(key);
+        const group = element.dataset.loadingContext === 'group' ? element.closest('[data-loading-context-group]') : null;
+        const registry = group ? groupedContexts : contexts;
+        const contextKey = group || key;
+        if (group) activeGroups.add(group);
+        let status = registry.get(contextKey);
         if (!status?.isConnected) {
           status = document.createElement('span'); status.className = 'loading-context';
           status.setAttribute('role','status');
           status.textContent = element.dataset.loadingMessage || 'This is taking a little longer than usual.';
-          element.insertAdjacentElement('afterend',status); contexts.set(key,status);
+          // Opted-in sibling controls share one announcement outside their
+          // aria-busy buttons, without inserting text into the control row.
+          if (group) group.append(status); else element.insertAdjacentElement('afterend',status);
+          registry.set(contextKey,status);
         }
       }
       if (element.dataset.loadingPhase !== phase) element.dataset.loadingPhase = phase;
@@ -101,6 +110,7 @@ export function mountLoadingFeedback(document, { now = () => performance.now(), 
       else if (elapsed < LOADING_CONTEXT_DELAY_MS) next = Math.min(next, LOADING_CONTEXT_DELAY_MS - elapsed);
     }
     for (const key of episodes.keys()) if (!active.has(key)) { episodes.delete(key); contexts.get(key)?.remove(); contexts.delete(key); }
+    for (const [group,status] of groupedContexts) if (!activeGroups.has(group)) {status.remove();groupedContexts.delete(group);}
     publish([...slowContexts.values()]);
     if (Number.isFinite(next)) timer = setTimer(sync, Math.max(1,next));
   };
@@ -110,5 +120,5 @@ export function mountLoadingFeedback(document, { now = () => performance.now(), 
   document.addEventListener('visibilitychange',visibility);
   window.addEventListener('hashchange',sync);
   visibility(); sync();
-  return () => { destroyed=true;observer.disconnect();if(timer!==null)clearTimer(timer);episodes.clear();for(const status of contexts.values())status.remove();contexts.clear();publish([]);window.removeEventListener('hashchange',sync);document.removeEventListener('visibilitychange',visibility); };
+  return () => { destroyed=true;observer.disconnect();if(timer!==null)clearTimer(timer);episodes.clear();for(const status of contexts.values())status.remove();contexts.clear();for(const status of groupedContexts.values())status.remove();groupedContexts.clear();publish([]);window.removeEventListener('hashchange',sync);document.removeEventListener('visibilitychange',visibility); };
 }

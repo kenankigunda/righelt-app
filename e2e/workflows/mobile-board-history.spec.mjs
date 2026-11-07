@@ -208,13 +208,13 @@ test.describe('narrow board and history',()=>{
       await page.getByRole('button',{name:'Undo before this move',exact:true}).tap();
       await expect(page.getByTestId('undo-waiting-notice')).toBeVisible();
       await expect(guest.getByTestId('undo-approval-notice')).toBeVisible();
-      await firstRow.click();
+      await firstRow.locator('.history-move-line').click();
       await expect(firstRow).toHaveClass(/is-selected/);
       await expect(firstRow.getByTestId('history-inline-preview')).toBeVisible();
-      await secondRow.click();
+      await secondRow.locator('.history-move-line').click();
       await expect(secondRow).toHaveClass(/is-selected/);
       await expect(secondRow.getByTestId('history-inline-preview')).toBeVisible();
-      await firstRow.click();await expect(firstRow).toHaveClass(/is-selected/);
+      await firstRow.locator('.history-move-line').click();await expect(firstRow).toHaveClass(/is-selected/);
       await guestContext.route(/\/(shared|revert-approve)$/,async route=>{
         if(!isOperationRequest(route.request(),'revert-approve'))return route.continue();
         approvalSeen=true;await held;await route.continue();
@@ -281,6 +281,8 @@ test.describe('narrow board and history',()=>{
       const loadingReceipt=await coldBoardLayoutReceipt(page);
       const loading=loadingReceipt.exactSilhouette?.documentRect;
       const loadingHeading=loadingReceipt.heading?.documentRect;
+      expect(loadingReceipt.exactSilhouette?.className).toContain('loading-board-silhouette');
+      expect(loading.width).toBeGreaterThan(0);expect(loading.height).toBeGreaterThan(0);
       const loadingReceiptPath=info.outputPath('cold-board-loading-layout.json');
       await writeFile(loadingReceiptPath,JSON.stringify({width,textScale,loading,loadingHeading,layout:loadingReceipt},null,2));
       await info.attach('cold-board-loading-layout',{path:loadingReceiptPath,contentType:'application/json'});
