@@ -1,4 +1,5 @@
 import test from "node:test";
+import vm from "node:vm";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -101,4 +102,46 @@ test('commander and supply colors and pressed states resolve independently',()=>
  updateInspectionLegend(legend,snapshot,context);
  assert.equal(attrs['aria-pressed'],'false');assert.equal(attrs['aria-label'],'Red supply point inspection');
  assert.equal(style['--legend-owner-color'],'var(--player-p1)');assert.equal(iconStyle['--supply-owner'],'var(--player-p1)');assert.equal(lineStyle['--swatch-supply-color'],'var(--player-p1)');
+});
+
+
+// Execute the actual case-local browser callback, not a copy of its predicate.
+const legendJourneySource=readFileSync(new URL('../../../e2e/workflows/ux-refresh-checkpoint.spec.mjs',import.meta.url),'utf8');
+const atomicStart=legendJourneySource.indexOf(' const readLegendOwnershipColors = () => {');
+const atomicEnd=legendJourneySource.indexOf(' const checkColors=',atomicStart);
+assert.ok(atomicStart>=0 && atomicEnd>atomicStart,'actual atomic legend callback must be present');
+const atomicSource=legendJourneySource.slice(atomicStart,atomicEnd)+';globalThis.read=readLegendOwnershipColors;';
+const atomicLegendModel=()=>{
+ const document={};
+ const node=()=>({isConnected:true,ownerDocument:document,getRootNode:()=>document});
+ const root=node(),board=node(),commander=node(),command=node(),supply=node(),selected=node();
+ selected.classList={contains:kind=>kind==='p2'};
+ const nodes={'.commander-key':commander,'.command':command,'.supply-point svg':supply};
+ const owners={command:'P2',supply:'P2'};
+ root.querySelector=selector=>selector==='[data-board-inspection="command"]'?{getAttribute:()=>owners.command}:selector==='[data-board-inspection="supply"]'?{getAttribute:()=>owners.supply}:nodes[selector];
+ root.contains=value=>Object.values(nodes).includes(value);board.contains=value=>value===selected;
+ board.querySelector=()=>selected;document.documentElement=node();
+ document.querySelector=selector=>selector==='.overlay-key'?root:selector==='#shell-board'?board:null;
+ const styles=new Map([[commander,{color:'rgb(45, 103, 199)',token:'#2d67c7'}],[command,{color:'rgb(45, 103, 199)',token:'#2d67c7'}],[supply,{fill:'rgb(45, 103, 199)',token:'#2d67c7'}],[document.documentElement,{token:'#2d67c7'}]]);
+ const context=vm.createContext({document,getComputedStyle:value=>{const style=styles.get(value);return {...style,getPropertyValue:()=>style.token};}});
+ vm.runInContext(atomicSource,context);
+ return {read:context.read,document,root,board,commander,command,supply,selected,nodes,owners,styles};
+};
+const acceptsLegendSample=sample=>sample.valid===true && sample.owner==='P2' && sample.commandOwner==='P2' && sample.supplyOwner==='P2' && sample.colorsAgree===true && sample.ownerColorsAgree===true;
+test('actual atomic legend callback accepts current connected matching ownership and colors',()=>{
+ const model=atomicLegendModel();const sample=model.read();assert.equal(acceptsLegendSample(sample),true);assert.equal(sample.commanderColor,'rgb(45, 103, 199)');assert.equal(sample.supplyFill,sample.commanderColor);
+});
+for(const [name,change] of [
+ ['missing icon',m=>{m.nodes['.commander-key']=null;}],
+ ['detached icon',m=>{m.commander.isConnected=false;}],
+ ['stale document root',m=>{m.root.getRootNode=()=>({});}],
+ ['stale foreign document',m=>{m.commander.ownerDocument={};}],
+ ['empty computed color',m=>{m.styles.get(m.commander).color='';}],
+ ['connected wrong commander color',m=>{m.styles.get(m.commander).color='rgb(194, 69, 47)';}],
+ ['connected wrong supply fill',m=>{m.styles.get(m.supply).fill='rgb(194, 69, 47)';}],
+ ['all matching colors from wrong owner',m=>{for(const value of [m.commander,m.command,m.supply]){const style=m.styles.get(value);style.token='#c2452f';if('color' in style)style.color='rgb(194, 69, 47)';else style.fill='rgb(194, 69, 47)';}}],
+ ['unselected ownership',m=>{m.selected.classList.contains=()=>false;}],
+ ['stale inspection ownership',m=>{m.owners.command='P1';}],
+])test(`actual atomic legend callback rejects ${name}`,()=>{
+ const model=atomicLegendModel();change(model);assert.equal(acceptsLegendSample(model.read()),false);
 });
