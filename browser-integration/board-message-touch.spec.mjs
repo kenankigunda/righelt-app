@@ -293,14 +293,14 @@ test('admission changes preserve independent context, selection, baseline-aligne
 
 test.describe('native mouse action lifetime',()=>{
  test.use({hasTouch:false});
-test('two-row replay retains its native pressed target through an unchanged background refresh',async({page},info)=>{
+test('replay prompt retains its native pressed target through an unchanged background refresh',async({page},info)=>{
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
- await page.evaluate(async()=>{await window.boardFixture.setup('pass',false);window.msg={rows:[{text:'Babs moved a piece',actions:[{id:'replay-computer',label:'Show me again'}]},{text:'Select a piece or',actions:[{id:'pass',label:'Pass'}]}]};window.boardFixture.message(window.msg);window.events=[];document.addEventListener('pointerdown',e=>{const b=e.target.closest('button');if(b){b.classList.add('is-pressing');window.pressed=b;window.events.push({kind:'down',action:b.dataset.boardMessageAction});}});document.addEventListener('click',e=>window.events.push({kind:'click',action:e.target.closest('button')?.dataset.boardMessageAction}));});
- const b=page.getByRole('button',{name:'Show me again',exact:true});await page.evaluate(()=>document.fonts.ready);await b.hover();await page.mouse.down();
+ await page.evaluate(async()=>{await window.boardFixture.setup('pass',false);window.msg={text:'Next',actions:[{id:'replay-next',label:'Next'},{id:'replay-stop',label:'Stop replay'}],context:{text:'Opponent moved',action:{id:'replay-computer',label:'Show me again'}}};window.boardFixture.message(window.msg);window.events=[];document.addEventListener('pointerdown',e=>{const b=e.target.closest('button');if(b){b.classList.add('is-pressing');window.pressed=b;window.events.push({kind:'down',action:b.dataset.boardMessageAction});}});document.addEventListener('click',e=>window.events.push({kind:'click',action:e.target.closest('button')?.dataset.boardMessageAction}));});
+ const b=page.getByRole('button',{name:'Next',exact:true});await page.evaluate(()=>document.fonts.ready);await b.hover();await page.mouse.down();
  await expect.poll(()=>page.evaluate(()=>Boolean(window.pressed)),{timeout:2000}).toBe(true);
- await page.evaluate(()=>{window.boardFixture.message(window.msg);window.events.push({kind:'refresh',same:window.pressed===document.querySelector('[data-board-message-action="replay-computer"]'),connected:window.pressed.isConnected});});
+ await page.evaluate(selector=>{window.boardFixture.message(window.msg);window.events.push({kind:'refresh',same:window.pressed===document.querySelector(selector),connected:window.pressed.isConnected});},'[data-board-message-action="replay-next"]');
  await page.mouse.up();
- const result=await page.evaluate(()=>({events:window.events,actions:window.boardFixture.messageActions()}));await info.attach('pointer-lifetime',{body:JSON.stringify(result),contentType:'application/json'});console.log(JSON.stringify(result));expect(result.events.some(e=>e.kind==='refresh'&&e.same)).toBe(true);expect(result.actions).toEqual(['replay-computer']);
+ const result=await page.evaluate(()=>({events:window.events,actions:window.boardFixture.messageActions()}));await info.attach('pointer-lifetime',{body:JSON.stringify(result),contentType:'application/json'});console.log(JSON.stringify(result));expect(result.events.some(e=>e.kind==='refresh'&&e.same)).toBe(true);expect(result.actions).toEqual(['replay-next']);
 });
 
 });
@@ -309,7 +309,7 @@ test('message compatibility ignores only known inline press feedback',async({pag
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
  const result=await page.evaluate(async()=>{
   const {patchBoardMessage,renderBoardMessageHtml}=await import('/apps/web/board/message-presentation.js');
-  const html=renderBoardMessageHtml({rows:[{text:'Opponent moved',actions:[{id:'replay-computer',label:'Show me again'}]},{text:'Select a piece or',actions:[{id:'pass',label:'Pass'}]}]});
+  const html=renderBoardMessageHtml({text:'Next',actions:[{id:'replay-next',label:'Next'},{id:'replay-stop',label:'Stop replay'}]});
   const probe=change=>{const box=document.createElement('div');box.innerHTML=html;const button=box.querySelector('button');change(button);const patched=patchBoardMessage(box,html);return {patched,same:box.querySelector('button')===button,classes:button.className};};
   return {press:probe(b=>b.classList.add('is-pressing')),release:probe(b=>b.classList.add('is-releasing')),bounce:probe(b=>b.classList.add('button-release-bounce')),semantic:probe(b=>b.classList.add('different-action-style')),action:probe(b=>b.dataset.boardMessageAction='pass'),disabled:probe(b=>b.disabled=true)};
  });
@@ -321,8 +321,8 @@ test('message compatibility ignores only known inline press feedback',async({pag
 
 test('keyboard release feedback preserves its focused replay action across refresh',async({page})=>{
  await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
- await page.evaluate(async()=>{await window.boardFixture.setup('pass',false);window.msg={rows:[{text:'Opponent moved',actions:[{id:'replay-computer',label:'Show me again'}]},{text:'Select a piece or',actions:[{id:'pass',label:'Pass'}]}]};window.boardFixture.message(window.msg);document.addEventListener('click',event=>event.target.closest('button')?.classList.add('button-release-bounce'));});
- const replay=page.getByRole('button',{name:'Show me again',exact:true});await replay.press('Enter');
- const result=await page.evaluate(()=>{const button=document.activeElement;const feedback=button.classList.contains('button-release-bounce');window.boardFixture.message(window.msg);return {feedback,same:document.querySelector('[data-board-message-action="replay-computer"]')===button,connected:button.isConnected,focused:document.activeElement===button,actions:window.boardFixture.messageActions()};});
- expect(result).toEqual({feedback:true,same:true,connected:true,focused:true,actions:['replay-computer']});
+ await page.evaluate(async()=>{await window.boardFixture.setup('pass',false);window.msg={text:'Next',actions:[{id:'replay-next',label:'Next'},{id:'replay-stop',label:'Stop replay'}],context:{text:'Opponent moved',action:{id:'replay-computer',label:'Show me again'}}};window.boardFixture.message(window.msg);document.addEventListener('click',event=>event.target.closest('button')?.classList.add('button-release-bounce'));});
+ const replay=page.getByRole('button',{name:'Next',exact:true});await replay.press('Enter');
+ const result=await page.evaluate(selector=>{const button=document.activeElement;const feedback=button.classList.contains('button-release-bounce');window.boardFixture.message(window.msg);return {feedback,same:document.querySelector(selector)===button,connected:button.isConnected,focused:document.activeElement===button,actions:window.boardFixture.messageActions()};},'[data-board-message-action="replay-next"]');
+ expect(result).toEqual({feedback:true,same:true,connected:true,focused:true,actions:['replay-next']});
 });

@@ -125,6 +125,7 @@ test('actual render wrapper preserves completed copy focus through a later same-
  const f=fixture();f.manager.begin(f.original,'copy:a');f.finish();let current=f.original,replacements=0;
  const context={document:f.document,pendingInvitationFocus:f.manager,isButtonPending:()=>false,
   renderGesture:{defer:()=>false},utilityMemory:{capture(){},restore(){}},inlineProfiles:{sync(){}},syncMountedGameShellPanelUi(){},
+  historyHeadingFocus:{capture(){},restore(){}},syncRenderedMarkupSnapshot(){},resumeBoardContextReplay(){},
   currentRoute:{gameId:'a'},pendingResultReviewFocus:null,getGamePanel:()=>f.scope.panel,getCurrentViewedGameId:()=> 'a',
   preserveBoardFocus:(_options,render)=>render(),joinFeedback:{restoreFocus(){}},
   appEl:{querySelectorAll:()=>[current]},renderContent:()=>{
