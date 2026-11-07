@@ -3,6 +3,7 @@ import { CURRENT_COMPUTER_MODEL } from '../../packages/shared-types/src/computer
 import { test, expect } from '@playwright/test';
 import { submitPlayableAction, switchGamePanel } from '../support/app.mjs';
 import { AUTH_CONTROL_ORIGIN } from './fixture.mjs';
+import {waitForAccountStartup,revealAccountEntry} from './helpers.mjs';
 import { readProjectedGame, waitForComputerDecision } from '../support/computer-projection.mjs';
 import { isOperationRequest, operationValues } from '../support/shared-request.mjs';
 import { attachFailureAndRethrow } from '../support/failure-evidence.mjs';
@@ -40,17 +41,27 @@ async function waitForInitialComputerControl(page, initial, acquisition) {
       deviceId: values.deviceId, submittedGeneration: values.generation, acceptedGeneration }) });
 }
 
-async function registerComputerTester(page, { home = true } = {}) {
+async function registerComputerTester(page, { home = true, accountOnly = false } = {}) {
   expect((await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`, { method: 'POST' })).ok).toBe(true);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Play both sides', exact: true }).click();
+  let accountEntry;
+  if (accountOnly) {
+    await waitForAccountStartup(page);
+    accountEntry = await revealAccountEntry(page);
+    await accountEntry.click();
+  } else await page.getByRole('button', { name: 'Play both sides', exact: true }).click();
   const account = page.getByTestId('account-dialog');
   await account.getByRole('button', { name: 'Create account', exact: true }).click();
   await account.getByLabel('Username', { exact: true }).fill(`Computer_${Date.now().toString(36)}`);
   await account.getByLabel('Password', { exact: true }).fill('A computer play password 482');
   await account.getByRole('button', { name: 'Create account & continue', exact: true }).click();
-  await expect(page.getByTestId('game-shell')).toBeVisible();
-  if (home) await page.goto('/#/');
+  if (accountOnly) {
+    await expect(account).not.toBeVisible();
+    await expect(accountEntry).toHaveAttribute('data-authenticated','true');
+  } else {
+    await expect(page.getByTestId('game-shell')).toBeVisible();
+    if (home) await page.goto('/#/');
+  }
 }
 
 test('ordinary computer play records real worker evidence, preserves private notes, and branches from the displayed decision', async ({ page }, testInfo) => {
@@ -165,7 +176,7 @@ test('ordinary computer undo restores the human turn and resumes computer contro
   await page.addInitScript(installPassiveCommandObservations);
   let primaryError;
   try{
-  await registerComputerTester(page);
+  await registerComputerTester(page, {accountOnly:true});
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
   const creation = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST' && response.request().postDataJSON()?.computer?.p2 === 'babs');
   const initialControl = captureInitialComputerControl(page);
