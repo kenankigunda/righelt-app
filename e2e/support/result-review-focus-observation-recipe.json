@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "modulePath": "/shell/app.js",
+  "sourceSha256": "14e0f3b63b338d6fef74fdb015d0e56f4ec6874b7b13ffff84e7e229bf09f210",
+  "outputSha256": "5ecdff0a2646a0b509d82e4de8c5e957e6006699e365c6947e7ac0f49f9770c1",
+  "prefix": "const __righeltResultReviewFocusProbe = (kind, refs = {}) => { try { globalThis.__RIGHELT_RESULT_REVIEW_FOCUS_PROBE__?.(kind, refs); } catch {} };\n",
+  "operations": [
+    {
+      "label": "context-history-patch",
+      "start": 10864,
+      "end": 10988,
+      "before": "const history=appEl.querySelector('[data-game-panel=\"history\"]');if(history)patchToolHtml(history,renderHistoryPanel(game));",
+      "after": "const history=appEl.querySelector('[data-game-panel=\"history\"]');if(history){__righeltResultReviewFocusProbe(\"history-before-context-patch\",{root:history});patchToolHtml(history,renderHistoryPanel(game));__righeltResultReviewFocusProbe(\"history-after-context-patch\",{root:history});}"
+    },
+    {
+      "label": "incremental-history-patch",
+      "start": 166765,
+      "end": 166849,
+      "before": "    patchToolHtml(historyEl, renderHistoryPanel(game));\n    revealSelectedHistory();",
+      "after": "    __righeltResultReviewFocusProbe(\"history-before-incremental-patch\",{root:historyEl});\n    patchToolHtml(historyEl, renderHistoryPanel(game));\n    __righeltResultReviewFocusProbe(\"history-after-incremental-patch\",{root:historyEl});\n    revealSelectedHistory();"
+    },
+    {
+      "label": "committed-render-entry",
+      "start": 211788,
+      "end": 211855,
+      "before": "  if (renderGesture.defer({ animatePanels, includeBoard })) return;",
+      "after": "  if (renderGesture.defer({ animatePanels, includeBoard })) return;\n  __righeltResultReviewFocusProbe(\"render-committed-entry\");"
+    },
+    {
+      "label": "original-focus-once",
+      "start": 212725,
+      "end": 212834,
+      "before": "if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }",
+      "after": "if (heading) { heading.tabIndex = -1; __righeltResultReviewFocusProbe(\"focus-before\", {node:heading}); heading.focus({preventScroll:true}); __righeltResultReviewFocusProbe(\"focus-after\", {node:heading}); pendingResultReviewFocus = null; }"
+    },
+    {
+      "label": "existing-render-tail",
+      "start": 212839,
+      "end": 213036,
+      "before": "  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  resumeBoardContextReplay();",
+      "after": "  __righeltResultReviewFocusProbe(\"render-before-join\");\n  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  __righeltResultReviewFocusProbe(\"render-after-join\");\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  resumeBoardContextReplay();\n  __righeltResultReviewFocusProbe(\"render-after-resume\");"
+    },
+    {
+      "label": "explicit-analysis",
+      "start": 273620,
+      "end": 273676,
+      "before": "if (action === \"analysis\") { resultPresentation.clear();",
+      "after": "if (action === \"analysis\") { __righeltResultReviewFocusProbe(\"analysis-entry\"); resultPresentation.clear();"
+    }
+  ],
+  "indexEncoding": "UTF16 code units; source has no astral codepoints, independently assert before application"
+}

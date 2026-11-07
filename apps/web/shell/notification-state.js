@@ -11,7 +11,12 @@ const interactingNotification = () => {
 // Selection is an incident identity, never a position in a changing stack.
 export const createNotificationStack = ({getInteractionKey = interactingNotification} = {}) => {
   const selected = new Map();
+  const preferred = new Map();
   return {
+    prefer(scope,key) {
+      if(!key){preferred.delete(scope);return;}
+      if(preferred.get(scope)?.key!==key)preferred.set(scope,{key,suppressed:false});
+    },
     order(scope, items) {
       if (!items.length) { selected.delete(scope); return []; }
       const previous = selected.get(scope);
@@ -23,7 +28,10 @@ export const createNotificationStack = ({getInteractionKey = interactingNotifica
       // in the stack, then takes priority after interaction ends. Explicit cycle
       // always wins, even when the outgoing card contains keyboard focus.
       const pendingKey = items.some(item => item.key === pendingUrgent) ? pendingUrgent : null;
-      const active = heldKey ?? pendingKey ?? (items.some(item => item.key === previous?.key) ? previous.key : items[0].key);
+      const preference=preferred.get(scope);
+      const preferredKey=!preference?.suppressed&&items.some(item=>item.key===preference?.key)?preference.key:null;
+      const currentUrgent=items.some(item=>item.key===previous?.key&&item.priority==='urgent')?previous.key:null;
+      const active = heldKey ?? pendingKey ?? currentUrgent ?? preferredKey ?? (items.some(item => item.key === previous?.key) ? previous.key : items[0].key);
       selected.set(scope, {
         key: active,
         known: new Map(items.map(item => [item.key, item.priority])),
@@ -35,6 +43,7 @@ export const createNotificationStack = ({getInteractionKey = interactingNotifica
     advance(scope, items) {
       const ordered = this.order(scope, items);
       if (ordered.length < 2) return false;
+      if(preferred.has(scope))preferred.get(scope).suppressed=true;
       Object.assign(selected.get(scope), {key: ordered[1].key, pendingUrgent: null, releaseHoldOnce: true});
       return true;
     },

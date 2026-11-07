@@ -56,7 +56,7 @@ test('quiet renewal keeps its durable envelope without disabling legal human-tur
  assert.equal(transport.getGameViewModel(game.id).sharedMutationsBlocked,false);
  const boardMessage=view=>opponentBoardMessage(view,session.snapshot(),{},{canInteract:view.canRecordMove,identityId:'owner'});
  const hasPass=message=>(message.rows??[message]).some(row=>(row.actions??(row.action?[row.action]:[])).some(action=>action.id==='pass'));
- const narration=boardMessage(transport.getGameViewModel(game.id));assert.match(narration.text,/Babs projected/);assert.equal(hasPass(narration),true);
+ const narration=boardMessage(transport.getGameViewModel(game.id));assert.match(narration.context.text,/Babs projected/);assert.equal(hasPass(narration),true);
  now+=COMPUTER_TIMING.renewAfterMs;await session.tick();await waitForBoundary(()=>held);
  const original=structuredClone(held),view=transport.getGameViewModel(game.id);
  assert.equal(view.pendingCommandCount,1);assert.equal(view.sharedMutationsBlocked,true);
@@ -68,7 +68,7 @@ test('quiet renewal keeps its durable envelope without disabling legal human-tur
  assert.equal(activity.label,'Active here');assert.equal(activity.quietRenewal,true);
  assert.equal(recoveryMessage(view,now,{quietComputerRenewal:activity.quietRenewal}),'');
  assert.equal(isBoardRecoveryPending(view,{quietComputerRenewal:activity.quietRenewal,now}),false);
- const heldMessage=boardMessage(view);assert.equal(heldMessage.text,narration.text);assert.deepEqual(heldMessage.action,{id:'replay-computer',label:'Show me again'});assert.equal(hasPass(heldMessage),true);
+ const heldMessage=boardMessage(view);assert.equal(heldMessage.text,narration.text);assert.deepEqual(heldMessage.context.action,{id:'replay-computer',label:'Show me again'});assert.deepEqual(heldMessage.context,narration.context);assert.equal(hasPass(heldMessage),true);
  transport.selectHistoryMove({gameId:game.id,moveIndex:0});
  assert.equal(transport.getGameViewModel(game.id).inHistoryMode,true);
  assert.notEqual(transport.getAuthoritativeGame(game.id).inHistoryMode,true,'actual session context remains authoritative, not the history projection');

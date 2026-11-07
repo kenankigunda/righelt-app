@@ -1,3 +1,4 @@
+import {installResultReviewFocusObservation} from '../support/result-review-focus-observation.mjs';
 import {ownedContexts} from '../support/owned-contexts.mjs';
 import {switchGamePanel} from '../support/app.mjs';
 import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
@@ -15,20 +16,31 @@ for (const opponent of ["self", "friend"]) test.describe(`real ${opponent} retai
   // Two retained phases keep their original per-test60s budgets. This is not
   // a single60s end-to-end timing claim; no account/game/setup is repeated.
   test.describe.configure({mode:'serial'});
-  let owned,page,gameId;
+  let owned,page,gameId,resultReviewObservation;
   test.beforeAll(async({browser},info)=>{
     owned=ownedContexts(browser);const use=info.project.use;
     const context=await owned.create({...use.contextOptions,baseURL:use.baseURL,
       viewport:use.viewport,deviceScaleFactor:use.deviceScaleFactor,
       ignoreHTTPSErrors:use.ignoreHTTPSErrors,reducedMotion:use.reducedMotion,
       isMobile:use.isMobile,hasTouch:use.hasTouch,userAgent:use.userAgent});
+    resultReviewObservation=await installResultReviewFocusObservation({context,baseURL:use.baseURL});
     page=await context.newPage();
   });
-  test.afterAll(async()=>{await owned?.close();});
-  test('terminal result preserves responsive controls and native reconnect focus',async({},testInfo)=>{
+  test.afterEach(async({},info)=>{
+    if(info.title==='the same completed game persists through review and swapped rematch')await resultReviewObservation?.finish(page,info);
+  });
+  test.afterAll(async({},info)=>{try{await resultReviewObservation?.finish(page,info);}finally{await owned?.close();}});
+  // Account/Home preparation has its own 20s fixture budget. The original
+  // terminal body remains 60s and its shell/result/reconnect assertions stay 10s.
+  const terminalTest=test.extend({createdTerminalGame:[async({},use)=>{
+    const creations=[];
+    const onCreation=request=>{if(request.method()==='POST'&&new URL(request.url()).pathname==='/api/shell/games')creations.push(request);};
+    page.on('request',onCreation);
+    try{
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/");
   const creation = page.waitForResponse(response => response.ok() && response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/shell/games');
+  creation.catch(()=>{}); // Observe rejection if preparation fails before awaiting it.
   await page.getByTestId("home-create-game").waitFor();
   await (opponent === "self" ? page.getByRole("button", {name:"Play both sides", exact:true}) : page.getByTestId("home-create-game")).click();
   const dialog = page.getByTestId("account-dialog");
@@ -36,6 +48,30 @@ for (const opponent of ["self", "friend"]) test.describe(`real ${opponent} retai
   await dialog.getByLabel("Username", { exact: true }).fill(`Result_${Date.now().toString(36)}`);
   await dialog.getByLabel("Password", { exact: true }).fill("A result account test password 482");
   await dialog.getByRole("button", { name: "Create account & continue", exact: true }).click();
+  if(opponent==='self'){
+    // Only public recovery state admits a second intent. A loading cue alone
+    // never proves recovery and must not authorize another creation request.
+    const error=page.getByTestId('account-continuation-error');
+    const start=page.locator('[data-testid="home-create-game"][data-action="create-self-play"]');
+    let outcome='pending';
+    await expect.poll(async()=>{
+      if(await error.isVisible())return outcome='recovery-error';
+      if(await start.isVisible()&&await start.isEnabled())return outcome='retained-start';
+      if(await page.getByTestId('game-shell').isVisible())return outcome='normal-continuation';
+      return 'pending';
+    },{timeout:20000,message:'Account creation must reach its normal shell or an explicit Home recovery choice'}).not.toBe('pending');
+    if(outcome!=='normal-continuation'){
+      expect(creations,'Home recovery must not replay a creation write').toEqual([]);
+      if(outcome==='recovery-error'){
+        const retry=error.getByRole('button',{name:'Try again',exact:true});
+        await expect(retry).toHaveCount(1);await expect(retry).toBeEnabled();
+        await retry.click(); // One explicit read retry, never a repeated write.
+      }
+      await expect(start).toBeVisible();await expect(start).toBeEnabled();
+      expect(creations,'Read recovery alone must still leave zero creation writes').toEqual([]);
+      await start.click(); // The retained self-play choice requires one new intent.
+    }
+  }
   if (opponent === "friend") await page.getByRole("button",{name:"Start a friend game",exact:true}).click();
   if (opponent === "friend") await page.getByRole("button",{name:"Close invite",exact:true}).click();
   await expect(page.getByTestId("game-shell")).toBeVisible();
@@ -44,6 +80,12 @@ for (const opponent of ["self", "friend"]) test.describe(`real ${opponent} retai
   const acceptedCreation = await creation; gameId = (await acceptedCreation.json()).game.id;
   const creationHeaders = Object.fromEntries(Object.entries(acceptedCreation.request().headers()).filter(([name]) => name.startsWith('x-righelt-')));
   await expect(page.getByTestId("game-shell")).toHaveAttribute("data-game-id", gameId);
+  expect(creations,'The normal continuation or fresh explicit Start creates exactly one game').toHaveLength(1);
+  await use({creationHeaders});
+    }finally{page.off('request',onCreation);}
+  },{timeout:20000}]});
+  terminalTest('terminal result preserves responsive controls and native reconnect focus',async({createdTerminalGame},testInfo)=>{
+  const {creationHeaders}=createdTerminalGame;
   const loaded = await page.evaluate(async ({ scenario, gameId, headers }) => {
     const response = await fetch("/api/shell/scenarios/import", { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ scenario, targetGameId: gameId, protocolVersion: 2 }) });
     return { status: response.status, body: await response.json() };

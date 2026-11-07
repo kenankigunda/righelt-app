@@ -89,7 +89,7 @@ async function fixture(t,{journalAdapter,seed=true}={}) {
   const browser={location,scrollTo(){},addEventListener:(name,handler)=>listeners.set(name,handler),
     requestAnimationFrame:callback=>{const id=++frameId;frames.set(id,callback);return id;},cancelAnimationFrame:id=>frames.delete(id)};
   let generation=1,pageSize=1,columnCount=1,clicks=0,renders=0,refreshes=0;
-  const context=vm.createContext({structuredClone,URL,URLSearchParams,SYNC_TIMING,createRouteHydration,
+  const context=vm.createContext({cancelPendingBoardContextReplay(){},pendingBoardContextReplay:null,structuredClone,URL,URLSearchParams,SYNC_TIMING,createRouteHydration,
     hydrateRoute:createRouteHydration(),window:browser,currentRoute:parseRouteFromHash('#/'),transport,
     account:{snapshot:()=>({generation}),canPlay:()=>true},
     parseRouteFromHash,buildHashForRoute,FLYOUT_KEYS,HOME_SECTION_SERVER_PAGE_SIZE:6,HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT:1,
@@ -793,4 +793,26 @@ for(const newerActive of [false,true])test(`RAF validation preserves a newly dis
 test('capture-only layout observation without a full job does not invent a full refresh',async t=>{
  const f=await fixture(t);f.setColumns(2);f.flushScheduledFrames();await flush();
  assert.equal(f.calls.length,0);assert.equal(f.h.active(),false);assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+});
+
+
+test('two timed-out account Home reads retain explicit self-play through read retry without replaying creation',async t=>{
+  const f=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});
+  f.respond(()=>new Promise(()=>{}));
+  const work=f.h.continue({hash:'#/',action:'create-self-play'});await flush();
+  t.mock.timers.tick(5000);await flush();
+  assert.ok(f.h.recovery());assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+  t.mock.timers.tick(500);await flush();t.mock.timers.tick(5000);await work;
+  assert.equal(f.calls.length,4);assert.equal(f.h.pending().running,false);
+  assert.equal(f.h.pending().recoveryEpisode,true);assert.equal(f.h.recovery().error.code,'request_timeout');
+  assert.equal(f.writes.length,0);assert.equal(f.clicks(),0);
+  f.h.start('create-self-play');assert.equal(f.writes.length,0,'Start remains fenced while read recovery is unresolved');
+  f.respond(({section})=>Response.json(pageBody(section)));
+  await f.h.retry();
+  assert.equal(f.h.recovery(),null);assert.equal(f.h.pending(),null);
+  assert.equal(f.writes.length,0);assert.equal(f.clicks(),0,'Explicit read retry cannot replay the old write intent');
+  assert.match(f.h.startButton(),/data-action="create-self-play"/);assert.match(f.h.startButton(),/Start playing both sides/);
+  assert.doesNotMatch(f.h.startButton(),/disabled/);
+  f.h.start('create-self-play');await Promise.all(f.creations);
+  assert.equal(f.writes.length,1);assert.equal(f.writes[0].body.selfPlayMode,true);
 });

@@ -63,7 +63,22 @@ test('computer save failures take priority while the delayed saving notice stays
     // A transient recovery card here does not establish a terminal failure.
     await expect.poll(()=>page.evaluate(readProjectedGame,{id:game.id,guest:true,expectedComputer:{modelId:game.computer.modelId,profile:'babs'}}),{timeout:30000}).toBeTruthy();
     await expect(notice(page)).toHaveCount(0);
-    await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
+    const acceptedContext=page.locator('[data-alert-stack-card] [data-board-context]:has(.board-context-replay)');
+    await expect(acceptedContext).toHaveCount(1);
+    const acceptedContextKey=await acceptedContext.getAttribute('data-board-context');
+    expect(acceptedContextKey).toBeTruthy();
+    // The expired original command remains an urgent, actionable rejection.
+    // The accepted replacement turn has its own context, reached through the
+    // actual notification control instead of assuming old inline narration.
+    const rejection=page.getByTestId('sync-failure-banner');
+    await expect(rejection).toContainText('Board changed before your move was recorded. Check it and try again.');
+    const activeRejection=page.locator('[data-alert-stack-card].is-active:has([data-testid="sync-failure-banner"])');
+    await expect(activeRejection).toHaveAttribute('data-stack-count','2');
+    await activeRejection.press('Enter');
+    await expect(acceptedContext).toBeVisible();
+    await expect(acceptedContext).toHaveAttribute('data-board-context',acceptedContextKey);
+    await expect(page.locator('[data-alert-stack-card]:has([data-testid="sync-failure-banner"])')).toHaveAttribute('inert','');
+    await expect(acceptedContext.getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
     await settledMessage(page);
     const growth={scope:'Accepted narration geometry only; notices retained their original exact geometry checks',before:beforeMessage,after:await measureBoardMessageGeometry(page)};
     try{await persistGeometryEvidence(info,'accepted-message-growth.json',growth);growth.movement=assertSettledBoardMessageGrowth(growth.before,growth.after);growth.status='complete';}

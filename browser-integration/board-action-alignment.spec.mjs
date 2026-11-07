@@ -1,4 +1,6 @@
-import {test,expect} from '@playwright/test';
+import {test as base,expect} from '@playwright/test';
+import {controlledHeightPublication} from './support/height-publication-test-fixture.mjs';
+const test=base.extend({publicationOwner:controlledHeightPublication});
 import {writeFile} from 'node:fs/promises';
 
 for(const scale of [100,200])for(const action of [{id:"pass",label:"Pass"},{id:"end-turn",label:"End turn"},{id:"replay-computer",label:"Show me again"}])for(const fallback of [false,true])test(`${action.label} and compact-coordinate text share the ${fallback?"fallback":"primary"} prose baseline at ${scale}%`,async({page},info)=>{
@@ -24,19 +26,31 @@ for(const scale of [100,200])for(const action of [{id:"pass",label:"Pass"},{id:"
  await page.screenshot({path:info.outputPath(`shared-baseline-${action.id}-${fallback}-${scale}.png`)});
 });
 
-for(const width of [320,390])for(const scale of [100,200])test(`wrapped action targets stay separate at ${width}px and ${scale}%`,async({page},info)=>{
+for(const width of [320,390])for(const scale of [100,200])test(`wrapped action targets stay separate at ${width}px and ${scale}%`,async({page,publicationOwner},info)=>{
  await page.setViewportSize({width,height:1200});await page.goto('/browser-integration/support/message-font-admission.html');await page.waitForFunction(()=>window.fixtureReady);
  await page.evaluate(async scale=>{
   document.documentElement.style.fontSize=`${scale}%`;await document.fonts.ready;
   const {renderBoardMessageHtml}=await import('/apps/web/board/message-presentation.js');document.querySelector('#font-message').innerHTML=renderBoardMessageHtml({rows:[{text:'Your opponent pushed (9, 9) and had several pieces follow',coordinates:[{row:9,col:9}],action:{id:'replay-computer',label:'Show me again'}},{text:'Select a piece or',action:{id:'pass',label:'Pass'}}]});
+  const label=document.querySelector('#font-message'),slot=label.closest('.board-message-slot'),font=getComputedStyle(slot.querySelector('.board-message-live'));
+  globalThis.__wrappedActionConsumer={label,slot,content:label.innerHTML,fontKey:`${font.fontSize}:${font.fontFamily}:${font.lineHeight}`,width:slot.getBoundingClientRect().width};
  },scale);
+ // Consume settled geometry after the existing observer/frame publication lifecycle.
+ // An unchanged target may legitimately retain its original publication sequence.
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+ await page.waitForFunction(()=>window.currentFontAdmission?.().ready===true);
  const proof=await page.locator('#font-message').evaluate(label=>{
   const board=document.querySelector('#font-board').getBoundingClientRect(),slot=label.closest('.board-message-slot').getBoundingClientRect();
   const targets=[...label.querySelectorAll('button')].map(button=>{const rect=button.getBoundingClientRect(),height=Math.max(44,rect.height),top=rect.y+(rect.height-height)/2;return {text:button.textContent,width:rect.width,rect:rect.toJSON(),pseudo:{height:getComputedStyle(button,'::before').height,top:getComputedStyle(button,'::before').top,transform:getComputedStyle(button,'::before').transform,boxSizing:getComputedStyle(button,'::before').boxSizing},top,bottom:top+height,height,points:[top+1,top+height-1].map(y=>({y,owns:document.elementFromPoint(rect.x+rect.width/2,y)?.closest('button')===button,hit:document.elementFromPoint(rect.x+rect.width/2,y)?.outerHTML.slice(0,200)}))};});
-  return {targets,slot:{top:slot.top,bottom:slot.bottom},boardTop:board.top,overflow:document.documentElement.scrollWidth>innerWidth,scrollWidth:document.documentElement.scrollWidth,overflowNodes:[...document.querySelectorAll('body *')].map(el=>({tag:el.tagName,cls:el.className,rect:el.getBoundingClientRect().toJSON()})).filter(row=>row.rect.right>innerWidth+.1).slice(0,12)};
+  const proof={targets,slot:{top:slot.top,bottom:slot.bottom},boardTop:board.top,overflow:document.documentElement.scrollWidth>innerWidth,scrollWidth:document.documentElement.scrollWidth,overflowNodes:[...document.querySelectorAll('body *')].map(el=>({tag:el.tagName,cls:el.className,rect:el.getBoundingClientRect().toJSON()})).filter(row=>row.rect.right>innerWidth+.1).slice(0,12)};
+  const mutation=globalThis.__wrappedActionConsumer,currentLabel=document.querySelector('#font-message'),currentSlot=currentLabel?.closest('.board-message-slot'),admission=window.currentFontAdmission();
+  const publication={admission,flags:{overflow:currentSlot?.dataset.promptOverflow??null,unsupported:currentSlot?.dataset.promptReservationUnsupported??null,underreserved:currentSlot?.dataset.promptPrimaryUnderreserved??null,unmapped:currentLabel?.dataset.promptUnmapped??null},identity:{label:label===mutation.label&&currentLabel===label,slot:currentSlot===mutation.slot,content:label.innerHTML===mutation.content,font:admission.current?.fontKey===mutation.fontKey,width:admission.current?.width===mutation.width},mutationMetrics:{fontKey:mutation.fontKey,width:mutation.width}};
+  return {...proof,publication};
  });
  await writeFile(info.outputPath('hit-regions.json'),JSON.stringify(proof,null,2));
  await info.attach('hit-regions',{body:JSON.stringify(proof,null,2),contentType:'application/json'});
+ const publication=proof.publication,sourceRoute=publicationOwner.metadata(),publicationProof={publication,sourceRoute,scope:'Settled wrapped-action hit geometry, not fixed-height admission for an expanded/degraded message'};
+ await writeFile(info.outputPath('wrapped-publication.json'),JSON.stringify(publicationProof,null,2));await info.attach('Wrapped action owner publication',{body:JSON.stringify(publicationProof),contentType:'application/json'});
+ expect(sourceRoute.pending).toBe(0);expect(sourceRoute.issues).toEqual([]);expect(sourceRoute.issueDropped).toBe(0);expect(sourceRoute.transformed).toBeGreaterThan(0);expect(sourceRoute.incomplete).toBe(false);expect(publication.admission.ready).toBe(true);expect(publication.identity).toEqual({label:true,slot:true,content:true,font:true,width:true});
  expect(proof.targets).toHaveLength(2);for(const target of proof.targets){expect(target.width).toBeGreaterThanOrEqual(44);expect(target.height).toBeGreaterThanOrEqual(44);expect(target.points.every(point=>point.owns),target.text).toBe(true);expect(target.top).toBeGreaterThanOrEqual(proof.slot.top-.1);expect(target.bottom).toBeLessThanOrEqual(proof.slot.bottom+.1);expect(target.bottom).toBeLessThan(proof.boardTop);}
  expect(proof.targets[0].bottom).toBeLessThanOrEqual(proof.targets[1].top+.1);expect(proof.overflow).toBe(false);
  await page.screenshot({path:info.outputPath(`wrapped-actions-${width}-${scale}.png`)});

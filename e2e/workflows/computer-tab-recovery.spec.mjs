@@ -304,8 +304,10 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
    const read=()=>{
     const label=document.querySelector('#shell-board-preview-label'),card=document.querySelector('[data-computer-activity]'),wrap=document.querySelector('[data-testid="game-board-wrap"]');
     const pass=label?.querySelector('[data-board-message-action="pass"], [data-board-preview-action="pass"]');if(!firstPass)firstPass=pass;
+    const context=document.querySelector('[data-alert-stack-card].is-active [data-board-context]');
+    const contextVisible=Boolean(context?.getClientRects().length&&getComputedStyle(context).visibility!=='hidden'&&getComputedStyle(context).display!=='none');
     return {at:Date.now(),gameId:document.querySelector('[data-testid="game-shell"]')?.getAttribute('data-game-id'),
-     narration:label?[...label.childNodes].filter(node=>node.nodeType!==1||node.tagName!=='BUTTON').map(node=>node.textContent).join('').trim():'',
+     narration:context?.querySelector('.board-context-content')?.textContent.trim()??'',contextKey:context?.getAttribute('data-board-context')??null,contextVisible,
      activity:card?.getAttribute('data-computer-activity'),activityText:card?.textContent.trim(),connected:!!card?.querySelector('.is-connected'),
      announcement:document.querySelector('#shell-sync-announcement')?.textContent??'',
      reconnecting:wrap?.getAttribute('data-reconnecting'),busy:wrap?.getAttribute('aria-busy'),
@@ -334,9 +336,9 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   await expect(pass).toBeVisible();await expect(pass).toBeEnabled();expect(await journalRecord()).toEqual(original);
   const early=samples.filter(sample=>sample.at>=original.submittedAt&&sample.at<=sampledAt);
   expect(early.length).toBeGreaterThan(0);expect(samples.some(sample=>sample.overflow)).toBe(false);
-  const narration=samples[0].narration;expect(narration).toMatch(/Babs /);
+  const narration=samples[0].narration,contextKey=samples[0].contextKey;expect(narration).toMatch(/Babs /);expect(JSON.parse(contextKey)[1]).toBe(id);expect(JSON.parse(contextKey)[2]).toBe(before.gameplayRevision);
   for(const sample of early){
-   expect(sample.gameId).toBe(id);expect(sample.narration).toBe(narration);expect(sample.activity).toBe('here');expect(sample.activityText).toBe('Active here');expect(sample.connected).toBe(true);
+   expect(sample.gameId).toBe(id);expect(sample.narration).toBe(narration);expect(sample.contextVisible).toBe(true);expect(sample.contextKey).toBe(contextKey);expect(sample.activity).toBe('here');expect(sample.activityText).toBe('Active here');expect(sample.connected).toBe(true);
    expect(sample.pass).toBe(true);expect(sample.passEnabled).toBe(true);expect(sample.samePass).toBe(true);
    expect(sample.announcement).not.toMatch(/Updating computer play|Needs attention|Reconnecting|Saving/);
    expect(sample.recovery.join(' ')).not.toMatch(/Updating computer play|Needs attention/);expect(sample.reconnecting).not.toBe('true');expect(sample.busy).not.toBe('true');

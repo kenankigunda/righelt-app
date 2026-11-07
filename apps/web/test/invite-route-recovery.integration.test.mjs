@@ -40,7 +40,7 @@ function fixture({staleInvite=false}={}) {
     getGameViewModel:gameId=>({id:gameId}),
   };
   const diagnostics=createIssueDiagnostics({schedule:()=>1,environment:()=>({})});
-  const context=vm.createContext({
+  const context=vm.createContext({cancelPendingBoardContextReplay(){},pendingBoardContextReplay:null,
     expandedViewerGames:new Set(),account:{snapshot:()=>({generation})},transport:owner,currentRoute:parseRouteFromHash('#/invite/first'),
     window:{location:{hash:'#/invite/first'},addEventListener:(name,fn)=>events[name]=fn,history:{replaceState:(_state,_title,hash)=>{context.window.location.hash=hash;}}},parseRouteFromHash,buildHashForRoute,FLYOUT_KEYS,URL,URLSearchParams,hydrateRoute:createRouteHydration(),
     appEl:{querySelectorAll:()=>[{classList:{add:noop}}],addEventListener:(_name,fn)=>clicks.push(fn)},

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
-import {installBoardAdmissionCollector,transformBoardAdmissionModule,installBoardAdmissionDiagnostics,cloneBoardSourceHandoff,createBoardSourceConsoleRetention,SOURCE_PRESS_PREFIX,SOURCE_PRESS_MAX_BYTES} from '../../../e2e/support/board-admission-diagnostics.mjs';
+import {installBoardAdmissionCollector,transformBoardAdmissionModule,installBoardAdmissionDiagnostics,cloneBoardSourceHandoff,createBoardSourceConsoleRetention,SOURCE_PRESS_PREFIX,SOURCE_PRESS_MAX_BYTES,COMPUTER_RECOVERY_CATEGORIES} from '../../../e2e/support/board-admission-diagnostics.mjs';
 
 const recipes=JSON.parse(await readFile(new URL('../../../e2e/support/board-admission-transformations.json',import.meta.url),'utf8'));
 for(const [pathname,recipe] of Object.entries(recipes))test(`exact source and protected transform ${pathname}`,async()=>{
@@ -231,6 +231,85 @@ test('helper first and latest read snapshots survive bounded rolling eviction',(
  assert.equal(log.incomplete,true);assert.ok(log.dropped>0);
 });
 
+
+// Closed observation categories are an external diagnostic/privacy contract, not runtime policy.
+const approvedErrorNames=['Error','TypeError','RangeError','ReferenceError','SyntaxError','URIError','EvalError','AggregateError'];
+const approvedErrorCategories=['rules_cancelled','invalid_rules_response','rules_worker_failed','rules_timeout','session_changed','stale_state','journal_timeout','sync_recovering','storage_reset','storage_generation_unverified','invalid_saved_command','cleanup_unverified','untracked_saved_command','invalid_cleanup_receipt'];
+test('runtime error fields accept only closed local categories and never arbitrary strings or extra payload',()=>{
+ const {record,log}=collector();
+ for(const name of approvedErrorNames)record('runtime-host-error',{errorName:name,errorCode:'stale_state',errorMessage:'journal_timeout'});
+ for(const code of approvedErrorCategories)record('runtime-host-error',{errorName:'Error',errorCode:code,errorMessage:code});
+ for(const [index,name] of approvedErrorNames.entries())assert.equal(log.first[index].errorName,name);
+ for(const [index,code] of approvedErrorCategories.entries()){const row=log.first[approvedErrorNames.length+index];assert.equal(row.errorCode,code);assert.equal(row.errorMessage,code);}
+ const privateText='person@example.invalid game-private-secret';
+ for(const value of [privateText,'rules_cancelled-extra','x'.repeat(64),'x'.repeat(4096),{},3,false,undefined]){
+  record('runtime-host-error',{errorName:value,errorCode:value,errorMessage:value,value:privateText,gameId:privateText,rawState:privateText});
+  const row=log.first.at(-1);assert.equal(row.errorName,null);assert.equal(row.errorCode,null);assert.equal(row.errorMessage,null);
+  assert.equal('value' in row,false);assert.equal('gameId' in row,false);assert.equal('rawState' in row,false);
+ }
+ assert.equal(JSON.stringify(log).includes(privateText),false);
+});
+test('runtime error collector reads only own data descriptors and tolerates throwing proxies',()=>{
+ const {record,log}=collector();let getterReads=0,traps=0;
+ const data={};for(const key of ['errorName','errorCode','errorMessage','rawState'])Object.defineProperty(data,key,{enumerable:true,get(){getterReads++;throw new Error('private getter');}});
+ record('runtime-host-error',data);assert.equal(getterReads,0);
+ record('runtime-host-error',Object.create({errorName:'Error',errorCode:'stale_state',errorMessage:'stale_state'}));
+ record('runtime-host-error',new Proxy({},{getOwnPropertyDescriptor(){traps++;throw new Error('private trap');}}));assert.equal(traps,3);
+ for(const row of log.first){assert.equal(row.errorName,null);assert.equal(row.errorCode,null);assert.equal(row.errorMessage,null);}
+ assert.equal(log.incomplete,false);
+});
+test('actual transformed host catch preserves original object, getter counts and finally with unsafe errors',async()=>{
+ const recipe=recipes['/board/runtime/board-runtime.js'];
+ const source=await readFile(new URL('../../../'+recipe.file,import.meta.url),'utf8');
+ const transformed=transformBoardAdmissionModule(source,recipe);
+ const segment=text=>{const start=text.indexOf('    } catch (error) {',text.indexOf('const body = await host.applyAction'));const end=text.indexOf('\n  };',start);assert.ok(start>=0&&end>start);return text.slice(start,end);};
+ const original=segment(source),observed=segment(transformed),operation=recipe.operations.find(op=>op.after.includes('runtime-host-error'));
+ assert.equal(observed.replace(operation.after,''),original);
+ const run=(body,make,sinkThrows=false)=>{
+  const reads={message:0,name:0,code:0,traps:0};const sentinel={};const error=make(reads,sentinel),effects=[],rows=[];
+  const previous=globalThis.__boardAdmissionRecord;globalThis.__boardAdmissionRecord=(event,data)=>{rows.push({event,data});if(sinkThrows)throw new Error('private sink');};
+  let propagated;
+  try{new Function('failure','setResult','setSubmitting','renderStatus','destroyed','revision','snapshotRevision',recipe.prefix+'try { throw failure;\n'+body)(error,value=>effects.push(['result',value]),value=>effects.push(['submitting',value]),()=>effects.push(['render']),false,1,1);}
+  catch(value){propagated=value;}
+  finally{if(previous===undefined)delete globalThis.__boardAdmissionRecord;else globalThis.__boardAdmissionRecord=previous;}
+  return{error,effects,rows,reads,propagated,sentinel};
+ };
+ const cases=[
+  ()=>Object.assign(new Error('rules_cancelled'),{name:'TypeError',code:'rules_cancelled'}),
+  ()=>new TypeError('private person@example.invalid'),
+  reads=>{const error=new Error();for(const key of ['message','name','code'])Object.defineProperty(error,key,{get(){reads[key]++;return key==='message'?'stale_state':'private getter';},configurable:true});return error;},
+  ()=>42,
+  ()=>Object.create({name:'Error',message:'stale_state',code:'stale_state'}),
+  reads=>new Proxy(new Error('stale_state'),{getOwnPropertyDescriptor(){reads.traps++;throw new Error('private trap');}}),
+  (reads,sentinel)=>{const error=new Error();Object.defineProperty(error,'message',{get(){reads.message++;throw sentinel;}});return error;},
+ ];
+ for(const make of cases){
+  const baseline=run(original,make),actual=run(observed,make),throwingSink=run(observed,make,true);
+  assert.deepEqual(actual.effects,baseline.effects);assert.deepEqual(throwingSink.effects,baseline.effects);
+  for(const key of ['message','name','code'])assert.equal(actual.reads[key],baseline.reads[key]);
+  assert.equal(actual.rows.length,1);assert.equal(actual.rows[0].event,'runtime-host-error');
+  if(baseline.propagated){assert.equal(baseline.propagated,baseline.sentinel);assert.equal(actual.propagated,actual.sentinel);assert.equal(throwingSink.propagated,throwingSink.sentinel);}else{assert.equal(actual.propagated,undefined);assert.equal(throwingSink.propagated,undefined);}
+  assert.deepEqual(actual.effects.slice(-2),[['submitting',false],['render']]);
+  assert.equal(JSON.stringify(actual.rows).includes('private'),false);
+ }
+ const data=run(observed,cases[0]);assert.deepEqual(data.rows[0].data,{errorName:'TypeError',errorCode:'rules_cancelled',errorMessage:'rules_cancelled'});
+ const primitive=run(observed,cases[3]);assert.deepEqual(primitive.rows[0].data,{errorName:null,errorCode:null,errorMessage:null});
+ const proxy=run(observed,cases[5]);assert.equal(proxy.reads.traps,3);assert.deepEqual(proxy.rows[0].data,{errorName:null,errorCode:null,errorMessage:null});
+ const timeout=run(observed,()=>Object.assign(new Error('Rules calculation timed out'),{code:'rules_timeout'}));assert.deepEqual(timeout.rows[0].data,{errorName:null,errorCode:'rules_timeout',errorMessage:'rules_timeout'});
+ for(const code of approvedErrorCategories){const row=run(observed,()=>Object.assign(new Error(code),{code})).rows[0].data;assert.equal(row.errorCode,code);assert.equal(row.errorMessage,code);}
+});
+test('error categories remain source-derived and changed output remains hash protected',async()=>{
+ const sources=await Promise.all(['apps/web/board/rules-runtime.js','apps/web/shell/live-transport.js','apps/web/shell/command-journal.js'].map(file=>readFile(new URL('../../../'+file,import.meta.url),'utf8')));
+ for(const category of approvedErrorCategories)assert.ok(sources.some(source=>source.includes("'"+category+"'")||source.includes('"'+category+'"')),category);
+ const recipe=recipes['/board/runtime/board-runtime.js'],source=await readFile(new URL('../../../'+recipe.file,import.meta.url),'utf8');
+ const altered={...recipe,operations:recipe.operations.map(op=>op.after.includes('runtime-host-error')?{...op,after:op.after+' '}:op)};
+ assert.throws(()=>transformBoardAdmissionModule(source,altered),/output hash mismatch/);
+ const wrongOutput={...recipe,outputSha256:'0'.repeat(64)};assert.throws(()=>transformBoardAdmissionModule(source,wrongOutput),/output hash mismatch/);
+ assert.equal(recipe.operations.filter(op=>op.after.includes('runtime-host-error')).length,1);assert.equal(recipe.operations.length,23);
+ const unchanged={"/board-adapters/engine-board-adapter.js":"37ae4d7c79eb76c04725868ffd98d53a3951eec9f9613851709688deb9e6a769","/shell/live-transport.js":"bb99f37831cf1acd3e0a3c6b43016a49ef8d3c40863e472ca9cf57d92d5255a1","/board/hosts/shell-host.js":"6f8f475dfe5108ead572c51375b3bafb85a94ee998ef91e2abd01f738cd575db","/shell/app.js":"b8b1927f3c4a462f82767976577fce0ecef6497f26a61a09edc8ef247c78f5b4"};
+ for(const [key,expected] of Object.entries(unchanged)){assert.equal(createHash('sha256').update(JSON.stringify(recipes[key])).digest('hex'),expected);}
+});
+
 const sourceCell=(root,row=3,col=6)=>{const cell={dataset:{row:String(row),col:String(col)},isConnected:true};cell.closest=selector=>selector==='.cell'?cell:root;return cell;};
 const nativeEvent=(type,target,root,document)=>({type,isTrusted:true,pointerId:7,button:0,buttons:type.endsWith('down')?1:0,target,currentTarget:document,composedPath:()=>[target,root,document]});
 const armSource=h=>{const first=sourceCell(h.root),second=sourceCell(h.root);h.sandbox.__boardAdmissionSourceRead(false,first);h.sandbox.__boardAdmissionSourceRead(false,second);return second;};
@@ -303,13 +382,63 @@ test('source window measures distinct press, replacement and release roots witho
  assert.ok(down.sequence<bind.sequence&&bind.sequence<up.sequence);assert.equal(down.sourceConnected,true);assert.equal(up.sourceConnected,false);
  assert.notEqual(down.cellRootToken,up.cellRootToken);assert.equal(h.log.sourceWindow.incomplete,false);
 });
-test('case source opt-in leaves the original two move actions and assertion body byte-identical',async()=>{
+test('case source opt-in and sealed inline capture preserve the original two actions and assertions',async()=>{
  const current=await readFile(new URL('../../../e2e/workflows/recovery-freeze-regression.spec.mjs',import.meta.url),'utf8');
- // Reviewed 0a959 fixture bytes, independent of the checkout's current HEAD.
- const normalized=current.replace(',sourceAttemptOrdinal:2','').replace('  await admissionDiagnostics.checkpoint();\n','');
- assert.equal(createHash('sha256').update(normalized).digest('hex'),'165ec16bb620c0038a8059a2d513401a5a258069ea6ae397130bb58fb5844d30');
- const body=current.slice(current.indexOf("test('Horus finishes a real turn"));assert.equal(body.split('await submitPlayableAction(page,').length-1,2);
- assert.equal(current.split('sourceAttemptOrdinal:2').length-1,1);
+ // Original reviewed 0a959 fixture and independently reviewed 3b99 composition.
+ // Keep the original golden: only invert the sealed test-owned observation block.
+ const hash=text=>createHash('sha256').update(text).digest('hex');
+ const originalSHA='165ec16bb620c0038a8059a2d513401a5a258069ea6ae397130bb58fb5844d30';
+ const reviewedCurrentSHA='95388c539469a08b581a1058ef79298c978cdaf859e12c5d1b328dd97bd8ca3b';
+ const inlineSHA='8eb845f8799df703d46f19d983eb32a8e7e4bd29598d0a3d11321e618085abbe';
+ const beginMarker='  { // Begin case-local expansion of the existing second submitPlayableAction.';
+ const endMarker='  } // End case-local expansion.';
+ const callbackImport="import {observeReadinessEvaluation} from '../support/readiness-diagnostics.mjs';\n";
+ const checkpoint='  await admissionDiagnostics.checkpoint();\n';
+ const sourceRead='try { globalThis.__boardAdmissionSourceRead?.(selected,el); } catch {}';
+ const originalSecond="  await submitPlayableAction(page,self.legalActions.find(action=>action.type==='move'));";
+ const helper=await readFile(new URL('../../../e2e/support/app.mjs',import.meta.url),'utf8');
+ const predicateStart=helper.indexOf('  await expect.poll(() => observeReadinessEvaluation',helper.indexOf('export const submitPlayableAction'));
+ const predicateEnd=helper.indexOf('  await target.click();',predicateStart);
+ assert.ok(predicateStart>=0&&predicateEnd>predicateStart);
+ const parentPredicate=helper.slice(predicateStart,predicateEnd);
+ const normalize=source=>{
+  assert.equal(source.split(beginMarker).length-1,1,'one sealed inline action');
+  assert.equal(source.split(endMarker).length-1,1,'one inline end');
+  assert.equal(source.split(callbackImport).length-1,1,'existing readiness import');
+  assert.equal(source.split(',sourceAttemptOrdinal:2').length-1,1,'source attempt two retained');
+  assert.equal(source.split(checkpoint).length-1,1,'pre-reload checkpoint retained');
+  assert.ok(source.includes('  const saved=await currentGame(page,self.id);\n'+checkpoint+'  await page.reload();'),'checkpoint stays before reload');
+  const start=source.indexOf(beginMarker),end=source.indexOf(endMarker,start)+endMarker.length;
+  const inline=source.slice(start,end);
+  assert.equal(hash(inline),inlineSHA,'approved inline capture and original actions are immutable');
+  assert.equal(inline.split(sourceRead).length-1,1,'existing source callback retained');
+  assert.ok(inline.includes(parentPredicate),'same existing parent readiness predicate');
+  const rawBody=source.slice(source.indexOf("test('Horus finishes a real turn"));
+  assert.equal(rawBody.split('await submitPlayableAction(page,').length-1,1,'first action remains a helper call');
+  const normalized=source.replace(inline,originalSecond).replace(callbackImport,'').replace(',sourceAttemptOrdinal:2','').replace(checkpoint,'');
+  assert.equal(hash(normalized),originalSHA,'all original source outside the sealed observation remains exact');
+  const body=normalized.slice(normalized.indexOf("test('Horus finishes a real turn"));
+  assert.equal(body.split('await submitPlayableAction(page,').length-1,2,'exactly the original two actions after inversion');
+  return normalized;
+ };
+ assert.equal(hash(current),reviewedCurrentSHA,'honest composed-source identity, not a replacement for the old golden');
+ normalize(current);
+ const reload="  await page.reload();await expect(page.getByTestId('game-board')).toBeVisible();";
+ assert.equal(current.split(reload).length-1,1);
+ const beforeSaved='  const saved=await currentGame(page,self.id);';
+ assert.equal(current.split(beforeSaved).length-1,1);
+ assert.throws(()=>normalize(current.replace(beforeSaved,'  await page.mouse.click(1,1);\n'+beforeSaved)),/all original source/,'extra native action must fail');
+ const originalAssertion='expect(reloaded.gameplayRevision).toBe(saved.gameplayRevision)';
+ assert.equal(current.split(originalAssertion).length-1,1);
+ assert.throws(()=>normalize(current.replace(originalAssertion,'expect(reloaded.gameplayRevision).toBe(saved.gameplayRevision+1)')),/all original source/,'changed original business assertion must fail');
+ const inlineConfirm='  await target.click();\n'+endMarker;
+ assert.equal(current.split(inlineConfirm).length-1,1);
+ assert.throws(()=>normalize(current.replace(inlineConfirm,'  await target.click();\n  await target.click();\n'+endMarker)),/approved inline capture/,'extra inline action must fail');
+ const inlineAssertion="expect(sourceAdmission.after.selected,'Existing source click must admit its source before any destination action').toBe(true)";
+ assert.equal(current.split(inlineAssertion).length-1,1);
+ assert.throws(()=>normalize(current.replace(inlineAssertion,inlineAssertion.replace('toBe(true)','toBe(false)'))),/approved inline capture/,'changed inline business assertion must fail');
+ assert.throws(()=>normalize(current.replace(sourceRead,'')),/approved inline capture/,'lost parent source callback must fail');
+ assert.throws(()=>normalize(current.replace(checkpoint,'')),/pre-reload checkpoint retained/,'lost checkpoint must fail');
 });
 
 
@@ -386,4 +515,28 @@ test('explicit checkpoint keeps immutable source epoch without relying on pagehi
  const capture=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://127.0.0.1:10193',targetRow:2,targetCol:6,sourceAttemptOrdinal:2});
  await capture.checkpoint();assert.equal(reads,1);document=collector({sourceAttemptOrdinal:2});document.log.timeOrigin=456;
  await capture.persist();assert.equal(reads,2);assert.equal(attachment.retainedPreReloadSourceWindow.timeOrigin,123);assert.equal(attachment.observation.timeOrigin,456);assert.equal(attachment.retention.incomplete,false);assert.equal(attachment.retention.epochsMerged,false);assert.deepEqual([...page.listeners],[page.foreign]);
+});
+
+// Case-local recovery observation never changes the original catch or default recipes.
+test('closed computer recovery descriptors, retention and original catch semantics',async()=>{
+ const recipe=JSON.parse(await readFile(new URL('../../../e2e/support/computer-session-recovery-transformation.json',import.meta.url),'utf8'))['/shell/computer-session.js'];
+ const source=await readFile(new URL('../../../apps/web/shell/computer-session.js',import.meta.url),'utf8');
+ transformBoardAdmissionModule(source,recipe);
+ assert.throws(()=>transformBoardAdmissionModule(source+' ',recipe),/source hash/);
+ assert.throws(()=>transformBoardAdmissionModule(source,{...recipe,outputSha256:'0'.repeat(64)}),/output hash/);
+ const bad=structuredClone(recipe);bad.operations[0].start++;assert.throws(()=>transformBoardAdmissionModule(source,bad),/range/);
+ const known=COMPUTER_RECOVERY_CATEGORIES.map(code=>({code}));let getters=0;
+ const unsafe=[new Proxy({message:'stale_state'},{getOwnPropertyDescriptor(target,key){if(key==='code')throw Error('PRIVATE');return Object.getOwnPropertyDescriptor(target,key);}}),{code:'PRIVATE-ID'},Object.create({code:'stale_state'}),{get code(){getters++;return 'stale_state';}},new Proxy({},{getOwnPropertyDescriptor(){throw Error('PRIVATE');}}),42,null,{code:()=>{}},{message:'PRIVATE'}];
+ for(const [error,wanted] of [...known.map(e=>[e,e.code]),...unsafe.map(e=>[e,null])]){
+  const h=collector({recoveryCategories:COMPUTER_RECOVERY_CATEGORIES});h.sandbox.__boardAdmissionRecovery(error);
+  const row=h.sandbox.__boardAdmissionObservation.firstComputerRecovery;assert.equal(row.observed,true);assert.equal(row.errorCategory,wanted);assert(!JSON.stringify(row).includes('PRIVATE'));
+  h.sandbox.__boardAdmissionRecovery({code:'storage_reset'});assert.equal(row.errorCategory,wanted);
+ }
+ assert.equal(getters,0);
+ const injected=collector({recoveryCategories:COMPUTER_RECOVERY_CATEGORIES});injected.sandbox.__boardAdmissionRecord('computer-session-recovery-error',{errorCategory:'PRIVATE',message:'PRIVATE',identityId:'PRIVATE'});assert(!JSON.stringify(injected.sandbox.__boardAdmissionObservation).includes('PRIVATE'));
+ const op=recipe.operations[0];
+ for(const sinkThrows of [false,true]){
+  const original=Error('stale_state'),seen=[];const env={run:1,epoch:1,error:original,context:{key:'k'},recovery:null,publish:value=>seen.push(value),__boardAdmissionRecovery(){if(sinkThrows)throw Error('sink');}};env.globalThis=env;
+  vm.runInNewContext(op.after,env);assert.equal(env.error,original);assert.equal(env.recovery,'k');assert.equal(seen.length,1);assert.equal(seen[0].message,original.message);
+ }
 });
