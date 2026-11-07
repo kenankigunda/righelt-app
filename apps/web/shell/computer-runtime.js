@@ -1,6 +1,7 @@
 import { COMPUTER_LIMITS, COMPUTER_TIMING, COMPUTER_PROFILES, getComputerModel } from '../generated/packages/shared-types/src/computer-play.js';
 import { deterministicStateHash } from '../generated/packages/game-engine/src/hash.js';
 import { fetchVerifiedAsset, sha256 } from './verified-assets.js';
+import { fetchComputerResource, computerNetworkError } from './computer-recovery.js';
 
 export const TRAINED_COMPUTER_PLAY = 'enabled';
 
@@ -82,9 +83,9 @@ export class ComputerRuntime {
     let manifest;
     const manifestTimeout = this.timers.setTimeout(() => controller.abort('no-progress'), COMPUTER_TIMING.stalledAfterMs);
     try {
-      const response = await this.fetchImpl('/computer/runtime/manifest.json', { signal: controller.signal, cache: 'no-store' });
-      if (!response.ok) throw new Error('runtime-unavailable');
-      manifest = await response.json();
+      const response = await fetchComputerResource('/computer/runtime/manifest.json', { fetchImpl: this.fetchImpl, signal: controller.signal, cache: 'no-store' });
+      try { manifest = await response.json(); }
+      catch (error) { if (error instanceof SyntaxError) throw new Error('runtime-incompatible'); throw computerNetworkError(error, controller.signal); }
     } finally { this.timers.clearTimeout(manifestTimeout); }
     if (manifest.schema !== 1 || !manifest.runtimeVersion || !manifest.assets) throw new Error('runtime-incompatible');
     const asset = async name => {
