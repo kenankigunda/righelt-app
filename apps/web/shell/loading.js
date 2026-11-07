@@ -57,12 +57,12 @@ export function mountLoadingFeedback(document, { now = () => performance.now(), 
       if (!episodes.has(key)) episodes.set(key, now());
       const elapsed = now() - episodes.get(key);
       const phase = loadingPhase(elapsed);
-      if(element.dataset.loadingContext==='external'){
+      const group = isButton && element.dataset.loadingContext === 'group' ? element.closest('[data-loading-context-group]') : null;
+      if(group || element.dataset.loadingContext==='external'){
         element.querySelector(':scope > .loading-context')?.remove();
         contexts.get(key)?.remove();contexts.delete(key);
       }
       if (isButton && phase === 'slow' && element.dataset.loadingContext !== 'external') {
-        const group = element.dataset.loadingContext === 'group' ? element.closest('[data-loading-context-group]') : null;
         const registry = group ? groupedContexts : contexts;
         const contextKey = group || key;
         if (group) activeGroups.add(group);
@@ -116,7 +116,7 @@ export function mountLoadingFeedback(document, { now = () => performance.now(), 
   };
   const visibility = () => document.documentElement.toggleAttribute('data-loading-hidden',document.hidden);
   const observer = new window.MutationObserver(sync);
-  observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['data-loading-state','data-loading-key','data-pending','data-loading-context','data-loading-message','open','hidden','inert']});
+  observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['data-loading-state','data-loading-key','data-pending','data-loading-context','data-loading-context-group','data-loading-message','open','hidden','inert']});
   document.addEventListener('visibilitychange',visibility);
   window.addEventListener('hashchange',sync);
   visibility(); sync();

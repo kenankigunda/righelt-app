@@ -29,3 +29,19 @@ test('Ghost arrows retain native keyboard activation, focus, and reduced-motion 
  await page.evaluate(()=>window.setPending(false));await expect(next).toBeEnabled();await expect(next.locator('svg')).toBeVisible();expect(await next.evaluate(button=>button.querySelector('svg')===window.originalArrow)).toBe(true);
  await page.evaluate(()=>{window.setPending(true);window.setPending(false);});await expect(page.locator('.loading-pieces:visible')).toHaveCount(0);await expect(page.locator('.loading-context')).toHaveCount(0);
 });
+
+test('changing only the ancestor group marker transfers slow notices through the real observer',async({page})=>{
+ await page.goto('/browser-integration/support/home-pagination-ghost.html');await page.waitForFunction(()=>window.fixtureReady);
+ await page.evaluate(()=>{document.querySelector('[data-loading-context-group]').removeAttribute('data-loading-context-group');window.setPending(true);});
+ await page.evaluate(()=>window.advance(5000));
+ const row=page.locator('.home-games-section-controls'),section=page.locator('.home-games-section');
+ await expect(row.locator('.loading-context[role="status"]')).toHaveCount(2);
+ await page.evaluate(()=>{window.originalLoadingControls=[...document.querySelectorAll('.home-games-section-controls button')].map(button=>({button,cue:button.querySelector('.loading-pieces')}));document.querySelector('.home-games-section').setAttribute('data-loading-context-group','');});
+ await expect(section.locator(':scope > .loading-context[role="status"]')).toHaveCount(1);
+ await expect(row.locator('.loading-context')).toHaveCount(0);
+ await page.evaluate(()=>document.querySelector('.home-games-section').removeAttribute('data-loading-context-group'));
+ await expect(section.locator(':scope > .loading-context')).toHaveCount(0);
+ await expect(row.locator('.loading-context[role="status"]')).toHaveCount(2);
+ expect(await page.evaluate(()=>window.originalLoadingControls.every(({button,cue},index)=>button===document.querySelectorAll('.home-games-section-controls button')[index]&&button.dataset.loadingPhase==='slow'&&button.querySelector('.loading-pieces')===cue))).toBe(true);
+ await page.evaluate(()=>window.setPending(false));await expect(page.locator('.loading-context')).toHaveCount(0);
+});
