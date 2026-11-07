@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readProjectedGame, waitForComputerDecision } from '../../../e2e/support/computer-projection.mjs';
+import { runInNewContext } from 'node:vm';
+import { readProjectedGame, waitForComputerDecision, waitForOpponentReady } from '../../../e2e/support/computer-projection.mjs';
 
 const expectedComputer = { modelId: 'initial-1554', profile: 'horus' };
 function fixture(t, { sessionStatus = 200, session = { contextId: 'account-context' }, projectionStatus = 200, game = { id: 'game-1', moves: [] } } = {}) {
@@ -93,4 +94,151 @@ for (const modelId of ['initial-1554', 'test-next-model']) test(`observation hel
 });
 test('observation helper rejects missing model identity before browser execution', async () => {
  await assert.rejects(waitForComputerDecision({evaluate:()=>{throw Error('must not run');}},'game-1','horus'),/Expected computer model identity required/);
+});
+
+// Run the actual exported browser callback with isolated DOM and monotonic clock.
+// No host sleeps, actions, requests, or global clock/document replacement.
+function preparationFixture(states, {stepMs = 100} = {}) {
+  const observed = {now: 0, queries: 0, pauses: 0, evaluations: 0, options: null};
+  const page = {evaluate(callback, options) {
+    observed.evaluations++;
+    observed.options = options;
+    return runInNewContext(`(${callback.toString()})(options)`, {
+      options,
+      performance: {now: () => observed.now},
+      document: {querySelector(selector) {
+        assert.equal(selector, 'dialog[open].opponent-story-modal');
+        const state = states[Math.min(observed.queries++, states.length - 1)];
+        if (!state) return null;
+        return {querySelector(selector) {
+          if (selector === '[data-story-play]') return state.missingPlay ? null : {disabled: !state.ready};
+          if (selector === '[data-story-readiness]') return {textContent: state.message ?? 'Preparing'};
+          if (selector === '[data-story-retry]') return {hidden: !state.retry};
+          assert.fail(`Unexpected leaf read: ${selector}`);
+        }};
+      }},
+      setTimeout(resolve, ms) {
+        assert.equal(ms, 100);
+        observed.pauses++;
+        observed.now += stepMs;
+        queueMicrotask(resolve);
+      },
+    });
+  }};
+  return {page, observed};
+}
+
+test('opponent readiness waits for its first actual open within the original allowance', async () => {
+  const {page, observed} = preparationFixture([null, null, {ready: true}]);
+  const receipt = await waitForOpponentReady(page);
+  assert.equal(receipt.elapsedMs, 200);
+  assert.equal(observed.evaluations, 1);
+  assert.equal(observed.options.timeoutMs, 45_000);
+  assert.equal(observed.queries, 3);
+  assert.equal(observed.pauses, 2);
+});
+
+test('first opening does not restart the original bounded clock', async () => {
+  const {page, observed} = preparationFixture([null, null, {}]);
+  await assert.rejects(waitForOpponentReady(page, {timeoutMs: 300}), /exceeded its bounded workflow allowance/);
+  assert.equal(observed.now, 300);
+  assert.equal(observed.queries, 3);
+});
+
+test('a dialog never opened consumes only the original default allowance', async () => {
+  const {page, observed} = preparationFixture([null]);
+  await assert.rejects(waitForOpponentReady(page), /exceeded its bounded workflow allowance/);
+  assert.equal(observed.now, 45_000);
+  assert.equal(observed.queries, 450);
+  assert.equal(observed.pauses, 450);
+  assert.equal(observed.evaluations, 1);
+});
+
+test('closure after observed opening fails immediately without awaiting a reopen', async () => {
+  const {page, observed} = preparationFixture([{}, null, {ready: true}]);
+  await assert.rejects(waitForOpponentReady(page), /dialog closed before readiness/);
+  assert.equal(observed.now, 100);
+  assert.equal(observed.queries, 2);
+  assert.equal(observed.pauses, 1);
+});
+
+test('missing and disabled Play remain pending until actual readiness', async () => {
+  const {page, observed} = preparationFixture([{missingPlay: true}, {}, {ready: true}]);
+  assert.equal((await waitForOpponentReady(page)).elapsedMs, 200);
+  assert.equal(observed.queries, 3);
+});
+
+for (const state of [{retry: true}, {message: 'Unsupported model'}, {message: 'Could not prepare'}]) {
+  test(`terminal preparation still fails immediately: ${JSON.stringify(state)}`, async () => {
+    const {page, observed} = preparationFixture([state, {ready: true}]);
+    await assert.rejects(waitForOpponentReady(page), /Opponent preparation failed/);
+    assert.equal(observed.pauses, 0);
+    assert.equal(observed.queries, 1);
+  });
+}
+
+for (const message of ['11 of 10 bytes', '0 of 0 bytes']) {
+  test(`invalid byte progress remains fatal: ${message}`, async () => {
+    const {page, observed} = preparationFixture([{message}]);
+    await assert.rejects(waitForOpponentReady(page), /Invalid preparation byte progress/);
+    assert.equal(observed.pauses, 0);
+  });
+}
+
+test('same-total progress regression remains fatal', async () => {
+  const {page, observed} = preparationFixture([{message: '10 of 100 bytes'}, {message: '9 of 100 bytes', ready: true}]);
+  await assert.rejects(waitForOpponentReady(page), /progress moved backwards/);
+  assert.equal(observed.queries, 2);
+});
+
+test('changed-total progress retains its original sampling semantics', async () => {
+  const {page} = preparationFixture([{message: '10 of 100 bytes'}, {message: '5 of 200 bytes', ready: true}]);
+  const receipt = await waitForOpponentReady(page);
+  assert.equal(receipt.byteSamples, 2);
+  assert.equal(receipt.lastBytes.received, 5);
+  assert.equal(receipt.lastBytes.total, 200);
+});
+
+test('first-open latency still requires original slow-preparation detail', async () => {
+  const {page, observed} = preparationFixture([null, {ready: true, message: 'Ready'}], {stepMs: 6000});
+  await assert.rejects(waitForOpponentReady(page), /Slow opponent preparation did not expose detailed progress/);
+  assert.equal(observed.now, 6000);
+});
+
+test('actual slow-preparation detail remains sufficient after delayed opening', async () => {
+  const {page} = preparationFixture([null, {ready: true, message: 'Getting ready to play 6s'}], {stepMs: 6000});
+  const receipt = await waitForOpponentReady(page);
+  assert.equal(receipt.elapsedMs, 6000);
+  assert.equal(receipt.detailed, true);
+});
+
+test('already-ready open dialog has no added wait', async () => {
+  const {page, observed} = preparationFixture([{ready: true}]);
+  assert.equal((await waitForOpponentReady(page)).elapsedMs, 0);
+  assert.equal(observed.pauses, 0);
+});
+
+
+// Execute the actual local account setup helper without importing its browser suite.
+const accountSpecURL=new URL('../../../e2e/auth/computer-play.spec.mjs',import.meta.url);
+async function accountSetupSource(){const source=await(await import('node:fs/promises')).readFile(accountSpecURL,'utf8');const start=source.indexOf('async function registerComputerTester('),end=source.indexOf("\ntest('ordinary computer play",start);assert(start>=0&&end>start);return{source,helper:source.slice(start,end)};}
+function accountSetupHarness(helper,{authAck=true,dialogClosed=true,startupError=null,registerError=null,resetOk=true}={}){
+ const calls=[];let authenticated=false;
+ const entry={async click(){calls.push('account-entry');},kind:'entry'};
+ const account={kind:'dialog',getByRole(role,{name}){assert.equal(role,'button');return{async click(){calls.push(name);if(name==='Create account & continue'){if(registerError)throw registerError;authenticated=true;}}};},getByLabel(name){return{async fill(value){calls.push([name,value]);}};}};
+ const page={async goto(url){calls.push(['goto',url]);},getByRole(role,{name}){assert.equal(name,'Play both sides');return{async click(){calls.push('incidental-self-play');}};},getByTestId(id){assert(['account-dialog','game-shell'].includes(id));return id==='account-dialog'?account:{kind:'game'};}};
+ const expect=value=>({toBe(expected){assert.equal(value,expected);},async toBeVisible(){assert.equal(value.kind,'game');calls.push('game-visible');},async toHaveAttribute(name,expected){calls.push(['auth-ack',name,expected]);assert.equal(value,entry);assert.equal(authenticated&&authAck,true);assert.equal(name,'data-authenticated');assert.equal(expected,'true');},not:{async toBeVisible(){calls.push('dialog-closed');assert.equal(value,account);assert.equal(authenticated&&dialogClosed,true);}}});
+ const fn=runInNewContext(helper+';registerComputerTester',{expect,AUTH_CONTROL_ORIGIN:'http://fixture',fetch:async(url,options)=>{calls.push(['reset',url,options.method]);return{ok:resetOk};},Date:{now:()=>42},waitForAccountStartup:async value=>{assert.equal(value,page);calls.push('startup');if(startupError)throw startupError;},revealAccountEntry:async value=>{assert.equal(value,page);calls.push('reveal-account');return entry;}});
+ return{calls,run:options=>fn(page,options)};
+}
+test('actual computer account-only setup uses public registration without creating an incidental self-play game',async()=>{
+ const{helper}=await accountSetupSource(),h=accountSetupHarness(helper);await h.run({accountOnly:true});
+ assert.deepEqual(h.calls,[['reset','http://fixture/reset-limits','POST'],['goto','/'],'startup','reveal-account','account-entry','Create account',['Username','Computer_16'],['Password','A computer play password 482'],'Create account & continue','dialog-closed',['auth-ack','data-authenticated','true']]);
+});
+test('actual default computer registration keeps its original incidental-game and optional Home behavior',async()=>{
+ const{helper}=await accountSetupSource();for(const options of[undefined,{home:false}]){const h=accountSetupHarness(helper);await h.run(options);assert.deepEqual(h.calls,[['reset','http://fixture/reset-limits','POST'],['goto','/'],'incidental-self-play','Create account',['Username','Computer_16'],['Password','A computer play password 482'],'Create account & continue','game-visible',...(options?[]:[['goto','/#/']])]);}
+});
+for(const failure of['startup','registration','dialog','auth','reset'])test(`actual account-only setup refuses ${failure} failure before reporting authenticated completion`,async()=>{
+ const{helper}=await accountSetupSource(),primary=Error(failure),h=accountSetupHarness(helper,{startupError:failure==='startup'?primary:null,registerError:failure==='registration'?primary:null,dialogClosed:failure!=='dialog',authAck:failure!=='auth',resetOk:failure!=='reset'});
+ await assert.rejects(h.run({accountOnly:true}),error=>failure==='startup'||failure==='registration'?error===primary:error instanceof assert.AssertionError);assert.equal(h.calls.includes('incidental-self-play'),false);
 });

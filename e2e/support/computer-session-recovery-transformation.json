@@ -14,5 +14,22 @@
         "anchorCount": 1
       }
     ]
+  },
+  "/board/rules-runtime.js": {
+    "file": "apps/web/board/rules-runtime.js",
+    "sourceSha256": "9d039baf11cf52b8a22bac68237e410281621955d0d544f2c6c30391ecc90f7a",
+    "outputSha256": "cb169296f850f4339864b2c3efd449d81aea51aca7120979e69d47046876ad12",
+    "prefix": "",
+    "operations": [
+      {
+        "label": "running-rules-timeout",
+        "start": 2703,
+        "end": 2858,
+        "before": "      job.timer = this.timers.setTimeout(() => finish(Object.assign(new Error(\"Rules calculation timed out\"), { code: \"rules_timeout\" })), this.timeoutMs);",
+        "after": "      job.timer = this.timers.setTimeout(() => {\n        try {\n          const scope = typeof job.scope === 'string' ? job.scope : '';\n          const scopeKind = scope.startsWith('admit:') ? 'admit' : scope.startsWith('project:') ? 'project' : scope.startsWith('reconcile:') ? 'reconcile' : scope === 'piece' ? 'piece' : scope === 'rush-guidance' ? 'rush-guidance' : 'other';\n          globalThis.__boardAdmissionRulesTimeout?.({ jobId:job.id, type:['project','equivalent','previews','rush-guidance'].includes(job.type) ? job.type : 'other', scopeKind, active:this.running === job });\n        } catch {}\n        finish(Object.assign(new Error(\"Rules calculation timed out\"), { code: \"rules_timeout\" }));\n      }, this.timeoutMs);",
+        "anchor": "      job.timer = this.timers.setTimeout(() => finish(Object.assign(new Error(\"Rules calculation timed out\"), { code: \"rules_timeout\" })), this.timeoutMs);",
+        "anchorCount": 1
+      }
+    ]
   }
 }

@@ -7,13 +7,21 @@ test('the initial invitation survives a viewer and closes once its friend joins'
  const contexts=[];
  try{
   await page.goto('/');await waitForLegacyIdentity(page);
+  const creation=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');
+  creation.catch(()=>{}); // Own early cleanup rejection; the original promise remains awaited below.
   await page.getByTestId('home-create-game').click();await continueFriendIntroduction(page,{friendIntroduction:true});
   const dialog=page.getByRole('dialog',{name:'Invite a friend',exact:true});await expect(dialog).toBeVisible();
   await expect(dialog.locator('[data-invite-role="viewer"]')).toHaveCount(0);
   const gameId=decodeURIComponent(new URL(page.url()).hash.match(/^#\/game\/([^?]+)/)[1]);
-  const game=await page.evaluate(async id=>{
-   const identityId=localStorage.getItem('righelt.identity.id.v1');return(await(await fetch(`/api/shell/games/${id}?identityId=${encodeURIComponent(identityId)}`)).json()).game;
+  const creationResponse=await creation;expect(creationResponse.status()).toBe(200);
+  const creationBody=await creationResponse.json();expect(creationBody.ok).toBe(true);expect(creationBody.game?.id).toBe(gameId);
+  const authority=await page.evaluate(async id=>{
+   const identityId=localStorage.getItem('righelt.identity.id.v1');
+   const response=await fetch(`/api/shell/games/${id}?identityId=${encodeURIComponent(identityId)}`);
+   return {status:response.status,body:await response.json()};
   },gameId);
+  expect(authority.status).toBe(200);expect(authority.body.ok).toBe(true);expect(authority.body.game?.id).toBe(gameId);
+  const game=authority.body.game;
   const viewerContext=await browser.newContext({baseURL,viewport:{width:390,height:844}});contexts.push(viewerContext);const viewer=await viewerContext.newPage();
   await viewer.goto(`/#/invite/${game.inviteTokens.viewer}?as=viewer`);await viewer.getByTestId('invite-join-viewer').click();await expect(viewer.getByTestId('game-role')).toContainText('Viewer');
   await expect(dialog).toBeVisible();await expect(dialog.locator('[data-invite-role="viewer"]')).toHaveCount(0);

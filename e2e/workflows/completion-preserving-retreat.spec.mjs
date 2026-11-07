@@ -1,5 +1,7 @@
 import {installCaseReadiness,finishCaseReadiness,attachNodeReadiness} from '../support/readiness-diagnostics.mjs';
-import {installBoardAdmissionDiagnostics} from '../support/board-admission-diagnostics.mjs';
+import {performance} from 'node:perf_hooks';
+import {installClientSettlementObserver} from '../support/client-settlement-observer.mjs';
+import {installBoardAdmissionDiagnostics,runComputerRecoveryPersistence,COMPUTER_RECOVERY_FIXTURE_BUDGET_MS} from '../support/board-admission-diagnostics.mjs';
 import {test as base,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {deterministicStateHash,resolveToStability,serializeState} from '../../apps/web/generated/packages/game-engine/src/index.js';
@@ -15,29 +17,37 @@ import {COMPUTER_UI_FRAME_MEASURE} from '../../apps/web/shell/frame-presentation
 // native Follow journeys retain their complete existing 60-second body budget.
 const test=base.extend({
  computerRecoveryAdmission:[async({page,baseURL},use,info)=>{
-  if(info.title!==computerRetreatWorkflow){await use();return;}
+  if(![computerRetreatWorkflow,computerFollowWorkflow].includes(info.title)){await use();return;}
+  const setupStarted=performance.now();
   const diagnostic=await installBoardAdmissionDiagnostics(page,info,{baseURL,computerSessionRecovery:true});
-  try{await use();}finally{await diagnostic.persist();}
- },{timeout:5000}],
+  const setupElapsedMs=performance.now()-setupStarted;
+  try{await use(diagnostic);}finally{await runComputerRecoveryPersistence(diagnostic,{setupElapsedMs});}
+ },{timeout:COMPUTER_RECOVERY_FIXTURE_BUDGET_MS}],
  // Shared 5s fixture slot covers setup AND teardown, separate from the 60s body.
  // Depending on page makes this persistence precede base-page teardown.
  humanAdmission:[async({page,baseURL},use,testInfo)=>{
   if(testInfo.title!=='human retreat excludes the stranded square and completes the native Follow')throw Error('Human admission fixture title mismatch');
-  const diagnostic=await installBoardAdmissionDiagnostics(page,testInfo,{baseURL,targetRow:3,targetCol:0});
-  try{await use();}finally{try{await diagnostic.persist();}catch(error){if(testInfo.status===testInfo.expectedStatus)throw error;console.error('[board-admission-diagnostic] fixture-persistence-incomplete');}}
+  const settlement=await installClientSettlementObserver(page,testInfo);
+  const diagnostic=await installBoardAdmissionDiagnostics(page,testInfo,{baseURL,targetRow:3,targetCol:0,moduleTransform:settlement.transform});
+  try{await use(settlement);}finally{
+   const saved=await Promise.allSettled([settlement.persist(),diagnostic.persist()]);
+   const failed=saved.find(result=>result.status==='rejected');
+   if(failed){if(testInfo.status===testInfo.expectedStatus)throw failed.reason;console.error('[board-admission-diagnostic] fixture-persistence-incomplete');}
+  }
  },{timeout:5000}],readinessMeasurement:[async({context,baseURL},use,info)=>{
  if(info.title!==computerFollowWorkflow){await use();return;}
  const dispose=await installCaseReadiness(context,baseURL);
  try{await use();}finally{await finishCaseReadiness(dispose,info);}
 },{auto:true}],acceptedRetreat:[async({page,baseURL,computerRecoveryAdmission},use)=>{
- await use(await acceptedComputerRetreat(page,baseURL));
+ await use(await acceptedComputerRetreat(page,baseURL,computerRecoveryAdmission));
 },{timeout:60000}]});
 
 const f=readRetreatCapture(),safe=f.alternatives.find(row=>row.completable);
 const computerRetreatWorkflow='the real computer defender records only the completion-preserving retreat';
 const computerFollowWorkflow='the real computer defender leaves a completion-preserving native Follow';
 // Read existing recorder and DOM only. Never drive recovery or submit work.
-async function readRetreatDiagnostics(measurementName){
+async function readRetreatDiagnostics(input){
+   const {measurementName,recoveryRead}=typeof input==='string'?{measurementName:input}:input;
    let readinessPage;
    try{readinessPage=globalThis.__righeltReadinessFreeze?.();}catch{readinessPage={incomplete:true,reason:'snapshot-unavailable'};}
 
@@ -49,7 +59,7 @@ async function readRetreatDiagnostics(measurementName){
    const {issueDiagnostics}=await import('/shell/issue-diagnostics.js');
    const fields=['stage','code','operation','receipt','pendingCount','gameplayRevision','appliedEventSeq','advertisedEventSeq','at','generation','elapsedMs','deadlineMs'];
    const pick=value=>Object.fromEntries(fields.filter(key=>Object.hasOwn(value??{},key)).map(key=>[key,value[key]]));
-   return{available:true,gameId,...(readinessPage?{readinessPage}:{}),journal:window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,historyRows:document.querySelectorAll('[data-testid="history-move-item"]').length,reports:issueDiagnostics.list().filter(report=>report.schemaVersion===1&&report.key===`recovery:${gameId}`).map(report=>({schemaVersion:1,startedAt:report.startedAt,resolvedAt:report.resolvedAt,initial:pick(report.initial),events:report.events.map(pick)}))};
+   return{available:true,gameId,...(recoveryRead?{boardRecovery:{...recoveryRead,gameId,documentNonce:globalThis.__boardAdmissionRecoveryDocument??null,timeOrigin:performance.timeOrigin,observation:globalThis.__boardAdmissionObservation??null}}:{}),...(readinessPage?{readinessPage}:{}),journal:window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,historyRows:document.querySelectorAll('[data-testid="history-move-item"]').length,reports:issueDiagnostics.list().filter(report=>report.schemaVersion===1&&report.key===`recovery:${gameId}`).map(report=>({schemaVersion:1,startedAt:report.startedAt,resolvedAt:report.resolvedAt,initial:pick(report.initial),events:report.events.map(pick)}))};
 }
 
 // Capture identity is explicitly minimal-artifact. Search and command
@@ -64,28 +74,45 @@ const capturedHash=state=>{
 const board=page=>page.getByTestId('game-board');
 const cell=(page,at)=>board(page).locator(`.cell[data-row="${at.row}"][data-col="${at.col}"]`);
 test.beforeEach(async({page})=>{await page.addInitScript(installJournalObservations);});
-test.afterEach(async({page},info)=>{
+test.afterEach(async({page,computerRecoveryAdmission},info)=>{
+ const finalRecovery=computerRecoveryAdmission?.finalRecoveryHandoff;
+ let recoveryRead,delivered=false;
+ try{recoveryRead=finalRecovery?.begin(page);}catch{finalRecovery?.failed('read-missing');}
+ const deliver=value=>{
+  if(!finalRecovery)return;
+  delivered=true;
+  if(value?.unavailable==='diagnostic-read-timeout'||value?.reason==='diagnostic-read-timeout')finalRecovery.journalTimedOut();
+  else if(!value?.boardRecovery)finalRecovery.failed('read-missing');
+ };
  if(info.status===info.expectedStatus){
   let timer;
   try{
-   const journal=await Promise.race([page.evaluate(measurementName=>{
+   const originalRead=page.evaluate(({measurementName,recoveryRead})=>{
       let readinessPage;
       try{readinessPage=globalThis.__righeltReadinessFreeze?.();}catch{readinessPage={incomplete:true,reason:'snapshot-unavailable'};}
-      return {...window.retreatJournalObservations,presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,...(readinessPage?{readinessPage}:{})};
-    },COMPUTER_UI_FRAME_MEASURE),new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
+      const match=location.hash.match(/^#\/game\/([^?#/]+)/);
+      const boardRecovery=recoveryRead?{...recoveryRead,gameId:match?decodeURIComponent(match[1]):null,documentNonce:globalThis.__boardAdmissionRecoveryDocument??null,timeOrigin:performance.timeOrigin,observation:globalThis.__boardAdmissionObservation??null}:null;
+      return {...window.retreatJournalObservations,...(boardRecovery?{boardRecovery}:{}),presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,...(readinessPage?{readinessPage}:{})};
+    },{measurementName:COMPUTER_UI_FRAME_MEASURE,recoveryRead});
+   finalRecovery?.retain(page,originalRead);
+   const journal=await Promise.race([originalRead,new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
+   deliver(journal);
    const path=info.outputPath('native-journal-lifecycle.json');
    await writeFile(path,JSON.stringify(attachNodeReadiness(journal??{unavailable:'not-installed'})));
    await info.attach('native-journal-lifecycle',{contentType:'application/json',path});
-  }catch{console.warn('[retreat-diagnostic] Journal lifecycle attachment unavailable.');if(info.title===computerFollowWorkflow)console.warn('[readiness] incomplete: first-read-or-persistence-unavailable');}
+  }catch{if(!delivered)finalRecovery?.failed('read-failed');console.warn('[retreat-diagnostic] Journal lifecycle attachment unavailable.');if(info.title===computerFollowWorkflow)console.warn('[readiness] incomplete: first-read-or-persistence-unavailable');}
   finally{clearTimeout(timer);}
   return;
  }
  if(!['failed','timedOut','interrupted'].includes(info.status))return;
  let snapshot,diagnosticTimer;
  try{
-  snapshot=page.isClosed()?{available:false,reason:'page-closed'}:await Promise.race([page.evaluate(readRetreatDiagnostics,COMPUTER_UI_FRAME_MEASURE),new Promise(resolve=>{diagnosticTimer=setTimeout(()=>resolve({available:false,reason:'diagnostic-read-timeout'}),2000);})]);
+  const originalRead=page.isClosed()?null:page.evaluate(readRetreatDiagnostics,{measurementName:COMPUTER_UI_FRAME_MEASURE,recoveryRead});
+  if(originalRead)finalRecovery?.retain(page,originalRead);
+  snapshot=originalRead?await Promise.race([originalRead,new Promise(resolve=>{diagnosticTimer=setTimeout(()=>resolve({available:false,reason:'diagnostic-read-timeout'}),2000);})]):{available:false,reason:'page-closed'};
  }catch(error){snapshot={available:false,reason:'diagnostic-read-unavailable',errorKind:String(error?.name??'Error').slice(0,80)};}
  finally{clearTimeout(diagnosticTimer);}
+ deliver(snapshot);
  snapshot=attachNodeReadiness(snapshot);
  try{
   const path=info.outputPath('local-recovery-incidents.json');await writeFile(path,JSON.stringify(snapshot));
@@ -143,7 +170,7 @@ async function receipt(page,id,command,outcome='accepted'){
  expect(own[0]).toMatchObject({outcome,fingerprint:command.fingerprint,identityId:command.identityId});
  expect(body.game?.id).toBe(id);expect(body.game.gameplayRevision).toBe(body.gameplayRevision);
  if(outcome==='accepted')expect(own[0].gameplayRevision).toBe(body.gameplayRevision);
- return {outcome:own[0],game:body.game};
+ return {outcome:own[0],game:body.game,eventSeq:body.eventSeq};
 }
 async function submit(page,id,action){
  const sent=page.waitForRequest(req=>req.method()==='POST'&&new URL(req.url()).pathname===`/api/shell/games/${id}/apply`);
@@ -185,9 +212,15 @@ test('human retreat excludes the stranded square and completes the native Follow
  const identityId=await page.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'));
  const unsafe={protocolVersion:2,actionContractVersion:3,gameId,identityId,clientCommandId:`v2:${crypto.randomUUID()}`,kind:'action',payload:{action:f.retreat.action},expectedState:pushed.board.state,expectedGameplayRevision:pushed.gameplayRevision};
  unsafe.fingerprint=await commandFingerprint(unsafe);
+ const clientScope=await humanAdmission.scope(gameId);
  const rejected=await request(page,`/api/shell/games/${gameId}/apply`,unsafe);expect(rejected.accepted).toBe(false);
- expect((await receipt(page,gameId,unsafe,'rejected')).outcome.reason).toBe('SUPPLY_DESTINATION_UNSUPPLIED');
- const unchanged=await current(page,gameId);expect(unchanged.board).toEqual(pushed.board);expect(unchanged.gameplayRevision).toBe(pushed.gameplayRevision);expect(unchanged.moves).toEqual(pushed.moves);
+ const settlementDeadline=performance.now()+SYNC_TIMING.confirmationBudgetMs;
+ const rejectedReceipt=await receipt(page,gameId,unsafe,'rejected');expect(rejectedReceipt.outcome.reason).toBe('SUPPLY_DESTINATION_UNSUPPLIED');
+ const unchangedResponse=await request(page,`/api/shell/games/${gameId}`),unchanged=unchangedResponse.game;expect(unchanged.board).toEqual(pushed.board);expect(unchanged.gameplayRevision).toBe(pushed.gameplayRevision);expect(unchanged.moves).toEqual(pushed.moves);
+ const rejectedOutcomes=rejected.commandOutcomes.filter(row=>row.clientCommandId===unsafe.clientCommandId);expect(rejectedOutcomes).toHaveLength(1);expect(isCommandOutcome(rejectedOutcomes[0],unsafe)).toBe(true);
+ const knownSeqs=[rejected.eventSeq,rejectedOutcomes[0].eventSeq,rejectedReceipt.eventSeq,rejectedReceipt.outcome.eventSeq,unchangedResponse.eventSeq];
+ expect(knownSeqs.every(value=>Number.isSafeInteger(value)&&value>=0)).toBe(true);
+ await humanAdmission.wait(clientScope,Math.max(...knownSeqs),settlementDeadline);
  // Clicking an empty unhighlighted square deliberately clears selection.
  // Resume through the actual pushed-piece control before selecting its move.
  await ensureActionActorSelected(cell(page,safe.action.from));
@@ -198,13 +231,14 @@ test('human retreat excludes the stranded square and completes the native Follow
  await info.attach('captured-retreat-provenance',{body:JSON.stringify({sha256:RETREAT_CAPTURE_SHA256,provenance:f.provenance,unsafe,receipt:rejected.commandOutcomes},null,2),contentType:'application/json'});
 });
 
-async function acceptedComputerRetreat(page,baseURL){
+async function acceptedComputerRetreat(page,baseURL,computerRecoveryAdmission){
  // This source exists only to branch its recorded decision. Open the actual
  // computer game once, avoiding an unused source runtime and journal lifecycle.
  const {gameId:sourceId}=await importScenarioGame(page,makeRetreatScenario('computer'),baseURL,{open:false});
  const source=await current(page,sourceId);expect(capturedHash(source.board.state)).toBe(safe.stateHash);
  const sourceDecisionId=source.moves.at(-1).moveId;
  const branched=(await request(page,'/api/shell/history/branch',{sourceGameId:sourceId,sourceDecisionId,creatorSide:'p2',computer:{p1:'babs',p2:null},computerModelId:'initial-1554'})).game;
+ computerRecoveryAdmission.finalRecoveryHandoff.bindGame(branched.id);
  expect(branched.computer.modelId).toBe('initial-1554');expect(branched.computer.seats).toEqual({p1:'babs',p2:null});
  expect(capturedHash(branched.board.state)).toBe(f.push.afterHash);expect(branched.legalActions).toEqual([safe.action]);
  const sent=page.waitForRequest(req=>req.method()==='POST'&&new URL(req.url()).pathname===`/api/shell/games/${branched.id}/apply`&&Boolean(req.postDataJSON()?.payload?.computer));
