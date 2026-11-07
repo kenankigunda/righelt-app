@@ -1,5 +1,6 @@
 import {expect} from '@playwright/test';
 import {MOBILE_NAVIGATION} from '../../apps/web/shell/mobile-navigation.js';
+import {settleMobileNavigationRow} from '../../browser-integration/support/mobile-navigation-geometry.mjs';
 
 // Native wheel input in the existing narrowed desktop profiles. This does not
 // stand in for physical touchscreen swipe or a 44px target for every cell.
@@ -36,6 +37,7 @@ export async function assertMobileBoardCellAccess(page,info,{before,readState,as
   await info.attach('Native navigation handle release readiness',{body:JSON.stringify(releaseReadiness),contentType:'application/json'});
   expect(releaseReadiness.after).toMatchObject({connected:true,active:false,pressing:false,offsetWidth:44,offsetHeight:44,cssWidth:'44px',cssHeight:'44px'});
   expect(releaseReadiness.after.finite.filter(animation=>animation.pending||animation.playState==='running')).toHaveLength(0);
+  await settleMobileNavigationRow(page.locator('.shell-mobile-tabbar'));
   await page.mouse.move(4,300);
   shown=await sample();expect(shown.visible).toBe('true');expect(shown.cells).toHaveLength(100);
   expect(shown.reveal.width).toBeGreaterThanOrEqual(44);expect(shown.reveal.height).toBeGreaterThanOrEqual(44);
