@@ -751,7 +751,7 @@ async function rulesTimeoutRecipe(){
 }
 test('computer timeout recipe is strictly bound, exactly invertible and preserves the original computer catch entry',async()=>{
  const{all,recipe,source}=await rulesTimeoutRecipe();
- assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'5d9fafc93be7c3244a6d83f63db8d18490c7aa388e10ae7eb99b8a0bfec0e9a8');
+ assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'4bbb047da244802475e00a1eb23d4d9f2b00aa8e2af3f18acd434db3b3201b2d');
  assert.equal(recipe.operations.length,1);const op=recipe.operations[0];assert.equal(op.anchorCount,1);
  const output=transformBoardAdmissionModule(source,recipe);assert.equal(output.slice(op.start,op.start+op.after.length),op.after);
  assert.equal(output.slice(0,op.start)+op.before+output.slice(op.start+op.after.length),source);
