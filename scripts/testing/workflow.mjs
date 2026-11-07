@@ -136,7 +136,7 @@ core.setOutput('ids',selected.map(a=>a.id).join(','));`,
     name: "CI",
     on: {
       pull_request: {
-        types: ["opened", "synchronize", "reopened", "ready_for_review"],
+        types: ["opened", "synchronize", "reopened"],
       },
       push: { branches: ["main"] },
       workflow_dispatch: {},
