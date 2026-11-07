@@ -105,10 +105,69 @@ test('closing the original tab automatically restores computer play in a new tab
 
 test('player card deliberately restores paused manual play and lost acknowledgement keeps one resume intent',async({page},info)=>{
  const id=await createComputer(page);
- for(const action of ['takeover','manual','pause']){
-  const game=await projected(page,id);
-  await guestRequest(page,`/api/shell/games/${id}/computer-control`,{action,deviceId:game.computer.lease.deviceId,generation:game.computer.generation});
- }
+ // Setup uses fresh owned authority, then chains only accepted responses.
+ // No projection/DOM gap, retry or sleep may turn a refusal into success.
+ await page.evaluate(async({id,header})=>{
+  const assert=(condition,message)=>{if(!condition)throw Error(`Fresh owned control fixture: ${message}`);};
+  const equal=(actual,expected,message)=>assert(JSON.stringify(actual)===JSON.stringify(expected),message);
+  const flags=game=>[game.computer.paused,game.computer.manual,game.computer.singleStep,game.computer.takeoverTurn];
+  const bootstrap=await fetch('/api/shell/bootstrap');
+  assert(bootstrap.status===200,'bootstrap must return200');
+  assert((await bootstrap.json()).ok===true,'bootstrap must be ok');
+  const storageGeneration=bootstrap.headers.get(header),identityId=localStorage.getItem('righelt.identity.id.v1');
+  assert(typeof identityId==='string'&&identityId.length>0,'existing guest identity missing');
+  const headers={'Content-Type':'application/json',...(storageGeneration?{[header]:storageGeneration}:{})};
+  const gameUrl=`/api/shell/games/${id}?identityId=${encodeURIComponent(identityId)}`;
+  const validate=(body,label)=>{
+   assert(body.ok===true,`${label} must be ok`);assert(body.game?.id===id,`${label} must name exact game`);
+   assert(Number.isSafeInteger(body.eventSeq)&&body.eventSeq>=0,`${label} eventSeq must be safe`);
+   assert(Number.isSafeInteger(body.game.computer?.generation)&&body.game.computer.generation>=0,`${label} generation must be safe`);
+   assert(typeof body.game.computer.lease?.deviceId==='string'&&body.game.computer.lease.deviceId.length>0,`${label} lease device missing`);
+   return body;
+  };
+  // The one initial read supplies the expected generation/device. Every setup
+  // mutation thereafter takes its authority from the immediately prior200.
+  const initialResponse=await fetch(gameUrl,{headers});
+  assert(initialResponse.status===200,'initial game must return200');
+  const initial=validate(await initialResponse.json(),'initial game');
+  const control=async(action,previous,expectedFlags)=>{
+   const previousControl=previous.game.computer;
+   const response=await fetch(`/api/shell/games/${id}/computer-control`,{method:'POST',headers,
+    body:JSON.stringify({identityId,protocolVersion:2,action,deviceId:previousControl.lease.deviceId,generation:previousControl.generation})});
+   assert(response.status===200,`${action} must return200, received${response.status}`);
+   const accepted=validate(await response.json(),action);
+   assert(accepted.eventSeq>previous.eventSeq,`${action} eventSeq must advance`);
+   assert(accepted.game.computer.lease.deviceId===previousControl.lease.deviceId,`${action} lease must belong to exact device`);
+   if(action==='acquire'){
+    // A live same-device acquire keeps its generation; reclaiming an expired
+    // lease advances it once. Neither path bypasses the real server guard.
+    assert(accepted.game.computer.generation===previousControl.generation||accepted.game.computer.generation===previousControl.generation+1,'acquire generation must stay or advance once');
+    assert(Number.isFinite(accepted.game.computer.lease.expiresAt)&&accepted.game.computer.lease.expiresAt>Date.now(),'acquire must return a fresh owned lease');
+   }else assert(accepted.game.computer.generation===previousControl.generation+1,`${action} generation must advance once`);
+   equal(flags(accepted.game),expectedFlags,`${action} flags mismatch`);
+   return accepted;
+  };
+  const acquired=await control('acquire',initial,[false,false,false,null]);
+  const turnIndex=acquired.game.currentTurn?.index??acquired.game.board.state.turnIndex;
+  assert(Number.isSafeInteger(turnIndex)&&turnIndex>=0,'takeover turn must be safe');
+  const takeover=await control('takeover',acquired,[false,false,false,turnIndex]);
+  const manual=await control('manual',takeover,[false,true,false,turnIndex]);
+  const paused=await control('pause',manual,[true,true,false,turnIndex]);
+  // The immediately preceding generation is now genuinely stale. This is a
+  // real rejected request, not an ignored refusal or a retry of positive setup.
+  const refusal=await fetch(`/api/shell/games/${id}/computer-control`,{method:'POST',headers,
+   body:JSON.stringify({identityId,protocolVersion:2,action:'pause',deviceId:paused.game.computer.lease.deviceId,generation:manual.game.computer.generation})});
+  assert(refusal.status===409,`stale generation must return409, received${refusal.status}`);
+  const rejected=await refusal.json();
+  assert(rejected.ok===false&&rejected.error==='computer_control_changed','stale generation must explicitly reject computer_control_changed');
+  const readbackResponse=await fetch(gameUrl,{headers});
+  assert(readbackResponse.status===200,'refusal readback must return200');
+  const readback=validate(await readbackResponse.json(),'refusal readback');
+  equal(flags(readback.game),[true,true,false,turnIndex],'refusal must preserve intended flags');
+  const authoritative=body=>({eventSeq:body.eventSeq,gameId:body.game.id,gameplayRevision:body.game.gameplayRevision,
+   computer:body.game.computer,board:body.game.board,moves:body.game.moves,turns:body.game.turns,currentTurn:body.game.currentTurn});
+  equal(authoritative(readback),authoritative(paused),'refusal must leave authoritative generation and state unchanged');
+ },{id,header:STORAGE_GENERATION_HEADER});
  const card=page.getByRole('button',{name:'Babs, Blue, Paused',exact:true});await expect(card).toBeVisible();await card.click();
  const resume=page.getByRole('button',{name:'Resume here',exact:true});await expect(resume).toBeEnabled();
  const sent=[];let dropped=false;
