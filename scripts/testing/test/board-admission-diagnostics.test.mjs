@@ -614,8 +614,11 @@ test('actual computer installer keeps empty activation coverage incomplete despi
  const temp=await import('node:fs/promises').then(async fs=>fs.mkdtemp((await import('node:os')).tmpdir()+'/computer-coverage-')),info={title:'computer',outputPath:name=>temp+'/'+name,async attach(){}};
  try{
   const diagnostic=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://owned',computerSessionRecovery:true});
-  const source=await readFile(new URL('../../../apps/web/shell/computer-session.js',import.meta.url),'utf8');
-  await handler({request:()=>({url:()=> 'http://owned/shell/computer-session.js'}),fetch:async()=>({text:async()=>source}),fulfill:async()=>{},abort:async()=>assert.fail('actual module must transform')});
+  const modules=JSON.parse(await readFile(new URL('../../../e2e/support/computer-session-recovery-transformation.json',import.meta.url),'utf8'));
+  for(const[pathname,recipe]of Object.entries(modules)){
+   const source=await readFile(new URL('../../../'+recipe.file,import.meta.url),'utf8');
+   await handler({request:()=>({url:()=> 'http://owned'+pathname}),fetch:async()=>({text:async()=>source}),fulfill:async()=>{},abort:async()=>assert.fail('actual module must transform')});
+  }
   diagnostic.finalRecoveryHandoff.bindGame('owned');const ticket=diagnostic.finalRecoveryHandoff.begin(page);assert.equal(init.recoveryNamespace,ticket.namespace);diagnostic.finalRecoveryHandoff.capture(page,recoveryPacket(ticket));
   await diagnostic.persist();const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));
   assert.deepEqual(payload.missingModules,[]);assert.deepEqual(payload.errors,[]);assert.equal(payload.observation.incomplete,false);assert.deepEqual(payload.observation.activation,[]);
@@ -688,4 +691,94 @@ test('actual fixture source shares the one5s constant and debits setup before ex
  const source=await readFile(new URL('../../../e2e/workflows/completion-preserving-retreat.spec.mjs',import.meta.url),'utf8');
  assert(source.includes('const setupStarted=performance.now();'));assert(source.includes('const setupElapsedMs=performance.now()-setupStarted;'));
  assert(source.includes('try{await use(diagnostic);}finally{await runComputerRecoveryPersistence(diagnostic,{setupElapsedMs});}'));assert(source.includes('{timeout:COMPUTER_RECOVERY_FIXTURE_BUDGET_MS}'));
+});
+
+const timeoutCollector=()=>collector({recoveryNamespace:'rules-owned-document'},{crypto:{randomUUID:()=> 'opaque-rules-document'}});
+function actualRulesScheduler(source,sink){
+ const callbacks=new Map(),delays=[],workers=[];let id=0;
+ const timers={setTimeout(fn,delay){callbacks.set(++id,fn);delays.push(delay);return id;},clearTimeout(key){callbacks.delete(key);}};
+ const sandbox={SYNC_TIMING:{requestTimeoutMs:5000},__boardAdmissionRulesTimeout:sink};
+ const start=source.indexOf('const cancelled ='),end=source.indexOf('export const createRulesExecutor =');assert(start>=0&&end>start);
+ const body=source.slice(start,end);assert.equal(body.split('import.meta.url').length-1,1);
+ // Bind the real module URL as an explicit VM metadata collaborator. The fake
+ // workerFactory is passed below; scheduler/timeout/job code remains actual.
+ const moduleURL=new URL('../../../apps/web/board/rules-runtime.js',import.meta.url).href;
+ vm.runInNewContext(body.replace('import.meta.url',JSON.stringify(moduleURL)).replace('export class RulesRuntime','class RulesRuntime')+'\nglobalThis.ActualRulesRuntime=RulesRuntime;',sandbox);
+ const runtime=new sandbox.ActualRulesRuntime({timers,workerFactory:()=>{const worker={sent:[],terminated:0,postMessage(value){this.sent.push(value);},terminate(){this.terminated++;}};workers.push(worker);return worker;}});
+ return{runtime,callbacks,delays,workers};
+}
+async function rulesTimeoutRecipe(){
+ const all=JSON.parse(await readFile(new URL('../../../e2e/support/computer-session-recovery-transformation.json',import.meta.url),'utf8'));
+ return{all,recipe:all['/board/rules-runtime.js'],source:await readFile(new URL('../../../apps/web/board/rules-runtime.js',import.meta.url),'utf8')};
+}
+test('computer timeout recipe is strictly bound, exactly invertible and preserves the original computer catch entry',async()=>{
+ const{all,recipe,source}=await rulesTimeoutRecipe();
+ assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'5d9fafc93be7c3244a6d83f63db8d18490c7aa388e10ae7eb99b8a0bfec0e9a8');
+ assert.equal(recipe.operations.length,1);const op=recipe.operations[0];assert.equal(op.anchorCount,1);
+ const output=transformBoardAdmissionModule(source,recipe);assert.equal(output.slice(op.start,op.start+op.after.length),op.after);
+ assert.equal(output.slice(0,op.start)+op.before+output.slice(op.start+op.after.length),source);
+ assert.throws(()=>transformBoardAdmissionModule(source+' ',recipe),/source hash/);assert.throws(()=>transformBoardAdmissionModule(source,{...recipe,outputSha256:'0'.repeat(64)}),/output hash/);
+ assert.throws(()=>transformBoardAdmissionModule(source,{...recipe,operations:[{...op,start:op.start+1}]}),/range/);assert.throws(()=>transformBoardAdmissionModule(source,{...recipe,operations:[{...op,anchorCount:2}]}),/anchor count/);
+});
+test('actual transformed scheduler observes only running timeout while preserving original errors, payloads and queued drain',async()=>{
+ const{recipe,source}=await rulesTimeoutRecipe(),transformed=transformBoardAdmissionModule(source,recipe),effects=[];
+ for(const mode of ['original','absent','record','throw']){
+  const h=timeoutCollector(),sink=mode==='record'?h.sandbox.__boardAdmissionRulesTimeout:mode==='throw'?()=>{throw Error('sink');}:undefined;
+  const f=actualRulesScheduler(mode==='original'?source:transformed,sink),aInput={private:'PRIVATE-A'},bInput={private:'PRIVATE-B'};
+  const a=f.runtime.project('admit:PRIVATE-game',aInput),b=f.runtime.project('project:PRIVATE-game',bInput);a.catch(()=>{});b.catch(()=>{});
+  assert.equal(f.workers.length,1);assert.equal(f.callbacks.size,1);assert.equal(f.workers[0].sent[0].input,aInput);
+  [...f.callbacks.values()][0]();await assert.rejects(a,error=>error.code==='rules_timeout'&&error.message==='Rules calculation timed out');
+  assert.equal(f.workers.length,2);const message=f.workers[1].sent[0],value={ok:true};assert.equal(message.input,bInput);assert.equal(message.scope,'project:PRIVATE-game');
+  f.workers[1].onmessage({data:{id:message.id,scope:message.scope,type:message.type,result:value}});assert.equal(await b,value);
+  effects.push({workers:f.workers.length,terminations:f.workers.map(w=>w.terminated),delays:f.delays,jobs:f.runtime.jobs.size,running:f.runtime.running});
+  if(mode==='record'){
+   const rows=JSON.parse(JSON.stringify(h.log.rulesTimeouts.rows));assert.deepEqual(rows,[{sequence:1,jobId:1,type:'project',scopeKind:'admit',active:true,now:456}]);
+   assert.equal(JSON.stringify(h.log.rulesTimeouts).includes('PRIVATE'),false);assert.equal(h.log.first.length,0);assert.equal(h.log.incomplete,false);
+  }else assert.equal(h.log.rulesTimeouts.rows.length,0);
+ }
+ for(const effect of effects)assert.deepEqual(effect,effects[0]);
+});
+test('actual cancelled stale timeout is marked inactive and cannot fail the newer running job',async()=>{
+ const{recipe,source}=await rulesTimeoutRecipe(),h=timeoutCollector(),f=actualRulesScheduler(transformBoardAdmissionModule(source,recipe),h.sandbox.__boardAdmissionRulesTimeout);
+ const a=f.runtime.project('admit:PRIVATE-old',{});a.catch(()=>{});const stale=[...f.callbacks.values()][0];f.runtime.cancel('admit:PRIVATE-old');await assert.rejects(a,e=>e.code==='rules_cancelled');
+ const b=f.runtime.project('project:PRIVATE-current',{});stale();assert.equal(f.workers[1].terminated,0);assert.equal(h.log.rulesTimeouts.rows[0].active,false);
+ const m=f.workers[1].sent[0];f.workers[1].onmessage({data:{id:m.id,scope:m.scope,type:m.type,result:'same'}});assert.equal(await b,'same');
+});
+test('timeout scalar buffer is computer-only, caps64 with accurate drops and does not invoke getters or alter old buffers',()=>{
+ assert.equal(collector().sandbox.__boardAdmissionRulesTimeout,undefined);const h=timeoutCollector(),valid={jobId:1,type:'project',scopeKind:'admit',active:true};let getters=0;
+ for(let i=0;i<64;i++)h.sandbox.__boardAdmissionRulesTimeout({...valid,jobId:i+1});assert.equal(h.log.rulesTimeouts.rows.length,64);assert.equal(h.log.rulesTimeouts.dropped,0);
+ h.sandbox.__boardAdmissionRulesTimeout(valid);assert.equal(h.log.rulesTimeouts.dropped,1);assert.equal(h.log.rulesTimeouts.incomplete,true);
+ const fresh=timeoutCollector();for(const value of [{...valid,jobId:0},{...valid,type:'PRIVATE'},{...valid,scopeKind:'PRIVATE'},{...valid,active:1},{...valid,payload:'PRIVATE'},{...valid,get jobId(){getters++;return 1;}}])fresh.sandbox.__boardAdmissionRulesTimeout(value);
+ assert.equal(getters,0);assert.equal(fresh.log.rulesTimeouts.dropped,6);assert.equal(fresh.log.rulesTimeouts.rows.length,0);assert.equal(JSON.stringify(fresh.log).includes('PRIVATE'),false);
+ assert.equal(fresh.log.first.length,0);assert.equal(fresh.log.incomplete,false);fresh.record('original',{});assert.equal(fresh.log.first[0].sequence,1);
+});
+test('same existing immutable handoff carries bounded timeout rows without an additional reader',()=>{
+ const h=timeoutCollector();h.sandbox.__boardAdmissionRulesTimeout({jobId:1,type:'project',scopeKind:'admit',active:true});const page=recoveryPage(),owner=createComputerRecoveryHandoff(page,'rules-owned-document');owner.bindGame('owned');const ticket=owner.begin(page),packet=recoveryPacket(ticket);
+ packet.documentNonce=h.log.documentNonce;packet.observation=JSON.parse(JSON.stringify(h.log));owner.capture(page,packet);const value=owner.consume();assert.equal(value.incomplete,false);assert.equal(value.observation.rulesTimeouts.rows.length,1);assert(Object.isFrozen(value.observation.rulesTimeouts.rows[0]));assert.equal(page.listenerCount(),0);
+});
+
+
+test('actual computer installer reports timeout-buffer loss with otherwise complete activation and delivery',async()=>{
+ let init,handler;const page={...recoveryPage(),async addInitScript(fn,value){init=value;},async route(pattern,value){handler=value;},async unroute(){}};
+ const fs=await import('node:fs/promises'),temp=await fs.mkdtemp((await import('node:os')).tmpdir()+'/computer-timeout-coverage-'),info={title:'computer',outputPath:name=>temp+'/'+name,async attach(){}};
+ try{
+  const diagnostic=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://owned',computerSessionRecovery:true});
+  const modules=JSON.parse(await readFile(new URL('../../../e2e/support/computer-session-recovery-transformation.json',import.meta.url),'utf8'));
+  for(const[pathname,recipe]of Object.entries(modules)){
+   const source=await readFile(new URL('../../../'+recipe.file,import.meta.url),'utf8');
+   await handler({request:()=>({url:()=> 'http://owned'+pathname}),fetch:async()=>({text:async()=>source}),fulfill:async()=>{},abort:async()=>assert.fail('actual module must transform')});
+  }
+  const h=collector({recoveryNamespace:init.recoveryNamespace},{crypto:{randomUUID:()=> 'actual-timeout-coverage-document'}});
+  const cell={dataset:{row:'3',col:'0'},isConnected:true,closest:selector=>selector==='.cell'?cell:h.root};
+  const down={type:'pointerdown',isTrusted:true,pointerId:7,target:cell,currentTarget:h.sandbox.document,composedPath:()=>[cell,h.root,h.sandbox.document]};
+  h.listeners.get('pointerdown:capture')(down);h.listeners.get('pointerdown:bubble')(down);
+  assert.ok(h.log.activation.length>0);assert.equal(h.log.incomplete,false);
+  for(let i=0;i<65;i++)h.sandbox.__boardAdmissionRulesTimeout({jobId:i+1,type:'project',scopeKind:'admit',active:true});
+  assert.equal(h.log.rulesTimeouts.rows.length,64);assert.equal(h.log.rulesTimeouts.dropped,1);assert.equal(h.log.rulesTimeouts.incomplete,true);assert.equal(h.log.incomplete,false,'old generic log semantics are unchanged');
+  diagnostic.finalRecoveryHandoff.bindGame('owned');const ticket=diagnostic.finalRecoveryHandoff.begin(page),packet=recoveryPacket(ticket);
+  packet.documentNonce=h.log.documentNonce;packet.observation=JSON.parse(JSON.stringify(h.log));diagnostic.finalRecoveryHandoff.capture(page,packet);
+  await diagnostic.persist();const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));
+  assert.deepEqual(payload.missingModules,[]);assert.deepEqual(payload.errors,[]);assert.equal(payload.handoff.incomplete,false);assert.equal(payload.observation.incomplete,false);assert.ok(payload.observation.activation.length>0);
+  assert.equal(payload.incomplete,true,'separate timeout-buffer loss cannot be hidden by otherwise complete coverage');
+ }finally{await fs.rm(temp,{recursive:true,force:true});}
 });

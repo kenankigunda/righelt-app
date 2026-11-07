@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readProjectedGame, waitForComputerDecision } from '../../../e2e/support/computer-projection.mjs';
+import { runInNewContext } from 'node:vm';
+import { readProjectedGame, waitForComputerDecision, waitForOpponentReady } from '../../../e2e/support/computer-projection.mjs';
 
 const expectedComputer = { modelId: 'initial-1554', profile: 'horus' };
 function fixture(t, { sessionStatus = 200, session = { contextId: 'account-context' }, projectionStatus = 200, game = { id: 'game-1', moves: [] } } = {}) {
@@ -93,4 +94,126 @@ for (const modelId of ['initial-1554', 'test-next-model']) test(`observation hel
 });
 test('observation helper rejects missing model identity before browser execution', async () => {
  await assert.rejects(waitForComputerDecision({evaluate:()=>{throw Error('must not run');}},'game-1','horus'),/Expected computer model identity required/);
+});
+
+// Run the actual exported browser callback with isolated DOM and monotonic clock.
+// No host sleeps, actions, requests, or global clock/document replacement.
+function preparationFixture(states, {stepMs = 100} = {}) {
+  const observed = {now: 0, queries: 0, pauses: 0, evaluations: 0, options: null};
+  const page = {evaluate(callback, options) {
+    observed.evaluations++;
+    observed.options = options;
+    return runInNewContext(`(${callback.toString()})(options)`, {
+      options,
+      performance: {now: () => observed.now},
+      document: {querySelector(selector) {
+        assert.equal(selector, 'dialog[open].opponent-story-modal');
+        const state = states[Math.min(observed.queries++, states.length - 1)];
+        if (!state) return null;
+        return {querySelector(selector) {
+          if (selector === '[data-story-play]') return state.missingPlay ? null : {disabled: !state.ready};
+          if (selector === '[data-story-readiness]') return {textContent: state.message ?? 'Preparing'};
+          if (selector === '[data-story-retry]') return {hidden: !state.retry};
+          assert.fail(`Unexpected leaf read: ${selector}`);
+        }};
+      }},
+      setTimeout(resolve, ms) {
+        assert.equal(ms, 100);
+        observed.pauses++;
+        observed.now += stepMs;
+        queueMicrotask(resolve);
+      },
+    });
+  }};
+  return {page, observed};
+}
+
+test('opponent readiness waits for its first actual open within the original allowance', async () => {
+  const {page, observed} = preparationFixture([null, null, {ready: true}]);
+  const receipt = await waitForOpponentReady(page);
+  assert.equal(receipt.elapsedMs, 200);
+  assert.equal(observed.evaluations, 1);
+  assert.equal(observed.options.timeoutMs, 45_000);
+  assert.equal(observed.queries, 3);
+  assert.equal(observed.pauses, 2);
+});
+
+test('first opening does not restart the original bounded clock', async () => {
+  const {page, observed} = preparationFixture([null, null, {}]);
+  await assert.rejects(waitForOpponentReady(page, {timeoutMs: 300}), /exceeded its bounded workflow allowance/);
+  assert.equal(observed.now, 300);
+  assert.equal(observed.queries, 3);
+});
+
+test('a dialog never opened consumes only the original default allowance', async () => {
+  const {page, observed} = preparationFixture([null]);
+  await assert.rejects(waitForOpponentReady(page), /exceeded its bounded workflow allowance/);
+  assert.equal(observed.now, 45_000);
+  assert.equal(observed.queries, 450);
+  assert.equal(observed.pauses, 450);
+  assert.equal(observed.evaluations, 1);
+});
+
+test('closure after observed opening fails immediately without awaiting a reopen', async () => {
+  const {page, observed} = preparationFixture([{}, null, {ready: true}]);
+  await assert.rejects(waitForOpponentReady(page), /dialog closed before readiness/);
+  assert.equal(observed.now, 100);
+  assert.equal(observed.queries, 2);
+  assert.equal(observed.pauses, 1);
+});
+
+test('missing and disabled Play remain pending until actual readiness', async () => {
+  const {page, observed} = preparationFixture([{missingPlay: true}, {}, {ready: true}]);
+  assert.equal((await waitForOpponentReady(page)).elapsedMs, 200);
+  assert.equal(observed.queries, 3);
+});
+
+for (const state of [{retry: true}, {message: 'Unsupported model'}, {message: 'Could not prepare'}]) {
+  test(`terminal preparation still fails immediately: ${JSON.stringify(state)}`, async () => {
+    const {page, observed} = preparationFixture([state, {ready: true}]);
+    await assert.rejects(waitForOpponentReady(page), /Opponent preparation failed/);
+    assert.equal(observed.pauses, 0);
+    assert.equal(observed.queries, 1);
+  });
+}
+
+for (const message of ['11 of 10 bytes', '0 of 0 bytes']) {
+  test(`invalid byte progress remains fatal: ${message}`, async () => {
+    const {page, observed} = preparationFixture([{message}]);
+    await assert.rejects(waitForOpponentReady(page), /Invalid preparation byte progress/);
+    assert.equal(observed.pauses, 0);
+  });
+}
+
+test('same-total progress regression remains fatal', async () => {
+  const {page, observed} = preparationFixture([{message: '10 of 100 bytes'}, {message: '9 of 100 bytes', ready: true}]);
+  await assert.rejects(waitForOpponentReady(page), /progress moved backwards/);
+  assert.equal(observed.queries, 2);
+});
+
+test('changed-total progress retains its original sampling semantics', async () => {
+  const {page} = preparationFixture([{message: '10 of 100 bytes'}, {message: '5 of 200 bytes', ready: true}]);
+  const receipt = await waitForOpponentReady(page);
+  assert.equal(receipt.byteSamples, 2);
+  assert.equal(receipt.lastBytes.received, 5);
+  assert.equal(receipt.lastBytes.total, 200);
+});
+
+test('first-open latency still requires original slow-preparation detail', async () => {
+  const {page, observed} = preparationFixture([null, {ready: true, message: 'Ready'}], {stepMs: 6000});
+  await assert.rejects(waitForOpponentReady(page), /Slow opponent preparation did not expose detailed progress/);
+  assert.equal(observed.now, 6000);
+});
+
+test('actual slow-preparation detail remains sufficient after delayed opening', async () => {
+  const {page} = preparationFixture([null, {ready: true, message: 'Getting ready to play 6s'}], {stepMs: 6000});
+  const receipt = await waitForOpponentReady(page);
+  assert.equal(receipt.elapsedMs, 6000);
+  assert.equal(receipt.detailed, true);
+});
+
+test('already-ready open dialog has no added wait', async () => {
+  const {page, observed} = preparationFixture([{ready: true}]);
+  assert.equal((await waitForOpponentReady(page)).elapsedMs, 0);
+  assert.equal(observed.pauses, 0);
 });
