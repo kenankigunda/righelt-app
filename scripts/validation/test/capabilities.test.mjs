@@ -182,3 +182,12 @@ test('actual tracked app history row selects a literal supported label without i
  assert.ok(['Undo back to this move','Undo before this move'].includes(selected));
  assert.ok(source.includes(selected+'</button>'),'Chosen row label is literally present in actual candidate source');
 });
+
+
+test('approved named result contract is selected without executing candidate code',async t=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'righelt-named-result-'));
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ await mkdir(path.join(root,'apps/web/shell'),{recursive:true});
+ await writeFile(path.join(root,'apps/web/shell/game-result.js'),'export const RESULT_HEADING_CONTRACT="named-perspective-v3";\nthrow Error("Never execute candidate source");');
+ assert.equal((await candidateCapabilities(root)).resultHeadingContract,'named-perspective-v3');
+});

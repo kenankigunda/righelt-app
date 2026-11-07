@@ -1,3 +1,4 @@
+import {settleContextTarget} from './support/context-target-geometry.mjs';
 import {captureControlledMessageBox,qualifyControlledMessageBox} from './support/controlled-message-box-contract.mjs';
 import {test as base,expect} from '@playwright/test';
 import {controlledHeightPublication} from './support/height-publication-test-fixture.mjs';
@@ -188,6 +189,7 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
       }
       if(phase==='completed-pass')await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
       const replay=page.getByRole('button',{name:'Show me again',exact:true});
+      await settleContextTarget(replay);
       const replayBox=await replay.boundingBox();expect(replayBox.width).toBeGreaterThanOrEqual(44);expect(replayBox.height).toBeGreaterThanOrEqual(44);
       expect(await replay.evaluate(button=>button.closest('#preview')===null)).toBe(true);
       if(phase==='completed-pass'){
@@ -325,4 +327,35 @@ test('keyboard release feedback preserves its focused replay action across refre
  const replay=page.getByRole('button',{name:'Next',exact:true});await replay.press('Enter');
  const result=await page.evaluate(selector=>{const button=document.activeElement;const feedback=button.classList.contains('button-release-bounce');window.boardFixture.message(window.msg);return {feedback,same:document.querySelector(selector)===button,connected:button.isConnected,focused:document.activeElement===button,actions:window.boardFixture.messageActions()};},'[data-board-message-action="replay-next"]');
  expect(result).toEqual({feedback:true,same:true,connected:true,focused:true,actions:['replay-next']});
+});
+
+test('context target measurement waits for its original finite entrance and keeps the strict minimum',async({page,publicationOwner})=>{
+ await page.setViewportSize({width:390,height:1000});
+ await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
+ await page.evaluate(async()=>{await window.boardFixture.setup('pass',false);await document.fonts.ready;});await settledMessage(page);
+ await page.evaluate(()=>window.boardFixture.message({text:'Select a piece',context:{text:'Recorded move details',action:{id:'replay-computer',label:'Show me again'}}}));
+ const replay=page.getByRole('button',{name:'Show me again',exact:true}),notice=replay.locator('xpath=ancestor::*[@data-board-context]');
+ const entrance=await notice.evaluate(node=>{
+  const animations=node.getAnimations().filter(animation=>animation.animationName==='shell-game-alert-reveal');
+  if(animations.length!==1)throw Error('Original finite context entrance is required');
+  const animation=animations[0];animation.pause();animation.currentTime=60;
+  return {endTime:animation.effect.getComputedTiming().endTime,playState:animation.playState};
+ });
+ expect(entrance).toEqual({endTime:180,playState:'paused'});
+ let completed=false;
+ const pending=settleContextTarget(replay).then(()=>{completed=true;});
+ try{
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))));
+  expect(completed,'A paused original entrance must keep target measurement pending').toBe(false);
+  await notice.evaluate(node=>{for(const animation of node.getAnimations())animation.play();});
+  await pending;
+  const settled=await replay.boundingBox();expect(settled.width).toBeGreaterThanOrEqual(44);expect(settled.height).toBeGreaterThanOrEqual(44);
+  await replay.evaluate(button=>{button.style.minHeight='43px';button.style.height='43px';});
+  await settleContextTarget(replay);
+  const undersized=await replay.boundingBox();expect(undersized.height).toBe(43);
+  expect(()=>expect(undersized.height).toBeGreaterThanOrEqual(44),'Settlement must not admit a real undersized target').toThrow();
+ }finally{
+  await notice.evaluate(node=>{for(const animation of node.getAnimations())animation.play();}).catch(()=>{});
+  await pending.catch(()=>{});
+ }
 });
