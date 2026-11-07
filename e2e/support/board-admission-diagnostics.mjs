@@ -186,6 +186,20 @@ export function installBoardAdmissionCollector({targetRow,targetCol,sourceAttemp
   const documentNonce=crypto.randomUUID();
   Object.defineProperty(globalThis,'__boardAdmissionRecoveryDocument',{value:documentNonce,writable:false,configurable:false});
   log.recoveryNamespace=recoveryNamespace;log.documentNonce=documentNonce;
+  // Separate timeout observations never churn the existing Board/source buffers.
+  const rulesTimeouts=log.rulesTimeouts={version:1,timeOrigin:log.timeOrigin,rows:[],dropped:0,incomplete:false};let timeoutSequence=0;
+  const dropTimeout=()=>{rulesTimeouts.dropped++;rulesTimeouts.incomplete=true;};
+  globalThis.__boardAdmissionRulesTimeout=value=>{try{
+   if(!value||typeof value!=='object')throw Error('Invalid timeout scalar packet');
+   const descriptors=Object.getOwnPropertyDescriptors(value),keys=Reflect.ownKeys(descriptors),allowed=['jobId','type','scopeKind','active'];
+   if(keys.length!==allowed.length||keys.some(key=>!allowed.includes(key))||allowed.some(key=>!Object.hasOwn(descriptors[key]??{},'value')))throw Error('Invalid timeout descriptor');
+   const jobId=descriptors.jobId.value,type=descriptors.type.value,scopeKind=descriptors.scopeKind.value,active=descriptors.active.value;
+   if(!Number.isSafeInteger(jobId)||jobId<1||!['project','equivalent','previews','rush-guidance','other'].includes(type)||!['admit','project','reconcile','piece','rush-guidance','other'].includes(scopeKind)||typeof active!=='boolean')throw Error('Invalid timeout scalar');
+   const now=performance.now();if(!Number.isFinite(now)||now<0)throw Error('Invalid timeout clock');
+   if(rulesTimeouts.rows.length===64){dropTimeout();return;}
+   rulesTimeouts.rows.push({sequence:++timeoutSequence,jobId,type,scopeKind,active,now});
+  }catch{dropTimeout();}};
+
  }
  if(sourceEnabled)log.sourceWindow={expectedOrdinal:sourceAttemptOrdinal,attemptsObserved:0,observed:false,markerRecorded:false,first:[],tail:[],dropped:0,projectionFailures:0,incomplete:true,lastFailure:'source-attempt-unobserved'};
  const sourceFailure=category=>{try{log.incomplete=true;if(sourceActive){log.sourceWindow.incomplete=true;log.sourceWindow.projectionFailures++;log.sourceWindow.lastFailure=category;}}catch{}};
@@ -335,7 +349,7 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
     await recoveryHandoff.awaitDelivery(options);
     const handoff=recoveryHandoff.consume(),observation=handoff.observation;
     const missingModules=Object.keys(recipes).filter(pathname=>!transforms.some(row=>row.pathname===pathname));
-    const payload={caseTitle:info.title,observation,handoff:{...handoff,observation:undefined},transforms,errors,missingModules,incomplete:handoff.incomplete||errors.length>0||missingModules.length>0||!observation?.activation?.length||Boolean(observation?.incomplete),clock:'page.performance/timeOrigin; Node persistence wall clock separate',nodePersistedAt:new Date().toISOString()};
+    const payload={caseTitle:info.title,observation,handoff:{...handoff,observation:undefined},transforms,errors,missingModules,incomplete:handoff.incomplete||errors.length>0||missingModules.length>0||!observation?.activation?.length||Boolean(observation?.incomplete)||Boolean(observation?.rulesTimeouts?.incomplete),clock:'page.performance/timeOrigin; Node persistence wall clock separate',nodePersistedAt:new Date().toISOString()};
     await persistComputerRecoveryEvidence({handoff,info,payload,removeRoute:async()=>{if(installed)await page.unroute(pattern,handler);}});return;
    }
    try{

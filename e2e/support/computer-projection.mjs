@@ -6,10 +6,16 @@ import {COMPUTER_TIMING} from '../../apps/web/generated/packages/shared-types/sr
 export async function waitForOpponentReady(page, {timeoutMs = 45_000} = {}) {
   const receipt = await page.evaluate(async ({timeoutMs, detailAfterMs}) => {
     const started = performance.now();
-    let lastMessage = '', detailed = false, byteSamples = 0, lastBytes = null;
+    let lastMessage = '', detailed = false, byteSamples = 0, lastBytes = null, hasOpened = false;
+    const pause = () => new Promise(resolve => setTimeout(resolve, 100));
     while (performance.now() - started < timeoutMs) {
       const dialog = document.querySelector('dialog[open].opponent-story-modal');
-      if (!dialog) throw Error('Opponent preparation dialog closed before readiness');
+      if (!dialog) {
+        if (hasOpened) throw Error('Opponent preparation dialog closed before readiness');
+        await pause();
+        continue;
+      }
+      hasOpened = true;
       const play = dialog.querySelector('[data-story-play]');
       const status = dialog.querySelector('[data-story-readiness]');
       lastMessage = status?.textContent ?? '';
@@ -31,7 +37,7 @@ export async function waitForOpponentReady(page, {timeoutMs = 45_000} = {}) {
         if (elapsedMs >= detailAfterMs + 1000 && !detailed) throw Error('Slow opponent preparation did not expose detailed progress');
         return {elapsedMs:Math.round(elapsedMs), detailed, byteSamples, lastBytes};
       }
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await pause();
     }
     throw Error(`Opponent preparation exceeded its bounded workflow allowance: ${lastMessage}`);
   }, {timeoutMs, detailAfterMs:COMPUTER_TIMING.detailAfterMs});
