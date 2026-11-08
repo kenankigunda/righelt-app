@@ -10,8 +10,10 @@ function destination(input) {
   return url;
 }
 
-export async function createWorkerConnectionOrigin(input) {
+export async function createWorkerConnectionOrigin(input, { listenPort = 0 } = {}) {
   const target = destination(input);
+  if (!Number.isInteger(listenPort) || listenPort < 0 || listenPort > 65535)
+    throw new Error("Account worker forwarding requires an exact loopback listen port");
   const sockets = new Set();
   const track = socket => {
     sockets.add(socket);
@@ -82,7 +84,7 @@ export async function createWorkerConnectionOrigin(input) {
   server.keepAliveTimeout = 0;
   await new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => { server.off("error", reject); resolve(); });
+    server.listen(listenPort, "127.0.0.1", () => { server.off("error", reject); resolve(); });
   });
   let closing;
   const retire = () => closing ??= new Promise(resolve => server.close(resolve));

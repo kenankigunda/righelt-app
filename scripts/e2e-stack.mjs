@@ -1,4 +1,5 @@
 import { isStackStopping, recordUnexpectedExit } from './testing/stack-status.mjs';
+import { createPublicApiConnection, reserveApiBackendPort, waitForOwnedApiReady } from './api-public-connections.mjs';
 import { installProxyConnectionIsolation } from './auth-proxy-diagnostics.mjs';
 import { observeAuthService } from './auth-stack-diagnostics.mjs';
 import {storageFixtureConfig} from "./storage-fixture-config.mjs";
@@ -30,6 +31,10 @@ let tempRoot = "";
 let shuttingDown = false;
 const intentionalStops = new Set();
 let controlServer;
+let apiPublicConnection;
+const isolatePublicApi = process.env.RIGHELT_E2E_PUBLIC_API_ISOLATION === "1";
+if (isolatePublicApi && webPort !== DEFAULT_E2E_WEB_PORT)
+  throw new Error("Public API isolation prototype is limited to the original guest stack");
 let restartActive = false;
 let privateLogs;
 let proxyDiagnosticsInstallation;
@@ -134,6 +139,8 @@ const shutdown = async (exitCode = 0) => {
   }
   shuttingDown = true;
   controlServer?.close();
+  try { await apiPublicConnection?.close(); }
+  catch (error) { console.error(error); exitCode = 1; }
   // No services can launch once shutdown starts. Restore shared source before
   // waiting for nested guardians, whose grace period may outlast our parent.
   try { const restore = await proxyDiagnosticsInstallation; await restore?.(); }
@@ -205,7 +212,7 @@ const run = async () => {
   // starts so guest journeys exercise the same assets as deployment.
   await runBlocking("computer runtime", process.execPath, ["scripts/build-computer-player.mjs"], { cwd: repoRoot });
 
-  const startApi = () => spawnLogged(
+  const startApi = (listenPort = apiPort) => spawnLogged(
     "api",
     "pnpm",
     [
@@ -217,7 +224,7 @@ const run = async () => {
       "--config",
       apiConfig,
       "--port",
-      apiPort,
+      String(listenPort),
       "--var",`STORAGE_GENERATION:${generation}`,
       "--var",`AUTH_ALLOWED_ORIGINS:${webOrigin}`,
       "--persist-to",
@@ -225,7 +232,25 @@ const run = async () => {
     ],
     { cwd: repoRoot },
   );
-  let apiChild = startApi();
+  let apiChild;
+  const startOwnedApi = async () => {
+    if (!isolatePublicApi) { apiChild = startApi(); return; }
+    const backendPort = await reserveApiBackendPort([Number(apiPort), Number(webPort), e2eControlPort(webPort)]);
+    if (shuttingDown) return;
+    apiChild = startApi(backendPort);
+    const child = apiChild;
+    await waitForOwnedApiReady(child, backendPort, DEFAULT_E2E_READY_TIMEOUT_MS);
+    await waitForHttp(`http://127.0.0.1:${backendPort}/api/health`, "private local API backend");
+    if (shuttingDown) return;
+    if (child.exitCode !== null || child.signalCode !== null) throw new Error("Owned API exited before public bridge creation");
+    const connection = await createPublicApiConnection({ publicPort: Number(apiPort), backendPort });
+    apiPublicConnection = connection;
+    if (shuttingDown) { await connection.close(); return; }
+    if (child.exitCode !== null || child.signalCode !== null) { await connection.close(); throw new Error("Owned API exited during public bridge creation"); }
+    console.log(`[e2e-stack] owned public API bridge ${connection.url.origin} -> ${connection.target}`);
+  };
+  await startOwnedApi();
+  if (shuttingDown) return;
   // Test-runner-only loopback control: not served by Pages or the application Worker.
   controlServer = createServer(async (request, response) => {
     // Cross-origin websites cannot invoke local runner controls.
@@ -241,6 +266,7 @@ const run = async () => {
     if (restartActive) { response.writeHead(409).end(); return; }
     restartActive=true;
     try {
+      if (isolatePublicApi) { await apiPublicConnection?.close(); apiPublicConnection = undefined; }
       await stopChild(apiChild);
       const deadline=Date.now()+5000;
       let down=false;
@@ -250,7 +276,7 @@ const run = async () => {
       }
       if (!down || shuttingDown) throw new Error("API did not stop or stack is shutting down");
       if(reset){generation=`e2e-storage-${randomUUID()}`;apiPersistPath=path.join(persistRoot,generation);await mkdir(apiPersistPath,{recursive:true});await migrate();}
-      apiChild = startApi();
+      await startOwnedApi();
       await waitForHttp(apiHealthUrl, "restarted local API");
       response.writeHead(200).end("restarted");
     } catch (error) { response.writeHead(500).end(String(error)); } finally { restartActive=false; }
