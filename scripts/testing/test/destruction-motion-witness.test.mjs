@@ -5,17 +5,17 @@ import vm from 'node:vm';
 const source=readFileSync(new URL('../../../e2e/workflows/destruction-lifecycle.spec.mjs',import.meta.url),'utf8');
 const start=source.indexOf('function armDestructionWitness('),end=source.indexOf('const observedCount=',start);
 assert(start>=0&&end>start);
-function harness(count=2,motion=true){
- let nodes=[],at=0,observer,disconnected=false,next=0;const frames=new Map();
- const context={window:{},performance:{now:()=>at},document:{querySelector:()=>({}),querySelectorAll:()=>nodes},
-  MutationObserver:class{constructor(fn){observer=fn;}observe(){}disconnect(){disconnected=true;}},
+function harness(count=2,motion=true,legacyBoardTarget=false){
+ let nodes=[],at=0,observer,observedTarget,board={},disconnected=false,next=0;const frames=new Map();const documentRoot={};
+ const context={window:{},performance:{now:()=>at},document:{documentElement:documentRoot,querySelector:()=>board,querySelectorAll:()=>nodes},
+  MutationObserver:class{constructor(fn){observer=fn;}observe(target){observedTarget=target;}disconnect(){disconnected=true;}},
   requestAnimationFrame:fn=>{frames.set(++next,fn);return next;},cancelAnimationFrame:id=>frames.delete(id)};
- vm.createContext(context);vm.runInContext(source.slice(start,end),context);
+ vm.createContext(context);vm.runInContext(legacyBoardTarget?source.slice(start,end).replace('observer.observe(document.documentElement,',"observer.observe(document.querySelector('#shell-board'),"):source.slice(start,end),context);
  context.armDestructionWitness({key:'proof',count,signatures:motion?['6,4:Red unit','7,4:Red unit']:null});
  const entry=context.window.destructionWitnesses.proof;
  const make=(row,col,id)=>{const animation={currentTime:0,playState:'running',delay:0,duration:2400,effect:{getComputedTiming(){return {activeDuration:animation.duration,delay:animation.delay};}}};
   return {animation,node:{getAnimations:()=>[animation],closest:()=>({dataset:{row:String(row),col:String(col)}}),getAttribute:name=>name==='aria-label'?'Red unit':id}};};
- return {entry,make,add(values,time=0){at=time;nodes=values.map(v=>v.node);observer();},frame(time){at=time;const callbacks=[...frames.values()];frames.clear();for(const fn of callbacks)fn();},get clean(){return disconnected&&frames.size===0;}};
+ return {entry,make,add(values,time=0){at=time;nodes=values.map(v=>v.node);if(observedTarget===board||observedTarget===documentRoot)observer();},replaceBoard(values,time=0){at=time;board={};nodes=values.map(v=>v.node);if(observedTarget===documentRoot)observer();},frame(time){at=time;const callbacks=[...frames.values()];frames.clear();for(const fn of callbacks)fn();},get clean(){return disconnected&&frames.size===0;}};
 }
 const pair=h=>[h.make(6,4,'U1-2'),h.make(7,4,'U1-3')];
 test('actual early DOM sample proves native advancement on first1112ms RAF before next1641ms expiry gap',async()=>{
@@ -76,4 +76,29 @@ test('mixed replacement keeps strict fractional reset detection on retained nati
  const replacement=h.make(6,4,'U1-2');replacement.animation.delay=-102;
  first[1].animation.currentTime=102.5;h.add([replacement,first[1]],103);
  await assert.rejects(h.entry.promise,/logical timeline reset/);assert(h.clean);
+});
+test('stable document observation records count after whole-board replacement; old target misses it',async()=>{
+ for(const legacy of [true,false]){
+  const h=harness(5,false,legacy),values=Array.from({length:5},(_,i)=>h.make(i,0,String(i)));h.replaceBoard(values,10);
+  if(legacy){assert.equal(h.entry.witness.outcome,'pending');h.entry.dispose();await assert.rejects(h.entry.promise,/disposed/);}
+  else assert.equal((await h.entry.promise).count,5);
+  assert(h.clean);
+ }
+});
+test('document-root mutation primes motion before late RAF after whole-board replacement',async()=>{
+ for(const legacy of [true,false]){
+  const h=harness(2,true,legacy),values=pair(h);h.replaceBoard(values,14);values.forEach(v=>v.animation.currentTime=1112);h.frame(1126);
+  if(legacy){assert.equal(h.entry.witness.outcome,'pending');h.replaceBoard([],2767);h.frame(2767);await assert.rejects(h.entry.promise,/expired/);}
+  else{const result=await h.entry.promise;assert.equal(result.first[0].nativeTime,0);assert.equal(result.next[0].nativeTime,1112);}
+  assert(h.clean);
+ }
+});
+test('completed native proof carries full timing witness before reload and the attachment retains it',async()=>{
+ const h=harness(),values=pair(h);h.add(values,14);values.forEach(v=>v.animation.currentTime=1112);h.frame(1126);
+ // This is the actual evaluate result crossing the page/host JSON boundary.
+ const motion=JSON.parse(JSON.stringify(await h.entry.promise));
+ assert.equal(motion.witness.outcome,'advanced');assert.equal(motion.witness.first.samples[0].nativeTime,0);
+ assert.equal(motion.witness.next.samples[0].nativeTime,1112);assert.equal(motion.witness.frames.length,2);
+ const capture=source.indexOf('retainedMotionWitness=motion.witness;'),reload=source.indexOf('await page.reload();');
+ assert(capture>=0&&reload>capture);assert(source.includes('const witness=retainedMotionWitness??await page.evaluate('));assert(h.clean);
 });

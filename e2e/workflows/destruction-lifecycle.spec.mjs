@@ -54,11 +54,11 @@ function armDestructionWitness({key,count,signatures=null}) {
   // Retiming or replacement alone is not motion. Only a later native frame on
   // the same objects can establish native currentTime advancement.
   if(source==='frame'&&samples.every((sample,index)=>sample.nativeTime>candidate[index].sample.nativeTime)){
-   witness.next={at,samples};finish(null,{first:candidate.map(entry=>entry.sample),next:samples});
+   witness.next={at,samples};finish(null,{first:candidate.map(entry=>entry.sample),next:samples,witness});
   }
  };
  const observer=new MutationObserver(()=>{try{inspect('mutation');}catch(error){finish(String(error));}});
- observer.observe(document.querySelector('#shell-board'),{childList:true,subtree:true});
+ observer.observe(document.documentElement,{childList:true,subtree:true});
  const frame=()=>{frameId=null;try{inspect('frame');}catch(error){finish(String(error));}if(!settled)frameId=requestAnimationFrame(frame);};
  witnesses[key]={promise,witness,dispose:()=>finish('Destruction witness disposed before proof')};
  if(signatures){window.destructionMotionProof=promise;window.destructionMotionWitness=witness;frameId=requestAnimationFrame(frame);}
@@ -71,6 +71,7 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
  const owner=await createOwnedContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1100},hasTouch:mobile});
  const observer=await createOwnedContext({viewport:{width:1440,height:1100}});
  const page=await owner.newPage(), viewer=await observer.newPage();
+ let retainedMotionWitness=null;
  try{
   const {gameId,gameHash}=await importScenarioGame(page,scenario,baseURL);
   await switchGamePanel(page,'board');
@@ -87,6 +88,7 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
   await end.click();
   const effects=p=>p.locator('#shell-board .removal-piece');
   const [motion]=await Promise.all([page.evaluate(()=>window.destructionMotionProof),observedCount(viewer,'viewer-count')]);
+  retainedMotionWitness=motion.witness;
   expect(motion.first.map(sample=>sample.signature)).toEqual(['6,4:Red unit','7,4:Red unit']);
   expect(motion.next.map(sample=>sample.signature)).toEqual(motion.first.map(sample=>sample.signature));
   expect(motion.next.every((sample,index)=>sample.duration===2400&&sample.pieceId===motion.first[index].pieceId&&sample.nodeId===motion.first[index].nodeId&&sample.animationId===motion.first[index].animationId&&sample.nativeTime>motion.first[index].nativeTime&&sample.elapsed>motion.first[index].elapsed)).toBe(true);
@@ -122,7 +124,7 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
   }
  }finally{
   await Promise.all([page,viewer].map(p=>disposeDestructionWitnesses(p).catch(()=>{})));
-  const witness=await page.evaluate(()=>window.destructionMotionWitness??null).catch(error=>({readError:String(error)}));
+  const witness=retainedMotionWitness??await page.evaluate(()=>window.destructionMotionWitness??null).catch(error=>({readError:String(error)}));
   await testInfo.attach('destruction-motion-witness',{body:JSON.stringify(witness,null,2),contentType:'application/json'});
  }
 });
