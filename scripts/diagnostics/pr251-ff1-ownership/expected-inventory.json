@@ -1,0 +1,471 @@
+{
+  "productHead": "2f2d7e12530004136dd64c5d8b958c8683166674",
+  "productTree": "a17ec48d131f140c50e902569c29b7c406de84ec",
+  "sourceFingerprint": "78f3d3f373daa6efbd25f2c6285765233c43fdd129e05e104a088708848d2c38",
+  "lane": "e2e:firefox:1/2",
+  "inventory": [
+    "ce5d5425da45bf533599-e367d5627af4c31237d0",
+    "ce5d5425da45bf533599-63d8d421d88fdc7c7266",
+    "ce5d5425da45bf533599-150963c81c4bd9eda7f8",
+    "4a93d7e67d8626a13aad-5f57cf14cf6ab6570769",
+    "4a93d7e67d8626a13aad-819b9583476ed12db097",
+    "625023dbea0990973129-0d573839d1e2ef6ac060",
+    "625023dbea0990973129-2c85551c951cd13b98ab",
+    "625023dbea0990973129-67c4739bd1e7ba2c9bcc",
+    "625023dbea0990973129-3eee2a1e3fb5309d828d",
+    "8c4111a0005e4b0957b7-47775dcea9986baacc17",
+    "8c4111a0005e4b0957b7-554cad75e91f05044987",
+    "8c4111a0005e4b0957b7-6ecb452e90ae56585c5f",
+    "3b527117df1766c4b677-2a5087a47db605715a53",
+    "3b527117df1766c4b677-b959f0ef063a4ad68dfa",
+    "3b527117df1766c4b677-37ff1f0ecf2cf5164ae1",
+    "3b527117df1766c4b677-a4580d189eaef395a16c",
+    "3b527117df1766c4b677-9a2f0d76f6cf2942dc78",
+    "3b527117df1766c4b677-9efd8cbab9dcd9662cad",
+    "3b527117df1766c4b677-5dd7070e879a98fda423",
+    "3b527117df1766c4b677-f92ecdacbbb513514f4b",
+    "3b527117df1766c4b677-338e526ab4caa042a8b5",
+    "3b527117df1766c4b677-0f5129202083e4c65669",
+    "3b527117df1766c4b677-8713bc4cede825d543fb",
+    "3b527117df1766c4b677-233037c6471b446c4a39",
+    "ba6a060a2e6f3a85f200-7f9c8ae8c3c7751b626b",
+    "ba6a060a2e6f3a85f200-8f5115396a49df4e1409",
+    "ba6a060a2e6f3a85f200-1808cea9a80299c267bf",
+    "ba6a060a2e6f3a85f200-c89aba8c6826b2673a7b",
+    "ba6a060a2e6f3a85f200-da75872458fb907180d2",
+    "fbe88226b0a1967259eb-f79f7844f2de887308c5",
+    "fbe88226b0a1967259eb-7b0e2636be17ba1b2196",
+    "fbe88226b0a1967259eb-8315769c91c134bca223",
+    "b56f5d77ed40f61cca31-5a137528412ffcce7655",
+    "b56f5d77ed40f61cca31-f55d38320e8ee2e56330",
+    "b56f5d77ed40f61cca31-b7cbbcdd16127101ed0d",
+    "b56f5d77ed40f61cca31-7ee9ce35210ac854fd72",
+    "504d4c53209de253c83d-d78dbab63b479cf498ff",
+    "504d4c53209de253c83d-f7da107d123f1b88b6ef",
+    "504d4c53209de253c83d-13adee09e2253d17b60f",
+    "ca6e3fb8130f4bc1b8ec-d697b1052208bbfe6808",
+    "ca6e3fb8130f4bc1b8ec-60a308d2db3f7a792cab",
+    "ca6e3fb8130f4bc1b8ec-90cae9c0d114c4ac67be",
+    "ca6e3fb8130f4bc1b8ec-3cfdce6ee48df1a14354",
+    "ca6e3fb8130f4bc1b8ec-6f9b0ed4bcd2cd0601b8",
+    "ca6e3fb8130f4bc1b8ec-d3cef7b13517af6f21f3",
+    "ca6e3fb8130f4bc1b8ec-ee7604c4862705bfc459",
+    "ca6e3fb8130f4bc1b8ec-77d134cfae29eea69d32",
+    "ca6e3fb8130f4bc1b8ec-6929c06dbecd72095bce",
+    "ca6e3fb8130f4bc1b8ec-a541f84000627402d16c",
+    "ca6e3fb8130f4bc1b8ec-3ecd5dbffec627a13387",
+    "ca6e3fb8130f4bc1b8ec-b7415bd15f5ff6c25f8a",
+    "ca6e3fb8130f4bc1b8ec-027b8de200b24f726fd7",
+    "ca6e3fb8130f4bc1b8ec-d4c56a007da18fcfe9d7",
+    "ca6e3fb8130f4bc1b8ec-e00ae63617bf141a54e4",
+    "ca6e3fb8130f4bc1b8ec-7d72cc6706d9cd18424a",
+    "ca6e3fb8130f4bc1b8ec-605573a735df9a258c4a",
+    "2372364d46babfbfb51f-efc041f41a31e9b938bb",
+    "2372364d46babfbfb51f-7b2a5744bce7947e4eaa",
+    "2372364d46babfbfb51f-13541d0a5177f15e847b",
+    "2372364d46babfbfb51f-1b790a9ba8b97d795601",
+    "2372364d46babfbfb51f-a3882775bfc890b210eb",
+    "2372364d46babfbfb51f-682e53de942d440625bc",
+    "2372364d46babfbfb51f-05198718ff99b23e9c73",
+    "2372364d46babfbfb51f-24432e865877bf5167e5",
+    "b69fe954460e900da117-d25f4b4cde9e09e1be61",
+    "b69fe954460e900da117-269c67191ab4f0385f48",
+    "b69fe954460e900da117-8535285d64e901fe8f83",
+    "b69fe954460e900da117-f498c720a60e23d6086d",
+    "b69fe954460e900da117-748bb590ca2aa64b21ef",
+    "b6ea69f1722b5b071a9c-a93a9dd3f4b8121f6df5",
+    "b6ea69f1722b5b071a9c-4bfa098a15356216493f",
+    "b6ea69f1722b5b071a9c-bcf071f60cdd601659ee",
+    "b6ea69f1722b5b071a9c-84bd34240bc94cf15a5c",
+    "b6ea69f1722b5b071a9c-97f23d40c29777d44545"
+  ],
+  "tests": [
+    {
+      "id": "ce5d5425da45bf533599-e367d5627af4c31237d0",
+      "name": " > firefox > workflows/browser-move-input.spec.mjs > phone instructions keep the board stationary during source and hover selection",
+      "file": "workflows/browser-move-input.spec.mjs"
+    },
+    {
+      "id": "ce5d5425da45bf533599-63d8d421d88fdc7c7266",
+      "name": " > firefox > workflows/browser-move-input.spec.mjs > browser move submission follows hover destination selection",
+      "file": "workflows/browser-move-input.spec.mjs"
+    },
+    {
+      "id": "ce5d5425da45bf533599-150963c81c4bd9eda7f8",
+      "name": " > firefox > workflows/browser-move-input.spec.mjs > browser move submission follows click destination selection",
+      "file": "workflows/browser-move-input.spec.mjs"
+    },
+    {
+      "id": "4a93d7e67d8626a13aad-5f57cf14cf6ab6570769",
+      "name": " > firefox > workflows/completed-game-review.spec.mjs > completed computer games stay read-only and Players identities remain clear at 390px",
+      "file": "workflows/completed-game-review.spec.mjs"
+    },
+    {
+      "id": "4a93d7e67d8626a13aad-819b9583476ed12db097",
+      "name": " > firefox > workflows/completed-game-review.spec.mjs > completed computer games stay read-only and Players identities remain clear at 1440px",
+      "file": "workflows/completed-game-review.spec.mjs"
+    },
+    {
+      "id": "625023dbea0990973129-0d573839d1e2ef6ac060",
+      "name": " > firefox > workflows/completion-preserving-retreat.spec.mjs > human retreat excludes the stranded square and completes the native Follow",
+      "file": "workflows/completion-preserving-retreat.spec.mjs"
+    },
+    {
+      "id": "625023dbea0990973129-2c85551c951cd13b98ab",
+      "name": " > firefox > workflows/completion-preserving-retreat.spec.mjs > the real computer defender records only the completion-preserving retreat",
+      "file": "workflows/completion-preserving-retreat.spec.mjs"
+    },
+    {
+      "id": "625023dbea0990973129-67c4739bd1e7ba2c9bcc",
+      "name": " > firefox > workflows/completion-preserving-retreat.spec.mjs > the real computer defender leaves a completion-preserving native Follow",
+      "file": "workflows/completion-preserving-retreat.spec.mjs"
+    },
+    {
+      "id": "625023dbea0990973129-3eee2a1e3fb5309d828d",
+      "name": " > firefox > workflows/completion-preserving-retreat.spec.mjs > a retained stranded Follow stays ongoing and its move-row Undo restores live Board",
+      "file": "workflows/completion-preserving-retreat.spec.mjs"
+    },
+    {
+      "id": "8c4111a0005e4b0957b7-47775dcea9986baacc17",
+      "name": " > firefox > workflows/computer-feedback.spec.mjs > computer save failures take priority while the delayed saving notice stays available without shifting the board",
+      "file": "workflows/computer-feedback.spec.mjs"
+    },
+    {
+      "id": "8c4111a0005e4b0957b7-554cad75e91f05044987",
+      "name": " > firefox > workflows/computer-feedback.spec.mjs > a transient computer proof save recovers automatically without manual recovery",
+      "file": "workflows/computer-feedback.spec.mjs"
+    },
+    {
+      "id": "8c4111a0005e4b0957b7-6ecb452e90ae56585c5f",
+      "name": " > firefox > workflows/computer-feedback.spec.mjs > an invalid computer proof save exposes immediate recovery and Resume here completes the real move",
+      "file": "workflows/computer-feedback.spec.mjs"
+    },
+    {
+      "id": "3b527117df1766c4b677-2a5087a47db605715a53",
+      "name": " > firefox > workflows/computer-tab-recovery.spec.mjs > a human destination survives fresh renewal and its first confirmation reaches one receipt",
+      "file": "workflows/computer-tab-recovery.spec.mjs"
+    },
+    {
+      "id": "3b527117df1766c4b677-b959f0ef063a4ad68dfa",
+      "name": " > firefox > workflows/computer-tab-recovery.spec.mjs > closing the original tab automatically restores computer play in a new tab with the same owner",
+      "file": "workflows/computer-tab-recovery.spec.mjs"
+    },
+    {
+      "id": "3b527117df1766c4b677-37ff1f0ecf2cf5164ae1",
+      "name": " > firefox > workflows/computer-tab-recovery.spec.mjs > player card deliberately restores paused manual play and lost acknowledgement keeps one resume intent",
+      "file": "workflows/computer-tab-recovery.spec.mjs"
+    },
+    {
+      "id": "3b527117df1766c4b677-a4580d189eaef395a16c",
+      "name": " > firefox > workflows/computer-tab-recovery.spec.mjs > competing tabs transfer control deliberately without changing seats or model",
+      "file": "workflows/computer-tab-recovery.spec.mjs"
+    },
+    {
+      "id": "3b527117df1766c4b677-9a2f0d76f6cf2942dc78",
+      "name": " > firefox > workflows/computer-tab-recovery.spec.mjs > abrupt browser termination releases authority after lease expiry",
+      "file": "workflows/computer-tab-recovery.spec.mjs"
+    },
+    {
+      "id": "3b527117df1766c4b677-9efd8cbab9dcd9662cad",
+      "name": " > firefox > workflows/computer-tab-recovery.spec.mjs > a suspended JavaScript renderer reacquires authority when resumed",
+      "file": "workflows/computer-tab-recovery.spec.mjs"
+    },
+    {
+      "id": "3b527117df1766c4b677-5dd7070e879a98fda423",
+      "name": " > firefox > workflows/computer-tab-recovery.spec.mjs > Home reuse starts Tau while the previous admitted control delivery is unresolved",
+      "file": "workflows/computer-tab-recovery.spec.mjs"
+    },
+    {
+      "id": "3b527117df1766c4b677-f92ecdacbbb513514f4b",
+      "name": " > firefox > workflows/computer-tab-recovery.spec.mjs > a routine human-turn renewal stays quiet until real control becomes uncertain",
+      "file": "workflows/computer-tab-recovery.spec.mjs"
+    },
+    {
+      "id": "3b527117df1766c4b677-338e526ab4caa042a8b5",
+      "name": " > firefox > workflows/computer-tab-recovery.spec.mjs > computer play automatically recovers when manifest unavailable",
+      "file": "workflows/computer-tab-recovery.spec.mjs"
+    },
+    {
+      "id": "3b527117df1766c4b677-0f5129202083e4c65669",
+      "name": " > firefox > workflows/computer-tab-recovery.spec.mjs > computer play automatically recovers when evidence response lost",
+      "file": "workflows/computer-tab-recovery.spec.mjs"
+    },
+    {
+      "id": "3b527117df1766c4b677-8713bc4cede825d543fb",
+      "name": " > firefox > workflows/computer-tab-recovery.spec.mjs > computer play automatically recovers when evidence write unavailable",
+      "file": "workflows/computer-tab-recovery.spec.mjs"
+    },
+    {
+      "id": "3b527117df1766c4b677-233037c6471b446c4a39",
+      "name": " > firefox > workflows/computer-tab-recovery.spec.mjs > an explicit human Pass during fresh renewal reaches one authoritative receipt",
+      "file": "workflows/computer-tab-recovery.spec.mjs"
+    },
+    {
+      "id": "ba6a060a2e6f3a85f200-7f9c8ae8c3c7751b626b",
+      "name": " > firefox > workflows/desktop-board-fit.spec.mjs > desktop board fits primary viewport, remains stable through scroll/header controls and keeps a floor in short windows",
+      "file": "workflows/desktop-board-fit.spec.mjs"
+    },
+    {
+      "id": "ba6a060a2e6f3a85f200-8f5115396a49df4e1409",
+      "name": " > firefox > workflows/desktop-board-fit.spec.mjs > desktop board fits the generic platform fallback at 1440x800",
+      "file": "workflows/desktop-board-fit.spec.mjs"
+    },
+    {
+      "id": "ba6a060a2e6f3a85f200-1808cea9a80299c267bf",
+      "name": " > firefox > workflows/desktop-board-fit.spec.mjs > cold loading populates the same card shape and100-cell grid at 1440x800 and100% text",
+      "file": "workflows/desktop-board-fit.spec.mjs"
+    },
+    {
+      "id": "ba6a060a2e6f3a85f200-c89aba8c6826b2673a7b",
+      "name": " > firefox > workflows/desktop-board-fit.spec.mjs > cold loading populates the same card shape and100-cell grid at 390x740 and100% text",
+      "file": "workflows/desktop-board-fit.spec.mjs"
+    },
+    {
+      "id": "ba6a060a2e6f3a85f200-da75872458fb907180d2",
+      "name": " > firefox > workflows/desktop-board-fit.spec.mjs > cold loading populates the same card shape and100-cell grid at 1440x800 and200% text",
+      "file": "workflows/desktop-board-fit.spec.mjs"
+    },
+    {
+      "id": "fbe88226b0a1967259eb-f79f7844f2de887308c5",
+      "name": " > firefox > workflows/destruction-lifecycle.spec.mjs > turn-end losses animate once for player and viewer and persist in history (desktop)",
+      "file": "workflows/destruction-lifecycle.spec.mjs"
+    },
+    {
+      "id": "fbe88226b0a1967259eb-7b0e2636be17ba1b2196",
+      "name": " > firefox > workflows/destruction-lifecycle.spec.mjs > turn-end losses animate once for player and viewer and persist in history (phone)",
+      "file": "workflows/destruction-lifecycle.spec.mjs"
+    },
+    {
+      "id": "fbe88226b0a1967259eb-8315769c91c134bca223",
+      "name": " > firefox > workflows/destruction-lifecycle.spec.mjs > screenshot project plays five supply-loss effects on both connected clients",
+      "file": "workflows/destruction-lifecycle.spec.mjs"
+    },
+    {
+      "id": "b56f5d77ed40f61cca31-5a137528412ffcce7655",
+      "name": " > firefox > workflows/destruction-sound.spec.mjs > native audio resumes and advances after a trusted pointer gesture without application code",
+      "file": "workflows/destruction-sound.spec.mjs"
+    },
+    {
+      "id": "b56f5d77ed40f61cca31-f55d38320e8ee2e56330",
+      "name": " > firefox > workflows/destruction-sound.spec.mjs > retained local destruction audio > real audio destruction batches deduplicate local receipts while reload, history and replay stay silent",
+      "file": "workflows/destruction-sound.spec.mjs"
+    },
+    {
+      "id": "b56f5d77ed40f61cca31-b7cbbcdd16127101ed0d",
+      "name": " > firefox > workflows/destruction-sound.spec.mjs > retained local destruction audio > the same observed owner stays muted through a new destruction game and reload",
+      "file": "workflows/destruction-sound.spec.mjs"
+    },
+    {
+      "id": "b56f5d77ed40f61cca31-7ee9ce35210ac854fd72",
+      "name": " > firefox > workflows/destruction-sound.spec.mjs > real audio remote finalization deduplicates its durable receipt while its owner stays muted",
+      "file": "workflows/destruction-sound.spec.mjs"
+    },
+    {
+      "id": "504d4c53209de253c83d-d78dbab63b479cf498ff",
+      "name": " > firefox > workflows/game-loading-follow.spec.mjs > retained Horus follow > the exact follow saves once and pauses with its durable receipt",
+      "file": "workflows/game-loading-follow.spec.mjs"
+    },
+    {
+      "id": "504d4c53209de253c83d-f7da107d123f1b88b6ef",
+      "name": " > firefox > workflows/game-loading-follow.spec.mjs > retained Horus follow > the same saved follow survives reload and resumes a distinct native Horus move",
+      "file": "workflows/game-loading-follow.spec.mjs"
+    },
+    {
+      "id": "504d4c53209de253c83d-13adee09e2253d17b60f",
+      "name": " > firefox > workflows/game-loading-follow.spec.mjs > retained Horus follow > the resumed retained game completes its required board visual phase",
+      "file": "workflows/game-loading-follow.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-d697b1052208bbfe6808",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > guest computer finishes a catalog position and prepares a fresh rematch",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-60a308d2db3f7a792cab",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 320px > guest computer prepares and accepts a real turn at 320px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-90cae9c0d114c4ac67be",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 320px > the same accepted guest turn replays without writes at 320px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-3cfdce6ee48df1a14354",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 320px > the same guest computer game survives reload and undo at 320px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-6f9b0ed4bcd2cd0601b8",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 320px > export preserves the same undone computer game and accepted attempt at 320px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-d3cef7b13517af6f21f3",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 390px > guest computer prepares and accepts a real turn at 390px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-ee7604c4862705bfc459",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 390px > the same accepted guest turn replays without writes at 390px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-77d134cfae29eea69d32",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 390px > the same guest computer game survives reload and undo at 390px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-6929c06dbecd72095bce",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 390px > export preserves the same undone computer game and accepted attempt at 390px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-a541f84000627402d16c",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 430px > guest computer prepares and accepts a real turn at 430px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-3ecd5dbffec627a13387",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 430px > the same accepted guest turn replays without writes at 430px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-b7415bd15f5ff6c25f8a",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 430px > the same guest computer game survives reload and undo at 430px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-027b8de200b24f726fd7",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 430px > export preserves the same undone computer game and accepted attempt at 430px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-d4c56a007da18fcfe9d7",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 1440px > guest computer prepares and accepts a real turn at 1440px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-e00ae63617bf141a54e4",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 1440px > the same accepted guest turn replays without writes at 1440px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-7d72cc6706d9cd18424a",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 1440px > the same guest computer game survives reload and undo at 1440px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "ca6e3fb8130f4bc1b8ec-605573a735df9a258c4a",
+      "name": " > firefox > workflows/guest-computer-play.spec.mjs > retained guest computer game at 1440px > export preserves the same undone computer game and accepted attempt at 1440px",
+      "file": "workflows/guest-computer-play.spec.mjs"
+    },
+    {
+      "id": "2372364d46babfbfb51f-efc041f41a31e9b938bb",
+      "name": " > firefox > workflows/history-endpoint-roles.spec.mjs > Three rushes: History separates endpoint roles at 390px",
+      "file": "workflows/history-endpoint-roles.spec.mjs"
+    },
+    {
+      "id": "2372364d46babfbfb51f-7b2a5744bce7947e4eaa",
+      "name": " > firefox > workflows/history-endpoint-roles.spec.mjs > Push, retreat and followers: History separates endpoint roles at 390px",
+      "file": "workflows/history-endpoint-roles.spec.mjs"
+    },
+    {
+      "id": "2372364d46babfbfb51f-13541d0a5177f15e847b",
+      "name": " > firefox > workflows/history-endpoint-roles.spec.mjs > Projection: History separates endpoint roles at 390px",
+      "file": "workflows/history-endpoint-roles.spec.mjs"
+    },
+    {
+      "id": "2372364d46babfbfb51f-1b790a9ba8b97d795601",
+      "name": " > firefox > workflows/history-endpoint-roles.spec.mjs > Push and destruction: History separates endpoint roles at 390px",
+      "file": "workflows/history-endpoint-roles.spec.mjs"
+    },
+    {
+      "id": "2372364d46babfbfb51f-a3882775bfc890b210eb",
+      "name": " > firefox > workflows/history-endpoint-roles.spec.mjs > Three rushes: History separates endpoint roles at 1440px",
+      "file": "workflows/history-endpoint-roles.spec.mjs"
+    },
+    {
+      "id": "2372364d46babfbfb51f-682e53de942d440625bc",
+      "name": " > firefox > workflows/history-endpoint-roles.spec.mjs > Push, retreat and followers: History separates endpoint roles at 1440px",
+      "file": "workflows/history-endpoint-roles.spec.mjs"
+    },
+    {
+      "id": "2372364d46babfbfb51f-05198718ff99b23e9c73",
+      "name": " > firefox > workflows/history-endpoint-roles.spec.mjs > Projection: History separates endpoint roles at 1440px",
+      "file": "workflows/history-endpoint-roles.spec.mjs"
+    },
+    {
+      "id": "2372364d46babfbfb51f-24432e865877bf5167e5",
+      "name": " > firefox > workflows/history-endpoint-roles.spec.mjs > Push and destruction: History separates endpoint roles at 1440px",
+      "file": "workflows/history-endpoint-roles.spec.mjs"
+    },
+    {
+      "id": "b69fe954460e900da117-d25f4b4cde9e09e1be61",
+      "name": " > firefox > workflows/home-card-pagination-reorder.spec.mjs > home pagination remains contained with page zoom at the smallest viewport",
+      "file": "workflows/home-card-pagination-reorder.spec.mjs"
+    },
+    {
+      "id": "b69fe954460e900da117-269c67191ab4f0385f48",
+      "name": " > firefox > workflows/home-card-pagination-reorder.spec.mjs > home pagination refreshes correctly when a moved game reorders onto an earlier page",
+      "file": "workflows/home-card-pagination-reorder.spec.mjs"
+    },
+    {
+      "id": "b69fe954460e900da117-8535285d64e901fe8f83",
+      "name": " > firefox > workflows/home-card-pagination-reorder.spec.mjs > home header pagination is visible at narrow viewport with a multi-column grid",
+      "file": "workflows/home-card-pagination-reorder.spec.mjs"
+    },
+    {
+      "id": "b69fe954460e900da117-f498c720a60e23d6086d",
+      "name": " > firefox > workflows/home-card-pagination-reorder.spec.mjs > home pagination keeps both arrows and its label on one line across layouts",
+      "file": "workflows/home-card-pagination-reorder.spec.mjs"
+    },
+    {
+      "id": "b69fe954460e900da117-748bb590ca2aa64b21ef",
+      "name": " > firefox > workflows/home-card-pagination-reorder.spec.mjs > home pagination fits pending, final-page, and delayed-font controls at enlarged text size",
+      "file": "workflows/home-card-pagination-reorder.spec.mjs"
+    },
+    {
+      "id": "b6ea69f1722b5b071a9c-a93a9dd3f4b8121f6df5",
+      "name": " > firefox > workflows/home-create-refresh.spec.mjs > early opponent introduction survives initial guest session adoption",
+      "file": "workflows/home-create-refresh.spec.mjs"
+    },
+    {
+      "id": "b6ea69f1722b5b071a9c-4bfa098a15356216493f",
+      "name": " > firefox > workflows/home-create-refresh.spec.mjs > logical early-create intent waits for guest bootstrap without opening account sign-in",
+      "file": "workflows/home-create-refresh.spec.mjs"
+    },
+    {
+      "id": "b6ea69f1722b5b071a9c-bcf071f60cdd601659ee",
+      "name": " > firefox > workflows/home-create-refresh.spec.mjs > home refresh preserves pointer activation already in progress",
+      "file": "workflows/home-create-refresh.spec.mjs"
+    },
+    {
+      "id": "b6ea69f1722b5b071a9c-84bd34240bc94cf15a5c",
+      "name": " > firefox > workflows/home-create-refresh.spec.mjs > home refresh preserves keyboard activation already in progress",
+      "file": "workflows/home-create-refresh.spec.mjs"
+    },
+    {
+      "id": "b6ea69f1722b5b071a9c-97f23d40c29777d44545",
+      "name": " > firefox > workflows/home-create-refresh.spec.mjs > bounded Home loading retires without growing its pending card",
+      "file": "workflows/home-create-refresh.spec.mjs"
+    }
+  ],
+  "horusIDs": [
+    "504d4c53209de253c83d-d78dbab63b479cf498ff",
+    "504d4c53209de253c83d-f7da107d123f1b88b6ef",
+    "504d4c53209de253c83d-13adee09e2253d17b60f"
+  ],
+  "target": {
+    "id": "504d4c53209de253c83d-13adee09e2253d17b60f",
+    "name": "retained-board-navigation-ownership",
+    "contentType": "application/json"
+  },
+  "historicalNative": {
+    "total": 74,
+    "passed": 72,
+    "intentionalSkipped": 2,
+    "noOwnershipJSON": true
+  },
+  "originalReceiptSHA256": "9891e6c17828540f86eaf1037e9c4102c9392c31fefb8fcf32ca546702d6e74a"
+}

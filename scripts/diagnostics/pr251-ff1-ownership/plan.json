@@ -1,0 +1,59 @@
+{
+  "execute": false,
+  "purpose": "Persist original inline ownership JSON in full matching Linux FF1, no new actions/official CI credit",
+  "productHead": "2f2d7e12530004136dd64c5d8b958c8683166674",
+  "productTree": "a17ec48d131f140c50e902569c29b7c406de84ec",
+  "releasedTools": "0c7b51b64c26604f1e08939e827cb4a934aa4f93",
+  "lane": {
+    "suite": "e2e",
+    "project": "firefox",
+    "shard": 1,
+    "shards": 2
+  },
+  "originalInventory": 74,
+  "originalIntentionalSkips": 2,
+  "requiredHorusSerialPhases": 3,
+  "runtime": {
+    "os": "ubuntu-24.04 GitHub hosted",
+    "node": "22.23.4",
+    "pnpm": "9.15.9",
+    "playwright": "1.59.1",
+    "workers": 1,
+    "retries": 0,
+    "bodyTimeout": 60000,
+    "expectTimeout": 10000,
+    "trace": "retain-on-failure",
+    "screenshot": "only-on-failure",
+    "audio": "Original Linux Firefox CI PulseAudio wrapper unchanged"
+  },
+  "originalInvocation": {
+    "entry": "scripts/testing/run.mjs runSuite",
+    "laneArguments": "pnpm test:e2e --project=firefox --shard=1/2",
+    "originalPrelist": "Unchanged runSuite original inventory subprocess before native",
+    "soleNativeDelta": "Append observer to original reporter set via explicit --reporter=github,line,junit,original-browser-reporter,observer; JUnit outputFile preserved by original env"
+  },
+  "sourceAuthority": [
+    "Candidate checked out separately at exact2f2, no source/config/fixture/catalog change",
+    "Diagnostic reporter source checkout separate from candidate and installed0c",
+    "Full original FF1 lifetime/order chosen over fresh3case subset",
+    "Original mandatory post-shard storage runs iff original native shard succeeded, independently of observer capture result",
+    "No NODE_OPTIONS/module/Worker/native API hook, no extra Page/HTTP/action/eval/clock/timeout/retry",
+    "No forced keyboard behavior when original conditional skips the navigation branch"
+  ],
+  "acceptance": "Original native suite must pass; exact required inlineJSON body persisted+validated and actual keyboard/nohover/focus/tabFocused proved. A missing or pointer observation cannot satisfy keyboard gate. Native case outcomes remain original.",
+  "limits": [
+    "Diagnostic only, no official CI/import evidence reuse",
+    "Runner family/package/binary metadata recorded, no claim future Ubuntu image or historical Firefox byteidentity",
+    "Original private service raw bindings stay private as original CI; standard emitted diagnostics/reports preserved",
+    "No broader app/performance/OS-browser-root claim"
+  ],
+  "futureDispatch": {
+    "enabled": false,
+    "workflow": "webkit-rendering-diagnostic.yml",
+    "ref": "codex/pr251-ff1-ownership-diagnostic after approved commit/push",
+    "inputs": {
+      "execute": true
+    },
+    "owner": "Root only after independent source+pure controls readback"
+  }
+}

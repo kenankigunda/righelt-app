@@ -1,0 +1,34 @@
+{
+  "files": {
+    "REVIEW.md": "a98bdc64957b093d699d77d99f7df11be088218d3d5dc073812c304e56b62acb",
+    "candidate-playwright.mjs": "9596c00cd3bd7f8c6372abedbf7f3207ad1b409c00a553f4c5d9b90d275d2175",
+    "expected-inventory.json": "3d18be902b1e35a6d6f43708809a17f00e014cbedc674164b07695824e11273a",
+    "inline-ownership-reporter.mjs": "149e7ae0417341ed233bc6ccda77b93ede5c4e81767367d375290d228de84ca3",
+    "plan.json": "8d2164121b32caf06070ed42d21f47f6b2baab9aad426c855796b4b1977100a8",
+    "reporter-controls.test.mjs": "8d4c06c35c122189a1214a7e09d016b2bfea735f203feca90cbf540cfb1236f6",
+    "reporter-selection.mjs": "f170e18741ce2882b5a384d2d0c3f519e84b5474d84935b5affcdcab60312b91",
+    "run.mjs": "f725bdfde6c8e6c10166572f62c59c1decacae60408b74779a6ca26e5ea70299",
+    "../../../.github/workflows/webkit-rendering-diagnostic.yml": "cf0e98cd1809df742b7d4b7d8a97b1eb2289e658b716fd46a0c8dcc30d88c57d"
+  },
+  "candidateHead": "2f2d7e12530004136dd64c5d8b958c8683166674",
+  "candidateFiles": {
+    "playwright.config.mjs": "7aab92ce5c488d21fd6c7e62838b8534d20ff02ebb82b81c61e9bae6fd133637",
+    "package.json": "9443b8b914774685a7e0946fc831f62d668a55ba50c9e9ccaa27633e3f0db331",
+    "scripts/testing/run.mjs": "8cb7fcfb4af64c5056a349beb6987a7fbbd4769625a0db5377994070b39386da",
+    "scripts/testing/ci-run.mjs": "acc42006df9b3fba14f5f65083f536d5d43016a12468105e4e34225e5ec9d4b9",
+    "scripts/testing/catalog.mjs": "f71d3545c5e370c8d972b36ac140d6055c5fc3fd1170a289b2c75a9f6f71ee5a",
+    "scripts/testing/receipts.mjs": "aef27c81b3a76796911aaf56ea4dd8df47c21fab00747ce838e91eaa2eb9444f",
+    "scripts/testing/inventory.mjs": "1967df162fed48ca713ae62142414eeb87e6ed4258007b24a11f9d4f02e5ec98",
+    "scripts/testing/browser-reporter.mjs": "2b7decbc3946638cbe80161798f804f94553dec6257b3af402ab2520d3dbd31f",
+    "scripts/testing/linux-audio.mjs": "0f6494cb9d158f98b4000ff05b93548ec64de994bc5d4689d110181497b201ab",
+    "scripts/testing/install-browsers.mjs": "6bb713387a358243fd2093c2037da8595112dcd00cdeec7fa23d93f72d5fc07e",
+    "scripts/playwright-e2e.mjs": "0cb31bfb6b6e5a4c8450984337d62d2e3b052df205605572c3e771fd5a45c93d",
+    "scripts/playwright-launch-options.mjs": "e2c63a6df0cf4cab2aeca5bcb7b1877fc1f4fb1f68544ef58a2bf547c8be83e0",
+    "e2e/workflows/game-loading-follow.spec.mjs": "55f464132c2f2fbe45604b8331aa4e83d1290e513c4856f7e46a06bf2675a535",
+    "e2e/support/native-board-keyboard.mjs": "0f52bbcaddce001ae76409a7cd1b67065119fa6d29d1448a64245d2d6e7e36fc",
+    "e2e/support/owned-contexts.mjs": "03f385397e495f1a902bc8b816ae26ceffd148c8f02580f9744a9114004639b2"
+  },
+  "controlsExecuted": false,
+  "nativeExecuted": false,
+  "dispatchEnabled": false
+}
