@@ -11,6 +11,62 @@ const test=base.extend({createOwnedContext:[async({browser},use)=>{
 const fixture=JSON.parse(fs.readFileSync(new URL('../../packages/game-engine/test/fixtures/destruction-turn-end.json',import.meta.url)));
 const scenario={formatVersion:2,id:'af0a1f18-1cb2-47a8-b203-4b5598f96893',title:'Turn-end destruction regression',description:'Deferred supply losses from the reported game',incorrect:false,initialState:fixture.initialState,moves:[],resultingState:fixture.initialState,expectedFinalStateHash:'',expectedOutcome:'ongoing'};
 
+// Observe the finite cue at DOM delivery, then prove native clock advancement
+// on a later animation frame. Board renders may legitimately replace tokens.
+function armDestructionWitness({key,count,signatures=null}) {
+ const witnesses=window.destructionWitnesses??={};
+ if(witnesses[key])throw Error(`Duplicate destruction witness: ${key}`);
+ const witness={startedAt:performance.now(),frames:[],outcome:'pending',replacements:0};
+ let candidate=null,lastLogical=null,frameId=null,settled=false,resolveProof,rejectProof;
+ const nodeIds=new WeakMap(),animationIds=new WeakMap();let nextNodeId=0,nextAnimationId=0;
+ const promise=new Promise((resolve,reject)=>{resolveProof=resolve;rejectProof=reject;});
+ promise.catch(()=>{}); // Own early rejection, while the caller still awaits the original promise.
+ const stop=()=>{observer.disconnect();if(frameId!==null)cancelAnimationFrame(frameId);frameId=null;};
+ const finish=(message,result)=>{if(settled)return;settled=true;stop();witness.outcome=message?'failed':signatures?'advanced':'observed';if(message){witness.message=message;rejectProof(Error(message));}else resolveProof(result);};
+ const inspect=source=>{
+  if(settled)return;
+  const nodes=[...document.querySelectorAll('#shell-board .removal-piece')];
+  if(!signatures){if(nodes.length===count)finish(null,{count});return;}
+  const entries=nodes.map(node=>{
+   const animation=node.getAnimations()[0],timing=animation?.effect?.getComputedTiming(),cell=node.closest('[data-row][data-col]');
+   if(!nodeIds.has(node))nodeIds.set(node,++nextNodeId);
+   if(animation&&!animationIds.has(animation))animationIds.set(animation,++nextAnimationId);
+   const nativeTime=typeof animation?.currentTime==='number'?animation.currentTime:null;
+   return {node,animation,sample:{signature:`${cell?.dataset.row},${cell?.dataset.col}:${node.getAttribute('aria-label')}`,pieceId:node.getAttribute('data-piece-id'),nodeId:nodeIds.get(node),animationId:animation?animationIds.get(animation):null,duration:timing?.activeDuration,nativeTime,elapsed:nativeTime===null?null:nativeTime-(timing?.delay??0),playState:animation?.playState}};
+  }).sort((a,b)=>a.sample.signature.localeCompare(b.sample.signature));
+  const samples=entries.map(entry=>entry.sample),at=performance.now();
+  if(samples.length||candidate){witness.frames.push({at,source,samples});if(witness.frames.length>32)witness.frames.shift();}
+  if(entries.length!==count){if(candidate)finish('Destruction effect expired before advancing');return;}
+  if(!samples.every((sample,index)=>sample.signature===signatures[index]&&sample.pieceId&&sample.duration===2400)) {finish('Destruction effect identity or duration changed');return;}
+  // A just-created CSSAnimation may not yet have a currentTime. It cannot prove motion.
+  if(samples.some(sample=>sample.nativeTime===null)){return;}
+  if(samples.some(sample=>!Number.isFinite(sample.nativeTime)||!Number.isFinite(sample.elapsed)||sample.playState!=='running')){finish('Destruction native animation is not running');return;}
+  const sameInstances=entries.map((entry,index)=>Boolean(candidate&&entry.node===candidate[index].node&&entry.animation===candidate[index].animation));
+  const same=candidate&&sameInstances.every(Boolean);
+  // The adapter re-primes replacement tokens with integer Date.now elapsed.
+  // Compare that integer phase across replacement only; one native instance
+  // retains the strict fractional clock/reset and advancement checks.
+  if(lastLogical&&samples.some((sample,index)=>sample.pieceId!==lastLogical[index].pieceId||(sameInstances[index]?sample.elapsed<lastLogical[index].elapsed:Math.floor(sample.elapsed)<Math.floor(lastLogical[index].elapsed)))){finish('Destruction logical timeline reset');return;}
+  lastLogical=samples;
+  if(candidate&&!same)witness.replacements++;
+  if(!same){candidate=entries;witness.first={at,samples};return;}
+  if(samples.some((sample,index)=>sample.nativeTime<candidate[index].sample.nativeTime)){finish('Destruction native timeline reset');return;}
+  // Retiming or replacement alone is not motion. Only a later native frame on
+  // the same objects can establish native currentTime advancement.
+  if(source==='frame'&&samples.every((sample,index)=>sample.nativeTime>candidate[index].sample.nativeTime)){
+   witness.next={at,samples};finish(null,{first:candidate.map(entry=>entry.sample),next:samples});
+  }
+ };
+ const observer=new MutationObserver(()=>{try{inspect('mutation');}catch(error){finish(String(error));}});
+ observer.observe(document.querySelector('#shell-board'),{childList:true,subtree:true});
+ const frame=()=>{frameId=null;try{inspect('frame');}catch(error){finish(String(error));}if(!settled)frameId=requestAnimationFrame(frame);};
+ witnesses[key]={promise,witness,dispose:()=>finish('Destruction witness disposed before proof')};
+ if(signatures){window.destructionMotionProof=promise;window.destructionMotionWitness=witness;frameId=requestAnimationFrame(frame);}
+ inspect('armed');
+}
+const observedCount=(page,key)=>expect.poll(()=>page.evaluate(key=>window.destructionWitnesses[key].witness.outcome,key)).toBe('observed');
+const disposeDestructionWitnesses=page=>page.evaluate(()=>{for(const entry of Object.values(window.destructionWitnesses??{}))entry.dispose();});
+
 for (const mobile of [false,true]) test(`turn-end losses animate once for player and viewer and persist in history (${mobile?'phone':'desktop'})`,async({createOwnedContext,baseURL},testInfo)=>{
  const owner=await createOwnedContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1100},hasTouch:mobile});
  const observer=await createOwnedContext({viewport:{width:1440,height:1100}});
@@ -26,37 +82,14 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
   // Arm the visual witness before the finite effect starts. Waiting for the
   // second client's delivery first can consume the owner's entire 2400ms cue.
   await page.bringToFront();
-  await page.evaluate(()=>{
-   window.destructionMotionProof=new Promise((resolve,reject)=>{
-    let first,nextNodeId=0;
-    const witness=window.destructionMotionWitness={startedAt:performance.now(),frames:[],outcome:'pending'};
-    let previousFrameAt=witness.startedAt;
-    const fail=message=>{witness.outcome='failed';witness.message=message;reject(Error(message));};
-    const nodeIds=new WeakMap(),expectedSignatures=['6,4:Red unit','7,4:Red unit'];
-    const frame=()=>{
-     const at=performance.now(),gap=at-previousFrameAt;previousFrameAt=at;
-     const samples=[...document.querySelectorAll('#shell-board .removal-piece')].map(node=>{
-      const animation=node.getAnimations()[0],timing=animation?.effect.getComputedTiming();
-      const cell=node.closest('[data-row][data-col]');
-      if(!nodeIds.has(node))nodeIds.set(node,++nextNodeId);
-      return {signature:`${cell?.dataset.row},${cell?.dataset.col}:${node.getAttribute('aria-label')}`,nodeId:nodeIds.get(node),duration:timing?.activeDuration,elapsed:typeof animation?.currentTime==='number'?animation.currentTime-(timing?.delay??0):null};
-     }).sort((a,b)=>a.signature.localeCompare(b.signature));
-     if(samples.length||first){witness.frames.push({at,gap,samples});if(witness.frames.length>32)witness.frames.shift();}
-     if(samples.length===2&&samples.every((sample,index)=>sample.signature===expectedSignatures[index]&&sample.duration===2400&&Number.isFinite(sample.elapsed))){
-      if(!first){first=samples;witness.first={at,samples};}
-      else if(samples.every((sample,index)=>sample.elapsed>first[index].elapsed)){witness.outcome='advanced';witness.next={at,samples};resolve({first,next:samples});return;}
-      else if(samples.some((sample,index)=>sample.elapsed<first[index].elapsed)){fail(`Destruction timeline reset: ${JSON.stringify({first,next:samples})}`);return;}
-     }else if(first){fail('Destruction effect expired before advancing');return;}
-     requestAnimationFrame(frame);
-    };requestAnimationFrame(frame);
-   });
-  });
+  await page.evaluate(armDestructionWitness,{key:'owner-motion',count:2,signatures:['6,4:Red unit','7,4:Red unit']});
+  await viewer.evaluate(armDestructionWitness,{key:'viewer-count',count:2});
   await end.click();
   const effects=p=>p.locator('#shell-board .removal-piece');
-  const [motion]=await Promise.all([page.evaluate(()=>window.destructionMotionProof),expect(effects(viewer)).toHaveCount(2)]);
+  const [motion]=await Promise.all([page.evaluate(()=>window.destructionMotionProof),observedCount(viewer,'viewer-count')]);
   expect(motion.first.map(sample=>sample.signature)).toEqual(['6,4:Red unit','7,4:Red unit']);
   expect(motion.next.map(sample=>sample.signature)).toEqual(motion.first.map(sample=>sample.signature));
-  expect(motion.next.every((sample,index)=>sample.duration===2400&&sample.elapsed>motion.first[index].elapsed)).toBe(true);
+  expect(motion.next.every((sample,index)=>sample.duration===2400&&sample.pieceId===motion.first[index].pieceId&&sample.nodeId===motion.first[index].nodeId&&sample.animationId===motion.first[index].animationId&&sample.nativeTime>motion.first[index].nativeTime&&sample.elapsed>motion.first[index].elapsed)).toBe(true);
   await page.screenshot({path:testInfo.outputPath('turn-end-removals.png')});
   for(const p of [page,viewer])await expect(effects(p)).toHaveCount(0);
   const read=()=>page.evaluate(async id=>{const identityId=localStorage.getItem('righelt.identity.id.v1');return (await(await fetch(`/api/shell/games/${id}?identityId=${identityId}`)).json()).game;},gameId);
@@ -88,6 +121,7 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
    await page.screenshot({path:testInfo.outputPath('history-removals.png')});
   }
  }finally{
+  await Promise.all([page,viewer].map(p=>disposeDestructionWitnesses(p).catch(()=>{})));
   const witness=await page.evaluate(()=>window.destructionMotionWitness??null).catch(error=>({readError:String(error)}));
   await testInfo.attach('destruction-motion-witness',{body:JSON.stringify(witness,null,2),contentType:'application/json'});
  }
@@ -99,11 +133,14 @@ test('screenshot project plays five supply-loss effects on both connected client
  const page=await owner.newPage(),viewer=await observer.newPage();
   const {gameHash}=await importScenarioGame(page,{...scenario,id:'cb925f15-ccdf-4183-9dc8-bffbddb145bf',initialState:projectFixture.initialState,resultingState:projectFixture.initialState},baseURL);
   await openDirectGameLink(viewer,baseURL,gameHash);await joinAsViewer(viewer);
+  try{
+  await Promise.all([page,viewer].map(p=>p.evaluate(armDestructionWitness,{key:'project-count',count:5})));
   await submitPlayableAction(page,projectFixture.action);
-  for(const p of [page,viewer])await expect(p.locator('#shell-board .removal-piece')).toHaveCount(5);
+  await Promise.all([page,viewer].map(p=>observedCount(p,'project-count')));
   await page.screenshot({path:testInfo.outputPath('project-removals.png')});
   for(const p of [page,viewer]){
    await expect(p.locator('#shell-board .removal-piece')).toHaveCount(0);
    await expect(p.getByTestId('history-destruction-item')).toHaveCount(5);
   }
+  }finally{await Promise.all([page,viewer].map(p=>disposeDestructionWitnesses(p).catch(()=>{})));}
 });

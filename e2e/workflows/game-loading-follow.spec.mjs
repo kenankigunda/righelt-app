@@ -29,16 +29,21 @@ const guestRequest = (page, route, body) => page.evaluate(async ({ route, body, 
 }, { route, body, storageHeader: STORAGE_GENERATION_HEADER, actionHeader: ACTION_CONTRACT_HEADER, actionVersion: ACTION_CONTRACT_VERSION });
 
 const projected = (page, id) => page.evaluate(readProjectedGame, { id, guest: true });
-const acceptedReceipt = async (page, command) => {
+const acceptedReceipt = async (page, command, retainedCommand) => {
   let result;
   await expect.poll(async () => {
-    result = await guestRequest(page, `/api/shell/games/${command.gameId}/reconcile`, { knownSnapshotEventSeq: 0, commands: [command] });
+    result = await guestRequest(page, `/api/shell/games/${command.gameId}/reconcile`, { knownSnapshotEventSeq: 0, commands: retainedCommand ? [command, retainedCommand] : [command] });
     expect(result.gameId).toBe(command.gameId);
     expect(result.game.id).toBe(command.gameId);
-    expect(result.commandOutcomes).toHaveLength(1);
-    expect(result.commandOutcomes[0]).toMatchObject({ gameId: command.gameId, identityId: command.identityId,
-      clientCommandId: command.clientCommandId, fingerprint: command.fingerprint });
-    const outcome = result.commandOutcomes[0];
+    const expectedCommands = retainedCommand ? [command, retainedCommand] : [command];
+    expect(result.commandOutcomes).toHaveLength(expectedCommands.length);
+    for (const expected of expectedCommands) {
+      const matches = result.commandOutcomes.filter(outcome => outcome.gameId === expected.gameId
+        && outcome.identityId === expected.identityId && outcome.clientCommandId === expected.clientCommandId);
+      expect(matches).toHaveLength(1);
+      expect(matches[0]).toMatchObject({ fingerprint: expected.fingerprint });
+    }
+    const outcome = result.commandOutcomes.find(outcome => outcome.clientCommandId === command.clientCommandId);
     if (outcome.outcome === 'rejected') throw Error(`Native command rejected: ${outcome.reason}`);
     if (!['accepted', 'unknown'].includes(outcome.outcome)) throw Error('Malformed native command outcome');
     if (outcome.outcome === 'unknown' && !['not_recorded', 'dependency_pending'].includes(outcome.reason)) throw Error(`Native command cannot recover: ${outcome.reason}`);
@@ -140,21 +145,22 @@ test('the same saved follow survives reload and resumes a distinct native Horus 
   await expect.poll(() => journalEntry(page, command)).toBeNull();
   const resumedRequest = nextCommand(paused.computer.generation);
   await resumeHere(page, game.id);
-  const laterCommand = (await resumedRequest).postDataJSON(), later = await acceptedReceipt(page, laterCommand);
+  const laterCommand = (await resumedRequest).postDataJSON(), later = await acceptedReceipt(page, laterCommand, command);
+  const laterReceipt = later.commandOutcomes.find(outcome => outcome.clientCommandId === laterCommand.clientCommandId);
   expect(laterCommand.clientCommandId).not.toBe(command.clientCommandId);
   expect(laterCommand.payload.computer.modelId).toBe(game.computer.modelId);
-  expect(later.commandOutcomes[0]).toMatchObject({ gameId: game.id, identityId: laterCommand.identityId,
+  expect(laterCommand.payload.computer.profile).toBe('horus');
+  expect(laterReceipt).toMatchObject({ gameId: game.id, identityId: laterCommand.identityId,
     clientCommandId: laterCommand.clientCommandId, fingerprint: laterCommand.fingerprint, outcome: 'accepted',
     gameplayRevision: laterCommand.expectedGameplayRevision + 1 });
   expect(later.game.moves.filter(move => move.clientCommandId === laterCommand.clientCommandId)).toHaveLength(1);
   expect(later.game.gameplayRevision).toBeGreaterThan(paused.gameplayRevision);
-  const reconciled = await guestRequest(page, `/api/shell/games/${game.id}/reconcile`, { knownSnapshotEventSeq: 0, commands: [command] });
-  expect(reconciled.commandOutcomes).toEqual([originalReceipt]);
-  expect(reconciled.game.moves.filter(move => move.clientCommandId === command.clientCommandId)).toHaveLength(1);
+  expect(later.commandOutcomes.filter(outcome => outcome.clientCommandId === command.clientCommandId)).toEqual([originalReceipt]);
+  expect(later.game.moves.filter(move => move.clientCommandId === command.clientCommandId)).toHaveLength(1);
   await expect.poll(() => journalEntry(page, command)).toBeNull();
   const path = info.outputPath('retained-follow-save-reload.json');
   await writeFile(path, JSON.stringify({ modelId: game.computer.modelId, command, originalReceipt, pausedRevision: paused.gameplayRevision,
-    reloadedRevision: reloaded.gameplayRevision, laterCommand, laterReceipt: later.commandOutcomes[0] }, null, 2));
+    reloadedRevision: reloaded.gameplayRevision, laterCommand, laterReceipt }, null, 2));
   await info.attach('retained-follow-save-reload', { path, contentType: 'application/json' });
   visualPhase = Object.freeze({ gameId: game.id });
 });
