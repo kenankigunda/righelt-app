@@ -32,9 +32,7 @@ let shuttingDown = false;
 const intentionalStops = new Set();
 let controlServer;
 let apiPublicConnection;
-const isolatePublicApi = process.env.RIGHELT_E2E_PUBLIC_API_ISOLATION === "1";
-if (isolatePublicApi && webPort !== DEFAULT_E2E_WEB_PORT)
-  throw new Error("Public API isolation prototype is limited to the original guest stack");
+const isolatePublicApi = process.env.RIGHELT_E2E_PUBLIC_API_ISOLATION !== "0";
 let restartActive = false;
 let privateLogs;
 let proxyDiagnosticsInstallation;
