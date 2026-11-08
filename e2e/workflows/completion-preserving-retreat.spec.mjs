@@ -1,7 +1,7 @@
 import {installCaseReadiness,finishCaseReadiness,attachNodeReadiness} from '../support/readiness-diagnostics.mjs';
 import {performance} from 'node:perf_hooks';
 import {installClientSettlementObserver} from '../support/client-settlement-observer.mjs';
-import {installBoardAdmissionDiagnostics,runComputerRecoveryPersistence,COMPUTER_RECOVERY_FIXTURE_BUDGET_MS} from '../support/board-admission-diagnostics.mjs';
+import {installBoardAdmissionDiagnostics,createComputerRecoveryJSONRead,runComputerRecoveryPersistence,COMPUTER_RECOVERY_FIXTURE_BUDGET_MS} from '../support/board-admission-diagnostics.mjs';
 import {test as base,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {deterministicStateHash,resolveToStability,serializeState} from '../../apps/web/generated/packages/game-engine/src/index.js';
@@ -87,13 +87,13 @@ test.afterEach(async({page,computerRecoveryAdmission},info)=>{
  if(info.status===info.expectedStatus){
   let timer;
   try{
-   const originalRead=page.evaluate(({measurementName,recoveryRead})=>{
+   const originalRead=page.evaluate(createComputerRecoveryJSONRead(({measurementName,recoveryRead})=>{
       let readinessPage;
       try{readinessPage=globalThis.__righeltReadinessFreeze?.();}catch{readinessPage={incomplete:true,reason:'snapshot-unavailable'};}
       const match=location.hash.match(/^#\/game\/([^?#/]+)/);
       const boardRecovery=recoveryRead?{...recoveryRead,gameId:match?decodeURIComponent(match[1]):null,documentNonce:globalThis.__boardAdmissionRecoveryDocument??null,timeOrigin:performance.timeOrigin,observation:globalThis.__boardAdmissionObservation??null}:null;
       return {...window.retreatJournalObservations,...(boardRecovery?{boardRecovery}:{}),presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,...(readinessPage?{readinessPage}:{})};
-    },{measurementName:COMPUTER_UI_FRAME_MEASURE,recoveryRead});
+    }),{measurementName:COMPUTER_UI_FRAME_MEASURE,recoveryRead}).then(JSON.parse);
    finalRecovery?.retain(page,originalRead);
    const journal=await Promise.race([originalRead,new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
    deliver(journal);

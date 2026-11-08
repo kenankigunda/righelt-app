@@ -103,36 +103,82 @@ export async function runComputerRecoveryPersistence(diagnostic,{setupElapsedMs,
  finally{clearTimer(timer);const state=diagnostic.finalRecoveryHandoff?.end();if(state?.cleanupAttemptedHere&&state.cleanupIncomplete)throw new AggregateError([...(primary?[primary]:[]),Error('Computer recovery handoff listener cleanup incomplete')],'Computer recovery fixture cleanup failed');}
 }
 
+// One self-contained guard is used by the Node receiver and mechanically embedded
+// in the existing final read. Reject values JSON would otherwise silently change.
+export function cloneComputerRecoveryHandoff(packet,expected,maxBytes){
+ const bad=(reason='handoff-invalid')=>{const error=Error('Invalid computer recovery handoff');error.recoveryReason=reason;throw error;};
+ const copy=(value,seen=new Set(),depth=0)=>{
+  if(value===null||typeof value==='boolean'||typeof value==='string'&&value.length<=2048||typeof value==='number'&&Number.isFinite(value))return value;
+  if(!value||typeof value!=='object'||depth>12||seen.has(value))bad();
+  seen.add(value);const descriptors=Object.getOwnPropertyDescriptors(value),array=Array.isArray(value),out=array?Object.setPrototypeOf([],null):Object.create(null);
+  if(array)for(let i=0;i<descriptors.length.value;i++)if(!Object.hasOwn(descriptors,String(i)))bad();
+  for(const key of Reflect.ownKeys(descriptors)){
+   if(typeof key!=='string'||!Object.hasOwn(descriptors[key],'value'))bad();
+   if(array&&key==='length')continue;
+   Object.defineProperty(out,key,{value:copy(descriptors[key].value,seen,depth+1),enumerable:true,writable:false,configurable:false});
+  }
+  seen.delete(value);return Object.freeze(out);
+ };
+ const envelope=copy(packet);
+ if(envelope.namespace!==expected.namespace||envelope.readId!==expected.readId||envelope.gameId!==expected.gameId||envelope.documentGeneration!==expected.documentGeneration)bad('foreign-handoff');
+ const observation=envelope.observation;
+ if(!Number.isFinite(envelope.timeOrigin)||envelope.timeOrigin<=0||!Number.isFinite(observation?.timeOrigin)||observation.timeOrigin<=0||typeof envelope.documentNonce!=='string'||!envelope.documentNonce||envelope.documentNonce.length>128||observation.documentNonce!==envelope.documentNonce||observation?.recoveryNamespace!==expected.namespace||observation?.version!==1)bad('foreign-document');
+ const serialized=JSON.stringify(envelope);
+ if(serialized.length>maxBytes||new TextEncoder().encode(serialized).byteLength>maxBytes)bad();
+ return envelope;
+}
+
+// This final snapshot is a plain-data DTO. Copy its own data without invoking
+// inherited JSON hooks; optional journal undefined/holes keep persisted JSON rules.
+export function cloneFinalRecoveryJSONDomain(input){
+ const seen=new Set();
+ const copy=value=>{
+  if(value===null||value===undefined||typeof value==='boolean'||typeof value==='string')return value;
+  if(typeof value==='number')return Number.isFinite(value)?value:null;
+  if(typeof value!=='object'||seen.has(value))throw Error('Invalid final recovery snapshot');
+  seen.add(value);const descriptors=Object.getOwnPropertyDescriptors(value),array=Array.isArray(value),out=array?Object.setPrototypeOf([],null):Object.create(null);
+  if(!array){
+   const prototypes=new Set();
+   for(let proto=Object.getPrototypeOf(value);proto;proto=Object.getPrototypeOf(proto)){
+    if(prototypes.has(proto)||Object.hasOwn(proto,'constructor')&&Object.getPrototypeOf(proto)!==null)throw Error('Unsupported final recovery DTO object');
+    prototypes.add(proto);
+   }
+  }
+  if(array)out.length=descriptors.length.value;
+  for(const key of Reflect.ownKeys(descriptors)){
+   if(descriptors[key].enumerable===false)continue;
+   if(typeof key!=='string'||!Object.hasOwn(descriptors[key],'value'))throw Error('Invalid final recovery snapshot descriptor');
+   if(array&&key==='length')continue;
+   Object.defineProperty(out,key,{value:copy(descriptors[key].value),enumerable:true,writable:false,configurable:false});
+  }
+  seen.delete(value);return out;
+ };
+ return copy(input);
+}
+
+// Compiled on Node, then serialized normally by Playwright. No browser eval or
+// second Page read. Optional journal fields retain their existing persisted JSON
+// domain; the authority-bearing recovery packet is validated BEFORE encoding.
+export function createComputerRecoveryJSONRead(read){
+ return new Function('input',`"use strict";const guard=(${cloneComputerRecoveryHandoff.toString()});const snapshot=(${cloneFinalRecoveryJSONDomain.toString()});const value=(${read.toString()})(input);if(input.recoveryRead){value.boardRecovery=guard(value.boardRecovery,input.recoveryRead,${SOURCE_PRESS_MAX_BYTES});}return JSON.stringify(snapshot(value));`);
+}
+
 // Node-only owner of the one existing final afterEach read. No browser operation.
 export function createComputerRecoveryHandoff(page,namespace){
  let gameId,ticket,result,delivery,retained=false,consumed=false,ended=false,listenerRemoved=false,cleanupIncomplete=false,journalReadTimedOut=false,documentGeneration=0;
  const fail=reason=>{if(!result?.incomplete)result={incomplete:true,reason,observation:null};};
  const navigated=frame=>{if(frame===page.mainFrame()){documentGeneration++;if(ticket)fail('foreign-document');}};
  page.on('framenavigated',navigated);
- const copy=(value,seen=new Set(),depth=0)=>{
-  if(value===null||typeof value==='boolean'||typeof value==='string'&&value.length<=2048||typeof value==='number'&&Number.isFinite(value))return value;
-  if(!value||typeof value!=='object'||depth>12||seen.has(value))throw Error('Invalid diagnostic data');
-  seen.add(value);const descriptors=Object.getOwnPropertyDescriptors(value),out=Array.isArray(value)?[]:Object.create(null);
-  for(const key of Reflect.ownKeys(descriptors)){
-   if(typeof key!=='string'||!Object.hasOwn(descriptors[key],'value'))throw Error('Invalid diagnostic descriptor');
-   if(Array.isArray(value)&&key==='length')continue;
-   Object.defineProperty(out,key,{value:copy(descriptors[key].value,seen,depth+1),enumerable:true,writable:false,configurable:false});
-  }
-  seen.delete(value);return Object.freeze(out);
- };
  const capture=(owner,packet)=>{
    if(ended||consumed){return;}
    if(result){fail('handoff-reused');return;}
    if(owner!==page){fail('foreign-page');return;}
    try{
     if(!ticket||!packet){fail('handoff-missing');return;}
-    const envelope=copy(packet);
-    if(envelope.namespace!==namespace||envelope.readId!==ticket.readId||envelope.gameId!==gameId||envelope.documentGeneration!==documentGeneration){fail('foreign-handoff');return;}
-    const observation=envelope.observation;
-    if(!Number.isFinite(envelope.timeOrigin)||envelope.timeOrigin<=0||!Number.isFinite(observation?.timeOrigin)||observation.timeOrigin<=0||typeof envelope.documentNonce!=='string'||!envelope.documentNonce||envelope.documentNonce.length>128||observation.documentNonce!==envelope.documentNonce||observation?.recoveryNamespace!==namespace||observation?.version!==1){fail('foreign-document');return;}
-    const immutable=observation,serialized=JSON.stringify(envelope);if(serialized.length>SOURCE_PRESS_MAX_BYTES||Buffer.byteLength(serialized,'utf8')>SOURCE_PRESS_MAX_BYTES)throw Error('Oversize diagnostic');
+    const envelope=cloneComputerRecoveryHandoff(packet,{namespace,readId:ticket.readId,gameId,documentGeneration},SOURCE_PRESS_MAX_BYTES);
+    const observation=envelope.observation,immutable=observation;
     result=Object.freeze({incomplete:false,reason:null,namespace,readId:ticket.readId,gameId,documentGeneration,documentNonce:envelope.documentNonce,timeOrigin:envelope.timeOrigin,observationTimeOrigin:observation.timeOrigin,observation:immutable});
-   }catch{fail('handoff-invalid');}
+   }catch(error){let reason='handoff-invalid';try{const value=Object.getOwnPropertyDescriptor(error,'recoveryReason')?.value;if(['foreign-handoff','foreign-document'].includes(value))reason=value;}catch{}fail(reason);}
   };
  const removeListener=()=>{if(listenerRemoved)return;listenerRemoved=true;try{page.off('framenavigated',navigated);}catch{cleanupIncomplete=true;fail('handoff-listener-cleanup-failed');}};
  return {
