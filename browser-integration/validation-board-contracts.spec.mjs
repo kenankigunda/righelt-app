@@ -60,7 +60,7 @@ async function mountUndoFixture(page,{transport='shared-http',mutate,undoLabel='
    row.querySelector('[data-action]').onclick=()=>fetch(`/api/shell/games/game-1/${shared?'shared':'revert-request'}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(envelope)}).catch(()=>{});
   }
  },{shared,envelope});
- return {shared,state,requests,reads,envelope,options:{undoLabel,gameId:'game-1',moveId:'human-1',identityId:'human-account',initialState:state,beforeState:{turnIndex:3},beforeRevision:2}};
+ return {shared,state,requests,reads,envelope,options:{undoLabel,historyHitTargetContract:'legacy-info-v1',gameId:'game-1',moveId:'human-1',identityId:'human-account',initialState:state,beforeState:{turnIndex:3},beforeRevision:2}};
 }
 
 for(const undoLabel of ['Undo back to this move','Undo before this move'])for(const transport of ['legacy','shared-http','shared-aborted-http'])test(`ordinary undo uses the immutable human row and ${transport} with ${undoLabel}`,async({page})=>{
