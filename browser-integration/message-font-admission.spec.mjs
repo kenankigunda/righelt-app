@@ -2,10 +2,38 @@ import {test as base,expect} from '@playwright/test';
 import {controlledHeightPublication} from './support/height-publication-test-fixture.mjs';
 const test=base.extend({publicationOwner:controlledHeightPublication});
 import {writeFile} from 'node:fs/promises';
+import {readFileSync} from 'node:fs';
 import {fontEnvelopeBudgetForBrowser,validateFontEnvelope} from './support/font-pattern-budget.mjs';
 import {promptFrontiersEm} from '../apps/web/board/prompt-reservation.js';
 import {decodeFontBoundarySamples} from './support/font-envelope-codec.mjs';
 import {reservationBands,routineFontBoundaryEm,admittedHeight,budgetPixelPrecision,actionReservationMetrics} from './support/message-reservation-policy.mjs';
+// This fixture controls the canonical CSS font URL, not the static server's
+// API-request transport. Unrouted fixtures and E2E retain real CSS loading.
+const refreshStylesheet = readFileSync(new URL('../apps/web/shell/refresh.css',import.meta.url),'utf8');
+const originalFontReference = '../assets/fonts/Manrope-variable.ttf';
+const stylesheetForFont = (fontUrl,source=refreshStylesheet) => {
+ if(source.split(originalFontReference).length!==2)throw new Error('Expected exactly one canonical stylesheet font URL');
+ return source.replace(originalFontReference,fontUrl);
+};
+const fulfillFontStylesheet = (route,fontUrl) => route.fulfill({status:200,
+ headers:{'content-type':'text/css','cache-control':'no-store'},body:stylesheetForFont(fontUrl)});
+
+test('controlled font stylesheet preserves canonical CSS and response metadata',async()=>{
+ let delivered;const completed=Promise.resolve();
+ const route={fetch(){throw new Error('Unexpected API-request CSS hop');},fulfill(value){delivered=value;return completed;}};
+ const fontUrl='/apps/web/assets/fonts/Manrope-variable.ttf?font-admission-control';
+ expect(fulfillFontStylesheet(route,fontUrl)).toBe(completed);await completed;
+ expect(delivered.status).toBe(200);expect(delivered.headers).toEqual({'content-type':'text/css','cache-control':'no-store'});
+ expect(delivered.body.split(fontUrl)).toHaveLength(2);
+ expect(delivered.body.replace(fontUrl,originalFontReference)).toBe(refreshStylesheet);
+});
+test('controlled font stylesheet refuses missing or duplicate source font URLs',()=>{
+ const fontUrl='/apps/web/assets/fonts/Manrope-variable.ttf?font-admission-control';
+ for(const source of [refreshStylesheet.replace(originalFontReference,''),refreshStylesheet+'\n'+originalFontReference]){
+  expect(()=>stylesheetForFont(fontUrl,source)).toThrow('Expected exactly one canonical stylesheet font URL');
+ }
+});
+
 const anchors=page=>page.evaluate(()=>window.fontAnchors());
 const sameAnchors=(a,b)=>{for(const target of ['heading','slot','board','panel'])for(const key of ['x','y','width','height'])expect(Math.abs(a[target][key]-b[target][key]),`${target}.${key}`).toBeLessThanOrEqual(.1);};
 const checkRows=(envelope,coldIntrinsic,label,browserName)=>{
@@ -23,7 +51,7 @@ for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(
  await page.setViewportSize({width,height:900});
  const key=`font-admission-${width}-${scale}`,fontUrl=`/apps/web/assets/fonts/Manrope-variable.ttf?${key}`;
  let release,seen=false,hold=true;const held=new Promise(resolve=>{release=resolve;});
- await page.route('**/apps/web/shell/refresh.css',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text()).replace('../assets/fonts/Manrope-variable.ttf',fontUrl)});});
+ await page.route('**/apps/web/shell/refresh.css',route=>fulfillFontStylesheet(route,fontUrl));
  await page.route(url=>url.pathname==='/apps/web/assets/fonts/Manrope-variable.ttf'&&url.searchParams.has(key),async route=>{seen=true;if(hold)await held;await route.continue();});
  const receipts={};
  try{
@@ -95,7 +123,7 @@ for(const scale of [100,200])test(`measured font boundaries keep cold, loaded an
  const bands=reservationBands.map(({min,max})=>[min,max]);
  const receipts={cold:[],loaded:[],warm:[]};let release,seen=false,hold=true;const held=new Promise(resolve=>{release=resolve;});
  const key='message-boundary-admission',fontUrl=`/apps/web/assets/fonts/Manrope-variable.ttf?${key}`;
- await page.route('**/apps/web/shell/refresh.css',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text()).replace('../assets/fonts/Manrope-variable.ttf',fontUrl)});});
+ await page.route('**/apps/web/shell/refresh.css',route=>fulfillFontStylesheet(route,fontUrl));
  await page.route(url=>url.pathname==='/apps/web/assets/fonts/Manrope-variable.ttf'&&url.searchParams.has(key),async route=>{seen=true;if(hold)await held;await route.continue();});
  const measure=async phase=>{
   const result=[],attempt={phase,admission:null,before:null,samples:null,after:null};
