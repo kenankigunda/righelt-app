@@ -1,5 +1,7 @@
 import {test,expect,chromium} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
+import {COMPUTER_TIMING} from '../../apps/web/generated/packages/shared-types/src/computer-play.js';
+import {createNaturalRenewalLeaseObserver} from '../support/natural-renewal-hold.mjs';
 import {browserLaunchOptions} from '../../scripts/playwright-launch-options.mjs';
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {selectPlayableAction,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
@@ -492,18 +494,20 @@ for (const fault of ['manifest unavailable', 'evidence response lost', 'evidence
 });
 
 test('an explicit human Pass during fresh renewal reaches one authoritative receipt',async({page},info)=>{
+ const leasePreparation=createNaturalRenewalLeaseObserver(page,{minimumRemainingMs:COMPUTER_TIMING.renewAfterMs,maximumRemainingMs:COMPUTER_TIMING.leaseMs});
  const id=await createComputer(page);await switchGamePanel(page,'board');
  const initial=await projected(page,id);await submitPlayableAction(page,initial.legalActions.find(action=>action.from&&action.to));
  if((await projected(page,id)).canEndTurn)await page.locator('[data-board-preview-action="end-turn"]').click();
  await waitForComputerDecision(page,id,'babs',{guest:true,modelId:initial.computer.modelId});
  await expect.poll(async()=>{const game=await projected(page,id);return game.board.state.sideToMove==='P1'&&!game.board.state.continuation;}).toBe(true);
  const before=await projected(page,id),pass=page.locator('#shell-board-preview-label [data-board-message-action="pass"], #shell-board-preview-label [data-board-preview-action="pass"]');
+ leasePreparation.bind(before);
  let renewal,renewalHeaders,release;const held=new Promise(resolve=>{release=resolve;}),humanRequests=[];
  const observe=request=>{if(request.method()!=='POST'||new URL(request.url()).pathname!==`/api/shell/games/${id}/apply`)return;const value=request.postDataJSON();if(!value.payload?.computer&&value.payload?.action?.type==='pass')humanRequests.push(value);};
  page.on('request',observe);
  await page.route(`**/api/shell/games/${id}/shared`,async route=>{
   const value=route.request().postDataJSON();
-  if(!renewal&&value.payload?.operation==='computer-control'&&value.payload.values?.action==='renew'){renewal=value;renewalHeaders=Object.fromEntries(Object.entries(route.request().headers()).filter(([name])=>name==='content-type'||name.startsWith('x-righelt-')));await held;}
+  if(!renewal&&value.payload?.operation==='computer-control'&&value.payload.values?.action==='renew'&&leasePreparation.eligible(route.request(),value)){renewal=value;renewalHeaders=Object.fromEntries(Object.entries(route.request().headers()).filter(([name])=>name==='content-type'||name.startsWith('x-righelt-')));await held;}
   await route.continue();
  });
  const journal=()=>page.evaluate(id=>new Promise((resolve,reject)=>{
@@ -518,7 +522,8 @@ test('an explicit human Pass during fresh renewal reaches one authoritative rece
   expect(admitted.expectedGameplayRevision).toBe(before.gameplayRevision);expect(admitted.expectedState).toEqual(before.board.state);
   expect(admitted.predecessor).toEqual({clientCommandId:renewal.clientCommandId,fingerprint:renewal.fingerprint});
   await expect(page.getByTestId('history-pending-move-item').filter({hasText:'PASS'})).toHaveCount(1);
-  expect(humanRequests).toHaveLength(0);release();
+  expect(humanRequests).toHaveLength(0);
+  expect(leasePreparation.remainingAtRelease(renewal),'The original held gesture must finish before its captured own lease expires').toBeGreaterThan(0);release();
   // WebSocket acknowledgement may settle and cancel the HTTP delivery. Read
   // the same durable receipts without resubmitting either command.
   await expect.poll(async()=>(await projected(page,id)).moves.filter(move=>move.clientCommandId===admitted.clientCommandId)).toHaveLength(1);
@@ -529,5 +534,5 @@ test('an explicit human Pass during fresh renewal reaches one authoritative rece
   expect(body.game.moves.filter(move=>move.clientCommandId===admitted.clientCommandId)).toHaveLength(1);expect(humanRequests).toEqual([admitted]);
   await expect.poll(async()=>(await journal()).some(value=>value.clientCommandId===admitted.clientCommandId)).toBe(false);
   await writeFile(info.outputPath('quiet-renew-explicit-pass.json'),JSON.stringify({beforeRevision:before.gameplayRevision,renewal,admitted,outcomes:body.commandOutcomes,humanRequests},null,2));
- }finally{release();page.off('request',observe);await page.unrouteAll({behavior:'wait'});}
+ }finally{release();page.off('request',observe);info.annotations.push({type:'natural-renewal-lease-preparation',description:JSON.stringify(leasePreparation.snapshot())});leasePreparation.dispose();await page.unrouteAll({behavior:'wait'});}
 });

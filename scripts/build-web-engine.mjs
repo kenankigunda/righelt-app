@@ -1,5 +1,7 @@
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { build } from "esbuild";
+import assert from "node:assert/strict";
 import path from "node:path";
 import ts from "typescript";
 
@@ -66,24 +68,77 @@ const transpileFile = async (sourcePath, destinationPath) => {
   await writeFile(destinationPath, rewriteRelativeImports(result.outputText), "utf8");
 };
 
-await rm(outputRoot, { recursive: true, force: true });
+export const RULES_WORKER_ENTRY = 'apps/web/board/rules-worker.js';
+export const RULES_WORKER_OUTPUT = 'apps/web/generated/rules-worker.js';
 
-for (const source of sources) {
-  const files = await walk(source.root);
-  for (const file of files) {
-    const relativePath = path.relative(source.root, file);
-    const outputFile = path.join(source.outDir, relativePath).replace(/\.ts$/, ".js");
-    await transpileFile(file, outputFile);
+export function assertRulesWorkerClosure(result) {
+  assert(result.metafile && Array.isArray(result.outputFiles));
+  const outputs = Object.values(result.metafile.outputs);
+  assert.equal(outputs.length, 1, 'Rules worker must have one output');
+  assert.equal(result.outputFiles.length, 1, 'Rules worker must have one served file');
+  assert.equal(outputs[0].entryPoint, RULES_WORKER_ENTRY);
+  assert.deepEqual(outputs[0].imports, [], 'Rules worker cannot load runtime imports');
+  assert.deepEqual(outputs[0].exports, [], 'Rules worker entry installs the original handler');
+  assert(Object.hasOwn(result.metafile.inputs, RULES_WORKER_ENTRY));
+  for (const [name, input] of Object.entries(result.metafile.inputs)) {
+    assert(name.startsWith('apps/web/') && !name.split('/').includes('..'), 'Unexpected worker dependency');
+    for (const dependency of input.imports) assert.notEqual(dependency.external, true, 'External worker dependency');
   }
+  return result;
 }
 
-// The server and browser consume this single pinned, versioned source list.
-const passwordData = path.join(outputRoot, "packages", "shared-types", "data");
-await ensureDir(passwordData);
-await writeFile(
-  path.join(passwordData, "common-passwords.json"),
-  await readFile(path.join(repoRoot, "packages", "shared-types", "data", "common-passwords.json")),
-);
+// The canonical entry is unchanged. Each RulesRuntime job still receives a new
+// module realm; this build only removes that realm's network import graph.
+export async function buildRulesWorker({ root = repoRoot, write = true } = {}) {
+  const result = assertRulesWorkerClosure(await build({
+    absWorkingDir: root,
+    entryPoints: [RULES_WORKER_ENTRY],
+    outfile: RULES_WORKER_OUTPUT,
+    bundle: true,
+    splitting: false,
+    format: 'esm',
+    platform: 'browser',
+    target: ['safari17', 'chrome120'],
+    minify: false,
+    legalComments: 'none',
+    sourcemap: false,
+    metafile: true,
+    write: false,
+  }));
+  if (write) {
+    const destination = path.join(root, RULES_WORKER_OUTPUT);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(destination, result.outputFiles[0].contents);
+  }
+  return result;
+}
 
-// Build the pinned browser runtime for local previews, CI and deployment together.
-await import('./build-computer-player.mjs');
+
+export async function buildWebEngine() {
+  await rm(outputRoot, { recursive: true, force: true });
+
+  for (const source of sources) {
+    const files = await walk(source.root);
+    for (const file of files) {
+      const relativePath = path.relative(source.root, file);
+      const outputFile = path.join(source.outDir, relativePath).replace(/\.ts$/, ".js");
+      await transpileFile(file, outputFile);
+    }
+  }
+
+  // The server and browser consume this single pinned, versioned source list.
+  const passwordData = path.join(outputRoot, "packages", "shared-types", "data");
+  await ensureDir(passwordData);
+  await writeFile(
+    path.join(passwordData, "common-passwords.json"),
+    await readFile(path.join(repoRoot, "packages", "shared-types", "data", "common-passwords.json")),
+  );
+
+  // Bundle the canonical rules entry after its generated engine imports exist.
+  await buildRulesWorker();
+
+  // Build the pinned browser runtime for local previews, CI and deployment together.
+  await import('./build-computer-player.mjs');
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) await buildWebEngine();

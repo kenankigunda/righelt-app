@@ -8,7 +8,7 @@ const cancelled = () => Object.assign(new Error('rules_cancelled'), { code: 'rul
 /** One running job, with replaceable queued scopes. Termination stops blocked JS. */
 export class RulesRuntime {
   asynchronous = true;
-  constructor({ workerFactory = () => new Worker(new URL('./rules-worker.js', import.meta.url), { type: 'module' }), timers = globalThis, timeoutMs = SYNC_TIMING.requestTimeoutMs } = {}) {
+  constructor({ workerFactory = () => new Worker(new URL('../generated/rules-worker.js', import.meta.url), { type: 'module' }), timers = globalThis, timeoutMs = SYNC_TIMING.requestTimeoutMs } = {}) {
     this.workerFactory = workerFactory;
     this.timers = timers; this.timeoutMs = timeoutMs;
     this.sequence = 0;
