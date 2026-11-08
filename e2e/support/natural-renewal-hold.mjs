@@ -5,8 +5,17 @@ export function createNaturalRenewalLeaseObserver(page, {minimumRemainingMs, max
   if (!(Number.isFinite(minimumRemainingMs) && minimumRemainingMs > 0 && maximumRemainingMs > minimumRemainingMs)) throw Error('Explicit original timing contracts required');
   let scope = null, latest = null, selected = null, retired = false, incomplete = false;
   const sockets = new Map(), candidates = [];
+  let highestEventSeq = null, prepared = null;
+  const sameBoundScope = proof => Boolean(scope?.initial && proof && proof.generation === scope.initial.generation
+    && proof.gameplayRevision === scope.initial.gameplayRevision && proof.lease.deviceId === scope.initial.lease?.deviceId
+    && proof.lease.authContextId === scope.initial.lease?.authContextId);
   const read = (game, eventSeq = null, socket = null) => {
     if (!scope || game?.id !== scope.gameId) return;
+    if (eventSeq !== null) {
+      if (!Number.isSafeInteger(eventSeq) || eventSeq < 0) { incomplete = true; return; }
+      if (highestEventSeq !== null && eventSeq < highestEventSeq) return;
+      highestEventSeq = eventSeq;
+    }
     const control = game.computer, lease = control?.lease;
     if (control?.ownerId !== scope.identityId || !Number.isSafeInteger(control.generation) || !lease
       || typeof lease.deviceId !== 'string' || typeof lease.authContextId !== 'string' || !Number.isFinite(lease.expiresAt)) { latest = null; return; }
@@ -33,7 +42,8 @@ export function createNaturalRenewalLeaseObserver(page, {minimumRemainingMs, max
       let value;
       try { value = JSON.parse(typeof payload === 'string' ? payload : payload.toString('utf8')); }
       catch { if (scope?.gameId === gameId && scope.identityId === identityId) incomplete = true; return; }
-      if (!value?.game || value.game.id !== gameId || !Number.isSafeInteger(value.eventSeq)) return;
+      if (!value?.game || value.game.id !== gameId) return;
+      if (!Number.isSafeInteger(value.eventSeq) || value.eventSeq < 0) { if (scope?.gameId === gameId && scope.identityId === identityId) incomplete = true; return; }
       record.last = value;
       if (scope?.gameId === gameId && scope.identityId === identityId) read(value.game, value.eventSeq, socket);
     };
@@ -55,9 +65,20 @@ export function createNaturalRenewalLeaseObserver(page, {minimumRemainingMs, max
       if (scope) throw Error('One original game scope only');
       if (!game?.id || !game.computer?.ownerId) throw Error('Original authoritative game required');
       scope = {gameId:game.id, identityId:game.computer.ownerId, origin:new URL(page.url()).origin,
-        sharedPath:`/api/shell/games/${encodeURIComponent(game.id)}/shared`};
+        sharedPath:`/api/shell/games/${encodeURIComponent(game.id)}/shared`,
+        initial:{generation:game.computer.generation, gameplayRevision:game.gameplayRevision, lease:structuredClone(game.computer.lease ?? null)}};
       read(game); // Reuse the original projected() read; no additional HTTP/evaluation.
       for (const [socket, record] of sockets) if (record.gameId === scope.gameId && record.identityId === scope.identityId && record.last) read(record.last.game, record.last.eventSeq, socket);
+    },
+    freshLeaseReady() {
+      const proof = latest, now = clock(), remainingMs = proof ? proof.lease.expiresAt - now : null;
+      const ready = Boolean(!retired && !incomplete && proof?.socket && sameBoundScope(proof)
+        && Number.isSafeInteger(proof.eventSeq) && proof.lease.expiresAt > scope.initial.lease.expiresAt
+        && Number.isFinite(now) && remainingMs >= maximumRemainingMs - minimumRemainingMs && remainingMs <= maximumRemainingMs);
+      if (ready && !prepared) prepared = {initial:structuredClone(scope.initial), observed:structuredClone({
+        generation:proof.generation, gameplayRevision:proof.gameplayRevision, lease:proof.lease, eventSeq:proof.eventSeq}),
+        remainingAtPreparationMs:remainingMs, source:'same-page-server-frame'};
+      return ready;
     },
     eligible(request, command) {
       let ownsPage = false;
@@ -69,7 +90,7 @@ export function createNaturalRenewalLeaseObserver(page, {minimumRemainingMs, max
       const values = command?.payload?.values, now = clock(), proof = latest;
       const remainingMs = proof ? proof.lease.expiresAt - now : null;
       const eligible = Boolean(!selected && !retired && !incomplete && ownsPage && scope && proof
-        && command.gameId === scope.gameId && command.identityId === scope.identityId
+        && sameBoundScope(proof) && command.gameId === scope.gameId && command.identityId === scope.identityId
         && command.kind === 'shared' && command.payload?.operation === 'computer-control' && values?.action === 'renew'
         && values.identityId === scope.identityId && values.generation === proof.generation
         && values.deviceId === proof.lease.deviceId && (command.authContextId ?? '') === proof.lease.authContextId
@@ -86,7 +107,8 @@ export function createNaturalRenewalLeaseObserver(page, {minimumRemainingMs, max
       if (!selected || selected.clientCommandId !== command?.clientCommandId || selected.fingerprint !== command?.fingerprint) throw Error('Exact selected renewal required');
       return selected.expiresAt - clock();
     },
-    snapshot() { return {minimumRemainingMs, maximumRemainingMs, retired, incomplete, selected:structuredClone(selected), candidates:structuredClone(candidates)}; },
+    snapshot() { return {minimumRemainingMs, maximumRemainingMs, retired, incomplete, selected:structuredClone(selected), candidates:structuredClone(candidates),
+      preparation:{minimumRemainingMs:maximumRemainingMs - minimumRemainingMs, initial:structuredClone(scope?.initial ?? null), observed:structuredClone(prepared)}}; },
     dispose,
   };
 }

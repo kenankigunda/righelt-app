@@ -502,6 +502,14 @@ test('an explicit human Pass during fresh renewal reaches one authoritative rece
  await expect.poll(async()=>{const game=await projected(page,id);return game.board.state.sideToMove==='P1'&&!game.board.state.continuation;}).toBe(true);
  const before=await projected(page,id),pass=page.locator('#shell-board-preview-label [data-board-message-action="pass"], #shell-board-preview-label [data-board-preview-action="pass"]');
  leasePreparation.bind(before);
+ // Let an aged natural renewal settle before arming the original held-renewal window.
+ try { await expect.poll(()=>leasePreparation.freshLeaseReady()).toBe(true); }
+ catch (error) {
+  // This assertion remains primary even if failure evidence or cleanup cannot be retained.
+  try { info.annotations.push({type:'natural-renewal-lease-preparation',description:JSON.stringify(leasePreparation.snapshot())}); } catch {}
+  try { leasePreparation.dispose(); } catch {}
+  throw error;
+ }
  let renewal,renewalHeaders,release;const held=new Promise(resolve=>{release=resolve;}),humanRequests=[];
  const observe=request=>{if(request.method()!=='POST'||new URL(request.url()).pathname!==`/api/shell/games/${id}/apply`)return;const value=request.postDataJSON();if(!value.payload?.computer&&value.payload?.action?.type==='pass')humanRequests.push(value);};
  page.on('request',observe);
