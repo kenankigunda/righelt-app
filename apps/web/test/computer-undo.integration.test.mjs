@@ -305,3 +305,31 @@ test('a rejected renewal cannot admit waiting Undo from a reread of the same sti
   assert.equal(h.store.getGameViewModel(h.current().id).sharedMutationsBlocked, false);
   assert.equal(h.button.getAttribute('aria-busy'), null);
 });
+
+test('mounted mutation controls use one rendered projection while delegated input checks current admission', async t => {
+  const h = await undoRenewAdmissionHarness(t);
+  const id = h.current().id, rendered = h.store.getGameViewModel(id);
+  const controls = ['end-turn', 'accept-invite-player'].map(action =>
+    new h.context.HTMLButtonElement({ 'data-action': action, 'data-game-id': id }));
+  h.context.document.querySelectorAll = () => controls;
+  const applyGates = vm.runInContext('applySharedMutationGates', h.context);
+  const blockedNow = vm.runInContext('sharedMutationIsBlocked', h.context);
+
+  // A mounted pass must honor its supplied frame, even if transport has newer data.
+  assert.equal(rendered.sharedMutationsBlocked, false);
+  applyGates({ ...rendered, sharedMutationsBlocked: true });
+  for (const control of controls) {
+    assert.equal(control.disabled, true);
+    assert.equal(control.getAttribute('aria-disabled'), 'true');
+  }
+  assert.equal(blockedNow('end-turn', id), false, 'delegated input reads current admission');
+
+  await h.startRenew();
+  applyGates(rendered);
+  for (const control of controls) {
+    assert.equal(control.disabled, false);
+    assert.equal(control.getAttribute('aria-disabled'), null);
+  }
+  assert.equal(blockedNow('end-turn', id), true, 'a stale enabled frame cannot bypass the live click gate');
+  await h.settle();
+});

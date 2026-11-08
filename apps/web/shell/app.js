@@ -258,9 +258,10 @@ const undoAdmissionIsPending = gameId => {
   const pending = pendingUndoAdmissions.get(gameId);
   return pending?.transport === transport && pending.accountGeneration === account.snapshot().generation;
 };
-const sharedMutationIsBlocked = (action, gameId) => {
+const sharedMutationIsBlocked = (action, gameId, providedProjection) => {
   if ((action === "revert-to-move" || action === "undo-last-move") && undoAdmissionIsPending(gameId)) return true;
-  if (!transport.getGameViewModel(gameId)?.sharedMutationsBlocked) return false;
+  const projection = providedProjection === undefined ? transport.getGameViewModel(gameId) : providedProjection;
+  if (!projection?.sharedMutationsBlocked) return false;
   return !((action === "revert-to-move" || action === "undo-last-move") && computerSession.getUndoWaitAdmission(gameId));
 };
 const applySharedMutationGates = (game) => {
@@ -276,7 +277,7 @@ const applySharedMutationGates = (game) => {
       element.removeAttribute("data-undo-pending");
       element.removeAttribute("aria-busy");
     }
-    if (sharedMutationIsBlocked(element.getAttribute("data-action"), game.id)) {
+    if (sharedMutationIsBlocked(element.getAttribute("data-action"), game.id, game)) {
       if (!element.hasAttribute("data-sync-disabled")) element.setAttribute("data-sync-disabled", String(element.hasAttribute("disabled")));
       element.setAttribute("aria-disabled", "true");
       if (element instanceof HTMLButtonElement) element.disabled = true;
