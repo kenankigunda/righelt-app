@@ -11,6 +11,7 @@ const expectAcceptedShared = async(page,gameId,request)=>{
   await expect.poll(()=>page.evaluate(async({gameId,envelope,headers})=>{
     const response=await fetch(`/api/shell/games/${gameId}/reconcile`,{method:'POST',headers:{...headers,'content-type':'application/json'},
       body:JSON.stringify({protocolVersion:2,identityId:envelope.identityId,knownSnapshotEventSeq:0,commands:[envelope]})});
+    if(response.status===503)return null;
     if(!response.ok)throw Error(`Receipt lookup failed HTTP ${response.status}`);
     return (await response.json()).commandOutcomes?.find(outcome=>outcome.clientCommandId===envelope.clientCommandId);
   },{gameId,envelope,headers})).toMatchObject({outcome:'accepted',clientCommandId:envelope.clientCommandId,fingerprint:envelope.fingerprint});
