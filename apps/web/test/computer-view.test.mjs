@@ -121,3 +121,13 @@ test('recovery and pause identify configured opponents even on a human turn',()=
  assert.match(renderComputerProgress(watch,{phase:'idle'}),/Watching Babs and Horus/);
  assert.match(renderComputerProgress({...watch,computer:{...watch.computer,paused:true}},{phase:'paused'}),/Babs and Horus are paused/);
 });
+
+
+test('automatic retry notices stay outside the board and offer Retry after foreground grace', () => {
+  const game = { id: 'g', canControlComputer: true, computerTurn: 'horus', computer: { seats: { p1: null, p2: 'horus' }, modelId: CURRENT_COMPUTER_MODEL.id } };
+  const render = (waitMs, canRetry = true) => renderComputerProgress(game, { phase: 'idle', activity: { showRecoveryNotice: true }, automaticRetry: { waitMs, canRetry } });
+  assert.equal(render(3999), '');
+  assert.match(render(4000), /Horus is waiting/); assert.doesNotMatch(render(4000), /data-control="retry"/);
+  assert.match(render(15000), /data-control="retry"/);
+  assert.match(render(15000, false), /data-control="retry" disabled/);
+});

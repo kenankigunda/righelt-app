@@ -1,3 +1,4 @@
+import {isObsoleteComputerRejection} from './computer-recovery.js';
 import { activeDecisionLineage } from './decision-history.js';
 import { createRulesExecutor } from '../board/rules-runtime.js';
 import { CURRENT_COMPUTER_MODEL, computerProfileFor } from '../generated/packages/shared-types/src/computer-play.js';
@@ -193,6 +194,7 @@ export const createLiveTransportStore = ({
   const optimisticStateByGameId = new Map();
   // Storage recovery owns asynchronous work separately from game projections.
   const journalRecoveryByOwner = new WeakMap();
+  const uncertainSharedAdmissions = new WeakMap();
   const historyIntentByGameId = new Map();
   const historyCache = new Map();
   const historyRequests = new Map();
@@ -666,6 +668,11 @@ export const createLiveTransportStore = ({
     return sameTerminalOwner(gameId, optimistic, owner, envelope, outcome);
   };
   const verifyCleanupAbsence = async (job, saved) => {
+    // A committed journal row can become visible before its admission callback
+    // registers the command in memory. Finish that existing admission before
+    // deciding whether the readback contains untracked intent; never enqueue it.
+    await job.optimistic.admission.catch(() => {});
+    if (!currentCleanupJob(job)) return false;
     for (const envelope of saved) {
       if (!currentCleanupJob(job)) return false;
       if (!isSyncCommand(envelope) || envelope.identityId !== identityId || envelope.gameId !== job.gameId
@@ -674,6 +681,14 @@ export const createLiveTransportStore = ({
       if (envelope.clientCommandId === job.envelope.clientCommandId) throw Object.assign(new Error("cleanup_unverified"), { code: "cleanup_unverified" });
       const tracked = job.optimistic.pendingCommands.some(command => canonicalCommandJson(command.envelope) === canonicalCommandJson(envelope));
       const known = job.optimistic.outcomes.get(envelope.clientCommandId);
+      const uncertain = uncertainSharedAdmissions.get(job.optimistic)?.get(envelope.clientCommandId);
+      if (!tracked && uncertain && canonicalCommandJson(uncertain.envelope) === canonicalCommandJson(envelope)) {
+        // A timeout can precede a late committed transaction. This exact
+        // current-owner envelope is evidence of intent, never submission
+        // authority: the normal repair must read and reconcile its durable row.
+        blockStorage(job.gameId, Object.assign(new Error('journal_timeout'), {code:'journal_timeout'}), null, null, uncertain.automaticRecoveryAllowed);
+        continue;
+      }
       if (!tracked && !await validTerminalCleanup(job.gameId, job.optimistic, job.owner, envelope, known)) {
         throw Object.assign(new Error("untracked_saved_command"), { code: "untracked_saved_command" });
       }
@@ -803,8 +818,11 @@ export const createLiveTransportStore = ({
     optimistic.syncStatus = optimistic.pendingCommands.length ? optimistic.syncStatus : "ready";
     startTerminalCleanup(gameId, command, outcome);
     recalculateOptimisticGame(gameId);
-    const notification = { type: outcome.outcome === "accepted" ? "authoritative_update" : command.kind === "shared" ? "shared_request_rejected" : "optimistic_rollback", gameId, clientCommandId: command.clientCommandId, reason:outcome.reason,
-      failureNotice: outcome.outcome === "rejected" && command.kind !== "shared" ? outcome.reason === "state_capacity_exceeded" ? "This game couldn’t save another move. Your earlier moves are safe. Please view details." : "Board changed before your move was recorded. Check it and try again." : "" };
+    // A confirmed obsolete computer attempt is handled by its session's
+    // automatic recovery, not a prompt to repeat a human move.
+    const quietComputerRetry = isObsoleteComputerRejection(command.computer,outcome.reason);
+    const notification = { type: outcome.outcome === "accepted" ? "authoritative_update" : command.kind === "shared" ? "shared_request_rejected" : "optimistic_rollback", gameId, clientCommandId: command.clientCommandId, computer: Boolean(command.computer), reason:outcome.reason,
+      failureNotice: outcome.outcome === "rejected" && command.kind !== "shared" && !quietComputerRetry ? outcome.reason === "state_capacity_exceeded" ? "This game couldn’t save another move. Your earlier moves are safe. Please view details." : "Board changed before your move was recorded. Check it and try again." : "" };
     if (notifications) notifications.push(notification); else emitChange(notification);
     return true;
   };
@@ -1048,6 +1066,7 @@ export const createLiveTransportStore = ({
           continue;
         }
         if (!optimistic.pendingCommands.some((entry) => entry.clientCommandId === envelope.clientCommandId)) optimistic.pendingCommands.push(internalCommand(envelope));
+        uncertainSharedAdmissions.get(optimistic)?.delete(envelope.clientCommandId);
       }
       // Topological order; cycles/invalid chains are rejected by the server, never sent out of order.
       const ordered = [], remaining = [...optimistic.pendingCommands];
@@ -1560,6 +1579,10 @@ export const createLiveTransportStore = ({
     }
   };
   const loadGame = async (gameId, { openAsViewer = false } = {}) => {
+    const loadIdentity = identityId, loadSession = auth?.session, loadContext = loadSession?.contextId;
+    const loadAuthEnabled = auth?.enabled, loadAuthenticated = loadSession?.authenticated;
+    const loadStorageGeneration = auth?.storageGeneration;
+    const loadAccountId = loadSession?.account?.id;
     if (getOptimisticState(gameId).upgradeRequired) throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
     // A fresh route already opened its socket. Its bounded initial snapshot owns recovery;
     // only fall back to HTTP after that generation has been retired by the connection owner.
@@ -1574,12 +1597,34 @@ export const createLiveTransportStore = ({
         return getGameViewModel(gameId);
       }
       if (socketOwned) {
+        const recovery = getOptimisticState(gameId);
+        let generation, connectionEpoch;
         try {
-          await reconcileGame(gameId);
+          const reconciliation = reconcileGame(gameId);
+          generation = recovery.recoveryGeneration; connectionEpoch = recovery.connectionRecoveryEpoch;
+          await reconciliation;
           const recovered = getGameViewModel(gameId);
           if (!recovered) throw new Error("invalid_snapshot");
           return recovered;
         } catch (error) {
+          // A ready replacement socket may retire this exact read. It is not
+          // a receipt for a write or permission to use an old/partial snapshot.
+          const sameOwner = active && identityId === loadIdentity && auth?.enabled === loadAuthEnabled
+            && auth?.storageGeneration === loadStorageGeneration && auth?.session === loadSession
+            && auth?.session?.contextId === loadContext && auth?.session?.account?.id === loadAccountId
+            && auth?.session?.authenticated === loadAuthenticated
+            && (!loadAuthEnabled || auth?.session?.authenticated === true);
+          const replacement = gameById.get(gameId);
+          if (error?.code === "recovery_superseded" && sameOwner && getOptimisticState(gameId) === recovery
+            && recovery.recoveryGeneration === generation && recovery.connectionRecoveryEpoch === connectionEpoch
+            && !recovery.connectionRecovering && !recovery.recoveryOwner && !recovery.recoveryPromise
+            && !recovery.storageBlocked && !recovery.unsavedCommand && !recovery.upgradeRequired
+            && !recovery.forceSnapshot && !recovery.pendingCommands.length && recovery.attempt?.commandId == null
+            && !["session_changed", "invalid_credentials"].includes(recovery.recoveryIssue)
+            && validSyncSnapshot(replacement, gameId) && isSyncRevision(lastEventSeqByGameId.get(gameId))) {
+            const current = getGameViewModel(gameId);
+            if (current && !current.positionOnly) return current;
+          }
           // Retain bounded protocol discovery until terminal-protocol recovery
           // supplies its replacement. A read never decides a command outcome.
           if (error.status !== 404 && error.status !== 405) throw error;
@@ -1942,6 +1987,11 @@ export const createLiveTransportStore = ({
         // Readable storage cannot prove a missing user stop/switch intent was
         // fulfilled. Only maintenance lease acquisition/renewal may self-recover.
         const automaticRecoveryAllowed=envelope.payload.operation==='computer-control'&&['acquire','renew'].includes(envelope.payload.values?.action);
+        if(error?.code==='journal_timeout') {
+          let uncertain=uncertainSharedAdmissions.get(optimistic);
+          if(!uncertain){uncertain=new Map();uncertainSharedAdmissions.set(optimistic,uncertain);}
+          uncertain.set(envelope.clientCommandId,{envelope:clone(envelope),automaticRecoveryAllowed});
+        }
         blockStorage(gameId,error,null,null,automaticRecoveryAllowed);throw error;
       }
       assertActive();

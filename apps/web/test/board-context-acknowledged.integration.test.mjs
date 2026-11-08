@@ -26,7 +26,7 @@ function fixture(){
   appEl:{querySelector:()=>null},document:{activeElement:null,hidden:false},queueBoardContextRefresh(){},
   contextReplayEnabled:()=>false,transport:{getFailedOperations:()=>failures,getIdentityId:()=> 'me'},
   maybeUpdateUndoRequestOutcomeFeedback(){},issueDiagnostics:{list:()=>[],capture:()=> 'incident',resolve(){}},
-  presentedRecoveryMessage:value=>value.recovery?'Reload game':'',needsRecoveryAction:value=>Boolean(value.recovery),
+  recoveryPresentationOptions:()=>({}),presentedRecoveryMessage:value=>value.recovery?'Reload game':'',needsRecoveryAction:value=>Boolean(value.recovery),
   dismissedRecoveryNotices:new Map(),ignoredRevertRequests:new Set(),isDiagnosticOpen:()=>false,
   computerSession:{snapshot:()=>({phase})},undoRequestFeedback:null,undoRequestFeedbackGameId:null,escapeHtml:String};
  runInNewContext(`${declaration('getRevertRequestKey')}${declaration('getActiveRevertRequest')}${declaration('getActivePendingRevertRequest')}${declaration('getGameAlertItems')}${source.slice(source.indexOf('const acknowledgedBoardMessage='),source.indexOf('const dispatchBoardMessageAction='))};globalThis.items=getGameAlertItems;globalThis.receive=receiveBoardContext;globalThis.ack=acknowledgedBoardMessage;`,ctx);

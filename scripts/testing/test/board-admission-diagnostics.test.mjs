@@ -306,7 +306,7 @@ test('error categories remain source-derived and changed output remains hash pro
  assert.throws(()=>transformBoardAdmissionModule(source,altered),/output hash mismatch/);
  const wrongOutput={...recipe,outputSha256:'0'.repeat(64)};assert.throws(()=>transformBoardAdmissionModule(source,wrongOutput),/output hash mismatch/);
  assert.equal(recipe.operations.filter(op=>op.after.includes('runtime-host-error')).length,1);assert.equal(recipe.operations.length,23);
- const unchanged={"/board-adapters/engine-board-adapter.js":"37ae4d7c79eb76c04725868ffd98d53a3951eec9f9613851709688deb9e6a769","/shell/live-transport.js":"bb99f37831cf1acd3e0a3c6b43016a49ef8d3c40863e472ca9cf57d92d5255a1","/board/hosts/shell-host.js":"6f8f475dfe5108ead572c51375b3bafb85a94ee998ef91e2abd01f738cd575db","/shell/app.js":"3b6c3839c547221d17d4bf69443570a5cf707849284aa6d97d62553ddbf4c0b8"};
+ const unchanged={"/board-adapters/engine-board-adapter.js":"37ae4d7c79eb76c04725868ffd98d53a3951eec9f9613851709688deb9e6a769","/shell/live-transport.js":"9f566774b78acb3180e64a8df6c70a8a2bc06f6f16543fa2dc1292666c039ee2","/board/hosts/shell-host.js":"6f8f475dfe5108ead572c51375b3bafb85a94ee998ef91e2abd01f738cd575db","/shell/app.js":"4d83624262aa09b0fcb4f51680c1812f24008534d439ea6aea69de56201d23ed"};
  for(const [key,expected] of Object.entries(unchanged)){assert.equal(createHash('sha256').update(JSON.stringify(recipes[key])).digest('hex'),expected);}
 });
 
@@ -388,7 +388,40 @@ test('case source opt-in and sealed inline capture preserve the original two act
  // Keep the original golden: only invert the sealed test-owned observation block.
  const hash=text=>createHash('sha256').update(text).digest('hex');
  const originalSHA='165ec16bb620c0038a8059a2d513401a5a258069ea6ae397130bb58fb5844d30';
- const reviewedCurrentSHA='95388c539469a08b581a1058ef79298c978cdaf859e12c5d1b328dd97bd8ca3b';
+ const reviewedCurrentSHA='a92963d3a05d8083077ed330cc2353d1f182bb39265ebdc775a16fe575ed33d0';
+ // Preserve the old composed-source golden by exactly inverting the seven
+ // accepted Recovery fault-lifecycle/reconnect fixture changes, not actions.
+ const reviewedFixtureBaseSHA='95388c539469a08b581a1058ef79298c978cdaf859e12c5d1b328dd97bd8ca3b';
+ const recoveryFixtureUnion=[
+  {
+    "before": "import {observeReadinessEvaluation} from '../support/readiness-diagnostics.mjs';\nimport {createFaultLifecycle,disposeFaultContexts,fetchFaultResponse} from '../support/fault-lifecycle.mjs';\nimport {installBoardAdmissionDiagnostics} from '../support/board-admission-diagnostics.mjs';\nimport {waitForOpponentReady,waitForComputerDecision} from '../support/computer-projection.mjs';\n",
+    "after": "import {observeReadinessEvaluation} from '../support/readiness-diagnostics.mjs';\nimport {installBoardAdmissionDiagnostics} from '../support/board-admission-diagnostics.mjs';\nimport {waitForOpponentReady,waitForComputerDecision} from '../support/computer-projection.mjs';\n"
+  },
+  {
+    "before": " try {\n let socketsUnavailable=false,losePush=true;const commands=[], sockets=[],pushProofs=[];\n const faults=createFaultLifecycle();\n const faultResources={faults:new Map([[page,[faults]]]),contexts:new Set()};\n const actionFor=command=>(command.kind==='shared'?command.payload.values:command).payload?.action;\n let holdConfirmation=false,releaseConfirmation,confirmationRequested=false;\n",
+    "after": " try {\n let socketsUnavailable=false,losePush=true;const commands=[], sockets=[],pushProofs=[];\n const actionFor=command=>(command.kind==='shared'?command.payload.values:command).payload?.action;\n let holdConfirmation=false,releaseConfirmation,confirmationRequested=false;\n"
+  },
+  {
+    "before": " await page.getByRole(\"button\",{name:\"Play both sides\",exact:true}).click();\n await switchGamePanel(page,\"board\");\n await page.route(`**/api/shell/games/${gameId}/**`,route=>faults.run(async()=>{\n  const request=route.request();\n  if(isOperationRequest(request,'reconcile')){\n   const response=await fetchFaultResponse(route);\n   if(!response)return;\n   if(holdConfirmation){confirmationRequested=true;await confirmationGate;}\n   await route.fulfill({response});return;\n",
+    "after": " await page.getByRole(\"button\",{name:\"Play both sides\",exact:true}).click();\n await switchGamePanel(page,\"board\");\n await page.route(`**/api/shell/games/${gameId}/**`,async route=>{\n  const request=route.request();\n  if(isOperationRequest(request,'reconcile')){\n   const response=await route.fetch();\n   if(holdConfirmation){confirmationRequested=true;await confirmationGate;}\n   await route.fulfill({response});return;\n"
+  },
+  {
+    "before": "  const first=losePush;\n  if(first){holdConfirmation=true;socketsUnavailable=true;losePush=false;sockets.forEach(socket=>socket.close({code:1012,reason:\"Test deployment transition\"}));}\n  const response=await fetchFaultResponse(route);\n  if(!response)return;\n  const body=await response.json();\n  const accepted=body.commandOutcomes?.find(outcome=>outcome.clientCommandId===envelope.clientCommandId&&outcome.fingerprint===envelope.fingerprint&&outcome.outcome==='accepted');\n  expect(accepted,'The healthy HTTP server must retain the accepted original push receipt').toBeTruthy();\n",
+    "after": "  const first=losePush;\n  if(first){holdConfirmation=true;socketsUnavailable=true;losePush=false;sockets.forEach(socket=>socket.close({code:1012,reason:\"Test deployment transition\"}));}\n  const response=await route.fetch(),body=await response.json();\n  const accepted=body.commandOutcomes?.find(outcome=>outcome.clientCommandId===envelope.clientCommandId&&outcome.fingerprint===envelope.fingerprint&&outcome.outcome==='accepted');\n  expect(accepted,'The healthy HTTP server must retain the accepted original push receipt').toBeTruthy();\n"
+  },
+  {
+    "before": "  if(holdConfirmation)await confirmationGate;\n  await route.fulfill({response});proof.deliveredAt=Date.now();\n }));\n try {\n let game=await currentGame(page,gameId);const push=game.legalActions.find(a=>a.type===\"push\");expect(push).toBeTruthy();\n\n await submitPlayableAction(page,push);\n",
+    "after": "  if(holdConfirmation)await confirmationGate;\n  await route.fulfill({response});proof.deliveredAt=Date.now();\n });\n let game=await currentGame(page,gameId);const push=game.legalActions.find(a=>a.type===\"push\");expect(push).toBeTruthy();\n try {\n\n await submitPlayableAction(page,push);\n"
+  },
+  {
+    "before": "  holdConfirmation=false;releaseConfirmation();\n  // Drain intercepted requests before the browser fixture closes.\n  await disposeFaultContexts(faultResources,[page]);\n  await info.attach(\"held-push-confirmations\",{body:JSON.stringify(pushProofs,null,2),contentType:\"application/json\"});\n }\n",
+    "after": "  holdConfirmation=false;releaseConfirmation();\n  // Drain intercepted requests before the browser fixture closes.\n  await page.unrouteAll({behavior:\"wait\"});\n  await info.attach(\"held-push-confirmations\",{body:JSON.stringify(pushProofs,null,2),contentType:\"application/json\"});\n }\n"
+  },
+  {
+    "before": " await page.route(`**/api/shell/games/${gameId}/**`,async route=>{\n  if(!isOperationRequest(route.request(),'reconcile')){await route.continue();return;}\n  // Reconcile is a POST. This fixture only observes an empty command batch,\n  // so an ECONNRESET may repeat the same read once without replaying a command.\n  const requestBody=route.request().postDataJSON();\n  expect(route.request().method()).toBe('POST');\n  expect(requestBody.protocolVersion).toBe(2);expect(requestBody.commands).toEqual([]);\n  const response=await route.fetch({maxRetries:1});if(hold){held();await gate;}await route.fulfill({response});\n });\n try {\n",
+    "after": " await page.route(`**/api/shell/games/${gameId}/**`,async route=>{\n  if(!isOperationRequest(route.request(),'reconcile')){await route.continue();return;}\n  const response=await route.fetch();if(hold){held();await gate;}await route.fulfill({response});\n });\n try {\n"
+  }
+];
  const inlineSHA='8eb845f8799df703d46f19d983eb32a8e7e4bd29598d0a3d11321e618085abbe';
  const beginMarker='  { // Begin case-local expansion of the existing second submitPlayableAction.';
  const endMarker='  } // End case-local expansion.';
@@ -402,6 +435,10 @@ test('case source opt-in and sealed inline capture preserve the original two act
  assert.ok(predicateStart>=0&&predicateEnd>predicateStart);
  const parentPredicate=helper.slice(predicateStart,predicateEnd);
  const normalize=source=>{
+  for(const {before,after} of recoveryFixtureUnion){
+   assert.equal(source.split(before).length-1,1,'exact reviewed Recovery fixture addition');
+   source=source.replace(before,after);
+  }
   assert.equal(source.split(beginMarker).length-1,1,'one sealed inline action');
   assert.equal(source.split(endMarker).length-1,1,'one inline end');
   assert.equal(source.split(callbackImport).length-1,1,'existing readiness import');
@@ -419,6 +456,7 @@ test('case source opt-in and sealed inline capture preserve the original two act
   assert.equal(hash(normalized),originalSHA,'all original source outside the sealed observation remains exact');
   const body=normalized.slice(normalized.indexOf("test('Horus finishes a real turn"));
   assert.equal(body.split('await submitPlayableAction(page,').length-1,2,'exactly the original two actions after inversion');
+  assert.equal(hash(source),reviewedFixtureBaseSHA,'all original source outside reviewed Recovery fixture union remains exact');
   return normalized;
  };
  assert.equal(hash(current),reviewedCurrentSHA,'honest composed-source identity, not a replacement for the old golden');
@@ -713,7 +751,7 @@ async function rulesTimeoutRecipe(){
 }
 test('computer timeout recipe is strictly bound, exactly invertible and preserves the original computer catch entry',async()=>{
  const{all,recipe,source}=await rulesTimeoutRecipe();
- assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'5d9fafc93be7c3244a6d83f63db8d18490c7aa388e10ae7eb99b8a0bfec0e9a8');
+ assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'4bbb047da244802475e00a1eb23d4d9f2b00aa8e2af3f18acd434db3b3201b2d');
  assert.equal(recipe.operations.length,1);const op=recipe.operations[0];assert.equal(op.anchorCount,1);
  const output=transformBoardAdmissionModule(source,recipe);assert.equal(output.slice(op.start,op.start+op.after.length),op.after);
  assert.equal(output.slice(0,op.start)+op.before+output.slice(op.start+op.after.length),source);

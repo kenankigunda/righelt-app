@@ -1,12 +1,19 @@
-import {test,expect} from '@playwright/test';
+import {test as base,expect} from '@playwright/test';
 import fs from 'node:fs';
 import {importScenarioGame,openDirectGameLink,joinAsViewer,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
+// Context cleanup has its own bounded fixture clock, separate from the
+// unchanged 60s behavioral assertions. Both owned contexts must still close.
+const test=base.extend({createOwnedContext:[async({browser},use)=>{
+ const owned=[];
+ try{await use(async options=>{const context=await browser.newContext(options);owned.push(context);return context;});}
+ finally{await Promise.all(owned.map(context=>context.close()));}
+},{timeout:60000}]});
 const fixture=JSON.parse(fs.readFileSync(new URL('../../packages/game-engine/test/fixtures/destruction-turn-end.json',import.meta.url)));
 const scenario={formatVersion:2,id:'af0a1f18-1cb2-47a8-b203-4b5598f96893',title:'Turn-end destruction regression',description:'Deferred supply losses from the reported game',incorrect:false,initialState:fixture.initialState,moves:[],resultingState:fixture.initialState,expectedFinalStateHash:'',expectedOutcome:'ongoing'};
 
-for (const mobile of [false,true]) test(`turn-end losses animate once for player and viewer and persist in history (${mobile?'phone':'desktop'})`,async({browser,baseURL},testInfo)=>{
- const owner=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1100},hasTouch:mobile});
- const observer=await browser.newContext({viewport:{width:1440,height:1100}});
+for (const mobile of [false,true]) test(`turn-end losses animate once for player and viewer and persist in history (${mobile?'phone':'desktop'})`,async({createOwnedContext,baseURL},testInfo)=>{
+ const owner=await createOwnedContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1100},hasTouch:mobile});
+ const observer=await createOwnedContext({viewport:{width:1440,height:1100}});
  const page=await owner.newPage(), viewer=await observer.newPage();
  try{
   const {gameId,gameHash}=await importScenarioGame(page,scenario,baseURL);
@@ -83,15 +90,13 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
  }finally{
   const witness=await page.evaluate(()=>window.destructionMotionWitness??null).catch(error=>({readError:String(error)}));
   await testInfo.attach('destruction-motion-witness',{body:JSON.stringify(witness,null,2),contentType:'application/json'});
-  await owner.close();await observer.close();
  }
 });
 
 const projectFixture=JSON.parse(fs.readFileSync(new URL('../../packages/game-engine/test/fixtures/destruction-project.json',import.meta.url)));
-test('screenshot project plays five supply-loss effects on both connected clients',async({browser,baseURL},testInfo)=>{
- const owner=await browser.newContext({viewport:{width:1440,height:1100}}),observer=await browser.newContext({viewport:{width:1440,height:1100}});
+test('screenshot project plays five supply-loss effects on both connected clients',async({createOwnedContext,baseURL},testInfo)=>{
+ const owner=await createOwnedContext({viewport:{width:1440,height:1100}}),observer=await createOwnedContext({viewport:{width:1440,height:1100}});
  const page=await owner.newPage(),viewer=await observer.newPage();
- try{
   const {gameHash}=await importScenarioGame(page,{...scenario,id:'cb925f15-ccdf-4183-9dc8-bffbddb145bf',initialState:projectFixture.initialState,resultingState:projectFixture.initialState},baseURL);
   await openDirectGameLink(viewer,baseURL,gameHash);await joinAsViewer(viewer);
   await submitPlayableAction(page,projectFixture.action);
@@ -101,5 +106,4 @@ test('screenshot project plays five supply-loss effects on both connected client
    await expect(p.locator('#shell-board .removal-piece')).toHaveCount(0);
    await expect(p.getByTestId('history-destruction-item')).toHaveCount(5);
   }
- }finally{await owner.close();await observer.close();}
 });

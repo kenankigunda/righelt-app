@@ -27,7 +27,7 @@ const fixture=()=>{
  const gate=createRenderGestureGate({render:options=>context.render(options),schedule:fn=>{scheduled.set(++sequence,fn);return sequence;},cancel:id=>scheduled.delete(id)});
  context={historyHeadingFocus:{capture:()=>null,restore:()=>false},syncRenderedMarkupSnapshot(){admissions.push({mounted,panelSynced:panelOwner===mounted});},resumeBoardContextReplay(){},document,appEl:root,joinFeedback:feedback,pendingInvitationFocus,isButtonPending:()=>busy,renderGesture:gate,preserveBoardFocus,getCurrentViewedGameId:()=> 'g',
   utilityMemory:{capture(){},restore(){}},inlineProfiles:{sync(){}},syncMountedGameShellPanelUi(){panelOwner=mounted;},
-  currentRoute:{gameId:'g'},pendingResultReviewFocus:null,getGamePanel:()=> 'board',
+  currentRoute:{gameId:'g'},recoveryPresentationOptions(){},pendingResultReviewFocus:null,getGamePanel:()=> 'board',
   renderContent(){renderCount++;mounted.isConnected=false;mounted=control();document.activeElement=body;}};
  runInNewContext(`${source.slice(start,end)}\nglobalThis.render=render;`,context);
  const flush=()=>{const jobs=[...scheduled.values()];scheduled.clear();for(const fn of jobs)fn();};
