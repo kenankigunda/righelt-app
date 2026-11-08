@@ -8,6 +8,7 @@ import {monitorEventLoopDelay} from 'node:perf_hooks';
 import {compareApiEvents} from './canonical-api-events.mjs';
 import {auditLifecycle} from './lifecycle-audit.mjs';
 import {requireDirectIdentity,signalDirectChild,captureInitialChildIdentity} from './direct-child-identity.mjs';
+import {resolveCandidatePlaywright} from './candidate-playwright.mjs';
 const source='e4979ad6e9d57e69753b0fe0788b636882e6c368',toolsPin='0c7b51b64c26604f1e08939e827cb4a934aa4f93';
 const runner=path.dirname(fileURLToPath(import.meta.url));
 const candidate=path.resolve(process.env.RIGHELT_DIAGNOSTIC_CANDIDATE??''),tools=path.resolve(process.env.RIGHELT_DIAGNOSTIC_TOOLS??'');
@@ -33,14 +34,13 @@ function sealProduct(){
  return Object.fromEntries(files.map(file=>{const full=path.join(candidate,file),stat=fs.lstatSync(full);return[file,{mode:stat.mode&0o777,symlink:stat.isSymbolicLink(),sha256:hash(stat.isSymbolicLink()?fs.readlinkSync(full):fs.readFileSync(full))}];}));
 }
 const before=sealProduct();write('source-before.json',{head:source,tree:command(['rev-parse','HEAD^{tree}']),files:before});
-const playwright=await import(pathToFileURL(path.join(candidate,'node_modules/playwright/index.mjs')).href);
-const browserPath=playwright.webkit.executablePath();
+const ownPlaywright=resolveCandidatePlaywright(candidate),browserPath=ownPlaywright.webkit.executablePath();
 const sourceLock=fs.readFileSync(path.join(candidate,'pnpm-lock.yaml')),installedLock=fs.readFileSync(path.join(candidate,'node_modules/.pnpm/lock.yaml'));
 const receiptDigest=bytes=>hash(JSON.stringify(bytes));
 assert(receiptDigest(sourceLock)==='341b60501f75b87b0e84d393c0a09828e9a0ca6e964acdd9fc959352920d5436'&&receiptDigest(installedLock)==='c915e9421b37eb675521395a7eef58fd3faeb8fe8ff754d79bffe7daa7c5f1ed','Exact historical dependency receipt contract required');
 write('runtime.json',{node:process.version,pnpm:'9.15.9',playwright:'1.59.1',platform:process.platform,arch:process.arch,
  sourceLock:{rawByteSHA256:hash(sourceLock),receiptStandardBufferJSONSHA256:receiptDigest(sourceLock)},installedLock:{rawByteSHA256:hash(installedLock),receiptStandardBufferJSONSHA256:receiptDigest(installedLock)},
- browserPath,browserLauncherSHA256:hash(fs.readFileSync(browserPath)),browsers:json(path.join(candidate,'node_modules/playwright-core/browsers.json'))});
+ browserPath,browserLauncherSHA256:hash(fs.readFileSync(browserPath)),playwrightDependencyProvenance:ownPlaywright.provenance});
 const registry=path.join(out,'resources'),events=path.join(out,'worker-lifecycle');fs.mkdirSync(registry,{mode:0o700});
 function knownListeners(){
  const ports=new Set();for(const file of['/proc/net/tcp','/proc/net/tcp6']){

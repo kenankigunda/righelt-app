@@ -132,7 +132,7 @@
     "https://cli.github.com/manual/gh_workflow_run",
     "https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow"
   ],
-  "revision": "v3-immediate-preidentity-cleanup",
+  "revision": "v4-own-pnpm-dependency-resolution",
   "v1IntendedRed": {
     "execute": false,
     "scope": "One Node-only named import of chromium from the frozen v1 test-fixture.mjs. Expected process exit1 with the actual missing named-export error. No fabricated TAP count and no old native execution.",
@@ -170,5 +170,46 @@
     "currentUniqueSourceControls": 31,
     "doNotSum": "V2 29 and V3 6 overlap4. Current unique31, not35."
   },
-  "targetAttribution": "Public original.test.info().testId is captured synchronously at Browser.newContext/newPage CALL ENTRY before await. Context createdUnderTestId and page contextCreatedUnderTestId record the creator only, not ongoing ownership. Outside active test returnsnull. Shared contexts are never relabeled."
+  "targetAttribution": "Public original.test.info().testId is captured synchronously at Browser.newContext/newPage CALL ENTRY before await. Context createdUnderTestId and page contextCreatedUnderTestId record the creator only, not ongoing ownership. Outside active test returnsnull. Shared contexts are never relabeled.",
+  "firstLinuxDiagnostic": {
+    "run": 42483906168,
+    "job": 128741511348,
+    "diagnosticCommit": "cf9f47933e43c41f7b4716289b594bb180c35c3c",
+    "status": "failed before shard/browser/stack",
+    "firstFailure": "ERR_MODULE_NOT_FOUND candidate/node_modules/playwright/index.mjs",
+    "artifact": 13618876605,
+    "archiveSHA256": "a138769ffe8ead683f36299958ebd4982fefcc884bb9293aaf0a68b7f9c57e52",
+    "archiveBytes": 75705,
+    "originalCasesExecuted": 0,
+    "rootDirectory": "test-results/manual-linux-diagnostic-watch-v1",
+    "finalSealSHA256": "d13658290e28eb294ef7a281d3d972bf8ca545a0c1e18aff5216a2ca4834b45d",
+    "noOriginalWorkerOrServiceEvidence": true
+  },
+  "v4Resolver": {
+    "execute": false,
+    "module": "candidate-playwright.mjs",
+    "scope": "Resolve direct own @playwright/test physical package and follow its real dependency closure to playwright then core. Use original exported WebKit BrowserType and read browsers.json from resolved core package root. No top-level transitive alias or blocked exports subpath.",
+    "freshContainingControls": 2,
+    "proof": "Actual old import expression fails in an owned temp root exposing only direct@playwright/test. New actual resolution yields1.59.1 and exact originalWebKit identity/registry metadata withoutlaunch. Missing direct dependency refuses ancestor fallback.",
+    "syntax": [
+      "candidate-playwright.mjs",
+      "candidate-playwright-controls.test.mjs",
+      "run.mjs"
+    ],
+    "JSON": [
+      "plan.json",
+      "source-freeze.json"
+    ],
+    "compatibleDiscovery": "V3 original/hooked/historical74 IDs/names/files/order remain exact. Hook/fixture/test/config bytes unchanged. No repeat discovery/native needed."
+  },
+  "remainingDependencyAssumptions": {
+    "auditedFiles": [
+      "run.mjs",
+      "test-fixture.mjs",
+      "register.mjs",
+      "test-import-hook.mjs",
+      "export-identity-control.test.mjs"
+    ],
+    "result": "No top-level playwright/core transitive aliases remain in runner. Fixture/exportcontrol use only direct@playwright/test alias supplied by actual installation. Hook has no Playwright package-path assumption."
+  }
 }

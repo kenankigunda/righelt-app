@@ -1,7 +1,9 @@
 {
-  "state": "SOURCE_ONLY_V3_PENDING_AFFECTED_CONTROLS_AND_PEER",
+  "state": "V4_SOURCE_READY_PENDING_AFFECTED_CONTROLS_PEER",
   "files": {
-    "REVIEW.md": "2a472c1fff7198c504bd5cdfa5e41b345de4828406f9c2a585080a838ff647b7",
+    "REVIEW.md": "c6fe4c6c55238b1f30b1e97d63e0fb660832520fac1d8bfe71c10324fae01bba",
+    "candidate-playwright-controls.test.mjs": "41179983c5cfa5a1a5b203d331807e54f961fc32990ca952759c7f50872815f2",
+    "candidate-playwright.mjs": "9596c00cd3bd7f8c6372abedbf7f3207ad1b409c00a553f4c5d9b90d275d2175",
     "canonical-api-events.mjs": "58239624a7e8969e386da8da46de6aae09004ece4f0a778d846979992383128e",
     "direct-child-identity-controls.test.mjs": "94e81ef1bf191e0d11ac18909421906452d7cb8de7ffa9aa024ff96750309adf",
     "direct-child-identity.mjs": "7d094d96fa8bef7ad44a57ecaad372028765c26118db58c38cc45d8d6c7b2ab7",
@@ -10,9 +12,9 @@
     "lifecycle-audit.mjs": "27238c72be95cfc666b26aa499346d259c35f7a1f451810481a00d6e020b106b",
     "observer-controls.test.mjs": "c1ff0b2365e45fd2f913b24b98dfb9ce3161cb128c67c8510f61220e2def641b",
     "page-observer.mjs": "49bebd94aaa354a1fe7fe5a2c3a2f9634c5f93cb58e1fdbe3598939e5c455fe3",
-    "plan.json": "bfdd9586d4515af8a7c00e9ce3c9e5ad6c3428ad74bc0f0e3738a4190d846458",
+    "plan.json": "d375a8daf18a64960caf692b2f4bb560b043187d5bbd824f6d5f8e390b2ef299",
     "register.mjs": "1de5e5aae035913421f26044a461a3c0bb81b89fc376beb0a787f21ec463a0be",
-    "run.mjs": "396d81a20d7eba1d838bae573266dd2d1245b2ef084cb0d0e13d76ba22db2507",
+    "run.mjs": "69a36ec75799b04113c93dafc67a7cbf794f194efed3c90cb9d4eae2e004bd39",
     "test-fixture.mjs": "2ef64295e6f4b3d7dc7a5f991ea23815acd1275e40f36332cb42dc1c1b80015a",
     "test-import-hook.mjs": "fd34697dc1649440ab6b5b79a126e1ebe412c78bce6b06b0aa2a8be0a39c140e",
     "../../../.github/workflows/webkit-rendering-diagnostic.yml": "5a35ab2ff42699541cdfbf05eaf4a20e1a71ab77dbae8936a38f004778c1bf09"
@@ -39,5 +41,6 @@
   "primarySeal": "97babc045e3eb0a78281aeb5922a7d9943fc1e3a7070cba4bed5be9f413ecf59",
   "scope": "Registered diagnostic workflow plus new isolated scripts only. Canonical PR250 untouched.",
   "preservedV1FreezeSHA256": "81bba89bfacfd60cebfe5105f33bca52afec327733542a16655563127da50dd9",
-  "preservedV2FreezeSHA256": "c4ac4860bf9c04bd1dc03ce1d1f66fd4eac6d332438f9d87f25af2066fd12b4b"
+  "preservedV2FreezeSHA256": "c4ac4860bf9c04bd1dc03ce1d1f66fd4eac6d332438f9d87f25af2066fd12b4b",
+  "preservedV3FreezeSHA256": "3b921e282f5901e4ed7af0e0d28187e7eaae3df4e6b2e0a9c9cc19dd0015a6dd"
 }
