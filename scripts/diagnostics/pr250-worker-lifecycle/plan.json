@@ -1,0 +1,174 @@
+{
+  "state": "SOURCE_ONLY_ALL_EXECUTION_HELD",
+  "candidateHead": "e4979ad6e9d57e69753b0fe0788b636882e6c368",
+  "candidateTree": "531d81fce113bc4409d9b3106d9a0874dd28ed0b",
+  "diagnosticBranch": "codex/pr250-worker-lifecycle-diagnostic",
+  "releasedTools": "0c7b51b64c26604f1e08939e827cb4a934aa4f93",
+  "runtime": {
+    "os": "ubuntu-24.04",
+    "node": "22.23.4",
+    "pnpm": "9.15.9",
+    "playwright": "1.59.1",
+    "browser": "original default WebKit launcher, no environment override",
+    "receiptLockStandardBufferJSONSHA256": "341b60501f75b87b0e84d393c0a09828e9a0ca6e964acdd9fc959352920d5436",
+    "receiptInstalledLockStandardBufferJSONSHA256": "c915e9421b37eb675521395a7eef58fd3faeb8fe8ff754d79bffe7daa7c5f1ed",
+    "rawSourceLockSHA256": "6da31d8175b1b4a605479b24efe7c1d5fb8ba4088de96f653ce58e44a6d17c5f",
+    "digestNote": "Receipt digests encode the standard Buffer JSON. They are distinct from raw-byte SHA256, both recorded and labeled by the actual runner.",
+    "originalNodeOptions": {
+      "status": "historical value unavailable",
+      "evidence": "Queue searched full original job log and178 extracted primary members. Workflow does not set NODE_OPTIONS. Absence from those records does not prove an empty original environment.",
+      "future": "Preserve and record actual inherited diagnostic NODE_OPTIONS before appending the source-frozen hook. Record explicit absence only if absent in that actual process."
+    }
+  },
+  "selection": {
+    "suite": "e2e",
+    "project": "webkit",
+    "shard": 1,
+    "shards": 2,
+    "workerCount": 1,
+    "retries": 0,
+    "grep": null,
+    "originalCaseUnionRequired": true,
+    "priorActualUnion": {
+      "passed": 70,
+      "failed": 2,
+      "intentionalSkipped": 2,
+      "total": 74
+    },
+    "budgets": "All original config/body60s/expect10s/acceptedRetreat60s/computerRecovery5s/request and rules timeouts unchanged. Original post-failure drain retained.",
+    "storageStep": "Post-suite storage job step is not part of this diagnostic. It runs after the failures in original CI and cannot establish their preceding context history. No official CI credit."
+  },
+  "primary": {
+    "run": 42476945109,
+    "job": 128720480892,
+    "intake": "/Users/kenankigunda/Documents/righelt/righelt-ci-layout-compatibility/test-results/pr250-current34-ci-watch-v3-e4979ad6/resume-after-tls-v1/ci/failures/128720480892/trusted-artifact-intake-v1",
+    "intakeSealSHA256": "97babc045e3eb0a78281aeb5922a7d9943fc1e3a7070cba4bed5be9f413ecf59",
+    "qualificationSHA256": "09c9863432c64e412610496468be7354ab155e876101b538ee4023b006ac3198",
+    "sourceMap": "/Users/kenankigunda/Documents/righelt/righelt-ci-layout-compatibility/test-results/pr250-current34-ci-watch-v3-e4979ad6/resume-after-tls-v1/ci/failures/128720480892/source-hypothesis-map-v1/map.json",
+    "firstCategoryBoth": "rules_timeout in admit/project",
+    "instanceIDMissing": true,
+    "aggregateCollectorIncomplete": true,
+    "actualWebNetworkConnectionLost": true,
+    "fullRawOriginalCIAbsent": true
+  },
+  "phases": [
+    {
+      "name": "source-control-proof",
+      "execute": false,
+      "command": [
+        "node",
+        "--test",
+        "--test-concurrency=1",
+        "scripts/diagnostics/pr250-worker-lifecycle/direct-child-identity-controls.test.mjs",
+        "scripts/diagnostics/pr250-worker-lifecycle/lifecycle-audit-controls.test.mjs",
+        "scripts/diagnostics/pr250-worker-lifecycle/observer-controls.test.mjs",
+        "scripts/diagnostics/pr250-worker-lifecycle/export-identity-control.test.mjs"
+      ],
+      "intendedUniqueControls": 29,
+      "scope": "14 original observer/hook controls +10 lifecycle audit controls +4 direct child identity controls +1 actual original Chromium export identity control. All fresh. Owned temporary files and one bounded Node-only import child, no browser/listener/API."
+    },
+    {
+      "name": "syntax",
+      "execute": false,
+      "scope": "Twelve .mjs syntax checks and JSON parsing of plan/source-freeze. No native."
+    },
+    {
+      "name": "discovery-and-hook-binding",
+      "execute": false,
+      "scope": "Original candidate config/--project=webkit/--shard=1/2 with original browser-reporter inventory. Compare exact case IDs/files/project/name/order before and with observer hook in separate discovery outputs. Must preserve74 original cases including same target2 and intended skips. Verify actual fixture-import record and that no browser, service or native result artifact exists."
+    },
+    {
+      "name": "linux-one-full-original-shard",
+      "execute": false,
+      "scope": "Only after root/peer source and controls/discovery acceptance, root may push isolated diagnostic branch and dispatch the existing registered workflow with --ref branch plus explicit execute input. Product separate checkout fixed e497. All original result/failure statuses and genuine strict records retained."
+    }
+  ],
+  "nativeLaunch": {
+    "execute": false,
+    "workflow": ".github/workflows/webkit-rendering-diagnostic.yml",
+    "futureCommand": [
+      "gh",
+      "workflow",
+      "run",
+      "webkit-rendering-diagnostic.yml",
+      "--ref",
+      "codex/pr250-worker-lifecycle-diagnostic",
+      "-f",
+      "execute=true"
+    ],
+    "authority": "Root separate public write/dispatch authorization required. This source preparation grants none."
+  },
+  "guards": {
+    "newHTTP": false,
+    "newPageActions": false,
+    "workerScriptRewrite": false,
+    "workerEvaluate": false,
+    "CDP": false,
+    "renderingInterventions": false,
+    "modelOrPayloadMutation": false,
+    "budgetIncrease": false,
+    "retry": false,
+    "officialCICredit": false
+  },
+  "knownLimits": [
+    "No RulesRuntime queue/pre-Worker/owning-instance evidence before a native Worker exists.",
+    "No worker handler-entry, module-bootstrap-completion or exact native thread join.",
+    "No join of public PWWorker to main-realm object by staticURL, count, order or timestamps.",
+    "Default Browser API context setup is awaited for init installation. That is passive diagnostic overhead, not an application wait or a performance result.",
+    "Node eventloop and OS samples are separately labeled clocks, never browser timings or a physical Worker identity.",
+    "Existing body or proxy failure remains failed even if lifecycle evidence is informative.",
+    "Historical NODE_OPTIONS and exact future runner-image/package byte identity are unavailable, no exact environment replication claim.",
+    "Known pre-existing Worker subclass limitation is outside actual selected WK1 runtime. No broad subclass patch is added.",
+    "Native frame navigation and PWWorker records do not supply exact physical document/Worker joins. Ledger completeness is scoped to installed contexts/recorded nonce identities and original executed case coverage, not a CDP cause proof."
+  ],
+  "sharedCanonicalValidator": {
+    "source": "/Users/kenankigunda/Documents/righelt/righelt-history-200-actual-e017-prep/test-results/history200-native-cycle-v1/guest-host-current-de1f-v2/canonical-api-events.mjs",
+    "sha256": "58239624a7e8969e386da8da46de6aae09004ece4f0a778d846979992383128e"
+  },
+  "officialReferences": [
+    "https://nodejs.org/download/release/v22.18.0/docs/api/module.html#moduleregisterhookshooks",
+    "https://playwright.dev/docs/api/class-browsercontext#browser-context-add-init-script",
+    "https://playwright.dev/docs/api/class-worker",
+    "https://cli.github.com/manual/gh_workflow_run",
+    "https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow"
+  ],
+  "revision": "v3-immediate-preidentity-cleanup",
+  "v1IntendedRed": {
+    "execute": false,
+    "scope": "One Node-only named import of chromium from the frozen v1 test-fixture.mjs. Expected process exit1 with the actual missing named-export error. No fabricated TAP count and no old native execution.",
+    "fixture": "/Users/kenankigunda/Documents/righelt/righelt-pr250-worker-lifecycle-diagnostic/test-results/pr250-worker-lifecycle-source-v1/before-v2/scripts/test-fixture.mjs"
+  },
+  "postflight": "Lifecycle evidence independently parsed from saved originals and matched to original executed case IDs. Discovery/import-only/all-skipped logs are not mislabeled browser workers. Original case outcome stays unchanged. Raw/canonical API and strict status audits run independently.",
+  "coherentFindings": [
+    "Root missing chromium export fixed and source-audited all94 original imports.",
+    "Root lifecycle evidence post-audit added, loss/missing/truncation fail closed.",
+    "Root NODE_OPTIONS preservation and historical availability limit recorded.",
+    "Queue canonical API audit is independent of strict web failure.",
+    "Queue/root direct child PID/start identity required for sample root and every targeted TERM/KILL.",
+    "Queue opaque receipt digest labels separated from raw-byte SHA256.",
+    "V3 initial capture failure uses only the immediate unreaped direct ChildProcess creation handle for bounded TERM/KILL/close. Original inspection error remains fatal. Later unknown/reused identities still cannot use that fallback."
+  ],
+  "preservedV2Controls": {
+    "acceptance": "test-results/pr250-worker-lifecycle-source-v2/light-controls-v1/acceptance.json",
+    "sha256": "6a08b6f5714b4cc40e6c1fb2a278d0242ebd0e617cbb9b12bef71a3c8df2e688",
+    "freshPassed": 29,
+    "syntax": 12,
+    "JSON": 2,
+    "nativeExecuted": false
+  },
+  "v3AffectedControls": {
+    "execute": false,
+    "containingFile": "scripts/diagnostics/pr250-worker-lifecycle/direct-child-identity-controls.test.mjs",
+    "expectedCount": 6,
+    "scope": "Four unchanged exact-identity negatives/positive plus2 actual owned Node children proving initial-capture-failure boundedTERM/forcedKILL/reap and primary preservation. No listener/API/browser.",
+    "syntaxChanged": [
+      "direct-child-identity.mjs",
+      "direct-child-identity-controls.test.mjs",
+      "run.mjs",
+      "test-fixture.mjs"
+    ],
+    "currentUniqueSourceControls": 31,
+    "doNotSum": "V2 29 and V3 6 overlap4. Current unique31, not35."
+  },
+  "targetAttribution": "Public original.test.info().testId is captured synchronously at Browser.newContext/newPage CALL ENTRY before await. Context createdUnderTestId and page contextCreatedUnderTestId record the creator only, not ongoing ownership. Outside active test returnsnull. Shared contexts are never relabeled."
+}

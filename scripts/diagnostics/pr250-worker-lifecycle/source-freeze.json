@@ -1,0 +1,43 @@
+{
+  "state": "SOURCE_ONLY_V3_PENDING_AFFECTED_CONTROLS_AND_PEER",
+  "files": {
+    "REVIEW.md": "2a472c1fff7198c504bd5cdfa5e41b345de4828406f9c2a585080a838ff647b7",
+    "canonical-api-events.mjs": "58239624a7e8969e386da8da46de6aae09004ece4f0a778d846979992383128e",
+    "direct-child-identity-controls.test.mjs": "94e81ef1bf191e0d11ac18909421906452d7cb8de7ffa9aa024ff96750309adf",
+    "direct-child-identity.mjs": "7d094d96fa8bef7ad44a57ecaad372028765c26118db58c38cc45d8d6c7b2ab7",
+    "export-identity-control.test.mjs": "14a188b6b8487598a6a479573e3bda671c64124833f20484aad55ef72c2ee7dd",
+    "lifecycle-audit-controls.test.mjs": "f67e47a67dc31e900fc561b5560feca1c75d672582f6c854c0b5cb8f2f5247f0",
+    "lifecycle-audit.mjs": "27238c72be95cfc666b26aa499346d259c35f7a1f451810481a00d6e020b106b",
+    "observer-controls.test.mjs": "c1ff0b2365e45fd2f913b24b98dfb9ce3161cb128c67c8510f61220e2def641b",
+    "page-observer.mjs": "49bebd94aaa354a1fe7fe5a2c3a2f9634c5f93cb58e1fdbe3598939e5c455fe3",
+    "plan.json": "bfdd9586d4515af8a7c00e9ce3c9e5ad6c3428ad74bc0f0e3738a4190d846458",
+    "register.mjs": "1de5e5aae035913421f26044a461a3c0bb81b89fc376beb0a787f21ec463a0be",
+    "run.mjs": "396d81a20d7eba1d838bae573266dd2d1245b2ef084cb0d0e13d76ba22db2507",
+    "test-fixture.mjs": "2ef64295e6f4b3d7dc7a5f991ea23815acd1275e40f36332cb42dc1c1b80015a",
+    "test-import-hook.mjs": "fd34697dc1649440ab6b5b79a126e1ebe412c78bce6b06b0aa2a8be0a39c140e",
+    "../../../.github/workflows/webkit-rendering-diagnostic.yml": "5a35ab2ff42699541cdfbf05eaf4a20e1a71ab77dbae8936a38f004778c1bf09"
+  },
+  "baseHead": "e4979ad6e9d57e69753b0fe0788b636882e6c368",
+  "baseTree": "531d81fce113bc4409d9b3106d9a0874dd28ed0b",
+  "protectedOriginalSources": {
+    "apps/web/board/rules-runtime.js": "9d039baf11cf52b8a22bac68237e410281621955d0d544f2c6c30391ecc90f7a",
+    "apps/web/board/rules-worker.js": "26290400a075bfdd6907d87d92383a5a5eaeaf9b368b089327807c07e32d5011",
+    "apps/web/shell/computer-runtime.js": "0377098d04c822b38271f5ad3eb28ca42c31ddddc45ec8ab06697051dbf4a41f",
+    "apps/web/shell/computer-session.js": "98bd73f3432b46f5ad1be5471ca6c1473811bca1b16d369a18bd16988fe7448c",
+    "apps/web/shell/live-transport.js": "74659b561c6aa308332e5473659581f5e780082124ada9dc946e2524540615b1",
+    "apps/web/shell/optimistic-live.js": "32d55056d9b198f1d352d97406670a1c3cd84496ac1ec4110ba42a831053ec53",
+    "e2e/workflows/completion-preserving-retreat.spec.mjs": "c834bf97627950c1e6d662e71b930b4df348d6d745c5b4de9cdc37b04f9ee0c2",
+    "e2e/support/computer-projection.mjs": "914cf881ce7bfc3114c254da4a0f9cf466125d2a8dffed1b8688d6be750a8a19",
+    "e2e/support/board-admission-diagnostics.mjs": "f9e394d606f3f54089698f95d1f917872e09f48d13b1a2d99267f134f444d6df",
+    "playwright.config.mjs": "7aab92ce5c488d21fd6c7e62838b8534d20ff02ebb82b81c61e9bae6fd133637",
+    "scripts/testing/run.mjs": "8cb7fcfb4af64c5056a349beb6987a7fbbd4769625a0db5377994070b39386da",
+    "scripts/testing/ci-run.mjs": "acc42006df9b3fba14f5f65083f536d5d43016a12468105e4e34225e5ec9d4b9",
+    "scripts/playwright-e2e.mjs": "0cb31bfb6b6e5a4c8450984337d62d2e3b052df205605572c3e771fd5a45c93d",
+    "scripts/e2e-stack.mjs": "7de420b49d2b69622c376897d03b03438da5c23cef2a7fe6fb1e3c4eca6f269d",
+    "pnpm-lock.yaml": "6da31d8175b1b4a605479b24efe7c1d5fb8ba4088de96f653ce58e44a6d17c5f"
+  },
+  "primarySeal": "97babc045e3eb0a78281aeb5922a7d9943fc1e3a7070cba4bed5be9f413ecf59",
+  "scope": "Registered diagnostic workflow plus new isolated scripts only. Canonical PR250 untouched.",
+  "preservedV1FreezeSHA256": "81bba89bfacfd60cebfe5105f33bca52afec327733542a16655563127da50dd9",
+  "preservedV2FreezeSHA256": "c4ac4860bf9c04bd1dc03ce1d1f66fd4eac6d332438f9d87f25af2066fd12b4b"
+}
