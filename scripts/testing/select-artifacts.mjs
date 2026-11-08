@@ -1,6 +1,6 @@
 // Artifact names are emitted with github.run_attempt. GitHub creation timestamps
 // can be inverted across reruns; they are metadata, never attempt authority.
-export function selectSuiteArtifacts(artifacts, { runId, headSha }) {
+export function selectSuiteArtifacts(artifacts, { runId, headSha, runAttempt }) {
   if (!Number.isSafeInteger(runId) || runId < 1 || typeof headSha !== 'string' || !headSha)
     throw Error('Suite artifact expected run/head missing');
   const byLane = new Map(), seen = new Set();
@@ -8,7 +8,7 @@ export function selectSuiteArtifacts(artifacts, { runId, headSha }) {
     if (!artifact.name?.startsWith('suite-')) continue;
     const match = /^(suite-[\w.-]+)-([1-9]\d*)$/.exec(artifact.name);
     const attempt = Number(match?.[2]);
-    if (!match || !Number.isSafeInteger(attempt))
+    if (!match || !Number.isSafeInteger(attempt) || (runAttempt !== undefined && (!Number.isSafeInteger(runAttempt) || runAttempt < 1 || attempt > runAttempt)))
       throw Error('Suite artifact attempt malformed');
     if (artifact.workflow_run?.id !== runId || artifact.workflow_run?.head_sha !== headSha)
       throw Error('Suite artifact run/head mismatch');

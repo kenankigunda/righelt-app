@@ -69,8 +69,13 @@ export function workflow() {
         ...(name === "e2e" ? [{
           name: "Validate storage lifecycle and reset",
           if: "matrix.shard == 1",
-          env: { PROJECT: expression("matrix.project"), PLAYWRIGHT_JUNIT_OUTPUT_FILE: "test-results/storage-lifecycle/results.xml", PLAYWRIGHT_OUTPUT_DIR: "test-results/storage-lifecycle/artifacts" },
+          env: { PROJECT: expression("matrix.project"), PLAYWRIGHT_JUNIT_OUTPUT_FILE: `test-results/storage-lifecycle/${expression("matrix.project")}/results.xml`, PLAYWRIGHT_OUTPUT_DIR: `test-results/storage-lifecycle/${expression("matrix.project")}/artifacts`, RIGHELT_TEST_OBSERVATIONS: `test-results/storage-lifecycle/${expression("matrix.project")}/observations.json` },
           run: 'pnpm test:e2e:storage --project="$PROJECT"',
+        }, {
+          name: "Seal mandatory storage lifecycle evidence",
+          if: "matrix.shard == 1",
+          env: { PROJECT: expression("matrix.project"), RIGHELT_STORAGE_HEAD: expression("github.event.pull_request.head.sha || github.sha") },
+          run: "node scripts/testing/storage-proof.mjs",
         }] : []),
         {
           name: "Preserve evidence",
@@ -101,8 +106,12 @@ export function workflow() {
           script: `const {selectSuiteArtifacts}=await import(process.env.GITHUB_WORKSPACE+'/scripts/testing/select-artifacts.mjs');
 const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:context.runId});
 const artifacts=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,{...context.repo,run_id:context.runId,per_page:100});
-const selected=selectSuiteArtifacts(artifacts,{runId:context.runId,headSha:run.head_sha});
+const selected=selectSuiteArtifacts(artifacts,{runId:context.runId,headSha:run.head_sha,runAttempt:run.run_attempt});
 if(!selected.length)throw new Error('No suite evidence');
+const fs=await import('node:fs');fs.mkdirSync('test-results',{recursive:true});fs.writeFileSync('test-results/selected-suite-artifacts.json',JSON.stringify(selected));
+const {listRunJobs}=await import(process.env.GITHUB_WORKSPACE+'/scripts/testing/artifact-inventory.mjs');
+const jobs=await listRunJobs(async endpoint=>{const page=Number(new URL('https://api.github.invalid/'+endpoint).searchParams.get('page')??1);return (await github.rest.actions.listJobsForWorkflowRun({...context.repo,run_id:context.runId,filter:'latest',per_page:100,page})).data;},context.runId);
+fs.writeFileSync('test-results/selected-suite-jobs.json',JSON.stringify({runId:context.runId,head:run.head_sha,runAttempt:run.run_attempt,total_count:jobs.length,jobs}));
 core.setOutput('ids',selected.map(a=>a.id).join(','));`,
         },
       },

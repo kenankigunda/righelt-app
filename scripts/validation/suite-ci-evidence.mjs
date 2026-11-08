@@ -1,3 +1,7 @@
+import {readFile} from 'node:fs/promises';
+import {validateStorageEvidence,validateStorageJobExecution} from '../testing/storage-evidence.mjs';
+import {expectedCILayout} from '../testing/ci-layouts.mjs';
+import {listRunArtifacts,listRunJobs} from '../testing/artifact-inventory.mjs';
 import { cachedArtifact, artifactCacheKey } from "./ci-artifact-cache.mjs";
 import { selectSuiteArtifacts } from "../testing/select-artifacts.mjs";
 import path from "node:path";
@@ -72,21 +76,22 @@ export async function importCatalogCI({
   call,
   execute,
   artifactCache,
+  expectedLayout = 'guest-2-v1',
 }) {
-  const page = await api(`actions/runs/${run.id}/artifacts?per_page=100`);
-  if (page.total_count > 100) throw Error("Unsupported artifact pagination");
-  if (artifactCache !== undefined && (!Array.isArray(page.artifacts) ||
-      !Number.isSafeInteger(page.total_count) || page.total_count !== page.artifacts.length))
-    throw Error("Incomplete current artifact inventory");
-  const artifacts = selectSuiteArtifacts(page.artifacts, {
+  const profile = await expectedCILayout(cwd, expectedLayout);
+  const inventory = await listRunArtifacts(api, run.id);
+  const artifacts = selectSuiteArtifacts(inventory, {
     runId: run.id,
     headSha: run.head_sha,
+    runAttempt: run.run_attempt,
   });
-  if (run.conclusion !== "success" || artifacts.length !== fullLanes().length)
+  if (run.conclusion !== "success" || artifacts.length !== profile.lanes.length)
     throw Error("Full current-attempt CI inventory unavailable");
   // Validate all fresh selected metadata before downloading any cached archive.
   if (artifactCache !== undefined)
     for (const artifact of artifacts) artifactCacheKey({repository,run,artifact});
+  let storageJobs;
+  const storageExecutions=[];
   const suiteReceipts = [],
     evidence = [];
   for (const a of artifacts) {
@@ -117,6 +122,26 @@ export async function importCatalogCI({
     const r = JSON.parse(await archiveCall(["unzip", "-p", archive, names[0]]));
     await verify();
     suiteReceipts.push(r);
+    const lane=profile.lanes.find(l=>laneKey(l)===r.lane);
+    if(lane?.suite==='e2e'&&lane.shard===1) {
+      const base=`storage-lifecycle/${lane.project}/`,proofName=base+'proof.json';
+      if(profile.storageEvidence||members.includes(proofName)) {
+        for(const name of[proofName,base+'results.xml',base+'observations.json'])
+          if(members.filter(n=>n===name).length!==1)throw Error('Mandatory storage archive evidence missing or duplicate');
+        const retained=[];
+        for(const [suffix,name]of[['json',proofName],['xml',base+'results.xml'],['observations.json',base+'observations.json']]) {
+          const file=path.join(outDir,`storage-${a.id}.${suffix}`);
+          await archiveExecute(['unzip','-p',archive,name],{cwd,log:file,logStdoutOnly:true,maxOutputBytes:1024});
+          await verify();retained.push(await readFile(file));
+        }
+        const proof=JSON.parse(retained[0]);
+        validateStorageEvidence(proof,retained[1],retained[2],{
+          runId:run.id,head:run.head_sha,attempt:Number(a.name.split('-').at(-1)),project:lane.project,identity:sourceIdentity(cwd),
+        });
+        if(!storageJobs)storageJobs=await listRunJobs(api,run.id);
+        storageExecutions.push({project:lane.project,artifactId:a.id,...validateStorageJobExecution(proof,storageJobs)});
+      }
+    }
     const logName = names[0].replace(/[^/]+$/, "output.log");
     const log = path.join(outDir, `suite-${a.id}.log`);
     await archiveExecute(["unzip", "-p", archive, logName], {
@@ -153,7 +178,7 @@ export async function importCatalogCI({
       ({archive,verify,executeArchive,archiveHash}) => inspect(archive,verify,executeArchive,archiveHash));
   }
   const identity = sourceIdentity(cwd),
-    verified = verifyFull(suiteReceipts, identity);
+    verified = verifyFull(suiteReceipts, identity, {lanes:profile.lanes,catalog:profile.catalog});
   if (verified.status !== "passed") throw Error(verified.errors.join("; "));
   const receipts = {},
     rejected = {};
@@ -200,6 +225,9 @@ export async function importCatalogCI({
   }
   const result = {
     run: { id: run.id, head: run.head_sha, attempt: run.run_attempt },
+    expectedLayout: profile.id,
+    storageExecutions,
+    storageContract: profile.storageEvidence ? 'mandatory-source-bound-junit-and-execution-proof' : 'historical-job-status-contract; no new storage JUnit credit without retained proof',
     receipts,
     rejected,
   };
