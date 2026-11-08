@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 test('early opponent introduction survives initial guest session adoption', async ({ page }) => {
+  // Keep the initial-adoption pointer journey in view while its real five-second
+  // bootstrap is held; separate narrow held-input journeys cover scrolling.
+  await page.setViewportSize({ width: 1280, height: 1280 });
   let release, entered, releaseModel, modelEntered;
   const held = new Promise(resolve => { release = resolve; });
   const intercepted = new Promise(resolve => { entered = resolve; });
@@ -29,6 +32,7 @@ test('early opponent introduction survives initial guest session adoption', asyn
     await page.goto('/');
     await intercepted;
     const trigger = page.locator('button[data-opponent="babs"]');
+    await expect(trigger).toBeInViewport({ ratio: 1 });
     await trigger.click();
     const dialog = page.getByRole('dialog', { name: 'Babs', exact: true });
     await expect(dialog).not.toBeVisible();
