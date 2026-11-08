@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs';
 import {createHash} from 'node:crypto';
-import {INITIAL_LOAD_RECIPE,transformInitialLoadHtml,verifyInitialLoadAsset,inverseInitialLoadSource,installInitialLoadObserver,validateInitialLoadObservation,ownedStateSync,installInitialLoadReplacement,validateReadCancellation,readInitialLoadObservation,settleInitialLoadResources} from '../../../e2e/support/initial-load-replacement.mjs';
+import {INITIAL_LOAD_RECIPE,transformInitialLoadHtml,verifyInitialLoadAsset,inverseInitialLoadSource,installInitialLoadObserver,validateInitialLoadObservation,ownedStateSync,installInitialLoadReplacement,validateReadCancellation,readInitialLoadObservation,settleInitialLoadResources,initialLoadSocketOrigin} from '../../../e2e/support/initial-load-replacement.mjs';
 import apiWorker from '../../api/index.js';
+import {buildLocalApiWsHost,isLocalDevHost} from '../local-dev-ports.js';
+import {LIVE_HISTORY} from '../generated/packages/shared-types/src/sync-protocol.js';
 import {createFakeD1} from '../../../packages/api-handler/test/support/fake-d1.mjs';
 import {createFakeGameRooms} from '../../../packages/api-handler/test/support/fake-game-rooms.mjs';
 const root=new URL('../../../',import.meta.url),read=path=>fs.readFileSync(new URL(path,root)),hash=value=>createHash('sha256').update(value).digest('hex');
@@ -62,13 +64,13 @@ test('private inverse removes ONLY actual new acceptance branch and all raw/rang
  for(const mutate of[r=>r.sourceSha256='0'.repeat(64),r=>r.outputSha256='0'.repeat(64),r=>r.operations[0].start++,r=>r.operations[0].after='changed',r=>r.operations.push({...r.operations[0]})]){const bad=clone(recipe);mutate(bad);assert.throws(()=>inverseInitialLoadSource(source,bad));}
 });
 const flush=async()=>{for(let n=0;n<20;n++)await Promise.resolve();};
-async function relayFixture({unrouteFails=false,closeFails=false}={}){
- const body=await realGame(),baseURL='http://fixture.test',frame={},listeners=new Map(),routes=[],wire=[],calls=[],cause=Error('unroute failure'),peerCause=Error('peer failure');let socketHandler;
- const page={mainFrame:()=>frame,on(n,f){listeners.set(n,f);},off(n,f){assert.equal(listeners.get(n),f);listeners.delete(n);},async addInitScript(fn,args){assert.equal(fn,installInitialLoadObserver);assert.equal(args.gameId,body.game.id);},async route(match,handler){routes.push({match,handler});},async unroute(match,handler){assert(routes.some(r=>r.match===match&&r.handler===handler));calls.push('unroute');if(unrouteFails&&calls.filter(x=>x==='unroute').length===1)throw cause;},async routeWebSocket(_match,handler){socketHandler=handler;}};
+async function relayFixture({unrouteFails=false,closeFails=false,baseURL='http://fixture.test'}={}){
+ const body=await realGame(),frame={},listeners=new Map(),routes=[],wire=[],calls=[],cause=Error('unroute failure'),peerCause=Error('peer failure');let socketHandler,socketMatch;
+ const page={mainFrame:()=>frame,on(n,f){listeners.set(n,f);},off(n,f){assert.equal(listeners.get(n),f);listeners.delete(n);},async addInitScript(fn,args){assert.equal(fn,installInitialLoadObserver);assert.equal(args.gameId,body.game.id);},async route(match,handler){routes.push({match,handler});},async unroute(match,handler){assert(routes.some(r=>r.match===match&&r.handler===handler));calls.push('unroute');if(unrouteFails&&calls.filter(x=>x==='unroute').length===1)throw cause;},async routeWebSocket(match,handler){socketMatch=match;socketHandler=handler;}};
  const owner=await installInitialLoadReplacement(page,{baseURL,gameId:body.game.id,eventSeq:body.eventSeq,identityId:'id-main-owner',engine:'chromium'});
- function socket(){const sent=[],server={onMessage(fn){this.message=fn;},onClose(fn){this.closed=fn;},async close(){calls.push('server-close');if(closeFails)throw peerCause;}},client={connectToServer:()=>server,onClose(fn){this.closed=fn;},send:message=>sent.push(message),async close(){calls.push('client-close');}};socketHandler(client);const value={server,client,sent};wire.push(value);return value;}
+ function socket(url=initialLoadSocketOrigin(baseURL)+'/api/shell/games/'+encodeURIComponent(body.game.id)+'/ws'){assert.equal(socketMatch(new URL(url)),true,'Real URL must match captured owned WebSocket route');const sent=[],server={onMessage(fn){this.message=fn;},onClose(fn){this.closed=fn;},async close(){calls.push('server-close');if(closeFails)throw peerCause;}},client={connectToServer:()=>server,onClose(fn){this.closed=fn;},send:message=>sent.push(message),async close(){calls.push('client-close');}};socketHandler(client);const value={server,client,sent};wire.push(value);return value;}
  function request(path,{method='GET',payload=null,text='',bytes=Buffer.alloc(0),json={}}={}){const url=baseURL+path,original={url:()=>url,method:()=>method,frame:()=>frame,postDataJSON:()=>payload,failure:()=>({errorText:'net::ERR_ABORTED'})},events=[],response={status:()=>200,text:async()=>text,body:async()=>bytes,json:async()=>json,request:()=>original,url:()=>url};const route={request:()=>original,async fetch(){events.push('fetch');return response;},async fulfill(){events.push('fulfill');},async abort(){events.push('abort');},async continue(){events.push('continue');}};const found=routes.find(r=>r.match(new URL(url)));assert(found,'Owned route missing');const work=found.handler(route);return{work,original,events,response};}
- return{body,owner,page,frame,listeners,routes,wire,calls,cause,peerCause,socket,request};
+ return{body,owner,page,frame,listeners,routes,wire,calls,cause,peerCause,socket,request,matchesSocket:url=>socketMatch(new URL(url))};
 }
 test('actual owned relay preserves source HTML/asset and exact first-versus-current socket bytes, then exact cancellation identity',async()=>{
  const f=await relayFixture(),{game, eventSeq}=f.body;const html=f.request('/?initial-load-replacement='+game.id,{text:read('apps/web/index.html').toString()});await html.work;
@@ -98,4 +100,16 @@ test('actual independent cleanup starts context closure even while relay disposa
  const work=settleInitialLoadResources({async dispose(){calls.push('relay');await pending;throw relayFailure;},snapshot:()=>snapshot},{async close(){calls.push('context');release();throw contextFailure;}});
  const result=await work;assert.deepEqual(calls,['relay','context']);assert.equal(result.relay,snapshot);assert.deepEqual(result.errors,[relayFailure,contextFailure]);assert.deepEqual(result.cleanup,[{owner:'relay',status:'rejected'},{owner:'context',status:'rejected'}]);
  const healthy=await settleInitialLoadResources({dispose:async()=>snapshot},{close:async()=>{}});assert.equal(healthy.relay,snapshot);assert.deepEqual(healthy.errors,[]);
+});
+
+test('actual createWsUrl source reaches the captured relay on authoritative local API origin and HTTPS same-origin only',async()=>{
+ const source=read('apps/web/shell/sync-store.js').toString();assert.equal(hash(source),'879f0cd414fedf1f9b5b342ef9462ec944b9681200d87aea6b287d2402aaef9a');const anchor='const createWsUrl = ',endAnchor='\nconst createPresenceUrl = ';assert.equal(source.split(anchor).length-1,1);const start=source.indexOf(anchor),end=source.indexOf(endAnchor,start);assert(end>start);const expression=source.slice(start+anchor.length,end).trim().replace(/;$/,'');
+ for(const baseURL of['http://127.0.0.1:9888','https://127.0.0.1:9888','https://fixture.test']){
+  const f=await relayFixture({baseURL}),context={window:{location:new URL(baseURL)},URLSearchParams,buildLocalApiWsHost,isLocalDevHost,LIVE_HISTORY},createWsUrl=vm.runInNewContext('('+expression+')',context),actual=createWsUrl({identityId:'id-main-owner',gameId:f.body.game.id,sessionId:'owned-session',lastEventSeq:0});
+  assert.equal(f.matchesSocket(actual),true);f.socket(actual);const url=new URL(actual);
+  if(baseURL==='http://127.0.0.1:9888'){assert.equal(url.origin,'ws://127.0.0.1:9887');const oldOrigin=new URL(baseURL).origin.replace(/^http/,'ws');assert.equal(url.origin===oldOrigin,false,'Old web-origin matcher misses real local API socket');const wrongWeb=new URL(actual);wrongWeb.port='9888';assert.equal(f.matchesSocket(wrongWeb.href),false);}
+  else assert.equal(url.origin,new URL(baseURL).origin.replace(/^https/,'wss'));
+  for(const mutate of[u=>u.pathname='/api/shell/games/other/ws',u=>u.hostname='unowned.test',u=>u.protocol=u.protocol==='ws:'?'wss:':'ws:']){const bad=new URL(actual);mutate(bad);assert.equal(f.matchesSocket(bad.href),false);}
+  await f.owner.dispose();
+ }
 });

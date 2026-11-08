@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {createFaultLifecycle} from './fault-lifecycle.mjs';
 import {validSyncSnapshot} from '../../apps/web/shell/live-transport.js';
+import {buildLocalApiWsHost,isLocalDevHost} from '../../apps/web/local-dev-ports.js';
 export const INITIAL_LOAD_RECIPE=JSON.parse(fs.readFileSync(new URL('./initial-load-replacement-recipe.json',import.meta.url),'utf8'));
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const copy=value=>JSON.parse(JSON.stringify(value));
@@ -80,6 +81,13 @@ export function validateReadCancellation({engine,errorText,forwardOrdinal,failur
  assert(typeof errorText==='string'&&allowed[engine].includes(errorText),'Failure is not the original engine cancellation outcome');return true;
 }
 const gate=()=>{let release;const promise=new Promise(resolve=>{release=resolve;});let released=false;return{promise,release(){if(!released){released=true;release();}},get released(){return released;}};};
+// Match the actual sync-store createWsUrl ownership rule: local HTTP sockets
+// connect to the authoritative API variant; HTTPS remains on the page origin.
+export function initialLoadSocketOrigin(baseURL){
+ const url=new URL(baseURL);assert(['http:','https:'].includes(url.protocol));
+ const protocol=url.protocol==='https:'?'wss':'ws',host=url.protocol!=='https:'&&isLocalDevHost(url.hostname)?buildLocalApiWsHost(url.port):url.host;
+ return `${protocol}://${host}`;
+}
 export async function installInitialLoadReplacement(page,{baseURL,gameId,eventSeq,identityId,engine,inverseRecipe=null}){
  assert(['chromium','firefox','webkit'].includes(engine),'Unknown original engine');
  const origin=new URL(baseURL).origin,asset=INITIAL_LOAD_RECIPE.asset,assetGate=gate(),readGate=gate(),fault=createFaultLifecycle(),sockets=[],errors=[],rows=[],transforms=[],installed=[];
@@ -109,7 +117,7 @@ export async function installInitialLoadReplacement(page,{baseURL,gameId,eventSe
  try{
   await page.addInitScript(installInitialLoadObserver,{gameId});page.on('requestfailed',onFailed);page.on('request',onRequest);page.on('response',onResponse);
   for(const[match,handler]of handlers){await page.route(match,handler);installed.push([match,handler]);}
-  await page.routeWebSocket(url=>url.origin===origin.replace(/^http/,'ws')&&url.pathname===`/api/shell/games/${gameId}/ws`,client=>{
+  await page.routeWebSocket(url=>url.origin===initialLoadSocketOrigin(baseURL)&&url.pathname===`/api/shell/games/${encodeURIComponent(gameId)}/ws`,client=>{
    if(disposed){void run(()=>client.close());return;}
    const entry={client,server:client.connectToServer(),index:sockets.length,frames:[],pending:[],bytes:0,snapshot:null,eventSeq:null,maxGameEventSeq:null,closed:false,pageCloseForwarded:false,serverCloseForwarded:false};sockets.push(entry);note('socket-created',{index:entry.index});
    client.onClose((code,reason)=>run(async()=>{entry.closed=true;note('client-socket-closed',{index:entry.index});if(entry.pageCloseForwarded)return;entry.pageCloseForwarded=true;await entry.server.close({code,reason});}));
