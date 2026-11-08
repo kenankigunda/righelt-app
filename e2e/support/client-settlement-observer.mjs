@@ -44,6 +44,10 @@ export function settlementMatches(packet,scope,expectedSeq){
  if(r.hostEligible!==true||r.pendingCommandCount!==0||r.syncStatus!=='ready')return false;
  return ['rulesChecking','storageBlocked','unsavedCommand','confirmationOverdue','recovering','upgradeRequired','sharedMutationsBlocked','gameplayMutationsBlocked','inHistoryMode','positionOnly'].every(key=>r[key]===false);
 }
+// Compile only this module's trusted matcher source in Node. Playwright receives
+// a real self-contained function (isFunction:true), with scope/sequence as data;
+// the browser executes no new eval/Function and never treats a function as ready.
+const settlementWaitPredicate=Function(`return ({scope,expectedSeq}) => (${settlementMatches.toString()})(globalThis.__retreatClientSettlement?.snapshot(),scope,expectedSeq);`)();
 export async function installClientSettlementObserver(page,info){
  const namespace=randomUUID(),recipes=JSON.parse(await readFile(new URL('./client-settlement-transformation.json',import.meta.url),'utf8'));
  const transforms=[];
@@ -54,7 +58,7 @@ export async function installClientSettlementObserver(page,info){
   async scope(gameId){const p=await snapshot(),r=p?.latest;if(!r||p.failures||p.namespace!==namespace||r.scopeGameId!==gameId||r.currentGameId!==gameId)throw Error('Owned client settlement scope unavailable');return Object.freeze({namespace,timeOrigin:r.timeOrigin,transportEpoch:r.transportEpoch,rootEpoch:r.rootEpoch,gameId});},
   async wait(scope,expectedSeq,deadline){
    const remaining=deadline-performance.now();if(!(remaining>0))throw Error('Original unsafe receipt allowance exhausted');
-   await page.waitForFunction(`({scope,expectedSeq}) => (${settlementMatches.toString()})(globalThis.__retreatClientSettlement?.snapshot(),scope,expectedSeq)`,{scope,expectedSeq},{timeout:remaining});
+   await page.waitForFunction(settlementWaitPredicate,{scope,expectedSeq},{timeout:remaining});
   },
   async persist(){const packet=await snapshot();const result={namespace,transforms,packet};await writeFile(info.outputPath('client-settlement-observation.json'),JSON.stringify(result,null,2));if(new Set(transforms.map(row=>row.pathname)).size!==2||packet?.failures||!packet?.latest)throw Error('Client settlement observer incomplete');},
  };

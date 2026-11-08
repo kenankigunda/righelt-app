@@ -75,7 +75,7 @@ export function readInitialLoadObservation(){
  return {native:globalThis.__initialLoadReplacementObservation?.stop()??null,lastError:{present:raw!==undefined&&raw!==null&&raw!=="",type:typeof raw,code:typeof raw==='string'&&/^[a-z][a-z0-9_]{0,63}$/.test(raw)?raw:null}};
 }
 export function validateReadCancellation({engine,errorText,forwardOrdinal,failureOrdinal,failureCount,released}){
- const allowed={chromium:['net::ERR_ABORTED'],firefox:['NS_BINDING_ABORTED'],webkit:['cancelled']};
+ const allowed={chromium:['net::ERR_ABORTED'],firefox:['NS_BINDING_ABORTED'],webkit:['cancelled','Load request cancelled']};
  assert(Object.hasOwn(allowed,engine));assert.equal(failureCount,1,'Duplicate held request failure');assert.equal(released,false,'Failure arrived after held read release');
  assert(Number.isSafeInteger(forwardOrdinal)&&forwardOrdinal>0,'Failure preceded replacement frame');assert(Number.isSafeInteger(failureOrdinal)&&failureOrdinal>forwardOrdinal,'Failure must follow exact replacement-frame forwarding');
  assert(typeof errorText==='string'&&allowed[engine].includes(errorText),'Failure is not the original engine cancellation outcome');return true;

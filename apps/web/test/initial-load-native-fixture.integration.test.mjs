@@ -113,3 +113,22 @@ test('actual createWsUrl source reaches the captured relay on authoritative loca
   await f.owner.dispose();
  }
 });
+
+// Exact owned cancellation from CI 42433947906, WebKit job 128588646777.
+const linuxWebKitReadCancellation=Object.freeze({engine:'webkit',errorText:'Load request cancelled',forwardOrdinal:10,failureOrdinal:12,failureCount:1,released:false});
+test('Linux WebKit exact owned replacement cancellation is accepted',()=>{
+ assert.equal(validateReadCancellation({...linuxWebKitReadCancellation}),true);
+});
+test('Linux WebKit cancellation wording preserves exact engine, ordering, cardinality and unreleased-read guards',()=>{
+ for(const change of[
+  {engine:'chromium'},{engine:'firefox'},{engine:'unknown'},
+  {forwardOrdinal:null},{forwardOrdinal:0},{forwardOrdinal:1.5},
+  {failureOrdinal:10},{failureOrdinal:9},{failureOrdinal:null},
+  {failureCount:0},{failureCount:2},{released:true},
+  {errorText:null},{errorText:'Load request cancelled '},{errorText:'load request cancelled'},
+  {errorText:'Load request canceled'},{errorText:'net::ERR_TIMED_OUT'},{errorText:'net::ERR_CONNECTION_RESET'},
+ ])assert.throws(()=>validateReadCancellation({...linuxWebKitReadCancellation,...change}));
+ for(const field of['engine','errorText','forwardOrdinal','failureOrdinal','failureCount','released']){
+  const incomplete={...linuxWebKitReadCancellation};delete incomplete[field];assert.throws(()=>validateReadCancellation(incomplete));
+ }
+});

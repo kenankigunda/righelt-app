@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {performance} from 'node:perf_hooks';
+import {createHash} from 'node:crypto';
+import {createRequire} from 'node:module';
 import {createLiveTransportStore} from '../shell/live-transport.js';
 import {createSyncStore} from '../shell/sync-store.js';
 import {readRetreatCapture} from '../../../e2e/support/retreat-completion-fixture.mjs';
@@ -158,4 +160,28 @@ test('both app and runtime source bindings reject mismatches and invert to uncha
   assert.throws(()=>transformClientSettlement(raw+' ',input,r));assert.throws(()=>transformClientSettlement(raw,input+' ',r));
   for(const bad of [{...r,prefix:'bad'},{...r,outputSha256:'0'.repeat(64)},{...r,operations:[{...r.operations[0],anchorCount:2}]},{...r,operations:[{...r.operations[0],before:'bad'}]}])assert.throws(()=>transformClientSettlement(raw,input,bad),undefined,path);
  }
+});
+
+// Execute the installed protocol bodies; only serialization/handle conversion
+// are inert leaves because these controls never launch a browser or own handles.
+function actualPlaywrightWaitProtocol(snapshot){
+ const own=createRequire(new URL('../../../package.json',import.meta.url)),testRequire=createRequire(own.resolve('@playwright/test/package.json')),pwRequire=createRequire(testRequire.resolve('playwright/package.json')),corePath=pwRequire.resolve('playwright-core/package.json').replace(/package\.json$/,'');
+ const client=readFileSync(corePath+'lib/client/frame.js','utf8'),server=readFileSync(corePath+'lib/server/frames.js','utf8'),sha=value=>createHash('sha256').update(value).digest('hex');assert.equal(sha(client),'49a0d5aa0c154b4fd588eda16a25cc93909923f91c06ce9afdd384506b703991');assert.equal(sha(server),'a0a5c3655b86edeb1e6acb8133d40769dda53c246340271251598dac5ff48594');
+ const methodStart='  async waitForFunction(pageFunction, arg, options = {}) {';assert.equal(client.split(methodStart).length-1,1);const begin=client.indexOf(methodStart),end=client.indexOf('\n  }',begin)+4;assert(end>begin);const clientMethod=client.slice(begin,end);
+ const predicateStart='        let evaledExpression;',predicateEnd='        let fulfill;';assert.equal(server.split(predicateStart).length-1,1);const a=server.indexOf(predicateStart),b=server.indexOf(predicateEnd,a);assert(b>a);const predicateSource=server.slice(a,b),makePredicate=vm.runInNewContext('({expression2,isFunction2,arg2})=>{'+predicateSource+'return predicate;}',{__retreatClientSettlement:{snapshot}});
+ let poll;const protocol=[],samples=[];
+ const channel={waitForFunction(params){protocol.push(params);const predicate=makePredicate({expression2:params.expression,isFunction2:params.isFunction,arg2:params.arg});return new Promise(resolve=>{poll=()=>{const value=predicate();samples.push({type:typeof value,truthy:Boolean(value)});if(value)resolve({handle:value});};poll();});}};
+ const imported={serializeArgument:value=>value,JSHandle:{from:value=>value}},owner=vm.runInNewContext('({'+clientMethod+'})',{import_assert:{assert},import_jsHandle:imported});owner._channel=channel;owner._timeout=options=>options.timeout;
+ return{page:{addInitScript:async()=>{},waitForFunction:owner.waitForFunction.bind(owner)},poll:()=>poll(),protocol,samples};
+}
+test('actual installed Playwright protocol keeps the exported waiter pending until receipt and blockers truly settle',async t=>{
+ const f=storeFixture(t),h=harness(f.store);h.run();const scope=h.scope(),protocol=actualPlaywrightWaitProtocol(h.snapshot);const owner=await installClientSettlementObserver(protocol.page,{});let settled=false;
+ const pending=owner.wait(scope,5,performance.now()+1000);pending.then(()=>{settled=true;});for(let i=0;i<10;i++)await Promise.resolve();
+ assert.equal(settled,false,'A string evaluating to a function object must not satisfy the real client settlement barrier');assert.deepEqual(protocol.samples,[{type:'boolean',truthy:false}]);assert.equal(protocol.protocol[0].isFunction,true);assert.equal(protocol.protocol[0].arg.scope,scope);assert.equal(protocol.protocol[0].arg.expectedSeq,5);
+ f.store.applyLiveGameUpdate({game:f.g,eventSeq:5,baseline:true});f.store.setConnectionRecovering('owned',true,{reason:'behind_server'});h.run();protocol.poll();for(let i=0;i<10;i++)await Promise.resolve();assert.equal(settled,false,'Consumed sequence alone cannot admit recovery');
+ f.store.setConnectionRecovering('owned',false);h.run();protocol.poll();await pending;assert.equal(settled,true);assert(protocol.samples.every(row=>row.type==='boolean'));assert.equal(f.requests(),0,'Waiter only observes the existing recorder');
+});
+test('actual installed protocol keeps missing recorder evidence pending and never compiles scope data into the predicate',async t=>{
+ const f=storeFixture(t),h=harness(f.store);f.store.applyLiveGameUpdate({game:f.g,eventSeq:5,baseline:true});h.run();const scope=h.scope();let packet=null;const protocol=actualPlaywrightWaitProtocol(()=>packet),owner=await installClientSettlementObserver(protocol.page,{});let settled=false;
+ const pending=owner.wait(scope,5,performance.now()+1000);pending.then(()=>{settled=true;});for(let i=0;i<10;i++)await Promise.resolve();assert.equal(settled,false);assert.equal(protocol.protocol[0].isFunction,true);assert(!protocol.protocol[0].expression.includes(scope.gameId));assert(!protocol.protocol[0].expression.includes(scope.namespace));packet=h.snapshot();protocol.poll();await pending;assert.equal(settled,true);assert.equal(protocol.protocol.length,1,'Same original wait, no restart');
 });
