@@ -61,3 +61,11 @@ cases('backend readiness requires the exact owned child announcement, not a fore
  const b=child(),failed=waitForOwnedApiReady(b,12345,1000);failed.catch(()=>{});b.stdout.emit('data',Buffer.from('[wrangler:info] Ready on http://localhost:1234\n'));b.stdout.emit('data',Buffer.from('foreign Ready on http://localhost:12345\n'));b.emit('exit',1,null);await assert.rejects(failed,/Owned API exited/);assert.equal(b.stdout.listenerCount('data'),0);
  const c=child();c.exitCode=1;await assert.rejects(waitForOwnedApiReady(c,12345,1000),/Owned API exited/);
 });
+
+const readinessChild=()=>Object.assign(new EventEmitter(),{stdout:new EventEmitter(),stderr:new EventEmitter(),exitCode:null,signalCode:null});
+cases('split longer-port announcement never qualifies the requested exact port',async()=>{
+ const c=readinessChild(),ready=waitForOwnedApiReady(c,1234,1000);ready.catch(()=>{});c.stdout.emit('data',Buffer.from('[wrangler:info] Ready on http://localhost:1234'));c.stdout.emit('data',Buffer.from('5\n'));c.emit('exit',1,null);await assert.rejects(ready,/Owned API exited/);
+});
+cases('correct split announcement waits for its complete original newline',async()=>{
+ const c=readinessChild(),ready=waitForOwnedApiReady(c,1234,1000);let resolved=false;ready.then(()=>resolved=true);c.stdout.emit('data',Buffer.from('[wrangler:info] Ready on http://localhost:1234'));await Promise.resolve();assert.equal(resolved,false);c.stdout.emit('data',Buffer.from('\n'));await ready;
+});

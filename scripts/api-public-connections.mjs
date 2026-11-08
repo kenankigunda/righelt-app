@@ -37,7 +37,7 @@ export function waitForOwnedApiReady(child, port, timeoutMs) {
     const data = bytes => {
       tail = (tail + bytes.toString("utf8")).replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").slice(-65536);
       const expected = `[wrangler:info] Ready on http://localhost:${port}`;
-      if (tail.split(/\r?\n/).some(line => line.trim() === expected)) {
+      if (tail.split(/\r?\n/).slice(0,-1).some(line => line.trim() === expected)) {
         if (child.exitCode !== null || child.signalCode !== null) exited(); else finish();
       }
     };
