@@ -244,7 +244,7 @@ async function acceptedComputerRetreat(page,baseURL,computerRecoveryAdmission){
  const sent=page.waitForRequest(req=>req.method()==='POST'&&new URL(req.url()).pathname===`/api/shell/games/${branched.id}/apply`&&Boolean(req.postDataJSON()?.payload?.computer));
  await page.goto(`${baseURL}/#/game/${encodeURIComponent(branched.id)}`);await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',branched.id);
  const accepted=await waitForComputerDecision(page,branched.id,'babs',{guest:true,modelId:'initial-1554'}),command=(await sent).postDataJSON();
- expect(command.payload.action).toEqual(safe.action);await receipt(page,branched.id,command);
+ expect(command.payload.action).toEqual(safe.action);
  const move=accepted.moves.find(row=>row.clientCommandId===command.clientCommandId);expect(move).toBeTruthy();
  expect(move.action).toEqual(safe.action);expect(move.retreatSemantics).toBe('completion-preserving-retreat-v2');expect(move.computerProof).toEqual(command.payload.computer);
  expect(capturedHash(move.selectionSnapshot)).toBe(f.push.afterHash);expect(capturedHash(move.snapshot)).toBe(safe.stateHash);
@@ -256,6 +256,7 @@ async function acceptedComputerRetreat(page,baseURL,computerRecoveryAdmission){
 // within its existing 60s body budget after separately bounded worker preparation.
 test(computerRetreatWorkflow,async({page,acceptedRetreat},info)=>{
  const {branched,command,move}=acceptedRetreat;
+ await receipt(page,branched.id,command);
  const attempt=(await request(page,`/api/shell/games/${branched.id}/decision-attempt`,{attemptId:move.computerProof.attemptId,kind:'computer'})).attempt;
  expect(attempt.proof).toEqual(move.computerProof);expect(attempt.fingerprint).toBe(deterministicStateHash(branched.board.state));expect(attempt.result.status).toBe('ready');expect(attempt.result.action).toEqual(safe.action);
  expect(attempt.result.legality).toMatchObject({complete:true,unknown:0,indices:[1144]});expect(attempt.result.actionIndex).toBe(1144);
@@ -265,6 +266,7 @@ test(computerRetreatWorkflow,async({page,acceptedRetreat},info)=>{
 
 test(computerFollowWorkflow,async({page,acceptedRetreat},info)=>{
  const {branched,command,move}=acceptedRetreat;
+ await receipt(page,branched.id,command);
  const ready=await atHash(page,branched.id,safe.stateHash);expect(ready.legalActions).toEqual([FOLLOW_ACTION]);await switchGamePanel(page,'board');await noClosure(page,ready);
  await page.screenshot({path:info.outputPath('computer-safe-retreat.png')});
  // Completion comes from the same validated authoritative reconciliation that
