@@ -34,11 +34,18 @@ export async function candidateCapabilities(root) {
   let historyUndoLabel=null;
   try { historyUndoLabel=historyUndoLabelContract(await readFile(path.join(root,'apps/web/shell/app.js'),'utf8')); }
   catch(error) { if(error.code!=='ENOENT') throw error; }
+  let historyHitTargetContract='legacy-info-v1';
+  try {
+    const history=await readFile(path.join(root,'apps/web/shell/history-narration.js'),'utf8');
+    historyHitTargetContract=stringContract(sourceFile('history-narration.js',history),'HISTORY_HIT_TARGET_CONTRACT',['move-button-v1'],'history hit target');
+    if(historyHitTargetContract==='legacy')throw Error('Unsupported history hit target contract declaration');
+  } catch(error) { if(error.code!=='ENOENT') throw error; }
   let currentComputerModel=null;
   if(trainedComputerPlay) currentComputerModel=currentModelContract(await readFile(path.join(root,'packages/shared-types/src/computer-play.ts'),'utf8'));
   return {
     currentComputerModel,
     historyUndoLabel,
+    historyHitTargetContract,
     resultHeadingContract,
     rematchChoicesContract,
     trainedComputerPlay,

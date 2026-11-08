@@ -66,3 +66,44 @@ for(const mutation of ['wrongTarget','rejected','missingOwnReceipt','wrongGame',
 test('undo requires its explicit supported source label before any browser activity',async()=>{
  for(const undoLabel of [undefined,'','Undo anything'])await assert.rejects(()=>undoBeforeHumanMove(null,{undoLabel}),/explicit supported source-selected undo label/);
 });
+
+// Compile the actual helper through its selection boundary. Native locator
+// leaves are controlled; operation/receipt assertions remain in the real suffix.
+async function selectedHistoryPrefix(){
+ const {readFile}=await import('node:fs/promises');
+ const source=await readFile(process.env.RIGHELT_HISTORY_HIT_RED_SOURCE||new URL('../history-undo.mjs',import.meta.url),'utf8');
+ const start=source.indexOf('export async function undoBeforeHumanMove('),end=source.indexOf('\n const control=row.locator(',start);
+ assert(start>=0&&end>start,'Actual helper selection boundary required');
+ const prefix=source.slice(start,end).replace(/^export /,'')+'\n return row;\n}';
+ return ({expectedSelector,rowAvailable=true,targetAvailable=true,expectedMoveId='human-1'})=>{
+  const clicks=[],panels=[],rows=[];const row={count:rowAvailable?1:0,locator(selector){return {async click(){clicks.push(selector);assert.equal(selector,expectedSelector,'Selected native History hit must be clicked');assert(targetAvailable,'Selected direct History hit must exist');}};}};
+  const page={locator(selector){rows.push(selector);assert.equal(selector,`[data-testid="history-move-item"][data-move-id=${JSON.stringify(expectedMoveId)}]`,'The same exact human decision row must own selection');return row;}};
+  const expect=locator=>({async toHaveCount(count){assert.equal(locator.count,count,'Exactly one selected human decision row required');}});
+  const select=Function('assert','expect','selectGamePanel','return ('+prefix+');')(assert,expect,async(p,panel)=>{assert.equal(p,page);panels.push(panel);});
+  return {page,select,clicks,panels,rows};
+ };
+}
+const selection={gameId:'game-1',moveId:'human-1',identityId:'human-account',undoLabel:'Undo before this move'};
+test('source-selected native History hit reaches only the exact human decision row',async()=>{
+ const make=await selectedHistoryPrefix(),f=make({expectedSelector:':scope > .history-move-hit'});
+ await f.select(f.page,{...selection,historyHitTargetContract:'move-button-v1'});
+ assert.deepEqual(f.panels,['history']);assert.equal(f.rows.length,1);assert.deepEqual(f.clicks,[':scope > .history-move-hit']);
+});
+test('explicit legacy History contract preserves the original single visual-info click',async()=>{
+ const make=await selectedHistoryPrefix(),f=make({expectedSelector:'.history-item-info'});
+ await f.select(f.page,{...selection,historyHitTargetContract:'legacy-info-v1'});
+ assert.deepEqual(f.clicks,['.history-item-info']);assert.equal(f.rows.length,1);
+});
+test('missing or unknown forwarded History contract fails before Page activity',async()=>{
+ for(const historyHitTargetContract of [undefined,null,'legacy','future-v2'])await assert.rejects(()=>undoBeforeHumanMove(null,{...selection,historyHitTargetContract}),/explicit supported source-selected History hit target contract/);
+});
+test('new History target failure never falls back or selects another decision row',async()=>{
+ const make=await selectedHistoryPrefix(),missing=make({expectedSelector:':scope > .history-move-hit',targetAvailable:false});
+ await assert.rejects(()=>missing.select(missing.page,{...selection,historyHitTargetContract:'move-button-v1'}),/Selected direct History hit must exist/);assert.deepEqual(missing.clicks,[':scope > .history-move-hit']);
+ const absent=make({expectedSelector:':scope > .history-move-hit',rowAvailable:false});
+ await assert.rejects(()=>absent.select(absent.page,{...selection,historyHitTargetContract:'move-button-v1'}),/Exactly one selected human decision row/);assert.deepEqual(absent.clicks,[]);
+ const wrong=make({expectedSelector:':scope > .history-move-hit',expectedMoveId:'another-decision'});
+ await assert.rejects(()=>wrong.select(wrong.page,{...selection,historyHitTargetContract:'move-button-v1'}),/same exact human decision row/);assert.deepEqual(wrong.clicks,[]);
+ const blocked=make({expectedSelector:'a different native target'});
+ await assert.rejects(()=>blocked.select(blocked.page,{...selection,historyHitTargetContract:'move-button-v1'}),/Selected native History hit/);assert.deepEqual(blocked.clicks,[':scope > .history-move-hit']);
+});
