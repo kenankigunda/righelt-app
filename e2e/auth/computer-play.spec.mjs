@@ -343,3 +343,154 @@ test('authenticated human Pass stays available during a sanitized pending renewa
     await writeFile(info.outputPath('authenticated-renewal-receipts.json'),JSON.stringify({beforeRevision:before.gameplayRevision,renewalId:renewal.clientCommandId,admittedId:admitted.clientCommandId,predecessor:admitted.predecessor,outcomes:body.commandOutcomes,humanRequestCount:humanRequests.length},null,2));
   }finally{release();page.off('request',observe);await page.unrouteAll({behavior:'wait'});}
 });
+
+test('ordinary computer Undo retains one explicit input across its held own renewal', async ({ page, browserName }, info) => {
+  test.skip(browserName !== 'chromium', 'The deterministic held-renewal interleaving is Chromium-only; the original ordinary Undo case remains cross-engine.');
+  await page.addInitScript(installPassiveCommandObservations);
+  let primaryError, pointerOwned = false, routeInstalled = false, released = false, armed = false;
+  let held = null, heldRouteFinished = null, release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const requests = [], observationErrors = [], cleanupErrors = [];
+  const unblock = () => { if (!released) { released = true; release(); } };
+  const observe = request => {
+    try {
+      if (!isOperationRequest(request, 'computer-control') && !isOperationRequest(request, 'revert-request')) return;
+      if (requests.length >= 64) throw Error('Held-renew request observation overflow');
+      requests.push({ operation: request.postDataJSON()?.payload?.operation,
+        values: operationValues(request), envelope: request.postDataJSON() });
+    } catch (error) { observationErrors.push(error); }
+  };
+  let matcher, intercept;
+  page.on('request', observe);
+  try {
+    await registerComputerTester(page, {accountOnly:true});
+    await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
+    const creation = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST' && response.request().postDataJSON()?.computer?.p2 === 'babs');
+    creation.catch(() => {});
+    const initialControl = captureInitialComputerControl(page);
+    await page.getByRole('button', { name: 'Play Babs', exact: true }).click();
+    const response = await creation;
+    expect(response.ok()).toBe(true);
+    const initial = (await response.json()).game;
+    expect(initial.computer.seats).toEqual({ p1: null, p2: 'babs' });
+    expect(initial.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
+    await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', initial.id);
+    await waitForInitialComputerControl(page, initial, initialControl);
+    const ownerEnvelope = (await initialControl).postDataJSON();
+    await page.evaluate(()=>window.commandObservationCheckpoint('before-first-human-action'));
+    await submitPlayableAction(page, initial.legalActions.find(action => action.from && action.to));
+    await page.evaluate(()=>window.commandObservationCheckpoint('after-first-human-confirmation'));
+    await expect.poll(async () => (await projected(page, initial.id)).moves.length).toBeGreaterThan(0);
+    if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();
+    await waitForComputerDecision(page, initial.id, 'babs', { modelId: initial.computer.modelId });
+    await switchGamePanel(page, 'history');
+    const authority = await projected(page, initial.id);
+    const firstMove = authority.moves.find(move => !move.undone);
+    expect(firstMove?.moveId).toBeTruthy();
+    const row = page.locator(`[data-testid="history-move-item"][data-move-id="${firstMove.moveId}"]`);
+    await row.locator('.history-item-info').click();
+    await expect(row).toHaveAttribute('aria-current', 'true');
+    const undo = row.getByRole('button', {name:'Undo before this move',exact:true});
+    await expect(undo).toBeVisible(); await expect(undo).toBeEnabled();
+    expect(authority.computer.ownerId).toBe(ownerEnvelope.identityId);
+    expect(authority.computer.lease.deviceId).toBeTruthy();
+    const origin = new URL(page.url()).origin;
+    const pathname = `/api/shell/games/${encodeURIComponent(initial.id)}/shared`;
+    matcher = url => url.origin === origin && url.pathname === pathname;
+    intercept = async route => {
+      const request = route.request();
+      const command = request.postDataJSON(), values = operationValues(request);
+      const eligible = armed && request.method() === 'POST' && isOperationRequest(request, 'computer-control')
+        && command.kind === 'shared' && command.gameId === initial.id && command.identityId === ownerEnvelope.identityId
+        && command.authContextId === ownerEnvelope.authContextId && values.action === 'renew'
+        && values.deviceId === authority.computer.lease.deviceId && values.generation === authority.computer.generation;
+      if (!eligible) { await route.continue(); return; }
+      if (held) { observationErrors.push(Error('More than one matching renewal while held')); await route.continue(); return; }
+      let finished;
+      heldRouteFinished = new Promise(resolve => { finished = resolve; });
+      held = { command, values };
+      try { await gate; await route.continue(); }
+      catch (error) { observationErrors.push(error); throw error; }
+      finally { finished(); }
+    };
+    await page.route(matcher, intercept); routeInstalled = true;
+    const pressed = await undo.elementHandle();
+    expect(pressed).not.toBeNull();
+    await undo.hover();
+    expect(await pressed.evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+      const hit = document.elementFromPoint(x,y);
+      return element.isConnected && !element.disabled && !element.closest('[inert],[aria-hidden="true"]')
+        && rect.width > 0 && rect.height > 0 && x >= 0 && x < innerWidth && y >= 0 && y < innerHeight
+        && (hit === element || element.contains(hit));
+    })).toBe(true);
+    pointerOwned = true; await page.mouse.down(); armed = true;
+    // Natural application renewal only. The existing 10-second expect and
+    // 60-second body budgets remain unchanged; there is no fake clock or sleep.
+    await expect.poll(() => held !== null).toBe(true);
+    expect(held.command.expectedGameplayRevision).toBe(authority.gameplayRevision);
+    expect(held.command.expectedState).toEqual(authority.board.state);
+    expect(held.command.clientCommandId).toMatch(/^v2:/);
+    expect(held.command.fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    await page.mouse.up(); pointerOwned = false;
+    await expect.poll(() => pressed.evaluate(element => element.isConnected && element.disabled
+      && element.getAttribute('aria-busy') === 'true' && element.getAttribute('data-undo-pending') === 'true')).toBe(true);
+    expect(requests.filter(record => record.values?.action === 'pause' || record.operation === 'revert-request')).toHaveLength(0);
+    expect(observationErrors).toEqual([]);
+    unblock();
+    await heldRouteFinished;
+    // A live receipt may legitimately cancel its HTTP response. The original
+    // passive observer sees either a genuine socket outcome or response body;
+    // no new reconciliation request is introduced to prove acceptance.
+    const accepted = (page, envelope) => page.evaluate(({id,fingerprint}) => {
+      const records = window.passiveCommandObservations;
+      if (!Array.isArray(records) || records.length >= 1500) return false;
+      return records.some(record => [record.commandOutcome,...(record.outcomes ?? [])].some(outcome =>
+        outcome?.clientCommandId === id && outcome.fingerprint === fingerprint && outcome.outcome === 'accepted'));
+    }, {id:envelope.clientCommandId,fingerprint:envelope.fingerprint});
+    await expect.poll(() => accepted(page, held.command)).toBe(true);
+    await expect.poll(async () => {
+      const game = await projected(page, initial.id);
+      return { activeMoves:game.moves.filter(move=>!move.undone).length, paused:game.computer.paused, state:game.board.state };
+    }).toEqual({activeMoves:0,paused:false,state:initial.board.state});
+    const pauses = requests.filter(record => record.values?.action === 'pause');
+    const undos = requests.filter(record => record.operation === 'revert-request');
+    const resumes = requests.filter(record => record.values?.action === 'resume');
+    expect(new Set(pauses.map(record=>record.envelope.clientCommandId)).size).toBe(1);
+    expect(new Set(undos.map(record=>record.envelope.clientCommandId)).size).toBe(1);
+    expect(new Set(resumes.map(record=>record.envelope.clientCommandId)).size).toBe(1);
+    expect(undos[0].values.targetMoveId).toBe(firstMove.moveId);
+    await expect.poll(() => accepted(page, undos[0].envelope)).toBe(true);
+    await expect.poll(() => accepted(page, resumes[0].envelope)).toBe(true);
+    await switchGamePanel(page,'board');
+    await expect(page.locator('[data-computer-status]')).toBeHidden();
+    expect(observationErrors).toEqual([]);
+    await page.screenshot({path:info.outputPath('computer-undo-held-renew-resumed.png')});
+    await info.attach('held-renew-commands',{contentType:'application/json',body:JSON.stringify({held,requests},null,2)});
+  } catch (error) { primaryError = error; throw error; }
+  finally {
+    // Attempt every owned cleanup independently under the unchanged test budget.
+    // On a failed held-down premise, move away before releasing so cleanup does
+    // not accidentally click Undo. This is cleanup input, never success-path play.
+    unblock();
+    const outcomes = await Promise.allSettled([
+      (async () => { if (heldRouteFinished) await heldRouteFinished; })(),
+      (async () => { if (routeInstalled) await page.unroute(matcher,intercept); })(),
+      (async () => {
+        if (!pointerOwned) return;
+        const errors = [];
+        try { await page.mouse.move(0,0); } catch (error) { errors.push(error); }
+        try { await page.mouse.up(); pointerOwned = false; } catch (error) { errors.push(error); }
+        if (errors.length) throw new AggregateError(errors,'Owned pointer cleanup failed');
+      })(),
+      (async () => { page.off('request',observe); })(),
+      (async () => { await attachCommandObservations(page,info); })(),
+    ]);
+    cleanupErrors.push(...outcomes.filter(result=>result.status==='rejected').map(result=>result.reason));
+    if (cleanupErrors.length) {
+      if (primaryError) info.annotations.push({type:'held-renew-cleanup-failed',description:cleanupErrors.map(String).join('; ')});
+      else throw new AggregateError(cleanupErrors,'Held renewal cleanup incomplete');
+    }
+  }
+});

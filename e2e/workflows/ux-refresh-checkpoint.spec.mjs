@@ -1,3 +1,4 @@
+import { observeReloadHomeReads } from '../support/reload-home-reads.mjs';
 import {installInvitationFocusDiagnostics} from '../support/invitation-focus-diagnostics.mjs';
 import { waitForOverlayEntry } from "../support/overlay-motion.mjs";
 import { switchGamePanel } from '../support/app.mjs';
@@ -22,13 +23,17 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  const sound=page.getByRole('button',{name:'Mute sound',exact:true});
  await sound.locator('svg').click();
  await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeFocused();
- // Observe this new document's real Home reads before advancing its clock.
- const reloadedHomeReads=['my','other'].map(section=>page.waitForResponse(response=>{
-  const url=new URL(response.url());
-  return response.request().method()==='GET'&&url.pathname==='/api/shell/games'&&url.searchParams.get('section')===section&&response.status()===200;
- }));
- await page.reload();await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeVisible();
- for(const response of await Promise.all(reloadedHomeReads))expect(await response.finished()).toBeNull();
+ // Bind each response to a request started after this reload's main-frame commit.
+ const reloadHome=observeReloadHomeReads(page);
+ const reloadedHomeReads=['my','other'].map(section=>page.waitForResponse(response=>reloadHome.matches(response,section)));
+ // Own early rejection without replacing the original promises or hiding later errors.
+ for(const read of reloadedHomeReads)void read.catch(()=>{});
+ try{
+  const reloadResponse=await page.reload();reloadHome.assertReload(reloadResponse);
+  await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeVisible();
+  for(const response of await Promise.all(reloadedHomeReads))expect(await response.finished()).toBeNull();
+  reloadHome.assertReload(reloadResponse);
+ }finally{reloadHome.dispose();}
  await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
  await expect(page.getByTestId('home-create-game')).toBeEnabled();
  // Model preparation may exceed the carousel interval. Hold autoplay while

@@ -318,3 +318,71 @@ test('a missing guest lease context is not treated as authenticated proof',async
  await assert.rejects(h.store.applyGameAction({gameId:game.id,state:game.board.state,action:{type:'pass'}}),{code:'sync_recovering'});
  assert.equal((await h.journal.list('owner',game.id)).length,1);assert.equal(h.actions.length,0);
 });
+
+
+test('Undo renewal admission reads the exact durable envelope without changing shared gates', async t => {
+ const h=await humanRenewalHarness(t),before=await h.journal.list('owner',h.game().id);
+ const admission=h.store.getUndoRenewalAdmission(h.game().id);
+ assert.ok(admission);assert.equal(Object.isFrozen(admission),true);
+ assert.equal(admission.commandId,h.held().clientCommandId);
+ assert.equal(admission.fingerprint,h.held().fingerprint);
+ assert.equal(admission.deviceId,h.held().payload.values.deviceId);
+ assert.equal(admission.generation,h.held().payload.values.generation);
+ assert.equal(admission.revision,h.game().gameplayRevision);
+ assert.equal(h.store.getGameViewModel(h.game().id).sharedMutationsBlocked,true);
+ assert.deepEqual(await h.journal.list('owner',h.game().id),before);
+ h.release();await h.renew;
+ assert.equal(h.store.getUndoRenewalAdmission(h.game().id),null);
+});
+
+for(const change of ['context','account','signed-out','explicit-lease-mismatch'])test(`Undo wait admission refuses changed authenticated ${change}`,async t=>{
+ const h=await humanRenewalHarness(t,{authenticated:true});
+ assert.ok(h.store.getUndoRenewalAdmission(h.game().id));
+ if(change==='context')h.auth.session.contextId='b'.repeat(64);
+ else if(change==='account')h.auth.session.account={id:'another-account'};
+ else if(change==='signed-out')h.auth.session.authenticated=false;
+ else {
+  h.store.applyLiveGameUpdate({game:{...h.game(),computer:{...h.game().computer,lease:{...h.game().computer.lease,authContextId:'b'.repeat(64)}}},eventSeq:2});
+  assert.equal(h.store.getAuthoritativeGame(h.game().id).computer.lease.authContextId,'b'.repeat(64));
+ }
+ assert.equal(h.store.getUndoRenewalAdmission(h.game().id),null);
+ assert.equal((await h.journal.list('owner',h.game().id)).length,1);
+});
+
+for(const [name,change] of [
+ ['foreign device',h=>h.update(game=>({...game,computer:{...game.computer,lease:{...game.computer.lease,deviceId:'another-device'}}}))],
+ ['generation',h=>h.update(game=>({...game,computer:{...game.computer,generation:game.computer.generation+1}}))],
+ ['withdrawn permission',h=>h.update(game=>({...game,canRecordMove:false,canEndTurn:false}))],
+ ['completed game',h=>h.update(game=>({...game,board:{state:{...game.board.state,outcome:{status:'p1_win'}}}}))],
+ ['computer turn',h=>h.update(game=>({...game,board:{state:{...game.board.state,sideToMove:'P2'}}}))],
+ ['manual control',h=>h.update(game=>({...game,computer:{...game.computer,manual:true}}))],
+ ['paused control',h=>h.update(game=>({...game,computer:{...game.computer,paused:true}}))],
+ ['independent recovery',h=>h.store.setConnectionRecovering(h.game().id,true)],
+ ['upgrade required',h=>h.store.markUpgradeRequired(h.game().id)],
+])test(`Undo wait admission preserves the ${name} fence`,async t=>{
+ const h=await humanRenewalHarness(t);
+ assert.ok(h.store.getUndoRenewalAdmission(h.game().id));change(h);
+ assert.equal(h.store.getUndoRenewalAdmission(h.game().id),null);
+});
+
+test('an expired confirmation budget refuses Undo wait even with an unexpired lease',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:Date.now()});
+ const h=await humanRenewalHarness(t);
+ assert.ok(h.store.getUndoRenewalAdmission(h.game().id));t.mock.timers.tick(16000);
+ h.update(game=>({...game,computer:{...game.computer,lease:{...game.computer.lease,expiresAt:Date.now()+60000}}}));
+ assert.equal(h.store.getUndoRenewalAdmission(h.game().id),null);
+});
+
+test('pending non-renew shared control never admits an Undo wait',async t=>{
+ const h=await humanRenewalHarness(t,{controlAction:'pause'});
+ assert.equal(h.store.getGameViewModel(h.game().id).sharedMutationsBlocked,true);
+ assert.equal(h.store.getUndoRenewalAdmission(h.game().id),null);
+});
+
+test('real journal refusal stays a storage blocker rather than admitting Undo behind renewal',async t=>{
+ const h=await humanRenewalHarness(t);
+ h.journal.admit=async()=>{throw Object.assign(Error('storage unavailable'),{code:'journal_timeout'});};
+ await assert.rejects(h.store.applyGameAction({gameId:h.game().id,state:h.game().board.state,action:{type:'pass'}}));
+ assert.equal(h.store.getGameViewModel(h.game().id).storageBlocked,true);
+ assert.equal(h.store.getUndoRenewalAdmission(h.game().id),null);
+});

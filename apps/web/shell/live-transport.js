@@ -322,6 +322,16 @@ export const createLiveTransportStore = ({
     return Boolean(actor && !computerProfileFor(control, actor, turnIndex));
   };
 
+  // Read-only admission for an explicit Undo that will wait for this exact
+  // serialized renewal. Shared command admission itself remains unchanged.
+  const getUndoRenewalAdmission = gameId => {
+    const game = gameById.get(gameId), optimistic = optimisticStateByGameId.get(gameId);
+    if (!active || !optimistic || optimistic.admissionProjection || optimistic.projectionJob?.pending || !hasOnlySafeHumanRenewal(game, optimistic)) return null;
+    const envelope = optimistic.pendingCommands[0].envelope;
+    return Object.freeze({ commandId: envelope.clientCommandId, fingerprint: envelope.fingerprint, deviceId: envelope.payload.values.deviceId,
+      generation: envelope.payload.values.generation, revision: game.gameplayRevision });
+  };
+
   const decorateGameWithSync = (game, gameId) => {
     const optimistic = getOptimisticState(gameId);
     const next = clone(game);
@@ -2213,6 +2223,7 @@ export const createLiveTransportStore = ({
     listGames,
     getHomeGameCard,
     getGameViewModel,
+    getUndoRenewalAdmission,
     isUpgradeRequired: (gameId) => getOptimisticState(gameId).upgradeRequired === true,
     markUpgradeRequired,
     getAuthoritativeGame: (gameId) => clone(gameById.get(gameId) ?? null),

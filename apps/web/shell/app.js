@@ -253,12 +253,31 @@ const updateRecoveryAnnouncement = (game) => {
   const text = game ? [presentedRecoveryMessage(game), game.historyNotice, ...failures].filter(Boolean).join(" ") : "";
   if (syncAnnouncement.textContent !== text) syncAnnouncement.textContent = text;
 };
+const pendingUndoAdmissions = new Map();
+const undoAdmissionIsPending = gameId => {
+  const pending = pendingUndoAdmissions.get(gameId);
+  return pending?.transport === transport && pending.accountGeneration === account.snapshot().generation;
+};
+const sharedMutationIsBlocked = (action, gameId, providedProjection) => {
+  if ((action === "revert-to-move" || action === "undo-last-move") && undoAdmissionIsPending(gameId)) return true;
+  const projection = providedProjection === undefined ? transport.getGameViewModel(gameId) : providedProjection;
+  if (!projection?.sharedMutationsBlocked) return false;
+  return !((action === "revert-to-move" || action === "undo-last-move") && computerSession.getUndoWaitAdmission(gameId));
+};
 const applySharedMutationGates = (game) => {
   if (!game) return;
   document.querySelectorAll("[data-action]").forEach((element) => {
     if (!sharedMutationActions.has(element.getAttribute("data-action"))) return;
     if (element.getAttribute("data-game-id") && element.getAttribute("data-game-id") !== game.id) return;
-    if (game.sharedMutationsBlocked) {
+    const undoAction = element.getAttribute("data-action") === "revert-to-move" || element.getAttribute("data-action") === "undo-last-move";
+    if (undoAction && undoAdmissionIsPending(game.id)) {
+      element.setAttribute("data-undo-pending", "true");
+      element.setAttribute("aria-busy", "true");
+    } else if (element.hasAttribute("data-undo-pending")) {
+      element.removeAttribute("data-undo-pending");
+      element.removeAttribute("aria-busy");
+    }
+    if (sharedMutationIsBlocked(element.getAttribute("data-action"), game.id, game)) {
       if (!element.hasAttribute("data-sync-disabled")) element.setAttribute("data-sync-disabled", String(element.hasAttribute("disabled")));
       element.setAttribute("aria-disabled", "true");
       if (element instanceof HTMLButtonElement) element.disabled = true;
@@ -5197,7 +5216,7 @@ appEl.addEventListener("click", async (event) => {
     const result = getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId());
     if(result)rematchDialog.open(result,actionEl);return;
   }
-  if (sharedMutationActions.has(action) && transport.getGameViewModel(actionGameId)?.sharedMutationsBlocked) return;
+  if (sharedMutationActions.has(action) && sharedMutationIsBlocked(action, actionGameId)) return;
   const animateFlyoutClose = async (flyoutKey, closeFlyout) => {
     gameSound.play("flyout-back");
     const flyoutEl = appEl?.querySelector?.(`[data-flyout="${flyoutKey}"]`);
@@ -5396,47 +5415,68 @@ appEl.addEventListener("click", async (event) => {
     }
     const undoTransport = transport, undoAccountGeneration = account.snapshot().generation;
     const undoScopeIsCurrent = () => transport === undoTransport && account.snapshot().generation === undoAccountGeneration && getCurrentViewedGameId() === gameId;
-    const game = transport.getGameViewModel(gameId);
-    const undoToken = viewingIntent.beginUndo(gameId, {targetMoveId:moveId,revision:game.gameplayRevision,scope:viewingScope()});
-    const computerUndo = Boolean(game?.computer && game.canControlComputer);
-    const revert = async () => {
-      if (!undoScopeIsCurrent()) return false;
-      let targetMoveId = moveId;
-      if (computerUndo) {
-        await computerSession.action('pause');
+    const pending = pendingUndoAdmissions.get(gameId);
+    if (pending?.transport === undoTransport && pending.accountGeneration === undoAccountGeneration) return;
+    const admissionOwner = { transport: undoTransport, accountGeneration: undoAccountGeneration };
+    pendingUndoAdmissions.set(gameId, admissionOwner);
+    try {
+      const game = transport.getGameViewModel(gameId);
+      const undoAdmission = game?.sharedMutationsBlocked ? computerSession.getUndoWaitAdmission(gameId) : null;
+      if (game?.sharedMutationsBlocked && !undoAdmission) return;
+      if (undoAdmission) applySharedMutationGates(game);
+      const undoToken = viewingIntent.beginUndo(gameId, {targetMoveId:moveId,revision:game.gameplayRevision,scope:viewingScope()});
+      const computerUndo = Boolean(game?.computer && game.canControlComputer);
+      const revert = async () => {
         if (!undoScopeIsCurrent()) return false;
-        if (action === 'undo-last-move' && !game.computer.manual) {
-          const entries = [];
-          let cursor = null;
-          do { const page = await undoTransport.decisionHistory(gameId, cursor); entries.push(...page.items); cursor = page.nextCursor; } while (cursor);
-          const human = activeDecisionLineage(entries).filter(move => !move.computerProof).at(-1);
-          if (!human) return false;
-          targetMoveId = human.moveId;
+        if (undoAdmission) {
+          const currentGame = undoTransport.getGameViewModel(gameId);
+          if (currentGame?.sharedMutationsBlocked || !currentGame?.canControlComputer
+            || currentGame.gameplayRevision !== undoAdmission.renewal.revision
+            || !currentGame.moves?.some(move => move.moveId === moveId && !move.undone)) return false;
         }
+        let targetMoveId = moveId;
+        if (computerUndo) {
+          await computerSession.action('pause');
+          if (!undoScopeIsCurrent()) return false;
+          if (action === 'undo-last-move' && !game.computer.manual) {
+            const entries = [];
+            let cursor = null;
+            do { const page = await undoTransport.decisionHistory(gameId, cursor); entries.push(...page.items); cursor = page.nextCursor; } while (cursor);
+            const human = activeDecisionLineage(entries).filter(move => !move.computerProof).at(-1);
+            if (!human) return false;
+            targetMoveId = human.moveId;
+          }
+        }
+        if (!undoScopeIsCurrent()) return false;
+        undoToken.targetMoveId = targetMoveId;
+        const handle = undoTransport.requestRevertToMove({ gameId, targetMoveId });
+        void handle.committed.then(() => { viewingIntent.commitUndo(gameId, undoToken); maybeReturnAfterUndo(gameId); }, () => viewingIntent.cancelUndo(gameId, undoToken));
+        if (computerUndo) await handle.committed;
+        return true;
+      };
+      // Keep automatic control work fenced until the undo response is applied;
+      // the server drops its lease before that acknowledgement reaches us.
+      let reverted;
+      try { reverted = computerUndo ? await computerSession.withMutation(revert, { undoAdmission }) : await revert(); }
+      catch {
+        viewingIntent.cancelUndo(gameId, undoToken);
+        if (undoScopeIsCurrent()) setUndoRequestFeedback(gameId, "Undo could not finish");
+        return;
       }
-      if (!undoScopeIsCurrent()) return false;
-      undoToken.targetMoveId = targetMoveId;
-      const handle = undoTransport.requestRevertToMove({ gameId, targetMoveId });
-      void handle.committed.then(() => { viewingIntent.commitUndo(gameId, undoToken); maybeReturnAfterUndo(gameId); }, () => viewingIntent.cancelUndo(gameId, undoToken));
-      if (computerUndo) await handle.committed;
-      return true;
-    };
-    // Keep automatic control work fenced until the undo response is applied;
-    // the server drops its lease before that acknowledgement reaches us.
-    let reverted;
-    try { reverted = computerUndo ? await computerSession.withMutation(revert) : await revert(); }
-    catch {
-      viewingIntent.cancelUndo(gameId, undoToken);
-      if (undoScopeIsCurrent()) setUndoRequestFeedback(gameId, "Undo could not finish");
-      return;
-    }
-    if (computerUndo && reverted) {
-      if (!undoScopeIsCurrent()) return;
-      try {
-        await computerSession.tick();
+      if (!reverted) viewingIntent.cancelUndo(gameId, undoToken);
+      if (computerUndo && reverted) {
         if (!undoScopeIsCurrent()) return;
-        await computerSession.action('resume');
-      } catch { /* The undo is accepted. Computer recovery explains an uncertain resume. */ }
+        try {
+          await computerSession.tick();
+          if (!undoScopeIsCurrent()) return;
+          await computerSession.action('resume');
+        } catch { /* The undo is accepted. Computer recovery explains an uncertain resume. */ }
+      }
+    } finally {
+      if (pendingUndoAdmissions.get(gameId) === admissionOwner) {
+        pendingUndoAdmissions.delete(gameId);
+        if (undoScopeIsCurrent()) applySharedMutationGates(undoTransport.getGameViewModel(gameId));
+      }
     }
     return;
   }

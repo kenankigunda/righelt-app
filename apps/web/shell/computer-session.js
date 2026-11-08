@@ -159,13 +159,18 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     if (work.leaseWork || work.controlWork || work.resumeWork || projection?.sharedMutationsBlocked || projection?.pendingCommandCount > 0
       || !ownLease(game) || clock() - renewedAt < COMPUTER_TIMING.renewAfterMs) return;
     return startLeaseWork(async () => {
-      try { await control(context, 'renew'); if (recoveryScopeIsCurrent(context)) renewedAt = clock(); }
+      try {
+        const result = await control(context, 'renew');
+        if (recoveryScopeIsCurrent(context)) renewedAt = clock();
+        return result?.ok === true;
+      }
       catch {
-        if (!recoveryScopeIsCurrent(context)) return;
+        if (!recoveryScopeIsCurrent(context)) return false;
         renewedAt = clock();
         await context.transport.loadGame(game.id).catch(() => {});
         const latest = current();
         if (recoveryScopeIsCurrent(context) && (!ownLease(latest.game) || latest.game.computer.generation !== game.computer.generation)) cancelWork('lease-lost');
+        return false;
       }
     }, 'renew', context);
   };
@@ -429,31 +434,53 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     return work;
   };
   const timer = timers.setInterval(() => { const context = current(); void tick().catch(error => publish({ phase: 'recovery', message: error.message }, context)); }, 1000);
+  const getUndoWaitAdmission = gameId => {
+    const context = current(), work = workFor(context);
+    if (destroyed || !context.authenticated || context.game?.id !== gameId || !ownLease(context.game)
+      || work.controlWork || work.resumeWork || work.leaseWorkAction !== 'renew' || !work.leaseWork) return null;
+    const renewal = context.transport.getUndoRenewalAdmission?.(gameId);
+    if (!renewal || renewal.deviceId !== deviceId) return null;
+    return Object.freeze({ ...ownerScope(context), renewal, leaseWork: work.leaseWork });
+  };
   return {
-    tick, analyze, cancelAnalysis,
-    withMutation: work => withControlWork(async () => {
-      cancelWork('history-mutation');
-      const original = current(), leaseWork = workFor(original).leaseWork;
-      if (leaseWork) await leaseWork;
-      let context = current();
-      const mayMutate = value => sameOwnerScope(ownerScope(original), value) && value.authenticated && value.game?.computer?.ownerId === value.transport.getIdentityId();
-      if (!mayMutate(context)) return false;
-      try {
-        if (!ownLease(context.game)) {
-          // Undo is explicit owner intent. Claim its serialized lease before
-          // pausing, while ordinary ticks continue to respect another device.
-          const foreignLease = context.game.computer.lease?.expiresAt > clock();
-          await control(context, foreignLease ? 'switch' : 'acquire');
-          context = current();
-          if (!mayMutate(context)) return false;
-          if (!ownLease(context.game)) throw Error('computer_control_changed');
-        }
-        return await work();
-      } catch (error) {
-        if (mayMutate(current())) publish({phase:'recovery', message:error.message}, context);
-        throw error;
+    tick, analyze, cancelAnalysis, getUndoWaitAdmission,
+    withMutation: (work, { undoAdmission = null } = {}) => {
+      if (undoAdmission) {
+        const admission = getUndoWaitAdmission(undoAdmission.gameId);
+        if (!admission || !sameOwnerScope(undoAdmission, current()) || admission.leaseWork !== undoAdmission.leaseWork
+          || admission.renewal.commandId !== undoAdmission.renewal.commandId
+          || admission.renewal.fingerprint !== undoAdmission.renewal.fingerprint) return Promise.resolve(false);
       }
-    }),
+      return withControlWork(async () => {
+        cancelWork('history-mutation');
+        const original = current(), leaseWork = workFor(original).leaseWork;
+        const leaseAccepted = leaseWork ? await leaseWork : null;
+        if (undoAdmission && leaseAccepted !== true) return false;
+        let context = current();
+        const mayMutate = value => sameOwnerScope(ownerScope(original), value) && value.authenticated && value.game?.computer?.ownerId === value.transport.getIdentityId();
+        if (!mayMutate(context)) return false;
+        if (undoAdmission) {
+          const game = context.transport.getGameViewModel(context.game.id);
+          if (game?.sharedMutationsBlocked || game?.gameplayRevision !== undoAdmission.renewal.revision
+            || game?.computer?.generation !== undoAdmission.renewal.generation || !ownLease(context.game)) return false;
+        }
+        try {
+          if (!ownLease(context.game)) {
+            // Undo is explicit owner intent. Claim its serialized lease before
+            // pausing, while ordinary ticks continue to respect another device.
+            const foreignLease = context.game.computer.lease?.expiresAt > clock();
+            await control(context, foreignLease ? 'switch' : 'acquire');
+            context = current();
+            if (!mayMutate(context)) return false;
+            if (!ownLease(context.game)) throw Error('computer_control_changed');
+          }
+          return await work();
+        } catch (error) {
+          if (mayMutate(current())) publish({phase:'recovery', message:error.message}, context);
+          throw error;
+        }
+      });
+    },
     snapshot: () => {
       schedulePhaseLabel();
       const context = current();

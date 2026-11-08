@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import {undoRenewAdmissionHarness} from './support/undo-renew-admission-fixture.mjs';
 import {createViewingIntent} from '../shell/viewing-state.js';
 import {resolveInitialSelectionHydration} from '../shell/selection-hydration.js';
 
@@ -16,6 +17,7 @@ const undoHarness = () => {
   const calls = [], feedback = [], returns = [], viewingIntent = createViewingIntent();
   const game = { gameplayRevision: 1, moves: [{moveId:'move',undone:false}], computer: {manual:true}, canControlComputer:true };
   const context = vm.createContext({
+    pendingUndoAdmissions:new Map(),applySharedMutationGates:()=>{},
     action:'undo-last-move',actionEl:{getAttribute:name=>name==='data-game-id'?'original':'move'},
     account:{snapshot:()=>({generation:context.generation})},generation:1,
     viewedGame:'original',getCurrentViewedGameId:()=>context.viewedGame,
@@ -90,6 +92,7 @@ for (const boundary of ['mutation', 'pause', 'committed', 'acquire']) {
       const game = { computer: { manual: true, lease: { deviceId: 'other-valid-lease' } }, canControlComputer: true };
       const transport = { getGameViewModel: () => game, requestRevertToMove: () => { calls.push('revert'); return { committed: wait('committed') }; } };
       const context = vm.createContext({
+        pendingUndoAdmissions:new Map(),applySharedMutationGates:()=>{},
         action: 'undo-last-move', actionEl: { getAttribute: name => name === 'data-game-id' ? 'original' : 'move' },
         transport, account: { snapshot: () => ({ generation: context.generation }) }, generation: 1,
         viewedGame: 'original', getCurrentViewedGameId: () => context.viewedGame,
@@ -185,4 +188,148 @@ test('browsing a different move while undo is pending never clears selection or 
   assert.deepEqual(h.game.initialSelectionAction,h.action);
   assert.deepEqual(h.game.pendingScenarioSelection.target,h.action.to);
   assert.equal(h.context.mountedOverlayKey,'old','No history view or board selection is cleared');
+});
+
+
+// Runs the actual transport, facade, lease-work session, mounted History gates,
+// delegated click handler and renderGesture interleaving. The journal and DOM
+// are explicit controlled collaborators; this is not native/durability proof.
+test('selected Undo without renewal still executes once', async t => {
+  const h = await undoRenewAdmissionHarness(t);
+  await h.activate();
+  assert.equal(h.undoCount(), 1);
+});
+
+test('selected Undo after completed renewal executes once', async t => {
+  const h = await undoRenewAdmissionHarness(t);
+  await h.startRenew(); await h.settle(); await h.activate();
+  assert.equal(h.undoCount(), 1);
+});
+
+test('mounted Undo admits only its real current renew work and waits without a command', async t => {
+  const h = await undoRenewAdmissionHarness(t);
+  await h.startRenew();
+  assert.equal(h.button.disabled, false);
+  const running = h.activate();
+  await new Promise(setImmediate);
+  assert.equal(h.undoCount(), 0);
+  assert.equal(h.commands.filter(c => c.payload.values?.action === 'pause').length, 0);
+  await h.settle(); await running;
+  assert.equal(h.undoCount(), 1);
+});
+
+test('renewal during a held pointer gesture retains one explicit Undo and deduplicates a second input', async t => {
+  const h = await undoRenewAdmissionHarness(t);
+  h.gesture('pointerdown'); await h.startRenew();
+  assert.equal(h.button.disabled, false);
+  assert.ok(h.events.length);
+  h.gesture('pointerup');
+  const running = h.activate();
+  assert.equal(h.button.disabled, true);
+  assert.equal(h.button.getAttribute('aria-busy'), 'true');
+  await h.dispatchQueuedClick();
+  h.flush();
+  assert.equal(h.undoCount(), 0);
+  await h.settle(); await running;
+  assert.equal(h.undoCount(), 1);
+});
+
+for (const boundary of ['foreign', 'account', 'auth', 'transport', 'session-game', 'target']) {
+  test(`a waiting Undo refuses changed ${boundary} before pause`, async t => {
+    const h = await undoRenewAdmissionHarness(t);
+    await h.startRenew();
+    const running = h.activate();
+    await new Promise(setImmediate);
+    h.change(boundary);
+    if (boundary === 'target') {
+      assert.equal(h.button.isConnected, false);
+      assert.equal(h.current().moves.find(move => move.moveId === 'human').undone, true);
+    }
+    await h.settle(); await running;
+    assert.equal(h.undoCount(), 0);
+    assert.equal(h.commands.filter(c => c.payload.values?.action === 'pause').length, 0);
+  });
+}
+
+for (const boundary of ['lease-expiry', 'recovery', 'upgrade']) {
+  test(`the narrow Undo gate refuses existing ${boundary} even during a held gesture`, async t => {
+    const h = await undoRenewAdmissionHarness(t);
+    h.gesture('pointerdown'); await h.startRenew(); h.change(boundary);
+    assert.equal(h.session.getUndoWaitAdmission(h.current().id), null);
+    await h.activate();
+    assert.equal(h.undoCount(), 0);
+  });
+}
+
+test('journal failure after renewal retains storage refusal and no Undo envelope', async t => {
+  const h = await undoRenewAdmissionHarness(t);
+  await h.startRenew();
+  const running = h.activate();
+  h.change('storage'); h.releaseRenew(); await running;
+  assert.equal(h.store.getGameViewModel(h.current().id).storageBlocked, true);
+  assert.equal(h.undoCount(), 0);
+  assert.ok(h.feedback.some(row => row.message === 'Undo could not finish'));
+});
+
+
+test('explicit Undo without a blocked renewal still claims an existing foreign lease', async t => {
+  const h = await undoRenewAdmissionHarness(t);
+  h.change('foreign-lease');
+  await h.activate();
+  assert.equal(h.commands.filter(c => c.payload.values?.action === 'switch').length, 1);
+  assert.equal(h.undoCount(), 1);
+});
+
+test('transport renewal metadata alone cannot impersonate session-owned lease work', async t => {
+  const h = await undoRenewAdmissionHarness(t);
+  const { promise } = await h.startExternalRenew();
+  assert.ok(h.store.getUndoRenewalAdmission(h.current().id));
+  assert.equal(h.session.getUndoWaitAdmission(h.current().id), null);
+  assert.equal(h.button.disabled, true);
+  await h.settle(); await promise;
+  assert.equal(h.undoCount(), 0);
+});
+
+
+test('a rejected renewal cannot admit waiting Undo from a reread of the same still-valid prior lease', async t => {
+  const h = await undoRenewAdmissionHarness(t);
+  await h.startRenew();
+  const before = structuredClone(h.current().computer.lease);
+  const running = h.activate();
+  h.change('renew-rejection');
+  await h.settle(); await running;
+  assert.equal(h.undoCount(), 0);
+  assert.equal(h.commands.filter(c => c.payload.values?.action === 'pause').length, 0);
+  assert.equal(h.current().computer.lease.deviceId, before.deviceId);
+  assert.equal(h.current().computer.lease.expiresAt, before.expiresAt);
+  assert.equal(h.store.getGameViewModel(h.current().id).sharedMutationsBlocked, false);
+  assert.equal(h.button.getAttribute('aria-busy'), null);
+});
+
+test('mounted mutation controls use one rendered projection while delegated input checks current admission', async t => {
+  const h = await undoRenewAdmissionHarness(t);
+  const id = h.current().id, rendered = h.store.getGameViewModel(id);
+  const controls = ['end-turn', 'accept-invite-player'].map(action =>
+    new h.context.HTMLButtonElement({ 'data-action': action, 'data-game-id': id }));
+  h.context.document.querySelectorAll = () => controls;
+  const applyGates = vm.runInContext('applySharedMutationGates', h.context);
+  const blockedNow = vm.runInContext('sharedMutationIsBlocked', h.context);
+
+  // A mounted pass must honor its supplied frame, even if transport has newer data.
+  assert.equal(rendered.sharedMutationsBlocked, false);
+  applyGates({ ...rendered, sharedMutationsBlocked: true });
+  for (const control of controls) {
+    assert.equal(control.disabled, true);
+    assert.equal(control.getAttribute('aria-disabled'), 'true');
+  }
+  assert.equal(blockedNow('end-turn', id), false, 'delegated input reads current admission');
+
+  await h.startRenew();
+  applyGates(rendered);
+  for (const control of controls) {
+    assert.equal(control.disabled, false);
+    assert.equal(control.getAttribute('aria-disabled'), null);
+  }
+  assert.equal(blockedNow('end-turn', id), true, 'a stale enabled frame cannot bypass the live click gate');
+  await h.settle();
 });
