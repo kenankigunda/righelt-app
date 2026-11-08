@@ -1,0 +1,20 @@
+{
+  "version": 3,
+  "execute": false,
+  "priorFreezeSHA256": "3391b0e79f13fc6c8d1a73b7a83bd94a9a2f960bfcca5cf4ad61f36424d4830b",
+  "candidateHead": "bdf58f2f13664e45f407681ec8a6930467ecf894",
+  "files": {
+    "../../../.github/workflows/webkit-rendering-diagnostic.yml": "e64d27d9cec50874c2314e375b28f5509b8e55978704fe8bf09f227a19868536",
+    "REVIEW.md": "5672ed337c2038033ace5bea34a58609caaea23cf74e3f50883783dabdc5e90a",
+    "audit.mjs": "e8587bc982a10369a21b814e56e8d7f927e54147615b0bba9f14f30d4c3294c2",
+    "candidate-playwright.mjs": "9596c00cd3bd7f8c6372abedbf7f3207ad1b409c00a553f4c5d9b90d275d2175",
+    "canonical-api-events.mjs": "58239624a7e8969e386da8da46de6aae09004ece4f0a778d846979992383128e",
+    "controls.test.mjs": "2682176c28e9d9e01f5cdb867e21422f0f9552bd1df1fef67e683e56dde76dc3",
+    "derive.mjs": "2afafa55100c72bb6423abb45bba6af88e97da17f34d6b8f89c73b67ce44f294",
+    "direct-child-identity.mjs": "7d094d96fa8bef7ad44a57ecaad372028765c26118db58c38cc45d8d6c7b2ab7",
+    "execution-plan.json": "41aa7ab069d51f418f8f150ef0f981d1816657b4ed0c6802eca0aa4fbc53b6ae",
+    "expected-inventory.json": "d61c534a0d31b1d4e90433e773a2fec059c86c4034b68ef214445b0482091b1a",
+    "recorder.mjs": "68ed2a5967d72aa25ec1eaf4b77feab7905940d298c6a077b6b88a2b7f3ae021",
+    "run.mjs": "429d77c77b3245590a1fa8bd03f7faf5eaa862f0a7c4a6ea80174cc679d2f295"
+  }
+}

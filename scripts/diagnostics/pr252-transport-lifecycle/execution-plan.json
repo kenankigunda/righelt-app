@@ -1,0 +1,54 @@
+{
+  "execute": false,
+  "diagnosticOnly": true,
+  "candidateHead": "bdf58f2f13664e45f407681ec8a6930467ecf894",
+  "candidateTree": "835de3d8252da9a865ee077020b2b259bdbaaee2",
+  "candidateSourceEntries": 1545,
+  "releasedTools": "0c7b51b64c26604f1e08939e827cb4a934aa4f93",
+  "runner": "ubuntu-24.04",
+  "runtime": {
+    "node": "22.23.4",
+    "pnpm": "9.15.9",
+    "playwright": "1.59.1"
+  },
+  "selection": {
+    "suite": "e2e",
+    "project": "webkit",
+    "shard": 1,
+    "shards": 2,
+    "count": 74,
+    "expectedInventory": "expected-inventory.json",
+    "nativeRunner": "scripts/testing/ci-run.mjs",
+    "workers": 1,
+    "retries": 0,
+    "budgets": "UNCHANGED original config/test/fixture budgets",
+    "trace": "UNCHANGED original retain-on-failure policy"
+  },
+  "derivedProductPath": "scripts/auth-worker-connections.mjs",
+  "onlyExtraEnv": "RIGHELT_TRANSPORT_DIAGNOSTIC_OUT",
+  "nodeOptions": "inherited unchanged; historical value unavailable",
+  "coverage": "INNER ProxyWorker\u2192UserWorker only, BOTH web/api origins required",
+  "earlierHop": "PagesFunction\u2192publicAPI remains unobserved; absence is gap, never nondispatch/noncommit",
+  "limits": {
+    "rowsPerProcess": 250000,
+    "bytesPerProcess": 134217728,
+    "terminalRequired": true,
+    "missingSignalTerminal": "incomplete; NO diagnostic signal handler"
+  },
+  "pureControls": {
+    "command": [
+      "node",
+      "--test",
+      "scripts/diagnostics/pr252-transport-lifecycle/controls.test.mjs"
+    ],
+    "syntax": "all new JS files; no deps/browser/server/listing required"
+  },
+  "dispatch": {
+    "enabled": false,
+    "workflow": "webkit-rendering-diagnostic.yml",
+    "registeredWorkflowId": 376976894,
+    "ref": "codex/pr252-transport-lifecycle-diagnostic",
+    "oneAttempt": true,
+    "noOfficialCICredit": true
+  }
+}
