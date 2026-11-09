@@ -1,3 +1,4 @@
+import { createPublicApiConnection, reserveApiBackendPort, waitForOwnedApiReady } from "./api-public-connections.mjs";
 import {storageFixtureConfig} from "./storage-fixture-config.mjs";
 import { recordUnexpectedExit } from './testing/stack-status.mjs';
 import { cliPath } from './resources/supervisor.mjs';
@@ -22,6 +23,7 @@ const root = process.cwd();
 const webPort = String(LOCAL_DEV_PORT_VARIANTS.find(variant => variant.suffix === "auth-e2e").webPort);
 const apiPort = String(resolveLocalApiPort(webPort));
 const origin = `https://127.0.0.1:${webPort}`;
+const AUTH_READY_TIMEOUT_MS = 120_000;
 const temporary = await mkdtemp(path.join(os.tmpdir(), "righelt-auth-e2e-"));
 const persist = path.join(temporary, "state");
 const children = new Set();
@@ -32,21 +34,26 @@ const diagnostics = path.join(root, "test-results/auth-stack-diagnostics", runId
 let diagnosticsFailed = false;
 let stopping = false;
 let control;
+let apiPublicConnection;
 let proxyDiagnosticsInstallation;
 const failureDirectory = process.env.RIGHELT_AUTH_FAILURE_DIRECTORY;
 const failureRunId = process.env.RIGHELT_AUTH_FAILURE_RUN_ID;
 let failureJournalReady = false;
 
-function run(args, { cwd = root, service = null, captureStderr = false } = {}) {
+function run(args, { cwd = root, service = null, captureStderr = false, captureOutput = false } = {}) {
   if (stopping) throw new Error("Account stack is stopping");
   const env = args.includes("https") ? localHttpsEnvironment({ cwd }) : { ...process.env };
   const logDirectory = path.join(privateLogs, service || "setup");
   const child = spawnAuthStackCommand(args, { cwd, env: { ...env, WRANGLER_LOG_PATH: logDirectory,
     RIGHELT_AUTH_FAILURE_SERVICE: service || "setup",
-    RIGHELT_AUTH_FRESH_CONNECTIONS: service ? "1" : "0" }, service: Boolean(service), captureStderr });
+    RIGHELT_AUTH_FRESH_CONNECTIONS: service ? "1" : "0" }, service: Boolean(service), captureStderr, captureOutput });
   children.add(child);
   child.on("close", () => children.delete(child));
   if (service) {
+    if (captureOutput) {
+      child.stdout.on("data", chunk => process.stdout.write(chunk));
+      child.stderr.on("data", chunk => process.stderr.write(chunk));
+    }
     serviceReceipts.push(observeAuthService(child, { service, logDirectory,
       requireProxyReceiptLogs: true, failureDirectory, failureRunId,
       outputFile: path.join(diagnostics, `${service}.json`), isStopping: () => stopping,
@@ -71,6 +78,8 @@ async function shutdown(code = 0) {
   if (stopping) return;
   stopping = true;
   control?.close();
+  try { await apiPublicConnection?.close(); }
+  catch (error) { console.error(error); code = 1; }
   const cleaned = await Promise.all([...children].map(stopAuthStackCommand));
   const receipts = await Promise.all(serviceReceipts);
   // A concurrent external shutdown must not hide an initiating service exit
@@ -87,7 +96,7 @@ async function shutdown(code = 0) {
 process.on("SIGTERM", () => void shutdown());
 process.on("SIGINT", () => void shutdown());
 async function ready(url) {
-  const deadline = Date.now() + 120000;
+  const deadline = Date.now() + AUTH_READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
     try {
       const ok = url.startsWith("https:")
@@ -149,8 +158,21 @@ try {
   const fixtureFile=path.join(temporary,"legacy.sql");
   await writeFile(fixtureFile,seedSql);
   await run([...d1,"execute","DB","--config",apiConfig,"--local","--persist-to",persist,"--file",fixtureFile]);
-  run(["exec", "wrangler", "dev", ...configs.flatMap(file => ["--config", file]), "--local", "--port", apiPort,
-    "--inspector-port", String(Number(apiPort)+10), "--persist-to", persist], { service: "api" });
+  const backendPort = await reserveApiBackendPort([Number(apiPort), Number(webPort), Number(apiPort)+10, Number(webPort)+10, Number(webPort)+100]);
+  if (stopping) throw new Error("Account stack stopped before API backend launch");
+  const apiChild = run(["exec", "wrangler", "dev", ...configs.flatMap(file => ["--config", file]), "--local", "--port", String(backendPort),
+    "--inspector-port", String(Number(apiPort)+10), "--persist-to", persist], { service: "api", captureOutput: true });
+  await waitForOwnedApiReady(apiChild, backendPort, AUTH_READY_TIMEOUT_MS);
+  await ready(`http://127.0.0.1:${backendPort}/api/health`);
+  if (stopping || apiChild.exitCode !== null || apiChild.signalCode !== null)
+    throw new Error("Owned account API stopped before public bridge creation");
+  const connection = await createPublicApiConnection({ publicPort: Number(apiPort), backendPort });
+  apiPublicConnection = connection;
+  if (stopping || apiChild.exitCode !== null || apiChild.signalCode !== null) {
+    await connection.close();
+    throw new Error("Owned account API stopped during public bridge creation");
+  }
+  console.log(`[auth-e2e] owned public API bridge ${connection.url.origin} -> ${connection.target}`);
   await ready(`http://127.0.0.1:${apiPort}/api/health`);
   // Test-runner-only loopback control; never exposed through Pages or application routes.
   // Fixed SQL operations only, rejecting browser-origin requests. This is not an auth bypass.

@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  miniflare@4.20260219.0:
+    hash: uoi5ukwosfa5rbb6s5nabf67fa
+    path: patches/miniflare@4.20260219.0.patch
+
 importers:
 
   .:
@@ -1646,7 +1651,7 @@ snapshots:
 
   long@5.3.2: {}
 
-  miniflare@4.20260219.0:
+  miniflare@4.20260219.0(patch_hash=uoi5ukwosfa5rbb6s5nabf67fa):
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
       sharp: 0.34.5
@@ -1842,7 +1847,7 @@ snapshots:
       '@cloudflare/unenv-preset': 2.14.0(unenv@2.0.0-rc.24)(workerd@1.20260219.0)
       blake3-wasm: 2.1.5
       esbuild: 0.27.3
-      miniflare: 4.20260219.0
+      miniflare: 4.20260219.0(patch_hash=uoi5ukwosfa5rbb6s5nabf67fa)
       path-to-regexp: 6.3.0
       unenv: 2.0.0-rc.24
       workerd: 1.20260219.0

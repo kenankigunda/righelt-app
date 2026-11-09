@@ -1,3 +1,5 @@
+import {installComputerRecoveryBinding} from './computer-recovery-binding.mjs';
+import {COMPUTER_UI_FRAME_MEASURE} from '../../apps/web/shell/frame-presentation.js';
 import {readFile, writeFile} from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
 import {performance} from 'node:perf_hooks';
@@ -17,6 +19,11 @@ export const transformBoardAdmissionModule = (source, recipe) => {
 };
 
 export const SOURCE_PRESS_PREFIX='[righelt-source-window-v1]';
+export const COMPUTER_RECOVERY_FINAL_PREFIX='[righelt-computer-final-read-v1]';
+// Separate from the 512KiB authority cap: the full DTO also contains up to
+// 1024 journal rows and 1064 scalar readiness rows. Leave generous headroom,
+// refuse unexpected expansion, and never truncate any producer's evidence.
+export const COMPUTER_RECOVERY_FINAL_MAX_BYTES=4*1024*1024;
 export const SOURCE_PRESS_MAX_BYTES=512*1024;
 export const COMPUTER_RECOVERY_CATEGORIES=Object.freeze(['rules_timeout','stale_state','session_changed','sync_recovering','journal_timeout','storage_reset','invalid_credentials','invalid_action','move-not-submitted','computer_control_changed','invalid_rules_response','upgrade_required']);
 const safeBoardDiagnostic=category=>{try{console.error(`[board-admission-diagnostic] ${category}`);}catch{}};
@@ -103,41 +110,111 @@ export async function runComputerRecoveryPersistence(diagnostic,{setupElapsedMs,
  finally{clearTimer(timer);const state=diagnostic.finalRecoveryHandoff?.end();if(state?.cleanupAttemptedHere&&state.cleanupIncomplete)throw new AggregateError([...(primary?[primary]:[]),Error('Computer recovery handoff listener cleanup incomplete')],'Computer recovery fixture cleanup failed');}
 }
 
-// Node-only owner of the one existing final afterEach read. No browser operation.
-export function createComputerRecoveryHandoff(page,namespace){
- let gameId,ticket,result,delivery,retained=false,consumed=false,ended=false,listenerRemoved=false,cleanupIncomplete=false,journalReadTimedOut=false,documentGeneration=0;
- const fail=reason=>{if(!result?.incomplete)result={incomplete:true,reason,observation:null};};
- const navigated=frame=>{if(frame===page.mainFrame()){documentGeneration++;if(ticket)fail('foreign-document');}};
- page.on('framenavigated',navigated);
+// One self-contained guard is used by the Node receiver and mechanically embedded
+// in the existing final read. Reject values JSON would otherwise silently change.
+export function cloneComputerRecoveryHandoff(packet,expected,maxBytes){
+ const bad=(reason='handoff-invalid')=>{const error=Error('Invalid computer recovery handoff');error.recoveryReason=reason;throw error;};
  const copy=(value,seen=new Set(),depth=0)=>{
   if(value===null||typeof value==='boolean'||typeof value==='string'&&value.length<=2048||typeof value==='number'&&Number.isFinite(value))return value;
-  if(!value||typeof value!=='object'||depth>12||seen.has(value))throw Error('Invalid diagnostic data');
-  seen.add(value);const descriptors=Object.getOwnPropertyDescriptors(value),out=Array.isArray(value)?[]:Object.create(null);
+  if(!value||typeof value!=='object'||depth>12||seen.has(value))bad();
+  seen.add(value);const descriptors=Object.getOwnPropertyDescriptors(value),array=Array.isArray(value),out=array?Object.setPrototypeOf([],null):Object.create(null);
+  if(array)for(let i=0;i<descriptors.length.value;i++)if(!Object.hasOwn(descriptors,String(i)))bad();
   for(const key of Reflect.ownKeys(descriptors)){
-   if(typeof key!=='string'||!Object.hasOwn(descriptors[key],'value'))throw Error('Invalid diagnostic descriptor');
-   if(Array.isArray(value)&&key==='length')continue;
+   if(typeof key!=='string'||!Object.hasOwn(descriptors[key],'value'))bad();
+   if(array&&key==='length')continue;
    Object.defineProperty(out,key,{value:copy(descriptors[key].value,seen,depth+1),enumerable:true,writable:false,configurable:false});
   }
   seen.delete(value);return Object.freeze(out);
  };
+ const envelope=copy(packet);
+ if(envelope.namespace!==expected.namespace||envelope.readId!==expected.readId||envelope.gameId!==expected.gameId||envelope.documentGeneration!==expected.documentGeneration)bad('foreign-handoff');
+ const observation=envelope.observation;
+ if(!Number.isFinite(envelope.timeOrigin)||envelope.timeOrigin<=0||!Number.isFinite(observation?.timeOrigin)||observation.timeOrigin<=0||typeof envelope.documentNonce!=='string'||!envelope.documentNonce||envelope.documentNonce.length>128||observation.documentNonce!==envelope.documentNonce||observation?.recoveryNamespace!==expected.namespace||observation?.version!==1)bad('foreign-document');
+ const serialized=JSON.stringify(envelope);
+ if(serialized.length>maxBytes||new TextEncoder().encode(serialized).byteLength>maxBytes)bad();
+ return envelope;
+}
+
+// This final snapshot is a plain-data DTO. Copy its own data without invoking
+// inherited JSON hooks; optional journal undefined/holes keep persisted JSON rules.
+export function cloneFinalRecoveryJSONDomain(input){
+ const seen=new Set();
+ const copy=value=>{
+  if(value===null||value===undefined||typeof value==='boolean'||typeof value==='string')return value;
+  if(typeof value==='number')return Number.isFinite(value)?value:null;
+  if(typeof value!=='object'||seen.has(value))throw Error('Invalid final recovery snapshot');
+  seen.add(value);const descriptors=Object.getOwnPropertyDescriptors(value),array=Array.isArray(value),out=array?Object.setPrototypeOf([],null):Object.create(null);
+  if(!array){
+   const prototypes=new Set();
+   for(let proto=Object.getPrototypeOf(value);proto;proto=Object.getPrototypeOf(proto)){
+    if(prototypes.has(proto)||Object.hasOwn(proto,'constructor')&&Object.getPrototypeOf(proto)!==null)throw Error('Unsupported final recovery DTO object');
+    prototypes.add(proto);
+   }
+  }
+  if(array)out.length=descriptors.length.value;
+  for(const key of Reflect.ownKeys(descriptors)){
+   if(descriptors[key].enumerable===false)continue;
+   if(typeof key!=='string'||!Object.hasOwn(descriptors[key],'value'))throw Error('Invalid final recovery snapshot descriptor');
+   if(array&&key==='length')continue;
+   Object.defineProperty(out,key,{value:copy(descriptors[key].value),enumerable:true,writable:false,configurable:false});
+  }
+  seen.delete(value);return out;
+ };
+ return copy(input);
+}
+
+export function readComputerRecoverySnapshot({measurementName,recoveryRead}){
+      let readinessPage;
+      try{readinessPage=globalThis.__righeltReadinessFreeze?.();}catch{readinessPage={incomplete:true,reason:'snapshot-unavailable'};}
+      const match=location.hash.match(/^#\/game\/([^?#/]+)/);
+      const boardRecovery=recoveryRead?{...recoveryRead,gameId:match?decodeURIComponent(match[1]):null,documentNonce:globalThis.__boardAdmissionRecoveryDocument??null,timeOrigin:performance.timeOrigin,observation:globalThis.__boardAdmissionObservation??null}:null;
+      return {...window.retreatJournalObservations,...(boardRecovery?{boardRecovery}:{}),presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,...(readinessPage?{readinessPage}:{})};
+    }
+
+// Compiled on Node, then serialized normally by Playwright. No browser eval or
+// second Page read. Optional journal fields retain their existing persisted JSON
+// domain; the authority-bearing recovery packet is validated BEFORE encoding.
+export function createComputerRecoveryJSONRead(read,publishConsole=false){
+ return new Function('input',`"use strict";const guard=(${cloneComputerRecoveryHandoff.toString()});const snapshot=(${cloneFinalRecoveryJSONDomain.toString()});const value=(${read.toString()})(input);if(input.recoveryRead){value.boardRecovery=guard(value.boardRecovery,input.recoveryRead,${SOURCE_PRESS_MAX_BYTES});}const serialized=JSON.stringify(snapshot(value));${publishConsole?`if(input.recoveryRead){if(serialized.length>${COMPUTER_RECOVERY_FINAL_MAX_BYTES}||new TextEncoder().encode(serialized).byteLength>${COMPUTER_RECOVERY_FINAL_MAX_BYTES})throw Error("Final recovery snapshot too large");console.debug(${JSON.stringify(COMPUTER_RECOVERY_FINAL_PREFIX)}+serialized);}`:""}return serialized;`);
+}
+
+// Node-only owner of the one existing final afterEach read. No browser operation.
+export function createComputerRecoveryHandoff(page,namespace){
+ let gameId,ticket,result,delivery,retained=false,consumed=false,ended=false,listenerRemoved=false,cleanupIncomplete=false,journalReadTimedOut=false,documentGeneration=0;
+ let consoleMode=false,consoleInstalled=false,consoleText,consoleDelivery,resolveConsole,originalCall,originalSettled=false,originalRaw;
+ const fail=reason=>{if(!result?.incomplete)result={incomplete:true,reason,observation:null};resolveConsole?.(null);};
+ const navigated=frame=>{if(frame===page.mainFrame()){documentGeneration++;if(ticket)fail('foreign-document');}};
+ page.on('framenavigated',navigated);
  const capture=(owner,packet)=>{
    if(ended||consumed){return;}
    if(result){fail('handoff-reused');return;}
    if(owner!==page){fail('foreign-page');return;}
    try{
     if(!ticket||!packet){fail('handoff-missing');return;}
-    const envelope=copy(packet);
-    if(envelope.namespace!==namespace||envelope.readId!==ticket.readId||envelope.gameId!==gameId||envelope.documentGeneration!==documentGeneration){fail('foreign-handoff');return;}
-    const observation=envelope.observation;
-    if(!Number.isFinite(envelope.timeOrigin)||envelope.timeOrigin<=0||!Number.isFinite(observation?.timeOrigin)||observation.timeOrigin<=0||typeof envelope.documentNonce!=='string'||!envelope.documentNonce||envelope.documentNonce.length>128||observation.documentNonce!==envelope.documentNonce||observation?.recoveryNamespace!==namespace||observation?.version!==1){fail('foreign-document');return;}
-    const immutable=observation,serialized=JSON.stringify(envelope);if(serialized.length>SOURCE_PRESS_MAX_BYTES||Buffer.byteLength(serialized,'utf8')>SOURCE_PRESS_MAX_BYTES)throw Error('Oversize diagnostic');
+    const envelope=cloneComputerRecoveryHandoff(packet,{namespace,readId:ticket.readId,gameId,documentGeneration},SOURCE_PRESS_MAX_BYTES);
+    const observation=envelope.observation,immutable=observation;
     result=Object.freeze({incomplete:false,reason:null,namespace,readId:ticket.readId,gameId,documentGeneration,documentNonce:envelope.documentNonce,timeOrigin:envelope.timeOrigin,observationTimeOrigin:observation.timeOrigin,observation:immutable});
-   }catch{fail('handoff-invalid');}
+   }catch(error){let reason='handoff-invalid';try{const value=Object.getOwnPropertyDescriptor(error,'recoveryReason')?.value;if(['foreign-handoff','foreign-document'].includes(value))reason=value;}catch{}fail(reason);}
   };
- const removeListener=()=>{if(listenerRemoved)return;listenerRemoved=true;try{page.off('framenavigated',navigated);}catch{cleanupIncomplete=true;fail('handoff-listener-cleanup-failed');}};
+ const consoleListener=message=>{try{
+  const text=message.text();if(typeof text!=='string'||!text.startsWith(COMPUTER_RECOVERY_FINAL_PREFIX))return;
+  if(!ticket||!consoleMode||message.page()!==page||message.worker()!==null||message.type()!=='debug'){fail('foreign-page');return;}
+  if(consoleText!==undefined){fail('handoff-reused');return;}
+  const raw=text.slice(COMPUTER_RECOVERY_FINAL_PREFIX.length);
+  if(raw.length>COMPUTER_RECOVERY_FINAL_MAX_BYTES||Buffer.byteLength(raw,'utf8')>COMPUTER_RECOVERY_FINAL_MAX_BYTES){fail('handoff-invalid');return;}
+  const value=cloneFinalRecoveryJSONDomain(JSON.parse(raw));
+  capture(page,value?.boardRecovery);if(result?.incomplete)return;
+  consoleText=raw;resolveConsole(value);
+ }catch{fail('handoff-invalid');}};
+ const removeListener=()=>{if(listenerRemoved)return;listenerRemoved=true;
+  try{page.off('framenavigated',navigated);}catch{cleanupIncomplete=true;fail('handoff-listener-cleanup-failed');}
+  if(consoleInstalled)try{page.off('console',consoleListener);}catch{cleanupIncomplete=true;fail('handoff-listener-cleanup-failed');}
+ };
  return {
   bindGame(id){if(gameId||typeof id!=='string'||!id)throw Error('Recovery game scope unavailable');gameId=id;},
-  begin(owner){if(owner!==page||!gameId||ticket||consumed||ended)throw Error('Recovery final read scope unavailable');ticket=Object.freeze({namespace,readId:randomUUID(),gameId,documentGeneration});return ticket;},
+  begin(owner,{consoleDelivery:useConsole=false}={}){if(owner!==page||!gameId||ticket||consumed||ended)throw Error('Recovery final read scope unavailable');ticket=Object.freeze({namespace,readId:randomUUID(),gameId,documentGeneration});
+   if(useConsole){consoleMode=true;consoleDelivery=new Promise(resolve=>{resolveConsole=resolve;});delivery=consoleDelivery;consoleInstalled=true;try{page.on('console',consoleListener);}catch(error){fail('handoff-listener-install-failed');throw error;}}
+   return ticket;},
   capture,
   retain(owner,promise){
    if(owner!==page||!ticket||retained||consumed||ended){fail('foreign-handoff');return;}
@@ -148,7 +225,22 @@ export function createComputerRecoveryHandoff(page,namespace){
     if(value?.boardRecovery)capture(owner,value.boardRecovery);else fail('read-missing');
    },()=>{if(!ended&&!consumed)fail('read-failed');});
   },
-  journalTimedOut(){journalReadTimedOut=true;},
+  retainConsoleRead(owner,promise){
+   if(owner!==page||!ticket||!consoleMode||retained||consumed||ended){fail('foreign-handoff');throw Error('Recovery console read scope unavailable');}
+   retained=true;
+   // Own rejection immediately, but never report success before the original
+   // call settles in the same afterEach hook, including its tracing barrier.
+   originalCall=Promise.resolve(promise).then(raw=>{originalSettled=true;originalRaw=raw;return raw;},error=>{originalSettled=true;fail('read-failed');throw error;});
+   originalCall.catch(()=>{});
+   return consoleDelivery;
+  },
+  async completeOriginalRead(){
+   if(!consoleMode||!originalCall){fail('read-missing');throw Error('Recovery original call unavailable');}
+   const raw=await originalCall;
+   if(typeof raw!=='string'||consoleText===undefined||raw!==consoleText)fail('handoff-conflict');
+   if(result?.incomplete)throw Error('Computer recovery original call incomplete: '+result.reason);
+  },
+  journalTimedOut(){journalReadTimedOut=true;if(consoleMode)fail('read-timed-out');},
   async awaitDelivery({remainingMs=()=>0,setTimer=setTimeout,clearTimer=clearTimeout}={}){
    if(result||!delivery)return;
    const wait=Math.max(0,remainingMs()-COMPUTER_RECOVERY_CLEANUP_RESERVE_MS);
@@ -159,10 +251,25 @@ export function createComputerRecoveryHandoff(page,namespace){
   },
   failed(reason){fail(['read-failed','read-timed-out','read-missing'].includes(reason)?reason:'read-failed');},
   end(){ended=true;if(!consumed)fail('fixture-ended');const cleanupAttemptedHere=!listenerRemoved;removeListener();return{cleanupIncomplete,cleanupAttemptedHere};},
-  consume(){if(consumed)return Object.freeze({incomplete:true,reason:'handoff-reused',observation:null});consumed=true;
+  consume(){if(consumed)return Object.freeze({incomplete:true,reason:'handoff-reused',observation:null});if(consoleMode&&(!originalSettled||typeof originalRaw!=='string'||originalRaw!==consoleText))fail('read-pending-or-conflicting');consumed=true;
    if(result&&!result.incomplete&&result.documentGeneration!==documentGeneration)fail('foreign-document');
    removeListener();
    return Object.freeze({...result??{incomplete:true,reason:'handoff-missing',observation:null},journalReadTimedOut,cleanupIncomplete});},
+ };
+}
+export async function installComputerRecoveryBindingOwner(page,namespace,owner,options={}){
+ let activeTicket,beginAt,started=false,poisoned=false;
+ const transport=await installComputerRecoveryBinding(page,{namespace,produce:createComputerRecoveryJSONRead(readComputerRecoverySnapshot),measurementName:COMPUTER_UI_FRAME_MEASURE,maxBytes:COMPUTER_RECOVERY_FINAL_MAX_BYTES,
+  capture(value){if(!activeTicket||!value?.boardRecovery)throw Error('Final recovery packet missing');cloneComputerRecoveryHandoff(value.boardRecovery,activeTicket,SOURCE_PRESS_MAX_BYTES);owner.capture(page,value.boardRecovery);},failed:reason=>{poisoned=true;owner.failed(reason);},...options});
+ return{
+  ...owner,
+  begin(pageOwner,settings){beginAt=performance.now();activeTicket=owner.begin(pageOwner);if(settings?.bindingDelivery){transport.begin(activeTicket,beginAt);return activeTicket;}return activeTicket;},
+  startBindingRead(pageOwner){if(pageOwner!==page||!activeTicket||started)throw Error('Final recovery binding read scope unavailable');started=true;return transport.start();},
+  async completeOriginalRead(){await transport.complete();if(poisoned)throw Error('Final recovery binding incomplete');},
+  journalTimedOut(){owner.journalTimedOut();if(started)transport.fail('read-timed-out');},
+  disposeBindingDelivery:()=>transport.dispose(),
+  consume(){if(started&&!transport.healthy())owner.failed('read-failed');const result=owner.consume(),binding=transport.report();return{...result,cleanupIncomplete:result.cleanupIncomplete||binding.cleanupIncomplete,binding};},
+  end(){transport.cancel();return owner.end();},
  };
 }
 export async function persistComputerRecoveryEvidence({handoff,info,payload,write=writeFile,removeRoute,primaryError}){
@@ -313,7 +420,7 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
  const recipes=JSON.parse(await readFile(new URL(computerSessionRecovery?'./computer-session-recovery-transformation.json':'./board-admission-transformations.json',import.meta.url),'utf8'));
  const transforms=[],errors=[];let installed=false;
  const recoveryNamespace=computerSessionRecovery?randomUUID():null;
- const recoveryHandoff=computerSessionRecovery?createComputerRecoveryHandoff(page,recoveryNamespace):null;
+ let recoveryHandoff=computerSessionRecovery?createComputerRecoveryHandoff(page,recoveryNamespace):null;
  const origin=new URL(baseURL).origin;
  const sourceRetention=sourceAttemptOrdinal===undefined?null:createBoardSourceConsoleRetention(page,sourceAttemptOrdinal);
  const handler=async route=>{
@@ -332,10 +439,16 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
  };
  const pattern=url=>url.origin===origin && Object.hasOwn(recipes,url.pathname);
  try{
+  if(recoveryHandoff)recoveryHandoff=await installComputerRecoveryBindingOwner(page,recoveryNamespace,recoveryHandoff);
   if(sourceAttemptOrdinal===undefined)await page.addInitScript(installBoardAdmissionCollector,{targetRow,targetCol,...(computerSessionRecovery?{recoveryCategories:COMPUTER_RECOVERY_CATEGORIES,recoveryNamespace}:{})});
   else await page.addInitScript({content:`(()=>{const SOURCE_PRESS_PREFIX=${JSON.stringify(SOURCE_PRESS_PREFIX)};const SOURCE_PRESS_MAX_BYTES=${SOURCE_PRESS_MAX_BYTES};const cloneBoardSourceHandoff=(${cloneBoardSourceHandoff.toString()});(${installBoardAdmissionCollector.toString()})(${JSON.stringify({targetRow,targetCol,sourceAttemptOrdinal})});})();`});
   await page.route(pattern,handler);installed=true;
- }catch(error){sourceRetention?.stop();const disposed=recoveryHandoff?.consume();if(disposed?.cleanupIncomplete)throw new AggregateError([error,Error('Computer recovery handoff listener cleanup incomplete')],'Diagnostic setup and cleanup failed');throw error;}
+ }catch(error){
+  sourceRetention?.stop();const cleanup=[];
+  try{await recoveryHandoff?.disposeBindingDelivery?.();}catch(failure){cleanup.push(failure);}
+  const disposed=recoveryHandoff?.consume();if(disposed?.cleanupIncomplete)cleanup.push(Error('Computer recovery handoff listener cleanup incomplete'));
+  if(cleanup.length)throw new AggregateError([error,...cleanup],'Diagnostic setup and cleanup failed');throw error;
+ }
  return {
   finalRecoveryHandoff:recoveryHandoff,
   async checkpoint(){
@@ -346,11 +459,12 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
   },
   async persist(options={}){
    if(recoveryHandoff){
+    let bindingCleanupError;try{await recoveryHandoff.disposeBindingDelivery();}catch(error){bindingCleanupError=error;recoveryHandoff.failed('read-failed');}
     await recoveryHandoff.awaitDelivery(options);
     const handoff=recoveryHandoff.consume(),observation=handoff.observation;
     const missingModules=Object.keys(recipes).filter(pathname=>!transforms.some(row=>row.pathname===pathname));
     const payload={caseTitle:info.title,observation,handoff:{...handoff,observation:undefined},transforms,errors,missingModules,incomplete:handoff.incomplete||errors.length>0||missingModules.length>0||!observation?.activation?.length||Boolean(observation?.incomplete)||Boolean(observation?.rulesTimeouts?.incomplete),clock:'page.performance/timeOrigin; Node persistence wall clock separate',nodePersistedAt:new Date().toISOString()};
-    await persistComputerRecoveryEvidence({handoff,info,payload,removeRoute:async()=>{if(installed)await page.unroute(pattern,handler);}});return;
+    await persistComputerRecoveryEvidence({handoff,info,payload,primaryError:bindingCleanupError,removeRoute:async()=>{if(installed)await page.unroute(pattern,handler);}});return;
    }
    try{
    let observation=null,incomplete=errors.length>0;

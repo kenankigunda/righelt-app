@@ -21,7 +21,7 @@ test('cancellation waits for an in-flight diagnostic installation and restores b
   events.exit = code => { order.push(`exit:${code}`); stopped(); };
   const run = new Function('dependencies', `
     const { process, path, os, mkdtemp, installProxyConnectionIsolation, createE2ePersistRoot } = dependencies;
-    let shuttingDown = false, privateLogs, proxyDiagnosticsInstallation, controlServer, diagnosticsFailed = false, tempRoot = '';
+    let shuttingDown = false, privateLogs, proxyDiagnosticsInstallation, controlServer, apiPublicConnection, diagnosticsFailed = false, tempRoot = '';
     const managedChildren = new Set(), serviceReceipts = [];
     const stopChild = () => { throw Error('No service should have launched'); };
     ${shutdown}
@@ -111,7 +111,7 @@ test('shutdown restores diagnostic source before waiting for service cleanup', a
   const order = [];
   const run = new Function('dependencies', `
     const {stopChild, proxyDiagnosticsInstallation, process} = dependencies;
-    let shuttingDown = false, controlServer, diagnosticsFailed = false, tempRoot = '';
+    let shuttingDown = false, controlServer, apiPublicConnection, diagnosticsFailed = false, tempRoot = '';
     const managedChildren = new Set([{}]), serviceReceipts = [];
     ${shutdown}
     return shutdown;
@@ -122,6 +122,54 @@ test('shutdown restores diagnostic source before waiting for service cleanup', a
   try { assert.deepEqual(order, ['restored']); }
   finally { release(); await pending; }
   assert.deepEqual(order, ['restored', 'exit:0']);
+});
+
+function extractedShutdownWithBridge({ apiPublicConnection, stopChild, restore, exit, error }) {
+  const shutdown = source.slice(source.indexOf('const shutdown ='), source.indexOf('const run ='));
+  return new Function('dependencies', `
+    const {apiPublicConnection, stopChild, process, console, proxyDiagnosticsInstallation} = dependencies;
+    let shuttingDown = false, controlServer, diagnosticsFailed = false, tempRoot = '';
+    const managedChildren = new Set([{}]), serviceReceipts = [Promise.resolve({expected:true})];
+    ${shutdown}
+    return shutdown;
+  `)({ apiPublicConnection, stopChild, proxyDiagnosticsInstallation: Promise.resolve(restore),
+    process: {exit}, console: {error} });
+}
+
+test('shutdown awaits the actual public bridge close before restoring source and stopping services', async () => {
+  let releaseBridge, bridgeStarted, releaseChild, childStarted;
+  const bridgeClosing = new Promise(resolve => { bridgeStarted = resolve; });
+  const bridgeClosed = new Promise(resolve => { releaseBridge = resolve; });
+  const childStopping = new Promise(resolve => { childStarted = resolve; });
+  const childStopped = new Promise(resolve => { releaseChild = resolve; });
+  const order = [];
+  const shutdown = extractedShutdownWithBridge({
+    apiPublicConnection: {async close() { order.push('bridge-start'); bridgeStarted(); await bridgeClosed; order.push('bridge-end'); }},
+    async restore() { order.push('restored'); },
+    async stopChild() { order.push('stop-start'); childStarted(); await childStopped; order.push('stop-end'); },
+    exit: code => order.push('exit:' + code), error: error => { throw error; },
+  });
+  const pending = shutdown();
+  try {
+    await bridgeClosing;
+    assert.deepEqual(order, ['bridge-start']);
+    releaseBridge();
+    await childStopping;
+    assert.deepEqual(order, ['bridge-start', 'bridge-end', 'restored', 'stop-start']);
+  } finally { releaseBridge(); releaseChild(); await pending; }
+  assert.deepEqual(order, ['bridge-start', 'bridge-end', 'restored', 'stop-start', 'stop-end', 'exit:0']);
+});
+
+test('a public bridge close error still restores source and stops services before the failed exit', async () => {
+  const original = new Error('controlled public bridge close failure'), order = [];
+  const shutdown = extractedShutdownWithBridge({
+    apiPublicConnection: {async close() { order.push('bridge-close'); throw original; }},
+    async restore() { order.push('restored'); }, async stopChild() { order.push('stopped'); },
+    exit: code => order.push('exit:' + code),
+    error: error => { assert.equal(error, original); order.push('original-error'); },
+  });
+  await shutdown();
+  assert.deepEqual(order, ['bridge-close', 'original-error', 'restored', 'stopped', 'exit:1']);
 });
 
 for (const stopping of [false, true]) test(`runtime preparation respects migration cancellation: ${stopping}`, async () => {

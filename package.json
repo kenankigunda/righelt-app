@@ -114,5 +114,10 @@
     "typescript": "^5.7.3",
     "wrangler": "4.67.0"
   },
-  "packageManager": "pnpm@9.15.9"
+  "packageManager": "pnpm@9.15.9",
+  "pnpm": {
+    "patchedDependencies": {
+      "miniflare@4.20260219.0": "patches/miniflare@4.20260219.0.patch"
+    }
+  }
 }

@@ -231,7 +231,7 @@ test('E04 reload unresolved journal then visibility resume preserves original ID
 });
 
 test('E06 same identity tabs reconcile one journal without duplicating a committed move',async({browser,baseURL},info)=>{
- const p=await party(browser,baseURL);try{
+ const p=await party(browser,baseURL);
   const twin=await p.contexts[0].newPage();const tf=await wire(twin);
   await twin.goto(`${baseURL}${p.gameHash}`);await expect(twin.getByTestId('game-role')).toContainText('Player 1');
   p.faults[0].loseAtApply=true;
@@ -243,7 +243,6 @@ test('E06 same identity tabs reconcile one journal without duplicating a committ
   expect((await digest(p.pages[0])).history).toHaveLength(1);
   await evidence(info,'same-identity-tabs',start,[...p.faults,tf]);
   expect(new Set([...p.faults[0].commands,...tf.commands].map(c=>c.clientCommandId)).size).toBe(1);
- }finally{await cleanupParty(p);}
 });
 
 for(const phase of ['before','after'])test(`E03 actual Worker restart ${phase} commit resolves the pending sender`,async({browser,baseURL,request},info)=>{

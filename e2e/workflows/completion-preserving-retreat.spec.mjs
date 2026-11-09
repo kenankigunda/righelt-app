@@ -1,7 +1,7 @@
 import {installCaseReadiness,finishCaseReadiness,attachNodeReadiness} from '../support/readiness-diagnostics.mjs';
 import {performance} from 'node:perf_hooks';
 import {installClientSettlementObserver} from '../support/client-settlement-observer.mjs';
-import {installBoardAdmissionDiagnostics,runComputerRecoveryPersistence,COMPUTER_RECOVERY_FIXTURE_BUDGET_MS} from '../support/board-admission-diagnostics.mjs';
+import {installBoardAdmissionDiagnostics,createComputerRecoveryJSONRead,readComputerRecoverySnapshot,runComputerRecoveryPersistence,COMPUTER_RECOVERY_FIXTURE_BUDGET_MS} from '../support/board-admission-diagnostics.mjs';
 import {test as base,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {deterministicStateHash,resolveToStability,serializeState} from '../../apps/web/generated/packages/game-engine/src/index.js';
@@ -77,7 +77,7 @@ test.beforeEach(async({page})=>{await page.addInitScript(installJournalObservati
 test.afterEach(async({page,computerRecoveryAdmission},info)=>{
  const finalRecovery=computerRecoveryAdmission?.finalRecoveryHandoff;
  let recoveryRead,delivered=false;
- try{recoveryRead=finalRecovery?.begin(page);}catch{finalRecovery?.failed('read-missing');}
+ try{recoveryRead=finalRecovery?.begin(page,{bindingDelivery:info.status===info.expectedStatus});}catch(error){finalRecovery?.failed('read-missing');throw error;}
  const deliver=value=>{
   if(!finalRecovery)return;
   delivered=true;
@@ -85,23 +85,28 @@ test.afterEach(async({page,computerRecoveryAdmission},info)=>{
   else if(!value?.boardRecovery)finalRecovery.failed('read-missing');
  };
  if(info.status===info.expectedStatus){
-  let timer;
+  let timer,originalCall,primaryReadError;
   try{
-   const originalRead=page.evaluate(({measurementName,recoveryRead})=>{
-      let readinessPage;
-      try{readinessPage=globalThis.__righeltReadinessFreeze?.();}catch{readinessPage={incomplete:true,reason:'snapshot-unavailable'};}
-      const match=location.hash.match(/^#\/game\/([^?#/]+)/);
-      const boardRecovery=recoveryRead?{...recoveryRead,gameId:match?decodeURIComponent(match[1]):null,documentNonce:globalThis.__boardAdmissionRecoveryDocument??null,timeOrigin:performance.timeOrigin,observation:globalThis.__boardAdmissionObservation??null}:null;
-      return {...window.retreatJournalObservations,...(boardRecovery?{boardRecovery}:{}),presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,...(readinessPage?{readinessPage}:{})};
-    },{measurementName:COMPUTER_UI_FRAME_MEASURE,recoveryRead});
-   finalRecovery?.retain(page,originalRead);
+   originalCall=finalRecovery?finalRecovery.startBindingRead(page):page.evaluate(createComputerRecoveryJSONRead(readComputerRecoverySnapshot),{measurementName:COMPUTER_UI_FRAME_MEASURE,recoveryRead}).then(JSON.parse);
+   originalCall.catch(()=>{}); // Own every same-hook transport failure immediately.
+   const originalRead=originalCall;
    const journal=await Promise.race([originalRead,new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
    deliver(journal);
    const path=info.outputPath('native-journal-lifecycle.json');
    await writeFile(path,JSON.stringify(attachNodeReadiness(journal??{unavailable:'not-installed'})));
    await info.attach('native-journal-lifecycle',{contentType:'application/json',path});
-  }catch{if(!delivered)finalRecovery?.failed('read-failed');console.warn('[retreat-diagnostic] Journal lifecycle attachment unavailable.');if(info.title===computerFollowWorkflow)console.warn('[readiness] incomplete: first-read-or-persistence-unavailable');}
-  finally{clearTimeout(timer);}
+  }catch(error){primaryReadError=error;finalRecovery?.failed('read-failed');console.warn('[retreat-diagnostic] Journal lifecycle attachment unavailable.');if(info.title===computerFollowWorkflow)console.warn('[readiness] incomplete: first-read-or-persistence-unavailable');if(finalRecovery)throw error;}
+  finally{clearTimeout(timer);
+   // Payload AND browser-publisher completion share the original absolute2s.
+   // Await the original public configuration settlement in this SAME hook
+   // before the unchanged5s persistence fixture can consume the evidence.
+   if(finalRecovery&&originalCall){
+    const failures=primaryReadError?[primaryReadError]:[];
+    try{await originalCall;}catch(error){if(!failures.includes(error))failures.push(error);}
+    try{await finalRecovery.completeOriginalRead();}catch(error){if(!failures.includes(error))failures.push(error);}
+    if(failures.length){finalRecovery.failed('read-failed');if(failures.length===1)throw failures[0];throw new AggregateError(failures,'Final recovery delivery, configuration and cleanup failed');}
+   }
+  }
   return;
  }
  if(!['failed','timedOut','interrupted'].includes(info.status))return;
@@ -244,7 +249,7 @@ async function acceptedComputerRetreat(page,baseURL,computerRecoveryAdmission){
  const sent=page.waitForRequest(req=>req.method()==='POST'&&new URL(req.url()).pathname===`/api/shell/games/${branched.id}/apply`&&Boolean(req.postDataJSON()?.payload?.computer));
  await page.goto(`${baseURL}/#/game/${encodeURIComponent(branched.id)}`);await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',branched.id);
  const accepted=await waitForComputerDecision(page,branched.id,'babs',{guest:true,modelId:'initial-1554'}),command=(await sent).postDataJSON();
- expect(command.payload.action).toEqual(safe.action);await receipt(page,branched.id,command);
+ expect(command.payload.action).toEqual(safe.action);
  const move=accepted.moves.find(row=>row.clientCommandId===command.clientCommandId);expect(move).toBeTruthy();
  expect(move.action).toEqual(safe.action);expect(move.retreatSemantics).toBe('completion-preserving-retreat-v2');expect(move.computerProof).toEqual(command.payload.computer);
  expect(capturedHash(move.selectionSnapshot)).toBe(f.push.afterHash);expect(capturedHash(move.snapshot)).toBe(safe.stateHash);
@@ -256,6 +261,7 @@ async function acceptedComputerRetreat(page,baseURL,computerRecoveryAdmission){
 // within its existing 60s body budget after separately bounded worker preparation.
 test(computerRetreatWorkflow,async({page,acceptedRetreat},info)=>{
  const {branched,command,move}=acceptedRetreat;
+ await receipt(page,branched.id,command);
  const attempt=(await request(page,`/api/shell/games/${branched.id}/decision-attempt`,{attemptId:move.computerProof.attemptId,kind:'computer'})).attempt;
  expect(attempt.proof).toEqual(move.computerProof);expect(attempt.fingerprint).toBe(deterministicStateHash(branched.board.state));expect(attempt.result.status).toBe('ready');expect(attempt.result.action).toEqual(safe.action);
  expect(attempt.result.legality).toMatchObject({complete:true,unknown:0,indices:[1144]});expect(attempt.result.actionIndex).toBe(1144);
@@ -265,6 +271,7 @@ test(computerRetreatWorkflow,async({page,acceptedRetreat},info)=>{
 
 test(computerFollowWorkflow,async({page,acceptedRetreat},info)=>{
  const {branched,command,move}=acceptedRetreat;
+ await receipt(page,branched.id,command);
  const ready=await atHash(page,branched.id,safe.stateHash);expect(ready.legalActions).toEqual([FOLLOW_ACTION]);await switchGamePanel(page,'board');await noClosure(page,ready);
  await page.screenshot({path:info.outputPath('computer-safe-retreat.png')});
  // Completion comes from the same validated authoritative reconciliation that
