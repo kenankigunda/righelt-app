@@ -17,6 +17,11 @@ export const transformBoardAdmissionModule = (source, recipe) => {
 };
 
 export const SOURCE_PRESS_PREFIX='[righelt-source-window-v1]';
+export const COMPUTER_RECOVERY_FINAL_PREFIX='[righelt-computer-final-read-v1]';
+// Separate from the 512KiB authority cap: the full DTO also contains up to
+// 1024 journal rows and 1064 scalar readiness rows. Leave generous headroom,
+// refuse unexpected expansion, and never truncate any producer's evidence.
+export const COMPUTER_RECOVERY_FINAL_MAX_BYTES=4*1024*1024;
 export const SOURCE_PRESS_MAX_BYTES=512*1024;
 export const COMPUTER_RECOVERY_CATEGORIES=Object.freeze(['rules_timeout','stale_state','session_changed','sync_recovering','journal_timeout','storage_reset','invalid_credentials','invalid_action','move-not-submitted','computer_control_changed','invalid_rules_response','upgrade_required']);
 const safeBoardDiagnostic=category=>{try{console.error(`[board-admission-diagnostic] ${category}`);}catch{}};
@@ -159,14 +164,15 @@ export function cloneFinalRecoveryJSONDomain(input){
 // Compiled on Node, then serialized normally by Playwright. No browser eval or
 // second Page read. Optional journal fields retain their existing persisted JSON
 // domain; the authority-bearing recovery packet is validated BEFORE encoding.
-export function createComputerRecoveryJSONRead(read){
- return new Function('input',`"use strict";const guard=(${cloneComputerRecoveryHandoff.toString()});const snapshot=(${cloneFinalRecoveryJSONDomain.toString()});const value=(${read.toString()})(input);if(input.recoveryRead){value.boardRecovery=guard(value.boardRecovery,input.recoveryRead,${SOURCE_PRESS_MAX_BYTES});}return JSON.stringify(snapshot(value));`);
+export function createComputerRecoveryJSONRead(read,publishConsole=false){
+ return new Function('input',`"use strict";const guard=(${cloneComputerRecoveryHandoff.toString()});const snapshot=(${cloneFinalRecoveryJSONDomain.toString()});const value=(${read.toString()})(input);if(input.recoveryRead){value.boardRecovery=guard(value.boardRecovery,input.recoveryRead,${SOURCE_PRESS_MAX_BYTES});}const serialized=JSON.stringify(snapshot(value));${publishConsole?`if(input.recoveryRead){if(serialized.length>${COMPUTER_RECOVERY_FINAL_MAX_BYTES}||new TextEncoder().encode(serialized).byteLength>${COMPUTER_RECOVERY_FINAL_MAX_BYTES})throw Error("Final recovery snapshot too large");console.debug(${JSON.stringify(COMPUTER_RECOVERY_FINAL_PREFIX)}+serialized);}`:""}return serialized;`);
 }
 
 // Node-only owner of the one existing final afterEach read. No browser operation.
 export function createComputerRecoveryHandoff(page,namespace){
  let gameId,ticket,result,delivery,retained=false,consumed=false,ended=false,listenerRemoved=false,cleanupIncomplete=false,journalReadTimedOut=false,documentGeneration=0;
- const fail=reason=>{if(!result?.incomplete)result={incomplete:true,reason,observation:null};};
+ let consoleMode=false,consoleInstalled=false,consoleText,consoleDelivery,resolveConsole,originalCall,originalSettled=false,originalRaw;
+ const fail=reason=>{if(!result?.incomplete)result={incomplete:true,reason,observation:null};resolveConsole?.(null);};
  const navigated=frame=>{if(frame===page.mainFrame()){documentGeneration++;if(ticket)fail('foreign-document');}};
  page.on('framenavigated',navigated);
  const capture=(owner,packet)=>{
@@ -180,10 +186,25 @@ export function createComputerRecoveryHandoff(page,namespace){
     result=Object.freeze({incomplete:false,reason:null,namespace,readId:ticket.readId,gameId,documentGeneration,documentNonce:envelope.documentNonce,timeOrigin:envelope.timeOrigin,observationTimeOrigin:observation.timeOrigin,observation:immutable});
    }catch(error){let reason='handoff-invalid';try{const value=Object.getOwnPropertyDescriptor(error,'recoveryReason')?.value;if(['foreign-handoff','foreign-document'].includes(value))reason=value;}catch{}fail(reason);}
   };
- const removeListener=()=>{if(listenerRemoved)return;listenerRemoved=true;try{page.off('framenavigated',navigated);}catch{cleanupIncomplete=true;fail('handoff-listener-cleanup-failed');}};
+ const consoleListener=message=>{try{
+  const text=message.text();if(typeof text!=='string'||!text.startsWith(COMPUTER_RECOVERY_FINAL_PREFIX))return;
+  if(!ticket||!consoleMode||message.page()!==page||message.worker()!==null||message.type()!=='debug'){fail('foreign-page');return;}
+  if(consoleText!==undefined){fail('handoff-reused');return;}
+  const raw=text.slice(COMPUTER_RECOVERY_FINAL_PREFIX.length);
+  if(raw.length>COMPUTER_RECOVERY_FINAL_MAX_BYTES||Buffer.byteLength(raw,'utf8')>COMPUTER_RECOVERY_FINAL_MAX_BYTES){fail('handoff-invalid');return;}
+  const value=cloneFinalRecoveryJSONDomain(JSON.parse(raw));
+  capture(page,value?.boardRecovery);if(result?.incomplete)return;
+  consoleText=raw;resolveConsole(value);
+ }catch{fail('handoff-invalid');}};
+ const removeListener=()=>{if(listenerRemoved)return;listenerRemoved=true;
+  try{page.off('framenavigated',navigated);}catch{cleanupIncomplete=true;fail('handoff-listener-cleanup-failed');}
+  if(consoleInstalled)try{page.off('console',consoleListener);}catch{cleanupIncomplete=true;fail('handoff-listener-cleanup-failed');}
+ };
  return {
   bindGame(id){if(gameId||typeof id!=='string'||!id)throw Error('Recovery game scope unavailable');gameId=id;},
-  begin(owner){if(owner!==page||!gameId||ticket||consumed||ended)throw Error('Recovery final read scope unavailable');ticket=Object.freeze({namespace,readId:randomUUID(),gameId,documentGeneration});return ticket;},
+  begin(owner,{consoleDelivery:useConsole=false}={}){if(owner!==page||!gameId||ticket||consumed||ended)throw Error('Recovery final read scope unavailable');ticket=Object.freeze({namespace,readId:randomUUID(),gameId,documentGeneration});
+   if(useConsole){consoleMode=true;consoleDelivery=new Promise(resolve=>{resolveConsole=resolve;});delivery=consoleDelivery;consoleInstalled=true;try{page.on('console',consoleListener);}catch(error){fail('handoff-listener-install-failed');throw error;}}
+   return ticket;},
   capture,
   retain(owner,promise){
    if(owner!==page||!ticket||retained||consumed||ended){fail('foreign-handoff');return;}
@@ -194,7 +215,22 @@ export function createComputerRecoveryHandoff(page,namespace){
     if(value?.boardRecovery)capture(owner,value.boardRecovery);else fail('read-missing');
    },()=>{if(!ended&&!consumed)fail('read-failed');});
   },
-  journalTimedOut(){journalReadTimedOut=true;},
+  retainConsoleRead(owner,promise){
+   if(owner!==page||!ticket||!consoleMode||retained||consumed||ended){fail('foreign-handoff');throw Error('Recovery console read scope unavailable');}
+   retained=true;
+   // Own rejection immediately, but never report success before the original
+   // call settles in the same afterEach hook, including its tracing barrier.
+   originalCall=Promise.resolve(promise).then(raw=>{originalSettled=true;originalRaw=raw;return raw;},error=>{originalSettled=true;fail('read-failed');throw error;});
+   originalCall.catch(()=>{});
+   return consoleDelivery;
+  },
+  async completeOriginalRead(){
+   if(!consoleMode||!originalCall){fail('read-missing');throw Error('Recovery original call unavailable');}
+   const raw=await originalCall;
+   if(typeof raw!=='string'||consoleText===undefined||raw!==consoleText)fail('handoff-conflict');
+   if(result?.incomplete)throw Error('Computer recovery original call incomplete: '+result.reason);
+  },
+  journalTimedOut(){journalReadTimedOut=true;if(consoleMode)fail('read-timed-out');},
   async awaitDelivery({remainingMs=()=>0,setTimer=setTimeout,clearTimer=clearTimeout}={}){
    if(result||!delivery)return;
    const wait=Math.max(0,remainingMs()-COMPUTER_RECOVERY_CLEANUP_RESERVE_MS);
@@ -205,7 +241,7 @@ export function createComputerRecoveryHandoff(page,namespace){
   },
   failed(reason){fail(['read-failed','read-timed-out','read-missing'].includes(reason)?reason:'read-failed');},
   end(){ended=true;if(!consumed)fail('fixture-ended');const cleanupAttemptedHere=!listenerRemoved;removeListener();return{cleanupIncomplete,cleanupAttemptedHere};},
-  consume(){if(consumed)return Object.freeze({incomplete:true,reason:'handoff-reused',observation:null});consumed=true;
+  consume(){if(consumed)return Object.freeze({incomplete:true,reason:'handoff-reused',observation:null});if(consoleMode&&(!originalSettled||typeof originalRaw!=='string'||originalRaw!==consoleText))fail('read-pending-or-conflicting');consumed=true;
    if(result&&!result.incomplete&&result.documentGeneration!==documentGeneration)fail('foreign-document');
    removeListener();
    return Object.freeze({...result??{incomplete:true,reason:'handoff-missing',observation:null},journalReadTimedOut,cleanupIncomplete});},

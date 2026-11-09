@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
-import {cloneComputerRecoveryHandoff,createComputerRecoveryJSONRead,createComputerRecoveryHandoff,SOURCE_PRESS_MAX_BYTES} from '../../../e2e/support/board-admission-diagnostics.mjs';
+import {cloneComputerRecoveryHandoff,createComputerRecoveryJSONRead,createComputerRecoveryHandoff,SOURCE_PRESS_MAX_BYTES,COMPUTER_RECOVERY_FINAL_PREFIX,COMPUTER_RECOVERY_FINAL_MAX_BYTES} from '../../../e2e/support/board-admission-diagnostics.mjs';
 import {EventEmitter} from 'node:events';
 const expected={namespace:'namespace',readId:'read',gameId:'game',documentGeneration:1};
 const packet=()=>({...expected,timeOrigin:123,documentNonce:'document',observation:{version:1,timeOrigin:123,documentNonce:'document',recoveryNamespace:'namespace',first:[],tail:[],activation:[],incomplete:false,rulesTimeouts:{rows:[{jobId:2,type:'previews',active:true,now:25956}],dropped:0,incomplete:false}}});
 function originalCallback(){
  const source=readFileSync(new URL('../../../e2e/workflows/completion-preserving-retreat.spec.mjs',import.meta.url),'utf8');
- const marker='createComputerRecoveryJSONRead(',start=source.indexOf('page.evaluate('+marker)+('page.evaluate('+marker).length,end=source.indexOf('}),{measurementName:',start);
+ const marker='createComputerRecoveryJSONRead(',start=source.indexOf('page.evaluate('+marker)+('page.evaluate('+marker).length,end=source.indexOf('},Boolean(finalRecovery)),{measurementName:',start);
  assert.ok(start>0&&end>start);
  return new Function('return ('+source.slice(start,end+1)+');')();
 }
@@ -108,4 +108,181 @@ test('actual callback omits non-enumerable journal data and getters without invo
 for(const [name,value]of[['Date',new Date(0)],['Map',new Map([['key','value']])]])test(name+' journal values fail instead of silently becoming empty objects',()=>{
  const snapshot={records:[{event:'original',unsupported:value}],dropped:0,eventLoopTicks:0,boardRecovery:packet(),presentation:null,readinessPage:{incomplete:false}};
  assert.throws(()=>originalRead(snapshot),/Unsupported final recovery DTO object/);
+});
+
+function consoleRead(){
+ const page=new EventEmitter(),frame={};page.mainFrame=()=>frame;
+ const owner=createComputerRecoveryHandoff(page,'namespace');owner.bindGame('game');
+ const ticket=owner.begin(page,{consoleDelivery:true});
+ const dto={records:[{event:'original-journal'}],dropped:0,eventLoopTicks:1,boardRecovery:{...packet(),...ticket},presentation:null,readinessPage:{incomplete:false}};
+ let resolve,reject;const original=new Promise((yes,no)=>{resolve=yes;reject=no;});
+ const delivered=owner.retainConsoleRead(page,original);
+ const emit=(raw=JSON.stringify(dto),overrides={})=>page.emit('console',{text:()=>COMPUTER_RECOVERY_FINAL_PREFIX+raw,page:()=>page,worker:()=>null,type:()=> 'debug',...overrides});
+ return{page,frame,owner,ticket,dto,resolve,reject,delivered,emit};
+}
+
+test('computer callback emits the exact full DTO once and returns identical bytes; ordinary reads do not emit',()=>{
+ const calls=[],context={console:{debug:text=>calls.push(text)},TextEncoder};
+ const input={recoveryRead:expected,records:[{event:'original'}],boardRecovery:packet()};
+ const ordinary=createComputerRecoveryJSONRead(value=>value),published=createComputerRecoveryJSONRead(value=>value,true);
+ const before=vm.runInNewContext('('+ordinary.toString()+')(input)',{...context,input});assert.equal(calls.length,0);
+ const after=vm.runInNewContext('('+published.toString()+')(input)',{...context,input});
+ assert.equal(after,before);assert.deepEqual(calls,[COMPUTER_RECOVERY_FINAL_PREFIX+after]);
+});
+
+test('full DTO transport has its own generous byte cap and never truncates journal data',()=>{
+ const callback=createComputerRecoveryJSONRead(value=>value,true),sent=[];
+ const input={recoveryRead:expected,boardRecovery:packet(),records:[{value:'x'.repeat(SOURCE_PRESS_MAX_BYTES+1)}]};
+ const run=value=>vm.runInNewContext('('+callback.toString()+')(input)',{input:value,console:{debug:text=>sent.push(text)},TextEncoder});
+ const raw=run(input);assert.equal(JSON.parse(raw).records[0].value,input.records[0].value);assert.equal(sent[0],COMPUTER_RECOVERY_FINAL_PREFIX+raw);
+ input.records[0].value='é'.repeat(COMPUTER_RECOVERY_FINAL_MAX_BYTES/2);sent.length=0;
+ assert.throws(()=>run(input),/snapshot too large/);assert.equal(sent.length,0);
+});
+
+test('early console delivery keeps guards live until exact original acknowledgement, then consumes once',async()=>{
+ const f=consoleRead(),raw=JSON.stringify(f.dto);f.emit(raw);
+ const value=await f.delivered;assert.deepEqual(JSON.parse(JSON.stringify(value)),f.dto);
+ assert.equal(f.page.listenerCount('console'),1);assert.equal(f.page.listenerCount('framenavigated'),1);
+ let finished=false;const completion=f.owner.completeOriginalRead().then(()=>{finished=true;});await Promise.resolve();assert.equal(finished,false);
+ f.resolve(raw);await completion;assert.equal(finished,true);assert.equal(f.owner.consume().incomplete,false);
+ assert.equal(f.page.listenerCount('console'),0);assert.equal(f.page.listenerCount('framenavigated'),0);f.owner.end();
+});
+
+test('an early packet cannot hide the same original evaluate rejection',async()=>{
+ const f=consoleRead(),primary=Error('original evaluate rejected');f.emit();await f.delivered;f.reject(primary);
+ await assert.rejects(f.owner.completeOriginalRead(),error=>error===primary);
+ assert.equal(f.owner.consume().incomplete,true);f.owner.end();
+});
+
+test('pending original acknowledgement cannot be consumed as successful evidence',async()=>{
+ const f=consoleRead();f.emit();await f.delivered;
+ assert.equal(f.owner.consume().incomplete,true);f.reject(Error('owned late rejection'));await Promise.resolve();f.owner.end();
+ assert.equal(f.page.listenerCount('console'),0);
+});
+
+for(const phase of ['before packet','after packet'])test('main-document navigation '+phase+' stays fatal through original settlement',async()=>{
+ const f=consoleRead(),raw=JSON.stringify(f.dto);
+ if(phase==='before packet')f.page.emit('framenavigated',f.frame);
+ f.emit(raw);await f.delivered;
+ if(phase==='after packet')f.page.emit('framenavigated',f.frame);
+ f.resolve(raw);await assert.rejects(f.owner.completeOriginalRead(),/foreign-document/);
+ assert.equal(f.owner.consume().incomplete,true);f.owner.end();
+});
+
+test('the full returned packet must equal console bytes, including journal fields',async()=>{
+ const f=consoleRead();f.emit();await f.delivered;f.resolve(JSON.stringify({...f.dto,records:[]}));
+ await assert.rejects(f.owner.completeOriginalRead(),/handoff-conflict/);assert.equal(f.owner.consume().incomplete,true);f.owner.end();
+});
+
+for(const conflict of [false,true])test('duplicate console packet is fatal even when byte-identical: '+conflict,async()=>{
+ const f=consoleRead(),raw=JSON.stringify(f.dto);f.emit(raw);await f.delivered;f.emit(conflict?JSON.stringify({...f.dto,records:[]}):raw);f.resolve(raw);
+ await assert.rejects(f.owner.completeOriginalRead(),/handoff-reused/);assert.equal(f.owner.consume().incomplete,true);f.owner.end();
+});
+
+for(const kind of ['foreign page','worker','wrong type','namespace','readId','gameId','generation','document nonce','malformed','oversize'])test('console final packet refuses '+kind,async()=>{
+ const f=consoleRead();let raw=JSON.stringify(f.dto),overrides={};
+ if(kind==='foreign page')overrides.page=()=>({});if(kind==='worker')overrides.worker=()=>({});if(kind==='wrong type')overrides.type=()=> 'log';
+ if(['namespace','readId','gameId'].includes(kind))f.dto.boardRecovery[kind]='foreign';
+ if(kind==='generation')f.dto.boardRecovery.documentGeneration++;
+ if(kind==='document nonce')f.dto.boardRecovery.observation.documentNonce='foreign';
+ if(kind==='malformed')raw='{';else if(kind==='oversize')raw='x'.repeat(COMPUTER_RECOVERY_FINAL_MAX_BYTES+1);else raw=JSON.stringify(f.dto);
+ f.emit(raw,overrides);await f.delivered;f.resolve(raw);await assert.rejects(f.owner.completeOriginalRead());assert.equal(f.owner.consume().incomplete,true);f.owner.end();
+});
+
+test('2s journal timeout is fatal even when the exact original packet and acknowledgement arrive later',async()=>{
+ const f=consoleRead(),raw=JSON.stringify(f.dto);f.owner.journalTimedOut();f.emit(raw);f.resolve(raw);
+ await assert.rejects(f.owner.completeOriginalRead(),/read-timed-out/);const value=f.owner.consume();assert.equal(value.incomplete,true);assert.equal(value.journalReadTimedOut,true);f.owner.end();
+});
+
+test('console listener removal failure remains failed evidence',async()=>{
+ const f=consoleRead(),raw=JSON.stringify(f.dto);f.emit(raw);await f.delivered;f.resolve(raw);await f.owner.completeOriginalRead();
+ const off=f.page.off;f.page.off=function(type,...args){if(type==='console')throw Error('console off failed');return off.call(this,type,...args);};
+ const result=f.owner.consume();assert.equal(result.incomplete,true);assert.equal(result.cleanupIncomplete,true);f.owner.end();
+});
+
+async function actualConsoleHook({lateReject=false,navigate=false,timeout=false,autoAck=true,beginFailure=false,admissionFailure=false}={}){
+ const page=new EventEmitter(),frame={};page.mainFrame=()=>frame;
+ const owner=createComputerRecoveryHandoff(page,'namespace');if(!beginFailure)owner.bindGame('game');
+ let acknowledge,rejectOriginal,releaseProducer,journalWritten;
+ const ack=new Promise((yes,no)=>{acknowledge=yes;rejectOriginal=no;}),producer=new Promise(yes=>{releaseProducer=yes;}),written=new Promise(yes=>{journalWritten=yes;});
+ const primary=Error('original evaluate rejection after console'),journals=[],timers=[];let reads=0,afterEach;
+ page.evaluate=async(fn,input)=>{
+  reads++;if(admissionFailure)owner.end();if(timeout)await producer;
+  const raw=vm.runInNewContext('('+fn.toString()+')(input)',{
+   input,globalThis:{__boardAdmissionObservation:{...packet().observation,recoveryNamespace:'namespace'},__boardAdmissionRecoveryDocument:'document'},
+   window:{retreatJournalObservations:{records:[{event:'same-original'}],dropped:0,eventLoopTicks:1}},
+   location:{hash:'#/game/game'},performance:{timeOrigin:123,getEntriesByName:()=>[]},TextEncoder,
+   console:{debug:text=>page.emit('console',{text:()=>text,page:()=>page,worker:()=>null,type:()=> 'debug'})},
+  });
+  await ack;return raw;
+ };
+ const source=readFileSync(new URL('../../../e2e/workflows/completion-preserving-retreat.spec.mjs',import.meta.url),'utf8'),start=source.indexOf('test.afterEach('),end=source.indexOf('\nasync function request(',start);
+ const info={title:'the real computer defender leaves a completion-preserving native Follow',status:'passed',expectedStatus:'passed',outputPath:name=>'/controlled/'+name,async attach(){}};
+ vm.runInNewContext(source.slice(start,end),{
+  test:{afterEach:fn=>{afterEach=fn;}},COMPUTER_UI_FRAME_MEASURE:'same-measure',computerFollowWorkflow:info.title,computerRetreatWorkflow:'other',createComputerRecoveryJSONRead,
+  writeFile:async(_path,body)=>{journals.push(JSON.parse(body));journalWritten();if(navigate)page.emit('framenavigated',frame);if(lateReject)rejectOriginal(primary);else if(autoAck)acknowledge();},
+  attachNodeReadiness:value=>value,console:{warn(){}},
+  setTimeout(fn,ms){timers.push(ms);if(timeout)queueMicrotask(()=>{fn();releaseProducer();});return 1;},clearTimeout(){},
+ });
+ const pending=afterEach({page,computerRecoveryAdmission:{finalRecoveryHandoff:owner}},info);pending.catch(()=>{});
+ return{page,owner,primary,journals,timers,pending,written,acknowledge,rejectOriginal,reads:()=>reads};
+}
+
+test('actual afterEach writes the same journal packet yet stays live until original call acknowledgement',async()=>{
+ const f=await actualConsoleHook({autoAck:false});let done=false;f.pending.then(()=>{done=true;});
+ try{
+  await f.written;assert.equal(f.journals[0].records[0].event,'same-original');assert.equal(done,false);
+  assert.equal(f.page.listenerCount('console'),1);assert.equal(f.page.listenerCount('framenavigated'),1);
+ }finally{f.acknowledge();await f.pending;}
+ assert.equal(f.reads(),1);assert.deepEqual(f.timers,[2000]);assert.equal(f.owner.consume().incomplete,false);f.owner.end();
+});
+
+test('actual afterEach poisons an early delivered packet when the original evaluate later rejects',async()=>{
+ const f=await actualConsoleHook({lateReject:true});
+ await assert.rejects(f.pending,error=>error===f.primary);
+ assert.equal(f.journals[0].records[0].event,'same-original','journal was delivered before acknowledgement failed');
+ assert.equal(f.owner.consume().incomplete,true);assert.equal(f.reads(),1);f.owner.end();
+});
+
+test('actual afterEach rejects a main-document transition after journal delivery but before acknowledgement',async()=>{
+ const f=await actualConsoleHook({navigate:true});await assert.rejects(f.pending,/foreign-document/);
+ assert.equal(f.owner.consume().incomplete,true);assert.equal(f.reads(),1);f.owner.end();
+});
+
+test('actual afterEach keeps a 2s unavailable journal failed even after its owned original call settles',async()=>{
+ const f=await actualConsoleHook({timeout:true});await assert.rejects(f.pending,/read-timed-out/);
+ assert.equal(f.journals[0].unavailable,'diagnostic-read-timeout');assert.deepEqual(f.timers,[2000]);
+ const value=f.owner.consume();assert.equal(value.incomplete,true);assert.equal(value.journalReadTimedOut,true);assert.equal(f.reads(),1);f.owner.end();
+});
+
+test('actual afterEach does not issue any browser read after its required begin fails',async()=>{
+ const f=await actualConsoleHook({beginFailure:true});await assert.rejects(f.pending,/final read scope unavailable/);
+ assert.equal(f.reads(),0);assert.deepEqual(f.timers,[]);f.owner.end();
+ assert.equal(f.page.listenerCount('console'),0);assert.equal(f.page.listenerCount('framenavigated'),0);
+});
+
+test('actual afterEach still awaits and owns an issued read when console admission fails',async()=>{
+ const f=await actualConsoleHook({admissionFailure:true,autoAck:false});let finished=false;
+ f.pending.then(()=>{finished=true;},()=>{finished=true;});await Promise.resolve();await Promise.resolve();
+ assert.equal(f.reads(),1);assert.equal(finished,false);
+ f.rejectOriginal(f.primary);
+ await assert.rejects(f.pending,error=>error.name==='AggregateError'&&Array.isArray(error.errors)&&error.errors.includes(f.primary));
+ assert.equal(f.owner.consume().incomplete,true);f.owner.end();
+});
+
+for(const status of ['failed','timedOut','interrupted'])test('actual '+status+' body retains legacy diagnostics and its original failure without console transport',async()=>{
+ const source=readFileSync(new URL('../../../e2e/workflows/completion-preserving-retreat.spec.mjs',import.meta.url),'utf8');
+ const readStart=source.indexOf('async function readRetreatDiagnostics('),readEnd=source.indexOf('\n// Capture identity',readStart);
+ const read=vm.runInNewContext('('+source.slice(readStart,readEnd)+')');
+ const page=new EventEmitter(),frame={};page.mainFrame=()=>frame;let closedChecks=0,reads=0,afterEach;
+ page.isClosed=()=>++closedChecks>1;
+ page.evaluate=async(fn,input)=>{reads++;assert.equal(fn,read);assert.equal(page.listenerCount('console'),0);return {available:true,gameId:'game',boardRecovery:{...packet(),...input.recoveryRead},journal:{records:[{event:'original-failed-body'}]}};};
+ const owner=createComputerRecoveryHandoff(page,'namespace');owner.bindGame('game');
+ const original=Error('original body failure'),info={title:'the real computer defender leaves a completion-preserving native Follow',status,expectedStatus:'passed',error:original,outputPath:name=>'/controlled/'+name,async attach(){}};
+ const start=source.indexOf('test.afterEach('),end=source.indexOf('\nasync function request(',start),saved=[];
+ vm.runInNewContext(source.slice(start,end),{test:{afterEach:fn=>{afterEach=fn;}},COMPUTER_UI_FRAME_MEASURE:'original',computerFollowWorkflow:info.title,computerRetreatWorkflow:'other',readRetreatDiagnostics:read,createComputerRecoveryJSONRead,writeFile:async(_path,body)=>saved.push(JSON.parse(body)),attachNodeReadiness:value=>value,console:{warn(){}},setTimeout:()=>1,clearTimeout(){}});
+ await afterEach({page,computerRecoveryAdmission:{finalRecoveryHandoff:owner}},info);
+ assert.equal(reads,1);assert.equal(info.error,original);assert.equal(info.status,status);assert.equal(saved[0].journal.records[0].event,'original-failed-body');
+ const handoff=owner.consume();assert.equal(handoff.incomplete,false);assert.deepEqual(JSON.parse(JSON.stringify(handoff.observation.rulesTimeouts.rows)),packet().observation.rulesTimeouts.rows);
+ owner.end();assert.equal(page.listenerCount('console'),0);assert.equal(page.listenerCount('framenavigated'),0);
 });

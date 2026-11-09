@@ -579,7 +579,7 @@ test('closed computer recovery descriptors, retention and original catch semanti
  }
 });
 
-const recoveryPage=()=>{const listeners=new Map(),frame={};return{mainFrame:()=>frame,on(type,fn){listeners.set(type,fn);},off(type,fn){assert.equal(listeners.get(type),fn);listeners.delete(type);},navigate(){listeners.get('framenavigated')?.(frame);},listenerCount:()=>listeners.size};};
+const recoveryPage=()=>{const listeners=new Map(),frame={};return{mainFrame:()=>frame,on(type,fn){listeners.set(type,fn);},off(type,fn){assert.equal(listeners.get(type),fn);listeners.delete(type);},navigate(){listeners.get('framenavigated')?.(frame);},emitConsole(text){listeners.get('console')?.({text:()=>text,page:()=>this,worker:()=>null,type:()=> 'debug'});},listenerCount:()=>listeners.size};};
 const recoveryPacket=ticket=>({...ticket,documentNonce:'controlled-document',timeOrigin:123,observation:{version:1,documentNonce:'controlled-document',timeOrigin:123,recoveryNamespace:ticket.namespace,first:[],tail:[],activation:[],incomplete:false,firstComputerRecovery:null}});
 test('final computer recovery handoff is immutable, page/game/document-bound and consumed once',()=>{
  const page=recoveryPage(),owner=createComputerRecoveryHandoff(page,'nonce');owner.bindGame('owned');const ticket=owner.begin(page),packet=recoveryPacket(ticket);owner.capture(page,packet);packet.observation.firstComputerRecovery={observed:true,errorCategory:'rules_timeout'};
@@ -604,17 +604,17 @@ test('computer evidence persistence attempts independent sinks and owned route c
 
 async function finalReadFixture({computer=true,timeout=false,readFailure=false,deferred=false}={}){
  const files=[],attached=[],events=[],timers=[];let reads=0,unroutes=0,init,release;const deferredRead=new Promise(resolve=>{release=resolve;});
- const page={...recoveryPage(),async addInitScript(fn,arg){init=arg;},async route(){},async unroute(){unroutes++;},async evaluate(fn,arg){reads++;events.push('browser-read');if(timeout&&!deferred)return new Promise(()=>{});if(readFailure)throw Error('original read failed');const observation={version:1,documentNonce:'controlled-document',timeOrigin:123,recoveryNamespace:init.recoveryNamespace,first:[],tail:[],activation:[],incomplete:false,firstComputerRecovery:null};if(deferred)await deferredRead;return vm.runInNewContext(`(${fn.toString()})(argument)`,{argument:arg,globalThis:{__boardAdmissionObservation:observation,__boardAdmissionRecoveryDocument:'controlled-document'},window:{retreatJournalObservations:{}},location:{hash:'#/game/owned'},performance:{timeOrigin:123,getEntriesByName:()=>[]},TextEncoder});}};
+ const page={...recoveryPage(),async addInitScript(fn,arg){init=arg;},async route(){},async unroute(){unroutes++;},async evaluate(fn,arg){reads++;events.push('browser-read');if(timeout)await deferredRead;if(readFailure)throw Error('original read failed');const observation={version:1,documentNonce:'controlled-document',timeOrigin:123,recoveryNamespace:init.recoveryNamespace,first:[],tail:[],activation:[],incomplete:false,firstComputerRecovery:null};if(deferred&&!timeout)await deferredRead;return vm.runInNewContext(`(${fn.toString()})(argument)`,{argument:arg,globalThis:{__boardAdmissionObservation:observation,__boardAdmissionRecoveryDocument:'controlled-document'},window:{retreatJournalObservations:{}},location:{hash:'#/game/owned'},performance:{timeOrigin:123,getEntriesByName:()=>[]},TextEncoder,console:{debug:text=>page.emitConsole(text)}});}};
  const info={title:'the real computer defender leaves a completion-preserving native Follow',status:'passed',expectedStatus:'passed',outputPath:name=>'/owned/'+name,async attach(name,value){attached.push({name,...value});}};
  const owner=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://owned',computerSessionRecovery:computer});owner.finalRecoveryHandoff?.bindGame('owned');
  const source=await readFile(new URL('../../../e2e/workflows/completion-preserving-retreat.spec.mjs',import.meta.url),'utf8');let afterEach;
  const start=source.indexOf('test.afterEach('),end=source.indexOf('\nasync function request(',start);
- vm.runInNewContext(source.slice(start,end),{test:{afterEach:fn=>{afterEach=fn;}},COMPUTER_UI_FRAME_MEASURE:'measure',computerFollowWorkflow:info.title,computerRetreatWorkflow:'other',createComputerRecoveryJSONRead,writeFile:async(file,body)=>{files.push({file,body});},attachNodeReadiness:x=>x,console:{warn(){}},setTimeout(fn,ms){timers.push(ms);if(timeout)queueMicrotask(fn);return 1;},clearTimeout(){}});
- await afterEach({page,computerRecoveryAdmission:computer?owner:undefined},info);
- return{page,info,owner,files,attached,events,timers,release,reads:()=>reads,unroutes:()=>unroutes};
+ vm.runInNewContext(source.slice(start,end),{test:{afterEach:fn=>{afterEach=fn;}},COMPUTER_UI_FRAME_MEASURE:'measure',computerFollowWorkflow:info.title,computerRetreatWorkflow:'other',createComputerRecoveryJSONRead,writeFile:async(file,body)=>{files.push({file,body});},attachNodeReadiness:x=>x,console:{warn(){}},setTimeout(fn,ms){timers.push(ms);if(timeout)queueMicrotask(()=>{fn();release();});return 1;},clearTimeout(){}});
+ let hookError;try{await afterEach({page,computerRecoveryAdmission:computer?owner:undefined},info);}catch(error){hookError=error;}
+ return{page,info,owner,hookError,files,attached,events,timers,release,reads:()=>reads,unroutes:()=>unroutes};
 }
 test('actual existing final afterEach read hands off recovery once; computer persist never performs duplicate read',async()=>{
- const f=await finalReadFixture();assert.equal(f.reads(),1);
+ const f=await finalReadFixture();assert.equal(f.hookError,undefined);assert.equal(f.reads(),1);
  // Persist uses a controlled file sink; original implementation would add the
  // second page.evaluate seen in the primary CI trace. No browser timing claim.
  const originalWritePath=f.info.outputPath;const directory=await import('node:os').then(x=>x.tmpdir());const temp=await import('node:fs/promises').then(x=>x.mkdtemp(directory+'/recovery-handoff-'));f.info.outputPath=name=>temp+'/'+name;
@@ -623,7 +623,7 @@ test('actual existing final afterEach read hands off recovery once; computer per
 test('actual original 2s timeout or failed final read produces incomplete Node persistence with no fallback browser read',async()=>{
  for(const settings of [{timeout:true},{readFailure:true}]){
   const f=await finalReadFixture(settings),directory=await import('node:os').then(x=>x.tmpdir()),temp=await import('node:fs/promises').then(x=>x.mkdtemp(directory+'/recovery-handoff-'));f.info.outputPath=name=>temp+'/'+name;
-  try{await assert.rejects(f.owner.persist(),/Computer recovery evidence incomplete/);assert.equal(f.reads(),1);assert.equal(f.unroutes(),1);const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));assert.equal(payload.handoff.incomplete,true);assert.equal(payload.observation,null);if(settings.timeout)assert.deepEqual(f.timers,[2000]);}finally{await import('node:fs/promises').then(x=>x.rm(temp,{recursive:true,force:true}));}
+  try{assert.ok(f.hookError);await assert.rejects(f.owner.persist(),/Computer recovery evidence incomplete/);assert.equal(f.reads(),1);assert.equal(f.unroutes(),1);const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));assert.equal(payload.handoff.incomplete,true);assert.equal(payload.observation,null);if(settings.timeout)assert.deepEqual(f.timers,[2000]);}finally{await import('node:fs/promises').then(x=>x.rm(temp,{recursive:true,force:true}));}
  }
 });
 test('generic/default persistence retains its existing browser read and is not redirected to computer handoff',async()=>{
@@ -673,14 +673,14 @@ test('browser init creates an opaque readonly document nonce; exact nonce accept
  const foreignPage=recoveryPage(),foreign=createComputerRecoveryHandoff(foreignPage,'nonce');foreign.bindGame('owned');const otherTicket=foreign.begin(foreignPage);foreign.capture(foreignPage,{...otherTicket,documentNonce:'current-document',timeOrigin:1000,observation});assert.equal(foreign.consume().reason,'foreign-document','equal clocks cannot qualify a different document nonce');
 });
 
-test('actual 2s journal timeout stays immutable while its same original read can deliver within computer ownership',async()=>{
+test('actual 2s journal timeout stays failed when its same original read delivers late',async()=>{
  const f=await finalReadFixture({timeout:true,deferred:true}),fs=await import('node:fs/promises'),temp=await fs.mkdtemp((await import('node:os')).tmpdir()+'/computer-late-');f.info.outputPath=name=>temp+'/'+name;
  try{
   assert.equal(JSON.parse(f.files[0].body).unavailable,'diagnostic-read-timeout');assert.deepEqual(f.timers,[2000]);
   f.release();await Promise.resolve();await Promise.resolve();
-  await f.owner.persist({remainingMs:()=>5000});
+  assert.ok(f.hookError);await assert.rejects(f.owner.persist({remainingMs:()=>5000}),/Computer recovery evidence incomplete/);
   const value=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));
-  assert.equal(value.handoff.incomplete,false);assert.equal(value.handoff.journalReadTimedOut,true);
+  assert.equal(value.handoff.incomplete,true);assert.equal(value.handoff.journalReadTimedOut,true);
   assert.equal(JSON.parse(f.files[0].body).unavailable,'diagnostic-read-timeout');assert.equal(f.reads(),1);assert.equal(f.unroutes(),1);
  }finally{await fs.rm(temp,{recursive:true,force:true});}
 });
