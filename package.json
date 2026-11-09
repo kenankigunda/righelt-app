@@ -49,6 +49,7 @@
     "test:web:integration": "node apps/web/test/run-web-tests.mjs --layer integration",
     "e2e:install": "playwright install chromium firefox webkit",
     "test:e2e": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/playwright-e2e.mjs",
+    "test:e2e:guest-smoke": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/playwright-e2e.mjs --config playwright.guest-smoke.config.mjs",
     "test:e2e:headed": "node scripts/resources/cli.mjs run --kind heavy -- playwright test --headed",
     "cf:set-db": "node scripts/set-d1-binding.mjs",
     "db:local": "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-DB} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev",
@@ -94,12 +95,15 @@
     "test:plan": "node scripts/testing/cli.mjs plan",
     "test:affected": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/testing/cli.mjs affected",
     "test:browser:integration": "node scripts/resources/cli.mjs run --kind heavy -- playwright test --config playwright.browser.config.mjs",
+    "test:browser:contract": "node scripts/resources/cli.mjs run --kind heavy -- playwright test --config playwright.browser-contract.config.mjs",
     "test:performance": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/testing/performance.mjs",
     "test:tooling": "node scripts/testing/tooling.mjs",
+    "test:tooling:browser": "RIGHELT_TOOLING_SUITE=tooling-browser node scripts/testing/tooling.mjs",
     "test:report-viewer": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/validation/test/report-browser.mjs",
     "test:e2e:auth:journeys": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/run-auth-e2e.mjs --config playwright.auth.config.mjs",
+    "test:e2e:auth-smoke": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/run-auth-e2e.mjs --config playwright.auth-smoke.config.mjs",
     "test:e2e:auth:controls": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/run-auth-e2e.mjs --config playwright.auth-controls.config.mjs",
-    "test:e2e:storage": "RIGHELT_E2E_STORAGE_ARCHIVES=1 node scripts/resources/cli.mjs run --kind heavy -- playwright test e2e/workflows/storage-lifecycle.spec.mjs"
+    "test:e2e:storage": "RIGHELT_E2E_STORAGE_ARCHIVES=1 node scripts/resources/cli.mjs run --kind heavy -- playwright test --config playwright.storage-lifecycle.config.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.1",

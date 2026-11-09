@@ -76,7 +76,7 @@ export async function importCatalogCI({
   call,
   execute,
   artifactCache,
-  expectedLayout = 'guest-2-v1',
+  expectedLayout = 'pr-gate-v2',
 }) {
   const profile = await expectedCILayout(cwd, expectedLayout);
   const inventory = await listRunArtifacts(api, run.id);
@@ -85,7 +85,11 @@ export async function importCatalogCI({
     headSha: run.head_sha,
     runAttempt: run.run_attempt,
   });
-  if (run.conclusion !== "success" || artifacts.length !== profile.lanes.length)
+  if (
+    run.conclusion !== "success" ||
+    artifacts.length < profile.lanes.length ||
+    artifacts.length > profile.lanes.length * 2
+  )
     throw Error("Full current-attempt CI inventory unavailable");
   // Validate all fresh selected metadata before downloading any cached archive.
   if (artifactCache !== undefined)
@@ -177,8 +181,15 @@ export async function importCatalogCI({
     } else await cachedArtifact({root:artifactCache,repository,run,artifact:a,download,consumptionDir:outDir},
       ({archive,verify,executeArchive,archiveHash}) => inspect(archive,verify,executeArchive,archiveHash));
   }
-  const identity = sourceIdentity(cwd),
-    verified = verifyFull(suiteReceipts, identity, {lanes:profile.lanes,catalog:profile.catalog});
+  const identity = sourceIdentity(cwd, {
+      base: profile.evidenceProfile ? suiteReceipts[0]?.baseRevision : null,
+    }),
+    verified = verifyFull(suiteReceipts, identity, {
+      lanes: profile.lanes,
+      catalog: profile.catalog,
+      profile: profile.evidenceProfile ?? null,
+      allowLegacy: !profile.evidenceProfile,
+    });
   if (verified.status !== "passed") throw Error(verified.errors.join("; "));
   const receipts = {},
     rejected = {};
@@ -198,6 +209,10 @@ export async function importCatalogCI({
       )
         throw Error("Explicit exact runtime/dependency identity mismatch");
       const time = Date.now(),
+        matchingEvidence = evidence.filter((e) =>
+          ids.some((id) => e.lane.startsWith(id + ":")),
+        ),
+        matchedSuites = new Set(matchingEvidence.map((entry) => entry.lane.split(":", 1)[0])),
         receipt = {
           importedAt: new Date(time).toISOString(),
           expiresAt: new Date(time + 86400000).toISOString(),
@@ -210,13 +225,13 @@ export async function importCatalogCI({
           runHead: run.head_sha,
           testedTree: identity.testedTree,
           argv: request.argv,
-          evidence: evidence.filter((e) =>
-            ids.some((id) => e.lane.startsWith(id + ":")),
-          ),
+          evidence: matchingEvidence,
           limitations: [
             "Retained-state and cross-platform evidence are not credited",
           ],
         };
+      if (ids.some((id) => !matchedSuites.has(id)))
+        throw Error("Requested check is not completely represented by this evidence profile");
       receipt.integrity = evidenceKey(receipt);
       receipts[name] = receipt;
     } catch (error) {

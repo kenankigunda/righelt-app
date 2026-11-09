@@ -69,6 +69,12 @@ UX-sensitive changes should be proven automatically before manual inspection whe
   - layout-stability or user-timing proof when smoothness is part of the requirement
 - PRs and implementation notes should call out when a change adds or updates one of these contract tests.
 
+## CI evidence profiles
+
+PRs require the deterministic Node inventory plus a focused stable browser contract: Chromium guest and authenticated workflows, and explicit Chromium/Firefox/WebKit behavior contracts. The broad browser matrix runs in the separate advisory `Nightly validation` workflow. See `docs/ai/TESTING_STRATEGY.md` for the exact profile, receipt, retry, and affected-selection policies.
+
+`PR validation` is the authoritative aggregate. `Full validation` temporarily aliases it for repository-ruleset compatibility. Nightly evidence cannot satisfy either context, and only successful push-triggered main CI can start automatic deployment.
+
 ## CI Order
 
 CI runs in lane order:
@@ -77,13 +83,13 @@ CI runs in lane order:
 2. generated runtime freshness guard
 3. `unit`
 4. `integration`
-5. `E2E`
+5. stable browser contracts and representative real-stack `E2E`
 
 The integration gate includes `test:sync-stress` (100 fixed multiplayer fault schedules with saved failure traces) and `test:sync-runtime` (actual local Workers/D1 transactions, sockets and restart durability). CI runs these as explicit jobs as well as the existing engine/API/web integration jobs. See [sync fault harness details](../packages/api-handler/test-stress/README.md) for replay commands, assertions and browser-proof boundaries.
 
 ## Browser setup and recovery evidence
 
-`pnpm e2e:install` installs Chromium, Firefox, and WebKit. The E2E gate runs the full workflow suite in Chromium and representative multiplayer recovery and UX cases in Firefox and WebKit. CI uses Playwright-managed browser versions. Optional `RIGHELT_CHROMIUM_EXECUTABLE`, `RIGHELT_FIREFOX_EXECUTABLE`, and `RIGHELT_WEBKIT_EXECUTABLE` overrides are for local environments only.
+`pnpm e2e:install` installs Chromium, Firefox, and WebKit. The PR gate runs representative Chromium real-stack workflows and a controlled three-browser contract. The full workflow matrix runs nightly. CI uses Playwright-managed browser versions. Optional `RIGHELT_CHROMIUM_EXECUTABLE`, `RIGHELT_FIREFOX_EXECUTABLE`, and `RIGHELT_WEBKIT_EXECUTABLE` overrides are for local environments only.
 
 Recovery measurements are written to `test-results/sync-recovery` and uploaded by CI even after successful runs. They count application payload bytes, not compressed wire traffic. See [T-114 browser validation](validation/t114-browser-validation.md) for fault coverage and measurement limits.
 

@@ -95,6 +95,7 @@ test("explicit CI artifact credit verifies full inventory, primary logs and cano
         Unit: { argv: ["pnpm", "test:unit"], runtime, dependencies },
       };
       const options = {
+        expectedLayout: "guest-2-v1",
         repository: "owner/repo",
         run,
         cwd,
@@ -176,7 +177,7 @@ test('archive cache reuses only bytes and revalidates real ZIP proof on every hi
       else {const fd=(await import('node:fs')).openSync(log,'w');try{execFileSync(argv[0],argv.slice(1),{stdio:['ignore',fd,'pipe']});}finally{(await import('node:fs')).closeSync(fd);}}
       return {code:0,output:''};
     };
-    const options={repository:'owner/repo',run,cwd,outDir,expected,artifactCache,api:async()=>({total_count:artifacts.length,artifacts}),call,execute};
+    const options={expectedLayout:'guest-2-v1',repository:'owner/repo',run,cwd,outDir,expected,artifactCache,api:async()=>({total_count:artifacts.length,artifacts}),call,execute};
     if(variant) {
       await assert.rejects(importCatalogCI(options));const cold=downloads;
       await assert.rejects(importCatalogCI(options));assert.equal(downloads,cold,`invalid ${variant} seal/proof is rejected on cached bytes without another download`);

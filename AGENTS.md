@@ -36,7 +36,7 @@ For UI controls, follow `docs/ai/UI_CONTROL_CONTRACT.md`. All icon-only close/di
 
 ## 4) Testing Policy
 
-The suite catalog, focused selection and rollout rules are documented in `docs/ai/TESTING_STRATEGY.md`. Focused checks are advisory. Full validation remains required before merge.
+The suite catalog, evidence profiles, focused-selection shadow and rollout rules are documented in `docs/ai/TESTING_STRATEGY.md`. `PR validation` is the authoritative merge gate. `Full validation` is a temporary compatibility alias for that same result while repository settings still require its historical name. Broad browser validation is advisory and runs nightly.
 
 - Testing layers are standardized repo-wide:
   - `unit test` = one module/component in isolation

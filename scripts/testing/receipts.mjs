@@ -30,7 +30,10 @@ export function digestBuffer(value) {
   }
   return hash.update("]}").digest("hex");
 }
-export function sourceIdentity(cwd) {
+export function sourceIdentity(
+  cwd,
+  { base = process.env.RIGHELT_TEST_BASE_REVISION || null } = {},
+) {
   const git = (...a) =>
     execFileSync("git", a, { cwd, encoding: "utf8" }).trim();
   const files = [
@@ -58,6 +61,7 @@ export function sourceIdentity(cwd) {
   });
   return {
     revision: git("rev-parse", "HEAD"),
+    baseRevision: base ? git("rev-parse", base) : null,
     testedTree: git("rev-parse", "HEAD^{tree}"),
     sourceFingerprint: digest(hashes),
     sourceClean: git("status", "--porcelain") === "",
@@ -66,10 +70,149 @@ export function sourceIdentity(cwd) {
 export function sealReceipt(receipt) {
   return { ...receipt, integrity: digest(receipt) };
 }
+export const EVIDENCE_PROFILES = Object.freeze({
+  PR_GATE: "pr-gate",
+  NIGHTLY_FULL: "nightly-full",
+});
+export const FAILURE_KINDS = Object.freeze({
+  ASSERTION: "assertion",
+  INVENTORY: "inventory",
+  OWNED_STACK_EXIT: "owned-stack-exit",
+  RESOURCE_PRESSURE: "resource-pressure",
+  UNKNOWN: "unknown",
+});
+const NON_RETRYABLE_FAILURE_PATTERNS = Object.freeze([
+  ["http-5xx", /(?:\b(?:HTTP\s*(?:status\s*)?|status(?:\s+code)?\s*[:=]?\s*)5\d\d\b|\b5\d\d\s+(?:Internal\s+Server\s+Error|Bad\s+Gateway|Service\s+Unavailable|Gateway\s+Timeout)\b|\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+\S+\s+5\d\d\b)/i],
+  ["timeout", /\b(?:time(?:d)?\s*out|timeout)\b/i],
+  ["reference-error", /\bReferenceError\b/],
+  ["playwright-flaky", /\bflaky\b/i],
+]);
+
+export function detectNonRetryableFailureEvidence(...values) {
+  const text = values
+    .filter((value) => value !== null && value !== undefined)
+    .map((value) => String(value))
+    .join("\n");
+  return NON_RETRYABLE_FAILURE_PATTERNS.filter(([, pattern]) =>
+    pattern.test(text),
+  ).map(([kind]) => kind);
+}
+
+export function classifyFailure({
+  result,
+  observations,
+  inventory,
+  stack,
+  nonRetryableFailureEvidence = [],
+  dirtyDuringRun = false,
+}) {
+  if (inventory?.missing?.length || inventory?.unexpected?.length)
+    return FAILURE_KINDS.INVENTORY;
+  if (
+    nonRetryableFailureEvidence.length ||
+    observations?.failed ||
+    observations?.unexpected ||
+    observations?.flaky ||
+    observations?.uncompleted
+  )
+    return FAILURE_KINDS.ASSERTION;
+  if (result.code === 75) return FAILURE_KINDS.RESOURCE_PRESSURE;
+  if (stack?.unexpectedExit) return FAILURE_KINDS.OWNED_STACK_EXIT;
+  if (dirtyDuringRun) return FAILURE_KINDS.UNKNOWN;
+  return FAILURE_KINDS.UNKNOWN;
+}
+
+const receiptBody = (receipt) => {
+  const { integrity, ...body } = receipt;
+  return body;
+};
+export const hasValidIntegrity = (receipt) =>
+  Boolean(receipt?.integrity) && receipt.integrity === digest(receiptBody(receipt));
+
+export function isRetryableReceipt(receipt) {
+  if (
+    receipt?.version !== 2 ||
+    !hasValidIntegrity(receipt) ||
+    receipt.attempt !== 1 ||
+    receipt.priorReceiptDigest !== null ||
+    !["failed", "incomplete"].includes(receipt.status) ||
+    !["failed", "incomplete"].includes(receipt.outcome) ||
+    ![
+      FAILURE_KINDS.OWNED_STACK_EXIT,
+      FAILURE_KINDS.RESOURCE_PRESSURE,
+    ].includes(receipt.failureKind)
+  )
+    return false;
+  if (
+    (receipt.failureKind === FAILURE_KINDS.OWNED_STACK_EXIT &&
+      !receipt.stack?.unexpectedExit) ||
+    (receipt.failureKind === FAILURE_KINDS.RESOURCE_PRESSURE &&
+      receipt.exitCode !== 75)
+  )
+    return false;
+  if (
+    receipt.observations?.failed ||
+    receipt.observations?.unexpected ||
+    receipt.observations?.flaky ||
+    receipt.observations?.uncompleted ||
+    receipt.nonRetryableFailureEvidence?.length ||
+    receipt.inventory?.missing?.length ||
+    receipt.inventory?.unexpected?.length
+  )
+    return false;
+  return true;
+}
+
+export const shouldDeferInfrastructureRetry = (receipt, enabled) =>
+  enabled && receipt?.attempt === 1 && isRetryableReceipt(receipt);
+
+function selectLaneReceipt(matches, key, errors) {
+  if (matches.length === 1) return matches[0];
+  if (matches.length !== 2) {
+    errors.push(`${key}: missing or duplicate receipt`);
+    return null;
+  }
+  const [first, second] = [...matches].sort(
+    (a, b) => Number(a.attempt ?? 0) - Number(b.attempt ?? 0),
+  );
+  const sameContext = [
+    "evidenceProfile",
+    "catalog",
+    "lane",
+    "suite",
+    "kind",
+    "stateMode",
+    "revision",
+    "baseRevision",
+    "testedTree",
+    "sourceFingerprint",
+  ].every((field) => first[field] === second[field]);
+  if (
+    first.attempt !== 1 ||
+    second.attempt !== 2 ||
+    !isRetryableReceipt(first) ||
+    second.priorReceiptDigest !== first.integrity ||
+    second.outcome !== "infra-recovered" ||
+    second.failureKind !== null ||
+    !sameContext ||
+    digest(first.runtime) !== digest(second.runtime) ||
+    digest(first.dependencies) !== digest(second.dependencies)
+  ) {
+    errors.push(`${key}: invalid or unlinked retry evidence`);
+    return null;
+  }
+  return second;
+}
+
 export function verifyFull(
   receipts,
   identity,
-  { lanes = fullLanes(), catalog = catalogDigest() } = {},
+  {
+    lanes = fullLanes(),
+    catalog = catalogDigest(),
+    profile = null,
+    allowLegacy = true,
+  } = {},
 ) {
   const errors = [];
   const environment = receipts[0]?.runtime,
@@ -77,23 +220,45 @@ export function verifyFull(
   for (const lane of lanes) {
     const key = laneKey(lane),
       matches = receipts.filter((r) => r.lane === key);
-    if (matches.length !== 1) {
-      errors.push(`${key}: missing or duplicate receipt`);
-      continue;
-    }
-    const { integrity, ...r } = matches[0];
+    const selected = selectLaneReceipt(matches, key, errors);
+    if (!selected) continue;
+    const { integrity, ...r } = selected;
+    const isLegacy = r.version === 1;
     if (
       integrity !== digest(r) ||
-      r.version !== 1 ||
+      (!isLegacy && r.version !== 2) ||
+      (isLegacy && !allowLegacy) ||
       r.catalog !== catalog ||
       r.status !== "passed" ||
+      (!isLegacy && !["passed", "infra-recovered"].includes(r.outcome)) ||
+      (!isLegacy && r.failureKind !== null) ||
+      (!isLegacy && ![1, 2].includes(r.attempt)) ||
+      (!isLegacy && r.attempt === 2 && matches.length !== 2) ||
+      (!isLegacy && r.outcome === "infra-recovered" && r.attempt !== 2) ||
+      (!isLegacy && r.outcome === "passed" && r.priorReceiptDigest !== null) ||
       r.exitCode !== 0 ||
       r.incomplete ||
       r.dirtyDuringRun
     )
       errors.push(`${key}: invalid or incomplete result`);
-    for (const field of ["revision", "testedTree", "sourceFingerprint"])
-      if (r[field] !== identity[field]) errors.push(`${key}: stale ${field}`);
+    if (!isLegacy && (!r.evidenceProfile || r.baseRevision === undefined))
+      errors.push(`${key}: evidence profile or base revision missing`);
+    if (profile && !r.baseRevision)
+      errors.push(`${key}: required base revision missing`);
+    if (profile && (isLegacy || r.evidenceProfile !== profile))
+      errors.push(`${key}: wrong evidence profile`);
+    for (const field of [
+      "revision",
+      "baseRevision",
+      "testedTree",
+      "sourceFingerprint",
+    ]) {
+      if (
+        (!isLegacy || field !== "baseRevision") &&
+        r[field] !== identity[field]
+      )
+        errors.push(`${key}: stale ${field}`);
+    }
     if (
       !r.runtime?.node ||
       !r.runtime?.pnpm ||
@@ -109,7 +274,7 @@ export function verifyFull(
     if (
       r.suite !== lane.suite ||
       r.stateMode !==
-        (["e2e", "auth-e2e", "auth-controls", "responsive"].includes(lane.suite)
+        (["e2e", "guest-smoke", "auth-smoke", "storage-lifecycle", "auth-e2e", "auth-controls", "responsive"].includes(lane.suite)
           ? "real-stack"
           : "controlled")
     )
@@ -143,12 +308,16 @@ export function verifyFull(
   if (extras.length)
     errors.push("Unexpected receipts outside the full suite inventory");
   return {
-    version: 1,
+    version: 2,
     status: errors.length ? "failed" : "passed",
     catalog,
+    profile,
     identity,
     errors,
     lanes: lanes.map(laneKey),
+    recovered: receipts
+      .filter((receipt) => receipt.outcome === "infra-recovered")
+      .map((receipt) => receipt.lane),
   };
 }
 export function readReceipts(dir) {
