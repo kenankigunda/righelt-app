@@ -1,7 +1,7 @@
 import {installCaseReadiness,finishCaseReadiness,attachNodeReadiness} from '../support/readiness-diagnostics.mjs';
 import {performance} from 'node:perf_hooks';
 import {installClientSettlementObserver} from '../support/client-settlement-observer.mjs';
-import {installBoardAdmissionDiagnostics,createComputerRecoveryJSONRead,runComputerRecoveryPersistence,COMPUTER_RECOVERY_FIXTURE_BUDGET_MS} from '../support/board-admission-diagnostics.mjs';
+import {installBoardAdmissionDiagnostics,createComputerRecoveryJSONRead,readComputerRecoverySnapshot,runComputerRecoveryPersistence,COMPUTER_RECOVERY_FIXTURE_BUDGET_MS} from '../support/board-admission-diagnostics.mjs';
 import {test as base,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {deterministicStateHash,resolveToStability,serializeState} from '../../apps/web/generated/packages/game-engine/src/index.js';
@@ -77,7 +77,7 @@ test.beforeEach(async({page})=>{await page.addInitScript(installJournalObservati
 test.afterEach(async({page,computerRecoveryAdmission},info)=>{
  const finalRecovery=computerRecoveryAdmission?.finalRecoveryHandoff;
  let recoveryRead,delivered=false;
- try{recoveryRead=finalRecovery?.begin(page,{consoleDelivery:info.status===info.expectedStatus});}catch(error){finalRecovery?.failed('read-missing');throw error;}
+ try{recoveryRead=finalRecovery?.begin(page,{bindingDelivery:info.status===info.expectedStatus});}catch(error){finalRecovery?.failed('read-missing');throw error;}
  const deliver=value=>{
   if(!finalRecovery)return;
   delivered=true;
@@ -87,15 +87,9 @@ test.afterEach(async({page,computerRecoveryAdmission},info)=>{
  if(info.status===info.expectedStatus){
   let timer,originalCall,primaryReadError;
   try{
-   originalCall=page.evaluate(createComputerRecoveryJSONRead(({measurementName,recoveryRead})=>{
-      let readinessPage;
-      try{readinessPage=globalThis.__righeltReadinessFreeze?.();}catch{readinessPage={incomplete:true,reason:'snapshot-unavailable'};}
-      const match=location.hash.match(/^#\/game\/([^?#/]+)/);
-      const boardRecovery=recoveryRead?{...recoveryRead,gameId:match?decodeURIComponent(match[1]):null,documentNonce:globalThis.__boardAdmissionRecoveryDocument??null,timeOrigin:performance.timeOrigin,observation:globalThis.__boardAdmissionObservation??null}:null;
-      return {...window.retreatJournalObservations,...(boardRecovery?{boardRecovery}:{}),presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,...(readinessPage?{readinessPage}:{})};
-    },Boolean(finalRecovery)),{measurementName:COMPUTER_UI_FRAME_MEASURE,recoveryRead});
-   if(finalRecovery)originalCall.catch(()=>{}); // Owned immediately even if admission below rejects.
-   const originalRead=finalRecovery?finalRecovery.retainConsoleRead(page,originalCall):originalCall.then(JSON.parse);
+   originalCall=finalRecovery?finalRecovery.startBindingRead(page):page.evaluate(createComputerRecoveryJSONRead(readComputerRecoverySnapshot),{measurementName:COMPUTER_UI_FRAME_MEASURE,recoveryRead}).then(JSON.parse);
+   originalCall.catch(()=>{}); // Own every same-hook transport failure immediately.
+   const originalRead=originalCall;
    const journal=await Promise.race([originalRead,new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
    deliver(journal);
    const path=info.outputPath('native-journal-lifecycle.json');
@@ -103,10 +97,15 @@ test.afterEach(async({page,computerRecoveryAdmission},info)=>{
    await info.attach('native-journal-lifecycle',{contentType:'application/json',path});
   }catch(error){primaryReadError=error;finalRecovery?.failed('read-failed');console.warn('[retreat-diagnostic] Journal lifecycle attachment unavailable.');if(info.title===computerFollowWorkflow)console.warn('[readiness] incomplete: first-read-or-persistence-unavailable');if(finalRecovery)throw error;}
   finally{clearTimeout(timer);
-   // Payload delivery has its original 2s deadline. Keep this same hook alive
-   // for the already-issued call's normal tracing acknowledgement, under its
-   // unchanged hook budget, before the 5s persistence fixture can consume it.
-   if(finalRecovery&&originalCall)try{await originalCall;await finalRecovery.completeOriginalRead();}catch(error){finalRecovery.failed('read-failed');if(primaryReadError)throw new AggregateError([primaryReadError,error],'Final recovery read and acknowledgement failed');throw error;}
+   // Payload AND browser-publisher completion share the original absolute2s.
+   // Await the original public configuration settlement in this SAME hook
+   // before the unchanged5s persistence fixture can consume the evidence.
+   if(finalRecovery&&originalCall){
+    const failures=primaryReadError?[primaryReadError]:[];
+    try{await originalCall;}catch(error){if(!failures.includes(error))failures.push(error);}
+    try{await finalRecovery.completeOriginalRead();}catch(error){if(!failures.includes(error))failures.push(error);}
+    if(failures.length){finalRecovery.failed('read-failed');if(failures.length===1)throw failures[0];throw new AggregateError(failures,'Final recovery delivery, configuration and cleanup failed');}
+   }
   }
   return;
  }

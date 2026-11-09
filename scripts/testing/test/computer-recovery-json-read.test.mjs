@@ -2,15 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
-import {cloneComputerRecoveryHandoff,createComputerRecoveryJSONRead,createComputerRecoveryHandoff,SOURCE_PRESS_MAX_BYTES,COMPUTER_RECOVERY_FINAL_PREFIX,COMPUTER_RECOVERY_FINAL_MAX_BYTES} from '../../../e2e/support/board-admission-diagnostics.mjs';
+import {cloneComputerRecoveryHandoff,createComputerRecoveryJSONRead,createComputerRecoveryHandoff,SOURCE_PRESS_MAX_BYTES,COMPUTER_RECOVERY_FINAL_PREFIX,COMPUTER_RECOVERY_FINAL_MAX_BYTES,readComputerRecoverySnapshot,installComputerRecoveryBindingOwner} from '../../../e2e/support/board-admission-diagnostics.mjs';
 import {EventEmitter} from 'node:events';
+import {recoveryBindingHarness} from './support/recovery-binding-harness.mjs';
 const expected={namespace:'namespace',readId:'read',gameId:'game',documentGeneration:1};
 const packet=()=>({...expected,timeOrigin:123,documentNonce:'document',observation:{version:1,timeOrigin:123,documentNonce:'document',recoveryNamespace:'namespace',first:[],tail:[],activation:[],incomplete:false,rulesTimeouts:{rows:[{jobId:2,type:'previews',active:true,now:25956}],dropped:0,incomplete:false}}});
 function originalCallback(){
+ // The former inline callback is now the authoritative named producer shared
+ // by generic reads and the source-pinned binding. Execute that actual export.
  const source=readFileSync(new URL('../../../e2e/workflows/completion-preserving-retreat.spec.mjs',import.meta.url),'utf8');
- const marker='createComputerRecoveryJSONRead(',start=source.indexOf('page.evaluate('+marker)+('page.evaluate('+marker).length,end=source.indexOf('},Boolean(finalRecovery)),{measurementName:',start);
- assert.ok(start>0&&end>start);
- return new Function('return ('+source.slice(start,end+1)+');')();
+ assert.ok(source.includes('createComputerRecoveryJSONRead(readComputerRecoverySnapshot)'));
+ return readComputerRecoverySnapshot;
 }
 function originalRead(snapshot){
  const b=snapshot.boardRecovery;
@@ -200,74 +202,69 @@ test('console listener removal failure remains failed evidence',async()=>{
  const result=f.owner.consume();assert.equal(result.incomplete,true);assert.equal(result.cleanupIncomplete,true);f.owner.end();
 });
 
-async function actualConsoleHook({lateReject=false,navigate=false,timeout=false,autoAck=true,beginFailure=false,admissionFailure=false}={}){
- const page=new EventEmitter(),frame={};page.mainFrame=()=>frame;
- const owner=createComputerRecoveryHandoff(page,'namespace');if(!beginFailure)owner.bindGame('game');
- let acknowledge,rejectOriginal,releaseProducer,journalWritten;
- const ack=new Promise((yes,no)=>{acknowledge=yes;rejectOriginal=no;}),producer=new Promise(yes=>{releaseProducer=yes;}),written=new Promise(yes=>{journalWritten=yes;});
- const primary=Error('original evaluate rejection after console'),journals=[],timers=[];let reads=0,afterEach;
- page.evaluate=async(fn,input)=>{
-  reads++;if(admissionFailure)owner.end();if(timeout)await producer;
-  const raw=vm.runInNewContext('('+fn.toString()+')(input)',{
-   input,globalThis:{__boardAdmissionObservation:{...packet().observation,recoveryNamespace:'namespace'},__boardAdmissionRecoveryDocument:'document'},
-   window:{retreatJournalObservations:{records:[{event:'same-original'}],dropped:0,eventLoopTicks:1}},
-   location:{hash:'#/game/game'},performance:{timeOrigin:123,getEntriesByName:()=>[]},TextEncoder,
-   console:{debug:text=>page.emit('console',{text:()=>text,page:()=>page,worker:()=>null,type:()=> 'debug'})},
-  });
-  await ack;return raw;
- };
+async function actualBindingHook({lateReject=false,navigate=false,timeout=false,autoAck=true,beginFailure=false}={}){
+ let acknowledge,rejectOriginal,releaseProducer,journalWritten,afterEach,reads=0;
+ const configuration=new Promise((yes,no)=>{acknowledge=yes;rejectOriginal=no;}),producer=new Promise(yes=>{releaseProducer=yes;}),written=new Promise(yes=>{journalWritten=yes;});
+ const primary=Error('original configuration rejected after delivery'),journals=[],timers=[];
+ const h=recoveryBindingHarness({gameId:'game',namespace:'namespace',configGate:configuration,onRead:()=>{reads++;},beforeSignal:async()=>{if(timeout)await producer;}});
+ const {page}=h;page.evaluate=()=>assert.fail('binding recovery must not issue Page.evaluate');
+ const base=createComputerRecoveryHandoff(page,'namespace');if(!beginFailure)base.bindGame('game');
+ const owner=await installComputerRecoveryBindingOwner(page,'namespace',base,{verifyInstaller:async()=>{}});
  const source=readFileSync(new URL('../../../e2e/workflows/completion-preserving-retreat.spec.mjs',import.meta.url),'utf8'),start=source.indexOf('test.afterEach('),end=source.indexOf('\nasync function request(',start);
  const info={title:'the real computer defender leaves a completion-preserving native Follow',status:'passed',expectedStatus:'passed',outputPath:name=>'/controlled/'+name,async attach(){}};
  vm.runInNewContext(source.slice(start,end),{
-  test:{afterEach:fn=>{afterEach=fn;}},COMPUTER_UI_FRAME_MEASURE:'same-measure',computerFollowWorkflow:info.title,computerRetreatWorkflow:'other',createComputerRecoveryJSONRead,
-  writeFile:async(_path,body)=>{journals.push(JSON.parse(body));journalWritten();if(navigate)page.emit('framenavigated',frame);if(lateReject)rejectOriginal(primary);else if(autoAck)acknowledge();},
+  test:{afterEach:fn=>{afterEach=fn;}},COMPUTER_UI_FRAME_MEASURE:'same-measure',computerFollowWorkflow:info.title,computerRetreatWorkflow:'other',createComputerRecoveryJSONRead,readComputerRecoverySnapshot,
+  writeFile:async(_path,body)=>{journals.push(JSON.parse(body));journalWritten();if(navigate)page.emit('framenavigated',h.frame);if(lateReject)rejectOriginal(primary);else if(autoAck)acknowledge();},
   attachNodeReadiness:value=>value,console:{warn(){}},
   setTimeout(fn,ms){timers.push(ms);if(timeout)queueMicrotask(()=>{fn();releaseProducer();});return 1;},clearTimeout(){},
  });
+
  const pending=afterEach({page,computerRecoveryAdmission:{finalRecoveryHandoff:owner}},info);pending.catch(()=>{});
- return{page,owner,primary,journals,timers,pending,written,acknowledge,rejectOriginal,reads:()=>reads};
+ return{...h,owner,primary,journals,timers,pending,written,acknowledge,rejectOriginal,reads:()=>reads};
 }
 
-test('actual afterEach writes the same journal packet yet stays live until original call acknowledgement',async()=>{
- const f=await actualConsoleHook({autoAck:false});let done=false;f.pending.then(()=>{done=true;});
+test('actual afterEach writes the same packet but stays live until original configuration acknowledgement',async()=>{
+ const f=await actualBindingHook({autoAck:false});let done=false;f.pending.then(()=>{done=true;});
  try{
   await f.written;assert.equal(f.journals[0].records[0].event,'same-original');assert.equal(done,false);
-  assert.equal(f.page.listenerCount('console'),1);assert.equal(f.page.listenerCount('framenavigated'),1);
+  assert.equal(f.page.listenerCount('console'),1);assert.ok(f.page.listenerCount('framenavigated')>=1);
  }finally{f.acknowledge();await f.pending;}
  assert.equal(f.reads(),1);assert.deepEqual(f.timers,[2000]);assert.equal(f.owner.consume().incomplete,false);f.owner.end();
 });
 
-test('actual afterEach poisons an early delivered packet when the original evaluate later rejects',async()=>{
- const f=await actualConsoleHook({lateReject:true});
+test('actual afterEach poisons an early delivered packet when original configuration later rejects',async()=>{
+ const f=await actualBindingHook({lateReject:true});
  await assert.rejects(f.pending,error=>error===f.primary);
- assert.equal(f.journals[0].records[0].event,'same-original','journal was delivered before acknowledgement failed');
+ assert.equal(f.journals[0].records[0].event,'same-original','same packet was delivered before original configuration failed');
  assert.equal(f.owner.consume().incomplete,true);assert.equal(f.reads(),1);f.owner.end();
 });
 
-test('actual afterEach rejects a main-document transition after journal delivery but before acknowledgement',async()=>{
- const f=await actualConsoleHook({navigate:true});await assert.rejects(f.pending,/foreign-document/);
+test('actual afterEach rejects navigation after journal delivery and before configuration acknowledgement',async()=>{
+ const f=await actualBindingHook({navigate:true});await assert.rejects(f.pending,/foreign-document/);
  assert.equal(f.owner.consume().incomplete,true);assert.equal(f.reads(),1);f.owner.end();
 });
 
-test('actual afterEach keeps a 2s unavailable journal failed even after its owned original call settles',async()=>{
- const f=await actualConsoleHook({timeout:true});await assert.rejects(f.pending,/read-timed-out/);
+test('actual afterEach preserves unavailable journal failure after its original configuration settles',async()=>{
+ const f=await actualBindingHook({timeout:true});await assert.rejects(f.pending,/read-timed-out/);
  assert.equal(f.journals[0].unavailable,'diagnostic-read-timeout');assert.deepEqual(f.timers,[2000]);
- const value=f.owner.consume();assert.equal(value.incomplete,true);assert.equal(value.journalReadTimedOut,true);assert.equal(f.reads(),1);f.owner.end();
+ const value=f.owner.consume();assert.equal(value.incomplete,true);assert.equal(value.journalReadTimedOut,true);
+ assert.equal(f.reads(),0,'timeout before ticket acceptance must not trigger a fallback or later state read');f.owner.end();
 });
 
-test('actual afterEach does not issue any browser read after its required begin fails',async()=>{
- const f=await actualConsoleHook({beginFailure:true});await assert.rejects(f.pending,/final read scope unavailable/);
- assert.equal(f.reads(),0);assert.deepEqual(f.timers,[]);f.owner.end();
+test('actual afterEach issues no signal or state read after required begin fails',async()=>{
+ const f=await actualBindingHook({beginFailure:true});await assert.rejects(f.pending,/final read scope unavailable/);
+ assert.equal(f.reads(),0);assert.deepEqual(f.timers,[]);assert.equal(f.events.includes('signal-install'),false);
+ await f.owner.disposeBindingDelivery();f.owner.end();
  assert.equal(f.page.listenerCount('console'),0);assert.equal(f.page.listenerCount('framenavigated'),0);
 });
 
-test('actual afterEach still awaits and owns an issued read when console admission fails',async()=>{
- const f=await actualConsoleHook({admissionFailure:true,autoAck:false});let finished=false;
- f.pending.then(()=>{finished=true;},()=>{finished=true;});await Promise.resolve();await Promise.resolve();
- assert.equal(f.reads(),1);assert.equal(finished,false);
+test('actual afterEach still awaits original configuration when its delivery failed',async()=>{
+ const f=await actualBindingHook({timeout:true,autoAck:false});let finished=false;
+ f.pending.then(()=>{finished=true;},()=>{finished=true;});await f.written;
+ assert.equal(finished,false,'rejected delivery cannot skip original configuration settlement');
  f.rejectOriginal(f.primary);
  await assert.rejects(f.pending,error=>error.name==='AggregateError'&&Array.isArray(error.errors)&&error.errors.includes(f.primary));
- assert.equal(f.owner.consume().incomplete,true);f.owner.end();
+ assert.equal(f.owner.consume().incomplete,true);assert.equal(f.page.listenerCount('console'),0);f.owner.end();
 });
 
 for(const status of ['failed','timedOut','interrupted'])test('actual '+status+' body retains legacy diagnostics and its original failure without console transport',async()=>{

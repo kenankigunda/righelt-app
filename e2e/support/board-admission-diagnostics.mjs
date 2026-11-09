@@ -1,3 +1,5 @@
+import {installComputerRecoveryBinding} from './computer-recovery-binding.mjs';
+import {COMPUTER_UI_FRAME_MEASURE} from '../../apps/web/shell/frame-presentation.js';
 import {readFile, writeFile} from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
 import {performance} from 'node:perf_hooks';
@@ -161,6 +163,14 @@ export function cloneFinalRecoveryJSONDomain(input){
  return copy(input);
 }
 
+export function readComputerRecoverySnapshot({measurementName,recoveryRead}){
+      let readinessPage;
+      try{readinessPage=globalThis.__righeltReadinessFreeze?.();}catch{readinessPage={incomplete:true,reason:'snapshot-unavailable'};}
+      const match=location.hash.match(/^#\/game\/([^?#/]+)/);
+      const boardRecovery=recoveryRead?{...recoveryRead,gameId:match?decodeURIComponent(match[1]):null,documentNonce:globalThis.__boardAdmissionRecoveryDocument??null,timeOrigin:performance.timeOrigin,observation:globalThis.__boardAdmissionObservation??null}:null;
+      return {...window.retreatJournalObservations,...(boardRecovery?{boardRecovery}:{}),presentation:performance.getEntriesByName(measurementName).at(-1)?.detail??null,...(readinessPage?{readinessPage}:{})};
+    }
+
 // Compiled on Node, then serialized normally by Playwright. No browser eval or
 // second Page read. Optional journal fields retain their existing persisted JSON
 // domain; the authority-bearing recovery packet is validated BEFORE encoding.
@@ -245,6 +255,21 @@ export function createComputerRecoveryHandoff(page,namespace){
    if(result&&!result.incomplete&&result.documentGeneration!==documentGeneration)fail('foreign-document');
    removeListener();
    return Object.freeze({...result??{incomplete:true,reason:'handoff-missing',observation:null},journalReadTimedOut,cleanupIncomplete});},
+ };
+}
+export async function installComputerRecoveryBindingOwner(page,namespace,owner,options={}){
+ let activeTicket,beginAt,started=false,poisoned=false;
+ const transport=await installComputerRecoveryBinding(page,{namespace,produce:createComputerRecoveryJSONRead(readComputerRecoverySnapshot),measurementName:COMPUTER_UI_FRAME_MEASURE,maxBytes:COMPUTER_RECOVERY_FINAL_MAX_BYTES,
+  capture(value){if(!activeTicket||!value?.boardRecovery)throw Error('Final recovery packet missing');cloneComputerRecoveryHandoff(value.boardRecovery,activeTicket,SOURCE_PRESS_MAX_BYTES);owner.capture(page,value.boardRecovery);},failed:reason=>{poisoned=true;owner.failed(reason);},...options});
+ return{
+  ...owner,
+  begin(pageOwner,settings){beginAt=performance.now();activeTicket=owner.begin(pageOwner);if(settings?.bindingDelivery){transport.begin(activeTicket,beginAt);return activeTicket;}return activeTicket;},
+  startBindingRead(pageOwner){if(pageOwner!==page||!activeTicket||started)throw Error('Final recovery binding read scope unavailable');started=true;return transport.start();},
+  async completeOriginalRead(){await transport.complete();if(poisoned)throw Error('Final recovery binding incomplete');},
+  journalTimedOut(){owner.journalTimedOut();if(started)transport.fail('read-timed-out');},
+  disposeBindingDelivery:()=>transport.dispose(),
+  consume(){if(started&&!transport.healthy())owner.failed('read-failed');const result=owner.consume(),binding=transport.report();return{...result,cleanupIncomplete:result.cleanupIncomplete||binding.cleanupIncomplete,binding};},
+  end(){transport.cancel();return owner.end();},
  };
 }
 export async function persistComputerRecoveryEvidence({handoff,info,payload,write=writeFile,removeRoute,primaryError}){
@@ -395,7 +420,7 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
  const recipes=JSON.parse(await readFile(new URL(computerSessionRecovery?'./computer-session-recovery-transformation.json':'./board-admission-transformations.json',import.meta.url),'utf8'));
  const transforms=[],errors=[];let installed=false;
  const recoveryNamespace=computerSessionRecovery?randomUUID():null;
- const recoveryHandoff=computerSessionRecovery?createComputerRecoveryHandoff(page,recoveryNamespace):null;
+ let recoveryHandoff=computerSessionRecovery?createComputerRecoveryHandoff(page,recoveryNamespace):null;
  const origin=new URL(baseURL).origin;
  const sourceRetention=sourceAttemptOrdinal===undefined?null:createBoardSourceConsoleRetention(page,sourceAttemptOrdinal);
  const handler=async route=>{
@@ -414,10 +439,16 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
  };
  const pattern=url=>url.origin===origin && Object.hasOwn(recipes,url.pathname);
  try{
+  if(recoveryHandoff)recoveryHandoff=await installComputerRecoveryBindingOwner(page,recoveryNamespace,recoveryHandoff);
   if(sourceAttemptOrdinal===undefined)await page.addInitScript(installBoardAdmissionCollector,{targetRow,targetCol,...(computerSessionRecovery?{recoveryCategories:COMPUTER_RECOVERY_CATEGORIES,recoveryNamespace}:{})});
   else await page.addInitScript({content:`(()=>{const SOURCE_PRESS_PREFIX=${JSON.stringify(SOURCE_PRESS_PREFIX)};const SOURCE_PRESS_MAX_BYTES=${SOURCE_PRESS_MAX_BYTES};const cloneBoardSourceHandoff=(${cloneBoardSourceHandoff.toString()});(${installBoardAdmissionCollector.toString()})(${JSON.stringify({targetRow,targetCol,sourceAttemptOrdinal})});})();`});
   await page.route(pattern,handler);installed=true;
- }catch(error){sourceRetention?.stop();const disposed=recoveryHandoff?.consume();if(disposed?.cleanupIncomplete)throw new AggregateError([error,Error('Computer recovery handoff listener cleanup incomplete')],'Diagnostic setup and cleanup failed');throw error;}
+ }catch(error){
+  sourceRetention?.stop();const cleanup=[];
+  try{await recoveryHandoff?.disposeBindingDelivery?.();}catch(failure){cleanup.push(failure);}
+  const disposed=recoveryHandoff?.consume();if(disposed?.cleanupIncomplete)cleanup.push(Error('Computer recovery handoff listener cleanup incomplete'));
+  if(cleanup.length)throw new AggregateError([error,...cleanup],'Diagnostic setup and cleanup failed');throw error;
+ }
  return {
   finalRecoveryHandoff:recoveryHandoff,
   async checkpoint(){
@@ -428,11 +459,12 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
   },
   async persist(options={}){
    if(recoveryHandoff){
+    let bindingCleanupError;try{await recoveryHandoff.disposeBindingDelivery();}catch(error){bindingCleanupError=error;recoveryHandoff.failed('read-failed');}
     await recoveryHandoff.awaitDelivery(options);
     const handoff=recoveryHandoff.consume(),observation=handoff.observation;
     const missingModules=Object.keys(recipes).filter(pathname=>!transforms.some(row=>row.pathname===pathname));
     const payload={caseTitle:info.title,observation,handoff:{...handoff,observation:undefined},transforms,errors,missingModules,incomplete:handoff.incomplete||errors.length>0||missingModules.length>0||!observation?.activation?.length||Boolean(observation?.incomplete)||Boolean(observation?.rulesTimeouts?.incomplete),clock:'page.performance/timeOrigin; Node persistence wall clock separate',nodePersistedAt:new Date().toISOString()};
-    await persistComputerRecoveryEvidence({handoff,info,payload,removeRoute:async()=>{if(installed)await page.unroute(pattern,handler);}});return;
+    await persistComputerRecoveryEvidence({handoff,info,payload,primaryError:bindingCleanupError,removeRoute:async()=>{if(installed)await page.unroute(pattern,handler);}});return;
    }
    try{
    let observation=null,incomplete=errors.length>0;
