@@ -3,9 +3,9 @@ import { cliPath } from "./resources/supervisor.mjs";
 
 // Always create a guardian, including inside an existing test supervisor. The
 // browser runner may put its web server in a separate process group.
-export function spawnAuthStackCommand(args, { cwd, env = process.env, service = false, captureStderr = false } = {}) {
+export function spawnAuthStackCommand(args, { cwd, env = process.env, service = false, captureStderr = false, captureOutput = false } = {}) {
   return spawn(process.execPath, [cliPath, "run", "--kind", service ? "preview" : "heavy", "--", "pnpm", ...args], {
-    cwd, env, stdio: captureStderr ? ["inherit", "inherit", "pipe"] : "inherit"
+    cwd, env, stdio: captureOutput ? ["inherit", "pipe", "pipe"] : captureStderr ? ["inherit", "inherit", "pipe"] : "inherit"
   });
 }
 
