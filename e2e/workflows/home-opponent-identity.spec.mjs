@@ -83,12 +83,16 @@ for(const width of [390,900,1440])test(`fresh Home cards retain configured compu
      clientWidth:controls.querySelector('.home-games-section-page-label').clientWidth,scrollWidth:controls.querySelector('.home-games-section-page-label').scrollWidth},
     buttons:[...controls.querySelectorAll('button')].map(button=>({action:button.dataset.action,bounds:rect(button)})),
    }));
-   return {documentOverflow,scrollWidth:root.scrollWidth,viewport,pagination,scroll:{x:scrollX,y:scrollY},visualViewport:visualViewport?{width:visualViewport.width,height:visualViewport.height,offsetLeft:visualViewport.offsetLeft,offsetTop:visualViewport.offsetTop,scale:visualViewport.scale}:null,
+   return {dpr:devicePixelRatio,documentOverflow,scrollWidth:root.scrollWidth,viewport,pagination,scroll:{x:scrollX,y:scrollY},visualViewport:visualViewport?{width:visualViewport.width,height:visualViewport.height,offsetLeft:visualViewport.offsetLeft,offsetTop:visualViewport.offsetTop,scale:visualViewport.scale}:null,
     rootFont:style(root).fontSize,fonts:{status:document.fonts.status,faces:[...document.fonts].map(face=>({family:face.family,status:face.status,weight:face.weight,style:face.style}))},suspects,records};
   });
   const diagnosticPath=info.outputPath(`home-overflow-${info.project.name}-${width}-${text}.json`);
   await mkdir(dirname(diagnosticPath),{recursive:true});await writeFile(diagnosticPath,JSON.stringify(overflow,null,2));
   await info.attach(`home-overflow-${width}-${text}`,{path:diagnosticPath,contentType:'application/json'});
+  expect(Number.isFinite(overflow.dpr)&&overflow.dpr>0).toBe(true);
+  const rectTolerance=Math.max(.5,1/overflow.dpr);
+  // scrollWidth/clientWidth are integer CSSOM extents. Their rounding signal
+  // stays separate from the DPR-bounded floating rectangle comparisons below.
   expect(overflow.documentOverflow).toBeLessThanOrEqual(1);
   expect(overflow.pagination.length).toBeGreaterThan(0);
   for(const [index,pagination] of overflow.pagination.entries()){
@@ -99,8 +103,8 @@ for(const width of [390,900,1440])test(`fresh Home cards retain configured compu
    expect(pagination.label.scrollWidth).toBeLessThanOrEqual(pagination.label.clientWidth+1);
    expect(pagination.buttons.map(button=>button.action)).toEqual(['home-page-prev','home-page-next']);
    for(const item of [pagination.label,...pagination.buttons]){
-    expect(item.bounds.left).toBeGreaterThanOrEqual(-1);
-    expect(item.bounds.right).toBeLessThanOrEqual(width+1);
+    expect(item.bounds.left).toBeGreaterThanOrEqual(overflow.viewport.left-rectTolerance);
+    expect(item.bounds.right).toBeLessThanOrEqual(overflow.viewport.right+rectTolerance);
    }
    for(const {bounds} of pagination.buttons){expect(bounds.width).toBeGreaterThanOrEqual(44);expect(bounds.height).toBeGreaterThanOrEqual(44);}
   }
