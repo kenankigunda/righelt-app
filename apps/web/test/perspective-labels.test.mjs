@@ -74,8 +74,8 @@ test('computer history actors keep their plain name while current-turn copy stay
  const g={...game(),player2:{identityId:'red',computerProfile:'horus'},computer:{seats:{p2:'horus'}}};
  assert.equal(boardTurnLabel(g,{sideToMove:'P2'},options),'Opponent to play');
  assert.equal(historyActorLabel(g,{actorSide:'P2'},options),'Horus');
- assert.equal(historyActorLabel(g,{actorSide:'P1'},options),'You');
- assert.equal(historyActorLabel(game(),{actorSide:'P2'},options),'Opponent');
+ assert.equal(historyActorLabel(g,{actorSide:'P1'},options),'Guest');
+ assert.equal(historyActorLabel(game(),{actorSide:'P2'},options),'Guest 2');
  assert.equal(historyActorLabel(game(),{actorSide:'P2',computerProof:{profile:'tau'}},options),'Tau');
 });
 
@@ -91,4 +91,16 @@ test('an account named Guest remains its name and an open seat does not number t
  assert.equal(playerDisplayName(named,'P1'),'Guest');assert.equal(playerDisplayName(named,'P2'),'Guest');
  assert.equal(playerDisplayName({...game('Viewer'),player2:null},'P1'),'Guest');
  assert.equal(historyActorLabel(game(),{},options),'Next player');
+});
+
+test('canonical player references keep names, fixed guest seats and nonvisual ownership separate', async()=>{
+ const {playerIdentityLabel}=await import('../shell/perspective-labels.js');
+ const named={...game(),player1:{identityId:'red',profile:{displayName:'Red <&> שלום'}},player2:{identityId:'blue',profile:{displayName:'Red <&> שלום'}}};
+ assert.deepEqual(playerIdentityLabel(named,'p1',options),{text:'Red <&> שלום',side:'P1',color:'Red',accessibleName:'Red <&> שלום, you, Red'});
+ assert.deepEqual(playerIdentityLabel(named,'P2',options),{text:'Red <&> שלום',side:'P2',color:'Blue',accessibleName:'Red <&> שלום, Blue'});
+ assert.equal(playerIdentityLabel(game(),'P1',options).text,'Guest 1');
+ assert.equal(playerIdentityLabel({...named,player1:{identityId:'red'}},'P1',options).text,'Guest');
+ assert.equal(historyActorLabel(named,{actorSide:'P1'},options),'Red <&> שלום');
+ assert.equal(historyActorLabel(game(),{actorSide:'P2'},options),'Guest 2');
+ assert.deepEqual(playerIdentityLabel(named,'unknown',options),{text:'Player',side:null,color:null,accessibleName:'Player'});
 });

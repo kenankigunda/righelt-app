@@ -57,10 +57,10 @@ test('a guest observer sees named results while the two-sided owner retains winn
   await openResult(viewer);
   const observerResult=viewer.getByTestId('game-result');
   await expect(observerResult).toHaveAttribute('data-result-tone','neutral');await expect(observerResult).toHaveAttribute('data-winner','p1');
-  await expect(observerResult.getByRole('heading',{name:'Guest 1 won',exact:true})).toBeVisible();
-  await expect(observerResult.getByText('Guest 2’s commander lost its supply.',{exact:true})).toBeVisible();
-  await expect(observerResult.getByRole('heading',{name:'You won',exact:true})).toHaveCount(0);
-  await expect(observerResult.locator('h1 bdi')).toHaveText('Guest 1');
+  await expect(observerResult.getByRole('heading',{name:'Guest 1 won as Red',exact:true})).toBeVisible();
+  await expect(observerResult.getByText('Guest 2’s commander lost its supply.',{exact:false})).toBeVisible();
+  await expect(observerResult.getByRole('heading',{name:'You won as Red',exact:true})).toHaveCount(0);
+  await expect(observerResult.locator('h1 bdi')).toHaveText('Guest 1 won as Red');
   // Neutral observers retain the ink mark; victory color belongs to the owner.
   await viewer.screenshot({path:info.outputPath('guest-observer-result.png')});
   await observerResult.getByRole('button',{name:'Review game',exact:true}).click();await switchGamePanel(viewer,'history');
@@ -73,13 +73,16 @@ test('a guest observer sees named results while the two-sided owner retains winn
   await expect(viewer.getByTestId('history-load-status')).toHaveCount(0);
   await expect.poll(()=>pendingSnapshots.size,{message:'Expected observed history snapshot reads to finish before reload'}).toBe(0);
   await viewer.reload();await expect(viewer.getByTestId('game-shell')).toBeVisible();await expect(observerResult).toHaveCount(0);
-  await openResult(viewer);await expect(observerResult.getByRole('heading',{name:'Guest 1 won',exact:true})).toBeVisible();
+  await openResult(viewer);await expect(observerResult.getByRole('heading',{name:'Guest 1 won as Red',exact:true})).toBeVisible();
   unchanged(before,await read(page,game.id));
   await openResult(page);const ownerResult=page.getByTestId('game-result');
-  await expect(ownerResult.getByRole('heading',{name:'You won',exact:true})).toBeVisible();await expect(ownerResult.getByText('You play both sides',{exact:true})).toBeVisible();
+  await expect(ownerResult.getByRole('heading',{name:'You won as Red',exact:true})).toBeVisible();await expect(ownerResult.getByText('You play both sides',{exact:true})).toBeVisible();
   await expect(ownerResult).toHaveAttribute('data-result-tone','victory');await expect(ownerResult).toHaveAttribute('data-winner','p1');
   await expect(ownerResult.getByText('Your Blue commander lost its supply.',{exact:true})).toBeVisible();
+  await expect(ownerResult.locator('p .player-tone-p2 bdi')).toHaveText('Your Blue commander');
+  await expect(ownerResult.locator('p .player-tone-p2')).toHaveCSS('color','rgb(45, 103, 199)');
   await expect(ownerResult.locator('.result-stone')).toHaveCSS('fill','rgb(194, 69, 47)');
+  await page.screenshot({path:info.outputPath('self-play-result-affiliation.png')});
   await ownerResult.getByRole('button',{name:'Play again',exact:true}).click();const rematch=page.getByRole('dialog',{name:'Play again',exact:true});
   const opponent=rematch.locator('input[name="rematch-opponent"][value="self"]'),side=rematch.locator('input[name="rematch-side"][value="p2"]');
   await expect(opponent).toHaveAccessibleName('Play both sides');await expect(opponent).toBeChecked();await expect(rematch.locator('input[name="rematch-opponent"]:checked')).toHaveCount(1);
