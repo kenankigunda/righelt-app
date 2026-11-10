@@ -6,6 +6,7 @@ import {performance} from 'node:perf_hooks';
 
 export const RECOVERY_BINDING_ACK='[righelt-final-binding-v1]';
 export const RECOVERY_BINDING_DEADLINE_MS=2000;
+export const RECOVERY_BINDING_TOTAL_MS=5000;
 const INSTALLER_SOURCES=Object.freeze({
  'lib/utils/isomorphic/protocolMetainfo.js':'7db22e2f6e0e20f9db797ee3f3a86d4ec68b0e520975c7391a76bd42fe0da2e6',
  'lib/server/page.js':'3d236ad57de9eebdf4d165e3943522c041cafb0e136d479c9c0e9aeedeb0692a',
@@ -53,9 +54,10 @@ export function createRecoveryBindingInit(produce){
 export async function installComputerRecoveryBinding(page,{namespace,produce,measurementName,capture,failed,maxBytes,now=()=>performance.now(),setTimer=setTimeout,clearTimer=clearTimeout,verifyInstaller=requireRecoveryBindingInstaller}){
  await verifyInstaller();
  const publisherName='__righeltFinalPublisher_'+randomUUID().replaceAll('-','_'),signalName='__righeltFinalSignal_'+randomUUID().replaceAll('-','_');
- let ticket,deadline,armNonce,value,raw,ack=false,signal,publisher,init,resolveDelivery,delivery,timer,primary,disposed=false,started=false,configSettled=false,configurationIssued=false,payloadAt,completionAt,disposeWork,disposeDone=false;const owned=new Set(),cleanupErrors=[];
- const poison=reason=>{if(!primary)primary=Error('Final recovery binding: '+reason);failed(reason==='foreign-document'?'read-failed':reason==='read-timed-out'?'read-timed-out':'read-failed');resolveDelivery?.(null);};
- const alive=()=>{if(disposed||primary||!ticket)throw Error('Final recovery binding inactive');if(now()>deadline){poison('read-timed-out');throw primary;}};
+ let ticket,beginAt,totalDeadline,deadline,armNonce,value,raw,ack=false,signal,publisher,init,resolveDelivery,delivery,timer,totalTimer,primary,disposed=false,started=false,configSettled=false,configurationIssued=false,configurationIssuedAt,requestReceivedAt,payloadAt,completionAt,configSettledAt,disposeStartedAt,disposeDoneAt,disposeWork,disposeDone=false,stage='SETUP',failureStage,timeoutBudget;const owned=new Set(),cleanupErrors=[];
+ const poison=reason=>{if(!primary){failureStage=stage;primary=Error('Final recovery binding: '+reason);}failed(reason==='foreign-document'?'read-failed':reason==='read-timed-out'?'read-timed-out':'read-failed');resolveDelivery?.(null);};
+ const checkBudget=()=>{if(ticket&&now()>totalDeadline){timeoutBudget??='total';poison('read-timed-out');}else if(armNonce&&!ack&&now()>deadline){timeoutBudget??='read';poison('read-timed-out');}};
+ const alive=()=>{checkBudget();if(disposed||primary||!ticket)throw primary??Error('Final recovery binding inactive');};
  const sourceOK=source=>source?.page===page&&source?.context===page.context()&&source?.frame===page.mainFrame();
  const publish=async(source,message)=>{
   const task=Promise.resolve().then(()=>{
@@ -64,28 +66,28 @@ export async function installComputerRecoveryBinding(page,{namespace,produce,mea
     const keys=message.kind==='request'?['kind','namespace','armNonce']:['kind','namespace','armNonce','readId','raw'];if(Object.keys(message).length!==keys.length||Object.keys(message).some(key=>!keys.includes(key)))throw Error('Malformed final recovery publisher');
     if(message.kind==='request'){
      if(armNonce||typeof message.armNonce!=='string'||!message.armNonce||message.armNonce.length>128)throw Error('Repeated final recovery request');
-     armNonce=message.armNonce;return{ticket,armNonce};
+     requestReceivedAt=now();armNonce=message.armNonce;stage='READING';deadline=Math.min(totalDeadline,requestReceivedAt+RECOVERY_BINDING_DEADLINE_MS);timer=setTimer(()=>{timeoutBudget??=deadline===totalDeadline?'total':'read';poison('read-timed-out');},Math.max(0,deadline-now()));return{ticket,armNonce};
     }
     if(message.kind!=='payload'||!armNonce||message.armNonce!==armNonce||message.readId!==ticket.readId||raw!==undefined)throw Error('Foreign/repeated final recovery payload');
     if(typeof message.raw!=='string'||message.raw.length>maxBytes||Buffer.byteLength(message.raw,'utf8')>maxBytes)throw Error('Final recovery payload too large');
-    const parsed=JSON.parse(message.raw);capture(parsed);alive();raw=message.raw;value=parsed;payloadAt=now();
+    const parsed=JSON.parse(message.raw);capture(parsed);alive();raw=message.raw;value=parsed;payloadAt=now();stage='PUBLISHED';
     return{namespace,armNonce,readId:ticket.readId,documentNonce:parsed.boardRecovery.documentNonce,phase:'accepted'};
-   }catch(error){poison(now()>deadline?'read-timed-out':'read-failed');throw error;}
+   }catch(error){checkBudget();poison(timeoutBudget?'read-timed-out':'read-failed');throw error;}
   });owned.add(task);try{return await task;}finally{owned.delete(task);}
  };
  const consoleMessage=message=>{try{
   const text=message.text();if(typeof text!=='string'||!text.startsWith(RECOVERY_BINDING_ACK))return;
   alive();if(text.length>2048||Buffer.byteLength(text,'utf8')>2048||message.page()!==page||message.worker()!==null||message.type()!=='debug')throw Error('Foreign final recovery completion');
   const data=JSON.parse(text.slice(RECOVERY_BINDING_ACK.length));if(data.phase!=='complete'||ack||!raw||data.namespace!==namespace||data.armNonce!==armNonce||data.readId!==ticket.readId||data.documentNonce!==value.boardRecovery.documentNonce)throw Error('Missing/conflicting final recovery completion');
-  ack=true;completionAt=now();alive();clearTimer(timer);resolveDelivery(value);
- }catch{poison(now()>deadline?'read-timed-out':'read-failed');}};
+  alive();ack=true;completionAt=now();stage='ACKED';clearTimer(timer);resolveDelivery(value);
+ }catch{checkBudget();poison(timeoutBudget?'read-timed-out':'read-failed');}};
  const navigated=frame=>{if(ticket&&frame===page.mainFrame())poison('foreign-document');},closed=()=>poison('read-failed');
  const listeners=[['console',consoleMessage],['framenavigated',navigated],['close',closed],['crash',closed],['pageerror',closed]];
  const dispose=()=>{
-  if(disposeWork)return disposeWork;disposed=true;clearTimer(timer);disposeWork=(async()=>{
+  if(disposeWork)return disposeWork;disposeStartedAt=now();checkBudget();disposed=true;clearTimer(timer);disposeWork=(async()=>{
   for(const item of [signal,publisher,init])if(item)try{await item.dispose();}catch(error){cleanupErrors.push(error);}
   for(const[name,fn]of listeners)try{page.off(name,fn);}catch(error){cleanupErrors.push(error);}
-  disposeDone=true;if(cleanupErrors.length){poison('read-failed');throw new AggregateError([...(primary?[primary]:[]),...cleanupErrors],'Final recovery binding cleanup failed');}
+  disposeDone=true;disposeDoneAt=now();checkBudget();clearTimer(totalTimer);if(!primary)stage='DISPOSED';if(cleanupErrors.length){poison('read-failed');throw new AggregateError([...(primary?[primary]:[]),...cleanupErrors],'Final recovery binding cleanup failed');}
  })();disposeWork.catch(()=>{});return disposeWork;
  };
  try{
@@ -94,10 +96,10 @@ export async function installComputerRecoveryBinding(page,{namespace,produce,mea
   init=await page.addInitScript(createRecoveryBindingInit(produce),{publisherName,signalName,namespace,measurementName,maxBytes,ackPrefix:RECOVERY_BINDING_ACK});
  }catch(error){try{await dispose();}catch(cleanup){throw new AggregateError([error,cleanup],'Final recovery setup and cleanup failed');}throw error;}
  return{
-  begin(next,beginAt){if(ticket||disposed||primary)throw Error('Final recovery binding scope unavailable');ticket=next;deadline=beginAt+RECOVERY_BINDING_DEADLINE_MS;delivery=new Promise(resolve=>{resolveDelivery=resolve;});timer=setTimer(()=>poison('read-timed-out'),Math.max(0,deadline-now()));},
+  begin(next,at){if(ticket||disposed||primary)throw Error('Final recovery binding scope unavailable');ticket=next;beginAt=at;totalDeadline=beginAt+RECOVERY_BINDING_TOTAL_MS;stage='ARMING';delivery=new Promise(resolve=>{resolveDelivery=resolve;});totalTimer=setTimer(()=>{timeoutBudget??='total';poison('read-timed-out');},Math.max(0,totalDeadline-now()));},
   start(){if(started||!ticket||primary)throw Error('Final recovery binding start unavailable');started=true;
-   const operation=Promise.resolve().then(()=>{configurationIssued=true;return page.exposeBinding(signalName,()=>{poison('read-failed');throw primary;});});
-   signal=undefined;const original=operation.then(item=>{signal=item;configSettled=true;return item;},error=>{configSettled=true;poison('read-failed');throw error;});original.catch(()=>{});
+   const operation=Promise.resolve().then(()=>{alive();configurationIssued=true;configurationIssuedAt=now();return page.exposeBinding(signalName,()=>{poison('read-failed');throw primary;});});
+   signal=undefined;const original=operation.then(item=>{signal=item;configSettled=true;configSettledAt=now();checkBudget();return item;},error=>{configSettled=true;configSettledAt=now();checkBudget();poison('read-failed');throw error;});original.catch(()=>{});
    this.original=original;return delivery.then(snapshot=>{if(primary||!snapshot)throw primary??Error('Final recovery delivery missing');return snapshot;});},
   async complete(){let originalError;try{await this.original;}catch(error){originalError=error;}
    await Promise.allSettled([...owned]);if(!ack||!raw||!configSettled)poison('read-failed');
@@ -108,6 +110,6 @@ export async function installComputerRecoveryBinding(page,{namespace,produce,mea
   fail:poison,
   cancel(){if(started&&!disposed)poison('read-failed');},
   healthy:()=>Boolean(ack&&raw&&configSettled&&disposeDone&&!primary&&!cleanupErrors.length),
-  report:()=>({kind:'source-pinned-binding-v1',started,deadline,payloadAt,completionAt,ack,configSettled,cleanupIncomplete:cleanupErrors.length>0,disposeDone,incomplete:Boolean(primary),reason:primary?.message??null,ownedCallbackTasks:owned.size,claim:'Browser publisher promise settled +owned callback work +signal configuration only; no global internal drain.'}),
+  report:()=>({kind:'source-pinned-binding-v2',started,stage,failureStage,beginAt,totalDeadline,deadline,configurationIssued,configurationIssuedAt,requestReceivedAt,armNonce,payloadAt,completionAt,configSettledAt,disposeStartedAt,disposeDoneAt,timeoutBudget,readBudgetMs:RECOVERY_BINDING_DEADLINE_MS,totalAcceptanceBudgetMs:RECOVERY_BINDING_TOTAL_MS,ack,configSettled,cleanupIncomplete:cleanupErrors.length>0,disposeDone,incomplete:Boolean(primary),reason:primary?.message??null,ownedCallbackTasks:owned.size,claim:'Browser publisher promise settled +owned callback work +signal configuration only; no global internal drain.'}),
  };
 }

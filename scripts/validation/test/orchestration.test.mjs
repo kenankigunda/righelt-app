@@ -58,8 +58,8 @@ test('changed AI tools require dedicated checks and preserve a failed or missing
  for(const area of ['ai-trainer','ai-benchmark']){await mkdir(path.join(cwd,'tools',area),{recursive:true});await writeFile(path.join(cwd,'tools',area,'example.txt'),'tool');}
  await git(['add','.'],cwd);await git(['commit','-m','AI tools'],cwd);
  const seen=[];
- const result=await localRun({cwd,base,dir:path.join(root,'run'),publishReport:false,lockPath:path.join(root,'lock'),execute:async(argv,{env})=>{
-  seen.push(argv);await saveJSON(env.RIGHELT_EVIDENCE_JSON,[{id:'proof',status:'passed',images:[]}]);return {code:argv[1]==='test:trainer'?1:0,duration:1};
+ const result=await localRun({cwd,base,dir:path.join(root,'run'),publishReport:false,lockPath:path.join(root,'lock'),execute:async(argv,{env,log})=>{
+  await writeFile(log,'Controlled dedicated-check primary log');seen.push(argv);await saveJSON(env.RIGHELT_EVIDENCE_JSON,[{id:'proof',status:'passed',images:[]}]);return {code:argv[1]==='test:trainer'?1:0,duration:1};
  }});
  for(const script of ['test:trainer','test:ai-benchmark'])assert.equal(seen.filter(argv=>argv[1]===script).length,1);
  assert.deepEqual(result.stage.unmapped,[]);assert.equal(result.stage.checks.find(c=>c.name==='Trainer checks').status,'failed');

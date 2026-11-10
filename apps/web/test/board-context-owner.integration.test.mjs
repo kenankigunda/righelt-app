@@ -1,3 +1,4 @@
+import {publishAcknowledgedBoardMessage,contextReplayAvailable} from '../shell/playback-presentation.js';
 import {withPushSequenceMessage} from '../shell/push-sequence-replay.js';
 import {historyBoardMessage} from '../shell/history-narration.js';
 import test from 'node:test';
@@ -39,7 +40,7 @@ function fixture(t){
  let resolveArchive;const archive=new Promise(resolve=>{resolveArchive=resolve;});
  const transport={getGameViewModel:()=>context.view,getAuthoritativeGame:()=>context.view,getIdentityId:()=>'me',decisionHistory:()=>archive};
  const requests=createReplayRequest();
- const context=vm.createContext({confirmedPlayback:null,forcedFollowWorking:()=>false,historyBoardMessage,view:accepted(),scopeGeneration:'accountA:storageA',document:doc,appEl:app,queueMicrotask:fn=>queued.push(fn),
+ const context=vm.createContext({publishAcknowledgedBoardMessage,contextReplayAvailable,confirmedPlayback:null,forcedFollowWorking:()=>false,historyBoardMessage,view:accepted(),scopeGeneration:'accountA:storageA',document:doc,appEl:app,queueMicrotask:fn=>queued.push(fn),
  syncRecoverySpace(app){syncRecoverySpace(app);admissions.push('recovery');},
  createBoardContextStore,createBoardContextOwner,createBoardContextFocus,createBoardContextLayout:()=>({sync(){admissions.push('layout');},reveal:(target,current)=>{if(current())reveals.push(target);}}),
  captureDisplayedReplay,displayedReplayIsCurrent,replayArchiveMatches,opponentBoardMessage,withPushSequenceMessage,transport,replayRequests:requests,

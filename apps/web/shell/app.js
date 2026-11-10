@@ -1,4 +1,8 @@
 import * as undoHistory from './history-undo-groups.js';
+import {presentPlaybackBoardMessage,playbackTurnIndicator,publishAcknowledgedBoardMessage,contextReplayAvailable,refreshFollowControls} from './playback-presentation.js';
+import {isLiveBoardVisible} from './live-board-visibility.js';
+import {mountDecisionNoteEditor} from './decision-note-editor.js';
+import {renderResultPanel} from './result-panel.js';
 import {selectedHistoryPresentation,recordedHistoryView,historyBoardMessage} from './history-narration.js';
 import {recordedMoveNumber,visibleRecordedMoves,recordedActorSide} from './recorded-narration.js';
 import {renderBoardMessageHtml} from '../board/message-presentation.js';
@@ -177,20 +181,8 @@ const queueBoardContextRefresh=()=>{
 };
 const displayedReplayFrame=()=>getBoardGame(transport.getGameViewModel(getCurrentViewedGameId()));
 const canReplayDisplayed=descriptor=>displayedReplayIsCurrent(descriptor,{game:displayedReplayFrame(),context:currentReplayContext()});
-const contextReplayEnabled=descriptor=>!forcedFollowWorking(descriptor?.gameId)&&!confirmedPlayback?.snapshot().playing&&canReplayDisplayed(descriptor)&&!replayRequests.snapshot()&&!replayController?.snapshot().playing;
-const acknowledgedBoardMessage=(view,status,options)=>{
- const recorded=options.presentationMove;
- const presentation=recorded?{...view,inHistoryMode:true,historyTurnIndex:null,inspectedDecision:recorded}:view;
- const message=historyBoardMessage(presentation)??withPushSequenceMessage(opponentBoardMessage(view,status,{},options),view,{},options.identityId),body=message?.context;
- if(!body){if(boardContexts.update('acknowledged',null))queueBoardContextRefresh();return;}
- const replay=['replay-computer','replay-push-sequence'].includes(body.action?.id)?captureDisplayedReplay({source:body.action.id==='replay-push-sequence'?'push-sequence':'opponent-turn',game:view,owner:transport,scope:boardContextScope(),identityId:transport.getIdentityId(),visible:!document.hidden}):null;
- const context={gameId:view.id,key:replay?.key??JSON.stringify(recorded?[boardContextScope(),view.id,'confirmed-frame',recorded.moveId]:[boardContextScope(),view.id,view.gameplayRevision,'completion']),message:body,replay,mandatory:false,transient:false};
- const previousKey=boardContexts.channel('acknowledged')?.key;
- const changed=boardContexts.update('acknowledged',context);
- const piece=boardContexts.channel('piece');
- if(previousKey!==context.key&&!boardContexts.isDismissed(context.key)&&!(piece?.gameId===view.id&&piece.message&&!piece.transient&&!boardContexts.isDismissed(piece.key)))notificationStack.prefer(view.id,`board-context:${context.key}`);
- if(changed)queueBoardContextRefresh();
-};
+const contextReplayEnabled=descriptor=>contextReplayAvailable({descriptor,followWorking:forcedFollowWorking(descriptor?.gameId),playbackPlaying:confirmedPlayback?.snapshot().playing,canReplay:canReplayDisplayed,replayPending:replayRequests.snapshot(),replayPlaying:replayController?.snapshot().playing});
+const acknowledgedBoardMessage=(view,status,options)=>publishAcknowledgedBoardMessage(view,status,options,{boardContexts,queueBoardContextRefresh,transport,boardContextScope,document,notificationStack});
 const receiveBoardContext=(context,meta)=>{
  const game=displayedReplayFrame();if(!game)return;
  const frame=[boardContextScope(),game.id,game.gameplayRevision,game.inHistoryMode?[game.historyIndex,game.historyTurnIndex]:'live'];
@@ -3377,14 +3369,7 @@ const renderApprovalGate = (game, request) => {
   `;
 };
 
-const renderResult = game => {
-  const confirmed = transport.getAuthoritativeGame(game.id);
-  const result = getGameResult(confirmed, transport.getIdentityId());
-  if (!result) return "";
-  const names = ['P1','P2'].map(side => playerDisplayName(confirmed,side));
-  const isolatedName = (name,index) => `<span class="player-tone-p${index+1}"><bdi dir="auto">${escapeHtml(name)}</bdi></span>`;
-  return `<section class="panel game-result" data-testid="game-result" data-result-tone="${result.tone}" data-winner="${result.winner ?? ''}"><p class="small">Game finished</p>${renderResultMark(result)}<h1 tabindex="-1">${renderResultText(result,'title')}</h1><p>${renderResultText(result,'reason')}</p><p>${result.controlsBothSides ? "You play both sides" : names.map(isolatedName).join(" vs ")}</p><p class="small">Game ${escapeHtml(formatDisplayGameId(game.id))}</p><div class="story-modal-actions"><button data-action="analysis" data-game-id="${escapeHtml(game.id)}">${icon('back')}Review game</button><button${result.tone === "victory" ? "" : ' class="secondary"'} data-action="rematch" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Play again</button><a class="button-link secondary" href="#/">${icon('home')}Home</a></div></section>`;
-};
+const renderResult = game => renderResultPanel(game,{transport,escapeHtml,formatDisplayGameId});
 
 const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   // A socket may supply the snapshot before route hydration finishes. Keep
@@ -3626,14 +3611,7 @@ const mountBoardForGame = (game) => {
       }),
       controls: {
         onInteractionSound: event => gameSound.interaction(event),
-        getTurnIndicator: state => {
-          const view=getBoardGame(transport.getGameViewModel(game.id));
-          const replay=replayController?.snapshot();
-          const automatic=confirmedPlayback?.snapshot().current?.frame?.recordedMove;
-          if(view?.confirmedPlayback&&automatic)return selectedHistoryPresentation({...view,inHistoryMode:true,historyTurnIndex:null,inspectedDecision:automatic})?.caption??{text:'Move unavailable'};
-          if(replay?.playing)return selectedHistoryPresentation({...view,inHistoryMode:true,historyTurnIndex:null,inspectedDecision:replay.recordedMove})?.caption??{text:'Replay'};
-          return selectedHistoryPresentation(view)?.caption??boardTurnCaption(view,state,{identityId:transport.getIdentityId()});
-        },
+        getTurnIndicator: state => playbackTurnIndicator(getBoardGame(transport.getGameViewModel(game.id)),state,{replay:replayController?.snapshot(),step:confirmedPlayback?.snapshot().current,identityId:transport.getIdentityId()}),
         getBoardMessage: selection => {
           boardContextScope();
           const view = getBoardGame(transport.getGameViewModel(game.id));
@@ -3643,20 +3621,8 @@ const mountBoardForGame = (game) => {
           const replayFeedback = replayRequests.snapshot();
           const replay = replayController?.snapshot();
           const status = computerSession?.snapshot();
-          updateComputerBoardLoading(document.getElementById('shell-board-preview-label')?.parentElement.querySelector('.board-message-activity'), view, status, {
-            replaying: Boolean(view?.confirmedPlayback || forcedFollowWorking(game.id) || replay?.playing || replayFeedback?.gameId === game.id), inspecting: Boolean(selection.selectedPieceId || selection.inspection), scope: viewingScope(),
-          });
-          if (view?.positionOnly) return { text: view.positionLoading ? "Loading play" : "Play could not finish loading" };
-          if(view?.confirmedPlayback){
-            const step=confirmedPlayback?.snapshot().current,record=step?.frame?.recordedMove;
-            if(record)acknowledgedBoardMessage(view,status,{identityId:transport.getIdentityId(),presentationMove:record});
-            const actor=record?recordedActorSide(record):step?.move?.actorSide;
-            const recordedPresentation=record?selectedHistoryPresentation({...view,inHistoryMode:true,historyTurnIndex:null,inspectedDecision:record}):null;
-            const actorName=recordedPresentation?.message.actorName??playerDisplayName(view,actor);
-            if(view.confirmedPlayback.error)return {text:`${actorName} needs help`,actorName,action:{id:'retry-confirmed-playback',label:'Retry'}};
-            if(status?.activity?.needsHelp){const helpName=COMPUTER_PROFILES[status.profile]?.name??actorName;return {text:`${helpName} needs help`,actorName:helpName};}
-            return {text:`${actorName} is making their move`,actorName};
-          }
+          const confirmedMessage=presentPlaybackBoardMessage(view,status,{activityHost:document.getElementById('shell-board-preview-label')?.parentElement.querySelector('.board-message-activity'),selection,followWorking:forcedFollowWorking(game.id),replay,replayFeedback,scope:viewingScope(),step:confirmedPlayback?.snapshot().current,onRecorded:acknowledgedBoardMessage,identityId:transport.getIdentityId()});
+          if(confirmedMessage)return confirmedMessage;
           if (replayFeedback?.gameId === game.id) return replayFeedback.phase === "loading"
             ? {text:"Preparing replay",action:{id:"replay-cancel",label:"Cancel replay"}}
             : {text:"Replay unavailable",actions:[{id:"replay-computer",label:"Try again"},{id:"replay-dismiss",label:"Dismiss"}]};
@@ -4758,11 +4724,7 @@ computerSession = createComputerSession({ getContext: () => {
   if (presentation === COMPUTER_PRESENTATION.progress) computerUiPresentation.schedule();
   else { computerUiPresentation.cancel(); updateComputerUi(); }
 } });
-const updateForcedFollowUi = () => {
-  boardRuntime?.setInteractionBlocked(Boolean(forcedFollowSession?.snapshot().working || replayController?.snapshot().playing || confirmedPlayback?.snapshot().playing));
-  boardRuntime?.refreshStatus();
-  queueBoardContextRefresh();
-};
+const updateForcedFollowUi = () => refreshFollowControls({boardRuntime,followWorking:forcedFollowSession?.snapshot().working,replayPlaying:replayController?.snapshot().playing,playbackPlaying:confirmedPlayback?.snapshot().playing,refreshContext:queueBoardContextRefresh});
 const showForcedFollowVisual = async (state, move = null) => {
   forcedFollowVisual?.destroy();
   const rootEl = appEl.querySelector('[data-testid="game-board-wrap"]');
@@ -4910,28 +4872,7 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => {preparation.cancel();resultPresentation.clear();});
 
-document.addEventListener('toggle', event => {
-  const key = event.target?.dataset?.debugSection;
-  if (!key) return;
-  const state = getDecisionDebugState(getCurrentViewedGameId());
-  const changed = state.open.has(key) !== event.target.open;
-  if (event.target.open) state.open.add(key); else state.open.delete(key);
-  if (changed && !event.target.open && key === 'notes') delete state.noteDecisionId;
-  if (changed && event.target.open && (key === 'position' || key === 'notes')) updateComputerUi();
-}, true);
-document.addEventListener('focusin', event => {
-  if (!event.target?.dataset?.debugNote) return;
-  // Focus precedes typing: retain this editor's identity before any playback render.
-  getDecisionDebugState(getCurrentViewedGameId()).noteDecisionId = event.target.dataset.decisionId;
-});
-document.addEventListener('input', event => {
-  const field = event.target?.dataset?.debugNote;
-  if (!field) return;
-  const state = getDecisionDebugState(getCurrentViewedGameId()), id = event.target.dataset.decisionId;
-  const note = { ...(state.drafts.get(id) ?? state.notes.find(note => note.decisionId === id) ?? { text: '', flagged: false }) };
-  note[field] = field === 'flagged' ? event.target.checked : event.target.value;
-  state.drafts.set(id, note);
-});
+mountDecisionNoteEditor({document,getCurrentViewedGameId,getDecisionDebugState,updateComputerUi});
 document.addEventListener('change', event => {
   if (!event.target?.matches?.('[data-debug-filter]')) return;
   getDecisionDebugState(getCurrentViewedGameId()).flaggedOnly = event.target.checked; updateComputerUi();
@@ -4953,17 +4894,7 @@ const maybeReturnAfterUndo = gameId => {
   transport.returnToLive({gameId});
   if (getShellLayoutMode() === 'narrow') navigateTo(buildGameHash(gameId,null,getCurrentGameHashState('board')));
 };
-const liveBoardVisible = () => {
-  if(document.hidden||!document.hasFocus()||currentRoute.name!=='game'||transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode
-    ||currentRoute.scenarios||replayController?.snapshot().playing||(appEl.dataset.shellTransitionPhase??'idle')!=='idle'
-    ||getShellLayoutMode()==='narrow'&&(currentRoute.panel??'board')!=='board')return false;
-  const board=appEl.querySelector('[data-testid="game-board"]'),rect=board?.getBoundingClientRect();
-  if(!rect||rect.width<=0||rect.height<=0)return false;
-  const left=Math.max(0,rect.left),right=Math.min(window.innerWidth,rect.right),top=Math.max(0,rect.top),bottom=Math.min(window.innerHeight,rect.bottom);
-  // A drawer/dialog can cover a still-mounted Board. Test the visible region,
-  // while allowing a docked utility beside a genuinely visible Live Board.
-  return right>left&&bottom>top&&Boolean(board.closest('[data-testid="game-board-wrap"]')?.contains(document.elementFromPoint((left+right)/2,(top+bottom)/2)));
-};
+const liveBoardVisible = () => isLiveBoardVisible({document,currentRoute,inHistoryMode:transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode,replaying:replayController?.snapshot().playing,layout:getShellLayoutMode(),appEl,window});
 const syncConfirmedPlayback = () => {
   const gameId=getCurrentViewedGameId(),game=transport.getAuthoritativeGame(gameId),view=transport.getGameViewModel(gameId);
   lastPlaybackVisibility=liveBoardVisible();

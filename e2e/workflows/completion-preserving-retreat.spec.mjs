@@ -100,14 +100,15 @@ test.afterEach(async({page,computerRecoveryAdmission},info)=>{
    originalCall=finalRecovery?finalRecovery.startBindingRead(page):page.evaluate(createComputerRecoveryJSONRead(readComputerRecoverySnapshot),{measurementName:COMPUTER_UI_FRAME_MEASURE,recoveryRead}).then(JSON.parse);
    originalCall.catch(()=>{}); // Own every same-hook transport failure immediately.
    const originalRead=originalCall;
-   const journal=await Promise.race([originalRead,new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
+   const journal=finalRecovery?await originalRead:await Promise.race([originalRead,new Promise(resolve=>{timer=setTimeout(()=>resolve({unavailable:'diagnostic-read-timeout'}),2000);})]);
    deliver(journal);
    const path=info.outputPath('native-journal-lifecycle.json');
    await writeFile(path,JSON.stringify(attachNodeReadiness(journal??{unavailable:'not-installed'})));
    await info.attach('native-journal-lifecycle',{contentType:'application/json',path});
   }catch(error){primaryReadError=error;finalRecovery?.failed('read-failed');console.warn('[retreat-diagnostic] Journal lifecycle attachment unavailable.');if(info.title===computerFollowWorkflow)console.warn('[readiness] incomplete: first-read-or-persistence-unavailable');if(finalRecovery)throw error;}
   finally{clearTimeout(timer);
-   // Payload AND browser-publisher completion share the original absolute2s.
+   // Binding payload +publisher completion have2s from the validated request;
+   // arming, configuration and disposal share a fixed5s acceptance deadline.
    // Await the original public configuration settlement in this SAME hook
    // before the unchanged5s persistence fixture can consume the evidence.
    if(finalRecovery&&originalCall){

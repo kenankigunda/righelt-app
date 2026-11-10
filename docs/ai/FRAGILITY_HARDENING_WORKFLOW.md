@@ -80,3 +80,7 @@ This workflow extends, and does not replace, the normal testing policy in `AGENT
 - Choose the lowest layer that proves each changed contract. Avoid duplicating assertions across unit, integration and E2E merely to satisfy test labels. See `TESTING_STRATEGY.md` for browser integration and the required PR gate.
 - Every touched workflow must still consider whether E2E coverage should be added or expanded.
 - The PR gate and explicitly mapped feature acceptance remain correctness requirements. Do not require the full nightly profile or the retired `Full validation` context.
+
+## Durable test design
+
+Follow [the durable testing standard](TESTING_STRATEGY.md#durable-tests-execute-behavior). Execute production behavior instead of slicing or inspecting product source. Plan small production seams and focused real-app wiring proof, use native browsers for browser-owned contracts, and retain independent expected outcomes. Migrate affected legacy assertions when changing their contract, demonstrate targeted negative proof, and run `pnpm check:test-durability`. New source-inspection exceptions are limited to justified artifact contracts. Review whether each test catches the bug and tolerates behavior-preserving refactors.

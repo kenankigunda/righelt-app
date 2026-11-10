@@ -1,3 +1,4 @@
+import {confirmedPlaybackMessage,playbackTurnIndicator,contextReplayAvailable,refreshFollowControls} from '../shell/playback-presentation.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {captureDisplayedReplay,displayedReplayIsCurrent,replayArchiveMatches} from '../shell/displayed-replay.js';
@@ -59,32 +60,25 @@ test('a retained explicit closure preserves local push replay and its final reco
  assert.equal(payload.frames.length,3);assert.deepEqual(payload.frames.at(-1).after,closed);assert.equal(payload.frames.at(-1).recordedMove.moveId,last.moveId);assert.equal(payload.frames.at(-1).destroyedPieces.length,1);
 });
 
-test('actual automatic Board callbacks publish the recorded step and exact caption beside finite activity',async()=>{
- const {readFileSync}=await import('node:fs'),{runInNewContext}=await import('node:vm');
+test('production automatic presentation publishes the recorded step and exact caption beside finite activity',async()=>{
  const {selectedHistoryPresentation}=await import('../shell/history-narration.js'),{recordedActorSide}=await import('../shell/recorded-narration.js'),{playerDisplayName}=await import('../shell/perspective-labels.js');
  const {COMPUTER_PROFILES}=await import('../generated/packages/shared-types/src/computer-play.js');
- const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8'),record={moveId:'real',index:16,displayMoveNumber:17,turnIndex:0,actorSide:'P1',computerProof:{profile:'babs'},action:{type:'rush',from:{row:1,col:2},to:{row:2,col:2}}};
+ const record={moveId:'real',index:16,displayMoveNumber:17,turnIndex:0,actorSide:'P1',computerProof:{profile:'babs'},action:{type:'rush',from:{row:1,col:2},to:{row:2,col:2}}};
  const game={id:'g',moves:[record],computer:{seats:{p1:'babs',p2:'tau'}},player1:{computerProfile:'tau'},player2:{computerProfile:'tau'},confirmedPlayback:{playing:true}},published=[];
  const context={game,selectedHistoryPresentation,recordedActorSide,playerDisplayName,COMPUTER_PROFILES,boardContextScope(){},activeDisplayedReplay:null,getBoardGame:value=>value,transport:{getGameViewModel:()=>game,getIdentityId:()=> 'human'},replayController:null,replayRequests:{snapshot:()=>null},computerSession:{snapshot:()=>({phase:'computing',profile:'tau'})},confirmedPlayback:{snapshot:()=>({current:{move:record,frame:{recordedMove:record,moveNumber:17}}})},forcedFollowWorking:()=>false,viewingScope:()=> 'scope',document:{getElementById:()=>({parentElement:{querySelector:()=>null}})},updateComputerBoardLoading(){},boardTurnCaption:()=>({text:'Live'}),acknowledgedBoardMessage:(_view,_status,options)=>published.push(options.presentationMove)};
- const begin=source.indexOf('        getTurnIndicator: state => {'),end=source.indexOf('        getBoardMessage:',begin),caption=source.slice(begin,end).trim().replace(/^getTurnIndicator:\s*/,'').replace(/,\s*$/,'');
- assert.deepEqual({...runInNewContext(`(${caption})`,context)({})},{text:'Move 17',side:'P1'});
- const start=source.indexOf('        getBoardMessage: selection => {'),finish=source.indexOf('        onBoardMessageAction:',start),callback=source.slice(start,finish).trim().replace(/^getBoardMessage:\s*/,'').replace(/,\s*$/,'');
- const message=runInNewContext(`(${callback})`,context)({});assert.equal(message.text,'Babs is making their move');assert.equal(published[0],record);assert(isMappedBoardPromptHtml(renderBoardMessageHtml(message)));
+ assert.deepEqual(playbackTurnIndicator(game,{},{step:context.confirmedPlayback.snapshot().current,identityId:'human'}),{text:'Move 17',side:'P1'});
+ const message=confirmedPlaybackMessage(game,context.computerSession.snapshot(),{step:context.confirmedPlayback.snapshot().current,identityId:'human',onRecorded:context.acknowledgedBoardMessage});assert.equal(message.text,'Babs is making their move');assert.equal(published[0],record);assert(isMappedBoardPromptHtml(renderBoardMessageHtml(message)));
 });
 
 
-test('actual Follow availability callback refreshes stable context controls on start, finish and retirement',async()=>{
- const {readFileSync}=await import('node:fs'),{runInNewContext}=await import('node:vm');
+test('production Follow controls refresh stable context controls on start, finish and retirement',async()=>{
  const {createBoardContextStore,renderBoardContext}=await import('../shell/board-context.js');
- const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
  const store=createBoardContextStore(),context={key:'stable-ack',gameId:'g',message:{text:'Recorded push'},replay:{gameId:'g'}};
  assert(store.update('acknowledged',context));
  let working=true,queued=0,html='',blocked=false,refreshes=0;
  const scope={forcedFollowWorking:()=>working,forcedFollowSession:{snapshot:()=>({working})},confirmedPlayback:{snapshot:()=>({playing:false})},replayController:{snapshot:()=>({playing:false})},replayRequests:{snapshot:()=>null},canReplayDisplayed:()=>true,boardRuntime:{setInteractionBlocked:value=>{blocked=value;},refreshStatus:()=>{refreshes++;}},queueBoardContextRefresh:()=>{queued++;}};
- const enabledSource=source.match(/const contextReplayEnabled=([^;]+);/)[1];
- const enabled=runInNewContext(`(${enabledSource})`,scope);
- const callbackSource=source.slice(source.indexOf('const updateForcedFollowUi = () => {'),source.indexOf('const showForcedFollowVisual =',source.indexOf('const updateForcedFollowUi = () => {'))).replace(/^const updateForcedFollowUi = /,'').trim().replace(/;$/,'');
- const update=runInNewContext(`(${callbackSource})`,scope);
+ const enabled=descriptor=>contextReplayAvailable({descriptor,followWorking:working,playbackPlaying:false,replayPending:null,replayPlaying:false,canReplay:scope.canReplayDisplayed});
+ const update=()=>refreshFollowControls({boardRuntime:scope.boardRuntime,followWorking:working,replayPlaying:false,playbackPlaying:false,refreshContext:scope.queueBoardContextRefresh});
  const render=()=>{html=renderBoardContext(store.channel('acknowledged'),{replayEnabled:enabled(context.replay)});};
  const flush=()=>{if(queued){queued=0;render();}};
  render();assert.match(html,/ disabled/);

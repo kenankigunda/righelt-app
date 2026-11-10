@@ -1,3 +1,5 @@
+import {publishAcknowledgedBoardMessage} from '../shell/playback-presentation.js';
+import {renderResultPanel} from '../shell/result-panel.js';
 import {SYNC_TIMING} from '../generated/packages/shared-types/src/sync-protocol.js';
 import {withPushSequenceMessage} from '../shell/push-sequence-replay.js';
 import {historyBoardMessage} from '../shell/history-narration.js';
@@ -33,7 +35,7 @@ function fixture(){
   recoveryPresentationOptions:()=>({}),presentedRecoveryMessage:value=>value.recovery?'Reload game':'',needsRecoveryAction:value=>Boolean(value.recovery),
   dismissedRecoveryNotices:new Map(),ignoredRevertRequests:new Set(),isDiagnosticOpen:()=>false,
   computerSession:{snapshot:()=>({phase})},undoRequestFeedback:null,undoRequestFeedbackGameId:null,escapeHtml:String};
- runInNewContext(`${declaration('getRevertRequestKey')}${declaration('getActiveRevertRequest')}${declaration('getActivePendingRevertRequest')}${declaration('getGameAlertItems')}${source.slice(source.indexOf('const acknowledgedBoardMessage='),source.indexOf('const dispatchBoardMessageAction='))};globalThis.items=getGameAlertItems;globalThis.receive=receiveBoardContext;globalThis.ack=acknowledgedBoardMessage;`,ctx);
+ runInNewContext(`${declaration('getRevertRequestKey')}${declaration('getActiveRevertRequest')}${declaration('getActivePendingRevertRequest')}${declaration('getGameAlertItems')}${source.slice(source.indexOf('const acknowledgedBoardMessage='),source.indexOf('const dispatchBoardMessageAction='))};globalThis.items=getGameAlertItems;globalThis.receive=receiveBoardContext;globalThis.ack=acknowledgedBoardMessage;`,Object.assign(ctx,{publishAcknowledgedBoardMessage,renderResultPanel}));
  const refresh=()=>ctx.receive({kind:'piece',mandatory:false,message:{text:'Piece help'}},{selectedPieceId:'piece',intentVersion:1,phase:null,continuationPhase:null,transient:false});
  const order=()=>stack.order(game.id,ctx.items(game));
  assert.equal(order()[0].key,'computer:g');
