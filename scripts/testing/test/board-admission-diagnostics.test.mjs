@@ -611,9 +611,9 @@ test('computer evidence persistence attempts independent sinks and owned route c
 });
 
 async function finalReadFixture({computer=true,timeout=false,readFailure=false,deferred=false}={}){
- const files=[],attached=[],events=[],timers=[];let reads=0,unroutes=0,release;
+ const files=[],attached=[],events=[],timers=[];let reads=0,unroutes=0,release,owner;
  const deferredRead=new Promise(resolve=>{release=resolve;});
- const h=recoveryBindingHarness({gameId:'owned',breakProducer:readFailure,onRead:()=>{reads++;events.push('browser-read');},beforeSignal:async()=>{if(timeout||deferred)await deferredRead;}}),page=h.page;
+ const h=recoveryBindingHarness({gameId:'owned',breakProducer:readFailure,onRead:()=>{reads++;events.push('browser-read');},beforeSignal:async()=>{if(timeout){queueMicrotask(()=>{owner.finalRecoveryHandoff.journalTimedOut();release();});}if(timeout||deferred)await deferredRead;}}),page=h.page;
  const addInit=page.addInitScript;
  page.addInitScript=async(fn,arg)=>{
   if(fn.name==='installBoardAdmissionCollector'){
@@ -627,7 +627,7 @@ async function finalReadFixture({computer=true,timeout=false,readFailure=false,d
  page.route=async()=>{};page.unroute=async()=>{unroutes++;};
  page.evaluate=async(fn,arg)=>{const prior=reads;if(readFailure)throw Error('original read failed');const value=vm.runInContext('('+fn.toString()+')(argument)',Object.assign(h.realm(),{argument:arg}));if(reads===prior)reads++;return value;};
  const info={title:'the real computer defender leaves a completion-preserving native Follow',status:'passed',expectedStatus:'passed',outputPath:name=>'/owned/'+name,async attach(name,value){attached.push({name,...value});}};
- const owner=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://owned',computerSessionRecovery:computer});owner.finalRecoveryHandoff?.bindGame('owned');
+ owner=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://owned',computerSessionRecovery:computer});owner.finalRecoveryHandoff?.bindGame('owned');
  const source=await readFile(new URL('../../../e2e/workflows/completion-preserving-retreat.spec.mjs',import.meta.url),'utf8');let afterEach;
  const start=source.indexOf('test.afterEach('),end=source.indexOf('\nasync function request(',start);
  vm.runInNewContext(source.slice(start,end),{test:{afterEach:fn=>{afterEach=fn;}},COMPUTER_UI_FRAME_MEASURE:'measure',computerFollowWorkflow:info.title,computerRetreatWorkflow:'other',createComputerRecoveryJSONRead,readComputerRecoverySnapshot,writeFile:async(file,body)=>{files.push({file,body});},attachNodeReadiness:x=>x,console:{warn(){}},setTimeout(fn,ms){timers.push(ms);if(timeout)queueMicrotask(()=>{fn();release();});return 1;},clearTimeout(){}});
@@ -641,10 +641,10 @@ test('actual existing final afterEach read hands off recovery once; computer per
  const originalWritePath=f.info.outputPath;const directory=await import('node:os').then(x=>x.tmpdir());const temp=await import('node:fs/promises').then(x=>x.mkdtemp(directory+'/recovery-handoff-'));f.info.outputPath=name=>temp+'/'+name;
  try{await f.owner.persist();assert.equal(f.reads(),1);assert.equal(f.unroutes(),1);const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));assert.equal(payload.handoff.incomplete,false);assert.equal(payload.observation.firstComputerRecovery,null);}finally{f.info.outputPath=originalWritePath;await import('node:fs/promises').then(x=>x.rm(temp,{recursive:true,force:true}));}
 });
-test('actual original 2s timeout or failed final read produces incomplete Node persistence with no fallback browser read',async()=>{
+test('owned binding timeout or failed final read produces incomplete Node persistence with no fallback browser read',async()=>{
  for(const settings of [{timeout:true},{readFailure:true}]){
   const f=await finalReadFixture(settings),directory=await import('node:os').then(x=>x.tmpdir()),temp=await import('node:fs/promises').then(x=>x.mkdtemp(directory+'/recovery-handoff-'));f.info.outputPath=name=>temp+'/'+name;
-  try{assert.ok(f.hookError);await assert.rejects(f.owner.persist(),/Computer recovery evidence incomplete/);assert.equal(f.reads(),settings.timeout?0:1,'timeout before accepted ticket reads no state; producer failure reads once, neither falls back');assert.equal(f.unroutes(),1);const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));assert.equal(payload.handoff.incomplete,true);assert.equal(payload.observation,null);if(settings.timeout)assert.deepEqual(f.timers,[2000]);}finally{await import('node:fs/promises').then(x=>x.rm(temp,{recursive:true,force:true}));}
+  try{assert.ok(f.hookError);await assert.rejects(f.owner.persist(),/Computer recovery evidence incomplete/);assert.equal(f.reads(),settings.timeout?0:1,'timeout before accepted ticket reads no state; producer failure reads once, neither falls back');assert.equal(f.unroutes(),1);const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));assert.equal(payload.handoff.incomplete,true);assert.equal(payload.observation,null);if(settings.timeout)assert.deepEqual(f.timers,[]);}finally{await import('node:fs/promises').then(x=>x.rm(temp,{recursive:true,force:true}));}
  }
 });
 test('generic/default persistence retains its existing browser read and is not redirected to computer handoff',async()=>{
@@ -758,15 +758,15 @@ test('browser init creates an opaque readonly document nonce; exact nonce accept
  const foreignPage=recoveryPage(),foreign=createComputerRecoveryHandoff(foreignPage,'nonce');foreign.bindGame('owned');const otherTicket=foreign.begin(foreignPage);foreign.capture(foreignPage,{...otherTicket,documentNonce:'current-document',timeOrigin:1000,observation});assert.equal(foreign.consume().reason,'foreign-document','equal clocks cannot qualify a different document nonce');
 });
 
-test('actual 2s journal timeout rejects the late ticket without a producer or fallback read',async()=>{
+test('controlled binding timeout rejects the late ticket without a producer or fallback read',async()=>{
  const f=await finalReadFixture({timeout:true,deferred:true}),fs=await import('node:fs/promises'),temp=await fs.mkdtemp((await import('node:os')).tmpdir()+'/computer-late-');f.info.outputPath=name=>temp+'/'+name;
  try{
-  assert.equal(JSON.parse(f.files[0].body).unavailable,'diagnostic-read-timeout');assert.deepEqual(f.timers,[2000]);
+  assert.equal(f.files.length,0,'no fallback journal is invented after rejected binding delivery');assert.deepEqual(f.timers,[]);
   f.release();await Promise.resolve();await Promise.resolve();
   assert.ok(f.hookError);await assert.rejects(f.owner.persist({remainingMs:()=>5000}),/Computer recovery evidence incomplete/);
   const value=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));
   assert.equal(value.handoff.incomplete,true);assert.equal(value.handoff.journalReadTimedOut,true);
-  assert.equal(JSON.parse(f.files[0].body).unavailable,'diagnostic-read-timeout');assert.equal(f.reads(),0,'the expired ticket is refused before the producer; releasing it cannot create later evidence');assert.equal(f.unroutes(),1);
+  assert.equal(f.files.length,0);assert.equal(f.reads(),0,'the expired ticket is refused before the producer; releasing it cannot create later evidence');assert.equal(f.unroutes(),1);
  }finally{await fs.rm(temp,{recursive:true,force:true});}
 });
 
