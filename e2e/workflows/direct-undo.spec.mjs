@@ -42,7 +42,7 @@ test('another human still must approve Undo',async({page,otherPlayer,baseURL})=>
  await openDirectGameLink(otherPlayer,baseURL,gameHash);await requestPlayerJoin(otherPlayer);await acceptPendingRequest(page);
  const initial=await readUndoGame(page,gameId,true);await submitPlayableAction(page,initial.legalActions.find(action=>action.from&&action.to));await expect.poll(async()=>(await readUndoGame(page,gameId,true)).moves.filter(move=>!move.undone).length).toBe(1);
  const before=await readUndoGame(page,gameId,true),move=before.moves.find(item=>!item.undone);expect(move).toBeTruthy();
- await switchGamePanel(page,'history');const row=page.locator(`[data-testid="history-move-item"][data-move-id="${move.moveId}"]`);await selectRecordedUndoMove(row);await row.getByRole('button',{name:'Undo before this move',exact:true}).click();
+ await switchGamePanel(page,'history');const row=page.locator(`[data-testid="history-move-item"][data-move-id="${move.moveId}"]`);await selectRecordedUndoMove(row,move);await row.getByRole('button',{name:'Undo before this move',exact:true}).click();
  await expect(page.locator('[data-action="rescind-revert-request"]')).toBeVisible();await expect(otherPlayer.locator('[data-action="accept-revert-request"]')).toBeVisible();
  const waiting=await readUndoGame(page,gameId,true);expect(waiting.board.state).toEqual(before.board.state);expect(waiting.moves.filter(item=>!item.undone)).toHaveLength(1);expect(waiting.pendingRevertRequest.targetMoveId).toBe(move.moveId);
  await otherPlayer.locator('[data-action="accept-revert-request"]').click();await expect.poll(async()=>(await readUndoGame(page,gameId,true)).moves.filter(item=>!item.undone).length).toBe(0);

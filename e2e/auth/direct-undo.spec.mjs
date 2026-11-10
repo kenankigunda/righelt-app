@@ -16,10 +16,14 @@ test('computer Undo waits for an admitted move and never asks its human owner fo
  await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&new URL(response.url()).pathname==='/api/shell/games');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const response=await created;expect(response.status()).toBe(200);const initial=(await response.json()).game;
  await expect(page.locator('[data-computer-activity="here"]')).toHaveText('Active here');
- let releaseComputer;const held=new Promise(resolve=>releaseComputer=resolve),computerCommands=[],resumes=[];
- const computerRoute=async route=>{const body=route.request().postDataJSON();if(body?.gameId===initial.id&&body.payload?.computer){computerCommands.push(body);await held;}await route.continue();};
+ let releaseComputer;const held=new Promise(resolve=>releaseComputer=resolve),computerCommands=[],resumes=[],computerRouteTasks=[];
+ const computerRoute=route=>{
+  const task=(async()=>{const body=route.request().postDataJSON();if(body?.gameId===initial.id&&body.payload?.computer){computerCommands.push(body);await held;}await route.continue();})();
+  computerRouteTasks.push(task);task.catch(()=>{});return task;
+ };
  await context.route('**/apply',computerRoute);
  page.on('request',request=>{if(isOperationRequest(request,'computer-control')&&operationValues(request).action==='resume')resumes.push(request.postDataJSON());});
+ let primary;
  try{
   await submitPlayableAction(page,initial.legalActions.find(action=>action.from&&action.to));await expect.poll(async()=>(await readUndoGame(page,initial.id,false)).moves.filter(move=>!move.undone&&!move.computerProof).length).toBe(1);const afterHuman=await readUndoGame(page,initial.id,false);
   if(afterHuman.canEndTurn)await page.locator('[data-board-preview-action="end-turn"]').click();
@@ -36,5 +40,11 @@ test('computer Undo waits for an admitted move and never asks its human owner fo
   expect(new Set(computerCommands.map(command=>command.clientCommandId)).size).toBe(1);for(const command of computerCommands)expect(command).toEqual(computerCommands[0]);
   expect(proof.game.moves.filter(move=>move.undone)).toHaveLength(2);
   await page.screenshot({path:info.outputPath('computer-direct-undo.png')});await info.attach('computer-direct-undo-command',{body:JSON.stringify({undoId:proof.command.clientCommandId,computerId:computerCommands[0].clientCommandId,resumeId:resumes[0].clientCommandId}),contentType:'application/json'});
- }finally{releaseComputer();if(!page.isClosed())await context.unroute('**/apply',computerRoute);}
+ }catch(error){primary=error;throw error;}finally{
+  releaseComputer();
+  const failures=[];
+  try{await context.unroute('**/apply',computerRoute);}catch(error){failures.push(error);}
+  failures.push(...(await Promise.allSettled(computerRouteTasks)).filter(row=>row.status==='rejected').map(row=>row.reason));
+  if(failures.length)throw new AggregateError([...(primary?[primary]:[]),...failures],'Computer route cleanup failed',{cause:primary??failures[0]});
+ }
 });
