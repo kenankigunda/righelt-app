@@ -205,7 +205,7 @@ test('ordinary computer undo restores the human turn and resumes computer contro
     const firstMove=(await projected(page,initial.id)).moves.find(move=>!move.undone);
     expect(firstMove?.moveId).toBeTruthy();
     const row=page.locator(`[data-testid="history-move-item"][data-move-id="${firstMove.moveId}"]`);
-    await row.locator('.history-item-info').click();
+    await row.locator(':scope > .history-move-hit').click();
     await row.getByRole('button',{name:'Undo before this move',exact:true}).click();
     await expect.poll(async () => {
       const game = await projected(page, initial.id);
@@ -388,7 +388,7 @@ test('ordinary computer Undo retains one explicit input across its held own rene
     const firstMove = authority.moves.find(move => !move.undone);
     expect(firstMove?.moveId).toBeTruthy();
     const row = page.locator(`[data-testid="history-move-item"][data-move-id="${firstMove.moveId}"]`);
-    await row.locator('.history-item-info').click();
+    await row.locator(':scope > .history-move-hit').click();
     await expect(row).toHaveAttribute('aria-current', 'true');
     const undo = row.getByRole('button', {name:'Undo before this move',exact:true});
     await expect(undo).toBeVisible(); await expect(undo).toBeEnabled();

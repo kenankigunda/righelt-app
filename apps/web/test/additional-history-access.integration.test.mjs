@@ -1,3 +1,6 @@
+import {selectedHistoryPresentation} from '../shell/history-narration.js';
+import {recordedMoveNumber,visibleRecordedMoves} from '../shell/recorded-narration.js';
+import {renderBoardMessageHtml} from '../board/message-presentation.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -8,7 +11,7 @@ const extract=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end
 async function renderAccess(accountState,ownershipMode){
  let requests=0,authorityResets=0,dialogOpen=true,focused='start-new-game';
  const game={id:'g',gameplayRevision:0,ownershipMode};
- const context={createAdditionalHistory,canReadAdditionalHistory,account:{snapshot:()=>accountState},getCurrentViewedGameId:()=> 'g',render:()=>{},escapeHtml:String,icon:()=>'',queueMicrotask,
+ const context={selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,createAdditionalHistory,canReadAdditionalHistory,account:{snapshot:()=>accountState},getCurrentViewedGameId:()=> 'g',render:()=>{},escapeHtml:String,icon:()=>'',queueMicrotask,
   transport:{getAuthoritativeGame:()=>game,additionalHistory:async()=>{
    requests++;
    if(accountState.enabled&&(!accountState.session.authenticated||ownershipMode==='legacy_guest')){

@@ -7,7 +7,7 @@ const game=()=>({computer:{seats:{p1:'tau',p2:null}},board:{state:{turnIndex:1}}
 test('narration and replay CTA belong to completed preceding computer turn until selection',()=>{
   const g=game();assert.equal(latestComputerTurn(g).last.moveId,'m');
   const message=computerBoardMessage(g,{});
-  assert.equal(message.text,'Tau rushed a piece from (1, 2) to (2, 3)');assert.equal(message.action.label,'Show me again');
+  assert.equal(message.text,'Tau rushed from (1, 2) to (2, 3)');assert.equal(message.action.label,'Show me again');
   assert.equal(computerBoardMessage(g,{}, {selectedPieceId:'piece'}),null);
   g.board.state.turnIndex=2;assert.equal(computerBoardMessage(g,{}),null);
   g.moves[0]={...move,undone:true};assert.equal(latestComputerTurn(g),null);
@@ -76,17 +76,17 @@ test('an idle unacquired runner never claims it is thinking, including delayed r
 
 test('whole-sequence narration identifies rush groups and the original push victim',()=>{
  const action=(type,actorId,from,to)=>({action:{type,actorId,from,to}}),point=(row,col)=>({row,col});
- assert.equal(describeTurn([action('rush','a',point(1,1),point(1,2)),action('rush','b',point(2,1),point(2,2))],'Horus'),'Horus rushed several pieces');
+ assert.equal(describeTurn([action('rush','a',point(1,1),point(1,2)),action('rush','b',point(2,1),point(2,2))],'Horus'),'Horus rushed 2 pieces to (1, 2) and (2, 2)');
  const push=action('push','a',point(1,1),point(1,2)),retreat=action('retreat','victim',point(1,2),point(0,2)),follow=action('follow','a',point(1,2),point(1,3));
- assert.equal(describeTurn([push,retreat,follow],'Horus'),'Horus pushed (1, 2) and had a piece follow');
- assert.equal(describeTurn([push,retreat,follow,action('follow','b',point(2,2),point(1,2))],'Horus'),'Horus pushed (1, 2) and had several pieces follow');
- assert.equal(describeTurn([push,retreat,follow,{...action('follow','b',point(2,2),point(1,2)),undone:true}],'Horus'),'Horus pushed (1, 2) and had a piece follow');
+ assert.equal(describeTurn([push,retreat,follow],'Horus'),'Horus pushed onto (1, 2)');
+ assert.equal(describeTurn([push,retreat,follow,action('follow','b',point(2,2),point(1,2))],'Horus'),'Horus pushed onto (1, 2) and had 1 piece follow');
+ assert.equal(describeTurn([push,retreat,follow,{...action('follow','b',point(2,2),point(1,2)),undone:true}],'Horus'),'Horus pushed onto (1, 2)');
 });
 
 
-test('one rushed piece is narrated from its first source to its final destination',()=>{
- const moves=[{action:{type:'rush',actorId:'a',from:{row:1,col:1},to:{row:1,col:2}}},{action:{type:'rush',actorId:'a',from:{row:1,col:2},to:{row:2,col:2}}}];
- assert.equal(describeTurn(moves,'Horus'),'Horus rushed a piece from (1, 1) to (2, 2)');
+test('a single acknowledged rush retains its source and recorded destination',()=>{
+ const moves=[{action:{type:'rush',actorId:'a',from:{row:1,col:1},to:{row:1,col:2}}}];
+ assert.equal(describeTurn(moves,'Horus'),'Horus rushed from (1, 1) to (1, 2)');
  const g={...game(),pendingComputerSaveStartedAt:0,pendingComputerProfile:'tau',pendingComputerControl:true};
  assert.equal(computerBoardMessage(g,{phase:'saving',observedAt:1000}),'Tau is saving their move');
 });

@@ -1,3 +1,4 @@
+import {visibleRecordedMoves,recordedMoveNumber} from './recorded-narration.js';
 const createReplayPreview = ({rootEl, createAdapter, preview}) => {
   const doc = rootEl.ownerDocument;
   const wrap = doc.createElement('div'); wrap.className = 'board-wrap computer-replay-wrap';
@@ -20,12 +21,13 @@ export function buildComputerTurnReplay(options) {
 
 export function buildTurnReplay({moves, completedTurnIndex, gameId, revision, lineageHead, finalSnapshot = null}) {
   if (!Number.isInteger(completedTurnIndex)) return null;
-  const turn = (moves ?? []).filter(move => !move.undone && move.turnIndex === completedTurnIndex && move.action?.type !== 'end_turn');
+  const turn = visibleRecordedMoves((moves ?? []).filter(move => move.turnIndex === completedTurnIndex));
   if (!turn.length) return null;
   if (turn.some((move, index) => !move.moveId || !move.selectionSnapshot || !move.snapshot || move.turnMoveIndex !== index)) return null;
-  const frames = turn.map(move => ({decisionId: move.moveId, action: move.action, before: move.selectionSnapshot, after: move.snapshot, destroyedPieces: move.destroyedPieces ?? []}));
+  const frames = turn.map(move => ({decisionId: move.moveId, action: move.action, before: move.selectionSnapshot, after: move.snapshot, destroyedPieces: move.destroyedPieces ?? [], moveNumber:recordedMoveNumber(move), recordedMove:move}));
   if (finalSnapshot && JSON.stringify(finalSnapshot) !== JSON.stringify(frames.at(-1).after)) {
-    frames.push({decisionId: `turn-${completedTurnIndex}-finalization`, action: {type: 'end_turn'}, before: frames.at(-1).after, after: finalSnapshot, destroyedPieces: []});
+    frames.at(-1).after=finalSnapshot;
+    frames.at(-1).recordedMove={...frames.at(-1).recordedMove,snapshot:finalSnapshot};
   }
   return structuredClone({gameId, revision, lineageHead, turnIndex: completedTurnIndex, frames});
 }
@@ -35,7 +37,7 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
   const doc = rootEl.ownerDocument;
   let replay = null, layer = null, preview = null, index = -1, generation = 0, timer = null, settleWait = null;
   let animations = [], removedTokens = [];
-  const snapshot = () => ({playing: Boolean(replay), step: index + 1, total: replay?.frames.length ?? 0, manual: Boolean(replay && reducedMotion()), gameId: replay?.gameId ?? null, action: index >= 0 && replay?.frames[index] ? structuredClone(replay.frames[index].action) : null});
+  const snapshot = () => ({playing: Boolean(replay), step: index + 1, total: replay?.frames.length ?? 0, manual: Boolean(replay && reducedMotion()), gameId: replay?.gameId ?? null, action: index >= 0 && replay?.frames[index] ? structuredClone(replay.frames[index].action) : null, recordedMove:replay?.frames[Math.max(0,index)]?structuredClone(replay.frames[Math.max(0,index)].recordedMove??null):null});
   const notify = () => onChange(snapshot());
   const wait = duration => new Promise(resolve => { settleWait = resolve; timer = setTimer(() => {timer = null; settleWait = null; resolve(true);}, duration); });
   const clearMotion = () => {
