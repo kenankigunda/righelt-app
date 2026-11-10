@@ -1,5 +1,7 @@
 # UX Validation Workflow
 
+The [marble and glass refresh](MATERIAL_UX_CONTRACT.md) requires independent UX-validator and product-tester loops during planning and implementation. Recheck repaired findings and preserve current and incoming approved workflows. Visual acceptance does not substitute for regression evidence.
+
 This workflow defines how to turn UX goals into automated proof before implementation ships. Use it when a ticket touches UI, interaction, motion, accessibility, branding, layout stability, responsive behavior, or sound.
 
 ## Objective
@@ -81,10 +83,21 @@ Final validation should report:
 - E2E should only smoke-test high-value sound-trigger paths when they materially improve confidence.
 
 ## References
-- [docs/TESTING_STRATEGY.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/TESTING_STRATEGY.md)
-- [docs/ai/FRAGILITY_HARDENING_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/FRAGILITY_HARDENING_WORKFLOW.md)
-- [docs/UX_PRINCIPLES.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/UX_PRINCIPLES.md)
+- [Testing strategy](TESTING_STRATEGY.md)
+- [Fragility review](FRAGILITY_HARDENING_WORKFLOW.md)
+- [UX principles](../UX_PRINCIPLES.md)
 
 ## Validation evidence and PR shepherding
 
-Use the repo skill `skills/validate-and-shepherd/SKILL.md` for local validation or integrated PR shepherding. Run `pnpm validate:local` before completion; use `pnpm validate:integrated --manifest FILE` for ordered PR sets. Inspect actual screenshots, repair source PRs, publish the evidence report, and report current-head readiness and remaining risks. Personal report review progress never authorizes a merge.
+Follow [AGENTS validation guidance](../../AGENTS.md#validation-evidence-and-pr-shepherding) and the installed, pinned sibling `righelt-validation-tools/skills/validate-and-shepherd/SKILL.md`. Use an explicit candidate. The released policy owns execution, evidence reuse, publication and readiness gates. Do not substitute candidate-local tooling or copy a conflicting workflow here. Publication is currently paused until explicitly resumed. Deliver local evidence while preserving merge and activation gates.
+
+
+## Studies and implementation acceptance
+
+Compare alternatives inside the real component and surrounding page, using its actual assets, typography, source renderer and representative acknowledged records. Label synthetic layout fixtures and unmerged incoming states. A selected variant, recommendation, rendered preview and explicit approval are different facts. Record the final approval and later corrections before changing a normative contract. Preserve rejected alternatives as evidence without keeping their rules active. See [the decision index](../UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
+
+For changed interactive surfaces, acceptance includes desktop and 320/390px mobile, breakpoint edges, short/landscape viewports, loaded/fallback/cold fonts, long names and natural 200% text or browser zoom as applicable. Test text enlargement and browser zoom separately when either can change layout. Measure 44px targets, native edge hit tests, nonoverlap, keyboard Enter/Space, focus identity, press continuity, reduced motion, scrolling, loading/error and wrapped states. Inspect source and target roles in grayscale/forced colors when meaning depends on styling. Preserve usable board-cell floors rather than shrinking controls to force fit.
+
+Retain actual DOM references across semantically unchanged refreshes. Verify first input exactly once, including a background update during a native press, held worker/journal/receipt boundaries and negative authority cases. Measure input, projection, durable admission, acknowledgement and visible presentation separately when claiming latency. An unchanged timestamp or matching text is not complete identity or responsiveness proof.
+
+Study QA establishes only its stated scope. It does not prove full-page geometry, real authentication, authoritative game creation, all-browser behavior, physical devices or deployment. Product acceptance needs the relevant contract assertions and exact candidate evidence. Preserve failures and raw originals. Independent review should cover the bounded coherent diff and changed findings, with unresolved gaps disclosed. Resource and final delivery procedures remain in [resource management](RESOURCE_MANAGEMENT.md), [PR workflow](PR_WORKFLOW.md) and the released validation skill. No schedule, email or publication action follows from this guidance.

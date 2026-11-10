@@ -214,15 +214,38 @@ The game ends immediately when a player’s Commander is unsupplied after resolu
 - If `P2` Commander unsupplied and `P1` Commander supplied: `P1` wins.
 - If both Commanders become unsupplied in the same stabilized resolution, result is a draw.
 
-No other win condition exists in v1 spec.
+The approved automatic-ending extension in §8.1 adds turn-start immobility and early sequence finality. It is intended behavior pending implementation and validation, not a claim about the deployed engine.
 
 **Invariant**: A Commander removal always produces a terminal outcome (`p1_win`, `p2_win`, or `draw`). A move whose outcome status is `ongoing` cannot contain a Commander removal. This invariant is relied upon by the history destruction record system to classify Commander removals as `commander_unsupplied` without further engine-side tagging.
+
+## 8.1 Approved automatic endings, pending implementation
+
+Kenan selected these rules and rollout on November 1. [D16 in the decision index](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index) points to the final handoff. Existing continuation and Pass descriptions above remain the implementation baseline until this extension is delivered.
+
+1. A player starting an ordinary turn with Pass as the sole legal action loses. Do not append an unplayed Pass.
+2. Wait for any legal defender response that can save the defender.
+3. Wait when any legal choice in a required attacker continuation can restore defender survival. Multiple alternatives can all be required. Do not choose on the player's behalf.
+4. An optional attacker extension that only rescues the defender does not delay ending.
+5. Preserve optional extra rushes that can save the attacker's own commander, including rescue requiring multiple rushes.
+6. Once relevant continuations cannot change the outcome, end immediately and cancel remaining obligations. Record only played actions, never invented follows.
+
+The selected rollout uses current rules for every future live position: new and ongoing games, Undo-restored positions and games started from History. Upgrade ongoing current positions once. Do not introduce a permanent old-rules live mode, inheritance from a historical ruleset or special labels. Preserve recorded past moves, archived snapshots and completed past outcomes. Visual History/replay reads those saved records. Current-rules re-execution/import can end earlier or reject later old actions. Undo may restore a position that becomes terminal immediately under current rules.
+
+### Technical review and acceptance boundary
+
+These rules are selected. Their implementation mechanics remain under review. Complete legal results and stable commander outcomes must support any terminal proof. Filtered UI actions, computer search subsets, timeouts, cancelled searches and partial enumeration cannot prove sole Pass or defeat. Unknown branches/settlement keep ordinary legal play available and must not become cached negative rescue facts.
+
+The handoff recommends a pure finite same-sequence proof with complete required alternatives and optional self-rescue paths, isolated memo modes and cancellation/work bounds. Numerical budgets require measurement. The exact terminal representation for a displaced pushed defender remains a review gap: clearing continuation flags can resurrect it into supply or create overlapping ordinary pieces. Do not infer safe settlement from that shortcut. Draw/commander-versus-immobility precedence and detailed result-reason wording are recommendations requiring explicit implementation review, not additional selected rules.
+
+Acceptance must cover sole-Pass incoming turns, saving defender responses, differing mandatory alternatives, optional defender-only rescue, multi-step attacker self-rescue, win/draw changes, pushed overlap, destruction/supply cascades and interrupted proof. Turn ownership differs from temporary retreat control. Only End turn, paused computers and spectator filtering are not turn-start immobility.
+
+Authoritative terminal commit and the ongoing-position upgrade need idempotency, revision/ownership fences and atomic board/result/receipt persistence. GET remains read-only. Reconcile in-flight durable follows with their original receipts. Verify duplicate/stale commands, computer stopping, confirmation-only result effects, Undo/branch/import behavior, immutable past snapshots and chronological visual replay. Migration mechanics, safe terminal normalization and final combined engine/API/browser proof remain implementation gates. No production migration or deployment is authorized by this document.
 
 ## 9. Determinism Requirements
 
 - Rules evaluation must be deterministic from current state and chosen action.
 - No hidden randomness.
-- Replay of recorded action sequence must produce identical end result.
+- Evaluation of the same state/action under the same rules is deterministic. Visual replay preserves recorded snapshots and outcomes. Re-executing old actions under current rules follows §8.1 and need not reproduce a superseded ruleset result. Retained archive/hash compatibility is a separate data contract, not permission to rewrite history.
 
 ## 10. Out of Scope
 
