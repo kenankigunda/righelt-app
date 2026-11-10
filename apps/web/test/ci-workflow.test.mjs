@@ -21,13 +21,11 @@ test('every PR-gate lane runs exactly once before any conditional retry',()=>{
  assert.equal(retries.length,prGateLanes().filter(l=>suiteById(l.suite).browser).length);
  for(const[,job]of retries)assert.match(job.if,/retry_eligible == 'true'/);
 });
-test('PR validation is the real aggregate and Full validation is only its compatibility alias',()=>{
+test('PR validation is the sole required aggregate',()=>{
  const gate=actual.jobs['pr-validation'];assert.equal(gate.name,'PR validation');assert.equal(gate.if,'always()');
- assert.deepEqual(gate.needs.sort(),Object.keys(actual.jobs).filter(id=>!['pr-validation','full-validation'].includes(id)).sort());
- const alias=actual.jobs['full-validation'];assert.equal(alias.name,'Full validation');assert.deepEqual(alias.needs,['pr-validation']);
- assert.equal(alias.steps.length,1);assert.match(alias.steps[0].run,/PR_VALIDATION_RESULT/);
+ assert.deepEqual(gate.needs.sort(),Object.keys(actual.jobs).filter(id=>id!=='pr-validation').sort());
+ assert.equal(actual.jobs['full-validation'],undefined);
  for(const [id,job] of Object.entries(actual.jobs)){
-  if(id==='full-validation')continue;
   assert.equal(job.steps.find(s=>s.uses==='actions/checkout@v5').with.ref,'${{ github.event.pull_request.head.sha || github.sha }}');
   assert.ok(job.steps.some(s=>s.run==='pnpm install --frozen-lockfile'));
   assert.ok(job.steps.some(s=>s.uses==='pnpm/action-setup@v4'&&s.with.version==='9.15.9'));

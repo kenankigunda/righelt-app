@@ -86,19 +86,18 @@ test('persisted CI evidence requires exact name/tree/command, expiry and survivi
  await writeFile(imported.receipts.Typecheck.evidence[0].archive,'corrupt');assert.equal(await loadCIReceipt(file,options),null);
 });
 
-test('tracked workflow exposes exact PR evidence and a compatibility-only alias',async()=>{
+test('tracked workflow exposes exact PR evidence through its authoritative aggregate',async()=>{
  const source=await readFile(new URL('../../../.github/workflows/ci.yml',import.meta.url),'utf8');
  const {workflowJobs}=await import('../ci-evidence.mjs');const jobs=workflowJobs(source);assert.ok(jobs.length>8);assert.ok(!jobs.some(j=>j.id==='push'));
- const aggregate=jobs.find(j=>j.id==='pr-validation'),alias=jobs.find(j=>j.id==='full-validation');
+ const aggregate=jobs.find(j=>j.id==='pr-validation');
  assert.ok(aggregate.steps.some(s=>s.name==='Verify exact profile receipts'));
- assert.deepEqual(generatedWorkflow().jobs['full-validation'].needs,['pr-validation']);
- assert.deepEqual(alias.steps.map(s=>s.name),['Require PR validation']);
+ assert.ok(!jobs.some(j=>j.id==='full-validation'));
+ assert.ok(!generatedWorkflow().jobs['full-validation']);
 });
 
 const requireExactSharedNodePatch=document=>{
  const versions=[];
  for(const [id,job] of Object.entries(document.jobs)){
-  if(id==='full-validation')continue;
   const setup=job.steps.filter(step=>step.uses?.split('@')[0]==='actions/setup-node');
   assert.equal(setup.length,1,`${id} must set up Node exactly once`);
   const version=setup[0].with?.['node-version'];
@@ -106,7 +105,7 @@ const requireExactSharedNodePatch=document=>{
   assert.match(version,/^22\.\d+\.\d+$/,`${id} must name an exact Node 22 patch`);
   versions.push(version);
  }
- assert.equal(versions.length,Object.keys(document.jobs).length-1,'every executable job except the compatibility alias must select Node');
+ assert.equal(versions.length,Object.keys(document.jobs).length,'every CI job must select Node');
  assert.equal(new Set(versions).size,1,'all CI jobs must use the same exact Node patch');
 };
 
