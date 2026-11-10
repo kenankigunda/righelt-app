@@ -1,7 +1,7 @@
 import {access,readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {RESULT_HEADING_CONTRACTS} from './result-heading-contract.mjs';
-import {sourceFile,stringContract,currentModelContract,historyUndoLabelContract} from './source-contract.mjs';
+import {sourceFile,stringContract,currentModelContract,historyUndoLabelContract,historyUndoLabelSource} from './source-contract.mjs';
 // Source capabilities select explicit contracts before tests run. A failed
 // assertion never changes contracts or downgrades account proof to guest proof.
 export async function candidateCapabilities(root) {
@@ -32,8 +32,17 @@ export async function candidateCapabilities(root) {
     separateAccountForms=/^export const ACCOUNT_ENTRY_LAYOUT\s*=\s*['"]separate['"];?$/m.test(dialog);
   } catch(error) { if(error.code!=='ENOENT') throw error; }
   let historyUndoLabel=null;
-  try { historyUndoLabel=historyUndoLabelContract(await readFile(path.join(root,'apps/web/shell/app.js'),'utf8')); }
-  catch(error) { if(error.code!=='ENOENT') throw error; }
+  try {
+    const app=await readFile(path.join(root,'apps/web/shell/app.js'),'utf8');
+    const selected=historyUndoLabelSource(app);
+    if(selected==='app.js')historyUndoLabel=historyUndoLabelContract(app);
+    else {
+      let renderer;
+      try { renderer=await readFile(path.join(root,'apps/web/shell/history-rendering.js'),'utf8'); }
+      catch(error){if(error.code==='ENOENT')throw Error('History renderer source is missing');throw error;}
+      historyUndoLabel=historyUndoLabelContract(renderer,{renderer:true});
+    }
+  } catch(error) { if(error.code!=='ENOENT') throw error; }
   let historyHitTargetContract='legacy-info-v1';
   try {
     const history=await readFile(path.join(root,'apps/web/shell/history-narration.js'),'utf8');
