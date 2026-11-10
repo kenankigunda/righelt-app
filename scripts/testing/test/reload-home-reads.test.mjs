@@ -81,11 +81,16 @@ test('actual spec owns original waiter rejections, preserves primary reload fail
  await Promise.resolve();
 });
 
-test('all original workflow assertions after the reload block remain byte-exact',()=>{
+test('reload workflow changes only the approved canonical-name assertions',()=>{
  const current=readFileSync(new URL('../../../e2e/workflows/ux-refresh-checkpoint.spec.mjs',import.meta.url),'utf8');
  const anchor=" await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);\n await expect(page.getByTestId('home-create-game')).toBeEnabled();";
  assert.ok(current.includes(anchor));
- assert.equal(createHash('sha256').update(current.slice(current.indexOf(anchor))).digest('hex'),'b01b2f1c671f3eac064701a808e737324cde373fb615acab026c55b5dfd0b2cf');
+ const tail=current.slice(current.indexOf(anchor));
+ const canonical=" await expect(ownProfile).toHaveText('Guest');await expect(ownProfile).toHaveAccessibleName('Guest, you, Red, Connected');";
+ const original=" await expect(ownProfile).toHaveText('You');await expect(ownProfile).toHaveAccessibleName('You, Red, Connected');";
+ assert.equal(tail.split(canonical).length,2,'canonical identity assertions must occur exactly once');
+ // Invert only PR207's approved name change; conserve every other assertion.
+ assert.equal(createHash('sha256').update(tail.replace(canonical,original)).digest('hex'),'b01b2f1c671f3eac064701a808e737324cde373fb615acab026c55b5dfd0b2cf');
  assert.ok(current.includes('expect(await response.finished()).toBeNull()'));
 });
 
