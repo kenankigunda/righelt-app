@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { createRouteHydration } from '../shell/route-hydration.js';
+import { sameRouteRead, sameHomeReadScope } from '../shell/home-section-reads.js';
 import { createIssueDiagnostics } from '../shell/issue-diagnostics.js';
 import { parseRouteFromHash, buildHomeHash, buildHashForRoute, FLYOUT_KEYS } from '../shell/routes.js';
 import { renderInvitationSurface } from '../shell/invitations.js';
@@ -51,6 +52,7 @@ function fixture({staleInvite=false}={}) {
     getShellLayoutMode:()=>layout,saveDebugFlyoutOpen:noop,storage:{},scheduleGameShellStickyLayout:noop,scheduleResponsiveHomeSectionPageSizes:noop,
     prefersReducedMotion:()=>true,isPassivePageClick:()=>true,accountDialog:{isOpen:()=>false},delay:async()=>{},FLYOUT_MOTION_MS:1,
 
+    sameRouteRead,sameHomeReadScope,
     getVisibleHomeSectionKeys:()=>[],getHomeSection:()=>{},getHomeSectionVisiblePageSize:()=>0,getHomeSectionColumnCount:()=>1,
     syncHomeSections:async()=>{homeLoads++;},syncLiveChannels:()=>{channels++;},
     invitationLoadFailureKind,issueDiagnostics:diagnostics,render:options=>renders.push(options),maybeRevealRouteTransition:()=>{},
