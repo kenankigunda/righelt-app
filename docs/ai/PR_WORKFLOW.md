@@ -2,6 +2,8 @@
 
 `PR validation` over the exact `pr-gate` profile is the only blocking CI aggregate. `Full validation` is retired and must not be awaited. Broad `nightly-full` results are advisory: failed, pending or missing nightly evidence does not independently block review, merge or deployment. Keep explicit feature acceptance, independent review, authorization, retained-state proof and deployed-identity verification separate. Investigate confirmed product defects without restoring a blanket full-suite gate.
 
+Resolve actual main from its fetched or primary branch ref, not a pull request's historical base snapshot. Before merging, verify that the exact tested PR head contains that live target, while retaining the PR/run snapshot identity separately.
+
 ## One place for each feature
 
 Use one canonical branch and PR per feature, normally corresponding to its parent ticket. Reuse the matching PR and record its branch, worktree and URL in the ticket. Subtasks, implementation layers, tests and repairs belong in that feature PR; file count alone is not a reason to split it.
