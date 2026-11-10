@@ -1,7 +1,6 @@
+import {renderResultPanel} from '../shell/result-panel.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {runInNewContext} from 'node:vm';
 import {getGameResult,renderResultText,createRematchDialog,REMATCH_CHOICES_CONTRACT} from '../shell/game-result.js';
 import {playerDisplayName} from '../shell/perspective-labels.js';
 
@@ -35,12 +34,10 @@ test('true human both-side results celebrate either actual winner and swap only 
 });
 
 test('actual result HTML isolates and escapes observer names without changing plain result payload',()=>{
- const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
- const body=source.slice(source.indexOf('const renderResult ='),source.indexOf('const renderGame ='));
  const game=finished('p1',['<img src=x> שלום','Bo & Co']);
  const escapeHtml=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
  const context={game,getGameResult,renderResultText,playerDisplayName,transport:{getIdentityId:()=> 'observer',getAuthoritativeGame:()=>game},escapeHtml,renderResultMark:()=>'',formatDisplayGameId:String,icon:()=>''};
- runInNewContext(`${body};globalThis.html=renderResult(game);`,context);
+ context.html=renderResultPanel(game,context);
  assert.match(context.html,/<bdi dir="auto">&lt;img src=x&gt; שלום<\/bdi><\/span> won/);
  assert.match(context.html,/<bdi dir="auto">Bo &amp; Co’s commander<\/bdi><\/span> was destroyed/);
  assert.doesNotMatch(context.html,/<img src=x>/);assert.doesNotMatch(context.html,/Self-play|Player [12]/);
@@ -63,17 +60,15 @@ test('rematch keeps semantic selected side and opponent values with concise colo
 
 
 test('actual result summary identifies true human both-side ownership without relabeling manual computers',()=>{
- const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
- const body=source.slice(source.indexOf('const renderResult ='),source.indexOf('const renderGame ='));
  for(const winner of ['p1','p2'])for(const names of [['',''],['Ada','Ada']]) {
   const game={...finished(winner,names),selfPlayMode:true,selfPlayStartSide:'p2'};game.player2.identityId='red';
   const context={game,getGameResult,renderResultText,playerDisplayName,transport:{getIdentityId:()=> 'red',getAuthoritativeGame:()=>game},escapeHtml:String,renderResultMark:()=>'',formatDisplayGameId:String,icon:()=>''};
-  runInNewContext(`${body};globalThis.html=renderResult(game);`,context);
+  context.html=renderResultPanel(game,context);
   assert.match(context.html,/<p>You play both sides<\/p>/);assert.doesNotMatch(context.html,/Guest 1.* vs |Ada.* vs /);
   assert.match(context.html,new RegExp(`data-result-tone="victory" data-winner="${winner}"`));
   const manual={...game,computer:{seats:{p1:'horus',p2:null},manual:true},player1:{identityId:'red',computerProfile:'horus'}};
   const manualContext={...context,game:manual,transport:{getIdentityId:()=> 'red',getAuthoritativeGame:()=>manual}};
-  runInNewContext(`${body};globalThis.html=renderResult(game);`,manualContext);
+  manualContext.html=renderResultPanel(manual,manualContext);
   assert.doesNotMatch(manualContext.html,/You play both sides/);assert.match(manualContext.html,/Horus/);
  }
 });

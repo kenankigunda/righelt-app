@@ -17,11 +17,13 @@ const recipe=JSON.parse(read('e2e/support/client-settlement-transformation.json'
 const old=transformBoardAdmissionModule(raw,oldRecipe),observed=transformClientSettlement(raw,old,recipe);
 const callback=source=>{const start=source.indexOf('        canInteract: ');return source.slice(start+'        canInteract: '.length,source.indexOf('\n      }),',start)).trim().replace(/,$/,'');};
 const guardSource=raw.match(/const canControlLiveBoard = ([^\n]+);/)[1];
+const forcedFollowWorkingSource=raw.match(/const forcedFollowWorking = ([^\n]+);/)[1];
 function harness(store){
  const root={isConnected:true};let currentRoot=root,scopeGame='owned';
- const context={performance:{timeOrigin:1234},document:{getElementById:()=>currentRoot},transport:store,game:{id:'owned'},boardEl:root,getCurrentViewedGameId:()=>scopeGame,mountedBoardGameId:'owned',currentRoute:{},scenarioCapture:null,hostInvite:null,getBoardGame:value=>value,isOngoingGame:g=>g?.board?.state?.outcome?.status==='ongoing',account:{canPlay:()=>true},Object,WeakMap};
+ const context={performance:{timeOrigin:1234},document:{getElementById:()=>currentRoot},transport:store,game:{id:'owned'},boardEl:root,getCurrentViewedGameId:()=>scopeGame,mountedBoardGameId:'owned',currentRoute:{},scenarioCapture:null,hostInvite:null,getBoardGame:value=>value,isOngoingGame:g=>g?.board?.state?.outcome?.status==='ongoing',account:{canPlay:()=>true},forcedFollowSession:null,Object,WeakMap};
  vm.createContext(context);vm.runInContext(`(${installClientSettlementRecorder.toString()})({namespace:'fixture'});`,context);
  context.canControlLiveBoard=vm.runInContext(`(${guardSource})`,context);
+ context.forcedFollowWorking=vm.runInContext(`(${forcedFollowWorkingSource})`,context);
  const run=vm.runInContext(`(${callback(observed)})`,context),original=vm.runInContext(`(${callback(old)})`,context);
  context.__retreatClientSettlement.bind(run,root);
  const snapshot=()=>context.__retreatClientSettlement.snapshot();
@@ -37,6 +39,15 @@ test('actual host + actual store: known receipt is not client consumption; ordin
  const before=JSON.stringify(f.store.getAuthoritativeGame('owned'));f.store.applyLiveGameUpdate({game:f.g,eventSeq:5,baseline:true});assert.equal(h.run(),true);
  assert.equal(settlementMatches(h.snapshot(),scope,5),true);assert.equal(f.requests(),0);assert.equal(JSON.stringify(f.store.getAuthoritativeGame('owned')),before);
  assert.equal(h.snapshot().latest.positionOnly,false,'optional positionOnly absent on actual happy view explicitly means not position-only');
+});
+test('actual extracted host preserves the current forced-Follow working-game admission fence',t=>{
+ const f=storeFixture(t),h=harness(f.store);assert.equal(h.run(),true);
+ h.context.forcedFollowSession={snapshot:()=>({working:true,gameId:'owned'})};
+ assert.equal(h.original(),false);assert.equal(h.run(),false);assert.equal(h.snapshot().latest.hostEligible,false);
+ h.context.forcedFollowSession={snapshot:()=>({working:true,gameId:'foreign'})};
+ assert.equal(h.original(),true);assert.equal(h.run(),true);
+ h.context.forcedFollowSession={snapshot:()=>({working:false,gameId:'owned'})};
+ assert.equal(h.original(),true);assert.equal(h.run(),true);assert.equal(f.requests(),0);
 });
 test('actual store HTTP recovery keeps barrier closed until applied authority and recovery ownership settle',async t=>{
  const f=storeFixture(t),h=harness(f.store);h.run();const scope=h.scope();f.store.setConnectionRecovering('owned',true,{reason:'behind_server'});assert.equal(h.run(),false);assert.equal(settlementMatches(h.snapshot(),scope,5),false);
