@@ -43,7 +43,7 @@ test('mounted Players presence refresh patches the join subtree and retains the 
  game.player1.connected=true;
  assert.equal(context.refresh(game),true);profiles.sync();
  assert.equal(patched.length,2);assert.equal(patched[0],rendered[0]);assert.equal(patched[1],rendered[1]);
- assert.match(patched[0],/aria-label="You, Red, Disconnected"/);assert.match(patched[1],/aria-label="You, Red, Connected"/);
+ assert.match(patched[0],/aria-label="VeryLongUnbrokenDisplayName12345, you, Red, Disconnected"/);assert.match(patched[1],/aria-label="VeryLongUnbrokenDisplayName12345, you, Red, Connected"/);
  assert.equal(document.activeElement,owner);assert.equal(owner.dataset.profileKey,'seat:P1');assert.equal(context.panelPendingFocus.size,0);
  releaseProfile({ok:true,json:async()=>({joinedMonth:'2025-01'})});await loadingProfile;
  assert.match(slot.innerHTML,/Joined January 2025/);assert.equal(attributes.get('aria-expanded'),'true');assert.equal(document.activeElement,owner);

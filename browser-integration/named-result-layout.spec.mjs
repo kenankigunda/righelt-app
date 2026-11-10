@@ -7,7 +7,7 @@ for(const [width,scale] of [[320,200],[390,200],[1440,100]])for(const [kind,name
  await page.evaluate(({name,scale})=>{document.documentElement.style.fontSize=`${scale}%`;window.namedResultFixture.render(name);},{name,scale});
  await page.evaluate(()=>document.fonts.ready);
  expect(await page.evaluate(()=>document.fonts.check('700 56px Manrope'))).toBe(true);
- const result=page.getByTestId('game-result'),heading=result.getByRole('heading',{name:`${name} won`,exact:true});
+ const result=page.getByTestId('game-result'),heading=result.getByRole('heading',{name:`Red: ${name} won`,exact:true});
  await expect(heading).toBeVisible();await expect(heading.locator('bdi')).toHaveText(name);await expect(heading.locator('bdi')).toHaveAttribute('dir','auto');
  await expect(result.locator('img')).toHaveCount(0);
  const geometry=await result.evaluate(element=>({documentOverflow:document.documentElement.scrollWidth-document.documentElement.clientWidth,resultOverflow:element.scrollWidth-element.clientWidth,headingOverflow:element.querySelector('h1').scrollWidth-element.querySelector('h1').clientWidth,fontSize:parseFloat(getComputedStyle(element.querySelector('h1')).fontSize)}));

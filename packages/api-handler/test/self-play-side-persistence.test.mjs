@@ -60,7 +60,8 @@ test("SQLite persistence and the game HTTP projection retain blue self-play resu
       assert.equal(roomBody.eventSeq, revision);
       assert.equal(roomBody.game.selfPlayStartSide, "p2");
       const result = getGameResult(roomBody.game, "me");
-      assert.equal(result.title, "You won");
+      assert.equal(result.title, "You won as Red");
+      assert.equal(result.winner, "p1", "the actual winner, not the creator side, determines the result name");
       assert.equal(result.rematchSide, "p1");
       if (revision === 1) await persistGameState(env, projection.game, 2);
     }

@@ -489,6 +489,12 @@ This section is normative and applies to every new endpoint, page, and performan
 - A forecast never removes a real piece, changes frozen action eligibility, completes a turn, adds a history destruction record, or triggers removal animation or sound. Real move admission continues to use the authoritative state. Preserve the existing acknowledged-history presentation separately.
 
 
+### Canonical player references and accessible affiliation
+
+Use the current canonical player name in its owning color for identity references. One anonymous player is Guest; when both seats are anonymous, use Guest 1 and Guest 2 by fixed seat. Names that happen to be Red, Blue or Guest remain unchanged. Preserve profile actions, bidirectional isolation and complete accessible names for long or duplicate names. Accessible labels retain the owner color and identify the human's own seat independently of visible color. Useful relative control prompts and You won may remain.
+
+History actor references use canonical names rather than You or Opponent. Result titles identify the actual winner, never the active side or selected rematch side. Human self-play needs the winning-seat qualification: You won as Red/Blue for its owner and {player name} won as Red/Blue for viewers. Other results omit redundant visible color suffixes while retaining accessible color attribution. Commander explanations carry structured owner references; style the entire Your Blue commander phrase in the relevant color. Never infer an owner's color by matching user-supplied name text. Viewing, temporary computer control and replay must not change the recorded owner or gameplay authority.
+
 ### History endpoint roles
 
 - Desktop and mobile History opt into dashed violet 2px source borders and solid green 2px target borders. Shared-role squares retain the dashed violet outer border plus an inset solid green 2px outline. Colors remain `#7650A6` and `#1F7A5A`.
