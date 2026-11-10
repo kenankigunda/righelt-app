@@ -15,7 +15,7 @@ test('only tracked sent-account replies authorize; duplicate and foreign input c
  applyReply(run,{...m,id:'c',text:'cancel merge #123'},m.from,m.from);assert.equal(run.prs[0].authorization.state,'cancelled');
 });
 test('merge requires current gates, source revision, explicit authorization and dependencies',()=>{
- const p={number:1,ciGate:gateFixture().gate,head:'h',base:'main',gatesHead:'h',gatesBase:'b',independentReview:{status:'passed',head:'h'},checks:'passed',review:'passed',preview:'not-configured',previewCheckedHead:'h',conflicts:false,open:true,authorization:{state:'authorized',target:'main'}};
+ const p={number:1,baseSnapshot:'b',ciGate:gateFixture().gate,head:'h',base:'main',gatesHead:'h',gatesBase:'b',independentReview:{status:'passed',head:'h'},checks:'passed',review:'passed',preview:'not-configured',previewCheckedHead:'h',conflicts:false,open:true,authorization:{state:'authorized',target:'main'}};
  const s={head:'h',base:'b',status:'passed',visualReviewed:true,sourceClean:true};assert.equal(canMerge(p,s,'b',{repository:'o/r'}),true);
  for(const patch of [{checks:'pending'},{review:'pending'},{conflicts:true},{scopeDecision:true},{waitingFor:[12]},{authorization:{state:'cancelled'}}])assert.equal(canMerge({...p,...patch},s,'b',{repository:'o/r'}),false);
  assert.equal(canMerge(p,{...s,head:'old'},'b',{repository:'o/r'}),false);assert.equal(canMerge(p,{...s,visualReviewed:false},'b',{repository:'o/r'}),false);
@@ -68,7 +68,7 @@ test('a cached passed flag cannot replace fresh canonical PR gate provenance',()
  const p={number:1,head:'h',base:'main',gatesHead:'h',gatesBase:'b',independentReview:{status:'passed',head:'h'},checks:'passed',review:'passed',preview:'not-configured',previewCheckedHead:'h',conflicts:false,open:true,authorization:{state:'authorized',target:'main'}};
  const stage={head:'h',base:'b',status:'passed',visualReviewed:true,sourceClean:true};
  assert.equal(canMerge(p,stage,'b',{repository:'o/r'}),false);
- p.ciGate=gateFixture().gate;
+ p.ciGate=gateFixture().gate;p.baseSnapshot='b';
  assert.equal(canMerge(p,stage,'b',{repository:'o/r'}),true);
  p.advisoryChecks=[{name:'Nightly full validation',conclusion:'FAILURE',private:'SECRET'}];
  assert.equal(canMerge(p,stage,'b',{repository:'o/r'}),true);
