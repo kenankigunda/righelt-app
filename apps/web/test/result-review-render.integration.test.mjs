@@ -1,3 +1,4 @@
+import {createHomeSectionReads} from '../shell/home-section-reads.js';
 import {publishAcknowledgedBoardMessage} from '../shell/playback-presentation.js';
 import {renderResultPanel} from '../shell/result-panel.js';
 import {selectedHistoryPresentation} from '../shell/history-narration.js';
@@ -217,6 +218,7 @@ function historyRouteHarness(t) {
     syncRenderedMarkupSnapshot:()=>{context.lastRenderedRouteKey=context.getRouteRenderKey();},
     viewingIntent:{saveScroll:noop,cancelUndo:noop,scrollTop:()=>0},replayRequests:{cancel:noop},replayController:null,mobileNavigation:null,
   };
+  context.homeSectionReads=createHomeSectionReads({state:context,pendingHomeSectionKeys:new Set()});
   runInNewContext(`
     ${patchHelper}
     let desktopBoardFit=null;
