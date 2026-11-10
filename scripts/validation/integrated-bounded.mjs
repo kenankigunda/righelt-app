@@ -47,7 +47,7 @@ export async function boundedIntegratedRun({spec,cwd=process.cwd(),dir,resume=fa
  }});
  const attempt=Date.now(),attemptDir=path.join(dir,'attempts',String(attempt));
  if(retainedInput){await mkdir(path.dirname(attemptDir),{recursive:true});await mkdir(attemptDir,{mode:0o700});}else await mkdir(attemptDir,{recursive:true});
- const run={version:2,id:previous?.id??`integrated-${attempt}`,mode:'integrated',repository:spec.repository,startedAt:previous?.startedAt??new Date().toISOString(),base,prs,stages:[],risks:[],findings:[],mergeMethod:spec.mergeMethod??'squash',complete:false,harnessRevision,harnessFingerprint,plan:spec,publication:{status:'pending'},emailThreads:previous?.emailThreads??[],notifications:previous?.notifications??[],attempts:previous?[...(previous.attempts??[]),{id:previous.attempt,base:previous.base,stages:previous.stages,risks:previous.risks,publication:previous.publication,...(previous.retainedTransfer?{retainedTransfer:previous.retainedTransfer}:{})}]:[],attempt};
+ const run={version:spec.version,id:previous?.id??`integrated-${attempt}`,mode:'integrated',repository:spec.repository,startedAt:previous?.startedAt??new Date().toISOString(),base,prs,stages:[],risks:[],findings:[],mergeMethod:spec.mergeMethod??'squash',complete:false,harnessRevision,harnessFingerprint,plan:spec,publication:{status:'pending'},emailThreads:previous?.emailThreads??[],notifications:previous?.notifications??[],attempts:previous?[...(previous.attempts??[]),{id:previous.attempt,base:previous.base,stages:previous.stages,risks:previous.risks,publication:previous.publication,...(previous.retainedTransfer?{retainedTransfer:previous.retainedTransfer}:{})}]:[],attempt};
  if(previous?.retainedTransfer)run.retainedTransfer=structuredClone(previous.retainedTransfer);
  const root=path.join(path.dirname(cwd),`righelt-validation-${attempt}`);await git(['worktree','add','--detach',root,base],cwd);run.worktree=root;await saveJSON(file,run);
  let state=path.join(attemptDir,'state'),continuity,accountContinuity,legacyContinuity,canReuse=!retainedInput;
@@ -56,6 +56,7 @@ export async function boundedIntegratedRun({spec,cwd=process.cwd(),dir,resume=fa
   if(retainedInput){
    const restored=await restoreRetainedInput({input:retainedInput,repository:spec.repository,baseBranch:spec.base,baseline:base,cwd, destination:state,targetRunDir:dir,assertStopped:stopped});
    ({continuity,accountContinuity,legacyContinuity}=restored);
+   if(spec.version===3){const selected=stagePolicy(spec,0,{accounts:Boolean(accountContinuity),changed:[]}).continuity;if((continuity&&!selected.includes('guest'))||(accountContinuity&&!selected.includes('account')))throw Error('Explicit retained input requires all restored guest/account continuity contracts');}
    run.retainedTransfer=restored.origin;
    await saveJSON(path.join(attemptDir,'retained-transfer.json'),restored.origin);
    run.findings.push(`Retained data restored from original ${restored.origin.sourceStage} at ${restored.origin.originalHead}; all current baseline proof runs anew.`);
@@ -88,16 +89,16 @@ export async function boundedIntegratedRun({spec,cwd=process.cwd(),dir,resume=fa
     }
    }
    canReuse=false;
-   await ensureInstallation(root,{log:path.join(attemptDir,`install-${index}.log`)});
+   if(policy.selected.length)await ensureInstallation(root,{log:path.join(attemptDir,`install-${index}.log`)});
    if(capabilities.accounts&&!accountContinuity)legacyContinuity=continuity;
    const next=path.join(state,`continuity-${index}.json`),stageDir=path.join(attemptDir,`stage-${index}`);
-   const result=await localRun({cwd:root,dir:stageDir,base,full:policy.phase==='final',config,publishReport:false,stageIndex:index,policy,ciEvidence,cacheDir:path.join(dir,'check-cache'),persistRoot:path.join(state,'guest'),continuityInput:continuity,continuityOutput:next,accountPersistRoot:path.join(state,'account'),accountContinuityInput:accountContinuity,accountLegacyContinuityInput:legacyContinuity});
+   const result=await localRun({cwd:root,dir:stageDir,base,full:policy.phase==='final',config,publishReport:false,stageIndex:index,policy,ciEvidence,cacheDir:spec.version===3?undefined:path.join(dir,'check-cache'),...(spec.version===2||policy.continuity.includes('guest')?{persistRoot:path.join(state,'guest'),continuityInput:continuity}:{}),...(spec.version===2||policy.continuity.length?{continuityOutput:next}:{}),...(spec.version===2||policy.continuity.includes('account')?{accountPersistRoot:path.join(state,'account'),accountContinuityInput:accountContinuity,accountLegacyContinuityInput:legacyContinuity}:{})});
    const stage=result.stage;stage.aggregateHead=stage.head;stage.head=index?prs[index-1].head:base;stage.title=index?`After #${prs[index-1].number}: ${prs[index-1].title}`:'Baseline continuity';stage.artifactDir=stageDir;
    run.stages.push(stage);run.risks.push(...result.run.risks);
    await cp(path.join(stageDir,'site'),path.join(dir,'site'),{recursive:true});
    if(stage.status==='passed'){
-    continuity=next;if(capabilities.accounts)accountContinuity=next;
-    await saveJSON(path.join(state,'continuity-state.json'),{continuity:path.relative(state,continuity),accountContinuity:accountContinuity?path.relative(state,accountContinuity):null,legacyContinuity:legacyContinuity?path.relative(state,legacyContinuity):null});
+    if(spec.version===2||policy.continuity.includes('guest'))continuity=next;if(capabilities.accounts&&(spec.version===2||policy.continuity.includes('account')))accountContinuity=next;
+    await saveJSON(path.join(state,'continuity-state.json'),{continuity:continuity?path.relative(state,continuity):null,accountContinuity:accountContinuity?path.relative(state,accountContinuity):null,legacyContinuity:legacyContinuity?path.relative(state,legacyContinuity):null});
     stage.checkpoint=path.join(attemptDir,`checkpoint-${index}`);stage.checkpointProvenance=provenance;
     await createCheckpoint({root:state,destination:stage.checkpoint,provenance,expiresAt:new Date(Date.now()+86400000).toISOString(),assertStopped:stopped});
     stage.evidenceReceipt=path.join(attemptDir,`evidence-receipt-${index}.json`);

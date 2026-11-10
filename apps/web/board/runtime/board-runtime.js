@@ -1462,7 +1462,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       const action=externalAction.getAttribute("data-board-message-action");
       if (action === "retry-rush-guidance") { rushGuidanceKey = null; syncRushGuidance(); renderStatusContent(); }
       else if (action === "pass") submitPass();
-      else if(action==='end-turn')void endCurrentTurn();
+      else if(action==='end-turn'){if(!inspection&&legalActions.some(action=>action.type==='end_turn'))void endCurrentTurn();}
       else controls.onBoardMessageAction?.(action,{trigger:externalAction});
       return;
     }

@@ -9,6 +9,7 @@ async function candidate(){
  await mkdir(path.join(cwd,'apps/web/shell'),{recursive:true});
  await writeFile(path.join(cwd,'apps/web/shell/account-controller.js'),'// account capability');
  await saveJSON(path.join(cwd,'package.json'),{scripts:{'test:pr-gate':'controlled gate','test:e2e:auth':'test-auth'}});
+ await saveJSON(path.join(cwd,'validation-plan.json'),{version:2,questions:[{id:'legacy-account',description:'Preserve original fresh and retained account proof',paths:['apps/'],checks:['PR gate','Responsive proof']}]});
  await git(['init','-b','main'],cwd);await git(['config','user.email','test@example.invalid'],cwd);await git(['config','user.name','Test'],cwd);
  await git(['add','.'],cwd);await git(['commit','-m','account candidate'],cwd);
  return {dir,cwd,base:await git(['rev-parse','HEAD'],cwd)};

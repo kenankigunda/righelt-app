@@ -1,3 +1,6 @@
+import {selectedHistoryPresentation} from '../shell/history-narration.js';
+import {recordedMoveNumber,visibleRecordedMoves} from '../shell/recorded-narration.js';
+import {renderBoardMessageHtml} from '../board/message-presentation.js';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -344,7 +347,7 @@ test("history branch launch keeps the source tab stable while opening a new tab"
 test("history navigation stays local-first without the removed global busy wrapper", () => {
   assert.doesNotMatch(source, /const shouldRenderBusyStateStart =/);
   assert.doesNotMatch(source, /const shouldRenderBusyStateEnd =/);
-  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*transport\.selectHistoryMove\(\{ gameId, moveIndex, moveId:actionEl\.getAttribute\("data-move-id"\) \|\| null \}\);[\s\S]*return;/s);
+  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*const moveId=actionEl\.getAttribute\("data-move-id"\)\?\?actionEl\.closest\("\.history-item\[data-move-id\]"\)\?\.getAttribute\("data-move-id"\)\?\?null;[\s\S]*await animateHistoryDeselection\(actionEl\);[\s\S]*transport\.selectHistoryMove\(\{ gameId, moveIndex, moveId \}\);[\s\S]*return;/s);
   assert.match(source, /if \(action === "return-live"\) \{[\s\S]*transport\.returnToLive\(\{ gameId \}\);[\s\S]*return;/s);
   assert.doesNotMatch(source, /if \(action === "jump-history"\) \{[\s\S]*await transport\.selectHistoryMove/s);
   assert.doesNotMatch(source, /if \(action === "return-live"\) \{[\s\S]*await transport\.returnToLive/s);

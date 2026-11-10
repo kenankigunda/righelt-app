@@ -688,7 +688,7 @@ test('a replacement login cannot claim the previous session lease and acquires o
  const f=fixture();t.after(()=>f.session.destroy());enableResume(f);await f.session.tick();
  assert.equal(f.session.snapshot().activity.activeHere,true);
  const before=structuredClone(f.game().computer);f.relogin();
- const activity=f.session.snapshot().activity;assert.equal(activity.label,'Needs attention');assert.equal(activity.showResume,true);
+ const activity=f.session.snapshot().activity;assert.equal(activity.label,'Waiting');assert.equal(activity.showResume,true);
  await f.session.tick();assert.equal(f.controls.length,1);assert.equal(f.computations(),0);assert.equal(f.submissions(),0);
  assert.deepEqual(f.game().computer,before);
  f.setTime(before.lease.expiresAt+1);await f.session.tick();
@@ -767,6 +767,29 @@ for(const change of ['switchGame','changeAccount','changeTransport'])test(`save-
  f[change]();release();await work;assert.equal(f.submissions(),0);assert.equal(f.saved.length,1);
 });
 
+test('a newer same-device server lease is acknowledged without waiting for expiry',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ const originalGeneration=f.game().computer.generation;
+ f.game().computer=changeComputerControl(f.game().computer,{ownerId:'owner',authContextId:'session',deviceId:'device',action:'resume-here',generation:originalGeneration,now:100,turnIndex:0});
+ const replacementGeneration=f.game().computer.generation;
+ f.setBlocked(true);await f.session.tick();assert.equal(f.controls.length,1);assert.equal(f.computations(),0);
+ f.setBlocked(false);await f.session.tick();
+ assert.equal(f.controls.length,2);assert.equal(f.controls[1].action,'acquire');assert.equal(f.controls[1].generation,replacementGeneration);
+ assert.equal(f.game().computer.generation,replacementGeneration);assert.equal(f.session.snapshot().phase,'idle');
+ const computation=f.session.tick();assert.equal(f.computations(),1);
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await computation;
+ assert.equal(f.submissions(),1);assert.equal(f.controls.length,2);
+});
+
+test('same-device lease acknowledgement still requires the server authentication context',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ f.game().computer.generation++;f.game().computer.lease.authContextId='different-session';
+ const generation=f.game().computer.generation;await f.session.tick();
+ assert.equal(f.controls.length,2);assert.equal(f.controls[1].action,'acquire');
+ assert.equal(f.game().computer.generation,generation);assert.equal(f.game().computer.lease.authContextId,'different-session');
+ assert.equal(f.computations(),0);assert.equal(f.submissions(),0);
+ await f.session.tick();assert.equal(f.controls.length,2);
+});
 
 for (const stored of [false, true]) test(`temporary evidence failure reconciles the same attempt without recomputing (already stored=${stored})`, async t => {
   const f = fixture(); t.after(() => f.session.destroy()); await f.session.tick();
@@ -993,4 +1016,32 @@ test('actual session recovery markup stops projection for retry and resume varia
  for(const disabledReason of [null,'disabled']){const html=renderComputerProgress(f.game(),{...f.session.snapshot(),activity:{disabledReason}});assert(html.includes('data-action="computer-branch"'));await assert.rejects(observe(html),/Computer entered recovery/);}
  for(const status of [{phase:'preparing'},{phase:'idle',activity:{showRecoveryNotice:true}},{phase:'idle'}]){const html=renderComputerProgress({...f.game(),computer:{...f.game().computer,paused:status.phase==='idle'&&!status.activity}},status);assert(!html.includes('data-action="computer-branch"'));await assert.rejects(observe(html),/still waiting/);}
  game={id:'g',moves:[{computerProof:{modelId:'initial-1554',profile:'babs'}}]};assert.equal((await observe(renderComputerProgress(f.game(),f.session.snapshot()))).moves.length,1);
+});
+
+test('next calculation may overlap saving but only matching acknowledged authority admits its candidate',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());f.game().computer.seats.p2='babs';await f.session.tick();
+ let acknowledge,admissions=0;const receipt=new Promise(resolve=>acknowledge=resolve),expected=structuredClone(f.game().board.state);expected.sideToMove='P2';expected.turnIndex=1;
+ f.transport.applyGameAction=async()=>({committed:++admissions===1?receipt:Promise.resolve(),...(admissions===1?{state:expected}:{})});
+ const first=f.session.tick();f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.computations(),2,'next calculation overlaps first receipt wait');assert.equal(f.saved.length,1);assert.equal(admissions,1);
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));await f.session.tick();assert.equal(admissions,1,'no second command before acknowledgement');
+ f.game().board.state=expected;f.game().gameplayRevision=1;await f.session.tick();acknowledge();await first;await f.session.tick();
+ assert.equal(f.computations(),2);assert.equal(f.saved.length,2);assert.equal(admissions,2);assert.deepEqual(f.saved[1].attempt.state,expected);assert.notEqual(f.saved[1].attemptId,f.saved[0].attemptId);
+});
+for(const change of ['position','generation','model','account'])test(`speculation is discarded on mismatched ${change} before another command is admitted`,async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());f.game().computer.seats.p2='babs';await f.session.tick();
+ let acknowledge,admissions=0;const expected=structuredClone(f.game().board.state);expected.sideToMove='P2';expected.turnIndex=1;
+ f.transport.applyGameAction=async()=>({committed:new Promise(resolve=>acknowledge=resolve),state:expected});
+ const first=f.session.tick();f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));assert.equal(f.computations(),2);
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));f.game().board.state=structuredClone(expected);f.game().gameplayRevision=1;
+ if(change==='position')f.game().board.state.sideToMove='P1';if(change==='generation')f.game().computer.generation++;if(change==='model')f.game().computer.modelId='different';if(change==='account')f.changeAccount();
+ await f.session.tick();acknowledge();await first;assert.equal(f.saved.length,1,'candidate has no evidence/admission before authority match');assert.equal(f.session.snapshot().speculation,null);
+});
+
+
+test('an acknowledged owner never automatically takes a newer lease held by another device',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ f.game().computer=changeComputerControl(f.game().computer,{ownerId:'owner',authContextId:'session',deviceId:'different-device',action:'resume-here',generation:f.game().computer.generation,now:100,turnIndex:0});
+ await f.session.tick();assert.equal(f.controls.length,1);assert.equal(f.session.snapshot().phase,'other-device');
+ assert.equal(f.game().computer.lease.deviceId,'different-device');assert.equal(f.computations(),0);assert.equal(f.submissions(),0);
 });

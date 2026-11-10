@@ -106,3 +106,7 @@ Implementation plans and PR summaries should identify:
 ## Validation evidence and PR shepherding
 
 Use the repo skill `skills/validate-and-shepherd/SKILL.md` for local validation or integrated PR shepherding. Run `pnpm validate:local` before completion; use `pnpm validate:integrated --manifest FILE` for ordered PR sets. Inspect actual screenshots, repair source PRs, publish the evidence report, and report current-head readiness and remaining risks. Personal report review progress never authorizes a merge.
+
+## Durable test design
+
+Follow [the durable testing standard](ai/TESTING_STRATEGY.md#durable-tests-execute-behavior). Execute production behavior instead of slicing or inspecting product source. Plan small production seams and focused real-app wiring proof, use native browsers for browser-owned contracts, and retain independent expected outcomes. Migrate affected legacy assertions when changing their contract, demonstrate targeted negative proof, and run `pnpm check:test-durability`. New source-inspection exceptions are limited to justified artifact contracts. Review whether each test catches the bug and tolerates behavior-preserving refactors.

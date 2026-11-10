@@ -1,3 +1,5 @@
+import {createRecoveryPresentation} from '../shell/recovery-presentation.js';
+import {SYNC_TIMING} from '../generated/packages/shared-types/src/sync-protocol.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -15,7 +17,7 @@ function fixture(){
  let held=null,failures=[],phase='idle';
  const game={id:'g',gameplayRevision:1,moves:[{moveId:'m',notation:'MOVE'}],currentSnapshot:{sideToMove:'P1'},board:{state:{outcome:{status:'ongoing'}}},player1:{identityId:'requester'},player2:{identityId:'approver'}};
  const stack=createNotificationStack({getInteractionKey:()=>held}),store=createBoardContextStore();
- const ctx={boardContexts:store,renderBoardContext,renderGameAlertCard,renderComputerProgress,recoveryActivity,activityActorSide,undoApprovalActorSide,icon,notificationStack:stack,
+ const ctx={SYNC_TIMING,viewingScope:()=> 'fixture',recoveryPresentationOptions:()=>({}),playbackRecoveryWait:{update:()=>0},liveBoardVisible:()=>true,boardContexts:store,renderBoardContext,renderGameAlertCard,renderComputerProgress,recoveryActivity,activityActorSide,undoApprovalActorSide,icon,notificationStack:stack,
   boardContextScope:()=> 'fixture',boardContextOwner:{commit(){}},displayedReplayFrame:()=>game,
   appEl:{querySelector:()=>null},document:{activeElement:null},queueBoardContextRefresh(){},
   contextReplayEnabled:()=>false,transport:{ensureRecoveryIncident:()=>null,getFailedOperations:()=>failures},
@@ -23,6 +25,7 @@ function fixture(){
   recoveryPresentationOptions:()=>({}),presentedRecoveryMessage:value=>value.recovery?'Reload game':'',needsRecoveryAction:value=>Boolean(value.recovery),
   dismissedRecoveryNotices:new Map(),ignoredRevertRequests:new Set(),isDiagnosticOpen:()=>false,
   computerSession:{snapshot:()=>({phase})},undoRequestFeedback:null,undoRequestFeedbackGameId:null,escapeHtml:String};
+ ctx.recoveryPresentation=createRecoveryPresentation(()=>({transport:ctx.transport}));
  runInNewContext(`${declaration('getRevertRequestKey')}${declaration('getActiveRevertRequest')}${declaration('getActivePendingRevertRequest')}${declaration('getGameAlertItems')}${source.slice(source.indexOf('const receiveBoardContext='),source.indexOf('const dispatchBoardMessageAction='))};globalThis.items=getGameAlertItems;globalThis.receive=receiveBoardContext;`,ctx);
  const refresh=()=>ctx.receive({kind:'piece',mandatory:false,message:{text:'Piece help'}},{selectedPieceId:'piece',intentVersion:1,phase:null,continuationPhase:null,transient:false});
  const order=()=>stack.order(game.id,ctx.items(game));

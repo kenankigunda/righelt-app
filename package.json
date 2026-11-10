@@ -99,6 +99,7 @@
     "test:browser:contract": "node scripts/resources/cli.mjs run --kind heavy -- playwright test --config playwright.browser-contract.config.mjs",
     "test:performance": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/testing/performance.mjs",
     "test:tooling": "node scripts/testing/tooling.mjs",
+    "check:test-durability": "node scripts/testing/check-source-inspection.mjs",
     "test:tooling:browser": "RIGHELT_TOOLING_SUITE=tooling-browser node scripts/testing/tooling.mjs",
     "test:report-viewer": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/validation/test/report-browser.mjs",
     "test:e2e:auth:journeys": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/run-auth-e2e.mjs --config playwright.auth.config.mjs",

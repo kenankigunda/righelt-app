@@ -1,13 +1,13 @@
 {
   "/shell/computer-session.js": {
     "file": "apps/web/shell/computer-session.js",
-    "sourceSha256": "98bd73f3432b46f5ad1be5471ca6c1473811bca1b16d369a18bd16988fe7448c",
-    "outputSha256": "0214672bdc87f81aa40be96ea8a41d9f04478917d7fa591af1fa473db692133d",
+    "sourceSha256": "28976b76cccb7a660d8ca5340715b01d7a27f13f5e28eb2465d0ebf554f27b91",
+    "outputSha256": "feac22b5bd7f0b962cd0e3ebe28000829d9537f47f706ad3fb0f208c2a8ceb1c",
     "prefix": "",
     "operations": [
       {
-        "start": 25717,
-        "end": 25850,
+        "start": 27866,
+        "end": 27999,
         "before": "if (run === epoch) { decisionRetry = null; recovery = context.key; publish({ phase: 'recovery', message: error.message }, context); }",
         "after": "if (run === epoch) { decisionRetry = null; try{globalThis.__boardAdmissionRecovery?.(error);}catch{} recovery = context.key; publish({ phase: 'recovery', message: error.message }, context); }",
         "anchor": "if (run === epoch) { decisionRetry = null; recovery = context.key; publish({ phase: 'recovery', message: error.message }, context); }",

@@ -1,3 +1,4 @@
+import {createRecoveryPresentation} from '../shell/recovery-presentation.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createLiveTransportStore} from '../shell/live-transport.js';
@@ -79,21 +80,8 @@ test('an incompatible client notice has details before publishing its failure',t
  assert.match(renderGameAlertCard({incidentId:published}),/>Details<\/button>/);
 });
 
-// Select the app's actual foreground qualification and incident expression.
-// A changed caller must continue to qualify presentation before requesting evidence.
-const {readFileSync}=await import('node:fs');
 const {createForegroundRecoveryWait}=await import('../shell/foreground-recovery.js');
 const {createRecoveryTelemetry}=await import('../shell/recovery-telemetry.js');
-const appSource=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
-const presentationStart=appSource.indexOf('const recoveryPresentationOptions =');
-const presentationEnd=appSource.indexOf('const presentedRecoveryMessage =',presentationStart);
-assert.ok(presentationStart>=0 && presentationEnd>presentationStart);
-const qualification=appSource.match(/const recoveryNeedsAction = needsRecoveryAction\(game, Date\.now\(\), recoveryPresentationOptions\(game\)\);/g);
-assert.equal(qualification?.length,1);
-const incidentExpression=appSource.match(/testId: "sync-recovery-banner", incidentId: ([^,\n]+),/);
-assert.ok(incidentExpression);
-const appIncident=Function('game','transport','needsRecoveryAction','foregroundRecoveryWait','viewingScope','currentRoute','document','getCurrentViewedGameId','computerSession','quietComputerRenewal',
- `${appSource.slice(presentationStart,presentationEnd)}\n${qualification[0]}\nreturn ${incidentExpression[1]};`);
 
 for(const interrupted of ['hidden','History'])test(`${interrupted} recovery time cannot promote Details before a fresh foreground wait`,t=>{
  t.mock.timers.enable({apis:['Date'],now:1000});issueDiagnostics.clear();
@@ -103,7 +91,8 @@ for(const interrupted of ['hidden','History'])test(`${interrupted} recovery time
  transport.setConnectionRecovering('foreground-game',true);
  const wait=createForegroundRecoveryWait({setTimer:()=>0,clearTimer(){}}),route={name:'game',gameId:'foreground-game'},doc={hidden:false};
  let inspecting=false;
- const render=()=>{const game={...transport.getGameViewModel('foreground-game'),inHistoryMode:inspecting};return appIncident(game,transport,needsRecoveryAction,wait,()=> 'owner',route,doc,()=>game.id,null,()=>false);};
+ const presentation=createRecoveryPresentation(()=>({transport,foregroundRecoveryWait:wait,viewingScope:()=> 'owner',currentRoute:route,document:doc,getCurrentViewedGameId:()=> 'foreground-game',computerSession:null,quietComputerRenewal:()=>false}));
+ const render=()=>{const game={...transport.getGameViewModel('foreground-game'),inHistoryMode:inspecting};const required=needsRecoveryAction(game,Date.now(),presentation.options(game));return presentation.incidentId(game,required);};
  assert.equal(render(),null);t.mock.timers.tick(14000);assert.equal(render(),null);
  if(interrupted==='hidden')doc.hidden=true;else inspecting=true;
  assert.equal(render(),null);t.mock.timers.tick(600000);assert.equal(render(),null);

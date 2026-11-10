@@ -192,14 +192,35 @@ test("E-02: clicking a DESTROYED sub-bullet navigates to the parent snapshot and
   const { context, page } = await createIsolatedPage(browser);
 
   try {
-    await importScenarioGame(page, DESTRUCTION_SCENARIO, baseURL);
+    const { gameId } = await importScenarioGame(page, DESTRUCTION_SCENARIO, baseURL);
 
     await expect(getDestructionItems(page).first()).toBeVisible();
     const destructionItem = getDestructionItems(page).first();
     const parentMoveItem = destructionItem.locator("xpath=ancestor::*[@data-testid='history-move-item'][1]");
 
-    // Click the sub-bullet
-    await destructionItem.click();
+    // The transparent native sibling owns clicks over this visible sub-bullet.
+    // Prove the actual label point reaches its exact parent move before clicking.
+    const moveId = await parentMoveItem.getAttribute('data-move-id');
+    expect(moveId).toBeTruthy();
+    const moveHit = parentMoveItem.locator(':scope > button.history-move-hit[data-action="jump-history"]');
+    await expect(moveHit).toHaveAttribute('data-game-id', gameId);
+    const labelBox = await destructionItem.boundingBox(), hitBox = await moveHit.boundingBox();
+    for (const box of [labelBox, hitBox]) {
+      expect(box).not.toBeNull();
+      expect([box.x, box.y, box.width, box.height].every(Number.isFinite)).toBe(true);
+      expect(box.width).toBeGreaterThan(0); expect(box.height).toBeGreaterThan(0);
+    }
+    const point = { x: labelBox.x + labelBox.width / 2, y: labelBox.y + labelBox.height / 2 };
+    for (const box of [labelBox, hitBox]) {
+      expect(point.x).toBeGreaterThan(box.x); expect(point.x).toBeLessThan(box.x + box.width);
+      expect(point.y).toBeGreaterThan(box.y); expect(point.y).toBeLessThan(box.y + box.height);
+    }
+    expect(await moveHit.evaluate((button, { point, gameId, moveId }) =>
+      button === document.elementFromPoint(point.x, point.y)
+      && button.dataset.gameId === gameId
+      && button.closest('[data-move-id]')?.dataset.moveId === moveId,
+    { point, gameId, moveId })).toBe(true);
+    await moveHit.click({ position: { x: point.x - hitBox.x, y: point.y - hitBox.y } });
 
     // The history-return-live button must be visible (we are now in history mode)
     await expect(page.getByTestId("history-return-live")).toBeVisible();
@@ -335,7 +356,7 @@ test('whole-turn history combines push routes and destruction on the final board
  try{
   await importScenarioGame(page,DESTRUCTION_SCENARIO,baseURL);
   const heading=page.locator('[data-testid="history-turn"] .history-turn-heading').filter({hasText:'Turn 1'});
-  await heading.click();
+  await heading.locator('..').locator(':scope > .history-turn-hit').click({position:{x:12,y:12}});
   await expect(heading).toHaveAttribute('aria-current','true');
   await expect(heading).not.toHaveAttribute('data-action');
   const board=page.getByTestId('game-board');

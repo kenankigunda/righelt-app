@@ -1,177 +1,1205 @@
 {
-  "version": 1,
-  "allowed": [
+  "version": 2,
+  "baselineRevision": "64443d2d530ea9206403154b0120e6ff8cc5d8a4",
+  "legacy": [
     {
       "file": "apps/web/test/additional-history-access.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/board-adapter-contract.test.mjs",
+      "targets": [
+        "unresolved:join(testDir, \"..\", \"board-adapter-contract.js\")"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/board-context-acknowledged.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/board-context-owned-removal.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "unresolved:new URL('../shell/'+file,import.meta.url)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/board-context-owner.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/board-context-undo.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/board-loading-message-owner.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/board-message-layout.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/design-tokens.css",
+        "apps/web/shell/app.js",
+        "apps/web/shell/board-ux.css"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/branch-readiness.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/ci-workflow.test.mjs",
+      "targets": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/nightly-validation.yml",
+        ".github/workflows/trained-play.yml",
+        "unresolved:new URL(`../../../.github/workflows/${file}`,import.meta.url)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/client-settlement-observer.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "unresolved:corePath+'lib/client/frame.js'",
+        "unresolved:corePath+'lib/server/frames.js'",
+        "unresolved:new URL('../../../'+path,import.meta.url)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/completed-game-review.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/computer-card-shell.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/computer-ui-refresh.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/computer-undo.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
-      "file": "apps/web/test/game-render-hydration.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "file": "apps/web/test/db-retention-cleanup-workflow.test.mjs",
+      "targets": [
+        ".github/workflows/db-retention-cleanup.yml"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
-      "file": "apps/web/test/game-result-copy.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "file": "apps/web/test/deploy-config.test.mjs",
+      "targets": [
+        ".github/workflows/deploy.yml"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/e2e-stack.test.mjs",
+      "targets": [
+        "playwright.config.mjs",
+        "scripts/e2e-auth-stack.mjs",
+        "scripts/e2e-stack.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/engine-board-adapter.test.mjs",
+      "targets": [
+        "unresolved:join(testDir, \"..\", \"board-adapters\", \"engine-board-adapter.js\")",
+        "unresolved:join(testDir, \"..\", \"styles.css\")"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/foundation-boundary.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "unresolved:join(testDir, \"..\", \"shell\", \"app.js\")"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/game-render-hydration.integration.test.mjs",
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/history-heading-focus.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
-    },
-    {
-      "file": "apps/web/test/history.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/history-panel-perspective.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/history-turn-render.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/history.test.mjs",
+      "targets": [
+        "unresolved:join(testDir, \"..\", \"board\", \"runtime\", \"board-runtime.js\")",
+        "unresolved:join(testDir, \"..\", \"shell\", \"app.js\")",
+        "unresolved:join(testDir, \"..\", \"shell\", \"history-preview.js\")",
+        "unresolved:join(testDir, \"..\", \"shell\", \"shell.css\")"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/home-read-recovery.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/hover-capability.test.mjs",
+      "targets": [
+        "unresolved:join(testDir, \"..\", \"shell\", \"shell.css\")",
+        "unresolved:join(testDir, \"..\", \"styles.css\")"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/initial-game-load-replacement.integration.test.mjs",
+      "targets": [
+        "apps/web/shell/live-transport.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/initial-load-native-fixture.integration.test.mjs",
+      "targets": [
+        "unresolved:new URL(path,root)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/invite-route-recovery.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "unresolved:process.env.RIGHELT_INVITE_RECOVERY_SOURCE || new URL('../shell/app.js',import.meta.url)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/join-focus-render.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/legend.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "e2e/workflows/ux-refresh-checkpoint.spec.mjs",
+        "unresolved:join(testDir, \"..\", \"shell\", \"app.js\")",
+        "unresolved:join(testDir, \"..\", \"styles.css\")"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/loading-context.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/local-dev-scripts.test.mjs",
+      "targets": [
+        "apps/web/test/run-web-tests.mjs",
+        "scripts/check-web-engine-generated.mjs",
+        "scripts/db-retention-cleanup-github.mjs",
+        "scripts/db-retention-cleanup-local.mjs",
+        "scripts/db-retention-cleanup-shared.mjs",
+        "scripts/dev-web-auto.mjs",
+        "scripts/run-node-tests.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/local-https.test.mjs",
+      "targets": [
+        "unresolved:cert",
+        "unresolved:file",
+        "unresolved:files[0]",
+        "unresolved:files[1]",
+        "unresolved:key",
+        "unresolved:signedFile"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/mobile-layout.test.mjs",
+      "targets": [
+        "unresolved:join(testDir, \"..\", \"index.html\")",
+        "unresolved:join(testDir, \"..\", \"shell\", \"shell.css\")",
+        "unresolved:join(testDir, \"..\", \"styles.css\")"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/opponent-startup.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/panel-loading.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/pending-invitation-focus.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js",
+        "unresolved:sourceUrl"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/players-focus-shell.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/prompt-reservation.test.mjs",
+      "targets": [
+        "apps/web/shell/board-ux.css"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/recovery-order-admission.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/recovery-scroll-reservation.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/render-gesture.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/result-review-render.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/route-read.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/rules-worker-build.test.mjs",
+      "targets": [
+        "apps/web/generated/rules-worker.js",
+        "scripts/build-web-engine.mjs",
+        "unresolved:sentinel"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/scenario-migration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "unresolved:join(testDir, \"..\", \"scenarios\", \"catalog.json\")",
+        "unresolved:join(testDir, \"..\", \"shell\", \"app.js\")"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/shell-render-stability.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/shell/app.js",
+        "apps/web/shell/shell.css",
+        "unresolved:join(testDir, \"..\", \"shell\", \"app.js\")",
+        "unresolved:join(testDir, \"..\", \"shell\", \"players-panel.js\")",
+        "unresolved:join(testDir, \"..\", \"shell\", \"sync-store.js\")",
+        "unresolved:join(testDir,\"..\",\"shell\",\"panel-loading.js\")"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/startup-session-adoption.integration.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "unresolved:process.env.RIGHELT_STARTUP_REGRESSION_SOURCE\n  || new URL('../shell/app.js', import.meta.url)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/support/legacy-client.mjs",
+      "targets": [
+        "unresolved:join(web, 'shell/live-transport.js')"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/support/undo-renew-admission-fixture.mjs",
+      "targets": [
+        "unresolved:path.join(root,'apps/web/shell/app.js')"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "apps/web/test/ticket-workflow-docs.test.mjs",
+      "targets": [
+        "unresolved:path.join(repoRoot, \".claude\", \"agents\", `${role.claude}.md`)",
+        "unresolved:path.join(repoRoot, \"skills\", role.skill, \"SKILL.md\")",
+        "unresolved:path.join(repoRoot, \"skills\", role.skill, \"agents\", \"openai.yaml\")"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "apps/web/test/ui-guards.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "unresolved:join(testDir, \"..\", \"board\", \"hosts\", \"shell-host.js\")",
+        "unresolved:join(testDir, \"..\", \"shell\", \"app.js\")",
+        "unresolved:join(testDir, \"..\", \"shell\", \"sync-store.js\")"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "browser-integration/home-recovery-retention.spec.mjs",
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "browser-integration/message-font-admission.spec.mjs",
+      "targets": [
+        "apps/web/shell/refresh.css"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "browser-integration/support/message-reservation-policy.mjs",
+      "targets": [
+        "apps/web/shell/board-ux.css"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "e2e/auth/profile-layout.spec.mjs",
+      "targets": [
+        "unresolved:new URL(file, import.meta.url)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "e2e/support/board-admission-diagnostics.mjs",
+      "targets": [
+        "unresolved:new URL(computerSessionRecovery?'./computer-session-recovery-transformation.json':'./board-admission-transformations.json',import.meta.url)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "e2e/support/computer-recovery-binding.mjs",
+      "targets": [
+        "unresolved:core",
+        "unresolved:path.join(path.dirname(core),file)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "e2e/workflows/guest-computer-play.spec.mjs",
+      "targets": [
+        "unresolved:await (await downloaded).path()"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "e2e/workflows/invitation-focus-transition.spec.mjs",
+      "targets": [
+        "apps/web/shell/app.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "e2e/workflows/mixed-client-journal.spec.mjs",
+      "targets": [
+        "unresolved:join(fixture.web, pathname)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/api-handler/test-runtime/account-cutover.test.mjs",
+      "targets": [
+        "unresolved:path.join(root, \"db/migrations\", name)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/api-handler/test-runtime/additional-history.test.mjs",
+      "targets": [
+        "unresolved:path.join(root,'db/migrations',name)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/api-handler/test-runtime/atomic-persistence.test.mjs",
+      "targets": [
+        "unresolved:path.join(root, \"db/migrations\", name)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/api-handler/test-runtime/auth-game-authority.test.mjs",
+      "targets": [
+        "unresolved:path.join(root, \"db/migrations\", name)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/api-handler/test-runtime/computer-play.test.mjs",
+      "targets": [
+        "unresolved:path.join(root, 'db/migrations', file)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/api-handler/test-runtime/socket-recovery.test.mjs",
+      "targets": [
+        "unresolved:path.join(root, \"db/migrations\", name)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/api-handler/test-runtime/storage-lifecycle.test.mjs",
+      "targets": [
+        "unresolved:path.join(root,\"db/migrations\",name)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/api-handler/test/account-operations.test.mjs",
+      "targets": [
+        ".github/workflows/deploy.yml",
+        "unresolved:receipt"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/api-handler/test/auth-credentials.integration.test.mjs",
+      "targets": [
+        "unresolved:new URL(file, migrations)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/api-handler/test/auth-foundations.integration.test.mjs",
+      "targets": [
+        "unresolved:new URL(name,dir)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/api-handler/test/computer-control.test.mjs",
+      "targets": [
+        "unresolved:new URL('../../../apps/web'+model.url,import.meta.url)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/api-handler/test/import-policy.guard.test.mjs",
+      "targets": [
+        "packages/api-handler/src/index.ts"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/api-handler/test/self-play-side-persistence.test.mjs",
+      "targets": [
+        "unresolved:new URL(name, migrations)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/api-handler/test/sync-migration.test.mjs",
+      "targets": [
+        "unresolved:new URL(file, folder)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/api-handler/test/ux-resume-order.test.mjs",
+      "targets": [
+        "unresolved:new URL(file,dir)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/computer-player/tests/end-turn.integration.test.mjs",
+      "targets": [
+        "unresolved:new URL('../../../apps/web'+CURRENT_COMPUTER_MODEL.url,import.meta.url)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/computer-player/tests/model-release.integration.test.mjs",
+      "targets": [
+        "unresolved:new URL('../../../apps/web'+model.url,import.meta.url)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/computer-player/tests/search-graph-helper.mjs",
+      "targets": [
+        "packages/computer-player/src/search.ts"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/game-engine/test/integration/golden-scenarios.test.mjs",
+      "targets": [
+        "unresolved:path.join(GOLDEN_FIXTURE_DIR, entry)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/game-engine/test/integration/import-policy.guard.test.mjs",
+      "targets": [
+        "unresolved:modulePath"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "packages/game-engine/test/integration/p005-runtime-parity.test.mjs",
+      "targets": [
+        "unresolved:fixturePath"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/auth-proxy-diagnostics.test.mjs",
+      "targets": [
+        "unresolved:file",
+        "unresolved:path.join(path.dirname(packageFile), \"wrangler-dist/ProxyWorker.js\")",
+        "unresolved:path.join(path.dirname(packageFile), \"wrangler-dist/cli.js\")",
+        "unresolved:runtimeFile"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/auth-proxy-failures.test.mjs",
+      "targets": [
+        "unresolved:path.join(f.directory, \"requests\", `${messages[index].requestId}.json`)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/auth-proxy-identity.test.mjs",
+      "targets": [
+        "unresolved:path.join(path.dirname(packageFile), \"wrangler-dist/ProxyWorker.js\")"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/auth-proxy-launcher.test.mjs",
+      "targets": [
+        "unresolved:outerReceipt"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/auth-stack-diagnostics.test.mjs",
+      "targets": [
+        "unresolved:logFile",
+        "unresolved:options.outputFile",
+        "unresolved:outputFile",
+        "unresolved:path.join(dir, 'receipt.json')"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/auth-worker-runtime.test.mjs",
+      "targets": [
+        "scripts/wrangler-dist/ProxyWorker.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/e2e-stack-diagnostics.test.mjs",
+      "targets": [
+        "scripts/e2e-stack.mjs",
+        "unresolved:path.join(root, 'test-results/e2e-stack-diagnostics/private/web-1.json')"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/resources/test/auth-stack.test.mjs",
+      "targets": [
+        "scripts/e2e-auth-stack.mjs",
+        "unresolved:path.join(dir,'stopped')",
+        "unresolved:path.join(registry,`${receipt.id}.json`)",
+        "unresolved:path.join(registry,name)",
+        "unresolved:pidsFile"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/resources/test/registry.test.mjs",
+      "targets": [
+        "unresolved:recordPath('overlap')",
+        "unresolved:recordPath('recovery')",
+        "unresolved:recordPath(record.id)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/resources/test/supervisor.test.mjs",
+      "targets": [
+        "unresolved:f.pidFile",
+        "unresolved:path.join(f.dir,'ran')",
+        "unresolved:path.join(f.dir,'registry',(await readdir(path.join(f.dir,'registry'))).find(n=>n.endsWith('.json')))",
+        "unresolved:path.join(f.dir,'registry',bound.id+'.json')",
+        "unresolved:path.join(f.dir,'registry',name)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/select-junit-artifacts.test.mjs",
+      "targets": [
+        "unresolved:join(output, entry)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/storage-archive-config.test.mjs",
+      "targets": [
+        ".github/workflows/deploy.yml",
+        "scripts/deploy-account-services.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/storage-reset.test.mjs",
+      "targets": [
+        "unresolved:options.receipt",
+        "unresolved:receipt"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/storage-writer-canary.test.mjs",
+      "targets": [
+        "unresolved:receiptPath"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "scripts/testing/test/board-admission-diagnostics.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/board/rules-runtime.js",
+        "apps/web/shell/computer-session.js",
+        "e2e/support/app.mjs",
+        "e2e/workflows/completion-preserving-retreat.spec.mjs",
+        "e2e/workflows/recovery-freeze-regression.spec.mjs",
+        "unresolved:new URL('../../../'+file,import.meta.url)",
+        "unresolved:new URL('../../../'+recipe.file,import.meta.url)",
+        "unresolved:temp+'/board-admission-observation.json'"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/ci-import.test.mjs",
+      "targets": [
+        "unresolved:final",
+        "unresolved:zip",
+        "unresolved:zipFiles.get(id)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/ci-layout-import.test.mjs",
+      "targets": [
+        ".github/workflows/ci.yml",
+        "scripts/testing/catalog.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/computer-recovery-json-read.test.mjs",
+      "targets": [
+        "e2e/workflows/completion-preserving-retreat.spec.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/controlled-message-box-contract.test.mjs",
+      "targets": [
+        "browser-integration/support/board-message.html"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/destruction-motion-witness.test.mjs",
+      "targets": [
+        "e2e/workflows/destruction-lifecycle.spec.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/e06-cleanup-owner.test.mjs",
+      "targets": [
+        "e2e/workflows/sync-recovery-pressure.spec.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/height-publication-drain.test.mjs",
+      "targets": [
+        "apps/web/board/message-height.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/height-publication-fixture.test.mjs",
+      "targets": [
+        "apps/web/board/message-height.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/height-publication-observer.test.mjs",
+      "targets": [
+        "apps/web/board/message-height.js"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/held-continuation-read.test.mjs",
+      "targets": [
+        "e2e/auth/accounts.spec.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/horus-receipt-batch.test.mjs",
+      "targets": [
+        "e2e/workflows/game-loading-follow.spec.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "scripts/testing/test/invitation-focus-diagnostics.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "apps/web/index.html",
+        "apps/web/main.js",
+        "apps/web/shell/app.js",
+        "e2e/workflows/ux-refresh-checkpoint.spec.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/linux-audio.test.mjs",
+      "targets": [
+        "unresolved:data.server.slice(5)+'.ready'",
+        "unresolved:proof"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/miniflare-loopback-keepalive.test.mjs",
+      "targets": [
+        "unresolved:miniflarePackage",
+        "unresolved:wranglerPackage"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/mobile-receipt-poll.test.mjs",
+      "targets": [
+        "e2e/workflows/mobile-board-history.spec.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/native-board-keyboard.test.mjs",
+      "targets": [
+        "e2e/workflows/human-opponent-replay.spec.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/natural-renewal-hold.test.mjs",
+      "targets": [
+        "e2e/workflows/computer-tab-recovery.spec.mjs",
+        "unresolved:process.env.RIGHELT_NATURAL_PREPARATION_CALLER??new URL('../../../e2e/workflows/computer-tab-recovery.spec.mjs',import.meta.url)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/node-reporter.test.mjs",
+      "targets": [
+        "unresolved:process.env.RIGHELT_TEST_OBSERVATIONS"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/opponent-invite-create-ack.test.mjs",
+      "targets": [
+        "e2e/workflows/opponent-invite-polish.spec.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "scripts/testing/test/optimistic-popup-selection-observer.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "scripts/e2e-stack.mjs",
+        "unresolved:new URL('../../../'+recipe.file,import.meta.url)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/owned-replay-focus-observer.test.mjs",
+      "targets": [
+        "unresolved:new URL(r.file,root)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/owned-replay-focus-workflow.test.mjs",
+      "targets": [
+        "e2e/workflows/human-opponent-replay.spec.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/paint-edge-provenance.test.mjs",
+      "targets": [
+        "browser-integration/board-message-paint.spec.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/pr-gate-workflow.test.mjs",
+      "targets": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/nightly-validation.yml"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/pressure.test.mjs",
+      "targets": [
+        "apps/web/index.html",
+        "browser-integration/support/account.html",
+        "unresolved:process.env.RIGHELT_TEST_STACK_STATUS"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/readiness-observer.test.mjs",
+      "targets": [
+        "unresolved:new URL('../../../'+path,import.meta.url)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/reload-home-reads.test.mjs",
+      "targets": [
+        "e2e/workflows/ux-refresh-checkpoint.spec.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "scripts/testing/test/result-review-focus-observation.test.mjs",
-      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+      "targets": [
+        "unresolved:path.join(directory,'result-review-focus-observation.json')"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/retreat-height-diagnostics.test.mjs",
+      "targets": [
+        "apps/web/board/message-height.js",
+        "e2e/workflows/forced-follow.spec.mjs",
+        "unresolved:new URL('../../../'+recipe.file,import.meta.url)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/stack-status.test.mjs",
+      "targets": [
+        "unresolved:process.env.RIGHELT_TEST_STACK_STATUS"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/storage-evidence.test.mjs",
+      "targets": [
+        "unresolved:outputFile",
+        "unresolved:path.join(dir,'proof.json')"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/switch-game-panel.test.mjs",
+      "targets": [
+        "e2e/support/app.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/sync-recovery-fixture-read.test.mjs",
+      "targets": [
+        "e2e/workflows/sync-recovery-ux.spec.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/testing/test/typed-original-minimum.test.mjs",
+      "targets": [
+        "apps/web/shell/board-ux.css"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/validation/test/account-stack.test.mjs",
+      "targets": [
+        "unresolved:path.join(accountPersistRoot, 'state/v3/d1/miniflare-D1DatabaseObject/abc123.sqlite')",
+        "unresolved:path.join(next.persist, 'retained-db')"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
       "file": "scripts/validation/test/capabilities.test.mjs",
-      "contract": "workflow compatibility contract selected from reviewed source without executing candidate code"
+      "targets": [
+        "unresolved:process.env.RIGHELT_HISTORY_CONTRACT_SOURCE"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/validation/test/ci-artifact-cache.test.mjs",
+      "targets": [
+        "unresolved:archive",
+        "unresolved:file",
+        "unresolved:final",
+        "unresolved:path.join(options.root,names[0],'status.json')",
+        "unresolved:trustedZip",
+        "unresolved:verifiedCopy"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/validation/test/ci-evidence.test.mjs",
+      "targets": [
+        ".github/workflows/ci.yml"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/validation/test/distribution.test.mjs",
+      "targets": [
+        "unresolved:other",
+        "unresolved:path.join(f.destination,'local-work')",
+        "unresolved:path.join(f.skillRoot,'gh-watch-and-repair-pr/SKILL.md')",
+        "unresolved:shipping"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/validation/test/efficient-infrastructure.test.mjs",
+      "targets": [
+        "unresolved:log",
+        "unresolved:path.join(destination,'continuity.json.account-mobile')",
+        "unresolved:path.join(destination,'db.sqlite')",
+        "unresolved:path.join(destination,'private-config','worker.toml')",
+        "unresolved:path.join(live,'db.sqlite')",
+        "unresolved:path.join(restored,'db.sqlite-wal')",
+        "unresolved:receipt"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/validation/test/history-undo.test.mjs",
+      "targets": [
+        "unresolved:process.env.RIGHELT_HISTORY_HIT_RED_SOURCE||new URL('../history-undo.mjs',import.meta.url)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/validation/test/orchestration.test.mjs",
+      "targets": [
+        "unresolved:authArtifact",
+        "unresolved:e2eArtifact",
+        "unresolved:path.join(tree,'one')",
+        "unresolved:path.join(tree,'two')"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/validation/test/plan-execution.test.mjs",
+      "targets": [
+        "unresolved:evidence",
+        "unresolved:path.join(root,'site/index.html')"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/validation/test/publish.test.mjs",
+      "targets": [
+        "unresolved:path.join(publisherRoot,'node_modules/.bin/wrangler')",
+        "unresolved:path.join(publisherRoot,'node_modules/wrangler/package.json')",
+        "unresolved:path.join(publisherRoot,'package.json')",
+        "unresolved:path.join(publisherRoot,'scripts/validation/publisher/node_modules/wrangler/package.json')",
+        "unresolved:path.join(publisherRoot,'scripts/validation/publisher/package.json')",
+        "unresolved:path.join(site,'index.html')"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/validation/test/retained-input.test.mjs",
+      "targets": [
+        "scripts/validation/integrated-bounded.mjs",
+        "unresolved:`${options.accountContinuityInput}.account-${viewport}`",
+        "unresolved:file",
+        "unresolved:owned",
+        "unresolved:path.join(f.stage.checkpoint,'manifest.json')",
+        "unresolved:path.join(options.accountPersistRoot,'hmac-v1.key')",
+        "unresolved:path.join(result.state,'account/hmac-v1.key')",
+        "unresolved:path.join(result.state,'guest/api-state/v3/d1/database/original.sqlite')",
+        "unresolved:path.join(target,name)"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/validation/test/source-contract.test.mjs",
+      "targets": [
+        "scripts/validation/computer-proof.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/validation/test/streamlined-integrated.test.mjs",
+      "targets": [
+        "scripts/validation/integrated-bounded.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/validation/test/streamlined.test.mjs",
+      "targets": [
+        "unresolved:file",
+        "unresolved:path.join(cwd,'.git/righelt-validation-evidence',files.find(f=>f.endsWith('.json')))",
+        "unresolved:path.join(dir,'run.json')",
+        "unresolved:path.join(root,'out/startup-error.json')",
+        "unresolved:runFile"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/validation/test/thread-evidence.test.mjs",
+      "targets": [
+        "unresolved:file",
+        "unresolved:path.join(dir,'evidence.md')",
+        "unresolved:path.join(site,'index.html')"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "scripts/validation/test/ux-compat.test.mjs",
+      "targets": [
+        "validation-account-e2e/accounts.spec.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "tools/ai-benchmark/tests/browser.test.mjs",
+      "targets": [
+        "unresolved:file",
+        "unresolved:process.env.AI_BENCHMARK_REFERENCE",
+        "unresolved:process.env.AI_BENCHMARK_SEARCH_REFERENCE"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "tools/ai-benchmark/tests/worker-profile.test.mjs",
+      "targets": [
+        "tools/ai-benchmark/worker.mjs"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "validation-account-e2e/accounts.spec.mjs",
+      "targets": [
+        "unresolved:`${input}.account-${info.project.name}`",
+        "unresolved:process.env.RIGHELT_LEGACY_CONTINUITY_INPUT"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
+    },
+    {
+      "file": "validation-e2e/core.spec.mjs",
+      "targets": [
+        "unresolved:file"
+      ],
+      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     }
-  ]
+  ],
+  "artifacts": []
 }

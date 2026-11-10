@@ -1,6 +1,6 @@
 import {writeFile} from 'node:fs/promises';
 import { CURRENT_COMPUTER_MODEL } from '../../packages/shared-types/src/computer-play.ts';
-import { test, expect } from '@playwright/test';
+import { test as base, expect } from '@playwright/test';
 import { submitPlayableAction, switchGamePanel } from '../support/app.mjs';
 import { AUTH_CONTROL_ORIGIN } from './fixture.mjs';
 import {waitForAccountStartup,revealAccountEntry} from './helpers.mjs';
@@ -9,6 +9,16 @@ import { isOperationRequest, operationValues } from '../support/shared-request.m
 import { attachFailureAndRethrow } from '../support/failure-evidence.mjs';
 import { waitForPlayableBoard } from '../../scripts/validation/browser-navigation.mjs';
 import {installPassiveCommandObservations,attachCommandObservations} from '../support/command-observations.mjs';
+
+// Preserve native account registration, but give setup and the Undo journey
+// their own bounded phases instead of consuming Undo's 60-second body budget.
+const test=base.extend({
+  computerUndoPage:[async({page},use)=>{
+    await page.addInitScript(installPassiveCommandObservations);
+    await registerComputerTester(page, {accountOnly:true});
+    await use(page);
+  },{timeout:60000}],
+});
 
 const projected = (page, id) => page.evaluate(readProjectedGame, { id });
 
@@ -86,6 +96,30 @@ test('ordinary computer play records real worker evidence, preserves private not
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
   await expect(page.getByTestId('game-role')).toContainText('Player 1');
   await waitForInitialComputerControl(page, created, initialControl);
+  const humanName = created.player1.profile.displayName || created.player1.profile.username;
+  await switchGamePanel(page,'players');
+  const humanReference=page.getByTestId('participant-player-1').locator('.participant-profile');
+  await expect(humanReference.locator('.player-name')).toHaveText(humanName);
+  await expect(humanReference).toHaveAccessibleName(`${humanName}, you, Red, Connected`);
+  await expect(humanReference.locator('.player-name')).toHaveCSS('color','rgb(194, 69, 47)');
+  await expect(page.getByTestId('participant-player-2').locator('.player-name')).toHaveText('Babs');
+  await page.screenshot({path:testInfo.outputPath('canonical-players-desktop.png')});
+  const identityViewport=page.viewportSize();
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.locator('#app')).toHaveAttribute('data-shell-layout-mode','narrow');
+  await switchGamePanel(page,'players');
+  await testInfo.attach('canonical-mobile-bounds',{contentType:'application/json',body:JSON.stringify(await humanReference.locator('.player-name').evaluate(async node=>{
+    const range=document.createRange();range.selectNodeContents(node);
+    const observation=await new Promise(resolve=>{const observer=new IntersectionObserver(([entry])=>{observer.disconnect();resolve({ratio:entry.intersectionRatio,root:entry.rootBounds?.toJSON(),box:entry.boundingClientRect.toJSON(),intersection:entry.intersectionRect.toJSON()});});observer.observe(node);});
+    const ancestors=[];for(let el=node;el;el=el.parentElement){const style=getComputedStyle(el);ancestors.push({tag:el.tagName,className:el.className,box:el.getBoundingClientRect().toJSON(),overflowX:style.overflowX,overflowY:style.overflowY,clipPath:style.clipPath});}
+    return {viewport:{width:innerWidth,height:innerHeight,pixelRatio:devicePixelRatio},text:range.getBoundingClientRect().toJSON(),observation,ancestors};
+  }),null,2)});
+  await expect(humanReference.locator('.player-name')).toBeInViewport({ratio:1});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:testInfo.outputPath('canonical-players-mobile.png')});
+  await page.setViewportSize(identityViewport);
+  await expect(page.locator('#app')).toHaveAttribute('data-shell-layout-mode','wide');
+  await switchGamePanel(page,'board');
   const humanAction = created.legalActions.find(action => action.from && action.to);
   await submitPlayableAction(page, humanAction);
   await expect.poll(async () => (await projected(page, created.id)).moves.length).toBeGreaterThan(0);
@@ -100,6 +134,9 @@ test('ordinary computer play records real worker evidence, preserves private not
   } catch (error) {
     await attachFailureAndRethrow(error,{page,testInfo,lastVerifiedProjection:lastVerifiedGame,details:{journeyPhase,errors}});
   }
+  // The saved decision is inspectable only after its confirmed presentation finishes.
+  // Server acceptance alone can precede the last visible computer movement.
+  await expect(page.locator('#shell-board-preview-label').getByRole('button', { name: 'Pass', exact: true })).toBeVisible({ timeout: 100000 });
   const navigation = page.getByRole('button', { name: 'Open navigation menu', exact: true });
   if (await navigation.isVisible()) await navigation.click();
   await page.getByRole('button', { name: 'Debug', exact: true }).click();
@@ -172,11 +209,9 @@ test('ordinary computer play records real worker evidence, preserves private not
   expect(errors).toEqual([]);
 });
 
-test('ordinary computer undo restores the human turn and resumes computer control', async ({ page }, info) => {
-  await page.addInitScript(installPassiveCommandObservations);
+test('ordinary computer undo restores the human turn and resumes computer control', async ({ computerUndoPage: page }, info) => {
   let primaryError;
   try{
-  await registerComputerTester(page, {accountOnly:true});
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
   const creation = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST' && response.request().postDataJSON()?.computer?.p2 === 'babs');
   const initialControl = captureInitialComputerControl(page);
@@ -205,7 +240,7 @@ test('ordinary computer undo restores the human turn and resumes computer contro
     const firstMove=(await projected(page,initial.id)).moves.find(move=>!move.undone);
     expect(firstMove?.moveId).toBeTruthy();
     const row=page.locator(`[data-testid="history-move-item"][data-move-id="${firstMove.moveId}"]`);
-    await row.locator('.history-item-info').click();
+    await row.locator(':scope > .history-move-hit').click();
     await row.getByRole('button',{name:'Undo before this move',exact:true}).click();
     await expect.poll(async () => {
       const game = await projected(page, initial.id);
@@ -388,7 +423,7 @@ test('ordinary computer Undo retains one explicit input across its held own rene
     const firstMove = authority.moves.find(move => !move.undone);
     expect(firstMove?.moveId).toBeTruthy();
     const row = page.locator(`[data-testid="history-move-item"][data-move-id="${firstMove.moveId}"]`);
-    await row.locator('.history-item-info').click();
+    await row.locator(':scope > .history-move-hit').click();
     await expect(row).toHaveAttribute('aria-current', 'true');
     const undo = row.getByRole('button', {name:'Undo before this move',exact:true});
     await expect(undo).toBeVisible(); await expect(undo).toBeEnabled();

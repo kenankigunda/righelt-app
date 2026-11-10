@@ -1,3 +1,4 @@
+import {computerInterventionRequired} from './computer-recovery.js';
 import {isCompletedGame} from './game-lifecycle.js';
 import { COMPUTER_TIMING, computerProfileFor } from '../generated/packages/shared-types/src/computer-play.js';
 import { SYNC_TIMING } from '../generated/packages/shared-types/src/sync-protocol.js';
@@ -8,6 +9,7 @@ const workingPhases = new Set(['preparing', 'initializing-verified-runtime', 'in
 export function computerActivity({ game, identityId, deviceId, authenticated, visible, status = {}, projection = {}, now, resuming = false, waitingMs = 0, lastAcquisitionFailure = null, resumeSupported = true, controlAcknowledged = true, renewing = false }) {
   const control = game?.computer;
   if (!control) return null;
+  if(isCompletedGame(game)&&projection.confirmedPlayback)return {state:projection.confirmedPlayback.error?'attention':'moving',label:projection.confirmedPlayback.error?'Needs help':'Making their move',needsHelp:Boolean(projection.confirmedPlayback.error),activeHere:false,quietRenewal:false,showResume:false,disabledReason:null,showRecoveryNotice:false,waitingMs:0,lastAcquisitionFailure:null};
   if(isCompletedGame(game))return {state:'finished',label:'Game finished',activeHere:false,quietRenewal:false,showResume:false,disabledReason:null,showRecoveryNotice:false,waitingMs:0,lastAcquisitionFailure:null};
   const owner = control.ownerId === identityId && game.canControlComputer !== false;
   const ongoing = game.board?.state?.outcome?.status === 'ongoing';
@@ -28,8 +30,11 @@ export function computerActivity({ game, identityId, deviceId, authenticated, vi
     && request?.action === 'renew' && request.deviceId === deviceId && request.generation === control.generation
     && Number.isFinite(request.submittedAt) && request.submittedAt <= now && now - request.submittedAt < SYNC_TIMING.confirmationBudgetMs);
   const activeHere = Boolean(owner && authenticated && visible && ongoing && localLease && controlAcknowledged && !override && (!uncertain || quietRenewal) && !resuming && !lastAcquisitionFailure && !['recovery', 'other-device'].includes(status.phase));
-  let state = 'attention', label = 'Needs attention';
-  if (resuming) { state = 'resuming'; label = 'Resuming'; }
+  const terminalIssue=code=>computerInterventionRequired({code});
+  const needsHelp=Boolean(projection.storageBlocked||projection.upgradeRequired||projection.unsavedCommand||projection.confirmedPlayback?.error||status.phase==='recovery'||terminalIssue(lastAcquisitionFailure?.code)||terminalIssue(projection.recoveryIssue));
+  let state = 'idle', label = 'Waiting';
+  if(needsHelp){state='attention';label='Needs help';}
+  else if (resuming) { state = 'resuming'; label = 'Resuming'; }
   else if (override) { state = 'paused'; label = 'Paused'; }
   else if (activeHere) { state = 'here'; label = 'Active here'; }
   else if (liveLease && !localLease) { state = 'elsewhere'; label = 'Active in another tab'; }
@@ -41,5 +46,7 @@ export function computerActivity({ game, identityId, deviceId, authenticated, vi
   else if (!resumeSupported) disabledReason = 'Refresh after the server update to resume computer play here.';
   else if (resuming) disabledReason = 'Resuming computer play…';
   const showRecoveryNotice = Boolean(resumeSupported && owner && authenticated && visible && ongoing && computerTurn && !override && !uncertain && !resuming && !activeHere && !liveLease && !workingPhases.has(status.phase) && status.phase !== 'recovery' && waitingMs >= COMPUTER_TIMING.stalledAfterMs);
-  return { state, label, activeHere, quietRenewal, showResume: !activeHere, disabledReason, showRecoveryNotice, waitingMs, lastAcquisitionFailure };
+  const intervention=needsHelp||showRecoveryNotice;
+  if(intervention){state='attention';label='Needs help';}
+  return { state, label, needsHelp:intervention, activeHere:activeHere&&!intervention, quietRenewal, showResume: !activeHere, disabledReason, showRecoveryNotice, waitingMs, lastAcquisitionFailure };
 }

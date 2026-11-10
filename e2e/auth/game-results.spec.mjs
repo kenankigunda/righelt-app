@@ -146,10 +146,14 @@ for (const opponent of ["self", "friend"]) test.describe(`real ${opponent} retai
     await expect(page.getByTestId("game-result")).toHaveCount(0);
     // Selecting a saved after-state must keep the History board/mini preview,
     // never open a result overlay or replay a celebration.
-    // Click the move text. A selected row contains an Undo action, so its
-    // geometric center is not a reliable target for selecting that same move.
-    const lastMove=page.locator('[data-testid="history-move-item"] .history-move-line').last();
-    await lastMove.click();
+    // Unselected moves expose the native selection target. A selected move
+    // has no selection action; its corner remains inert beside child actions.
+    const lastMove=page.getByTestId('history-move-item').last();
+    const selectMove=lastMove.locator(':scope > .history-move-hit');
+    if(await selectMove.count())await selectMove.click();
+    else{await expect(lastMove).toHaveAttribute('aria-current','true');await lastMove.click({position:{x:3,y:3}});}
+    await expect(lastMove).toHaveAttribute('aria-current','true');
+    await expect(lastMove.locator(':scope > .history-move-hit')).toHaveCount(0);
     await expect(page.getByTestId('game-result')).toHaveCount(0);
     // Read the real authenticated HTTP projection, not the optimistic creation
     // object or a warm socket snapshot. Repeating catches persistence regressions.
@@ -211,10 +215,10 @@ test('a retained legacy commander destruction explains the actual cause without 
   return{status:response.status,body:await response.json()};
  },{gameId,scenario,terminal,headers});
  expect(imported.status,JSON.stringify(imported.body)).toBe(200);expect(imported.body.game.board.state.outcome.reason).toBe('p2_commander_unsupplied');expect(imported.body.game.moves).toHaveLength(0);
- const result=page.getByTestId('game-result');await expect(result.getByRole('heading',{name:'You won',exact:true})).toBeVisible();await expect(result).toContainText('Your Blue commander was destroyed.');await expect(result).not.toContainText('lost its supply');
+ const result=page.getByTestId('game-result');await expect(result.getByRole('heading',{name:'You won as Red',exact:true})).toBeVisible();await expect(result).toContainText('Your Blue commander was destroyed.');await expect(result).not.toContainText('lost its supply');
  await page.reload();await expect(page.getByTestId('game-shell')).toBeVisible();await expect(result).toHaveCount(0);
  await page.goto(`/#/game/${gameId}?panel=history`);await page.getByRole('button',{name:'View result',exact:true}).click();
- await expect(result.getByRole('heading',{name:'You won',exact:true})).toBeVisible();expect(await result.locator('[data-result-mark]').evaluate(el=>el.getAnimations({subtree:true}).length)).toBe(0);
+ await expect(result.getByRole('heading',{name:'You won as Red',exact:true})).toBeVisible();expect(await result.locator('[data-result-mark]').evaluate(el=>el.getAnimations({subtree:true}).length)).toBe(0);
  const retained=await page.evaluate(async({gameId,headers})=>(await(await fetch(`/api/shell/games/${gameId}`,{headers})).json()).game,{gameId,headers});
  expect(retained.board.state.outcome.reason).toBe('p2_commander_unsupplied');expect(retained.moves).toHaveLength(0);
  await page.screenshot({path:info.outputPath('legacy-commander-result.png')});

@@ -1,4 +1,4 @@
-import {importCatalogCI,PR_GATE_LAYOUT} from './suite-ci-evidence.mjs';
+import {importCatalogCI,PR_GATE_LAYOUT,PR_GATE_LAYOUTS} from './suite-ci-evidence.mjs';
 import {readFile,mkdir} from 'node:fs/promises';
 import path from 'node:path';
 import {command,saveJSON} from './io.mjs';
@@ -127,8 +127,9 @@ export async function loadCIReceipt(file,{name,argv,tree,evidenceProfile,now=Dat
   const document=JSON.parse(await readFile(file,'utf8'));const receipt=document.receipts?.[name]??document;
   const {integrity,...body}=receipt;
   const imported=Date.parse(receipt.importedAt),expiry=Date.parse(receipt.expiresAt);
-  if(integrity!==evidenceKey(body)||receipt.status!=='passed'||receipt.source!=='github-actions'||receipt.name!==name||receipt.testedTree!==tree||JSON.stringify(receipt.argv)!==JSON.stringify(argv)||!Number.isFinite(imported)||!Number.isFinite(expiry)||imported>now||expiry<=now||expiry<=imported||expiry-imported>86400000||!Array.isArray(receipt.evidence)||!receipt.evidence.length)return null;
-  if(evidenceProfile!==undefined&&(receipt.evidenceProfile!==evidenceProfile||typeof receipt.layout!=='string'||!receipt.layout||(evidenceProfile===EVIDENCE_PROFILES.PR_GATE&&receipt.layout!==PR_GATE_LAYOUT)||(evidenceProfile===EVIDENCE_PROFILES.NIGHTLY_FULL&&receipt.layout===PR_GATE_LAYOUT)))return null;
+  const immutable=receipt.version===2&&receipt.validity==='inputs-and-artifacts'&&receipt.layout===PR_GATE_LAYOUT;
+  if(integrity!==evidenceKey(body)||receipt.status!=='passed'||receipt.source!=='github-actions'||receipt.name!==name||receipt.testedTree!==tree||JSON.stringify(receipt.argv)!==JSON.stringify(argv)||!Number.isFinite(imported)||imported>now||(!immutable&&(!Number.isFinite(expiry)||expiry<=now||expiry<=imported||expiry-imported>86400000))||!Array.isArray(receipt.evidence)||!receipt.evidence.length)return null;
+  if(evidenceProfile!==undefined&&(receipt.evidenceProfile!==evidenceProfile||typeof receipt.layout!=='string'||!receipt.layout||(evidenceProfile===EVIDENCE_PROFILES.PR_GATE&&!PR_GATE_LAYOUTS.includes(receipt.layout))||(evidenceProfile===EVIDENCE_PROFILES.NIGHTLY_FULL&&PR_GATE_LAYOUTS.includes(receipt.layout))))return null;
   for(const evidence of receipt.evidence){
    if(evidenceProfile!==undefined&&(evidence.provenance?.evidenceProfile!==evidenceProfile||evidence.provenance?.layout!==receipt.layout))return null;
    if(!evidence.provenance||evidence.provenance.testedTree!==tree||evidence.provenance.checkout!==evidence.checkout||await fileDigest(evidence.log)!==evidence.logHash||await fileDigest(evidence.archive)!==evidence.archiveHash)return null;
