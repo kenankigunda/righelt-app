@@ -285,7 +285,7 @@ body {
   display: flex;
   align-items: flex-start;
   transform: translateX(-50%);
-  z-index: 2;
+  z-index: var(--shell-layer-notice);
 }
 
 .shell-header-status[data-shell-alert-zone="idle"] {
@@ -2195,6 +2195,8 @@ textarea:focus-visible {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.hover-tooltip {position:fixed;z-index:var(--shell-layer-utility);pointer-events:none;padding:5px 8px;background:var(--surface-raised);color:var(--ink);border:1px solid var(--divider);font:400 .875rem/1.4 var(--font-family);white-space:normal;overflow-wrap:anywhere;box-shadow:var(--shadow-raised);}
+@media(forced-colors:active){.hover-tooltip{background:Canvas;color:CanvasText;border-color:CanvasText;}}
 .account-dialog select { width: 100%; min-height: 44px; font: inherit; }
 
 /* Autosave feedback occupies the same inline slot as shared input actions. */

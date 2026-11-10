@@ -17,6 +17,7 @@ import {renderDismissButton} from './dismiss-control.js';
 import {createConfirmedFramePresenter} from './confirmed-frame-presenter.js';
 import {createConfirmedComputerPlayback} from './confirmed-computer-playback.js';
 import {isOngoingGame,isCompletedGame} from './game-lifecycle.js';
+import {mountHoverTooltips} from './hover-tooltip.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
@@ -224,6 +225,7 @@ const resumeBoardContextReplay=()=>{
  if(boardContextOwner.current(pending.intent)&&canReplayDisplayed(pending.descriptor))dispatchBoardMessageAction('replay-computer',{descriptor:pending.descriptor,trigger});
 };
 
+mountHoverTooltips(appEl);
 mountRecoverySpace(appEl);
 const utilityMemory = createUtilityMemory({ root: appEl, getScope: key => `${account.snapshot().generation}:${key === 'debug' ? getCurrentViewedGameId() ?? 'home' : 'scenarios'}` });
 const boardLoadingMessageOwner=createBoardLoadingMessageOwner(appEl);
