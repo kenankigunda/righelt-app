@@ -6,7 +6,7 @@ import os from 'node:os';
 import {stagePolicy,validatePlan,questionEvidencePassed} from '../plan.mjs';
 import {localRun} from '../local.mjs';
 import {executeCheck,checkReuse,checkProvenance} from '../execution.mjs';
-import {saveSuccessfulEvidence,loadSuccessfulEvidence} from '../reuse.mjs';
+import {saveSuccessfulEvidence,loadSuccessfulEvidence,evidenceKey,fileDigest} from '../reuse.mjs';
 import {git,command} from '../io.mjs';
 import {finalProofReady} from '../model.mjs';
 import {compactStatus} from '../status.mjs';
@@ -22,6 +22,9 @@ test('v3 docs need only the stable gate, no baseline reruns or visual review',()
  const final=stagePolicy(gate,0,{accounts:true,changed:['docs/a.md']});assert.deepEqual(final.selected,['PR gate']);assert.equal(final.visualMode,'none');
  assert.deepEqual(stagePolicy({...gate,prs:[{number:1}]},0,{accounts:true}).selected,[]);
  assert.deepEqual(stagePolicy(gate,0,{changed:['apps/new.js']}).unmapped,['apps/new.js']);
+ assert.deepEqual(stagePolicy(gate,0,{changed:['scripts/validation/model.mjs']}).selected,['PR gate']);
+ assert(stagePolicy(gate,0,{changed:['scripts/validation/assets/app.mjs']}).selected.includes('Report viewer'));
+ assert(stagePolicy({...gate,validateReportViewer:true},0).selected.includes('Report viewer'));
 });
 test('v3 requires mappings for changed native fixtures and validation journeys without changing v2',()=>{
  const files=['browser-integration/support/history.html','validation-e2e/core.spec.mjs','validation-account-e2e/accounts.spec.mjs'];
@@ -33,6 +36,13 @@ test('native acceptance executes the bound file rather than its whole browser su
  const {root,cwd}=await fixture(t);await writeFile(path.join(cwd,'package.json'),JSON.stringify({scripts:{'test:pr-gate':'controlled gate','test:browser:integration':'controlled native'}}));await git(['add','.'],cwd);await git(['commit','-m','native script fixture'],cwd);
  const file='browser-integration/history-narration.spec.mjs',spec={version:3,questions:[{id:'native',description:'Changed native History behavior',paths:['browser-integration/'],checks:['PR gate','Browser integration'],evidence:[{check:'Browser integration',files:[file]}]}]},seen=[];
  const {stage}=await localRun({cwd,base:'HEAD',policy:stagePolicy(spec,0),dir:path.join(root,'native'),lockPath:path.join(root,'lock'),publishReport:false,execute:async(argv,{log})=>{seen.push(argv);await writeFile(log,'passed');return {code:0,duration:1};}});assert.equal(stage.status,'passed');assert.deepEqual(seen.find(a=>a[1]==='test:browser:integration'),['pnpm','test:browser:integration',file]);
+});
+test('exact gate CI credit and a targeted native check coexist without rerunning the gate',async t=>{
+ const {root,cwd}=await fixture(t);await writeFile(path.join(cwd,'package.json'),JSON.stringify({scripts:{'test:pr-gate':'controlled gate','test:browser:integration':'controlled native'}}));await git(['add','.'],cwd);await git(['commit','-m','native script fixture'],cwd);
+ const tree=await git(['rev-parse','HEAD^{tree}'],cwd),checkout=await git(['rev-parse','HEAD'],cwd),log=path.join(root,'ci.log'),archive=path.join(root,'ci.zip');await writeFile(log,'verified original CI log');await writeFile(archive,'verified archive');
+ const receipt={version:2,validity:'inputs-and-artifacts',status:'passed',name:'PR gate',source:'github-actions',testedTree:tree,argv:['pnpm','test:pr-gate'],evidenceProfile:'pr-gate',layout:'pr-gate-v3',importedAt:new Date(Date.now()-1000).toISOString(),evidence:[{checkout,provenance:{testedTree:tree,checkout,evidenceProfile:'pr-gate',layout:'pr-gate-v3'},log,logHash:await fileDigest(log),archive,archiveHash:await fileDigest(archive)}]};receipt.integrity=evidenceKey(receipt);const ciEvidence=path.join(root,'ci-import.json');await writeFile(ciEvidence,JSON.stringify({receipts:{'PR gate':receipt}}));
+ const file='browser-integration/history-narration.spec.mjs',spec={version:3,questions:[{id:'native',description:'Changed native History behavior',paths:['browser-integration/'],checks:['PR gate','Browser integration'],evidence:[{check:'Browser integration',files:[file]}]}]},seen=[];
+ const {stage}=await localRun({cwd,base:'HEAD',policy:stagePolicy(spec,0),ciEvidence,dir:path.join(root,'mixed'),lockPath:path.join(root,'lock'),publishReport:false,execute:async(argv,{log})=>{seen.push(argv);await writeFile(log,'native passed');return {code:0,duration:1};}});assert.equal(stage.status,'passed');assert.deepEqual(seen,[['pnpm','test:browser:integration',file]]);assert.equal(stage.checks.find(c=>c.name==='PR gate').source,'github-actions');assert.match(stage.checks.find(c=>c.name==='Browser integration').ciReason,/targeted command/);
 });
 test('v3 retained contracts select only the necessary baseline and final journeys',()=>{
  assert.deepEqual(stagePolicy(history,0).selected,['Responsive proof']);

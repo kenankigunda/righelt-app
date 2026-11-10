@@ -83,6 +83,7 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
   const prerequisites=new Set(['PR gate','Typecheck','Generated runtime']);
   let prerequisiteFailure=null;
   const decisions=[];
+  const ciDocument=ciEvidence&&policy.version===3?await readJSON(ciEvidence):null;
   const runCheck=async(name,argv,checkCwd=cwd)=>{
    const browser=['E2E','Auth E2E','Boundary E2E'].includes(name);
    const checkEnv={...env,RIGHELT_EVIDENCE_PROFILE:expectedEvidenceProfile(name),...(name==='Account responsive proof'?{RIGHELT_EVIDENCE_JSON:env.RIGHELT_EVIDENCE_JSON+'.account'}:{}),PLAYWRIGHT_OUTPUT_DIR:path.join(dir,`debug-${stageIndex}`,name.replaceAll(' ','-')),...(browser?{CI:'1'}:{})};
@@ -92,15 +93,18 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
    if(checkCwd!==cwd){checkEnv.RIGHELT_VALIDATION_TARGET_ROOT=checkCwd;checkEnv.RIGHELT_ACCOUNT_CANDIDATE_ROOT=checkCwd;checkEnv.RIGHELT_AUTH_E2E_WEB_PORT='9988';}
    const provenance=policy?await checkProvenance(checkCwd,argv,checkEnv,{name,fingerprint:stage.fingerprint,phase:policy.version===3&&!['Responsive proof','Account responsive proof'].includes(name)?'stateless':name==='PR gate'?'fresh-pr-gate':name==='Auth E2E'?'fresh-auth':policy?.phase==='final'&&['E2E','Boundary E2E'].includes(name)?'fresh-general':persistRoot?'retained':'fresh'}):null;
    const log=path.join(dir,`stage-${stageIndex}-${name.replaceAll(' ','-')}.log`);
-   if(policy&&ciEvidence&&Object.hasOwn(canonicalCommands,name)){
+   const ciRepresented=ciDocument&&(Object.hasOwn(ciDocument.receipts??{},name)||Object.hasOwn(ciDocument.rejected??{},name)||ciDocument.name===name);
+   const canonicalRequest=JSON.stringify(argv)===JSON.stringify(['pnpm',canonicalCommands[name]]);
+   const ciReason=policy.version!==3?null:ciEvidence&&!canonicalRequest?'Selected targeted command requires scoped local proof':ciEvidence&&!ciRepresented?'Additional selected check is not represented by this CI import':null;
+   if(policy&&ciEvidence&&Object.hasOwn(canonicalCommands,name)&&(policy.version===2||(canonicalRequest&&(name==='PR gate'||ciRepresented)))){
     const receipt=await loadCIReceipt(ciEvidence,{name,argv,tree:provenance.tree,evidenceProfile:expectedEvidenceProfile(name)});
     if(receipt){if(inspectOnly){decisions.push({name,action:'reuse',reason:'Exact CI receipt verified',source:'github-actions'});return;}return {name,status:'passed',duration:0,reused:true,source:'github-actions',provenance,receipt,reason:'Exact CI coverage credited; retained-state proof remains local'};}
     if(policy.version===3)throw Error(`CI evidence for ${name} is missing, incompatible, expired or corrupt. Repair the import or explicitly omit --ci-evidence to execute the required check; no implicit whole-gate fallback.`);
    }
-   if(inspectOnly){const prior=['Responsive proof','Account responsive proof'].includes(name)?{reason:'Current stateful acceptance must execute'}:await checkReuse({cacheDir,provenance});decisions.push({name,action:prior.result?'reuse':'execute',reason:prior.reason,requirement:policy.reasons?.[name]??policy.rationale});return;}
+   if(inspectOnly){const prior=['Responsive proof','Account responsive proof'].includes(name)?{reason:'Current stateful acceptance must execute'}:await checkReuse({cacheDir,provenance});decisions.push({name,action:prior.result?'reuse':'execute',reason:prior.reason,requirement:policy.reasons?.[name]??policy.rationale,ciReason});return;}
    console.log(`[validation] ${stage.title}: ${name}`);
    if(!policy){const r=await execute(argv,{cwd:checkCwd,env:checkEnv,log,allowFailure:true});return {name,status:r.code?'failed':'passed',duration:r.duration};}
-   return executeCheck({cwd:checkCwd,argv,env:checkEnv,name,log,execute,cacheDir,provenance,immutable:policy.version===3,deferEvidence:policy.version===3?publish=>pendingEvidence.push(publish):undefined,reuse:['PR gate','Typecheck','Generated runtime','Unit','Integration','Auth E2E',...(policy.version===3?['Boundary E2E','Browser integration','Tooling','Report viewer']:[])].includes(name)||name==='E2E'&&(!persistRoot||policy.phase==='final')});
+   const checked=await executeCheck({cwd:checkCwd,argv,env:checkEnv,name,log,execute,cacheDir,provenance,immutable:policy.version===3,deferEvidence:policy.version===3?publish=>pendingEvidence.push(publish):undefined,reuse:['PR gate','Typecheck','Generated runtime','Unit','Integration','Auth E2E',...(policy.version===3?['Boundary E2E','Browser integration','Tooling','Report viewer']:[])].includes(name)||name==='E2E'&&(!persistRoot||policy.phase==='final')});return {...checked,...(ciReason?{ciReason}:{})};
   };
   if(inspectOnly){for(const [name,argv]of checks)await runCheck(name,argv);return {version:policy.version,phase:policy.phase,decisions,blocked:selection.unmapped,visualRequired:stage.visualRequired,continuity:policy.continuity??[],cacheDir};}
   if(policy.version===3&&selection.unmapped.length)throw Error('Map the affected acceptance contracts in a version 3 plan before execution');
