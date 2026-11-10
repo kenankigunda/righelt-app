@@ -1,4 +1,7 @@
 import hashlib
+import os
+from .device import configured_device
+from .hosted_receipts import verify_recipe
 import json
 from pathlib import Path
 import platform
@@ -17,7 +20,9 @@ def build_manifest(seed,stage,*,training_recipe=None):
     if dirty.strip():raise ValueError('commit experiment source before launch')
     revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     recipe=recipe_binding() if training_recipe is None else validate_recipe(training_recipe)
+    verify_recipe(recipe)
     return {'schema':1,'sourceRevision':revision,'configSha256':CONFIG_SHA256,'config':CONFIG,'trainingRecipe':recipe,
+            **({'executionBackend': configured_device()} if 'RIGHELT_TRAINING_DEVICE' in os.environ else {}),
             'python':platform.python_version(),'platform':platform.platform(),'seed':seed,'stage':stage,
             **manifest_fields(),'seconds':CONFIG['resources']['initialSeconds' if stage=='initial' else 'overnightSeconds'],
             'dependencies':subprocess.check_output([sys.executable,'-m','pip','freeze'],text=True).splitlines(),
@@ -102,7 +107,10 @@ ADOPTION_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for n
     'tools/ai-trainer/tests/exploration_fixture.py','tools/ai-trainer/tests/test_exploration_adoption.py',
     'tools/ai-trainer/tests/test_sequence.py','tools/ai-trainer/tests/test_eight_hour.py','tools/ai-trainer/tests/test_fresh_health.py','tools/ai-trainer/tests/test_stage.py')
 
-PROOF_PATHS=('packages/game-engine/src','packages/computer-player/src','packages/shared-types/src',
+HOSTED_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for name in (
+    'device','hosted_receipts','hosted_cleanup','hosted_snapshot'))
+
+PROOF_PATHS=('tools/hosted-compute/policy.json','packages/game-engine/src','packages/computer-player/src','packages/shared-types/src',
     'tools/ai-trainer/production-corpus.mjs','tools/ai-trainer/snapshot-production.py',
     'tools/ai-trainer/righelt_training/production.py','tools/ai-trainer/righelt_training/curriculum.py',
     'tools/ai-trainer/righelt_training/replay.py',
@@ -111,7 +119,7 @@ PROOF_PATHS=('packages/game-engine/src','packages/computer-player/src','packages
     'tools/ai-trainer/righelt_training/incremental.py',
     'packages/computer-player/config/training-recipes-v1.json',
     'tools/ai-trainer/righelt_training/model.py','tools/ai-trainer/righelt_training/export.py',
-    'tools/ai-trainer/righelt_training/parity.py','tools/ai-trainer/requirements.lock','pnpm-lock.yaml',*SCREEN_PROOF_PATHS,*ADOPTION_PROOF_PATHS)
+    'tools/ai-trainer/righelt_training/parity.py','tools/ai-trainer/requirements.lock','pnpm-lock.yaml',*SCREEN_PROOF_PATHS,*ADOPTION_PROOF_PATHS,*HOSTED_PROOF_PATHS)
 
 def dependency_inventory(revision=None):
     """Exact tracked source inventory; missing paths can never imply no changes."""

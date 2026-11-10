@@ -11,6 +11,32 @@ from righelt_training.config import CONFIG_SHA256
 from righelt_training.curriculum import family_for_root, simple_root
 
 class ArenaTest(unittest.TestCase):
+    def test_hosted_rollback_recovers_remote_result_and_preserves_consumed_missing_outcome(self):
+        from righelt_training import hosted_receipts
+        with tempfile.TemporaryDirectory() as d:
+            path,_=self.frozen(d,mode='diagnostic');models={'candidate':'candidate-model','opponent':'opponent-model'}
+            remote={};calls=[]
+            def claim(namespace,identity):
+                if identity in remote:return {'created':False,**remote[identity]}
+                remote[identity]={};return {'created':True}
+            def settle(namespace,identity,result):remote[identity]={'result':json.loads(json.dumps(result))}
+            def crash(job,*args,**kwargs):
+                calls.append(job['id'])
+                if len(calls)==2:raise KeyboardInterrupt('host lost after durable claim')
+                return self.player(job,*args,**kwargs)
+            with patch.object(hosted_receipts,'enabled',return_value=True),patch.object(hosted_receipts,'evaluation_claim',side_effect=claim),patch.object(hosted_receipts,'settle',side_effect=settle),patch('righelt_training.arena.verify_game') as replay:
+                with self.assertRaises(KeyboardInterrupt):run_arena(path,d,models,'cpu',player=crash)
+                output=next((Path(d)/'evaluations').iterdir());(output/'state.json').unlink()
+                resumed_calls=[]
+                def resume(job,*args,**kwargs):resumed_calls.append(job['id']);return self.player(job,*args,**kwargs)
+                result=run_arena(path,d,models,'cpu',player=resume)
+                self.assertEqual(result['completedGames'],199)
+                self.assertEqual(result['attemptedGames'],200)
+                self.assertEqual(result['unfinishedByReason'],{'interrupted':1})
+                self.assertEqual(len(resumed_calls),198)
+                self.assertTrue(all(identity not in resumed_calls for identity in calls))
+                replay.assert_called_once()
+
     def setUp(self):
         self.archive=tempfile.TemporaryDirectory();self.addCleanup(self.archive.cleanup)
         self.root_patch=patch('righelt_training.arena.ROOT',Path(self.archive.name))

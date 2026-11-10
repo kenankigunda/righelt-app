@@ -33,7 +33,7 @@ export async function verifyCurrentCorpus(corpus, engine) {
 }
 
 export function compareNumeric(reference, actual) {
-  assert.equal(reference.referenceDevice, 'mps');
+  assert.equal(reference.referenceDevice, process.env.RIGHELT_TRAINING_DEVICE ?? 'mps');
   assert.equal(actual.modelVersion, reference.modelSha256);
   assert.equal(reference.states.length, 1000); assert.equal(actual.results.length, 1000);
   assert.equal(actual.threads, 1);
@@ -52,7 +52,7 @@ export function compareNumeric(reference, actual) {
   }
   return { numericParityPassed: true, legalMasksIdentical: true, states: 1000,
     modelSha256: actual.modelVersion, corpusSha256: reference.corpusSha256,
-    referenceDevice: 'mps', backend: 'wasm', threads: 1, policyMaxAbs, valueMaxAbs, actualPhone: false };
+    referenceDevice: reference.referenceDevice, backend: 'wasm', threads: 1, policyMaxAbs, valueMaxAbs, actualPhone: false };
 }
 
 async function browser(attempt) {

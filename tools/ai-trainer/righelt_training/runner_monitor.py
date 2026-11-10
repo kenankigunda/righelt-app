@@ -5,12 +5,13 @@ from pathlib import Path
 import threading
 import time
 import torch
+from .device import memory_bytes
 from .checkpoint import atomic_json
 
 class RunnerMonitor:
     def __init__(self,directory,*,interval=3,clock=time.monotonic,query=None,expire=None):
         self.directory=Path(directory);self.interval=interval;self.clock=clock
-        self.query=query or (lambda:torch.mps.driver_allocated_memory() if torch.backends.mps.is_available() else 0)
+        self.query=query or memory_bytes
         self.expire=expire or (lambda:os._exit(70))
         self.lock=threading.RLock();self.stop=threading.Event();self.error=None;self.active=None
     def publish(self):

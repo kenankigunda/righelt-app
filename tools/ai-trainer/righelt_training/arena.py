@@ -1,3 +1,5 @@
+from . import hosted_receipts
+from .device import selected_device, memory_bytes
 """Paired model evaluation. Completed games only; no old search opponent."""
 from .budget import effective_deadline
 from .runner_monitor import RunnerMonitor
@@ -361,7 +363,7 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
     def heartbeat():
         if monitor is not None:
             monitor.check();return
-        amount=torch.mps.driver_allocated_memory() if str(device)=='mps' else 0
+        amount=memory_bytes(str(device))
         atomic_json(directory/'device-memory.json',{'schema':1,'pid':os.getpid(),'observedAt':time.time(),'driverBytes':amount})
     heartbeat();persist();reason='complete'
     # The supervisor first pauses until this process publishes fresh GPU memory.
@@ -386,18 +388,39 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
         for seat in ('P1','P2'):
             job=expected[(pair['id'],seat)]
             if job['id'] in state['records']:continue
-            if diagnostic and any(a['pairId']==pair['id'] and a['candidateSeat']==seat for a in state['attempts']):
+            if diagnostic and not hosted_receipts.enabled() and any(a['pairId']==pair['id'] and a['candidateSeat']==seat for a in state['attempts']):
                 # An interrupted/unfinished seat is evidence, not a request for
                 # another attempt. Resume proceeds to the next frozen identity.
                 continue
             prior=next((a for a in reversed(state['attempts']) if a['pairId']==pair['id'] and a['candidateSeat']==seat and a['status']=='unfinished'),None)
-            if prior and not retry_qualification(directory,runtime,digest,job,prior):
+            if prior and not hosted_receipts.enabled() and not retry_qualification(directory,runtime,digest,job,prior):
                 reason='engine-recovery-review-required';break
             assigned=allocation()
             if deadline-clock()<40:reason='budget';break
             if assigned.get('stop') or assigned['paused']:reason='resource-pause';break
             by_seat={seat:models['candidate'],('P2' if seat=='P1' else 'P1'):models['opponent']}
             attempt={'pairId':pair['id'],'candidateSeat':seat,'startedMonotonic':clock(),'status':'running','sourceManifest':runtime['manifestSha256'],'interval':runtime.get('allocationInterval')}
+            remote=hosted_receipts.evaluation_claim('evaluation:'+digest, job['id'])
+            if not remote['created']:
+                retained=remote.get('result',{})
+                if retained.get('status')=='completed':
+                    game=retained['game']
+                    if game['id']!=job['id'] or game['seed']!=job['seed'] or game.get('modelVersions')!=job['modelVersions'] or game.get('profileVersions')!=job['profileVersions'] or game.get('partition')!=plan['partition']:
+                        raise ValueError('remote evaluation identity mismatch')
+                    verify_game(game,min(deadline-10,clock()+20))
+                    path,sha=archive_game(output/'games',game)
+                    record=retained['record']
+                    if sha!=record['sha256']:raise ValueError('remote evaluation archive mismatch')
+                    state['records'][job['id']]=record;count_accepted(game)
+                    attempt.update(status='completed',reason='remote-evidence-recovered')
+                else:
+                    attempt.update(status='unfinished',reason=retained.get('reason','interrupted'))
+                if attempt['status']=='unfinished':
+                    attempt['diagnostic']=preserve_diagnostic(output,job,{'status':'unfinished','reason':attempt['reason']},len(state['attempts'])+1)
+                original=next((a for a in state['attempts'] if a['pairId']==pair['id'] and a['candidateSeat']==seat),None)
+                if original is None:state['attempts'].append(attempt)
+                else:original.update({k:v for k,v in attempt.items() if k in ('status','reason','diagnostic')})
+                persist();continue
             state['attempts'].append(attempt);persist()
             try:
                 orphan=output/'games'/(hashlib.sha256(job['id'].encode()).hexdigest()+'.json.gz')
@@ -420,6 +443,7 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
                         ('budget','resource-pause','inference-budget','verification-budget') else 'engine')
                     attempt['diagnostic']=preserve_diagnostic(output,job,result,len(state['attempts']))
                     persist()
+                    hosted_receipts.settle('evaluation:'+digest,job['id'],{'status':'unfinished','reason':reason})
                     if diagnostic and expected_diagnostic_limit(result):
                         reason='complete';heartbeat();continue
                     break
@@ -436,7 +460,13 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
                 state['records'][job['id']]={'pairId':pair['id'],'candidateSeat':seat,
                     'outcome':'truncated' if game['termination']=='truncated' else game['outcome']['status'],
                     'archive':str(path.relative_to(output)),'sha256':sha}
-                persist();heartbeat()
+                persist()
+                hosted_receipts.settle('evaluation:'+digest,job['id'],{'status':'completed','game':game,'record':state['records'][job['id']]})
+                heartbeat()
+            except hosted_receipts.HostedInfrastructureError:
+                attempt.update(status='unfinished',finishedMonotonic=clock(),reason='interrupted',infrastructureReason='hosted-barrier-unavailable')
+                attempt['diagnostic']=preserve_diagnostic(output,job,{'status':'unfinished','reason':'interrupted'},len(state['attempts']))
+                persist();raise
             except (ValueError,RuntimeError,KeyError,TypeError) as error:
                 if diagnostic:
                     attempt.update(status='failed',finishedMonotonic=clock(),reason='correctness-failure')
@@ -495,9 +525,8 @@ def main():
         if effective_deadline(runtime)-time.monotonic()<40:raise ValueError('original evaluation budget expired')
         plan,digest=read_frozen_plan(args.plan)
         if runtime.get('arenaPlanSha256')!=digest:raise ValueError('supervisor plan identity mismatch')
-        if not torch.backends.mps.is_available():raise RuntimeError('MPS unavailable for arena')
         signal.signal(signal.SIGUSR1,lambda *_:None)
-        device=torch.device('mps');torch.set_num_threads(2)
+        device=selected_device();torch.set_num_threads(2)
         with RunnerMonitor(args.run_dir) as monitor:
             with monitor.operation('arena-model-restoration',min(300,effective_deadline(runtime)-time.monotonic())):
                 models=load_frozen_models(plan,{'candidate':args.candidate_checkpoint,'opponent':args.opponent_checkpoint},device)

@@ -1,4 +1,5 @@
 """Durable allocation-wide consumption; rollback cannot reissue work identities."""
+from . import hosted_receipts
 import fcntl
 import json
 import re
@@ -32,6 +33,9 @@ class RecoveryLedger:
                             floor=max(floor,json.loads(companion.read_text())['state']['nextJob'])
                     data['jobs'][key]=floor
                 value=max(data['jobs'][key],minimum);data['jobs'][key]=value+1
+            value=hosted_receipts.counter(f'{self.root.resolve()}:{kind}:{key}', value)
+            if kind=='checkpoint':data['checkpoints']=value+1
+            else:data['jobs'][key]=value+1
             atomic_json(path,data)
             return value
     def checkpoint(self,minimum=0):return self.claim('checkpoint','',minimum)
@@ -46,6 +50,7 @@ class RecoveryLedger:
         with (self.root/'recovery-ledger.lock').open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX)
             if self.launched(job_id):return False
+            if not hosted_receipts.claim('training', job_id):return False
             append(self.root/'generation-launches.jsonl',{'jobId':job_id,
                    'directory':str(Path(directory).resolve()),'claimedAt':time.time()})
             return True

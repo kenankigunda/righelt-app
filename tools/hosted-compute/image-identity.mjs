@@ -1,0 +1,12 @@
+import { execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { assert, canonical } from './policy.mjs';
+const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
+assert(git('status', '--porcelain') === '', 'image requires clean committed source');
+const sourceRevision = git('rev-parse', 'HEAD');
+assert(sourceRevision === process.env.SOURCE_REVISION, 'image source revision mismatch');
+const locks = Object.fromEntries(['pnpm-lock.yaml', 'tools/ai-trainer/requirements.lock'].map(name => [name, createHash('sha256').update(readFileSync(name)).digest('hex')]));
+const dependencySha256 = createHash('sha256').update(canonical(locks)).digest('hex');
+writeFileSync('.compute-source.json', JSON.stringify({ sourceRevision, dependencySha256, locks }) + '\n', { flag: 'wx' });
+writeFileSync('.git/info/exclude', '\n.compute-source.json\n', { flag: 'a' });

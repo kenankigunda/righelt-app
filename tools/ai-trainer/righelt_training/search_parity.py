@@ -55,9 +55,10 @@ def repair_cache(previous,current,revision):
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--corpus',type=Path,required=True);parser.add_argument('--output',type=Path,required=True)
-    parser.add_argument('--repair-reference',type=Path);parser.add_argument('--reference-revision');parser.add_argument('--checkpoint',type=Path);parser.add_argument('--device',choices=['cpu','mps'],default='mps');parser.add_argument('--limit',type=int,default=1000);parser.add_argument('--seconds',type=float,default=1800);args=parser.parse_args()
+    parser.add_argument('--repair-reference',type=Path);parser.add_argument('--reference-revision');parser.add_argument('--checkpoint',type=Path);parser.add_argument('--device',choices=['cpu','mps','cuda'],default='mps');parser.add_argument('--limit',type=int,default=1000);parser.add_argument('--seconds',type=float,default=1800);args=parser.parse_args()
     if not 0<args.limit<=1000 or not 0<args.seconds<=1800:raise ValueError('invalid proof bounds')
-    if args.device=='mps' and not torch.backends.mps.is_available():raise RuntimeError('requires MPS')
+    from .device import selected_device
+    selected_device(args.device)
     torch.set_num_threads(1);torch.manual_seed(107);device=args.device;model=None
     if args.checkpoint:
         meta=json.loads(args.checkpoint.with_suffix('.json').read_text())

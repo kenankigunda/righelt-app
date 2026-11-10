@@ -25,10 +25,11 @@ def verify_corpus(data):
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--corpus',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
-    p.add_argument('--reference-output',type=Path);p.add_argument('--require-mps',action='store_true');p.add_argument('--checkpoint',type=Path);p.add_argument('--seed',type=int,default=107);args=p.parse_args()
+    p.add_argument('--device',choices=['cpu','mps','cuda']);p.add_argument('--reference-output',type=Path);p.add_argument('--require-mps',action='store_true');p.add_argument('--checkpoint',type=Path);p.add_argument('--seed',type=int,default=107);args=p.parse_args()
     torch.set_num_threads(1);torch.manual_seed(args.seed)
     if args.require_mps and not torch.backends.mps.is_available():raise RuntimeError('MPS unavailable')
-    reference_device='mps' if args.require_mps else 'cpu'
+    from .device import selected_device
+    reference_device=str(selected_device('mps' if args.require_mps else args.device or 'cpu'))
     trained=False
     rows=verify_corpus(json.loads(args.corpus.read_text()));model=None
     if args.checkpoint:

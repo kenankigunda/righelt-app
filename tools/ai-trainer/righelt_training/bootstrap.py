@@ -18,6 +18,7 @@ import sys
 import time
 import uuid
 
+from .device import configured_device
 from .allocation import Allocation
 from .budget import Budget
 from .checkpoint import atomic_json, inspect_checkpoint
@@ -139,17 +140,17 @@ def validate_outputs(attempt, identity):
             or checked.get('states') != STATES or checked.get('corpusSha256') != identity['corpus']['sha256']):
         raise ValueError('current engine corpus verification is incomplete')
     if (native.get('numericPassed') is not True or native.get('states') != STATES
-            or native.get('heldoutStates') != STATES or native.get('referenceDevice') != 'mps'
+            or native.get('heldoutStates') != STATES or native.get('referenceDevice') != configured_device()
             or native.get('trainedCheckpoint') is not True or native.get('configSha256') != CONFIG_SHA256
             or native.get('corpusSha256') != identity['corpus']['sha256']
             or native.get('atol') != 1e-5 or native.get('rtol') != 1e-4
             or len(errors) != 2 or any(type(n) not in (int, float) or not math.isfinite(n) or n < 0 for n in errors)
             or native.get('export', {}).get('sha256') != model_sha):
-        raise ValueError('native MPS numeric proof is incomplete')
-    if (raw.get('modelSha256') != model_sha or raw.get('referenceDevice') != 'mps'
+        raise ValueError('native backend numeric proof is incomplete')
+    if (raw.get('modelSha256') != model_sha or raw.get('referenceDevice') != configured_device()
             or raw.get('corpusSha256') != identity['corpus']['sha256']
             or [row['id'] for row in raw.get('states', [])] != ids
-            or search.get('complete') is not True or search.get('referenceDevice') != 'mps'
+            or search.get('complete') is not True or search.get('referenceDevice') != configured_device()
             or search.get('modelSha256') != model_sha or digest(attempt / 'native-search.onnx') != model_sha
             or search.get('corpusSha256') != identity['corpus']['sha256'] or search.get('profile') != PROFILE
             or [row['id'] for row in search.get('states', [])] != ids
@@ -158,12 +159,12 @@ def validate_outputs(attempt, identity):
                    for i, row in enumerate(search['states']))):
         raise ValueError('1000-state native search reference is incomplete or mismatched')
     if (numeric.get('numericParityPassed') is not True or numeric.get('legalMasksIdentical') is not True
-            or numeric.get('states') != STATES or numeric.get('referenceDevice') != 'mps'
+            or numeric.get('states') != STATES or numeric.get('referenceDevice') != configured_device()
             or numeric.get('backend') != 'wasm' or numeric.get('threads') != 1
             or numeric.get('corpusSha256') != identity['corpus']['sha256'] or numeric.get('modelSha256') != model_sha
             or not numeric.get('browserVersion') or tactical.get('browserVersion') != numeric['browserVersion']
             or tactical.get('states') != STATES or tactical.get('tacticalOutcomesVerified') is not True
-            or tactical.get('modelSha256') != model_sha or tactical.get('referenceDevice') != 'mps'
+            or tactical.get('modelSha256') != model_sha or tactical.get('referenceDevice') != configured_device()
             or observed.get('modelVersion') != model_sha or [row['id'] for row in observed.get('results', [])] != ids):
         raise ValueError('1000-state browser numeric/legal/tactical proof is incomplete')
     if built.get('modelVersion') != model_sha or built.get('runtimeVersion') != identity['runtime']['onnxruntime-web']:

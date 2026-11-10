@@ -53,6 +53,7 @@ def save_checkpoint(path, model, optimizer, *, round_index, updates, replay_ids,
         data['recovery']={'schema':1,'state':state,'archives':archives}
         data['recoverySha256']=hashlib.sha256(json.dumps(data['recovery'],sort_keys=True,allow_nan=False).encode()).hexdigest()
     if torch.backends.mps.is_available(): data['mpsRng']=torch.mps.get_rng_state()
+    if torch.cuda.is_available(): data['cudaRng']=torch.cuda.get_rng_state_all()
     tmp=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
     try:
         with tmp.open('xb') as f:torch.save(data,f);f.flush();os.fsync(f.fileno())
@@ -113,8 +114,12 @@ def load_checkpoint(path, model, optimizer=None, *, manifest_sha256, require_rec
     if model_architecture(model) != record_architecture(data):
         raise ValueError('Checkpoint differs from requested model architecture')
     if validate_state is not None: validate_state(data)
+    if 'cudaRng' in data and torch.cuda.is_available() and len(data['cudaRng']) != torch.cuda.device_count():
+        raise ValueError('CUDA recovery device count mismatch')
     model.load_state_dict(data['model'])
     if optimizer is not None: optimizer.load_state_dict(data['optimizer'])
     random.setstate(data['pythonRng']);torch.set_rng_state(data['torchRng'])
     if 'mpsRng' in data and torch.backends.mps.is_available(): torch.mps.set_rng_state(data['mpsRng'])
+    if 'cudaRng' in data and torch.cuda.is_available():
+        torch.cuda.set_rng_state_all(data['cudaRng'])
     return data

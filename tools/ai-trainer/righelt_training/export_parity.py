@@ -1,3 +1,4 @@
+from .device import selected_device, memory_bytes
 """Supervised trained-checkpoint MPS/native-ORT parity; browser promotion stays separate."""
 import argparse
 import hashlib
@@ -39,9 +40,10 @@ def validate_parity_checkpoint(directory,checkpoint,runtime,meta,checkpoint_hash
 
 def evaluate(directory,checkpoint,corpus,deadline,*,clock=time.monotonic,checker=numeric_parity,gate_report=None,
              development_cases=None,development_collector=None):
+    device=str(selected_device())
     directory=Path(directory);checkpoint=Path(checkpoint);corpus=Path(corpus)
     result={'schema':1,'complete':False,'numericPassed':False,'trainedCheckpoint':False,
-            'heldoutStates':0,'referenceDevice':'mps','configSha256':CONFIG_SHA256,
+            'heldoutStates':0,'referenceDevice':device,'configSha256':CONFIG_SHA256,
             'productionPromotion':False,'remaining':['trained browser WASM parity','promotion gates']}
     output=directory/'trained-export-parity.json';atomic_json(output,result)
     try:
@@ -54,7 +56,6 @@ def evaluate(directory,checkpoint,corpus,deadline,*,clock=time.monotonic,checker
         checkpoint_hash=hashlib.sha256(checkpoint.read_bytes()).hexdigest()
         validate_parity_checkpoint(directory,checkpoint,runtime,meta,checkpoint_hash,gate_report)
         rows=verify_corpus(json.loads(corpus.read_text()))
-        if not torch.backends.mps.is_available():raise RuntimeError('MPS unavailable for trained parity')
         model=model_from_record(meta);load_checkpoint(checkpoint,model,manifest_sha256=meta['manifestSha256'],require_recovery=True)
         asset=directory/'trained-export'/f'{checkpoint_hash}.onnx'
         metadata=export_onnx(model,asset)
@@ -67,7 +68,7 @@ def evaluate(directory,checkpoint,corpus,deadline,*,clock=time.monotonic,checker
                 time.sleep(.1);allocation=json.loads((directory/'allocation.json').read_text())
             if allocation.get('stop'):raise TimeoutError('parity resource stop')
             batch=np.asarray([row['encoded'] for row in rows[offset:offset+32]],dtype=np.float32).reshape(-1,CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize'])
-            report=checker(model,asset,batch,reference_device='mps')
+            report=checker(model,asset,batch,reference_device=device)
             if report.get('numericPassed') is not True or not np.isfinite(report['maxAbsoluteError']).all():raise ValueError('nonfinite/failed parity report')
             errors=[max(a,b) for a,b in zip(errors,report['maxAbsoluteError'])]
             result['heldoutStates']+=len(batch)
@@ -108,7 +109,7 @@ def main():
     signal.signal(signal.SIGUSR1,lambda *_:None);stopped=threading.Event()
     def heartbeat():
         while not stopped.is_set():
-            amount=torch.mps.driver_allocated_memory() if torch.backends.mps.is_available() else 0
+            amount=memory_bytes()
             atomic_json(args.run_dir/'device-memory.json',{'schema':1,'pid':os.getpid(),'observedAt':time.time(),'driverBytes':amount});stopped.wait(3)
     thread=threading.Thread(target=heartbeat,daemon=True);thread.start();torch.set_num_threads(1)
     try:result=evaluate(args.run_dir,args.checkpoint,args.corpus,effective_deadline(runtime),gate_report=args.gate_report,

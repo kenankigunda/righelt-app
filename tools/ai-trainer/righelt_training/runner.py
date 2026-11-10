@@ -1,4 +1,5 @@
 """Budgeted local experiment child. Supervisor owns permission and hard limits."""
+from .device import selected_device, memory_bytes
 from .budget import effective_deadline,validation_boundary
 from .admission import KINDS,CHECKPOINT_ALLOWANCE,estimate as admission_estimate, observe as observe_duration, restore_observations
 from .allocation import rows
@@ -30,7 +31,8 @@ from . import exploration_adoption
 from .training_recipe import record_recipe, recipe_binding
 
 ENGINE = ROOT / 'tools/ai-trainer/engine-worker.mjs'
-CHECKPOINT_INTERVAL = 590
+CHECKPOINT_INTERVAL = (json.loads((ROOT/'tools/hosted-compute/policy.json').read_text())['trainerCheckpointSeconds']
+                       if os.environ.get('RIGHELT_HOSTED') == '1' else 590)
 
 
 def read_json(path):
@@ -99,6 +101,8 @@ class Runner:
             raise ValueError('manifest content mismatch')
         self.continuation = fresh_health.continuation_for(self.directory, self.manifest['manifest'])
         self.training_recipe = record_recipe(self.manifest['manifest'])
+        from .hosted_receipts import verify_recipe
+        verify_recipe(self.training_recipe)
         self.exploration_adoption = exploration_adoption.manifest_binding(self.directory, self.manifest['manifest'], mode='provenance')
         if self.exploration_adoption and (self.runtime.get('explorationAdoption') != self.exploration_adoption
                 or self.runtime.get('trainingRecipe') != self.training_recipe):
@@ -109,10 +113,7 @@ class Runner:
         self.started = self.runtime['startedMonotonic']
         if self.deadline <= self.started or self.deadline <= time.monotonic():
             raise ValueError('expired experiment')
-        self.device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
-        # Runtime fallback is prohibited for experiments; CPU remains available to unit tests.
-        if self.device.type != 'mps':
-            raise RuntimeError('MPS unavailable; run preflight with Metal access')
+        self.device = selected_device()
         torch.set_num_threads(2)
         torch.manual_seed(seed)
         self.model = PolicyValueNet().to(self.device)
@@ -146,7 +147,7 @@ class Runner:
     def report_device_memory(self):
         if getattr(self,'monitor',None):
             self.monitor.check();return
-        amount=torch.mps.driver_allocated_memory() if self.device.type=='mps' else 0
+        amount=memory_bytes(str(self.device))
         atomic_json(self.directory/'device-memory.json', {'schema':1,'pid':os.getpid(),
                     'observedAt':time.time(),'driverBytes':amount})
 

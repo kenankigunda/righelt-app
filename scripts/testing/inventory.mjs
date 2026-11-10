@@ -38,6 +38,7 @@ export function nodeInventory(id, cwd = process.cwd()) {
     return [
       ...[
         "scripts/testing/test",
+        "tools/hosted-compute/test",
         "scripts/resources/test",
         "scripts/validation/test",
       ].flatMap((dir) => walk(path.join(cwd, dir))),

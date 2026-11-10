@@ -4,6 +4,8 @@ on:
     paths:
       - 'packages/computer-player/**'
       - 'tools/ai-trainer/**'
+      - 'tools/hosted-compute/**'
+      - 'apps/compute-controller/**'
       - 'tools/ai-benchmark/**'
       - 'scripts/build-ai-benchmark.mjs'
       - 'package.json'
@@ -14,6 +16,8 @@ on:
     paths:
       - 'packages/computer-player/**'
       - 'tools/ai-trainer/**'
+      - 'tools/hosted-compute/**'
+      - 'apps/compute-controller/**'
       - 'tools/ai-benchmark/**'
       - 'scripts/build-ai-benchmark.mjs'
       - 'package.json'
@@ -47,6 +51,8 @@ jobs:
         env:
           PYTHONPATH: tools/ai-trainer
         run: pnpm test:trainer
+      - name: Hosted compute contracts and local Worker proof
+        run: pnpm test:hosted-compute
       - name: CPU export smoke test
         env:
           PYTHONPATH: tools/ai-trainer

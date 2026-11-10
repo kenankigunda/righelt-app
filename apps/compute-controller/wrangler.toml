@@ -1,0 +1,28 @@
+name = "righelt-compute-controller"
+main = "index.mjs"
+compatibility_date = "2026-11-09"
+workers_dev = false
+preview_urls = false
+
+[vars]
+COMPUTE_ENABLED = "false"
+AUTHORIZED_PILOT_CENTS = "0"
+CONTROLLER_URL = ""
+
+[[durable_objects.bindings]]
+name = "CONTROL"
+class_name = "ComputeController"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ComputeController"]
+
+[[r2_buckets]]
+binding = "ARTIFACTS"
+bucket_name = "righelt-compute-private"
+
+[triggers]
+crons = []
+
+[observability.logs]
+enabled = false

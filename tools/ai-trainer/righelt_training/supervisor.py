@@ -368,7 +368,7 @@ def main():
     if manifest_path.exists():
         original=active_manifest(args.run_dir)
         if any(original['manifest'].get(key)!=manifest.get(key) for key in (
-                'sourceRevision','configSha256','seed','stage','dependencies','lockHashes','explorationAdoption',*manifest_fields())):
+                'sourceRevision','configSha256','seed','stage','executionBackend','dependencies','lockHashes','explorationAdoption',*manifest_fields())):
             original=amend_manifest(args.run_dir,manifest,json.loads(args.gate_report.read_text()).get('repair',{}))
         exploration_adoption.manifest_binding(args.run_dir,original['manifest'])
         digest=original['sha256']

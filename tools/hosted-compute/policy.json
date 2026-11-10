@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "pilotCents": 10000,
+  "monthlyCents": 50000,
+  "repairCents": 1000,
+  "repairMs": 7200000,
+  "checkpointMs": 600000,
+  "leaseMs": 120000,
+  "heartbeatMs": 20000,
+  "reconcileMs": 60000,
+  "startupMs": 900000,
+  "requestMs": 10000,
+  "maxObjectBytes": 67108864,
+  "maxArtifacts": 2000,
+  "shutdownReserveCents": 2000,
+  "reserveBasisPoints": 2000,
+  "trainerCheckpointSeconds": 240,
+  "snapshotEveryMs": 120000
+}
