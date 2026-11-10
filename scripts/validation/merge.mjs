@@ -1,6 +1,6 @@
 import {command} from './io.mjs';
 import {canMerge,readiness} from './model.mjs';
-import {resolvePRGate} from './ci-gate.mjs';
+import {resolvePRGate,resolveLivePRBase} from './ci-gate.mjs';
 export function verifyCheckApplicability(evidence,head,base){
  return evidence?.verified===true&&evidence.head===head&&evidence.base===base
   &&evidence.workflowFiltersVerified===true&&evidence.requiredChecksVerified===true
@@ -13,18 +13,47 @@ export async function refreshPR(run,number,{cwd=process.cwd(),execute=command}={
  const repo=run.repository;if(!/^[\w.-]+\/[\w.-]+$/.test(repo??''))throw Error('Run repository is required');
  const read=async n=>JSON.parse((await execute(['gh','pr','view',String(n),'--repo',repo,'--json','number,headRefOid,baseRefOid,baseRefName,state,isDraft,mergeable,reviewDecision,statusCheckRollup,mergedAt,mergeCommit'],{cwd})).output);
  const current=await read(number);
+ // A squash advances live main to a commit outside the former PR head.
+ // Confirm the completed merge directly instead of applying a pre-merge
+ // ancestry requirement to its already-merged input.
+ if(current.state==='MERGED'){
+  const metadata=JSON.parse((await execute(['gh','api',`repos/${repo}/pulls/${number}`],{cwd})).output);
+  if(current.number!==number||metadata.number!==number||metadata.head?.sha!==current.headRefOid||metadata.base?.sha!==current.baseRefOid||metadata.base?.ref!==current.baseRefName||metadata.merged!==true||!current.mergeCommit?.oid||metadata.merge_commit_sha!==current.mergeCommit.oid)throw Error('Completed merge primary provenance differs');
+  if(pr.head!==current.headRefOid||pr.base!==current.baseRefName){run.complete=false;for(const stage of run.stages){stage.status='stale';stage.visualReviewed=false;}}
+  pr.head=current.headRefOid;pr.base=current.baseRefName;pr.baseSnapshot=current.baseRefOid;
+  pr.merged=true;pr.closed=false;pr.open=false;pr.mergeCommit=current.mergeCommit.oid;pr.mergedAt=current.mergedAt;
+  if(pr.authorization)pr.authorization.state='consumed';
+  pr.readiness='merged';pr.waiting=[];
+  const stage=run.mode==='local'?run.stages[0]:run.stages.find(s=>s.index===run.prs.indexOf(pr)+1);
+  return {pr,stage,current,currentBase:run.base??stage?.base};
+ }
+ const staleAll=()=>{run.complete=false;for(const stage of run.stages){stage.status='stale';stage.visualReviewed=false;}};
+ let liveBase;
+ try{liveBase=await resolveLivePRBase({current,repository:repo,cwd,execute});}catch(error){staleAll();throw error;}
  // A boundary is certified by the final aggregate, so every input must still match.
  if(run.version===2){
   for(const input of run.prs){
    const actual=input.number===number?current:await read(input.number);
-   if(actual.baseRefName!==input.base||!input.inputBaseSha||actual.baseRefOid!==input.inputBaseSha){run.complete=false;for(const stage of run.stages){stage.status='stale';stage.visualReviewed=false;}}
+   // inputBaseSha remains the PR snapshot captured with the original input.
+   if(actual.baseRefName!==input.base||!input.inputBaseSha||actual.baseRefOid!==input.inputBaseSha)staleAll();
+   let inputLive;
+   try{inputLive=input.number===number?liveBase:await resolveLivePRBase({current:actual,repository:repo,cwd,execute});}catch(error){staleAll();throw error;}
+   input.liveBaseProvenance=inputLive;
+   if(inputLive.sha!==run.base)staleAll();
    if(actual.headRefOid!==input.head){
     input.head=actual.headRefOid;run.complete=false;
     for(const stage of run.stages)if(run.mode==='local'||stage.index>=run.prs.indexOf(input)+1){stage.status='stale';stage.visualReviewed=false;}
    }
   }
-  if(current.baseRefOid!==run.base){run.complete=false;for(const stage of run.stages){stage.status='stale';stage.visualReviewed=false;}}
+  if(liveBase.sha!==run.base)staleAll();
  }
+ // Recheck after other inputs were read, without treating their historical
+ // snapshots as a moving branch ref or reusing an old ancestry timestamp.
+ try{
+  const latest=await resolveLivePRBase({current,repository:repo,cwd,execute});
+  if(latest.sha!==liveBase.sha)staleAll();
+  liveBase=latest;
+ }catch(error){staleAll();throw error;}
  // Native stack merges can include predecessors. V1 authorizes individual PRs,
  // so read membership from the primary resource and reject stacks explicitly.
  const metadata=JSON.parse((await execute(['gh','api',`repos/${repo}/pulls/${number}`],{cwd})).output);
@@ -38,22 +67,23 @@ export async function refreshPR(run,number,{cwd=process.cwd(),execute=command}={
  pr.base=current.baseRefName;pr.open=current.state==='OPEN';pr.draft=current.isDraft;pr.conflicts=current.mergeable==='CONFLICTING'?true:current.mergeable==='MERGEABLE'?false:null;
  pr.merged=current.state==='MERGED';pr.closed=current.state==='CLOSED';
  if(pr.merged&&pr.authorization)pr.authorization.state='consumed';
- const ci=await resolvePRGate({current,repository:repo,cwd,execute});
+ pr.baseSnapshot=current.baseRefOid;pr.liveBaseProvenance=liveBase;
+ const ci=await resolvePRGate({current,repository:repo,cwd,execute,liveBase});
  pr.ciGate=ci.gate;pr.advisoryChecks=ci.advisoryChecks;pr.ciGateReason=ci.reason??null;
- pr.checks=ci.namedGateCount===0&&verifyCheckApplicability(pr.checkApplicability,current.headRefOid,current.baseRefOid)?'not-applicable':ci.status;
+ pr.checks=ci.namedGateCount===0&&verifyCheckApplicability(pr.checkApplicability,current.headRefOid,liveBase.sha)?'not-applicable':ci.status;
  pr.review=current.reviewDecision==='APPROVED'?'passed':current.reviewDecision==='CHANGES_REQUESTED'?'failed':'pending';
  // Empty reviewDecision is only acceptable after the agent verifies no review requirement.
  if(!current.reviewDecision&&pr.noReviewRequired===true)pr.review='passed';
  pr.waitingFor=[];for(const dep of pr.dependsOn??[]){if((await read(dep)).state!=='MERGED')pr.waitingFor.push(dep);}
- pr.gatesHead=current.headRefOid;pr.gatesBase=current.baseRefOid;pr.gatesCheckedAt=new Date().toISOString();
+ pr.gatesHead=current.headRefOid;pr.gatesBase=liveBase.sha;pr.gatesCheckedAt=new Date().toISOString();
  const stage=run.mode==='local'?run.stages[0]:run.stages.find(s=>s.index===run.prs.indexOf(pr)+1);
- const result=readiness(pr,stage,current.baseRefOid,run);pr.readiness=pr.merged?'merged':result.status;pr.waiting=result.waiting;
- return {pr,stage,current};
+ const result=readiness(pr,stage,liveBase.sha,run);pr.readiness=pr.merged?'merged':result.status;pr.waiting=result.waiting;
+ return {pr,stage,current,currentBase:liveBase.sha};
 }
 export async function mergeAuthorized(run,number,{cwd=process.cwd(),execute=command}={}){
  if(!Number.isFinite(Date.parse(run.replyCheckedAt))||Date.parse(run.replyCheckedAt)>Date.now()||Date.now()-Date.parse(run.replyCheckedAt)>60_000)throw Error('Re-read tracked reply threads before merging (within 60 seconds)');
- const {pr,stage,current}=await refreshPR(run,number,{cwd,execute});
- if(!canMerge(pr,stage,current.baseRefOid,run))throw Error(`Not ready or not authorized: ${pr.waiting.join(', ')}`);
+ const {pr,stage,current,currentBase}=await refreshPR(run,number,{cwd,execute});
+ if(!canMerge(pr,stage,currentBase,run))throw Error(`Not ready or not authorized: ${pr.waiting.join(', ')}`);
  if(!['merge','squash','rebase'].includes(run.mergeMethod))throw Error('Record a repository-allowed mergeMethod');
  const repository=JSON.parse((await execute(['gh','api',`repos/${run.repository}`],{cwd})).output);
  const permission={merge:'allow_merge_commit',squash:'allow_squash_merge',rebase:'allow_rebase_merge'}[run.mergeMethod];
