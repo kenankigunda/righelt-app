@@ -1,14 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
-const start=source.indexOf('const liveBoardVisible ='),end=source.indexOf('const syncConfirmedPlayback =',start);
-const declaration=source.slice(start,end);
+import {isLiveBoardVisible} from '../shell/live-board-visibility.js';
 function visible({covered=false,replaying=false,scenarios=false,phase='idle',debug=false,layout='narrow',history=false,panel='board',hidden=false,focused=true}={}){
  const hit={},cover={},wrapper={contains:node=>node===hit},board={getBoundingClientRect:()=>({left:10,right:380,top:230,bottom:600,width:370,height:370}),closest:()=>wrapper};
  const document={hidden,hasFocus:()=>focused,elementFromPoint:()=>covered?cover:hit};
  const appEl={dataset:{shellTransitionPhase:phase},querySelector:()=>board};
- return Function('document','currentRoute','transport','getShellLayoutMode','appEl','window','replayController',`${declaration};return liveBoardVisible;`)(document,{name:'game',gameId:'g',panel,debug,scenarios},{getGameViewModel:()=>({inHistoryMode:history})},()=>layout,appEl,{innerWidth:390,innerHeight:450},{snapshot:()=>({playing:replaying})})();
+ return isLiveBoardVisible({document,currentRoute:{name:'game',gameId:'g',panel,debug,scenarios},inHistoryMode:history,replaying,layout,appEl,window:{innerWidth:390,innerHeight:450}});
 }
 test('actual visibility excludes utility occlusion while retaining a visible docked Board',()=>{
  assert.equal(visible(),true);

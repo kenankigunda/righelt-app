@@ -56,6 +56,11 @@ The suite catalog, evidence profiles, focused-selection shadow and rollout rules
 - Validated correctness is a hard gate: do not advance a change to the next development step until required tests for the current step pass.
 
 
+
+### Durable behavioral tests
+
+Write new tests against executed production behavior, not product source text. Extract small helpers used by the app when needed, retain focused real-app wiring proof, and use native browser proof for native browser contracts. No source slicing/evaluation or implementation-spelling assertions. Only specific artifact contracts may receive new source-inspection exceptions. Migrate affected legacy assertions when changing their behavior, and show targeted negative proof for migrated regressions. Run `pnpm check:test-durability`. Follow [the durable testing standard](docs/ai/TESTING_STRATEGY.md#durable-tests-execute-behavior).
+
 ## 4.1) Task Resource Management
 
 - Follow `docs/ai/RESOURCE_MANAGEMENT.md` for temporary servers, watchers, builds, browser tests and task-created preview tabs.

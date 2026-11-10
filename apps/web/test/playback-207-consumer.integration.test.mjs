@@ -1,7 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {runInNewContext} from 'node:vm';
 import {createBoardContextStore} from '../shell/board-context.js';
 import {historyBoardMessage,selectedHistoryPresentation} from '../shell/history-narration.js';
 import {recordedActorSide} from '../shell/recorded-narration.js';
@@ -14,12 +12,11 @@ import {isMappedBoardPromptHtml} from '../board/prompt-models.js';
 import {getGameResult,renderResultText,RESULT_HEADING_CONTRACT} from '../shell/game-result.js';
 import {renderResultMark} from '../shell/result-presentation.js';
 import {icon} from '../shell/ui.js';
-const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
-const extract=(begin,end)=>{const start=source.indexOf(begin),finish=source.indexOf(end,start);assert(start>=0&&finish>start);return source.slice(start,finish);};
-const callback=(begin,end)=>extract(begin,end).trim().replace(/^\w+:\s*/,'').replace(/,\s*$/,'');
+import {confirmedPlaybackMessage,playbackTurnIndicator,publishAcknowledgedBoardMessage} from '../shell/playback-presentation.js';
+import {renderResultPanel} from '../shell/result-panel.js';
 const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-test('actual automatic callbacks and recorded contexts keep canonical raw actors across ownership and manual control',()=>{
+test('production automatic presentation and recorded contexts keep canonical raw actors across ownership and manual control',()=>{
  for(const perspective of ['owner','manual-computer','observer']){
   const identityId=perspective==='observer'?'viewer':'human',manual=perspective==='manual-computer';
   const record={moveId:'accepted',index:16,displayMoveNumber:17,turnIndex:0,actorSide:'P2',computerProof:{profile:'babs'},action:{type:'rush',from:{row:1,col:2},to:{row:2,col:2}}};
@@ -32,10 +29,10 @@ test('actual automatic callbacks and recorded contexts keep canonical raw actors
    transport:{getGameViewModel:()=>game,getIdentityId:()=>identityId},replayController:null,replayRequests:{snapshot:()=>null},computerSession:{snapshot:()=>({phase:'computing',profile:'tau'})},
    confirmedPlayback:{snapshot:()=>({current:{move:record,frame:{recordedMove:record,moveNumber:17}}})},forcedFollowWorking:()=>false,viewingScope:()=> 'scope',
    document:{hidden:false,getElementById:()=>({parentElement:{querySelector:()=>null}})},updateComputerBoardLoading(){},boardTurnCaption:()=>({text:'Live'})};
-  context.acknowledgedBoardMessage=runInNewContext(extract('const acknowledgedBoardMessage=','const receiveBoardContext=')+'acknowledgedBoardMessage',context);
-  const caption=runInNewContext('('+callback('        getTurnIndicator: state => {','        getBoardMessage:')+')',context)({});
+  context.acknowledgedBoardMessage=(view,status,options)=>publishAcknowledgedBoardMessage(view,status,options,context);
+  const caption=playbackTurnIndicator(game,{},{step:context.confirmedPlayback.snapshot().current,identityId});
   assert.deepEqual({...caption},{text:'Move 17',side:'P2'});
-  const message=runInNewContext('('+callback('        getBoardMessage: selection => {','        onBoardMessageAction:')+')',context)({});
+  const message=confirmedPlaybackMessage(game,context.computerSession.snapshot(),{step:context.confirmedPlayback.snapshot().current,identityId,onRecorded:context.acknowledgedBoardMessage});
   assert.equal(message.text,'Babs is making their move');assert(isMappedBoardPromptHtml(renderBoardMessageHtml(message)));
   const recorded=store.channel('acknowledged');assert.equal(recorded.message.text,'Babs rushed from (1, 2) to (2, 2)');assert.equal(recorded.replay,null);
   assert.deepEqual(recorded.message.coordinates,[{row:1,col:2},{row:2,col:2}]);
@@ -56,7 +53,7 @@ test('actual result renderer consumes structured v3 ownership instead of rendere
   {game:computer,id:'human',title:'Babs won',winner:'p2',tone:'defeat'},{game:self,id:'human',title:'You won as Blue',winner:'p2',tone:'victory'},{game:self,id:'viewer',title:'Riley won as Blue',winner:'p2',tone:'neutral'}];
  for(const {game,id,title,winner,tone} of cases){
   const before=JSON.stringify(game),context={getGameResult,renderResultText,renderResultMark,playerDisplayName,escapeHtml,formatDisplayGameId:value=>value,icon,transport:{getAuthoritativeGame:()=>game,getIdentityId:()=>id}};
-  const render=runInNewContext(extract('const renderResult =','const renderGame =')+'renderResult',context);
+  const render=game=>renderResultPanel(game,context);
   const html=render({id:'g',player1:{profile:{displayName:'Unconfirmed name'}},board:{state:{outcome:{status:'draw'}}}}),result=getGameResult(game,id);
   assert.equal(result.title,title);assert.equal(result.tone,tone);assert.equal(result.titleParts.find(part=>part.side)?.side,winner);
   assert(html.includes(`<h1 tabindex="-1">${renderResultText(result,'title')}</h1>`),'actual result heading retains structured owner markup');
