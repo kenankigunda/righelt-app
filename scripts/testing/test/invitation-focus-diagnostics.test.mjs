@@ -1,3 +1,4 @@
+import {createNotificationPatchLifecycle} from '../../../apps/web/shell/game-alert-presentation.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -118,4 +119,22 @@ test('installer and evidence encoder admit exactly the three invitation focus ca
  }
  const page={addInitScript:async()=>{throw Error('unlisted must not initialize');},route:async()=>{throw Error('unlisted must not route');}};
  await assert.rejects(()=>installInvitationFocusDiagnostics(page,{title:'Players unrelated clipboard case'},{baseURL:'http://127.0.0.1:10193'}),/allowlisted/);
+});
+
+// Execute the diagnostic recipe's own inserted statements, not sliced product
+// code. The real lifecycle helper performs the DOM mutation between witnesses.
+test('replacement witnesses surround actual DOM mutation only for changed markup',()=>{
+ const before=recipe.operations[1],after=recipe.operations[2];
+ assert.equal(before.before,'');assert.equal(after.before,'');
+ for(const changed of [false,true]){
+  const events=[],nextMain={},currentMain={replaceWith:next=>{assert.equal(next,nextMain);events.push('replace');}};
+  const patches=createNotificationPatchLifecycle({captureBeforePatch:()=>events.push('capture')},{replaceMain:()=>false});
+  const nextMarkup='next',lastRenderedMarkup=changed?'old':'next';
+  const inputs={appEl:{querySelector:()=>currentMain},nextMarkup,lastRenderedMarkup,routeName:'game',patchHomeAroundCreateControl:()=>assert.fail('not a Home branch'),createMarkupRoot:()=>({querySelector:()=>nextMain}),updateMountedFlyouts:()=>events.push('flyouts')};
+  const context={nextMarkup,lastRenderedMarkup,observeInviteFocus:phase=>events.push(phase),patch:()=>patches.patchMainMarkup(inputs)};
+  // The two inserted statements are the artifact under test; this wrapper
+  // supplies only their original changed-branch relationship.
+  vm.runInNewContext(before.after+'if(patch()){'+after.after+'}',context);
+  assert.deepEqual(events,changed?['render-before-replacement','capture','replace','flyouts','render-after-replacement']:['capture']);
+ }
 });

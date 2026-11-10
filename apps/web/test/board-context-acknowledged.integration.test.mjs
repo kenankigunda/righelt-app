@@ -1,3 +1,4 @@
+import {createGameAlertItems,renderGameAlertStackCard} from '../shell/game-alert-presentation.js';
 import {publishAcknowledgedBoardMessage} from '../shell/playback-presentation.js';
 import {renderResultPanel} from '../shell/result-panel.js';
 import {SYNC_TIMING} from '../generated/packages/shared-types/src/sync-protocol.js';
@@ -35,7 +36,8 @@ function fixture(){
   recoveryPresentationOptions:()=>({}),presentedRecoveryMessage:value=>value.recovery?'Reload game':'',needsRecoveryAction:value=>Boolean(value.recovery),
   dismissedRecoveryNotices:new Map(),ignoredRevertRequests:new Set(),isDiagnosticOpen:()=>false,
   computerSession:{snapshot:()=>({phase})},undoRequestFeedback:null,undoRequestFeedbackGameId:null,escapeHtml:String};
- runInNewContext(`${declaration('getRevertRequestKey')}${declaration('getActiveRevertRequest')}${declaration('getActivePendingRevertRequest')}${declaration('getGameAlertItems')}${source.slice(source.indexOf('const acknowledgedBoardMessage='),source.indexOf('const dispatchBoardMessageAction='))};globalThis.items=getGameAlertItems;globalThis.receive=receiveBoardContext;globalThis.ack=acknowledgedBoardMessage;`,Object.assign(ctx,{publishAcknowledgedBoardMessage,renderResultPanel}));
+ ctx.getGameAlertItems=createGameAlertItems(()=>ctx);
+ runInNewContext(`${declaration('getRevertRequestKey')}${declaration('getActiveRevertRequest')}${declaration('getActivePendingRevertRequest')}globalThis.getActiveRevertRequest=getActiveRevertRequest;globalThis.getActivePendingRevertRequest=getActivePendingRevertRequest;${source.slice(source.indexOf('const acknowledgedBoardMessage='),source.indexOf('const dispatchBoardMessageAction='))};globalThis.items=getGameAlertItems;globalThis.receive=receiveBoardContext;globalThis.ack=acknowledgedBoardMessage;`,Object.assign(ctx,{publishAcknowledgedBoardMessage,renderResultPanel}));
  const refresh=()=>ctx.receive({kind:'piece',mandatory:false,message:{text:'Piece help'}},{selectedPieceId:'piece',intentVersion:1,phase:null,continuationPhase:null,transient:false});
  const order=()=>stack.order(game.id,ctx.items(game));
  assert.equal(order()[0].key,'computer:g');
@@ -109,6 +111,16 @@ test('automatic frame context uses pinned recorded identity and shared closure n
  const next={...record,moveId:'next'};f.ctx.ack(f.game,{phase:'idle'},{identityId:'me',presentationMove:next});assert.notEqual(f.store.channel('acknowledged').key,first.key);
 });
 
+// Remove only the two exact inert decorative spans. Keep the original broad
+// accessibility refusal for every semantic ancestor, control and other node.
+const withoutPaperDecoration=html=>{
+ for(const name of ['notice-paper-face','notice-paper-curl']){
+  const exact=`<span class="${name}" hidden aria-hidden="true"></span>`;
+  assert.equal(html.split(exact).length-1,1,'one approved decorative span');html=html.replace(exact,'');
+ }
+ return html;
+};
+
 function playbackRecoveryFixture(){
  const f=fixture(),timers=new Map();let now=0,nextTimer=0,visible=true;
  f.ctx.playbackRecoveryWait=createForegroundRecoveryWait({clock:()=>now,
@@ -117,7 +129,7 @@ function playbackRecoveryFixture(){
  f.game.confirmedPlayback={retrying:true,canRetry:true};f.ack();
  const acknowledged=`board-context:${f.store.channel('acknowledged').key}`;
  assert.equal(f.order()[0].key,acknowledged,'Seed the actual preferred acknowledged context');
- runInNewContext(`${declaration('renderGameAlertStackCard')};globalThis.card=renderGameAlertStackCard;`,f.ctx);
+ f.ctx.card=options=>renderGameAlertStackCard(options,f.ctx.escapeHtml);
  return {...f,acknowledged,recoveryKey:`confirmed-playback-recovery:${f.game.id}`,
   advance(to){assert(to>=now);for(;;){const due=[...timers].filter(([,timer])=>timer.at<=to).sort((a,b)=>a[1].at-b[1].at)[0];if(!due)break;now=due[1].at;timers.delete(due[0]);due[1].fn();}now=to;return f.order();},
   visible(value){visible=value;return f.order();},blocked(value){f.game.confirmedPlayback.retrying=value;return f.order();},
@@ -135,7 +147,7 @@ test('overdue playback Retry becomes an active accessible notice only at the rea
  const items=f.advance(15000),notice=items.find(item=>item.key===f.recoveryKey);
  assert.equal(items[0].key,f.recoveryKey);assert.equal(notice.priority,'urgent');
  const card=f.cardFor(f.recoveryKey);assert.match(card,/is-active/);assert.match(card,/data-stack-index="0"/);
- assert.doesNotMatch(card,/aria-hidden="true"|\sinert(?:\s|>)/);
+ assert.doesNotMatch(withoutPaperDecoration(card),/aria-hidden="true"|\sinert(?:\s|>)/);
  assert.match(card,/<button class="secondary mini-button" data-action="retry-confirmed-playback" >Retry<\/button>/);
  assert.match(card,/Still loading the move\. Retrying in the background\./);
 });
@@ -145,7 +157,7 @@ test('a focused context holds overdue playback Retry until interaction ends',()=
  const held=f.advance(15000);assert.equal(held.find(item=>item.key===f.recoveryKey).priority,'urgent');assert.equal(held[0].key,f.acknowledged);
  assert.match(f.cardFor(f.recoveryKey),/aria-hidden="true" tabindex="-1" inert/);
  f.hold(null);assert.equal(f.order()[0].key,f.recoveryKey);
- assert.doesNotMatch(f.cardFor(f.recoveryKey),/aria-hidden="true"|\sinert(?:\s|>)/);
+ assert.doesNotMatch(withoutPaperDecoration(f.cardFor(f.recoveryKey)),/aria-hidden="true"|\sinert(?:\s|>)/);
 });
 
 test('hidden time and settled playback cannot carry an old Retry deadline into a new foreground wait',()=>{
@@ -160,4 +172,13 @@ test('hidden time and settled playback cannot carry an old Retry deadline into a
  f.advance(900000);assert.equal(f.blocked(true).some(item=>item.key===f.recoveryKey),false);
  assert.equal(f.advance(914999).find(item=>item.key===f.recoveryKey).priority??'normal','normal');
  assert.equal(f.advance(915000)[0].key,f.recoveryKey);
+});
+
+
+test('paper decoration inverse cannot conceal hidden semantic Retry ancestry or unknown hidden markup',()=>{
+ const f=playbackRecoveryFixture();f.advance(15000);const card=f.cardFor(f.recoveryKey),hidden=/aria-hidden="true"|\sinert(?:\s|>)/;
+ assert.match(withoutPaperDecoration(card.replace('class="alert shell-game-alert"','class="alert shell-game-alert" aria-hidden="true"')),hidden);
+ assert.match(withoutPaperDecoration(card.replace('>Retry</button>',' inert>Retry</button>')),hidden);
+ assert.match(withoutPaperDecoration(card+'<span aria-hidden="true">Other content</span>'),hidden);
+ assert.throws(()=>withoutPaperDecoration(card.replace('notice-paper-curl','unapproved-decoration')),/one approved decorative span/);
 });

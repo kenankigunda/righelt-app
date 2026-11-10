@@ -1,3 +1,4 @@
+import {createGameAlertItems,renderGameAlertStackCard,renderRecoveryActions} from '../shell/game-alert-presentation.js';
 import {selectedHistoryPresentation} from '../shell/history-narration.js';
 import {recordedMoveNumber,visibleRecordedMoves} from '../shell/recorded-narration.js';
 import {renderBoardMessageHtml} from '../board/message-presentation.js';
@@ -44,13 +45,14 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const renderHeaderNarrowMenu = \(\) =>/);
   assert.match(source, /const renderHeaderAlertZone = \(\) => \{/);
   assert.match(source, /const notificationStack = createNotificationStack\(\);/);
-  assert.match(source, /const getGameAlertItems = \(game\) => \{/);
-  assert.match(source, /const renderGameAlertStackCard = \(\{ gameId, item, stackIndex, totalAlerts \}\) => \{/);
-  assert.match(source, /const isActive = stackIndex === 0;/);
-  assert.match(source, /data-action="cycle-game-alert-stack"/);
-  assert.doesNotMatch(source, /data-action="cycle-game-alert-stack" data-game-id="\$\{escapeHtml\(gameId\)\}" role="button" tabindex="0"/);
-  assert.match(source, /: isActive\s*\? 'tabindex="-1"'/);
-  assert.match(source, /: 'aria-hidden="true" tabindex="-1" inert'/);
+  const stackCard=options=>renderGameAlertStackCard({gameId:'g',item:{key:'item',html:''},totalAlerts:2,...options},String);
+  const active=stackCard({stackIndex:0}),inactive=stackCard({stackIndex:1});
+  assert.match(active,/data-action="cycle-game-alert-stack"/);assert.match(active,/tabindex="0"/);assert.doesNotMatch(active,/role="button"/);
+  assert.match(inactive,/aria-hidden="true" tabindex="-1" inert/);
+  assert.match(stackCard({stackIndex:0,totalAlerts:1}),/tabindex="-1"/);
+  const items=createGameAlertItems(()=>({transport:{getFailedOperations:()=>[{id:'failure',error:{message:'Failed'}}]},maybeUpdateUndoRequestOutcomeFeedback(){},presentedRecoveryMessage:()=>null,needsRecoveryAction:()=>false,recoveryPresentationOptions:()=>({}),issueDiagnostics:{list:()=>[],capture:()=> 'incident'},isDiagnosticOpen:()=>false,dismissedRecoveryNotices:new Map(),escapeHtml:String,playbackRecoveryWait:{update:()=>0},viewingScope:()=> 'g',liveBoardVisible:()=>true,SYNC_TIMING:{reconnectAlertMs:4000,confirmationBudgetMs:15000},renderComputerProgress:()=>'',computerSession:{snapshot:()=>({})},getActiveRevertRequest:()=>null,getActivePendingRevertRequest:()=>null,undoRequestFeedback:null,undoRequestFeedbackGameId:null,boardContextScope(){},boardContexts:{items:()=>[]},contextReplayEnabled:()=>false}))({id:'g'});
+  assert.match(items[0].html,/data-testid="sync-failure-banner"/);assert.match(items[0].html,/data-action="dismiss-failed-operation"/);
+
   assert.match(source, /const viewedGameId = getCurrentViewedGameId\(\);/);
   assert.match(source, /data-shell-alert-zone="\$\{gameAlerts \|\| startupStatus \? "active" : "idle"\}"/);
   assert.match(source, /data-action="toggle-header-menu"/);
@@ -65,12 +67,9 @@ test("shell render patches same-route game updates without replacing the board p
   assert.doesNotMatch(source.slice(source.indexOf("const renderHeader ="), source.indexOf("const renderHome =")), />Home<\/(?:a|span)>/);
   assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*return renderDecisionDebug/s);
   assert.match(source, /const getDocumentTitle = \(\) => \{\s*const gameId = getCurrentViewedGameId\(\);\s*if \(gameId\) \{\s*return `\$\{formatDisplayGameId\(gameId\)\} \| Righelt`;\s*\}\s*return "Righelt";\s*\};/s);
-  assert.match(source, /const failedOperations = transport\.getFailedOperations\?\.\(game\.id\) \?\? \[\];/);
   assert.match(source, /const getFailedOperationsKey = \(gameId\) =>/);
   assert.match(source, /failedOperationsKey: getFailedOperationsKey\(game\.id\)/);
   assert.match(source, /const failedOperationsKey = getFailedOperationsKey\(game\.id\);/);
-  assert.match(source, /testId:\s*"sync-failure-banner"/);
-  assert.match(source, /data-action="dismiss-failed-operation"/);
   assert.match(source, /let isBuildingGameAlerts = false;/);
   assert.match(source, /const renderGameAlertsHtml = \(game, inviteFromRole = null\) => \{[\s\S]*isBuildingGameAlerts = true;[\s\S]*finally \{\s*isBuildingGameAlerts = false;\s*\}/s);
   assert.match(source, /if \(!isBuildingGameAlerts\) \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
@@ -234,8 +233,6 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /document\.title = getDocumentTitle\(\);/);
   assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedHeader\(\);\s*updateMountedFlyouts\(\);\s*restoreScenarioDraftFocus\?\.\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*syncMountedGameShellPanelUi\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
   assert.match(source, /shouldUseIncrementalGameShell\(\) &&[\s\S]*getRouteTransitionPhaseKey\(\) === lastRenderedTransitionPhaseKey[\s\S]*updateMountedHeader\(\);\s*updateHeaderFields\(\);\s*syncScenarioAuthoringControls\(\);\s*updateMountedGameShell\(/s);
-  assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*if \(currentRoute\.name !== "home" \|\| !patchHomeAroundCreateControl\(nextMarkup\)\) \{[\s\S]*currentMain\.replaceWith\(nextMain\);updateMountedFlyouts\(\);[\s\S]*else appEl\.innerHTML = nextMarkup;\s*\}\s*restoreScenarioDraftFocus\?\.\(\);[\s\S]*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
-  assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.match(source, /data-flyout-link="home"/);
   assert.match(source, /flyoutLink \? `data-flyout-link="\$\{escapeHtml\(flyoutLink\)\}"` : ""/);
   assert.doesNotMatch(source, /data-flyout-link="tutorial"/);
@@ -368,7 +365,13 @@ test("shell renders durable browser E2E selectors for core workflow surfaces", (
   assert.match(source, /data-testid="approval-gate"/);
   assert.match(source, /data-testid="accept-request"/);
   assert.match(source, /data-testid="ignore-request"/);
-  assert.match(source, /testId:approval\?'undo-approval-notice':'undo-waiting-notice'/);
+  for(const approval of [false,true]){
+    const request={requestId:'undo',targetMoveId:'move'};
+    const getItems=createGameAlertItems(()=>({transport:{getFailedOperations:()=>[]},maybeUpdateUndoRequestOutcomeFeedback(){},presentedRecoveryMessage:()=>null,needsRecoveryAction:()=>false,recoveryPresentationOptions:()=>({}),issueDiagnostics:{list:()=>[]},dismissedRecoveryNotices:new Map(),escapeHtml:String,playbackRecoveryWait:{update:()=>0},viewingScope:()=> 'g',liveBoardVisible:()=>true,SYNC_TIMING:{reconnectAlertMs:4000,confirmationBudgetMs:15000},renderComputerProgress:()=>'',computerSession:{snapshot:()=>({})},getActiveRevertRequest:()=>approval?request:null,getActivePendingRevertRequest:()=>approval?null:request,undoApprovalActorSide:()=>null,undoRequestFeedback:null,boardContextScope(){},boardContexts:{items:()=>[]}}));
+    const html=getItems({id:'g'})[0].html;
+    assert.match(html,new RegExp(`data-testid="${approval?'undo-approval-notice':'undo-waiting-notice'}"`));
+    assert.match(html,new RegExp(`data-action="${approval?'accept-revert-request':'rescind-revert-request'}"`));
+  }
   assert.match(source, /data-testid="invite-join-player"/);
   assert.match(source, /data-testid="invite-join-viewer"/);
 });
@@ -487,7 +490,9 @@ test("history navigation uses pointer-down press state with a single mouseup rel
 test("upgrade fencing keeps a static recovery notice without discarding viewing context", () => {
  const subscriber=source.slice(source.indexOf('const subscribeToTransport'),source.indexOf('subscribeToTransport();'));
  assert.doesNotMatch(subscriber,/location\.reload|sync-v2-refresh/);
- assert.match(source,/game\.upgradeRequired \? `<button class="secondary[^"\n]*" data-action="refresh-game"/);
+ const upgrade=renderRecoveryActions({game:{id:'g',upgradeRequired:true},dismissed:false,recoveryNeedsAction:true,escapeHtml:String});
+ assert.match(upgrade,/<button class="secondary[^"\n]*" data-action="refresh-game">[\s\S]*?Reload game<\/button>/);
+ assert.match(upgrade,/<a[^>]+href="#\/">[\s\S]*?Home<\/a>/);assert.doesNotMatch(upgrade,/reconnect-safely/);
  assert.match(source,/if \(!game && transport\.isUpgradeRequired\?\.\(gameId\)\) \{\s*return `<section[^`]+data-action="refresh-game"/);
 });
 

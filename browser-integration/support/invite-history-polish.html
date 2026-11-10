@@ -2,6 +2,7 @@
 <link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"><link rel="stylesheet" href="/apps/web/shell/computer-replay.css">
 </head><body><main id="app" class="app-root" data-action-affiliation="red"></main><div id="p1" style="background:var(--player-p1)"></div><div id="p2" style="background:var(--player-p2)"></div>
 <script type="module">
+import {renderGameAlertStackCard as renderStackCard} from '/apps/web/shell/game-alert-presentation.js';
 import {selectedHistoryPresentation} from '/apps/web/shell/history-narration.js';
 import {visibleRecordedMoves,recordedMoveNumber} from '/apps/web/shell/recorded-narration.js';
 import {renderBoardMessageHtml} from '/apps/web/board/message-presentation.js';
@@ -52,9 +53,9 @@ const renderHomeLoading=Function('loadingAttributes','escapeHtml','getHomeSectio
 let urgentFixtureItems=[];
 const loadingScope=()=>`fixture:${root.dataset.shellRoute??'empty'}`;
 const alertSource=extract('const getHeaderAlertItems =','const renderHomeCardSkeleton =');
-const stackSource=extract('const renderGameAlertStackCard =','const renderTurnHistory =');
+const renderGameAlertStackCard=options=>renderStackCard(options,escapeHtml);
 const zoneSource=extract('const renderHeaderAlertZone =','const syncShellLayoutMode =');
-const alertFactory=Function('loadingContextScope','getGameAlertItems','notificationStack','renderGameAlertCard','escapeHtml','getCurrentViewedGameId','transport','account','loadingAttributes',`let slowLoadingContexts=[],isBuildingGameAlerts=false;const accountStartupError=null;${alertSource}${stackSource}${zoneSource};return {update(contexts){slowLoadingContexts=contexts;},render:renderHeaderAlertZone};`)(loadingScope,()=>urgentFixtureItems,createNotificationStack(),renderGameAlertCard,escapeHtml,()=> 'fixture',{getGameViewModel:()=>({id:'fixture'})},{snapshot:()=>({ready:true})},loadingAttributes);
+const alertFactory=Function('loadingContextScope','getGameAlertItems','notificationStack','renderGameAlertCard','escapeHtml','getCurrentViewedGameId','transport','account','loadingAttributes','renderGameAlertStackCard',`let slowLoadingContexts=[],isBuildingGameAlerts=false;const accountStartupError=null;${alertSource}${zoneSource};return {update(contexts){slowLoadingContexts=contexts;},render:renderHeaderAlertZone};`)(loadingScope,()=>urgentFixtureItems,createNotificationStack(),renderGameAlertCard,escapeHtml,()=> 'fixture',{getGameViewModel:()=>({id:'fixture'})},{snapshot:()=>({ready:true})},loadingAttributes,renderGameAlertStackCard);
 function patchLoadingHeader(){const header=root.querySelector('.shell-header');if(!header)return;const next=document.createElement('header');next.innerHTML=alertFactory.render();const current=header.querySelector('.shell-header-status');if(current)patchNotificationTree(current,next.firstElementChild);else header.append(next.firstElementChild);}
 window.holdUrgentLoadingNotice=active=>{urgentFixtureItems=active?[{key:'actual-error',priority:'urgent',html:renderGameAlertCard({tone:'danger',body:'Recovery needs attention',testId:'urgent-loading-test'})}]:[];patchLoadingHeader();};
 mountRecoverySpace(root);

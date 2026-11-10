@@ -88,30 +88,30 @@
   {
     "file": "apps/web/shell/app.js",
     "servedPath": "/shell/app.js",
-    "sourceSha256": "0aeacfc178f02d7bd17dcf0210ff819c88042064ab9cd035bf2ca50c3ef44004",
-    "outputSha256": "ab7fb54b45ca8d3a2f5364016b4ba973ff4da2dacf80c59e7b7fa967e5542266",
+    "sourceSha256": "b050ab82736f87940bd2b6e2b7fc46ec231bea483f00242a3164b611d167496a",
+    "outputSha256": "510a5af70c9e65306353a0fe55a7ee439d7d1915aa75aad83ff376dd253b13c8",
     "operations": [
       {
-        "start": 712,
-        "end": 712,
+        "start": 926,
+        "end": 926,
         "before": "",
         "after": "const __ownedFocusValue=(kind,value,scope)=>{try{globalThis.__ownedFocusProbe?.record(kind,value,scope);}catch{}return value;};\n"
       },
       {
-        "start": 245608,
-        "end": 245666,
+        "start": 239798,
+        "end": 239856,
         "before": "const focusReturn=boardContextFocus.begin(trigger,{allows:",
         "after": "const focusReturn=boardContextFocus.begin(__ownedFocusValue(\"replay-trigger\",(trigger),null),{allows:"
       },
       {
-        "start": 247547,
-        "end": 247740,
+        "start": 241737,
+        "end": 241930,
         "before": "const finish=()=>{\n    boardRuntime?.setInteractionBlocked(forcedFollowWorking(gameId)||Boolean(confirmedPlayback?.snapshot().playing));boardRuntime?.refreshStatus();queueBoardContextRefresh();",
         "after": "const finish=()=>{\n    __ownedFocusValue(\"finish-enter\",(trigger),focusReturn);\n    boardRuntime?.setInteractionBlocked(forcedFollowWorking(gameId)||Boolean(confirmedPlayback?.snapshot().playing));boardRuntime?.refreshStatus();queueBoardContextRefresh();\n    __ownedFocusValue(\"finish-after-render\",(trigger),focusReturn);"
       },
       {
-        "start": 248613,
-        "end": 248969,
+        "start": 242803,
+        "end": 243159,
         "before": "onChange:replay=>{\n      const playing=replay.playing;\n      const refresh=()=>{boardRuntime?.setInteractionBlocked(playing||forcedFollowWorking(gameId)||Boolean(confirmedPlayback?.snapshot().playing));boardRuntime?.refreshStatus();queueBoardContextRefresh();};\n      if(playing)refresh();else focusReturn.renderOwnedRemoval(refresh);\n    },onFinish:finish",
         "after": "onChange:replay=>{\n      const playing=__ownedFocusValue(\"change-playing\",(replay.playing),focusReturn);\n      const refresh=()=>{boardRuntime?.setInteractionBlocked(playing||forcedFollowWorking(gameId)||Boolean(confirmedPlayback?.snapshot().playing));boardRuntime?.refreshStatus();queueBoardContextRefresh();__ownedFocusValue(\"change-after-render\",(trigger),focusReturn);};\n      if(playing)refresh();else focusReturn.renderOwnedRemoval(refresh);\n    },onFinish:finish"
       }

@@ -10,6 +10,7 @@ export const renderGameAlertCard = ({ tone = "", body = "", action = "", testId 
   const toneClass = tone ? ` ${escape(tone)}` : "";
   const testIdAttr = testId ? ` data-testid="${escape(testId)}"` : "";
   return `<div class="alert${toneClass} shell-game-alert${tone === "danger" ? " sync-failure-banner" : ""}"${testIdAttr}${actorAttribute} data-notification-activity="${["processing", "waiting"].includes(activity) && tone !== "danger" ? activity : "static"}">
+    <span class="notice-paper-face" hidden aria-hidden="true"></span><span class="notice-paper-curl" hidden aria-hidden="true"></span>
     <div class="shell-game-alert-copy${tone === "danger" ? " sync-failure-copy" : ""}">${body}</div>
     ${action ? `<div class="shell-game-alert-actions">${action}</div>` : ""}
     ${renderDiagnosticDisclosure(incidentId)}
