@@ -1,4 +1,4 @@
-import {readFile,mkdir,rm,cp,readdir,lstat,readlink,mkdtemp} from 'node:fs/promises';
+import {readFile,mkdir,rm,cp,readdir,lstat,readlink,mkdtemp,realpath} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 export const harnessRoot=fileURLToPath(new URL('../../',import.meta.url));
 import os from 'node:os';import path from 'node:path';
@@ -34,6 +34,7 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
  const revision=await git(['rev-parse','HEAD'],cwd);const baseSha=await git(['rev-parse',base],cwd);
  const changed=(await git(['diff','--name-only',baseSha],cwd)+'\n'+await git(['ls-files','--others','--exclude-standard'],cwd)).split('\n').filter(Boolean);const selection=coverage(changed);const pendingEvidence=[];
  if(!policy){const spec=await defaultLocalPlan(cwd);policy=stagePolicy(spec,spec.prs?.length??0,{changed});}
+ if(policy.version===3)cwd=await realpath(cwd);
  if(policy.phase==='final')policy={...policy,selected:[...new Set(['PR gate',...policy.selected])]};
  selection.unmapped=[...new Set([...selection.unmapped,...(policy.unmapped??[]),...(policy.version===3&&policy.phase==='final'?questionsForFiles({version:policy.version,questions:policy.questions??[]},changed).unmapped:[])])];
  run??={version:VERSION,id:`${Date.now()}-${revision.slice(0,8)}`,startedAt:new Date().toISOString(),mode:'local',base:baseSha,revision,fingerprint:await fingerprint(cwd),prs:[],stages:[],risks:[]};
@@ -42,7 +43,7 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
  if(policy){run.version=policy.version;run.mergeMethod??='squash';}
  run.localPolicy=policy;run.harnessRevision??=harnessRevision;
  run.harnessFingerprint??=harnessFingerprint;
- dir??=path.join(cwd,'test-results','validation',run.id);if(!inspectOnly)await mkdir(dir,{recursive:true});if(policy.version===3)cacheDir??=await evidenceCache(cwd);const site=path.join(dir,'site');
+ dir??=path.join(cwd,'test-results','validation',run.id);if(!inspectOnly){await mkdir(dir,{recursive:true});if(policy.version===3)dir=await realpath(dir);}if(policy.version===3)cacheDir??=await evidenceCache(cwd);const site=path.join(dir,'site');
  const stage={id:`stage-${stageIndex}`,index:stageIndex,title:stageIndex?`Merge point ${stageIndex}`:'Baseline / local validation',head:revision,base:baseSha,status:'running',checks:[],items:[],unmapped:selection.unmapped,visualReviewed:false,sourceClean:!(await git(['status','--porcelain'],cwd))};if(run.stages.some(s=>s.index===stageIndex))(run.history??=[]).push(...run.stages.filter(s=>s.index===stageIndex).map(s=>structuredClone(s)));run.stages=run.stages.filter(s=>s.index!==stageIndex);run.stages.push(stage);
  if(policy)Object.assign(stage,{phase:policy.phase,visualRequired:policy.visualMode!=='none',questions:policy.questions?.map(q=>({id:q.id,description:q.description})),policyVersion:policy.version});
  Object.assign(stage,{harnessRevision,harnessFingerprint,fingerprint:await fingerprint(cwd)});
@@ -154,6 +155,7 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
  if(run.harnessRevision!==await git(['rev-parse','HEAD'],harnessRoot)||run.harnessFingerprint!==await fingerprint(harnessRoot)){stage.status='stale';run.risks.push('Validation harness changed during this run.');}
  if(stage.status!=='stale')for(const publishEvidence of pendingEvidence)await publishEvidence();
  }finally{for(const publishEvidence of pendingEvidence)await publishEvidence.discard?.();}
+ if(policy.version===3&&run.mode==='local')run.complete=stage.status==='passed';
  await save();
  if(publishReport){try{await publish(run,site,config,{cwd});}catch(e){run.publication={status:'failed',error:e.message};}await saveJSON(file,run);}
  console.log(`Report: ${path.join(site,'index.html')}\nRun: ${file}`);return {run,dir,stage};

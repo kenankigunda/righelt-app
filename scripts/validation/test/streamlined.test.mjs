@@ -69,7 +69,7 @@ test('read-only planning writes nothing and launches no check',async t=>{
 test('separate local invocations reuse a verified immutable log and run no duplicate check',async t=>{
  const {root,cwd}=await fixture(t);let calls=0;const execute=async(argv,{log})=>{calls++;await writeFile(log,'controlled completed gate');return {code:0,duration:25};};
  const options={cwd,base:'HEAD',lockPath:path.join(root,'lock'),execute,publishReport:false};
- const first=await localRun({...options,dir:path.join(root,'first')});assert.equal(first.stage.status,'passed');assert.equal(first.stage.visualRequired,false);
+ const first=await localRun({...options,dir:path.join(root,'first')});assert.equal(first.stage.status,'passed');assert.equal(first.stage.visualRequired,false);assert.equal(first.run.complete,true);assert.equal(compactStatus(first.run).status,'complete');
  const plan=await localRun({...options,dir:path.join(root,'plan'),inspectOnly:true});assert.equal(plan.decisions[0].action,'reuse');
  const second=await localRun({...options,dir:path.join(root,'second')});assert.equal(second.stage.status,'passed');assert.equal(calls,1);assert.equal(second.stage.checks[0].reused,true);assert.notEqual(second.stage.checks[0].log,first.stage.checks[0].log);
  const files=await readdir(path.join(cwd,'.git/righelt-validation-evidence'));const receipt=JSON.parse(await readFile(path.join(cwd,'.git/righelt-validation-evidence',files.find(f=>f.endsWith('.json')))));assert.equal(receipt.version,2);assert.equal(receipt.expiresAt,undefined);
