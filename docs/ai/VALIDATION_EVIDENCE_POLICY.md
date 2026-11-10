@@ -33,3 +33,11 @@ After a repair, rerun the failing case and affected subsystem, then only invalid
 ## Release and adoption
 
 Develop tooling in an isolated candidate and use the pinned release for ongoing delivery. Test and independently review tooling before protected merge. Install the merged release and update the three personal validation/shipping skills with backups through the existing installer. Render parent templates from that release without disturbing unrelated checkouts. Do not replace a harness or move main during an acceptance run pinned to those inputs. Verify the installed planner, reuse and invalidation behavior before telling delivery to adopt it. Publication, email and paused schedules remain unchanged.
+
+## Work ahead during deployment verification
+
+Once a protected merge is confirmed, immediately refresh the next authorized feature branch against that actual merged main. Continue implementation, focused checks, independent review, ordinary push and exact-head PR CI while the preceding main CI, automatic deployment and served-identity checks run. Deployment waiting is a constraint on the next merge, not a stop instruction for development.
+
+Keep separate owners/actions for verification of the latest merge and preparation of the next change. One lead may use bounded waits and make progress between them. Report both tracks and the exact remaining merge condition. Source preparation and remote CI can proceed concurrently; local heavy work still uses the shared queue. Do not move main under an acceptance run pinned to it.
+
+If deployment verification fails, retain its failure and block the next merge. Continue safe independent preparation while investigating the failure. Revalidate only dependent inputs after a repair. Never substitute another revision's successful deployment for the required served identity. Authorization and explicit user wait commands remain binding.
