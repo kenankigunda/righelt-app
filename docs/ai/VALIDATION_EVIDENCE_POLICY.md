@@ -29,6 +29,8 @@ Version 3 stateless checks share an owner-private evidence store in the reposito
 
 A supplied CI import that cannot verify blocks its requested credit with a specific diagnostic. Repair that import or explicitly choose to execute the missing check. Do not silently launch another entire gate because an evidence reader failed. An older head cannot satisfy current-head branch protection even if some local evidence is compatible.
 
+A stateless check owns its evidence key until completion and source-stability verification. Concurrent identical checks wait for that result rather than duplicating work. Before a rerun, archive its prior active index so a failure, interruption or exception cannot revive an older pass. Preserve owned lock evidence after an interruption. Recovery requires the saved PID/start identity to be absent or definitively reused and any linked supervised run to have verified cleanup. Archive that exact owner record, remove only its positively abandoned key lock, and rerun the affected check. Never remove a live or uncertain lock.
+
 After a repair, rerun the failing case and affected subsystem, then only invalidated final checks. Reuse unchanged successful proof and bounded independent review. Stop once the recorded acceptance questions are answered. More checks, screenshots or stress repetitions need an unresolved correctness reason.
 
 ## Release and adoption

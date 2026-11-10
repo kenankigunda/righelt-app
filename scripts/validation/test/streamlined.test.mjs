@@ -6,7 +6,7 @@ import os from 'node:os';
 import {stagePolicy,validatePlan,questionEvidencePassed} from '../plan.mjs';
 import {localRun} from '../local.mjs';
 import {executeCheck,checkReuse,checkProvenance} from '../execution.mjs';
-import {saveSuccessfulEvidence,loadSuccessfulEvidence,evidenceKey,fileDigest} from '../reuse.mjs';
+import {saveSuccessfulEvidence,loadSuccessfulEvidence,inspectSuccessfulEvidence,evidenceKey,fileDigest} from '../reuse.mjs';
 import {git,command} from '../io.mjs';
 import {finalProofReady} from '../model.mjs';
 import {compactStatus} from '../status.mjs';
@@ -81,6 +81,7 @@ test('cross-worktree evidence matches unchanged inputs and invalidates a relevan
  await mkdir(path.join(other,'docs'));await writeFile(path.join(other,'docs/a.md'),'copy');assert.deepEqual((await checkProvenance(other,argv,env,args)).compatibility,first.compatibility);
  await mkdir(path.join(other,'apps'));await writeFile(path.join(other,'apps/new.ts'),'new input');assert.notDeepEqual((await checkProvenance(other,argv,env,args)).compatibility,first.compatibility);
  const runtime=await checkProvenance(other,argv,{...env,NODE_OPTIONS:'--no-warnings'},args);assert.notEqual(runtime.environmentHash,second.environmentHash);
+ const runA=await checkProvenance(cwd,argv,{...env,RIGHELT_RESOURCE_RUN:'one',RIGHELT_RESOURCE_REGISTRY:'/one'},args),runB=await checkProvenance(cwd,argv,{...env,RIGHELT_RESOURCE_RUN:'two',RIGHELT_RESOURCE_REGISTRY:'/two'},args);assert.deepEqual(runA.compatibility,runB.compatibility,'Resource bookkeeping must not invalidate unchanged inputs');
 });
 test('immutable corruption, incompatible inputs and incomplete results never earn reuse credit',async t=>{
  const {root,cwd}=await fixture(t),cacheDir=path.join(root,'cache'),log=path.join(root,'source.log'),provenance={compatibility:{inputs:'v1'}};let calls=0;
@@ -88,6 +89,26 @@ test('immutable corruption, incompatible inputs and incomplete results never ear
  await executeCheck(args);const original=await checkReuse(args);assert(original.result);assert.equal((await checkReuse({...args,provenance:{compatibility:{inputs:'v2'}}})).result,undefined);
  await writeFile(original.result.log,'corrupt');assert.equal((await checkReuse(args)).reason,'artifact-integrity');
  const failed=await executeCheck({...args,execute:async()=>({code:75,duration:1})});assert.equal(failed.status,'failed');assert.equal(failed.incomplete,true);assert.equal(calls,1);
+ await writeFile(original.result.log,'original');assert.equal((await checkReuse(args)).result,undefined,'Restoring the old artifact cannot revive superseded success');
+});
+for(const outcome of ['failed','incomplete','exception'])test(`a forced ${outcome} check archives old credit until a new stable pass`,async t=>{
+ const {root,cwd}=await fixture(t),cacheDir=path.join(root,'cache'),log=path.join(root,'check.log'),provenance={compatibility:{inputs:'unchanged'}};
+ const options={cwd,argv:['check'],name:'Unit',log,cacheDir,provenance,reuse:true,immutable:true,execute:async()=>{await writeFile(log,'pass');return {code:0,duration:1};}};await executeCheck(options);assert((await checkReuse(options)).result);
+ const attempt={...options,reuse:false,execute:async()=>{if(outcome==='exception')throw Error('controlled execution exception');return {code:outcome==='incomplete'?75:1,duration:1};}};
+ if(outcome==='exception')await assert.rejects(()=>executeCheck(attempt),/controlled execution exception/);else assert.equal((await executeCheck(attempt)).status,'failed');
+ assert.equal((await checkReuse(options)).result,undefined);assert((await readdir(path.join(cacheDir,'history'))).length>0);
+ await executeCheck(options);assert((await checkReuse(options)).result);
+});
+test('a deferred stale writer cannot overwrite a newer execution or duplicate its work',async t=>{
+ const {root,cwd}=await fixture(t),cacheDir=path.join(root,'cache'),log=path.join(root,'check.log'),provenance={compatibility:{inputs:'same'}};let publish,calls=0;
+ const options={cwd,argv:['check'],name:'Unit',log,cacheDir,provenance,reuse:true,immutable:true,execute:async()=>{calls++;await writeFile(log,'pass');return {code:0,duration:1};}};
+ await executeCheck({...options,deferEvidence:callback=>{publish=callback;}});assert.equal((await checkReuse(options)).reason,'compatible-check-in-progress');assert.equal((await executeCheck(options)).status,'blocked');assert.equal(calls,1);
+ await publish.discard();await executeCheck({...options,execute:async()=>({code:1,duration:1})});await publish();assert.equal((await checkReuse(options)).result,undefined,'Discarded older publication cannot restore a pass');
+});
+test('read-only reuse inspection rejects an index invalidated while artifacts were checked',async t=>{
+ const {root,cwd}=await fixture(t),cacheDir=path.join(root,'cache'),log=path.join(root,'check.log'),provenance={compatibility:{inputs:'same'}};
+ const options={cwd,argv:['check'],name:'Unit',log,cacheDir,provenance,reuse:true,immutable:true,execute:async()=>{await writeFile(log,'pass');return {code:0,duration:1};}};await executeCheck(options);
+ const observed=await checkReuse({...options,inspect:async(...args)=>{const old=await inspectSuccessfulEvidence(...args);await executeCheck({...options,reuse:false,execute:async()=>({code:1,duration:1})});return old;}});assert.equal(observed.result,undefined);
 });
 test('legacy expiry stays enforced while new stateless evidence is not invalidated by age alone',async t=>{
  const {root}=await fixture(t),log=path.join(root,'log');await writeFile(log,'pass');const provenance={inputs:'same'},result={status:'passed',code:0,incomplete:false,signal:null};
