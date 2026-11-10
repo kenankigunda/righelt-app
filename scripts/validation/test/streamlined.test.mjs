@@ -23,6 +23,17 @@ test('v3 docs need only the stable gate, no baseline reruns or visual review',()
  assert.deepEqual(stagePolicy({...gate,prs:[{number:1}]},0,{accounts:true}).selected,[]);
  assert.deepEqual(stagePolicy(gate,0,{changed:['apps/new.js']}).unmapped,['apps/new.js']);
 });
+test('v3 requires mappings for changed native fixtures and validation journeys without changing v2',()=>{
+ const files=['browser-integration/support/history.html','validation-e2e/core.spec.mjs','validation-account-e2e/accounts.spec.mjs'];
+ for(const file of files){assert.deepEqual(stagePolicy(gate,0,{changed:[file]}).unmapped,[file]);assert.deepEqual(stagePolicy({...history,version:2},0,{changed:[file]}).unmapped,[]);}
+ const spec={version:3,questions:[{id:'native',description:'The changed native History interaction remains correct',paths:['browser-integration/'],checks:['PR gate','Browser integration'],evidence:[{check:'Browser integration',files:['browser-integration/history-narration.spec.mjs']}]}]};
+ const policy=stagePolicy(spec,0,{changed:[files[0]]});assert.deepEqual(policy.unmapped,[]);assert.deepEqual(policy.browserTests,['browser-integration/history-narration.spec.mjs']);assert.equal(questionEvidencePassed(spec.questions[0],[{name:'PR gate',status:'passed'},{name:'Browser integration',status:'passed',provenance:{argv:['pnpm','test:browser:integration',...policy.browserTests]}}],[]),true);
+});
+test('native acceptance executes the bound file rather than its whole browser suite',async t=>{
+ const {root,cwd}=await fixture(t);await writeFile(path.join(cwd,'package.json'),JSON.stringify({scripts:{'test:pr-gate':'controlled gate','test:browser:integration':'controlled native'}}));await git(['add','.'],cwd);await git(['commit','-m','native script fixture'],cwd);
+ const file='browser-integration/history-narration.spec.mjs',spec={version:3,questions:[{id:'native',description:'Changed native History behavior',paths:['browser-integration/'],checks:['PR gate','Browser integration'],evidence:[{check:'Browser integration',files:[file]}]}]},seen=[];
+ const {stage}=await localRun({cwd,base:'HEAD',policy:stagePolicy(spec,0),dir:path.join(root,'native'),lockPath:path.join(root,'lock'),publishReport:false,execute:async(argv,{log})=>{seen.push(argv);await writeFile(log,'passed');return {code:0,duration:1};}});assert.equal(stage.status,'passed');assert.deepEqual(seen.find(a=>a[1]==='test:browser:integration'),['pnpm','test:browser:integration',file]);
+});
 test('v3 retained contracts select only the necessary baseline and final journeys',()=>{
  assert.deepEqual(stagePolicy(history,0).selected,['Responsive proof']);
  assert.deepEqual(stagePolicy(history,1,{changed:['apps/reader.js']}).selected,['PR gate','Responsive proof']);
@@ -115,11 +126,11 @@ test('a real v3 baseline seeds prior state without asserting an upgrade that has
  }});
  assert.equal(stage.status,'passed');assert(!stage.checks.some(c=>c.name==='Release question: old-history'));assert(stage.checks.some(c=>c.name==='Guest continuity fixture'&&c.status==='passed'));
 });
-test('resuming a v3 policy cannot hide newly unmapped product inputs',async t=>{
+for(const changed of ['apps/new-reader.js','browser-integration/support/new-history.html'])test(`resuming a v3 policy cannot hide newly unmapped ${changed}`,async t=>{
  const {root,cwd}=await fixture(t);let calls=0;const execute=async(argv,{log})=>{calls++;await writeFile(log,'pass');return {code:0,duration:1};};
  const original=await localRun({cwd,base:'HEAD',dir:path.join(root,'original'),lockPath:path.join(root,'lock'),publishReport:false,execute});
- await mkdir(path.join(cwd,'apps'));await writeFile(path.join(cwd,'apps/new-reader.js'),'new contract');
- const result=await localRun({cwd,base:'HEAD',policy:original.run.localPolicy,dir:path.join(root,'resumed'),lockPath:path.join(root,'lock'),publishReport:false,execute});assert.equal(result.stage.status,'failed');assert(result.stage.unmapped.includes('apps/new-reader.js'));assert.equal(calls,1);
+ await mkdir(path.dirname(path.join(cwd,changed)),{recursive:true});await writeFile(path.join(cwd,changed),'new contract');
+ const result=await localRun({cwd,base:'HEAD',policy:original.run.localPolicy,dir:path.join(root,'resumed'),lockPath:path.join(root,'lock'),publishReport:false,execute});assert.equal(result.stage.status,'failed');assert(result.stage.unmapped.includes(changed));assert.equal(calls,1);
 });
 test('fresh v3 browser checks clear inherited state roots instead of caching a retained run',async t=>{
  const {root,cwd}=await fixture(t),prior=process.env.RIGHELT_ACCOUNT_PERSIST_ROOT;process.env.RIGHELT_ACCOUNT_PERSIST_ROOT='/must-not-use-retained-state';t.after(()=>{if(prior===undefined)delete process.env.RIGHELT_ACCOUNT_PERSIST_ROOT;else process.env.RIGHELT_ACCOUNT_PERSIST_ROOT=prior;});

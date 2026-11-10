@@ -35,7 +35,7 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
  const changed=(await git(['diff','--name-only',baseSha],cwd)+'\n'+await git(['ls-files','--others','--exclude-standard'],cwd)).split('\n').filter(Boolean);const selection=coverage(changed);const pendingEvidence=[];
  if(!policy){const spec=await defaultLocalPlan(cwd);policy=stagePolicy(spec,spec.prs?.length??0,{changed});}
  if(policy.phase==='final')policy={...policy,selected:[...new Set(['PR gate',...policy.selected])]};
- selection.unmapped=[...new Set([...selection.unmapped,...(policy.unmapped??[]),...(policy.version===3&&policy.phase==='final'?questionsForFiles({questions:policy.questions??[]},changed).unmapped:[])])];
+ selection.unmapped=[...new Set([...selection.unmapped,...(policy.unmapped??[]),...(policy.version===3&&policy.phase==='final'?questionsForFiles({version:policy.version,questions:policy.questions??[]},changed).unmapped:[])])];
  run??={version:VERSION,id:`${Date.now()}-${revision.slice(0,8)}`,startedAt:new Date().toISOString(),mode:'local',base:baseSha,revision,fingerprint:await fingerprint(cwd),prs:[],stages:[],risks:[]};
  const harnessRevision=await git(['rev-parse','HEAD'],harnessRoot);
  const harnessFingerprint=await fingerprint(harnessRoot);
@@ -71,7 +71,7 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
   const accountChecks=accountSelected?[['Account responsive proof',['node',path.join(harnessRoot,'node_modules/@playwright/test/cli.js'),'test','--config',path.join(harnessRoot,'playwright.validation-account.config.mjs')]]]:[];
   if(policy.selected.includes('PR gate')&&!candidateScripts['test:pr-gate'])throw Error('Candidate must declare test:pr-gate; nightly full is not a fallback');
   let checks=[['PR gate',['pnpm','test:pr-gate']],['Typecheck',['pnpm','typecheck']],['Generated runtime',['pnpm','check:web-engine-generated']],['Unit',['pnpm','test:unit']],['Integration',['pnpm','test:integration']],['E2E',['pnpm','test:e2e',...(full?[]:selection.files)]],...authChecks,['Responsive proof',['node',path.join(harnessRoot,'node_modules/@playwright/test/cli.js'),'test','--config',path.join(harnessRoot,'playwright.validation.config.mjs')]],...accountChecks,['Report viewer',['node',path.join(harnessRoot,'scripts/validation/test/report-browser.mjs')]]];
-  for(const [name,script] of [['Browser integration','test:browser:integration'],['Tooling','test:tooling'],['Performance','test:performance']])if(candidateScripts[script])checks.push([name,['pnpm',script]]);
+  for(const [name,script] of [['Browser integration','test:browser:integration'],['Tooling','test:tooling'],['Performance','test:performance']])if(candidateScripts[script])checks.push([name,['pnpm',script,...(name==='Browser integration'?policy.browserTests??[]:[])]]);
   if(policy){
    checks=checks.filter(([name])=>policy.selected.includes(name));
    if(policy.tests?.length)checks.splice(2,0,['Boundary E2E',['pnpm','test:e2e',...policy.tests,'--project=chromium']]);

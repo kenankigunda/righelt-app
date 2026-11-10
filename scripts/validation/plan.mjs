@@ -14,8 +14,9 @@ export function validatePlan(spec) {
       if(!Array.isArray(q.evidence)||!q.evidence.length)throw Error('Version 3 questions require explicit evidence bindings');
       for(const binding of q.evidence){
         if(!q.checks.includes(binding.check)&&binding.check!=='Boundary E2E')throw Error('Evidence must bind a selected question check');
-        if(binding.check==='Boundary E2E'){
-          if(!binding.files?.length||binding.files.some(f=>!/^e2e\/[\w./-]+\.spec\.mjs$/.test(f)||f.includes('..')))throw Error('Bind explicit candidate test files');
+        if(binding.check==='Boundary E2E'||binding.check==='Browser integration'){
+          const prefix=binding.check==='Boundary E2E'?'e2e/':'browser-integration/';
+          if(!binding.files?.length||binding.files.some(f=>typeof f!=='string'||!f.startsWith(prefix)||!/^[-\w./]+\.spec\.mjs$/.test(f)||f.includes('..')))throw Error('Bind explicit candidate test files');
         }else if(binding.check==='PR gate'){
           const requirements=new Set(SUITES.filter(s=>prGateLanes().some(l=>l.suite===s.id)).flatMap(s=>s.requirements));
           if(!binding.requirements?.length||binding.requirements.some(r=>!requirements.has(r)))throw Error('Bind catalog requirements actually covered by the PR gate');
@@ -32,7 +33,7 @@ export function validatePlan(spec) {
   return spec;
 }
 export function questionsForFiles(spec, files) {
-  const relevant = files.filter(f=>/^(apps\/|packages\/|db\/|e2e\/)/.test(f));
+  const relevant = files.filter(f=>/^(apps\/|packages\/|db\/|e2e\/)/.test(f)||(spec.version===3&&/^(browser-integration\/|validation-e2e\/|validation-account-e2e\/)/.test(f)));
   const matched = q=>relevant.some(f=>q.paths.some(prefix=>f.startsWith(prefix)));
   return {questions:spec.questions.filter(matched),unmapped:relevant.filter(f=>!spec.questions.some(q=>q.paths.some(prefix=>f.startsWith(prefix))))};
 }
@@ -65,13 +66,14 @@ function streamlinedPolicy(spec,index,{accounts,changed}){
  if(phase==='boundary'&&coverage.questions.length&&!selected.length)coverage.unmapped.push('Changed boundary has no acceptance evidence');
  const visualMode=phase!=='baseline'&&spec.visual?'walkthrough':'none';
  if(visualMode!=='none'&&!selected.some(c=>['Responsive proof','Account responsive proof'].includes(c)))coverage.unmapped.push('Visual review requires a selected visual evidence producer');
- return {version:3,phase,lanes:1,questions,unmapped:coverage.unmapped,selected,tests,continuity,visualMode,coverageViewports:['mobile','mid-wide','full-wide'],viewports:spec.visual?.viewports??['mobile','mid-wide'],checkpoints:spec.visual?.checkpoints,reasons:Object.fromEntries(selected.map(name=>[name,name==='PR gate'?'Required stable PR profile':questions.filter(q=>q.checks.includes(name)||q.evidence.some(e=>e.check===name)).map(q=>q.description).join('; ')||'Explicit retained-state contract'])),rationale:'Required protection plus explicitly bound acceptance evidence'};
+ const browserTests=phase==='baseline'?[]:[...new Set(questions.flatMap(q=>q.evidence.filter(e=>e.check==='Browser integration').flatMap(e=>e.files)))];
+ return {version:3,phase,lanes:1,browserTests,questions,unmapped:coverage.unmapped,selected,tests,continuity,visualMode,coverageViewports:['mobile','mid-wide','full-wide'],viewports:spec.visual?.viewports??['mobile','mid-wide'],checkpoints:spec.visual?.checkpoints,reasons:Object.fromEntries(selected.map(name=>[name,name==='PR gate'?'Required stable PR profile':questions.filter(q=>q.checks.includes(name)||q.evidence.some(e=>e.check===name)).map(q=>q.description).join('; ')||'Explicit retained-state contract'])),rationale:'Required protection plus explicitly bound acceptance evidence'};
 }
 export function questionEvidencePassed(question,checks,items){
  return question.checks.every(name=>checks.some(c=>c.name===name&&c.status==='passed'))&&question.evidence.every(binding=>{
   const check=checks.find(c=>c.name===binding.check&&c.status==='passed');if(!check)return false;
   if(binding.check==='PR gate')return true; // validatePlan verifies these catalog requirements, exact profile verification remains mandatory.
-  if(binding.check==='Boundary E2E')return binding.files.every(f=>check.provenance?.argv?.includes(f));
+  if(binding.check==='Boundary E2E'||binding.check==='Browser integration')return binding.files.every(f=>check.provenance?.argv?.includes(f));
   return binding.workflows.every(title=>items.some(i=>i.status==='passed'&&i.title?.split(' / ').at(-1)===title));
  });
 }

@@ -16,6 +16,7 @@ A version 3 question names `id`, `description`, affected `paths`, `checks` and `
 
 - `{"check":"PR gate","requirements":["test-infrastructure"]}` binds a requirement in the stable suite catalog. It does not claim a separate feature workflow ran.
 - `{"check":"Boundary E2E","files":["e2e/workflows/history-narration.spec.mjs"]}` runs the named original candidate files. Include `"PR gate"` in `checks`; the explicit files are additional acceptance.
+- `{"check":"Browser integration","files":["browser-integration/history-narration.spec.mjs"]}` selects the named native files using the candidate browser configuration. Include `"Browser integration"` in `checks`.
 - `{"check":"Responsive proof","workflows":["create, move, viewer live update, reload and reconnect"]}` binds the exact reported workflow title. Include `"Responsive proof"` in `checks`.
 
 Use `continuity:["guest","account"]` on the affected question when the change needs existing identities, ownership or persisted history proved across an upgrade. This selects baseline and upgraded continuity checks. Omit unneeded kinds. Checkpoint expiry, original provenance, session deadlines and stopped-state checks remain mandatory. Missing historical continuity is a disclosed gap, never repaired by relabeling new seeds.
