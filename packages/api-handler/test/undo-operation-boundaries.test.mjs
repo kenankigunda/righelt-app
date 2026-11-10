@@ -1,15 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createHash} from 'node:crypto';
-import {readFileSync} from 'node:fs';
-import {pathToFileURL} from 'node:url';
 import {stampAcceptedRestoration, archiveStatements, readDecision} from '../src/decision-archive.ts';
 import {createFakeD1} from './support/fake-d1.mjs';
-// The RED command may select only the exact preserved original core, without editing either checkout.
-const originalCore = '/Users/kenankigunda/Documents/righelt/righelt-undo-release-196-prep/packages/api-handler/src/shell-live-core.ts';
-const coreURL = process.env.UNDO_BOUNDARY_ORIGINAL_CORE ? pathToFileURL(originalCore).href : new URL('../src/shell-live-core.ts', import.meta.url).href;
-if (process.env.UNDO_BOUNDARY_ORIGINAL_CORE) assert.equal(createHash('sha256').update(readFileSync(originalCore)).digest('hex'), '96d46c3cfdbf206e03410d3054cdaaef3cf730395bde476258faef1ce97991d0');
-const {createInitialGame, applyRevertToMove, applyScenarioToGame, exportScenarioFromGame} = await import(coreURL);
+import {createInitialGame, applyRevertToMove, applyScenarioToGame, exportScenarioFromGame} from '../src/shell-live-core.ts';
 const clone = structuredClone;
 function fixture() {
  const game = createInitialGame({gameId:'boundaries', identityId:'alice', selfPlayMode:true});

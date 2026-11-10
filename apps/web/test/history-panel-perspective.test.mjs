@@ -1,3 +1,4 @@
+import {runWithHistoryRendering} from './support/history-rendering-context.mjs';
 import {canReadAdditionalHistory} from '../shell/additional-history.js';
 import * as undoHistory from '../shell/history-undo-groups.js';
 import {selectedHistoryPresentation} from '../shell/history-narration.js';
@@ -12,13 +13,12 @@ import {renderHistorySlots} from '../shell/panel-loading.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import vm from 'node:vm';
 
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const declaration=source.slice(source.indexOf('const renderHistoryPanel ='),source.indexOf('const renderBoardPanel ='));
 test('history shows actor names only with their moves and puts result access after history',()=>{
  const context={undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderHistoryResult,icon,renderHistorySlots,renderTurnHistory:()=>'<li>Horus · Move 1: Rush</li>',renderAdditionalHistory:()=>'<div>Earlier moves</div>',getGameResult:()=>({winner:'p2'}),transport:{getAuthoritativeGame:()=>({}),getIdentityId:()=> 'owner'},escapeHtml:value=>String(value),participantName:()=>{throw Error('Standalone participant identity must not render in History');}};
- vm.runInNewContext(`${declaration};globalThis.render=renderHistoryPanel;`,context);
+ runWithHistoryRendering(`${declaration};globalThis.render=renderHistoryPanel;`,context);
  const html=context.render({id:'game',player1:{computerProfile:'babs'},player2:{computerProfile:'horus'}});
  assert.match(html,/Horus · Move 1/);
  assert.doesNotMatch(html,/history-player-names|history-player-name|Computer/);
@@ -29,7 +29,7 @@ test('history shows actor names only with their moves and puts result access aft
 
 test('history hydration retains the selected view and exposes scoped retry before the move list',()=>{
  const context={undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderHistoryResult,renderHistorySlots,renderTurnHistory:()=>'<li>Selected move</li>',renderAdditionalHistory:()=>'',getGameResult:()=>null,transport:{getAuthoritativeGame:()=>({}),getIdentityId:()=> 'owner'},escapeHtml:String};
- vm.runInNewContext(`${declaration};globalThis.render=renderHistoryPanel;`,context);
+ runWithHistoryRendering(`${declaration};globalThis.render=renderHistoryPanel;`,context);
  const loading=context.render({id:'game',historyLoading:true,historyLoadIndex:3});
  assert.match(loading,/Loading this move/);assert.doesNotMatch(loading,/data-action="jump-history"/);
  const failed=context.render({id:'game',historyLoadError:'unavailable',historyLoadIndex:3});
@@ -45,7 +45,7 @@ test('actual history action icons preserve labels, selected-move guards and view
   renderHistoryPreview:()=>'',buildMovePreview:()=>({}),buildTurnPreview:()=>({}),historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:()=> 'You',playerToneClassForSide:()=>'',playerToneClassForSeat:()=>'',formatClientDateTime:String,
   expandedUndoneGroups:new Set(),historyActorLabel:()=> 'You',transport:{getIdentityId:()=> 'me'},getShellLayoutMode:()=> 'wide'};
  const declaration=source.slice(source.indexOf('const renderTurnHistory ='),source.indexOf('const renderHeader ='));
- vm.runInNewContext(`${declaration};globalThis.history=renderTurnHistory;`,context);
+ runWithHistoryRendering(`${declaration};globalThis.history=renderTurnHistory;`,context);
  const game={id:'g',inHistoryMode:true,historyIndex:0,myRoles:['Player 1'],turns:[],moves:[{index:0,moveId:'m',notation:'Pass',at:'date'}]};
  const html=context.history(game);
  for(const [action,label,glyph]of[['launch-history-branch','New game before this move','play'],['revert-to-move','Undo before this move','back'],['return-live','Return to live view','board']]){

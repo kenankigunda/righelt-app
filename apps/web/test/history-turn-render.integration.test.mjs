@@ -1,3 +1,4 @@
+import {createHistoryRendering} from '../shell/history-rendering.js';
 import * as undoHistory from '../shell/history-undo-groups.js';
 import {selectedHistoryPresentation,recordedHistoryView} from '../shell/history-narration.js';
 import {recordedMoveNumber,visibleRecordedMoves} from '../shell/recorded-narration.js';
@@ -7,18 +8,15 @@ import {isCompletedGame} from '../shell/game-lifecycle.js';
 import {historyTurnSide} from '../shell/history-preview.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import vm from 'node:vm';
 import {buildMovePreview,buildTurnPreview} from '../shell/history-preview.js';
 import {buildComputerTurnReplay} from '../shell/computer-replay.js';
-const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
-const declaration=source.slice(source.indexOf('const renderHistoryPreview ='),source.indexOf('const renderHeader ='));
 const escape=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
 const context={undoHistory,selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',isCompletedGame,buildMovePreview,buildTurnPreview,escapeHtml:escape,getShellLayoutMode:()=> 'narrow',toStableKey:JSON.stringify,
  renderMiniBoardPreviewRoot:({overlay})=>`<div data-preview-mode="${overlay.mode}"></div>`,playerToneClassForSide:side=>`player-tone-${side}`,playerToneClassForSeat:()=>'',
  historyActorLabel:(_game,move)=>move.actorSide==='P2'?'Defender':'Attacker',historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:(_game,side)=>side==='Player 2'||side==='P2'?'Defender':'Attacker',
  transport:{getIdentityId:()=> 'me'},icon:()=>'',formatClientDateTime:String,expandedUndoneGroups:new Set(),liveHistoryLabel:()=> 'Waiting'};
-vm.runInNewContext(`${declaration};globalThis.render=renderTurnHistory`,context);
+const renderer=createHistoryRendering(()=>context);
+context.render=renderer.renderTurnHistory;
 const moves=[{index:0,turnIndex:0,turnMoveIndex:0,moveId:'a',actorSide:'P1',notation:'Push',snapshot:{pieces:[]}},
  {index:1,turnIndex:0,turnMoveIndex:1,moveId:'b',actorSide:'P2',notation:'Retreat',snapshot:{pieces:[]}},
  {index:2,turnIndex:1,turnMoveIndex:0,moveId:'c',actorSide:'P2',notation:'Move',snapshot:{pieces:[]}}];
@@ -51,8 +49,7 @@ test('selected turn is inert, has aggregate preview and exposes no undo or branc
 context.canReadAdditionalHistory=()=>true;
 context.account={snapshot:()=>({enabled:false})};
 context.additionalHistory={snapshot:()=>context.archiveState};
-const archiveDeclaration=source.slice(source.indexOf('const renderAdditionalHistory ='),source.indexOf('let revealedHistoryKey'));
-vm.runInNewContext(`${archiveDeclaration};globalThis.archive=renderAdditionalHistory`,context);
+context.archive=renderer.renderAdditionalHistory;
 test('archive entries share turn grouping, actor accessibility and inert selected action previews',()=>{
  context.archiveState={metadata:true,loaded:true,items:[{id:'b',move:moves[1],at:'date'},{id:'a',move:moves[0],at:'date'}]};
  const html=context.archive({...game,moves:[],inHistoryMode:true,inspectedDecision:moves[1]});
@@ -84,9 +81,8 @@ test('mobile active and archived previews share the known closure final snapshot
  const action={index:0,turnIndex:0,turnMoveIndex:0,moveId:'action',actorSide:'P1',notation:'Rush',action:{type:'rush',actorId:'A',from:{row:4,col:3},to:{row:4,col:4}},selectionSnapshot:before,snapshot:before};
  const closure={index:1,turnIndex:0,turnMoveIndex:1,moveId:'closure',actorSide:'P1',notation:'End turn',action:{type:'end_turn'},snapshot:final,destroyedPieces:[{pieceId:'lost',ownerSeat:'p1',position:{row:5,col:3}}]};
  const snapshots=[],original=context.renderMiniBoardPreviewRoot;
- const getter=source.slice(source.indexOf('const getBoardGame ='),source.indexOf('const decisionDebugStates ='));
  const desktopContext={recordedHistoryView,deriveBoardView:value=>value,getShellLayoutMode:()=> 'wide',transport:context.transport,additionalHistory:context.additionalHistory};
- vm.runInNewContext(`${getter};globalThis.get= getBoardGame`,desktopContext);
+ desktopContext.get=createHistoryRendering(()=>desktopContext).getBoardGame;
  context.renderMiniBoardPreviewRoot=preview=>{snapshots.push(preview.snapshot);return '<div data-preview-mode="recorded-action"></div>';};
  try{
   const selected={...game,inHistoryMode:true,historyIndex:0,inspectedDecision:action,moves:[action,closure]};

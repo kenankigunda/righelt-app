@@ -14,13 +14,22 @@ export const expectNoUndoApproval=async page=>{
  await expect(page.getByText('Waiting for undo approval',{exact:true})).toHaveCount(0);
 };
 export async function undoWithHeldReceipt(page,{gameId,targetMove,guest=true,beforeClick=async()=>{},afterClick=async()=>{}}){
- let release,command;const held=new Promise(resolve=>release=resolve),sent=[];
+ let release,command,receipt;const held=new Promise(resolve=>release=resolve),sent=[];
  const routeHandler=async route=>{
   const body=route.request().postDataJSON();
   if(body?.gameId===gameId&&body.payload?.operation==='revert-request'){
    sent.push(body);command??=body;await held;
   }
   await route.continue();
+  if(body?.gameId===gameId&&body.payload?.operation==='revert-request'){
+   const response=await route.request().response();
+   expect(response?.status()).toBe(200);
+   const result=await response.json();
+   const accepted=result.commandOutcomes?.find(row=>row.clientCommandId===body.clientCommandId);
+   expect(accepted).toMatchObject({gameId,identityId:body.identityId,clientCommandId:body.clientCommandId,fingerprint:body.fingerprint,outcome:'accepted'});
+   expect(Number.isSafeInteger(accepted.eventSeq)&&accepted.eventSeq>0).toBe(true);
+   receipt??=accepted;
+  }
  };
  await page.context().route('**/shared',routeHandler);
  try{
@@ -41,6 +50,8 @@ export async function undoWithHeldReceipt(page,{gameId,targetMove,guest=true,bef
   expect(game.notifications.some(note=>/accepted the undo request/i.test(note))).toBe(false);
   for(const body of sent)expect(body).toEqual(command);
   await expectNoUndoApproval(page);await switchGamePanel(page,'board');
-  return {command,sent,game};
+  await expect.poll(()=>Boolean(receipt)).toBe(true);
+  expect(game.lastRestoration?.undoEventSeq).toBe(receipt.eventSeq);
+  return {command,sent,game,receipt};
  }finally{release();if(!page.isClosed())await page.context().unroute('**/shared',routeHandler);}
 }
