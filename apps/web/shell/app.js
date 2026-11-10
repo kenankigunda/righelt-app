@@ -17,6 +17,7 @@ import {renderDismissButton} from './dismiss-control.js';
 import {createConfirmedFramePresenter} from './confirmed-frame-presenter.js';
 import {createConfirmedComputerPlayback} from './confirmed-computer-playback.js';
 import {isOngoingGame,isCompletedGame} from './game-lifecycle.js';
+import {createLiveTurnOverview,liveTurnOverviewOverlay} from './live-turn-overview.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
@@ -42,6 +43,10 @@ import { renderComputerProgress, renderDecisionDebug } from './computer-view.js'
 import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
 let computerSession = null;
 const viewingIntent = createViewingIntent();
+const liveTurnOverview = createLiveTurnOverview({
+  loadMoves:values=>transport.loadTurnMoves(values),
+  onChange:()=>{if(currentRoute.name==='game'){boardRuntime?.refreshVisuals?.();boardRuntime?.refreshStatus?.();}},
+});
 let mobileNavigation = null;
 let replayController = null;
 let confirmedPlayback=null,confirmedFramePresenter=null,confirmedDisplayGameId=null,lastPlaybackVisibility=null;
@@ -1305,6 +1310,7 @@ const getAdjacentGamePanel = (panel = getGamePanel(), direction = 0) => {
 const preparePanelTransition = (previous, next) => {
   if(pendingBoardContextReplay&&(next.name!=='game'||next.gameId!==pendingBoardContextReplay.descriptor.gameId||getGamePanel(next)!=='board'))cancelPendingBoardContextReplay();
   if(previous.name!==next.name||previous.gameId!==next.gameId){boardContextVisit++;boardContextOwner.retire();}
+  if (previous.name === "game" && (next.name !== "game" || next.gameId !== previous.gameId)) liveTurnOverview.leave();
   if (previous.name === 'game' && (next.gameId !== previous.gameId || getGamePanel(previous) !== getGamePanel(next))) {
     viewingIntent.saveScroll(previous.gameId, getGamePanel(previous), window.scrollY);
   }
@@ -3530,6 +3536,7 @@ const mountBoardForGame = (game) => {
   applySharedMutationGates(game);
   updateRecoveryAnnouncement(game);
   const capturing = currentRoute.scenarios && scenarioCapture?.gameId === game.id;
+  liveTurnOverview.sync(capturing ? null : game,{identityId:transport.getIdentityId(),scope:viewingScope()});
   const snapshot = capturing ? capturePosition() : game.currentSnapshot ?? null;
   const historyPreview = game.inHistoryMode ? (game.historyTurnIndex != null ? buildTurnPreview(game.historyTurnMoves,{context:'history'}) : buildMovePreview(game.inspectedDecision ?? game.moves?.find(move=>move.index===game.historyIndex),{context:'history'})) : null;
   const historyMoveIndex = game.inHistoryMode ? (game.historyTurnIndex != null ? `turn:${game.historyTurnIndex}` : game.historyIndex) : null;
@@ -3600,6 +3607,8 @@ const mountBoardForGame = (game) => {
       }),
       controls: {
         onInteractionSound: event => gameSound.interaction(event),
+        getDisplayOverlay:selection=>liveTurnOverviewOverlay(selection,{game:getBoardGame(transport.getGameViewModel(game.id)),overview:liveTurnOverview,confirmedPlayback,replayController,forcedFollow:()=>forcedFollowWorking(game.id)}),
+        onPieceSelected:piece=>liveTurnOverview.selected(piece),
         getTurnIndicator: state => playbackTurnIndicator(getBoardGame(transport.getGameViewModel(game.id)),state,{replay:replayController?.snapshot(),step:confirmedPlayback?.snapshot().current,identityId:transport.getIdentityId()}),
         getBoardMessage: selection => {
           boardContextScope();
@@ -4964,6 +4973,7 @@ function resetAccountTransport(next) {
   additionalHistory.clear();
   utilityMemory.clear(); expandedViewerGames.clear(); expandedComputerCards.clear();
   viewingIntent.clear();
+  liveTurnOverview.leave();
   replayController?.stop("account-changed");
   preparation.cancel();
   computerSession?.suspend(); scenarioCapture = null; scenarioMetadataDrafts.clear(); decisionDebugStates.clear();

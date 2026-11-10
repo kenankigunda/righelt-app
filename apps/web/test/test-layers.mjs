@@ -17,6 +17,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "opponent-move-sound.test.mjs",
   "foreground-recovery.test.mjs",
   "computer-recovery.test.mjs",
+  "live-turn-overview.test.mjs",
   "game-lifecycle.test.mjs",
   "history-turn-preview.test.mjs",
   "recorded-narration.test.mjs",

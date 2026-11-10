@@ -29,6 +29,7 @@ const test=base.extend({
 import {createGamesViaApi,createGameFromHome,openDirectGameLink,requestPlayerJoin,acceptPendingRequest,joinAsViewer,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
 import {readProjectedGame} from '../support/computer-projection.mjs';
 import {isOperationRequest} from '../support/shared-request.mjs';
+import {listLegalActions} from '../../apps/web/generated/packages/game-engine/src/index.js';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
 const label=page=>page.locator('#shell-board-preview-label');
 const context=page=>page.locator('#app [data-board-context]:has(.board-context-replay)');
@@ -259,4 +260,84 @@ for(const width of [390,1440])test(`reopening human play preserves narration and
   await pass.click();await expect.poll(async()=>(await projected(owner,gameId)).board.state.turnIndex).toBe(beforePass.board.state.turnIndex+1);
   const passed=await projected(owner,gameId);expect(passed.gameplayRevision).toBe(beforePass.gameplayRevision+1);expect(passed.moves.at(-1).action).toEqual({type:'pass'});expect(passWrites).toHaveLength(1);owner.off('request',trackPass);
   await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
+});
+
+async function expectLiveOverview(page,board,visible) {
+ const recorded=board.locator('.recorded-action-source-piece');
+ if(!visible){await expect(recorded).toHaveCount(0);return;}
+ // A source token alone could belong to an acknowledged/manual playback frame.
+ // A usable live Pass and actual recorded paint together establish this surface.
+ await expect(label(page).getByRole('button',{name:'Pass',exact:true})).toBeEnabled();
+ await expect(recorded.first()).toBeVisible();
+}
+
+async function createOverviewFriendGame({ownedRoleContext,baseURL,width}) {
+ const contexts=await Promise.all([0,1].map(()=>ownedRoleContext({viewport:{width,height:820},hasTouch:width===390})));
+ const [owner,opponent]=await Promise.all(contexts.map(context=>context.newPage()));
+ // Authoritative fixture creation is not the behavior under test here. Native
+ // Friend creation has separate workflow coverage.
+ const [gameId]=await createGamesViaApi(owner,1),gameHash=`#/game/${encodeURIComponent(gameId)}`;
+ await owner.goto(`${baseURL}/${gameHash}`);await expect(owner.getByTestId('game-shell')).toHaveAttribute('data-game-id',gameId);
+ await openDirectGameLink(opponent,baseURL,gameHash);await requestPlayerJoin(opponent);await acceptPendingRequest(owner);
+ await expect(opponent.getByTestId('game-role')).toContainText('Player 2');
+ await Promise.all([owner,opponent].map(page=>switchGamePanel(page,'board')));
+ const initial=await projected(owner,gameId),action=initial.legalActions.find(action=>action.type==='move'&&action.to?.row===4&&action.to?.col===6);
+ expect(action).toBeTruthy();await submitPlayableAction(owner,action);
+ const board=opponent.getByTestId('game-board'),cell=point=>board.locator(`.cell[data-row="${point.row}"][data-col="${point.col}"]`);
+ await expectLiveOverview(opponent,board,true);
+ await expect(cell(action.from).locator('.recorded-action-source-piece')).toBeVisible();
+ await expect(cell(action.to).locator(`.piece-token[data-piece-id="${action.actorId}"]:not(.move-ghost)`)).toBeVisible();
+ return {owner,opponent,gameId,board,cell};
+}
+
+for(const width of [390,1440])test(`live opponent overview preserves play and visit intent at ${width}px`,async({ownedRoleContext,baseURL},info)=>{
+ const {owner,opponent,gameId,board,cell}=await createOverviewFriendGame({ownedRoleContext,baseURL,width});
+ await expect(board.locator('.cell.source,.cell.target,.axis-strong,.axis-medium')).toHaveCount(0);
+ await expect(opponent.getByTestId('history-return-live')).toHaveCount(0);
+ await expect(replayButton(opponent)).toBeVisible();
+ await opponent.screenshot({path:info.outputPath(`live-overview-${width}.png`),fullPage:true});
+ const before=await projected(opponent,gameId),writes=[];
+ const watch=request=>{if(isOperationRequest(request,'apply')||isOperationRequest(request,'end-turn'))writes.push(request.postDataJSON());};opponent.on('request',watch);
+ const enemy=before.board.state.pieces.find(piece=>piece.owner==='P1'),own=before.board.state.pieces.find(piece=>piece.owner==='P2');
+ const empty=()=>{for(let row=1;row<9;row++)for(let col=1;col<9;col++)if(!before.board.state.pieces.some(piece=>piece.position.row===row&&piece.position.col===col))return{row,col};};
+ await cell(enemy.position).click();await expectLiveOverview(opponent,board,false);
+ await expect(label(opponent)).not.toHaveAttribute('data-loading-state','pending');await cell(empty()).click();await expectLiveOverview(opponent,board,true);
+ await cell({row:0,col:9}).click();await expectLiveOverview(opponent,board,false);
+ await expect(label(opponent)).not.toHaveAttribute('data-loading-state','pending');await cell(empty()).click();await expectLiveOverview(opponent,board,true);
+ await cell(own.position).click();await expectLiveOverview(opponent,board,false);
+ await expect(label(opponent)).not.toHaveAttribute('data-loading-state','pending');await cell(empty()).click();await expect(replayButton(opponent)).toBeVisible();
+ await expectLiveOverview(opponent,board,false);
+ assertUnchanged(before,await projected(opponent,gameId));expect(writes).toEqual([]);opponent.off('request',watch);
+ await opponent.reload();await expect(opponent.getByTestId('game-shell')).toBeVisible();await switchGamePanel(opponent,'board');
+ await expectLiveOverview(opponent,board,true);
+ await cell(own.position).click();await expect(label(opponent)).not.toHaveAttribute('data-loading-state','pending');await cell(empty()).click();await expectLiveOverview(opponent,board,false);
+ await opponent.locator('.shell-header-title-link').click();await expect(opponent.getByTestId('home-create-game')).toBeVisible();
+ await opponent.locator(`.mini-board-card-link-surface[data-game-id="${gameId}"]`).click();await switchGamePanel(opponent,'board');
+ await expectLiveOverview(opponent,board,true);
+ });
+
+for(const width of [390,1440])test(`unfinished human turn reopens live and a new opponent turn restores overview at ${width}px`,async({ownedRoleContext,baseURL})=>{
+ const {owner,opponent,gameId,board}=await createOverviewFriendGame({ownedRoleContext,baseURL,width});
+ // Project a second actor and approach before rushing: a lone actor's rush
+ // settles immediately, so it cannot prove reopening an unfinished turn.
+ const approach=listLegalActions((await projected(opponent,gameId)).board.state).find(action=>action.type==='project'&&action.to?.row===4&&action.to?.col===3);expect(approach).toBeTruthy();await submitPlayableAction(opponent,approach);
+ await expect.poll(async()=>(await projected(owner,gameId)).board.state.turnIndex).toBe(2);
+ const answer=(await projected(owner,gameId)).legalActions.find(action=>action.type==='move'&&action.to?.row===4&&action.to?.col===5);expect(answer).toBeTruthy();await submitPlayableAction(owner,answer);
+ await expectLiveOverview(opponent,board,true);
+ const reposition=listLegalActions((await projected(opponent,gameId)).board.state).find(action=>action.type==='move'&&action.actorId==='C2'&&action.to?.row===5&&action.to?.col===3);expect(reposition).toBeTruthy();await submitPlayableAction(opponent,reposition);
+ await expect.poll(async()=>(await projected(owner,gameId)).board.state.turnIndex).toBe(4);
+ const close=listLegalActions((await projected(owner,gameId)).board.state).find(action=>action.type==='move'&&action.to?.row===5&&action.to?.col===5);expect(close).toBeTruthy();await submitPlayableAction(owner,close);
+ await expectLiveOverview(opponent,board,true);
+ const ready=await projected(opponent,gameId),rush=listLegalActions(ready.board.state).find(action=>action.type==='rush'&&action.from&&action.to);expect(rush).toBeTruthy();
+ await submitPlayableAction(opponent,rush);
+ await expect.poll(async()=>(await projected(opponent,gameId)).moves.some(move=>move.actorSide==='P2'&&move.turnIndex===5)).toBe(true);
+ expect((await projected(opponent,gameId)).board.state.turnIndex).toBe(5);
+ await opponent.reload();await expect(opponent.getByTestId('game-shell')).toBeVisible();await switchGamePanel(opponent,'board');
+ await expectLiveOverview(opponent,board,false);
+ await label(opponent).getByRole('button',{name:'End turn',exact:true}).click();
+ await expect.poll(async()=>(await projected(owner,gameId)).board.state.sideToMove).toBe('P1');
+ const next=await projected(owner,gameId),nextAction=next.legalActions.find(action=>action.type==='move'&&action.from&&action.to);
+ await submitPlayableAction(owner,nextAction);
+ await expectLiveOverview(opponent,board,true);
+ await expect(opponent.getByTestId('history-return-live')).toHaveCount(0);
 });
