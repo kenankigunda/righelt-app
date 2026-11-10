@@ -6,8 +6,9 @@ import path from 'node:path';
 import {git,saveJSON} from '../io.mjs';
 import {localRun} from '../local.mjs';
 import {evidenceKey,fileDigest} from '../reuse.mjs';
+import {expectedEvidenceProfile} from '../suite-ci-evidence.mjs';
 
-const groups={'Browser integration':'test:browser:integration',Tooling:'test:tooling',Performance:'test:performance'};
+const groups={'PR gate':'test:pr-gate','Browser integration':'test:browser:integration',Tooling:'test:tooling',Performance:'test:performance'};
 async function fixture(t,fault){
   const root=await realpath(await mkdtemp(path.join(os.tmpdir(),'ci-credit-orchestration-'))),cwd=path.join(root,'candidate');
   t.after(()=>rm(root,{recursive:true,force:true}));await mkdir(cwd);
@@ -18,7 +19,7 @@ async function fixture(t,fault){
   for(const[name,script]of Object.entries(groups)){
     const log=path.join(root,`${script.replaceAll(':','-')}.log`),archive=`${log}.zip`;
     await writeFile(log,'verified primary CI log');await writeFile(archive,'verified CI artifact bytes');
-    const receipt={name,status:'passed',source:'github-actions',testedTree:fault==='tree'?'a'.repeat(40):tree,argv:['pnpm',fault==='command'?'different-command':script],importedAt:new Date(Date.now()-1000).toISOString(),expiresAt:new Date(Date.now()+60000).toISOString(),evidence:[{checkout,provenance:{testedTree:tree,checkout},log,logHash:await fileDigest(log),archive,archiveHash:await fileDigest(archive)}]};
+    const profile=expectedEvidenceProfile(name),receipt={evidenceProfile:fault==='profile'?'wrong':profile,layout:profile==='pr-gate'?'pr-gate-v2':'nightly-full-fixture',name,status:'passed',source:'github-actions',testedTree:fault==='tree'?'a'.repeat(40):tree,argv:['pnpm',fault==='command'?'different-command':script],importedAt:new Date(Date.now()-1000).toISOString(),expiresAt:new Date(Date.now()+60000).toISOString(),evidence:[{checkout,provenance:{testedTree:tree,checkout,evidenceProfile:profile,layout:profile==='pr-gate'?'pr-gate-v2':'nightly-full-fixture'},log,logHash:await fileDigest(log),archive,archiveHash:await fileDigest(archive)}]};
     receipt.integrity=evidenceKey(receipt);receipts[name]=receipt;
     if(fault==='artifact')await writeFile(archive,'changed after verified import');
   }
@@ -26,7 +27,7 @@ async function fixture(t,fault){
   return{root,cwd,ciEvidence};
 }
 
-for(const fault of [null,'tree','command','artifact'])test(`CI credit orchestration ${fault?`rejects ${fault} mismatch`:'reuses all three additional verified groups'}`,async t=>{
+for(const fault of [null,'tree','command','artifact','profile'])test(`CI credit orchestration ${fault?`rejects ${fault} mismatch`:'reuses PR gate and explicitly required additional verified groups'}`,async t=>{
   const{root,cwd,ciEvidence}=await fixture(t,fault),executed=[];
   const policy={version:2,phase:'final',lanes:1,visualMode:'none',viewports:['mobile'],coverageViewports:['mobile'],questions:[],unmapped:[],selected:[...Object.keys(groups),'Responsive proof']};
   const{stage}=await localRun({cwd,base:'HEAD',dir:path.join(root,'run'),lockPath:path.join(root,'lock'),policy,ciEvidence,publishReport:false,execute:async(argv,{env})=>{

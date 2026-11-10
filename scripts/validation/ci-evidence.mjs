@@ -1,7 +1,8 @@
-import {importCatalogCI} from './suite-ci-evidence.mjs';
+import {importCatalogCI,PR_GATE_LAYOUT} from './suite-ci-evidence.mjs';
 import {readFile,mkdir} from 'node:fs/promises';
 import path from 'node:path';
 import {command,saveJSON} from './io.mjs';
+import {EVIDENCE_PROFILES} from '../testing/receipts.mjs';
 import {evidenceKey,fileDigest} from './reuse.mjs';
 
 const SHA=/^[a-f0-9]{40}$/;
@@ -120,14 +121,16 @@ export async function importCI({repository,runId,cwd,outDir,expected,artifactCac
 }
 
 // This verifies previously imported evidence; it never grants merge authority.
-export async function loadCIReceipt(file,{name,argv,tree,now=Date.now()}){
+export async function loadCIReceipt(file,{name,argv,tree,evidenceProfile,now=Date.now()}){
  try{
   if(!Number.isFinite(now)||!SHA.test(tree))return null;
   const document=JSON.parse(await readFile(file,'utf8'));const receipt=document.receipts?.[name]??document;
   const {integrity,...body}=receipt;
   const imported=Date.parse(receipt.importedAt),expiry=Date.parse(receipt.expiresAt);
   if(integrity!==evidenceKey(body)||receipt.status!=='passed'||receipt.source!=='github-actions'||receipt.name!==name||receipt.testedTree!==tree||JSON.stringify(receipt.argv)!==JSON.stringify(argv)||!Number.isFinite(imported)||!Number.isFinite(expiry)||imported>now||expiry<=now||expiry<=imported||expiry-imported>86400000||!Array.isArray(receipt.evidence)||!receipt.evidence.length)return null;
+  if(evidenceProfile!==undefined&&(receipt.evidenceProfile!==evidenceProfile||typeof receipt.layout!=='string'||!receipt.layout||(evidenceProfile===EVIDENCE_PROFILES.PR_GATE&&receipt.layout!==PR_GATE_LAYOUT)||(evidenceProfile===EVIDENCE_PROFILES.NIGHTLY_FULL&&receipt.layout===PR_GATE_LAYOUT)))return null;
   for(const evidence of receipt.evidence){
+   if(evidenceProfile!==undefined&&(evidence.provenance?.evidenceProfile!==evidenceProfile||evidence.provenance?.layout!==receipt.layout))return null;
    if(!evidence.provenance||evidence.provenance.testedTree!==tree||evidence.provenance.checkout!==evidence.checkout||await fileDigest(evidence.log)!==evidence.logHash||await fileDigest(evidence.archive)!==evidence.archiveHash)return null;
   }
   return receipt;

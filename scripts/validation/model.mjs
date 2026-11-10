@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {currentPRGatePassed} from './ci-gate.mjs';
 export const VERSION = 1;
 export const viewports = [
   {name:'mobile', width:390, height:844, isMobile:true, hasTouch:true},
@@ -49,7 +50,7 @@ export function finalProofReady(run, currentBase) {
 }
 export function readiness(pr, stage, currentBase, run) {
   const waiting=[];
-  if ((run?.version===2||stage?.policyVersion===2)&&!finalProofReady(run,currentBase)) waiting.push('Final broad validation and screenshot review of current inputs');
+  if ((run?.version===2||stage?.policyVersion===2)&&!finalProofReady(run,currentBase)) waiting.push('Final validation and screenshot review of current inputs');
   if(pr.nativeStack)waiting.push('Native GitHub stacks are unsupported; individual authorization cannot include predecessors');
   if (!stage || stage.head !== pr.head || stage.base !== currentBase || stage.status !== 'passed') waiting.push('Current integrated validation');
   if (stage?.unmapped?.length) waiting.push('Coverage gaps');
@@ -59,7 +60,7 @@ export function readiness(pr, stage, currentBase, run) {
   if (pr.gatesHead !== pr.head || pr.gatesBase !== currentBase) waiting.push('Fresh PR gate provenance');
   const a=pr.checkApplicability;
   const notApplicable=pr.checks==='not-applicable'&&a?.verified===true&&a.head===pr.head&&a.base===currentBase&&a.workflowFiltersVerified===true&&a.requiredChecksVerified===true&&Array.isArray(a.requiredChecks)&&a.requiredChecks.length===0&&Array.isArray(a.sources)&&a.sources.length>0;
-  if (pr.checks !== 'passed'&&!notApplicable) waiting.push('Required CI checks');
+  if (!(pr.checks==='passed'&&currentPRGatePassed(pr,currentBase,{repository:run?.repository}))&&!notApplicable) waiting.push('Required CI checks');
   if (pr.review !== 'passed') waiting.push('Required reviews');
   if ((pr.preview === 'passed' && (pr.previewHead !== pr.head || !pr.previewUrl)) || (pr.preview === 'not-configured' && pr.previewCheckedHead !== pr.head)) waiting.push('Current preview provenance');
   if (pr.preview !== 'passed' && pr.preview !== 'not-configured') waiting.push('Current preview verification');
@@ -102,6 +103,6 @@ function publicAttempt(attempt){
 export function publicRun(run) {
   // Explicit allowlist: logs, connector envelopes, notes and recipient are never published.
   return {history:[...(run.history??[]),...(run.attempts??[])].map(publicAttempt),version:VERSION,id:run.id,startedAt:run.startedAt,base:run.base,revision:run.revision,fingerprint:run.fingerprint,harnessRevision:run.harnessRevision,harnessFingerprint:run.harnessFingerprint,
-    risks:run.risks??[], findings:run.findings??[], prs:(run.prs??[]).map((p,index)=>{const stage=run.mode==='local'?run.stages?.[0]:run.stages?.find(s=>s.index===index+1);const current=readiness(p,stage,run.base,run);return {number:p.number,title:p.title,url:p.url,head:p.head,readiness:p.merged?'merged':current.status,waiting:p.merged?[]:current.waiting,authorization:p.authorization?.state};}),
+    risks:run.risks??[], findings:run.findings??[], prs:(run.prs??[]).map((p,index)=>{const stage=run.mode==='local'?run.stages?.[0]:run.stages?.find(s=>s.index===index+1);const current=readiness(p,stage,run.base,run);return {number:p.number,title:p.title,url:p.url,head:p.head,ciGate:p.ciGate?{name:p.ciGate.name,status:p.ciGate.status,head:p.ciGate.head,runId:p.ciGate.runId,runAttempt:p.ciGate.runAttempt,checkedAt:p.ciGate.checkedAt}:null,advisoryChecks:(p.advisoryChecks??[]).map(c=>({name:c.name??c.context,status:c.status??c.state,conclusion:c.conclusion,workflowName:c.workflowName})),readiness:p.merged?'merged':current.status,waiting:p.merged?[]:current.waiting,authorization:p.authorization?.state};}),
     stages:(run.stages??[]).map(s=>({id:s.id,index:s.index,title:s.title,status:s.status,head:s.head,base:s.base,fingerprint:s.fingerprint,harnessRevision:s.harnessRevision,harnessFingerprint:s.harnessFingerprint,visualReviewed:s.visualReviewed,visualRequired:s.visualRequired,phase:s.phase,questions:s.questions,unmapped:s.unmapped??[],checks:(s.checks??[]).map(c=>({name:c.name,status:c.status,duration:c.duration,reused:c.reused,reason:c.reason,source:c.source})),items:(s.items??[]).map(i=>({id:i.id,title:i.title,viewport:i.viewport,status:i.status,revision:i.revision,assertions:i.assertions??[],findings:i.findings??[],behaviors:(i.behaviors??[]).map(b=>({label:b.label,checkpoint:b.checkpoint})),client:i.client?{browser:i.client.browser,viewport:i.client.viewport,width:i.client.width,height:i.client.height,hasTouch:i.client.hasTouch}:undefined,images:(i.images??[]).map(p=>({src:p.src,thumbnail:p.thumbnail,caption:p.caption,digest:p.digest,checkpoint:p.checkpoint,kind:p.kind,viewport:p.viewport}))}))}))};
 }

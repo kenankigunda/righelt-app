@@ -15,7 +15,7 @@ test('resume identity includes candidate order, target and external harness cont
 test('retained-state validation rejects candidate edits and a changed sequence harness',async()=>{
  const {localRun}=await import('../local.mjs');const {saveJSON}=await import('../io.mjs');
  const root=await mkdtemp(path.join(os.tmpdir(),'validation-mutation-'));const cwd=path.join(root,'repo');await import('node:fs/promises').then(fs=>fs.mkdir(cwd));
- await git(['init','-b','main'],cwd);await git(['config','user.email','test@example.invalid'],cwd);await git(['config','user.name','Validation test'],cwd);await writeFile(path.join(cwd,'file'),'original');await git(['add','.'],cwd);await git(['commit','-m','base'],cwd);const base=await git(['rev-parse','HEAD'],cwd);
+ await git(['init','-b','main'],cwd);await git(['config','user.email','test@example.invalid'],cwd);await git(['config','user.name','Validation test'],cwd);await writeFile(path.join(cwd,'file'),'original');await saveJSON(path.join(cwd,'package.json'),{scripts:{'test:pr-gate':'controlled gate'}});await saveJSON(path.join(cwd,'validation-plan.json'),{version:2,questions:[{id:'preserved-artifacts',description:'Explicit E2E artifact and source integrity',paths:['apps/'],checks:['E2E','Report viewer']}]});await git(['add','.'],cwd);await git(['commit','-m','base'],cwd);const base=await git(['rev-parse','HEAD'],cwd);
  for(const kind of ['candidate','harness']){
   await writeFile(path.join(cwd,'file'),'original');let n=0;let e2eArtifact;
   const run={version:1,id:kind,mode:'integrated',base,stages:[],prs:[],risks:[],...(kind==='harness'?{harnessRevision:'old',harnessFingerprint:'old'}:{})};
@@ -38,7 +38,7 @@ test('candidate auth capability runs its own E2E lane and preserves failures and
  const {localRun}=await import('../local.mjs');const {saveJSON}=await import('../io.mjs');
  const root=await mkdtemp(path.join(os.tmpdir(),'validation-auth-capability-'));const cwd=path.join(root,'repo');await mkdir(cwd);
  await git(['init','-b','main'],cwd);await git(['config','user.email','test@example.invalid'],cwd);await git(['config','user.name','Validation test'],cwd);
- await saveJSON(path.join(cwd,'package.json'),{scripts:{'test:e2e:auth':'playwright test --config playwright.auth.config.mjs'}});await git(['add','.'],cwd);await git(['commit','-m','auth-capable candidate'],cwd);const base=await git(['rev-parse','HEAD'],cwd);
+ await saveJSON(path.join(cwd,'package.json'),{scripts:{'test:pr-gate':'controlled gate','test:e2e:auth':'playwright test --config playwright.auth.config.mjs'}});await saveJSON(path.join(cwd,'validation-plan.json'),{version:2,questions:[{id:'auth-feature',description:'Explicit failed Auth lane preserves artifacts',paths:['apps/'],checks:['Auth E2E','Report viewer']}]});await git(['add','.'],cwd);await git(['commit','-m','auth-capable candidate'],cwd);const base=await git(['rev-parse','HEAD'],cwd);
  const seen=[];let authArtifact;
  const result=await localRun({cwd,base,full:true,dir:path.join(root,'run'),publishReport:false,lockPath:path.join(root,'lock'),execute:async(argv,{env})=>{
   seen.push(argv);await saveJSON(env.RIGHELT_EVIDENCE_JSON,[{id:'proof',status:'passed',images:[]}]);
@@ -54,7 +54,7 @@ test('changed AI tools require dedicated checks and preserve a failed or missing
  const {localRun}=await import('../local.mjs');const {saveJSON}=await import('../io.mjs');
  const root=await mkdtemp(path.join(os.tmpdir(),'validation-ai-'));const cwd=path.join(root,'repo');await mkdir(cwd);
  await git(['init','-b','main'],cwd);await git(['config','user.email','test@example.invalid'],cwd);await git(['config','user.name','Validation test'],cwd);
- await saveJSON(path.join(cwd,'package.json'),{scripts:{}});await git(['add','.'],cwd);await git(['commit','-m','base'],cwd);const base=await git(['rev-parse','HEAD'],cwd);
+ await saveJSON(path.join(cwd,'package.json'),{scripts:{'test:pr-gate':'controlled gate'}});await git(['add','.'],cwd);await git(['commit','-m','base'],cwd);const base=await git(['rev-parse','HEAD'],cwd);
  for(const area of ['ai-trainer','ai-benchmark']){await mkdir(path.join(cwd,'tools',area),{recursive:true});await writeFile(path.join(cwd,'tools',area,'example.txt'),'tool');}
  await git(['add','.'],cwd);await git(['commit','-m','AI tools'],cwd);
  const seen=[];

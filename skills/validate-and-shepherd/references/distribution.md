@@ -15,7 +15,7 @@ The default revision is freshly fetched `origin/main`; `--revision MERGED_SHA` p
 
 Personal skill changes are explicit external writes. `--update-gh-watch` adds installation of the tracked `docs/ai/GH_WATCH_AND_REPAIR_PR_SKILL.template.md` into that one personal skill; it is never applied by default. Changed skill files receive a local backup. No other personal skill is modified. Review the template diff before requesting this option.
 
-After installation, run `pnpm setup:workspace` from the canonical `righelt-app` checkout at the released revision to regenerate parent instructions from the released templates. This is separate from developing/reviewing an unmerged tooling candidate; do not apply unreleased parent guidance or install the personal adapter prematurely.
+After installation, run `pnpm setup:workspace` from the canonical `righelt-app` checkout at the released revision to regenerate parent instructions from the released templates. This is separate from developing/reviewing an unmerged tooling candidate; do not apply unreleased parent guidance or install the personal adapter prematurely. If the canonical app checkout is on unrelated work, do not switch it or run the broad workspace setup from a differently named tools checkout. Instead, after installation, back up and render only the two parent instruction files from the installed release templates, substituting the fixed canonical app/backlog/tools paths. Verify exact output and resolved placeholders; leave settings, links and the unrelated checkout unchanged.
 
 Example released invocation:
 
