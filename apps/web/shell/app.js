@@ -1,3 +1,4 @@
+import {createHomeCardRendering,scenarioPreviewStatus,formatSideToMoveLabel,getStaticCardPreviewSnapshot,getStaticCardPreviewSelection,getStaticCardPreviewPayload} from './home-card-rendering.js';
 import {
   createHomeSectionReads, HOME_SECTION_SERVER_PAGE_SIZE, HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,
   HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE, createHomeSectionState, getHomeSectionVisibleTotalPages,
@@ -129,7 +130,8 @@ import {
   resolveHistoryScenarioExportContext,
   tryLocalScenarioWrite,
 } from "./scenarios.js";
-import { renderHomeCardIdentity } from "./home-card-identity.js";
+import { renderHomeCardIdentity, renderHomeCardTurn } from "./home-card-identity.js";
+import {renderScenarioPlayerCopy} from "./scenario-player-copy.js";
 import { buildStaticGameCardFromScenario } from "./static-game-cards.js";
 import { historyTurnSide, buildMovePreview, buildTurnPreview, buildDestroyedPieceOverlays, findRecordedActionStartPiece } from "./history-preview.js";
 import { resolveInitialSelectionHydration } from "./selection-hydration.js";
@@ -693,36 +695,6 @@ const formatOutcomeStatus = (outcome) => {
   return "unknown";
 };
 
-const formatSideToMoveLabel = (snapshot) => {
-  if (snapshot?.sideToMove === "P1") {
-    return "Red to play";
-  }
-  if (snapshot?.sideToMove === "P2") {
-    return "Blue to play";
-  }
-  return "Turn unknown";
-};
-
-const getStaticCardPreviewSnapshot = (card) => card?.previewSnapshot ?? null;
-const getStaticCardPreviewSelection = (card) =>
-  card?.previewSelection?.source
-    ? {
-        selectedPieceId: null,
-        source: card.previewSelection.source,
-        target: card.previewSelection.target ?? null,
-      }
-    : null;
-const getStaticCardPreviewPayload = (card) => ({
-  snapshot: getStaticCardPreviewSnapshot(card),
-  selection: getStaticCardPreviewSelection(card),
-  overlay: { mode: "none" },
-  legalActions: [],
-  selectedPieceId: null,
-  selectedPieceMoves: [],
-  selectedPieceMovePreviews: [],
-  currentActionType: "pass",
-  selectedPieceOverlayPhase: "actionPreviews",
-});
 const buildSavedSelectionFromAction = (action, snapshot) => {
   if (!action?.from) {
     return null;
@@ -1960,6 +1932,7 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
   const selectedScenarioTitle = scenarioMetadataDrafts.get(selectedScenario?.id)?.title ?? selectedScenario?.title ?? "";
   const selectedScenarioDescription = scenarioMetadataDrafts.get(selectedScenario?.id)?.description ?? selectedScenario?.description ?? "Scenarios replay canonical shell history into a game.";
   const canUpdateScenario = canAuthorScenarios && Boolean(selectedScenario);
+  const contextualDescription = !editing ? renderScenarioPlayerCopy({...selectedScenario,description:selectedScenarioDescription},game) : null;
   if (scenarioLoadPending) {
     return `
       <section class="panel debug-panel scenario-panel scenario-panel-load loading-region" ${loadingAttributes("scenarios", "The scenarios are taking a little longer to load.")} data-testid="scenario-load-skeleton">
@@ -1992,9 +1965,10 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
               <p
                 class="small"
                 data-scenario-editable="description"
+                data-version="${canAuthorScenarios && editing ? 'editing' : 'reading'}"
                 data-persist data-decision-id="${escapeHtml(selectedScenario?.id)}" ${canAuthorScenarios && editing ? 'contenteditable="plaintext-only" role="textbox" aria-label="Scenario description"' : ""}
                 ${canAuthorScenarios && editing ? "" : 'tabindex="0"'}
-              >${escapeHtml(selectedScenarioDescription)}</p>
+              >${contextualDescription ?? escapeHtml(selectedScenarioDescription)}</p>
             </div>`
           : `<p class="small">${escapeHtml(selectedScenarioDescription)}</p>`
       }
@@ -2008,9 +1982,7 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
                   <span class="small">${escapeHtml(`${scenarioCard.moveCount} move(s)`)}</span>
                   <span class="small">${escapeHtml(`Expected ${formatOutcomeStatus(selectedScenario.expectedOutcome)}`)}</span>
                 </div>`,
-              statusText: scenarioPreviewSnapshot
-                ? formatSideToMoveLabel(scenarioPreviewSnapshot)
-                : "Snapshot unavailable",
+              ...scenarioPreviewStatus(getActiveScenarioGame(),scenarioPreviewSnapshot),
             })
           : ""
       }
@@ -2263,82 +2235,15 @@ const getInviteContextForGame = (game, routeName = currentRoute.name) => {
   };
 };
 
-const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyoutLink = null, gameId = null, header, meta, statusText, winnerSide = null }) => {
-  const previewPayload = card?.previewPayload ?? getStaticCardPreviewPayload(card);
-  const previewKey = toStableKey({
-    snapshot: previewPayload.snapshot,
-    selection: previewPayload.selection,
-    overlay: previewPayload.overlay,
-    legalActions: previewPayload.legalActions,
-    selectedPieceId: previewPayload.selectedPieceId,
-    selectedPieceMoves: previewPayload.selectedPieceMoves,
-    selectedPieceMovePreviews: previewPayload.selectedPieceMovePreviews,
-    currentActionType: previewPayload.currentActionType,
-    selectedPieceOverlayPhase: previewPayload.selectedPieceOverlayPhase,
-  });
-  const body = `<div class="mini-board-card-header">
-      ${header}
-    </div>
-    <div class="mini-board-card-copy">
-      ${meta}
-    </div>
-    ${renderMiniBoardPreviewRoot({
-      previewId: `${variant}:${card.id}`,
-      snapshot: previewPayload.snapshot,
-      selection: previewPayload.selection,
-      overlay: previewPayload.overlay,
-      legalActions: previewPayload.legalActions,
-      selectedPieceId: previewPayload.selectedPieceId,
-      selectedPieceMoves: previewPayload.selectedPieceMoves,
-      selectedPieceMovePreviews: previewPayload.selectedPieceMovePreviews,
-      currentActionType: previewPayload.currentActionType,
-      selectedPieceOverlayPhase: previewPayload.selectedPieceOverlayPhase,
-      previewKey,
-      sizeVariant: "compact",
-    })}
-    <p class="small mini-board-preview-status">${escapeHtml(statusText)}</p>`;
-  if (!href) {
-    return `<div class="mini-board-card mini-board-card-${escapeHtml(variant)}">${body}</div>`;
-  }
-  return `<article class="mini-board-card"${winnerSide ? ` data-winner-side="${winnerSide.toLowerCase()}"` : ''}>
-    <a
-      class="mini-board-card-link-surface"
-      href="${href}"
-      ${flyoutLink ? `data-flyout-link="${escapeHtml(flyoutLink)}"` : ""}
-      ${gameId ? `data-game-id="${escapeHtml(gameId)}"` : ""}
-    >
-      ${body}
-    </a>
-  </article>`;
-};
-
-const renderHomeGameCard = (game) => {
-  const snapshot = getStaticCardPreviewSnapshot(game);
-  const result = homeCardResult(game, {identityId:transport.getIdentityId()});
-  const completed = result.kind === 'completed';
-  const statusText = result.kind === 'ongoing' ? snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable" : result.label;
-  const moveLabel = completed ? `${game.moveCount} ${game.moveCount === 1 ? 'move' : 'moves'}` : `Move ${game.moveCount + 1}`;
-  const resultHtml = completed ? `<div class="home-card-result${result.winnerSide ? ` player-tone-${result.winnerSide.toLowerCase()}` : ''}"><strong><bdi>${escapeHtml(result.label)}</bdi></strong>${result.detail ? `<span class="small">${escapeHtml(result.detail)}</span>` : ''}</div>` : '';
-  const recoveryChip =
-    game.pendingPreviewSnapshot ? '<span class="status-chip">Update pending</span>' : game.syncStatus === "desynced" || game.syncStatus === "confirming" ? '<span class="status-chip">Recovering</span>' : "";
-  return renderStaticMiniBoardCard({
-    card: game,
-    href: buildGameHash(game.id, null, getCurrentFlyoutState()),
-    flyoutLink: "game",
-    gameId: game.id,
-    header: `<div>
-        <span class="mini-board-card-link">${escapeHtml(formatDisplayGameId(game.id))}</span>
-        <p class="small mini-board-card-subtitle">Last move on ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
-      </div>
-      ${recoveryChip}`,
-    meta: `<div class="mini-board-card-meta mini-board-card-meta-primary">
-        ${renderHomeCardIdentity(game, {identityId: transport.getIdentityId(), quiet:completed})}
-        <span class="small">${escapeHtml(moveLabel)}</span>
-      </div>${resultHtml}`,
-    statusText: completed ? result.action : result.kind === 'pending' ? `${statusText} · ${result.action}` : statusText,
-    winnerSide: completed ? result.winnerSide : null,
-  });
-};
+const homeCardRendering = createHomeCardRendering({
+  getTransport:()=>transport,
+  toStableKey:(...args)=>toStableKey(...args),escapeHtml:(...args)=>escapeHtml(...args),
+  renderMiniBoardPreviewRoot:(...args)=>renderMiniBoardPreviewRoot(...args),
+  buildGameHash:(...args)=>buildGameHash(...args),getCurrentFlyoutState:(...args)=>getCurrentFlyoutState(...args),
+  formatDisplayGameId:(...args)=>formatDisplayGameId(...args),formatClientDateTime:(...args)=>formatClientDateTime(...args),
+});
+const renderStaticMiniBoardCard = (...args) => homeCardRendering.renderStaticMiniBoardCard(...args);
+const renderHomeGameCard = (...args) => homeCardRendering.renderHomeGameCard(...args);
 
 const renderHomeSectionControls = (sectionKey, section, { placement } = { placement: "header" }) => `<div
   class="home-games-section-controls home-games-section-controls-${escapeHtml(placement)}"

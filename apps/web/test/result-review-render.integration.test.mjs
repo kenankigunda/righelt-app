@@ -1,3 +1,4 @@
+import {createHomeSectionReads} from '../shell/home-section-reads.js';
 import {publishAcknowledgedBoardMessage} from '../shell/playback-presentation.js';
 import {renderResultPanel} from '../shell/result-panel.js';
 import {selectedHistoryPresentation} from '../shell/history-narration.js';
@@ -117,7 +118,7 @@ test("optimistic terminal state cannot expose a result or open it before confirm
   const optimistic = {id:"g",board:{state:{outcome:{status:"p1_win"}}},player1:{identityId:"me"}};
   let confirmed = {...optimistic,board:{state:{outcome:{status:"ongoing"}}}};
   const context = {selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},renderHistorySlots,renderResultMark,playerDisplayName,resultPresentation:createResultPresentation(),additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})}, getGameResult, transport:{getIdentityId:()=>"me",getAuthoritativeGame:()=>confirmed,getGameViewModel:()=>optimistic},escapeHtml:value=>String(value),formatDisplayGameId:value=>value,icon,renderTurnHistory:()=>"",participantName,participantDisplayName,render:()=>{},activeResultGameId:null};
-  runInNewContext(`${extract("const renderResult =", "const renderGame =")}
+  runInNewContext(`const renderResult=game=>renderResultPanel(game,{transport,escapeHtml,formatDisplayGameId});
     ${extract("const renderAdditionalHistory =", "const renderHistoryPanel =")}
     ${extract("const renderHistoryPanel =", "const renderBoardPanel =")}
     globalThis.result = renderResult;globalThis.history = renderHistoryPanel;
@@ -137,7 +138,7 @@ test("computer seats have distinct human, watch, history and result labels despi
   const game = {id:'g', player1:person, player2:{...person, computerProfile:'babs'}, selfPlayMode:true, computer:{seats:{p1:null,p2:'babs'},manual:false}, board:{state:{outcome:{status:'p1_win'}}}, moves:[]};
   const context = {selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},renderHistorySlots,renderResultMark,playerDisplayName,isPlayerRole:role=>['Player 1','Player 2'].includes(role),escapeHtml:String,participantName,participantDisplayName,getGameResult,transport:{getIdentityId:()=> 'me',getAuthoritativeGame:()=>game},additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})},formatDisplayGameId:String,icon:()=>'',renderTurnHistory:()=>`<li data-testid="history-move-item">${historyActorLabel(game,{actorSide:'P2'},{identityId:'me'})} · Move 1: Pass</li>`};
   runInNewContext(`${extract('const playerToneClassForSeat =','const renderConnectionStatusIcon =')}
-    ${extract('const renderResult =','const renderGame =')}
+    const renderResult=game=>renderResultPanel(game,{transport,escapeHtml,formatDisplayGameId});
     ${extract('const renderAdditionalHistory =','const renderHistoryPanel =')}
     ${extract('const renderHistoryPanel =','const renderBoardPanel =')}
     globalThis.role = renderRoleLabel; globalThis.result = renderResult; globalThis.history = renderHistoryPanel;`, Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
@@ -146,7 +147,7 @@ test("computer seats have distinct human, watch, history and result labels despi
   assert.match(context.role('Player 1', {...game,player1:{...person,computerProfile:'tau'}}), /watching computers/);
   assert.match(context.role('Viewer', game), />Viewer</);
   assert.match(context.role('Player 1', {...game,player2:person}), /both players/);
-  assert.match(context.result(game), /<span class="player-tone-p1"><bdi dir="auto">Owner<\/bdi><\/span> vs <span class="player-tone-p2"><bdi dir="auto">Babs<\/bdi>/);
+  assert.match(context.result(game), /<span class="player-tone-p1"><span class="sr-only">Red: <\/span><bdi dir="auto">Owner<\/bdi><\/span> vs <span class="player-tone-p2"><span class="sr-only">Blue: <\/span><bdi dir="auto">Babs<\/bdi>/);
   const history = context.history(game);
   assert.match(history, /history-move-item">Babs · Move 1/);
   assert.doesNotMatch(history, /history-player-names|history-player-name|>Owner<|Computer/);
@@ -167,7 +168,7 @@ test('actual result renderer affiliates victory with the authoritative winning s
  for(const [winner,identity]of[['p1','red'],['p2','blue']]){
   const game={id:'g',player1:{identityId:'red'},player2:{identityId:'blue'},currentTurn:{playerSeat:winner==='p1'?'Player 2':'Player 1'},board:{state:{sideToMove:winner==='p1'?'P2':'P1',pieces:[{id:winner==='p1'?'C1':'C2',supplied:true}],outcome:{status:`${winner}_win`,reason:winner==='p1'?'p2_commander_destroyed':'p1_commander_destroyed'}}}};
   const context={selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,game,renderResultMark,getGameResult,playerDisplayName,transport:{getIdentityId:()=>identity,getAuthoritativeGame:()=>game},escapeHtml:String,formatDisplayGameId:String,icon,participantName,participantDisplayName};
-  runInNewContext(`${extract('const renderResult =','const renderGame =')};globalThis.output=renderResult(game);`,Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
+  runInNewContext(`const renderResult=game=>renderResultPanel(game,{transport,escapeHtml,formatDisplayGameId});;globalThis.output=renderResult(game);`,Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
   assert.match(context.output,new RegExp(`data-result-tone="victory" data-winner="${winner}"`));
   assert.match(context.output.replace(/<[^>]*>/g,''),/You won/);assert.match(context.output,new RegExp(`${playerDisplayName(game,winner==='p1'?'p2':'p1')}’s commander`));
   const actions=[...context.output.matchAll(/<button([^>]*)data-action="(analysis|rematch)"[^>]*>/g)];
@@ -217,6 +218,7 @@ function historyRouteHarness(t) {
     syncRenderedMarkupSnapshot:()=>{context.lastRenderedRouteKey=context.getRouteRenderKey();},
     viewingIntent:{saveScroll:noop,cancelUndo:noop,scrollTop:()=>0},replayRequests:{cancel:noop},replayController:null,mobileNavigation:null,
   };
+  context.homeSectionReads=createHomeSectionReads({state:context,pendingHomeSectionKeys:new Set()});
   runInNewContext(`
     ${patchHelper}
     let desktopBoardFit=null;

@@ -508,6 +508,8 @@ Use the current canonical player name in its owning color for identity reference
 
 History actor references use canonical names rather than You or Opponent. Result titles identify the actual winner, never the active side or selected rematch side. Human self-play needs the winning-seat qualification: You won as Red/Blue for its owner and {player name} won as Red/Blue for viewers. Other results omit redundant visible color suffixes while retaining accessible color attribution. Commander explanations carry structured owner references; style the entire Your Blue commander phrase in the relevant color. Never infer an owner's color by matching user-supplied name text. Viewing, temporary computer control and replay must not change the recorded owner or gameplay authority.
 
+Curated instructional descriptions may resolve structured owner references only when real game context exists and the shipped scenario ID and original description match. Edited and imported prose stays untouched. Editing always exposes the original description, not resolved names or nonvisual affiliation text. Changing between display and editing must replace that description node before preserving editable content. Analysis explanations name the actual value owner, while raw evidence and exported owner enums keep their technical coordinate system.
+
 ### History endpoint roles
 
 - Desktop and mobile History opt into dashed violet 2px source borders and solid green 2px target borders. Shared-role squares retain the dashed violet outer border plus an inset solid green 2px outline. Colors remain `#7650A6` and `#1F7A5A`.

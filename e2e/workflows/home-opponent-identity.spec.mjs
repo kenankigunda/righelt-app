@@ -33,9 +33,11 @@ for(const width of [390,900,1440])test(`fresh Home cards retain configured compu
   await page.setViewportSize({width,height:900});await page.evaluate(text=>document.documentElement.style.fontSize=`${text}%`,text);
   for(const {id,side} of games){
    const card=page.locator(`.mini-board-card-link-surface[data-game-id="${id}"]`),matchup=card.locator('.home-card-matchup');
-   await expect(matchup).toHaveText('You vs. Horus');
-   await expect(matchup.locator(`.player-tone-${side}`)).toHaveText('Horus');
-   await expect(matchup.locator(`.player-tone-${side==='p1'?'p2':'p1'}`)).toHaveText('You');
+   await expect(matchup.locator('bdi')).toHaveText(['Guest','Horus']);
+   await expect(matchup.locator(`.player-tone-${side} bdi`)).toHaveText('Horus');
+   await expect(matchup.locator(`.player-tone-${side} .sr-only`)).toHaveText(`${side==='p1'?'Red':'Blue'}: `);
+   await expect(matchup.locator(`.player-tone-${side==='p1'?'p2':'p1'} bdi`)).toHaveText('Guest');
+   await expect(card.locator('.mini-board-preview-status bdi')).toHaveText(side==='p1'?'Horus':'Guest');
    await expect(matchup.getByRole('img',{name:'Computer player',exact:true})).toHaveCount(1);
    await expect(matchup.locator('.is-disconnected')).toHaveCount(0);
   }
