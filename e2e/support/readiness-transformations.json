@@ -1,20 +1,20 @@
 {
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",
-    "sourceSha256": "b10f7c031f89ffbd7f54b98e5d151e33d8c5c0f52c4ad0ec4a21423df120fb34",
-    "outputSha256": "ed69044bc74147315156b58dd4192f9387d380677f18b3ca16960f38d6b806c0",
+    "sourceSha256": "9537ba10b5afc9a23b1a24eb851b4c4a8417e3cddeb4e9d522a483f2a5f3b279",
+    "outputSha256": "801d32fc9076f01a92c932151728714a2bc64470fc6e1ec077c6d1aa39106156",
     "operations": [
       {
-        "start": 22898,
-        "end": 22898,
+        "start": 23882,
+        "end": 23882,
         "before": "",
         "after": "let readinessFinish,readinessCompleted=false;\n    try{readinessFinish=globalThis.__righeltReadinessBegin?.('render-board');}catch{}\n    try{\n    ",
         "anchor": " (!state || !mounted) {\n      return;\n    }\n    syncRushGuidance();\n    const effectiveMoves = g",
         "anchorCount": 1
       },
       {
-        "start": 24150,
-        "end": 24150,
+        "start": 25134,
+        "end": 25134,
         "before": "",
         "after": "\n    readinessCompleted=true;\n    }finally{try{readinessFinish?.(readinessCompleted);}catch{}}",
         "anchor": "querySelector('.group-strength-badge')),\n    });\n  };\n\n  const disabledInlineActions = new Set()",

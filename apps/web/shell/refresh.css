@@ -492,7 +492,7 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .panel > .section-actions:last-of-type:not(:has(~ :not(.invite-feedback:empty))) {margin-bottom:0;}
 
 /* Four short dashes, scoped to legend samples, never board overlay strokes. */
-.overlay-key .swatch:is(.command,.supply)::before {border:0;height:3px;background:repeating-linear-gradient(to right,currentColor 0 2px,transparent 2px 4px);}
+.overlay-key .swatch:is(.command,.supply)::before {border:0;height:var(--connection-line-width);background:var(--connection-command-sample);}
 
 .overlay-key [hidden] {display:none!important;}
 .overlay-key {overflow:hidden;}
@@ -634,3 +634,4 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 #app .players-section-actions button.invite-action:hover {color:var(--ink);}
 
 .viewer-roster button.participant-profile,.perspective-participants button.participant-profile {min-height:44px;}
+.overlay-key .swatch.supply::before {background:var(--connection-supply-sample);}

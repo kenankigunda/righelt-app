@@ -18,14 +18,14 @@
   },
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",
-    "rawSourceSha256": "b10f7c031f89ffbd7f54b98e5d151e33d8c5c0f52c4ad0ec4a21423df120fb34",
-    "sourceSha256": "77b7de814eec17123bca3cba093d55d0b99e08bc66f07fb2704a352bd172662a",
-    "outputSha256": "52040d84e48d02f4968e78abb98ed8c91b9e8091facade6a6252e1b2af7b7c6d",
+    "rawSourceSha256": "9537ba10b5afc9a23b1a24eb851b4c4a8417e3cddeb4e9d522a483f2a5f3b279",
+    "sourceSha256": "0b143ef960f535a93d6f29c6045696e4c51fa12111a45750738d5a2a5c75cb6d",
+    "outputSha256": "72ed27feff43144fe2467e3ef0e574ce270f9457ea8e594671684c9654ebaf9f",
     "prefix": "",
     "operations": [
       {
-        "start": 71568,
-        "end": 71803,
+        "start": 75352,
+        "end": 75587,
         "before": "    elements = {\n      boardEl: nextElements.boardEl,\n      overlayLinesEl: nextElements.overlayLinesEl,\n      boardPreviewLabelEl: nextElements.boardPreviewLabelEl,\n      boardTurnIndicatorEl: nextElements.boardTurnIndicatorEl,\n    };",
         "after": "    elements = {\n      boardEl: nextElements.boardEl,\n      overlayLinesEl: nextElements.overlayLinesEl,\n      boardPreviewLabelEl: nextElements.boardPreviewLabelEl,\n      boardTurnIndicatorEl: nextElements.boardTurnIndicatorEl,\n    };\n    try { globalThis.__retreatClientSettlement?.bind(host.canInteract, elements.boardEl); } catch { try { globalThis.__retreatClientSettlement?.invalidate(); } catch {} }",
         "anchor": "    elements = {\n      boardEl: nextElements.boardEl,\n      overlayLinesEl: nextElements.overlayLinesEl,\n      boardPreviewLabelEl: nextElements.boardPreviewLabelEl,\n      boardTurnIndicatorEl: nextElements.boardTurnIndicatorEl,\n    };",
