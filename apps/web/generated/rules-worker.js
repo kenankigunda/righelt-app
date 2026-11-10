@@ -2870,18 +2870,16 @@ var projectOptimisticGame = ({ authoritativeGame, identityId, queue }) => {
       outcome: workingGame.board.state.outcome ?? null
     });
   }
-  return {
-    ok: true,
-    game: finalizeProjectedView({
-      authoritativeGame,
-      workingGame,
-      identityId,
-      queue,
-      pendingMoves,
-      liveLegalActions: liveLegalActions ?? listLegalActions(workingGame.board.state)
-    }),
-    commandResults
-  };
+  const firstComputer = queue.findIndex((command) => Boolean(command.computer));
+  const visibleGame = firstComputer < 0 ? finalizeProjectedView({
+    authoritativeGame,
+    workingGame,
+    identityId,
+    queue,
+    pendingMoves,
+    liveLegalActions: liveLegalActions ?? listLegalActions(workingGame.board.state)
+  }) : projectOptimisticGame({ authoritativeGame, identityId, queue: queue.slice(0, firstComputer) }).game;
+  return { ok: true, game: visibleGame, commandResults };
 };
 
 // apps/web/board/client-move-generation.js
