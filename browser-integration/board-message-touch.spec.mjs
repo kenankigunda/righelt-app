@@ -184,7 +184,7 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
         await replay.focus();await replay.evaluate(button=>{window.namedReplayButton=button;window.namedActorNode=button.closest('[data-board-context]').querySelector('.board-message-name');});
         await page.evaluate(()=>window.boardFixture.message({...window.namedSpectatorMessage,context:{...window.namedSpectatorMessage.context,text:window.namedSpectatorMessage.context.text.replace('retreated','followed')}}));
         await expect(replay).toBeFocused();expect(await replay.evaluate(button=>button===window.namedReplayButton&&button.closest('[data-board-context]').querySelector('.board-message-name')===window.namedActorNode)).toBe(true);
-        await expect(page.locator('#fixture-context')).toContainText('followed a piece from 9, 9 to 0, 0');
+        await expect(page.locator('#fixture-context')).toContainText('followed from 9, 9 to 0, 0');
         await settledMessage(page);expect(await measure(),'Same-layout named narration refresh preserves settled geometry and action focus').toEqual(current);
       }
       if(phase==='completed-pass')await expect(page.getByRole('button',{name:'Pass',exact:true})).toHaveCount(1);
@@ -312,13 +312,13 @@ test('message compatibility ignores only known inline press feedback',async({pag
  const result=await page.evaluate(async()=>{
   const {patchBoardMessage,renderBoardMessageHtml}=await import('/apps/web/board/message-presentation.js');
   const html=renderBoardMessageHtml({text:'Next',actions:[{id:'replay-next',label:'Next'},{id:'replay-stop',label:'Stop replay'}]});
-  const probe=change=>{const box=document.createElement('div');box.innerHTML=html;const button=box.querySelector('button');change(button);const patched=patchBoardMessage(box,html);return {patched,same:box.querySelector('button')===button,classes:button.className};};
+  const probe=change=>{const box=document.createElement('div');box.innerHTML=html;const button=box.querySelector('button');change(button);const patched=patchBoardMessage(box,html),current=box.querySelector('button');return {patched,same:current===button,classes:button.className,current:{action:current.dataset.boardMessageAction,disabled:current.disabled,classes:current.className}};};
   return {press:probe(b=>b.classList.add('is-pressing')),release:probe(b=>b.classList.add('is-releasing')),bounce:probe(b=>b.classList.add('button-release-bounce')),semantic:probe(b=>b.classList.add('different-action-style')),action:probe(b=>b.dataset.boardMessageAction='pass'),disabled:probe(b=>b.disabled=true)};
  });
  expect(result.press).toMatchObject({patched:true,same:true});expect(result.press.classes).toContain('is-pressing');
  expect(result.release).toMatchObject({patched:true,same:true});expect(result.release.classes).toContain('is-releasing');
  expect(result.bounce).toMatchObject({patched:true,same:true});expect(result.bounce.classes).toContain('button-release-bounce');
- for(const key of ['semantic','action','disabled'])expect(result[key].patched,key).toBe(false);
+ for(const key of ['semantic','action','disabled']){expect(result[key].patched,key).toBe(true);expect(result[key].same,key).toBe(false);expect(result[key].current,key).toEqual({action:'replay-next',disabled:false,classes:'board-preview-inline-button'});}
 });
 
 test('keyboard release feedback preserves its focused replay action across refresh',async({page})=>{
@@ -368,4 +368,16 @@ test('context target measurement waits for its original finite entrance and keep
   await notice.evaluate(node=>{for(const animation of node.getAnimations())animation.play();}).catch(()=>{});
   await pending.catch(()=>{});
  }
+});
+
+// Proposed nested structural negative; not a two-row application message.
+test('compatible narration parents replace semantically changed child actions',async({page})=>{
+ await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
+ const result=await page.evaluate(async()=>{
+  const {patchBoardMessage,renderBoardMessageHtml}=await import('/apps/web/board/message-presentation.js');
+  const html=`<span class="controlled-message-parent">${renderBoardMessageHtml({text:'Next',actions:[{id:'replay-next',label:'Next'}]})}</span>`;
+  const probe=change=>{const box=document.createElement('div');box.innerHTML=html;const old=box.querySelector('button');change(old);const patched=patchBoardMessage(box,html),current=box.querySelector('button');return{patched,same:old===current,current:{action:current.dataset.boardMessageAction,disabled:current.disabled,classes:current.className}};};
+  return{semantic:probe(b=>b.classList.add('different-action-style')),action:probe(b=>b.dataset.boardMessageAction='pass'),disabled:probe(b=>b.disabled=true)};
+ });
+ for(const key of ['semantic','action','disabled']){expect(result[key].patched,key).toBe(true);expect(result[key].same,key).toBe(false);expect(result[key].current,key).toEqual({action:'replay-next',disabled:false,classes:'board-preview-inline-button'});}
 });
