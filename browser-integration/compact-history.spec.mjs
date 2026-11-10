@@ -22,9 +22,10 @@ test('undone disclosure retains native priority above the aggregate target',asyn
  const toggle=page.getByRole('button',{name:'1 move undone',exact:true});await expect(toggle).toHaveAttribute('aria-expanded','false');await toggle.click();await expect(toggle).toHaveAttribute('aria-expanded','true');
  const row=page.locator('[data-move-id="undone-record"]');await expect(row).toBeVisible();expect(await page.evaluate(()=>window.historyActions)).toEqual(['toggle-undone-group']);
  const hit=row.locator(':scope > .history-move-hit');
- const geometry=await hit.evaluate(node=>{const style=getComputedStyle(node),box=node.getBoundingClientRect(),owner=node.parentElement.getBoundingClientRect();return{position:style.position,background:style.backgroundColor,border:style.borderTopWidth,x:box.x,y:box.y,width:box.width,height:box.height,owner:{x:owner.x,y:owner.y,width:owner.width,height:owner.height}};});
+ const geometry=await hit.evaluate(node=>{const style=getComputedStyle(node),box=node.getBoundingClientRect(),owner=node.parentElement.getBoundingClientRect();return{dpr:devicePixelRatio,position:style.position,background:style.backgroundColor,border:style.borderTopWidth,x:box.x,y:box.y,width:box.width,height:box.height,owner:{x:owner.x,y:owner.y,width:owner.width,height:owner.height}};});
  expect(geometry.position).toBe('absolute');expect(geometry.background).toBe('rgba(0, 0, 0, 0)');expect(geometry.border).toBe('0px');
- for(const key of ['x','y','width','height'])expect(Math.abs(geometry[key]-geometry.owner[key])).toBeLessThanOrEqual(1);
+ const tolerance=Math.max(.5,1/geometry.dpr);
+ for(const key of ['x','y','width','height'])expect(Math.abs(geometry[key]-geometry.owner[key])).toBeLessThanOrEqual(tolerance);
  await hit.click();await expect(row).toHaveClass(/is-selected/);await expect(row.locator('.history-move-hit')).toHaveCount(0);
  expect(await page.evaluate(()=>window.historyActions)).toEqual(['toggle-undone-group','jump-history']);
  await page.screenshot({path:info.outputPath('compact-undone-native-target.png'),fullPage:true});
