@@ -3641,7 +3641,7 @@ const homeSectionReads = createHomeSectionReads({
   captureHomeFocus: (...args) => captureHomeFocus(...args),
   restoreHomeReadingPosition: (...args) => restoreHomeReadingPosition(...args),
   restoreHomeFocus: (...args) => restoreHomeFocus(...args),
-  pendingHomeSectionKeys, gameSound, storyDialog, appEl, document, window, syncAnnouncement,
+  pendingHomeSectionKeys, gameSound, storyDialog: { refresh: (...args) => storyDialog.refresh(...args) }, appEl, document, window, syncAnnouncement,
 });
 const loadHomeSectionServerPage = (...args) => homeSectionReads.loadServerPage(...args);
 const loadHomeSectionPage = (...args) => homeSectionReads.loadPage(...args);

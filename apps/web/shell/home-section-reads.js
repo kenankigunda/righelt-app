@@ -356,8 +356,14 @@ export function createHomeSectionReads({state, getHomeSection, setHomeSection, g
           attemptBatch.commit();
           const publishedRevision = read.owner.getHomeListRevision?.() ?? null;
           for(const key of readKeys)if(!errors.has(key))sectionMap[key].homeListRevision=publishedRevision;
+          // Sections outside this transaction may have settled a manual Retry
+          // while our healthy read was pending. Keep their current publication.
+          for (const key of visibleSectionKeys) if (!readKeys.includes(key)) sectionMap[key] = getHomeSection(key);
           state.homeSections = sectionMap;
-          state.lastHomeBatchRevision = publishedRevision;
+          // An unread healthy section can predate membership learned by our batch.
+          // Keep the existing trailing-refresh obligation instead of stamping it.
+          state.lastHomeBatchRevision = visibleSectionKeys.every(key => sectionMap[key].error || sectionMap[key].homeListRevision === publishedRevision)
+            ? publishedRevision : null;
           // A successful count refresh can clamp our own page. Advance only this
           // proven read's input snapshot, never accept a concurrent user change.
           read.inputs = JSON.stringify([state.homeReadVisit, read.homeDebug, getVisibleHomeSectionKeys({ debug: read.homeDebug }).map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])]);
