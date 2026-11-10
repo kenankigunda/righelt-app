@@ -50,6 +50,8 @@ Inspect PR required checks and review rules using GitHub metadata. A missing che
 
 ## Readiness
 
+Resolve the current target from the primary branch ref. PR `baseRefOid`, REST `base.sha` and the CI run's PR base are historical snapshots, not live-main identity. Preserve their exact PR/run binding separately, and require positive ancestry proof that the tested PR head contains the current target. A moved target or missing/foreign ancestry invalidates readiness.
+
 Refresh each PR record with checks/review (`passed`, `pending`, `failed`), preview (`passed`, `pending`, `failed`, or verified `not-configured`), conflicts boolean, open/draft flags and waitingFor prerequisite numbers. Record the provenance URLs and head for every gate. The stage must have matching head/base, passed checks, no coverage gaps and actual agent visual inspection.
 
 Use four statuses: merge-ready; validated but waiting on prerequisites; not merge-ready; unverified/stale. Include next action and owner. Local tests alone never establish PR readiness. Recheck remote base and PR heads at handoff and before merging.
