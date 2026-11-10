@@ -275,7 +275,8 @@ test("history renderer groups turns newest first and moves chronologically", () 
   assert.match(source, /class="history-turn /);
   assert.match(source, /sort\(\(a,b\)=>b.index-a.index\)/);
   assert.match(source, /a.turnMoveIndex \?\? a.index/);
-  assert.match(source, /data-action="toggle-undone-group"/);
+  assert.match(source, /undoHistory\.renderUndoHistoryGroups\(/);
+  assert.match(readFileSync(join(testDir, "..", "shell", "history-undo-groups.js"), "utf8"), /data-action="toggle-undone-group"/);
   assert.match(source, /data-action="jump-history-turn"/);
   assert.match(source, /data-action="revert-to-move"/);
 });

@@ -1,5 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Compact History contracts</title><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"></head><body><main id="app" class="app-root" data-hover-capability="hover"><section class="panel" style="max-width:34rem;margin:1rem auto"><h2>History</h2><ol class="history-list" id="history"></ol></section></main>
 <script type="module">
+import * as undoHistory from '/apps/web/shell/history-undo-groups.js';
 import {applyAction} from '/apps/web/generated/packages/game-engine/src/index.js';
 import {selectedHistoryPresentation} from '/apps/web/shell/history-narration.js';
 import {visibleRecordedMoves,recordedMoveNumber} from '/apps/web/shell/recorded-narration.js';
@@ -27,7 +28,7 @@ const game={id:'fixture',moves,turns:[{index:moves[0].turnIndex,playerSeat:'Play
 const renderedMiniBoardPreviewPayloads=new Map(),registry=new Map();
 const renderMiniBoardPreviewRoot=Function('renderedMiniBoardPreviewPayloads','escapeHtml',`${extract('const registerMiniBoardPreview =','const formatOutcomeStatus =')};return renderMiniBoardPreviewRoot;`)(renderedMiniBoardPreviewPayloads,escapeHtml);
 const expandedUndoneGroups=new Set();
-const deps={...tones,isCompletedGame,boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',selectedHistoryPresentation,visibleRecordedMoves,recordedMoveNumber,renderBoardMessageHtml,buildMovePreview,buildTurnPreview,historyTurnSide,historyActorLabel,playerDisplayName,COMPUTER_PROFILES,renderMiniBoardPreviewRoot,getShellLayoutMode:()=>innerWidth<933?'narrow':'wide',toStableKey:JSON.stringify,escapeHtml,icon,transport:{getIdentityId:()=> 'red'},formatClientDateTime:()=> 'Oct 30',expandedUndoneGroups,liveHistoryLabel:()=> 'Waiting'};
+const deps={undoHistory,...tones,isCompletedGame,boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',selectedHistoryPresentation,visibleRecordedMoves,recordedMoveNumber,renderBoardMessageHtml,buildMovePreview,buildTurnPreview,historyTurnSide,historyActorLabel,playerDisplayName,COMPUTER_PROFILES,renderMiniBoardPreviewRoot,getShellLayoutMode:()=>innerWidth<933?'narrow':'wide',toStableKey:JSON.stringify,escapeHtml,icon,transport:{getIdentityId:()=> 'red'},formatClientDateTime:()=> 'Oct 30',expandedUndoneGroups,liveHistoryLabel:()=> 'Waiting'};
 const render=Function(...Object.keys(deps),`${extract('const renderHistoryPreview =','const renderHeader =')};return renderTurnHistory;`)(...Object.values(deps));
 window.historyActions=[];
 function draw(){document.querySelector('#history').innerHTML=render(game);syncMiniBoardPreviews({previews:[...document.querySelectorAll('[data-mini-board-preview]')].map(rootEl=>({rootEl,...renderedMiniBoardPreviewPayloads.get(rootEl.dataset.previewId)})),registry,createAdapter:()=>createEngineBoardAdapter()});}
