@@ -77,6 +77,6 @@ When using this workflow, the result should include:
 
 This workflow extends, and does not replace, the normal testing policy in `AGENTS.md`.
 
-- Choose the lowest layer that proves each changed contract. Avoid duplicating assertions across unit, integration and E2E merely to satisfy test labels. See `TESTING_STRATEGY.md` for browser integration and the full validation gate.
+- Choose the lowest layer that proves each changed contract. Avoid duplicating assertions across unit, integration and E2E merely to satisfy test labels. See `TESTING_STRATEGY.md` for browser integration and the required PR gate.
 - Every touched workflow must still consider whether E2E coverage should be added or expanded.
-- The full relevant test pass remains a correctness gate before advancing the work.
+- The PR gate and explicitly mapped feature acceptance remain correctness requirements. Do not require the full nightly profile or the retired `Full validation` context.

@@ -7,6 +7,8 @@ description: Monitor a GitHub pull request through CI and preview deployment, in
 
 Drive one PR head from failing or pending checks to current, applicable CI and configured preview evidence. For Righelt, read `__VALIDATION_TOOLS__/skills/validate-and-shepherd/SKILL.md` and invoke the released CLI with an explicit candidate path. Do not substitute a candidate branch's unreleased skill.
 
+For Righelt only: `PR validation` over the exact `pr-gate` profile is the only blocking CI aggregate. `Full validation` is retired and must not be awaited. Broad `nightly-full` results are advisory: failed, pending or missing nightly evidence does not independently block review, merge or deployment. Keep explicit feature acceptance, independent review, authorization, retained-state proof and deployed-identity verification separate. Investigate confirmed product defects without restoring a blanket full-suite gate. The generic validation checklist below does not authorize extra blanket Righelt gates. Other repositories retain their own required checks.
+
 Separate ready for review, ready to merge and ready to activate. A code repair request does not authorize merge, deployment, activation, access changes or resuming a paused schedule. Preserve unresolved operational evidence as explicit requirements, without silently expanding a bounded repair into deployment work.
 
 ## Resolve the target and authority

@@ -35,6 +35,7 @@
     "setup:https": "node scripts/setup-local-https.mjs",
     "setup:workspace": "bash scripts/setup-workspace.sh",
     "test": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/testing/cli.mjs full",
+    "test:pr-gate": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/validation/pr-gate.mjs",
     "test:unit": "pnpm test:engine:unit && pnpm test:web:unit && pnpm test:computer-player:unit",
     "test:ci-report-selection": "node --test scripts/select-junit-artifacts.test.mjs",
     "test:integration": "pnpm test:engine:integration && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web:integration && pnpm test:sync-stress && pnpm test:sync-runtime && pnpm test:computer-player:integration",

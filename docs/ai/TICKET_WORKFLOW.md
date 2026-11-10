@@ -1,5 +1,7 @@
 # Ticket Workflow
 
+`PR validation` over the exact `pr-gate` profile is the only blocking CI aggregate. `Full validation` is retired and must not be awaited. Broad `nightly-full` results are advisory: failed, pending or missing nightly evidence does not independently block review, merge or deployment. Keep explicit feature acceptance, independent review, authorization, retained-state proof and deployed-identity verification separate. Investigate confirmed product defects without restoring a blanket full-suite gate.
+
 This document captures the non-default workflow for ticket-driven development using agent teams. Use it when kicking off a ticket from the backlog through spec, visual design, eng planning, implementation, and validation.
 
 ## When To Use It

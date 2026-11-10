@@ -30,6 +30,7 @@
     "plan": {
       "name": "Advisory affected-test plan",
       "runs-on": "ubuntu-latest",
+      "continue-on-error": true,
       "steps": [
         {
           "name": "Checkout",
@@ -1064,7 +1065,6 @@
       "if": "always()",
       "runs-on": "ubuntu-latest",
       "needs": [
-        "plan",
         "node",
         "tooling-browser-default-1",
         "tooling-browser-default-1-retry",

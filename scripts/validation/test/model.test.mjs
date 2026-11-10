@@ -1,3 +1,4 @@
+import {gateFixture} from './support/ci-gate-fixture.mjs';
 import test from 'node:test';import assert from 'node:assert/strict';
 import {parseCommands,applyReply,readiness,canMerge,invalidate,publicRun,coverage} from '../model.mjs';
 import {transition,statusOf,mergeBackup} from '../assets/progress.mjs';
@@ -14,10 +15,10 @@ test('only tracked sent-account replies authorize; duplicate and foreign input c
  applyReply(run,{...m,id:'c',text:'cancel merge #123'},m.from,m.from);assert.equal(run.prs[0].authorization.state,'cancelled');
 });
 test('merge requires current gates, source revision, explicit authorization and dependencies',()=>{
- const p={head:'h',base:'main',gatesHead:'h',gatesBase:'b',independentReview:{status:'passed',head:'h'},checks:'passed',review:'passed',preview:'not-configured',previewCheckedHead:'h',conflicts:false,open:true,authorization:{state:'authorized',target:'main'}};
- const s={head:'h',base:'b',status:'passed',visualReviewed:true,sourceClean:true};assert.equal(canMerge(p,s,'b'),true);
- for(const patch of [{checks:'pending'},{review:'pending'},{conflicts:true},{scopeDecision:true},{waitingFor:[12]},{authorization:{state:'cancelled'}}])assert.equal(canMerge({...p,...patch},s,'b'),false);
- assert.equal(canMerge(p,{...s,head:'old'},'b'),false);assert.equal(canMerge(p,{...s,visualReviewed:false},'b'),false);
+ const p={number:1,baseSnapshot:'b',ciGate:gateFixture().gate,head:'h',base:'main',gatesHead:'h',gatesBase:'b',independentReview:{status:'passed',head:'h'},checks:'passed',review:'passed',preview:'not-configured',previewCheckedHead:'h',conflicts:false,open:true,authorization:{state:'authorized',target:'main'}};
+ const s={head:'h',base:'b',status:'passed',visualReviewed:true,sourceClean:true};assert.equal(canMerge(p,s,'b',{repository:'o/r'}),true);
+ for(const patch of [{checks:'pending'},{review:'pending'},{conflicts:true},{scopeDecision:true},{waitingFor:[12]},{authorization:{state:'cancelled'}}])assert.equal(canMerge({...p,...patch},s,'b',{repository:'o/r'}),false);
+ assert.equal(canMerge(p,{...s,head:'old'},'b',{repository:'o/r'}),false);assert.equal(canMerge(p,{...s,visualReviewed:false},'b',{repository:'o/r'}),false);
 });
 test('input changes invalidate downstream stages',()=>{const r={base:'b',prs:[{head:'a'},{head:'c'}],stages:[0,1,2].map(index=>({index,id:String(index),status:'passed'}))};assert.deepEqual(invalidate(r,'b',['a','new']),['2']);assert.deepEqual(invalidate(r,'changed',['a','new']),['0','1','2']);});
 test('public projection excludes private metadata',()=>{const p=publicRun({id:'r',recipient:'secret',emailThreads:['private'],stages:[],logs:'secret'});assert(!JSON.stringify(p).includes('secret'));});
@@ -61,4 +62,16 @@ test('public items allowlist text/client provenance and exclude nested private f
 test('historical attempts retain failures without private paths, payloads or images',()=>{
  const attempt={stages:[{id:'old',title:'Earlier',status:'failed',checks:[{name:'E2E',status:'failed',log:'SECRET'}],items:[{images:[{src:'SECRET'}]}]}],risks:['SECRET'],publication:{url:'https://example.test/report',directory:'SECRET',stableUrl:'file:///SECRET'}};
  const p=publicRun({attempts:[attempt],history:[{status:'failed',logs:'SECRET'}],stages:[]});assert(!JSON.stringify(p).includes('SECRET'));assert.equal(p.history[0].stages[0].status,'failed');assert.equal(p.history[1].links[0].url,'https://example.test/report');
+});
+
+test('a cached passed flag cannot replace fresh canonical PR gate provenance',()=>{
+ const p={number:1,head:'h',base:'main',gatesHead:'h',gatesBase:'b',independentReview:{status:'passed',head:'h'},checks:'passed',review:'passed',preview:'not-configured',previewCheckedHead:'h',conflicts:false,open:true,authorization:{state:'authorized',target:'main'}};
+ const stage={head:'h',base:'b',status:'passed',visualReviewed:true,sourceClean:true};
+ assert.equal(canMerge(p,stage,'b',{repository:'o/r'}),false);
+ p.ciGate=gateFixture().gate;p.baseSnapshot='b';
+ assert.equal(canMerge(p,stage,'b',{repository:'o/r'}),true);
+ p.advisoryChecks=[{name:'Nightly full validation',conclusion:'FAILURE',private:'SECRET'}];
+ assert.equal(canMerge(p,stage,'b',{repository:'o/r'}),true);
+ const projected=publicRun({repository:'o/r',mode:'local',base:'b',prs:[p],stages:[stage]}).prs[0];
+ assert.equal(projected.advisoryChecks[0].conclusion,'FAILURE');assert.ok(!JSON.stringify(projected).includes('SECRET'));
 });
