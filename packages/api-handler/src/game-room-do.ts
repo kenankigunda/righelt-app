@@ -1,6 +1,7 @@
+import { requiresUndoApproval } from '../../shared-types/src/undo-policy';
 import { EngineComputationLimit, boundedEngineOperation } from "../../game-engine/src/computation-guard";
 import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, canonicalCommandJson } from '../../shared-types/src/sync-protocol';
-import { archiveStatements, readDecision, readDecisionPage, readAdditionalDecisionPage, parseHistoryCursor, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
+import { stampAcceptedRestoration, type AcceptedRestoration, archiveStatements, readDecision, readDecisionPage, readAdditionalDecisionPage, parseHistoryCursor, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
 import { StorageWriteLimitError } from './storage-codec';
 import { COMPUTER_CAPABILITIES, COMPUTER_LIMITS, changeComputerControl, computerCommandError, computerModelForCreation, createComputerControl, parseComputerSeats, type ComputerProof } from '../../shared-types/src/computer-play';
 import { STORAGE_POLICY, STORAGE_GENERATION_HEADER } from "../../shared-types/src/storage-policy";
@@ -727,20 +728,19 @@ export class GameRoomDO {
       }
       const requesterSeat = role;
       const approverIdentityId = getApproverIdentityForSeat(game, requesterSeat);
-      const autoApprove = !approverIdentityId || approverIdentityId === identityId;
+      const autoApprove = !requiresUndoApproval(identityId, approverIdentityId);
       if (autoApprove) {
         const reverted = applyRevertToMove(game, targetMoveId, identityId, targetMove);
         if (!reverted.ok) {
           this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, targetMoveId, error: reverted.error });
           return json({ ok: false, error: reverted.error }, 409);
         }
-        addNotification(game, `Player ${identityId} accepted the undo request`);
         this.logDiagnostic("info", "live_server_revert_auto_approved", { identityId, targetMoveId }, true);
         await this.commit({
           type: "event_appended",
           reason: "moves_reverted",
           game,
-        });
+        }, { targetDecisionId: targetMoveId, requesterIdentityId: identityId });
         return json({ ok: true, autoApproved: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
       }
       game.pendingRevertRequest = {
@@ -804,7 +804,7 @@ export class GameRoomDO {
         type: "event_appended",
         reason: "moves_reverted",
         game,
-      });
+      }, { targetDecisionId: pendingRevertRequest.targetMoveId, requesterIdentityId: pendingRevertRequest.requesterIdentityId });
       return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
@@ -1249,7 +1249,9 @@ export class GameRoomDO {
       | { type: "event_appended"; reason: string; clientCommandId?: string | null; game: LiveGame }
       | { type: "join_request_created"; requesterIdentityId: string; requestedSeat: "Player 1" | "Player 2"; game: LiveGame }
       | { type: "join_request_resolved"; requesterIdentityId: string; accepted: boolean; seat: "Player 1" | "Player 2" | null; game: LiveGame },
+    restoration?: AcceptedRestoration,
   ) {
+    if (restoration && (input.type !== "event_appended" || input.reason !== "moves_reverted")) throw new Error("invalid_restoration_event");
     const event =
       input.type === "event_appended"
           ? ({
@@ -1276,7 +1278,7 @@ export class GameRoomDO {
               game: clone(input.game),
             } satisfies JoinRequestResolvedEvent);
 
-    await this.persistCandidate(input.game, event);
+    await this.persistCandidate(input.game, event, undefined, false, [], undefined, restoration);
     this.logDiagnostic("info", "live_server_commit_event", { type: event.type }, true);
     this.scheduleBroadcast(event);
   }
@@ -1425,7 +1427,7 @@ export class GameRoomDO {
     this.state.waitUntil(rooms.get(rooms.idFromName(storageRoomName(this.env,gameId))).fetch(new Request("https://game-room/_storage/tick",{method:"POST",headers:{"x-game-id":gameId,[`x-storage-${kind}-steps`]:String(remaining-1),...(this.env.STORAGE_GENERATION?{[STORAGE_GENERATION_HEADER]:this.env.STORAGE_GENERATION}:{})}})).then(async response=>{if(!response.ok)console.warn(JSON.stringify({event:"storage_continuation_deferred",kind,status:response.status}));await response.body?.cancel();}).catch(()=>{console.warn(JSON.stringify({event:"storage_continuation_deferred",kind}));}));
   }
 
-  private async persistCandidate(game: LiveGame, event: (ServerEvent & { eventSeq: number }) | null, receipt?: CommandReceipt, systemPresence = false, additionalStatements: D1Statement[] = [], presenceIdentity?:string) {
+  private async persistCandidate(game: LiveGame, event: (ServerEvent & { eventSeq: number }) | null, receipt?: CommandReceipt, systemPresence = false, additionalStatements: D1Statement[] = [], presenceIdentity?:string, restoration?: AcceptedRestoration) {
     this.env = await withCutoverPolicy(this.env);
     if (authActive(this.env) && (this.env.AUTH_ENABLED !== "true" || !maintenanceAllowed(this.env,this.requestAuthority?.accountId))) throw new AuthProblem("temporarily_unavailable",503);
     const permit = cutoverWritePermit(this.env,game.id,this.requestAuthority,systemPresence);
@@ -1455,8 +1457,9 @@ export class GameRoomDO {
     }
     const started = Date.now();
     const base = this.eventSeq;
+    if (restoration) stampAcceptedRestoration(this.game, game, base + 1, restoration);
     const gameplay = (value: LiveGame | null) => value ? JSON.stringify([value.board, value.moves, value.turns]) : null;
-    const gameplayChanged = Boolean(this.game && gameplay(this.game) !== gameplay(game));
+    const gameplayChanged = Boolean(this.game && (restoration || gameplay(this.game) !== gameplay(game)));
     game.gameplayRevision = (this.game?.gameplayRevision ?? 0) + (gameplayChanged ? 1 : 0);
     // A rejection records evidence only. Preserve the already durable payload,
     // including saves written before a capacity setting was rolled back.
@@ -1466,7 +1469,7 @@ export class GameRoomDO {
       const command=this.sharedCommand;
       receipt={gameId:game.id,identityId:command.identityId,clientCommandId:command.clientCommandId,fingerprint:command.fingerprint,outcome:"accepted",reason:null,eventSeq:base+1,gameplayRevision:game.gameplayRevision};
     }
-    const archive = preservePayload || (metadataOnly && game.archiveStartRevision !== undefined) ? [] : archiveStatements(this.env, this.game, game, base + 1);
+    const archive = preservePayload || (metadataOnly && game.archiveStartRevision !== undefined && !restoration) ? [] : archiveStatements(this.env, this.game, game, base + 1, restoration);
     event ??= { type: "state_sync", eventSeq: base + 1, reason: "projection_updated", game: clone(game) };
     if ("game" in event) event.game = clone(game);
     if (receipt) {

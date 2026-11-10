@@ -35,7 +35,7 @@ const config = defineConfig({
     },
     ...["firefox", "webkit"].map(name => ({
       name,
-      testMatch: /(completed-home-cards|confirmed-computer-playback|forced-follow|opponent-move-sound|history-narration|home-card-pagination-reorder|players-viewers|game-loading-follow|position-first-loading|initial-game-load-replacement|sequence-status-preview|completed-game-review|invitation-load-recovery|named-observer-result|desktop-board-fit|home-opponent-identity|opponent-invite-polish|destruction-sound|human-opponent-replay|legend-inspection|computer-feedback|mobile-board-history|sync-recovery-(pressure|ux)|recovery-freeze-regression|browser-move-input|home-create-refresh|guest-computer-play|computer-tab-recovery|storage-lifecycle|destruction-lifecycle|history-endpoint-roles|home-pagination-ghost|home-self-play-footer)\.spec\.mjs/,
+      testMatch: /(completed-home-cards|confirmed-computer-playback|forced-follow|opponent-move-sound|history-narration|home-card-pagination-reorder|players-viewers|game-loading-follow|position-first-loading|initial-game-load-replacement|sequence-status-preview|completed-game-review|invitation-load-recovery|named-observer-result|desktop-board-fit|direct-undo|home-opponent-identity|opponent-invite-polish|destruction-sound|human-opponent-replay|legend-inspection|computer-feedback|mobile-board-history|sync-recovery-(pressure|ux)|recovery-freeze-regression|browser-move-input|home-create-refresh|guest-computer-play|computer-tab-recovery|storage-lifecycle|destruction-lifecycle|history-endpoint-roles|home-pagination-ghost|home-self-play-footer)\.spec\.mjs/,
       use: { ...devices[name === "firefox" ? "Desktop Firefox" : "Desktop Safari"],
         launchOptions: browserLaunchOptions(name) },
     })),

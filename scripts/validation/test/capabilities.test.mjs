@@ -177,10 +177,10 @@ test('history undo source label rejects missing, ambiguous, unknown and dynamic 
 
 test('actual tracked app history row selects a literal supported label without importing candidate code',async()=>{
  const root=path.resolve(import.meta.dirname,'../../..');
- const source=await readFile(path.join(root,'apps/web/shell/app.js'),'utf8');
  const selected=(await candidateCapabilities(root)).historyUndoLabel;
  assert.ok(['Undo back to this move','Undo before this move'].includes(selected));
- assert.ok(source.includes(selected+'</button>'),'Chosen row label is literally present in actual candidate source');
+ // This observes the resolver's declared contract. Native Undo journeys verify
+ // the actual accessible button and receipt; source spelling is not UI proof.
 });
 
 
@@ -216,4 +216,75 @@ test('present History module rejects missing, inactive, ambiguous and unknown ta
   await writeFile(path.join(directory,'history-narration.js'),source);
   await assert.rejects(()=>candidateCapabilities(root),/Unsupported history hit target contract/);
  }
+});
+
+
+const extractedHistoryApp = (factory='build',instance='history') => `
+import {createHistoryRendering as ${factory}} from './history-rendering.js';
+const ${instance}=${factory}(()=>({}));
+const active=game=>${instance}.renderTurnHistory(game);
+const archive=game=>${instance}.renderAdditionalHistory(game);
+throw Error('Candidate source must never execute');`;
+const extractedHistoryModule = (local='renderTurns',row='revertButton',label='Undo before this move') => `
+export function createHistoryRendering(getDependencies){
+ const ${local}=game=>{const ${row}=game.selected?\`<button data-action="revert-to-move" data-game-id="${'${escapeHtml(game.id)}'}">${'${icon("back")}'}${label}</button>\`:'';return ${row};};
+ const renderAdditionalHistory=()=>'';
+ return {renderTurnHistory:${local},renderAdditionalHistory};
+}
+throw Error('Candidate source must never execute');`;
+async function historyLayoutFixture(t){
+ const root=await mkdtemp(path.join(os.tmpdir(),'history-layout-contract-'));
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ const dir=path.join(root,'apps/web/shell');await mkdir(dir,{recursive:true});
+ const app=path.join(dir,'app.js'),renderer=path.join(dir,'history-rendering.js');
+ return {root,app,renderer,async set(appSource=extractedHistoryApp(),rendererSource=extractedHistoryModule()){
+  await writeFile(app,appSource);await writeFile(renderer,rendererSource);
+ }};
+}
+test('extracted History producer resolves its actual returned row without importing candidate code',async t=>{
+ const f=await historyLayoutFixture(t);await f.set();
+ assert.equal((await candidateCapabilities(f.root)).historyUndoLabel,'Undo before this move');
+});
+test('private import, instance, renderer and row aliases preserve the extracted History contract',async t=>{
+ const f=await historyLayoutFixture(t);await f.set(extractedHistoryApp('constructHistory','ownedView'),extractedHistoryModule('paintTurns','undoMarkup'));
+ assert.equal((await candidateCapabilities(f.root)).historyUndoLabel,'Undo before this move');
+});
+test('unreferenced renderer files and comments cannot supply a History row contract',async t=>{
+ const f=await historyLayoutFixture(t);
+ for(const app of ['// '+extractedHistoryApp().replaceAll('\n','\n// '),'const history={};']){
+  await f.set(app);await assert.rejects(()=>candidateCapabilities(f.root),/Unsupported history undo row label contract/);
+ }
+});
+test('extracted History rejects missing construction, method wiring, reassignment and shadowing',async t=>{
+ const f=await historyLayoutFixture(t),valid=extractedHistoryApp();
+ for(const app of [
+  valid.replace('const history=build(()=>({}));','const history={};'),
+  valid.replace('history.renderAdditionalHistory(game)','String(game)'),
+  valid+'\nhistory=other;',
+  valid+'\nhistory.renderTurnHistory=other;',
+  valid+'\nhistory[\"renderAdditionalHistory\"]=other;',
+  valid+'\ndelete history.renderTurnHistory;',
+  valid+'\nhistory.renderTurnHistory++;',
+  valid+'\nObject.assign(history,{renderTurnHistory:other});',
+  valid+'\nfunction misleading(history){return history.renderTurnHistory({});}',
+  valid.replace("import {createHistoryRendering as build}","import * as build"),
+  valid+'\nconst duplicate=build(()=>({}));',
+  valid+'\nconst revertButton=`<button data-action="revert-to-move">Undo before this move</button>`;',
+ ]){await f.set(app);await assert.rejects(()=>candidateCapabilities(f.root),/Unsupported History renderer source binding/);}
+});
+test('bound but missing History producer fails closed instead of falling back',async t=>{
+ const f=await historyLayoutFixture(t);await f.set();await rm(f.renderer);
+ await assert.rejects(()=>candidateCapabilities(f.root),/History renderer source is missing/);
+});
+test('extracted History rejects ambiguous, dynamic and unreturned row producers',async t=>{
+ const f=await historyLayoutFixture(t),valid=extractedHistoryModule();
+ for(const renderer of [
+  valid.replace('export function','function'),
+  valid.replace('return {renderTurnHistory:renderTurns,renderAdditionalHistory};','return {renderAdditionalHistory};'),
+  valid.replace('return {renderTurnHistory:renderTurns,renderAdditionalHistory};','return {renderTurnHistory:renderTurns,renderAdditionalHistory,...other};'),
+  valid.replace('return {renderTurnHistory:renderTurns,renderAdditionalHistory};','return {renderTurnHistory:renderTurns,renderTurnHistory:other,renderAdditionalHistory};'),
+  extractedHistoryModule('renderTurns','revertButton','${unknownLabel}'),
+  extractedHistoryModule('renderTurns','revertButton','Undo something else'),
+  valid.replace('return revertButton;', 'const duplicate=`<button data-action="revert-to-move">Undo before this move</button>`;return revertButton;'),
+ ]){await f.set(undefined,renderer);await assert.rejects(()=>candidateCapabilities(f.root),/Unsupported (?:History renderer source binding|history undo row label contract)/);}
 });

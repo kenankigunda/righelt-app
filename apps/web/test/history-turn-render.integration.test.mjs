@@ -1,3 +1,5 @@
+import {createHistoryRendering} from '../shell/history-rendering.js';
+import * as undoHistory from '../shell/history-undo-groups.js';
 import {selectedHistoryPresentation,recordedHistoryView} from '../shell/history-narration.js';
 import {recordedMoveNumber,visibleRecordedMoves} from '../shell/recorded-narration.js';
 import {renderBoardMessageHtml} from '../board/message-presentation.js';
@@ -6,18 +8,15 @@ import {isCompletedGame} from '../shell/game-lifecycle.js';
 import {historyTurnSide} from '../shell/history-preview.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import vm from 'node:vm';
 import {buildMovePreview,buildTurnPreview} from '../shell/history-preview.js';
 import {buildComputerTurnReplay} from '../shell/computer-replay.js';
-const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
-const declaration=source.slice(source.indexOf('const renderHistoryPreview ='),source.indexOf('const renderHeader ='));
 const escape=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
-const context={selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',isCompletedGame,buildMovePreview,buildTurnPreview,escapeHtml:escape,getShellLayoutMode:()=> 'narrow',toStableKey:JSON.stringify,
+const context={undoHistory,selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',isCompletedGame,buildMovePreview,buildTurnPreview,escapeHtml:escape,getShellLayoutMode:()=> 'narrow',toStableKey:JSON.stringify,
  renderMiniBoardPreviewRoot:({overlay})=>`<div data-preview-mode="${overlay.mode}"></div>`,playerToneClassForSide:side=>`player-tone-${side}`,playerToneClassForSeat:()=>'',
  historyActorLabel:(_game,move)=>move.actorSide==='P2'?'Defender':'Attacker',historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:(_game,side)=>side==='Player 2'||side==='P2'?'Defender':'Attacker',
  transport:{getIdentityId:()=> 'me'},icon:()=>'',formatClientDateTime:String,expandedUndoneGroups:new Set(),liveHistoryLabel:()=> 'Waiting'};
-vm.runInNewContext(`${declaration};globalThis.render=renderTurnHistory`,context);
+const renderer=createHistoryRendering(()=>context);
+context.render=renderer.renderTurnHistory;
 const moves=[{index:0,turnIndex:0,turnMoveIndex:0,moveId:'a',actorSide:'P1',notation:'Push',snapshot:{pieces:[]}},
  {index:1,turnIndex:0,turnMoveIndex:1,moveId:'b',actorSide:'P2',notation:'Retreat',snapshot:{pieces:[]}},
  {index:2,turnIndex:1,turnMoveIndex:0,moveId:'c',actorSide:'P2',notation:'Move',snapshot:{pieces:[]}}];
@@ -50,8 +49,7 @@ test('selected turn is inert, has aggregate preview and exposes no undo or branc
 context.canReadAdditionalHistory=()=>true;
 context.account={snapshot:()=>({enabled:false})};
 context.additionalHistory={snapshot:()=>context.archiveState};
-const archiveDeclaration=source.slice(source.indexOf('const renderAdditionalHistory ='),source.indexOf('let revealedHistoryKey'));
-vm.runInNewContext(`${archiveDeclaration};globalThis.archive=renderAdditionalHistory`,context);
+context.archive=renderer.renderAdditionalHistory;
 test('archive entries share turn grouping, actor accessibility and inert selected action previews',()=>{
  context.archiveState={metadata:true,loaded:true,items:[{id:'b',move:moves[1],at:'date'},{id:'a',move:moves[0],at:'date'}]};
  const html=context.archive({...game,moves:[],inHistoryMode:true,inspectedDecision:moves[1]});
@@ -83,9 +81,8 @@ test('mobile active and archived previews share the known closure final snapshot
  const action={index:0,turnIndex:0,turnMoveIndex:0,moveId:'action',actorSide:'P1',notation:'Rush',action:{type:'rush',actorId:'A',from:{row:4,col:3},to:{row:4,col:4}},selectionSnapshot:before,snapshot:before};
  const closure={index:1,turnIndex:0,turnMoveIndex:1,moveId:'closure',actorSide:'P1',notation:'End turn',action:{type:'end_turn'},snapshot:final,destroyedPieces:[{pieceId:'lost',ownerSeat:'p1',position:{row:5,col:3}}]};
  const snapshots=[],original=context.renderMiniBoardPreviewRoot;
- const getter=source.slice(source.indexOf('const getBoardGame ='),source.indexOf('const decisionDebugStates ='));
  const desktopContext={recordedHistoryView,deriveBoardView:value=>value,getShellLayoutMode:()=> 'wide',transport:context.transport,additionalHistory:context.additionalHistory};
- vm.runInNewContext(`${getter};globalThis.get= getBoardGame`,desktopContext);
+ desktopContext.get=createHistoryRendering(()=>desktopContext).getBoardGame;
  context.renderMiniBoardPreviewRoot=preview=>{snapshots.push(preview.snapshot);return '<div data-preview-mode="recorded-action"></div>';};
  try{
   const selected={...game,inHistoryMode:true,historyIndex:0,inspectedDecision:action,moves:[action,closure]};
@@ -139,10 +136,38 @@ test('archived rows display newest first without mutating source entries or turn
  assert.deepEqual(items,before);
 });
 test('pending and expanded undone rows each display newest first without reordering records',()=>{
- const active=replayRecords(),undone=active.slice(0,2).map((move,index)=>({...move,moveId:'undone-'+index,index:index+3,turnMoveIndex:index+3,undone:true})),pending={...active[0],moveId:'pending',index:5,turnMoveIndex:5};
+ const active=replayRecords(),undone=active.slice(0,2).map((move,index)=>({...move,moveId:'undone-'+index,index:index+3,turnMoveIndex:index+3,undone:true,undoEventSeq:42})),pending={...active[0],moveId:'pending',index:5,turnMoveIndex:5};
  const records=[...active,...undone],before=structuredClone({records,pending});
- context.expandedUndoneGroups.add('g:turn:0');
+ context.expandedUndoneGroups.add('g:undo:accepted:42');
  try{assert.deepEqual(displayedIds(context.render({...game,moves:records,pendingMoves:[pending],turns:[{index:0,playerSeat:'Player 1'}]})),['pending','follow','retreat','push','undone-1','undone-0']);}
- finally{context.expandedUndoneGroups.delete('g:turn:0');}
+ finally{context.expandedUndoneGroups.delete('g:undo:accepted:42');}
  assert.deepEqual({records,pending},before);
+});
+
+test('actual live renderer collapses each accepted Undo once across turns and separates legacy records',()=>{
+ const records=[{...moves[0],moveId:'active'},{...moves[1],moveId:'first-one',undone:true,undoEventSeq:10},{...moves[2],moveId:'first-two',index:3,undone:true,undoEventSeq:10},{...moves[2],moveId:'second',index:4,undone:true,undoEventSeq:11},{...moves[2],moveId:'legacy',index:5,undone:true}];
+ const original=structuredClone(records);context.expandedUndoneGroups.clear();
+ const collapsed=context.render({...game,moves:records});
+ assert.equal((collapsed.match(/data-undo-boundary="accepted"/g)??[]).length,2);assert.match(collapsed,/Original Undo boundary unavailable/);assert.doesNotMatch(collapsed,/data-move-id="first-one"/);
+ context.expandedUndoneGroups.add('g:undo:accepted:10');
+ const expanded=context.render({...game,moves:records});assert.match(expanded,/data-move-id="first-one"/);assert.match(expanded,/data-move-id="first-two"/);assert.doesNotMatch(expanded,/data-move-id="second"/);assert(expanded.indexOf('data-move-id="first-two"')<expanded.indexOf('data-move-id="first-one"'));assert.deepEqual(records,original);context.expandedUndoneGroups.clear();
+});
+test('loaded archive members merge with the live operation without a second archive disclosure',()=>{
+ const live={...moves[0],undone:true,undoEventSeq:12},archived={...moves[2],moveId:'evicted',index:3,undone:true,undoEventSeq:12};
+ const entries=[{id:archived.moveId,move:archived,historyStatus:'undone'}];context.archiveState={metadata:true,loaded:true,items:entries};
+ const view={...game,moves:[live],historyUndoArchiveEntries:entries};context.expandedUndoneGroups.clear();
+ const combined=context.render(view)+context.archive(view);assert.equal((combined.match(/data-undo-event-seq="12"/g)??[]).length,1);assert.match(combined,/2 moves undone/);
+ context.expandedUndoneGroups.add('g:undo:accepted:12');const open=context.render(view);assert.match(open,/data-move-id="a"/);assert.match(open,/data-archive-move-id="evicted"/);assert.match(open,/data-action="inspect-history-archive"/);context.expandedUndoneGroups.clear();
+});
+
+for(const mode of ['narrow','wide'])test(`actual ${mode} History preserves a selected-now-undone record without overriding explicit collapse`,()=>{
+ const saved=context.getShellLayoutMode;context.getShellLayoutMode=()=>mode;context.expandedUndoneGroups.clear();
+ try{
+  const record={...moves[1],moveId:'chosen'},view={...game,moves:[record],inHistoryMode:true,historyIndex:record.index,inspectedDecision:record};
+  context.render(view);const after={...view,moves:[{...record,undone:true,undoEventSeq:31}]};
+  const revealed=context.render(after);assert.match(revealed,/data-undo-event-seq="31"/);assert.match(revealed,/aria-expanded="true"/);assert.match(revealed,/data-move-id="chosen"/);assert.match(revealed,/aria-current="true"/);assert.equal(after.inHistoryMode,true);
+  if(mode==='narrow')assert.match(revealed,/data-testid="history-inline-preview"/);else assert.doesNotMatch(revealed,/data-testid="history-inline-preview"/);
+  context.expandedUndoneGroups.delete('g:undo:accepted:31');const collapsed=context.render(after);assert.match(collapsed,/aria-expanded="false"/);assert.doesNotMatch(collapsed,/data-move-id="chosen"/);
+  undoHistory.noteUndoHistorySelection(context.expandedUndoneGroups,'g','chosen',context.transport);assert.match(context.render(after),/data-move-id="chosen"/);
+ }finally{context.getShellLayoutMode=saved;context.expandedUndoneGroups.clear();}
 });
