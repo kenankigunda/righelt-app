@@ -26,12 +26,12 @@ for(const width of [390,1440])for(const example of cases)test(`${example.name}: 
  const moves=game.moves.filter(move=>!move.undone),turnMoves=moves.filter(move=>move.turnIndex===moves.at(-1).turnIndex),move=turnMoves[0];
  expect(turnMoves.length).toBeGreaterThan(0);
  await switchGamePanel(page,'history');
- const row=page.locator(`[data-testid="history-move-item"][data-move-id="${move.moveId}"]`);await row.locator('.history-item-info').click();
+ const row=page.locator(`[data-testid="history-move-item"][data-move-id="${move.moveId}"]`);await row.locator(':scope > .history-move-hit').click();
  const preview=()=>width<900?page.getByTestId('history-inline-preview'):page.getByTestId('game-board');
  await expect.poll(()=>actualRoles(preview())).toEqual(expectedRoles([move]));await expectRoleStyles(preview());
  await expect.poll(()=>actualPieces(preview())).toEqual(expectedPieces(move.snapshot));
  await page.screenshot({path:info.outputPath('history-single-endpoint-roles.png'),fullPage:true});
- const heading=row.locator('xpath=ancestor::li[contains(@class,"history-turn")]/div[contains(@class,"history-turn-heading")]');await heading.click();
+ const heading=row.locator('xpath=ancestor::li[contains(@class,"history-turn")]/div[contains(@class,"history-turn-heading")]');await heading.locator('..').locator(':scope > .history-turn-hit').click({position:{x:12,y:12}});
  await expect.poll(()=>actualRoles(preview())).toEqual(expectedRoles(turnMoves));await expectRoleStyles(preview());
  await expect(preview().locator('.axis-strong,.axis-medium')).toHaveCount(0);
  await expect.poll(()=>actualPieces(preview())).toEqual(expectedPieces(turnMoves.at(-1).snapshot));

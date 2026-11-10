@@ -1,3 +1,4 @@
+import {historyBoardMessage} from '../shell/history-narration.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -21,7 +22,7 @@ function fixture(){
   computer:{seats:{p1:'tau',p2:null},modelId:'old-model',takeoverTurn:null},canControlComputer:true,
   moves:[{moveId:'a',turnIndex:0,turnMoveIndex:0,actorSide:'P1',selectionSnapshot:{pieces:[],sideToMove:'P1'},snapshot:{pieces:[],sideToMove:'P2'},action:{type:'rush',from:{row:1,col:2},to:{row:2,col:3}}}]};
  const stack=createNotificationStack({getInteractionKey:()=>held}),store=createBoardContextStore();
- const ctx={opponentBoardMessage,captureDisplayedReplay,structuredClone,boardContexts:store,renderBoardContext,renderGameAlertCard,renderComputerProgress,recoveryActivity,activityActorSide,undoApprovalActorSide,icon,notificationStack:stack,
+ const ctx={historyBoardMessage,opponentBoardMessage,captureDisplayedReplay,structuredClone,boardContexts:store,renderBoardContext,renderGameAlertCard,renderComputerProgress,recoveryActivity,activityActorSide,undoApprovalActorSide,icon,notificationStack:stack,
   boardContextScope:()=> 'fixture',boardContextOwner:{commit(){}},displayedReplayFrame:()=>game,
   appEl:{querySelector:()=>null},document:{activeElement:null,hidden:false},queueBoardContextRefresh(){},
   contextReplayEnabled:()=>false,transport:{getFailedOperations:()=>failures,getIdentityId:()=> 'me'},
@@ -77,4 +78,17 @@ for(const kind of ['placeholder','dismissed'])test(`a ${kind} piece entry cannot
  if(kind==='placeholder')f.ctx.receive(null,{selectedPieceId:'piece',intentVersion:1,phase:null,continuationPhase:null,transient:false});
  else f.refresh();
  assert.equal(f.order()[0].key,`board-context:${f.store.channel('acknowledged').key}`);
+});
+
+test('selected recorded History detail uses acknowledged context without replay authority or Board-sized copy',()=>{
+ const f=fixture();
+ f.game.inHistoryMode=true;f.game.historyIndex=0;
+ f.game.inspectedDecision={...f.game.moves[0],index:0,displayMoveNumber:17};
+ f.ack();const context=f.store.channel('acknowledged');
+ assert.equal(context.message.text,'Tau rushed from (1, 2) to (2, 3)');
+ assert.equal(context.replay,null);
+ assert.equal(f.store.channel('piece'),null);
+ assert.deepEqual(context.message.coordinates,[{row:1,col:2},{row:2,col:3}]);
+ assert(f.store.dismiss(context.key));f.ack();
+ assert.equal(f.store.items('g').length,0,'quiet renders do not revive selected narration');
 });

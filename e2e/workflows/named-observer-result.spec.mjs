@@ -65,7 +65,7 @@ test('a guest observer sees named results while the two-sided owner retains winn
   await viewer.screenshot({path:info.outputPath('guest-observer-result.png')});
   await observerResult.getByRole('button',{name:'Review game',exact:true}).click();await switchGamePanel(viewer,'history');
   const inspectedMove=viewer.getByTestId('history-move-item').last();
-  await inspectedMove.locator('.history-move-line').click();await expect(observerResult).toHaveCount(0);
+  await inspectedMove.locator(':scope > .history-move-hit').click();await expect(observerResult).toHaveCount(0);
   // Complete the requested inspection and adjacent prefetch before a normal
   // reload. Keep strict page-error checks instead of filtering navigation errors.
   await expect(inspectedMove).toHaveClass(/is-selected/);

@@ -23,7 +23,10 @@ test('replay frames retain forced opposing responses and copy data without mutat
 test('replay includes authoritative finalization without adding gameplay moves',()=>{
   const finalSnapshot={pieces:[]};
   const result=buildComputerTurnReplay({moves:moves(),completedTurnIndex:2,finalSnapshot});
-  assert.equal(result.frames.at(-1).action.type,'end_turn');
+  assert.equal(result.frames.at(-1).action.type,'follow');
+  assert.equal(result.frames.length,3);
+  assert.equal(result.frames.some(frame=>frame.action.type==='end_turn'),false);
+  assert.deepEqual(result.frames.at(-1).recordedMove.snapshot,finalSnapshot);
   assert.deepEqual(result.frames.at(-1).after,finalSnapshot);
   assert.equal(moves().length,3);
 });
