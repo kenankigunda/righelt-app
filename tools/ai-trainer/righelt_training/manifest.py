@@ -108,9 +108,9 @@ ADOPTION_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for n
     'tools/ai-trainer/tests/test_sequence.py','tools/ai-trainer/tests/test_eight_hour.py','tools/ai-trainer/tests/test_fresh_health.py','tools/ai-trainer/tests/test_stage.py')
 
 HOSTED_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for name in (
-    'device','hosted_receipts','hosted_cleanup','hosted_snapshot'))
+    'device','hosted_receipts','hosted_cleanup','hosted_snapshot','execution_recipe','hosted_canary'))
 
-PROOF_PATHS=('tools/hosted-compute/policy.json','packages/game-engine/src','packages/computer-player/src','packages/shared-types/src',
+PROOF_PATHS=('tools/hosted-compute/policy.json','tools/hosted-compute/fixture-contract.json','packages/game-engine/src','packages/computer-player/src','packages/shared-types/src',
     'tools/ai-trainer/production-corpus.mjs','tools/ai-trainer/snapshot-production.py',
     'tools/ai-trainer/righelt_training/production.py','tools/ai-trainer/righelt_training/curriculum.py',
     'tools/ai-trainer/righelt_training/replay.py',

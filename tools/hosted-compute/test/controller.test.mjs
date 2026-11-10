@@ -156,7 +156,7 @@ test('pilot reservations are cumulative and cannot be renewed by another campaig
 test('collection requires complete outputs and clear requires an exact verified inventory', async () => {
   const f = await fixture(); await f.launch(); const a = await f.upload();
   await assert.rejects(f.core.finish('pilot', 1, { kind: 'complete', outputs: {} }), /artifact/);
-  await f.core.finish('pilot', 1, { kind: 'complete', outputs: { proof: a }, files: [{ ...a, path: '.ai-runs/pilot/run/proof.json' }] });
+  await f.core.finish('pilot', 1, await f.completion());
   await f.core.reconcile(); await f.core.reconcile();
   const inventory = await f.core.inventory('pilot');
   await assert.rejects(f.core.clear('pilot', { verified: true }), /receipt/);

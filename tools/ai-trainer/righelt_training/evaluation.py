@@ -35,3 +35,49 @@ def paired_report(pairs, seed, threshold=0.60, resamples=10000):
             'truncations':truncations,'truncationRate':truncation,'seed':seed,
             'resamples':resamples,'complete':complete,
             'passed':complete and score>=threshold and lower>0.5 and truncation<=0.05}
+
+
+def prospective_report(schedule, receipts):
+    """Future development ledger only. Never reinterpret October's frozen score.
+
+    Keep every scheduled attempt and genuine equal trajectory. Missing/timeout
+    outcomes have [0,1] score bounds, never invented draws. Correlation groups
+    remain visible, with no independence or confidence claim from one model.
+    Baseline-baseline diagnostics do not erase complete candidate pairs.
+    """
+    jobs = {job['id']: job for job in schedule}
+    if not jobs or len(jobs) != len(schedule): raise ValueError('unique scheduled jobs required')
+    records = {}; receipt_ids = set()
+    for row in receipts:
+        job = jobs.get(row['jobId'])
+        if not job or row['jobId'] in records or row['receiptId'] in receipt_ids:
+            raise ValueError('unscheduled, duplicate or reused receipt')
+        if any(row[key] != job[key] for key in ('pairId', 'candidateSeat', 'profile', 'familyId', 'role')):
+            raise ValueError('receipt differs from scheduled work')
+        if row['status'] == 'complete' and row.get('outcome') not in ('p1_win','p2_win','draw'):
+            raise ValueError('cutoff is not a terminal outcome')
+        if row['status'] not in ('complete','unfinished','failed'): raise ValueError('invalid attempt disposition')
+        records[row['jobId']] = row; receipt_ids.add(row['receiptId'])
+    candidate = [j for j in schedule if j['role'] == 'candidate']
+    groups = {}
+    for job in candidate:
+        groups.setdefault((job['pairId'],job['profile']),[]).append(job)
+    if any(len(group) != 2 or {j['candidateSeat'] for j in group} != {'P1','P2'} for group in groups.values()):
+        raise ValueError('prospective paired seats required')
+    low = high = 0.; complete_pairs = 0
+    for group in groups.values():
+        complete_pairs += all(records.get(j['id'],{}).get('status') == 'complete' for j in group)
+        for job in group:
+            row = records.get(job['id'])
+            if row and row['status'] == 'complete':
+                value = score_game(row['outcome'], job['candidateSeat']); low += value; high += value
+            else: high += 1
+    n = len(candidate)
+    return {'scheduledAttempts': len(schedule), 'candidateGames': n, 'attempted': len(records),
+        'completed': sum(r['status']=='complete' for r in records.values()),
+        'unfinished': sum(r['status']=='unfinished' for r in records.values()),
+        'failed': sum(r['status']=='failed' for r in records.values()), 'unstarted':len(jobs)-len(records),
+        'completeCandidatePairs': complete_pairs, 'candidateScoreBounds': [low/n,high/n] if n else None,
+        'families': sorted({j['familyId'] for j in candidate}),
+        'equalTrajectoriesRetained': True, 'independentTrainingReplications': None,
+        'strengthEstablished': False}

@@ -1,3 +1,4 @@
+import { verifyResult } from './result.mjs';
 import { POLICY, TERMINAL, assert, artifact, canonical, encode, safeName, sha256, validateManifest, reserveCents } from './policy.mjs';
 
 const stopping = new Set(['stopping', 'cleanup-uncertain']);
@@ -141,7 +142,11 @@ export class Controller {
       assert(c.objects[file.sha256]?.bytes === file.bytes, 'checkpoint upload incomplete');
     }
     assert(snapshot.files.some(f => f.path.endsWith('/latest.json')), 'recovery checkpoint pointer missing');
-    c.snapshot = { ...snapshot, phaseIndex: c.phase }; this.event(c, 'checkpoint-published', { id: snapshot.id });
+    const files = snapshot.files.map(file => {
+      const prior = c.snapshot?.phaseIndex === c.phase && c.snapshot.files.find(f => f.path === file.path && f.sha256 === file.sha256 && f.bytes === file.bytes);
+      return { ...file, originGeneration: prior ? (prior.originGeneration ?? c.snapshot.generation) : generation };
+    });
+    c.snapshot = { ...snapshot, files, phaseIndex: c.phase, generation }; this.event(c, 'checkpoint-published', { id: snapshot.id });
     await this.save(db); return { accepted: true };
   }
   async finish(id, generation, result) {
@@ -155,6 +160,11 @@ export class Controller {
     if (result.kind === 'complete') {
       for (const name of phase.outputs) {
         const a = artifact(result.outputs?.[name]); assert(c.objects[a.sha256]?.bytes === a.bytes, 'required output not uploaded');
+        const raw = new Uint8Array(await (await this.bucket.get(`${id}/${a.sha256}`)).arrayBuffer());
+        await verifyResult(JSON.parse(new TextDecoder().decode(raw)), { manifest: c.manifest, manifestSha256: c.manifestSha256, phase, generation, snapshot: c.snapshot, expect: phase.expect[name], rawSha256: a.sha256, read: async record => {
+          assert(result.files?.some(f => f.path === record.path && f.sha256 === record.sha256 && f.bytes === record.bytes), 'result missing from run inventory');
+          return new Uint8Array(await (await this.bucket.get(`${id}/${record.sha256}`)).arrayBuffer());
+        } });
         c.outputs[`${phase.id}/${name}`] = a;
       }
       assert(Array.isArray(result.files), 'completed run file inventory required');

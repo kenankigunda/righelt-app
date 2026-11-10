@@ -23,6 +23,9 @@ def corpus_record(binding):
             raise ValueError('invalid production partition')
         if p['partition'] == 'train' and (p['gameId'] in held or p['stateHash'] in withheld or p['encodingHash'] in protected):
             raise ValueError('production evaluation leakage')
+        if p['partition'] != 'train' and corpus.get('curation', {}).get('guardOnly'):
+            if 'state' in p: raise ValueError('raw protected position in guard-only corpus')
+            continue
         if p['state']['outcome']['status'] != 'ongoing':
             raise ValueError('terminal production start')
     return corpus

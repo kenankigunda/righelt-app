@@ -48,6 +48,8 @@ def tensor_batch(positions, device):
 def train_round(model, optimizer, positions, *, device, seed, deadline, should_pause=lambda: False,
                 on_batch=lambda metrics: None, clock=time.monotonic, start_batch=0, operation=lambda name,seconds:nullcontext(),
                 evidence_game_ids=None):
+    from .execution_recipe import verify_runtime
+    verify_runtime(model=model, optimizer=optimizer)
     order = list(range(len(positions)))
     random.Random(seed).shuffle(order)
     batch_size = CONFIG['training']['batchSize']
@@ -76,12 +78,16 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
                 raise ValueError('nonfinite loss')
             loss.backward()
             norm = torch.nn.utils.clip_grad_norm_(model.parameters(), CONFIG['training']['gradientClip'], error_if_nonfinite=True)
+            head_gradients = {head: sum(float(p.grad.detach().abs().sum()) for name,p in model.named_parameters()
+                if p.grad is not None and name.startswith(prefixes))
+                for head,prefixes in {'policy': ('policy.', 'pass_head.'),
+                                      'terminalValue': ('value_spatial.', 'value_hidden.', 'value_out.')}.items()}
             previous = [p.detach().clone() for p in model.parameters()]
             optimizer.step()
             delta = sum((p.detach() - old).abs().sum().item() for p, old in zip(model.parameters(), previous))
             if not math.isfinite(delta) or delta <= 0:
                 raise ValueError('training update was nonfinite or zero')
-            metrics = {'loss': loss.item(), 'policyLoss': policy_loss.item(), 'valueLoss': value_loss.item(),
+            metrics = {'headGradientL1': head_gradients, 'loss': loss.item(), 'policyLoss': policy_loss.item(), 'valueLoss': value_loss.item(),
                        'gradientNorm': norm.item(), 'parameterDelta': delta, 'positions': len(batch),
                        'seconds': clock() - before, 'batchIndex': start // batch_size,
                        'policyPositions': int(policy_mask.sum()), 'valuePositions': int(mask.sum())}

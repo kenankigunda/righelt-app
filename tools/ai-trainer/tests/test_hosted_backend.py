@@ -28,7 +28,10 @@ class HostedBackendTest(unittest.TestCase):
     def test_hosted_recipe_must_match_the_frozen_input_even_when_another_recipe_is_valid(self):
         with tempfile.TemporaryDirectory() as d:
             recipe = recipe_binding(); raw = json.dumps(recipe).encode(); path = Path(d)/'recipe.json'; path.write_bytes(raw)
-            with patch.dict(os.environ, {'RIGHELT_HOSTED': '1', 'RIGHELT_EXPECTED_RECIPE_PATH': str(path), 'RIGHELT_EXPECTED_RECIPE_SHA256': hashlib.sha256(raw).hexdigest()}):
+            from righelt_training.execution_recipe import settings
+            execution = Path(d)/'execution.json'
+            execution.write_text(json.dumps({'schema':1,'kind':'execution-recipe','settings':settings('ordinary-continuation')}))
+            with patch.dict(os.environ, {'RIGHELT_HOSTED': '1', 'RIGHELT_EXPECTED_RECIPE_PATH': str(path), 'RIGHELT_EXPECTED_RECIPE_SHA256': hashlib.sha256(raw).hexdigest(), 'RIGHELT_EXECUTION_RECIPE_PATH':str(execution),'RIGHELT_EXECUTION_RECIPE_SHA256':hashlib.sha256(execution.read_bytes()).hexdigest()}):
                 hosted_receipts.verify_recipe(recipe)
                 with self.assertRaisesRegex(ValueError, 'differs from approved'):
                     hosted_receipts.verify_recipe(recipe_binding('root-dirichlet-v1'))

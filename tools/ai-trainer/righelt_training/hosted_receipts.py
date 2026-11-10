@@ -18,6 +18,8 @@ def verify_recipe(recipe):
     raw = Path(os.environ['RIGHELT_EXPECTED_RECIPE_PATH']).read_bytes()
     if hashlib.sha256(raw).hexdigest() != os.environ['RIGHELT_EXPECTED_RECIPE_SHA256'] or validate_recipe(json.loads(raw)) != recipe:
         raise ValueError('hosted pilot training recipe differs from approved artifact')
+    from .execution_recipe import verify_runtime
+    verify_runtime(recipe)
 
 
 def enabled():

@@ -7,6 +7,8 @@ import { randomUUID } from 'node:crypto';
 import { Client, InfrastructureError } from './client.mjs';
 import { POLICY, assert, canonical, encode, safeRunPath, sha256 } from './policy.mjs';
 
+import { executionIdentity, verifyResult } from './result.mjs';
+
 const exec = promisify(execFile);
 export async function containedFile(root, relative, { createParents = false } = {}) {
   assert(safeRunPath(relative), 'unsafe run path');
@@ -70,11 +72,35 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
   assert(imageIdentity.sourceRevision === manifest.sourceRevision && imageIdentity.dependencySha256 === manifest.dependencySha256, 'container/source provenance mismatch');
   await hydrate(client, root, manifest.inputs);
   if (work.snapshot) await hydrate(client, root, work.snapshot.files);
+  // Completed durable phase evidence is reusable, with its original identity.
+  // Do not rerun immutable jobs or relabel it as work from this generation.
+  if (work.snapshot?.phaseIndex === work.phaseIndex && phase.outputs.every(name => work.snapshot.files.some(f => f.path === phase.outputPaths[name]))) {
+    await client.json('heartbeat', { restoredSnapshotId: work.snapshot.id });
+    const outputs = {};
+    try {
+      for (const name of phase.outputs) {
+        const a = work.snapshot.files.find(f => f.path === phase.outputPaths[name]);
+        const raw = await fs.readFile(await containedFile(root, a.path));
+        assert(await sha256(raw) === a.sha256, 'restored receipt changed');
+        await verifyResult(JSON.parse(raw), { manifest, manifestSha256: work.manifestSha256, phase, generation: work.generation, snapshot: work.snapshot, expect: phase.expect[name], rawSha256: a.sha256, read: async record => fs.readFile(await containedFile(root, record.path)) });
+        outputs[name] = a;
+      }
+    } catch (error) {
+      await client.json('finish', { kind: 'correctness', outputs: {}, files: work.snapshot.files });
+      return { kind: 'correctness', exitCode: null, reason: error.message };
+    }
+    await client.json('finish', { kind: 'complete', outputs, files: work.snapshot.files });
+    return { kind: 'complete', exitCode: 0, recoveredCompletedPhase: true };
+  }
   const logRelative = `${phase.runDir}/hosted-${work.generation}.log`;
   const logPath = await containedFile(root, logRelative, { createParents: true });
   const output = createWriteStream(logPath, { flags: 'ax', mode: 0o600 });
   const recipe = manifest.inputs.find(a => a.sha256 === manifest.recipeSha256);
   assert(recipe, 'approved recipe artifact missing');
+  const contextPath = await containedFile(root, `${phase.runDir}/execution-context.json`, { createParents: true });
+  await fs.writeFile(contextPath, JSON.stringify({ execution: executionIdentity(manifest, work.manifestSha256, phase, work.generation), completedWorkIds: phase.workIds, recoveryFiles: work.snapshot?.phaseIndex === work.phaseIndex ? work.snapshot.files : [] }), { mode: 0o600 });
+  const executionRecipe = manifest.inputs.find(a => a.sha256 === manifest.executionRecipeSha256);
+  assert(executionRecipe, 'execution recipe artifact missing');
   const failurePath = `${phase.runDir}/hosted-infrastructure-${work.generation}.json`;
   let lease = (await client.json('heartbeat', { restoredSnapshotId: work.snapshot?.id })).leaseExpires;
   const argv = work.resume || work.snapshot?.phaseIndex === work.phaseIndex ? phase.resumeArgv : phase.argv;
@@ -82,6 +108,8 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
     PATH: env.PATH, HOME: env.HOME, LANG: 'C.UTF-8', PYTHONPATH: 'tools/ai-trainer',
     RIGHELT_TRAINING_DEVICE: phase.device, RIGHELT_HOSTED: '1',
     RIGHELT_EXPECTED_RECIPE_PATH: path.join(root, recipe.path), RIGHELT_EXPECTED_RECIPE_SHA256: manifest.recipeSha256,
+    RIGHELT_EXECUTION_CONTEXT: contextPath,
+    RIGHELT_EXECUTION_RECIPE_PATH: path.join(root, executionRecipe.path), RIGHELT_EXECUTION_RECIPE_SHA256: manifest.executionRecipeSha256,
     RIGHELT_HOSTED_FAILURE_FILE: path.join(root, failurePath),
     COMPUTE_URL: env.COMPUTE_URL, COMPUTE_ID: env.COMPUTE_ID, COMPUTE_GENERATION: env.COMPUTE_GENERATION,
     COMPUTE_WORKER_TOKEN: env.COMPUTE_WORKER_TOKEN,
@@ -158,6 +186,7 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
       for (const name of phase.outputs) {
         const raw = await fs.readFile(await containedFile(root, phase.outputPaths[name]));
         const evidence = JSON.parse(raw);
+        await verifyResult(evidence, { manifest, manifestSha256: work.manifestSha256, phase, generation: work.generation, snapshot: work.snapshot, expect: phase.expect[name], rawSha256: await sha256(raw), read: async a => fs.readFile(await containedFile(root, a.path)) });
         for (const [key, expected] of Object.entries(phase.expect[name])) assert(canonical(evidence[key]) === canonical(expected), 'phase evidence failed');
         outputs[name] = await client.upload(raw);
       }

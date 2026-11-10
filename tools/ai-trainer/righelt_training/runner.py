@@ -133,6 +133,8 @@ class Runner:
         self.inference_bound = 30.
         if resume:
             self.restore(Path(resume))
+        from .execution_recipe import verify_start
+        verify_start(resume, self.model, self.optimizer)
         restore_observations(self.state,self.directory)
         self.restore_admission_claims()
         self.curriculum = Curriculum(seed, switched=self.state['curriculumSwitched'],

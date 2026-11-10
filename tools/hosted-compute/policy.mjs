@@ -21,7 +21,7 @@ export function artifact(a) {
 }
 export function validateManifest(m) {
   assert(m?.schema === 1 && safeName(m.id) && m.id.length <= 40, 'invalid campaign identity');
-  for (const key of ['sourceRevision', 'dependencySha256', 'checkpointSha256', 'corpusSha256', 'recipeSha256']) {
+  for (const key of ['sourceRevision', 'dependencySha256', 'checkpointSha256', 'corpusSha256', 'recipeSha256', 'executionRecipeSha256']) {
     assert(new RegExp(key === 'sourceRevision' ? '^[a-f0-9]{40}$' : '^[a-f0-9]{64}$').test(m[key]), `missing ${key}`);
   }
   assert(typeof m.authorizationReference === 'string' && m.authorizationReference.length >= 8, 'explicit spending authorization reference required');
@@ -33,9 +33,11 @@ export function validateManifest(m) {
   assert(new Set(m.inputs.map(a => a.path)).size === m.inputs.length, 'duplicate input path');
   assert(new Set(m.inputs.map(a => a.name)).size === m.inputs.length, 'duplicate input name');
   assert(m.inputs.some(a => a.sha256 === m.checkpointSha256) && m.inputs.some(a => a.sha256 === m.corpusSha256) && m.inputs.some(a => a.sha256 === m.recipeSha256), 'checkpoint, corpus and recipe must be in input inventory');
+  assert(m.inputs.some(a => a.sha256 === m.executionRecipeSha256), 'execution recipe input required');
   assert(Array.isArray(m.phases) && m.phases.length > 0 && m.phases.length <= 12, 'bounded phases required');
   assert(new Set(m.phases.map(p => p.id)).size === m.phases.length, 'duplicate phase');
   for (const p of m.phases) {
+    assert(Array.isArray(p.workIds) && p.workIds.length > 0 && p.workIds.every(safeName) && new Set(p.workIds).size === p.workIds.length, 'scheduled work identities required');
     assert(safeName(p.id) && ['rehearsal', 'training', 'evaluation', 'export', 'benchmark'].includes(p.kind), 'invalid phase');
     assert(['cpu', 'cuda'].includes(p.device), 'hosted device must be explicit');
     assert(Number.isSafeInteger(p.seconds) && p.seconds > 0 && p.seconds <= 86400, 'invalid phase runtime');
