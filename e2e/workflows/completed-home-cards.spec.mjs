@@ -34,22 +34,23 @@ for(const width of [390,1440])test(`Home separates completed games and names con
  const card=id=>completed.locator(`a[data-game-id="${id}"]`);
  await expect(card(homeGames.win.id)).toContainText('You won');
  await expect(card(homeGames.loss.id)).toContainText('Tau won');await expect(card(homeGames.loss.id)).toContainText('You lost');
- const lossLines=await card(homeGames.loss.id).locator('.home-card-result').evaluate(node=>({headlineBottom:node.querySelector('strong').getBoundingClientRect().bottom,detailTop:node.querySelector('.small').getBoundingClientRect().top}));
- expect(lossLines.detailTop).toBeGreaterThanOrEqual(lossLines.headlineBottom-1);
+ const lossLines=await card(homeGames.loss.id).locator('.home-card-result').evaluate(node=>({headlineBottom:node.querySelector('strong').getBoundingClientRect().bottom,detailTop:node.querySelector('.small').getBoundingClientRect().top,dpr:devicePixelRatio}));
+ const tolerance=Math.max(.5,1/lossLines.dpr);
+ expect(lossLines.detailTop).toBeGreaterThanOrEqual(lossLines.headlineBottom-tolerance);
  await expect(card(homeGames.source.id)).toContainText('Red won');
  for(const game of [homeGames.source,homeGames.win,homeGames.loss]){
   await expect(card(game.id)).toContainText('Review game');
   await expect(card(game.id).locator('.connection-status-icon')).toHaveCount(0);
   await expect(card(game.id).locator('button,a,[tabindex]')).toHaveCount(0);
   const square=await card(game.id).locator('.mini-board-preview-board .cell').first().boundingBox();
-  expect(Math.abs(square.width-square.height)).toBeLessThanOrEqual(1);
+  expect(Math.abs(square.width-square.height)).toBeLessThanOrEqual(tolerance);
   await expect(active.locator(`a[data-game-id="${game.id}"]`)).toHaveCount(0);
  }
  await expect(active.locator(`a[data-game-id="${homeGames.ongoing.id}"]`)).toBeVisible();
  await expect(card(homeGames.loss.id).locator('..')).toHaveAttribute('data-winner-side','p1');
  const sectionOrder=await page.locator('.home-refresh > section').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('data-home-section-root')??(node.classList.contains('home-start')?'start':'other')));
  expect(sectionOrder.indexOf('completed')).toBeGreaterThan(sectionOrder.indexOf('start'));
- expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+Math.max(.5,1/devicePixelRatio))).toBe(true);
  await page.screenshot({path:info.outputPath('home-completed-winner-lines.png'),fullPage:true});
  await card(homeGames.loss.id).focus();await page.keyboard.press('Enter');
  await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',homeGames.loss.id);
@@ -64,7 +65,9 @@ test('an acknowledged Undo moves its Home card and counts without stealing focus
  await page.addInitScript(()=>{window.__RIGHELT_VERBOSE_CLIENT_LOGS=true;});
  await page.setViewportSize({width:1440,height:1100});
  await page.goto(`/#/game/${homeGames.source.id}`);await switchGamePanel(page,'history');
- const move=page.getByTestId('history-move-item').last();await move.locator('.history-item-info').click();
+ const move=page.getByTestId('history-move-item').last();
+ if(await move.getAttribute('aria-current')!=='true')await move.locator(':scope > .history-move-hit').click();
+ await expect(move).toHaveAttribute('aria-current','true');await expect(move).toHaveClass(/is-selected/);
  const undo=move.locator('[data-action="revert-to-move"]');await expect(undo).toBeEnabled();
  let release,heldCommand;
  const hold=new Promise(resolve=>release=resolve);
@@ -81,7 +84,7 @@ test('an acknowledged Undo moves its Home card and counts without stealing focus
   const card=completed.locator(`a[data-game-id="${homeGames.source.id}"]`);
   await expect(completed.getByText('3 games',{exact:true})).toBeVisible();
   await expect(card).toContainText('Red won');
-  await card.focus();const before=await card.evaluate(node=>({scrollY,cardTop:node.getBoundingClientRect().top,sectionTop:node.closest('[data-home-section-root]').getBoundingClientRect().top}));
+  await card.focus();const before=await card.evaluate(node=>({scrollY,cardTop:node.getBoundingClientRect().top,sectionTop:node.closest('[data-home-section-root]').getBoundingClientRect().top,dpr:devicePixelRatio}));
   release();
   await expect(completed.getByText('2 games',{exact:true})).toBeVisible();
   await expect(card).toHaveCount(0);
@@ -91,7 +94,7 @@ test('an acknowledged Undo moves its Home card and counts without stealing focus
   const after=await page.evaluate(()=>({scrollY,cardTop:document.activeElement.getBoundingClientRect().top,sectionTop:document.activeElement.closest('[data-home-section-root]').getBoundingClientRect().top}));
   writeFileSync(info.outputPath('home-reading-position.json'),JSON.stringify({before,after},null,2));
   await info.attach('home-reading-position',{contentType:'application/json',path:info.outputPath('home-reading-position.json')});
-  expect(Math.abs(after.sectionTop-before.sectionTop)).toBeLessThanOrEqual(1);
+  expect(Math.abs(after.sectionTop-before.sectionTop)).toBeLessThanOrEqual(Math.max(.5,1/before.dpr));
   const identityId=await page.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'));
   const result=await page.request.get(`/api/shell/games/${homeGames.source.id}?identityId=${encodeURIComponent(identityId)}`);
   expect(result.ok()).toBe(true);const game=(await result.json()).game;
@@ -171,7 +174,7 @@ test('completed pagination and resizing preserve the visible page without retryi
   await expect(completed.locator(`a[data-game-id="${anchor}"]`)).toBeVisible();
   expect(otherRequests).toBe(beforeRequests);
   await expect(other.getByText("We couldn't load these games.",{exact:true})).toBeVisible();
-  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+Math.max(.5,1/devicePixelRatio))).toBe(true);
   await page.screenshot({path:info.outputPath('home-completed-responsive-page.png'),fullPage:true});
  }finally{await context.unrouteAll({behavior:'wait'});}
 });
