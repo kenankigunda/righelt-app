@@ -41,7 +41,7 @@ export function finalProofReady(run, currentBase) {
   if (!run || run.base !== currentBase) return false;
   const integrated=run.mode==='integrated';
   const final=run.stages?.find(s=>s.phase==='final'&&s.index===(integrated?run.prs.length:0));
-  if (!final || final.base!==currentBase || final.status!=='passed' || final.sourceClean!==true || final.visualReviewed!==true || final.unmapped?.length || !final.checks?.length || final.checks.some(c=>c.status!=='passed')) return false;
+  if (!final || final.base!==currentBase || final.status!=='passed' || final.sourceClean!==true || (final.policyVersion===3?final.visualRequired!==false&&final.visualReviewed!==true:final.visualReviewed!==true) || final.unmapped?.length || !final.checks?.length || final.checks.some(c=>c.status!=='passed')) return false;
   if (!integrated) return final.head===run.revision;
   if (run.complete!==true || run.stages.length!==run.prs.length+1 || run.stages.some(s=>s.status!=='passed')) return false;
   const proof=final.checkpointProvenance;
@@ -50,7 +50,7 @@ export function finalProofReady(run, currentBase) {
 }
 export function readiness(pr, stage, currentBase, run) {
   const waiting=[];
-  if ((run?.version===2||stage?.policyVersion===2)&&!finalProofReady(run,currentBase)) waiting.push('Final validation and screenshot review of current inputs');
+  if (([2,3].includes(run?.version)||[2,3].includes(stage?.policyVersion))&&!finalProofReady(run,currentBase)) waiting.push(run?.version===3?'Final validation and any selected visual review of current inputs':'Final validation and screenshot review of current inputs');
   if(pr.nativeStack)waiting.push('Native GitHub stacks are unsupported; individual authorization cannot include predecessors');
   if (!stage || stage.head !== pr.head || stage.base !== currentBase || stage.status !== 'passed') waiting.push('Current integrated validation');
   if (stage?.unmapped?.length) waiting.push('Coverage gaps');

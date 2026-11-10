@@ -21,7 +21,7 @@ for(const mutation of [null,'nightly-profile','failed','wrong-lane','missing-bas
 test('PR gate runner refuses missing base before any lane',async()=>{let calls=0;await assert.rejects(runPRGate({identity:{...identity,baseRevision:null},executeSuite:async()=>{calls++;}}),/explicit source base/);assert.equal(calls,0);});
 test('final plan defaults to PR gate and explicit fresh/retained questions, not nightly matrix',async t=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'gate-plan-'));t.after(()=>rm(root,{recursive:true,force:true}));const plan=await defaultLocalPlan(root),selected=stagePolicy(plan,0,{accounts:true}).selected;
- assert.deepEqual(selected,['PR gate','Responsive proof','Account responsive proof']);
+ assert.deepEqual(selected,['PR gate']);
  const explicit={version:2,questions:[{id:'feature',description:'Specific browser behavior',paths:['apps/'],checks:['E2E','Performance']}]};assert.deepEqual(stagePolicy(explicit,0).selected,['PR gate','Responsive proof','E2E','Performance']);
 });
 test('PR profile cannot claim broad nightly browser group or accept a renamed command',()=>{

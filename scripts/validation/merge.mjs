@@ -31,7 +31,7 @@ export async function refreshPR(run,number,{cwd=process.cwd(),execute=command}={
  let liveBase;
  try{liveBase=await resolveLivePRBase({current,repository:repo,cwd,execute});}catch(error){staleAll();throw error;}
  // A boundary is certified by the final aggregate, so every input must still match.
- if(run.version===2){
+ if([2,3].includes(run.version)){
   for(const input of run.prs){
    const actual=input.number===number?current:await read(input.number);
    // inputBaseSha remains the PR snapshot captured with the original input.

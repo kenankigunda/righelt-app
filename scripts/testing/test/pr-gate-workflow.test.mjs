@@ -18,7 +18,7 @@ test('advisory planning cannot block the PR aggregate or successful CI deploymen
 
 test('released PR layout pins the generated workflow and complete unchanged PR inventory',async()=>{
  const root=fileURLToPath(new URL('../../../',import.meta.url));
- const profile=await expectedCILayout(root,'pr-gate-v2');
+ const profile=await expectedCILayout(root,'pr-gate-v3');
  assert.equal(profile.evidenceProfile,'pr-gate');
  assert.deepEqual(profile.lanes.map(laneKey).sort(),prGateLanes().map(laneKey).sort());
  assert.equal(await readFile(new URL('../../../.github/workflows/ci.yml',import.meta.url),'utf8'),workflowText());
