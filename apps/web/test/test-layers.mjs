@@ -51,6 +51,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "viewer-summary.test.mjs",
   "players-panel.test.mjs",
   "computer-status-badge.test.mjs",
+  "hover-tooltip.test.mjs",
   "panel-loading.test.mjs",
   "invite-load-recovery.test.mjs",
   "desktop-board-fit.test.mjs",
