@@ -834,7 +834,8 @@
           "name": "Setup Node",
           "uses": "actions/setup-node@v5",
           "with": {
-            "node-version": "22.23.4"
+            "node-version": "22.23.4",
+            "package-manager-cache": false
           }
         },
         {

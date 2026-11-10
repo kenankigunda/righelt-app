@@ -13,7 +13,7 @@ const setup = [
 ];
 
 // Planning and receipt verification import only Node built-ins and repository modules.
-const receiptSetup = [setup[0], { name: 'Setup Node', uses: 'actions/setup-node@v5', with: { 'node-version': CI_NODE_VERSION } }];
+const receiptSetup = [setup[0], { name: 'Setup Node', uses: 'actions/setup-node@v5', with: { 'node-version': CI_NODE_VERSION, 'package-manager-cache': false } }];
 
 const artifactName = (lane, attempt) =>
   `suite-${lane.suite}-${lane.project || "default"}-${lane.shard}-of-${lane.shards}-attempt-${attempt}-${expression("github.run_attempt")}`;
