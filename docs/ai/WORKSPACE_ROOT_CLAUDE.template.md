@@ -18,3 +18,7 @@ For end-to-end evidence, integrated PR validation, and autonomous repairs, read 
 ## Task resources
 
 Follow the app repo's `docs/ai/RESOURCE_MANAGEMENT.md`. Use supervised launchers for temporary previews and heavy jobs, track run/tab ownership, and clean up task-owned resources at completion or interruption. Memory-pressure cancellation is incomplete validation. Keep Codex and unrelated resources open.
+
+## Proportionate validation and evidence reuse
+
+Follow `docs/ai/VALIDATION_EVIDENCE_POLICY.md` in the pinned released tools. Inspect `plan --candidate /absolute/path` before executing. New version 3 plans require a concrete acceptance or regression reason for every additional check and reuse compatible proof across runs. Keep the full stable current-head PR gate. Recheck only invalidated evidence after repairs, reuse unchanged review and images, and stop when acceptance questions are answered. Retained proof is required at affected state boundaries, not automatically for every feature. Continue independent work while required CI runs unless the user explicitly requested waiting. Existing explicit acceptance, authorization, production-data protection and exact deployed identity remain required. CI narrowing is separate.

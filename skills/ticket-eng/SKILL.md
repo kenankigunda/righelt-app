@@ -17,3 +17,7 @@ Use this skill for `Tke` fan-out or any Lead-dispatched execution subtask.
 - Read the subtask acceptance checks and embedded test-plan rows before editing code.
 - Consult `ticket-tester` only for novel gaps not already covered by the test plan.
 - Report progress in the exact shared output shape and return blockers to Lead instead of expanding scope.
+
+## Proportionate validation and evidence reuse
+
+Follow `docs/ai/VALIDATION_EVIDENCE_POLICY.md` in the pinned released tools. Inspect `plan --candidate /absolute/path` before executing. New version 3 plans require a concrete acceptance or regression reason for every additional check and reuse compatible proof across runs. Keep the full stable current-head PR gate. Recheck only invalidated evidence after repairs, reuse unchanged review and images, and stop when acceptance questions are answered. Retained proof is required at affected state boundaries, not automatically for every feature. Continue independent work while required CI runs unless the user explicitly requested waiting. Existing explicit acceptance, authorization, production-data protection and exact deployed identity remain required. CI narrowing is separate.

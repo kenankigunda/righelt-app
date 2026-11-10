@@ -12,6 +12,9 @@ const setup = [
   { name: "Install dependencies", run: "pnpm install --frozen-lockfile" },
 ];
 
+// Planning and receipt verification import only Node built-ins and repository modules.
+const receiptSetup = [setup[0], { name: 'Setup Node', uses: 'actions/setup-node@v5', with: { 'node-version': CI_NODE_VERSION } }];
+
 const artifactName = (lane, attempt) =>
   `suite-${lane.suite}-${lane.project || "default"}-${lane.shard}-of-${lane.shards}-attempt-${attempt}-${expression("github.run_attempt")}`;
 const validateStep = (lane, profile, attempt, priorExpression = null) => ({
@@ -53,7 +56,7 @@ const browserAttemptJob = (lane, profile, attempt, needs = null) => ({
 });
 const normalizeId = (lane) => `${lane.suite}-${lane.project || "default"}-${lane.shard}`.replace(/[^a-z0-9-]/g, "-");
 const aggregateSteps = (profile, outputName) => [
-  ...setup,
+  ...receiptSetup,
   {
     name: "Select exact-run evidence", id: "artifacts", uses: "actions/github-script@v8",
     with: { script: `const {selectSuiteArtifacts}=await import(process.env.GITHUB_WORKSPACE+'/scripts/testing/select-artifacts.mjs');
@@ -86,8 +89,8 @@ export function workflow() {
     name: "Advisory affected-test plan", "runs-on": "ubuntu-latest",
     "continue-on-error": true,
     steps: [
-      ...setup,
-      { name: "Record shadow selection", run: "pnpm test:plan --base \"$RIGHELT_TEST_BASE_REVISION\" --out test-results/plan/plan.json" },
+      ...receiptSetup,
+      { name: "Record shadow selection", run: "node scripts/testing/cli.mjs plan --base \"$RIGHELT_TEST_BASE_REVISION\" --out test-results/plan/plan.json" },
       { name: "Preserve shadow plan", uses: "actions/upload-artifact@v6", with: { name: `affected-plan-${expression("github.run_attempt")}`, path: "test-results/plan/plan.json", "if-no-files-found": "error" } },
     ],
   };
