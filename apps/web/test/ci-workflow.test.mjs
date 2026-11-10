@@ -23,7 +23,9 @@ test('every PR-gate lane runs exactly once before any conditional retry',()=>{
 });
 test('PR validation is the sole required aggregate',()=>{
  const gate=actual.jobs['pr-validation'];assert.equal(gate.name,'PR validation');assert.equal(gate.if,'always()');
- assert.deepEqual(gate.needs.sort(),Object.keys(actual.jobs).filter(id=>id!=='pr-validation').sort());
+ assert.deepEqual(gate.needs.sort(),Object.keys(actual.jobs).filter(id=>!['plan','pr-validation'].includes(id)).sort());
+ assert.equal(actual.jobs.plan['continue-on-error'],true,'advisory selection cannot fail the overall CI workflow');
+ assert.ok(!gate.needs.includes('plan'),'advisory selection must not become required receipt evidence');
  assert.equal(actual.jobs['full-validation'],undefined);
  for(const [id,job] of Object.entries(actual.jobs)){
   assert.equal(job.steps.find(s=>s.uses==='actions/checkout@v5').with.ref,'${{ github.event.pull_request.head.sha || github.sha }}');
