@@ -42,3 +42,7 @@ Ask every question needed to resolve genuine architectural tradeoffs or constrai
 - [docs/ai/TICKET_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/TICKET_WORKFLOW.md)
 - [docs/ai/UX_VALIDATION_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/UX_VALIDATION_WORKFLOW.md)
 - [docs/ai/ORCHESTRATION_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/ORCHESTRATION_WORKFLOW.md)
+
+## Durable test design
+
+Follow [the durable testing standard](../TESTING_STRATEGY.md#durable-tests-execute-behavior). Execute production behavior instead of slicing or inspecting product source. Plan small production seams and focused real-app wiring proof, use native browsers for browser-owned contracts, and retain independent expected outcomes. Migrate affected legacy assertions when changing their contract, demonstrate targeted negative proof, and run `pnpm check:test-durability`. New source-inspection exceptions are limited to justified artifact contracts. Review whether each test catches the bug and tolerates behavior-preserving refactors.

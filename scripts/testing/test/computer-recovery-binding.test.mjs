@@ -30,10 +30,10 @@ for(const phase of ['payload','completion'])test('absolute2s refuses '+phase+' e
  if(phase==='completion'){
   const emit=f.h.page.emit.bind(f.h.page);f.h.page.emit=(type,message)=>{if(type==='console'&&message.text().startsWith(RECOVERY_BINDING_ACK))f.clock.value=2001;return emit(type,message);};
  }
- await assert.rejects(f.transport.start());await assert.rejects(f.transport.complete());assert(f.failures.includes('read-timed-out'));assert.equal(f.transport.healthy(),false);assert.equal(f.timers.length,1);
+ await assert.rejects(f.transport.start());await assert.rejects(f.transport.complete());assert(f.failures.includes('read-timed-out'));assert.equal(f.transport.healthy(),false);assert.equal(f.timers.length,2);
 });
 test('late signal configuration settlement does not invalidate an on-time payload AND completion',async()=>{
- const gate=deferred(),f=await fixture({harness:{configGate:gate.promise}});await f.transport.start();assert.equal(f.timers[0].cleared,true);f.clock.value=2500;gate.resolve();await f.transport.complete();assert.equal(f.transport.healthy(),true);
+ const gate=deferred(),f=await fixture({harness:{configGate:gate.promise}});await f.transport.start();assert.equal(f.timers[0].cleared,false);assert.equal(f.timers[1].cleared,true);f.clock.value=2500;gate.resolve();await f.transport.complete();assert.equal(f.transport.healthy(),true);
 });
 test('missing setter/configuration success cannot manufacture a snapshot or completion',async()=>{
  const f=await fixture({harness:{beforeSignal(_page,realm){for(const name of Object.getOwnPropertyNames(realm))if(name.startsWith('__righeltFinalSignal_'))delete realm[name];}}});const read=f.transport.start();await settle();assert.equal(f.reads(),0);f.timers[0].fn();await assert.rejects(read);await assert.rejects(f.transport.complete());
@@ -80,4 +80,36 @@ test('actual pinned source guard accepts actual bytes and refuses altered instal
   await mkdir(path.join(root,'node_modules/playwright-core/lib/utils/isomorphic'),{recursive:true});await writeFile(path.join(root,'node_modules/playwright-core/lib/utils/isomorphic/protocolMetainfo.js'),'changed');
   const module=new URL('../../../e2e/support/computer-recovery-binding.mjs',import.meta.url).href,q=spawnSync(process.execPath,['--input-type=module','-e',`import{requireRecoveryBindingInstaller as guard}from${JSON.stringify(module)};try{await guard();process.exitCode=7;}catch(error){if(!String(error.message).includes('installer source changed'))throw error;}`],{cwd:root,encoding:'utf8'});assert.equal(q.status,0,q.stderr);
  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+// A controlled public configuration gate reproduces the original pre-request
+// timeout schedule without runner load, sleeps or additional browser reads.
+test('held configuration releases after old2s but one request and ACK fit the fixed5s acceptance cap',async()=>{
+ const entered=deferred(),release=deferred(),f=await fixture({harness:{beforeSignal:async()=>{entered.resolve();await release.promise;}}});
+ const read=f.transport.start();read.catch(()=>{});await entered.promise;f.clock.value=2500;
+ assert.equal(f.reads(),0);assert.equal(f.transport.report().incomplete,false);assert.equal(f.timers[0].ms,5000);
+ release.resolve();await read;await f.transport.complete();assert.equal(f.reads(),1);const report=f.transport.report();
+ assert.equal(report.requestReceivedAt,2500);assert.equal(report.deadline,4500);assert.equal(report.totalDeadline,5000);assert.equal(report.ack,true);assert.equal(f.transport.healthy(),true);
+});
+test('no publisher request exhausts total acceptance and late release never revives the ticket',async()=>{
+ const entered=deferred(),release=deferred(),f=await fixture({harness:{beforeSignal:async()=>{entered.resolve();await release.promise;}}});const read=f.transport.start();read.catch(()=>{});await entered.promise;
+ f.clock.value=5001;f.timers[0].fn();await assert.rejects(read);release.resolve();await assert.rejects(f.transport.complete());assert.equal(f.reads(),0);assert.equal(f.transport.report().timeoutBudget,'total');assert.equal(f.transport.healthy(),false);
+});
+for(const boundary of ['payload','completion'])test('late request cannot extend total5s for '+boundary,async()=>{
+ let f;f=await fixture({harness:{beforeSignal(){f.clock.value=4500;},publisherGate(args){if(boundary==='payload'&&args[0].kind==='payload')f.clock.value=5001;}}});
+ if(boundary==='completion'){const emit=f.h.page.emit.bind(f.h.page);f.h.page.emit=(type,msg)=>{if(type==='console'&&msg.text().startsWith(RECOVERY_BINDING_ACK))f.clock.value=5001;return emit(type,msg);};}
+ await assert.rejects(f.transport.start());await assert.rejects(f.transport.complete());assert.equal(f.transport.report().deadline,5000);assert.equal(f.transport.report().timeoutBudget,'total');assert.equal(f.transport.healthy(),false);
+});
+test('configuration settlement after total cap fails even with an earlier packet and ACK',async()=>{
+ const gate=deferred(),f=await fixture({harness:{configGate:gate.promise}});await f.transport.start();f.clock.value=5001;gate.resolve();await assert.rejects(f.transport.complete());assert.equal(f.transport.report().configSettledAt,5001);assert.equal(f.transport.report().disposeDone,true);assert.equal(f.transport.healthy(),false);
+});
+test('owned disposal crossing total cap is awaited, recorded and permanently failed',async()=>{
+ const f=await fixture();await f.transport.start();const signalName=[...f.h.bindings.keys()].find(n=>n.startsWith('__righeltFinalSignal_'));
+ // Public disposable is captured by the transport; intercept its source-owned
+ // event sink to advance only the injected monotonic clock during real disposal.
+ const push=f.h.events.push.bind(f.h.events);f.h.events.push=(...items)=>{if(items.includes('signal-dispose'))f.clock.value=5001;return push(...items);};
+ await assert.rejects(f.transport.complete());assert(signalName);assert.equal(f.h.bindings.size,0);assert.equal(f.transport.report().disposeDoneAt,5001);assert.equal(f.transport.report().timeoutBudget,'total');assert.equal(f.transport.healthy(),false);
+});
+test('navigation while configuration is held before the first request remains fatal',async()=>{
+ const entered=deferred(),release=deferred(),f=await fixture({harness:{beforeSignal:async()=>{entered.resolve();await release.promise;}}});const read=f.transport.start();read.catch(()=>{});await entered.promise;f.h.navigate();release.resolve();await assert.rejects(read);await assert.rejects(f.transport.complete());assert.equal(f.reads(),0);assert.match(f.transport.report().reason,/foreign-document/);
 });

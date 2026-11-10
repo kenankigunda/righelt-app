@@ -70,6 +70,8 @@ async function register(page, username, { gate = false, readRecovery = false } =
   }
   // The game URL and Player 1 role are optimistic. Finish the real creation
   // before a caller can navigate away and cancel its pending mutation.
+  await expect(play).toBeVisible();
+  await expect(play).toBeEnabled();
   const [creation] = await Promise.all([
     page.waitForResponse(response => response.request().method() === "POST"
       && new URL(response.url()).pathname === "/api/shell/games", { timeout: 10000 }),
@@ -567,7 +569,8 @@ test("current public names follow the account across browsers through the minima
     await other.reload();
     await switchGamePanel(other,"players");
     const ownPlayer=other.getByTestId("participant-player-1").getByRole("button");
-    await expect(ownPlayer).toContainText("You");
+    await expect(ownPlayer).toContainText("Étoile 🌟");
+    await expect(ownPlayer).toHaveAccessibleName("Étoile 🌟, you, Red, Connected");
     await expect(ownPlayer).toHaveAttribute("data-username",username);
     await expect(other.getByTestId("history-player-names")).toHaveCount(0);
     const spectator = await browser.newContext({ ignoreHTTPSErrors: true });
@@ -1000,11 +1003,11 @@ test("long profile names remain accessible to observers without covering the boa
   await expect(dialog(page).locator("[data-autosave-status]")).toHaveText("Saved");
   await dialog(page).getByRole("button", { name: "Close", exact: true }).click();
   const owner = page.getByTestId("participant-player-1").getByRole("button");
-  await expect(owner).toHaveText('You');
+  await expect(owner).toHaveText(displayName);
   const username=await owner.getAttribute('data-username');expect(username).toBeTruthy();
   await owner.focus();await owner.press('Enter');await expect(page.getByTestId('public-profile')).toContainText('Joined');
-  await expect(owner).toHaveAttribute('aria-expanded','true');await expect(owner).toBeFocused();await expect(owner).toHaveText('You');
-  // The owner sees You. A separate public observer must still receive the full
+  await expect(owner).toHaveAttribute('aria-expanded','true');await expect(owner).toBeFocused();await expect(owner).toHaveText(displayName);
+  // The owner and a separate public observer receive the full
   // saved name, accessible identity and real profile control at the same width.
   const observerContext=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1366,height:900}});
   try{

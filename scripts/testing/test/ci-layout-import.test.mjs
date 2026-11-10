@@ -21,12 +21,12 @@ async function fixture(t,id='guest-2-v1'){
 }
 test('legacy thirty-four lane compatibility remains accepted',async t=>{const{options}=await fixture(t,'guest-2-v1');assert.deepEqual((await importCatalogCI(options)).rejected,{});});
 test('current pr-gate v2 imports represented checks and rejects nightly-only credit',async t=>{
- const{options,runtime,dependencies}=await fixture(t,'pr-gate-v2');
+ const{options,runtime,dependencies}=await fixture(t,'pr-gate-v3');
  const result=await importCatalogCI({...options,expected:{
   Unit:{argv:['pnpm','test:unit'],runtime,dependencies},
   E2E:{argv:['pnpm','test:e2e'],runtime,dependencies},
  }});
- assert.equal(result.expectedLayout,'pr-gate-v2');assert.ok(result.receipts.Unit);assert.match(result.rejected.E2E,/evidence profile differs/);
+ assert.equal(result.expectedLayout,'pr-gate-v3');assert.ok(result.receipts.Unit);assert.match(result.rejected.E2E,/evidence profile differs/);
 });
 test('unknown, downgrade and changed source do not gain layout credit',async t=>{
  const{options,cwd}=await fixture(t,'guest-2-v1');await assert.rejects(importCatalogCI({...options,expectedLayout:'unknown'}));await assert.rejects(importCatalogCI({...options,expectedLayout:'guest-4-v1'}));await fs.appendFile(path.join(cwd,'scripts/testing/catalog.mjs'),'\nthrow Error("must never execute");');await assert.rejects(importCatalogCI(options));

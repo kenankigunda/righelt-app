@@ -48,6 +48,15 @@ export function playerDisplayName(game,side) {
   return hasAnonymousPlayers(game)?`Guest ${actor==='P1'?1:2}`:name;
 }
 
+/** Canonical visible identity; nonvisual color and ownership never depend on text color. */
+export function playerIdentityLabel(game,side,options={}) {
+  const actor=normalizeActivitySide(side);
+  if(!actor)return {text:'Player',side:null,color:null,accessibleName:'Player'};
+  const text=playerDisplayName(game,actor),color=sideColorName(actor);
+  const owned=humanControlledSides(game,options).includes(actor);
+  return {text,side:actor,color,accessibleName:`${text}${owned?', you':''}, ${color}`};
+}
+
 export function perspectiveActorLabel(game,side,options={}) {
   const actor=normalizeActivitySide(side);
   if(!actor)return 'Next player';
@@ -70,11 +79,11 @@ export function liveHistoryLabel(game,state,options={}) {
   return `Live · Waiting on ${label==='You'?'you':label==='Opponent'?'opponent':label} to move`;
 }
 
-// History names the computer that acted; current-turn captions stay relative.
+// Recorded references use canonical names; useful live control prompts stay relative.
 export function historyActorLabel(game,move,options={}) {
   const side=normalizeActivitySide(move?.actorSide)??activityStateActorSide(move?.selectionSnapshot);
   if(!side)return 'Next player';
   const profile=COMPUTER_PROFILES[move?.computerProof?.profile];
   if(profile)return profile.name;
-  return computerSeat(game,side)?playerDisplayName(game,side):perspectiveActorLabel(game,side,options);
+  return playerDisplayName(game,side);
 }

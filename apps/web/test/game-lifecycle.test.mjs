@@ -12,10 +12,10 @@ test('only an explicitly ongoing live game permits gameplay',()=>{
  assert.equal(isOngoingGame({...game('ongoing'),status:'finished'}),true,'authoritative undo can reopen a game despite stale display metadata');
 });
 test('History presents perspective-aware winner and color, including observers and draws',()=>{
- assert.match(renderHistoryResult(game('p1_win'),'a'),/You won<\/strong> <span>· Red/);
- assert.match(renderHistoryResult(game('p2_win'),'a'),/Your opponent won<\/strong> <span>· Blue/);
- assert.match(renderHistoryResult(game('p2_win'),'observer'),/Guest 2 won<\/strong> <span>· Blue/);
+ assert.match(renderHistoryResult(game('p1_win'),'a'),/aria-label="You won, Red"/);
+ assert.match(renderHistoryResult(game('p2_win'),'a'),/aria-label="Guest 2 won, Blue"/);
+ assert.match(renderHistoryResult(game('p2_win'),'observer'),/aria-label="Guest 2 won, Blue"/);
  assert.match(renderHistoryResult(game('draw'),'a'),/Draw<\/strong>/);assert.doesNotMatch(renderHistoryResult(game('draw'),'a'),/· (Red|Blue)/);
  assert.equal(renderHistoryResult(game('ongoing'),'a'),'');
- const named={...game('p1_win'),player1:{identityId:'a',profile:{displayName:'<Ada>'}}};assert.match(renderHistoryResult(named,'observer'),/&lt;Ada&gt; won/);
+ const named={...game('p1_win'),player1:{identityId:'a',profile:{displayName:'<Ada>'}}};assert.match(renderHistoryResult(named,'observer'),/&lt;Ada&gt; won, Red/);
 });

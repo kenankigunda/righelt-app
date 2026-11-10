@@ -3,16 +3,16 @@ import assert from "node:assert/strict";
 import { getGameResult, createResultTransitions, createRematchDialog, RESULT_HEADING_CONTRACT, REMATCH_CHOICES_CONTRACT } from "../shell/game-result.js";
 const game = (status = "ongoing") => ({ id: "g", player1: { identityId: "red" }, player2: { identityId: "blue" }, board: { state: { outcome: { status, reason: "p2_commander_unsupplied" } } } });
 test("results use authoritative ownership and selected self-play start for the rematch", () => {
-  assert.equal(RESULT_HEADING_CONTRACT, 'perspective-v2');
+  assert.equal(RESULT_HEADING_CONTRACT, 'named-perspective-v3');
   assert.equal(getGameResult(game(), "red"), null);
   assert.equal(getGameResult(game("p1_win"), "red").title, "You won");
-  assert.equal(getGameResult(game("p1_win"), "blue").title, "Your opponent won");
+  assert.equal(getGameResult(game("p1_win"), "blue").title, "Guest 1 won");
   assert.equal(getGameResult(game("p1_win"), "viewer").title, "Guest 1 won");
   assert.equal(getGameResult(game("draw"), "blue").title, "Draw");
   const self = { ...game("p1_win"), player2:{identityId:"red"}, selfPlayMode: true, selfPlayStartSide: "p2", currentSnapshot: { outcome: { status: "ongoing" } } };
-  assert.equal(getGameResult(self, "viewer").title, "Guest 1 won");
+  assert.equal(getGameResult(self, "viewer").title, "Guest 1 won as Red");
   assert.equal(getGameResult(self, "viewer").side, null);
-  assert.deepEqual(getGameResult(self, "red"), { title: "You won", side: "p2", winner: "p1", tone: "victory", controlsBothSides: true, reason: "Your Blue commander lost its supply.", opponent: "self", rematchSide: "p1" });
+  assert.deepEqual(getGameResult(self, "red"), { title: "You won as Red", titleParts:[{text:"You won as Red",side:"p1",colorNamed:true}], side: "p2", winner: "p1", tone: "victory", controlsBothSides: true, reason: "Your Blue commander lost its supply.", reasonParts:[{text:"Your Blue commander",side:"p2",colorNamed:true},{text:" lost its supply."}], opponent: "self", rematchSide: "p1" });
 });
 test("result automatic entry happens once on an observed live finish, never hydration/history/hidden/story", () => {
   const tracker = createResultTransitions();
@@ -29,11 +29,11 @@ test("result automatic entry happens once on an observed live finish, never hydr
 
 test('actual defeat causes remain distinct and legacy push results are interpreted without rewriting history',()=>{
  const captured={...game('p1_win'),board:{state:{outcome:{status:'p1_win',reason:'p2_commander_destroyed'},pieces:[{id:'C1',supplied:true}]}}};
- assert.equal(getGameResult(captured,'red').reason,'Your opponent’s commander was destroyed.');
+ assert.equal(getGameResult(captured,'red').reason,'Guest 2’s commander was destroyed.');
  assert.equal(getGameResult(captured,'red').tone,'victory');assert.equal(getGameResult(captured,'blue').tone,'defeat');assert.equal(getGameResult(captured,'viewer').tone,'neutral');
  const legacy=structuredClone(captured);legacy.board.state.outcome.reason='p2_commander_unsupplied';const original=structuredClone(legacy);
- assert.equal(getGameResult(legacy,'red').reason,'Your opponent’s commander was destroyed.');assert.deepEqual(legacy,original);
- legacy.board.state.pieces.push({id:'C2',supplied:false});assert.equal(getGameResult(legacy,'red').reason,'Your opponent’s commander lost its supply.');
+ assert.equal(getGameResult(legacy,'red').reason,'Guest 2’s commander was destroyed.');assert.deepEqual(legacy,original);
+ legacy.board.state.pieces.push({id:'C2',supplied:false});assert.equal(getGameResult(legacy,'red').reason,'Guest 2’s commander lost its supply.');
  assert.equal(getGameResult(game('draw'),'red').tone,'draw');
  const watch={...captured,computer:{seats:{p1:'tau',p2:'horus'},manual:false}};assert.equal(getGameResult(watch,'red').tone,'neutral');
 });

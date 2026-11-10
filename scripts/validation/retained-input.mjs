@@ -109,7 +109,7 @@ export async function restoreRetainedInput({input,repository,baseBranch,baseline
  if(typeof assertStopped!=='function'||await assertStopped()!==true)throw Error('Retained transfer requires stopped source and target services');
  return withRunLock(runFile,async()=>{
   const sourceRunDigest=await fileDigest(runFile),source=await readJSON(runFile);
-  if(source.version!==2||typeof source.id!=='string'||!source.id||source.mode!=='integrated'||source.repository!==repository||source.plan?.base!==baseBranch||!sha(source.base)||!Array.isArray(source.stages)||!Array.isArray(source.prs))throw Error('Retained source must be a matching integrated v2 repository');
+  if(![2,3].includes(source.version)||typeof source.id!=='string'||!source.id||source.mode!=='integrated'||source.repository!==repository||source.plan?.base!==baseBranch||!sha(source.base)||!Array.isArray(source.stages)||!Array.isArray(source.prs))throw Error('Retained source must be a matching integrated v2 repository');
   const selected=source.stages.filter(stage=>stage.id===input.stageId);
   if(selected.length!==1)throw Error('Retained source stage must be unique');
   const stage=selected[0],provenance=stage.checkpointProvenance;

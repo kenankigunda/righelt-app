@@ -6,9 +6,32 @@ This program follows the October 2026 product decisions. Independent healthy PRs
 
 The contracts below combine current behavior and approved incoming work. They do not assert that every described feature is implemented, validated, merged or deployed. Track those states separately and refresh this snapshot against actual PR and main metadata before publishing this documentation.
 
-At this source-preparation checkpoint, main, production and the installed validation release are `98505b6e`. History200 is published at `8af0278a`, with its new current-head CI still pending. Its targeted native proof is separate from final retained-state acceptance. Identity207 is source-prepared and locally checked; it is not merged. The other surviving canonical families—193,196,204,210,212,213,215,217,187,218,190,225,226,243 and221—remain separate delivery items. Prepared source, historical checks and studies never establish current production acceptance.
+As of 10 November 2026, History200, identity/results207 and confirmed playback193 are merged and production-verified. Main and the installed validation release are `4760090f`. PR193 passed exact-head PR validation, actual-main CI and normal deployment, followed by served commit, module and API-version verification. Its source-testing repair also introduced the durable behavioral testing standard. Prepared source, historical checks and studies never establish current production acceptance.
 
-The original program inventory remains67 items:32 merged and verified in production,23 open and12 superseded. Prerequisite tooling254/255 and advisory nightly repairs are tracked separately and do not change that inventory. Preserve the approved feature order and actual-main refresh boundaries.
+The original program remains 67 items: 35 merged and production-verified, 15 open and 17 superseded at this checkpoint. Related186/189/205 are closed as documented supersessions through193;239 remains part of212. The remaining 14 canonical families appear below. Prerequisites, including248/249, CI/tooling250/253/254/255/257 and the open storage-isolation256, are counted separately. Refresh these facts from primary PR and deployment evidence before the final documentation merge. Preserve the approved feature order and actual-main refresh boundaries.
+
+| Remaining family | Required delivery |
+|---|---|
+|196 Direct Undo|Direct self-play/computer Undo, authoritative human consent and distinct operation boundaries with preserved History intent.|
+|204 Completed Home|Correct membership, counts, winner information, pagination, freshness and Undo reclassification.|
+|210 Naming consumers|Canonical names across Home, analysis and descriptions while preserving editable originals and accessible attribution.|
+|212 Fixtures, including239|Account dismissal and panel-motion settlement while retaining account and font-layout proof.|
+|213 Computer rows|Coherent identity/activity, accessible status, stable disclosure and permission-aware Resume.|
+|215 Shared contracts|Approved decisions, supersessions and delivery status, clearly separating pending work.|
+|217 Notices/paper|Notice layering, vellum materials, opening/closing motion and paired paper cues.|
+|187 Navigation|Directional motion, visit restoration and cold recovery with preserved focus and scroll.|
+|218 Inspection|Independent Commander/supply inspection, correct ownership and distinct route patterns.|
+|190 Opponent overview|Completed opponent-turn presentation, revision-safe hydration and explicit inspection precedence.|
+|225 Recovery details|Readable sanitized details, reliable copying, fallback selection and focus.|
+|226 Guidance diagnostics|Bounded episode diagnostics without gameplay or recovery authority.|
+|243 Board copy|Complete information/action-first copy within PR246's finite prompt geometry.|
+|221 Visual foundation|Full marble-and-paper propagation, all assets and motion, accessibility and matched performance acceptance.|
+
+Follow [durable testing](TESTING_STRATEGY.md#durable-tests-execute-behavior) and the released version 3 evidence policy. Test production behavior with independent expected answers. Migrate new and affected source-dependent assertions in the feature that changes them; leave the unrelated legacy inventory to T-136. Run the durability guard before slower checks. Do not regenerate the legacy baseline or add test-only product hooks. Targeted negative proof and one focused app wiring proof protect migrated behavior. Native browser contracts require native proof; permutation depth belongs in faster integration tests.
+
+Prepare and review the next two or three families in parallel. Refresh, ordinary-push and run exact-head PR CI during the predecessor's main CI and deployment verification. Only the next merge waits for verified deployment. Serialize local heavy phases through the resource queue. Reuse compatible evidence, source review and inspected originals. Retained proof is required at affected state boundaries, including196's operation/admission change, rather than automatically for every family. Preserve original checkpoint lineage and expiry. No fresh seed substitutes for historical continuity.
+
+`PR validation` over the full stable 19-lane `pr-gate` is the sole blocking CI aggregate. Full validation is retired and nightly-full is advisory. Explicit feature acceptance, bounded independent review, authorization, actual-main CI, normal deployment and exact served identity remain separate requirements. CI narrowing is T-137 and is not a prerequisite for this rollout.
 
 PR196 must preserve each accepted Undo operation as a separate collapsed History boundary. PR221 must preserve truthful pending, uncertain and failed invitation creation, with usable copy only after acknowledgement and no replay of the original POST; Home204/210 supply its dependency boundary. These are pending acceptance requirements, not claims that the prepared implementations already satisfy them.
 
@@ -52,6 +75,8 @@ The221 illustration inventory,14 approved asset source bindings,32-view/60-row m
 ## Validation and release
 
 Use the pinned released validation tools, an explicit candidate checkout and exact revisions. Preserve raw failures and repair the canonical source PR. Evidence publication remains paused. Merge readiness, user merge authority and deployed production verification are separate gates.
+
+The table is the program-wide coverage inventory. For each change, select the affected acceptance contracts and concrete regression risks through the released plan, reuse compatible proof, and stop when those questions are answered. It is not a requirement to rerun every row for every PR. The full-refresh 32-view/60-row and matched performance requirements remain explicit final acceptance.
 
 | Area | Required proof |
 | --- | --- |

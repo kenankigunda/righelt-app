@@ -203,13 +203,14 @@ test('console listener removal failure remains failed evidence',async()=>{
 });
 
 async function actualBindingHook({lateReject=false,navigate=false,timeout=false,autoAck=true,beginFailure=false}={}){
- let acknowledge,rejectOriginal,releaseProducer,journalWritten,afterEach,reads=0;
+ let acknowledge,rejectOriginal,releaseProducer,journalWritten,afterEach,expireBinding,timeoutReached,reads=0;
  const configuration=new Promise((yes,no)=>{acknowledge=yes;rejectOriginal=no;}),producer=new Promise(yes=>{releaseProducer=yes;}),written=new Promise(yes=>{journalWritten=yes;});
  const primary=Error('original configuration rejected after delivery'),journals=[],timers=[];
- const h=recoveryBindingHarness({gameId:'game',namespace:'namespace',configGate:configuration,onRead:()=>{reads++;},beforeSignal:async()=>{if(timeout)await producer;}});
+ const h=recoveryBindingHarness({gameId:'game',namespace:'namespace',configGate:configuration,onRead:()=>{reads++;},beforeSignal:async()=>{if(timeout){queueMicrotask(()=>{expireBinding();releaseProducer();timeoutReached();if(autoAck)acknowledge();});await producer;}}});
  const {page}=h;page.evaluate=()=>assert.fail('binding recovery must not issue Page.evaluate');
  const base=createComputerRecoveryHandoff(page,'namespace');if(!beginFailure)base.bindGame('game');
- const owner=await installComputerRecoveryBindingOwner(page,'namespace',base,{verifyInstaller:async()=>{}});
+ const timedOut=new Promise(resolve=>{timeoutReached=resolve;});
+ const owner=await installComputerRecoveryBindingOwner(page,'namespace',base,{verifyInstaller:async()=>{},setTimer(fn,ms){timers.push(ms);expireBinding=fn;return 1;},clearTimer(){}});
  const source=readFileSync(new URL('../../../e2e/workflows/completion-preserving-retreat.spec.mjs',import.meta.url),'utf8'),start=source.indexOf('test.afterEach('),end=source.indexOf('\nasync function request(',start);
  const info={title:'the real computer defender leaves a completion-preserving native Follow',status:'passed',expectedStatus:'passed',outputPath:name=>'/controlled/'+name,async attach(){}};
  vm.runInNewContext(source.slice(start,end),{
@@ -220,7 +221,7 @@ async function actualBindingHook({lateReject=false,navigate=false,timeout=false,
  });
 
  const pending=afterEach({page,computerRecoveryAdmission:{finalRecoveryHandoff:owner}},info);pending.catch(()=>{});
- return{...h,owner,primary,journals,timers,pending,written,acknowledge,rejectOriginal,reads:()=>reads};
+ return{...h,owner,primary,journals,timers,pending,written,timedOut,acknowledge,rejectOriginal,reads:()=>reads};
 }
 
 test('actual afterEach writes the same packet but stays live until original configuration acknowledgement',async()=>{
@@ -229,7 +230,7 @@ test('actual afterEach writes the same packet but stays live until original conf
   await f.written;assert.equal(f.journals[0].records[0].event,'same-original');assert.equal(done,false);
   assert.equal(f.page.listenerCount('console'),1);assert.ok(f.page.listenerCount('framenavigated')>=1);
  }finally{f.acknowledge();await f.pending;}
- assert.equal(f.reads(),1);assert.deepEqual(f.timers,[2000]);assert.equal(f.owner.consume().incomplete,false);f.owner.end();
+ assert.equal(f.reads(),1);assert.equal(f.timers.length,2);assert(f.timers[0]>4900&&f.timers[0]<=5000);assert(f.timers[1]>1900&&f.timers[1]<=2000);assert.equal(f.owner.consume().incomplete,false);f.owner.end();
 });
 
 test('actual afterEach poisons an early delivered packet when original configuration later rejects',async()=>{
@@ -244,10 +245,10 @@ test('actual afterEach rejects navigation after journal delivery and before conf
  assert.equal(f.owner.consume().incomplete,true);assert.equal(f.reads(),1);f.owner.end();
 });
 
-test('actual afterEach preserves unavailable journal failure after its original configuration settles',async()=>{
+test('actual afterEach preserves binding timeout without a fallback snapshot after configuration settles',async()=>{
  const f=await actualBindingHook({timeout:true});await assert.rejects(f.pending,/read-timed-out/);
- assert.equal(f.journals[0].unavailable,'diagnostic-read-timeout');assert.deepEqual(f.timers,[2000]);
- const value=f.owner.consume();assert.equal(value.incomplete,true);assert.equal(value.journalReadTimedOut,true);
+ assert.equal(f.journals.length,0);assert.equal(f.timers.length,1);assert(f.timers[0]>4900&&f.timers[0]<=5000);
+ const value=f.owner.consume();assert.equal(value.incomplete,true);assert.equal(value.journalReadTimedOut,false,'binding deadline is separate from the legacy journal race');
  assert.equal(f.reads(),0,'timeout before ticket acceptance must not trigger a fallback or later state read');f.owner.end();
 });
 
@@ -260,7 +261,7 @@ test('actual afterEach issues no signal or state read after required begin fails
 
 test('actual afterEach still awaits original configuration when its delivery failed',async()=>{
  const f=await actualBindingHook({timeout:true,autoAck:false});let finished=false;
- f.pending.then(()=>{finished=true;},()=>{finished=true;});await f.written;
+ f.pending.then(()=>{finished=true;},()=>{finished=true;});await f.timedOut;
  assert.equal(finished,false,'rejected delivery cannot skip original configuration settlement');
  f.rejectOriginal(f.primary);
  await assert.rejects(f.pending,error=>error.name==='AggregateError'&&Array.isArray(error.errors)&&error.errors.includes(f.primary));

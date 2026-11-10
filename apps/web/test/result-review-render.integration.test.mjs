@@ -1,6 +1,11 @@
+import {publishAcknowledgedBoardMessage} from '../shell/playback-presentation.js';
+import {renderResultPanel} from '../shell/result-panel.js';
+import {selectedHistoryPresentation} from '../shell/history-narration.js';
+import {recordedMoveNumber,visibleRecordedMoves} from '../shell/recorded-narration.js';
+import {renderBoardMessageHtml} from '../board/message-presentation.js';
 import {createBoardContextStore} from '../shell/board-context.js';
 import {isCompletedGame} from '../shell/game-lifecycle.js';
-import {renderHistoryResult} from '../shell/game-result.js';
+import {renderResultText,renderHistoryResult} from '../shell/game-result.js';
 import {historyTurnSide} from '../shell/history-preview.js';
 import {playerDisplayName,liveHistoryLabel} from '../shell/perspective-labels.js';
 import {canReadAdditionalHistory} from '../shell/additional-history.js';
@@ -34,7 +39,7 @@ function harness({ resultMounted = true, activeResult = null } = {}) {
   let mountedPanel = "board";
   const appEl = new Element();
   appEl.querySelector = selector => selector === ".game-result" ? (resultMounted ? new Element() : null) : new Element();
-  const context = {renderHistoryResult,
+  const context = {selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,
     resultPresentation:createResultPresentation(),
     HTMLElement: Element, appEl, currentRoute: { name: "game", gameId: "g", panel: "board" },
     activeResultGameId: activeResult,
@@ -53,7 +58,7 @@ function harness({ resultMounted = true, activeResult = null } = {}) {
       return shouldPatchFlyoutsOnly;
     };
     globalThis.review = () => { const action = "analysis", actionGameId = "g"; ${reviewAction} };
-  `, context);
+  `, Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
   const jobs = new Map(), decisions = [];
   let id = 0;
   const renderContent = () => {
@@ -100,10 +105,10 @@ test("only true flyout changes retain flyout-only patching; panel changes refres
 
 // An acknowledged undo can reopen a completed game while its result is visible.
 test("authoritative terminal rollback clears result state so the board can remount", () => {
-  const reconcile = extract("    if (activeResultGameId === currentRoute.gameId && confirmed?.board", "    if(resultTransitions.observe");
+  const reconcile = extract("    if (activeResultGameId === currentRoute.gameId && confirmed?.board", "    if(!game?.confirmedPlayback && resultTransitions.observe");
   for (const status of ["ongoing", "p1_win", "draw"]) {
-    const context = {renderHistoryResult,activeResultGameId:"g", currentRoute:{gameId:"g"}, confirmed:{board:{state:{outcome:{status}}}}, transport:{getIdentityId:()=>"me"},getGameResult:game=>game.board.state.outcome.status === "ongoing" ? null : {title:"Finished"}};
-    runInNewContext(reconcile, context);
+    const context = {selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,activeResultGameId:"g", currentRoute:{gameId:"g"}, confirmed:{board:{state:{outcome:{status}}}}, transport:{getIdentityId:()=>"me"},getGameResult:game=>game.board.state.outcome.status === "ongoing" ? null : {title:"Finished"}};
+    runInNewContext(reconcile, Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
     assert.equal(context.activeResultGameId,status === "ongoing" ? null : "g");
   }
 });
@@ -111,17 +116,17 @@ test("authoritative terminal rollback clears result state so the board can remou
 test("optimistic terminal state cannot expose a result or open it before confirmation", () => {
   const optimistic = {id:"g",board:{state:{outcome:{status:"p1_win"}}},player1:{identityId:"me"}};
   let confirmed = {...optimistic,board:{state:{outcome:{status:"ongoing"}}}};
-  const context = {renderHistoryResult,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},renderHistorySlots,renderResultMark,playerDisplayName,resultPresentation:createResultPresentation(),additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})}, getGameResult, transport:{getIdentityId:()=>"me",getAuthoritativeGame:()=>confirmed},escapeHtml:value=>String(value),formatDisplayGameId:value=>value,icon,renderTurnHistory:()=>"",participantName,participantDisplayName,render:()=>{},activeResultGameId:null};
+  const context = {selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},renderHistorySlots,renderResultMark,playerDisplayName,resultPresentation:createResultPresentation(),additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})}, getGameResult, transport:{getIdentityId:()=>"me",getAuthoritativeGame:()=>confirmed,getGameViewModel:()=>optimistic},escapeHtml:value=>String(value),formatDisplayGameId:value=>value,icon,renderTurnHistory:()=>"",participantName,participantDisplayName,render:()=>{},activeResultGameId:null};
   runInNewContext(`${extract("const renderResult =", "const renderGame =")}
     ${extract("const renderAdditionalHistory =", "const renderHistoryPanel =")}
     ${extract("const renderHistoryPanel =", "const renderBoardPanel =")}
     globalThis.result = renderResult;globalThis.history = renderHistoryPanel;
-    globalThis.openResult = () => {const action="view-result", actionGameId="g";${extract('  if (action === "view-result")','  if (action === "analysis")')}};`,context);
+    globalThis.openResult = () => {const action="view-result", actionGameId="g";${extract('  if (action === "view-result")','  if (action === "analysis")')}};`,Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
   assert.equal(context.result(optimistic),"");
   assert.doesNotMatch(context.history(optimistic),/data-action="view-result"/);
   context.openResult();assert.equal(context.activeResultGameId,null);
   confirmed=optimistic;
-  assert.match(context.result(optimistic),/>You won</);
+  assert.match(context.result(optimistic).replace(/<[^>]*>/g,''),/You won/);
   assert.match(context.result(optimistic),/<a[^>]+href="#\/">[\s\S]*?<svg[^>]+aria-hidden="true"[^>]+focusable="false"[\s\S]*?<\/svg>Home<\/a>/);
   assert.match(context.history(optimistic),/data-action="view-result"/);
   context.openResult();assert.equal(context.activeResultGameId,"g");
@@ -130,27 +135,27 @@ test("optimistic terminal state cannot expose a result or open it before confirm
 test("computer seats have distinct human, watch, history and result labels despite shared authority", () => {
   const person = {identityId:'me', profile:{username:'owner', displayName:'Owner'}};
   const game = {id:'g', player1:person, player2:{...person, computerProfile:'babs'}, selfPlayMode:true, computer:{seats:{p1:null,p2:'babs'},manual:false}, board:{state:{outcome:{status:'p1_win'}}}, moves:[]};
-  const context = {renderHistoryResult,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},renderHistorySlots,renderResultMark,playerDisplayName,isPlayerRole:role=>['Player 1','Player 2'].includes(role),escapeHtml:String,participantName,participantDisplayName,getGameResult,transport:{getIdentityId:()=> 'me',getAuthoritativeGame:()=>game},additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})},formatDisplayGameId:String,icon:()=>'',renderTurnHistory:()=>`<li data-testid="history-move-item">${historyActorLabel(game,{actorSide:'P2'},{identityId:'me'})} · Move 1: Pass</li>`};
+  const context = {selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},renderHistorySlots,renderResultMark,playerDisplayName,isPlayerRole:role=>['Player 1','Player 2'].includes(role),escapeHtml:String,participantName,participantDisplayName,getGameResult,transport:{getIdentityId:()=> 'me',getAuthoritativeGame:()=>game},additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})},formatDisplayGameId:String,icon:()=>'',renderTurnHistory:()=>`<li data-testid="history-move-item">${historyActorLabel(game,{actorSide:'P2'},{identityId:'me'})} · Move 1: Pass</li>`};
   runInNewContext(`${extract('const playerToneClassForSeat =','const renderConnectionStatusIcon =')}
     ${extract('const renderResult =','const renderGame =')}
     ${extract('const renderAdditionalHistory =','const renderHistoryPanel =')}
     ${extract('const renderHistoryPanel =','const renderBoardPanel =')}
-    globalThis.role = renderRoleLabel; globalThis.result = renderResult; globalThis.history = renderHistoryPanel;`, context);
+    globalThis.role = renderRoleLabel; globalThis.result = renderResult; globalThis.history = renderHistoryPanel;`, Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
   assert.match(context.role('Player 1', game), />Player 1</);
   assert.match(context.role('Player 1', {...game,player1:{...person,computerProfile:'tau'},player2:person}), />Player 2</);
   assert.match(context.role('Player 1', {...game,player1:{...person,computerProfile:'tau'}}), /watching computers/);
   assert.match(context.role('Viewer', game), />Viewer</);
   assert.match(context.role('Player 1', {...game,player2:person}), /both players/);
-  assert.match(context.result(game), /<bdi dir="auto">Owner<\/bdi> vs <bdi dir="auto">Babs<\/bdi>/);
+  assert.match(context.result(game), /<span class="player-tone-p1"><bdi dir="auto">Owner<\/bdi><\/span> vs <span class="player-tone-p2"><bdi dir="auto">Babs<\/bdi>/);
   const history = context.history(game);
   assert.match(history, /history-move-item">Babs · Move 1/);
   assert.doesNotMatch(history, /history-player-names|history-player-name|>Owner<|Computer/);
 });
 
 test("retained historical turns keep an exit even after undo removes the live turn", () => {
-  const context = {boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',isCompletedGame,renderHistoryResult,icon,liveHistoryLabel,transport:{getIdentityId:()=>"me"},escapeHtml:String,getControlSeatForTurn:(_state,seat)=>seat,
+  const context = {selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',isCompletedGame,renderResultText,renderHistoryResult,icon,liveHistoryLabel,transport:{getIdentityId:()=>"me"},escapeHtml:String,getControlSeatForTurn:(_state,seat)=>seat,
     historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:()=>"You",playerToneClassForSide:()=>"",playerToneClassForSeat:()=>"",formatClientDateTime:String,expandedUndoneGroups:new Set()};
-  runInNewContext(`${extract("const renderTurnHistory =", "const renderHeader =")}\n globalThis.history = renderTurnHistory;`, context);
+  runInNewContext(`${extract("const renderTurnHistory =", "const renderHeader =")}\n globalThis.history = renderTurnHistory;`, Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
   for (const turns of [[], [{index:0,playerSeat:"Player 1",moveIndexes:[]}]]) {
     const game={id:"retained",currentTurn:{index:2,playerSeat:"Player 1"},turns,moves:[],inHistoryMode:true,historyIndex:1};
     assert.match(context.history(game), /data-testid="history-return-live"/);
@@ -161,10 +166,10 @@ test("retained historical turns keep an exit even after undo removes the live tu
 test('actual result renderer affiliates victory with the authoritative winning side',()=>{
  for(const [winner,identity]of[['p1','red'],['p2','blue']]){
   const game={id:'g',player1:{identityId:'red'},player2:{identityId:'blue'},currentTurn:{playerSeat:winner==='p1'?'Player 2':'Player 1'},board:{state:{sideToMove:winner==='p1'?'P2':'P1',pieces:[{id:winner==='p1'?'C1':'C2',supplied:true}],outcome:{status:`${winner}_win`,reason:winner==='p1'?'p2_commander_destroyed':'p1_commander_destroyed'}}}};
-  const context={renderHistoryResult,game,renderResultMark,getGameResult,playerDisplayName,transport:{getIdentityId:()=>identity,getAuthoritativeGame:()=>game},escapeHtml:String,formatDisplayGameId:String,icon,participantName,participantDisplayName};
-  runInNewContext(`${extract('const renderResult =','const renderGame =')};globalThis.output=renderResult(game);`,context);
+  const context={selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,game,renderResultMark,getGameResult,playerDisplayName,transport:{getIdentityId:()=>identity,getAuthoritativeGame:()=>game},escapeHtml:String,formatDisplayGameId:String,icon,participantName,participantDisplayName};
+  runInNewContext(`${extract('const renderResult =','const renderGame =')};globalThis.output=renderResult(game);`,Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
   assert.match(context.output,new RegExp(`data-result-tone="victory" data-winner="${winner}"`));
-  assert.match(context.output,/>You won<\/h1>/);assert.match(context.output,/Your opponent’s commander was destroyed/);
+  assert.match(context.output.replace(/<[^>]*>/g,''),/You won/);assert.match(context.output,new RegExp(`${playerDisplayName(game,winner==='p1'?'p2':'p1')}’s commander`));
   const actions=[...context.output.matchAll(/<button([^>]*)data-action="(analysis|rematch)"[^>]*>/g)];
   assert.equal(actions.length,2);for(const action of actions)assert.doesNotMatch(action[1],/secondary/);
   assert.equal(getGameResult(game,identity).rematchSide,winner==='p1'?'p2':'p1');
@@ -186,7 +191,7 @@ function historyRouteHarness(t) {
     moves:[0,1].map(index=>({index,moveId:`m${index}`,snapshot:snapshot(index),selectionSnapshot:snapshot(index),notation:'MOVE',at:'2026-01-01'}))}});
   transport.selectHistoryMove({gameId:'g',moveIndex:0});
   const noop=()=>{};
-  const context={pendingBoardContextReplay:null,cancelPendingBoardContextReplay:noop,boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',isCompletedGame,renderHistoryResult,HTMLElement:Element,appEl,transport,currentRoute:{name:'game',gameId:'g',panel:'history'},
+  const context={selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,pendingBoardContextReplay:null,cancelPendingBoardContextReplay:noop,boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',isCompletedGame,renderResultText,renderHistoryResult,HTMLElement:Element,appEl,transport,currentRoute:{name:'game',gameId:'g',panel:'history'},
     lastRenderedRouteKey:'g|history|debug:false',lastRenderedBaseRouteKey:'g',lastRenderedTransitionPhaseKey:'idle',
     activeResultGameId:null,mountedBoardGameId:null,FLYOUT_KEYS:[],
     getGamePanel:route=>(route??context.currentRoute).panel,
@@ -229,7 +234,7 @@ function historyRouteHarness(t) {
       ${extract('  const shouldPatchFlyoutsOnly =','  let body = "";')}
       throw Error('The existing game must update incrementally, without replacing its shell');
     };
-  `,context);
+  `,Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
   const jobs=new Map();let id=0;
   const gate=createRenderGestureGate({render:()=>context.paint(),schedule:fn=>{jobs.set(++id,fn);return id;},cancel:key=>jobs.delete(key)});
   const render=()=>{if(!gate.defer({includeBoard:false}))context.paint();};

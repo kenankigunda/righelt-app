@@ -75,7 +75,7 @@ test('fallback sizing permanently mirrors the same formatted messages and inert 
  const primary=indexed('primary'),fallback=indexed('fallback');
  assert.equal(primary.size,boardPromptSizingModels().length);assert.deepEqual(fallback,primary);
  assert.equal(paragraphs.length,2*boardPromptSizingModels().length);
- for(const font of ['primary','fallback'])assert.equal(copies(font).length,68);
+ for(const font of ['primary','fallback'])assert.equal(copies(font).length,79);
  assert.deepEqual([...primary.keys()],boardPromptSizingModels().map((_,index)=>`prompt:${index}`));
  assert.equal([...primary.values()].filter(row=>row.pattern==='required-retry').length,1);
  for(const {attributes,markup}of paragraphs){assert.equal(attributes.get('aria-hidden'),'true');assert(attributes.has('inert'));assert.doesNotMatch(markup,/data-action=|data-board-message-action=|data-board-preview-action=/);}

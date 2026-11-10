@@ -7,7 +7,7 @@ export const BOARD_PROMPT=Object.freeze({
  piece:'Select a piece',move:'Select a move',anotherPiece:'Select another piece',
  anotherMove:'Select another move',rush:'Select a rush',requiredRush:'Select a rush to restore supply',
  follow:'Select a follow',history:'Choose a move in History',complete:'Review the game in History',
- replay:'Watch replay',manualReplay:'Next',loadingReplay:'Preparing replay',failedReplay:'Replay unavailable',
+ following:'Following the push',replay:'Watch replay',manualReplay:'Next',loadingReplay:'Preparing replay',failedReplay:'Replay unavailable',
 });
 
 export function boardPromptSizingModels({boardSize=10}={}) {
@@ -28,11 +28,11 @@ export function boardPromptSizingModels({boardSize=10}={}) {
   ...['Select a retreat','Opponent’s supply and command lines','Supply and command lines','Command lines','Supply lines','No command connection','No supply connection','No connection','Waiting for the game','Waiting for your opponent','Loading play','Play could not finish loading'].map(text=>({text})),
  ];
  for(const name of new Set(['Computer',...Object.values(COMPUTER_PROFILES).map(profile=>profile.name)])){
-  for(const suffix of ['needs a hand','is thinking','is saving their move','is paused'])models.push({text:`${name} ${suffix}`});
+  for(const suffix of ['needs a hand','needs help','is making their move','is thinking','is saving their move','is paused'])models.push({text:`${name} ${suffix}`});
   models.push({text:`Waiting for ${name}`});
  }
  // Same12ch visual bound and full-name accessibility as actual actor labels.
- const actorName='MMMMMMMMMMMMMMMM';models.push({text:`${actorName} to play`,actorName});
+ const actorName='MMMMMMMMMMMMMMMM';models.push({text:`${actorName} to play`,actorName},{text:`${actorName} is making their move`,actorName},{text:`${actorName} needs help`,actorName,action:{id:'retry-confirmed-playback',label:'Retry'}});
  return models;
 }
 

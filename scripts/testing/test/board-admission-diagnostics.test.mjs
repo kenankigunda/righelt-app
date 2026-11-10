@@ -308,7 +308,7 @@ test('error categories remain source-derived and changed output remains hash pro
  assert.throws(()=>transformBoardAdmissionModule(source,altered),/output hash mismatch/);
  const wrongOutput={...recipe,outputSha256:'0'.repeat(64)};assert.throws(()=>transformBoardAdmissionModule(source,wrongOutput),/output hash mismatch/);
  assert.equal(recipe.operations.filter(op=>op.after.includes('runtime-host-error')).length,1);assert.equal(recipe.operations.length,23);
- const unchanged={"/board-adapters/engine-board-adapter.js":"37ae4d7c79eb76c04725868ffd98d53a3951eec9f9613851709688deb9e6a769","/shell/live-transport.js":"a4e3c9a37eac44d300f3a1cee4eb8393fd22f4bc2a8318194d353de0f8478d05","/board/hosts/shell-host.js":"6f8f475dfe5108ead572c51375b3bafb85a94ee998ef91e2abd01f738cd575db","/shell/app.js":"3e17a5e6d1c05895b1e3a365043635ea006958bf521600b8eb48520aef569592"};
+ const unchanged={"/board-adapters/engine-board-adapter.js":"37ae4d7c79eb76c04725868ffd98d53a3951eec9f9613851709688deb9e6a769","/shell/live-transport.js":"1307e7f8ae69203001b16725e165e2d561a6aeed15850271350ee2b1249d0f10","/board/hosts/shell-host.js":"6f8f475dfe5108ead572c51375b3bafb85a94ee998ef91e2abd01f738cd575db","/shell/app.js":"a7efa0aa80df61319ee3ee2d33c845fb2d86cbbefeec01cf2b8336f1dd51813d"};
  for(const [key,expected] of Object.entries(unchanged)){assert.equal(createHash('sha256').update(JSON.stringify(recipes[key])).digest('hex'),expected);}
 });
 
@@ -390,7 +390,7 @@ test('case source opt-in and sealed inline capture preserve the original two act
  // Keep the original golden: only invert the sealed test-owned observation block.
  const hash=text=>createHash('sha256').update(text).digest('hex');
  const originalSHA='165ec16bb620c0038a8059a2d513401a5a258069ea6ae397130bb58fb5844d30';
- const reviewedCurrentSHA='a92963d3a05d8083077ed330cc2353d1f182bb39265ebdc775a16fe575ed33d0';
+ const reviewedCurrentSHA='fcf3791e85b1a3243d451cf3993ba631fe152b88e8ac2b0b9a144ffe21ee8646';
  // Preserve the old composed-source golden by exactly inverting the seven
  // accepted Recovery fault-lifecycle/reconnect fixture changes, not actions.
  const reviewedFixtureBaseSHA='95388c539469a08b581a1058ef79298c978cdaf859e12c5d1b328dd97bd8ca3b';
@@ -422,6 +422,10 @@ test('case source opt-in and sealed inline capture preserve the original two act
   {
     "before": " await page.route(`**/api/shell/games/${gameId}/**`,async route=>{\n  if(!isOperationRequest(route.request(),'reconcile')){await route.continue();return;}\n  // Reconcile is a POST. This fixture only observes an empty command batch,\n  // so an ECONNRESET may repeat the same read once without replaying a command.\n  const requestBody=route.request().postDataJSON();\n  expect(route.request().method()).toBe('POST');\n  expect(requestBody.protocolVersion).toBe(2);expect(requestBody.commands).toEqual([]);\n  const response=await route.fetch({maxRetries:1});if(hold){held();await gate;}await route.fulfill({response});\n });\n try {\n",
     "after": " await page.route(`**/api/shell/games/${gameId}/**`,async route=>{\n  if(!isOperationRequest(route.request(),'reconcile')){await route.continue();return;}\n  const response=await route.fetch();if(hold){held();await gate;}await route.fulfill({response});\n });\n try {\n"
+  },
+  {
+    "before": " await expect(message).toContainText(\"Select a retreat\");\n const acceptedRetreat=page.waitForResponse(response=>response.request().method()==='POST'&&new URL(response.url()).pathname.endsWith('/apply')&&actionFor(response.request().postDataJSON())?.type==='retreat');\n const automaticFollow=page.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/apply')&&actionFor(request.postDataJSON())?.type==='follow');\n acceptedRetreat.catch(()=>{});automaticFollow.catch(()=>{});\n await submitPlayableAction(page,retreat);\n const retreatResponse=await acceptedRetreat,retreatBody=await retreatResponse.json(),retreatCommand=retreatResponse.request().postDataJSON();\n expect(retreatBody.commandOutcomes).toContainEqual(expect.objectContaining({clientCommandId:retreatCommand.clientCommandId,fingerprint:retreatCommand.fingerprint,outcome:'accepted'}));\n expect(retreatBody.game.board.state.continuation.phase).toBe('follow');\n // Read the immutable acknowledged decision: the sole mandatory continuation\n // may finish before a later live read. No second native activation is needed.\n expect(retreatBody.game.legalActions).toHaveLength(1);\n const follow=retreatBody.game.legalActions[0];expect(follow.type).toBe('follow');\n const followCommand=(await automaticFollow).postDataJSON();\n expect(actionFor(followCommand)).toEqual(follow);\n expect(followCommand.payload.computer).toBeUndefined();\n expect(followCommand.expectedState).toEqual(retreatBody.game.board.state);\n expect(followCommand.expectedGameplayRevision).toBe(retreatBody.game.gameplayRevision);\n await expect(page.locator('.board-wrap[data-reconnecting=\"true\"]')).toHaveCount(0,{timeout:10000});\n await expect.poll(async()=> (await currentGame(page,gameId)).moves.length).toBe(3);\n game=await currentGame(page,gameId);expect(game.board.state.continuation).toBeNull();\n expect(game.moves.map(move=>move.action)).toEqual([push,retreat,follow]);\n expect(game.moves[2].clientCommandId).toBe(followCommand.clientCommandId);\n expect(new Set(game.moves.map(m=>m.clientCommandId)).size).toBe(3);",
+    "after": " await expect(message).toContainText(\"Select a retreat\");\n await submitPlayableAction(page,retreat);\n await expect.poll(async()=> (await currentGame(page,gameId)).board.state.continuation?.phase).toBe(\"follow\");\n await expect(page.locator('.board-wrap[data-reconnecting=\"true\"]')).toHaveCount(0,{timeout:10000});\n game=await currentGame(page,gameId);const follow=game.legalActions.find(a=>a.type===\"follow\");expect(follow).toBeTruthy();\n // The required continuation actor is already selected, even when a pushed\n // defender shares its square with the attacker and has no generic source class.\n await submitPlayableAction(page,follow);\n await expect.poll(async()=> (await currentGame(page,gameId)).moves.length).toBe(3);\n game=await currentGame(page,gameId);expect(game.board.state.continuation).toBeNull();\n expect(game.moves.map(move=>move.action)).toEqual([push,retreat,follow]);\n expect(new Set(game.moves.map(m=>m.clientCommandId)).size).toBe(3);"
   }
 ];
  const inlineSHA='8eb845f8799df703d46f19d983eb32a8e7e4bd29598d0a3d11321e618085abbe';
@@ -436,11 +440,8 @@ test('case source opt-in and sealed inline capture preserve the original two act
  const predicateEnd=helper.indexOf('  await target.click();',predicateStart);
  assert.ok(predicateStart>=0&&predicateEnd>predicateStart);
  const parentPredicate=helper.slice(predicateStart,predicateEnd);
- const normalize=source=>{
-  for(const {before,after} of recoveryFixtureUnion){
-   assert.equal(source.split(before).length-1,1,'exact reviewed Recovery fixture addition');
-   source=source.replace(before,after);
-  }
+ const normalize=(source,inversions=recoveryFixtureUnion)=>{
+  for(const {before,after} of inversions){assert.equal(source.split(before).length-1,1,'exact reviewed Recovery fixture union');source=source.replace(before,after);}
   assert.equal(source.split(beginMarker).length-1,1,'one sealed inline action');
   assert.equal(source.split(endMarker).length-1,1,'one inline end');
   assert.equal(source.split(callbackImport).length-1,1,'existing readiness import');
@@ -463,6 +464,8 @@ test('case source opt-in and sealed inline capture preserve the original two act
  };
  assert.equal(hash(current),reviewedCurrentSHA,'honest composed-source identity, not a replacement for the old golden');
  normalize(current);
+ assert.throws(()=>normalize(current,recoveryFixtureUnion.slice(0,-1)),/all original source/,'missing Playback fixture inversion must fail the original golden');
+ assert.throws(()=>normalize(current,[...recoveryFixtureUnion.slice(0,-1),{before:recoveryFixtureUnion.at(-1).after,after:recoveryFixtureUnion.at(-1).before}]),/exact reviewed Recovery fixture union/,'reversed Playback fixture inversion must fail closed');
  const reload="  await page.reload();await expect(page.getByTestId('game-board')).toBeVisible();";
  assert.equal(current.split(reload).length-1,1);
  const beforeSaved='  const saved=await currentGame(page,self.id);';
@@ -608,9 +611,9 @@ test('computer evidence persistence attempts independent sinks and owned route c
 });
 
 async function finalReadFixture({computer=true,timeout=false,readFailure=false,deferred=false}={}){
- const files=[],attached=[],events=[],timers=[];let reads=0,unroutes=0,release;
+ const files=[],attached=[],events=[],timers=[];let reads=0,unroutes=0,release,owner;
  const deferredRead=new Promise(resolve=>{release=resolve;});
- const h=recoveryBindingHarness({gameId:'owned',breakProducer:readFailure,onRead:()=>{reads++;events.push('browser-read');},beforeSignal:async()=>{if(timeout||deferred)await deferredRead;}}),page=h.page;
+ const h=recoveryBindingHarness({gameId:'owned',breakProducer:readFailure,onRead:()=>{reads++;events.push('browser-read');},beforeSignal:async()=>{if(timeout){queueMicrotask(()=>{owner.finalRecoveryHandoff.journalTimedOut();release();});}if(timeout||deferred)await deferredRead;}}),page=h.page;
  const addInit=page.addInitScript;
  page.addInitScript=async(fn,arg)=>{
   if(fn.name==='installBoardAdmissionCollector'){
@@ -624,7 +627,7 @@ async function finalReadFixture({computer=true,timeout=false,readFailure=false,d
  page.route=async()=>{};page.unroute=async()=>{unroutes++;};
  page.evaluate=async(fn,arg)=>{const prior=reads;if(readFailure)throw Error('original read failed');const value=vm.runInContext('('+fn.toString()+')(argument)',Object.assign(h.realm(),{argument:arg}));if(reads===prior)reads++;return value;};
  const info={title:'the real computer defender leaves a completion-preserving native Follow',status:'passed',expectedStatus:'passed',outputPath:name=>'/owned/'+name,async attach(name,value){attached.push({name,...value});}};
- const owner=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://owned',computerSessionRecovery:computer});owner.finalRecoveryHandoff?.bindGame('owned');
+ owner=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://owned',computerSessionRecovery:computer});owner.finalRecoveryHandoff?.bindGame('owned');
  const source=await readFile(new URL('../../../e2e/workflows/completion-preserving-retreat.spec.mjs',import.meta.url),'utf8');let afterEach;
  const start=source.indexOf('test.afterEach('),end=source.indexOf('\nasync function request(',start);
  vm.runInNewContext(source.slice(start,end),{test:{afterEach:fn=>{afterEach=fn;}},COMPUTER_UI_FRAME_MEASURE:'measure',computerFollowWorkflow:info.title,computerRetreatWorkflow:'other',createComputerRecoveryJSONRead,readComputerRecoverySnapshot,writeFile:async(file,body)=>{files.push({file,body});},attachNodeReadiness:x=>x,console:{warn(){}},setTimeout(fn,ms){timers.push(ms);if(timeout)queueMicrotask(()=>{fn();release();});return 1;},clearTimeout(){}});
@@ -638,10 +641,10 @@ test('actual existing final afterEach read hands off recovery once; computer per
  const originalWritePath=f.info.outputPath;const directory=await import('node:os').then(x=>x.tmpdir());const temp=await import('node:fs/promises').then(x=>x.mkdtemp(directory+'/recovery-handoff-'));f.info.outputPath=name=>temp+'/'+name;
  try{await f.owner.persist();assert.equal(f.reads(),1);assert.equal(f.unroutes(),1);const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));assert.equal(payload.handoff.incomplete,false);assert.equal(payload.observation.firstComputerRecovery,null);}finally{f.info.outputPath=originalWritePath;await import('node:fs/promises').then(x=>x.rm(temp,{recursive:true,force:true}));}
 });
-test('actual original 2s timeout or failed final read produces incomplete Node persistence with no fallback browser read',async()=>{
+test('owned binding timeout or failed final read produces incomplete Node persistence with no fallback browser read',async()=>{
  for(const settings of [{timeout:true},{readFailure:true}]){
   const f=await finalReadFixture(settings),directory=await import('node:os').then(x=>x.tmpdir()),temp=await import('node:fs/promises').then(x=>x.mkdtemp(directory+'/recovery-handoff-'));f.info.outputPath=name=>temp+'/'+name;
-  try{assert.ok(f.hookError);await assert.rejects(f.owner.persist(),/Computer recovery evidence incomplete/);assert.equal(f.reads(),settings.timeout?0:1,'timeout before accepted ticket reads no state; producer failure reads once, neither falls back');assert.equal(f.unroutes(),1);const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));assert.equal(payload.handoff.incomplete,true);assert.equal(payload.observation,null);if(settings.timeout)assert.deepEqual(f.timers,[2000]);}finally{await import('node:fs/promises').then(x=>x.rm(temp,{recursive:true,force:true}));}
+  try{assert.ok(f.hookError);await assert.rejects(f.owner.persist(),/Computer recovery evidence incomplete/);assert.equal(f.reads(),settings.timeout?0:1,'timeout before accepted ticket reads no state; producer failure reads once, neither falls back');assert.equal(f.unroutes(),1);const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));assert.equal(payload.handoff.incomplete,true);assert.equal(payload.observation,null);if(settings.timeout)assert.deepEqual(f.timers,[]);}finally{await import('node:fs/promises').then(x=>x.rm(temp,{recursive:true,force:true}));}
  }
 });
 test('generic/default persistence retains its existing browser read and is not redirected to computer handoff',async()=>{
@@ -755,15 +758,15 @@ test('browser init creates an opaque readonly document nonce; exact nonce accept
  const foreignPage=recoveryPage(),foreign=createComputerRecoveryHandoff(foreignPage,'nonce');foreign.bindGame('owned');const otherTicket=foreign.begin(foreignPage);foreign.capture(foreignPage,{...otherTicket,documentNonce:'current-document',timeOrigin:1000,observation});assert.equal(foreign.consume().reason,'foreign-document','equal clocks cannot qualify a different document nonce');
 });
 
-test('actual 2s journal timeout rejects the late ticket without a producer or fallback read',async()=>{
+test('controlled binding timeout rejects the late ticket without a producer or fallback read',async()=>{
  const f=await finalReadFixture({timeout:true,deferred:true}),fs=await import('node:fs/promises'),temp=await fs.mkdtemp((await import('node:os')).tmpdir()+'/computer-late-');f.info.outputPath=name=>temp+'/'+name;
  try{
-  assert.equal(JSON.parse(f.files[0].body).unavailable,'diagnostic-read-timeout');assert.deepEqual(f.timers,[2000]);
+  assert.equal(f.files.length,0,'no fallback journal is invented after rejected binding delivery');assert.deepEqual(f.timers,[]);
   f.release();await Promise.resolve();await Promise.resolve();
   assert.ok(f.hookError);await assert.rejects(f.owner.persist({remainingMs:()=>5000}),/Computer recovery evidence incomplete/);
   const value=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));
   assert.equal(value.handoff.incomplete,true);assert.equal(value.handoff.journalReadTimedOut,true);
-  assert.equal(JSON.parse(f.files[0].body).unavailable,'diagnostic-read-timeout');assert.equal(f.reads(),0,'the expired ticket is refused before the producer; releasing it cannot create later evidence');assert.equal(f.unroutes(),1);
+  assert.equal(f.files.length,0);assert.equal(f.reads(),0,'the expired ticket is refused before the producer; releasing it cannot create later evidence');assert.equal(f.unroutes(),1);
  }finally{await fs.rm(temp,{recursive:true,force:true});}
 });
 
@@ -833,7 +836,7 @@ async function rulesTimeoutRecipe(){
 }
 test('computer timeout recipe is strictly bound, exactly invertible and preserves the original computer catch entry',async()=>{
  const{all,recipe,source}=await rulesTimeoutRecipe();
- assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'e941defcabcb496695e2c002a5a404231c7ad2775e3f443432409a2297281f21');
+ assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'dbac69c1672ae52cbb515f93d0bed3bdb2db889bc1c5824b9704a43955dc0022');
  assert.equal(recipe.operations.length,1);const op=recipe.operations[0];assert.equal(op.anchorCount,1);
  const output=transformBoardAdmissionModule(source,recipe);assert.equal(output.slice(op.start,op.start+op.after.length),op.after);
  assert.equal(output.slice(0,op.start)+op.before+output.slice(op.start+op.after.length),source);

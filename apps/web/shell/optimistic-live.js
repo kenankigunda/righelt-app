@@ -217,10 +217,13 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
     });
   }
 
-  return {
-    ok: true,
-    game: finalizeProjectedView({ authoritativeGame, workingGame, identityId, queue, pendingMoves,
-      liveLegalActions: liveLegalActions ?? listLegalActions(workingGame.board.state) }),
-    commandResults,
-  };
+  // Admission still validates and computes the exact durable command result.
+  // Computer work only changes the visible position after server confirmation;
+  // human commands before it retain their existing optimistic presentation.
+  const firstComputer = queue.findIndex(command => Boolean(command.computer));
+  const visibleGame = firstComputer < 0
+    ? finalizeProjectedView({ authoritativeGame, workingGame, identityId, queue, pendingMoves,
+        liveLegalActions: liveLegalActions ?? listLegalActions(workingGame.board.state) })
+    : projectOptimisticGame({authoritativeGame,identityId,queue:queue.slice(0,firstComputer)}).game;
+  return {ok:true,game:visibleGame,commandResults};
 };

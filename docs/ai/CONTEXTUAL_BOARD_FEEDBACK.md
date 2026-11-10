@@ -41,11 +41,13 @@ The comparison passed Chromium and WebKit at320/390px and100/200percent text. Ph
 
 ## Validation
 
+This section records the contextual-feedback coverage inventory. Select checks for the changed contract and concrete regression risks through the released plan, reuse compatible evidence, and do not repeat the entire inventory for each PR.
+
 Use focused pure-rule and scope tests for explanation causes, phase deadlines and identity fences. Use the actual board adapter/runtime for inactive selections, frozen sequence restrictions, blocked targets and read-only inspection. Verify no old floating selection labels remain, no unavailable action is shown and required continuation controls survive.
 
 Check event placement in all three browsers at320/390px and enlarged text, including clustered events, scroll, resize, hidden panels, static boards and disposal. Inspect original screenshots. Check message geometry across loading, thinking, checking, saving, inspection and completed-turn replay, preserving cue identity and player color.
 
-Hold an actual authenticated game creation before server admission to verify both optimistic participant rows, public-profile action, focus and expanded details before and after the canonical response. Verify computer seats separately. Run the complete relevant web suite, type checking and generated-source verification sequentially with regeneration before consumers. Final release gates require the actual merged prerequisite base, current strict CI, released validation and production proof. Preserve failed attempts separately and report incomplete checks honestly.
+Hold an actual authenticated game creation before server admission to verify both optimistic participant rows, public-profile action, focus and expanded details before and after the canonical response. Verify computer seats separately. Use the stable current-head PR gate for required CI. Run additional affected tests only for mapped acceptance questions. Regenerate stale generated artifacts before their affected consumers, preserving the original failed checks; do not repeat unchanged successful checks. Final release gates require the actual merged prerequisite base, current strict CI, released validation and production proof. Preserve failed attempts separately and report incomplete checks honestly.
 
 ## Recovery investigation coordination
 
