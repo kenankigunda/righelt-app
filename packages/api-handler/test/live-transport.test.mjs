@@ -1,3 +1,4 @@
+import {readDecision} from '../src/decision-archive.ts';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { listLegalActions } from "../../game-engine/src/legal";
@@ -1440,6 +1441,12 @@ test("live transport: revert request requires approval and marks moves undone on
   assert.equal(approveBody.game.pendingRevertRequest, null);
   assert.equal(approveBody.game.moves.filter((move) => move.undone === true).length >= 1, true);
   assert.equal(approveBody.game.moves.find((move) => move.moveId === targetMoveId)?.undone, true);
+  const undoSequence = approveBody.game.lastRestoration.undoEventSeq;
+  assert.equal(undoSequence, approveBody.eventSeq);
+  assert.ok(approveBody.game.moves.filter(move => move.undone).every(move => move.undoEventSeq === undoSequence));
+  const restoration = await readDecision(env, gameId, `restore-${undoSequence}`);
+  assert.equal(restoration.requesterIdentityId, "id-owner", "Approval does not replace the requester with the approver");
+  assert.equal(restoration.restorationVersion, 1);
   assert.equal(approveBody.game.inHistoryMode, false);
   assert.equal(approveBody.game.historyIndex, null);
 
@@ -1478,6 +1485,8 @@ test("live transport: dual-seat identity auto-approves revert requests", async (
   const requestBody = await requestRevert.json();
   assert.equal(requestRevert.status, 200);
   assert.equal(requestBody.autoApproved, true);
+  assert.equal(requestBody.game.notifications[0], "Undo applied");
+  assert.equal(requestBody.game.notifications.some(note => /undo request/i.test(note)), false);
   assert.equal(requestBody.pendingApproval, undefined);
   assert.equal(requestBody.game.pendingRevertRequest, null);
   assert.equal(requestBody.game.moves[0].undone, true);

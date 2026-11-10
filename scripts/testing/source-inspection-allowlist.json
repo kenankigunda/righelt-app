@@ -3,13 +3,6 @@
   "baselineRevision": "64443d2d530ea9206403154b0120e6ff8cc5d8a4",
   "legacy": [
     {
-      "file": "apps/web/test/additional-history-access.integration.test.mjs",
-      "targets": [
-        "apps/web/shell/app.js"
-      ],
-      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
-    },
-    {
       "file": "apps/web/test/board-adapter-contract.test.mjs",
       "targets": [
         "unresolved:join(testDir, \"..\", \"board-adapter-contract.js\")"
@@ -174,16 +167,8 @@
       "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
-      "file": "apps/web/test/history-turn-render.integration.test.mjs",
-      "targets": [
-        "apps/web/shell/app.js"
-      ],
-      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
-    },
-    {
       "file": "apps/web/test/history.test.mjs",
       "targets": [
-        "unresolved:join(testDir, \"..\", \"board\", \"runtime\", \"board-runtime.js\")",
         "unresolved:join(testDir, \"..\", \"shell\", \"app.js\")",
         "unresolved:join(testDir, \"..\", \"shell\", \"history-preview.js\")",
         "unresolved:join(testDir, \"..\", \"shell\", \"shell.css\")"

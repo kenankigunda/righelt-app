@@ -59,6 +59,8 @@ export type MoveEntry = {
   undone?: boolean;
   undoneAt?: string | null;
   undoneByIdentityId?: string | null;
+  /** Actual accepted restoration commit, scoped to this game. Never a timestamp. */
+  undoEventSeq?: number;
   selectionSnapshot: GameState;
   snapshot: GameState;
   /** Persistent record of pieces destroyed during resolution of this move. */
@@ -120,7 +122,7 @@ export type LiveGame = {
   ownershipMode?: "legacy_guest" | "account_v1";
   computer?: ComputerControl;
   archiveStartRevision?: number;
-  lastRestoration?: { decisionId: string; at: string };
+  lastRestoration?: { decisionId: string; at: string; undoEventSeq?: number };
   id: string;
   gameplayRevision: number;
   createdAt: string;
@@ -1007,9 +1009,10 @@ const defaultNotationForAction = (action: Action) => {
   return `${action.type.toUpperCase()} ${formatCoordinate(action.from)} -> ${formatCoordinate(action.to)}`;
 };
 
-const renumberHistory = (game: LiveGame) => {
+const renumberHistory = (game: LiveGame, preservedMoves?: Set<MoveEntry>) => {
   let activeMoveCounter = 0;
   game.moves.forEach((move, index) => {
+    if (preservedMoves?.has(move)) return;
     move.index = index;
     if (!move.moveId) {
       move.moveId = nextMoveId();
@@ -1096,7 +1099,9 @@ export const applyRevertToMove = (game: LiveGame, targetMoveId: string, requeste
   }
   const targetMove = targetIndex < 0 ? archivedTarget! : game.moves[targetIndex];
   const revertedAt = now();
+  const previouslyUndone = new Set(game.moves.filter(move => move.undone === true));
   for (let index = Math.max(0, targetIndex); index < game.moves.length; index += 1) {
+    if (previouslyUndone.has(game.moves[index])) continue;
     game.moves[index].undone = true;
     game.moves[index].undoneAt = revertedAt;
     game.moves[index].undoneByIdentityId = requesterIdentityId;
@@ -1108,7 +1113,7 @@ export const applyRevertToMove = (game: LiveGame, targetMoveId: string, requeste
   game.initialSelectionAction = clone(targetMove.action);
   game.pendingRevertRequest = null;
   game.historyIndexByIdentity = {};
-  renumberHistory(game);
+  renumberHistory(game, previouslyUndone);
   rebuildTurnsFromActiveMoves(game, game.board.state);
   game.lastMoveAt = getActiveMoves(game).at(-1)?.at ?? null;
   game.updatedAt = revertedAt;
