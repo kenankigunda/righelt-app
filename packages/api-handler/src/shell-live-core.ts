@@ -1,5 +1,6 @@
 import { LIVE_HISTORY } from "../../shared-types/src/sync-protocol";
 import { boundedEngineOperation } from "../../game-engine/src/computation-guard";
+import {isTerminalOutcome, type OutcomeStatus} from '../../shared-types/src/engine';
 import {CURRENT_RETREAT_SEMANTICS,archivedRetreatSemantics,type RetreatSemantics} from '../../shared-types/src/retreat-rules';
 import { computerProfileFor, type ComputerControl, type ComputerProfile, type ComputerProof } from '../../shared-types/src/computer-play';
 import { destructionRecords, removalNotices, type RemovalEvent } from "../../game-engine/src/removals";
@@ -151,6 +152,11 @@ export type LiveGame = {
 
 export type StaticGameCard = {
   id: string;
+  eventSeq: number | null;
+  gameplayRevision: number | null;
+  confirmedOutcomeStatus: OutcomeStatus | null;
+  selfPlayMode: boolean;
+  myRoles: IdentityRole[];
   createdAt: string;
   lastMoveAt: string | null;
   updatedAt: string;
@@ -814,10 +820,12 @@ export const toStaticGameCard = (
     moveCount?: number;
     previewSnapshot?: GameState | null;
     computer?: ComputerControl;
+    eventSeq?: number;
+    gameplayRevision?: number;
   },
   identityId: string,
 ): StaticGameCard => {
-  const myRole = findRoleForIdentity(
+  const myRoles = getRolesForIdentity(
     {
       ...game,
       gameplayRevision: 0,
@@ -832,9 +840,19 @@ export const toStaticGameCard = (
     },
     identityId,
   );
+  const myRole = myRoles[0] ?? 'Guest';
+  const eventSeq = Number.isSafeInteger(game.eventSeq) && game.eventSeq! >= 0 ? game.eventSeq! : null;
+  const gameplayRevision = Number.isSafeInteger(game.gameplayRevision) && game.gameplayRevision! >= 0 ? game.gameplayRevision! : null;
+  const status = game.board.state?.outcome?.status;
+  const confirmedOutcomeStatus = eventSeq !== null && gameplayRevision !== null && (status === 'ongoing' || isTerminalOutcome(status)) ? status : null;
   const canJoinAsPlayer = myRole !== "Player 1" && myRole !== "Player 2" && !game.selfPlayMode && (!game.player1 || !game.player2);
   return {
     id: game.id,
+    eventSeq,
+    gameplayRevision,
+    confirmedOutcomeStatus,
+    selfPlayMode: game.selfPlayMode === true,
+    myRoles,
     createdAt: game.createdAt,
     lastMoveAt: game.lastMoveAt,
     updatedAt: game.updatedAt,

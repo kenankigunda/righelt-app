@@ -1,3 +1,4 @@
+import {createHomeSectionReads,createHomeSectionState} from '../shell/home-section-reads.js';
 import {selectedHistoryPresentation} from '../shell/history-narration.js';
 import {recordedMoveNumber,visibleRecordedMoves} from '../shell/recorded-narration.js';
 import {renderBoardMessageHtml} from '../board/message-presentation.js';
@@ -122,7 +123,6 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /getAvailableShellContentWidth\(viewportWidth, route\) >= SHELL_WIDE_SCREEN_MIN_WIDTH \? "wide" : "narrow"/);
   assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) => getShellLayoutModeForRoute\(currentRoute, viewportWidth\);/);
   assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
-  assert.match(source, /window\.requestAnimationFrame\(\(\) => \{\s*scrollHomeSectionToTop\(sectionKey\);\s*\}\);/s);
   assert.match(source, /const syncShellLayoutMode = \(\) => \{/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", layoutMode\);/);
   assert.match(source, /appEl\.setAttribute\("data-shell-route", currentRoute\?\.name \|\| "unknown"\);/);
@@ -201,10 +201,6 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /querySelectorAll\("\.panel"\)/);
   assert.match(source, /class="panel" data-shell-panel="board"/);
   assert.match(source, /scheduleGameShellStickyLayout\(\);/);
-  assert.match(source, /const scheduleResponsiveHomeSectionPageSizes = \(\) => \{/);
-  assert.match(source, /window\.cancelAnimationFrame\(homeSectionResizeFrame\);/);
-  assert.match(source, /homeSectionResizeFrame = window\.requestAnimationFrame\(\(\) => \{/);
-  assert.match(source, /const didUpdate = await syncResponsiveHomeSectionPageSizes\(\);/);
   assert.match(source, /render\(\{ animatePanels: false, includeBoard: false \}\);/);
   assert.match(source, /window\.addEventListener\("resize", \(\) => \{[\s\S]*?normalizeRouteFlyoutState\(currentRoute,[\s\S]*?scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
   assert.match(source, /window\.addEventListener\("load", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
@@ -234,7 +230,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /document\.title = getDocumentTitle\(\);/);
   assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedHeader\(\);\s*updateMountedFlyouts\(\);\s*restoreScenarioDraftFocus\?\.\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*syncMountedGameShellPanelUi\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
   assert.match(source, /shouldUseIncrementalGameShell\(\) &&[\s\S]*getRouteTransitionPhaseKey\(\) === lastRenderedTransitionPhaseKey[\s\S]*updateMountedHeader\(\);\s*updateHeaderFields\(\);\s*syncScenarioAuthoringControls\(\);\s*updateMountedGameShell\(/s);
-  assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*if \(currentRoute\.name !== "home" \|\| !patchHomeAroundCreateControl\(nextMarkup\)\) \{[\s\S]*currentMain\.replaceWith\(nextMain\);updateMountedFlyouts\(\);[\s\S]*else appEl\.innerHTML = nextMarkup;\s*\}\s*restoreScenarioDraftFocus\?\.\(\);[\s\S]*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
+  assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*if \(currentRoute\.name !== "home" \|\| !patchHomeAroundCreateControl\(nextMarkup\)\) \{[\s\S]*currentMain\.replaceWith\(nextMain\);updateMountedFlyouts\(\);[\s\S]*else appEl\.innerHTML = nextMarkup;\s*\}\s*restoreScenarioDraftFocus\?\.\(\);[\s\S]*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels && !preserveHomeReadingPosition\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.match(source, /data-flyout-link="home"/);
   assert.match(source, /flyoutLink \? `data-flyout-link="\$\{escapeHtml\(flyoutLink\)\}"` : ""/);
@@ -396,11 +392,11 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /return '<strong class="player-tone-both">both players<\/strong>';/);
   assert.match(source, /const renderConnectionStatusIcon = \(status, label\) =>/);
   assert.match(source, /import \{ renderHomeCardIdentity \} from "\.\/home-card-identity\.js"/);
-  assert.match(source, /renderHomeCardIdentity\(game, \{identityId: transport\.getIdentityId\(\)\}\)/);
+  assert.match(source, /renderHomeCardIdentity\(game, \{identityId: transport\.getIdentityId\(\), quiet:completed\}\)/);
   assert.doesNotMatch(source, /renderHomeSeatConnectionLine|renderHomeConnectionSummary|renderHomeRoleLine/);
   assert.match(source, /<div class="mini-board-card-copy">/);
   assert.match(source, /<div class="mini-board-card-meta mini-board-card-meta-primary">/);
-  assert.match(source, /const moveLabel = `Move \$\{game\.moveCount \+ 1\}`;/);
+  assert.match(source, /const moveLabel = completed \?[^;]+game\.moveCount[^;]+: `Move \$\{game\.moveCount \+ 1\}`;/);
   assert.match(source, /reconcileMiniBoardPreviews\(\);\s*syncMountedGameShellPanelUi\(shellRoot\);\s*initializeDesktopBoardFit\(\);\s*scheduleGameShellStickyLayout\(\);/);
 });
 
@@ -521,4 +517,17 @@ test('all history undo/create actions belong to moves and the top keeps only Ret
  const moves=source.slice(source.indexOf('const renderTurnHistory ='),source.indexOf('const renderHeader ='));
  assert.match(moves,/history-item-actions/);assert.match(moves,/data-action="launch-history-branch"/);assert.match(moves,/data-action="revert-to-move"/);assert.match(moves,/data-testid="history-return-live"/);
  const css=readFileSync(new URL('../shell/shell.css',import.meta.url),'utf8');assert.match(css,/\.shell-header-menu-button \{\s*display: flex;\s*align-items: center;\s*justify-content: center;/);
+});
+
+test('Home responsive frames cancel stale scheduling and page navigation scrolls after settled publication',async()=>{
+ let frameId=0;const frames=new Map(),cancelled=[],events=[];
+ const window={requestAnimationFrame:fn=>{frames.set(++frameId,fn);return frameId;},cancelAnimationFrame:id=>{cancelled.push(id);frames.delete(id);}};
+ const owner={getHomeListRevision:()=>null},read={owner,homeDebug:false};
+ const state={homeSections:{my:{...createHomeSectionState('My games'),loaded:true,totalGames:8,totalPages:3,gameIds:['a','b','c'],visiblePageSize:3,visibleColumnCount:3,serverPageGameIdsByPage:{0:['a','b','c','d'],1:['e','f','g','h']}}},currentRoute:{name:'home'},homeReadVisit:1,homeSectionResizeFrame:0,lastHomeBatchRevision:null,transport:owner};
+ const pending=new Set(),controller=createHomeSectionReads({state,window,getVisibleHomeSectionKeys:()=>['my'],getHomeSection:key=>state.homeSections[key],setHomeSection:(key,value)=>state.homeSections[key]=value,
+ getHomeSectionVisiblePageSize:()=>3,getHomeSectionColumnCount:()=>1,captureRouteRead:()=>read,assertCurrentRouteRead:value=>assert.equal(value,read),routeReadIsCurrent:value=>value===read,
+ pendingHomeSectionKeys:pending,isHomeSectionPending:key=>pending.has(key),render:()=>events.push(['render',pending.size]),syncLiveChannels:()=>events.push(['sync']),gameSound:{play(){}},scrollHomeSectionToTop:key=>events.push(['scroll',key])});
+ controller.scheduleResponsive();const old=state.homeSectionResizeFrame;controller.scheduleResponsive();assert(cancelled.includes(old));assert.equal(frames.size,1);
+ await [...frames.values()][0]();frames.clear();assert.equal(state.homeSectionResizeFrame,0);assert.equal(state.homeSections.my.visibleColumnCount,1);assert.deepEqual(events,[['sync'],['render',0]]);
+ events.length=0;await controller.next('my');assert.deepEqual(events,[['render',1],['sync'],['render',0]]);assert.equal(pending.size,0);assert.equal(frames.size,1);[...frames.values()][0]();assert.deepEqual(events.at(-1),['scroll','my']);
 });
