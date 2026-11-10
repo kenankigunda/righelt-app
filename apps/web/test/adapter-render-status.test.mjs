@@ -1,4 +1,5 @@
 import test from "node:test";
+import {annotateRushSourceCells} from '../board/guidance-presentation.js';
 import assert from "node:assert/strict";
 
 import {
@@ -74,7 +75,7 @@ test("selected piece summary exposes live render status and frozen actionable st
     commanded: false,
     actionableSupplied: true,
     actionableCommanded: true,
-    explanation: "Inactive: no command connection",
+    explanation: "No command connection",
     groupComponentId: "P1:C1",
     groupStrength: 2,
   });
@@ -247,4 +248,12 @@ test("selected piece tooltip explains frozen start-of-sequence supply block", ()
     ),
     "Cannot move: was not supplied at start of rush.",
   );
+});
+
+
+test('actual rush source-cell accessible annotation leads with availability and preserves exact piece coordinate',()=>{
+ const attrs={},classes=[],cell={classList:{add:value=>classes.push(value)},setAttribute:(key,value)=>attrs[key]=value};
+ const snapshot={pieces:[{id:'A',position:{row:4,col:2}}]},actions=[{action:{actorId:'A'}}];
+ annotateRushSourceCells({actions,findPieceById:(state,id)=>state.pieces.find(p=>p.id===id),snapshot,cells:new Map([['4,2',cell]]),coordKey:point=>`${point.row},${point.col}`});
+ assert.equal(attrs['aria-label'],'Supply-restoring rush available for piece at (4, 2)');assert.deepEqual(classes,['rush-guidance-source']);assert.equal(snapshot.pieces[0].id,'A');
 });

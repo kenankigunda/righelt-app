@@ -1,5 +1,5 @@
+import {createObservedAudioSession as createAudioSession} from '../support/observed-audio-session.mjs';
 import {test as base,expect} from '@playwright/test';
-import {installPassiveAudioObservations} from '../support/audio-observations.mjs';
 import {ownedContexts} from '../support/owned-contexts.mjs';
 import {readFile,writeFile} from 'node:fs/promises';
 import {importScenarioGame,openDirectGameLink,joinAsViewer,submitPlayableAction,switchGamePanel,returnToLive,closeContextQuietly} from '../support/app.mjs';
@@ -62,21 +62,9 @@ test('native audio resumes and advances after a trusted pointer gesture without 
   await page.evaluate(()=>{void window.nativeAudioContext?.close().catch(()=>{});});
  }
 });
-const createObservedAudioSession=async({ownerContext,viewerContext})=>{
- await ownerContext.addInitScript(installPassiveAudioObservations);await viewerContext.addInitScript(installPassiveAudioObservations);
- await ownerContext.addInitScript(instrument);await viewerContext.addInitScript(instrument);
- const owner=await ownerContext.newPage(),viewer=await viewerContext.newPage();
- const observations={owner:[],viewer:[]};
- const retain=async(label,page,phase)=>{observations[label].push({phase,...await page.evaluate(()=>({timeline:window.passiveAudioObservations,probe:window.destructionAudioProbe,ui:window.passiveAudioUiState?.()})).catch(error=>({readError:String(error)}))});};
- return {owner,viewer,retain,async attach(info){
-  for(const [label,page]of[['owner',owner],['viewer',viewer]]){
-   await retain(label,page,'final');
-   const path=info.outputPath(`audio-observations-${label}.json`);await writeFile(path,JSON.stringify(observations[label],null,2));await info.attach(`Passive native audio ${label}`,{path,contentType:'application/json'});
-  }
- }};
-};
+const createObservedAudioSession=(contexts,info)=>createAudioSession(contexts,info,{instrument});
 const withObservedAudio=async(contexts,info,run)=>{
- const session=await createObservedAudioSession(contexts);
+ const session=await createObservedAudioSession(contexts,info);
  try{await run(session);}finally{await session.attach(info);}
 };
 const sendEndTurn=(page,gameId,body,generation)=>page.evaluate(async({gameId,body,generation,header})=>{
@@ -94,7 +82,7 @@ test.describe('retained local destruction audio',()=>{
   const use=info.project.use;
   const options={...use.contextOptions,baseURL:use.baseURL,viewport:{width:1440,height:1100},deviceScaleFactor:use.deviceScaleFactor,isMobile:use.isMobile,hasTouch:use.hasTouch,userAgent:use.userAgent};
   const ownerContext=await owned.create(options),viewerContext=await owned.create(options);
-  session=await createObservedAudioSession({ownerContext,viewerContext});
+  session=await createObservedAudioSession({ownerContext,viewerContext},info);
  });
  test.afterAll(async()=>{await owned?.close();});
  test('real audio destruction batches deduplicate local receipts while reload, history and replay stay silent',async({baseURL,browserName},info)=>{

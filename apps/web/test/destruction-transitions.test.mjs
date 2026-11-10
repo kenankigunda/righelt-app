@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {buildHistoryRemovalEffects} from '../board/guidance-presentation.js';
 import assert from 'node:assert/strict';
 import {createDestructionTransitions} from '../shell/destruction-transitions.js';
 import {buildDestroyedPieceOverlays} from '../shell/history-preview.js';
@@ -6,6 +7,15 @@ import {createBoardRuntime} from '../board/runtime/board-runtime.js';
 
 const record=(id)=>({eventId:`command:${id}`,pieceId:id,position:{row:6,col:4},reason:'loss_of_supply',piece:{id,owner:'P1',kind:'unit',position:{row:6,col:4},supplied:false,commanded:false}});
 const game=(records=[])=>({id:'g',moves:[{clientCommandId:'command',destroyedPieces:records}]});
+
+test('destruction copy leads with the event and preserves cause, coordinates and identity',()=>{
+ for(const [reason,cause] of [['loss_of_supply','due to loss of supply'],['no_retreat','because it could not retreat']]){
+  const transitions=createDestructionTransitions();transitions.update(game());
+  const original={...record('A'),reason},effect=transitions.update(game([original])).effects[0];
+  assert.equal(effect.message,`Destruction for piece at (6, 4) ${cause}`);
+  for(const key of ['eventId','pieceId','position','reason','piece'])assert.deepEqual(effect[key],original[key]);
+ }
+});
 
 test('new live records play once, including append on turn completion and pending confirmation',()=>{
  const t=createDestructionTransitions();
@@ -91,4 +101,10 @@ test('frozen capture clears live overlays and silently baselines arrivals and ex
  assert.deepEqual(t.update(game([record('A'),record('B')]),{frozen:true}).effects,[]);
  assert.deepEqual(t.update(game([record('A'),record('B')])).effects,[]);
  assert.equal(t.update(game([record('A'),record('B'),record('C')])).effects.length,1);
+});
+
+
+test('actual computed History removal metadata changes only its lead and leaves saved records untouched',()=>{
+ const original={row:4,col:2,piece:{id:'A',owner:'P2',kind:'unit',position:{row:4,col:2},supplied:false,commanded:true},message:'Saved original message'};
+ const before=structuredClone(original),effect=buildHistoryRemovalEffects([original])[0];assert.equal(effect.message,'Destruction for piece at (4, 2).');assert.equal(effect.reason,'history_destroyed');assert.equal(effect.pieceId,'A');assert.deepEqual(effect.position,{row:4,col:2});assert.deepEqual(effect.piece,original.piece);assert.deepEqual(original,before);assert.notEqual(effect.piece,original.piece);
 });

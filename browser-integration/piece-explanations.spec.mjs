@@ -30,7 +30,7 @@ for (const width of [320, 390]) test(`selection explanations retain their actual
     });
   }, {kind, interactive});
   await configure('inactive');
-  await expect(page.locator('#fixture-context')).toContainText('Inactive: no command connection for piece at 4, 2');
+  await expect(page.locator('#fixture-context')).toContainText('No command connection for piece at 4, 2');
   await expect(page.locator('#preview')).not.toContainText('Inactive:');
   await accountMessageGrowth();
   expect(await page.locator('.cell.selected-piece').evaluate(node => getComputedStyle(node, '::after').content)).toBe('none');

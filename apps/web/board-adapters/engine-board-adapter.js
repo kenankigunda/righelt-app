@@ -1,3 +1,4 @@
+import {annotateRushSourceCells} from '../board/guidance-presentation.js';
 import { rushActionKey } from '../board/rush-supply-guidance.js';
 import { REMOVAL_EFFECT_DURATION_MS, REMOVAL_FLASH_COUNT } from "../board/removal-timing.js";
 import {createSequenceStatusProjector} from '../board/sequence-status-preview.js';
@@ -1454,12 +1455,7 @@ export function createEngineBoardAdapter() {
       });
       if (rushSupplyGuidance && overlay?.mode === 'interactive' && !overlay?.inspection) {
         const entries = new Map(rushSupplyGuidance.actions.map(entry => [rushActionKey(entry.action), entry]));
-        for (const entry of rushSupplyGuidance.actions) {
-          const source = findPieceById(snapshot, entry.action.actorId);
-          const cell = source && cellByCoordinateKey.get(coordKey(source.position));
-          cell?.classList.add('rush-guidance-source');
-          cell?.setAttribute('aria-label', `Piece at (${source.position.row}, ${source.position.col}), supply-restoring rush available`);
-        }
+        annotateRushSourceCells({actions:rushSupplyGuidance.actions,snapshot,cells:cellByCoordinateKey,findPieceById,coordKey});
         for (const action of selectedPieceMoves ?? []) {
           if (action.type !== 'rush' || !action.to) continue;
           const cell = cellByCoordinateKey.get(coordKey(action.to));
