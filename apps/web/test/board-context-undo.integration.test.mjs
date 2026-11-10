@@ -18,7 +18,7 @@ function fixture(){
  const ctx={boardContexts:store,renderBoardContext,renderGameAlertCard,renderComputerProgress,recoveryActivity,activityActorSide,undoApprovalActorSide,icon,notificationStack:stack,
   boardContextScope:()=> 'fixture',boardContextOwner:{commit(){}},displayedReplayFrame:()=>game,
   appEl:{querySelector:()=>null},document:{activeElement:null},queueBoardContextRefresh(){},
-  contextReplayEnabled:()=>false,transport:{getFailedOperations:()=>failures},
+  contextReplayEnabled:()=>false,transport:{ensureRecoveryIncident:()=>null,getFailedOperations:()=>failures},
   maybeUpdateUndoRequestOutcomeFeedback(){},issueDiagnostics:{list:()=>[],capture:()=> 'incident',resolve(){}},
   recoveryPresentationOptions:()=>({}),presentedRecoveryMessage:value=>value.recovery?'Reload game':'',needsRecoveryAction:value=>Boolean(value.recovery),
   dismissedRecoveryNotices:new Map(),ignoredRevertRequests:new Set(),isDiagnosticOpen:()=>false,

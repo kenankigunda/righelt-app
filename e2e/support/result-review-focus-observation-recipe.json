@@ -1,8 +1,8 @@
 {
   "version": 1,
   "modulePath": "/shell/app.js",
-  "sourceSha256": "4823a8949d24990dcd56f5fed4a583062e33edab74a240d0c4f99b6fbe2d9d1d",
-  "outputSha256": "46c389a7ca97de7a09a78d6b34d2e6044323ba3aeb0676d22dced77981a6fc45",
+  "sourceSha256": "14db47a579616daad8ad74402d1fc36a259c26eb9f30f1375cc301cc483d380e",
+  "outputSha256": "f5261f42f8aed42b2bef4dc9a95a639c392096cd50a67ac9bf1c7fccbf08e000",
   "prefix": "const __righeltResultReviewFocusProbe = (kind, refs = {}) => { try { globalThis.__RIGHELT_RESULT_REVIEW_FOCUS_PROBE__?.(kind, refs); } catch {} };\n",
   "operations": [
     {
@@ -14,36 +14,36 @@
     },
     {
       "label": "incremental-history-patch",
-      "start": 171448,
-      "end": 171532,
+      "start": 171474,
+      "end": 171558,
       "before": "    patchToolHtml(historyEl, renderHistoryPanel(game));\n    revealSelectedHistory();",
       "after": "    __righeltResultReviewFocusProbe(\"history-before-incremental-patch\",{root:historyEl});\n    patchToolHtml(historyEl, renderHistoryPanel(game));\n    __righeltResultReviewFocusProbe(\"history-after-incremental-patch\",{root:historyEl});\n    revealSelectedHistory();"
     },
     {
       "label": "committed-render-entry",
-      "start": 216471,
-      "end": 216538,
+      "start": 216497,
+      "end": 216564,
       "before": "  if (renderGesture.defer({ animatePanels, includeBoard })) return;",
       "after": "  if (renderGesture.defer({ animatePanels, includeBoard })) return;\n  __righeltResultReviewFocusProbe(\"render-committed-entry\");"
     },
     {
       "label": "original-focus-once",
-      "start": 217526,
-      "end": 217635,
+      "start": 217552,
+      "end": 217661,
       "before": "if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }",
       "after": "if (heading) { heading.tabIndex = -1; __righeltResultReviewFocusProbe(\"focus-before\", {node:heading}); heading.focus({preventScroll:true}); __righeltResultReviewFocusProbe(\"focus-after\", {node:heading}); pendingResultReviewFocus = null; }"
     },
     {
       "label": "existing-render-tail",
-      "start": 217640,
-      "end": 217837,
+      "start": 217666,
+      "end": 217863,
       "before": "  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  resumeBoardContextReplay();",
       "after": "  __righeltResultReviewFocusProbe(\"render-before-join\");\n  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  __righeltResultReviewFocusProbe(\"render-after-join\");\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  resumeBoardContextReplay();\n  __righeltResultReviewFocusProbe(\"render-after-resume\");"
     },
     {
       "label": "explicit-analysis",
-      "start": 278254,
-      "end": 278310,
+      "start": 278280,
+      "end": 278336,
       "before": "if (action === \"analysis\") { resultPresentation.clear();",
       "after": "if (action === \"analysis\") { __righeltResultReviewFocusProbe(\"analysis-entry\"); resultPresentation.clear();"
     }
