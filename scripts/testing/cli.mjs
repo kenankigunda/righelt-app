@@ -17,6 +17,10 @@ try {
   if (mode === "plan" || mode === "affected") {
     const plan = affectedPlan(cwd, flags.base ?? "origin/main");
     console.log(JSON.stringify(plan, null, 2));
+    if (flags.out) {
+      await mkdir(path.dirname(path.resolve(cwd, String(flags.out))), { recursive: true });
+      await writeFile(path.resolve(cwd, String(flags.out)), JSON.stringify(plan, null, 2));
+    }
     if (mode === "affected") {
       await mkdir(out, { recursive: true });
       await writeFile(
@@ -34,7 +38,7 @@ try {
         }
       }
       console.log(
-        "Focused evidence is advisory. Full validation remains required before merge.",
+        "Focused evidence is advisory. PR validation remains authoritative; Full validation is its temporary compatibility alias.",
       );
     }
   } else if (mode === "suite") {

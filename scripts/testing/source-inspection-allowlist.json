@@ -1,0 +1,177 @@
+{
+  "version": 1,
+  "allowed": [
+    {
+      "file": "apps/web/test/additional-history-access.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/board-context-acknowledged.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/board-context-owned-removal.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/board-context-owner.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/board-context-undo.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/board-loading-message-owner.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/board-message-layout.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/branch-readiness.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/client-settlement-observer.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/completed-game-review.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/computer-card-shell.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/computer-ui-refresh.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/computer-undo.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/game-render-hydration.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/game-result-copy.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/foundation-boundary.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/history-heading-focus.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/history.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/history-panel-perspective.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/history-turn-render.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/home-read-recovery.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/invite-route-recovery.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/join-focus-render.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/legend.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/loading-context.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/opponent-startup.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/panel-loading.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/pending-invitation-focus.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/players-focus-shell.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/recovery-order-admission.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/recovery-scroll-reservation.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/render-gesture.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/result-review-render.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/route-read.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/scenario-migration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/shell-render-stability.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/startup-session-adoption.integration.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "apps/web/test/ui-guards.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "scripts/testing/test/board-admission-diagnostics.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "scripts/testing/test/invitation-focus-diagnostics.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "scripts/testing/test/optimistic-popup-selection-observer.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "scripts/testing/test/result-review-focus-observation.test.mjs",
+      "contract": "native-fixture compatibility; migrate to importable helpers when the owning surface changes"
+    },
+    {
+      "file": "scripts/validation/test/capabilities.test.mjs",
+      "contract": "workflow compatibility contract selected from reviewed source without executing candidate code"
+    }
+  ]
+}

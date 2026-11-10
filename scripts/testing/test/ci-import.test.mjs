@@ -5,8 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { importCatalogCI } from "../../validation/suite-ci-evidence.mjs";
-import { fullLanes, laneKey, catalogDigest, suiteKind } from "../catalog.mjs";
+import { laneKey, suiteKind } from "../catalog.mjs";
 import { sourceIdentity, sealReceipt, digest } from "../receipts.mjs";
+const historical=JSON.parse(await readFile(new URL("../ci-layout-profiles.json",import.meta.url),"utf8")).profiles.find(p=>p.id==="guest-2-v1");
+const fullLanes=()=>historical.lanes,catalogDigest=()=>historical.catalog;
 test("explicit CI artifact credit verifies full inventory, primary logs and canonical commands", async () => {
   const cwd = await realpath(
     await mkdtemp(path.join(os.tmpdir(), "righelt-ci-")),
@@ -17,6 +19,10 @@ test("explicit CI artifact credit verifies full inventory, primary logs and cano
     git("config", "user.name", "Test");
     git("config", "user.email", "test@example.invalid");
     await writeFile(path.join(cwd, "source"), "current");
+    await mkdir(path.join(cwd,"scripts/testing"),{recursive:true});
+    await writeFile(path.join(cwd,"scripts/testing/catalog.mjs"),await readFile(new URL("./fixtures/ci-legacy-catalog.txt",import.meta.url)));
+    await mkdir(path.join(cwd,".github/workflows"),{recursive:true});
+    await writeFile(path.join(cwd,".github/workflows/ci.yml"),await readFile(new URL("./fixtures/ci-legacy-34.json",import.meta.url)));
     git("add", ".");
     git("commit", "-qm", "base");
     const identity = sourceIdentity(cwd),
@@ -89,6 +95,7 @@ test("explicit CI artifact credit verifies full inventory, primary logs and cano
         Unit: { argv: ["pnpm", "test:unit"], runtime, dependencies },
       };
       const options = {
+        expectedLayout: "guest-2-v1",
         repository: "owner/repo",
         run,
         cwd,
@@ -133,7 +140,7 @@ test('archive cache reuses only bytes and revalidates real ZIP proof on every hi
   t.after(()=>rm(cwd,{recursive:true,force:true}));t.after(()=>rm(storage,{recursive:true,force:true}));
   const git=(...a)=>execFileSync('git',a,{cwd,stdio:'pipe'});
   git('init','-q');git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid');
-  await writeFile(path.join(cwd,'source'),'same source');git('add','.');git('commit','-qm','base');
+  await writeFile(path.join(cwd,'source'),'same source');await mkdir(path.join(cwd,'scripts/testing'),{recursive:true});await writeFile(path.join(cwd,'scripts/testing/catalog.mjs'),await readFile(new URL('./fixtures/ci-legacy-catalog.txt',import.meta.url)));await mkdir(path.join(cwd,'.github/workflows'),{recursive:true});await writeFile(path.join(cwd,'.github/workflows/ci.yml'),await readFile(new URL('./fixtures/ci-legacy-34.json',import.meta.url)));git('add','.');git('commit','-qm','base');
   const identity=sourceIdentity(cwd),runtime={node:'22.23.4',pnpm:'9.15.9'},dependencies={lockHash:'tracked',installedLockHash:'installed'};
   const run={id:41,run_attempt:2,head_sha:identity.revision,conclusion:'success'};
   const expected={Unit:{argv:['pnpm','test:unit'],runtime,dependencies}};
@@ -170,7 +177,7 @@ test('archive cache reuses only bytes and revalidates real ZIP proof on every hi
       else {const fd=(await import('node:fs')).openSync(log,'w');try{execFileSync(argv[0],argv.slice(1),{stdio:['ignore',fd,'pipe']});}finally{(await import('node:fs')).closeSync(fd);}}
       return {code:0,output:''};
     };
-    const options={repository:'owner/repo',run,cwd,outDir,expected,artifactCache,api:async()=>({total_count:artifacts.length,artifacts}),call,execute};
+    const options={expectedLayout:'guest-2-v1',repository:'owner/repo',run,cwd,outDir,expected,artifactCache,api:async()=>({total_count:artifacts.length,artifacts}),call,execute};
     if(variant) {
       await assert.rejects(importCatalogCI(options));const cold=downloads;
       await assert.rejects(importCatalogCI(options));assert.equal(downloads,cold,`invalid ${variant} seal/proof is rejected on cached bytes without another download`);

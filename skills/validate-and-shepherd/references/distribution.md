@@ -27,3 +27,9 @@ node /absolute/righelt-validation-tools/scripts/validation/cli.mjs integrated --
 If the released tools or dependency runtime are missing, report the exact setup gap and prepare the installation command. Do not silently fall back to arbitrary branch-local tools. Developing the tooling itself uses an isolated explicit test candidate; it is not an installed release or permission to replace the user's personal skills.
 
 The optional `--update-shipping-skills` flag narrowly replaces the personal `ship-worktree` skill's blanket visual-suite rerun with affected checks plus the repository-required final pass. It preserves unrelated contents and backs up a changed file. This remains repository-neutral; other repositories keep their own required gates. Audit other shipping guidance for concrete conflicts before making further edits.
+
+## History selection compatibility
+
+The released account Undo journey selects its History hit target before browser activity. Candidates without `apps/web/shell/history-narration.js` use the original information-row click. A present module must declare the literal exported `HISTORY_HIT_TARGET_CONTRACT='move-button-v1'`, which selects the direct native move button on the same immutable move-ID row. Missing, ambiguous or unknown declarations fail closed. The forwarded contract is required by the helper, with no runtime fallback after a failed click.
+
+Merge and install the compatible tooling release before running official fresh or retained account validation against that History layout. Development controls of unmerged tooling do not replace released validation. This adapter changes no Undo command, receipt assertion, deadline or product behavior. Report publication and paused schedules remain unchanged.

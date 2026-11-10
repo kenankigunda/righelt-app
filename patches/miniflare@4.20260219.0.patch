@@ -1,0 +1,13 @@
+diff --git a/dist/src/index.js b/dist/src/index.js
+index 4179f895e7bf88b20de64a1d630e2278dacb39db..9d3b5f9195e1629095c76020539ec76673674328 100644
+--- a/dist/src/index.js
++++ b/dist/src/index.js
+@@ -81650,6 +81650,8 @@ var Miniflare2 = class _Miniflare {
+         /* grace */
+         0
+       );
++      // Backport workers-sdk#14850: disable the local loopback idle-close timer.
++      server.keepAliveTimeout = 0;
+       server.on("upgrade", this.#handleLoopbackUpgrade);
+       server.listen(0, hostname, () => resolve6(server));
+     });

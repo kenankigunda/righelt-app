@@ -1,3 +1,4 @@
+import { fulfillHeldContinuationRead, controlledContinuationReadCompleted } from "../support/held-continuation-read.mjs";
 import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { continueFriendIntroduction, waitForFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup, signOutAndOpenSignIn } from "./helpers.mjs";
 import { profileLayoutDisplayName, sampleParticipantGeometry } from "../support/profile-layout.mjs";
@@ -41,6 +42,10 @@ async function register(page, username, { gate = false, readRecovery = false } =
   const failedRead=request=>{if(recoveryReads.has(request))recoveryObserved=true;};
   const settledRead=response=>{
     if(!recoveryReads.has(response.request()))return;
+    if(readRecovery.request){
+      void controlledContinuationReadCompleted(response,readRecovery.request()).then(complete=>{if(complete)recoveredReadComplete=true;}).catch(()=>{});
+      return;
+    }
     if(!response.ok()){recoveryObserved=true;return;}
     void response.finished().then(async error=>{if(!error&&(await response.json()).ok!==false)recoveredReadComplete=true;}).catch(()=>{});
   };
@@ -49,6 +54,7 @@ async function register(page, username, { gate = false, readRecovery = false } =
     await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
     await expect(dialog(page)).not.toBeVisible();
     if(readRecovery){
+      if(readRecovery.released)await readRecovery.released;
       await expect.poll(()=>({recoveryObserved,recoveredReadComplete})).toEqual({recoveryObserved:true,recoveredReadComplete:true});
       await openRecoveredFriendChoice(page);
     }
@@ -179,7 +185,7 @@ test("registration helper waits for a failed bootstrap retry before submitting",
   }
 });
 test("registration helper retries one failed continuation read without repeating account or game creation", async ({ page }) => {
-  let registrations = 0, creates = 0, failedReads = 0, retriedReads = 0, release, failed;
+  let registrations = 0, creates = 0, failedReads = 0, retriedReads = 0, release, failed, retryRequest;
   const held = new Promise(resolve => { release = resolve; });
   const readFailed = new Promise(resolve => { failed = resolve; });
   page.on("request", request => {
@@ -196,11 +202,14 @@ test("registration helper retries one failed continuation read without repeating
         return;
       }
       retriedReads++;
-      await held;
+      if(retriedReads!==1)throw new Error("Unexpected second continuation retry");
+      retryRequest=route.request();
+      await fulfillHeldContinuationRead(route,{request:retryRequest,released:held});
+      return;
     }
     await route.continue();
   });
-  const registration = register(page, uniqueName(), { gate: true, readRecovery: true }).then(value => ({ value }), error => ({ error }));
+  const registration = register(page, uniqueName(), { gate: true, readRecovery: {released:held,request:()=>retryRequest} }).then(value => ({ value }), error => ({ error }));
   const stoppedBeforeRetry = registration.then(outcome => {
     throw outcome.error ?? new Error("Registration completed before the held continuation retry");
   });
@@ -216,6 +225,7 @@ test("registration helper retries one failed continuation read without repeating
     const outcome = await registration;
     if (outcome.error) throw outcome.error;
     expect(failedReads).toBe(1);
+    expect(retriedReads).toBe(1);
     expect(registrations).toBe(1);
     expect(creates).toBe(1);
     await expect(page.getByTestId("game-role")).toContainText("Player 1");

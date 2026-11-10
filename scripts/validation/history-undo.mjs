@@ -48,15 +48,16 @@ export async function assertUndoReceipt(body,envelope,{gameId,moveId,identityId,
  assert.equal(body.game.moves.filter(move=>!move.undone).length,0);
 }
 
-export async function undoBeforeHumanMove(page,{gameId,moveId,identityId,initialState,beforeState,beforeRevision,undoLabel}){
+export async function undoBeforeHumanMove(page,{gameId,moveId,identityId,initialState,beforeState,beforeRevision,undoLabel,historyHitTargetContract}){
  assert.ok(['Undo back to this move','Undo before this move'].includes(undoLabel),'An explicit supported source-selected undo label is required');
+ assert.ok(['legacy-info-v1','move-button-v1'].includes(historyHitTargetContract),'An explicit supported source-selected History hit target contract is required');
  assert.ok(typeof gameId==='string'&&gameId.trim().length,'Game ID is required before browser activity');
  assert.ok(typeof moveId==='string'&&moveId.length,'Human decision ID is required before browser activity');
  assert.ok(typeof identityId==='string'&&identityId.trim().length,'Human identity is required before browser activity');
  await selectGamePanel(page,'history');
  const row=page.locator(`[data-testid="history-move-item"][data-move-id=${JSON.stringify(moveId)}]`);
  await expect(row).toHaveCount(1);
- await row.locator('.history-item-info').click();
+ await row.locator(historyHitTargetContract==='move-button-v1'?':scope > .history-move-hit':'.history-item-info').click();
  const control=row.locator('[data-action="revert-to-move"]');
  await expect(control).toHaveCount(1);
  await expect(control).toHaveAttribute('data-game-id',gameId);

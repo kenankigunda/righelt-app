@@ -45,3 +45,11 @@ test("deployment builds production browser assets before publishing Pages", () =
   assert.ok(build >= 0);
   assert.ok(build < source.indexOf("wrangler pages deploy"));
 });
+
+test("automatic deployment accepts only successful push CI runs on main", () => {
+  const source = readFileSync(new URL("../../../.github/workflows/deploy.yml", import.meta.url), "utf8");
+  assert.match(source, /github\.event\.workflow_run\.conclusion == 'success'/);
+  assert.match(source, /github\.event\.workflow_run\.event == 'push'/);
+  assert.match(source, /github\.event\.workflow_run\.head_branch == 'main'/);
+  assert.doesNotMatch(source, /workflows: \["Nightly validation"\]/);
+});

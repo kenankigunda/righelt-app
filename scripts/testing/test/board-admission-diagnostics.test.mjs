@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
-import {installBoardAdmissionCollector,transformBoardAdmissionModule,installBoardAdmissionDiagnostics,cloneBoardSourceHandoff,createBoardSourceConsoleRetention,SOURCE_PRESS_PREFIX,SOURCE_PRESS_MAX_BYTES,COMPUTER_RECOVERY_CATEGORIES,createComputerRecoveryHandoff,persistComputerRecoveryEvidence,runComputerRecoveryPersistence,COMPUTER_RECOVERY_FIXTURE_BUDGET_MS,COMPUTER_RECOVERY_CLEANUP_RESERVE_MS} from '../../../e2e/support/board-admission-diagnostics.mjs';
+import {EventEmitter} from 'node:events';
+import {recoveryBindingHarness} from './support/recovery-binding-harness.mjs';
+import {installBoardAdmissionCollector,transformBoardAdmissionModule,installBoardAdmissionDiagnostics,cloneBoardSourceHandoff,createBoardSourceConsoleRetention,SOURCE_PRESS_PREFIX,SOURCE_PRESS_MAX_BYTES,COMPUTER_RECOVERY_CATEGORIES,createComputerRecoveryHandoff,createComputerRecoveryJSONRead,readComputerRecoverySnapshot,persistComputerRecoveryEvidence,runComputerRecoveryPersistence,COMPUTER_RECOVERY_FIXTURE_BUDGET_MS,COMPUTER_RECOVERY_CLEANUP_RESERVE_MS} from '../../../e2e/support/board-admission-diagnostics.mjs';
 
 const recipes=JSON.parse(await readFile(new URL('../../../e2e/support/board-admission-transformations.json',import.meta.url),'utf8'));
 for(const [pathname,recipe] of Object.entries(recipes))test(`exact source and protected transform ${pathname}`,async()=>{
@@ -579,7 +581,10 @@ test('closed computer recovery descriptors, retention and original catch semanti
  }
 });
 
-const recoveryPage=()=>{const listeners=new Map(),frame={};return{mainFrame:()=>frame,on(type,fn){listeners.set(type,fn);},off(type,fn){assert.equal(listeners.get(type),fn);listeners.delete(type);},navigate(){listeners.get('framenavigated')?.(frame);},listenerCount:()=>listeners.size};};
+const recoveryPage=()=>{
+ const events=new EventEmitter(),frame={},context={};
+ return{mainFrame:()=>frame,context:()=>context,on(type,fn){events.on(type,fn);},off(type,fn){assert.ok(events.listeners(type).includes(fn));events.off(type,fn);},navigate(){events.emit('framenavigated',frame);},emitConsole(text){events.emit('console',{text:()=>text,page:()=>this,worker:()=>null,type:()=> 'debug'});},listenerCount:type=>type?events.listenerCount(type):events.eventNames().reduce((n,k)=>n+events.listenerCount(k),0),async exposeBinding(){return{async dispose(){}};}};
+};
 const recoveryPacket=ticket=>({...ticket,documentNonce:'controlled-document',timeOrigin:123,observation:{version:1,documentNonce:'controlled-document',timeOrigin:123,recoveryNamespace:ticket.namespace,first:[],tail:[],activation:[],incomplete:false,firstComputerRecovery:null}});
 test('final computer recovery handoff is immutable, page/game/document-bound and consumed once',()=>{
  const page=recoveryPage(),owner=createComputerRecoveryHandoff(page,'nonce');owner.bindGame('owned');const ticket=owner.begin(page),packet=recoveryPacket(ticket);owner.capture(page,packet);packet.observation.firstComputerRecovery={observed:true,errorCategory:'rules_timeout'};
@@ -603,18 +608,31 @@ test('computer evidence persistence attempts independent sinks and owned route c
 });
 
 async function finalReadFixture({computer=true,timeout=false,readFailure=false,deferred=false}={}){
- const files=[],attached=[],events=[],timers=[];let reads=0,unroutes=0,init,release;const deferredRead=new Promise(resolve=>{release=resolve;});
- const page={...recoveryPage(),async addInitScript(fn,arg){init=arg;},async route(){},async unroute(){unroutes++;},async evaluate(fn,arg){reads++;events.push('browser-read');if(timeout&&!deferred)return new Promise(()=>{});if(readFailure)throw Error('original read failed');const observation={version:1,documentNonce:'controlled-document',timeOrigin:123,recoveryNamespace:init.recoveryNamespace,first:[],tail:[],activation:[],incomplete:false,firstComputerRecovery:null};if(deferred)await deferredRead;return vm.runInNewContext(`(${fn.toString()})(argument)`,{argument:arg,globalThis:{__boardAdmissionObservation:observation,__boardAdmissionRecoveryDocument:'controlled-document'},window:{retreatJournalObservations:{}},location:{hash:'#/game/owned'},performance:{timeOrigin:123,getEntriesByName:()=>[]}});}};
+ const files=[],attached=[],events=[],timers=[];let reads=0,unroutes=0,release;
+ const deferredRead=new Promise(resolve=>{release=resolve;});
+ const h=recoveryBindingHarness({gameId:'owned',breakProducer:readFailure,onRead:()=>{reads++;events.push('browser-read');},beforeSignal:async()=>{if(timeout||deferred)await deferredRead;}}),page=h.page;
+ const addInit=page.addInitScript;
+ page.addInitScript=async(fn,arg)=>{
+  if(fn.name==='installBoardAdmissionCollector'){
+   // This controlled leaf models the separate DOM collector environment; the
+   // actual binding initializer, producer, codec and receiver execute intact.
+   const realm=h.realm();realm.__boardAdmissionObservation.recoveryNamespace=arg.recoveryNamespace;realm.__boardAdmissionObservation.firstComputerRecovery=null;
+   return{async dispose(){}};
+  }
+  return addInit(fn,arg);
+ };
+ page.route=async()=>{};page.unroute=async()=>{unroutes++;};
+ page.evaluate=async(fn,arg)=>{const prior=reads;if(readFailure)throw Error('original read failed');const value=vm.runInContext('('+fn.toString()+')(argument)',Object.assign(h.realm(),{argument:arg}));if(reads===prior)reads++;return value;};
  const info={title:'the real computer defender leaves a completion-preserving native Follow',status:'passed',expectedStatus:'passed',outputPath:name=>'/owned/'+name,async attach(name,value){attached.push({name,...value});}};
  const owner=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://owned',computerSessionRecovery:computer});owner.finalRecoveryHandoff?.bindGame('owned');
  const source=await readFile(new URL('../../../e2e/workflows/completion-preserving-retreat.spec.mjs',import.meta.url),'utf8');let afterEach;
  const start=source.indexOf('test.afterEach('),end=source.indexOf('\nasync function request(',start);
- vm.runInNewContext(source.slice(start,end),{test:{afterEach:fn=>{afterEach=fn;}},COMPUTER_UI_FRAME_MEASURE:'measure',computerFollowWorkflow:info.title,computerRetreatWorkflow:'other',writeFile:async(file,body)=>{files.push({file,body});},attachNodeReadiness:x=>x,console:{warn(){}},setTimeout(fn,ms){timers.push(ms);if(timeout)queueMicrotask(fn);return 1;},clearTimeout(){}});
- await afterEach({page,computerRecoveryAdmission:computer?owner:undefined},info);
- return{page,info,owner,files,attached,events,timers,release,reads:()=>reads,unroutes:()=>unroutes};
+ vm.runInNewContext(source.slice(start,end),{test:{afterEach:fn=>{afterEach=fn;}},COMPUTER_UI_FRAME_MEASURE:'measure',computerFollowWorkflow:info.title,computerRetreatWorkflow:'other',createComputerRecoveryJSONRead,readComputerRecoverySnapshot,writeFile:async(file,body)=>{files.push({file,body});},attachNodeReadiness:x=>x,console:{warn(){}},setTimeout(fn,ms){timers.push(ms);if(timeout)queueMicrotask(()=>{fn();release();});return 1;},clearTimeout(){}});
+ let hookError;try{await afterEach({page,computerRecoveryAdmission:computer?owner:undefined},info);}catch(error){hookError=error;}
+ return{page,info,owner,hookError,files,attached,events,timers,release,reads:()=>reads,unroutes:()=>unroutes};
 }
 test('actual existing final afterEach read hands off recovery once; computer persist never performs duplicate read',async()=>{
- const f=await finalReadFixture();assert.equal(f.reads(),1);
+ const f=await finalReadFixture();assert.equal(f.hookError,undefined);assert.equal(f.reads(),1);
  // Persist uses a controlled file sink; original implementation would add the
  // second page.evaluate seen in the primary CI trace. No browser timing claim.
  const originalWritePath=f.info.outputPath;const directory=await import('node:os').then(x=>x.tmpdir());const temp=await import('node:fs/promises').then(x=>x.mkdtemp(directory+'/recovery-handoff-'));f.info.outputPath=name=>temp+'/'+name;
@@ -623,7 +641,7 @@ test('actual existing final afterEach read hands off recovery once; computer per
 test('actual original 2s timeout or failed final read produces incomplete Node persistence with no fallback browser read',async()=>{
  for(const settings of [{timeout:true},{readFailure:true}]){
   const f=await finalReadFixture(settings),directory=await import('node:os').then(x=>x.tmpdir()),temp=await import('node:fs/promises').then(x=>x.mkdtemp(directory+'/recovery-handoff-'));f.info.outputPath=name=>temp+'/'+name;
-  try{await assert.rejects(f.owner.persist(),/Computer recovery evidence incomplete/);assert.equal(f.reads(),1);assert.equal(f.unroutes(),1);const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));assert.equal(payload.handoff.incomplete,true);assert.equal(payload.observation,null);if(settings.timeout)assert.deepEqual(f.timers,[2000]);}finally{await import('node:fs/promises').then(x=>x.rm(temp,{recursive:true,force:true}));}
+  try{assert.ok(f.hookError);await assert.rejects(f.owner.persist(),/Computer recovery evidence incomplete/);assert.equal(f.reads(),settings.timeout?0:1,'timeout before accepted ticket reads no state; producer failure reads once, neither falls back');assert.equal(f.unroutes(),1);const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));assert.equal(payload.handoff.incomplete,true);assert.equal(payload.observation,null);if(settings.timeout)assert.deepEqual(f.timers,[2000]);}finally{await import('node:fs/promises').then(x=>x.rm(temp,{recursive:true,force:true}));}
  }
 });
 test('generic/default persistence retains its existing browser read and is not redirected to computer handoff',async()=>{
@@ -645,8 +663,72 @@ test('computer setup failure releases only owned navigation listener and preserv
  const primary=Error('init failed'),page={...recoveryPage(),async addInitScript(){throw primary;}};
  await assert.rejects(installBoardAdmissionDiagnostics(page,{},{baseURL:'http://owned',computerSessionRecovery:true}),error=>error===primary);assert.equal(page.listenerCount(),0);
  const cleanup=Error('off failed'),broken={...recoveryPage(),off(){throw cleanup;},async addInitScript(){throw primary;}};
- await assert.rejects(installBoardAdmissionDiagnostics(broken,{},{baseURL:'http://owned',computerSessionRecovery:true}),error=>error instanceof AggregateError&&error.errors[0]===primary&&error.errors.length===2);
+ await assert.rejects(installBoardAdmissionDiagnostics(broken,{},{baseURL:'http://owned',computerSessionRecovery:true}),error=>{
+  const leaves=value=>value instanceof AggregateError?value.errors.flatMap(leaves):[value],all=leaves(error);
+  assert.equal(all[0],primary,'original setup failure remains first through binding and listener cleanup');assert.ok(all.includes(cleanup),'actual cleanup failure remains retained');return true;
+ });
 });
+test('actual installer awaits binding cleanup after later collector-init or route setup failure',async()=>{
+ for(const stage of ['collector-init','route'])for(const cleanupFails of [false,true]){
+  const primary=Error(stage+' failed'),cleanup=Error('publisher cleanup failed'),events=[];
+  let releaseDisposal,disposalEntered;
+  const gate=new Promise(resolve=>{releaseDisposal=resolve;}),entered=new Promise(resolve=>{disposalEntered=resolve;});
+  const page={...recoveryPage(),
+   async exposeBinding(){events.push('publisher-installed');return{async dispose(){events.push('publisher-dispose-enter');disposalEntered();await gate;events.push('publisher-dispose-return');if(cleanupFails)throw cleanup;}};},
+   async addInitScript(fn){
+    if(fn.name==='installBoardAdmissionCollector'){events.push('collector-init');if(stage==='collector-init')throw primary;return;}
+    events.push('binding-init-installed');return{async dispose(){events.push('binding-init-disposed');}};
+   },
+   async route(){events.push('route-setup');throw primary;},
+  };
+  let completed=false;
+  const work=installBoardAdmissionDiagnostics(page,{},{baseURL:'http://owned',computerSessionRecovery:true});
+  work.then(()=>{completed=true;},()=>{completed=true;});
+  try{
+   assert.equal(await Promise.race([entered.then(()=>true),work.then(()=>false,()=>false)]),true,'later setup failure must enter actual binding disposal');
+   assert.equal(completed,false,'original installer must await disposal rather than leave a detached cleanup task');
+   assert.deepEqual(events.slice(0,3),['publisher-installed','binding-init-installed','collector-init']);
+   assert.equal(events.includes('route-setup'),stage==='route');
+  }finally{releaseDisposal();}
+  await assert.rejects(work,error=>{
+   if(!cleanupFails)return error===primary;
+   const leaves=value=>value instanceof AggregateError?value.errors.flatMap(leaves):[value],all=leaves(error);
+   assert.equal(all[0],primary);assert.ok(all.includes(cleanup));return true;
+  });
+  assert.ok(events.includes('publisher-dispose-return'));assert.ok(events.includes('binding-init-disposed'));
+  assert.equal(page.listenerCount(),0,'both transport and original handoff listeners are removed');
+ }
+});
+
+test('actual returned persist still saves, attaches and unroutes after binding disposal failure',async()=>{
+ for(const sinkFailures of [false,true]){
+  const fs=await import('node:fs/promises'),directory=await import('node:os').then(x=>x.tmpdir()),temp=await fs.mkdtemp(directory+'/binding-disposal-persist-');
+  const bindingError=Error('publisher disposal failed'),attachError=Error('attachment failed'),routeError=Error('route cleanup failed'),events=[];let publisherDisposals=0;
+  const page={...recoveryPage(),
+   async exposeBinding(){return{async dispose(){publisherDisposals++;events.push('binding-dispose');throw bindingError;}};},
+   async addInitScript(fn){if(fn.name==='installBoardAdmissionCollector')return;return{async dispose(){events.push('binding-init-dispose');}};},
+   async route(){},async unroute(){events.push('unroute');if(sinkFailures)throw routeError;},
+  };
+  const info={title:'computer',outputPath:name=>{events.push('save');return temp+'/'+name;},async attach(){events.push('attach');if(sinkFailures)throw attachError;}};
+  let diagnostic;
+  try{
+   diagnostic=await installBoardAdmissionDiagnostics(page,info,{baseURL:'http://owned',computerSessionRecovery:true});
+   const owner=diagnostic.finalRecoveryHandoff;owner.bindGame('owned');owner.capture(page,recoveryPacket(owner.begin(page)));
+   await assert.rejects(diagnostic.persist(),error=>{
+    const leaves=value=>value instanceof AggregateError?value.errors.flatMap(leaves):[value],all=leaves(error);
+    assert.ok(error instanceof AggregateError);assert.ok(all.includes(bindingError),'actual binding cleanup error is preserved at returned persist boundary');
+    if(sinkFailures){assert.ok(all.includes(attachError));assert.ok(all.includes(routeError));}return true;
+   });
+   assert.deepEqual(events,['binding-dispose','binding-init-dispose','save','attach','unroute']);
+   const saved=JSON.parse(await fs.readFile(temp+'/board-admission-observation.json','utf8'));
+   assert.equal(saved.handoff.incomplete,true);assert.equal(saved.handoff.cleanupIncomplete,true);
+   assert.equal(page.listenerCount(),0);assert.equal(publisherDisposals,1);
+   await assert.rejects(owner.disposeBindingDelivery());assert.equal(publisherDisposals,1,'idempotent disposal must not repeat a failed public cleanup');
+   owner.end();
+  }finally{await fs.rm(temp,{recursive:true,force:true});}
+ }
+});
+
 test('actual computer installer keeps empty activation coverage incomplete despite complete final delivery',async()=>{
  let init,handler;const page={...recoveryPage(),async addInitScript(fn,value){init=value;},async route(pattern,value){handler=value;},async unroute(){}};
  const temp=await import('node:fs/promises').then(async fs=>fs.mkdtemp((await import('node:os')).tmpdir()+'/computer-coverage-')),info={title:'computer',outputPath:name=>temp+'/'+name,async attach(){}};
@@ -673,15 +755,15 @@ test('browser init creates an opaque readonly document nonce; exact nonce accept
  const foreignPage=recoveryPage(),foreign=createComputerRecoveryHandoff(foreignPage,'nonce');foreign.bindGame('owned');const otherTicket=foreign.begin(foreignPage);foreign.capture(foreignPage,{...otherTicket,documentNonce:'current-document',timeOrigin:1000,observation});assert.equal(foreign.consume().reason,'foreign-document','equal clocks cannot qualify a different document nonce');
 });
 
-test('actual 2s journal timeout stays immutable while its same original read can deliver within computer ownership',async()=>{
+test('actual 2s journal timeout rejects the late ticket without a producer or fallback read',async()=>{
  const f=await finalReadFixture({timeout:true,deferred:true}),fs=await import('node:fs/promises'),temp=await fs.mkdtemp((await import('node:os')).tmpdir()+'/computer-late-');f.info.outputPath=name=>temp+'/'+name;
  try{
   assert.equal(JSON.parse(f.files[0].body).unavailable,'diagnostic-read-timeout');assert.deepEqual(f.timers,[2000]);
   f.release();await Promise.resolve();await Promise.resolve();
-  await f.owner.persist({remainingMs:()=>5000});
+  assert.ok(f.hookError);await assert.rejects(f.owner.persist({remainingMs:()=>5000}),/Computer recovery evidence incomplete/);
   const value=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));
-  assert.equal(value.handoff.incomplete,false);assert.equal(value.handoff.journalReadTimedOut,true);
-  assert.equal(JSON.parse(f.files[0].body).unavailable,'diagnostic-read-timeout');assert.equal(f.reads(),1);assert.equal(f.unroutes(),1);
+  assert.equal(value.handoff.incomplete,true);assert.equal(value.handoff.journalReadTimedOut,true);
+  assert.equal(JSON.parse(f.files[0].body).unavailable,'diagnostic-read-timeout');assert.equal(f.reads(),0,'the expired ticket is refused before the producer; releasing it cannot create later evidence');assert.equal(f.unroutes(),1);
  }finally{await fs.rm(temp,{recursive:true,force:true});}
 });
 

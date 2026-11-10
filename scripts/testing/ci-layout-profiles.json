@@ -1,0 +1,247 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "guest-2-v1",
+      "catalogSourceSHA256": "f71d3545c5e370c8d972b36ac140d6055c5fc3fd1170a289b2c75a9f6f71ee5a",
+      "catalog": "e10f69c61b4253cba24551038406282aea0679c0e558bc3b4572133debe81461",
+      "lanes": [
+        {
+          "suite": "typecheck",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "generated",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "engine-unit",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "web-unit",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "computer-unit",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "computer-integration",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "engine-integration",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "api-handler",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "api-worker",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "web-integration",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "sync-stress",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "sync-runtime",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "tooling",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "browser-integration",
+          "project": "chromium",
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "browser-integration",
+          "project": "firefox",
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "browser-integration",
+          "project": "webkit",
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "e2e",
+          "project": "chromium",
+          "shard": 1,
+          "shards": 2
+        },
+        {
+          "suite": "e2e",
+          "project": "chromium",
+          "shard": 2,
+          "shards": 2
+        },
+        {
+          "suite": "e2e",
+          "project": "firefox",
+          "shard": 1,
+          "shards": 2
+        },
+        {
+          "suite": "e2e",
+          "project": "firefox",
+          "shard": 2,
+          "shards": 2
+        },
+        {
+          "suite": "e2e",
+          "project": "webkit",
+          "shard": 1,
+          "shards": 2
+        },
+        {
+          "suite": "e2e",
+          "project": "webkit",
+          "shard": 2,
+          "shards": 2
+        },
+        {
+          "suite": "auth-e2e",
+          "project": "chromium",
+          "shard": 1,
+          "shards": 2
+        },
+        {
+          "suite": "auth-e2e",
+          "project": "chromium",
+          "shard": 2,
+          "shards": 2
+        },
+        {
+          "suite": "auth-e2e",
+          "project": "firefox",
+          "shard": 1,
+          "shards": 2
+        },
+        {
+          "suite": "auth-e2e",
+          "project": "firefox",
+          "shard": 2,
+          "shards": 2
+        },
+        {
+          "suite": "auth-e2e",
+          "project": "webkit",
+          "shard": 1,
+          "shards": 2
+        },
+        {
+          "suite": "auth-e2e",
+          "project": "webkit",
+          "shard": 2,
+          "shards": 2
+        },
+        {
+          "suite": "auth-controls",
+          "project": "chromium",
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "auth-controls",
+          "project": "firefox",
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "auth-controls",
+          "project": "webkit",
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "responsive",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "report-viewer",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        },
+        {
+          "suite": "performance",
+          "project": null,
+          "shard": 1,
+          "shards": 1
+        }
+      ],
+      "storageEvidence": false,
+      "workflowSourceSHA256": "8b96879cccd874c3435d2f87388ae37495e62605108921f57a5beb9177f084a9"
+    },
+    {
+      "id": "pr-gate-v2",
+      "evidenceProfile": "pr-gate",
+      "catalogSourceSHA256": "3bd43eae35e2f9b682b30813f597cae29667803d291d8d7d981888be3d39ce2f",
+      "catalog": "14ef03132b4a874a944115e16b14086cc5d4c741f001deeeea450f5b47d32d9d",
+      "lanes": [
+        { "suite": "typecheck", "project": null, "shard": 1, "shards": 1 },
+        { "suite": "generated", "project": null, "shard": 1, "shards": 1 },
+        { "suite": "engine-unit", "project": null, "shard": 1, "shards": 1 },
+        { "suite": "web-unit", "project": null, "shard": 1, "shards": 1 },
+        { "suite": "computer-unit", "project": null, "shard": 1, "shards": 1 },
+        { "suite": "computer-integration", "project": null, "shard": 1, "shards": 1 },
+        { "suite": "engine-integration", "project": null, "shard": 1, "shards": 1 },
+        { "suite": "api-handler", "project": null, "shard": 1, "shards": 1 },
+        { "suite": "api-worker", "project": null, "shard": 1, "shards": 1 },
+        { "suite": "web-integration", "project": null, "shard": 1, "shards": 1 },
+        { "suite": "sync-stress", "project": null, "shard": 1, "shards": 1 },
+        { "suite": "sync-runtime", "project": null, "shard": 1, "shards": 1 },
+        { "suite": "tooling", "project": null, "shard": 1, "shards": 1 },
+        { "suite": "tooling-browser", "project": null, "shard": 1, "shards": 1 },
+        { "suite": "browser-contract", "project": "chromium", "shard": 1, "shards": 1 },
+        { "suite": "browser-contract", "project": "firefox", "shard": 1, "shards": 1 },
+        { "suite": "browser-contract", "project": "webkit", "shard": 1, "shards": 1 },
+        { "suite": "guest-smoke", "project": "chromium", "shard": 1, "shards": 1 },
+        { "suite": "auth-smoke", "project": "chromium", "shard": 1, "shards": 1 }
+      ],
+      "storageEvidence": false,
+      "workflowSourceSHA256": "21956ae50221f133eee7ca5c7772a68a338a1f7befd6c110d9d7b60dfcf8c086"
+    }
+  ]
+}

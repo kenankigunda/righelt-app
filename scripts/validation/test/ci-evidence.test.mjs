@@ -86,16 +86,19 @@ test('persisted CI evidence requires exact name/tree/command, expiry and survivi
  await writeFile(imported.receipts.Typecheck.evidence[0].archive,'corrupt');assert.equal(await loadCIReceipt(file,options),null);
 });
 
-test('tracked workflow exposes catalog lanes and an independent fail-closed aggregator',async()=>{
+test('tracked workflow exposes exact PR evidence and a compatibility-only alias',async()=>{
  const source=await readFile(new URL('../../../.github/workflows/ci.yml',import.meta.url),'utf8');
- const {workflowJobs}=await import('../ci-evidence.mjs');const jobs=workflowJobs(source);assert.equal(jobs.length,8);assert.ok(!jobs.some(j=>j.id==='push'));
- for(const job of jobs.filter(j=>j.id!=='full-validation'))assert.equal(job.steps.filter(s=>s.name==='Validate suite').length,1);
- assert.ok(jobs.find(j=>j.id==='full-validation').steps.some(s=>s.name==='Require all jobs and exact suite receipts'));
+ const {workflowJobs}=await import('../ci-evidence.mjs');const jobs=workflowJobs(source);assert.ok(jobs.length>8);assert.ok(!jobs.some(j=>j.id==='push'));
+ const aggregate=jobs.find(j=>j.id==='pr-validation'),alias=jobs.find(j=>j.id==='full-validation');
+ assert.ok(aggregate.steps.some(s=>s.name==='Verify exact profile receipts'));
+ assert.deepEqual(generatedWorkflow().jobs['full-validation'].needs,['pr-validation']);
+ assert.deepEqual(alias.steps.map(s=>s.name),['Require PR validation']);
 });
 
 const requireExactSharedNodePatch=document=>{
  const versions=[];
  for(const [id,job] of Object.entries(document.jobs)){
+  if(id==='full-validation')continue;
   const setup=job.steps.filter(step=>step.uses?.split('@')[0]==='actions/setup-node');
   assert.equal(setup.length,1,`${id} must set up Node exactly once`);
   const version=setup[0].with?.['node-version'];
@@ -103,7 +106,7 @@ const requireExactSharedNodePatch=document=>{
   assert.match(version,/^22\.\d+\.\d+$/,`${id} must name an exact Node 22 patch`);
   versions.push(version);
  }
- assert.equal(versions.length,8,'every catalog job and the aggregator must select Node');
+ assert.equal(versions.length,Object.keys(document.jobs).length-1,'every executable job except the compatibility alias must select Node');
  assert.equal(new Set(versions).size,1,'all CI jobs must use the same exact Node patch');
 };
 
@@ -117,19 +120,19 @@ test('CI setup steps share one exact Node 22 patch in generated and tracked work
 test('CI runtime contract rejects floating versions and missing setup',()=>{
  for(const version of ['22','22.23','22.x','22.23.x','^22.23.4','~22.23.4','latest','lts/*',22,null,undefined]){
   const document=structuredClone(generatedWorkflow());
-  document.jobs['full-validation'].steps.find(step=>step.uses?.startsWith('actions/setup-node@')).with={'node-version':version};
+  document.jobs['pr-validation'].steps.find(step=>step.uses?.startsWith('actions/setup-node@')).with={'node-version':version};
   assert.throws(()=>requireExactSharedNodePatch(document),/exact Node 22 patch/);
  }
  const document=structuredClone(generatedWorkflow());
- document.jobs['full-validation'].steps=document.jobs['full-validation'].steps.filter(step=>!step.uses?.startsWith('actions/setup-node@'));
+ document.jobs['pr-validation'].steps=document.jobs['pr-validation'].steps.filter(step=>!step.uses?.startsWith('actions/setup-node@'));
  assert.throws(()=>requireExactSharedNodePatch(document),/set up Node exactly once/);
 });
 
-test('CI runtime contract rejects a different full patch on the aggregator',()=>{
+test('CI runtime contract rejects a different patch on the PR aggregator',()=>{
  const document=generatedWorkflow();
  // The setup objects are intentionally shared by the generator; isolate this mutation.
- document.jobs['full-validation']=structuredClone(document.jobs['full-validation']);
- const setup=document.jobs['full-validation'].steps.find(step=>step.uses?.startsWith('actions/setup-node@'));
+ document.jobs['pr-validation']=structuredClone(document.jobs['pr-validation']);
+ const setup=document.jobs['pr-validation'].steps.find(step=>step.uses?.startsWith('actions/setup-node@'));
  const [major,minor,patch]=setup.with['node-version'].split('.');
  setup.with['node-version']=`${major}.${minor}.${Number(patch)+1}`;
  assert.throws(()=>requireExactSharedNodePatch(document),/same exact Node patch/);

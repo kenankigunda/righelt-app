@@ -1,6 +1,6 @@
 import { readdirSync } from "node:fs";
 import path from "node:path";
-import { TOOLING_WEB_FILES } from "./catalog.mjs";
+import { TOOLING_BROWSER_FILES, TOOLING_WEB_FILES } from "./catalog.mjs";
 import { classifyWebTestFile } from "../../apps/web/test/test-layers.mjs";
 const walk = (dir) =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
@@ -41,10 +41,12 @@ export function nodeInventory(id, cwd = process.cwd()) {
         "scripts/validation/test",
       ].flatMap((dir) => walk(path.join(cwd, dir))),
       ...readdirSync(path.join(cwd, "scripts"))
-        .filter((f) => f.endsWith(".test.mjs"))
+        .filter((f) => f.endsWith(".test.mjs") && !TOOLING_BROWSER_FILES.includes(f))
         .map((f) => path.join(cwd, "scripts", f)),
       ...TOOLING_WEB_FILES.map((f) => path.join(cwd, "apps/web/test", f)),
     ];
+  if (id === "tooling-browser")
+    return TOOLING_BROWSER_FILES.map((f) => path.join(cwd, "scripts", f));
   return null;
 }
 export function verifyInventory(expected, observations, cwd) {

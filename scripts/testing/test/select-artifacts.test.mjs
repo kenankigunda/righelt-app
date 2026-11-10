@@ -18,3 +18,8 @@ test('malformed attempts, foreign provenance and duplicate lane attempts fail cl
  assert.throws(()=>selectSuiteArtifacts([],{}));
  assert.deepEqual(selectSuiteArtifacts([{name:'unrelated-debug'}],expected),[]);
 });
+test('a new first attempt never inherits a stale test retry from an older workflow rerun',()=>{
+ const a=(testAttempt,workflowAttempt)=>artifact(workflowAttempt,{name:`suite-browser-contract-chromium-1-of-1-attempt-${testAttempt}-${workflowAttempt}`});
+ assert.deepEqual(selectSuiteArtifacts([a(1,1),a(2,1),a(1,2)],expected),[a(1,2)]);
+ assert.deepEqual(selectSuiteArtifacts([a(1,1),a(2,2)],expected),[a(1,1),a(2,2)]);
+});

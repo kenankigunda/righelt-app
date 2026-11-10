@@ -3,7 +3,15 @@ import { spawn, execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { catalogDigest, laneKey, suiteById, suiteKind } from "./catalog.mjs";
-import { digest, digestBuffer, sourceIdentity, sealReceipt } from "./receipts.mjs";
+import {
+  classifyFailure,
+  detectNonRetryableFailureEvidence,
+  digest,
+  digestBuffer,
+  EVIDENCE_PROFILES,
+  sourceIdentity,
+  sealReceipt,
+} from "./receipts.mjs";
 export async function runSuite(
   lane,
   {
@@ -11,8 +19,16 @@ export async function runSuite(
     out = "test-results/suites",
     execute,
     filters = [],
+    profile = process.env.RIGHELT_EVIDENCE_PROFILE || EVIDENCE_PROFILES.NIGHTLY_FULL,
+    attempt = Number(process.env.RIGHELT_CI_ATTEMPT || 1),
+    priorReceiptDigest = process.env.RIGHELT_PRIOR_RECEIPT_DIGEST || null,
   } = {},
 ) {
+  if (![1, 2].includes(attempt)) throw Error(`Invalid test attempt: ${attempt}`);
+  if (!Object.values(EVIDENCE_PROFILES).includes(profile))
+    throw Error(`Invalid evidence profile: ${profile}`);
+  if ((attempt === 1) !== (priorReceiptDigest === null))
+    throw Error("Only attempt 2 may name a prior receipt digest");
   const suite = suiteById(lane.suite),
     key = laneKey(lane),
     dir = path.resolve(cwd, out, key.replace(/[^\w.-]/g, "-"));
@@ -80,6 +96,10 @@ export async function runSuite(
   await rm(stack, { force: true });
   let browserInventory = null;
   const configs = {
+    "browser-contract": "playwright.browser-contract.config.mjs",
+    "guest-smoke": "playwright.guest-smoke.config.mjs",
+    "auth-smoke": "playwright.auth-smoke.config.mjs",
+    "storage-lifecycle": "playwright.storage-lifecycle.config.mjs",
     "browser-integration": "playwright.browser.config.mjs",
     e2e: "playwright.config.mjs",
     "auth-e2e": "playwright.auth.config.mjs",
@@ -111,6 +131,11 @@ export async function runSuite(
     ).inventory;
   }
   const result = await launch({ args, env, cwd, log });
+  const logBytes = await readFile(log).catch(() => Buffer.from(""));
+  const nonRetryableFailureEvidence = detectNonRetryableFailureEvidence(
+    result.error,
+    logBytes,
+  );
   const after = sourceIdentity(cwd);
   let observations = null,
     stackState = null;
@@ -146,6 +171,24 @@ export async function runSuite(
     !observations?.uncompleted &&
     !inventory?.missing.length &&
     !inventory?.unexpected?.length;
+  const dirtyDuringRun = before.sourceFingerprint !== after.sourceFingerprint;
+  const failureKind = passed
+    ? null
+    : classifyFailure({
+        result,
+        observations,
+        inventory,
+        stack: stackState,
+        nonRetryableFailureEvidence,
+        dirtyDuringRun,
+      });
+  const outcome = passed
+    ? attempt === 2
+      ? "infra-recovered"
+      : "passed"
+    : incomplete
+      ? "incomplete"
+      : "failed";
   const hashFile = async (f) => digest(await readFile(path.join(cwd, f)));
   const runtime = {
     node: process.version,
@@ -160,12 +203,15 @@ export async function runSuite(
     ).version,
   };
   const receipt = sealReceipt({
-    version: 1,
+    version: 2,
+    evidenceProfile: profile,
+    attempt,
+    priorReceiptDigest,
     catalog: catalogDigest(),
     lane: key,
     suite: suite.id,
     kind,
-    stateMode: ["e2e", "auth-e2e", "auth-controls", "responsive"].includes(
+    stateMode: ["e2e", "guest-smoke", "auth-smoke", "storage-lifecycle", "auth-e2e", "auth-controls", "responsive"].includes(
       suite.id,
     )
       ? "real-stack"
@@ -177,17 +223,20 @@ export async function runSuite(
       installedLockHash: await hashFile("node_modules/.pnpm/lock.yaml"),
     },
     status: passed ? "passed" : incomplete ? "incomplete" : "failed",
+    outcome,
+    failureKind,
     exitCode: result.code,
     signal: result.signal ?? null,
     incomplete,
-    dirtyDuringRun: before.sourceFingerprint !== after.sourceFingerprint,
+    dirtyDuringRun,
     startedAt,
     durationMs: performance.now() - started,
     observations,
     inventory,
     stack: stackState,
+    nonRetryableFailureEvidence,
     log,
-    logHash: digestBuffer(await readFile(log).catch(() => Buffer.from(""))),
+    logHash: digestBuffer(logBytes),
   });
   const file = path.join(dir, `${Date.now()}.receipt.json`);
   await writeFile(file, JSON.stringify(receipt, null, 2));

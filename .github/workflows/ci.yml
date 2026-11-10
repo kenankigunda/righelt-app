@@ -23,11 +23,58 @@
     "cancel-in-progress": "${{ github.event_name == 'pull_request' }}"
   },
   "env": {
-    "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24": "true"
+    "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24": "true",
+    "RIGHELT_TEST_BASE_REVISION": "${{ github.event.pull_request.base.sha || github.sha }}"
   },
   "jobs": {
+    "plan": {
+      "name": "Advisory affected-test plan",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22.23.4",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Record shadow selection",
+          "run": "pnpm test:plan --base \"$RIGHELT_TEST_BASE_REVISION\" --out test-results/plan/plan.json"
+        },
+        {
+          "name": "Preserve shadow plan",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "affected-plan-${{ github.run_attempt }}",
+            "path": "test-results/plan/plan.json",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
     "node": {
-      "name": "node / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
+      "name": "node / ${{ matrix.suite }}",
       "runs-on": "ubuntu-latest",
       "timeout-minutes": 60,
       "strategy": {
@@ -117,516 +164,13 @@
               "shard": 1,
               "shards": 1,
               "artifact": "node-11"
-            }
-          ]
-        }
-      },
-      "steps": [
-        {
-          "name": "Checkout",
-          "uses": "actions/checkout@v5",
-          "with": {
-            "fetch-depth": 0,
-            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
-          }
-        },
-        {
-          "name": "Setup pnpm",
-          "uses": "pnpm/action-setup@v4",
-          "with": {
-            "version": "9.15.9"
-          }
-        },
-        {
-          "name": "Setup Node",
-          "uses": "actions/setup-node@v5",
-          "with": {
-            "node-version": "22.23.4",
-            "cache": "pnpm"
-          }
-        },
-        {
-          "name": "Install dependencies",
-          "run": "pnpm install --frozen-lockfile"
-        },
-        {
-          "name": "Record advisory selection",
-          "run": "pnpm test:plan --base origin/main"
-        },
-        {
-          "name": "Validate suite",
-          "env": {
-            "SUITE": "${{ matrix.suite }}",
-            "PROJECT": "${{ matrix.project }}",
-            "SHARD": "${{ matrix.shard }}",
-            "SHARDS": "${{ matrix.shards }}"
-          },
-          "run": "node scripts/testing/ci-run.mjs"
-        },
-        {
-          "name": "Preserve evidence",
-          "if": "always()",
-          "uses": "actions/upload-artifact@v6",
-          "with": {
-            "name": "suite-${{ matrix.artifact }}-${{ github.run_attempt }}",
-            "path": "test-results/",
-            "if-no-files-found": "error"
-          }
-        }
-      ]
-    },
-    "browser-integration": {
-      "name": "browser-integration / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
-      "runs-on": "ubuntu-24.04",
-      "timeout-minutes": 60,
-      "strategy": {
-        "fail-fast": false,
-        "matrix": {
-          "include": [
-            {
-              "suite": "browser-integration",
-              "project": "chromium",
-              "shard": 1,
-              "shards": 1,
-              "artifact": "browser-integration-0"
             },
-            {
-              "suite": "browser-integration",
-              "project": "firefox",
-              "shard": 1,
-              "shards": 1,
-              "artifact": "browser-integration-1"
-            },
-            {
-              "suite": "browser-integration",
-              "project": "webkit",
-              "shard": 1,
-              "shards": 1,
-              "artifact": "browser-integration-2"
-            }
-          ]
-        }
-      },
-      "steps": [
-        {
-          "name": "Checkout",
-          "uses": "actions/checkout@v5",
-          "with": {
-            "fetch-depth": 0,
-            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
-          }
-        },
-        {
-          "name": "Setup pnpm",
-          "uses": "pnpm/action-setup@v4",
-          "with": {
-            "version": "9.15.9"
-          }
-        },
-        {
-          "name": "Setup Node",
-          "uses": "actions/setup-node@v5",
-          "with": {
-            "node-version": "22.23.4",
-            "cache": "pnpm"
-          }
-        },
-        {
-          "name": "Install dependencies",
-          "run": "pnpm install --frozen-lockfile"
-        },
-        {
-          "name": "Install browsers",
-          "env": {
-            "PROJECT": "${{ matrix.project }}"
-          },
-          "run": "node scripts/testing/install-browsers.mjs"
-        },
-        {
-          "name": "Record advisory selection",
-          "run": "pnpm test:plan --base origin/main"
-        },
-        {
-          "name": "Validate suite",
-          "env": {
-            "SUITE": "${{ matrix.suite }}",
-            "PROJECT": "${{ matrix.project }}",
-            "SHARD": "${{ matrix.shard }}",
-            "SHARDS": "${{ matrix.shards }}"
-          },
-          "run": "node scripts/testing/ci-run.mjs"
-        },
-        {
-          "name": "Preserve evidence",
-          "if": "always()",
-          "uses": "actions/upload-artifact@v6",
-          "with": {
-            "name": "suite-${{ matrix.artifact }}-${{ github.run_attempt }}",
-            "path": "test-results/",
-            "if-no-files-found": "error"
-          }
-        }
-      ]
-    },
-    "e2e": {
-      "name": "e2e / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
-      "runs-on": "ubuntu-24.04",
-      "timeout-minutes": 60,
-      "strategy": {
-        "fail-fast": false,
-        "matrix": {
-          "include": [
-            {
-              "suite": "e2e",
-              "project": "chromium",
-              "shard": 1,
-              "shards": 2,
-              "artifact": "e2e-0"
-            },
-            {
-              "suite": "e2e",
-              "project": "chromium",
-              "shard": 2,
-              "shards": 2,
-              "artifact": "e2e-1"
-            },
-            {
-              "suite": "e2e",
-              "project": "firefox",
-              "shard": 1,
-              "shards": 2,
-              "artifact": "e2e-2"
-            },
-            {
-              "suite": "e2e",
-              "project": "firefox",
-              "shard": 2,
-              "shards": 2,
-              "artifact": "e2e-3"
-            },
-            {
-              "suite": "e2e",
-              "project": "webkit",
-              "shard": 1,
-              "shards": 2,
-              "artifact": "e2e-4"
-            },
-            {
-              "suite": "e2e",
-              "project": "webkit",
-              "shard": 2,
-              "shards": 2,
-              "artifact": "e2e-5"
-            }
-          ]
-        }
-      },
-      "steps": [
-        {
-          "name": "Checkout",
-          "uses": "actions/checkout@v5",
-          "with": {
-            "fetch-depth": 0,
-            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
-          }
-        },
-        {
-          "name": "Setup pnpm",
-          "uses": "pnpm/action-setup@v4",
-          "with": {
-            "version": "9.15.9"
-          }
-        },
-        {
-          "name": "Setup Node",
-          "uses": "actions/setup-node@v5",
-          "with": {
-            "node-version": "22.23.4",
-            "cache": "pnpm"
-          }
-        },
-        {
-          "name": "Install dependencies",
-          "run": "pnpm install --frozen-lockfile"
-        },
-        {
-          "name": "Install browsers",
-          "env": {
-            "PROJECT": "${{ matrix.project }}"
-          },
-          "run": "node scripts/testing/install-browsers.mjs"
-        },
-        {
-          "name": "Record advisory selection",
-          "run": "pnpm test:plan --base origin/main"
-        },
-        {
-          "name": "Validate suite",
-          "env": {
-            "SUITE": "${{ matrix.suite }}",
-            "PROJECT": "${{ matrix.project }}",
-            "SHARD": "${{ matrix.shard }}",
-            "SHARDS": "${{ matrix.shards }}"
-          },
-          "run": "node scripts/testing/ci-run.mjs"
-        },
-        {
-          "name": "Validate storage lifecycle and reset",
-          "if": "matrix.shard == 1",
-          "env": {
-            "PROJECT": "${{ matrix.project }}",
-            "PLAYWRIGHT_JUNIT_OUTPUT_FILE": "test-results/storage-lifecycle/results.xml",
-            "PLAYWRIGHT_OUTPUT_DIR": "test-results/storage-lifecycle/artifacts"
-          },
-          "run": "pnpm test:e2e:storage --project=\"$PROJECT\""
-        },
-        {
-          "name": "Preserve evidence",
-          "if": "always()",
-          "uses": "actions/upload-artifact@v6",
-          "with": {
-            "name": "suite-${{ matrix.artifact }}-${{ github.run_attempt }}",
-            "path": "test-results/",
-            "if-no-files-found": "error"
-          }
-        }
-      ]
-    },
-    "auth-e2e": {
-      "name": "auth-e2e / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
-      "runs-on": "ubuntu-24.04",
-      "timeout-minutes": 60,
-      "strategy": {
-        "fail-fast": false,
-        "matrix": {
-          "include": [
-            {
-              "suite": "auth-e2e",
-              "project": "chromium",
-              "shard": 1,
-              "shards": 2,
-              "artifact": "auth-e2e-0"
-            },
-            {
-              "suite": "auth-e2e",
-              "project": "chromium",
-              "shard": 2,
-              "shards": 2,
-              "artifact": "auth-e2e-1"
-            },
-            {
-              "suite": "auth-e2e",
-              "project": "firefox",
-              "shard": 1,
-              "shards": 2,
-              "artifact": "auth-e2e-2"
-            },
-            {
-              "suite": "auth-e2e",
-              "project": "firefox",
-              "shard": 2,
-              "shards": 2,
-              "artifact": "auth-e2e-3"
-            },
-            {
-              "suite": "auth-e2e",
-              "project": "webkit",
-              "shard": 1,
-              "shards": 2,
-              "artifact": "auth-e2e-4"
-            },
-            {
-              "suite": "auth-e2e",
-              "project": "webkit",
-              "shard": 2,
-              "shards": 2,
-              "artifact": "auth-e2e-5"
-            },
-            {
-              "suite": "auth-controls",
-              "project": "chromium",
-              "shard": 1,
-              "shards": 1,
-              "artifact": "auth-e2e-6"
-            },
-            {
-              "suite": "auth-controls",
-              "project": "firefox",
-              "shard": 1,
-              "shards": 1,
-              "artifact": "auth-e2e-7"
-            },
-            {
-              "suite": "auth-controls",
-              "project": "webkit",
-              "shard": 1,
-              "shards": 1,
-              "artifact": "auth-e2e-8"
-            }
-          ]
-        }
-      },
-      "steps": [
-        {
-          "name": "Checkout",
-          "uses": "actions/checkout@v5",
-          "with": {
-            "fetch-depth": 0,
-            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
-          }
-        },
-        {
-          "name": "Setup pnpm",
-          "uses": "pnpm/action-setup@v4",
-          "with": {
-            "version": "9.15.9"
-          }
-        },
-        {
-          "name": "Setup Node",
-          "uses": "actions/setup-node@v5",
-          "with": {
-            "node-version": "22.23.4",
-            "cache": "pnpm"
-          }
-        },
-        {
-          "name": "Install dependencies",
-          "run": "pnpm install --frozen-lockfile"
-        },
-        {
-          "name": "Install browsers",
-          "env": {
-            "PROJECT": "${{ matrix.project }}"
-          },
-          "run": "node scripts/testing/install-browsers.mjs"
-        },
-        {
-          "name": "Record advisory selection",
-          "run": "pnpm test:plan --base origin/main"
-        },
-        {
-          "name": "Validate suite",
-          "env": {
-            "SUITE": "${{ matrix.suite }}",
-            "PROJECT": "${{ matrix.project }}",
-            "SHARD": "${{ matrix.shard }}",
-            "SHARDS": "${{ matrix.shards }}"
-          },
-          "run": "node scripts/testing/ci-run.mjs"
-        },
-        {
-          "name": "Preserve evidence",
-          "if": "always()",
-          "uses": "actions/upload-artifact@v6",
-          "with": {
-            "name": "suite-${{ matrix.artifact }}-${{ github.run_attempt }}",
-            "path": "test-results/",
-            "if-no-files-found": "error"
-          }
-        }
-      ]
-    },
-    "responsive": {
-      "name": "responsive / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
-      "runs-on": "ubuntu-24.04",
-      "timeout-minutes": 60,
-      "strategy": {
-        "fail-fast": false,
-        "matrix": {
-          "include": [
-            {
-              "suite": "responsive",
-              "project": "",
-              "shard": 1,
-              "shards": 1,
-              "artifact": "responsive-0"
-            }
-          ]
-        }
-      },
-      "steps": [
-        {
-          "name": "Checkout",
-          "uses": "actions/checkout@v5",
-          "with": {
-            "fetch-depth": 0,
-            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
-          }
-        },
-        {
-          "name": "Setup pnpm",
-          "uses": "pnpm/action-setup@v4",
-          "with": {
-            "version": "9.15.9"
-          }
-        },
-        {
-          "name": "Setup Node",
-          "uses": "actions/setup-node@v5",
-          "with": {
-            "node-version": "22.23.4",
-            "cache": "pnpm"
-          }
-        },
-        {
-          "name": "Install dependencies",
-          "run": "pnpm install --frozen-lockfile"
-        },
-        {
-          "name": "Install browsers",
-          "env": {
-            "PROJECT": "${{ matrix.project }}"
-          },
-          "run": "node scripts/testing/install-browsers.mjs"
-        },
-        {
-          "name": "Record advisory selection",
-          "run": "pnpm test:plan --base origin/main"
-        },
-        {
-          "name": "Validate suite",
-          "env": {
-            "SUITE": "${{ matrix.suite }}",
-            "PROJECT": "${{ matrix.project }}",
-            "SHARD": "${{ matrix.shard }}",
-            "SHARDS": "${{ matrix.shards }}"
-          },
-          "run": "node scripts/testing/ci-run.mjs"
-        },
-        {
-          "name": "Preserve evidence",
-          "if": "always()",
-          "uses": "actions/upload-artifact@v6",
-          "with": {
-            "name": "suite-${{ matrix.artifact }}-${{ github.run_attempt }}",
-            "path": "test-results/",
-            "if-no-files-found": "error"
-          }
-        }
-      ]
-    },
-    "tooling": {
-      "name": "tooling / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
-      "runs-on": "ubuntu-24.04",
-      "timeout-minutes": 60,
-      "strategy": {
-        "fail-fast": false,
-        "matrix": {
-          "include": [
             {
               "suite": "tooling",
               "project": "",
               "shard": 1,
               "shards": 1,
-              "artifact": "tooling-0"
-            },
-            {
-              "suite": "report-viewer",
-              "project": "",
-              "shard": 1,
-              "shards": 1,
-              "artifact": "tooling-1"
+              "artifact": "node-12"
             }
           ]
         }
@@ -660,23 +204,14 @@
           "run": "pnpm install --frozen-lockfile"
         },
         {
-          "name": "Install browsers",
-          "env": {
-            "PROJECT": "${{ matrix.project }}"
-          },
-          "run": "node scripts/testing/install-browsers.mjs"
-        },
-        {
-          "name": "Record advisory selection",
-          "run": "pnpm test:plan --base origin/main"
-        },
-        {
           "name": "Validate suite",
           "env": {
             "SUITE": "${{ matrix.suite }}",
             "PROJECT": "${{ matrix.project }}",
             "SHARD": "${{ matrix.shard }}",
-            "SHARDS": "${{ matrix.shards }}"
+            "SHARDS": "${{ matrix.shards }}",
+            "RIGHELT_EVIDENCE_PROFILE": "pr-gate",
+            "RIGHELT_CI_ATTEMPT": "1"
           },
           "run": "node scripts/testing/ci-run.mjs"
         },
@@ -685,30 +220,20 @@
           "if": "always()",
           "uses": "actions/upload-artifact@v6",
           "with": {
-            "name": "suite-${{ matrix.artifact }}-${{ github.run_attempt }}",
+            "name": "suite-${{ matrix.artifact }}-attempt-1-${{ github.run_attempt }}",
             "path": "test-results/",
             "if-no-files-found": "error"
           }
         }
       ]
     },
-    "performance": {
-      "name": "performance / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
+    "tooling-browser-default-1": {
+      "name": "tooling-browser / chromium / attempt 1",
       "runs-on": "ubuntu-24.04",
       "timeout-minutes": 60,
-      "strategy": {
-        "fail-fast": false,
-        "matrix": {
-          "include": [
-            {
-              "suite": "performance",
-              "project": "",
-              "shard": 1,
-              "shards": 1,
-              "artifact": "performance-0"
-            }
-          ]
-        }
+      "outputs": {
+        "retry_eligible": "${{ steps.validate.outputs.retry_eligible }}",
+        "receipt_digest": "${{ steps.validate.outputs.receipt_digest }}"
       },
       "steps": [
         {
@@ -739,23 +264,23 @@
           "run": "pnpm install --frozen-lockfile"
         },
         {
-          "name": "Install browsers",
+          "name": "Install browser",
           "env": {
-            "PROJECT": "${{ matrix.project }}"
+            "PROJECT": "chromium"
           },
           "run": "node scripts/testing/install-browsers.mjs"
         },
         {
-          "name": "Record advisory selection",
-          "run": "pnpm test:plan --base origin/main"
-        },
-        {
           "name": "Validate suite",
+          "id": "validate",
           "env": {
-            "SUITE": "${{ matrix.suite }}",
-            "PROJECT": "${{ matrix.project }}",
-            "SHARD": "${{ matrix.shard }}",
-            "SHARDS": "${{ matrix.shards }}"
+            "SUITE": "tooling-browser",
+            "PROJECT": "",
+            "SHARD": "1",
+            "SHARDS": "1",
+            "RIGHELT_EVIDENCE_PROFILE": "pr-gate",
+            "RIGHELT_CI_ATTEMPT": "1",
+            "RIGHELT_DEFER_INFRA_RETRY": "1"
           },
           "run": "node scripts/testing/ci-run.mjs"
         },
@@ -764,29 +289,795 @@
           "if": "always()",
           "uses": "actions/upload-artifact@v6",
           "with": {
-            "name": "suite-${{ matrix.artifact }}-${{ github.run_attempt }}",
+            "name": "suite-tooling-browser-default-1-of-1-attempt-1-${{ github.run_attempt }}",
             "path": "test-results/",
             "if-no-files-found": "error"
           }
         }
       ]
     },
-    "full-validation": {
+    "tooling-browser-default-1-retry": {
+      "name": "tooling-browser / chromium / attempt 2",
+      "needs": [
+        "tooling-browser-default-1"
+      ],
+      "if": "${{ needs.tooling-browser-default-1.outputs.retry_eligible == 'true' }}",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 60,
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22.23.4",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browser",
+          "env": {
+            "PROJECT": "chromium"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Validate suite",
+          "id": "validate",
+          "env": {
+            "SUITE": "tooling-browser",
+            "PROJECT": "",
+            "SHARD": "1",
+            "SHARDS": "1",
+            "RIGHELT_EVIDENCE_PROFILE": "pr-gate",
+            "RIGHELT_CI_ATTEMPT": "2",
+            "RIGHELT_PRIOR_RECEIPT_DIGEST": "${{ needs.tooling-browser-default-1.outputs.receipt_digest }}"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-tooling-browser-default-1-of-1-attempt-2-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "browser-contract-chromium-1": {
+      "name": "browser-contract / chromium / attempt 1",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 60,
+      "outputs": {
+        "retry_eligible": "${{ steps.validate.outputs.retry_eligible }}",
+        "receipt_digest": "${{ steps.validate.outputs.receipt_digest }}"
+      },
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22.23.4",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browser",
+          "env": {
+            "PROJECT": "chromium"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Validate suite",
+          "id": "validate",
+          "env": {
+            "SUITE": "browser-contract",
+            "PROJECT": "chromium",
+            "SHARD": "1",
+            "SHARDS": "1",
+            "RIGHELT_EVIDENCE_PROFILE": "pr-gate",
+            "RIGHELT_CI_ATTEMPT": "1",
+            "RIGHELT_DEFER_INFRA_RETRY": "1"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-browser-contract-chromium-1-of-1-attempt-1-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "browser-contract-chromium-1-retry": {
+      "name": "browser-contract / chromium / attempt 2",
+      "needs": [
+        "browser-contract-chromium-1"
+      ],
+      "if": "${{ needs.browser-contract-chromium-1.outputs.retry_eligible == 'true' }}",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 60,
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22.23.4",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browser",
+          "env": {
+            "PROJECT": "chromium"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Validate suite",
+          "id": "validate",
+          "env": {
+            "SUITE": "browser-contract",
+            "PROJECT": "chromium",
+            "SHARD": "1",
+            "SHARDS": "1",
+            "RIGHELT_EVIDENCE_PROFILE": "pr-gate",
+            "RIGHELT_CI_ATTEMPT": "2",
+            "RIGHELT_PRIOR_RECEIPT_DIGEST": "${{ needs.browser-contract-chromium-1.outputs.receipt_digest }}"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-browser-contract-chromium-1-of-1-attempt-2-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "browser-contract-firefox-1": {
+      "name": "browser-contract / firefox / attempt 1",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 60,
+      "outputs": {
+        "retry_eligible": "${{ steps.validate.outputs.retry_eligible }}",
+        "receipt_digest": "${{ steps.validate.outputs.receipt_digest }}"
+      },
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22.23.4",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browser",
+          "env": {
+            "PROJECT": "firefox"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Validate suite",
+          "id": "validate",
+          "env": {
+            "SUITE": "browser-contract",
+            "PROJECT": "firefox",
+            "SHARD": "1",
+            "SHARDS": "1",
+            "RIGHELT_EVIDENCE_PROFILE": "pr-gate",
+            "RIGHELT_CI_ATTEMPT": "1",
+            "RIGHELT_DEFER_INFRA_RETRY": "1"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-browser-contract-firefox-1-of-1-attempt-1-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "browser-contract-firefox-1-retry": {
+      "name": "browser-contract / firefox / attempt 2",
+      "needs": [
+        "browser-contract-firefox-1"
+      ],
+      "if": "${{ needs.browser-contract-firefox-1.outputs.retry_eligible == 'true' }}",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 60,
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22.23.4",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browser",
+          "env": {
+            "PROJECT": "firefox"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Validate suite",
+          "id": "validate",
+          "env": {
+            "SUITE": "browser-contract",
+            "PROJECT": "firefox",
+            "SHARD": "1",
+            "SHARDS": "1",
+            "RIGHELT_EVIDENCE_PROFILE": "pr-gate",
+            "RIGHELT_CI_ATTEMPT": "2",
+            "RIGHELT_PRIOR_RECEIPT_DIGEST": "${{ needs.browser-contract-firefox-1.outputs.receipt_digest }}"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-browser-contract-firefox-1-of-1-attempt-2-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "browser-contract-webkit-1": {
+      "name": "browser-contract / webkit / attempt 1",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 60,
+      "outputs": {
+        "retry_eligible": "${{ steps.validate.outputs.retry_eligible }}",
+        "receipt_digest": "${{ steps.validate.outputs.receipt_digest }}"
+      },
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22.23.4",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browser",
+          "env": {
+            "PROJECT": "webkit"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Validate suite",
+          "id": "validate",
+          "env": {
+            "SUITE": "browser-contract",
+            "PROJECT": "webkit",
+            "SHARD": "1",
+            "SHARDS": "1",
+            "RIGHELT_EVIDENCE_PROFILE": "pr-gate",
+            "RIGHELT_CI_ATTEMPT": "1",
+            "RIGHELT_DEFER_INFRA_RETRY": "1"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-browser-contract-webkit-1-of-1-attempt-1-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "browser-contract-webkit-1-retry": {
+      "name": "browser-contract / webkit / attempt 2",
+      "needs": [
+        "browser-contract-webkit-1"
+      ],
+      "if": "${{ needs.browser-contract-webkit-1.outputs.retry_eligible == 'true' }}",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 60,
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22.23.4",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browser",
+          "env": {
+            "PROJECT": "webkit"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Validate suite",
+          "id": "validate",
+          "env": {
+            "SUITE": "browser-contract",
+            "PROJECT": "webkit",
+            "SHARD": "1",
+            "SHARDS": "1",
+            "RIGHELT_EVIDENCE_PROFILE": "pr-gate",
+            "RIGHELT_CI_ATTEMPT": "2",
+            "RIGHELT_PRIOR_RECEIPT_DIGEST": "${{ needs.browser-contract-webkit-1.outputs.receipt_digest }}"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-browser-contract-webkit-1-of-1-attempt-2-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "guest-smoke-chromium-1": {
+      "name": "guest-smoke / chromium / attempt 1",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 60,
+      "outputs": {
+        "retry_eligible": "${{ steps.validate.outputs.retry_eligible }}",
+        "receipt_digest": "${{ steps.validate.outputs.receipt_digest }}"
+      },
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22.23.4",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browser",
+          "env": {
+            "PROJECT": "chromium"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Validate suite",
+          "id": "validate",
+          "env": {
+            "SUITE": "guest-smoke",
+            "PROJECT": "chromium",
+            "SHARD": "1",
+            "SHARDS": "1",
+            "RIGHELT_EVIDENCE_PROFILE": "pr-gate",
+            "RIGHELT_CI_ATTEMPT": "1",
+            "RIGHELT_DEFER_INFRA_RETRY": "1"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-guest-smoke-chromium-1-of-1-attempt-1-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "guest-smoke-chromium-1-retry": {
+      "name": "guest-smoke / chromium / attempt 2",
+      "needs": [
+        "guest-smoke-chromium-1"
+      ],
+      "if": "${{ needs.guest-smoke-chromium-1.outputs.retry_eligible == 'true' }}",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 60,
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22.23.4",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browser",
+          "env": {
+            "PROJECT": "chromium"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Validate suite",
+          "id": "validate",
+          "env": {
+            "SUITE": "guest-smoke",
+            "PROJECT": "chromium",
+            "SHARD": "1",
+            "SHARDS": "1",
+            "RIGHELT_EVIDENCE_PROFILE": "pr-gate",
+            "RIGHELT_CI_ATTEMPT": "2",
+            "RIGHELT_PRIOR_RECEIPT_DIGEST": "${{ needs.guest-smoke-chromium-1.outputs.receipt_digest }}"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-guest-smoke-chromium-1-of-1-attempt-2-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "auth-smoke-chromium-1": {
+      "name": "auth-smoke / chromium / attempt 1",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 60,
+      "outputs": {
+        "retry_eligible": "${{ steps.validate.outputs.retry_eligible }}",
+        "receipt_digest": "${{ steps.validate.outputs.receipt_digest }}"
+      },
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22.23.4",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browser",
+          "env": {
+            "PROJECT": "chromium"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Validate suite",
+          "id": "validate",
+          "env": {
+            "SUITE": "auth-smoke",
+            "PROJECT": "chromium",
+            "SHARD": "1",
+            "SHARDS": "1",
+            "RIGHELT_EVIDENCE_PROFILE": "pr-gate",
+            "RIGHELT_CI_ATTEMPT": "1",
+            "RIGHELT_DEFER_INFRA_RETRY": "1"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-auth-smoke-chromium-1-of-1-attempt-1-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "auth-smoke-chromium-1-retry": {
+      "name": "auth-smoke / chromium / attempt 2",
+      "needs": [
+        "auth-smoke-chromium-1"
+      ],
+      "if": "${{ needs.auth-smoke-chromium-1.outputs.retry_eligible == 'true' }}",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 60,
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22.23.4",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browser",
+          "env": {
+            "PROJECT": "chromium"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Validate suite",
+          "id": "validate",
+          "env": {
+            "SUITE": "auth-smoke",
+            "PROJECT": "chromium",
+            "SHARD": "1",
+            "SHARDS": "1",
+            "RIGHELT_EVIDENCE_PROFILE": "pr-gate",
+            "RIGHELT_CI_ATTEMPT": "2",
+            "RIGHELT_PRIOR_RECEIPT_DIGEST": "${{ needs.auth-smoke-chromium-1.outputs.receipt_digest }}"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-auth-smoke-chromium-1-of-1-attempt-2-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "pr-validation": {
       "permissions": {
         "contents": "read",
         "actions": "read"
       },
-      "name": "Full validation",
+      "name": "PR validation",
       "if": "always()",
       "runs-on": "ubuntu-latest",
       "needs": [
+        "plan",
         "node",
-        "browser-integration",
-        "e2e",
-        "auth-e2e",
-        "responsive",
-        "tooling",
-        "performance"
+        "tooling-browser-default-1",
+        "tooling-browser-default-1-retry",
+        "browser-contract-chromium-1",
+        "browser-contract-chromium-1-retry",
+        "browser-contract-firefox-1",
+        "browser-contract-firefox-1-retry",
+        "browser-contract-webkit-1",
+        "browser-contract-webkit-1-retry",
+        "guest-smoke-chromium-1",
+        "guest-smoke-chromium-1-retry",
+        "auth-smoke-chromium-1",
+        "auth-smoke-chromium-1-retry"
       ],
       "steps": [
         {
@@ -817,11 +1108,11 @@
           "run": "pnpm install --frozen-lockfile"
         },
         {
-          "name": "Select latest exact-run evidence",
+          "name": "Select exact-run evidence",
           "id": "artifacts",
           "uses": "actions/github-script@v8",
           "with": {
-            "script": "const {selectSuiteArtifacts}=await import(process.env.GITHUB_WORKSPACE+'/scripts/testing/select-artifacts.mjs');\nconst {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:context.runId});\nconst artifacts=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,{...context.repo,run_id:context.runId,per_page:100});\nconst selected=selectSuiteArtifacts(artifacts,{runId:context.runId,headSha:run.head_sha});\nif(!selected.length)throw new Error('No suite evidence');\ncore.setOutput('ids',selected.map(a=>a.id).join(','));"
+            "script": "const {selectSuiteArtifacts}=await import(process.env.GITHUB_WORKSPACE+'/scripts/testing/select-artifacts.mjs');\nconst {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:context.runId});\nconst artifacts=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,{...context.repo,run_id:context.runId,per_page:100});\nconst selected=selectSuiteArtifacts(artifacts,{runId:context.runId,headSha:run.head_sha,runAttempt:run.run_attempt});\nif(!selected.length)throw new Error('No suite evidence');\ncore.setOutput('ids',selected.map(a=>a.id).join(','));"
           }
         },
         {
@@ -834,21 +1125,39 @@
           }
         },
         {
-          "name": "Require all jobs and exact suite receipts",
+          "name": "Verify exact profile receipts",
           "env": {
-            "RIGHELT_JOB_RESULTS": "${{ toJSON(needs) }}"
+            "RIGHELT_JOB_RESULTS": "${{ toJSON(needs) }}",
+            "RIGHELT_EVIDENCE_PROFILE": "pr-gate"
           },
           "run": "node scripts/testing/ci-verify.mjs"
         },
         {
-          "name": "Preserve full inventory",
+          "name": "Preserve aggregate inventory",
           "if": "always()",
           "uses": "actions/upload-artifact@v6",
           "with": {
-            "name": "full-validation-${{ github.run_attempt }}",
+            "name": "pr-validation-${{ github.run_attempt }}",
             "path": "test-results/full/full.json",
             "if-no-files-found": "error"
           }
+        }
+      ]
+    },
+    "full-validation": {
+      "name": "Full validation",
+      "if": "always()",
+      "runs-on": "ubuntu-latest",
+      "needs": [
+        "pr-validation"
+      ],
+      "steps": [
+        {
+          "name": "Require PR validation",
+          "env": {
+            "PR_VALIDATION_RESULT": "${{ needs.pr-validation.result }}"
+          },
+          "run": "test \"$PR_VALIDATION_RESULT\" = success"
         }
       ]
     }

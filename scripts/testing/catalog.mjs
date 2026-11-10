@@ -11,6 +11,10 @@ export const TOOLING_WEB_FILES = Object.freeze([
   "ticket-workflow-docs.test.mjs",
   "playwright-launch-options.test.mjs",
 ]);
+export const TOOLING_BROWSER_FILES = Object.freeze([
+  "auth-proxy-launcher.test.mjs",
+  "sync-recovery-fixture.test.mjs",
+]);
 const suite = (id, script, paths, requirements, extra = {}) =>
   Object.freeze({ id, script, paths, requirements, ...extra });
 export const SUITES = Object.freeze([
@@ -108,7 +112,41 @@ export const SUITES = Object.freeze([
       "apps/web/test/",
     ],
     ["test-infrastructure", "workflow-safety"],
-    { browser: true },
+  ),
+  suite(
+    "tooling-browser",
+    "test:tooling:browser",
+    ["scripts/", "playwright", "package.json", "pnpm-lock.yaml"],
+    ["browser-test-infrastructure"],
+    { browser: true, gateOnly: true },
+  ),
+  suite(
+    "browser-contract",
+    "test:browser:contract",
+    ["apps/web/", "browser-integration/", "playwright.browser-contract.config.mjs"],
+    ["native-focus", "storage-lifecycle", "cross-tab-authority", "accessibility", "layout-tolerance"],
+    { browser: true, projects: ["chromium", "firefox", "webkit"], shards: 1, gateOnly: true },
+  ),
+  suite(
+    "guest-smoke",
+    "test:e2e:guest-smoke",
+    ["apps/", "packages/", "db/", "e2e/", "scripts/e2e-stack.mjs", "playwright.guest-smoke.config.mjs"],
+    ["boot-create-move-watch", "persistence"],
+    { browser: true, projects: ["chromium"], shards: 1, gateOnly: true },
+  ),
+  suite(
+    "auth-smoke",
+    "test:e2e:auth-smoke",
+    ["apps/", "packages/", "db/", "e2e/auth/", "scripts/e2e-auth-stack.mjs", "playwright.auth-smoke.config.mjs"],
+    ["authentication", "session-acknowledgement", "protected-mutation", "session-propagation"],
+    { browser: true, projects: ["chromium"], shards: 1, gateOnly: true },
+  ),
+  suite(
+    "storage-lifecycle",
+    "test:e2e:storage",
+    ["apps/", "packages/", "db/", "e2e/workflows/storage-lifecycle.spec.mjs", "playwright.storage-lifecycle.config.mjs"],
+    ["archive-restore", "generation-reset", "storage-fencing"],
+    { browser: true, projects: ["chromium", "firefox", "webkit"], shards: 1, nightlyOnly: true },
   ),
   suite(
     "browser-integration",
@@ -208,6 +246,22 @@ export function fullLanes() {
       : [{ suite: s.id, project: null, shard: 1, shards: 1 }],
   );
 }
+const lanesForSuites = (suites) => suites.flatMap((s) =>
+  s.projects
+    ? s.projects.flatMap((project) =>
+        Array.from({ length: s.shards }, (_, i) => ({
+          suite: s.id,
+          project,
+          shard: i + 1,
+          shards: s.shards,
+        })),
+      )
+    : [{ suite: s.id, project: null, shard: 1, shards: 1 }],
+);
+export const prGateLanes = () => lanesForSuites(SUITES.filter((s) =>
+  !s.nightlyOnly && (!s.browser || s.gateOnly),
+));
+export const nightlyFullLanes = () => lanesForSuites(SUITES);
 export const laneKey = (lane) =>
   `${lane.suite}:${lane.project ?? "default"}:${lane.shard}/${lane.shards}`;
 

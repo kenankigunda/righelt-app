@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { nodeInventory } from "./inventory.mjs";
-const files = nodeInventory("tooling");
+const files = nodeInventory(process.env.RIGHELT_TOOLING_SUITE || "tooling");
 const result = spawnSync(
   process.execPath,
   [

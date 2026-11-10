@@ -7,3 +7,5 @@ allowBuilds:
   protobufjs: false
   sharp: true
   workerd: true
+patchedDependencies:
+  miniflare@4.20260219.0: patches/miniflare@4.20260219.0.patch

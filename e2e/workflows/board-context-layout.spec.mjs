@@ -134,7 +134,17 @@ for(const width of [320,390,1440])test(`finite Board prompt geometry and require
  },entryOwner);
  let observationError;
  try{await info.attach(`Original paired context height observations ${width}px`,{body:JSON.stringify({width,before:cappedRecord,after:changedRecord}),contentType:'application/json'});}catch(error){observationError=error;}
- expect(changedRecord.height).toBe(capped);
+ const geometryTolerance=Math.max(0.5,1/(changedRecord.viewport.dpr||1));
+ const heightDelta=Math.abs(changedRecord.height-capped);
+ expect(heightDelta,'Capped context height must remain within the browser rendering tolerance').toBeLessThanOrEqual(geometryTolerance);
+ // Perturb the real measured element so the relaxed oracle proves that it still
+ // rejects a meaningful physical regression, then restore the owned DOM state.
+ const displacedHeight=await explanation.evaluate(node=>{
+  const value=node.style.getPropertyValue('transform'),priority=node.style.getPropertyPriority('transform');
+  try{node.style.setProperty('transform','scaleY(1.05)','important');return node.getBoundingClientRect().height;}
+  finally{if(value)node.style.setProperty('transform',value,priority);else node.style.removeProperty('transform');}
+ });
+ expect(Math.abs(displacedHeight-capped),'A greater-than-2px physical displacement is outside the rendering tolerance').toBeGreaterThan(2);
  if(observationError)throw observationError;
  expect(cappedRecord.incomplete||changedRecord.incomplete,'Paired height observation must be complete').toBe(false);
  expect(cappedRecord.entrySettled&&changedRecord.entrySettled,'Same context notice must remain settled at both original reads').toBe(true);

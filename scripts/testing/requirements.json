@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "broadPrefixes": [
+    ".github/",
+    "scripts/testing/",
+    "scripts/resources/",
+    "playwright",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    ".npmrc"
+  ],
+  "rules": [
+    { "prefix": "packages/game-engine/", "requirements": ["game-rules", "replay-determinism"], "suites": ["engine-unit", "engine-integration", "computer-unit", "computer-integration", "guest-smoke"] },
+    { "prefix": "packages/computer-player/", "requirements": ["computer-search", "computer-legality"], "suites": ["computer-unit", "computer-integration", "guest-smoke"] },
+    { "prefix": "packages/shared-types/", "requirements": ["shared-contracts"], "suites": ["typecheck", "engine-unit", "computer-unit", "api-handler", "web-unit", "web-integration", "guest-smoke", "auth-smoke"] },
+    { "prefix": "apps/api/", "requirements": ["api-contracts", "worker-boundary", "authority"], "suites": ["api-handler", "api-worker", "sync-runtime", "guest-smoke", "auth-smoke"] },
+    { "prefix": "apps/auth/", "requirements": ["authentication", "authorization"], "suites": ["api-handler", "sync-runtime", "auth-smoke"] },
+    { "prefix": "apps/auth-hash/", "requirements": ["authentication"], "suites": ["api-handler", "sync-runtime", "auth-smoke"] },
+    { "prefix": "apps/web/", "requirements": ["client-state", "ui-semantics", "persistence"], "suites": ["web-unit", "web-integration", "browser-contract", "guest-smoke", "auth-smoke"] },
+    { "prefix": "db/", "requirements": ["migration-contracts", "restart-durability"], "suites": ["api-handler", "sync-runtime", "guest-smoke", "auth-smoke"] },
+    { "prefix": "e2e/auth/", "requirements": ["account-journeys", "cross-tab-authority"], "suites": ["auth-smoke"] },
+    { "prefix": "e2e/", "requirements": ["create-move-watch", "persistence"], "suites": ["guest-smoke"] },
+    { "prefix": "browser-integration/", "requirements": ["native-focus", "accessibility", "layout-tolerance"], "suites": ["browser-contract"] },
+    { "prefix": "validation-e2e/", "requirements": ["responsive-continuity"], "suites": ["browser-contract"] },
+    { "prefix": "scripts/validation/", "requirements": ["evidence-review"], "suites": ["tooling", "tooling-browser"] },
+    { "prefix": "scripts/", "requirements": ["test-infrastructure", "workflow-safety"], "suites": ["tooling", "tooling-browser"] },
+    { "prefix": "docs/", "requirements": ["documentation-contracts"], "suites": ["tooling"] },
+    { "prefix": "skills/", "requirements": ["validation-policy"], "suites": ["tooling"] },
+    { "prefix": "AGENTS.md", "requirements": ["workflow-policy"], "suites": ["tooling"] },
+    { "prefix": "CLAUDE.md", "requirements": ["workflow-policy"], "suites": ["tooling"] }
+  ]
+}

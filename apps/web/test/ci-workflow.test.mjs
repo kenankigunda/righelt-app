@@ -1,23 +1,47 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
-import {workflow,workflowText} from '../../../scripts/testing/workflow.mjs';
-import {fullLanes,laneKey} from '../../../scripts/testing/catalog.mjs';
+import {nightlyWorkflow,workflow} from '../../../scripts/testing/workflow.mjs';
+import {nightlyFullLanes,prGateLanes,laneKey,suiteById} from '../../../scripts/testing/catalog.mjs';
 const actual=JSON.parse(readFileSync(new URL('../../../.github/workflows/ci.yml',import.meta.url),'utf8'));
+const nightly=JSON.parse(readFileSync(new URL('../../../.github/workflows/nightly-validation.yml',import.meta.url),'utf8'));
 test('checked-in CI equals the catalog-generated workflow',()=>assert.equal(JSON.stringify(actual),JSON.stringify(workflow())));
-test('every full lane runs exactly once with independent jobs',()=>{
- const lanes=Object.entries(actual.jobs).filter(([id])=>id!=='full-validation').flatMap(([,job])=>{assert.equal(job.needs,undefined);assert.equal(job.strategy['fail-fast'],false);return job.strategy.matrix.include.map(l=>laneKey({...l,project:l.project||null}));});
- assert.deepEqual(lanes.sort(),fullLanes().map(laneKey).sort());
+test('checked-in nightly equals the catalog-generated workflow',()=>assert.equal(JSON.stringify(nightly),JSON.stringify(nightlyWorkflow())));
+const workflowLanes=(definition)=>Object.entries(definition.jobs).flatMap(([id,job])=>{
+ if(['plan','pr-validation','full-validation','nightly-validation'].includes(id))return[];
+ if(job.strategy)return job.strategy.matrix.include.map(l=>laneKey({...l,project:l.project||null}));
+ if(id.endsWith('-retry'))return[];
+ const validate=job.steps.find(step=>step.name==='Validate suite');
+ if(!validate)return[];
+ return[laneKey({suite:validate.env.SUITE,project:validate.env.PROJECT||null,shard:Number(validate.env.SHARD),shards:Number(validate.env.SHARDS)})];
 });
-test('full gate always runs and depends on every lane, installs are frozen and pinned',()=>{
- const gate=actual.jobs['full-validation'];assert.equal(gate.name,'Full validation');assert.equal(gate.if,'always()');assert.deepEqual(gate.needs.sort(),Object.keys(actual.jobs).filter(id=>id!=='full-validation').sort());
- for(const job of Object.values(actual.jobs)){
+test('every PR-gate lane runs exactly once before any conditional retry',()=>{
+ assert.deepEqual(workflowLanes(actual).sort(),prGateLanes().map(laneKey).sort());
+ const retries=Object.entries(actual.jobs).filter(([id])=>id.endsWith('-retry'));
+ assert.equal(retries.length,prGateLanes().filter(l=>suiteById(l.suite).browser).length);
+ for(const[,job]of retries)assert.match(job.if,/retry_eligible == 'true'/);
+});
+test('PR validation is the real aggregate and Full validation is only its compatibility alias',()=>{
+ const gate=actual.jobs['pr-validation'];assert.equal(gate.name,'PR validation');assert.equal(gate.if,'always()');
+ assert.deepEqual(gate.needs.sort(),Object.keys(actual.jobs).filter(id=>!['pr-validation','full-validation'].includes(id)).sort());
+ const alias=actual.jobs['full-validation'];assert.equal(alias.name,'Full validation');assert.deepEqual(alias.needs,['pr-validation']);
+ assert.equal(alias.steps.length,1);assert.match(alias.steps[0].run,/PR_VALIDATION_RESULT/);
+ for(const [id,job] of Object.entries(actual.jobs)){
+  if(id==='full-validation')continue;
   assert.equal(job.steps.find(s=>s.uses==='actions/checkout@v5').with.ref,'${{ github.event.pull_request.head.sha || github.sha }}');
   assert.ok(job.steps.some(s=>s.run==='pnpm install --frozen-lockfile'));
   assert.ok(job.steps.some(s=>s.uses==='pnpm/action-setup@v4'&&s.with.version==='9.15.9'));
  }
  assert.deepEqual(actual.on.pull_request,{types:['opened','synchronize','reopened']},'PR source lifecycle events run full CI without repeating unchanged checks on ready status');
  assert.deepEqual(actual.on.push,{branches:['main']});assert.deepEqual(actual.on.workflow_dispatch,{});
+});
+
+test('nightly is advisory, complete, and cannot emit required gate contexts',()=>{
+ assert.equal(nightly.name,'Nightly validation');
+ assert.deepEqual(nightly.on.schedule,[{cron:'0 9 * * *'}]);assert.deepEqual(nightly.on.workflow_dispatch,{});
+ assert.deepEqual(workflowLanes(nightly).sort(),nightlyFullLanes().map(laneKey).sort());
+ assert.equal(nightly.jobs['pr-validation'],undefined);assert.equal(nightly.jobs['full-validation'],undefined);
+ assert.equal(nightly.jobs['nightly-validation'].name,'Nightly validation');
 });
 
 test('model CI installs pinned pnpm before Node cache discovery and uses the frozen lock',()=>{

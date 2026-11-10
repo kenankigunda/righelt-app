@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   fullLanes,
+  prGateLanes,
   laneKey,
   catalogDigest,
   SUITES,
@@ -21,7 +22,7 @@ const make = () =>
       catalog: catalogDigest(),
       lane: laneKey(l),
       suite: l.suite,
-      stateMode: ["e2e", "auth-e2e", "auth-controls", "responsive"].includes(
+      stateMode: ["e2e", "guest-smoke", "auth-smoke", "storage-lifecycle", "auth-e2e", "auth-controls", "responsive"].includes(
         l.suite,
       )
         ? "real-stack"
@@ -83,15 +84,26 @@ test("unknown paths and shared configuration select full inventory", () => {
   for (const file of [
     "unknown.file",
     "pnpm-lock.yaml",
+    ".github/workflows/ci.yml",
+    "package.json",
     "scripts/testing/plan.mjs",
   ])
     assert.deepEqual(
       planForFiles([file]).suites,
-      SUITES.map((s) => s.id),
+      [...new Set(prGateLanes().map((lane) => lane.suite))],
     );
   assert.equal(planForFiles(["docs/UX_PRINCIPLES.md"]).advisory, true);
+  for (const file of [
+    "apps/web/index.html",
+    "apps/web/config.json",
+    "apps/web/generated/runtime.js",
+  ]) {
+    const plan = planForFiles([file]);
+    assert.ok(plan.suites.includes("web-unit"));
+    assert.ok(plan.suites.includes("browser-contract"));
+  }
 });
-test("indirect imports expand selection; ambiguous dynamic import falls back to full", () => {
+test("shadow selection handles assets, renames, deletes and unknown inputs", () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "righelt-plan-"));
   try {
     const git = (...a) => execFileSync("git", a, { cwd: dir });
@@ -109,13 +121,28 @@ test("indirect imports expand selection; ambiguous dynamic import falls back to 
     git("commit", "-qm", "base");
     writeFileSync(`${dir}/packages/shared-types/a.mjs`, "export const a=2;");
     const plan = affectedPlan(dir, "HEAD");
-    assert.ok(plan.files.includes("apps/web/b.mjs"));
-    assert.ok(plan.suites.includes("browser-integration"));
-    writeFileSync(`${dir}/apps/web/b.mjs`, "export const b=import(variable);");
-    assert.deepEqual(
-      affectedPlan(dir, "HEAD").suites,
-      SUITES.map((s) => s.id),
-    );
+    assert.ok(plan.files.includes("packages/shared-types/a.mjs"));
+    assert.ok(plan.suites.includes("auth-smoke"));
+    writeFileSync(`${dir}/apps/web/layout.css`, ".x{display:block}");
+    assert.ok(affectedPlan(dir, "HEAD").suites.includes("browser-contract"));
+    git("add", "apps/web/layout.css");git("commit", "-qm", "asset");
+    git("mv", "apps/web/layout.css", "apps/web/layout-renamed.css");
+    const renamed=affectedPlan(dir,"HEAD");
+    assert.ok(renamed.changed.includes("apps/web/layout.css"));
+    assert.ok(renamed.changed.includes("apps/web/layout-renamed.css"));
+    writeFileSync(`${dir}/apps/web/dynamic.mjs`, "const target='./b.mjs'; export const value=import(target);");
+    const dynamic = affectedPlan(dir, "HEAD");
+    assert.equal(dynamic.fallback, true);
+    assert.ok(dynamic.reasons.some((reason) => reason.includes("Unresolved dynamic dependency")));
+    writeFileSync(`${dir}/apps/web/template.mjs`, "const name='b'; export const value=import(`./${name}.mjs`);");
+    assert.ok(affectedPlan(dir, "HEAD").reasons.some((reason) => reason.includes("apps/web/template.mjs")));
+    git("add", ".");git("commit", "-qm", "dynamic");
+    git("rm", "packages/shared-types/a.mjs");
+    const deleted = affectedPlan(dir, "HEAD");
+    assert.ok(deleted.changed.includes("packages/shared-types/a.mjs"));
+    assert.ok(deleted.suites.includes("auth-smoke"));
+    writeFileSync(`${dir}/unknown.asset`, "x");
+    assert.equal(affectedPlan(dir,"HEAD").fallback,true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

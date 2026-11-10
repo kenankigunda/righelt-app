@@ -191,3 +191,29 @@ test('approved named result contract is selected without executing candidate cod
  await writeFile(path.join(root,'apps/web/shell/game-result.js'),'export const RESULT_HEADING_CONTRACT="named-perspective-v3";\nthrow Error("Never execute candidate source");');
  assert.equal((await candidateCapabilities(root)).resultHeadingContract,'named-perspective-v3');
 });
+
+test('History hit target uses legacy only when its source module is absent',async t=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'history-hit-contract-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const directory=path.join(root,'apps/web/shell');await mkdir(directory,{recursive:true});
+ assert.equal((await candidateCapabilities(root)).historyHitTargetContract,'legacy-info-v1');
+ const source=process.env.RIGHELT_HISTORY_CONTRACT_SOURCE
+  ? await readFile(process.env.RIGHELT_HISTORY_CONTRACT_SOURCE,'utf8')
+  : "export const HISTORY_HIT_TARGET_CONTRACT='move-button-v1';";
+ await writeFile(path.join(directory,'history-narration.js'),source+'\nthrow Error("Candidate source must not execute");');
+ assert.equal((await candidateCapabilities(root)).historyHitTargetContract,'move-button-v1');
+});
+
+test('present History module rejects missing, inactive, ambiguous and unknown target declarations',async t=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'history-hit-negative-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const directory=path.join(root,'apps/web/shell');await mkdir(directory,{recursive:true});
+ const literal="export const HISTORY_HIT_TARGET_CONTRACT='move-button-v1';";
+ for(const source of ['', '// '+literal, '/* '+literal+' */', 'const example=`'+literal+'`;',
+  "function nested(){const HISTORY_HIT_TARGET_CONTRACT='move-button-v1';}",
+  literal.replace('export const','export let'),literal+literal,
+  "export const HISTORY_HIT_TARGET_CONTRACT=choose();",
+  "export const HISTORY_HIT_TARGET_CONTRACT='legacy-info-v1';",
+  "export const HISTORY_HIT_TARGET_CONTRACT='future-v2';"]){
+  await writeFile(path.join(directory,'history-narration.js'),source);
+  await assert.rejects(()=>candidateCapabilities(root),/Unsupported history hit target contract/);
+ }
+});
