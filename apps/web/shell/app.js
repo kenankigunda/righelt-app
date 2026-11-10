@@ -16,6 +16,7 @@ import {BOARD_PROMPT} from '../board/prompt-models.js';
 import {renderDismissButton} from './dismiss-control.js';
 import {createConfirmedFramePresenter} from './confirmed-frame-presenter.js';
 import {createConfirmedComputerPlayback} from './confirmed-computer-playback.js';
+import {createGuidanceIncidentSink} from './guidance-diagnostics.js';
 import {isOngoingGame,isCompletedGame} from './game-lifecycle.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
@@ -3599,6 +3600,7 @@ const mountBoardForGame = (game) => {
         },
       }),
       controls: {
+        onGuidanceDiagnostic: createGuidanceIncidentSink({gameId:game.id,diagnostics:issueDiagnostics}),
         onInteractionSound: event => gameSound.interaction(event),
         getTurnIndicator: state => playbackTurnIndicator(getBoardGame(transport.getGameViewModel(game.id)),state,{replay:replayController?.snapshot(),step:confirmedPlayback?.snapshot().current,identityId:transport.getIdentityId()}),
         getBoardMessage: selection => {
