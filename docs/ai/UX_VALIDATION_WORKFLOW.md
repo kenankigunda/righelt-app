@@ -87,4 +87,4 @@ Final validation should report:
 
 ## Validation evidence and PR shepherding
 
-Use the repo skill `skills/validate-and-shepherd/SKILL.md` for local validation or integrated PR shepherding. Run `pnpm validate:local` before completion; use `pnpm validate:integrated --manifest FILE` for ordered PR sets. Inspect actual screenshots, repair source PRs, publish the evidence report, and report current-head readiness and remaining risks. Personal report review progress never authorizes a merge.
+Use the pinned released `validate-and-shepherd` skill and `docs/ai/VALIDATION_EVIDENCE_POLICY.md`. Inspect the plan before executing, reuse compatible evidence and require additional UX checks only for mapped acceptance or regression risks. Inspect selected changed originals once. Publication remains paused unless explicitly resumed. Report current-head readiness and gaps. Personal review progress never authorizes a merge.

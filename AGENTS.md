@@ -51,7 +51,7 @@ The suite catalog, evidence profiles, focused-selection shadow and rollout rules
 - Choose coverage at the lowest layer that proves the changed contract; do not duplicate assertions merely to satisfy multiple test labels. Keep browser semantics in browser integration and real authority, persistence and workflow proof in E2E.
 - Every touched workflow must explicitly consider whether its `E2E` coverage should be added or expanded.
 - Keep workflow success proof in `E2E` and keep variant/permutation depth in `integration` tests to avoid redundant browser matrices.
-- Treat regression hardening as a default requirement for every change: run the full relevant test pass, add or extend tests for the changed behavior, cover nearby/adjacent workflows that could be affected, and include edge cases or tricky state transitions that could plausibly regress.
+- Treat regression hardening as a default requirement for every change: validate changed behavior and affected adjacent contracts, reuse compatible evidence, and add regression tests for concrete risks at the lowest useful layer.
 - Test plans should map expected behavior to source references such as spec sections, test matrix rows, and identified gaps requiring new tests.
 - Validated correctness is a hard gate: do not advance a change to the next development step until required tests for the current step pass.
 
@@ -263,3 +263,7 @@ Use the dedicated sibling `righelt-validation-tools/skills/validate-and-shepherd
 Validate introduced behavior and affected contracts, reuse compatible exact-revision evidence, and finish with required combined proof. Curate screenshots while preserving raw artifacts. Independent review is bounded to the coherent diff and changed findings. Separate ready-for-review, merge-ready/authorized, and activation-ready/authorized states. Scheduling is opt-in; a paused automation stays paused. Parent workspace templates are applied only during the explicit released installation, not while this tooling branch is under review.
 
 Validation publication is paused by default until explicitly resumed by the user. Deliver the generated local `evidence.md` and key inspected screenshot embeds directly in the Codex task. Preserve validation, independent review, merge and activation gates.
+
+## Proportionate validation and evidence reuse
+
+Follow `docs/ai/VALIDATION_EVIDENCE_POLICY.md` in the pinned released tools. Inspect `plan --candidate /absolute/path` before executing. New version 3 plans require a concrete acceptance or regression reason for every additional check and reuse compatible proof across runs. Keep the full stable current-head PR gate. Recheck only invalidated evidence after repairs, reuse unchanged review and images, and stop when acceptance questions are answered. Retained proof is required at affected state boundaries, not automatically for every feature. Within the authorized delivery order, implement, review, push and run CI for the next change while the preceding merge is in main CI or deployment verification. Only the next merge waits for required verification of the preceding deployment. Serialize local heavy jobs through the resource queue and preserve any explicit user wait command. Existing explicit acceptance, authorization, production-data protection and exact deployed identity remain required. CI narrowing is separate.

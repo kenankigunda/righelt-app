@@ -20,21 +20,28 @@ export async function fileDigest(file){
  if(!info.isFile()||info.isSymbolicLink()||await realpath(file)!==path.resolve(file))throw Error('Evidence must be a regular file without symlinks');
  const digest=createHash('sha256');for await(const chunk of createReadStream(file))digest.update(chunk);return digest.digest('hex');
 }
-export async function saveSuccessfulEvidence(file,{provenance,result,artifacts=[],expiresAt}){
+export async function saveSuccessfulEvidence(file,{provenance,result,artifacts=[],expiresAt,immutable=false}){
  if(result?.status!=='passed')throw Error('Only explicit successful evidence can be cached');
- if(!Number.isFinite(Date.parse(expiresAt))||Date.parse(expiresAt)<=Date.now())throw Error('A future evidence expiry is required');
+ if(!immutable&&(!Number.isFinite(Date.parse(expiresAt))||Date.parse(expiresAt)<=Date.now()))throw Error('A future evidence expiry is required');
+ if(immutable&&(result.code!==0||result.incomplete||result.signal||result.items?.length))throw Error('Immutable reuse requires a completed stateless check');
  const hashes=[];for(const artifact of artifacts){const absolute=path.resolve(artifact);hashes.push({path:absolute,sha256:await fileDigest(absolute)});}
- const receipt={version:1,key:evidenceKey(provenance),provenance,result,artifacts:hashes,expiresAt};
+ const receipt={version:immutable?2:1,key:evidenceKey(provenance),provenance,result,artifacts:hashes,...(immutable?{validity:'inputs-and-artifacts'}:{expiresAt})};
  receipt.integrity=evidenceKey(receipt);await saveJSON(file,receipt);return receipt;
 }
 export async function loadSuccessfulEvidence(file,provenance,{now=Date.now()}={}){
+ return (await inspectSuccessfulEvidence(file,provenance,{now})).result??null;
+}
+export async function inspectSuccessfulEvidence(file,provenance,{now=Date.now()}={}){
  try{
-  if(!Number.isFinite(now))return null;
+  if(!Number.isFinite(now))return {reason:'invalid-clock'};
   const receipt=await readJSON(file);const {integrity,...body}=receipt;
-  if(receipt.version!==1||receipt.key!==evidenceKey(provenance)||integrity!==evidenceKey(body)||receipt.result?.status!=='passed'||!Number.isFinite(Date.parse(receipt.expiresAt))||Date.parse(receipt.expiresAt)<=now||!Array.isArray(receipt.artifacts))return null;
-  for(const artifact of receipt.artifacts)if(await fileDigest(artifact.path)!==artifact.sha256)return null;
-  return receipt.result;
- }catch{return null;}
+  if(![1,2].includes(receipt.version)||integrity!==evidenceKey(body)||receipt.result?.status!=='passed'||!Array.isArray(receipt.artifacts))return {reason:'invalid-receipt'};
+  if(receipt.key!==evidenceKey(provenance))return {reason:'incompatible-inputs'};
+  if(receipt.version===1&&(!Number.isFinite(Date.parse(receipt.expiresAt))||Date.parse(receipt.expiresAt)<=now))return {reason:'expired-legacy-evidence'};
+  if(receipt.version===2&&(receipt.validity!=='inputs-and-artifacts'||receipt.result.code!==0||receipt.result.incomplete||receipt.result.signal||receipt.result.items?.length))return {reason:'incomplete-or-stateful-evidence'};
+  for(const artifact of receipt.artifacts)if(await fileDigest(artifact.path)!==artifact.sha256)return {reason:'artifact-integrity'};
+  return {reason:'compatible-inputs-and-verified-artifacts',result:receipt.result};
+ }catch(error){return {reason:error.code==='ENOENT'?'missing-evidence':'unreadable-evidence'};}
 }
 export function installSignature({lockHash,packageHash,nodeVersion,pnpmVersion,platform,arch}){
  const values={lockHash,packageHash,nodeVersion,pnpmVersion,platform,arch};

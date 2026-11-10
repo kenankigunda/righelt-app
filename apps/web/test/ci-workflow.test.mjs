@@ -29,8 +29,13 @@ test('PR validation is the sole required aggregate',()=>{
  assert.equal(actual.jobs['full-validation'],undefined);
  for(const [id,job] of Object.entries(actual.jobs)){
   assert.equal(job.steps.find(s=>s.uses==='actions/checkout@v5').with.ref,'${{ github.event.pull_request.head.sha || github.sha }}');
-  assert.ok(job.steps.some(s=>s.run==='pnpm install --frozen-lockfile'));
-  assert.ok(job.steps.some(s=>s.uses==='pnpm/action-setup@v4'&&s.with.version==='9.15.9'));
+  if(['plan','pr-validation'].includes(id)){
+   assert.ok(!job.steps.some(s=>s.run?.includes('pnpm install')||s.uses?.startsWith('pnpm/')));
+   assert.ok(job.steps.some(s=>s.uses==='actions/setup-node@v5'&&!s.with.cache&&s.with['package-manager-cache']===false));
+  }else{
+   assert.ok(job.steps.some(s=>s.run==='pnpm install --frozen-lockfile'));
+   assert.ok(job.steps.some(s=>s.uses==='pnpm/action-setup@v4'&&s.with.version==='9.15.9'));
+  }
  }
  assert.deepEqual(actual.on.pull_request,{types:['opened','synchronize','reopened']},'PR source lifecycle events run full CI without repeating unchanged checks on ready status');
  assert.deepEqual(actual.on.push,{branches:['main']});assert.deepEqual(actual.on.workflow_dispatch,{});

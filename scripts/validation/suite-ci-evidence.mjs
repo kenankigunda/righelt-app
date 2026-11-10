@@ -69,7 +69,8 @@ export function assertSuiteRequest(name, request) {
   )
     throw Error("Named suite and requested command differ");
 }
-export const PR_GATE_LAYOUT='pr-gate-v2';
+export const PR_GATE_LAYOUT='pr-gate-v3';
+export const PR_GATE_LAYOUTS=['pr-gate-v2',PR_GATE_LAYOUT];
 export function suiteRequestProfile(name,request,profile){
  assertSuiteRequest(name,request);
  const actualProfile=profile.evidenceProfile??'legacy-full',requestedProfile=request.evidenceProfile??(profile.evidenceProfile?expectedEvidenceProfile(name):'legacy-full');
@@ -88,7 +89,7 @@ export async function importCatalogCI({
   call,
   execute,
   artifactCache,
-  expectedLayout = PR_GATE_LAYOUT,
+  expectedLayout = 'auto',
 }) {
   const profile = await expectedCILayout(cwd, expectedLayout);
   const inventory = await listRunArtifacts(api, run.id);
@@ -227,7 +228,7 @@ export async function importCatalogCI({
         matchedSuites = new Set(matchingEvidence.map((entry) => entry.lane.split(":", 1)[0])),
         receipt = {
           importedAt: new Date(time).toISOString(),
-          expiresAt: new Date(time + 86400000).toISOString(),
+          ...(profile.id===PR_GATE_LAYOUT?{version:2,validity:'inputs-and-artifacts'}:{expiresAt:new Date(time+86400000).toISOString()}),
           status: "passed",
           name,
           source: "github-actions",
