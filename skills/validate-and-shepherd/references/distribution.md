@@ -36,7 +36,7 @@ Merge and install the compatible tooling release before running official fresh o
 
 ## History Undo source compatibility
 
-The capability reader supports the original inline History row and the extracted production History renderer. The extracted layout must have the named factory import, one immutable instance and actual active/archive method calls. Its returned turn renderer supplies exactly one supported literal Undo button. Local aliases may change. Missing sources, ambiguous producers, dynamic labels and direct instance/member mutation fail before browser execution. Candidate code is never imported or evaluated to discover the contract.
+The capability reader supports the original inline History row and the extracted production History renderer. The extracted layout must have the named factory import, one constant instance binding and actual active/archive method calls. Its returned turn renderer supplies exactly one supported literal Undo button. Local aliases may change. Missing sources, ambiguous producers, dynamic labels and direct instance/member mutation fail before browser execution. Candidate code is never imported or evaluated to discover the contract.
 
 This selects the source contract for native Undo validation. It does not prove app wiring or button behavior, which remain covered by the selected actual-app journey and exact command receipt. An unsupported layout is a compatibility failure to repair in released tooling, not permission to add dead candidate markup or silently use a legacy label. Keep existing source and receipt evidence when installing the merged compatibility release.
 
