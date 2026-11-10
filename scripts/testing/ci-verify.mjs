@@ -1,6 +1,7 @@
 import { nightlyFullLanes, prGateLanes } from "./catalog.mjs";
 import { appendFile, writeFile } from "node:fs/promises";
 import { readReceipts, sourceIdentity, verifyFull } from "./receipts.mjs";
+import { isolationFailureLabel } from "./storage-lane-isolation.mjs";
 const out = "test-results/full";
 const profile = process.env.RIGHELT_EVIDENCE_PROFILE || null;
 const lanes = profile === "pr-gate" ? prGateLanes() :
@@ -60,7 +61,7 @@ if (failedReceipts.length) {
   summary.push("## Classified failures", "");
   for (const receipt of failedReceipts)
     summary.push(
-      `- \`${receipt.lane}\`: **${receipt.failureKind ?? "unknown"}**; suggested owner: ${ownerFor(receipt.suite)}`,
+      `- \`${receipt.lane}\`: **${isolationFailureLabel(receipt) ?? receipt.failureKind ?? "unknown"}**; suggested owner: ${ownerFor(receipt.suite)}`,
     );
   summary.push("");
 }

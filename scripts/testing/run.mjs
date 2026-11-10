@@ -3,6 +3,7 @@ import { spawn, execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { catalogDigest, laneKey, suiteById, suiteKind } from "./catalog.mjs";
+import { storageLaneIsolation } from "./storage-lane-isolation.mjs";
 import {
   classifyFailure,
   detectNonRetryableFailureEvidence,
@@ -18,6 +19,7 @@ export async function runSuite(
     cwd = process.cwd(),
     out = "test-results/suites",
     execute,
+    discover,
     filters = [],
     profile = process.env.RIGHELT_EVIDENCE_PROFILE || EVIDENCE_PROFILES.NIGHTLY_FULL,
     attempt = Number(process.env.RIGHELT_CI_ATTEMPT || 1),
@@ -94,7 +96,7 @@ export async function runSuite(
   const { rm } = await import("node:fs/promises");
   await rm(observed, { force: true });
   await rm(stack, { force: true });
-  let browserInventory = null;
+  let browserInventory = null, isolation = null;
   const configs = {
     "browser-contract": "playwright.browser-contract.config.mjs",
     "guest-smoke": "playwright.guest-smoke.config.mjs",
@@ -106,7 +108,7 @@ export async function runSuite(
     "auth-controls": "playwright.auth-controls.config.mjs",
     responsive: "playwright.validation.config.mjs",
   };
-  if (configs[suite.id] && !execute) {
+  if (configs[suite.id] && (!execute || discover)) {
     const inventoryPath = path.join(dir, "inventory.json");
     const inventoryArgs = [
       "exec",
@@ -121,16 +123,19 @@ export async function runSuite(
     if (lane.project) inventoryArgs.push(`--project=${lane.project}`);
     if (lane.shards > 1)
       inventoryArgs.push(`--shard=${lane.shard}/${lane.shards}`);
-    execFileSync("pnpm", inventoryArgs, {
-      cwd,
-      env: { ...env, RIGHELT_TEST_OBSERVATIONS: inventoryPath },
-      stdio: "pipe",
-    });
-    browserInventory = JSON.parse(
-      await readFile(inventoryPath, "utf8"),
-    ).inventory;
+    const inventoryEnv={...env,RIGHELT_TEST_OBSERVATIONS:inventoryPath};
+    if(discover)await writeFile(inventoryPath,JSON.stringify(await discover({args:inventoryArgs,env:inventoryEnv,cwd})));
+    else execFileSync("pnpm", inventoryArgs, {cwd,env:inventoryEnv,stdio:"pipe"});
+    let discovery;
+    try{discovery=JSON.parse(await readFile(inventoryPath,"utf8"));}catch(error){
+      if(!['storage-lifecycle','e2e'].includes(suite.id))throw error;
+      discovery=null;
+    }
+    browserInventory=discovery?.inventory;
+    isolation=storageLaneIsolation(lane,discovery,{cwd});
   }
-  const result = await launch({ args, env, cwd, log });
+  if(isolation)await writeFile(log,JSON.stringify(isolation,null,2)+'\n');
+  const result = isolation?{code:1}:await launch({ args, env, cwd, log });
   const logBytes = await readFile(log).catch(() => Buffer.from(""));
   const nonRetryableFailureEvidence = detectNonRetryableFailureEvidence(
     result.error,
@@ -147,7 +152,9 @@ export async function runSuite(
   } catch {}
   const kind = suiteKind(suite.id);
   const expectedFiles = nodeInventory(suite.id, cwd);
-  const inventory = expectedFiles
+  const inventory = isolation
+    ? {expected:isolation.expected,missing:isolation.missing,unexpected:isolation.errors}
+    : expectedFiles
     ? verifyInventory(expectedFiles, observations, cwd)
     : browserInventory
       ? {
@@ -233,6 +240,7 @@ export async function runSuite(
     durationMs: performance.now() - started,
     observations,
     inventory,
+    ...(isolation?{isolation}:{}),
     stack: stackState,
     nonRetryableFailureEvidence,
     log,

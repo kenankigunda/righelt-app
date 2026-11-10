@@ -11,7 +11,8 @@ const reporter = process.env.CI
 
 const config = defineConfig({
   testDir: "./e2e",
-  testIgnore: "**/auth/**",
+  // The destructive reset proof owns a disposable stack in its dedicated lane.
+  testIgnore: ["**/auth/**", "**/storage-lifecycle.spec.mjs"],
   fullyParallel: false,
   workers: 1,
   outputDir,
