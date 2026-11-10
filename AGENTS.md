@@ -36,7 +36,7 @@ For UI controls, follow `docs/ai/UI_CONTROL_CONTRACT.md`. All icon-only close/di
 
 ## 4) Testing Policy
 
-The suite catalog, evidence profiles, focused-selection shadow and rollout rules are documented in `docs/ai/TESTING_STRATEGY.md`. `PR validation` is the authoritative merge gate. `Full validation` is a temporary compatibility alias for that same result while repository settings still require its historical name. Broad browser validation is advisory and runs nightly.
+The suite catalog, evidence profiles, focused-selection shadow and rollout rules are documented in `docs/ai/TESTING_STRATEGY.md`. `PR validation` over the exact `pr-gate` profile is the only blocking CI aggregate. `Full validation` is retired and must not be awaited. Broad `nightly-full` results are advisory: failed, pending or missing nightly evidence does not independently block review, merge or deployment. Keep explicit feature acceptance, independent review, authorization, retained-state proof and deployed-identity verification separate. Investigate confirmed product defects without restoring a blanket full-suite gate.
 
 - Testing layers are standardized repo-wide:
   - `unit test` = one module/component in isolation
@@ -44,7 +44,7 @@ The suite catalog, evidence profiles, focused-selection shadow and rollout rules
   - `E2E test` = the full browser workflow against the real local web + API stack
 - Run only tests relevant to touched packages for the current change.
 - Run required acceptance checks before final integration.
-- Treat the repo-level full verification flow as `pnpm test`, and keep it aligned with CI checks so local full-pass validation catches the same classes of failures.
+- Use the catalog-defined `pr-gate` checks for CI readiness. `pnpm test` and the complete nightly catalog are explicit diagnostics, not implicit merge prerequisites. Run additional tests only for mapped feature acceptance and affected contracts.
 - If tests cannot run, state why and what remains unverified.
 - Prefer deterministic, non-watch test commands in agent execution.
 - Add and/or extend a comprehensive test set for the changed behavior, with explicit regression-focused assertions.

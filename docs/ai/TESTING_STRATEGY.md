@@ -36,3 +36,9 @@ One fresh-run retry is allowed only when structured evidence proves an owned sta
 Regenerate both workflows with `node scripts/testing/workflow.mjs`; check drift with `node scripts/testing/workflow.mjs --check`. `pnpm test` remains the complete local inventory. Use the lowest deterministic layer that proves a contract, keep one real-stack wiring proof per critical workflow, and move fault permutations into integration tests. Source inspection is reserved for explicit workflow, generated-file, native-fixture, or pinned-third-party compatibility contracts and must appear in the source-inspection allowlist.
 
 General and account stacks own fresh temporary databases, secrets, ports, and output directories. Unexpected owned-process exits retain first-cause diagnostics. Raw service logs remain private when they can contain bindings or request data; uploaded diagnostics are sanitized and do not by themselves prove successful behavior.
+
+## Local and integrated delivery
+
+`PR validation` over the exact `pr-gate` profile is the only blocking CI aggregate. `Full validation` is retired and must not be awaited. Broad `nightly-full` results are advisory: failed, pending or missing nightly evidence does not independently block review, merge or deployment. Keep explicit feature acceptance, independent review, authorization, retained-state proof and deployed-identity verification separate. Investigate confirmed product defects without restoring a blanket full-suite gate.
+
+Final integrated execution must derive its CI checks from the PR profile and its additional browser work from explicit release questions. Neither check selection nor command generation may silently invoke the broad E2E or account matrices. Profile identity survives import and receipt loading; a smoke receipt never proves a broader journey.

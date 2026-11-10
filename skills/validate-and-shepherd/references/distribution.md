@@ -26,7 +26,7 @@ node /absolute/righelt-validation-tools/scripts/validation/cli.mjs integrated --
 
 If the released tools or dependency runtime are missing, report the exact setup gap and prepare the installation command. Do not silently fall back to arbitrary branch-local tools. Developing the tooling itself uses an isolated explicit test candidate; it is not an installed release or permission to replace the user's personal skills.
 
-The optional `--update-shipping-skills` flag narrowly replaces the personal `ship-worktree` skill's blanket visual-suite rerun with affected checks plus the repository-required final pass. It preserves unrelated contents and backs up a changed file. This remains repository-neutral; other repositories keep their own required gates. Audit other shipping guidance for concrete conflicts before making further edits.
+The optional `--update-shipping-skills` flag replaces the personal `ship-worktree` skill's blanket visual-suite rerun with affected checks plus the repository-required final pass, and installs an idempotent Righelt-only PR-gate policy section. It preserves unrelated contents, rejects malformed policy markers and backs up a changed file. Other repositories keep their own required gates. The generated `righelt-validation` adapter and opt-in watcher template carry the same CI policy: only exact current-head `PR validation` is blocking; `Full validation` is retired and nightly is advisory. After this release, install with `--update --update-gh-watch --update-shipping-skills` to update all three relevant personal skills.
 
 ## History selection compatibility
 
