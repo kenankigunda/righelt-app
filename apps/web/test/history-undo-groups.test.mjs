@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {groupUndoHistory, renderUndoHistoryGroups, noteUndoHistorySelection, observeUndoHistoryDisclosure} from '../shell/history-undo-groups.js';
+import {groupUndoHistory, renderUndoHistoryGroups, noteUndoHistorySelection, observeUndoHistoryDisclosure, toggleUndoHistoryGroup, finishUndoHistoryRequesterReturn} from '../shell/history-undo-groups.js';
 const item=(id,index,seq,extra={})=>({moveId:id,index,turnIndex:Math.floor(index/2),turnMoveIndex:index%2,undone:true,...(seq===undefined?{}:{undoEventSeq:seq}),...extra});
 const escape=String;
 test('one accepted Undo spans turns and live/archive pages without duplicate records or timestamp grouping',()=>{
@@ -82,4 +82,25 @@ test('a native explicit selection arriving before the first new-owner render is 
  const expanded=new Set(),groups=groupUndoHistory('g',[item('selected',1,8)]),view={id:'g',inHistoryMode:true,inspectedDecision:{moveId:'selected'}},first={getIdentityId:()=> 'one'},next={getIdentityId:()=> 'two'};
  observeUndoHistoryDisclosure(expanded,view,groups,first);noteUndoHistorySelection(expanded,'g','selected',next);assert.equal(observeUndoHistoryDisclosure(expanded,view,groups,next),true);assert(expanded.has('g:undo:accepted:8'));
  assert.throws(()=>noteUndoHistorySelection(expanded,'g','selected'),/owner required/);
+});
+
+test('requester return-live retires only the new automatic reveal, preserving older groups',()=>{
+ const expanded=new Set(['g:undo:accepted:7']),owner={getIdentityId:()=> 'viewer'},groups=groupUndoHistory('g',[item('selected',1,8)]),view={id:'g',inHistoryMode:true,inspectedDecision:{moveId:'selected'}};
+ observeUndoHistoryDisclosure(expanded,view,groups,owner);assert.deepEqual([...expanded],['g:undo:accepted:7','g:undo:accepted:8']);
+ assert.equal(finishUndoHistoryRequesterReturn(expanded,'g',8,owner),true);assert.deepEqual([...expanded],['g:undo:accepted:7']);
+ assert.equal(observeUndoHistoryDisclosure(expanded,{...view,inHistoryMode:false},groups,owner),false);assert.deepEqual([...expanded],['g:undo:accepted:7']);
+ for(const seq of [0,-1,1.5,Number.MAX_SAFE_INTEGER+1])assert.equal(finishUndoHistoryRequesterReturn(expanded,'g',seq,owner),false);
+});
+test('explicit native group choices survive requester return-live, including deliberate collapse',()=>{
+ for(const reopen of [false,true]){
+  const expanded=new Set(),owner={getIdentityId:()=> 'viewer'},groups=groupUndoHistory('g',[item('selected',1,8)]),view={id:'g',inHistoryMode:true,inspectedDecision:{moveId:'selected'}};
+  observeUndoHistoryDisclosure(expanded,view,groups,owner);toggleUndoHistoryGroup(expanded,'g:undo:accepted:8',owner);
+  if(reopen)toggleUndoHistoryGroup(expanded,'g:undo:accepted:8',owner);
+  assert.equal(finishUndoHistoryRequesterReturn(expanded,'g',8,owner),false);assert.equal(expanded.has('g:undo:accepted:8'),reopen);
+ }
+});
+test('a separate inspector retains its selected undone operation when the requester returns live',()=>{
+ const requester=new Set(),inspector=new Set(),owner={getIdentityId:()=> 'viewer'},groups=groupUndoHistory('g',[item('selected',1,8)]),view={id:'g',inHistoryMode:true,inspectedDecision:{moveId:'selected'}};
+ observeUndoHistoryDisclosure(requester,view,groups,owner);observeUndoHistoryDisclosure(inspector,view,groups,owner);
+ finishUndoHistoryRequesterReturn(requester,'g',8,owner);assert.equal(requester.size,0);assert.deepEqual([...inspector],['g:undo:accepted:8']);
 });

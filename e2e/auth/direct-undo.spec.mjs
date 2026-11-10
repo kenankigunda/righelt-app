@@ -1,10 +1,11 @@
+import {undoReceiptFixtures} from '../support/undo-receipts.mjs';
 import {test as base,expect} from '@playwright/test';
 import {AUTH_CONTROL_ORIGIN} from './fixture.mjs';
 import {waitForOpponentReady} from '../support/computer-projection.mjs';
 import {submitPlayableAction} from '../support/app.mjs';
 import {isOperationRequest,operationValues} from '../support/shared-request.mjs';
-import {undoWithHeldReceipt,readUndoGame,expectNoUndoApproval} from '../support/direct-undo.mjs';
-const test=base.extend({registeredPage:[async({page},use)=>{
+import {attachUndoReceiptProof,undoWithHeldReceipt,readUndoGame,expectNoUndoApproval} from '../support/direct-undo.mjs';
+const test=base.extend({...undoReceiptFixtures,registeredPage:[async({page},use)=>{
  expect((await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`,{method:'POST'})).ok).toBe(true);
  await page.goto('/');await page.getByRole('button',{name:'Play both sides',exact:true}).click();
  const account=page.getByTestId('account-dialog');await account.getByRole('button',{name:'Create account',exact:true}).click();
@@ -39,6 +40,7 @@ test('computer Undo waits for an admitted move and never asks its human owner fo
   await expect.poll(()=>resumes.length).toBeGreaterThan(0);expect(new Set(resumes.map(command=>command.clientCommandId)).size).toBe(1);
   expect(new Set(computerCommands.map(command=>command.clientCommandId)).size).toBe(1);for(const command of computerCommands)expect(command).toEqual(computerCommands[0]);
   expect(proof.game.moves.filter(move=>move.undone)).toHaveLength(2);
+  await attachUndoReceiptProof(info,proof);
   await page.screenshot({path:info.outputPath('computer-direct-undo.png')});await info.attach('computer-direct-undo-command',{body:JSON.stringify({undoId:proof.command.clientCommandId,computerId:computerCommands[0].clientCommandId,resumeId:resumes[0].clientCommandId}),contentType:'application/json'});
  }catch(error){primary=error;throw error;}finally{
   releaseComputer();

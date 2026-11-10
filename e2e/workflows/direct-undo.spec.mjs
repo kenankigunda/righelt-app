@@ -1,9 +1,10 @@
+import {undoReceiptFixtures} from '../support/undo-receipts.mjs';
 import {test as base,expect} from '@playwright/test';
 import {readFileSync} from 'node:fs';
 import {submitPlayableAction,createGameFromHome,openDirectGameLink,requestPlayerJoin,acceptPendingRequest,switchGamePanel,closeContextQuietly} from '../support/app.mjs';
 import {waitForPlayableBoard} from '../../scripts/validation/browser-navigation.mjs';
-import {undoWithHeldReceipt,readUndoGame,selectRecordedUndoMove} from '../support/direct-undo.mjs';
-const test=base.extend({otherPlayer:async({browser,baseURL},use)=>{const context=await browser.newContext({baseURL,viewport:{width:390,height:844}});try{await use(await context.newPage());}finally{await closeContextQuietly(context);}}});
+import {attachUndoReceiptProof,undoWithHeldReceipt,readUndoGame,selectRecordedUndoMove} from '../support/direct-undo.mjs';
+const test=base.extend({...undoReceiptFixtures,otherPlayer:async({browser,baseURL},use)=>{const context=await browser.newContext({baseURL,viewport:{width:390,height:844}});try{await use(await context.newPage());}finally{await closeContextQuietly(context);}}});
 const terminal=JSON.parse(readFileSync(new URL('../../apps/web/scenarios/catalog.json',import.meta.url))).scenarios.find(item=>item.title==='Capture supply point to win by unsupplying the commander');
 for(const completed of [false,true])test(`self-play Undo is direct while its receipt is pending (${completed?'completed':'live'})`,async({page},info)=>{
  await page.setViewportSize({width:390,height:844});await page.goto('/');
@@ -25,14 +26,15 @@ for(const completed of [false,true])test(`self-play Undo is direct while its rec
  await switchGamePanel(page,'history');
  const operation=page.locator(`[data-undo-boundary="accepted"][data-undo-event-seq="${acceptedSequence}"]`);
  const toggle=operation.locator(`[data-group-key="${initial.id}:undo:accepted:${acceptedSequence}"]`);
- await expect(operation).toHaveCount(1);await expect(toggle).toBeVisible();
+ await expect(operation).toHaveCount(1);await expect(toggle).toBeVisible();await expect(toggle).toHaveAttribute('aria-expanded','false');
  await page.reload();await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',initial.id);
- await expect(operation).toHaveCount(1);await expect(toggle).toBeVisible();
+ await expect(operation).toHaveCount(1);await expect(toggle).toBeVisible();await expect(toggle).toHaveAttribute('aria-expanded','false');
  const restored=await readUndoGame(page,initial.id,true);
  expect(restored.lastRestoration?.undoEventSeq).toBe(acceptedSequence);
  expect(restored.moves.find(move=>move.moveId===target.moveId)?.undoEventSeq).toBe(acceptedSequence);
- if(await toggle.getAttribute('aria-expanded')==='false')await toggle.click();
+ await toggle.click();
  await expect(operation.locator(`[data-move-id="${target.moveId}"]`)).toBeVisible();
+ await attachUndoReceiptProof(info,proof);
  await page.screenshot({path:info.outputPath(`direct-undo-${completed?'completed':'live'}.png`)});
  await info.attach('direct-undo-command',{body:JSON.stringify({commandId:proof.command.clientCommandId,submissions:proof.sent.length,completed}),contentType:'application/json'});
 });

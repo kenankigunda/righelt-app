@@ -4778,7 +4778,9 @@ const loadDebugHistory = async (gameId, more = false) => {
 const destructionTransitions = createDestructionTransitions();
 const maybeReturnAfterUndo = gameId => {
   if (currentRoute.name !== 'game' || currentRoute.gameId !== gameId) return;
-  if (!viewingIntent.observeUndo(gameId, transport.getAuthoritativeGame(gameId), viewingScope())) return;
+  const acceptedGame=transport.getAuthoritativeGame(gameId);
+  if (!viewingIntent.observeUndo(gameId, acceptedGame, viewingScope())) return;
+  undoHistory.finishUndoHistoryRequesterReturn(expandedUndoneGroups,gameId,acceptedGame?.lastRestoration?.undoEventSeq,transport);
   boardRuntime?.clearSelection();
   mountedOverlayKey=null;
   transport.returnToLive({gameId});
@@ -5720,11 +5722,7 @@ appEl.addEventListener("click", async (event) => {
   if (action === "toggle-undone-group") {
     const groupKey = actionEl.getAttribute("data-group-key");
     if (!groupKey) return;
-    if (expandedUndoneGroups.has(groupKey)) {
-      expandedUndoneGroups.delete(groupKey);
-    } else {
-      expandedUndoneGroups.add(groupKey);
-    }
+    undoHistory.toggleUndoHistoryGroup(expandedUndoneGroups,groupKey,transport);
     render({ animatePanels: false, includeBoard: false });
     return;
   }

@@ -17,11 +17,18 @@ for(const width of [320,1440])for(const scale of [100,200])test(`compact rail na
  await page.screenshot({path:info.outputPath('compact-selected-defender.png'),fullPage:true});
 });
 
-test('undone disclosure retains native priority above the aggregate target',async({page})=>{
+test('undone disclosure retains native priority above the aggregate target',async({page},info)=>{
  await page.addInitScript(scenario=>{window.compactScenario=scenario;},scenario);await page.goto('/browser-integration/support/compact-history.html');await page.waitForFunction(()=>window.fixtureReady);await page.evaluate(()=>window.addUndoneHistory());
  const toggle=page.getByRole('button',{name:'1 move undone',exact:true});await expect(toggle).toHaveAttribute('aria-expanded','false');await toggle.click();await expect(toggle).toHaveAttribute('aria-expanded','true');
- await expect(page.locator('[data-move-id="undone-record"]')).toBeVisible();expect(await page.evaluate(()=>window.historyActions)).toEqual(['toggle-undone-group']);
- await toggle.focus();await page.keyboard.press('Space');await expect(toggle).toHaveAttribute('aria-expanded','false');expect(await page.evaluate(()=>window.historyActions)).toEqual(['toggle-undone-group','toggle-undone-group']);
+ const row=page.locator('[data-move-id="undone-record"]');await expect(row).toBeVisible();expect(await page.evaluate(()=>window.historyActions)).toEqual(['toggle-undone-group']);
+ const hit=row.locator(':scope > .history-move-hit');
+ const geometry=await hit.evaluate(node=>{const style=getComputedStyle(node),box=node.getBoundingClientRect(),owner=node.parentElement.getBoundingClientRect();return{position:style.position,background:style.backgroundColor,border:style.borderTopWidth,x:box.x,y:box.y,width:box.width,height:box.height,owner:{x:owner.x,y:owner.y,width:owner.width,height:owner.height}};});
+ expect(geometry.position).toBe('absolute');expect(geometry.background).toBe('rgba(0, 0, 0, 0)');expect(geometry.border).toBe('0px');
+ for(const key of ['x','y','width','height'])expect(Math.abs(geometry[key]-geometry.owner[key])).toBeLessThanOrEqual(1);
+ await hit.click();await expect(row).toHaveClass(/is-selected/);await expect(row.locator('.history-move-hit')).toHaveCount(0);
+ expect(await page.evaluate(()=>window.historyActions)).toEqual(['toggle-undone-group','jump-history']);
+ await page.screenshot({path:info.outputPath('compact-undone-native-target.png'),fullPage:true});
+ await toggle.focus();await page.keyboard.press('Space');await expect(toggle).toHaveAttribute('aria-expanded','false');expect(await page.evaluate(()=>window.historyActions)).toEqual(['toggle-undone-group','jump-history','toggle-undone-group']);
 });
 
 test('native History hover stays a quiet owner wash rather than a generic paper button',async({page},info)=>{

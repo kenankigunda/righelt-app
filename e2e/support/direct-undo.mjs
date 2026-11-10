@@ -1,4 +1,6 @@
 import {expect} from '@playwright/test';
+import {writeFile} from 'node:fs/promises';
+import {undoReceiptObserver} from './undo-receipts.mjs';
 import {switchGamePanel} from './app.mjs';
 import {readProjectedGame} from './computer-projection.mjs';
 export const readUndoGame=(page,id,guest)=>page.evaluate(readProjectedGame,{id,guest});
@@ -28,8 +30,9 @@ export const expectNoUndoApproval=async page=>{
  await expect(page.getByText('Waiting for undo approval',{exact:true})).toHaveCount(0);
 };
 export async function undoWithHeldReceipt(page,{gameId,targetMove,guest=true,beforeClick=async()=>{},afterClick=async()=>{}}){
- let release,command,receipt;const held=new Promise(resolve=>release=resolve),sent=[];
- const routeHandler=async route=>{
+ let release,command,receipt,primary;const held=new Promise(resolve=>release=resolve),sent=[],attempts=[],routeTasks=[];
+ const observer=undoReceiptObserver(page);
+ const routeHandler=route=>{const task=(async()=>{
   const body=route.request().postDataJSON();
   if(body?.gameId===gameId&&body.payload?.operation==='revert-request'){
    sent.push(body);command??=body;await held;
@@ -37,14 +40,21 @@ export async function undoWithHeldReceipt(page,{gameId,targetMove,guest=true,bef
   await route.continue();
   if(body?.gameId===gameId&&body.payload?.operation==='revert-request'){
    const response=await route.request().response();
-   expect(response?.status()).toBe(200);
+   if(!response){
+    const failure=route.request().failure()?.errorText;
+    expect(failure).toBe('net::ERR_ABORTED');
+    attempts.push({clientCommandId:body.clientCommandId,status:null,failure});
+    return;
+   }
+   expect(response.status()).toBe(200);
+   attempts.push({clientCommandId:body.clientCommandId,status:response.status(),failure:null});
    const result=await response.json();
    const accepted=result.commandOutcomes?.find(row=>row.clientCommandId===body.clientCommandId);
    expect(accepted).toMatchObject({gameId,identityId:body.identityId,clientCommandId:body.clientCommandId,fingerprint:body.fingerprint,outcome:'accepted'});
    expect(Number.isSafeInteger(accepted.eventSeq)&&accepted.eventSeq>0).toBe(true);
    receipt??=accepted;
   }
- };
+ })();routeTasks.push(task);task.catch(()=>{});return task;};
  await page.context().route('**/shared',routeHandler);
  try{
   await switchGamePanel(page,'history');
@@ -64,8 +74,22 @@ export async function undoWithHeldReceipt(page,{gameId,targetMove,guest=true,bef
   expect(game.notifications.some(note=>/accepted the undo request/i.test(note))).toBe(false);
   for(const body of sent)expect(body).toEqual(command);
   await expectNoUndoApproval(page);await switchGamePanel(page,'board');
-  await expect.poll(()=>Boolean(receipt)).toBe(true);
+  await expect.poll(()=>Boolean(receipt??=observer.find(command))).toBe(true);
+  const socketReceipt=observer.find(command);if(socketReceipt)expect(socketReceipt).toEqual(receipt);
+  for(const attempt of attempts)if(attempt.status===null)expect(socketReceipt).toEqual(receipt);
   expect(game.lastRestoration?.undoEventSeq).toBe(receipt.eventSeq);
-  return {command,sent,game,receipt};
- }finally{release();if(!page.isClosed())await page.context().unroute('**/shared',routeHandler);}
+  return {command,sent,game,receipt,attempts,socketOriginals:observer.originals()};
+ }catch(error){primary=error;throw error;}finally{
+  release();const failures=[];
+  try{await page.context().unroute('**/shared',routeHandler);}catch(error){failures.push(error);}
+  failures.push(...(await Promise.allSettled(routeTasks)).filter(row=>row.status==='rejected').map(row=>row.reason));
+  if(!primary)try{const socketReceipt=observer.find(command);if(socketReceipt)expect(socketReceipt).toEqual(receipt);for(const attempt of attempts)if(attempt.status===null)expect(socketReceipt).toEqual(receipt);}catch(error){failures.push(error);}
+  if(failures.length)throw new AggregateError([...(primary?[primary]:[]),...failures],'Undo receipt route cleanup failed',{cause:primary??failures[0]});
+ }
+}
+
+export async function attachUndoReceiptProof(info,proof){
+ const path=info.outputPath('undo-original-receipts.json');
+ await writeFile(path,JSON.stringify({command:proof.command,receipt:proof.receipt,attempts:proof.attempts,socketOriginals:proof.socketOriginals}));
+ await info.attach('undo-original-receipts',{path,contentType:'application/json'});
 }

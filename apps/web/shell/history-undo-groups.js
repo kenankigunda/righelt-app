@@ -53,14 +53,14 @@ export const renderUndoHistoryGroups = (gameId, groups, row, expandedUndoneGroup
 // This state belongs to one viewer's expansion Set, never to shared gameplay.
 const disclosureOwners = new WeakMap();
 const disclosureOwner = expanded => {
-  if (!disclosureOwners.has(expanded)) disclosureOwners.set(expanded, {owner:null,identity:null,states:new Map(),explicit:new Map(),generation:0,requiresExplicitSelection:false});
+  if (!disclosureOwners.has(expanded)) disclosureOwners.set(expanded, {owner:null,identity:null,states:new Map(),explicit:new Map(),automatic:new Set(),generation:0,requiresExplicitSelection:false});
   return disclosureOwners.get(expanded);
 };
 const disclosureScope = (expanded, owner) => {
   if (!owner || typeof owner.getIdentityId !== 'function') throw Error('Undo disclosure owner required');
   const state = disclosureOwner(expanded), identity = owner.getIdentityId();
   if (state.owner !== null && (state.owner !== owner || state.identity !== identity)) {
-    state.states.clear();state.explicit.clear();expanded.clear();state.requiresExplicitSelection=true;
+    state.states.clear();state.explicit.clear();state.automatic.clear();expanded.clear();state.requiresExplicitSelection=true;
   }
   state.owner=owner;state.identity=identity;
   return state;
@@ -83,7 +83,20 @@ export function observeUndoHistoryDisclosure(expanded, game, groups, owner) {
   // honor a later explicit native collapse, rather than continually reopening.
   const permitted=!state.requiresExplicitSelection || explicit?.moveId===selectedMoveId;
   const reveal=Boolean(permitted && group && (!previous || previous.moveId!==selectedMoveId || previous.key!==key || previous.generation!==generation));
-  if(reveal)expanded.add(key);
+  if(reveal){if(!expanded.has(key))state.automatic.add(key);expanded.add(key);}
   state.states.set(game.id,{moveId:selectedMoveId,key,generation});
   return reveal;
+}
+
+// A native disclosure choice supersedes ownership of an automatic reveal.
+export function toggleUndoHistoryGroup(expanded,key,owner){
+ const state=disclosureScope(expanded,owner);state.automatic.delete(key);
+ if(expanded.has(key))expanded.delete(key);else expanded.add(key);
+}
+// Called only after this viewer's existing Undo intent authorizes return-live.
+export function finishUndoHistoryRequesterReturn(expanded,gameId,eventSeq,owner){
+ if(!gameId||!Number.isSafeInteger(eventSeq)||eventSeq<=0)return false;
+ const state=disclosureScope(expanded,owner),key=`${gameId}:undo:accepted:${eventSeq}`;
+ if(!state.automatic.delete(key))return false;
+ expanded.delete(key);return true;
 }
