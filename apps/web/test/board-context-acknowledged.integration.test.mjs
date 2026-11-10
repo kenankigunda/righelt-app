@@ -1,3 +1,5 @@
+import {SYNC_TIMING} from '../generated/packages/shared-types/src/sync-protocol.js';
+import {withPushSequenceMessage} from '../shell/push-sequence-replay.js';
 import {historyBoardMessage} from '../shell/history-narration.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,6 +14,7 @@ import {icon} from '../shell/ui.js';
 import {opponentBoardMessage} from '../shell/opponent-narration.js';
 import {captureDisplayedReplay} from '../shell/displayed-replay.js';
 import {CURRENT_COMPUTER_MODEL} from '../generated/packages/shared-types/src/computer-play.js';
+import {createForegroundRecoveryWait} from '../shell/foreground-recovery.js';
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const declaration=name=>{const start=source.indexOf('const '+name+' =');assert(start>=0);const end=source.indexOf('\nconst ',start+6);assert(end>start);return source.slice(start,end);};
 function fixture(){
@@ -22,7 +25,7 @@ function fixture(){
   computer:{seats:{p1:'tau',p2:null},modelId:'old-model',takeoverTurn:null},canControlComputer:true,
   moves:[{moveId:'a',turnIndex:0,turnMoveIndex:0,actorSide:'P1',selectionSnapshot:{pieces:[],sideToMove:'P1'},snapshot:{pieces:[],sideToMove:'P2'},action:{type:'rush',from:{row:1,col:2},to:{row:2,col:3}}}]};
  const stack=createNotificationStack({getInteractionKey:()=>held}),store=createBoardContextStore();
- const ctx={historyBoardMessage,opponentBoardMessage,captureDisplayedReplay,structuredClone,boardContexts:store,renderBoardContext,renderGameAlertCard,renderComputerProgress,recoveryActivity,activityActorSide,undoApprovalActorSide,icon,notificationStack:stack,
+ const ctx={SYNC_TIMING,viewingScope:()=> 'fixture',recoveryPresentationOptions:()=>({}),playbackRecoveryWait:{update:()=>0},liveBoardVisible:()=>true,historyBoardMessage,opponentBoardMessage,withPushSequenceMessage,captureDisplayedReplay,structuredClone,boardContexts:store,renderBoardContext,renderGameAlertCard,renderComputerProgress,recoveryActivity,activityActorSide,undoApprovalActorSide,icon,notificationStack:stack,
   boardContextScope:()=> 'fixture',boardContextOwner:{commit(){}},displayedReplayFrame:()=>game,
   appEl:{querySelector:()=>null},document:{activeElement:null,hidden:false},queueBoardContextRefresh(){},
   contextReplayEnabled:()=>false,transport:{getFailedOperations:()=>failures,getIdentityId:()=> 'me'},
@@ -91,4 +94,68 @@ test('selected recorded History detail uses acknowledged context without replay 
  assert.deepEqual(context.message.coordinates,[{row:1,col:2},{row:2,col:3}]);
  assert(f.store.dismiss(context.key));f.ack();
  assert.equal(f.store.items('g').length,0,'quiet renders do not revive selected narration');
+});
+
+test('automatic frame context uses pinned recorded identity and shared closure narration without History intent',()=>{
+ const f=fixture(),record={...f.game.moves[0],index:16,displayMoveNumber:17,computerProof:{profile:'babs'},destroyedPieces:[]};
+ f.game.moves=[record,{moveId:'closure',index:17,turnIndex:0,turnMoveIndex:1,actorSide:'P1',action:{type:'end_turn'},snapshot:{pieces:[],turnIndex:1},destroyedPieces:[{pieceId:'lost',ownerSeat:'P1',position:{row:3,col:4}}]}];
+ const before=JSON.stringify(f.game);
+ f.ctx.ack(f.game,{phase:'idle'},{identityId:'me',presentationMove:record});const first=f.store.channel('acknowledged');
+ assert.equal(first.message.text,'Babs rushed from (1, 2) to (2, 3) and lost piece at (3, 4)');assert.equal(first.replay,null);assert(first.key.includes('real')||first.key.includes(record.moveId));
+ assert.equal(JSON.stringify(f.game),before,'presentation must not change authoritative or personal History state');
+ f.ctx.ack(f.game,{phase:'idle'},{identityId:'me',presentationMove:record});assert.equal(f.store.channel('acknowledged').key,first.key);
+ const next={...record,moveId:'next'};f.ctx.ack(f.game,{phase:'idle'},{identityId:'me',presentationMove:next});assert.notEqual(f.store.channel('acknowledged').key,first.key);
+});
+
+function playbackRecoveryFixture(){
+ const f=fixture(),timers=new Map();let now=0,nextTimer=0,visible=true;
+ f.ctx.playbackRecoveryWait=createForegroundRecoveryWait({clock:()=>now,
+  setTimer:(fn,delay)=>{const id=++nextTimer;timers.set(id,{fn,at:now+delay});return id;},clearTimer:id=>timers.delete(id),onChange:()=>f.order()});
+ f.ctx.liveBoardVisible=()=>visible;
+ f.game.confirmedPlayback={retrying:true,canRetry:true};f.ack();
+ const acknowledged=`board-context:${f.store.channel('acknowledged').key}`;
+ assert.equal(f.order()[0].key,acknowledged,'Seed the actual preferred acknowledged context');
+ runInNewContext(`${declaration('renderGameAlertStackCard')};globalThis.card=renderGameAlertStackCard;`,f.ctx);
+ return {...f,acknowledged,recoveryKey:`confirmed-playback-recovery:${f.game.id}`,
+  advance(to){assert(to>=now);for(;;){const due=[...timers].filter(([,timer])=>timer.at<=to).sort((a,b)=>a[1].at-b[1].at)[0];if(!due)break;now=due[1].at;timers.delete(due[0]);due[1].fn();}now=to;return f.order();},
+  visible(value){visible=value;return f.order();},blocked(value){f.game.confirmedPlayback.retrying=value;return f.order();},
+  cardFor(key){const items=f.order(),index=items.findIndex(item=>item.key===key);assert(index>=0);return f.ctx.card({gameId:f.game.id,item:items[index],stackIndex:index,totalAlerts:items.length});}};
+}
+
+test('overdue playback Retry becomes an active accessible notice only at the real foreground boundary',()=>{
+ const f=playbackRecoveryFixture();
+ assert.equal(f.advance(3999).some(item=>item.key===f.recoveryKey),false);
+ for(const time of [4000,14999]){
+  const items=f.advance(time),notice=items.find(item=>item.key===f.recoveryKey);
+  assert.equal(notice.priority??'normal','normal');assert.equal(items[0].key,f.acknowledged);
+  assert.match(notice.html,/Loading the move\./);assert.doesNotMatch(notice.html,/retry-confirmed-playback/);
+ }
+ const items=f.advance(15000),notice=items.find(item=>item.key===f.recoveryKey);
+ assert.equal(items[0].key,f.recoveryKey);assert.equal(notice.priority,'urgent');
+ const card=f.cardFor(f.recoveryKey);assert.match(card,/is-active/);assert.match(card,/data-stack-index="0"/);
+ assert.doesNotMatch(card,/aria-hidden="true"|\sinert(?:\s|>)/);
+ assert.match(card,/<button class="secondary mini-button" data-action="retry-confirmed-playback" >Retry<\/button>/);
+ assert.match(card,/Still loading the move\. Retrying in the background\./);
+});
+
+test('a focused context holds overdue playback Retry until interaction ends',()=>{
+ const f=playbackRecoveryFixture();f.hold(f.acknowledged);
+ const held=f.advance(15000);assert.equal(held.find(item=>item.key===f.recoveryKey).priority,'urgent');assert.equal(held[0].key,f.acknowledged);
+ assert.match(f.cardFor(f.recoveryKey),/aria-hidden="true" tabindex="-1" inert/);
+ f.hold(null);assert.equal(f.order()[0].key,f.recoveryKey);
+ assert.doesNotMatch(f.cardFor(f.recoveryKey),/aria-hidden="true"|\sinert(?:\s|>)/);
+});
+
+test('hidden time and settled playback cannot carry an old Retry deadline into a new foreground wait',()=>{
+ const f=playbackRecoveryFixture();f.advance(14999);
+ assert.equal(f.visible(false).some(item=>item.key===f.recoveryKey),false);
+ f.advance(600000);assert.equal(f.visible(true).some(item=>item.key===f.recoveryKey),false);
+ assert.equal(f.advance(603999).some(item=>item.key===f.recoveryKey),false);
+ assert.equal(f.advance(604000).find(item=>item.key===f.recoveryKey).priority??'normal','normal');
+ assert.equal(f.advance(614999).find(item=>item.key===f.recoveryKey).priority??'normal','normal');
+ assert.equal(f.advance(615000)[0].key,f.recoveryKey);
+ assert.equal(f.blocked(false).some(item=>item.key===f.recoveryKey),false);
+ f.advance(900000);assert.equal(f.blocked(true).some(item=>item.key===f.recoveryKey),false);
+ assert.equal(f.advance(914999).find(item=>item.key===f.recoveryKey).priority??'normal','normal');
+ assert.equal(f.advance(915000)[0].key,f.recoveryKey);
 });

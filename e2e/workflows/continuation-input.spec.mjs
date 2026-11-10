@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { importScenarioGame } from "../support/app.mjs";
+import {readProjectedGame} from "../support/computer-projection.mjs";
 
 const piece = (id, owner, kind, row, col) => ({ id, owner, kind, position: { row, col }, supplied: true, commanded: true });
 const scenario = (id, title, pieces, continuation = null) => {
@@ -31,7 +32,8 @@ async function submit(page, move, count, hover) {
   await target.focus();
   await target.press("Enter");
   expect((await request).postDataJSON().payload.action).toEqual(move);
-  await expect(page.getByTestId("history-move-item")).toHaveCount(count);
+  if(Array.isArray(count)) await expect.poll(async()=>count.includes(await page.getByTestId("history-move-item").count())).toBe(true);
+  else await expect(page.getByTestId("history-move-item")).toHaveCount(count);
   await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
 }
 
@@ -48,7 +50,7 @@ for (const hover of [true, false]) {
   });
 }
 
-test("push switches control for retreat and restores the follow selection without hovering", async ({ page, baseURL }) => {
+test("push switches control for retreat and completes its unique mandatory follow without another activation", async ({ page, baseURL }) => {
   await page.addInitScript(() => {
     const native = window.matchMedia.bind(window);
     window.matchMedia = query => { const result = native(query); if (query === "(any-hover: hover)") Object.defineProperty(result, "matches", { value: true }); return result; };
@@ -58,6 +60,18 @@ test("push switches control for retreat and restores the follow selection withou
   await expect(page.getByTestId("game-role")).toContainText("both");
   await expect(page.locator("html")).toHaveAttribute("data-hover-capability", "hover");
   await submit(page, { type: "push", actorId: "U1-2", from: { row: 8, col: 9 }, to: { row: 9, col: 9 } }, 1, true);
-  await submit(page, { type: "retreat", actorId: "U2-2", from: { row: 9, col: 9 }, to: { row: 9, col: 8 } }, 2, true);
-  await submit(page, { type: "follow", actorId: "U1-1", from: { row: 7, col: 9 }, to: { row: 8, col: 9 } }, 3, true);
+  const followRequest=page.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/apply')&&request.postDataJSON()?.payload?.action?.type==='follow');
+  await submit(page, { type: "retreat", actorId: "U2-2", from: { row: 9, col: 9 }, to: { row: 9, col: 8 } }, [2,3], true);
+  const command=(await followRequest).postDataJSON();
+  expect(command.payload.action).toEqual({type:'follow',actorId:'U1-1',from:{row:7,col:9},to:{row:8,col:9}});
+  await expect.poll(async()=>{
+    const game=await page.evaluate(readProjectedGame,{id:command.gameId,guest:true});
+    return game.moves.map(move=>({action:move.action,commandId:move.clientCommandId}));
+  }).toEqual([
+    {action:{type:'push',actorId:'U1-2',from:{row:8,col:9},to:{row:9,col:9}},commandId:expect.any(String)},
+    {action:{type:'retreat',actorId:'U2-2',from:{row:9,col:9},to:{row:9,col:8}},commandId:expect.any(String)},
+    {action:command.payload.action,commandId:command.clientCommandId},
+  ]);
+  await expect(page.getByTestId('history-move-item')).toHaveCount(3);
+  await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
 });

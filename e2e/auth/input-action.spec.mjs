@@ -70,6 +70,12 @@ for (const { width, zoom } of [{ width: 320, zoom: 1 }, { width: 390, zoom: 1 },
     await continueFriendIntroduction(page);
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
     await (await revealAccountEntry(page)).click();
+    // The account rail moves up from the viewport edge on mobile. Under CI
+    // frame pressure a native click can hit a transiently stable position.
+    // Finish the actual entry motion before testing the field controls.
+    await dialog(page).evaluate(async node => {
+      await Promise.all(node.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+    });
     await dialog(page).getByRole("button", { name: "Change password", exact: true }).click();
     await expect(dialog(page).getByLabel("Current password", { exact: true })).toHaveCount(0);
     await proveInputAction(page, "New password", "text");

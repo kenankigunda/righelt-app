@@ -24,7 +24,7 @@ test('mismatched or incomplete actor metadata never hides or rewrites ordinary t
 
 test('inline controls use fixed brand glyphs and identical inert sizing content',()=>{
  assert.equal(icon,shellIcon);
- for(const [id,label,glyph] of [['replay-computer','Show me again','rematch'],['replay-next','Next','right'],['replay-stop','Stop replay','close'],['replay-dismiss','Dismiss','close'],['pass','Pass','right'],['end-turn','End turn','check']]){
+ for(const [id,label,glyph] of [['replay-computer','Show me again','rematch'],['replay-push-sequence','Show me again','rematch'],['replay-next','Next','right'],['replay-stop','Stop replay','close'],['replay-dismiss','Dismiss','close'],['pass','Pass','right'],['end-turn','End turn','check']]){
   const live=renderBoardInlineAction({id,label}),sizing=renderBoardInlineAction({id,label},{sizing:true});
   assert.match(live,/<svg class="righelt-icon"[^>]*aria-hidden="true" focusable="false"/);
   assert(live.includes(icon(glyph)));
@@ -84,5 +84,5 @@ test('finite replica markup propagates the semantic required retry tag to both f
  const {renderBoardMessageSlot}=await import('../shell/board-message-layout.js');
  const html=renderBoardMessageSlot({id:'test'});
  assert.equal((html.match(/data-prompt-pattern="required-retry"/g)??[]).length,2);
- assert.equal((html.match(/data-sizing-variant=/g)??[]).length,136);
+ assert.equal((html.match(/data-sizing-variant=/g)??[]).length,158);
 });

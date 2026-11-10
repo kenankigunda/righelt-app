@@ -16,7 +16,7 @@ export function boardPromptPattern(message){
  const actions=boardMessagePresentation(message).actions;
  return message.badge&&partitionMessageActions(actions).detached.some(action=>action.id==='retry-rush-guidance')?DETACHED_REQUIRED_RETRY:null;
 }
-const actionIcons = {'replay-computer':'rematch','replay-next':'right','replay-stop':'close','replay-dismiss':'close',pass:'right','end-turn':'check'};
+const actionIcons = {'replay-computer':'rematch','replay-push-sequence':'rematch','retry-confirmed-playback':'rematch','replay-next':'right','replay-stop':'close','replay-dismiss':'close',pass:'right','end-turn':'check'};
 // Sizing uses identical content without exposing an actionable data attribute.
 export function renderBoardInlineAction({id,label},{sizing=false,preview=false}={}) {
   const glyph=Object.hasOwn(actionIcons,id)?actionIcons[id]:null;

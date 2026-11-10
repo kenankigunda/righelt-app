@@ -1,8 +1,8 @@
 {
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",
-    "sourceSha256": "721cf3f5da2e670e79125d5df85bd18824c556cbddf29b8d53a285360ff635c9",
-    "outputSha256": "fbdadb66d1e1b061d614077206a7610b172f9dda05438793d881f59d0ebc7640",
+    "sourceSha256": "b10f7c031f89ffbd7f54b98e5d151e33d8c5c0f52c4ad0ec4a21423df120fb34",
+    "outputSha256": "ed69044bc74147315156b58dd4192f9387d380677f18b3ca16960f38d6b806c0",
     "operations": [
       {
         "start": 22898,

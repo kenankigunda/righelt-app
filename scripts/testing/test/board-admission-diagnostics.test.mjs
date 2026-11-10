@@ -308,7 +308,7 @@ test('error categories remain source-derived and changed output remains hash pro
  assert.throws(()=>transformBoardAdmissionModule(source,altered),/output hash mismatch/);
  const wrongOutput={...recipe,outputSha256:'0'.repeat(64)};assert.throws(()=>transformBoardAdmissionModule(source,wrongOutput),/output hash mismatch/);
  assert.equal(recipe.operations.filter(op=>op.after.includes('runtime-host-error')).length,1);assert.equal(recipe.operations.length,23);
- const unchanged={"/board-adapters/engine-board-adapter.js":"37ae4d7c79eb76c04725868ffd98d53a3951eec9f9613851709688deb9e6a769","/shell/live-transport.js":"a4e3c9a37eac44d300f3a1cee4eb8393fd22f4bc2a8318194d353de0f8478d05","/board/hosts/shell-host.js":"6f8f475dfe5108ead572c51375b3bafb85a94ee998ef91e2abd01f738cd575db","/shell/app.js":"9776a9efacfaec16a8089578dda572354c051d43eed1d32a7dd8d3f678e10d30"};
+ const unchanged={"/board-adapters/engine-board-adapter.js":"37ae4d7c79eb76c04725868ffd98d53a3951eec9f9613851709688deb9e6a769","/shell/live-transport.js":"1307e7f8ae69203001b16725e165e2d561a6aeed15850271350ee2b1249d0f10","/board/hosts/shell-host.js":"6f8f475dfe5108ead572c51375b3bafb85a94ee998ef91e2abd01f738cd575db","/shell/app.js":"fd3fd8347786a1f2bdc4576966190e9ecf64c5a50eb5763253ca89401da049f3"};
  for(const [key,expected] of Object.entries(unchanged)){assert.equal(createHash('sha256').update(JSON.stringify(recipes[key])).digest('hex'),expected);}
 });
 
@@ -390,7 +390,7 @@ test('case source opt-in and sealed inline capture preserve the original two act
  // Keep the original golden: only invert the sealed test-owned observation block.
  const hash=text=>createHash('sha256').update(text).digest('hex');
  const originalSHA='165ec16bb620c0038a8059a2d513401a5a258069ea6ae397130bb58fb5844d30';
- const reviewedCurrentSHA='a92963d3a05d8083077ed330cc2353d1f182bb39265ebdc775a16fe575ed33d0';
+ const reviewedCurrentSHA='fcf3791e85b1a3243d451cf3993ba631fe152b88e8ac2b0b9a144ffe21ee8646';
  // Preserve the old composed-source golden by exactly inverting the seven
  // accepted Recovery fault-lifecycle/reconnect fixture changes, not actions.
  const reviewedFixtureBaseSHA='95388c539469a08b581a1058ef79298c978cdaf859e12c5d1b328dd97bd8ca3b';
@@ -422,6 +422,10 @@ test('case source opt-in and sealed inline capture preserve the original two act
   {
     "before": " await page.route(`**/api/shell/games/${gameId}/**`,async route=>{\n  if(!isOperationRequest(route.request(),'reconcile')){await route.continue();return;}\n  // Reconcile is a POST. This fixture only observes an empty command batch,\n  // so an ECONNRESET may repeat the same read once without replaying a command.\n  const requestBody=route.request().postDataJSON();\n  expect(route.request().method()).toBe('POST');\n  expect(requestBody.protocolVersion).toBe(2);expect(requestBody.commands).toEqual([]);\n  const response=await route.fetch({maxRetries:1});if(hold){held();await gate;}await route.fulfill({response});\n });\n try {\n",
     "after": " await page.route(`**/api/shell/games/${gameId}/**`,async route=>{\n  if(!isOperationRequest(route.request(),'reconcile')){await route.continue();return;}\n  const response=await route.fetch();if(hold){held();await gate;}await route.fulfill({response});\n });\n try {\n"
+  },
+  {
+    "before": " await expect(message).toContainText(\"Select a retreat\");\n const acceptedRetreat=page.waitForResponse(response=>response.request().method()==='POST'&&new URL(response.url()).pathname.endsWith('/apply')&&actionFor(response.request().postDataJSON())?.type==='retreat');\n const automaticFollow=page.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/apply')&&actionFor(request.postDataJSON())?.type==='follow');\n acceptedRetreat.catch(()=>{});automaticFollow.catch(()=>{});\n await submitPlayableAction(page,retreat);\n const retreatResponse=await acceptedRetreat,retreatBody=await retreatResponse.json(),retreatCommand=retreatResponse.request().postDataJSON();\n expect(retreatBody.commandOutcomes).toContainEqual(expect.objectContaining({clientCommandId:retreatCommand.clientCommandId,fingerprint:retreatCommand.fingerprint,outcome:'accepted'}));\n expect(retreatBody.game.board.state.continuation.phase).toBe('follow');\n // Read the immutable acknowledged decision: the sole mandatory continuation\n // may finish before a later live read. No second native activation is needed.\n expect(retreatBody.game.legalActions).toHaveLength(1);\n const follow=retreatBody.game.legalActions[0];expect(follow.type).toBe('follow');\n const followCommand=(await automaticFollow).postDataJSON();\n expect(actionFor(followCommand)).toEqual(follow);\n expect(followCommand.payload.computer).toBeUndefined();\n expect(followCommand.expectedState).toEqual(retreatBody.game.board.state);\n expect(followCommand.expectedGameplayRevision).toBe(retreatBody.game.gameplayRevision);\n await expect(page.locator('.board-wrap[data-reconnecting=\"true\"]')).toHaveCount(0,{timeout:10000});\n await expect.poll(async()=> (await currentGame(page,gameId)).moves.length).toBe(3);\n game=await currentGame(page,gameId);expect(game.board.state.continuation).toBeNull();\n expect(game.moves.map(move=>move.action)).toEqual([push,retreat,follow]);\n expect(game.moves[2].clientCommandId).toBe(followCommand.clientCommandId);\n expect(new Set(game.moves.map(m=>m.clientCommandId)).size).toBe(3);",
+    "after": " await expect(message).toContainText(\"Select a retreat\");\n await submitPlayableAction(page,retreat);\n await expect.poll(async()=> (await currentGame(page,gameId)).board.state.continuation?.phase).toBe(\"follow\");\n await expect(page.locator('.board-wrap[data-reconnecting=\"true\"]')).toHaveCount(0,{timeout:10000});\n game=await currentGame(page,gameId);const follow=game.legalActions.find(a=>a.type===\"follow\");expect(follow).toBeTruthy();\n // The required continuation actor is already selected, even when a pushed\n // defender shares its square with the attacker and has no generic source class.\n await submitPlayableAction(page,follow);\n await expect.poll(async()=> (await currentGame(page,gameId)).moves.length).toBe(3);\n game=await currentGame(page,gameId);expect(game.board.state.continuation).toBeNull();\n expect(game.moves.map(move=>move.action)).toEqual([push,retreat,follow]);\n expect(new Set(game.moves.map(m=>m.clientCommandId)).size).toBe(3);"
   }
 ];
  const inlineSHA='8eb845f8799df703d46f19d983eb32a8e7e4bd29598d0a3d11321e618085abbe';
@@ -436,11 +440,8 @@ test('case source opt-in and sealed inline capture preserve the original two act
  const predicateEnd=helper.indexOf('  await target.click();',predicateStart);
  assert.ok(predicateStart>=0&&predicateEnd>predicateStart);
  const parentPredicate=helper.slice(predicateStart,predicateEnd);
- const normalize=source=>{
-  for(const {before,after} of recoveryFixtureUnion){
-   assert.equal(source.split(before).length-1,1,'exact reviewed Recovery fixture addition');
-   source=source.replace(before,after);
-  }
+ const normalize=(source,inversions=recoveryFixtureUnion)=>{
+  for(const {before,after} of inversions){assert.equal(source.split(before).length-1,1,'exact reviewed Recovery fixture union');source=source.replace(before,after);}
   assert.equal(source.split(beginMarker).length-1,1,'one sealed inline action');
   assert.equal(source.split(endMarker).length-1,1,'one inline end');
   assert.equal(source.split(callbackImport).length-1,1,'existing readiness import');
@@ -463,6 +464,8 @@ test('case source opt-in and sealed inline capture preserve the original two act
  };
  assert.equal(hash(current),reviewedCurrentSHA,'honest composed-source identity, not a replacement for the old golden');
  normalize(current);
+ assert.throws(()=>normalize(current,recoveryFixtureUnion.slice(0,-1)),/all original source/,'missing Playback fixture inversion must fail the original golden');
+ assert.throws(()=>normalize(current,[...recoveryFixtureUnion.slice(0,-1),{before:recoveryFixtureUnion.at(-1).after,after:recoveryFixtureUnion.at(-1).before}]),/exact reviewed Recovery fixture union/,'reversed Playback fixture inversion must fail closed');
  const reload="  await page.reload();await expect(page.getByTestId('game-board')).toBeVisible();";
  assert.equal(current.split(reload).length-1,1);
  const beforeSaved='  const saved=await currentGame(page,self.id);';
@@ -833,7 +836,7 @@ async function rulesTimeoutRecipe(){
 }
 test('computer timeout recipe is strictly bound, exactly invertible and preserves the original computer catch entry',async()=>{
  const{all,recipe,source}=await rulesTimeoutRecipe();
- assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'e941defcabcb496695e2c002a5a404231c7ad2775e3f443432409a2297281f21');
+ assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'dbac69c1672ae52cbb515f93d0bed3bdb2db889bc1c5824b9704a43955dc0022');
  assert.equal(recipe.operations.length,1);const op=recipe.operations[0];assert.equal(op.anchorCount,1);
  const output=transformBoardAdmissionModule(source,recipe);assert.equal(output.slice(op.start,op.start+op.after.length),op.after);
  assert.equal(output.slice(0,op.start)+op.before+output.slice(op.start+op.after.length),source);
