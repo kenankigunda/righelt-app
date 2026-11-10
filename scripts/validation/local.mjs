@@ -41,6 +41,7 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
  const harnessRevision=await git(['rev-parse','HEAD'],harnessRoot);
  const harnessFingerprint=await fingerprint(harnessRoot);
  if(policy){run.version=policy.version;run.mergeMethod??='squash';}
+ if(policy.version===3&&run.mode==='local')run.complete=false;
  run.localPolicy=policy;run.harnessRevision??=harnessRevision;
  run.harnessFingerprint??=harnessFingerprint;
  dir??=path.join(cwd,'test-results','validation',run.id);if(!inspectOnly){await mkdir(dir,{recursive:true});if(policy.version===3)dir=await realpath(dir);}if(policy.version===3)cacheDir??=await evidenceCache(cwd);const site=path.join(dir,'site');

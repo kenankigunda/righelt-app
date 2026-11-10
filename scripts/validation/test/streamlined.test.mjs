@@ -74,6 +74,10 @@ test('separate local invocations reuse a verified immutable log and run no dupli
  const second=await localRun({...options,dir:path.join(root,'second')});assert.equal(second.stage.status,'passed');assert.equal(calls,1);assert.equal(second.stage.checks[0].reused,true);assert.notEqual(second.stage.checks[0].log,first.stage.checks[0].log);
  const files=await readdir(path.join(cwd,'.git/righelt-validation-evidence'));const receipt=JSON.parse(await readFile(path.join(cwd,'.git/righelt-validation-evidence',files.find(f=>f.endsWith('.json')))));assert.equal(receipt.version,2);assert.equal(receipt.expiresAt,undefined);
 });
+test('a completed v3 local run becomes in-progress before resumed checks execute',async t=>{
+ const {root,cwd}=await fixture(t),head=await git(['rev-parse','HEAD'],cwd),dir=path.join(root,'resume');let observed=false;
+ const {run}=await localRun({cwd,base:'HEAD',dir,run:{version:3,mode:'local',complete:true,base:head,revision:head,stages:[],prs:[],risks:[]},lockPath:path.join(root,'lock'),publishReport:false,execute:async(argv,{log})=>{observed=true;assert.equal(JSON.parse(await readFile(path.join(dir,'run.json'),'utf8')).complete,false);await writeFile(log,'passed');return {code:0,duration:1};}});assert.equal(observed,true);assert.equal(run.complete,true);
+});
 test('cross-worktree evidence matches unchanged inputs and invalidates a relevant edit',async t=>{
  const {root,cwd}=await fixture(t),other=path.join(root,'other');await git(['worktree','add','--detach',other,'HEAD'],cwd);
  const env={RIGHELT_VALIDATION:'1'},args={fingerprint:'fallback',phase:'stateless',name:'Typecheck'},argv=['pnpm','typecheck'];
