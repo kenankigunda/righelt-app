@@ -84,6 +84,7 @@ export function workflow() {
     .map((lane, index) => ({ ...lane, project: lane.project || "", artifact: `node-${index}` }));
   jobs.plan = {
     name: "Advisory affected-test plan", "runs-on": "ubuntu-latest",
+    "continue-on-error": true,
     steps: [
       ...setup,
       { name: "Record shadow selection", run: "pnpm test:plan --base \"$RIGHELT_TEST_BASE_REVISION\" --out test-results/plan/plan.json" },
@@ -119,7 +120,7 @@ export function workflow() {
   }
   jobs["pr-validation"] = {
     permissions: { contents: "read", actions: "read" }, name: "PR validation", if: "always()",
-    "runs-on": "ubuntu-latest", needs: ["plan", "node", ...browserNeeds],
+    "runs-on": "ubuntu-latest", needs: ["node", ...browserNeeds],
     steps: aggregateSteps("pr-gate", "pr-validation"),
   };
   return {

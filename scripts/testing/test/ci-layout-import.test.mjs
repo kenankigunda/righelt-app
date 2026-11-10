@@ -26,7 +26,7 @@ test('current pr-gate v2 imports represented checks and rejects nightly-only cre
   Unit:{argv:['pnpm','test:unit'],runtime,dependencies},
   E2E:{argv:['pnpm','test:e2e'],runtime,dependencies},
  }});
- assert.equal(result.expectedLayout,'pr-gate-v2');assert.ok(result.receipts.Unit);assert.match(result.rejected.E2E,/not completely represented/);
+ assert.equal(result.expectedLayout,'pr-gate-v2');assert.ok(result.receipts.Unit);assert.match(result.rejected.E2E,/evidence profile differs/);
 });
 test('unknown, downgrade and changed source do not gain layout credit',async t=>{
  const{options,cwd}=await fixture(t,'guest-2-v1');await assert.rejects(importCatalogCI({...options,expectedLayout:'unknown'}));await assert.rejects(importCatalogCI({...options,expectedLayout:'guest-4-v1'}));await fs.appendFile(path.join(cwd,'scripts/testing/catalog.mjs'),'\nthrow Error("must never execute");');await assert.rejects(importCatalogCI(options));

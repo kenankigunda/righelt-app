@@ -5,6 +5,8 @@ description: Validate local app changes or ordered PR sets with local Markdown e
 
 # Validate and shepherd
 
+`PR validation` over the exact `pr-gate` profile is the only blocking CI aggregate. `Full validation` is retired and must not be awaited. Broad `nightly-full` results are advisory: failed, pending or missing nightly evidence does not independently block review, merge or deployment. Keep explicit feature acceptance, independent review, authorization, retained-state proof and deployed-identity verification separate. Investigate confirmed product defects without restoring a blanket full-suite gate.
+
 Use the dedicated released `righelt-validation-tools` checkout, pinned to a merged revision. Resolve the candidate separately and pass `--candidate /absolute/path` to the released CLI. Paths to skill references and harness files belong to the released checkout; product reads and repairs belong to the explicit candidate. Never run a branch-local skill as the released policy or modify another task's dirty worktree. See `references/distribution.md`.
 
 ## Evidence delivery

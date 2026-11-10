@@ -15,7 +15,7 @@ The default revision is freshly fetched `origin/main`; `--revision MERGED_SHA` p
 
 Personal skill changes are explicit external writes. `--update-gh-watch` adds installation of the tracked `docs/ai/GH_WATCH_AND_REPAIR_PR_SKILL.template.md` into that one personal skill; it is never applied by default. Changed skill files receive a local backup. No other personal skill is modified. Review the template diff before requesting this option.
 
-After installation, run `pnpm setup:workspace` from the canonical `righelt-app` checkout at the released revision to regenerate parent instructions from the released templates. This is separate from developing/reviewing an unmerged tooling candidate; do not apply unreleased parent guidance or install the personal adapter prematurely.
+After installation, run `pnpm setup:workspace` from the canonical `righelt-app` checkout at the released revision to regenerate parent instructions from the released templates. This is separate from developing/reviewing an unmerged tooling candidate; do not apply unreleased parent guidance or install the personal adapter prematurely. If the canonical app checkout is on unrelated work, do not switch it or run the broad workspace setup from a differently named tools checkout. Instead, after installation, back up and render only the two parent instruction files from the installed release templates, substituting the fixed canonical app/backlog/tools paths. Verify exact output and resolved placeholders; leave settings, links and the unrelated checkout unchanged.
 
 Example released invocation:
 
@@ -26,7 +26,7 @@ node /absolute/righelt-validation-tools/scripts/validation/cli.mjs integrated --
 
 If the released tools or dependency runtime are missing, report the exact setup gap and prepare the installation command. Do not silently fall back to arbitrary branch-local tools. Developing the tooling itself uses an isolated explicit test candidate; it is not an installed release or permission to replace the user's personal skills.
 
-The optional `--update-shipping-skills` flag narrowly replaces the personal `ship-worktree` skill's blanket visual-suite rerun with affected checks plus the repository-required final pass. It preserves unrelated contents and backs up a changed file. This remains repository-neutral; other repositories keep their own required gates. Audit other shipping guidance for concrete conflicts before making further edits.
+The optional `--update-shipping-skills` flag replaces the personal `ship-worktree` skill's blanket visual-suite rerun with affected checks plus the repository-required final pass, and installs an idempotent Righelt-only PR-gate policy section. It preserves unrelated contents, rejects malformed policy markers and backs up a changed file. Other repositories keep their own required gates. The generated `righelt-validation` adapter and opt-in watcher template carry the same CI policy: only exact current-head `PR validation` is blocking; `Full validation` is retired and nightly is advisory. After this release, install with `--update --update-gh-watch --update-shipping-skills` to update all three relevant personal skills.
 
 ## History selection compatibility
 

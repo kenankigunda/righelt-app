@@ -1,5 +1,7 @@
 # Orchestration Workflow
 
+`PR validation` over the exact `pr-gate` profile is the only blocking CI aggregate. `Full validation` is retired and must not be awaited. Broad `nightly-full` results are advisory: failed, pending or missing nightly evidence does not independently block review, merge or deployment. Keep explicit feature acceptance, independent review, authorization, retained-state proof and deployed-identity verification separate. Investigate confirmed product defects without restoring a blanket full-suite gate.
+
 This document captures the non-default orchestration workflow for coordinated, multi-stream feature execution. Use it just in time when the feature benefits from parallel streams and coordinator-led integration rather than the repo's normal single-stream approach.
 
 ## When To Use It

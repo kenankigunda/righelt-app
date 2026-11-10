@@ -10,7 +10,8 @@ import {candidateCapabilities} from './capabilities.mjs';
 import {initializeAccountUpgrade} from './account-stack.mjs';
 import {verifyAccountEvidence} from './account-evidence.mjs';
 import {loadCIReceipt} from './ci-evidence.mjs';
-import {canonicalCommands} from './suite-ci-evidence.mjs';
+import {canonicalCommands,expectedEvidenceProfile} from './suite-ci-evidence.mjs';
+import {defaultLocalPlan,stagePolicy} from './plan.mjs';
 import {executeCheck,checkProvenance,createAuthLane} from './execution.mjs';
 import {assertHistorySnapshot} from './history-continuity.mjs';
 export async function fingerprint(cwd){const tracked=await git(['ls-files','-z'],cwd);const untracked=await git(['ls-files','--others','--exclude-standard','-z'],cwd);const entries=[];for(const p of [...new Set((tracked+'\0'+untracked).split('\0').filter(Boolean))].sort()){try{entries.push([p,hash((await lstat(path.join(cwd,p))).isSymbolicLink()?await readlink(path.join(cwd,p)):await readFile(path.join(cwd,p)))]);}catch(e){if(e.code==='ENOENT')entries.push([p,'deleted']);else throw e;}}return hash(entries);}
@@ -31,7 +32,10 @@ export function verifyGeneralEvidence(items,{retained=false,viewports=['mobile',
 export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=false,config={},publishReport=config?.publicationEnabled===true,run,stageIndex=0,persistRoot,continuityInput,continuityOutput,accountPersistRoot,accountContinuityInput,accountLegacyContinuityInput,execute=command,policy,cacheDir,ciEvidence,lockPath=path.join(os.tmpdir(),'righelt-validation-9888.lock')}={}){
  cwd=path.resolve(cwd);
  const revision=await git(['rev-parse','HEAD'],cwd);const baseSha=await git(['rev-parse',base],cwd);
- const changed=(await git(['diff','--name-only',baseSha],cwd)+'\n'+await git(['ls-files','--others','--exclude-standard'],cwd)).split('\n').filter(Boolean);const selection=coverage(changed);if(policy)selection.unmapped=[...new Set([...selection.unmapped,...(policy.unmapped??[])])];
+ const changed=(await git(['diff','--name-only',baseSha],cwd)+'\n'+await git(['ls-files','--others','--exclude-standard'],cwd)).split('\n').filter(Boolean);const selection=coverage(changed);
+ if(!policy){const spec=await defaultLocalPlan(cwd);policy=stagePolicy(spec,spec.prs?.length??0,{changed});}
+ if(policy.phase==='final')policy={...policy,selected:[...new Set(['PR gate',...policy.selected])]};
+ selection.unmapped=[...new Set([...selection.unmapped,...(policy.unmapped??[])])];
  run??={version:VERSION,id:`${Date.now()}-${revision.slice(0,8)}`,startedAt:new Date().toISOString(),mode:'local',base:baseSha,revision,fingerprint:await fingerprint(cwd),prs:[],stages:[],risks:[]};
  const harnessRevision=await git(['rev-parse','HEAD'],harnessRoot);
  const harnessFingerprint=await fingerprint(harnessRoot);
@@ -45,12 +49,13 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
  const file=path.join(dir,'run.json');const save=async()=>{await saveJSON(file,run);await renderReport(run,site);};await save();
  const lock=lockPath;let locked=false;
  try{await mkdir(lock);locked=true;await saveJSON(path.join(lock,'owner.json'),{pid:process.pid,run:run.id,cwd});
-  const env={...(policy?{RIGHELT_VISUAL_MODE:policy.visualMode,RIGHELT_VALIDATION_VIEWPORTS:JSON.stringify(policy.coverageViewports??['mobile','mid-wide','full-wide']),RIGHELT_VISUAL_VIEWPORTS:JSON.stringify(policy.viewports),...(policy.checkpoints?{RIGHELT_VISUAL_CHECKPOINTS:JSON.stringify(policy.checkpoints)}:{})}:{}),RIGHELT_VALIDATION_TARGET_ROOT:cwd,RIGHELT_VALIDATION:'1',RIGHELT_E2E_WEB_PORT:'9888',RIGHELT_EVIDENCE_DIR:site,RIGHELT_EVIDENCE_JSON:path.join(dir,`evidence-${stageIndex}.json`),PLAYWRIGHT_OUTPUT_DIR:path.join(dir,`debug-${stageIndex}`),...(persistRoot?{RIGHELT_E2E_PERSIST_ROOT:persistRoot}:{}),...(continuityInput?{RIGHELT_CONTINUITY_INPUT:continuityInput}:{}),...(continuityOutput?{RIGHELT_CONTINUITY_FILE:continuityOutput}:{})};
+  const env={...(policy?{RIGHELT_VISUAL_MODE:policy.visualMode,RIGHELT_VALIDATION_VIEWPORTS:JSON.stringify(policy.coverageViewports??['mobile','mid-wide','full-wide']),RIGHELT_VISUAL_VIEWPORTS:JSON.stringify(policy.viewports),...(policy.checkpoints?{RIGHELT_VISUAL_CHECKPOINTS:JSON.stringify(policy.checkpoints)}:{})}:{}),RIGHELT_TEST_BASE_REVISION:baseSha,RIGHELT_VALIDATION_TARGET_ROOT:cwd,RIGHELT_VALIDATION:'1',RIGHELT_E2E_WEB_PORT:'9888',RIGHELT_EVIDENCE_DIR:site,RIGHELT_EVIDENCE_JSON:path.join(dir,`evidence-${stageIndex}.json`),PLAYWRIGHT_OUTPUT_DIR:path.join(dir,`debug-${stageIndex}`),...(persistRoot?{RIGHELT_E2E_PERSIST_ROOT:persistRoot}:{}),...(continuityInput?{RIGHELT_CONTINUITY_INPUT:continuityInput}:{}),...(continuityOutput?{RIGHELT_CONTINUITY_FILE:continuityOutput}:{})};
   await rm(env.RIGHELT_EVIDENCE_JSON,{force:true});
   await rm(env.RIGHELT_EVIDENCE_JSON+'.ui',{force:true});
   await rm(env.RIGHELT_EVIDENCE_JSON+'.adjacent',{force:true});
   await rm(env.RIGHELT_EVIDENCE_JSON+'.account',{force:true});
   const capabilities=await candidateCapabilities(cwd);
+  if(capabilities.accounts)policy={...policy,selected:[...new Set([...policy.selected,'Account responsive proof'])]};
   if(accountContinuityInput&&!capabilities.accounts)throw Error('Account capability disappeared after retained account proof');
   if(capabilities.accounts){
    if(accountContinuityInput)for(const name of (policy?.coverageViewports??['mobile','mid-wide','full-wide'])){
@@ -63,9 +68,10 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
   }
   const candidateScripts=(await readJSON(path.join(cwd,'package.json'),{})).scripts??{};
   const authChecks=typeof candidateScripts['test:e2e:auth']==='string'&&candidateScripts['test:e2e:auth'].trim()?[['Auth E2E',['pnpm','test:e2e:auth']]]:[];
-  if(capabilities.accounts&&!authChecks.length)throw Error('Account UI requires its candidate Auth E2E script');
+  if(policy.selected.includes('Auth E2E')&&!authChecks.length)throw Error('Account UI requires its candidate Auth E2E script');
   const accountChecks=capabilities.accounts?[['Account responsive proof',['node',path.join(harnessRoot,'node_modules/@playwright/test/cli.js'),'test','--config',path.join(harnessRoot,'playwright.validation-account.config.mjs')]]]:[];
-  let checks=[['Typecheck',['pnpm','typecheck']],['Generated runtime',['pnpm','check:web-engine-generated']],['Unit',['pnpm','test:unit']],['Integration',['pnpm','test:integration']],['E2E',['pnpm','test:e2e',...(full?[]:selection.files)]],...authChecks,['Responsive proof',['node',path.join(harnessRoot,'node_modules/@playwright/test/cli.js'),'test','--config',path.join(harnessRoot,'playwright.validation.config.mjs')]],...accountChecks,['Report viewer',['node',path.join(harnessRoot,'scripts/validation/test/report-browser.mjs')]]];
+  if(policy.selected.includes('PR gate')&&!candidateScripts['test:pr-gate'])throw Error('Candidate must declare test:pr-gate; nightly full is not a fallback');
+  let checks=[['PR gate',['pnpm','test:pr-gate']],['Typecheck',['pnpm','typecheck']],['Generated runtime',['pnpm','check:web-engine-generated']],['Unit',['pnpm','test:unit']],['Integration',['pnpm','test:integration']],['E2E',['pnpm','test:e2e',...(full?[]:selection.files)]],...authChecks,['Responsive proof',['node',path.join(harnessRoot,'node_modules/@playwright/test/cli.js'),'test','--config',path.join(harnessRoot,'playwright.validation.config.mjs')]],...accountChecks,['Report viewer',['node',path.join(harnessRoot,'scripts/validation/test/report-browser.mjs')]]];
   for(const [name,script] of [['Browser integration','test:browser:integration'],['Tooling','test:tooling'],['Performance','test:performance']])if(candidateScripts[script])checks.push([name,['pnpm',script]]);
   if(policy){
    checks=checks.filter(([name])=>policy.selected.includes(name));
@@ -73,24 +79,25 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
   }
   // Changed AI tooling requires its candidate-owned checks. Missing scripts fail
   // through pnpm; never turn absent coverage into a successful skipped lane.
-  const aiChecks=[...(selection.areas.includes('ai-trainer')?[['Trainer checks',['pnpm','test:trainer']]]:[]),...(selection.areas.includes('ai-benchmark')?[['AI benchmark checks',['pnpm','test:ai-benchmark']]]:[])];
+  const aiChecks=[...((selection.areas.includes('ai-trainer')||policy.selected.includes('Trainer checks'))?[['Trainer checks',['pnpm','test:trainer']]]:[]),...((selection.areas.includes('ai-benchmark')||policy.selected.includes('AI benchmark checks'))?[['AI benchmark checks',['pnpm','test:ai-benchmark']]]:[])];
   checks.push(...aiChecks);
-  const prerequisites=new Set(['Typecheck','Generated runtime']);
+  const prerequisites=new Set(['PR gate','Typecheck','Generated runtime']);
   let prerequisiteFailure=null;
   const runCheck=async(name,argv,checkCwd=cwd)=>{
    const browser=['E2E','Auth E2E','Boundary E2E'].includes(name);
-   const checkEnv={...env,...(name==='Account responsive proof'?{RIGHELT_EVIDENCE_JSON:env.RIGHELT_EVIDENCE_JSON+'.account'}:{}),PLAYWRIGHT_OUTPUT_DIR:path.join(dir,`debug-${stageIndex}`,name.replaceAll(' ','-')),...(browser?{CI:'1'}:{})};
-   if(policy?.phase==='final'&&name==='E2E'){delete checkEnv.RIGHELT_E2E_PERSIST_ROOT;delete checkEnv.RIGHELT_CONTINUITY_INPUT;delete checkEnv.RIGHELT_CONTINUITY_FILE;}
+   const checkEnv={...env,RIGHELT_EVIDENCE_PROFILE:expectedEvidenceProfile(name),...(name==='Account responsive proof'?{RIGHELT_EVIDENCE_JSON:env.RIGHELT_EVIDENCE_JSON+'.account'}:{}),PLAYWRIGHT_OUTPUT_DIR:path.join(dir,`debug-${stageIndex}`,name.replaceAll(' ','-')),...(browser?{CI:'1'}:{})};
+   if(name==='PR gate')for(const key of ['RIGHELT_E2E_PERSIST_ROOT','RIGHELT_CONTINUITY_INPUT','RIGHELT_CONTINUITY_FILE','RIGHELT_ACCOUNT_PERSIST_ROOT','RIGHELT_ACCOUNT_CONTINUITY_INPUT','RIGHELT_LEGACY_CONTINUITY_INPUT','RIGHELT_E2E_STORAGE_ARCHIVES'])checkEnv[key]=undefined;
+   if(policy?.phase==='final'&&['E2E','Boundary E2E'].includes(name)){delete checkEnv.RIGHELT_E2E_PERSIST_ROOT;delete checkEnv.RIGHELT_CONTINUITY_INPUT;delete checkEnv.RIGHELT_CONTINUITY_FILE;}
    if(checkCwd!==cwd){checkEnv.RIGHELT_VALIDATION_TARGET_ROOT=checkCwd;checkEnv.RIGHELT_ACCOUNT_CANDIDATE_ROOT=checkCwd;checkEnv.RIGHELT_AUTH_E2E_WEB_PORT='9988';}
-   const provenance=policy?await checkProvenance(checkCwd,argv,checkEnv,{name,fingerprint:stage.fingerprint,phase:name==='Auth E2E'?'fresh-auth':policy?.phase==='final'&&name==='E2E'?'fresh-general':persistRoot?'retained':'fresh'}):null;
+   const provenance=policy?await checkProvenance(checkCwd,argv,checkEnv,{name,fingerprint:stage.fingerprint,phase:name==='PR gate'?'fresh-pr-gate':name==='Auth E2E'?'fresh-auth':policy?.phase==='final'&&['E2E','Boundary E2E'].includes(name)?'fresh-general':persistRoot?'retained':'fresh'}):null;
    const log=path.join(dir,`stage-${stageIndex}-${name.replaceAll(' ','-')}.log`);
    if(policy&&ciEvidence&&Object.hasOwn(canonicalCommands,name)){
-    const receipt=await loadCIReceipt(ciEvidence,{name,argv,tree:provenance.tree});
+    const receipt=await loadCIReceipt(ciEvidence,{name,argv,tree:provenance.tree,evidenceProfile:expectedEvidenceProfile(name)});
     if(receipt)return {name,status:'passed',duration:0,reused:true,source:'github-actions',provenance,receipt,reason:'Exact CI coverage credited; retained-state proof remains local'};
    }
    console.log(`[validation] ${stage.title}: ${name}`);
    if(!policy){const r=await execute(argv,{cwd:checkCwd,env:checkEnv,log,allowFailure:true});return {name,status:r.code?'failed':'passed',duration:r.duration};}
-   return executeCheck({cwd:checkCwd,argv,env:checkEnv,name,log,execute,cacheDir,provenance,reuse:['Typecheck','Generated runtime','Unit','Integration','Auth E2E'].includes(name)||name==='E2E'&&(!persistRoot||policy.phase==='final')});
+   return executeCheck({cwd:checkCwd,argv,env:checkEnv,name,log,execute,cacheDir,provenance,reuse:['PR gate','Typecheck','Generated runtime','Unit','Integration','Auth E2E'].includes(name)||name==='E2E'&&(!persistRoot||policy.phase==='final')});
   };
   for(let position=0;position<checks.length;position++){
    const [name,argv]=checks[position];

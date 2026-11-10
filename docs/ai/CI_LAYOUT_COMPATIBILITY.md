@@ -2,7 +2,9 @@
 
 The active CI contract is receipt schema v2 with explicit `pr-gate` and `nightly-full` profiles. Candidate evidence is accepted only when its profile, catalog, exact lane inventory, source/base revisions, runtime, dependencies, and retry chain all match. A nightly receipt cannot satisfy PR evidence.
 
-The repository ruleset now requires `PR validation` directly. During bootstrap, CI published:
+The repository ruleset requires only `PR validation` directly. Never wait for the retired alias or the full nightly profile.
+
+Historical bootstrap only: CI published:
 
 1. `PR validation`, the real aggregate over exact `pr-gate` receipts.
 2. `Full validation`, a one-step compatibility alias that succeeds only when `PR validation` succeeds.

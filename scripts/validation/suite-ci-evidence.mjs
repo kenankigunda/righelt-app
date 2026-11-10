@@ -7,11 +7,12 @@ import { selectSuiteArtifacts } from "../testing/select-artifacts.mjs";
 import path from "node:path";
 import {createReadStream} from "node:fs";
 import {createHash} from "node:crypto";
-import { sourceIdentity, verifyFull, digest } from "../testing/receipts.mjs";
+import { sourceIdentity, verifyFull, digest, EVIDENCE_PROFILES } from "../testing/receipts.mjs";
 import { fullLanes, laneKey } from "../testing/catalog.mjs";
 import { evidenceKey, fileDigest } from "./reuse.mjs";
 import { saveJSON } from "./io.mjs";
 const groups = {
+  "PR gate": null,
   Typecheck: ["typecheck"],
   "Generated runtime": ["generated"],
   Generated: ["generated"],
@@ -46,6 +47,7 @@ export async function sealedLogDigest(log) {
 }
 // Credit explicit suite receipts, never infer tests from command text or job names.
 export const canonicalCommands = {
+  "PR gate": "test:pr-gate",
   Typecheck: "typecheck",
   "Generated runtime": "check:web-engine-generated",
   Generated: "check:web-engine-generated",
@@ -58,6 +60,7 @@ export const canonicalCommands = {
   Tooling: "test:tooling",
   Performance: "test:performance",
 };
+export function expectedEvidenceProfile(name){return ['E2E','Auth E2E','Auth','Browser integration','Performance'].includes(name)?EVIDENCE_PROFILES.NIGHTLY_FULL:EVIDENCE_PROFILES.PR_GATE;}
 export function assertSuiteRequest(name, request) {
   if (
     !canonicalCommands[name] ||
@@ -65,6 +68,15 @@ export function assertSuiteRequest(name, request) {
       JSON.stringify(["pnpm", canonicalCommands[name]])
   )
     throw Error("Named suite and requested command differ");
+}
+export const PR_GATE_LAYOUT='pr-gate-v2';
+export function suiteRequestProfile(name,request,profile){
+ assertSuiteRequest(name,request);
+ const actualProfile=profile.evidenceProfile??'legacy-full',requestedProfile=request.evidenceProfile??(profile.evidenceProfile?expectedEvidenceProfile(name):'legacy-full');
+ if(actualProfile!==requestedProfile||(name==='PR gate'&&actualProfile!==EVIDENCE_PROFILES.PR_GATE))throw Error('Requested check evidence profile differs from imported CI profile');
+ const ids=name==='PR gate'?[...new Set(profile.lanes.map(l=>l.suite))]:groups[name];
+ if(!ids?.length)throw Error('Unsupported named suite group');
+ return {evidenceProfile:requestedProfile,ids};
 }
 export async function importCatalogCI({
   repository,
@@ -76,7 +88,7 @@ export async function importCatalogCI({
   call,
   execute,
   artifactCache,
-  expectedLayout = 'pr-gate-v2',
+  expectedLayout = PR_GATE_LAYOUT,
 }) {
   const profile = await expectedCILayout(cwd, expectedLayout);
   const inventory = await listRunArtifacts(api, run.id);
@@ -170,6 +182,8 @@ export async function importCatalogCI({
         checkout: r.revision,
         runtime: r.runtime,
         dependencies: r.dependencies,
+        evidenceProfile: r.evidenceProfile ?? 'legacy-full',
+        layout: profile.id,
       },
     });
     await verify();
@@ -195,9 +209,7 @@ export async function importCatalogCI({
     rejected = {};
   for (const [name, request] of Object.entries(expected ?? {})) {
     try {
-      assertSuiteRequest(name, request);
-      const ids = groups[name];
-      if (!ids) throw Error("Unsupported named suite group");
+      const {evidenceProfile:requestedProfile,ids}=suiteRequestProfile(name,request,profile);
       if (
         !request.runtime ||
         !request.dependencies ||
@@ -225,6 +237,8 @@ export async function importCatalogCI({
           runHead: run.head_sha,
           testedTree: identity.testedTree,
           argv: request.argv,
+          evidenceProfile: requestedProfile,
+          layout: profile.id,
           evidence: matchingEvidence,
           limitations: [
             "Retained-state and cross-platform evidence are not credited",

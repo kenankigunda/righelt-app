@@ -1,5 +1,6 @@
 import {command} from './io.mjs';
 import {canMerge,readiness} from './model.mjs';
+import {resolvePRGate} from './ci-gate.mjs';
 export function verifyCheckApplicability(evidence,head,base){
  return evidence?.verified===true&&evidence.head===head&&evidence.base===base
   &&evidence.workflowFiltersVerified===true&&evidence.requiredChecksVerified===true
@@ -37,9 +38,9 @@ export async function refreshPR(run,number,{cwd=process.cwd(),execute=command}={
  pr.base=current.baseRefName;pr.open=current.state==='OPEN';pr.draft=current.isDraft;pr.conflicts=current.mergeable==='CONFLICTING'?true:current.mergeable==='MERGEABLE'?false:null;
  pr.merged=current.state==='MERGED';pr.closed=current.state==='CLOSED';
  if(pr.merged&&pr.authorization)pr.authorization.state='consumed';
- const checks=current.statusCheckRollup??[];
- // All reported checks are considered; never reinterpret an absent result as green.
- pr.checks=checks.length===0?(verifyCheckApplicability(pr.checkApplicability,current.headRefOid,current.baseRefOid)?'not-applicable':'unknown'):checks.some(c=>['FAILURE','ERROR','CANCELLED','TIMED_OUT','ACTION_REQUIRED'].includes(c.conclusion??c.state))?'failed':checks.every(c=>['SUCCESS','NEUTRAL','SKIPPED'].includes(c.conclusion??c.state))?'passed':'pending';
+ const ci=await resolvePRGate({current,repository:repo,cwd,execute});
+ pr.ciGate=ci.gate;pr.advisoryChecks=ci.advisoryChecks;pr.ciGateReason=ci.reason??null;
+ pr.checks=ci.namedGateCount===0&&verifyCheckApplicability(pr.checkApplicability,current.headRefOid,current.baseRefOid)?'not-applicable':ci.status;
  pr.review=current.reviewDecision==='APPROVED'?'passed':current.reviewDecision==='CHANGES_REQUESTED'?'failed':'pending';
  // Empty reviewDecision is only acceptable after the agent verifies no review requirement.
  if(!current.reviewDecision&&pr.noReviewRequired===true)pr.review='passed';

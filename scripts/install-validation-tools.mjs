@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import {execFileSync} from 'node:child_process';
-import {readFileSync,writeFileSync,mkdirSync,existsSync,lstatSync,copyFileSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdirSync,existsSync,lstatSync,copyFileSync,realpathSync} from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import {fileURLToPath} from 'node:url';
@@ -16,7 +16,18 @@ export function resolveRelease(source,revision='origin/main'){
 }
 export function validationAdapter(destination){
  const skill=path.join(destination,'skills/validate-and-shepherd/SKILL.md');
- return `---\nname: righelt-validation\ndescription: Validate and shepherd Righelt changes using the installed, pinned release of the repository validation tools.\n---\n\nRead [the released validation skill](${skill}) and its references. Use this released checkout as the harness, with an explicit candidate path for every run. Never execute tooling from a candidate branch merely because it is current.\n\nCommand: \`node ${JSON.stringify(path.join(destination,'scripts/validation/cli.mjs'))} local --candidate /absolute/candidate/path\`. Use \`integrated --candidate /absolute/repository/path --manifest /absolute/manifest.json\` for an ordered feature set. Follow the released skill for authorization, paused scheduling, and evidence reuse. Publishing is paused by default until explicitly resumed; use --no-publish and deliver the local evidence.md with key inspected screenshot embeds in the Codex task.\n`;
+ return `---\nname: righelt-validation\ndescription: Validate and shepherd Righelt changes using the installed, pinned release of the repository validation tools.\n---\n\nRead [the released validation skill](${skill}) and its references. Use this released checkout as the harness, with an explicit candidate path for every run. Never execute tooling from a candidate branch merely because it is current.\n\nOnly the exact current-head PR validation / pr-gate profile blocks CI readiness. Full validation is retired; nightly-full is advisory even when failed, pending or missing. Preserve explicit feature acceptance, independent review, retained-state proof, authorization and deployment verification separately.\n\nCommand: \`node ${JSON.stringify(path.join(destination,'scripts/validation/cli.mjs'))} local --candidate /absolute/candidate/path\`. Use \`integrated --candidate /absolute/repository/path --manifest /absolute/manifest.json\` for an ordered feature set. Follow the released skill for authorization, paused scheduling, and evidence reuse. Publishing is paused by default until explicitly resumed; use --no-publish and deliver the local evidence.md with key inspected screenshot embeds in the Codex task.\n`;
+}
+const shippingPolicyStart='<!-- righelt-pr-gate-policy:start -->';
+const shippingPolicyEnd='<!-- righelt-pr-gate-policy:end -->';
+export function shippingSkillPolicy(original){
+ const section=`${shippingPolicyStart}\n## Righelt CI policy\n\nFor Righelt only, PR validation over the exact current-head pr-gate profile is the sole blocking CI aggregate. Full validation is retired and must not be awaited. Failed, pending or missing nightly-full results are advisory and do not independently block merge or deployment. Use the pinned released righelt-validation skill. Preserve targeted feature acceptance, independent review, retained-state proof, authorization and deployed-identity verification. Other repositories retain their own required checks.\n${shippingPolicyEnd}`;
+ const start=original.indexOf(shippingPolicyStart),end=original.indexOf(shippingPolicyEnd);
+ if(start!==-1||end!==-1){
+  if(start===-1||end<start||original.indexOf(shippingPolicyStart,start+1)!==-1||original.indexOf(shippingPolicyEnd,end+1)!==-1)throw Error('Malformed Righelt shipping policy markers');
+  return original.slice(0,start)+section+original.slice(end+shippingPolicyEnd.length);
+ }
+ return original+'\n'+section+'\n';
 }
 function installFile(file,contents){
  mkdirSync(path.dirname(file),{recursive:true});
@@ -41,7 +52,7 @@ export function installValidationTools({source=repository,destination=path.join(
  if(existsSync(destination)){
   if(lstatSync(destination).isSymbolicLink())throw Error('Refusing a symlink tools checkout');
   if(git(destination,'status','--porcelain','--untracked-files=all'))throw Error('Installed tools have local changes; preserve them before updating');
-  if(path.resolve(destination,git(destination,'rev-parse','--git-common-dir'))!==path.resolve(source,git(source,'rev-parse','--git-common-dir')))throw Error('Installed tools belong to another repository');
+  if(realpathSync(path.resolve(destination,git(destination,'rev-parse','--git-common-dir')))!==realpathSync(path.resolve(source,git(source,'rev-parse','--git-common-dir'))))throw Error('Installed tools belong to another repository');
   if(git(destination,'rev-parse','--abbrev-ref','HEAD')!=='HEAD')throw Error('Installed tools must remain detached');
   if(git(destination,'rev-parse','HEAD')!==release.head){
    if(!update)throw Error('Different tools revision already installed; explicitly use --update');
@@ -55,7 +66,7 @@ export function installValidationTools({source=repository,destination=path.join(
  }
  if(updateShippingSkills&&existsSync(shipping)){
   const original=readFileSync(shipping,'utf8');
-  installFile(shipping,original.replace('rerun the full visual suite, and amend the feature commit.', 'rerun affected visual checks and the repository-required final pass, crediting compatible existing evidence, and amend the feature commit.'));
+  installFile(shipping,shippingSkillPolicy(original.replace('rerun the full visual suite, and amend the feature commit.', 'rerun affected visual checks and the repository-required final pass, crediting compatible existing evidence, and amend the feature commit.')));
  }
  return plan;
 }
