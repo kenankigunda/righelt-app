@@ -143,6 +143,8 @@ for(const [width,height,covered] of [[390,450,true],[1440,1100,false]]){
   const navigation=page.getByRole('button',{name:'Open navigation menu',exact:true});if(await navigation.isVisible())await navigation.click();await page.getByRole('button',{name:'Debug',exact:true}).click();
   const debug=page.locator('[data-flyout="debug"]');await expect(debug).toBeVisible();await expect.poll(()=>debug.evaluate(element=>element.getAnimations().every(animation=>!animation.pending&&animation.playState!=='running'))).toBe(true);await expect(debug).toHaveCSS('opacity','1');
   if(covered){
+   // Opening the native utility may scroll its trigger into view. Establish the wheel fixture explicitly.
+   await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));
    await page.mouse.move(20,20);await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
    await page.mouse.wheel(0,120);await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(0);
    await expect.poll(()=>page.getByTestId('game-board').evaluate(board=>{const r=board.getBoundingClientRect(),flyout=document.querySelector('[data-flyout="debug"]'),f=flyout.getBoundingClientRect(),left=Math.max(0,r.left),right=Math.min(innerWidth,r.right),top=Math.max(0,r.top),bottom=Math.min(innerHeight,r.bottom);return right>left&&bottom>top&&f.left<=(left+right)/2&&f.right>=(left+right)/2&&f.top<=(top+bottom)/2&&f.bottom>=(top+bottom)/2&&flyout.contains(document.elementFromPoint((left+right)/2,(top+bottom)/2))&&!board.closest('[data-testid="game-board-wrap"]').contains(document.elementFromPoint((left+right)/2,(top+bottom)/2));})).toBe(true);
