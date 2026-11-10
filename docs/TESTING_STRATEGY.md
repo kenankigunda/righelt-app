@@ -73,7 +73,7 @@ UX-sensitive changes should be proven automatically before manual inspection whe
 
 PRs require the deterministic Node inventory plus a focused stable browser contract: Chromium guest and authenticated workflows, and explicit Chromium/Firefox/WebKit behavior contracts. The broad browser matrix runs in the separate advisory `Nightly validation` workflow. See `docs/ai/TESTING_STRATEGY.md` for the exact profile, receipt, retry, and affected-selection policies.
 
-`PR validation` is the authoritative aggregate. `Full validation` temporarily aliases it for repository-ruleset compatibility. Nightly evidence cannot satisfy either context, and only successful push-triggered main CI can start automatic deployment.
+`PR validation` is the authoritative required aggregate. Nightly evidence cannot satisfy it, and only successful push-triggered main CI can start automatic deployment.
 
 ## CI Order
 

@@ -122,13 +122,6 @@ export function workflow() {
     "runs-on": "ubuntu-latest", needs: ["plan", "node", ...browserNeeds],
     steps: aggregateSteps("pr-gate", "pr-validation"),
   };
-  jobs["full-validation"] = {
-    name: "Full validation", if: "always()", "runs-on": "ubuntu-latest", needs: ["pr-validation"],
-    steps: [{
-      name: "Require PR validation", env: { PR_VALIDATION_RESULT: expression("needs.pr-validation.result") },
-      run: "test \"$PR_VALIDATION_RESULT\" = success",
-    }],
-  };
   return {
     name: "CI",
     on: { pull_request: { types: ["opened", "synchronize", "reopened"] }, push: { branches: ["main"] }, workflow_dispatch: {} },

@@ -241,7 +241,7 @@
         { "suite": "auth-smoke", "project": "chromium", "shard": 1, "shards": 1 }
       ],
       "storageEvidence": false,
-      "workflowSourceSHA256": "21956ae50221f133eee7ca5c7772a68a338a1f7befd6c110d9d7b60dfcf8c086"
+      "workflowSourceSHA256": "284d9f45625545b01d4307870fcf83f997989a45538c507d920b9eac443403af"
     }
   ]
 }

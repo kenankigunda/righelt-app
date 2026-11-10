@@ -1143,23 +1143,6 @@
           }
         }
       ]
-    },
-    "full-validation": {
-      "name": "Full validation",
-      "if": "always()",
-      "runs-on": "ubuntu-latest",
-      "needs": [
-        "pr-validation"
-      ],
-      "steps": [
-        {
-          "name": "Require PR validation",
-          "env": {
-            "PR_VALIDATION_RESULT": "${{ needs.pr-validation.result }}"
-          },
-          "run": "test \"$PR_VALIDATION_RESULT\" = success"
-        }
-      ]
     }
   }
 }

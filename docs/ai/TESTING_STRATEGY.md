@@ -5,7 +5,7 @@ The catalog in `scripts/testing/catalog.mjs` defines two exact evidence profiles
 - `pr-gate` contains every deterministic Node suite, Chromium guest and account workflow smokes, and the Chromium/Firefox/WebKit browser-contract suite.
 - `nightly-full` contains the complete catalog: the stable gate lanes plus broad general E2E, account, browser-integration, responsive, archive/reset, recovery, report, and observational performance inventory. It is advisory and never authorizes merge, deployment, release, or activation.
 
-`PR validation` is the authoritative aggregate. `Full validation` is a temporary compatibility job that depends only on `PR validation`, so the existing ruleset remains effective during migration. Nightly validation never emits either required context. Automatic deployment accepts only a successful `CI` workflow triggered by a push to `main`; manual CI and nightly runs cannot deploy.
+`PR validation` is the authoritative and required aggregate. The temporary `Full validation` compatibility job was retired after the repository ruleset migrated to `PR validation`. Nightly validation never emits the required context. Automatic deployment accepts only a successful `CI` workflow triggered by a push to `main`; manual CI and nightly runs cannot deploy.
 
 ## PR gate
 

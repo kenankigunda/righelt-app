@@ -38,7 +38,7 @@ try {
         }
       }
       console.log(
-        "Focused evidence is advisory. PR validation remains authoritative; Full validation is its temporary compatibility alias.",
+        "Focused evidence is advisory. PR validation remains authoritative.",
       );
     }
   } else if (mode === "suite") {
