@@ -106,3 +106,19 @@ test('ongoing Home status names the actual preview actor with nonvisual affiliat
  assert.equal(renderHomeCardTurn(input,{sideToMove:'missing'}),'Turn unknown');
  delete input.computer;assert.deepEqual(input,before);
 });
+
+
+test('a canonical literal You never invents owning ARIA for spectators or an opponent',()=>{
+ const named={...game('Viewer'),player1:person('me',{displayName:'You'}),player2:person('other',{displayName:'You'})};
+ const before=structuredClone(named);
+ for(const identityId of ['me','other','spectator',undefined]){
+  const html=renderHomeCardIdentity(named,{identityId});
+  assert.equal((html.match(/<bdi>You<\/bdi>/g)??[]).length,2);
+  assert.doesNotMatch(html,/aria-label="You, you,/);
+  assert.doesNotMatch(renderHomeCardTurn(named,{sideToMove:'P1'},{identityId}),/aria-label="You, you,/);
+ }
+ const owned=renderHomeCardIdentity({...named,myRole:'Player 1'},{identityId:'me'});
+ assert.match(owned,/aria-label="You, you, Red"/);
+ assert.doesNotMatch(owned,/aria-label="You, you, Blue"/);
+ assert.deepEqual(named,before);
+});

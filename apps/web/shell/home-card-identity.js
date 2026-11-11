@@ -42,7 +42,7 @@ export function homeCardMatchup(game, { identityId } = {}) {
   return { kind: ownSide ? 'player' : sameHuman ? 'watched-self' : 'viewer', ownSide, seats };
 }
 
-const renderName = (seat, label = seat.name) => `<strong class="player-tone-${seat.side}"${label==='You' ? ` aria-label="${escape(seat.name)}, you, ${sideColorName(seat.side)}"` : ''}><span class="sr-only">${sideColorName(seat.side)}: </span><bdi>${escape(label)}</bdi></strong>`;
+const renderName = (seat, label = seat.name, {owned=false}={}) => `<strong class="player-tone-${seat.side}"${owned ? ` aria-label="${escape(seat.name)}, you, ${sideColorName(seat.side)}"` : ''}><span class="sr-only">${sideColorName(seat.side)}: </span><bdi>${escape(label)}</bdi></strong>`;
 const renderParticipant = (seat, quiet = false) => {
   if (quiet) return renderName(seat);
   const status = seat.presence === 'open' ? 'open to join' : seat.presence;
@@ -56,7 +56,7 @@ export function renderHomeCardIdentity(game, options) {
   if (matchup.kind === 'player') {
     const own = matchup.seats.find(seat => seat.side === matchup.ownSide);
     const other = matchup.seats.find(seat => seat !== own);
-    return `<span class="home-card-matchup">${renderName(own,options?.identityId ? 'You' : own.name)} <span>vs.</span> ${renderParticipant(other, options?.quiet)}</span>`;
+    return `<span class="home-card-matchup">${renderName(own,'You',{owned:true})} <span>vs.</span> ${renderParticipant(other, options?.quiet)}</span>`;
   }
   return `<span class="home-card-matchup">${renderParticipant(matchup.seats[0], options?.quiet)} <span>${matchup.kind === 'watched-self' ? '/' : 'vs.'}</span> ${renderParticipant(matchup.seats[1], options?.quiet)}${matchup.kind === 'watched-self' ? ' <span>· Both sides</span>' : ''}</span>`;
 }
