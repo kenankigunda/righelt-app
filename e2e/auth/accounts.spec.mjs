@@ -1057,7 +1057,7 @@ test("long profile names remain accessible to observers without covering the boa
   await expect(description).toHaveText(curated.description);await expect(description.locator('bdi')).toHaveCount(0);
   await page.locator('#scenario-select').selectOption(scenarioId);
   await page.getByRole('link',{name:'Righelt',exact:true}).click();
-  await expect(preview).toHaveText('Red to play');await expect(preview.locator('bdi')).toHaveCount(0);
+  await expect(preview).toHaveText('Preview: Red to play');await expect(preview.locator('bdi')).toHaveCount(0);
   await page.locator('#scenario-select').selectOption(curated.id);
   await expect(description).toHaveText(curated.description);await expect(description.locator('bdi')).toHaveCount(0);
 });
