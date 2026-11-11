@@ -1,3 +1,4 @@
+import {readFile,writeFile} from 'node:fs/promises';
 import { observeReloadHomeReads } from '../support/reload-home-reads.mjs';
 import {installInvitationFocusDiagnostics} from '../support/invitation-focus-diagnostics.mjs';
 import { waitForOverlayEntry } from "../support/overlay-motion.mjs";
@@ -527,4 +528,75 @@ test('scroll viewport stays inside clipped modal corners when enlarged',async({p
  const geometry=await dialog.evaluate(el=>{const outer=el.getBoundingClientRect(),inner=el.querySelector('.modal-content').getBoundingClientRect();return {top:inner.top-outer.top,bottom:outer.bottom-inner.bottom,left:inner.left-outer.left,right:outer.right-inner.right};});
  expect(geometry.top).toBeGreaterThanOrEqual(24);expect(geometry.bottom).toBeGreaterThanOrEqual(24);expect(geometry.left).toBeGreaterThanOrEqual(10);expect(geometry.right).toBeGreaterThanOrEqual(10);
  await content.evaluate(el=>el.scrollTop=el.scrollHeight);await expect(dialog.getByRole('button',{name:'Start a friend game'})).toBeInViewport();await expect(dialog.getByRole('button',{name:'Close opponent story'})).toBeInViewport();
+});
+
+
+// One real consumer journey; visual/reference acceptance uses the attached originals.
+test('all approved artwork consumers fit and natural story motion survives bidirectional interruption',async({page},info)=>{
+ const evidence={scenes:[],portraits:[],motion:[],gaps:[],creates:[]},errors=[];let primary,hasPrimary=false;
+ const store=async()=>{const file=info.outputPath('artwork-consumers-and-natural-motion.json');await writeFile(file,JSON.stringify(evidence,null,2)+'\n',{mode:0o600});await info.attach('artwork consumers and natural motion',{path:file,contentType:'application/json'});};
+ const screenshot=async(name)=>{const file=info.outputPath(name+'.png'),before=await page.evaluate(()=>performance.now());await page.screenshot({path:file,animations:'allow'});const after=await page.evaluate(()=>performance.now());(evidence.originals??=[]).push({name,file,before,after,clock:'Actual page performance.now brackets; no exact capture-frame timestamp claim'});await info.attach(name,{path:file,contentType:'image/png'});};
+ const onRequest=request=>{if(request.method()==='POST'&&new URL(request.url()).pathname==='/api/shell/games')evidence.creates.push({method:'POST',path:'/api/shell/games'});};
+ const onPageError=error=>errors.push(error.message);page.on('request',onRequest);page.on('pageerror',onPageError);
+ const expected={babs:['babs-1-discovery','babs-2-rematch','babs-3-research'],tau:['tau-1-gardens','tau-2-connections','tau-3-patience'],horus:['horus-1-watchtower','horus-2-studying','horus-3-opinion']};
+ const assets=JSON.parse(await readFile(new URL('../../apps/web/assets/opponents/manifest.json',import.meta.url),'utf8'));
+ expect(assets).toHaveLength(14);
+ evidence.qualifiedArtifactIdentity={source:'Existing independent14delivery-hash proof; this nativecase proves actualconsumer binding/decoding/fit, not a second artifact hash pass.',assets:assets.map(({id,src,sha256})=>({id,src,sha256}))};
+ const settled=async(dialog)=>{
+  await expect.poll(()=>dialog.locator('[data-story-image]').evaluateAll(images=>images.flatMap(image=>image.getAnimations()).filter(animation=>animation.playState==='running'||animation.playState==='pending').length)).toBe(0);
+ };
+ const choose=async(dialog,name,index)=>{await dialog.getByRole('button',{name,exact:true}).click();await expect(dialog.locator('[data-story-image]').nth(index)).toHaveAttribute('data-active','true');await settled(dialog);};
+ const imageState=locator=>locator.evaluate(img=>{const r=img.getBoundingClientRect(),p=img.parentElement.getBoundingClientRect(),s=getComputedStyle(img);return{src:new URL(img.currentSrc||img.src).pathname,complete:img.complete,width:img.naturalWidth,height:img.naturalHeight,fit:s.objectFit,opacity:s.opacity,rect:r.toJSON(),parent:p.toJSON(),viewport:{width:innerWidth,height:innerHeight},overflow:img.parentElement.scrollWidth-img.parentElement.clientWidth};});
+ const verifyImage=async(locator,id)=>{await expect.poll(()=>locator.evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);const state=await imageState(locator);expect(state.src).toBe('/assets/opponents/'+id+'.webp');expect(state.fit).toBe('contain');expect(state.width).toBeGreaterThan(0);expect(state.height).toBeGreaterThan(0);expect(state.rect.width).toBeGreaterThan(0);expect(state.rect.height).toBeGreaterThan(0);expect(state.rect.left).toBeGreaterThanOrEqual(state.parent.left-1);expect(state.rect.right).toBeLessThanOrEqual(state.parent.right+1);expect(state.rect.top).toBeGreaterThanOrEqual(state.parent.top-1);expect(state.rect.bottom).toBeLessThanOrEqual(state.parent.bottom+1);expect(state.rect.left).toBeGreaterThanOrEqual(-1);expect(state.rect.right).toBeLessThanOrEqual(state.viewport.width+1);expect(state.rect.top).toBeGreaterThanOrEqual(-1);expect(state.rect.bottom).toBeLessThanOrEqual(state.viewport.height+1);return state;};
+ const stationary=async(dialog,before)=>{const after=await dialog.locator('.opponent-story-copy,.story-heading,.story-modal-actions,[data-story-step]').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().toJSON()));expect(after).toHaveLength(before.length);for(let i=0;i<after.length;i++)for(const key of ['x','y','width','height'])expect(after[i][key]).toBeCloseTo(before[i][key],0);};
+ try{
+  await page.setViewportSize({width:1440,height:900});await page.goto('/');await page.evaluate(()=>document.fonts.ready);
+  for(const id of ['babs','tau','horus'])evidence.portraits.push(await verifyImage(page.locator('button[data-opponent="'+id+'"]').locator('img'),id+'-portrait'));
+  evidence.portraits.push(await verifyImage(page.getByTestId('home-create-game').locator('img'),'friend-portrait'));
+  for(const [id,scenes] of Object.entries(expected)){
+   await page.locator('button[data-opponent="'+id+'"]').click();const dialog=page.getByRole('dialog',{name:{babs:'Babs',tau:'Tau',horus:'Horus'}[id],exact:true});await expect(dialog).toBeVisible();await waitForOverlayEntry(dialog);
+   // Native manual selection stops the normal carousel; no clock or animation override.
+   await choose(dialog,'Previous story image',2);
+   await choose(dialog,'Next story image',0);
+   const fixed=await dialog.locator('.opponent-story-copy,.story-heading,.story-modal-actions,[data-story-step]').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().toJSON()));
+   for(let index=0;index<3;index++){
+    if(index)await choose(dialog,'Next story image',index);
+    const image=dialog.locator('[data-story-image][data-active="true"]');const state=await verifyImage(image,scenes[index]);expect(state.width).toBe(1200);expect(state.height).toBe(800);expect(state.rect.width/state.rect.height).toBeCloseTo(1.5,2);expect(await dialog.evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);await stationary(dialog,fixed);evidence.scenes.push({id:scenes[index],...state});await screenshot(scenes[index]);
+   }
+   await choose(dialog,'Previous story image',1);await choose(dialog,'Previous story image',0);
+   if(id==='babs'){
+    // Passive bounded observation starts with real pointer input. It never changes time,
+    // replaces animate(), modifies styles, or submits gameplay.
+    await dialog.evaluate(el=>{
+     const images=[...el.querySelectorAll('[data-story-image]')],nodes=[...el.querySelectorAll('.opponent-story-copy,.story-heading,.story-modal-actions,[data-story-step]')];
+     const observation={frames:[],inputs:[],dropped:0,done:false};window.__artworkNativeObservation=observation;let started=false,frames=0;
+     const rect=node=>node.getBoundingClientRect().toJSON();
+     const sample=()=>{if(observation.done)return;if(++frames>600){observation.dropped++;observation.done=true;return;}observation.frames.push({at:performance.now(),images:images.map(image=>{const s=getComputedStyle(image);return{src:new URL(image.currentSrc||image.src).pathname,active:image.dataset.active,opacity:Number(s.opacity),transform:s.transform,filter:s.filter,rect:rect(image),animations:image.getAnimations().map(animation=>({time:animation.currentTime,duration:animation.effect.getTiming().duration,playState:animation.playState}))};}),fixed:nodes.map(rect),clips:[el.querySelector('.story-art'),el.querySelector('.modal-content'),el].map(node=>({rect:rect(node),overflowX:getComputedStyle(node).overflowX,overflowY:getComputedStyle(node).overflowY})),shade:el.querySelectorAll('.story-turn-shade').length});requestAnimationFrame(sample);};
+     const input=event=>{const button=event.target.closest('[data-story-step]');if(!button)return;observation.inputs.push({at:performance.now(),step:Number(button.dataset.storyStep),activeAnimations:images.flatMap(image=>image.getAnimations()).map(a=>({time:a.currentTime,duration:a.effect.getTiming().duration,playState:a.playState}))});if(!started){started=true;requestAnimationFrame(sample);}};
+     el.addEventListener('pointerdown',input,true);observation.stop=()=>{observation.done=true;el.removeEventListener('pointerdown',input,true);};
+    });
+    for(const direction of [1,-1]){
+     const first=direction===1?'Next story image':'Previous story image',second=direction===1?'Previous story image':'Next story image';
+     await dialog.getByRole('button',{name:first,exact:true}).click();
+     const early=await dialog.evaluate(()=>new Promise((resolve,reject)=>{const observation=window.__artworkNativeObservation,inputAt=observation.inputs.at(-1).at;let waited=0;const read=()=>{const frame=observation.frames.find(frame=>frame.at>=inputAt&&frame.images.some(image=>image.animations.some(a=>a.playState==='running'&&a.time>0&&a.time<a.duration*.2)));if(frame){resolve({frame,observedAt:performance.now(),framesWaited:waited});return;}if(++waited>=60||observation.done){reject(new Error('No qualifying early native frame within passive60frame bound'));return;}requestAnimationFrame(read);};read();}));
+     const before=early.frame;await screenshot('natural-'+direction+'-early');
+     const interrupted=await dialog.evaluate(el=>[...el.querySelectorAll('[data-story-image]')].some(image=>image.getAnimations().some(a=>a.playState==='running'&&a.currentTime<a.effect.getTiming().duration)));
+     if(!interrupted)evidence.gaps.push('Direction '+direction+': native second input could not interrupt an active first animation.');
+     await choose(dialog,second,0);const actualSecondInput=await dialog.evaluate(()=>window.__artworkNativeObservation.inputs.at(-1));if(!actualSecondInput.activeAnimations.some(a=>a.playState==='running'&&a.time<a.duration))evidence.gaps.push('Direction '+direction+': actual second pointerdown missed active first animation.');await stationary(dialog,fixed);evidence.motion.push({direction,earlyObservation:early,beforeScreenshot:before,interrupted,final:await imageState(dialog.locator('[data-story-image][data-active="true"]'))});await screenshot('natural-'+direction+'-settled');
+    }
+    const observation=await dialog.evaluate(()=>{const o=window.__artworkNativeObservation;o.stop();return{frames:o.frames,inputs:o.inputs,dropped:o.dropped};});evidence.motionFrames=observation;expect(observation.dropped).toBe(0);
+    const violations=[];for(const frame of observation.frames){if(frame.shade)violations.push({at:frame.at,kind:'unexpected shade'});for(const image of frame.images)if(image.animations.length&&(image.opacity!==1||image.filter.includes('brightness')))violations.push({at:frame.at,kind:'animated image opacity/filter',src:image.src,opacity:image.opacity,filter:image.filter});for(let i=0;i<fixed.length;i++)for(const key of ['x','y','width','height'])if(Math.abs(frame.fixed[i][key]-fixed[i][key])>=.5)violations.push({at:frame.at,kind:'copy/control moved',node:i,key,before:fixed[i][key],after:frame.fixed[i][key]});}expect(violations).toEqual([]);
+    for(const transition of evidence.motion)expect(transition.final.src).toBe('/assets/opponents/babs-1-discovery.webp');
+    evidence.visualReview={status:'PENDING_INDEPENDENT_REVIEW',questions:['Outgoing first-frame visibility and opacity during anticipation','Actual clip envelopes through clearance','Direction reversal and interruption continuity'],limit:'Raw geometry alone is not raster visibility proof; absence of a qualifying actual original remains an acceptance gap.'};
+   }
+   await dialog.getByRole('button',{name:'Close opponent story',exact:true}).click();await expect(dialog).not.toBeVisible();
+  }
+  await page.getByTestId('home-create-game').click();const friend=page.getByRole('dialog',{name:'Friend',exact:true});await expect(friend).toBeVisible();await waitForOverlayEntry(friend);await expect(friend.locator('img')).toHaveCount(1);await expect(friend.locator('[data-story-step]')).toHaveCount(0);evidence.friend=await verifyImage(friend.locator('img'),'friend-introduction');await friend.getByRole('button',{name:'Close opponent story',exact:true}).click();
+  expect(evidence.creates).toEqual([]);expect(errors).toEqual([]);expect(evidence.gaps).toEqual([]);expect(evidence.scenes).toHaveLength(9);evidence.nativeWorkflow='PASS_WITH_EXPLICIT_VISUAL_REVIEW_PENDING';
+ }catch(error){hasPrimary=true;primary=error;}finally{
+  evidence.pageErrors=errors;page.off('request',onRequest);page.off('pageerror',onPageError);evidence.secondaryErrors=[];
+  try{const raw=await page.evaluate(()=>{const o=window.__artworkNativeObservation;if(!o)return null;const snapshot={frames:o.frames,inputs:o.inputs,dropped:o.dropped};o.stop();return snapshot;});if(raw&&!evidence.motionFrames)evidence.motionFrames=raw;}catch(error){evidence.secondaryErrors.push({stage:'observer-capture-and-stop',name:error?.name??typeof error,message:String(error)});if(!hasPrimary){hasPrimary=true;primary=error;}}
+  try{await store();}catch(error){evidence.secondaryErrors.push({stage:'evidence-persist',name:error?.name??typeof error,message:String(error)});if(!hasPrimary){hasPrimary=true;primary=error;}try{await info.attach('artwork secondary evidence failure',{body:Buffer.from(JSON.stringify(evidence)),contentType:'application/json'});}catch(secondary){console.error('Secondary artwork attachment failure:',secondary);}}
+  if(hasPrimary)throw primary;
+ }
 });
