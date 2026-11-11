@@ -6,7 +6,7 @@ const test=base.extend({publicationOwner:controlledHeightPublication});
 import {writeFile} from 'node:fs/promises';
 import {readFileSync} from 'node:fs';
 const geckoSourceProfile=JSON.parse(readFileSync(new URL('./support/gecko-source-profile.json',import.meta.url),'utf8'));
-import {fontEnvelopeBudgetForBrowser} from './support/font-pattern-budget.mjs';
+import {fontEnvelopeBudgetForBrowser,fontEnvelopeInventoryViolations} from './support/font-pattern-budget.mjs';
 import {budgetPixelPrecision} from './support/message-reservation-policy.mjs';
 import {settledMessage,measureSemanticGeometry,assertSemanticGeometry} from './support/message-semantic-geometry.mjs';
 test.use({viewport:{width:390,height:740},hasTouch:true});
@@ -122,8 +122,9 @@ for(const width of [320,390])for(const scale of ['100%','200%'])test(`board mess
     return {width,probeWidth:width,outerPadding,usedMinimumProfile,usedSize,rows};
   });
   await info.attach('touch-reservation-raw',{body:JSON.stringify({reservation,physicalSlotHeight:initial.slot.height}),contentType:'application/json'});
-  expect(reservation.rows).toHaveLength(136);
-  for(const font of ['primary','fallback'])expect(reservation.rows.filter(row=>row.font===font)).toHaveLength(68);
+  // Preserve the historical 68-per-font corpus and qualify every current
+  // model identity, including PR193's eleven additional rows per font.
+  expect(fontEnvelopeInventoryViolations(reservation.rows),'Every current two-font sizing model occurs exactly once').toEqual([]);
   expect(reservation.rows.every(row=>row.minHeight===0),'Fallback input is natural geometry, never a CSS-reserved replica').toBe(true);
   const sourceBudget=fontEnvelopeBudgetForBrowser(reservation,reservation,{browserName});
   await info.attach('touch-reservation-contract',{body:JSON.stringify({reservation,sourceBudget,physicalSlotHeight:initial.slot.height}),contentType:'application/json'});

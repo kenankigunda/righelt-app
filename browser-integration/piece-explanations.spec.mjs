@@ -1,5 +1,6 @@
 import {test, expect} from '@playwright/test';
 import {settledMessage,measureSemanticGeometry,assertSemanticGeometry} from './support/message-semantic-geometry.mjs';
+import {createRushBlockerScenario} from '../e2e/support/rush-blocker-scenario.mjs';
 
 for (const width of [320, 390]) test(`selection explanations retain their actual context owner at ${width}px with enlarged text`, async ({page}, info) => {
   await page.setViewportSize({width, height:1000});
@@ -73,6 +74,57 @@ for (const width of [320, 390]) test(`selection explanations retain their actual
   expect(await page.locator('.cell.target').evaluate(node => getComputedStyle(node,'::after').content)).toBe('none');
   await accountMessageGrowth();
   await page.screenshot({path:info.outputPath(`blocked-target-${width}-200.png`)});
+
+  // This final chapter uses a genuinely legal rush continuation. The engine,
+  // runtime and adapter produce eligibility and source paint without test classes
+  // or a hand-written legal-action list. Keep the same width/text/geometry case.
+  const {state:rushState}=createRushBlockerScenario();
+  const legality=await page.evaluate(async snapshot=>{
+    const {listLegalActions,validateAction,canCloseContinuationNow,getRushContinuationBlockingPiece}=await import('/apps/web/generated/packages/game-engine/src/index.js');
+    const legalActions=listLegalActions(snapshot);
+    const expected={type:'rush',actorId:'B',from:{row:5,col:5},to:{row:5,col:4}};
+    const blocked=getRushContinuationBlockingPiece(snapshot)?.position;
+    if(canCloseContinuationNow(snapshot)||blocked?.row!==4||blocked?.col!==3
+      ||!validateAction(snapshot,expected).ok||!legalActions.some(action=>action.type==='rush'&&action.actorId==='B'&&action.from?.row===5&&action.from?.col===5&&action.to?.row===5&&action.to?.col===4)
+      ||legalActions.some(action=>action.type==='end_turn'))throw Error('Known rush-source fixture must have complete genuine required legality');
+    await window.boardFixture.setup('rush',false);
+    await window.boardFixture.configure(snapshot,legalActions,{selectionState:{selectedPieceId:null,source:null,target:null}});
+    return{legalCount:legalActions.length,expectedActionLegal:true,blocker:blocked,canEndTurn:false};
+  },rushState);
+  expect(legality).toMatchObject({expectedActionLegal:true,blocker:{row:4,col:3},canEndTurn:false});
+  expect(legality.legalCount).toBeGreaterThan(0);
+  await expect(page.locator('.rush-guidance-source')).toHaveCount(2);
+  const source=page.locator('#board .cell[data-row="5"][data-col="5"]');
+  const token=source.locator('.piece-token[data-piece-id="B"]');
+  await expect(source).toHaveAttribute('aria-label','Supply-restoring rush available for piece at (5, 5)');
+  await expect(token).toHaveAttribute('aria-label','Red unit');
+  await expect(token).toHaveClass(/p1/);await expect(token).toBeVisible();
+  const paint=await source.evaluate(cell=>{
+    const token=cell.querySelector('.piece-token[data-piece-id="B"]'),symbol=token?.querySelector('.piece-body');
+    const rect=cell.getBoundingClientRect(),tokenRect=token?.getBoundingClientRect();
+    const hit=document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2);
+    const style=getComputedStyle(cell),pieceStyle=token?getComputedStyle(token):null;
+    window.__rushSourceCell=cell;window.__rushSourcePointer=[];
+    cell.addEventListener('pointerdown',event=>window.__rushSourcePointer.push({trusted:event.isTrusted,sameCell:event.target.closest('.cell')===cell}),{once:true,passive:true});
+    return{row:cell.dataset.row,col:cell.dataset.col,pieceId:token?.dataset.pieceId,
+      borderStyle:style.borderTopStyle,borderWidth:parseFloat(style.borderTopWidth),
+      pieceOpacity:pieceStyle?.opacity,pieceVisibility:pieceStyle?.visibility,fill:symbol?getComputedStyle(symbol).fill:null,
+      tokenWidth:tokenRect?.width,tokenHeight:tokenRect?.height,nativeCenterHit:hit?.closest('.cell')===cell};
+  });
+  expect(paint).toMatchObject({row:'5',col:'5',pieceId:'B',borderStyle:'dashed',pieceVisibility:'visible',nativeCenterHit:true});
+  expect(paint.borderWidth).toBeGreaterThan(0);expect(paint.tokenWidth).toBeGreaterThan(0);expect(paint.tokenHeight).toBeGreaterThan(0);
+  expect(Number(paint.pieceOpacity)).toBeGreaterThan(0);expect(Number(paint.pieceOpacity)).toBeLessThanOrEqual(1);
+  expect(paint.fill).not.toBe('none');expect(paint.fill).not.toBe('rgba(0, 0, 0, 0)');
+  await accountMessageGrowth();
+  await source.click();
+  await expect(source).toHaveClass(/selected-piece/);
+  await expect(token).toHaveAttribute('data-piece-id','B');
+  expect(await page.evaluate(()=>({selection:window.boardFixture.selection(),applied:window.boardFixture.applied(),
+    sameCell:window.__rushSourceCell===document.querySelector('#board .cell[data-row="5"][data-col="5"]'),pointer:window.__rushSourcePointer})))
+    .toMatchObject({selection:{selectedPieceId:'B',source:{row:5,col:5}},applied:[],sameCell:true,pointer:[{trusted:true,sameCell:true}]});
+  await accountMessageGrowth();
+  await info.attach('Actual rush-source identity, legality and paint',{body:JSON.stringify({legality,paint,scope:'Real engine/runtime/adapter at existing width and200%text. Native hit/selection and computed paint, not physical display measurement.'}),contentType:'application/json'});
+  await page.screenshot({path:info.outputPath(`rush-source-${width}-200.png`)});
 });
 
 test('named computer phases keep one colored cue and stable board position without a timer', async ({page}) => {
