@@ -1,3 +1,4 @@
+import {createAccountContinuationOwner} from '../shell/account-continuation-owner.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -56,6 +57,7 @@ const homeSectionReads = createHomeSectionReads({
  isHomeSectionPending:(...args)=>isHomeSectionPending(...args),
  captureHomeFocus:(...args)=>captureHomeFocus(...args),
  scrollHomeSectionToTop(){},restoreHomeReadingPosition(){},restoreHomeFocus(){return false;},
+ resumeAccountContinuation:(pending,settlement)=>retryAccountContinuation({expectedPending:pending,settlement}),
  pendingHomeSectionKeys,gameSound,storyDialog,appEl,document,window,syncAnnouncement:{},
 });
 const syncHomeSections=(...args)=>homeSectionReads.syncSections(...args);
@@ -137,14 +139,14 @@ async function fixture(t,{journalAdapter,seed=true,authEnabled=true}={}) {
       if(returned?.then){responsiveWorks.push(returned);returned.catch(()=>{});}
       return returned;
     });return id;},cancelAnimationFrame:id=>frames.delete(id)};
-  let generation=1,pageSize=1,columnCount=1,clicks=0,renders=0,refreshes=0;
-  const context=vm.createContext({...homeReads,Error,captureHomeFocus:()=>null,document:{},cancelPendingBoardContextReplay(){},pendingBoardContextReplay:null,structuredClone,URL,URLSearchParams,SYNC_TIMING,createRouteHydration,
+  let generation=1,pageSize=1,columnCount=1,clicks=0,renders=0,refreshes=0,renderProbe=()=>{};
+  const context=vm.createContext({...homeReads,createAccountContinuationOwner,Error,captureHomeFocus:()=>null,document:{},cancelPendingBoardContextReplay(){},pendingBoardContextReplay:null,structuredClone,URL,URLSearchParams,SYNC_TIMING,createRouteHydration,
     hydrateRoute:createRouteHydration(),window:browser,currentRoute:parseRouteFromHash('#/'),transport,
     account:{snapshot:()=>({generation}),canPlay:()=>true},
     parseRouteFromHash,buildHashForRoute,FLYOUT_KEYS,HOME_SECTION_SERVER_PAGE_SIZE:4,HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT:1,
     getHomeSectionVisiblePageSize:()=>pageSize,getHomeSectionColumnCount:()=>columnCount,
     setTimeout:(...args)=>setTimeout(...args),clearTimeout:(...args)=>clearTimeout(...args),
-    render:()=>{renders++;},syncLiveChannels:()=>{},gameSound:{play(){},leaveGame(){},cancelPreview(){}},
+    render:()=>{renders++;renderProbe();},syncLiveChannels:()=>{},gameSound:{play(){},leaveGame(){},cancelPreview(){}},
     issueDiagnostics:{capture:()=> 'fixture-incident',resolve(){}},
     storyDialog:{refresh:()=>{refreshes++;},open(){},close(){}},
     appEl:{querySelector:()=>({click:()=>{clicks++;}})},CSS:{escape:value=>value},
@@ -180,6 +182,7 @@ async function fixture(t,{journalAdapter,seed=true,authEnabled=true}={}) {
       if(kind==='transport')context.transport={...transport};if(kind==='inputs')pageSize=2;h.capture();},
     setColumns:value=>{columnCount=value;h.capture();},
     changeColumnsBeforeScheduling:value=>{columnCount=value;},
+    onRender:probe=>{renderProbe=probe;},
     flushScheduledFrames:()=>{const pending=[...frames.values()];frames.clear();for(const callback of pending)callback();},
     setPageSize:value=>{pageSize=value;h.capture();},
   };
@@ -1050,4 +1053,68 @@ test('controlled responsive ownership retains the actual production foreign reje
  for(const request of held)request.resolve(Response.json(pageBody(request.section,'obsolete',1)));
  await assert.rejects(responsive,{code:'session_changed'});
  assert.equal(f.writes.length,0);assert.equal(f.h.sections().my.gameIds.length,0);
+});
+
+
+test('an owned responsive continuation replacement retires the old attempt and replays its unchanged choice once',async t=>{
+ const f=await fixture(t),held=[];
+ f.respond(request=>{const wait=deferred();held.push({...request,...wait});return wait.promise;});
+ const original=observe(f.h.continue({hash:'#/',action:'create-self-play'}));
+ await flush();const old=f.h.pending();assert.equal(old.running,true);assert.equal(held.length,3);
+ f.changeColumnsBeforeScheduling(2);f.h.scheduleResponsive();
+ const replacement=f.h.pending();assert.notEqual(replacement,old);assert.equal(replacement.intent,old.intent);
+ assert.equal(old.running,true,'old completion retains its own identity');
+ f.flushScheduledFrames();await flush();assert.equal(held.length,6);
+ for(const request of held.slice(3))request.resolve(Response.json(pageBody(request.section)));
+ await original;await flush();
+ assert.equal(f.clicks(),1);assert.equal(f.h.pending(),null);assert.equal(f.writes.length,0);
+ for(const request of held.slice(0,3))request.resolve(Response.json(pageBody(request.section,'obsolete')));
+ await flush();assert.equal(f.clicks(),1,'late old work cannot replay or poison the new owner');
+});
+
+
+test('an owned responsive handoff after a real failed Home attempt retains recovery and never replays the action',async t=>{
+ const f=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});
+ f.respond(()=>Response.json({error:'temporary_unavailable'},{status:503}));
+ const old=observe(f.h.continue({hash:'#/',action:'create-self-play'}));await flush();
+ assert.ok(f.h.recovery(),'the actual Home reader observed the original failure');
+ const first=f.h.pending();f.changeColumnsBeforeScheduling(2);f.h.scheduleResponsive();
+ const replacement=f.h.pending();assert.notEqual(replacement,first);assert.equal(replacement.intent,first.intent);
+ assert.equal(replacement.recoveryEpisode,true);
+ f.respond(({section})=>Response.json(pageBody(section)));f.flushScheduledFrames();await old;await flush();
+ assert.equal(f.h.pending(),null);assert.equal(f.clicks(),0);assert.equal(f.writes.length,0);
+});
+
+
+test('the continuation owns its render-before-read layout change without issuing an extra batch',async t=>{
+ const f=await fixture(t);let changed=false,batches=0;
+ const createBatch=f.context.transport.createHomeRead;
+ f.context.transport.createHomeRead=(...args)=>{batches++;return createBatch(...args);};
+ f.onRender(()=>{if(!changed){changed=true;f.changeColumnsBeforeScheduling(2);}});
+ f.respond(({section})=>Response.json(pageBody(section)));
+ await f.h.continue({hash:'#/',action:'create-self-play'});
+ assert.equal(f.clicks(),1);assert.equal(f.h.pending(),null);assert.equal(batches,1);
+ assert.deepEqual(f.calls.map(call=>call.section),['my','completed','other','my','completed'],'one owned transaction includes the existing bounded membership repair');
+ assert.equal(f.writes.length,0);
+});
+for(const kind of ['page','visit','account','transport','route'])test(`an owned render cannot carry an old continuation across a foreign ${kind} choice`,async t=>{
+ const f=await fixture(t);let changed=false;
+ f.onRender(()=>{if(changed)return;changed=true;if(kind==='page')f.h.changePage('my',1);else if(kind==='visit')f.h.noteVisit({});else f.change(kind);});
+ f.respond(({section})=>Response.json(pageBody(section)));
+ await f.h.continue({hash:'#/',action:'create-self-play'});
+ assert.equal(f.clicks(),0);assert.equal(f.writes.length,0);assert.equal(f.calls.length,0);
+});
+test('a current full read can fulfill the replacement continuation without a third batch',async t=>{
+ const f=await fixture(t),held=[];let batches=0;
+ const createBatch=f.context.transport.createHomeRead;
+ f.context.transport.createHomeRead=(...args)=>{batches++;return createBatch(...args);};
+ f.respond(request=>{const wait=deferred();held.push({...request,...wait});return wait.promise;});
+ const old=observe(f.h.continue({hash:'#/',action:'create-self-play'}));await flush();
+ f.changeColumnsBeforeScheduling(2);f.h.scheduleResponsive();
+ f.respond(({section})=>Response.json(pageBody(section)));
+ await f.h.sync();await old;
+ f.flushScheduledFrames();await flush();
+ assert.equal(f.clicks(),1);assert.equal(f.h.pending(),null);assert.equal(batches,2,'only the retired transaction and its owned replacement');
+ assert.deepEqual(f.calls.map(call=>call.section),['my','completed','other','my','completed','other','my','completed'],'replacement may perform its existing bounded page repair, never a third transaction');
+ for(const request of held)request.resolve(Response.json(pageBody(request.section,'obsolete')));await flush();assert.equal(f.clicks(),1);
 });

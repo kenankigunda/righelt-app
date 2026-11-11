@@ -1,14 +1,14 @@
 {
   "/shell/app.js": {
     "file": "apps/web/shell/app.js",
-    "rawSourceSha256": "7ae83ccc53365d5ab8f7d0524e79f2d54cc44c38cd26c16813a227786e29de06",
-    "sourceSha256": "982bb62914de45ce0514a3a3cee08bf27d7fc1ecfad17a15a56619d07e1f40cf",
-    "outputSha256": "7883c59ff00c5056283bd416cb7143bba7811c78a41679c0a48d8e431f28cec7",
+    "rawSourceSha256": "60da5e05a470f9d27ead8463edaa9bed751f10b1a3785238a988cd017b631af6",
+    "sourceSha256": "a698a9e70a1a7e32b202a0e3f499445a2c6e8d20467e2ee1cd4e44c3c1faca31",
+    "outputSha256": "f06b76607422e436e8f99bf63c55b69a3f52f30dfabdecd90a253f340ad944d5",
     "prefix": "",
     "operations": [
       {
-        "start": 180076,
-        "end": 180405,
+        "start": 180156,
+        "end": 180485,
         "before": "        canInteract: () => {\n          const view = getBoardGame(transport.getGameViewModel(game.id));\n          return !forcedFollowWorking(game.id) && !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && canControlLiveBoard(view);\n        },",
         "after": "        canInteract: (() => {\n          const settlementStore = transport;\n          const settlementHost = () => {\n          const view = getBoardGame(transport.getGameViewModel(game.id));\n          const eligible = !forcedFollowWorking(game.id) && !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && canControlLiveBoard(view);\n          try { globalThis.__retreatClientSettlement?.capture(transport, settlementHost, {\n            scopeGameId:game.id,viewGameId:view?.id ?? null,currentGameId:getCurrentViewedGameId(),mountedGameId:mountedBoardGameId,\n            appliedEventSeq:transport.getLastEventSeq(game.id),gameplayRevision:view?.gameplayRevision ?? null,hostEligible:eligible,\n            pendingCommandCount:view?.pendingCommandCount ?? null,syncStatus:view?.syncStatus ?? null,\n            rulesChecking:view?.rulesChecking ?? null,storageBlocked:view?.storageBlocked ?? null,unsavedCommand:view?.unsavedCommand ?? null,confirmationOverdue:view?.confirmationOverdue ?? null,recovering:view?.recovering ?? null,upgradeRequired:view?.upgradeRequired ?? null,sharedMutationsBlocked:view?.sharedMutationsBlocked ?? null,gameplayMutationsBlocked:view?.gameplayMutationsBlocked ?? null,\n            inHistoryMode:view?.inHistoryMode === true,positionOnly:view?.positionOnly === true,\n          }, settlementStore); } catch { try { globalThis.__retreatClientSettlement?.invalidate(); } catch {} }\n          return eligible;\n          };\n          return settlementHost;\n        })(),",
         "anchor": "        canInteract: () => {\n          const view = getBoardGame(transport.getGameViewModel(game.id));\n          return !forcedFollowWorking(game.id) && !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && canControlLiveBoard(view);\n        },",

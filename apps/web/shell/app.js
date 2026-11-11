@@ -1,3 +1,4 @@
+import {createAccountContinuationOwner} from './account-continuation-owner.js';
 import {
   createHomeSectionReads, HOME_SECTION_SERVER_PAGE_SIZE, HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,
   HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE, createHomeSectionState, getHomeSectionVisibleTotalPages,
@@ -3641,6 +3642,7 @@ const homeSectionReads = createHomeSectionReads({
   captureHomeFocus: (...args) => captureHomeFocus(...args),
   restoreHomeReadingPosition: (...args) => restoreHomeReadingPosition(...args),
   restoreHomeFocus: (...args) => restoreHomeFocus(...args),
+  resumeAccountContinuation: (pending,settlement) => retryAccountContinuation({expectedPending:pending,settlement}),
   pendingHomeSectionKeys, gameSound, storyDialog: { refresh: (...args) => storyDialog.refresh(...args) }, appEl, document, window, syncAnnouncement,
 });
 const loadHomeSectionServerPage = (...args) => homeSectionReads.loadServerPage(...args);
@@ -3990,6 +3992,33 @@ const observeHomeReadVisit = event => {
   // matching only the final URL would let stale work regain ownership.
   advanceHomeReadVisit();
 };
+const accountContinuationOwner = createAccountContinuationOwner(()=>({
+  state:{
+    get accountContinuation(){return accountContinuation;},set accountContinuation(value){accountContinuation=value;},
+    get accountContinuationError(){return accountContinuationError;},set accountContinuationError(value){accountContinuationError=value;},
+    get accountContinuationIncidentId(){return accountContinuationIncidentId;},set accountContinuationIncidentId(value){accountContinuationIncidentId=value;},
+    get homeReadJob(){return homeReadJob;},set homeReadJob(value){homeReadJob=value;},
+    get pendingResponsiveHomeRead(){return pendingResponsiveHomeRead;},set pendingResponsiveHomeRead(value){pendingResponsiveHomeRead=value;},
+    get routeHydrated(){return routeHydrated;},set routeHydrated(value){routeHydrated=value;},
+    get homeReadChoice(){return homeReadChoice;},set homeReadChoice(value){homeReadChoice=value;},
+    get transport(){return transport;},
+    get homeReadRecovery(){return homeReadRecovery;},set homeReadRecovery(value){homeReadRecovery=value;},
+    get homeSectionResizeFrame(){return homeSectionResizeFrame;},set homeSectionResizeFrame(value){homeSectionResizeFrame=value;},
+  },
+  get homeSectionReads(){return homeSectionReads;},
+  get captureRouteRead(){return captureRouteRead;},
+  get routeReadIsCurrent(){return routeReadIsCurrent;},
+  get render(){return render;},
+  get syncRouteDataAndLiveChannels(){return syncRouteDataAndLiveChannels;},
+  queueResponsiveHomeSectionPageSizes:(...args)=>queueResponsiveHomeSectionPageSizes(...args),
+  get issueDiagnostics(){return issueDiagnostics;},
+  get account(){return account;},
+  get getGameResult(){return getGameResult;},
+  get rematchDialog(){return rematchDialog;},
+  get appEl(){return appEl;},
+  get CSS(){return CSS;},
+  get window(){return window;},
+}));
 const captureRouteRead = () => {
   // A queued authority refresh can run after the URL changes but before the
   // browser delivers hashchange. Keep the read and its deduplication key on
@@ -4011,29 +4040,7 @@ const captureRouteRead = () => {
     inputs: JSON.stringify([homeReadVisit, homeDebug, getVisibleHomeSectionKeys({ debug: homeDebug }).map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])]),
   };
   read.epoch = hydrateRoute.observe(read);
-  if (homeReadJob && !sameRouteRead(homeReadJob.read, read)) {
-    const previousJob = homeReadJob;
-    previousJob.retire();
-    // Any caller can observe an input change, including an in-flight batch's
-    // current-owner predicate. Only this same Home authority owes a replacement.
-    if (previousJob.read.inputs !== read.inputs && sameHomeReadScope(previousJob.read, read)) {
-      pendingResponsiveHomeRead = { job: previousJob, read, fulfilledByNewer: false };
-      queueResponsiveHomeSectionPageSizes();
-    }
-  }
-  if (pendingResponsiveHomeRead) {
-    const pending = pendingResponsiveHomeRead;
-    if (!sameHomeReadScope(pending.read, read)) {
-      pendingResponsiveHomeRead = null;
-      window.cancelAnimationFrame(homeSectionResizeFrame);homeSectionResizeFrame = 0;
-    }
-    else if (pending.read.inputs !== read.inputs) {
-      pendingResponsiveHomeRead = { ...pending, read };
-      queueResponsiveHomeSectionPageSizes();
-    }
-  }
-  if (homeReadRecovery && !sameRouteRead(homeReadRecovery.read, read)) homeReadRecovery = null;
-  if (homeReadChoice && !sameRouteRead(homeReadChoice.read, read)) homeReadChoice = null;
+  accountContinuationOwner.observeRead(read);
   return read;
 };
 const routeReadIsCurrent = read => sameRouteRead(read, captureRouteRead());
@@ -4067,50 +4074,8 @@ const syncRouteDataAndLiveChannels = (read = captureRouteRead()) => {
   });
 };
 
-const retryAccountContinuation = async () => {
-  const pending = accountContinuation;
-  if (!pending || pending.running || !routeReadIsCurrent(pending)) return;
-  pending.running = true;
-  accountContinuationError = false;
-  render({ animatePanels: false, includeBoard: false });
-  try {
-    const result = await syncRouteDataAndLiveChannels();
-    if (result?.recovered) pending.recoveryEpisode = true;
-  } catch (error) {
-    if (pending.route.name === "home") pending.recoveryEpisode = true;
-    if (accountContinuation === pending && routeReadIsCurrent(pending)) {
-      pending.running = false;
-      accountContinuationError = true;
-      accountContinuationIncidentId = issueDiagnostics.capture("account-continuation", { ...error?.diagnosticEvidence, operation: "account_continuation", stage: "route_read_failed", code: error?.code ?? "unavailable", status: error?.status ?? null, gameId: pending.route?.gameId });
-      render({ animatePanels: false, includeBoard: false });
-    }
-    return;
-  }
-  if (accountContinuation !== pending || !routeReadIsCurrent(pending)) return;
-  // Claim before invoking the original action. A failed write is never replayed.
-  accountContinuation = null;
-  accountContinuationError = false;
-  issueDiagnostics.resolve("account-continuation");
-  routeHydrated = true;
-  render({ animatePanels: false });
-  // Recovery restores the retained choice. Only a new explicit Start may write.
-  if (pending.recoveryEpisode) {
-    if (pending.route.name === "home" && ["create-game", "create-self-play"].includes(pending.intent?.action)) {
-      homeReadChoice = { read: pending, action: pending.intent.action };
-      render({ animatePanels: false, includeBoard: false });
-    }
-    return;
-  }
-  const intent = pending.intent;
-  if (!intent || !account.canPlay() || intent.hash !== window.location.hash) return;
-  if (intent.action === "rematch") {
-    const result = getGameResult(transport.getAuthoritativeGame(intent.gameId), transport.getIdentityId());
-    if (result) rematchDialog.open(result, appEl.querySelector('[data-action="view-result"]'));
-    return;
-  }
-  const selector = `[data-action="${CSS.escape(intent.action)}"]${intent.gameId ? `[data-game-id="${CSS.escape(intent.gameId)}"]` : ""}${intent.moveIndex ? `[data-move-index="${CSS.escape(intent.moveIndex)}"]` : ""}`;
-  appEl.querySelector(selector)?.click();
-};
+
+const retryAccountContinuation = (...args)=>accountContinuationOwner.retry(...args);
 const completeAccountContinuation = async intent => {
   accountContinuation = { ...captureRouteRead(), intent, running: false, recoveryEpisode: Boolean(homeReadRecovery) };
   await retryAccountContinuation();

@@ -1,107 +1,107 @@
 {
   "pathname": "/shell/app.js",
-  "sourceSha256": "7ae83ccc53365d5ab8f7d0524e79f2d54cc44c38cd26c16813a227786e29de06",
-  "outputSha256": "38f4e83c434a1d37ed3ab80bf779e76ce1a06cfedb6a655e7ef99b56edf5cd67",
+  "sourceSha256": "60da5e05a470f9d27ead8463edaa9bed751f10b1a3785238a988cd017b631af6",
+  "outputSha256": "27cd4d06543f67e58b14efb7093d05323c01a8f2eaf2396c794e2374b84329ee",
   "operations": [
     {
-      "start": 5632,
-      "end": 5632,
+      "start": 5712,
+      "end": 5712,
       "before": "",
       "after": "const observeInviteFocus = (phase, detail) => { try { globalThis.__righeltInviteFocusProbe?.(phase, detail); } catch {} };\n",
       "anchor": "};\nconst patchToolHtml = (element, html) => {\n",
       "anchorCount": 1
     },
     {
-      "start": 203800,
-      "end": 203800,
+      "start": 203997,
+      "end": 203997,
       "before": "",
       "after": "    observeInviteFocus(\"render-before-replacement\");\n",
       "anchor": "  if (nextMarkup !== lastRenderedMarkup) {\n    if (currentRoute.name !== \"home\" || !patchHomeAroundCreateControl(nextMarkup)) {\n",
       "anchorCount": 1
     },
     {
-      "start": 204236,
-      "end": 204236,
+      "start": 204433,
+      "end": 204433,
       "before": "",
       "after": "    observeInviteFocus(\"render-after-replacement\");\n",
       "anchor": "    }\n    restoreScenarioDraftFocus?.();\n",
       "anchorCount": 1
     },
     {
-      "start": 207460,
-      "end": 207460,
+      "start": 207657,
+      "end": 207657,
       "before": "",
       "after": "  const observeFocus = phase => { if (typeof pendingKey === \"string\" && pendingKey.startsWith(\"copy-invite:\")) observeInviteFocus(phase); };\n  observeFocus(\"pending-before-set\");\n",
       "anchor": "  const pendingGeneration=account.snapshot().generation;\n  pendingButtonKeys.add(pendingKey);\n",
       "anchorCount": 1
     },
     {
-      "start": 207497,
-      "end": 207497,
+      "start": 207694,
+      "end": 207694,
       "before": "",
       "after": "  observeFocus(\"pending-after-set\");\n",
       "anchor": "  pendingButtonKeys.add(pendingKey);\n  if (renderStart) {\n",
       "anchorCount": 1
     },
     {
-      "start": 207518,
-      "end": 207518,
+      "start": 207715,
+      "end": 207715,
       "before": "",
       "after": "    observeFocus(\"pending-before-start-render\");\n",
       "anchor": "  if (renderStart) {\n    render({ animatePanels: false, includeBoard: false });\n",
       "anchorCount": 2
     },
     {
-      "start": 207577,
-      "end": 207577,
+      "start": 207774,
+      "end": 207774,
       "before": "",
       "after": "    observeFocus(\"pending-after-start-render\");\n",
       "anchor": "    render({ animatePanels: false, includeBoard: false });\n  }\n",
       "anchorCount": 7
     },
     {
-      "start": 207821,
-      "end": 207821,
+      "start": 208018,
+      "end": 208018,
       "before": "",
       "after": "    observeFocus(\"pending-before-clear\");\n",
       "anchor": "    if(pendingGeneration!==account.snapshot().generation)return;\n    pendingButtonKeys.delete(pendingKey);\n",
       "anchorCount": 1
     },
     {
-      "start": 207863,
-      "end": 207863,
+      "start": 208060,
+      "end": 208060,
       "before": "",
       "after": "    observeFocus(\"pending-after-clear\");\n",
       "anchor": "    pendingButtonKeys.delete(pendingKey);\n    if (renderEnd) {\n",
       "anchorCount": 1
     },
     {
-      "start": 207884,
-      "end": 207884,
+      "start": 208081,
+      "end": 208081,
       "before": "",
       "after": "      observeFocus(\"pending-before-end-render\");\n",
       "anchor": "    if (renderEnd) {\n      render({ animatePanels: false, includeBoard: false });\n",
       "anchorCount": 1
     },
     {
-      "start": 207945,
-      "end": 207945,
+      "start": 208142,
+      "end": 208142,
       "before": "",
       "after": "      observeFocus(\"pending-after-end-render\");\n",
       "anchor": "      render({ animatePanels: false, includeBoard: false });\n    }\n",
-      "anchorCount": 9
+      "anchorCount": 7
     },
     {
-      "start": 232466,
-      "end": 232734,
+      "start": 231132,
+      "end": 231400,
       "before": "    try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { if(!active())return;inviteFallback={gameId,link,role};setInviteFeedback('Copy the link below to share it.'); }\n",
       "after": "    try { observeInviteFocus(\"clipboard-before-await\"); await navigator.clipboard.writeText(link); observeInviteFocus(\"clipboard-resolved\");if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { observeInviteFocus(\"clipboard-rejected\"); if(!active())return;inviteFallback={gameId,link,role};setInviteFeedback('Copy the link below to share it.'); }\n",
       "anchor": "    window.__righeltLastInvite=link;\n    try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { if(!active())return;inviteFallback={gameId,link,role};setInviteFeedback('Copy the link below to share it.'); }\n  }catch(error){if(active()){ issueDiagnostics.capture(`invite:${gameId}`, { gameId, operation: 'create_invite', stage: 'failed', code: error.code ?? 'unavailable' }); setInviteFeedback('We couldn’t create your invite link. Please try again.'); }}\n",
       "anchorCount": 1
     },
     {
-      "start": 285377,
-      "end": 285377,
+      "start": 284043,
+      "end": 284043,
       "before": "",
       "after": "    observeInviteFocus(\"action-entry\", actionEl);\n",
       "anchor": "    }\n    const invitationPanel = actionEl.closest('[data-game-panel=\"join\"]');\n    if (invitationPanel instanceof HTMLElement) panelPendingFocus.delete(invitationPanel);\n    pendingInvitationFocus.begin(actionEl, getCopyInviteButtonKey(gameId));\n    await withPendingButton(getCopyInviteButtonKey(gameId),()=>copyGameInvitation(gameId,actionEl.dataset.inviteRole || 'viewer'));\n",
