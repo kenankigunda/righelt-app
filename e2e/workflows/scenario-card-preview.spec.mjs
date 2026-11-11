@@ -84,6 +84,11 @@ test("scenario flyout selected card renders history-style recorded action previe
     await expect
       .poll(() => locatorHasDescendant(cellLocator(previewRoot, projectAction.to), ".preview-created"))
       .toBe(true);
+    await expect.poll(() => flyout.evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      return !element.getAnimations().some(animation => animation.playState === "running" || animation.playState === "pending")
+        && getComputedStyle(element).opacity === "1" && rect.left >= -1 && rect.right <= innerWidth + 1;
+    })).toBe(true);
     const imagePath = info.outputPath("scenario-recorded-preview.png");
     await page.screenshot({ path: imagePath, fullPage: true });
     await info.attach("Scenario recorded preview", { path: imagePath, contentType: "image/png" });
