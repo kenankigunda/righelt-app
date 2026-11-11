@@ -692,6 +692,20 @@ body {background-color:var(--surface-foundation);background-image:var(--marble-c
 .home-refresh button.opponent-choice:nth-child(2){--marble-face-origin:-920px -720px;}
 .home-refresh button.opponent-choice:nth-child(3){--marble-face-origin:-760px -1040px;}
 .home-refresh button.opponent-choice:nth-child(4){--marble-face-origin:-1024px -896px;}
+/* The Board has four mineral corner cuts rather than the generic two.
+   Keep those anchors separate from the quiet working-face bitmap. */
+:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel[data-shell-panel="board"]::before {
+ background:linear-gradient(135deg,var(--corner-start) 0 16px,transparent 16px),
+ linear-gradient(225deg,var(--corner-start) 0 16px,transparent 16px),
+ linear-gradient(45deg,var(--corner-end) 0 16px,transparent 16px),
+ linear-gradient(315deg,var(--corner-end) 0 16px,transparent 16px),
+ var(--marble-face),linear-gradient(135deg,#fff,#f7f9f9);
+ background-position:top left,top right,bottom left,bottom right,0 0,var(--marble-face-origin),0 0;
+ background-size:40px 40px,40px 40px,40px 40px,40px 40px,auto,var(--marble-face-scale),auto;
+ background-repeat:no-repeat,no-repeat,no-repeat,no-repeat,repeat,repeat,repeat;
+}
+html[data-page-active="false"] .home-refresh button.opponent-choice::before {background:var(--marble-face),linear-gradient(135deg,#fff,#fafcfc);background-position:0 0,var(--marble-face-origin),0 0;background-size:auto,var(--marble-face-scale),auto;}
+.rematch-opponent-card::before,.rematch-opponent-card:has(input:checked)::before {background-position:0 0,var(--marble-face-origin),0 0;background-size:auto,var(--marble-face-scale),auto;}
 .home-refresh button.opponent-choice::after,.home-refresh .mini-board-card::after {background:var(--marble-edge);}
 [data-hover-capability="hover"] .home-refresh button.opponent-choice:not(:disabled):hover::before {background:linear-gradient(rgb(247 247 247 / 65%),rgb(247 247 247 / 65%)),var(--marble-texture),linear-gradient(#fff,#fafcfc);background-position:0 0,var(--marble-face-origin),0 0;background-size:auto,var(--marble-face-scale),auto;}
 @media(forced-colors:active) {body{background-image:none;}}
