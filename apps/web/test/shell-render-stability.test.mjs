@@ -1,3 +1,6 @@
+import {createHomeCardRendering,getStaticCardPreviewSnapshot,getStaticCardPreviewPayload} from '../shell/home-card-rendering.js';
+import {escapeDebug} from '../shell/computer-view.js';
+import {renderHomeCardIdentity,renderHomeCardTurn} from '../shell/home-card-identity.js';
 import {createHomeSectionReads,createHomeSectionState} from '../shell/home-section-reads.js';
 import {historyRenderingFixture} from './support/history-rendering-context.mjs';
 import {groupUndoHistory,renderUndoHistoryGroups} from '../shell/history-undo-groups.js';
@@ -235,7 +238,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*if \(currentRoute\.name !== "home" \|\| !patchHomeAroundCreateControl\(nextMarkup\)\) \{[\s\S]*currentMain\.replaceWith\(nextMain\);updateMountedFlyouts\(\);[\s\S]*else appEl\.innerHTML = nextMarkup;\s*\}\s*restoreScenarioDraftFocus\?\.\(\);[\s\S]*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels && !preserveHomeReadingPosition\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.match(source, /data-flyout-link="home"/);
-  assert.match(source, /flyoutLink \? `data-flyout-link="\$\{escapeHtml\(flyoutLink\)\}"` : ""/);
+
   assert.doesNotMatch(source, /data-flyout-link="tutorial"/);
   assert.match(source, /data-action="copy-invite" data-game-id=/);
   assert.doesNotMatch(source, /replaceWith\(previousBoardPanel\)/);
@@ -388,27 +391,27 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /data-mini-board-preview data-preview-id=/);
   assert.match(source, /const reconcileMiniBoardPreviews = \(\) => \{/);
   assert.match(source, /syncMiniBoardPreviews\(\{/);
-  assert.match(source, /const getStaticCardPreviewSnapshot = \(card\) => card\?\.previewSnapshot \?\? null;/);
-  assert.match(source, /const getStaticCardPreviewPayload = \(card\) => \(\{/);
+  const snapshot={sideToMove:'P2',outcome:{status:'ongoing'}},registered=[];
+  const card={id:'card',eventSeq:8,gameplayRevision:3,confirmedOutcomeStatus:'ongoing',myRole:'Player 1',myRoles:['Player 1'],moveCount:4,createdAt:'2026-10-01',previewSnapshot:snapshot,player1:{identityId:'me',profile:{displayName:'Kenan'}},player2:{identityId:'other',profile:{displayName:'Ada'}}};
+  assert.equal(getStaticCardPreviewSnapshot(card),snapshot);assert.equal(getStaticCardPreviewSnapshot(null),null);
+  assert.equal(getStaticCardPreviewPayload(card).snapshot,snapshot);
+  const presenter=createHomeCardRendering({getTransport:()=>({getIdentityId:()=> 'me'}),escapeHtml:escapeDebug,toStableKey:JSON.stringify,buildGameHash:id=>`#/game/${id}`,getCurrentFlyoutState:()=>({}),formatDisplayGameId:String,formatClientDateTime:String,renderMiniBoardPreviewRoot:value=>{registered.push(value);return '<div data-mini-board-preview></div>';}});
+  const html=presenter.renderHomeGameCard(card);
+  assert.equal(registered[0].previewId,'home:card');assert.equal(registered[0].snapshot,snapshot);
+  assert.match(html,/class="mini-board-card"/);assert.match(html,/class="mini-board-card-link-surface"[\s\S]*href="#\/game\/card"/);assert.match(html,/data-game-id="card"/);assert.match(html,/data-flyout-link="game"/);assert.match(html,/Last move on 2026-10-01/);
+  for(const syncStatus of ['desynced','confirming'])assert.match(presenter.renderHomeGameCard({...card,syncStatus}),/<span class="status-chip">Recovering<\/span>/);
+  assert.match(presenter.renderHomeGameCard({...card,pendingPreviewSnapshot:snapshot}),/Update pending/);
+  assert.match(html,/<div class="mini-board-card-copy">/);assert.match(html,/<div class="mini-board-card-meta mini-board-card-meta-primary">/);assert.match(html,/Move 5/);
+  const completed=presenter.renderHomeGameCard({...card,confirmedOutcomeStatus:'p2_win'});assert.match(completed,/4 moves/);assert.match(completed,/Review game/);
   assert.match(source, /const scenarioPreviewPayload = selectedScenario \? buildScenarioStaticPreviewModel\(selectedScenario\) : null;/);
-  assert.match(source, /previewId: `\$\{variant\}:\$\{card\.id\}`/);
-  assert.match(source, /class="mini-board-card"/);
-  assert.match(source, /class="mini-board-card-link-surface"[\s\S]*href=/);
-  assert.match(source, /data-game-id="\$\{escapeHtml\(game\.id\)\}"/);
-  assert.match(source, /Last move on \$\{escapeHtml\(formatClientDateTime\(game\.lastMoveAt \|\| game\.createdAt\)\)\}/);
-  assert.match(
-    source,
-    /const recoveryChip =[\s\S]*game\.syncStatus === "desynced" \|\| game\.syncStatus === "confirming"[\s\S]*'<span class="status-chip">Recovering<\/span>' : "";/,
-  );
   assert.match(source, /const isDualSeatIdentity = \(game\) =>/);
   assert.match(source, /return '<strong class="player-tone-both">both players<\/strong>';/);
   assert.match(source, /const renderConnectionStatusIcon = \(status, label\) =>/);
-  assert.match(source, /import \{ renderHomeCardIdentity \} from "\.\/home-card-identity\.js"/);
-  assert.match(source, /renderHomeCardIdentity\(game, \{identityId: transport\.getIdentityId\(\), quiet:completed\}\)/);
+  const named={myRole:'Player 1',player1:{identityId:'me',profile:{displayName:'Kenan'}},player2:{identityId:'other',profile:{displayName:'Ada'}}};
+  const quiet=renderHomeCardIdentity(named,{identityId:'me',quiet:true});
+  assert.match(quiet,/<bdi>Kenan<\/bdi>/);assert.match(quiet,/<bdi>Ada<\/bdi>/);assert.doesNotMatch(quiet,/connection-status-icon/);
+  assert.match(renderHomeCardTurn(named,{sideToMove:'P2'}),/Blue: <\/span><bdi>Ada<\/bdi><\/strong> to play/);
   assert.doesNotMatch(source, /renderHomeSeatConnectionLine|renderHomeConnectionSummary|renderHomeRoleLine/);
-  assert.match(source, /<div class="mini-board-card-copy">/);
-  assert.match(source, /<div class="mini-board-card-meta mini-board-card-meta-primary">/);
-  assert.match(source, /const moveLabel = completed \?[^;]+game\.moveCount[^;]+: `Move \$\{game\.moveCount \+ 1\}`;/);
   assert.match(source, /reconcileMiniBoardPreviews\(\);\s*syncMountedGameShellPanelUi\(shellRoot\);\s*initializeDesktopBoardFit\(\);\s*scheduleGameShellStickyLayout\(\);/);
 });
 

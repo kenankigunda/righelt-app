@@ -1654,6 +1654,7 @@ button.button-release-bounce,
 
 .mini-board-preview-status {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .row {
