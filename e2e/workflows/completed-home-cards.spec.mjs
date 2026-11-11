@@ -43,7 +43,7 @@ for(const width of [390,1440])test(`Home separates completed games and names con
  await expect(completed.getByText('4 games',{exact:true})).toBeVisible();
  const card=id=>completed.locator(`a[data-game-id="${id}"]`);
  const revealCard=async id=>{
-  if(await card(id).count())return;
+  if(await card(id).count()){await expect(card(id)).toBeVisible();return;}
   const next=completed.locator('[data-action="home-page-next"]');
   const previous=completed.locator('[data-action="home-page-prev"]');
   if(await next.isEnabled())await next.click();else await previous.click();
