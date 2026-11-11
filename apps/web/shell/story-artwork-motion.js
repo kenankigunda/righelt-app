@@ -11,23 +11,39 @@ export const storyArtworkFrames = (step = 1) => {
 
 export function createStoryArtworkMotion({reducedMotion,motionPreference=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)'),getStyle=node=>globalThis.getComputedStyle?.(node)}={}) {
  let active=[];
+ let activePair=null;
+ let completionGeneration=0;
  const isReduced=()=>reducedMotion?reducedMotion():Boolean(motionPreference?.matches);
- const cancel=()=>{const previous=active;active=[];for(const animation of previous)animation.cancel();};
+ const cancel=()=>{const previous=active;active=[];activePair=null;completionGeneration++;for(const animation of previous)animation.cancel();};
+ const observeCompletion=owned=>{
+  const generation=++completionGeneration;
+  const retire=()=>{if(active===owned&&completionGeneration===generation)cancel();};
+  Promise.all(owned.map(animation=>animation.finished)).then(retire,retire);
+ };
  const preferenceChanged=()=>{if(isReduced())cancel();};
  motionPreference?.addEventListener?.('change',preferenceChanged);
  return {
   cancel,
   destroy(){cancel();motionPreference?.removeEventListener?.('change',preferenceChanged);},
   swap(previous,selected,step){
-   const transforms=[previous,selected].map(node=>node&&getStyle(node)?.transform);
+   if(!previous||previous===selected||!previous.animate||!selected?.animate||isReduced()){cancel();return;}
+   // Returning to the image already leaving reverses its actual trajectory.
+   // Restarting anticipation would send that visible image out once more.
+   if(activePair?.previous===selected&&activePair?.selected===previous&&active.length===2&&active.every(animation=>typeof animation.reverse==='function')){
+    activePair={previous,selected};
+    for(const animation of active)animation.reverse();
+    observeCompletion(active);
+    return;
+   }
+   const transforms=[previous,selected].map(node=>getStyle(node)?.transform);
    cancel();
-   if(!previous||previous===selected||!previous.animate||!selected?.animate||isReduced())return;
    const {outgoing,incoming}=storyArtworkFrames(step);
    if(transforms[0]&&transforms[0]!=='none')outgoing[0].transform=transforms[0];
    if(transforms[1]&&transforms[1]!=='none')incoming[0].transform=transforms[1];
    const owned=[previous.animate(outgoing,{duration:STORY_SWAP_DURATION,easing:'linear',fill:'both'}),selected.animate(incoming,{duration:STORY_SWAP_DURATION,easing:'linear',fill:'both'})];
    active=owned;
-   Promise.all(owned.map(animation=>animation.finished)).then(()=>{if(active===owned)cancel();},()=>{if(active===owned)cancel();});
+   activePair={previous,selected};
+   observeCompletion(owned);
   },
  };
 }

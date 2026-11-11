@@ -39,3 +39,37 @@ test('changing reduced motion settles active effects and disposal removes its pr
  motion.swap(first,second,1);preference.matches=true;handlers.get('change')();assert.equal(first.animations[0].canceled,true);assert.equal(second.animations[0].canceled,true);
  motion.swap(second,first,-1);assert.equal(first.animations.length,1);motion.destroy();assert.equal(handlers.size,0);await Promise.resolve();
 });
+
+
+test('returning to the leaving image reverses only the live owned pair without replaying anticipation',async()=>{
+ const first=image(),second=image(),third=image();
+ for(const node of [first,second,third]){const animate=node.animate;node.animate=function(...args){const a=animate.apply(this,args);a.reversals=0;a.reverse=()=>{a.reversals++;};return a;};}
+ const motion=createStoryArtworkMotion({getStyle:()=>({transform:'none'}),reducedMotion:()=>false});
+ motion.swap(first,second,1);const pair=[first.animations[0],second.animations[0]];
+ motion.swap(second,first,-1);
+ assert.equal(first.animations.length,1);assert.equal(second.animations.length,1);
+ assert.deepEqual(pair.map(a=>a.reversals),[1,1]);assert.ok(pair.every(a=>!a.canceled));
+ motion.swap(first,second,1);assert.deepEqual(pair.map(a=>a.reversals),[2,2]);
+ // A genuinely new requested image owns its own generation. Old rejected
+ // completion promises must not retire these new effects.
+ motion.swap(second,third,1);const replacement=[second.animations[1],third.animations[0]];
+ await Promise.resolve();await Promise.resolve();
+ assert.ok(pair.every(a=>a.canceled));assert.ok(replacement.every(a=>!a.canceled));
+ replacement.forEach(a=>a.finish());await Promise.resolve();await Promise.resolve();
+ assert.ok(replacement.every(a=>a.canceled));
+ motion.swap(third,second,-1);assert.equal(second.animations.length,3);
+ assert.equal(second.animations[2].reversals,0);motion.destroy();
+});
+
+
+test('a superseded completion cannot retire a reversed pair with renewed finished promises',async()=>{
+ const first=image(),second=image();
+ for(const node of [first,second]){const animate=node.animate;node.animate=function(...args){const a=animate.apply(this,args);a.reverse=()=>{a.finished=new Promise(resolve=>{a.finishReversed=resolve;});};return a;};}
+ const motion=createStoryArtworkMotion({getStyle:()=>({transform:'none'}),reducedMotion:()=>false});
+ motion.swap(first,second,1);const pair=[first.animations[0],second.animations[0]];
+ pair[0].finish();motion.swap(second,first,-1);pair[1].finish();
+ await Promise.resolve();await Promise.resolve();
+ assert.ok(pair.every(a=>!a.canceled));
+ pair.forEach(a=>a.finishReversed());await Promise.resolve();await Promise.resolve();
+ assert.ok(pair.every(a=>a.canceled));motion.destroy();
+});

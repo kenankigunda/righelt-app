@@ -84,6 +84,16 @@ test('phone home and Babs carets fit without horizontal overflow',async({page})=
  await expect(page.getByRole('button',{name:'Mute sound',exact:true})).toBeVisible();
  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.screenshot({path:test.info().outputPath('home-phone.png')});
+ const menuTrigger=page.getByRole('button',{name:'Open navigation menu',exact:true});await menuTrigger.click();
+ const menu=page.locator('.shell-header-menu-panel');await expect(menu).toBeVisible();
+ await expect.poll(()=>menu.evaluate(el=>el.getAnimations().filter(a=>a.playState==='running').length)).toBe(0);
+ const menuPaint=await menu.evaluate(el=>{const s=getComputedStyle(el),r=el.getBoundingClientRect();return{radius:s.borderRadius,clip:s.clipPath,image:s.backgroundImage,shadow:s.boxShadow,rect:r.toJSON(),viewport:innerWidth,rows:[...el.querySelectorAll('button')].map(button=>{const b=button.getBoundingClientRect(),style=getComputedStyle(button);return{text:button.textContent.trim(),height:b.height,left:b.left,right:b.right,background:style.backgroundColor,shadow:style.boxShadow};})};});
+ expect(menuPaint.radius).toBe('0px');expect(menuPaint.clip.startsWith('polygon(')).toBe(true);expect(menuPaint.image).toContain('url(');expect(menuPaint.rect.left).toBeGreaterThanOrEqual(0);expect(menuPaint.rect.right).toBeLessThanOrEqual(menuPaint.viewport);
+ expect(menuPaint.rows.map(row=>row.text)).toEqual(['Account','Scenarios','Debug']);for(const row of menuPaint.rows){expect(row.height).toBeGreaterThanOrEqual(44);expect(row.shadow).toBe('none');}
+ const menuMetrics=test.info().outputPath('mobile-menu-native.json');await writeFile(menuMetrics,JSON.stringify(menuPaint,null,2),{mode:0o600});await test.info().attach('mobile menu native paint',{path:menuMetrics,contentType:'application/json'});
+ await page.screenshot({path:test.info().outputPath('mobile-menu-clipped-marble.png')});
+ await menu.getByRole('button',{name:'Scenarios',exact:true}).focus();await expect(menu.getByRole('button',{name:'Scenarios',exact:true})).toBeFocused();await page.keyboard.press('Escape');await expect(menu).toHaveAttribute('aria-hidden','true');await expect(menuTrigger).toHaveAttribute('aria-expanded','false');await expect(menu.getByRole('button',{name:'Scenarios',exact:true,includeHidden:true})).toHaveAttribute('tabindex','-1');
+ await menuTrigger.click();await expect(page.locator('.shell-header-menu-panel')).toBeVisible();await page.getByRole('heading',{name:'Start something new',exact:true}).click();await expect(page.locator('.shell-header-menu-panel')).toHaveAttribute('aria-hidden','true');
  await page.locator('button[data-opponent="babs"]').click();const dialog=page.getByRole('dialog',{name:'Babs',exact:true});await expect(dialog).toBeVisible();
  await expect(dialog.getByRole('button',{name:'Next story image'})).toBeVisible();
  await expect.poll(()=>dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
@@ -589,6 +599,21 @@ test('all approved artwork consumers fit and natural story motion survives bidir
     const observation=await dialog.evaluate(()=>{const o=window.__artworkNativeObservation;o.stop();return{frames:o.frames,inputs:o.inputs,dropped:o.dropped};});evidence.motionFrames=observation;expect(observation.dropped).toBe(0);
     const violations=[];for(const frame of observation.frames){if(frame.shade)violations.push({at:frame.at,kind:'unexpected shade'});for(const image of frame.images)if(image.animations.length&&(image.opacity!==1||image.filter.includes('brightness')))violations.push({at:frame.at,kind:'animated image opacity/filter',src:image.src,opacity:image.opacity,filter:image.filter});for(let i=0;i<fixed.length;i++)for(const key of ['x','y','width','height'])if(Math.abs(frame.fixed[i][key]-fixed[i][key])>=.5)violations.push({at:frame.at,kind:'copy/control moved',node:i,key,before:fixed[i][key],after:frame.fixed[i][key]});}expect(violations).toEqual([]);
     for(const transition of evidence.motion)expect(transition.final.src).toBe('/assets/opponents/babs-1-discovery.webp');
+    // Returning to the original scene reverses its actual path. It must not
+    // replay a full outgoing/incoming excursion merely to restore that scene.
+    const discovery=evidence.scenes.find(scene=>scene.id==='babs-1-discovery');
+    const returnEnvelopes=[];
+    for(const index of [1,3]){
+     const input=observation.inputs[index],end=observation.inputs[index+1]?.at??Infinity;
+     const before=observation.frames.filter(frame=>frame.at<=input.at).at(-1)?.images.find(image=>image.src.endsWith('/babs-1-discovery.webp'));
+     const allowance=Math.max(discovery.rect.width*.06,Math.abs((before?.rect.x??discovery.rect.x)-discovery.rect.x))+1;
+     const selected=observation.frames.filter(frame=>frame.at>=input.at&&frame.at<end).flatMap(frame=>frame.images.filter(image=>image.active==='true'&&image.src.endsWith('/babs-1-discovery.webp')).map(image=>({at:frame.at,x:image.rect.x})));
+     expect(selected.length).toBeGreaterThan(0);
+     returnEnvelopes.push({inputAt:input.at,direction:input.step,homeX:discovery.rect.x,allowance,maxDeparture:Math.max(...selected.map(image=>Math.abs(image.x-discovery.rect.x)))});
+    }
+    evidence.returnEnvelopes=returnEnvelopes;
+    for(const envelope of returnEnvelopes)expect(envelope.maxDeparture).toBeLessThanOrEqual(envelope.allowance);
+
     evidence.visualReview={status:'PENDING_INDEPENDENT_REVIEW',questions:['Outgoing first-frame visibility and opacity during anticipation','Actual clip envelopes through clearance','Direction reversal and interruption continuity'],limit:'Raw geometry alone is not raster visibility proof; absence of a qualifying actual original remains an acceptance gap.'};
    }
    await dialog.getByRole('button',{name:'Close opponent story',exact:true}).click();await expect(dialog).not.toBeVisible();
