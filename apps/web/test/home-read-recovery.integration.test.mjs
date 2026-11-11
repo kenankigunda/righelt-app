@@ -1,3 +1,6 @@
+import {createDestinationRouteOwner,destinationReadScope,destinationLiveGameId} from '../shell/destination-route-owner.js';
+import {createDestinationRecovery} from '../shell/destination-recovery.js';
+import {createNavigationHistory} from '../shell/navigation-history.js';
 import {createAccountContinuationOwner} from '../shell/account-continuation-owner.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -41,6 +44,7 @@ const homeSectionReads = createHomeSectionReads({
   get lastHomeBatchRevision(){return lastHomeBatchRevision;},set lastHomeBatchRevision(value){lastHomeBatchRevision=value;},
   get homeFocusToRestore(){return homeFocusToRestore;},set homeFocusToRestore(value){homeFocusToRestore=value;},
   get routeHydrated(){return routeHydrated;},set routeHydrated(value){routeHydrated=value;},
+  get homeSectionsHydrated(){return homeSectionsHydrated;},set homeSectionsHydrated(value){homeSectionsHydrated=value;},
   get homeSectionResizeFrame(){return homeSectionResizeFrame;},set homeSectionResizeFrame(value){homeSectionResizeFrame=value;},
  },
  getHomeSection:(...args)=>getHomeSection(...args),
@@ -60,6 +64,7 @@ const homeSectionReads = createHomeSectionReads({
  resumeAccountContinuation:(pending,settlement)=>retryAccountContinuation({expectedPending:pending,settlement}),
  pendingHomeSectionKeys,gameSound,storyDialog,appEl,document,window,syncAnnouncement:{},
 });
+const applyHomeVisitPages=(...args)=>homeSectionReads.applyVisitPages(...args);
 const syncHomeSections=(...args)=>homeSectionReads.syncSections(...args);
 const scheduleHomeListRefresh=(...args)=>homeSectionReads.scheduleRefresh(...args);
 const scheduleResponsiveHomeSectionPageSizes=(...args)=>homeSectionReads.scheduleResponsive(...args);
@@ -68,12 +73,13 @@ const queueResponsiveHomeSectionPageSizes=(...args)=>homeSectionReads.queueRespo
 const script = new vm.Script([
   'let accountContinuation=null,accountContinuationError=false,accountContinuationIncidentId=null;',
   part('let homeReadJob = null;','const hydrateRoute ='),
-  'let routeHydrated=false,routeSyncRequestId=0,inviteLoadState=null,resolvedInvite=null,homeSectionResizeFrame=0;',
+  'let routeHydrated=false,homeSectionsHydrated=false,routeSyncRequestId=0,inviteLoadState=null,resolvedInvite=null,homeSectionResizeFrame=0,pendingRoutePosition=null,destinationLoadPresentation=null;',
   "let homeFocusToRestore=null,pendingHomeRefresh=null,lastHomeBatchRevision=null; let homeSections=Object.fromEntries(['my','completed','other','smoke'].map(key=>[key,createHomeSectionState(key)]));",
   part('const pendingHomeSectionKeys =','let lastRenderedMarkup ='),
   part('const isHomeSectionPending =','const renderButtonStateAttributes ='),
   homeFixtureWiring,
-  part('const routeReadKey =','const syncScenarioCatalog ='),
+  part('const routeReadKey =','let destinationNoticeEl='),
+  part('const destinationRouteOwner=','const syncScenarioCatalog ='),
   part('const navigateTo =','let previousLayoutMode ='),
   part('const renderHomeStartButton =','const renderHomeGameSection ='),
   `const explicitStart=(action,actionEl={})=>{${part('  if (action === "create-game" || action === \'create-self-play\') {','  if (action === "launch-history-branch"')}};`,
@@ -140,7 +146,8 @@ async function fixture(t,{journalAdapter,seed=true,authEnabled=true}={}) {
       return returned;
     });return id;},cancelAnimationFrame:id=>frames.delete(id)};
   let generation=1,pageSize=1,columnCount=1,clicks=0,renders=0,refreshes=0,renderProbe=()=>{};
-  const context=vm.createContext({...homeReads,createAccountContinuationOwner,Error,captureHomeFocus:()=>null,document:{},cancelPendingBoardContextReplay(){},pendingBoardContextReplay:null,structuredClone,URL,URLSearchParams,SYNC_TIMING,createRouteHydration,
+  const destinationRecovery=createDestinationRecovery({setTimer:()=>null,clearTimer(){}});
+  const context=vm.createContext({createDestinationRouteOwner,destinationReadScope,destinationLiveGameId,destinationRecovery,syncDestinationNotice(){},...homeReads,createAccountContinuationOwner,Error,captureHomeFocus:()=>null,document:{},cancelPendingBoardContextReplay(){},pendingBoardContextReplay:null,structuredClone,URL,URLSearchParams,SYNC_TIMING,createRouteHydration,
     hydrateRoute:createRouteHydration(),window:browser,currentRoute:parseRouteFromHash('#/'),transport,
     account:{snapshot:()=>({generation}),canPlay:()=>true},
     parseRouteFromHash,buildHashForRoute,FLYOUT_KEYS,HOME_SECTION_SERVER_PAGE_SIZE:4,HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT:1,
@@ -161,6 +168,8 @@ async function fixture(t,{journalAdapter,seed=true,authEnabled=true}={}) {
     prefersReducedMotion:()=>false,retireTutorialSave(){},syncRouteTransitionForCurrentRoute(){},maybeRevealRouteTransition(){},
     invitationLoadFailureKind:()=> 'retry',
   });
+  browser.history={state:null,replaceState(state,_title,hash){this.state=state;if(hash!==undefined)location.hash=hash;}};
+  context.navigationHistory=createNavigationHistory({history:browser.history,getHash:()=>location.hash,capture:()=>({y:0,generation}),id:()=>String(++frameId)});
   script.runInContext(context);
   const h=context.home;
   h.seed({my:section('My games','my-cached'),completed:section('Your completed games','completed-cached'),other:section('Other games','other-cached'),smoke:section('Deploy smoke player','smoke-cached')});

@@ -1,3 +1,4 @@
+import {readGameDestination} from '../shell/destination-route-owner.js';
 import {renderRecoveryActions} from '../shell/game-alert-presentation.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -75,10 +76,9 @@ test('saved-game upgrade immediately offers Reload game and Home without replaci
  assert.match(source,/if \(action === "refresh-game"\) \{ window\.location\.reload\(\); return; \}/);
 });
 test('cold upgrade offers the same branded recovery choices without fabricating a board or reading a journal',()=>{
- const start=source.indexOf('const renderGameContent ='),end=source.indexOf('const renderApprovalGate =',start);assert.ok(start>0&&end>start);
  const reads=[];
- const render=new Function('transport','icon','routeHydrated','renderGameViewSkeleton',`${source.slice(start,end)};return renderGameContent;`)(
-  {getGameViewModel:id=>{reads.push(['view',id]);return null;},isUpgradeRequired:id=>{reads.push(['upgrade',id]);return true;}},icon,false,()=>assert.fail('Upgrade must not return a loading skeleton'));
+ const transport={getGameViewModel:id=>{reads.push(['view',id]);return null;},isUpgradeRequired:id=>{reads.push(['upgrade',id]);return true;}};
+ const render=gameId=>readGameDestination({gameId,transport,icon,presentation:null}).markup;
  const markup=render('saved-game');
  assert.deepEqual(reads,[['view','saved-game'],['upgrade','saved-game']]);
  assert.match(markup,/data-testid="sync-recovery-banner" role="status"/);
