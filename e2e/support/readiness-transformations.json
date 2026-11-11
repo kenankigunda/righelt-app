@@ -1,8 +1,8 @@
 {
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",
-    "sourceSha256": "9537ba10b5afc9a23b1a24eb851b4c4a8417e3cddeb4e9d522a483f2a5f3b279",
-    "outputSha256": "801d32fc9076f01a92c932151728714a2bc64470fc6e1ec077c6d1aa39106156",
+    "sourceSha256": "fa907be51d1740b4cbcfdbd209acca7cfcdf0904d33531f33a292439d8bc0ad9",
+    "outputSha256": "cc35aef9d2726dc0bd2cd753fcc9ef14b2553a345935d007762392feed123a99",
     "operations": [
       {
         "start": 23882,
@@ -13,8 +13,8 @@
         "anchorCount": 1
       },
       {
-        "start": 25134,
-        "end": 25134,
+        "start": 25382,
+        "end": 25382,
         "before": "",
         "after": "\n    readinessCompleted=true;\n    }finally{try{readinessFinish?.(readinessCompleted);}catch{}}",
         "anchor": "querySelector('.group-strength-badge')),\n    });\n  };\n\n  const disabledInlineActions = new Set()",

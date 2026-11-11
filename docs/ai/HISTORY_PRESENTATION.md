@@ -40,6 +40,13 @@ For removals, use lost for the narrated actor's pieces and destroyed for opposin
 
 Live completed summaries and acknowledged replay share this grammar. Replay uses recorded chronological order and board-wide move titles, with progress and controls retained. It never searches, submits or changes live state. Cancellation follows route, account, retirement, stop and relevant revision changes. Coordinates use shared comma-space chips, with escaped and directionally isolated names kept as separate structured values. Provenance: D03, D07 and D15.
 
+## Live opponent-turn overview
+
+Before the human starts their next turn, the live board can display the immediately preceding opponent turn using the same aggregate overlays. The underlying board snapshot, legal actions and mutation gates stay live. Viewing never selects History or submits a move. Missing snapshot detail loads through revision-fenced reads in the background; a failed visual read leaves normal play available.
+
+Opponent-piece and supply-point inspection temporarily replace the overview. Clearing them restores it. Explicitly selecting any own piece, including one with no legal moves, dismisses it for the current visit. Deselecting does not undo that dismissal. Reopening the game or completing a new opponent turn resets the dismissal. Reopening after any acknowledged or pending action in the human's current turn shows the live position. Narration and Show me again retain their separate selection rules.
+
+
 ## History endpoint roles
 
 Single-move and whole-turn History on desktop and mobile use a 2px dashed violet (`#7650A6`) source border and a 2px solid green (`#1F7A5A`) target border. A square with both roles keeps the dashed violet outer border and adds an inset 2px solid green outline. A turn uses the union of every acknowledged action's endpoints, including intermediate squares, rather than only net turn endpoints. Duplicate push/follow arrows remain deduplicated; defender retreats retain their distinct routes.
