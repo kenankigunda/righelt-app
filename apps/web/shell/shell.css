@@ -348,6 +348,13 @@ button.secondary.shell-header-menu-button {
   background: currentColor;
 }
 
+@media (forced-colors: active) {
+  .shell-header-menu-icon > span {
+    background: ButtonText;
+    forced-color-adjust: none;
+  }
+}
+
 .shell-header-menu-panel {
   position: absolute;
   top: calc(100% + 0.45rem);

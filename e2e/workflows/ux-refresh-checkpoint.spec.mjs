@@ -102,6 +102,25 @@ test('phone home and Babs carets fit without horizontal overflow',async({page})=
  await expect.poll(()=>dialog.evaluate(el=>getComputedStyle(el).opacity)).toBe('1');
  await expect.poll(()=>dialog.locator('[data-story-image][data-active="true"]').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);
  await page.screenshot({path:test.info().outputPath('babs-phone.png')});
+ // System foreground preserves all three menu bars when forced colors removes
+ // decorative backgrounds. The native button still owns opening and Escape.
+ await dialog.getByRole('button',{name:'Close opponent story',exact:true}).click();await expect(dialog).not.toBeVisible();
+ await page.emulateMedia({forcedColors:'active'});expect(await page.evaluate(()=>matchMedia('(forced-colors:active)').matches)).toBe(true);
+ const forcedTrigger=page.getByRole('button',{name:'Open navigation menu',exact:true});await expect(forcedTrigger).toBeVisible();await expect(forcedTrigger).toHaveAttribute('aria-expanded','false');
+ const forcedMenu=await forcedTrigger.evaluate(el=>{const backgroundChain=[];for(let ancestor=el;ancestor;ancestor=ancestor.parentElement){const style=getComputedStyle(ancestor);backgroundChain.push({tag:ancestor.tagName,className:ancestor.className,background:style.backgroundColor,image:style.backgroundImage,filter:style.filter,backdrop:style.backdropFilter,opacity:style.opacity});const channels=style.backgroundColor.match(/[\d.]+/g)?.map(Number);if(channels&&(channels.length===3||channels[3]===1))break;}return{button:el.getBoundingClientRect().toJSON(),backgroundChain,bars:[...el.querySelectorAll('.shell-header-menu-icon > span')].map(bar=>({rect:bar.getBoundingClientRect().toJSON(),background:getComputedStyle(bar).backgroundColor,adjust:getComputedStyle(bar).forcedColorAdjust,visibility:getComputedStyle(bar).visibility,display:getComputedStyle(bar).display}))};});
+ const luminance=color=>{const channels=color.match(/[\d.]+/g).map(Number);expect(channels.length).toBeGreaterThanOrEqual(3);if(channels.length===4)expect(channels[3]).toBe(1);const linear=channels.slice(0,3).map(value=>{const c=value/255;return c<=.04045?c/12.92:((c+.055)/1.055)**2.4;});return linear[0]*.2126+linear[1]*.7152+linear[2]*.0722;};
+ const forcedMetrics=test.info().outputPath('mobile-menu-forced-colors.json');await writeFile(forcedMetrics,JSON.stringify(forcedMenu,null,2),{mode:0o600});await test.info().attach('forced colors menu bars',{path:forcedMetrics,contentType:'application/json'});
+ for(const ancestor of forcedMenu.backgroundChain){expect(ancestor.image).toBe('none');expect(ancestor.filter).toBe('none');expect(ancestor.backdrop).toBe('none');expect(ancestor.opacity).toBe('1');const channels=ancestor.background.match(/[\d.]+/g).map(Number);if(channels.length===4)expect([0,1]).toContain(channels[3]);}
+ const backgroundLuminance=luminance(forcedMenu.backgroundChain.at(-1).background);forcedMenu.contrasts=forcedMenu.bars.map(bar=>{const levels=[backgroundLuminance,luminance(bar.background)].sort((a,b)=>a-b);return(levels[1]+.05)/(levels[0]+.05);});
+ await writeFile(forcedMetrics,JSON.stringify(forcedMenu,null,2),{mode:0o600});
+ expect(forcedMenu.button.width).toBeGreaterThanOrEqual(44);expect(forcedMenu.button.height).toBeGreaterThanOrEqual(44);expect(forcedMenu.bars).toHaveLength(3);
+ for(const [index,bar] of forcedMenu.bars.entries()){expect(bar.display).not.toBe('none');expect(bar.visibility).toBe('visible');expect(bar.rect.width).toBeGreaterThan(0);expect(bar.rect.height).toBe(2);expect(bar.adjust).toBe('none');expect(forcedMenu.contrasts[index]).toBeGreaterThanOrEqual(3);expect(bar.rect.left).toBeGreaterThanOrEqual(forcedMenu.button.left);expect(bar.rect.right).toBeLessThanOrEqual(forcedMenu.button.right);}
+ const closedImage=test.info().outputPath('mobile-menu-forced-colors-closed.png');await page.screenshot({path:closedImage});await test.info().attach('forced colors closed menu',{path:closedImage,contentType:'image/png'});
+ await forcedTrigger.click();await expect(menu).toHaveAttribute('aria-hidden','false');await expect(page.getByRole('button',{name:'Close navigation menu',exact:true})).toHaveAttribute('aria-expanded','true');
+ await expect.poll(()=>menu.evaluate(el=>el.getAnimations().filter(a=>a.playState==='running').length)).toBe(0);await expect.poll(()=>menu.evaluate(el=>getComputedStyle(el).opacity)).toBe('1');
+ const openImage=test.info().outputPath('mobile-menu-forced-colors-open.png');await page.screenshot({path:openImage});await test.info().attach('forced colors open menu',{path:openImage,contentType:'image/png'});
+ await menu.getByRole('button',{name:'Scenarios',exact:true}).focus();await page.keyboard.press('Escape');await expect(menu).toHaveAttribute('aria-hidden','true');await expect(forcedTrigger).toBeFocused();await expect(menu.getByRole('button',{name:'Scenarios',exact:true,includeHidden:true})).toHaveAttribute('tabindex','-1');
+ await page.emulateMedia({forcedColors:'none'});
 });
 
 test('Friend invite stays open after player copy and Players shares viewer intent',async({page,browser})=>{
