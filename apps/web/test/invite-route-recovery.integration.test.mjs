@@ -46,7 +46,7 @@ function fixture({staleInvite=false}={}) {
   };
   const diagnostics=createIssueDiagnostics({schedule:()=>1,environment:()=>({})});
   const destinationRecovery=createDestinationRecovery({setTimer:()=>null,clearTimer(){}});
-  const context=vm.createContext({structuredClone,createHomeSectionReads,createDestinationRouteOwner,destinationReadScope,destinationLiveGameId,destinationRecovery,syncDestinationNotice(){},createAccountContinuationOwner,cancelPendingBoardContextReplay(){},pendingBoardContextReplay:null,
+  const context=vm.createContext({document:{activeElement:null},structuredClone,createHomeSectionReads,createDestinationRouteOwner,destinationReadScope,destinationLiveGameId,destinationRecovery,syncDestinationNotice(){},createAccountContinuationOwner,cancelPendingBoardContextReplay(){},pendingBoardContextReplay:null,
     expandedViewerGames:new Set(),account:{snapshot:()=>({generation})},transport:owner,currentRoute:parseRouteFromHash('#/invite/first'),
     window:{location:{hash:'#/invite/first',get href(){return 'https://local.test/'+this.hash;}},addEventListener:(name,fn)=>events[name]=fn,history:{state:null,replaceState(state,_title,hash){this.state=structuredClone(state);if(hash!==undefined)context.window.location.hash=hash;}}},parseRouteFromHash,buildHashForRoute,FLYOUT_KEYS,URL,URLSearchParams,hydrateRoute:createRouteHydration(),
     appEl:{querySelectorAll:()=>[{classList:{add:noop}}],addEventListener:(_name,fn)=>clicks.push(fn)},

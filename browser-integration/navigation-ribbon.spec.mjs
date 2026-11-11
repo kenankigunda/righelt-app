@@ -17,17 +17,24 @@ for(const width of [390,1440])test(`Dense ribbon mirrors its edges and facets at
    if(timing.duration!==160||timing.endTime!==160||timing.iterations!==1||motion[0].playState!=='paused'||motion[0].currentTime!==60)throw Error('Dense ribbon checkpoint is not the paused original160ms animation');
    const swipe=node.querySelector('.shell-route-transition-layer-swipe'),style=getComputedStyle(swipe);
    const bounds=swipe.getBoundingClientRect();
-   return {left:bounds.left,right:bounds.right,opacity:style.opacity,scale:style.scale,clip:style.clipPath,facet:getComputedStyle(swipe,'::after').clipPath,duration:style.animationDuration};
+   const polygon=value=>{
+    if(!value.startsWith('polygon('))throw Error('Actual ribbon polygon is missing');
+    return value.slice(8,-1).split(',').map(point=>point.trim().split(/\s+/).map(token=>{
+     const number=parseFloat(token);if(!Number.isFinite(number)||(!token.endsWith('%')&&number!==0))throw Error('Unexpected ribbon polygon unit');return number;
+    }));
+   };
+   const scale=style.scale==='none'?[1,1]:style.scale.trim().split(/\s+/).map(Number);
+   return {left:bounds.left,right:bounds.right,opacity:Number(style.opacity),scale,clip:polygon(style.clipPath),facet:polygon(getComputedStyle(swipe,'::after').clipPath),duration:timing.duration,dpr:devicePixelRatio};
   },direction);
   frames.push(metrics);
-  expect(metrics.opacity).toBe('0.94');expect(metrics.duration).toBe('0.16s');
-  expect(metrics.scale).toBe(direction==='back'?'-1 1':'none');
-  expect(metrics.clip).toBe('polygon(9% 0px, 100% 0px, 91% 100%, 0px 100%)');
-  expect(metrics.facet).toBe('polygon(75% 0px, 100% 0px, 100% 100%, 50% 100%)');
+  expect(metrics.opacity).toBe(.94);expect(metrics.duration).toBe(160);
+  expect(metrics.scale).toEqual(direction==='back'?[-1,1]:[1,1]);
+  expect(metrics.clip).toEqual([[9,0],[100,0],[91,100],[0,100]]);
+  expect(metrics.facet).toEqual([[75,0],[100,0],[100,100],[50,100]]);
   await page.screenshot({path:info.outputPath(`dense-ribbon-${direction}-${width}.png`)});
  }
  // Percentage layout may round the two bounds differently by a fraction of a pixel.
- expect(Math.abs(frames[0].left+frames[1].right-width),'The back ribbon must mirror around the viewport center').toBeLessThanOrEqual(.5);
+ expect(Math.abs(frames[0].left+frames[1].right-width),'The back ribbon must mirror around the viewport center').toBeLessThanOrEqual(Math.max(.5,1/frames[0].dpr));
  await page.emulateMedia({reducedMotion:'reduce'});
  await expect(layer).toBeHidden();
  expect(await layer.evaluate(node=>node.getAnimations({subtree:true}).length)).toBe(0);

@@ -1,4 +1,5 @@
-import { createDestructionSoundTracker, playStoneCrack } from './destruction-sound.js';
+import {createPaperAudio} from './paper-audio.js';
+import { createDestructionSoundTracker, playStoneCrack, STONE_CRACK_DURATION } from './destruction-sound.js';
 import { swipeProgress } from './navigation-motion.js';
 import { getGameResult } from './game-result.js';
 import { resultSound } from './result-presentation.js';
@@ -21,6 +22,7 @@ export const createGameSound = ({
   getIdentityId = () => null,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
+  paperOptions = {},
 } = {}) => {
   let enabled = true, audio, reminderTimer = null, pendingIncoming = false;
   const destructionSounds = createDestructionSoundTracker();
@@ -28,9 +30,10 @@ export const createGameSound = ({
   const unseenGames=new Set();
   const displayedMoves=new Set();
   const opponentCueTimers = new Set();
-  let nextOpponentCueAt = 0;
+  let nextOpponentCueAt = 0,paperPriorityUntil = 0;
   const sequences = new Map(), localCommands = new Set(), localStates = new Map();
   const active = () => !hidden() && focused();
+  const paperAudio=createPaperAudio({...paperOptions,getAudio:()=>audio,enabled:()=>enabled,active,incomingPending:()=>pendingIncoming||unseenGames.size>0||opponentCueTimers.size>0||Boolean(audio&&audio.currentTime<paperPriorityUntil)});
   const cue = (state, previous, fallback='move', confirmed=true) => confirmed && state?.outcome?.status && state.outcome.status !== 'ongoing' ? 'result' : previous && (previous.sideToMove !== state?.sideToMove || previous.turnIndex !== state?.turnIndex) ? 'turn' : fallback;
   try { enabled = storage?.getItem(SOUND_KEY) !== 'false'; } catch {}
   const cancelPreview = () => {}; // Hover never schedules audio. Retained for interaction reset callers.
@@ -44,14 +47,16 @@ export const createGameSound = ({
   const play = (kind, {duration: transitionDuration} = {}) => {
     if (kind === 'preview-hover' || kind === 'preview-leave') return false;
     if (!enabled || (kind !== 'incoming' && !active()) || !audio || audio.state !== 'running') return false;
+    paperAudio.interrupt();
     const palette = {select:[1050,.018,.045],preview:[1800,.003,.10],page:[1400,.004,.16],'page-back':[1400,.004,.16],flyout:[970,.012,.12],'flyout-back':[970,.012,.12],history:[1400,.004,.10],'history-back':[1400,.004,.10],cancel:[650,.012,.045],move:[820,.045,.075],capture:[510,.038,.105],turn:[1200,.024,.065],result:[560,.032,.16],enter:[720,.020,.09],leave:[520,.018,.09],intro:[970,.016,.08],'intro-back':[970,.016,.08],incoming:[460,.06,.22]};
     const [frequency, volume, cueDuration] = palette[kind] || palette.select;
     const duration = (kind === "enter" || kind === "leave") && Number.isFinite(transitionDuration) ? Math.max(.04, Math.min(1, transitionDuration)) : cueDuration;
     try {
       const t = audio.currentTime;
-      if (kind === 'destruction') {playStoneCrack(audio);return true;}
+      if (kind === 'destruction') {paperPriorityUntil=Math.max(paperPriorityUntil,t+STONE_CRACK_DURATION);playStoneCrack(audio);return true;}
       if (['result-victory','result-defeat','result-draw'].includes(kind)) {
         const notes = kind === 'result-victory' ? [560,700,840] : kind === 'result-defeat' ? [420,360] : [520,520];
+        paperPriorityUntil=Math.max(paperPriorityUntil,t+(notes.length-1)*.1+.17);
         for (const [index,frequency] of notes.entries()) {
           const oscillator=audio.createOscillator(),envelope=audio.createGain(),start=t+index*.1;
           oscillator.type='sine';oscillator.frequency.value=frequency;
@@ -60,6 +65,7 @@ export const createGameSound = ({
         }
         return true;
       }
+      paperPriorityUntil=Math.max(paperPriorityUntil,t+(kind==='incoming'?.4:duration));
       if (kind === 'enter' || kind === 'leave') {
         // A breathy noise sweep follows the swipe without a pitched note.
         const up = kind === 'enter';
@@ -108,7 +114,7 @@ export const createGameSound = ({
     },INCOMING_REMINDER_MS);
   };
   const incoming = (gameId='legacy') => {
-    unseenGames.add(gameId);
+    unseenGames.add(gameId);paperAudio.interrupt();
     if(!enabled){pendingIncoming=true;return false;}
     // Several opponent actions form one outstanding reminder, never overlapping loops.
     if(pendingIncoming)return false;
@@ -117,6 +123,7 @@ export const createGameSound = ({
   };
   const opponentCue = kind => {
     if (!enabled || !active() || !audio || audio.state !== 'running') return false;
+    paperAudio.interrupt();
     const now = Date.now(), delay = Math.max(0, nextOpponentCueAt - now);
     nextOpponentCueAt = now + delay + OPPONENT_CUE_SPACING_MS;
     if (delay === 0) return play(kind);
@@ -126,10 +133,11 @@ export const createGameSound = ({
   };
   return {
     enabled:()=>enabled, gesture, play, cancelPreview,
-    activityChanged(){cancelPreview();if(!active())clearOpponentCues();},
-    toggle(){enabled=!enabled;cancelPreview();if(reminderTimer!==null)clearTimer(reminderTimer);reminderTimer=null;clearOpponentCues();try{storage?.setItem(SOUND_KEY,String(enabled));}catch{} if(enabled){gesture();scheduleReminder();}else void audio?.suspend().catch(()=>{});return enabled;},
-    hide(){cancelPreview();clearOpponentCues();},
-    leaveGame(){cancelPreview();clearOpponentCues();if(unseenGames.size)incoming(unseenGames.values().next().value);},
+    preparePaper:paperAudio.prepare,paper:paperAudio.play,cancelPaper:paperAudio.cancel,disposePaper:paperAudio.dispose,
+    activityChanged(){cancelPreview();if(!active()){clearOpponentCues();paperAudio.cancel();}},
+    toggle(){enabled=!enabled;paperAudio.cancel();cancelPreview();if(reminderTimer!==null)clearTimer(reminderTimer);reminderTimer=null;clearOpponentCues();try{storage?.setItem(SOUND_KEY,String(enabled));}catch{} if(enabled){gesture();scheduleReminder();}else void audio?.suspend().catch(()=>{});return enabled;},
+    hide(){cancelPreview();clearOpponentCues();paperAudio.cancel();},
+    leaveGame(){paperAudio.cancel();cancelPreview();clearOpponentCues();if(unseenGames.size)incoming(unseenGames.values().next().value);},
     interaction({kind,key}){
       if(!active()){cancelPreview();return;}
       if(kind==='preview-hover' || kind==='preview-leave')return;
@@ -162,7 +170,7 @@ export const createGameSound = ({
       if (finished && !fresh.includes(lastMove)) played = opponentCue(resultSound(getGameResult(game, getIdentityId()))) || played;
       return played;
     },
-    resetUpdates(){unseenGames.clear();clearIncoming();clearOpponentCues();},
+    resetUpdates(){paperAudio.dispose();unseenGames.clear();clearIncoming();clearOpponentCues();},
     viewing({gameId,live=false,playbackFinished=true}={}){
       if(live&&active()&&playbackFinished){unseenGames.delete(gameId);if(!unseenGames.size)clearIncoming();}
       else if(!live&&unseenGames.has(gameId))incoming(gameId);

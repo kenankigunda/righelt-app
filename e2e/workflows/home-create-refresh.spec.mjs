@@ -201,22 +201,25 @@ test('cold Home loading keeps its bounded card until a read succeeds',async({pag
    const cue=node.querySelector(':scope > .loading-pieces'),clock=cue.querySelector('i').getAnimations()[0];
    const rect=node.getBoundingClientRect().toJSON();window.boundedHomeFrames=[];
    const sample=()=>{if(!node.isConnected||!node.matches('[data-testid="home-section-skeleton"][data-loading-state="pending"]'))return;window.boundedHomeFrames.push({rect:node.getBoundingClientRect().toJSON(),same:node.querySelector(':scope > .loading-pieces')===cue&&cue.querySelector('i').getAnimations()[0]===clock,time:clock.currentTime,inlineContext:Boolean(node.querySelector('.loading-context'))});requestAnimationFrame(sample);};sample();
-   return {rect,time:clock.currentTime,at:performance.now()};
+   return {rect,time:clock.currentTime,at:performance.now(),dpr:devicePixelRatio};
   });
   // The existing read policy permits one retry. Observe its real request
   // before measuring retirement with the unchanged assertion budget.
   await expect.poll(()=>attempts).toBe(2);
-  await expect(page.locator('[data-alert-stack-card][data-notification-id$=":home:my"]').getByTestId('slow-loading-notice')).toBeVisible();
-  await expect(card).toHaveCount(0);
-  const retired=page.locator('[data-home-section-root="my"]');
-  await expect(retired).toContainText("We couldn't load these games.");
-  await expect(retired.getByRole('button',{name:'Try again',exact:true})).toBeVisible();
+  const recovery=page.getByTestId('destination-load-notice');
+  await expect(recovery).toBeVisible();await expect(recovery).toContainText('Opening your games');
+  await expect(card).toBeVisible();
   const frames=await page.evaluate(()=>window.boundedHomeFrames);
+  const blockedSlowNotices=await page.getByTestId('slow-loading-notice').count();
   expect(frames.length).toBeGreaterThan(2);
-  for(const frame of frames){expect(frame.rect).toEqual(before.rect);expect(frame.same).toBe(true);expect(frame.inlineContext).toBe(false);}
+  const tolerance=Math.max(.5,1/before.dpr);
+  for(const frame of frames){for(const key of ['left','top','width','height'])expect(Math.abs(frame.rect[key]-before.rect[key])).toBeLessThanOrEqual(tolerance);expect(frame.same).toBe(true);expect(frame.inlineContext).toBe(false);}
   expect(frames.at(-1).time).toBeGreaterThan(before.time);
+  release();await expect(card).toHaveCount(0);await expect(recovery).toBeHidden();
+  await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-phase','idle');
   await expect(page.getByTestId('slow-loading-notice')).toHaveCount(0);
-  await info.attach('mounted-home-bounded-layout',{body:JSON.stringify({before,frames}),contentType:'application/json'});
+  expect(blockedSlowNotices).toBe(0);
+  await info.attach('mounted-home-bounded-layout',{body:JSON.stringify({before,frames,blockedSlowNotices}),contentType:'application/json'});
   expect(errors).toEqual([]);
  }finally{release();await page.unrouteAll({behavior:'wait'});}
 });

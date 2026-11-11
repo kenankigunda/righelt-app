@@ -260,6 +260,7 @@ export function createHomeSectionReads({state, getHomeSection, setHomeSection, g
     if(adapter)adapter.assertCurrent();else assertCurrentRouteRead(read);
     const publishedSection = {
       ...nextSection,
+      error: null,
       visiblePageSize,
       visibleColumnCount,
       page: normalizedPage,

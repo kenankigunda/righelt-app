@@ -1,7 +1,7 @@
 // Own one deferred visit restoration with live account and destination authority.
 export const createNavigationVisitOwner = getDependencies => {
 const restore = () => {
-  const {state,account,window,appEl,CSS,navigationHistory}=getDependencies();
+  const {state,account,window,appEl,CSS,navigationHistory,getGamePanel}=getDependencies();
   const position = state.pendingRoutePosition;
   if (!position) return;
   if (position.generation !== account.snapshot().generation) { state.pendingRoutePosition = null; return; }
@@ -10,10 +10,14 @@ const restore = () => {
   if(position.focusOrigin && active?.isConnected && active!==doc?.body && active!==position.focusOrigin){state.pendingRoutePosition=null;return;}
   state.pendingRoutePosition = null;
   window.scrollTo({ top: position.y ?? 0, behavior: 'instant' });
-  const target = state.currentRoute.name === 'home'
-    ? (position.focusGameId ? appEl.querySelector(`.mini-board-card-link-surface[data-game-id="${CSS.escape(position.focusGameId)}"]`) : null) ?? appEl.querySelector('.shell-header-title-link')
-    : appEl.querySelector('[data-shell-panel="board"] .board-heading, .board-heading');
-  if (target) { if (!target.matches('a, button, [tabindex]')) target.tabIndex = -1; target.focus({ preventScroll: true }); }
+  const panel=state.currentRoute.name==='game'?getGamePanel(state.currentRoute):null;
+  const panelSelector=panel==='history'?'[data-game-panel="history"] h2':panel==='players'?'[data-game-panel="join"] h2':'[data-shell-panel="board"] .board-heading, .board-heading';
+  const available=target=>target?.isConnected!==false && !target?.closest?.('[inert],[hidden],[aria-hidden="true"]');
+  const selectedTarget=state.currentRoute.name==='home'
+    ? position.focusGameId ? appEl.querySelector(`.mini-board-card-link-surface[data-game-id="${CSS.escape(position.focusGameId)}"]`) : null
+    : appEl.querySelector(panelSelector);
+  const target=selectedTarget&&available(selectedTarget)?selectedTarget:appEl.querySelector('.shell-header-title-link');
+  if (target && available(target)) { if (!target.matches('a, button, [tabindex]')) target.tabIndex = -1; target.focus({ preventScroll: true }); }
   navigationHistory.save();
 };
   const pop = event => {

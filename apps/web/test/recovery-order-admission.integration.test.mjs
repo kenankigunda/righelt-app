@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import {mountRecoverySpace,syncRecoverySpace} from '../shell/recovery-space.js';
 import {createBoardContextLayout} from '../shell/board-context-layout.js';
+import {createNotificationPaper} from '../shell/notification-paper.js';
 const events=()=>{const map=new Map();return {addEventListener(k,f){if(!map.has(k))map.set(k,new Set());map.get(k).add(f);},removeEventListener(k,f){map.get(k)?.delete(f);},emit(k){for(const f of map.get(k)??[])f();},count(){return [...map.values()].reduce((n,s)=>n+s.size,0);}};};
 function fixture(){
  const jobs=new Map(),observers=[];let serial=0,writes=0,anchorReads=0,bottom=68;
@@ -16,7 +17,7 @@ function fixture(){
  const frame={style:{getPropertyValue:k=>reserve.get(k)||'',setProperty:(k,v)=>reserve.set(k,v),removeProperty:k=>reserve.delete(k)},querySelector:()=>({getBoundingClientRect:()=>({top:90+(parseFloat(reserve.get('--board-context-reserve'))||0)})})};
  const anchor={getBoundingClientRect(){anchorReads++;return {top:parseFloat(values.get('--recovery-space-top'))||58,width:366};}};
  const app={dataset:{shellLayoutMode:'narrow'},style:{getPropertyValue:k=>values.get(k)||'',setProperty(k,v){writes++;values.set(k,v);},removeProperty:k=>values.delete(k)},querySelector:k=>k==='.shell-header'?header:k==='[data-game-shell-root]'?frame:anchor};
- const doc={...events(),defaultView:win,fonts,getElementById:()=>app,querySelectorAll:()=>[],body:{append(){}},createElement:()=>({style:{},setAttribute(){},getBoundingClientRect:()=>({height:180}),remove(){}})};
+ const doc={...events(),defaultView:win,fonts,getElementById:id=>id==='app'?app:null,querySelectorAll:()=>[],body:{append(){}},createElement:()=>({style:{},setAttribute(){},getBoundingClientRect:()=>({height:180}),remove(){}})};
  const dispose=mountRecoverySpace(app,{window:win,document:doc}),layout=createBoardContextLayout(doc);
  const flush=()=>{const batch=[...jobs.values()];jobs.clear();for(const fn of batch)fn();};
  return {win,doc,app,viewport,fonts,layout,dispose,jobs,observers,values,frame,anchorReads:()=>anchorReads,writes:()=>writes,flush,setBottom:n=>{bottom=n;},replaceHeader(){header={getBoundingClientRect:()=>({bottom})};return header;},reserve:()=>reserve.get('--board-context-reserve'),close(){layout.destroy();dispose();}};
@@ -52,10 +53,11 @@ test('actual committed snapshot admits the existing header owner before context 
  const start=source.indexOf('const syncRenderedMarkupSnapshot ='),end=source.indexOf('const reconcileMiniBoardPreviews =',start);
  assert(start>=0&&end>start);
  const f=fixture(),calls=[];
- const context={appEl:f.app,HTMLElement:class{},syncRecoverySpace(app){calls.push('recovery');syncRecoverySpace(app);},boardContextLayout:{sync(){calls.push('context');f.layout.sync();}},renderFlyouts:()=>'',getRouteRenderKey:()=>'',getBaseRouteRenderKey:()=>'',getRouteTransitionPhaseKey:()=>''};
+ const notificationPaper=createNotificationPaper({document:f.doc,scope:()=> 'fixture'});
+ const context={notificationPaper,appEl:f.app,HTMLElement:class{},syncRecoverySpace(app){calls.push('recovery');syncRecoverySpace(app);},boardContextLayout:{sync(){calls.push('context');f.layout.sync();}},renderFlyouts:()=>'',getRouteRenderKey:()=>'',getBaseRouteRenderKey:()=>'',getRouteTransitionPhaseKey:()=>''};
  runInNewContext('let lastRenderedMainMarkup,lastRenderedFlyoutMarkup,lastRenderedMarkup,lastRenderedRouteKey,lastRenderedBaseRouteKey,lastRenderedTransitionPhaseKey;\n'+source.slice(start,end)+'\nglobalThis.commit=syncRenderedMarkupSnapshot;',context);
  try{
   context.commit();assert.deepEqual(calls,['recovery','context']);assert.equal(f.values.get('--recovery-space-top'),'76px');assert.equal(f.reserve(),'178px');
   f.setBottom(120);f.replaceHeader();calls.length=0;context.commit();assert.deepEqual(calls,['recovery','context']);assert.equal(f.reserve(),'230px');
- }finally{f.close();}
+ }finally{notificationPaper.retire();f.close();}
 });
