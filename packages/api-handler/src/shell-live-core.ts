@@ -1,5 +1,6 @@
 import { LIVE_HISTORY } from "../../shared-types/src/sync-protocol";
 import { boundedEngineOperation } from "../../game-engine/src/computation-guard";
+import {isTerminalOutcome, type OutcomeStatus} from '../../shared-types/src/engine';
 import {CURRENT_RETREAT_SEMANTICS,archivedRetreatSemantics,type RetreatSemantics} from '../../shared-types/src/retreat-rules';
 import { computerProfileFor, type ComputerControl, type ComputerProfile, type ComputerProof } from '../../shared-types/src/computer-play';
 import { destructionRecords, removalNotices, type RemovalEvent } from "../../game-engine/src/removals";
@@ -59,6 +60,8 @@ export type MoveEntry = {
   undone?: boolean;
   undoneAt?: string | null;
   undoneByIdentityId?: string | null;
+  /** Actual accepted restoration commit, scoped to this game. Never a timestamp. */
+  undoEventSeq?: number;
   selectionSnapshot: GameState;
   snapshot: GameState;
   /** Persistent record of pieces destroyed during resolution of this move. */
@@ -120,7 +123,7 @@ export type LiveGame = {
   ownershipMode?: "legacy_guest" | "account_v1";
   computer?: ComputerControl;
   archiveStartRevision?: number;
-  lastRestoration?: { decisionId: string; at: string };
+  lastRestoration?: { decisionId: string; at: string; undoEventSeq?: number };
   id: string;
   gameplayRevision: number;
   createdAt: string;
@@ -151,6 +154,11 @@ export type LiveGame = {
 
 export type StaticGameCard = {
   id: string;
+  eventSeq: number | null;
+  gameplayRevision: number | null;
+  confirmedOutcomeStatus: OutcomeStatus | null;
+  selfPlayMode: boolean;
+  myRoles: IdentityRole[];
   createdAt: string;
   lastMoveAt: string | null;
   updatedAt: string;
@@ -814,10 +822,12 @@ export const toStaticGameCard = (
     moveCount?: number;
     previewSnapshot?: GameState | null;
     computer?: ComputerControl;
+    eventSeq?: number;
+    gameplayRevision?: number;
   },
   identityId: string,
 ): StaticGameCard => {
-  const myRole = findRoleForIdentity(
+  const myRoles = getRolesForIdentity(
     {
       ...game,
       gameplayRevision: 0,
@@ -832,9 +842,19 @@ export const toStaticGameCard = (
     },
     identityId,
   );
+  const myRole = myRoles[0] ?? 'Guest';
+  const eventSeq = Number.isSafeInteger(game.eventSeq) && game.eventSeq! >= 0 ? game.eventSeq! : null;
+  const gameplayRevision = Number.isSafeInteger(game.gameplayRevision) && game.gameplayRevision! >= 0 ? game.gameplayRevision! : null;
+  const status = game.board.state?.outcome?.status;
+  const confirmedOutcomeStatus = eventSeq !== null && gameplayRevision !== null && (status === 'ongoing' || isTerminalOutcome(status)) ? status : null;
   const canJoinAsPlayer = myRole !== "Player 1" && myRole !== "Player 2" && !game.selfPlayMode && (!game.player1 || !game.player2);
   return {
     id: game.id,
+    eventSeq,
+    gameplayRevision,
+    confirmedOutcomeStatus,
+    selfPlayMode: game.selfPlayMode === true,
+    myRoles,
     createdAt: game.createdAt,
     lastMoveAt: game.lastMoveAt,
     updatedAt: game.updatedAt,
@@ -1007,9 +1027,10 @@ const defaultNotationForAction = (action: Action) => {
   return `${action.type.toUpperCase()} ${formatCoordinate(action.from)} -> ${formatCoordinate(action.to)}`;
 };
 
-const renumberHistory = (game: LiveGame) => {
+const renumberHistory = (game: LiveGame, preservedMoves?: Set<MoveEntry>) => {
   let activeMoveCounter = 0;
   game.moves.forEach((move, index) => {
+    if (preservedMoves?.has(move)) return;
     move.index = index;
     if (!move.moveId) {
       move.moveId = nextMoveId();
@@ -1096,7 +1117,9 @@ export const applyRevertToMove = (game: LiveGame, targetMoveId: string, requeste
   }
   const targetMove = targetIndex < 0 ? archivedTarget! : game.moves[targetIndex];
   const revertedAt = now();
+  const previouslyUndone = new Set(game.moves.filter(move => move.undone === true));
   for (let index = Math.max(0, targetIndex); index < game.moves.length; index += 1) {
+    if (previouslyUndone.has(game.moves[index])) continue;
     game.moves[index].undone = true;
     game.moves[index].undoneAt = revertedAt;
     game.moves[index].undoneByIdentityId = requesterIdentityId;
@@ -1108,7 +1131,7 @@ export const applyRevertToMove = (game: LiveGame, targetMoveId: string, requeste
   game.initialSelectionAction = clone(targetMove.action);
   game.pendingRevertRequest = null;
   game.historyIndexByIdentity = {};
-  renumberHistory(game);
+  renumberHistory(game, previouslyUndone);
   rebuildTurnsFromActiveMoves(game, game.board.state);
   game.lastMoveAt = getActiveMoves(game).at(-1)?.at ?? null;
   game.updatedAt = revertedAt;

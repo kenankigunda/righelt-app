@@ -36,6 +36,7 @@ export const createFakeD1 = () => {
       has_smoke_identity: typeof hasSmoke === "number" ? hasSmoke : hasSmokeIdentity(parsed) ? 1 : 0,
       state_json: stateJson,
       event_seq: eventSeq,
+      gameplay_revision: parsed?.gameplayRevision ?? 0,
     };
   };
 
@@ -58,7 +59,9 @@ export const createFakeD1 = () => {
         (row) =>
           row.has_smoke_identity === 0 &&
           (row.player1_identity_id === identityId || row.player2_identity_id === identityId) &&
-          (JSON.parse(row.state_json).board?.state?.outcome?.status ?? "ongoing") === "ongoing",
+          (normalized.includes("outcome_status IN")
+            ? ['p1_win','p2_win','draw'].includes(JSON.parse(row.state_json).board?.state?.outcome?.status)
+            : (JSON.parse(row.state_json).board?.state?.outcome?.status ?? "ongoing") === "ongoing"),
       );
     }
     if (normalized.includes("WHERE (NOT (COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)") || normalized.includes("player1_identity_id IS NOT ?1")) {
@@ -67,7 +70,8 @@ export const createFakeD1 = () => {
         (row) =>
           row.has_smoke_identity === 0 &&
           ((row.player1_identity_id !== identityId && row.player2_identity_id !== identityId) ||
-           (JSON.parse(row.state_json).board?.state?.outcome?.status ?? "ongoing") !== "ongoing"),
+           ((JSON.parse(row.state_json).board?.state?.outcome?.status ?? "ongoing") !== "ongoing" &&
+            (!normalized.includes("outcome_status IN") || !['p1_win','p2_win','draw'].includes(JSON.parse(row.state_json).board?.state?.outcome?.status)))),
       );
     }
     return rows;

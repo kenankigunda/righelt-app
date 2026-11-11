@@ -75,6 +75,7 @@ for(const width of [320,390,768,932,933,1440])for(const scale of [100,200])test(
   // Routing disables HTTP caching. This witnesses settled reload consistency,
   // not cache-admitted first paint. The actual cache-warm E2E is separate.
   await page.reload();await page.waitForFunction(()=>window.fixtureReady&&window.currentFontAdmission?.().ready===true);await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+  await expect.poll(()=>page.evaluate(()=>{const track=document.querySelector('.game-shell-track');return Boolean(track)&&!track.getAnimations().some(animation=>animation.pending||animation.playState==='running');})).toBe(true);
   receipts.warm=await anchors(page);receipts.warmEnvelope=await page.evaluate(()=>window.fontEnvelope());sameAnchors(receipts.loaded,receipts.warm);
   const warmBudget=checkRows(receipts.warmEnvelope,receipts.coldIntrinsic,'settled reload',browserName);
   expect(budgetPixelPrecision(receipts.warm.slot.height)).toBeLessThanOrEqual(budgetPixelPrecision(warmBudget.slotMax));

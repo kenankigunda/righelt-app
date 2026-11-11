@@ -5,6 +5,7 @@
 </head><body><div id="app" data-shell-route="game"><header class="shell-header"><h1>Recovery alert</h1><div class="shell-header-status" data-shell-alert-zone="active"><div id="shell-game-alerts"></div></div></header>
 <main><div class="board-wrap fixture-board" data-testid="game-board-wrap"><div class="board" data-testid="game-board"></div><div class="reconnect-background" aria-hidden="true"></div><svg class="overlay-lines" aria-hidden="true"><path d="M0 0L560 560" stroke="red"/></svg></div></main><footer>Players · Board · History</footer></div>
 <script type="module">
+import {renderRecoveryActions} from '/apps/web/shell/game-alert-presentation.js';
 import {icon} from "/apps/web/shell/ui.js";
 import {renderGameAlertCard} from "/apps/web/shell/game-alert.js";
 import {issueDiagnostics} from "/apps/web/shell/issue-diagnostics.js";
@@ -14,13 +15,8 @@ import {mountLoadingFeedback} from "/apps/web/shell/loading.js";
 const wrap=document.querySelector('.board-wrap');
 wrap.querySelector('.board').innerHTML=Array.from({length:25},(_,i)=>`<button class="cell" aria-label="Square ${i+1}">●</button>`).join('');
 const incident=issueDiagnostics.capture("recovery:fixture",{operation:"move_recovery",stage:"command_confirmation",gameId:"fixture",action:{type:"rush",actorId:"U2-1"}});
-// Exercise the actual app action templates without mounting its full shell.
-const appSource=await(await fetch('/apps/web/shell/app.js')).text();
-const templateStart=appSource.indexOf('action: !recoveryNeedsAction',appSource.indexOf('const getGameAlertItems'))+'action: '.length;
-const templateEnd=appSource.indexOf(',\n      }),',templateStart);
-if(templateStart<20||templateEnd<templateStart)throw Error('Recovery action template missing');
-const renderActions=new Function('game','dismissed','escapeHtml','icon','recoveryNeedsAction',`return (${appSource.slice(templateStart,templateEnd)});`);
-const recoveryActions=(game,dismissed=false)=>renderActions({id:'fixture',...game},dismissed,value=>String(value),icon,needsRecoveryAction(game));
+// Execute the same production recovery presenter used by the app.
+const recoveryActions=(game,dismissed=false)=>renderRecoveryActions({game:{id:'fixture',...game},dismissed,escapeHtml:String,recoveryNeedsAction:needsRecoveryAction(game)});
 const button=(label,action)=>`<button class="secondary mini-button" data-action="${action}">${icon('close')}${label}</button>`;
 const modes={
  quiet:{game:{recovering:true,recoveryStartedAt:Date.now()}},

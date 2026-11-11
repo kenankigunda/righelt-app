@@ -72,6 +72,8 @@ test("accepting undo preserves each selected retained entry until explicit retur
       approved=await (await guest.page.request.get(gameUrl)).json();
       return !approved.game.pendingRevertRequest && approved.game.moves.every(move=>move.undone);
     }).toBe(true);
+    const undoEventSeq=approved.game.lastRestoration?.undoEventSeq;
+    expect(Number.isSafeInteger(undoEventSeq)&&undoEventSeq>0).toBe(true);
     const liveState = approved.game.board.state;
     const expectedBoard = Array.from({ length: liveState.boardSize ** 2 }, (_, index) => {
       const row = Math.floor(index / liveState.boardSize), col = index % liveState.boardSize;
@@ -80,8 +82,12 @@ test("accepting undo preserves each selected retained entry until explicit retur
 
     for (const page of [owner.page, guest.page]) {
       await expect(page.getByTestId("history-return-live")).toBeVisible();
-      await page.locator('[data-action="toggle-undone-group"]').first().click();
-      const selected = page.locator(`[data-testid="history-move-item"][data-move-id="${selectedId}"]`);
+      const group=page.locator(`[data-undo-boundary="accepted"][data-undo-event-seq="${undoEventSeq}"]`);
+      // Keeping the selected undone entry automatically reveals its operation.
+      // A toggle here would collapse the very selection this journey preserves.
+      await expect(group.locator(':scope > [data-action="toggle-undone-group"]')).toHaveAttribute('aria-expanded','true');
+      const selected = group.locator(`[data-testid="history-move-item"][data-move-id="${selectedId}"]`);
+      await expect(selected).toBeVisible();
       await expect(selected).toHaveClass(/is-selected/);
       await expect(selected).toHaveClass(/is-undone/);
       await page.getByTestId("history-return-live").click();

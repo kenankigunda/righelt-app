@@ -73,7 +73,7 @@ body {
 .shell-route-transition-layer {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: var(--shell-layer-transition);
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
@@ -99,12 +99,15 @@ body {
 .shell-route-transition-layer-swipe {
   top: -10%;
   bottom: -10%;
-  left: -38%;
   width: 176%;
   inset-inline: auto;
-  background: none;
+  /* Keep the oversized ribbon centered before mirroring for back travel. */
+  left: -38%;
+  background: var(--player-p1);
+  opacity: .94;
+  clip-path: polygon(9% 0,100% 0,91% 100%,0 100%);
   box-shadow: none;
-  transform: translateX(-74%) skewX(-14deg);
+  transform: translateX(-110%);
 }
 
 .shell-route-transition-layer-swipe::before,
@@ -112,12 +115,12 @@ body {
   content: "";
   position: absolute;
   inset: 0;
-  clip-path: polygon(8% 0,55% 0,47% 100%,0 100%);
-  background: color-mix(in srgb,var(--player-p1) 24%,transparent);
+  clip-path: polygon(27% 0,42% 0,17% 100%,2% 100%);
+  background: var(--player-p1);
 }
 .shell-route-transition-layer-swipe::after {
-  clip-path: polygon(55% 0,100% 0,92% 100%,47% 100%);
-  background: color-mix(in srgb,var(--player-p2) 24%,transparent);
+  clip-path: polygon(75% 0,100% 0,100% 100%,50% 100%);
+  background: var(--player-p2);
 }
 
 .shell-route-transition-layer[data-phase="covering"] .shell-route-transition-layer-backdrop {
@@ -138,12 +141,12 @@ body {
 }
 
 .shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-swipe {
-  transform: translateX(10%) skewX(-12deg);
+  transform: translateX(0);
 }
 
 .shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-swipe::before,
 .shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-swipe::after {
-  animation: shell-held-facet-pulse 2.4s ease-in-out infinite;
+  animation: none;
 }
 @keyframes shell-held-facet-pulse { 0%,100% { opacity:.55; } 50% { opacity:1; } }
 [data-loading-hidden] .shell-route-transition-layer-swipe::before,
@@ -187,23 +190,23 @@ body {
 
 @keyframes shell-game-entry-swipe-in {
   0% {
-    opacity: 0.3;
-    transform: translateX(-74%) skewX(-14deg);
+    opacity: .94;
+    transform: translateX(-110%);
   }
   100% {
-    opacity: 0.38;
-    transform: translateX(10%) skewX(-12deg);
+    opacity: .94;
+    transform: translateX(0);
   }
 }
 
 @keyframes shell-game-entry-swipe-out {
   0% {
-    opacity: 0.38;
-    transform: translateX(10%) skewX(-12deg);
+    opacity: .94;
+    transform: translateX(0);
   }
   100% {
-    opacity: 0.18;
-    transform: translateX(84%) skewX(-10deg);
+    opacity: .94;
+    transform: translateX(110%);
   }
 }
 
@@ -285,7 +288,7 @@ body {
   display: flex;
   align-items: flex-start;
   transform: translateX(-50%);
-  z-index: 2;
+  z-index: var(--shell-layer-notice);
 }
 
 .shell-header-status[data-shell-alert-zone="idle"] {
@@ -796,7 +799,7 @@ button.secondary:disabled {
   animation: shell-game-alert-reveal 180ms ease;
   overflow: visible;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas: "copy disclosure" "actions actions" "details details";
   grid-template-rows: auto auto minmax(0, 1fr);
   gap: 12px 8px;
@@ -893,9 +896,18 @@ button.secondary:disabled {
   grid-template-rows: auto;
 }
 
+/* Keep the labelled disclosure from narrowing the message at small widths.
+   This layout is identical before and after expansion, preserving its hit target. */
+@container game-alert (width < 480px) {
+  .shell-game-alert:has(.shell-game-alert-actions):has(.issue-diagnostic) {
+    grid-template-areas: "copy copy" "actions disclosure" "details details";
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+}
+
 @container game-alert (min-width: 480px) {
   .shell-game-alert:has(.shell-game-alert-actions) {
-    grid-template-columns: minmax(0, 1fr) auto 44px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     grid-template-areas: "copy actions disclosure" "details details details";
     grid-template-rows: auto minmax(0, 1fr);
   }
@@ -1654,6 +1666,7 @@ button.button-release-bounce,
 
 .mini-board-preview-status {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .row {
@@ -1836,7 +1849,7 @@ textarea:focus-visible {
   align-items: stretch;
   justify-content: flex-end;
   gap: 0;
-  z-index: 10;
+  z-index: var(--shell-layer-utility-backdrop);
   pointer-events: none;
 }
 
@@ -1857,7 +1870,7 @@ textarea:focus-visible {
   transition:
     transform 180ms ease,
     opacity 180ms ease;
-  z-index: 11;
+  z-index: var(--shell-layer-utility);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   will-change: transform, opacity;
@@ -2075,7 +2088,7 @@ textarea:focus-visible {
     width: auto;
     max-width: none;
     transform: none;
-    z-index: 20;
+    z-index: var(--shell-layer-notice);
     min-height: 0;
     height: auto;
     max-height: calc(100dvh - var(--shell-mobile-tabbar-height) - 1rem);
@@ -2195,6 +2208,8 @@ textarea:focus-visible {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.hover-tooltip {position:fixed;z-index:var(--shell-layer-utility);pointer-events:none;padding:5px 8px;background:var(--surface-raised);color:var(--ink);border:1px solid var(--divider);font:400 .875rem/1.4 var(--font-family);white-space:normal;overflow-wrap:anywhere;box-shadow:var(--shadow-raised);}
+@media(forced-colors:active){.hover-tooltip{background:Canvas;color:CanvasText;border-color:CanvasText;}}
 .account-dialog select { width: 100%; min-height: 44px; font: inherit; }
 
 /* Autosave feedback occupies the same inline slot as shared input actions. */
@@ -2231,15 +2246,17 @@ textarea:focus-visible {
 @keyframes reconnect-sweep { from { transform: translateX(0); } to { transform: translateX(800%); } }
 [data-loading-hidden] .reconnect-background::before,
 [data-loading-hidden] .reconnect-background::after { animation-play-state: paused; }
-.issue-diagnostic > button.issue-caret { background: transparent; color: var(--muted); box-shadow: none; border: 0; min-width: 44px; min-height: 44px; padding: 0; opacity: .6; font-size: 20px; }
+.issue-diagnostic > button.issue-caret { background: transparent; color: inherit; box-shadow: none; border: 0; min-width: 44px; min-height: 44px; padding: 6px 10px; }
 .issue-details { font-size: 13px; line-height: 1.4; }
 .issue-details pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; user-select: text; }
 .shell-game-alert .issue-diagnostic { display: contents; }
-.shell-game-alert .issue-caret { grid-area: disclosure; align-self: start; width: 44px; height: 44px; }
+.shell-game-alert .issue-caret { grid-area: disclosure; align-self: start; width: auto; min-height: 44px; }
 .shell-game-alert .issue-details { grid-area: details; min-width: 0; min-height: 0; overflow: auto; border-top: 1px solid var(--divider, var(--line)); padding-top: 12px; }
 .shell-game-alert .issue-details > p { margin: 0 0 8px; }
 .shell-game-alert .issue-details > button { min-height: 44px; margin: 0 8px 8px 0; }
-.shell-game-alert .issue-details pre { margin: 0; }
+.shell-game-alert .issue-details { display: flex; flex-direction: column; }
+.shell-game-alert .issue-details > :is(p, button) { flex: 0 0 auto; }
+.shell-game-alert .issue-details pre { margin: 0; min-height: 2.8em; flex: 1 1 auto; overflow: auto; }
 .shell-header-status:has(.issue-details) { height: auto; }
 @media (prefers-reduced-motion: reduce) {
   .board-wrap > .board, .board-wrap > .overlay-lines { transition: none; }
@@ -2275,6 +2292,12 @@ textarea:focus-visible {
 .invite-load-status > p { grid-area: 1 / 1; }
 .invite-load-status-sizing { visibility: hidden; pointer-events: none; }
 
+/* A slow destination stays readable above its static navigation cover. */
+.destination-load-notice { position:fixed; z-index:var(--shell-layer-notice); top:max(20px,env(safe-area-inset-top)); left:50%; transform:translateX(-50%); width:min(480px,calc(100% - 32px)); }
+.destination-load-notice[hidden] { display:none; }
+.destination-load-notice .shell-game-alert { margin:0; }
+.destination-load-notice .shell-game-alert-actions { flex-wrap:wrap; }
+
 .history-turn { list-style:none; margin-block: .7rem; }
 .history-turn-heading { font-weight:800; padding-block:.25rem; }
 .history-turn-heading[data-action], .history-item[data-action] { cursor:pointer; }
@@ -2290,39 +2313,39 @@ textarea:focus-visible {
 
 /* Approved compact History rail. Selection buttons are siblings, never parents
    of child move/action buttons; their stacking gives the most specific hit priority. */
-.history-turn {position:relative;isolation:isolate;margin:0;transform-origin:50% 50%;transition:transform 140ms var(--shell-game-entry-easing);}
+:is(.history-turn,.history-item-undone-group) {position:relative;isolation:isolate;margin:0;transform-origin:50% 50%;transition:transform 140ms var(--shell-game-entry-easing);}
 .history-turn-heading {min-height:44px;padding:0;display:flex;align-items:center;pointer-events:none;}
-.history-turn > .history-list-nested {margin:0 0 0 3px;padding-left:10px;gap:0;border-left:2px solid currentColor;pointer-events:none;}
-.history-list:has(> .history-turn) {gap:6px;}
-.history-turn > .history-list-nested > .history-item {position:relative;display:block;pointer-events:none;}
-.history-turn > .history-list-nested > .history-item::before {content:none;}
-.history-turn .history-move-line {min-height:44px;display:flex;align-items:center;overflow-wrap:anywhere;}
-.history-turn .history-item-info {pointer-events:none;}
-.history-turn .history-archive-select {min-height:0;}
-.app-root .history-turn button:is(.history-turn-hit,.history-move-hit).secondary {
+:is(.history-turn,.history-item-undone-group) > .history-list-nested {margin:0 0 0 3px;padding-left:10px;gap:0;border-left:2px solid currentColor;pointer-events:none;}
+.history-list:has(> :is(.history-turn,.history-item-undone-group)) {gap:6px;}
+:is(.history-turn,.history-item-undone-group) > .history-list-nested > .history-item {position:relative;display:block;pointer-events:none;}
+:is(.history-turn,.history-item-undone-group) > .history-list-nested > .history-item::before {content:none;}
+:is(.history-turn,.history-item-undone-group) .history-move-line {min-height:44px;display:flex;align-items:center;overflow-wrap:anywhere;}
+:is(.history-turn,.history-item-undone-group) .history-item-info {pointer-events:none;}
+:is(.history-turn,.history-item-undone-group) .history-archive-select {min-height:0;}
+.app-root :is(.history-turn,.history-item-undone-group) button:is(.history-turn-hit,.history-move-hit).secondary {
   position:absolute;inset:0;width:100%;height:100%;min-height:0;margin:0;padding:0;
   border:0;border-radius:0;clip-path:none;background:transparent;color:inherit;
   pointer-events:auto;transform:none!important;animation:none!important;
 }
 .history-turn-hit {z-index:0;}
 .history-move-hit {z-index:2;}
-.history-turn .history-item.is-selected {pointer-events:auto;z-index:2;cursor:default;}
-.history-turn .history-item-actions,.history-turn .history-inline-preview {position:relative;z-index:3;pointer-events:auto;}
-.history-turn:has(> .history-turn-hit:is(:active,.is-pressing)),
-.history-turn .history-item:has(> .history-move-hit:is(:active,.is-pressing)) {transform:translateY(1px) scale(.985);}
-.history-turn:has(> .history-turn-hit.button-release-bounce),
-.history-turn .history-item:has(> .history-move-hit.button-release-bounce) {animation:history-item-release 140ms var(--shell-game-entry-easing);}
-[data-hover-capability="hover"] .app-root .history-turn button:is(.history-turn-hit,.history-move-hit).secondary:hover,
-.app-root[data-hover-capability="hover"] .history-turn button:is(.history-turn-hit,.history-move-hit).secondary:hover {background:color-mix(in srgb,currentColor 5%,transparent);border:0;box-shadow:none;}
+:is(.history-turn,.history-item-undone-group) .history-item.is-selected {pointer-events:auto;z-index:2;cursor:default;}
+:is(.history-turn,.history-item-undone-group) .history-item-actions,:is(.history-turn,.history-item-undone-group) .history-inline-preview {position:relative;z-index:3;pointer-events:auto;}
+:is(.history-turn,.history-item-undone-group):has(> .history-turn-hit:is(:active,.is-pressing)),
+:is(.history-turn,.history-item-undone-group) .history-item:has(> .history-move-hit:is(:active,.is-pressing)) {transform:translateY(1px) scale(.985);}
+:is(.history-turn,.history-item-undone-group):has(> .history-turn-hit.button-release-bounce),
+:is(.history-turn,.history-item-undone-group) .history-item:has(> .history-move-hit.button-release-bounce) {animation:history-item-release 140ms var(--shell-game-entry-easing);}
+[data-hover-capability="hover"] .app-root :is(.history-turn,.history-item-undone-group) button:is(.history-turn-hit,.history-move-hit).secondary:hover,
+.app-root[data-hover-capability="hover"] :is(.history-turn,.history-item-undone-group) button:is(.history-turn-hit,.history-move-hit).secondary:hover {background:color-mix(in srgb,currentColor 5%,transparent);border:0;box-shadow:none;}
 @media(min-width:933px) and (pointer:fine) {
-  .history-turn-heading,.history-turn .history-move-line {min-height:1.5em;}
+  .history-turn-heading,:is(.history-turn,.history-item-undone-group) .history-move-line {min-height:1.5em;}
 }
 @media(prefers-reduced-motion:reduce) {
-  .history-turn {transition:none;}
-  .history-turn:has(> .history-turn-hit:is(:active,.is-pressing)),
-  .history-turn .history-item:has(> .history-move-hit:is(:active,.is-pressing)) {transform:none;}
-  .history-turn:has(> .history-turn-hit.button-release-bounce),
-  .history-turn .history-item:has(> .history-move-hit.button-release-bounce) {animation:none;}
+  :is(.history-turn,.history-item-undone-group) {transition:none;}
+  :is(.history-turn,.history-item-undone-group):has(> .history-turn-hit:is(:active,.is-pressing)),
+  :is(.history-turn,.history-item-undone-group) .history-item:has(> .history-move-hit:is(:active,.is-pressing)) {transform:none;}
+  :is(.history-turn,.history-item-undone-group):has(> .history-turn-hit.button-release-bounce),
+  :is(.history-turn,.history-item-undone-group) .history-item:has(> .history-move-hit.button-release-bounce) {animation:none;}
 }
 
-.app-root .history-turn button.history-undone-toggle.secondary {position:relative;z-index:3;pointer-events:auto;min-height:44px;border:0;border-radius:0;padding:0;background:transparent;color:inherit;font:inherit;text-align:left;}
+.app-root :is(.history-turn,.history-item-undone-group) button.history-undone-toggle.secondary {position:relative;z-index:3;pointer-events:auto;min-height:44px;border:0;border-radius:0;padding:0;background:transparent;color:inherit;font:inherit;text-align:left;}

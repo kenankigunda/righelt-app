@@ -373,3 +373,99 @@ test('archive turn snapshots are revision-fenced and a changed archive leaves th
  const request=requests.find(request=>request.url.includes('decision-snapshot'));
  assert.equal(request.body.gameplayRevision,0);assert.equal(request.body.decisionId,'m0');
 });
+
+test('read-only turn hydration preserves viewing intent and live authority',async t=>{
+ const transport=store();t.after(()=>transport.retire());const game=fixture();
+ game.moves=game.moves.map((move,index)=>({...move,turnIndex:0,turnMoveIndex:index}));
+ transport.applyLiveGameUpdate({game});const before=transport.getGameViewModel(game.id);
+ const moves=await transport.loadTurnMoves({gameId:game.id,turnIndex:0,revision:0});
+ assert.equal(moves.length,4);assert.deepEqual(transport.getGameViewModel(game.id),before);
+ transport.selectHistoryMove({gameId:game.id,moveIndex:2});const selected=transport.getGameViewModel(game.id);
+ await transport.loadTurnMoves({gameId:game.id,turnIndex:0,revision:0});
+ assert.deepEqual(transport.getGameViewModel(game.id),selected);
+});
+
+test('read-only turn hydration rejects late archive publication after revision, visit or retirement changes',async t=>{
+ for(const changed of ['revision','visit','retired']){
+  const game=fixture();game.moves=[];let current=true,release;
+  const archived={...fixture().moves[0],turnIndex:20,turnMoveIndex:0};
+  const requests=[];
+  const transport=createLiveTransportStore({storage:{getItem:()=> 'actor',setItem(){}},fetcher:async(url,options)=>{
+   requests.push({url,body:JSON.parse(options.body)});
+   if(url.includes('decision-history'))return Response.json({items:[{kind:'decision',id:archived.moveId,move:archived}],nextCursor:null});
+   return new Promise(resolve=>{release=()=>resolve(Response.json({gameId:game.id,gameplayRevision:0,move:archived}));});
+  }});t.after(()=>transport.retire());transport.applyLiveGameUpdate({game});
+  const before=transport.getGameViewModel(game.id),work=transport.loadTurnMoves({gameId:game.id,turnIndex:20,revision:0,isCurrent:()=>current});
+  const rejected=assert.rejects(work,changed==='revision'?/history_changed/:changed==='retired'?/session_changed/:/history_superseded/);
+  for(let i=0;i<100&&!release;i++)await new Promise(resolve=>setImmediate(resolve));assert.ok(release);
+  if(changed==='revision')transport.applyLiveGameUpdate({game:{...game,gameplayRevision:1}});
+  if(changed==='visit')current=false;
+  if(changed==='retired')transport.retire();
+  release();await rejected;
+  if(changed!=='retired'){
+   const after=transport.getGameViewModel(game.id);assert.equal(after.inHistoryMode,before.inHistoryMode);assert.equal(after.historyTurnIndex,before.historyTurnIndex);assert.equal(after.pendingCommandCount,before.pendingCommandCount);
+   assert.deepEqual(after.board.state,before.board.state);
+  }
+  assert.equal(requests.length,2);assert.equal(requests[1].body.gameplayRevision,0);assert.equal(requests[1].body.decisionId,archived.moveId);
+ }
+});
+
+test('read-only archived turn hydration follows only the active immutable decision lineage',async t=>{
+ const game=fixture();game.moves=[];const active={...fixture().moves[0],turnIndex:20,turnMoveIndex:0},undone={...active,moveId:'undone'};const requests=[];
+ const transport=createLiveTransportStore({storage:{getItem:()=> 'actor',setItem(){}},fetcher:async(url,options)=>{
+  const body=JSON.parse(options.body);requests.push({url,body});
+  if(url.includes('decision-history'))return Response.json({items:[{kind:'decision',id:active.moveId,move:active},{kind:'decision',id:undone.moveId,move:undone},{kind:'restoration',id:'undo-record',targetDecisionId:undone.moveId}],nextCursor:null});
+  return Response.json({gameId:game.id,gameplayRevision:0,move:body.decisionId===active.moveId?active:undone});
+ }});t.after(()=>transport.retire());transport.applyLiveGameUpdate({game});const before=transport.getGameViewModel(game.id);
+ const moves=await transport.loadTurnMoves({gameId:game.id,turnIndex:20,revision:0});assert.deepEqual(moves.map(move=>move.moveId),[active.moveId]);
+ assert.deepEqual(transport.getGameViewModel(game.id),before);assert.deepEqual(requests.filter(request=>request.url.includes('decision-snapshot')).map(request=>request.body.decisionId),[active.moveId]);
+});
+
+test('position-first History can hydrate and select a whole turn after the complete game read fails',async t=>{
+ const game=fixture();game.moves=game.moves.map((move,index)=>({...move,turnIndex:0,turnMoveIndex:index}));
+ const position={...structuredClone(game),positionOnly:true,positionHistoryPending:false};
+ position.moves=position.moves.map(({snapshot,selectionSnapshot,...summary})=>summary);
+ const requests=[];
+ const transport=createLiveTransportStore({storage:{getItem:()=> 'actor',setItem(){}},fetcher:async(url,options)=>{
+  requests.push({url,method:options.method,body:options.body?JSON.parse(options.body):null});
+  if(url.includes('/position?'))return Response.json({ok:true,protocolVersion:2,projection:'position-v1',game:position,eventSeq:1});
+  if(url.includes('/decision-snapshot')){
+   const {decisionId,gameplayRevision}=JSON.parse(options.body);
+   return Response.json({gameId:game.id,gameplayRevision,move:game.moves.find(move=>move.moveId===decisionId)});
+  }
+  if(url.includes('/decision-history'))assert.fail('Untrimmed position summaries must not require archive discovery');
+  return Response.json({error:'complete_unavailable'},{status:503});
+ }});t.after(()=>transport.retire());
+ await assert.rejects(transport.loadGame(game.id,{positionFirst:true}),error=>error.status===503);
+ const before=transport.getGameViewModel(game.id);assert.equal(before.positionOnly,true);assert.equal(before.positionError,true);
+ const moves=await transport.loadTurnMoves({gameId:game.id,turnIndex:0});
+ assert.deepEqual(moves.map(move=>move.moveId),['m0','m1','m2','m3']);
+ assert.deepEqual(moves.map(move=>move.snapshot),[snapshot(0),snapshot(1),snapshot(2),snapshot(3)]);
+ assert.deepEqual(transport.getGameViewModel(game.id),before,'read-only hydration must preserve current History intent and authority');
+ await transport.selectHistoryTurn({gameId:game.id,turnIndex:0});
+ const selected=transport.getGameViewModel(game.id);assert.equal(selected.historyTurnIndex,0);assert.equal(selected.historyLoadError,undefined);
+ assert.deepEqual(selected.historyTurnMoves.map(move=>move.moveId),['m0','m1','m2','m3']);
+ assert.equal(selected.canRecordMove,false);assert.equal(selected.canEndTurn,false);assert.equal(selected.sharedMutationsBlocked,true);
+ assert.equal(requests.filter(request=>request.url.includes('/decision-snapshot')).length,4,'explicit selection reuses exact revision snapshots');
+ assert.equal(requests.filter(request=>request.url.includes('/decision-history')).length,0);
+});
+
+test('archived whole-turn reads join every page before applying immutable restoration lineage',async t=>{
+ const game=fixture();game.moves=[];
+ const first={...fixture().moves[0],turnIndex:20,turnMoveIndex:0};
+ const second={...fixture().moves[1],turnIndex:20,turnMoveIndex:1};
+ const undone={...first,moveId:'retired-decision'};const requests=[];
+ const transport=createLiveTransportStore({storage:{getItem:()=> 'actor',setItem(){}},fetcher:async(url,options)=>{
+  const body=JSON.parse(options.body);requests.push({url,body});
+  if(url.includes('/decision-history'))return body.cursor===null
+   ?Response.json({items:[{kind:'decision',id:first.moveId,move:first},{kind:'decision',id:undone.moveId,move:undone}],nextCursor:'older-page'})
+   :Response.json({items:[{kind:'restoration',id:'accepted-undo',targetDecisionId:undone.moveId},{kind:'decision',id:second.moveId,move:second}],nextCursor:null});
+  assert.ok(url.endsWith('/decision-snapshot'));assert.equal(body.identityId,'actor');assert.equal(body.gameplayRevision,0);
+  const move=[first,second].find(move=>move.moveId===body.decisionId);assert.ok(move,'retired decisions must never hydrate');
+  return Response.json({gameId:game.id,gameplayRevision:0,move});
+ }});t.after(()=>transport.retire());transport.applyLiveGameUpdate({game});const before=transport.getGameViewModel(game.id);
+ const moves=await transport.loadTurnMoves({gameId:game.id,turnIndex:20});
+ assert.deepEqual(moves,[first,second]);assert.deepEqual(transport.getGameViewModel(game.id),before);
+ assert.deepEqual(requests.filter(request=>request.url.includes('/decision-history')).map(request=>request.body.cursor),[null,'older-page']);
+ assert.deepEqual(requests.filter(request=>request.url.includes('/decision-snapshot')).map(request=>request.body.decisionId),['m0','m1']);
+});
