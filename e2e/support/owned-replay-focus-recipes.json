@@ -88,8 +88,8 @@
   {
     "file": "apps/web/shell/app.js",
     "servedPath": "/shell/app.js",
-    "sourceSha256": "14defd0cf14e3105aa7adfd69b0b5c9fe4fadfd6cd5ef76674e7242f1237905d",
-    "outputSha256": "4bd3dcf2f8cb04785b1d47ecab6e0b9ab84811cc62a579b84e934a8bfe68d2f8",
+    "sourceSha256": "83091f1ad9b15b26fd0e33f9bb7839d8675c395c3edd4473ee96b62993119531",
+    "outputSha256": "d7d09f09aafc658f22d979b00f9db068d54ea99ee3750cb4cfad8e7fa8f8a578",
     "operations": [
       {
         "start": 2527,

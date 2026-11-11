@@ -4525,6 +4525,11 @@ appEl.addEventListener("click", async (event) => {
   const routeLink = target.closest('a[href^="#/"]');
   if (routeLink && event.button === 0 && !event.defaultPrevented && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
     navigationHistory.save();
+    if (routeLink.dataset.flyoutLink === 'home' && currentRoute.name === 'not-found' && window.location.hash === routeLink.hash) {
+      event.preventDefault();
+      navigateTo(routeLink.hash);
+      return;
+    }
     if (routeLink.dataset.flyoutLink === 'home' && currentRoute.name === 'home') {
       event.preventDefault();
       window.scrollTo({ top: 0, behavior: 'instant' });

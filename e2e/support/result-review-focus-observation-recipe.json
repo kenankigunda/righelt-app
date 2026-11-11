@@ -1,8 +1,8 @@
 {
   "version": 1,
   "modulePath": "/shell/app.js",
-  "sourceSha256": "14defd0cf14e3105aa7adfd69b0b5c9fe4fadfd6cd5ef76674e7242f1237905d",
-  "outputSha256": "d281b7a94b110bfa3f403918e4039048e335ba749b8357bf7c310c0a56f02064",
+  "sourceSha256": "83091f1ad9b15b26fd0e33f9bb7839d8675c395c3edd4473ee96b62993119531",
+  "outputSha256": "cfbcc7cb5e474862859a43a5765edc5635e1ee774608f8a85504d7584d3dd6c9",
   "prefix": "const __righeltResultReviewFocusProbe = (kind, refs = {}) => { try { globalThis.__RIGHELT_RESULT_REVIEW_FOCUS_PROBE__?.(kind, refs); } catch {} };\n",
   "operations": [
     {
@@ -42,8 +42,8 @@
     },
     {
       "label": "explicit-analysis",
-      "start": 256788,
-      "end": 256844,
+      "start": 257003,
+      "end": 257059,
       "before": "if (action === \"analysis\") { resultPresentation.clear();",
       "after": "if (action === \"analysis\") { __righeltResultReviewFocusProbe(\"analysis-entry\"); resultPresentation.clear();"
     }

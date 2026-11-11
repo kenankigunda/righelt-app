@@ -1,9 +1,9 @@
 {
   "/shell/app.js": {
     "file": "apps/web/shell/app.js",
-    "rawSourceSha256": "14defd0cf14e3105aa7adfd69b0b5c9fe4fadfd6cd5ef76674e7242f1237905d",
-    "sourceSha256": "96fc68d83bd47c0879a11f924ac2e00bb3028f3fc5fae3e70415777c25caf6b5",
-    "outputSha256": "54f4ab5e94f4acb0068ecbc1b535bf469cf6bd77da2cb4d1d33a1a4c9de8d42d",
+    "rawSourceSha256": "83091f1ad9b15b26fd0e33f9bb7839d8675c395c3edd4473ee96b62993119531",
+    "sourceSha256": "66f951486efb40c974d359e47f17a5156c6fda7051736c1f03088b64f8906ac7",
+    "outputSha256": "f41e128e6b710c6dbd3baf14c04f4c74b28396f84acfcb1fb79951efd7265675",
     "prefix": "",
     "operations": [
       {
