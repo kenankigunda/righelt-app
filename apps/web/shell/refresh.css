@@ -739,6 +739,10 @@ html[data-page-active="false"] .home-refresh button.opponent-choice::before {bac
  background:var(--marble-face),var(--surface-raised);background-position:0 0,var(--marble-face-origin);background-size:auto,var(--marble-face-scale);border-color:var(--divider);
  box-shadow:inset 0 -3px 0 var(--marble-edge),inset 0 1px 0 rgb(255 255 255 / 90%),var(--shell-elevated-shadow);
 }
+/* A miniature is a quiet marble object on the single utility glass face,
+   without the inherited warm paper card surrounding it. Keep its layout. */
+.shell-flyout[data-flyout="scenarios"] .mini-board-card-scenario {background:transparent;border-color:transparent;border-radius:0;box-shadow:none;}
+.shell-flyout[data-flyout="scenarios"] .mini-board-preview-surface {background:var(--marble-face),var(--surface-raised);background-position:0 0,var(--marble-face-origin);background-size:auto,var(--marble-face-scale);}
 .mini-board-preview-wrap .cell {--cell-floor-image:none;}
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
  :is(.shell-flyout,.account-dialog[data-presentation="flyout"])::before {background:#f4f8fa;}
@@ -769,3 +773,4 @@ html[data-page-active="false"] .home-refresh button.opponent-choice::before {bac
 [data-shell-panel="board"] .cell.target .piece-token.commander.move-ghost .piece-mineral {opacity:.22;}
 .mini-board-preview-wrap .piece-mineral {display:none;}
 @media(forced-colors:active){.piece-mineral{display:none;}.piece-body{stroke:currentColor;}}
+@media(forced-colors:active){.shell-flyout[data-flyout="scenarios"] .mini-board-preview-surface {background:Canvas;}}
