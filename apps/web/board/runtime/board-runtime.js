@@ -1,3 +1,4 @@
+import {createInlineActionAvailability} from '../inline-action-availability.js';
 import {getPushRetreatPrompt as renderPushRetreatPrompt,requiredRushContext as buildRequiredRushContext,opponentInspectionPrompt,buildHistoryRemovalEffects} from '../guidance-presentation.js';
 import {createMessageHeightController} from '../message-height.js';
 import {BOARD_PROMPT,isMappedBoardPromptHtml} from '../prompt-models.js';
@@ -357,7 +358,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     if(messageHeightController?.deferContent?.(html,()=>renderStatus())){statusDeferred=true;return;}
     markPromptMapping(html);
     if (elements.boardPreviewLabelEl && elements.boardPreviewLabelEl.innerHTML !== html) {
-      if(!patchBoardMessage(elements.boardPreviewLabelEl,html))elements.boardPreviewLabelEl.innerHTML = html;
+      if(!patchBoardMessage(elements.boardPreviewLabelEl,html,{isRuntimeDisabled:inlineActionAvailability.owns}))elements.boardPreviewLabelEl.innerHTML = html;
     }
   };
 
@@ -588,20 +589,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     });
   };
 
-  const disabledInlineActions = new Set();
-  const restoreInlineActionAvailability = () => {
-    for (const button of disabledInlineActions) button.disabled = false;
-    disabledInlineActions.clear();
-  };
-  const syncInlineActionAvailability = () => {
-    if (!submitting && !interactionBlocked && host.canInteract?.(state) !== false) return;
-    for (const button of elements.boardPreviewLabelEl?.querySelectorAll?.('[data-board-preview-action="pass"], [data-board-preview-action="end-turn"], [data-board-message-action="pass"], [data-board-message-action="end-turn"]') ?? []) {
-      if (!button.disabled) { button.disabled = true; disabledInlineActions.add(button); }
-    }
-  };
+  const inlineActionAvailability=createInlineActionAvailability();
+  const syncInlineActionAvailability=()=>inlineActionAvailability.sync(elements.boardPreviewLabelEl,
+    submitting||interactionBlocked||host.canInteract?.(state)===false);
   const setSubmitting = value => {
     submitting = value;
-    restoreInlineActionAvailability();
     syncInlineActionAvailability();
     controls.onSubmitting?.(value);
   };
@@ -681,7 +673,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
         return;
       }
       const messageHtml = renderBoardMessageHtml(message);
-      if (!patchBoardMessage(label,messageHtml)) setBoardPreviewPromptHtml(messageHtml);
+      if (!patchBoardMessage(label,messageHtml,{isRuntimeDisabled:inlineActionAvailability.owns})) setBoardPreviewPromptHtml(messageHtml);
       return;
     }
     if(rushGuidanceStatus==='failed'&&overlayMode===OVERLAY_MODE.INTERACTIVE&&!hasInspection()&&!selectedPieceId&&host.canPresentActions?.(state)!==false&&state?.continuation?.type==='rush'){
@@ -855,9 +847,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   };
 
   const renderStatus = () => {
-    // Remove only our temporary disabled attributes before comparing HTML. This
-    // keeps unchanged buttons and their focus stable through status refreshes.
-    restoreInlineActionAvailability();statusDeferred=false;statusContext=requiredRushContext();
+    // Compare content without temporarily enabling runtime-blocked controls.
+    // The final native availability is reconciled once after the render.
+    statusDeferred=false;statusContext=requiredRushContext();
     try { renderStatusContent(); }
     finally { syncInlineActionAvailability();
       if(!statusDeferred)controls.onBoardContext?.(statusContext,{intentVersion:contextIntentVersion,revision:snapshotRevision,selectedPieceId,selectedSource,selectedTarget:selectedTargetOrigin===TARGET_ORIGIN.HOVER?null:selectedTarget,transient:selectedTargetOrigin===TARGET_ORIGIN.HOVER,phase:state?.continuation?.type??null,continuationPhase:state?.continuation?.phase??null});
@@ -1770,6 +1762,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
 
   const destroy = () => {
     destroyed = true;
+    inlineActionAvailability.clear();
     messageHeightController?.destroy();
     guidanceDiagnostics.retire();
     rushGuidanceClient.destroy();
