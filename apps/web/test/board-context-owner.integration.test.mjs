@@ -1,3 +1,5 @@
+import {createDestinationRouteOwner,destinationReadScope} from '../shell/destination-route-owner.js';
+import {createDestinationRecovery} from '../shell/destination-recovery.js';
 import {publishAcknowledgedBoardMessage,contextReplayAvailable} from '../shell/playback-presentation.js';
 import {withPushSequenceMessage} from '../shell/push-sequence-replay.js';
 import {historyBoardMessage} from '../shell/history-narration.js';
@@ -18,10 +20,10 @@ import {mountHoverTooltips} from '../shell/hover-tooltip.js';
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const part=(start,end)=>{const a=source.indexOf(start),b=source.indexOf(end,a);assert(a>=0&&b>a);return source.slice(a,b);};
 const script=new vm.Script([
- 'let replayController=null,routeSyncRequestId=0,inviteLoadState=null,resolvedInvite=null;',
+ 'let replayController=null,routeSyncRequestId=0,inviteLoadState=null,resolvedInvite=null,homeSectionsHydrated=false,destinationLoadPresentation=null;',
  part('const boardContexts=createBoardContextStore();','mountRecoverySpace(appEl);'),
  part('const currentReplayContext =','const updateComputerUi ='),
- part('const startRouteSync =','const syncRouteDataPassive ='),
+ part('const destinationRouteOwner=','const syncRouteDataPassive ='),
  `const replayAction=async actionEl=>{const action='replay-board-context';${part("  if(action==='replay-board-context'){","  if(action==='dismiss-board-context'){")}};`,
  `const dismiss=async actionEl=>{const action='dismiss-board-context';${part("  if(action==='dismiss-board-context'){",'  if (action === "cycle-game-alert-stack")')}};`,
  `globalThis.controls={receive:receiveBoardContext,ack:acknowledgedBoardMessage,scope:boardContextScope,owner:boardContextOwner,store:boardContexts,replay:startComputerReplay,dismiss,replayAction,routeSync:startRouteSync,resume:resumeBoardContextReplay,pending:()=>pendingBoardContextReplay,focus:boardContextFocus,retire:()=>{boardContextVisit++;boardContextOwner.retire();}};`,
@@ -48,7 +50,9 @@ function fixture(t){
  const transport={getGameViewModel:()=>context.view,getAuthoritativeGame:()=>context.view,getIdentityId:()=>'me',decisionHistory:()=>archive};
  const requests=createReplayRequest();
  t.after(()=>{for(const owner of [...owners].reverse())owner.destroy();assert.equal(observers.size,0);assert.equal(doc.count(),0);assert.equal(win.count(),0);});
- const context=vm.createContext({mountHoverTooltips(root){const owner=mountHoverTooltips(root);owners.push(owner);return owner;},publishAcknowledgedBoardMessage,contextReplayAvailable,confirmedPlayback:null,forcedFollowWorking:()=>false,historyBoardMessage,view:accepted(),scopeGeneration:'accountA:storageA',document:doc,appEl:app,queueMicrotask:fn=>queued.push(fn),
+ const destinationRecovery=createDestinationRecovery({setTimer:()=>null,clearTimer(){}});
+ t.after(()=>destinationRecovery.reset());
+ const context=vm.createContext({createDestinationRouteOwner,destinationReadScope,destinationRecovery,syncDestinationNotice(){},canHydrateRouteFromLocalState:()=>Boolean(context.transport.getGameViewModel(context.currentRoute.gameId)),mountHoverTooltips(root){const owner=mountHoverTooltips(root);owners.push(owner);return owner;},publishAcknowledgedBoardMessage,contextReplayAvailable,confirmedPlayback:null,forcedFollowWorking:()=>false,historyBoardMessage,view:accepted(),scopeGeneration:'accountA:storageA',document:doc,appEl:app,queueMicrotask:fn=>queued.push(fn),
  syncRecoverySpace(app){syncRecoverySpace(app);admissions.push('recovery');},
  createBoardContextStore,createBoardContextOwner,createBoardContextFocus(...args){const owner=createBoardContextFocus(...args);owners.push(owner);return owner;},createBoardContextLayout:()=>({sync(){admissions.push('layout');},reveal:(target,current)=>{if(current())reveals.push(target);}}),
  captureDisplayedReplay,displayedReplayIsCurrent,replayArchiveMatches,opponentBoardMessage,withPushSequenceMessage,transport,replayRequests:requests,

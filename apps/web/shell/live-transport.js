@@ -2002,8 +2002,8 @@ export const createLiveTransportStore = ({
 
   // Read-only presentation hydration. It never changes personal History intent,
   // live authority, or the command queue. Archive records are revision-fenced.
-  const loadTurnMoves = async ({gameId, turnIndex, revision = gameById.get(gameId)?.gameplayRevision, isCurrent = () => true}) => {
-    let summaries = (gameById.get(gameId)?.moves ?? []).filter(move=>move.turnIndex===turnIndex && !move.undone);
+  const loadTurnMoves = async ({gameId, turnIndex, revision = getGameViewModel(gameId)?.gameplayRevision, isCurrent = () => true}) => {
+    let summaries = (gameById.get(gameId)?.moves ?? getGameViewModel(gameId)?.moves ?? []).filter(move=>move.turnIndex===turnIndex && !move.undone);
     let archived = false;
     if (!summaries.length || summaries[0].turnMoveIndex > 0) {
       archived = true;
@@ -2018,7 +2018,7 @@ export const createLiveTransportStore = ({
     if (!summaries.length) throw new Error('turn_not_found');
     const moves=await Promise.all(summaries.map(move=>!archived && move.snapshot ? clone(move) : loadHistoricalMove(gameId,revision,move.moveId)));
     if (!active || !isCurrent()) throw new Error('history_superseded');
-    if (gameById.get(gameId)?.gameplayRevision!==revision) throw new Error('history_changed');
+    if (getGameViewModel(gameId)?.gameplayRevision!==revision) throw new Error('history_changed');
     return moves;
   };
 

@@ -1,3 +1,6 @@
+import {icon} from '../shell/ui.js';
+import {createDestinationRouteOwner,readGameDestination} from '../shell/destination-route-owner.js';
+import {createDestinationRecovery} from '../shell/destination-recovery.js';
 import {createGameAlertItems,renderGameAlertStackCard,renderRecoveryActions} from '../shell/game-alert-presentation.js';
 import {createHomeCardRendering,getStaticCardPreviewSnapshot,getStaticCardPreviewPayload} from '../shell/home-card-rendering.js';
 import {escapeDebug} from '../shell/computer-view.js';
@@ -109,7 +112,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const getRouteTransitionPhaseKey = \(\) => routeTransition\?\.phase \|\| "idle";/);
   assert.match(source, /const getRouteTransitionRenderKey = \(\) =>/);
   assert.match(source, /const isGameEntryRouteTransitionActive = \(route = currentRoute\) =>/);
-  assert.match(source, /const startGameEntryRouteTransition = \(gameId, fromRoute = currentRoute\?\.name \|\| "unknown", toRoute = 'game'\) => \{/);
+  assert.match(source, /const startGameEntryRouteTransition = \(gameId, fromRoute = currentRoute\?\.name \|\| "unknown", toRoute = 'game', direction = toRoute === 'home' \? 'back' : 'forward'\) => \{/);
   assert.match(source, /const maybeRevealRouteTransition = \(\) => \{/);
   assert.match(source, /const syncRouteTransitionForCurrentRoute = \(\) => \{/);
   assert.match(source, /const isFlyoutOnlyRouteChange = \(previousRoute, nextRoute\) =>/);
@@ -126,7 +129,6 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const getShellLayoutModeForRoute = \(route = currentRoute, viewportWidth = window\.innerWidth\) =>/);
   assert.match(source, /getAvailableShellContentWidth\(viewportWidth, route\) >= SHELL_WIDE_SCREEN_MIN_WIDTH \? "wide" : "narrow"/);
   assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) => getShellLayoutModeForRoute\(currentRoute, viewportWidth\);/);
-  assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
   assert.match(source, /const syncShellLayoutMode = \(\) => \{/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", layoutMode\);/);
   assert.match(source, /appEl\.setAttribute\("data-shell-route", currentRoute\?\.name \|\| "unknown"\);/);
@@ -257,7 +259,7 @@ test("live sync status renders are deduplicated by stable status key", () => {
 });
 
 test("sync store manages subscriptions through the active route game id", () => {
-  assert.match(source, /syncStore\.setActiveGameId\(routeGameId\);/);
+  assert.match(source, /syncStore\.setActiveGameId\(routeGameId \|\| null\);/);
   assert.match(syncStoreSource, /let activeGameId = null;/);
   assert.match(syncStoreSource, /const getLocalFailureMessage = \(game\) =>/);
   assert.match(syncStoreSource, /const isFailedLocalStub = \(game\) =>/);
@@ -418,7 +420,7 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /reconcileMiniBoardPreviews\(\);\s*syncMountedGameShellPanelUi\(shellRoot\);\s*initializeDesktopBoardFit\(\);\s*scheduleGameShellStickyLayout\(\);/);
 });
 
-test("app uses route skeleton sync and localized loading instead of a global busy wrapper", () => {
+test("app uses route skeleton sync and localized loading instead of a global busy wrapper", async () => {
   assert.doesNotMatch(source, /const withBusy = async/);
   assert.doesNotMatch(source, /let busy = false;/);
   const mount=source.slice(source.indexOf('mountLoadingFeedback(document,{'),source.indexOf('const currentReplayContext ='));
@@ -429,8 +431,13 @@ test("app uses route skeleton sync and localized loading instead of a global bus
   assert.ok(source.indexOf('mountLoadingFeedback(document,{')>source.indexOf('let transport = syncStore;'),'Loading callbacks mount after authoritative scope initialization');
   assert.match(source, /const pendingHomeSectionKeys = new Set\(\);/);
   assert.match(source, /const SCENARIO_LOAD_PENDING_KEY = "scenario:load";/);
-  assert.match(source, /const startRouteSync = \(\{ renderStart = true \} = \{\}\) => \{/);
-  assert.match(source, /routeHydrated = false;\s*syncLiveChannels\(\);/s);
+  const state={routeSyncRequestId:0,routeHydrated:true},renders=[],read={route:{name:'game',gameId:'g'},generation:1,epoch:1,routeKey:'g',owner:{}};
+  let release;const pending=new Promise(resolve=>release=resolve),recovery=createDestinationRecovery();
+  const owner=createDestinationRouteOwner(()=>({state,captureRouteRead:()=>read,routeReadIsCurrent:value=>value===read,canHydrateRouteFromLocalState:()=>false,destinationRecovery:recovery,
+    syncDestinationNotice(){},syncLiveChannels(){},render:options=>renders.push(options),syncRouteDataAndLiveChannels:()=>pending,
+    issueDiagnostics:{resolve(){}},cancelPendingBoardContextReplay(){},window:{},invitationLoadFailureKind:()=> 'retry',maybeRevealRouteTransition(){}}));
+  owner.start();assert.equal(state.routeHydrated,false);assert.deepEqual(renders,[{animatePanels:false,includeBoard:false}]);
+  release();await new Promise(setImmediate);assert.equal(state.routeHydrated,true);assert.equal(renders.length,2);recovery.reset();
   assert.match(source, /const initialRender = async \(\) => \{[\s\S]*?routeHydrated = false;\s*render\(\{ animatePanels: false, includeBoard: false \}\);[\s\S]*?await account\.start\(\);/s);
   assert.match(source, /startRouteSync\(\{ renderStart: false \}\);/);
   assert.match(source, /renderGameViewSkeleton\(\)/);
@@ -504,7 +511,8 @@ test("upgrade fencing keeps a static recovery notice without discarding viewing 
  const upgrade=renderRecoveryActions({game:{id:'g',upgradeRequired:true},dismissed:false,recoveryNeedsAction:true,escapeHtml:String});
  assert.match(upgrade,/<button class="secondary[^"\n]*" data-action="refresh-game">[\s\S]*?Reload game<\/button>/);
  assert.match(upgrade,/<a[^>]+href="#\/">[\s\S]*?Home<\/a>/);assert.doesNotMatch(upgrade,/reconnect-safely/);
- assert.match(source,/if \(!game && transport\.isUpgradeRequired\?\.\(gameId\)\) \{\s*return `<section[^`]+data-action="refresh-game"/);
+ const cold=readGameDestination({gameId:'g',transport:{getGameViewModel:()=>null,isUpgradeRequired:()=>true},presentation:null,icon}).markup;
+ assert.match(cold,/data-action="refresh-game"/);assert.match(cold,/>Reload game<\/button>/);assert.match(cold,/href="#\/"/);assert.doesNotMatch(cold,/reconnect-safely/);
 });
 
 test("loading frames and guest invitation surfaces never enter the loaded-shell patch path", () => {
@@ -551,8 +559,8 @@ test('Home responsive frames cancel stale scheduling and page navigation scrolls
  const state={homeSections:{my:{...createHomeSectionState('My games'),loaded:true,totalGames:8,totalPages:3,gameIds:['a','b','c'],visiblePageSize:3,visibleColumnCount:3,serverPageGameIdsByPage:{0:['a','b','c','d'],1:['e','f','g','h']}}},currentRoute:{name:'home'},homeReadVisit:1,homeSectionResizeFrame:0,lastHomeBatchRevision:null,transport:owner};
  const pending=new Set(),controller=createHomeSectionReads({state,window,getVisibleHomeSectionKeys:()=>['my'],getHomeSection:key=>state.homeSections[key],setHomeSection:(key,value)=>state.homeSections[key]=value,
  getHomeSectionVisiblePageSize:()=>3,getHomeSectionColumnCount:()=>1,captureRouteRead:()=>read,assertCurrentRouteRead:value=>assert.equal(value,read),routeReadIsCurrent:value=>value===read,
- pendingHomeSectionKeys:pending,isHomeSectionPending:key=>pending.has(key),render:()=>events.push(['render',pending.size]),syncLiveChannels:()=>events.push(['sync']),gameSound:{play(){}},scrollHomeSectionToTop:key=>events.push(['scroll',key])});
+ pendingHomeSectionKeys:pending,isHomeSectionPending:key=>pending.has(key),render:()=>events.push(['render',pending.size]),syncLiveChannels:()=>events.push(['sync']),gameSound:{play(){}},scrollHomeSectionToTop:key=>events.push(['scroll',key]),saveHomeVisit:()=>events.push(['save-visit'])});
  controller.scheduleResponsive();const old=state.homeSectionResizeFrame;controller.scheduleResponsive();assert(cancelled.includes(old));assert.equal(frames.size,1);
  await [...frames.values()][0]();frames.clear();assert.equal(state.homeSectionResizeFrame,0);assert.equal(state.homeSections.my.visibleColumnCount,1);assert.deepEqual(events,[['sync'],['render',0]]);
- events.length=0;await controller.next('my');assert.deepEqual(events,[['render',1],['sync'],['render',0]]);assert.equal(pending.size,0);assert.equal(frames.size,1);[...frames.values()][0]();assert.deepEqual(events.at(-1),['scroll','my']);
+ events.length=0;await controller.next('my');assert.deepEqual(events,[['render',1],['sync'],['render',0]]);assert.equal(pending.size,0);assert.equal(frames.size,1);[...frames.values()][0]();assert.deepEqual(events.slice(-2),[['scroll','my'],['save-visit']]);
 });
