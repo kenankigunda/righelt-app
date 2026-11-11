@@ -1,0 +1,308 @@
+{
+  "status": "approved assets verified; runtime transfer/decode/fit unmeasured",
+  "sourceManifest": "/Users/kenankigunda/Documents/righelt/righelt-backlog/backlog/docs/tickets/t-118/marble-2026-11-01/artwork-regeneration/selected-artwork-manifest.json",
+  "deliveryBytes": 2906220,
+  "assets": [
+    {
+      "id": "babs-1-discovery",
+      "deliveryFile": "babs-1-discovery.webp",
+      "sha256": "5b35c4f040a4b877395a62e376858ea7f21c650f6d682d1c73d27ac324145751",
+      "bytes": 272106,
+      "dimensions": [
+        1200,
+        800
+      ],
+      "target": "apps/web/assets/opponents/babs-1-discovery.webp",
+      "consumers": [
+        {
+          "source": "apps/web/shell/opponent-stories.js",
+          "role": "Opponent introduction and revisit story carousel",
+          "sizeAudit": "Markup960x640;3:2 object-fit:contain. Narrow max-height32dvh. >=760px side-by-side art/copy1.35fr:1,max dialog1120px."
+        }
+      ],
+      "alt": "Babs discovers the board during a rainstorm.",
+      "altStatus": "approved composition mapping; verify actual consumer semantics during integration"
+    },
+    {
+      "id": "babs-2-rematch",
+      "deliveryFile": "babs-2-rematch.webp",
+      "sha256": "8a307e992ebed7003d999063de8455d525e0d35cebfc103842064a92cbeb20de",
+      "bytes": 264182,
+      "dimensions": [
+        1200,
+        800
+      ],
+      "target": "apps/web/assets/opponents/babs-2-rematch.webp",
+      "consumers": [
+        {
+          "source": "apps/web/shell/opponent-stories.js",
+          "role": "Opponent introduction and revisit story carousel",
+          "sizeAudit": "Markup960x640;3:2 object-fit:contain. Narrow max-height32dvh. >=760px side-by-side art/copy1.35fr:1,max dialog1120px."
+        }
+      ],
+      "alt": "Babs eagerly invites another match.",
+      "altStatus": "approved composition mapping; verify actual consumer semantics during integration"
+    },
+    {
+      "id": "babs-3-research",
+      "deliveryFile": "babs-3-research.webp",
+      "sha256": "845996cd204be245da5f988dfc86c325427900e12d71d1cfa06a39fe42789b57",
+      "bytes": 278664,
+      "dimensions": [
+        1200,
+        800
+      ],
+      "target": "apps/web/assets/opponents/babs-3-research.webp",
+      "consumers": [
+        {
+          "source": "apps/web/shell/opponent-stories.js",
+          "role": "Opponent introduction and revisit story carousel",
+          "sizeAudit": "Markup960x640;3:2 object-fit:contain. Narrow max-height32dvh. >=760px side-by-side art/copy1.35fr:1,max dialog1120px."
+        }
+      ],
+      "alt": "Babs studies her growing collection of game notebooks.",
+      "altStatus": "approved composition mapping; verify actual consumer semantics during integration"
+    },
+    {
+      "id": "babs-portrait",
+      "deliveryFile": "babs-portrait.webp",
+      "sha256": "6ca6c9303d3acc71b904c6533da00c604b23a63e2b6f9c5f411aefcbcfc0bee2",
+      "bytes": 41964,
+      "dimensions": [
+        480,
+        480
+      ],
+      "target": "apps/web/assets/opponents/babs-portrait.webp",
+      "consumers": [
+        {
+          "source": "apps/web/shell/app.js",
+          "role": "Home Start choice",
+          "sizeAudit": "132px high desktop,116px at<=700px; width100%; object-fit:contain"
+        },
+        {
+          "source": "apps/web/shell/game-result.js",
+          "role": "Rematch opponent picker",
+          "sizeAudit": "36x36px; object-fit:cover; clipped-corner crop"
+        }
+      ],
+      "alt": "",
+      "altStatus": "approved composition mapping; verify actual consumer semantics during integration"
+    },
+    {
+      "id": "friend-introduction-selected",
+      "deliveryFile": "friend-introduction-selected.webp",
+      "sha256": "ca20720a594772127ae8ac3433d49418c464a74ef8a31a62cbe75d05398b69cd",
+      "bytes": 224194,
+      "dimensions": [
+        1200,
+        800
+      ],
+      "target": "apps/web/assets/opponents/friend-introduction.webp",
+      "consumers": [
+        {
+          "source": "apps/web/shell/opponent-stories.js",
+          "role": "Single-image Friend play modal. No carousel.",
+          "sizeAudit": "Markup960x640;3:2 object-fit:contain. Narrow max-height32dvh. >=760px side-by-side art/copy1.35fr:1,max dialog1120px."
+        }
+      ],
+      "alt": "A marble Righelt table set for two, with empty blue and red chairs pulled out and matching mugs and reserve pieces.",
+      "altStatus": "approved composition mapping; verify actual consumer semantics during integration"
+    },
+    {
+      "id": "friend-portrait",
+      "deliveryFile": "friend-portrait.webp",
+      "sha256": "82303cbdbfefc438a8c0e2ca2a2a12d9b99d98bf9002ae71789f9e7f17f318be",
+      "bytes": 22650,
+      "dimensions": [
+        480,
+        320
+      ],
+      "target": "apps/web/assets/opponents/friend-portrait.webp",
+      "consumers": [
+        {
+          "source": "apps/web/shell/app.js",
+          "role": "Home Start choice",
+          "sizeAudit": "132px high desktop,116px at<=700px; width100%; object-fit:contain"
+        },
+        {
+          "source": "apps/web/shell/game-result.js",
+          "role": "Rematch opponent picker",
+          "sizeAudit": "36x36px; object-fit:cover; clipped-corner crop"
+        }
+      ],
+      "alt": "",
+      "altStatus": "approved composition mapping; verify actual consumer semantics during integration"
+    },
+    {
+      "id": "horus-1-watchtower",
+      "deliveryFile": "horus-1-watchtower.webp",
+      "sha256": "739962579274e7ee969a9ca7a1d3a858e261828ad16e0ef64519f90c8f29ffeb",
+      "bytes": 252034,
+      "dimensions": [
+        1200,
+        800
+      ],
+      "target": "apps/web/assets/opponents/horus-1-watchtower.webp",
+      "consumers": [
+        {
+          "source": "apps/web/shell/opponent-stories.js",
+          "role": "Opponent introduction and revisit story carousel",
+          "sizeAudit": "Markup960x640;3:2 object-fit:contain. Narrow max-height32dvh. >=760px side-by-side art/copy1.35fr:1,max dialog1120px."
+        }
+      ],
+      "alt": "Horus observes the courtyard from a watchtower.",
+      "altStatus": "approved composition mapping; verify actual consumer semantics during integration"
+    },
+    {
+      "id": "horus-2-studying",
+      "deliveryFile": "horus-2-studying.webp",
+      "sha256": "91ef7f2304a16e2a689c67714357d3e40efc5b14c466d9967fc83667fc676c68",
+      "bytes": 278210,
+      "dimensions": [
+        1200,
+        800
+      ],
+      "target": "apps/web/assets/opponents/horus-2-studying.webp",
+      "consumers": [
+        {
+          "source": "apps/web/shell/opponent-stories.js",
+          "role": "Opponent introduction and revisit story carousel",
+          "sizeAudit": "Markup960x640;3:2 object-fit:contain. Narrow max-height32dvh. >=760px side-by-side art/copy1.35fr:1,max dialog1120px."
+        }
+      ],
+      "alt": "Horus studies a match in the courtyard below.",
+      "altStatus": "approved composition mapping; verify actual consumer semantics during integration"
+    },
+    {
+      "id": "horus-3-opinion",
+      "deliveryFile": "horus-3-opinion.webp",
+      "sha256": "fe1ac7b92e275ef3e08be996dac2fbb45905b24e9ec21732cca8380d85312d07",
+      "bytes": 291296,
+      "dimensions": [
+        1200,
+        800
+      ],
+      "target": "apps/web/assets/opponents/horus-3-opinion.webp",
+      "consumers": [
+        {
+          "source": "apps/web/shell/opponent-stories.js",
+          "role": "Opponent introduction and revisit story carousel",
+          "sizeAudit": "Markup960x640;3:2 object-fit:contain. Narrow max-height32dvh. >=760px side-by-side art/copy1.35fr:1,max dialog1120px."
+        }
+      ],
+      "alt": "Horus offers his opinion at the game table.",
+      "altStatus": "approved composition mapping; verify actual consumer semantics during integration"
+    },
+    {
+      "id": "horus-portrait",
+      "deliveryFile": "horus-portrait.webp",
+      "sha256": "619458ebd478d95644eb251d41ae0f52e1e0e1e065db4888a08b5d9c86cbf59c",
+      "bytes": 38602,
+      "dimensions": [
+        480,
+        480
+      ],
+      "target": "apps/web/assets/opponents/horus-portrait.webp",
+      "consumers": [
+        {
+          "source": "apps/web/shell/app.js",
+          "role": "Home Start choice",
+          "sizeAudit": "132px high desktop,116px at<=700px; width100%; object-fit:contain"
+        },
+        {
+          "source": "apps/web/shell/game-result.js",
+          "role": "Rematch opponent picker",
+          "sizeAudit": "36x36px; object-fit:cover; clipped-corner crop"
+        }
+      ],
+      "alt": "",
+      "altStatus": "approved composition mapping; verify actual consumer semantics during integration"
+    },
+    {
+      "id": "tau-1-gardens",
+      "deliveryFile": "tau-1-gardens.webp",
+      "sha256": "2481a01549ef34bde7599c933f83de5ed9a75c896a94204f2adc9bf34fd88ba3",
+      "bytes": 276684,
+      "dimensions": [
+        1200,
+        800
+      ],
+      "target": "apps/web/assets/opponents/tau-1-gardens.webp",
+      "consumers": [
+        {
+          "source": "apps/web/shell/opponent-stories.js",
+          "role": "Opponent introduction and revisit story carousel",
+          "sizeAudit": "Markup960x640;3:2 object-fit:contain. Narrow max-height32dvh. >=760px side-by-side art/copy1.35fr:1,max dialog1120px."
+        }
+      ],
+      "alt": "Tau waters the village garden.",
+      "altStatus": "approved composition mapping; verify actual consumer semantics during integration"
+    },
+    {
+      "id": "tau-2-connections",
+      "deliveryFile": "tau-2-connections.webp",
+      "sha256": "ea584d8000b1a70fec49c1f8b1364ed083711ce6bc20939beb3259845f213423",
+      "bytes": 335358,
+      "dimensions": [
+        1200,
+        800
+      ],
+      "target": "apps/web/assets/opponents/tau-2-connections.webp",
+      "consumers": [
+        {
+          "source": "apps/web/shell/opponent-stories.js",
+          "role": "Opponent introduction and revisit story carousel",
+          "sizeAudit": "Markup960x640;3:2 object-fit:contain. Narrow max-height32dvh. >=760px side-by-side art/copy1.35fr:1,max dialog1120px."
+        }
+      ],
+      "alt": "Tau considers a board beside connected irrigation channels.",
+      "altStatus": "approved composition mapping; verify actual consumer semantics during integration"
+    },
+    {
+      "id": "tau-3-patience",
+      "deliveryFile": "tau-3-patience.webp",
+      "sha256": "8e2bdc22cd01813a539f6302969bd7e9b19a86c950ae30e9e7cbf6cd1ba4cc6a",
+      "bytes": 272294,
+      "dimensions": [
+        1200,
+        800
+      ],
+      "target": "apps/web/assets/opponents/tau-3-patience.webp",
+      "consumers": [
+        {
+          "source": "apps/web/shell/opponent-stories.js",
+          "role": "Opponent introduction and revisit story carousel",
+          "sizeAudit": "Markup960x640;3:2 object-fit:contain. Narrow max-height32dvh. >=760px side-by-side art/copy1.35fr:1,max dialog1120px."
+        }
+      ],
+      "alt": "Tau considers his move while Babs waits.",
+      "altStatus": "approved composition mapping; verify actual consumer semantics during integration"
+    },
+    {
+      "id": "tau-portrait",
+      "deliveryFile": "tau-portrait.webp",
+      "sha256": "a49d3e9b213db99e5b5b9f97cd979fc1c72f39d3ee4eb756834d43bb71449a17",
+      "bytes": 57982,
+      "dimensions": [
+        480,
+        480
+      ],
+      "target": "apps/web/assets/opponents/tau-portrait.webp",
+      "consumers": [
+        {
+          "source": "apps/web/shell/app.js",
+          "role": "Home Start choice",
+          "sizeAudit": "132px high desktop,116px at<=700px; width100%; object-fit:contain"
+        },
+        {
+          "source": "apps/web/shell/game-result.js",
+          "role": "Rematch opponent picker",
+          "sizeAudit": "36x36px; object-fit:cover; clipped-corner crop"
+        }
+      ],
+      "alt": "",
+      "altStatus": "approved composition mapping; verify actual consumer semantics during integration"
+    }
+  ],
+  "friendMasterSha256": "49f1b9c6111d57b99e5decd8a83d2403aa888435d6bb8aa4466dc1761e6492ad"
+}

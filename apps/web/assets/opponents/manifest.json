@@ -5,10 +5,11 @@
     "width": 1200,
     "height": 800,
     "alt": "Babs discovers the board during a rainstorm.",
-    "generation": "02f5c703-d1c9-47ca-b5f7-09a110e091ce",
-    "bytes": 234754,
-    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
-    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
+    "sha256": "5b35c4f040a4b877395a62e376858ea7f21c650f6d682d1c73d27ac324145751",
+    "bytes": 272106,
+    "provenance": "docs/ai/marble/selected-assets.json",
+    "previousGeneration": "02f5c703-d1c9-47ca-b5f7-09a110e091ce",
+    "scope": "Approved narrative delivery; native component validation pending"
   },
   {
     "id": "babs-2-rematch",
@@ -16,10 +17,11 @@
     "width": 1200,
     "height": 800,
     "alt": "Babs eagerly invites another match.",
-    "generation": "6049fa43-936f-4678-b47e-a58599473c14",
-    "bytes": 239196,
-    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
-    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
+    "sha256": "8a307e992ebed7003d999063de8455d525e0d35cebfc103842064a92cbeb20de",
+    "bytes": 264182,
+    "provenance": "docs/ai/marble/selected-assets.json",
+    "previousGeneration": "6049fa43-936f-4678-b47e-a58599473c14",
+    "scope": "Approved narrative delivery; native component validation pending"
   },
   {
     "id": "babs-3-research",
@@ -27,10 +29,95 @@
     "width": 1200,
     "height": 800,
     "alt": "Babs studies her growing collection of game notebooks.",
-    "generation": "9728c6b9-ab30-4329-aea0-80e1e356322c",
-    "bytes": 251482,
-    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
-    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
+    "sha256": "845996cd204be245da5f988dfc86c325427900e12d71d1cfa06a39fe42789b57",
+    "bytes": 278664,
+    "provenance": "docs/ai/marble/selected-assets.json",
+    "previousGeneration": "9728c6b9-ab30-4329-aea0-80e1e356322c",
+    "scope": "Approved narrative delivery; native component validation pending"
+  },
+  {
+    "id": "babs-portrait",
+    "src": "/assets/opponents/babs-portrait.webp",
+    "width": 480,
+    "height": 480,
+    "alt": "",
+    "sha256": "6ca6c9303d3acc71b904c6533da00c604b23a63e2b6f9c5f411aefcbcfc0bee2",
+    "bytes": 41964,
+    "provenance": "docs/ai/marble/selected-assets.json",
+    "previousGeneration": null,
+    "scope": "Approved narrative delivery; native component validation pending"
+  },
+  {
+    "id": "friend-introduction",
+    "src": "/assets/opponents/friend-introduction.webp",
+    "width": 1200,
+    "height": 800,
+    "alt": "A marble Righelt table set for two, with empty blue and red chairs pulled out and matching mugs and reserve pieces.",
+    "sha256": "ca20720a594772127ae8ac3433d49418c464a74ef8a31a62cbe75d05398b69cd",
+    "bytes": 224194,
+    "provenance": "docs/ai/marble/selected-assets.json",
+    "previousGeneration": "2e5a3015-7164-4182-b516-aaf14719c5d8",
+    "scope": "Approved narrative delivery; native component validation pending"
+  },
+  {
+    "id": "friend-portrait",
+    "src": "/assets/opponents/friend-portrait.webp",
+    "width": 480,
+    "height": 320,
+    "alt": "",
+    "sha256": "82303cbdbfefc438a8c0e2ca2a2a12d9b99d98bf9002ae71789f9e7f17f318be",
+    "bytes": 22650,
+    "provenance": "docs/ai/marble/selected-assets.json",
+    "previousGeneration": null,
+    "scope": "Approved narrative delivery; native component validation pending"
+  },
+  {
+    "id": "horus-1-watchtower",
+    "src": "/assets/opponents/horus-1-watchtower.webp",
+    "width": 1200,
+    "height": 800,
+    "alt": "Horus observes the courtyard from a watchtower.",
+    "sha256": "739962579274e7ee969a9ca7a1d3a858e261828ad16e0ef64519f90c8f29ffeb",
+    "bytes": 252034,
+    "provenance": "docs/ai/marble/selected-assets.json",
+    "previousGeneration": "8d40afce-ee34-4633-9068-cf7a581d7c8e",
+    "scope": "Approved narrative delivery; native component validation pending"
+  },
+  {
+    "id": "horus-2-studying",
+    "src": "/assets/opponents/horus-2-studying.webp",
+    "width": 1200,
+    "height": 800,
+    "alt": "Horus studies a match in the courtyard below.",
+    "sha256": "91ef7f2304a16e2a689c67714357d3e40efc5b14c466d9967fc83667fc676c68",
+    "bytes": 278210,
+    "provenance": "docs/ai/marble/selected-assets.json",
+    "previousGeneration": "d422159d-5e61-491f-b854-74d71ac73883",
+    "scope": "Approved narrative delivery; native component validation pending"
+  },
+  {
+    "id": "horus-3-opinion",
+    "src": "/assets/opponents/horus-3-opinion.webp",
+    "width": 1200,
+    "height": 800,
+    "alt": "Horus offers his opinion at the game table.",
+    "sha256": "fe1ac7b92e275ef3e08be996dac2fbb45905b24e9ec21732cca8380d85312d07",
+    "bytes": 291296,
+    "provenance": "docs/ai/marble/selected-assets.json",
+    "previousGeneration": "c4c06839-3984-4fc4-b3a1-f7b9a8c230ab",
+    "scope": "Approved narrative delivery; native component validation pending"
+  },
+  {
+    "id": "horus-portrait",
+    "src": "/assets/opponents/horus-portrait.webp",
+    "width": 480,
+    "height": 480,
+    "alt": "",
+    "sha256": "619458ebd478d95644eb251d41ae0f52e1e0e1e065db4888a08b5d9c86cbf59c",
+    "bytes": 38602,
+    "provenance": "docs/ai/marble/selected-assets.json",
+    "previousGeneration": null,
+    "scope": "Approved narrative delivery; native component validation pending"
   },
   {
     "id": "tau-1-gardens",
@@ -38,9 +125,11 @@
     "width": 1200,
     "height": 800,
     "alt": "Tau waters the village garden.",
-    "generation": "exec-8dde4460-0d7f-4849-ba06-3d2c5fd972b5.png",
-    "bytes": 299444,
-    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades"
+    "sha256": "2481a01549ef34bde7599c933f83de5ed9a75c896a94204f2adc9bf34fd88ba3",
+    "bytes": 276684,
+    "provenance": "docs/ai/marble/selected-assets.json",
+    "previousGeneration": "exec-8dde4460-0d7f-4849-ba06-3d2c5fd972b5.png",
+    "scope": "Approved narrative delivery; native component validation pending"
   },
   {
     "id": "tau-2-connections",
@@ -48,10 +137,11 @@
     "width": 1200,
     "height": 800,
     "alt": "Tau considers a board beside connected irrigation channels.",
-    "generation": "49d088e3-c016-47f1-97ff-bb9836ec58e1",
-    "bytes": 256524,
-    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
-    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
+    "sha256": "ea584d8000b1a70fec49c1f8b1364ed083711ce6bc20939beb3259845f213423",
+    "bytes": 335358,
+    "provenance": "docs/ai/marble/selected-assets.json",
+    "previousGeneration": "49d088e3-c016-47f1-97ff-bb9836ec58e1",
+    "scope": "Approved narrative delivery; native component validation pending"
   },
   {
     "id": "tau-3-patience",
@@ -59,53 +149,22 @@
     "width": 1200,
     "height": 800,
     "alt": "Tau considers his move while Babs waits.",
-    "generation": "84ff3aca-a360-4130-ba8d-891d02f63716",
-    "bytes": 245306,
-    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
-    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
+    "sha256": "8e2bdc22cd01813a539f6302969bd7e9b19a86c950ae30e9e7cbf6cd1ba4cc6a",
+    "bytes": 272294,
+    "provenance": "docs/ai/marble/selected-assets.json",
+    "previousGeneration": "84ff3aca-a360-4130-ba8d-891d02f63716",
+    "scope": "Approved narrative delivery; native component validation pending"
   },
   {
-    "id": "horus-1-watchtower",
-    "src": "/assets/opponents/horus-1-watchtower.webp",
-    "width": 1200,
-    "height": 800,
-    "alt": "Horus watches courtyard games from his tower.",
-    "generation": "8d40afce-ee34-4633-9068-cf7a581d7c8e",
-    "bytes": 220484,
-    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
-    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
-  },
-  {
-    "id": "horus-2-studying",
-    "src": "/assets/opponents/horus-2-studying.webp",
-    "width": 1200,
-    "height": 800,
-    "alt": "Horus studies the match below and his notes.",
-    "generation": "d422159d-5e61-491f-b854-74d71ac73883",
-    "bytes": 236620,
-    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
-    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
-  },
-  {
-    "id": "horus-3-opinion",
-    "src": "/assets/opponents/horus-3-opinion.webp",
-    "width": 1200,
-    "height": 800,
-    "alt": "Horus joins Babs and Tau to suggest a move.",
-    "generation": "c4c06839-3984-4fc4-b3a1-f7b9a8c230ab",
-    "bytes": 268988,
-    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
-    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
-  },
-  {
-    "id": "friend-introduction",
-    "src": "/assets/opponents/friend-introduction.webp",
-    "alt": "Red and blue sleeved hands make room for a friend at a Righelt board, with mugs and inviting place settings.",
-    "width": 1536,
-    "height": 1024,
-    "generation": "2e5a3015-7164-4182-b516-aaf14719c5d8",
-    "bytes": 165750,
-    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
-    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
+    "id": "tau-portrait",
+    "src": "/assets/opponents/tau-portrait.webp",
+    "width": 480,
+    "height": 480,
+    "alt": "",
+    "sha256": "a49d3e9b213db99e5b5b9f97cd979fc1c72f39d3ee4eb756834d43bb71449a17",
+    "bytes": 57982,
+    "provenance": "docs/ai/marble/selected-assets.json",
+    "previousGeneration": null,
+    "scope": "Approved narrative delivery; native component validation pending"
   }
 ]

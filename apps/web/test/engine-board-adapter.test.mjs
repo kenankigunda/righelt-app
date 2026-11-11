@@ -1114,7 +1114,15 @@ test("preview ghosts do not render inactive state from preview metadata", () => 
 });
 
 test("inactive pieces use the square fill color instead of transparency", () => {
-  assert.match(styleSource, /\.cell\s*\{[\s\S]*--cell-fill:\s*#fbf8f0;[\s\S]*background:\s*var\(--cell-fill\);/s);
+  const cellFloor=styleSource.match(/\.cell\s*\{([^}]*)\}/)?.[1];
+  const commanderFloor=styleSource.match(/\.cell \.piece-token > \.commander-floor\s*\{([^}]*)\}/)?.[1];
+  assert.ok(cellFloor && commanderFloor,'actual cell and commander floor rules');
+  assert.match(cellFloor,/--cell-fill:\s*#f8fafa;/);
+  assert.match(cellFloor,/--cell-floor-color:\s*var\(--cell-fill\);/);
+  for(const floor of [cellFloor,commanderFloor]){
+    assert.match(floor,/background-color:\s*var\(--cell-floor-color\);/);
+    assert.match(floor,/background-image:\s*var\(--cell-floor-image\);/);
+  }
   assert.match(styleSource, /\.piece-token\.inactive\s*\{[\s\S]*background:\s*var\(--cell-fill, #fbf8f0\);/s);
   assert.match(styleSource, /\.cell\.group-member\s*\{[\s\S]*--cell-fill:\s*#eef8f1;/s);
   assert.match(styleSource, /\.cell\.continuation-moved\s*\{[\s\S]*--cell-fill:\s*#f5f7ef;/s);

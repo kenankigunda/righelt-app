@@ -1,0 +1,861 @@
+{
+  "version": 1,
+  "status": "PLANNED_ACCEPTANCE_QUESTIONS_NOT_EXECUTED",
+  "authority": "FINAL_IMPLEMENTATION_HANDOFF.md, original32-view/state and28-component matrix; original approved scope only.",
+  "candidateMaterialSource": "285723093f3fdf6ffa99be9a6824ce51bf34f201",
+  "requiredComposition": "Actual merged243 functional main plus owned221 delta, preserving all intermediate delivery contracts. Rebind final source/test selections before execution.",
+  "inventory": "coverage-inventory.json",
+  "items": [
+    {
+      "id": "V-01",
+      "question": "Does first paint use expressive calm-faced marble, preserve affiliation/mute and native header actions, remove obsolete page-grid owners and retain reduced-motion-safe inset-square wordmark activity?",
+      "cohort": "canvas",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-02",
+      "question": "Do actual populated Home cards retain canonical ownership, saved focus/native pressed links and one/both-seat presentation while receiving lighter raised marble and readable winner/turn information?",
+      "cohort": "home",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-03",
+      "question": "Do empty/loading/partial/error Home states show only authoritative content, preserve cached nodes and retry on the same page without blank maximum reservations or decorative readiness waits?",
+      "cohort": "home",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-04",
+      "question": "Do both pagination arrows and the complete page label remain one line at narrow widths and enlarged text, preserving current page/focus/pressed identity across responsive reflow and failure?",
+      "cohort": "home",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-05",
+      "question": "Do all approved opponent choices, centered self-play and Friend entry retain explicit-Start-only creation, cancellation and the correct artwork consumer at actual native hit sizes?",
+      "cohort": "entry",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-06",
+      "question": "Do Completed and Other games retain correct account-only membership/counts/winner/unknown outcome, pagination and Undo reclassification under final card materials?",
+      "cohort": "home",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-07",
+      "question": "Are Game, Players, Board and History independent raised sections with readable role/perspective/self-play/observer/maintenance states and no shared trough or Board tray?",
+      "cohort": "game",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-08",
+      "question": "Do two seat rows and subordinate Viewers preserve disclosure/focus/presence and invitation request semantics, owner identity and accessible attribution on marble?",
+      "cohort": "players",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-09",
+      "question": "Do computer identity/activity, prepare/error/retry/pause/resume/takeover retain coherent accessible status, permission-aware actions and stable native tooltip/disclosure under material layers?",
+      "cohort": "players",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-10",
+      "question": "Do all native selection/source/target/hover/focus/touch states remain visible and responsive with finite prompt geometry, no covered or moved held target and exactly one admitted action?",
+      "cohort": "board",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-11",
+      "question": "Do forced rush, Push/Retreat/Follow, continuation, obligatory badges and member/strength explanations retain complete-legality authority and scrollable context without increasing finite prompts?",
+      "cohort": "board",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-12",
+      "question": "Do independent Commander/Supply inspections retain affiliation and distinct green dashed supply versus owner-colored dotted command routes, including overlapping paths, clear/reentry and live controls?",
+      "cohort": "inspection",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-13",
+      "question": "Do octagonal flat units, enclosed Commander windows and bottom-opening supply arches retain single-cell footprints, opaque quiet/selected/ghost/stack floors and semantic focus/warning/destruction paint?",
+      "cohort": "pieces",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-14",
+      "question": "Do capture/removal/destruction and last-action/recorded-source overlays preserve acknowledged chronology and semantic marks without material obscuration or accidental live-state mutation?",
+      "cohort": "pieces",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-15",
+      "question": "Do compact owner-colored Turn rails, newest-first displayed decisions, archive errors and each collapsed Undo boundary retain exact native row hit/disclosure geometry, selection and chronological storage?",
+      "cohort": "history",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-16",
+      "question": "Do inline narrow History previews and complete recorded replay preserve frozen selection, live Board independence, requester-only return-to-live, native controls and quiet reload behavior?",
+      "cohort": "history",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-17",
+      "question": "Do host invites preserve explicit seat choice, dismissal, pending/uncertain/error state and copy/fallback only after acknowledgement, with accessible focused controls on marble?",
+      "cohort": "invite",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-18",
+      "question": "Do opening links and arrival/taken/viewer/pending/approval/denial/error states preserve authoritative permission and membership rules with clear action-first surfaces?",
+      "cohort": "invite",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-19",
+      "question": "Do named/color-aware victory/defeat/draw/neutral/self-play/observer results retain distinct destruction/supply-loss causes and finite live-only motion/sound, with quiet manual review?",
+      "cohort": "result",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-20",
+      "question": "Do rematch/branch opponent and side choices preserve saved human eligibility, focus, deliberate Start, cancellation and failure/retry without creating a match merely by opening?",
+      "cohort": "result",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-21",
+      "question": "Do all 14 exact approved assets retain crisp transparent actual-size/DPR composition, correct Friend R33-versus-hands split and draw-back/slide motion with stationary copy/actions and safe rapid reversal?",
+      "cohort": "art",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-22",
+      "question": "Are sign-in/create/challenge/forgotten-password dialogs marble with shallow fields, local accessible errors and tactile actions retaining native validity, focus and immediate semantics?",
+      "cohort": "account",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-23",
+      "question": "Do account settings/password/autosave/retry/signout flows use one diffusing glass utility face with readable opaque fallback while preserving generation, data ownership and focus?",
+      "cohort": "account",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-24",
+      "question": "Do public-profile and audience disclosures preserve current names, long/bidirectional isolation and native disclosure/focus without glass or tooltip layers intercepting input?",
+      "cohort": "players",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-25",
+      "question": "Do Scenarios list/import/capture/save/live/frozen states use the approved glass utility material while retaining source selection, scrolling, editing and save/cancel semantics?",
+      "cohort": "utility",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-26",
+      "question": "Do Debug/analysis/notes and recovery Details preserve readable sanitized scrollable content, native caret/copy fallback and current-incident focus without new authority?",
+      "cohort": "utility",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-27",
+      "question": "Do skeletons/loading edges and blue/amber/rose notices preserve final geometry, cached DOM identity, real retry/cancel, immediate actionable errors and active-visible paper timing/audio priorities?",
+      "cohort": "notices",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-28",
+      "question": "Do offline/reconnect/storage/upgrade/server/account failures remain immediately actionable, preserve pending commands/receipts and current recovery ownership, with storage-save failures amber?",
+      "cohort": "notices",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-29",
+      "question": "Does compact floating etched-glass switcher A retain native navy icons/red underline, safe areas, keyboard/touch navigation, focus-safe hide/reveal and inertness while hidden on short/landscape screens?",
+      "cohort": "navigation",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-30",
+      "question": "Do directional route/Back/dialog/flyout/size transitions preserve visits/focus/scroll and cold-destination recovery, retaining outgoing artwork through anticipation and information under reduced motion?",
+      "cohort": "navigation",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-31",
+      "question": "Do currently delivered tutorial/play-entry surfaces inherit approved materials and native input without implementing deferred hosted tutorial/account onboarding PR131?",
+      "cohort": "learning",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "V-32",
+      "question": "Do not-found/missing-game/invite and configuration-dependent routes retain truthful authority, legible empty/error states, native recovery and no invented content or enabled feature activation?",
+      "cohort": "learning",
+      "status": "gap",
+      "plannedReuse": "Unchanged functional/state evidence only after exact final dependency-closure qualification; obtain changed material native proof."
+    },
+    {
+      "id": "C-01",
+      "question": "Are document/header surfaces and inset-square wordmark painted correctly from startup through affiliation/mute/menu states without obsolete grid lifecycle?",
+      "cohort": "canvas",
+      "relatedViews": [
+        "V-01"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-02",
+      "question": "Does the mobile header menu remain marble, with native hit/focus/escape ownership and correct layering rather than utility glass?",
+      "cohort": "canvas",
+      "relatedViews": [
+        "V-01",
+        "V-29"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-03",
+      "question": "Do primary/secondary buttons compress toward flush without label motion, retain native44px/focus/disabled/pressed identity and admit the first intentional input?",
+      "cohort": "controls",
+      "relatedViews": [
+        "V-05",
+        "V-10",
+        "V-22"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-04",
+      "question": "Are quiet links/icon buttons readable and native-target sized across hover/focus/pressed/disabled/forced-colors states without new interception layers?",
+      "cohort": "controls",
+      "relatedViews": [
+        "V-01",
+        "V-15",
+        "V-26"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-05",
+      "question": "Do shallow marble fields/inline editors preserve labels, local errors, native validity/caret/selection and source-specific editing focus under text/browser zoom?",
+      "cohort": "controls",
+      "relatedViews": [
+        "V-22",
+        "V-23",
+        "V-26"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-06",
+      "question": "Do real selects/radios/checkboxes retain accessible selected/disabled/focus behavior and44px targets, with readable material and forced-colors fallbacks?",
+      "cohort": "controls",
+      "relatedViews": [
+        "V-20",
+        "V-23",
+        "V-25"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-07",
+      "question": "Do opponent/side/choice cards retain clear current choice, exact artwork crop and native keyboard/touch activation without early match creation?",
+      "cohort": "entry",
+      "relatedViews": [
+        "V-05",
+        "V-20"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-08",
+      "question": "Do supporting rows/chips/computer badges and obligatory guidance retain accessible affiliation/status, compact geometry and tooltip ownership under final materials?",
+      "cohort": "players",
+      "relatedViews": [
+        "V-08",
+        "V-09",
+        "V-11"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-09",
+      "question": "Do real Home card variants preserve canonical names, winner attribution, link identity, miniature ownership and pagination geometry through material loading/failure states?",
+      "cohort": "home",
+      "relatedViews": [
+        "V-02",
+        "V-03",
+        "V-04",
+        "V-06"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-10",
+      "question": "Are Game/Players/Board/History independently raised with visible gaps and calm faces, keeping working content separate without repeated carved containers?",
+      "cohort": "game",
+      "relatedViews": [
+        "V-07",
+        "V-08",
+        "V-09"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-11",
+      "question": "Are only Board cells recessed, with flat readable axes and finite prompt/context geometry independent of decorative marble, fonts and zoom?",
+      "cohort": "board",
+      "relatedViews": [
+        "V-10",
+        "V-11",
+        "V-12"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-12",
+      "question": "Do live/recorded/ghost/stack pieces and paths retain opaque floors, native windows/arches, semantic colors and complete selection/inspection precedence?",
+      "cohort": "pieces",
+      "relatedViews": [
+        "V-12",
+        "V-13",
+        "V-14"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-13",
+      "question": "Do Home/History/Scenario miniatures preserve the same piece/path semantics and bounded active/pending preview payload ownership without deleting retained game data?",
+      "cohort": "mini",
+      "relatedViews": [
+        "V-02",
+        "V-12",
+        "V-16",
+        "V-25"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-14",
+      "question": "Does final History CSS preserve the complete current Undo native row-hit/hover/press/release/disclosure selector union and requester-only intent behavior?",
+      "cohort": "history",
+      "relatedViews": [
+        "V-15",
+        "V-16"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-15",
+      "question": "Do profile/audience/native disclosures and body tooltips retain focus/inert retirement and pointer transparency with actual glass ancestors and notices/modals?",
+      "cohort": "players",
+      "relatedViews": [
+        "V-08",
+        "V-24"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-16",
+      "question": "Do host/incoming invitation controls preserve acknowledged copy, seat/viewer permissions, pending approval and current focus through marble/loading/error transitions?",
+      "cohort": "invite",
+      "relatedViews": [
+        "V-17",
+        "V-18"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-17",
+      "question": "Do result headings/emblems retain named/color-aware outcome/cause and finite only-on-confirmed-live feedback with quiet history/reload?",
+      "cohort": "result",
+      "relatedViews": [
+        "V-19"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-18",
+      "question": "Do rematch/branch dialogs remain marble with deliberate choices, stable focus/scroll, readable errors and creation only on confirmed Start?",
+      "cohort": "result",
+      "relatedViews": [
+        "V-20"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-19",
+      "question": "Do story dialogs retain all exact approved scenes and source readiness/decode/retry/cancel/session guards while slide motion leaves copy and controls stationary?",
+      "cohort": "art",
+      "relatedViews": [
+        "V-21"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-20",
+      "question": "Does Friend modal use exact approved R33 empty chairs while Home/rematch retain hands, with actual crop/alpha/crispness and no regeneration?",
+      "cohort": "art",
+      "relatedViews": [
+        "V-05",
+        "V-21"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-21",
+      "question": "Do marble login/create and glass Account utilities preserve per-field local error ownership, existing native forms/autosave/generation and readable fallback?",
+      "cohort": "account",
+      "relatedViews": [
+        "V-22",
+        "V-23"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-22",
+      "question": "Do Account/Scenarios/Debug flyouts each have one diffusing frosted-glass face, opaque fallback, correct native scroll/focus ownership and preserved source modality?",
+      "cohort": "utility",
+      "relatedViews": [
+        "V-23",
+        "V-25",
+        "V-26"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-23",
+      "question": "Do debug/recovery diagnostic disclosures remain sanitized, bounded, readable and natively copyable/selectable without altering gameplay or recovery authority?",
+      "cohort": "utility",
+      "relatedViews": [
+        "V-26",
+        "V-28"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-24",
+      "question": "Do skeleton/piece/loading-edge variants share final geometry and cached identity with ready controls, without forced dwell or unrelated font/art/model barriers?",
+      "cohort": "notices",
+      "relatedViews": [
+        "V-03",
+        "V-27"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-25",
+      "question": "Do info/warning/danger vellum and empty/error/recovery states preserve current source severity, native semantics/actions and paper lifetime/audio deduplication?",
+      "cohort": "notices",
+      "relatedViews": [
+        "V-27",
+        "V-28",
+        "V-32"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-26",
+      "question": "Does switcher A retain compact etched glass/native icons/red underline, safe-area footprint and source hide/reveal/inert/focus contracts?",
+      "cohort": "navigation",
+      "relatedViews": [
+        "V-29"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-27",
+      "question": "Do paper/route/artwork transitions preserve actual layer/hit ownership, current visual owners, native first input and reduced-motion information independently of mute?",
+      "cohort": "navigation",
+      "relatedViews": [
+        "V-21",
+        "V-27",
+        "V-30"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    },
+    {
+      "id": "C-28",
+      "question": "Do delivered learning/configuration routes receive materials and usable loading/errors without activating deferred product flows or changing account/model gating?",
+      "cohort": "learning",
+      "relatedViews": [
+        "V-31",
+        "V-32"
+      ],
+      "status": "gap",
+      "plannedReuse": "Share qualified view/cohort evidence; do not repeat native workflow once per component row."
+    }
+  ],
+  "cohorts": {
+    "canvas": {
+      "sources": [
+        "apps/web/index.html",
+        "apps/web/design-tokens.css",
+        "apps/web/shell/brand.js",
+        "apps/web/shell/refresh.css"
+      ],
+      "native": [
+        "e2e/workflows/brand-grid.spec.mjs"
+      ],
+      "performance": [
+        "PW01",
+        "PW07"
+      ]
+    },
+    "home": {
+      "sources": [
+        "apps/web/shell/app.js",
+        "apps/web/shell/home-focus.js",
+        "apps/web/shell/home-card-identity.js",
+        "apps/web/shell/home-card-result.js",
+        "apps/web/shell/refresh.css"
+      ],
+      "native": [
+        "e2e/workflows/home-create-refresh.spec.mjs",
+        "e2e/workflows/completed-home-cards.spec.mjs",
+        "e2e/workflows/home-card-pagination-reorder.spec.mjs"
+      ],
+      "performance": [
+        "PW01",
+        "PW06"
+      ]
+    },
+    "entry": {
+      "sources": [
+        "apps/web/shell/app.js",
+        "apps/web/shell/opponent-stories.js",
+        "apps/web/shell/refresh.css"
+      ],
+      "native": [
+        "e2e/workflows/home-self-play-footer.spec.mjs",
+        "e2e/workflows/opponent-invite-polish.spec.mjs"
+      ],
+      "performance": [
+        "PW04"
+      ]
+    },
+    "game": {
+      "sources": [
+        "apps/web/shell/app.js",
+        "apps/web/shell/shell.css",
+        "apps/web/shell/refresh.css"
+      ],
+      "native": [
+        "e2e/workflows/ux-refresh-checkpoint.spec.mjs"
+      ],
+      "performance": [
+        "PW02",
+        "PW05"
+      ]
+    },
+    "players": {
+      "sources": [
+        "apps/web/shell/players-panel.js",
+        "apps/web/shell/public-profile.js",
+        "apps/web/shell/computer-player-card.js",
+        "apps/web/shell/refresh.css"
+      ],
+      "native": [
+        "e2e/workflows/players-viewers.spec.mjs",
+        "e2e/workflows/computer-tab-recovery.spec.mjs"
+      ],
+      "performance": [
+        "PW03",
+        "PW07"
+      ]
+    },
+    "board": {
+      "sources": [
+        "apps/web/board/runtime/board-runtime.js",
+        "apps/web/board/prompt-models.js",
+        "apps/web/shell/board-message-layout.js",
+        "apps/web/shell/board-ux.css",
+        "apps/web/styles.css"
+      ],
+      "native": [
+        "browser-integration/board-message-touch.spec.mjs",
+        "browser-integration/board-message-paint.spec.mjs",
+        "browser-integration/message-font-admission.spec.mjs"
+      ],
+      "performance": [
+        "PW02"
+      ]
+    },
+    "inspection": {
+      "sources": [
+        "apps/web/board/inspection.js",
+        "apps/web/board-adapters/engine-board-adapter.js",
+        "apps/web/board/runtime/board-runtime.js",
+        "apps/web/legend.js"
+      ],
+      "native": [
+        "e2e/workflows/legend-inspection.spec.mjs"
+      ],
+      "performance": [
+        "PW02"
+      ]
+    },
+    "pieces": {
+      "sources": [
+        "apps/web/styles.css",
+        "apps/web/board-adapters/engine-board-adapter.js",
+        "apps/web/board/runtime/board-runtime.js"
+      ],
+      "native": [
+        "browser-integration/commander-floor.spec.mjs",
+        "e2e/workflows/history-destruction.spec.mjs"
+      ],
+      "performance": [
+        "PW02",
+        "PW06"
+      ]
+    },
+    "history": {
+      "sources": [
+        "apps/web/shell/history-preview.js",
+        "apps/web/shell/history-narration.js",
+        "apps/web/shell/shell.css"
+      ],
+      "native": [
+        "browser-integration/compact-history.spec.mjs",
+        "e2e/workflows/mobile-board-history.spec.mjs",
+        "e2e/workflows/history-narration.spec.mjs"
+      ],
+      "performance": [
+        "PW05",
+        "PW09"
+      ]
+    },
+    "invite": {
+      "sources": [
+        "apps/web/shell/invitations.js",
+        "apps/web/shell/pending-invitation-focus.js",
+        "apps/web/shell/invite-load-recovery.js"
+      ],
+      "native": [
+        "e2e/workflows/invitation-focus-transition.spec.mjs",
+        "e2e/workflows/invitation-load-recovery.spec.mjs",
+        "e2e/workflows/approval-and-history.spec.mjs"
+      ],
+      "performance": [
+        "PW03",
+        "PW05"
+      ]
+    },
+    "result": {
+      "sources": [
+        "apps/web/shell/game-result.js",
+        "apps/web/shell/result-presentation.js",
+        "apps/web/shell/result-presentation.css"
+      ],
+      "native": [
+        "e2e/workflows/named-observer-result.spec.mjs",
+        "browser-integration/named-result-layout.spec.mjs"
+      ],
+      "performance": [
+        "PW05"
+      ]
+    },
+    "art": {
+      "sources": [
+        "apps/web/shell/opponent-stories.js",
+        "apps/web/shell/story-artwork-motion.js",
+        "apps/web/assets/opponents/manifest.json",
+        "docs/ai/marble/selected-assets.json"
+      ],
+      "native": [
+        "e2e/workflows/ux-refresh-checkpoint.spec.mjs"
+      ],
+      "performance": [
+        "PW04",
+        "PW07"
+      ]
+    },
+    "account": {
+      "sources": [
+        "apps/web/shell/account-dialog.js",
+        "apps/web/shell/account-controller.js",
+        "apps/web/shell/account-autosave.js",
+        "apps/web/shell/refresh.css"
+      ],
+      "native": [
+        "browser-integration/account.spec.mjs"
+      ],
+      "performance": [
+        "PW03"
+      ]
+    },
+    "utility": {
+      "sources": [
+        "apps/web/shell/scenarios.js",
+        "apps/web/shell/utility-memory.js",
+        "apps/web/shell/refresh.css",
+        "apps/web/shell/app.js"
+      ],
+      "native": [
+        "e2e/workflows/scenario-flyout-selection-mode.spec.mjs",
+        "e2e/workflows/scenario-flyout-save-load.spec.mjs"
+      ],
+      "performance": [
+        "PW03",
+        "PW05",
+        "PW09"
+      ]
+    },
+    "notices": {
+      "sources": [
+        "apps/web/shell/notification-state.js",
+        "apps/web/shell/notification-dom.js",
+        "apps/web/shell/recovery-view.js",
+        "apps/web/shell/loading-edge.js",
+        "apps/web/shell/notification-motion.css"
+      ],
+      "native": [
+        "browser-integration/notification-stability.spec.mjs",
+        "e2e/workflows/sync-recovery-ux.spec.mjs",
+        "e2e/workflows/loading-skeletons.spec.mjs"
+      ],
+      "performance": [
+        "PW01",
+        "PW03",
+        "PW07"
+      ]
+    },
+    "navigation": {
+      "sources": [
+        "apps/web/shell/mobile-navigation.js",
+        "apps/web/shell/navigation-history.js",
+        "apps/web/shell/navigation-motion.js",
+        "apps/web/shell/board-ux.css"
+      ],
+      "native": [
+        "browser-integration/mobile-navigation-geometry.spec.mjs",
+        "browser-integration/mobile-navigation-owner.spec.mjs",
+        "e2e/workflows/navigation-destination-recovery.spec.mjs"
+      ],
+      "performance": [
+        "PW03",
+        "PW05",
+        "PW07"
+      ]
+    },
+    "learning": {
+      "sources": [
+        "apps/web/shell/tutorial.js",
+        "apps/web/shell/app.js",
+        "apps/web/shell/refresh.css"
+      ],
+      "native": [
+        "e2e/workflows/ux-refresh-checkpoint.spec.mjs"
+      ],
+      "performance": [
+        "PW01",
+        "PW05"
+      ]
+    },
+    "controls": {
+      "sources": [
+        "apps/web/shell/refresh.css",
+        "apps/web/shell/account-dialog.js",
+        "apps/web/shell/app.js"
+      ],
+      "native": [
+        "e2e/workflows/ux-refresh-checkpoint.spec.mjs",
+        "browser-integration/account.spec.mjs"
+      ],
+      "performance": [
+        "PW02",
+        "PW03"
+      ]
+    },
+    "mini": {
+      "sources": [
+        "apps/web/board/mini-board-preview.js",
+        "apps/web/shell/mini-preview-payloads.js",
+        "apps/web/styles.css"
+      ],
+      "native": [
+        "e2e/workflows/scenario-card-preview.spec.mjs",
+        "e2e/workflows/scenario-home-card.spec.mjs"
+      ],
+      "performance": [
+        "PW06",
+        "PW09"
+      ]
+    }
+  },
+  "executionPolicy": {
+    "noPerRowBrowserMatrix": true,
+    "proofLayer": "Execute production helpers for state/variant depth; native tests for layout/input/occlusion; inspected originals for material fidelity; matched full-app measurement for performance.",
+    "profiles": "Map representative primary/fallback font, forced-colors/opaque fallback, reduced motion/mute, short/narrow/landscape,200%text and actual browser zoom to affected questions; do not form a blanket cross-product.",
+    "reuse": "One coherent workflow may close multiple related rows only with exact evidence/revision and accepted unchanged consumer closure.",
+    "CI": "Only exact current-head PR validation/pr-gate is blocking CI. Nightly remains advisory.",
+    "retained": "No blanket new retained stage for material-only rows; preserve and qualify affected state boundaries separately.",
+    "review": "Independent UX/product/performance review closes concrete findings on final combined source, not all rows by screenshot count.",
+    "newScope": "HomeYou label policy and incoming-move placement/reservation changes excluded until studies confirmed.",
+    "deferred": "D16 automatic endings, PR85/124/131/168 and Slate remain separately visible follow-ups. V31 verifies existing delivered surface only."
+  }
+}
