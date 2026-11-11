@@ -89,13 +89,13 @@ function revealFixture(t){
  const win={...events(),innerHeight:600,requestAnimationFrame(){return 1;},cancelAnimationFrame(){}};
  let calls=0;
  const notice={getBoundingClientRect:()=>({bottom:333.734375})},nav={getBoundingClientRect:()=>({top:540,height:60})};
- let frame={dataset:{gameId:'g'}};
- const app={dataset:{shellLayoutMode:'narrow'},querySelector:selector=>selector==='[data-game-shell-root]'?frame:selector.includes('is-active')?notice:nav};
+ let frame={dataset:{gameId:'g'}},incoming=null;
+ const app={dataset:{shellLayoutMode:'narrow'},querySelector:selector=>selector==='[data-game-shell-root]'?frame:selector.includes('is-active')?notice:selector==='.incoming-move-flyout'?incoming:nav};
  const doc={...events(),defaultView:win,fonts:events(),getElementById:()=>app,querySelectorAll:()=>[],activeElement:null};
  const target={isConnected:true,style:{},matches:()=>true,getBoundingClientRect:()=>({top:271.640625,bottom:327.125}),scrollIntoView(options){assert.deepEqual(options,{block:'nearest',inline:'nearest',behavior:'instant'});calls++;}};
  const layout=createBoardContextLayout(doc);t.after(()=>layout.destroy());
  const focus=()=>{doc.activeElement=target;doc.fire('focusin',{target});};
- return {win,doc,target,layout,focus,calls:()=>calls,frame:()=>frame,replaceFrame(){frame={dataset:{gameId:'g'}};}};
+ return {win,doc,target,layout,focus,calls:()=>calls,frame:()=>frame,setIncoming(value){incoming=value;},replaceFrame(){frame={dataset:{gameId:'g'}};}};
 }
 test('native Tab reveals its still-focused action even when a background page does not run animation frames',async t=>{
  const f=revealFixture(t);f.doc.fire('keydown',{key:'Tab'});f.focus();assert.equal(f.calls(),0,'wait until native focus finishes');
@@ -155,4 +155,14 @@ test('visual viewport pan updates on its own scroll event while a held input sti
  f.doc.fire('pointerup',{pointerId:0});f.flush();assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'120px');
  f.win.visualViewport.offsetTop=50;f.win.visualViewport.fire('scroll');f.flush();assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'140px');
  f.setScroll(100);f.win.visualViewport.fire('scroll');f.flush();assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'140px','ordinary reader scroll cannot change the admitted document geometry');
+});
+
+test('explicit Board focus reveals above the actual incoming overlay without moving flyout focus',async t=>{
+ const f=revealFixture(t);f.setIncoming({closest:()=>null,getBoundingClientRect:()=>({top:400,height:200})});
+ f.target.getBoundingClientRect=()=>({top:430,bottom:474});f.doc.fire('keydown',{key:'Tab'});f.focus();await Promise.resolve();
+ assert.equal(f.calls(),1);assert.equal(f.target.style.scrollMarginBlockEnd,'208px','one outward-rounded reveal clears incoming top400 by8px');
+});
+test('retired incoming host does not constrain explicit Board focus',async t=>{
+ const f=revealFixture(t);f.setIncoming({closest:()=>({}),getBoundingClientRect:()=>({top:400,height:200})});
+ f.target.getBoundingClientRect=()=>({top:430,bottom:474});f.doc.fire('keydown',{key:'Tab'});f.focus();await Promise.resolve();assert.equal(f.calls(),0);
 });
