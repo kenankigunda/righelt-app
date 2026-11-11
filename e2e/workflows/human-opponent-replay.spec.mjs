@@ -248,7 +248,12 @@ for(const width of [390,1440])test(`reopening human play preserves narration and
    expect(moved.board.state.pieces.some(piece=>piece.position.row===4&&piece.position.col===4)).toBe(false);
    await owner.locator('[data-testid="game-board"] .cell[data-row="4"][data-col="4"]').click();
    await owner.locator(`[data-testid="game-board"] .cell[data-row="${piece.position.row}"][data-col="${piece.position.col}"]`).click();
-   await expect(label(owner)).toContainText('Supply line for commander at');await expect(label(owner)).toContainText('No connected units.');
+   // The finite Board label and the complete scrollable explanation are separate surfaces.
+   await expect(label(owner)).toHaveText('Supply lines');
+   const inspectionHelp=owner.getByRole('region',{name:'Board explanation',exact:true}).filter({hasText:'Supply line for commander at'});
+   await expect(inspectionHelp).toBeVisible();await expect(inspectionHelp).toContainText('Supply line for commander at');
+   await expect(inspectionHelp.locator('.board-preview-coordinate-chip')).toHaveText(`${piece.position.row}, ${piece.position.col}`);
+   await expect(inspectionHelp).toContainText('No connected units.');
   }
  }
   // Reopening the live game clears inspection and exposes legal Pass beside narration.
