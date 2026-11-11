@@ -1,4 +1,5 @@
 import {HOME_SECTION_SERVER_PAGE_SIZE,HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE,createHomeSectionReads,createHomeSectionState,homeSectionVisiblePageSize,getHomeSectionVisibleGameIdsFromCache,homeSectionIsEmpty} from '../shell/home-section-reads.js';
+import {historyRenderingFixture} from './support/history-rendering-context.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -83,12 +84,17 @@ test("game, join/invite, and history use shared section spacing structure", () =
   assert.match(summary, /class="section-stack"/);
   assert.match(summary, /<div class="section-followup"><p class="small"[^>]*>Turn<\/p><p class="small">Latest<\/p>/);
   assert.match(renderHistorySlots({rows:'<li>Move</li>'}), /<div class="section-followup"><ol class="history-list"[^>]*><li>Move<\/li><\/ol>/);
-  assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
+  const returned=historyRenderingFixture().renderTurnHistory({id:'return-live',inHistoryMode:true,moves:[]});
+  assert.match(returned, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
 });
 
 test("history live-return control stays mounted without blocking through the global busy gate", () => {
-  assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
-  assert.doesNotMatch(source, /data-action="return-live"[^`]*\$\{busy \? "disabled" : ""\}/);
+  const returned=historyRenderingFixture().renderTurnHistory({id:'return-live',inHistoryMode:true,moves:[]});
+  assert.match(returned, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
+  const blocked=historyRenderingFixture({busy:true}).renderTurnHistory({id:'return-live',inHistoryMode:true,sharedMutationsBlocked:true,moves:[]});
+  const control=blocked.match(/<button class="secondary" data-action="return-live"[^>]*>/)?.[0];
+  assert.ok(control,'Return to live must be present while shared mutations are blocked');
+  assert.doesNotMatch(control,/\bdisabled\b|aria-disabled="true"/);
   assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*const moveId=actionEl\.getAttribute\("data-move-id"\)\?\?actionEl\.closest\("\.history-item\[data-move-id\]"\)\?\.getAttribute\("data-move-id"\)\?\?null;[\s\S]*await animateHistoryDeselection\(actionEl\);[\s\S]*transport\.selectHistoryMove\(\{ gameId, moveIndex, moveId \}\);[\s\S]*return;/s);
   assert.match(source, /if \(action === "return-live"\) \{[\s\S]*transport\.returnToLive\(\{ gameId \}\);[\s\S]*return;/s);
   assert.match(syncStoreSource, /selectHistoryMove: \(\{ gameId, moveIndex, moveId = null \}\) => operationManager.createCommitted/);

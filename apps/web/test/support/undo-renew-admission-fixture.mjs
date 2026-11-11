@@ -1,5 +1,7 @@
+import {createHistoryRendering} from '../../shell/history-rendering.js';
+import * as undoHistory from '../../shell/history-undo-groups.js';
 import {selectedHistoryPresentation} from '../../shell/history-narration.js';
-import {visibleRecordedMoves} from '../../shell/recorded-narration.js';
+import {visibleRecordedMoves,recordedMoveNumber} from '../../shell/recorded-narration.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -58,6 +60,7 @@ export async function undoRenewAdmissionHarness(t){
   selectedHistoryPresentation,visibleRecordedMoves,boardContexts:createBoardContextStore(),boardContextScope:()=> 'controlled',isCompletedGame,buildMovePreview,buildTurnPreview,historyTurnSide,getShellLayoutMode:()=> 'wide',escapeHtml:x=>String(x??''),toStableKey:JSON.stringify,playerToneClassForSide:()=>'',playerToneClassForSeat:()=>'',historyActorLabel:()=> 'Owner',COMPUTER_PROFILES:{},playerDisplayName:()=> 'Owner',icon:()=>'',formatClientDateTime:String,expandedUndoneGroups:new Set(),liveHistoryLabel:()=>'',sharedMutationActions,
   renderHistoryPanel:g=>context.renderHistory(g),patchToolHtml:(element,html)=>{assert.equal(element,history);const match=html.match(/<button[^>]*data-action="revert-to-move"[^>]*>/);if(!match){assert(button,'Initial actual selected history renderer must produce Undo');button.isConnected=false;return;}const attrs=Object.fromEntries([...match[0].matchAll(/([\w-]+)="([^"]*)"/g)].map(m=>[m[1],m[2]]));if(!button||!button.isConnected)button=new Element(attrs);else button.attrs=new Map(Object.entries(attrs));button.disabled=button.hasAttribute('disabled');renders.push({blocked:store.getGameViewModel(game.id).sharedMutationsBlocked});},
  };
+ context.undoHistory=undoHistory;context.recordedMoveNumber=recordedMoveNumber;context.historyRendering=createHistoryRendering(()=>context);
  vm.createContext(context);
  const compiled=[extract('const pendingUndoAdmissions =','const bootstrap ='),extract('const renderHistoryPreview =','const renderHeader ='),extract('const updateMountedGameShell =','const doesMountedFlyoutStateMatchRoute ='),extract('const renderGesture =','// Background shell updates'),extract('const render =','const renderContent ='),extract('appEl.addEventListener("click", async (event) => {','appEl.addEventListener("change"')].join('\n');
  vm.runInContext(compiled+`\nconst renderContent=options=>updateMountedGameShell({game:transport.getGameViewModel(currentRoute.gameId),...options});globalThis.renderNow=()=>render({includeBoard:false,animatePanels:false});globalThis.renderHistory=renderTurnHistory;`,context);

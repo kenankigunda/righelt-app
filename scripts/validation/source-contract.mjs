@@ -39,21 +39,22 @@ export function currentModelContract(text) {
 }
 
 // Inspect the actual history-row template, never candidate code execution or comments.
-export function historyUndoLabelContract(text) {
- const source=sourceFile('app.js',text),rows=[],matches=[];
+export function historyUndoLabelContract(text,{renderer=false}={}) {
+ const parsed=sourceFile(renderer?'history-rendering.js':'app.js',text);
+ const source=renderer?historyRowRenderer(parsed):parsed,rows=[],matches=[];
  const findRows=node=>{
   if(ts.isVariableDeclaration(node)&&ts.isIdentifier(node.name)&&node.name.text==='revertButton')rows.push(node);
   ts.forEachChild(node,findRows);
  };
  findRows(source);
  const fail=()=>{throw Error('Unsupported history undo row label contract');};
- if(rows.length!==1||!rows[0].initializer)return fail();
+ if(!renderer&&(rows.length!==1||!rows[0].initializer))return fail();
  const visit=node=>{
   if(ts.isTemplateExpression(node)&&node.head.text.includes('data-action="revert-to-move"'))matches.push(node);
   else if(ts.isNoSubstitutionTemplateLiteral(node)&&node.text.includes('data-action="revert-to-move"'))matches.push(node);
   ts.forEachChild(node,visit);
  };
- visit(rows[0].initializer);
+ visit(renderer?source:rows[0].initializer);
  if(matches.length!==1)return fail();
  const template=matches[0],expressions=ts.isTemplateExpression(template)?template.templateSpans.map(span=>span.expression):[];
  const rendered=ts.isTemplateExpression(template)?template.head.text+template.templateSpans.map((span,index)=>`__EXPR_${index}__${span.literal.text}`).join(''):template.text;
@@ -68,4 +69,67 @@ export function historyUndoLabelContract(text) {
  }
  if(!['Undo back to this move','Undo before this move'].includes(label))return fail();
  return label;
+}
+
+
+const historyBindingFailure=()=>{throw Error('Unsupported History renderer source binding');};
+const withoutParentheses=node=>{while(node&&ts.isParenthesizedExpression(node))node=node.expression;return node;};
+
+/** Recognize the two released producer layouts without evaluating candidate code.
+ * A filename alone never selects a new layout. Public imports, construction and
+ * calls bind the separate source; private local aliases are intentionally free. */
+export function historyUndoLabelSource(text){
+ const source=sourceFile('app.js',text);
+ const imports=source.statements.filter(node=>ts.isImportDeclaration(node)&&ts.isStringLiteral(node.moduleSpecifier)&&node.moduleSpecifier.text==='./history-rendering.js');
+ if(!imports.length)return 'app.js';
+ if(imports.length!==1)return historyBindingFailure();
+ const bindings=imports[0].importClause?.namedBindings;
+ if(!bindings||!ts.isNamedImports(bindings))return historyBindingFailure();
+ const factories=bindings.elements.filter(specifier=>(specifier.propertyName??specifier.name).text==='createHistoryRendering');
+ if(factories.length!==1)return historyBindingFailure();
+ const factory=factories[0].name.text,instances=[];
+ for(const statement of source.statements)if(ts.isVariableStatement(statement)&&statement.declarationList.flags&ts.NodeFlags.Const){
+  for(const declaration of statement.declarationList.declarations){
+   const init=withoutParentheses(declaration.initializer);
+   if(ts.isIdentifier(declaration.name)&&init&&ts.isCallExpression(init)&&ts.isIdentifier(init.expression)&&init.expression.text===factory)instances.push(declaration);
+  }
+ }
+ if(instances.length!==1)return historyBindingFailure();
+ const instanceDeclaration=instances[0],instance=instanceDeclaration.name.text,calls=new Set();let inlineRows=0,invalid=false;
+ const receiver=node=>{
+  node=withoutParentheses(node);
+  while(node&&(ts.isPropertyAccessExpression(node)||ts.isElementAccessExpression(node)))node=withoutParentheses(node.expression);
+  return node&&ts.isIdentifier(node)&&node.text===instance;
+ };
+ const visit=node=>{
+  if(ts.isVariableDeclaration(node)&&ts.isIdentifier(node.name)){
+   if(node.name.text==='revertButton')inlineRows++;
+   if([factory,instance].includes(node.name.text)&&node!==instanceDeclaration)invalid=true;
+  }
+  if((ts.isParameter(node)||ts.isFunctionDeclaration(node))&&node.name&&ts.isIdentifier(node.name)&&[factory,instance].includes(node.name.text))invalid=true;
+  if(ts.isBinaryExpression(node)&&node.operatorToken.kind>=ts.SyntaxKind.FirstAssignment&&node.operatorToken.kind<=ts.SyntaxKind.LastAssignment&&(receiver(node.left)||ts.isIdentifier(node.left)&&node.left.text===factory))invalid=true;
+  if((ts.isPrefixUnaryExpression(node)||ts.isPostfixUnaryExpression(node))&&[ts.SyntaxKind.PlusPlusToken,ts.SyntaxKind.MinusMinusToken].includes(node.operator)&&receiver(node.operand))invalid=true;
+  if(ts.isDeleteExpression(node)&&receiver(node.expression))invalid=true;
+  if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)&&ts.isIdentifier(node.expression.expression)&&['Object','Reflect'].includes(node.expression.expression.text)&&['assign','defineProperty','defineProperties','set','deleteProperty','setPrototypeOf'].includes(node.expression.name.text)&&receiver(node.arguments[0]))invalid=true;
+  if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)&&ts.isIdentifier(node.expression.expression)&&node.expression.expression.text===instance)calls.add(node.expression.name.text);
+  ts.forEachChild(node,visit);
+ };
+ visit(source);
+ if(inlineRows||invalid||!calls.has('renderTurnHistory')||!calls.has('renderAdditionalHistory'))return historyBindingFailure();
+ return 'history-rendering.js';
+}
+
+function historyRowRenderer(source){
+ const factories=source.statements.filter(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='createHistoryRendering'&&node.modifiers?.some(modifier=>modifier.kind===ts.SyntaxKind.ExportKeyword));
+ if(factories.length!==1||!factories[0].body)return historyBindingFailure();
+ const body=factories[0].body,returns=body.statements.filter(ts.isReturnStatement);
+ if(returns.length!==1||!returns[0].expression||!ts.isObjectLiteralExpression(returns[0].expression))return historyBindingFailure();
+ if(returns[0].expression.properties.some(node=>!(ts.isShorthandPropertyAssignment(node)||ts.isPropertyAssignment(node))||!ts.isIdentifier(node.name)))return historyBindingFailure();
+ const members=returns[0].expression.properties.filter(node=>(ts.isShorthandPropertyAssignment(node)||ts.isPropertyAssignment(node))&&ts.isIdentifier(node.name)&&node.name.text==='renderTurnHistory');
+ if(members.length!==1)return historyBindingFailure();
+ const target=ts.isShorthandPropertyAssignment(members[0])?members[0].name:members[0].initializer;
+ if(!ts.isIdentifier(target))return historyBindingFailure();
+ const declarations=body.statements.filter(statement=>ts.isVariableStatement(statement)&&Boolean(statement.declarationList.flags&ts.NodeFlags.Const)).flatMap(statement=>statement.declarationList.declarations.filter(node=>ts.isIdentifier(node.name)&&node.name.text===target.text));
+ if(declarations.length!==1||!declarations[0].initializer||!(ts.isArrowFunction(declarations[0].initializer)||ts.isFunctionExpression(declarations[0].initializer)))return historyBindingFailure();
+ return declarations[0].initializer;
 }

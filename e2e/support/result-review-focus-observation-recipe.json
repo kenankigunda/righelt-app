@@ -1,49 +1,49 @@
 {
   "version": 1,
   "modulePath": "/shell/app.js",
-  "sourceSha256": "a06c017ee4f517796f4aaf68f9783fda0a22522b477345cd79e5214c1e712541",
-  "outputSha256": "3c7bd475c91a5f798ebf0bf8ece06d54c3422edf99e21e126d3d71e4cf55abe7",
+  "sourceSha256": "452e5ab9af023f32201a12761a6680f8b1646ea530bb67316404d8d7a3a14c97",
+  "outputSha256": "a3f5cb8ca674a7d11905e9c571b80303da26eefca8696e934a8d7f273310225d",
   "prefix": "const __righeltResultReviewFocusProbe = (kind, refs = {}) => { try { globalThis.__RIGHELT_RESULT_REVIEW_FOCUS_PROBE__?.(kind, refs); } catch {} };\n",
   "operations": [
     {
       "label": "context-history-patch",
-      "start": 13762,
-      "end": 13886,
+      "start": 13588,
+      "end": 13712,
       "before": "const history=appEl.querySelector('[data-game-panel=\"history\"]');if(history)patchToolHtml(history,renderHistoryPanel(game));",
       "after": "const history=appEl.querySelector('[data-game-panel=\"history\"]');if(history){__righeltResultReviewFocusProbe(\"history-before-context-patch\",{root:history});patchToolHtml(history,renderHistoryPanel(game));__righeltResultReviewFocusProbe(\"history-after-context-patch\",{root:history});}"
     },
     {
       "label": "incremental-history-patch",
-      "start": 169910,
-      "end": 169994,
+      "start": 157172,
+      "end": 157256,
       "before": "    patchToolHtml(historyEl, renderHistoryPanel(game));\n    revealSelectedHistory();",
       "after": "    __righeltResultReviewFocusProbe(\"history-before-incremental-patch\",{root:historyEl});\n    patchToolHtml(historyEl, renderHistoryPanel(game));\n    __righeltResultReviewFocusProbe(\"history-after-incremental-patch\",{root:historyEl});\n    revealSelectedHistory();"
     },
     {
       "label": "committed-render-entry",
-      "start": 205302,
-      "end": 205369,
+      "start": 192737,
+      "end": 192804,
       "before": "  if (renderGesture.defer({ animatePanels, includeBoard })) return;",
       "after": "  if (renderGesture.defer({ animatePanels, includeBoard })) return;\n  __righeltResultReviewFocusProbe(\"render-committed-entry\");"
     },
     {
       "label": "original-focus-once",
-      "start": 206357,
-      "end": 206466,
+      "start": 193792,
+      "end": 193901,
       "before": "if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }",
       "after": "if (heading) { heading.tabIndex = -1; __righeltResultReviewFocusProbe(\"focus-before\", {node:heading}); heading.focus({preventScroll:true}); __righeltResultReviewFocusProbe(\"focus-after\", {node:heading}); pendingResultReviewFocus = null; }"
     },
     {
       "label": "existing-render-tail",
-      "start": 206471,
-      "end": 206668,
+      "start": 193906,
+      "end": 194103,
       "before": "  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  resumeBoardContextReplay();",
       "after": "  __righeltResultReviewFocusProbe(\"render-before-join\");\n  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  __righeltResultReviewFocusProbe(\"render-after-join\");\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  resumeBoardContextReplay();\n  __righeltResultReviewFocusProbe(\"render-after-resume\");"
     },
     {
       "label": "explicit-analysis",
-      "start": 273654,
-      "end": 273710,
+      "start": 259724,
+      "end": 259780,
       "before": "if (action === \"analysis\") { resultPresentation.clear();",
       "after": "if (action === \"analysis\") { __righeltResultReviewFocusProbe(\"analysis-entry\"); resultPresentation.clear();"
     }

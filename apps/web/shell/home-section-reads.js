@@ -87,6 +87,52 @@ export const sameRouteRead = (read, current) => read.generation === current.gene
 export const sameHomeReadScope = (read, current) => read.route.name === "home" && current.route.name === "home"
   && read.homeVisit === current.homeVisit
   && sameRouteRead({ ...read, inputs: current.inputs }, current);
+// Layout can change during the owner's own render without changing a player's
+// page choice. Compare those choices explicitly; never adopt a foreign visit.
+export const homeContinuationLayoutCompatible = (previous, current) => {
+  if (previous?.route?.name!=="home" || current?.route?.name!=="home" || typeof previous.hash!=="string" || !Number.isSafeInteger(previous.homeVisit) || typeof previous.homeDebug!=="boolean" || !previous.owner || !sameHomeReadScope(previous,current) || previous.hash !== current.hash || previous.homeDebug !== current.homeDebug) return false;
+  const choices = read => {
+    let value;try { value=JSON.parse(read.inputs); } catch { return null; }
+    if (!Array.isArray(value) || value.length!==3 || value[0]!==read.homeVisit || value[1]!==read.homeDebug || !Array.isArray(value[2]) || !value[2].length) return null;
+    const keys=new Set(),pages=[];
+    for (const tuple of value[2]) {
+      if (!Array.isArray(tuple) || tuple.length!==4 || typeof tuple[0]!=="string" || !tuple[0] || keys.has(tuple[0]) || !Number.isSafeInteger(tuple[1]) || tuple[1]<0 || !Number.isSafeInteger(tuple[2]) || tuple[2]<=0 || !Number.isSafeInteger(tuple[3]) || tuple[3]<=0) return null;
+      keys.add(tuple[0]);pages.push([tuple[0],tuple[1]]);
+    }
+    return JSON.stringify(pages);
+  };
+  const before=choices(previous),after=choices(current);
+  return before!==null && before===after;
+};
+export const resultForHomeContinuation = record => {
+  if (record?.outcome!=="fulfilled" || record.result?.healthySettled!==true) throw record?.error ?? record?.result?.error ?? Object.assign(new Error("Home read did not settle completely"),{code:"home_read_incomplete"});
+  return record.result;
+};
+const transferredContinuation = (pending, read) => ({...pending,...read,intent:pending.intent,running:false,recoveryEpisode:pending.recoveryEpisode});
+export const bindHomeContinuationAfterRender = (pending,currentPending,read) => {
+  if (!pending || pending!==currentPending) return null;
+  if (sameRouteRead(pending,read)) return pending;
+  return homeContinuationLayoutCompatible(pending,read) ? transferredContinuation(pending,read) : null;
+};
+// A completed healthy read proves the same data window after a columns-only
+// render change. A different visible page size still needs its responsive read.
+export const bindHomeContinuationAfterSettlement = ({pending,currentPending,read,settledRead,result,job,replacement}) => {
+  if (!pending || pending!==currentPending || job || replacement || result?.healthySettled!==true || !settledRead || !sameRouteRead(pending,settledRead) || !homeContinuationLayoutCompatible(pending,settledRead) || !homeContinuationLayoutCompatible(pending,read)) return null;
+  const dataWindow=value=>JSON.parse(value.inputs)[2].map(([key,page,size])=>[key,page,size]);
+  return {continuation:transferredContinuation(pending,read),requiresRead:JSON.stringify(dataWindow(pending))!==JSON.stringify(dataWindow(read))};
+};
+export const createHomeReadReplacement = ({job,activeJob,read,pending,previous,currentReplacement,recovery}) => {
+  const owned = previous ? previous===currentReplacement && previous.job===job : job===activeJob;
+  const from=previous?.read ?? job?.read;
+  const replacement={job,read,fulfilledByNewer:false};
+  if (!owned || !from || !pending || previous && previous.continuation!==pending || !sameRouteRead(pending,from)) return replacement;
+  if (homeContinuationLayoutCompatible(from,read)) {
+    replacement.continuation=transferredContinuation(pending,read);
+    if (recovery?.read && sameRouteRead(recovery.read,from)) replacement.continuation.recoveryEpisode=true;
+  } else replacement.retiredContinuation=pending;
+  return replacement;
+};
+
 export const homeReadMayRetry = error => {
   const code = error?.code ?? "";
   if (/auth|credential|session|protocol|schema|storage|upgrade|contract|invalid_home_page/i.test(code)) return false;
@@ -103,9 +149,15 @@ export const homeSectionVisiblePageSize = columnCount => columnCount === 2
 /** Home list transactions and presentation reads share the shell's live state.
  * Generic route/account authority stays with capture/assert callbacks. */
 export function createHomeSectionReads({state, getHomeSection, setHomeSection, getHomeSectionVisiblePageSize, getHomeSectionColumnCount, getVisibleHomeSectionKeys, captureRouteRead, assertCurrentRouteRead, routeReadIsCurrent, render, syncLiveChannels, startRouteSync, isHomeSectionPending, scrollHomeSectionToTop, captureHomeFocus, restoreHomeReadingPosition, restoreHomeFocus,
-  pendingHomeSectionKeys, gameSound, storyDialog, appEl, document, window,
+  pendingHomeSectionKeys, gameSound, storyDialog, appEl, document, window, resumeAccountContinuation,
   syncAnnouncement, setTimeout=(...args)=>globalThis.setTimeout(...args), clearTimeout=(...args)=>globalThis.clearTimeout(...args),
 }) {
+  const jobResults=new WeakMap(),continuationSettlements=new WeakMap();
+  const takeContinuationSettlement = (pending,token) => {
+    const owned=continuationSettlements.get(token);continuationSettlements.delete(token);
+    if (!owned || owned.pending!==pending || state.accountContinuation!==pending || !sameRouteRead(pending,owned.read) || !routeReadIsCurrent(owned.read)) return null;
+    return owned.record;
+  };
   const loadHomeSectionServerPage = async (
     sectionKey,
     serverPage,
@@ -277,6 +329,7 @@ export function createHomeSectionReads({state, getHomeSection, setHomeSection, g
     state.homeReadJob?.retire();
     let retired = false, batch = null, delayTimer = null, rejectDelay = null;
     let settleRead, outcome = "retired";
+    const resultRecord={read,outcome:null,result:null,error:null};
     const settled = new Promise(resolve => { settleRead = resolve; });
     const job = {
       read, settled,
@@ -286,10 +339,12 @@ export function createHomeSectionReads({state, getHomeSection, setHomeSection, g
           clearTimeout(delayTimer); delayTimer = null;
           rejectDelay?.(Object.assign(new Error("session_changed"), { code: "session_changed" })); rejectDelay = null;
           if (state.homeReadJob === job) state.homeReadJob = null;
-        } finally { settleRead(outcome); }
+        } finally { if (resultRecord.outcome===null) resultRecord.outcome=outcome;settleRead(outcome); }
       },
     };
+    jobResults.set(job,resultRecord);
     state.homeReadJob = job;
+    if (state.pendingResponsiveHomeRead?.fulfilledByNewer && state.pendingResponsiveHomeRead.read===read) state.pendingResponsiveHomeRead.fulfilledByJob=job;
     const assertCurrent = () => {
       assertCurrentRouteRead(read, () => !retired && state.homeReadJob === job && isActive());
     };
@@ -356,15 +411,22 @@ export function createHomeSectionReads({state, getHomeSection, setHomeSection, g
           attemptBatch.commit();
           const publishedRevision = read.owner.getHomeListRevision?.() ?? null;
           for(const key of readKeys)if(!errors.has(key))sectionMap[key].homeListRevision=publishedRevision;
+          // Sections outside this transaction may have settled a manual Retry
+          // while our healthy read was pending. Keep their current publication.
+          for (const key of visibleSectionKeys) if (!readKeys.includes(key)) sectionMap[key] = getHomeSection(key);
           state.homeSections = sectionMap;
-          state.lastHomeBatchRevision = publishedRevision;
+          // An unread healthy section can predate membership learned by our batch.
+          // Keep the existing trailing-refresh obligation instead of stamping it.
+          state.lastHomeBatchRevision = visibleSectionKeys.every(key => sectionMap[key].error || sectionMap[key].homeListRevision === publishedRevision)
+            ? publishedRevision : null;
           // A successful count refresh can clamp our own page. Advance only this
           // proven read's input snapshot, never accept a concurrent user change.
           read.inputs = JSON.stringify([state.homeReadVisit, read.homeDebug, getVisibleHomeSectionKeys({ debug: read.homeDebug }).map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])]);
           if (continuation) continuation.inputs = read.inputs;
           state.homeReadRecovery = null;
           outcome = "fulfilled";
-          return { recovered, healthySettled: failures.length === 0, error:failures[0]?.error ?? null };
+          resultRecord.result={ recovered, healthySettled: failures.length === 0, error:failures[0]?.error ?? null };
+          return resultRecord.result;
         } catch (error) {
           attemptBatch.retire();
           assertCurrent();
@@ -388,7 +450,7 @@ export function createHomeSectionReads({state, getHomeSection, setHomeSection, g
         }
       }
     } catch (error) {
-      outcome = "failed";
+      outcome = "failed";resultRecord.error=error;
       throw error;
     } finally { job.retire(); }
   };
@@ -457,6 +519,31 @@ export function createHomeSectionReads({state, getHomeSection, setHomeSection, g
           // this snapshot; do not erase its freshly queued replacement.
           if (state.pendingResponsiveHomeRead === replacement) state.pendingResponsiveHomeRead = null;
           if (!current) return;
+          if (replacement.continuation && state.accountContinuation===replacement.continuation && resumeAccountContinuation) {
+            const pending=replacement.continuation;
+            const job=replacement.fulfilledByJob ?? state.homeReadJob;
+            if (job) {
+              const record=jobResults.get(job);
+              if (!record || record.read!==replacement.read) return;
+              await job.settled;
+              if (state.accountContinuation!==pending || !sameRouteRead(pending,record.read)) return;
+              const latest=captureRouteRead();
+              if (state.accountContinuation!==pending) return;
+              if (!sameRouteRead(record.read,latest)) {
+                if (homeContinuationLayoutCompatible(record.read,latest)) {
+                  const next=transferredContinuation(pending,latest);
+                  if (record.result?.recovered) next.recoveryEpisode=true;
+                  state.accountContinuation=next;
+                  state.pendingResponsiveHomeRead={job,read:latest,continuation:next,fulfilledByNewer:false};
+                  queueResponsiveHomeSectionPageSizes();
+                } else state.accountContinuation=null;
+                return;
+              }
+              const token={};continuationSettlements.set(token,{pending,read:record.read,record});
+              await resumeAccountContinuation(pending,token);
+            } else await resumeAccountContinuation(pending);
+            return;
+          }
           // Fulfillment survives completion or terminal failure before this frame.
           // Do not start a third batch or fall through to standalone pagination.
           if (replacement.fulfilledByNewer || state.homeReadJob) return;
@@ -544,6 +631,6 @@ export function createHomeSectionReads({state, getHomeSection, setHomeSection, g
     scheduleRefresh:scheduleHomeListRefresh, stabilize:stabilizeAfterHomeRead,
     restoreReading:restoreHomeReadingIntent, queueResponsive:queueResponsiveHomeSectionPageSizes,
     scheduleResponsive:scheduleResponsiveHomeSectionPageSizes,
-    next:key=>page(key,'next'), previous:key=>page(key,'prev'), retry, leaveHome, refreshResponsive,
+    next:key=>page(key,'next'), previous:key=>page(key,'prev'), retry, leaveHome, refreshResponsive,takeContinuationSettlement,
   };
 }

@@ -2,6 +2,8 @@ import {createHomeCardRendering,getStaticCardPreviewSnapshot,getStaticCardPrevie
 import {escapeDebug} from '../shell/computer-view.js';
 import {renderHomeCardIdentity,renderHomeCardTurn} from '../shell/home-card-identity.js';
 import {createHomeSectionReads,createHomeSectionState} from '../shell/home-section-reads.js';
+import {historyRenderingFixture} from './support/history-rendering-context.mjs';
+import {groupUndoHistory,renderUndoHistoryGroups} from '../shell/history-undo-groups.js';
 import {selectedHistoryPresentation} from '../shell/history-narration.js';
 import {recordedMoveNumber,visibleRecordedMoves} from '../shell/recorded-narration.js';
 import {renderBoardMessageHtml} from '../board/message-presentation.js';
@@ -270,13 +272,20 @@ test("sync store manages subscriptions through the active route game id", () => 
   assert.match(syncStoreSource, /liveSync\.connectGame\(gameId\);/);
 });
 
-test("history renderer groups turns newest first and moves chronologically", () => {
-  assert.match(source, /class="history-turn /);
-  assert.match(source, /sort\(\(a,b\)=>b.index-a.index\)/);
-  assert.match(source, /a.turnMoveIndex \?\? a.index/);
-  assert.match(source, /data-action="toggle-undone-group"/);
-  assert.match(source, /data-action="jump-history-turn"/);
-  assert.match(source, /data-action="revert-to-move"/);
+test("history renderer orders turns newest first and keeps native selection targets", () => {
+ const {renderTurnHistory}=historyRenderingFixture();
+ const game={id:'accepted-game',inHistoryMode:true,historyIndex:0,myRoles:['Player 1'],moves:[
+  {moveId:'first',index:0,turnIndex:0,turnMoveIndex:0,actorSide:'P1',notation:'First'},
+  {moveId:'second',index:1,turnIndex:1,turnMoveIndex:0,actorSide:'P2',notation:'Second'}]};
+ const html=renderTurnHistory(game);
+ assert.deepEqual([...html.matchAll(/data-testid="history-turn" aria-label="Turn (\d+) ·/g)].map(match=>Number(match[1])),[2,1]);
+ assert.match(html,/data-action="jump-history-turn"/);
+ assert.match(html,/data-action="revert-to-move"/);
+ const groups=groupUndoHistory('accepted-game',[{moveId:'accepted-move',index:0,turnIndex:0,undone:true,undoEventSeq:17}]);
+ const undo=renderUndoHistoryGroups('accepted-game',groups,()=>'<li>Recorded move</li>',new Set(),String);
+ assert.match(undo,/data-action="toggle-undone-group"/);
+ assert.match(undo,/data-undo-event-seq="17"/);
+ assert.match(undo,/aria-expanded="false"/);
 });
 
 test("transport subscriptions drive immediate game-shell updates", () => {
@@ -360,10 +369,13 @@ test("shell renders durable browser E2E selectors for core workflow surfaces", (
   assert.match(readFileSync(join(testDir, "..", "shell", "players-panel.js"), "utf8"), /data-testid="participants-list"/);
   assert.match(source, /data-testid="game-board"/);
   assert.match(readFileSync(join(testDir,"..","shell","panel-loading.js"),"utf8"), /data-testid="history-list"/);
-  assert.match(source, /data-testid="history-move-item"/);
-  assert.match(source, /data-testid="history-pending-move-item"/);
-  assert.match(source, /data-testid="history-destruction-item"/);
-  assert.match(source, /data-testid="history-return-live"/);
+  const {renderTurnHistory}=historyRenderingFixture();
+  const recorded={moveId:'recorded',index:0,turnIndex:0,turnMoveIndex:0,actorSide:'P1',notation:'Pass',action:{type:'pass'},selectionSnapshot:{pieces:[]},snapshot:{pieces:[]},destroyedPieces:[{ownerSeat:'p2',position:{row:2,col:3}}]};
+  const history=renderTurnHistory({id:'native-selectors',myRoles:['Player 1'],inHistoryMode:true,historyIndex:0,moves:[recorded],pendingMoves:[{...recorded,moveId:'pending',index:1,turnMoveIndex:1}]});
+  assert.match(history, /data-testid="history-move-item"/);
+  assert.match(history, /data-testid="history-pending-move-item"/);
+  assert.match(history, /data-testid="history-destruction-item"/);
+  assert.match(history, /data-testid="history-return-live"/);
   assert.match(source, /data-testid="approval-gate"/);
   assert.match(source, /data-testid="accept-request"/);
   assert.match(source, /data-testid="ignore-request"/);
@@ -517,8 +529,13 @@ test('all history undo/create actions belong to moves and the top keeps only Ret
  const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');const panel=source.slice(source.indexOf('const renderHistoryPanel ='),source.indexOf('const renderBoardPanel ='));
  assert.doesNotMatch(panel,/data-action="(?:launch-history-branch|revert-to-move|undo-last-move)"/);
  assert.doesNotMatch(source,/data-action="undo-last-move"/);
- const moves=source.slice(source.indexOf('const renderTurnHistory ='),source.indexOf('const renderHeader ='));
- assert.match(moves,/history-item-actions/);assert.match(moves,/data-action="launch-history-branch"/);assert.match(moves,/data-action="revert-to-move"/);assert.match(moves,/data-testid="history-return-live"/);
+ const {renderTurnHistory}=historyRenderingFixture();
+ const moves=renderTurnHistory({id:'move-actions',myRoles:['Player 1'],inHistoryMode:true,historyIndex:0,moves:[{moveId:'selected',index:0,turnIndex:0,turnMoveIndex:0,actorSide:'P1',notation:'Pass',action:{type:'pass'},selectionSnapshot:{pieces:[]},snapshot:{pieces:[]}}]});
+ const returnLine=moves.match(/<li class="history-empty-line history-return-live">[\s\S]*?<\/li>/)?.[0];
+ assert.ok(returnLine,'The native Return to live line must exist');assert.match(returnLine,/data-testid="history-return-live"/);
+ assert.doesNotMatch(returnLine,/data-action="(?:launch-history-branch|revert-to-move|undo-last-move)"/);
+ const selectedRow=moves.match(/<li class="history-item [^"]*"[^>]*data-move-id="selected"[\s\S]*?<\/li>/)?.[0];
+ assert.ok(selectedRow,'The selected move row must exist');assert.match(selectedRow,/history-item-actions/);assert.match(selectedRow,/data-action="launch-history-branch"/);assert.match(selectedRow,/data-action="revert-to-move"/);
  const css=readFileSync(new URL('../shell/shell.css',import.meta.url),'utf8');assert.match(css,/\.shell-header-menu-button \{\s*display: flex;\s*align-items: center;\s*justify-content: center;/);
 });
 

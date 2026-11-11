@@ -1,8 +1,9 @@
+import {createAccountContinuationOwner} from '../shell/account-continuation-owner.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
-import {sameRouteRead,sameHomeReadScope} from '../shell/home-section-reads.js';
+import {sameRouteRead,sameHomeReadScope,createHomeReadReplacement} from '../shell/home-section-reads.js';
 import {createRouteHydration} from '../shell/route-hydration.js';
 import {parseRouteFromHash,FLYOUT_KEYS} from '../shell/routes.js';
 
@@ -18,7 +19,7 @@ test('an authority microtask before hashchange cannot share a home read under an
     resolveInvite: async token => { calls.push(['invite', token]); return {gameId:'invited-game'}; },
     loadGame: async id => { calls.push(['game', id]); },
   };
-  const context = vm.createContext({sameRouteRead,sameHomeReadScope,
+  const context = vm.createContext({createAccountContinuationOwner,sameRouteRead,sameHomeReadScope,createHomeReadReplacement,
     account:{snapshot:()=>({generation:2})}, window:{location:{hash:'#/invite/cold-invite'}},
     transport:owner, currentRoute:parseRouteFromHash('#/'), resolvedInvite:null,
     getVisibleHomeSectionKeys:()=>[], getHomeSection:()=>{}, getHomeSectionVisiblePageSize:()=>0, getHomeSectionColumnCount:()=>1,
@@ -37,7 +38,7 @@ test('an authority microtask before hashchange cannot share a home read under an
 });
 
 test('captured game routes follow the URL rather than a previous invitation route', () => {
-  const context = vm.createContext({sameRouteRead,sameHomeReadScope,account:{snapshot:()=>({generation:3})}, window:{location:{hash:'#/game/current-game?panel=history'}},
+  const context = vm.createContext({createAccountContinuationOwner,sameRouteRead,sameHomeReadScope,createHomeReadReplacement,account:{snapshot:()=>({generation:3})}, window:{location:{hash:'#/game/current-game?panel=history'}},
     transport:{}, currentRoute:parseRouteFromHash('#/invite/previous'), getVisibleHomeSectionKeys:()=>[],
     hydrateRoute:createRouteHydration(), parseRouteFromHash,FLYOUT_KEYS,URLSearchParams});
   const read = script.runInContext(context).captureRouteRead();
@@ -49,7 +50,7 @@ test('captured game routes follow the URL rather than a previous invitation rout
 test('Home route hydration retains the original failed section read for account continuation', async () => {
   const original=Object.assign(new Error('local_api_unavailable'),{code:'local_api_unavailable',status:503,diagnosticEvidence:{serverBuild:'continuation-test-build'}});
   let channels=0;
-  const context=vm.createContext({sameRouteRead,sameHomeReadScope,account:{snapshot:()=>({generation:2})},window:{location:{hash:'#/'}},transport:{},currentRoute:parseRouteFromHash('#/'),
+  const context=vm.createContext({createAccountContinuationOwner,sameRouteRead,sameHomeReadScope,createHomeReadReplacement,account:{snapshot:()=>({generation:2})},window:{location:{hash:'#/'}},transport:{},currentRoute:parseRouteFromHash('#/'),
     getVisibleHomeSectionKeys:()=>[],getHomeSection:()=>{},getHomeSectionVisiblePageSize:()=>0,getHomeSectionColumnCount:()=>1,
     hydrateRoute:createRouteHydration(),parseRouteFromHash,FLYOUT_KEYS,URLSearchParams,
     // The current account-continuation owner strictly rejects a failed whole read.
