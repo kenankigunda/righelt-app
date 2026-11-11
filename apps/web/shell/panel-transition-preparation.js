@@ -18,7 +18,7 @@ export function createPanelTransitionPreparation(getDependencies) {
     const owner=d.transport,scope=d.viewingScope(),navigation=d.mobileNavigation;
     d.window.requestAnimationFrame(()=>{
      const current=getDependencies(),route=current.getCurrentRoute();
-     if(currentGeneration!==generation||current.transport!==owner||current.viewingScope()!==scope||current.mobileNavigation!==navigation||current.document?.hidden||route?.name!==next.name||route?.gameId!==next.gameId||current.getGamePanel(route)!==d.getGamePanel(next))return;
+     if(currentGeneration!==generation||current.transport!==owner||current.viewingScope()!==scope||current.mobileNavigation!==navigation||current.document?.hidden||route?.name!==next.name||route?.gameId!==next.gameId||current.getGamePanel(route)!==d.getGamePanel(next)||current.getShellLayoutModeForRoute(route)!=='narrow')return;
      navigation?.restoreScroll(current.viewingIntent.scrollTop(next.gameId,current.getGamePanel(next)));
     });
    }
