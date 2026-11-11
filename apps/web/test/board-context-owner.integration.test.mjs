@@ -11,6 +11,7 @@ import {captureDisplayedReplay,displayedReplayIsCurrent,replayArchiveMatches} fr
 import {createReplayRequest} from '../shell/replay-request.js';
 import {opponentBoardMessage} from '../shell/opponent-narration.js';
 import {syncRecoverySpace} from '../shell/recovery-space.js';
+import {mountHoverTooltips} from '../shell/hover-tooltip.js';
 
 // Execute the production app owners, including their callback ordering and
 // queued dismissal. Browser boundaries are controlled, not copied app logic.
@@ -32,17 +33,24 @@ const events=()=>{
 const accepted=()=>({id:'game',gameplayRevision:4,myRoles:['Player 2'],player1:{identityId:'other'},player2:{identityId:'me'},board:{state:{turnIndex:1,sideToMove:'P2'}},turns:[{index:0,playerSeat:'Player 1',status:'complete'}],moves:[{moveId:'move',turnIndex:0,actorSide:'P1',action:{type:'move',from:{row:1,col:2},to:{row:2,col:2}}}]});
 function fixture(t){
  const queued=[],reveals=[],plays=[],admissions=[],win=events(),doc={...events(),defaultView:win,hidden:false};
+ const owners=[],observers=new Set();
+ Object.assign(win,{setTimeout,clearTimeout,MutationObserver:class {
+  constructor(callback){this.callback=callback;}
+  observe(target,options){this.target=target;this.options=options;observers.add(this);}
+  disconnect(){observers.delete(this);}
+ }});
  const node=(kind)=>({kind,isConnected:true,disabled:false,dataset:{},setAttribute(){},append(){},closest(selector){return selector.includes('data-board-context')&&kind==='dismiss'?{contains:value=>value===this}:null;},focus(){doc.activeElement=this;doc.fire('focusin',{target:this});}});
  doc.body=node('body');doc.activeElement=doc.body;doc.createElement=()=>node('announcement');
  const board=node('board-guidance'),button=node('replay'),dismiss=node('dismiss');
  const root=node('root');
- const app={querySelector:selector=>selector==='[data-game-shell-root]'?{dataset:{gameId:'game'}}:selector==='[data-testid="game-board-wrap"]'?root:selector==='.board-message-live'?board:null};
+ const app={ownerDocument:doc,querySelector:selector=>selector==='[data-game-shell-root]'?{dataset:{gameId:'game'}}:selector==='[data-testid="game-board-wrap"]'?root:selector==='.board-message-live'?board:null};
  let resolveArchive;const archive=new Promise(resolve=>{resolveArchive=resolve;});
  const transport={getGameViewModel:()=>context.view,getAuthoritativeGame:()=>context.view,getIdentityId:()=>'me',decisionHistory:()=>archive};
  const requests=createReplayRequest();
- const context=vm.createContext({publishAcknowledgedBoardMessage,contextReplayAvailable,confirmedPlayback:null,forcedFollowWorking:()=>false,historyBoardMessage,view:accepted(),scopeGeneration:'accountA:storageA',document:doc,appEl:app,queueMicrotask:fn=>queued.push(fn),
+ t.after(()=>{for(const owner of [...owners].reverse())owner.destroy();assert.equal(observers.size,0);assert.equal(doc.count(),0);assert.equal(win.count(),0);});
+ const context=vm.createContext({mountHoverTooltips(root){const owner=mountHoverTooltips(root);owners.push(owner);return owner;},publishAcknowledgedBoardMessage,contextReplayAvailable,confirmedPlayback:null,forcedFollowWorking:()=>false,historyBoardMessage,view:accepted(),scopeGeneration:'accountA:storageA',document:doc,appEl:app,queueMicrotask:fn=>queued.push(fn),
  syncRecoverySpace(app){syncRecoverySpace(app);admissions.push('recovery');},
- createBoardContextStore,createBoardContextOwner,createBoardContextFocus,createBoardContextLayout:()=>({sync(){admissions.push('layout');},reveal:(target,current)=>{if(current())reveals.push(target);}}),
+ createBoardContextStore,createBoardContextOwner,createBoardContextFocus(...args){const owner=createBoardContextFocus(...args);owners.push(owner);return owner;},createBoardContextLayout:()=>({sync(){admissions.push('layout');},reveal:(target,current)=>{if(current())reveals.push(target);}}),
  captureDisplayedReplay,displayedReplayIsCurrent,replayArchiveMatches,opponentBoardMessage,withPushSequenceMessage,transport,replayRequests:requests,
  window:win,captureRouteRead:()=>({route:context.currentRoute}),routeReadIsCurrent:()=>true,syncLiveChannels(){},render(){},syncRouteDataAndLiveChannels:async()=>{throw new Error('navigation failed');},issueDiagnostics:{resolve(){},capture(){}},invitationLoadFailureKind:()=> 'network',maybeRevealRouteTransition(){},
  routeHydrated:true,mountedBoardGameId:'game',getShellLayoutMode:()=>'narrow',getGamePanel:()=>context.currentRoute.panel??'board',getCurrentGameHashState:panel=>({panel}),buildGameHash:()=> '#/game/game/board',navigateTo:()=>{},
@@ -63,7 +71,6 @@ function fixture(t){
   while(queued.length)queued.shift()();await Promise.resolve();
   while(queued.length)queued.shift()();await Promise.resolve();
  };while(queued.length)queued.shift()();admissions.length=0;
- t.after(()=>{c.focus.destroy();assert.equal(doc.count(),0);assert.equal(win.count(),0);});
  return {c,doc,win,context,board,button,dismiss,root,requests,plays,reveals,admissions,meta,flush,releaseArchive:()=>resolveArchive({items:[{...context.view.moves[0],archived:true}],nextCursor:null}),descriptor:()=>captureDisplayedReplay({game:context.view,owner:transport,scope:c.scope(),identityId:'me'})};
 }
 
