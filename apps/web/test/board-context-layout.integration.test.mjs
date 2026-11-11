@@ -148,3 +148,11 @@ test('actual Board-detail ancestor receives overflow cue without a notice wrappe
  body.closest=selector=>selector.split(',').map(part=>part.trim()).includes('.board-context-detail')?detail:null;f.setBodies([body]);f.layout.sync();
  assert.equal(body.tabIndex,0);assert.equal(detail.attributes['data-context-overflow'],'true');body.scrollHeight=48;f.sample();assert.equal(detail.attributes['data-context-overflow'],'false');
 });
+
+test('visual viewport pan updates on its own scroll event while a held input still fences geometry',t=>{
+ const f=mountedFixture(t);f.layout.sync();f.doc.fire('pointerdown',{pointerId:0});
+ f.win.visualViewport.offsetTop=30;f.win.visualViewport.fire('scroll');f.flush();assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'90px');
+ f.doc.fire('pointerup',{pointerId:0});f.flush();assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'120px');
+ f.win.visualViewport.offsetTop=50;f.win.visualViewport.fire('scroll');f.flush();assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'140px');
+ f.setScroll(100);f.win.visualViewport.fire('scroll');f.flush();assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'140px','ordinary reader scroll cannot change the admitted document geometry');
+});

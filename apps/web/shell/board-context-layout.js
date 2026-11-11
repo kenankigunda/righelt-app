@@ -45,7 +45,8 @@ export function createBoardContextLayout(doc=document) {
   if(key===nextKey&&frameOwner===wrap)return;
   const desired=Math.max(0,top+height/2-naturalCenter);
   const available=Number.isFinite(naturalLegendBottom)?Math.max(0,top+height-8-naturalLegendBottom):desired;
-  wrap.style.setProperty('--board-center-clearance',`${Math.max(0,Math.min(desired,available))}px`);
+  const clearance=`${Math.max(0,Math.min(desired,available))}px`;
+  if(wrap.style.getPropertyValue('--board-center-clearance')!==clearance)wrap.style.setProperty('--board-center-clearance',clearance);
   frameOwner=wrap;key=nextKey;
  };
  const schedule=()=>{if(!disposed&&raf===null)raf=win.requestAnimationFrame(measure);};
@@ -82,10 +83,10 @@ export function createBoardContextLayout(doc=document) {
  const keys=event=>{intentEpoch++;if(!['Shift','Control','Alt','Meta'].includes(event.key))keyboard=true;if((event.key==='Enter'||event.key===' ')&&!nativeKey)nativeKey=event.key;};
  doc.addEventListener('focusin',focus);doc.addEventListener('pointerdown',down,true);
  doc.addEventListener('pointerup',up,true);doc.addEventListener('pointercancel',up,true);doc.addEventListener('keydown',keys,true);doc.addEventListener('keyup',keyup,true);
- win.addEventListener('blur',retire);doc.addEventListener('visibilitychange',retire);win.addEventListener('resize',metrics);win.visualViewport?.addEventListener('resize',metrics);doc.fonts?.addEventListener?.('loadingdone',metrics);
+ win.addEventListener('blur',retire);doc.addEventListener('visibilitychange',retire);win.addEventListener('resize',metrics);win.visualViewport?.addEventListener('resize',metrics);win.visualViewport?.addEventListener('scroll',metrics);doc.fonts?.addEventListener?.('loadingdone',metrics);
  return {
   reveal,
   sync(){measure();syncOverflow();},
-  destroy(){disposed=true;if(raf!==null)win.cancelAnimationFrame(raf);bodyObserver?.disconnect();observedBodies.clear();frameOwner?.style.removeProperty('--board-center-clearance');doc.removeEventListener('focusin',focus);doc.removeEventListener('pointerdown',down,true);doc.removeEventListener('pointerup',up,true);doc.removeEventListener('pointercancel',up,true);doc.removeEventListener('keydown',keys,true);doc.removeEventListener('keyup',keyup,true);win.removeEventListener('blur',retire);doc.removeEventListener('visibilitychange',retire);win.removeEventListener('resize',metrics);win.visualViewport?.removeEventListener('resize',metrics);doc.fonts?.removeEventListener?.('loadingdone',metrics);},
+  destroy(){disposed=true;if(raf!==null)win.cancelAnimationFrame(raf);bodyObserver?.disconnect();observedBodies.clear();frameOwner?.style.removeProperty('--board-center-clearance');doc.removeEventListener('focusin',focus);doc.removeEventListener('pointerdown',down,true);doc.removeEventListener('pointerup',up,true);doc.removeEventListener('pointercancel',up,true);doc.removeEventListener('keydown',keys,true);doc.removeEventListener('keyup',keyup,true);win.removeEventListener('blur',retire);doc.removeEventListener('visibilitychange',retire);win.removeEventListener('resize',metrics);win.visualViewport?.removeEventListener('resize',metrics);win.visualViewport?.removeEventListener('scroll',metrics);doc.fonts?.removeEventListener?.('loadingdone',metrics);},
  };
 }
