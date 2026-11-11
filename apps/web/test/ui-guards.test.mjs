@@ -1,3 +1,5 @@
+import {destinationLiveGameId} from '../shell/destination-route-owner.js';
+import {scrollHomeSectionIntoView} from '../shell/home-section-reads.js';
 import {HOME_SECTION_SERVER_PAGE_SIZE,HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE,createHomeSectionReads,createHomeSectionState,homeSectionVisiblePageSize,getHomeSectionVisibleGameIdsFromCache,homeSectionIsEmpty} from '../shell/home-section-reads.js';
 import {historyRenderingFixture} from './support/history-rendering-context.mjs';
 import test from "node:test";
@@ -114,19 +116,18 @@ test("invite choice commit suppresses repeat game-route invite gate and join act
   assert.match(source, /if \(action === "join-viewer" \|\| action === "accept-invite-viewer"\)[\s\S]*?markInviteChoiceCommitted\(gameId\);/s);
   assert.match(source, /if \(action === "join-player" \|\| action === "accept-invite-player"\)[\s\S]*?markInviteChoiceCommitted\(gameId\);/s);
   assert.match(source, /if \(read\.route\.name === "game"\) \{\s*resolvedInvite = null;\s*await read\.owner\.loadGame\(read\.route\.gameId, \{ openAsViewer: false, positionFirst: true \}\);\s*\}/s);
-  assert.match(source, /const startRouteSync = \(\{ renderStart = true \} = \{\}\) => \{/);
-  assert.match(source, /routeHydrated = false;\s*syncLiveChannels\(\);/s);
   assert.match(source, /const initialRender = async \(\) => \{[\s\S]*?routeHydrated = false;\s*render\(\{ animatePanels: false, includeBoard: false \}\);[\s\S]*?await account\.start\(\);/s);
   assert.match(source, /startRouteSync\(\{ renderStart: false \}\);/);
-  assert.match(source, /routeHydrated = true;\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
 });
 
 test("game route live sync connection is not gated by participant role", () => {
-  assert.match(
-    source,
-    /const routeGameId =\s*shouldLiveSyncRoute\(currentRoute\)\s*&&/s,
-  );
-  assert.match(source, /syncStore\.setActiveGameId\(routeGameId\);/);
+  for(const myRole of [null,'Viewer','Player 1']){
+    const transport={getGameViewModel:()=>({id:'g',myRole})};
+    assert.equal(destinationLiveGameId({route:{name:'game',gameId:'g'},transport,presentation:{kind:'auth'}}),'g');
+  }
+  assert.equal(destinationLiveGameId({route:{name:'game',gameId:'g'},transport:{getGameViewModel:()=>null},presentation:{kind:'missing'}}),null);
+  assert.equal(destinationLiveGameId({route:{name:'game',gameId:'g'},transport:{getGameViewModel:()=>null},presentation:{kind:'retry'}}),'g');
+  assert.match(source, /syncStore\.setActiveGameId\(routeGameId \|\| null\);/);
   assert.match(syncStoreSource, /const getLocalFailureMessage = \(game\) =>/);
   assert.match(syncStoreSource, /const isFailedLocalStub = \(game\) =>/);
   assert.match(syncStoreSource, /const activeGame =/);
@@ -255,9 +256,6 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "header" \}\)/);
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "footer" \}\)/);
   assert.match(source, /hasHeaderAction \? renderHomeStartButton\(\) : ""/);
-  assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
-  assert.match(source, /if \(getShellLayoutMode\(\) !== "narrow" \|\| !\(appEl instanceof HTMLElement\)\) \{\s*return;\s*\}/s);
-  assert.match(source, /sectionEl\.scrollIntoView\(\{\s*behavior: "smooth",\s*block: "start",\s*\}\);/s);
   assert.match(source, /<div class="home-games-carousel" data-home-carousel="\$\{escapeHtml\(sectionKey\)\}">/);
   assert.match(source, /getVisibleHomeSectionKeys\(\)\.filter\(key=>key!=='my'\)\.map\(renderHomeGameSection\)\.join\(''\)/);
   assert.match(source, /<section class="panel home-games-section" data-loading-context-group data-home-section-root="\$\{escapeHtml\(sectionKey\)\}">/);
@@ -299,4 +297,16 @@ for(const initialSize of [4,3])test(initialSize===4
  assert.equal(section.page,1);assert.equal(section.totalPages,3);assert.equal(section.visiblePageSize,3);assert.equal(section.visibleColumnCount,1);
  assert.deepEqual(section.gameIds,['d','e','f']);
  if(initialSize===3)assert.deepEqual(publications[0],['my',{...original,page:1,totalPages:3,gameIds:['d','e','f'],visibleColumnCount:1}]);
+});
+
+test('Home section scrolling uses the native reduced-motion choice and refuses wide or missing destinations',()=>{
+ class Element{};
+ for(const reduced of [false,true]){
+  const calls=[],section=new Element();section.scrollIntoView=options=>calls.push(options);
+  const appEl=new Element();appEl.querySelector=()=>section;
+  scrollHomeSectionIntoView({getShellLayoutMode:()=> 'narrow',appEl,HTMLElement:Element,prefersReducedMotion:()=>reduced},'my');
+  assert.deepEqual(calls,[{behavior:reduced?'instant':'smooth',block:'start'}]);
+  scrollHomeSectionIntoView({getShellLayoutMode:()=> 'wide',appEl,HTMLElement:Element,prefersReducedMotion:()=>reduced},'my');assert.equal(calls.length,1);
+  appEl.querySelector=()=>null;scrollHomeSectionIntoView({getShellLayoutMode:()=> 'narrow',appEl,HTMLElement:Element,prefersReducedMotion:()=>reduced},'my');assert.equal(calls.length,1);
+ }
 });

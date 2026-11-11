@@ -150,7 +150,7 @@ export const homeSectionVisiblePageSize = columnCount => columnCount === 2
  * Generic route/account authority stays with capture/assert callbacks. */
 export function createHomeSectionReads({state, getHomeSection, setHomeSection, getHomeSectionVisiblePageSize, getHomeSectionColumnCount, getVisibleHomeSectionKeys, captureRouteRead, assertCurrentRouteRead, routeReadIsCurrent, render, syncLiveChannels, startRouteSync, isHomeSectionPending, scrollHomeSectionToTop, captureHomeFocus, restoreHomeReadingPosition, restoreHomeFocus,
   pendingHomeSectionKeys, gameSound, storyDialog, appEl, document, window, resumeAccountContinuation,
-  syncAnnouncement, setTimeout=(...args)=>globalThis.setTimeout(...args), clearTimeout=(...args)=>globalThis.clearTimeout(...args),
+  syncAnnouncement, saveHomeVisit, setTimeout=(...args)=>globalThis.setTimeout(...args), clearTimeout=(...args)=>globalThis.clearTimeout(...args),
 }) {
   const jobResults=new WeakMap(),continuationSettlements=new WeakMap();
   const takeContinuationSettlement = (pending,token) => {
@@ -258,7 +258,7 @@ export function createHomeSectionReads({state, getHomeSection, setHomeSection, g
     }) ?? [];
     const nextDirection = normalizedTotalPages > 1 && normalizedPage !== previous.page ? direction : "none";
     if(adapter)adapter.assertCurrent();else assertCurrentRouteRead(read);
-    (adapter?.setSection ?? setHomeSection)(sectionKey, {
+    const publishedSection = {
       ...nextSection,
       visiblePageSize,
       visibleColumnCount,
@@ -267,7 +267,9 @@ export function createHomeSectionReads({state, getHomeSection, setHomeSection, g
       gameIds: visibleGameIds,
       slideDirection: nextDirection,
       animationToken: nextDirection === "none" ? previous.animationToken : previous.animationToken + 1,
-    });
+    };
+    delete publishedSection.pendingVisitPage;
+    (adapter?.setSection ?? setHomeSection)(sectionKey,publishedSection);
     // Advance only this successfully published read before any async work.
     // Its page change is ours; unrelated input changes still fail the guard above.
     if(!adapter)read.inputs = JSON.stringify([state.homeReadVisit, read.homeDebug, getVisibleHomeSectionKeys({ debug: read.homeDebug }).map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])]);
@@ -399,7 +401,11 @@ export function createHomeSectionReads({state, getHomeSection, setHomeSection, g
           if (failures.length && (!allowPartial || continuationNow || failures.length === readKeys.length || failures.some(({error}) => !homeReadMayRetry(error)))) {
             throw failures.find(({error}) => !homeReadMayRetry(error))?.error ?? failures[0].error;
           }
-          for (const {key} of failures) sectionMap[key] = {...getHomeSection(key),loaded:true,error:true,refreshUnsettled:false};
+          for (const {key} of failures) {
+            const currentSection=getHomeSection(key);
+            sectionMap[key] = {...currentSection,loaded:true,error:true,refreshUnsettled:false,
+              ...(currentSection.pendingVisitPage===currentSection.page ? {gameIds:[]} : {})};
+          }
           for (const sectionKey of ["my", "completed", "other", "smoke"].filter(key => !visibleSectionKeys.includes(key))) {
             adapter.setSection(sectionKey, { ...adapter.getSection(sectionKey), page: 0, totalPages: 0, totalGames: 0, gameIds: [],
               serverPage: 0, serverTotalPages: 0, serverPageGameIds: [], serverPageGameIdsByPage: {},
@@ -415,6 +421,7 @@ export function createHomeSectionReads({state, getHomeSection, setHomeSection, g
           // while our healthy read was pending. Keep their current publication.
           for (const key of visibleSectionKeys) if (!readKeys.includes(key)) sectionMap[key] = getHomeSection(key);
           state.homeSections = sectionMap;
+          state.homeSectionsHydrated = true;
           // An unread healthy section can predate membership learned by our batch.
           // Keep the existing trailing-refresh obligation instead of stamping it.
           state.lastHomeBatchRevision = visibleSectionKeys.every(key => sectionMap[key].error || sectionMap[key].homeListRevision === publishedRevision)
@@ -614,9 +621,27 @@ export function createHomeSectionReads({state, getHomeSection, setHomeSection, g
         render({ animatePanels: false, includeBoard: false });
         window.requestAnimationFrame(() => {
           scrollHomeSectionToTop(sectionKey);
+          saveHomeVisit?.();
         });
       }
 
+  };
+
+  // A saved visit requests acknowledged pages, not a new authority or cache.
+  const advanceVisit = () => {
+    state.homeReadVisit++;
+    state.homeReadJob?.retire();
+    // A different browser visit owns its own reading/focus restoration.
+    state.homeFocusToRestore=null;
+    state.pendingHomeRefresh=null;
+  };
+  const applyVisitPages = (pages = {}) => {
+    const entries = Object.entries(pages).filter(([key]) => state.homeSections[key]);
+    if (entries.some(([key,page]) => state.homeSections[key].page !== page)) state.homeSectionsHydrated = false;
+    for (const [key,page] of entries) {
+      const section=state.homeSections[key];
+      state.homeSections[key] = {...section,page,...(section.page!==page?{pendingVisitPage:page}:{})};
+    }
   };
 
   const leaveHome = (previous,next) => {
@@ -626,7 +651,7 @@ export function createHomeSectionReads({state, getHomeSection, setHomeSection, g
     state.homeFocusToRestore = null;
   };
   return {
-    loadServerPage:loadHomeSectionServerPage, loadPage:loadHomeSectionPage,
+    advanceVisit, applyVisitPages, loadServerPage:loadHomeSectionServerPage, loadPage:loadHomeSectionPage,
     syncSections:syncHomeSections, syncResponsive:syncResponsiveHomeSectionPageSizes,
     scheduleRefresh:scheduleHomeListRefresh, stabilize:stabilizeAfterHomeRead,
     restoreReading:restoreHomeReadingIntent, queueResponsive:queueResponsiveHomeSectionPageSizes,
@@ -634,3 +659,22 @@ export function createHomeSectionReads({state, getHomeSection, setHomeSection, g
     next:key=>page(key,'next'), previous:key=>page(key,'prev'), retry, leaveHome, refreshResponsive,takeContinuationSettlement,
   };
 }
+
+export const scrollHomeSectionIntoView = ({getShellLayoutMode,appEl,HTMLElement,prefersReducedMotion},sectionKey) => {
+  if (getShellLayoutMode() !== "narrow" || !(appEl instanceof HTMLElement)) {
+    return;
+  }
+  const sectionEl = appEl.querySelector(`[data-home-section-root="${sectionKey}"]`);
+  if (!(sectionEl instanceof HTMLElement)) {
+    return;
+  }
+  sectionEl.scrollIntoView({
+    behavior: prefersReducedMotion() ? "instant" : "smooth",
+    block: "start",
+  });
+};
+
+
+// A restored page remains covered until its current acknowledged batch publishes.
+export const homeVisitSectionShowsSkeleton = (section,pending,{homeReady,routeReady}) =>
+  homeSectionShowsSkeleton(section,pending) || (!homeReady && !routeReady);

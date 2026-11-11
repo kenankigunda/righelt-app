@@ -182,7 +182,7 @@ for (const input of ['pointer', 'keyboard']) test(`home refresh preserves ${inpu
 
 // The real Home read has a five-second request bound. Keep that bound intact;
 // the renderer fixture separately exercises naturally prolonged slow notices.
-test('bounded Home loading retires without growing its pending card',async({page},info)=>{
+test('cold Home loading keeps its bounded card until a read succeeds',async({page},info)=>{
  await page.setViewportSize({width:390,height:800});
  const errors=[];page.on('pageerror',error=>errors.push(error.message));
  let release,entered=false,attempts=0;const held=new Promise(resolve=>{release=resolve;});
