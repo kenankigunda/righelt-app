@@ -1,5 +1,6 @@
 import {test,expect} from '@playwright/test';
-import {readFile} from 'node:fs/promises';
+import {readFile,writeFile} from 'node:fs/promises';
+import {expectRematchRadioGeometry} from '../support/rematch-layout.mjs';
 import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage-policy.js';
 import {openDirectGameLink,joinAsViewer,switchGamePanel,waitForLegacyIdentity} from '../support/app.mjs';
 
@@ -89,6 +90,18 @@ test('a guest observer sees named results while the two-sided owner retains winn
   await expect(opponent).toHaveAccessibleName('Play both sides');await expect(opponent).toBeChecked();await expect(rematch.locator('input[name="rematch-opponent"]:checked')).toHaveCount(1);
   await expect(side).toHaveAccessibleName('Blue');await expect(side).toBeChecked();await expect(rematch.locator('input[name="rematch-side"][value="p1"]')).toHaveAccessibleName('Red');await expect(rematch.locator('input[name="rematch-side"]:checked')).toHaveCount(1);
   await expect(rematch.getByRole('button',{name:'Start game',exact:true})).toBeEnabled();
+  await expectRematchRadioGeometry(rematch);await expect(rematch).toHaveCSS('opacity','1');
+  const portraitConsumers=[];
+  for(const id of ['babs','tau','horus','friend']){
+   const choice=rematch.locator(`input[name="rematch-opponent"][value="${id}"]`).locator('..'),image=choice.locator('img');
+   await expect(image).toBeVisible();await expect.poll(()=>image.evaluate(node=>node.complete&&node.naturalWidth>0)).toBe(true);
+   const state=await image.evaluate(node=>{const style=getComputedStyle(node),rect=node.getBoundingClientRect();return{src:new URL(node.currentSrc||node.src).pathname,naturalWidth:node.naturalWidth,naturalHeight:node.naturalHeight,fit:style.objectFit,clip:style.clipPath,rect:rect.toJSON()};});
+   expect(state.src).toBe(`/assets/opponents/${id}-portrait.webp`);expect(state.rect.width).toBeGreaterThan(0);expect(state.rect.height).toBeGreaterThan(0);
+   const target=await choice.boundingBox();expect(target.width).toBeGreaterThanOrEqual(44);expect(target.height).toBeGreaterThanOrEqual(44);portraitConsumers.push({id,...state});
+  }
+  const consumerPath=info.outputPath('rematch-artwork-consumers.json');await writeFile(consumerPath,JSON.stringify({portraits:portraitConsumers,friend:'Approved hands artwork; R33 remains Friend introduction only',selectedOpponent:await opponent.isChecked(),selectedBlue:await side.isChecked(),visualCropReview:'Pending actual original review; decode/currentSrc does not prove final crop quality'},null,2),{mode:0o600});await info.attach('rematch artwork consumers',{path:consumerPath,contentType:'application/json'});
+  const rematchPath=info.outputPath('rematch-approved-artwork-native.png');await rematch.screenshot({path:rematchPath});await info.attach('rematch approved artwork native',{path:rematchPath,contentType:'image/png'});
+
   const freshResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');
   await rematch.getByRole('button',{name:'Start game',exact:true}).click();const response=await freshResponse;expect(response.status()).toBe(200);const fresh=(await response.json()).game;
   expect(fresh.id).not.toBe(game.id);expect(fresh.selfPlayMode).toBe(true);expect(fresh.selfPlayStartSide).toBe('p2');expect(fresh.player1.identityId).toBe(game.player1.identityId);expect(fresh.player2.identityId).toBe(game.player1.identityId);expect(fresh.moves).toEqual([]);

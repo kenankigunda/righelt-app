@@ -749,8 +749,9 @@ html[data-page-active="false"] .home-refresh button.opponent-choice::before {bac
    only later travel crosses that boundary. Copy and native controls stay still. */
 .story-art img {filter:drop-shadow(0 2px 1px rgb(36 50 70 / 15%));}
 .story-art-wrap {--story-caret-outset:16px;}
-.story-art-wrap [data-story-step="-1"] {transform:translateX(calc(-1 * var(--story-caret-outset)));}
-.story-art-wrap [data-story-step="1"] {transform:translateX(var(--story-caret-outset));}
+.story-art-wrap [data-story-step] {transform:none;animation:none;}
+.story-art-wrap [data-story-step="-1"] {translate:calc(-1 * var(--story-caret-outset)) 0;}
+.story-art-wrap [data-story-step="1"] {translate:var(--story-caret-outset) 0;}
 @media(max-width:700px){.story-art-wrap{--story-caret-outset:12px;}}
 @media(forced-colors:active){.story-art img{filter:none;}}
 
