@@ -83,7 +83,7 @@ test('guidance failure reaches local Details without changing legal play',async(
     const required=page.locator('[data-alert-stack-card].is-active [data-board-context][aria-label="Required Board guidance"]');
     await expect(required).toContainText('Hints unavailable');
     await expect(preview.locator('.board-obligatory-pill')).toHaveText('Obligatory');
-    await expect(required.getByRole('button',{name:'Try again',exact:true})).toBeEnabled();
+    await expect(preview.getByRole('button',{name:'Try again',exact:true})).toBeEnabled();
 
     await page.getByRole('button',{name:'Debug',exact:true}).click();
     const runtimeBefore=await readPublicRuntime(page);
@@ -113,7 +113,7 @@ test('guidance failure reaches local Details without changing legal play',async(
     await page.getByRole('button',{name:'Debug',exact:true}).click();
     await expect(page.locator('[data-flyout="debug"]')).not.toBeVisible();
 
-    await required.getByRole('button',{name:'Try again',exact:true}).click();
+    await preview.getByRole('button',{name:'Try again',exact:true}).click();
     await expect(page.locator('.rush-guidance-source')).toHaveCount(2);
     await expect(required).not.toContainText('Hints unavailable');
     const actor=page.locator(`[data-testid="game-board"] .cell[data-row="${reconnect.from.row}"][data-col="${reconnect.from.col}"]`);
