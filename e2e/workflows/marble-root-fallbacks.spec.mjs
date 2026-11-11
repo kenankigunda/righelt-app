@@ -17,6 +17,10 @@ test('existing fallback and placeholder routes share marble without starting a g
  };
  try{
   await page.setViewportSize({width:390,height:844});await page.goto('/#/marble-acceptance-missing');
+  await expect(page.getByRole('heading',{name:'Start something new',exact:true})).toBeVisible();await expect(page).toHaveURL(/#\/$/);
+  // Startup canonicalizes unknown hashes. Once mounted, a native same-document
+  // navigation reaches the existing app fallback without changing product routing.
+  expect(await page.goto('/#/marble-acceptance-missing')).toBeNull();
   await expect(page.getByRole('heading',{name:'Route not found',exact:true})).toBeVisible();await inspect('root-not-found-marble');
   const home=page.getByRole('link',{name:'Return home',exact:true});const box=await home.boundingBox();expect(box.height).toBeGreaterThanOrEqual(44);await home.focus();await page.keyboard.press('Enter');await expect(page.getByRole('heading',{name:'Start something new',exact:true})).toBeVisible();
   await page.goto('/#/tutorial');await expect(page.getByRole('heading',{name:/Tutorial/})).toBeVisible();await expect(page.getByText('Not yet implemented',{exact:true})).toBeVisible();await expect(page.getByText('Step 1 of 5',{exact:true})).toBeVisible();await expect(page.getByText('Select your role',{exact:true})).toBeVisible();await inspect('root-existing-placeholder-marble');
