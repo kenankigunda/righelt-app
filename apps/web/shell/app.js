@@ -1121,6 +1121,7 @@ const preparePanelTransition = createPanelTransitionPreparation(()=>({
   pendingBoardContextReplay:boardContextState.pendingBoardContextReplay,cancelPendingBoardContextReplay,
   retireBoardContext(){boardContextVisit++;boardContextOwner.retire();},liveTurnOverview,homeSectionReads,viewingIntent,window,
   getGamePanel,getShellLayoutModeForRoute,transport,replayController,replayRequests,pendingRoutePosition,mobileNavigation,
+  viewingScope,getCurrentRoute:()=>currentRoute,document,
 }));
 
 const getCurrentFlyoutState = () => ({
