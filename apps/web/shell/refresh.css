@@ -663,13 +663,13 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 /* Marble foundation: bounded, static material. Textures never own layout,
    readiness or motion; the white base remains usable if either asset fails. */
 :root {
- --marble-face:linear-gradient(rgb(255 255 255 / 65%),rgb(255 255 255 / 65%)),url('../assets/materials/marble-white-raster-v1.webp');
+ --marble-face:linear-gradient(rgb(255 255 255 / 88%),rgb(255 255 255 / 88%)),url('../assets/materials/marble-white-raster-v1.webp');
  --marble-canvas:url('../assets/materials/marble-canvas.svg'),url('../assets/materials/marble-white-raster-v1.webp');
  --stone-grain:var(--marble-face);
  --marble-edge:#c7ccce;
  --marble-contact-shadow:0 3px 4px rgb(36 46 55 / 14%);
 }
-body {background-color:var(--surface-foundation);background-image:var(--marble-canvas);background-size:1440px 960px,1024px 1024px;}
+body {background-color:var(--surface-foundation);background-image:var(--marble-canvas);background-size:100% 960px,1024px 1024px;}
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,
 .story-modal,.game-result {
  --stone-edge:var(--marble-edge);
@@ -723,3 +723,14 @@ body {background-color:var(--surface-foundation);background-image:var(--marble-c
 .story-art-wrap [data-story-step="1"] {transform:translateX(var(--story-caret-outset));}
 @media(max-width:700px){.story-art-wrap{--story-caret-outset:12px;}}
 @media(forced-colors:active){.story-art img{filter:none;}}
+
+/* Quiet mineral faces preserve the native silhouettes and occupied footprint.
+   No filter, layout owner or per-piece resource is introduced. */
+.piece-body {stroke:color-mix(in srgb,currentColor 66%,#fff);stroke-width:.45;paint-order:stroke fill;}
+.piece-mineral {fill:none;stroke:#fff;stroke-width:.45;stroke-opacity:.2;stroke-linecap:round;pointer-events:none;}
+.piece-token.inactive .piece-body {stroke:currentColor;stroke-width:1.8;fill:var(--cell-fill,#f8fafa);}
+.piece-token.inactive .piece-mineral {display:none;}
+.cell .piece-token.commander.ghost .piece-mineral {opacity:.35;}
+[data-shell-panel="board"] .cell.target .piece-token.commander.move-ghost .piece-mineral {opacity:.22;}
+.mini-board-preview-wrap .piece-mineral {display:none;}
+@media(forced-colors:active){.piece-mineral{display:none;}.piece-body{stroke:currentColor;}}

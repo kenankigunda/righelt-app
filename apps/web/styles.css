@@ -374,8 +374,8 @@ button {
   place-items: center;
   min-height: 52px;
   padding: 4px;
-  border-radius: 6px;
-  border: 1px solid #cac7bd;
+  border-radius: 1.5px;
+  border: 1px solid #c4cdcd;
   color: var(--ink);
   --cell-floor-color: var(--cell-fill);
   --cell-floor-image: var(--marble-face, none);
@@ -385,7 +385,8 @@ button {
   background-size: var(--cell-floor-size);
   background-position: center;
   background-origin: border-box;
-  box-shadow: inset 1px 2px 3px rgb(44 57 66 / 17%), inset -1px -1px 0 rgb(255 255 255 / 90%);
+  --cell-recess-shadow: inset 1px 3px 3px rgb(44 57 66 / 26%), inset -1px -1px 0 rgb(255 255 255 / 94%);
+  box-shadow: var(--cell-recess-shadow);
 }
 
 /* Do not override border on source/target: they use border + inset shadow as one ring; changing
@@ -406,22 +407,22 @@ button {
 
 .cell.source {
   border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent), var(--cell-recess-shadow);
 }
 
 .cell.target {
   border-color: var(--accent-2);
-  box-shadow: inset 0 0 0 1px var(--accent-2);
+  box-shadow: inset 0 0 0 1px var(--accent-2), var(--cell-recess-shadow);
 }
 
 .cell.target.target-side-p1:not(.continuation-member) {
   border-color: var(--player-p1);
-  box-shadow: inset 0 0 0 1px var(--player-p1);
+  box-shadow: inset 0 0 0 1px var(--player-p1), var(--cell-recess-shadow);
 }
 
 .cell.target.target-side-p2:not(.continuation-member) {
   border-color: var(--player-p2);
-  box-shadow: inset 0 0 0 1px var(--player-p2);
+  box-shadow: inset 0 0 0 1px var(--player-p2), var(--cell-recess-shadow);
 }
 
 .board-event-label-layer {
@@ -474,18 +475,18 @@ button {
 .cell.rush-blocker {
   --cell-fill: #f7ead4;
   border-color: #cf9542;
-  box-shadow: inset 0 0 0 1px #cf9542;
+  box-shadow: inset 0 0 0 1px #cf9542, var(--cell-recess-shadow);
 }
 
 .cell.retreat-piece {
   --cell-fill: #f3e7c5;
   border-color: #d1b06a;
-  box-shadow: inset 0 0 0 1px #d1b06a;
+  box-shadow: inset 0 0 0 1px #d1b06a, var(--cell-recess-shadow);
 }
 
 .cell.selected-piece {
   border-color: var(--move-selection-ring);
-  box-shadow: inset 0 0 0 1px var(--move-selection-ring);
+  box-shadow: inset 0 0 0 1px var(--move-selection-ring), var(--cell-recess-shadow);
 }
 
 
@@ -1072,27 +1073,27 @@ button:disabled {
 .cell.selected-supply-point {
   --supply-selection-color:var(--player-p1);
   border-color:var(--supply-selection-color);
-  box-shadow:inset 0 0 0 2px var(--supply-selection-color);
+  box-shadow:inset 0 0 0 2px var(--supply-selection-color), var(--cell-recess-shadow);
   --cell-fill:color-mix(in srgb,var(--supply-selection-color) 12%,#fbf8f0);
 }
 .cell.selected-supply-point[data-selected-supply-owner="P2"] {--supply-selection-color:var(--player-p2);}
 /* Movement roles are independent of player ownership. Keep cells, coordinates
    and individual-move axes aligned. History endpoints opt in separately below. */
 :root { --move-source: #7650A6; --move-target: #1F7A5A; }
-.cell.source { border-color: var(--move-source); box-shadow: inset 0 0 0 1px var(--move-source); }
-.cell.target:not(.continuation-member) { border-color: var(--move-target); box-shadow: inset 0 0 0 1px var(--move-target); }
+.cell.source { border-color: var(--move-source); box-shadow: inset 0 0 0 1px var(--move-source), var(--cell-recess-shadow); }
+.cell.target:not(.continuation-member) { border-color: var(--move-target); box-shadow: inset 0 0 0 1px var(--move-target), var(--cell-recess-shadow); }
 .board-preview-coordinate-chip.board-preview-coordinate-chip-selected-piece { color:var(--move-source); border-color:var(--move-source); background:#f1ecf6; }
 .board-preview-coordinate-chip.board-preview-coordinate-chip-target { color:var(--move-target); border-color:var(--move-target); background:#e8f2ed; }
 .axis-label.axis-strong { color:var(--move-source); }
 .axis-label.axis-medium { color:var(--move-target); }
 .axis-label.axis-medium.axis-target-p1, .axis-label.axis-medium.axis-target-p2 { color:var(--move-target); }
-.cell.target.target-side-p1:not(.continuation-member), .cell.target.target-side-p2:not(.continuation-member) { border-color:var(--move-target); box-shadow:inset 0 0 0 1px var(--move-target); }
+.cell.target.target-side-p1:not(.continuation-member), .cell.target.target-side-p2:not(.continuation-member) { border-color:var(--move-target); box-shadow:inset 0 0 0 1px var(--move-target), var(--cell-recess-shadow); }
 
 /* History action roles: shape distinguishes source from target independently
    of affiliation. Shared endpoints retain both roles; live views do not opt in. */
-[data-presentation-context="history"] .cell.history-role-source { border:2px dashed var(--move-source); box-shadow:none; }
-[data-presentation-context="history"] .cell.history-role-target { border:2px solid var(--move-target); box-shadow:none; }
-[data-presentation-context="history"] .cell.history-role-source.history-role-target { border:2px dashed var(--move-source); box-shadow:inset 0 0 0 2px var(--move-target); }
+[data-presentation-context="history"] .cell.history-role-source { border:2px dashed var(--move-source); box-shadow:var(--cell-recess-shadow); }
+[data-presentation-context="history"] .cell.history-role-target { border:2px solid var(--move-target); box-shadow:var(--cell-recess-shadow); }
+[data-presentation-context="history"] .cell.history-role-source.history-role-target { border:2px dashed var(--move-source); box-shadow:inset 0 0 0 2px var(--move-target), var(--cell-recess-shadow); }
 
 /* Warning semantics are independent of either player's affiliation. */
 .board-obligatory-pill {
@@ -1141,7 +1142,11 @@ button:disabled {
 /* Flash the piece ink while its window continues to occlude lower layers. */
 .cell .piece-token.removal-piece.commander {animation-name:none;}
 .cell .piece-token.removal-piece.commander .piece-symbol {animation-delay:inherit;}
-.cell .piece-token.removal-piece.commander .piece-body {
+.cell .piece-token.removal-piece.commander :is(.piece-body,.piece-mineral) {
   animation:removal-piece-flash var(--removal-flash-duration) ease-in-out var(--removal-flash-count) alternate;
   animation-fill-mode:forwards;animation-delay:inherit;
 }
+
+/* Attenuate carving at miniature scale; forced colors retains system outlines. */
+.mini-board-preview-wrap .cell {--cell-recess-shadow:inset .5px 1px 1px rgb(44 57 66 / 16%),inset -.5px -.5px 0 #fff;}
+@media(forced-colors:active){.cell{--cell-recess-shadow:none;}}

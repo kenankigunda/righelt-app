@@ -86,6 +86,9 @@ test('phone home and Babs carets fit without horizontal overflow',async({page})=
  await page.locator('button[data-opponent="babs"]').click();const dialog=page.getByRole('dialog',{name:'Babs',exact:true});await expect(dialog).toBeVisible();
  await expect(dialog.getByRole('button',{name:'Next story image'})).toBeVisible();
  await expect.poll(()=>dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ await expect.poll(()=>dialog.evaluate(el=>el.getAnimations({subtree:true}).filter(a=>a.playState==='running'&&a.effect?.getTiming().iterations!==Infinity).length)).toBe(0);
+ await expect.poll(()=>dialog.evaluate(el=>getComputedStyle(el).opacity)).toBe('1');
+ await expect.poll(()=>dialog.locator('[data-story-image][data-active="true"]').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);
  await page.screenshot({path:test.info().outputPath('babs-phone.png')});
 });
 
@@ -352,6 +355,8 @@ test('Friend introduction uses one illustration, cancels without creating, and p
  const intro=page.getByRole('dialog',{name:'Friend',exact:true});await expect(intro).toBeVisible();
  await expect(intro.locator('img')).toHaveCount(1);await expect(intro.locator('[data-story-step]')).toHaveCount(0);
  await expect.poll(()=>intro.locator('img').evaluate(el=>el.complete && el.naturalWidth>0)).toBe(true);
+ await expect.poll(()=>intro.evaluate(el=>el.getAnimations({subtree:true}).filter(a=>a.playState==='running'&&a.effect?.getTiming().iterations!==Infinity).length)).toBe(0);
+ await expect.poll(()=>intro.evaluate(el=>getComputedStyle(el).opacity)).toBe('1');
  await page.screenshot({path:test.info().outputPath('friend-introduction.png')});
  await page.mouse.click(2,2);await expect(intro).not.toBeVisible();expect(creates).toBe(0);
  await page.getByTestId('home-create-game').click();await intro.getByRole('button',{name:'Start a friend game'}).click();
@@ -487,6 +492,7 @@ test('an open flyout retains its node and animation state across game navigation
 });
 
 test('commander windows mask paths and center dots in real and ghost states',async({page})=>{
+ await page.setViewportSize({width:1440,height:900});
  await page.goto('/');
  const created=page.waitForResponse(response=>response.request().method()==='POST' && new URL(response.url()).pathname==='/api/shell/games');
  await page.getByRole('button',{name:'Play both sides',exact:true}).click();
