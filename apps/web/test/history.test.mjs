@@ -1,3 +1,4 @@
+import {historyRenderingFixture} from './support/history-rendering-context.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MAX_HISTORY } from "../generated/packages/shared-types/src/history.js";
@@ -105,14 +106,13 @@ test("history trimming preserves contiguous move indexes and live turn controls 
   assert.equal(vm.currentTurn.playerSeat, "Player 2");
 });
 
+const destroyedMove={moveId:'destroyed-turn',index:0,turnIndex:0,turnMoveIndex:0,actorSide:'P1',notation:'Move',at:'recorded',action:{type:'pass'},selectionSnapshot:{pieces:[]},snapshot:{pieces:[]}};
+const destroyedHistory=(destroyedPieces,selected=false)=>historyRenderingFixture().renderTurnHistory({id:'history-only',myRoles:['Player 1'],inHistoryMode:selected,historyIndex:selected?0:null,moves:[{...destroyedMove,destroyedPieces}]});
 // U-13 — renderTurnHistory emits sub-bullets for moves with destroyedPieces
-test("U-13: renderTurnHistory source emits destruction sub-bullet HTML for moves with destroyedPieces", () => {
-  // Static source analysis: verify the rendering code produces subordinate list content and text
-  assert.match(appSource, /data-testid="history-destruction-item"/);
-  assert.match(appSource, /DESTROYED \(\$\{record\.position\.row\},\$\{record\.position\.col\}\)/);
-  assert.match(appSource, /history-destruction-list/);
-  assert.match(appSource, /history-destruction-item/);
-  assert.doesNotMatch(appSource, /data-action="jump-destruction"/);
+test("U-13: renderTurnHistory emits destruction sub-bullet HTML for moves with destroyedPieces", () => {
+ const html=destroyedHistory([{position:{row:2,col:3},ownerSeat:'p1'}]);
+ assert.match(html,/data-testid="history-destruction-item"/);assert.match(html,/DESTROYED \(2,3\)/);
+ assert.match(html,/history-destruction-list/);assert.match(html,/history-destruction-item/);assert.doesNotMatch(html,/data-action="jump-destruction"/);
 });
 
 // U-13 (integration view): destroyedPieces flows through the view model
@@ -144,29 +144,22 @@ test("U-13 (I-13): destroyedPieces on a move entry flows through the store view 
 });
 
 // U-14 — no sub-bullets when destroyedPieces is empty or absent
-test("U-14: renderTurnHistory source renders no sub-bullet container when destroyedPieces is absent or empty", () => {
-  // Source must check Array.isArray and length > 0 before emitting the <ul>
-  assert.match(appSource, /Array\.isArray\(move\.destroyedPieces\)/);
-  assert.match(appSource, /destroyedPieces\.length > 0/);
-  // The destruction list is only emitted conditionally (ternary ? ... : "")
-  assert.match(appSource, /destroyedPieces\.length > 0[\s\S]*?history-destruction-list[\s\S]*?: ""/);
+test("U-14: renderTurnHistory renders no sub-bullet container when destroyedPieces is absent or empty", () => {
+ for(const records of [undefined,null,[],{}])assert.doesNotMatch(destroyedHistory(records),/history-destruction-list|history-destruction-item/);
 });
 
 // U-15 — P2-owned destroyed piece gets P2 color class
-test("U-15: renderTurnHistory source maps ownerSeat p2 to player-tone-p2 CSS class", () => {
-  // Source must convert "p2" -> "P2" before passing to playerToneClassForSide
-  assert.match(appSource, /ownerSeat === "p1" \? "P1" : record\.ownerSeat === "p2" \? "P2"/);
+test("U-15: renderTurnHistory maps ownerSeat p2 to player-tone-p2 CSS class", () => {
+ const html=destroyedHistory([{position:{row:2,col:3},ownerSeat:'p2'}]);assert.match(html,/<li class="history-destruction-item player-tone-p2"/);
 });
 
 // U-16 — draw (two destroyedPieces entries) renders two sub-bullets
-test("U-16: renderTurnHistory source maps all destroyedPieces entries to sub-bullet items", () => {
-  // The source uses .map() over destroyedPieces — two entries produce two <li>s
-  assert.match(appSource, /destroyedPieces\.map\(\(record\)/);
+test("U-16: renderTurnHistory maps all destroyedPieces entries to sub-bullet items", () => {
+ const html=destroyedHistory([{position:{row:2,col:3},ownerSeat:'p1'},{position:{row:4,col:5},ownerSeat:'p2'}]);assert.equal((html.match(/data-testid="history-destruction-item"/g)??[]).length,2);assert.match(html,/DESTROYED \(2,3\)/);assert.match(html,/DESTROYED \(4,5\)/);
 });
 
 test("UX-09: selected history rows render destruction sub-bullets before action buttons", () => {
-  assert.match(appSource, /<div class="history-item-info">[\s\S]*history-move-line[\s\S]*history-destruction-list[\s\S]*history-move-at small[\s\S]*<\/div>[\s\S]*\$\{actions\}/);
-  assert.match(appSource, /history-destruction-item"[^>]*><span class="history-destruction-label">DESTROYED/);
+ const html=destroyedHistory([{position:{row:2,col:3},ownerSeat:'p1'}],true);assert(html.indexOf('history-destruction-list')>html.indexOf('history-move-line'));assert(html.indexOf('history-destruction-list')<html.indexOf('history-move-at small'));assert(html.indexOf('history-destruction-list')<html.indexOf('data-action="revert-to-move"'));assert.match(html,/history-destruction-item"[^>]*><span class="history-destruction-label">DESTROYED/);
 });
 
 // UX-03 — sub-bullet indentation uses minimal gutter (CSS structural check)
@@ -197,24 +190,8 @@ test("UX-03: shell.css contains destruction list indentation and no placeholder 
 });
 
 // UX-08 — sub-bullet is not rendered in the live board surface
-test("UX-08: history-destruction-item elements are inside renderTurnHistory (history panel only)", () => {
-  // The sub-bullet HTML is only produced inside renderTurnHistory, which feeds renderHistoryPanel.
-  // Verify the testid is not emitted by any board-facing render function.
-  assert.match(appSource, /history-destruction-item/);
-
-  // Locate renderTurnHistory, renderHistoryPanel, and the destruction item in source
-  const renderTurnIdx = appSource.indexOf("const renderTurnHistory");
-  const renderTurnEnd = appSource.indexOf("\nconst ", renderTurnIdx + 1);
-  const destructionIdx = appSource.indexOf('data-testid="history-destruction-item"');
-
-  // The destruction item testid must appear inside renderTurnHistory
-  assert.ok(renderTurnIdx !== -1, "renderTurnHistory function must exist");
-  assert.ok(destructionIdx > renderTurnIdx, "destruction item should appear after renderTurnHistory declaration");
-  assert.ok(renderTurnEnd === -1 || destructionIdx < renderTurnEnd, "destruction item should be inside renderTurnHistory body");
-
-  // It must NOT appear in any board runtime or board adapter source
-  const boardRuntimeSrc = readFileSync(join(testDir, "..", "board", "runtime", "board-runtime.js"), "utf8");
-  assert.doesNotMatch(boardRuntimeSrc, /history-destruction-item/);
+test("UX-08: destruction records stay in the History list without leaking into inline preview markup", () => {
+ const game={id:'history-only',moves:[{...destroyedMove,destroyedPieces:[{position:{row:2,col:3},ownerSeat:'p1'}]}]};const renderer=historyRenderingFixture({getShellLayoutMode:()=> 'narrow'});assert.match(renderer.renderTurnHistory(game),/data-testid="history-destruction-item"/);const preview=renderer.renderHistoryPreview(game,{snapshot:null},'board-preview');assert.match(preview,/data-testid="history-inline-preview"/);assert.match(preview,/Preview unavailable/);assert.doesNotMatch(preview,/history-destruction-item/);
 });
 
 test("I-14: history selection continues to be owned only by the parent move row", () => {

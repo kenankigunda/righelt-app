@@ -2,15 +2,16 @@ import {test,expect} from '@playwright/test';
 for(const width of [320,390])test(`home card names, seat colors and compact presence survive ${width}px enlarged text`,async({page},info)=>{
  await page.setViewportSize({width,height:1000});await page.goto('/browser-integration/support/home-card-identity.html');await page.waitForFunction(()=>window.fixtureReady);
  const card=id=>page.locator(`[data-case="${id}"]`);
- await expect(card('computer-red').locator('.home-card-matchup')).toHaveText('You vs. Horus');
+ await expect(card('computer-red').locator('.home-card-matchup')).toHaveText('Red: Sam vs. Blue: Horus');await expect(card('computer-red').locator('.home-card-matchup bdi')).toHaveText(['Sam','Horus']);
  for(const id of ['computer-red','computer-blue']){await expect(card(id).getByRole('img',{name:'Computer player'})).toHaveCount(1);await expect(card(id).locator('.is-disconnected')).toHaveCount(0);}
- for(const [id,side]of[['human-red','p1'],['computer-red','p1'],['human-blue','p2'],['computer-blue','p2']]){
-  await expect(card(id).locator(`.player-tone-${side}`)).toHaveText('You');
+ for(const [id,side,name]of[['human-red','p1','Sam'],['computer-red','p1','Sam'],['human-blue','p2','Morgan'],['computer-blue','p2','Sam']]){
+  await expect(card(id).locator(`.player-tone-${side} bdi`)).toHaveText(name);
+  await expect(card(id).locator(`.player-tone-${side} .sr-only`)).toHaveText(`${side==='p1'?'Red':'Blue'}: `);
   expect(await card(id).locator(`.player-tone-${side}`).evaluate(el=>getComputedStyle(el).color)).toBe(side==='p1'?'rgb(194, 69, 47)':'rgb(45, 103, 199)');
   await expect(card(id).getByRole('img')).toHaveCount(1);
  }
- await expect(card('waiting').locator('.home-card-matchup')).toHaveText('You vs. Open seat');await expect(card('waiting').getByRole('img',{name:'Open seat open to join'})).toHaveCount(1);await expect(card('guest').getByRole('img',{name:'Guest disconnected'})).toHaveCount(1);
- await expect(card('viewer').locator('.home-card-matchup')).toHaveText('Sam vs. Morgan');await expect(card('viewer').getByRole('img')).toHaveCount(2);await expect(card('self')).toContainText('You play both sides');await expect(card('self').getByRole('img')).toHaveCount(0);
+ await expect(card('waiting').locator('.home-card-matchup')).toHaveText('Red: Sam vs. Blue: Open seat');await expect(card('waiting').locator('.home-card-matchup bdi')).toHaveText(['Sam','Open seat']);await expect(card('waiting').getByRole('img',{name:'Open seat open to join'})).toHaveCount(1);await expect(card('guest').getByRole('img',{name:'Guest disconnected'})).toHaveCount(1);
+ await expect(card('viewer').locator('.home-card-matchup')).toHaveText('Red: Sam vs. Blue: Morgan');await expect(card('viewer').locator('.home-card-matchup bdi')).toHaveText(['Sam','Morgan']);await expect(card('viewer').getByRole('img')).toHaveCount(2);await expect(card('self')).toContainText('You play both sides');await expect(card('self').getByRole('img')).toHaveCount(0);
  await page.screenshot({path:info.outputPath(`home-identities-${width}-100.png`)});
  await page.evaluate(()=>document.documentElement.style.fontSize='200%');
  for(const item of await page.locator('.home-card-matchup').all()){

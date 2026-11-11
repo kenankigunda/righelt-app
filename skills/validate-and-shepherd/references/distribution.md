@@ -34,6 +34,12 @@ The released account Undo journey selects its History hit target before browser 
 
 Merge and install the compatible tooling release before running official fresh or retained account validation against that History layout. Development controls of unmerged tooling do not replace released validation. This adapter changes no Undo command, receipt assertion, deadline or product behavior. Report publication and paused schedules remain unchanged.
 
+## History Undo source compatibility
+
+The capability reader supports the original inline History row and the extracted production History renderer. The extracted layout must have the named factory import, one constant instance binding and actual active/archive method calls. Its returned turn renderer supplies exactly one supported literal Undo button. Local aliases may change. Missing sources, ambiguous producers, dynamic labels and direct instance/member mutation fail before browser execution. Candidate code is never imported or evaluated to discover the contract.
+
+This selects the source contract for native Undo validation. It does not prove app wiring or button behavior, which remain covered by the selected actual-app journey and exact command receipt. An unsupported layout is a compatibility failure to repair in released tooling, not permission to add dead candidate markup or silently use a legacy label. Keep existing source and receipt evidence when installing the merged compatibility release.
+
 ## Proportionate validation and evidence reuse
 
 Follow `docs/ai/VALIDATION_EVIDENCE_POLICY.md` in the pinned released tools. Inspect `plan --candidate /absolute/path` before executing. New version 3 plans require a concrete acceptance or regression reason for every additional check and reuse compatible proof across runs. Keep the full stable current-head PR gate. Recheck only invalidated evidence after repairs, reuse unchanged review and images, and stop when acceptance questions are answered. Retained proof is required at affected state boundaries, not automatically for every feature. Within the authorized delivery order, implement, review, push and run CI for the next change while the preceding merge is in main CI or deployment verification. Only the next merge waits for required verification of the preceding deployment. Serialize local heavy jobs through the resource queue and preserve any explicit user wait command. Existing explicit acceptance, authorization, production-data protection and exact deployed identity remain required. CI narrowing is separate.

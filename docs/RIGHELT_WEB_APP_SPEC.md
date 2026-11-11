@@ -319,6 +319,19 @@ List behavior:
   - Existing seat holder has been inactive for more than 5 minutes.
 - Such a takeover request must be approved by the opposite player before assignment.
 
+### Completed games on Home
+
+- Keep ongoing owned games in Continue playing. Put Your completed games below Start something new and above Other games. Only the current account's completed games belong in Your completed games. Other people's completed games remain in Other games.
+- Classify completion only from a confirmed `p1_win`, `p2_win` or `draw` outcome. Unknown status shows Game status unavailable, never a guessed winner or draw. A pending winning move or Undo does not change confirmed membership. Accepted Undo can reopen a game and update all affected counts, pages and cards together.
+- Filter membership before server counts and pagination. Preserve newest-activity ordering and stable ties. Clamp a removed last page. Each section has independent loading and recovery, and an empty completed section is hidden only after a successful zero count.
+- Home's first failed attempt remains a private whole read, followed by one 500ms retry. Only an exhausted second ordinary Home attempt may publish healthy sections after all work settles, retaining failed sections and explicit Retry. Account continuation, owner changes and auth/session/protocol/schema/storage/contract failures always refuse the whole read. No healthy section means global recovery. A failed section never restarts itself from a trailing refresh.
+- Membership freshness has its own bounded repair. If `home_list_changed` remains afterward, retain the entire previous cards/counts/focus with manual global recovery. Do not publish an unproven mixture or treat this as a recoverable network section failure.
+- Completed cards show the winner line beside the matchup and a subtle three-pixel rail in the winning side's color. Own victories say You won. Own losses name the actual winner, such as Tau won, with You lost beneath. Draw says Draw and No winner. Self-play uses Red won or Blue won without personal win/loss wording. Missing winner identity falls back to the actual side.
+- A completed card keeps its final board, saved move count and one full-card Review game link. It has no active-turn or presence cues and no nested interactive elements. The winner comes from the outcome's winning seat, independent of whose turn follows or shared computer ownership. Reuse shared player names and perspective rules, escape names and isolate their writing direction.
+- A card's board, result, count and identities form one confirmed revision. Older list replies must not overwrite a newer live projection or Undo reopening. Provisional previews stay separate. Recheck section membership and counts after concurrent updates rather than mixing old totals with newer cards.
+- Preserve a connected control the reader moved to during refresh. Otherwise retain the same card or a stable neighbor/heading in its previous section with no scroll jump. Announce a completed focus restoration. Refresh a trailing update after a successful batch, without creating a tight automatic retry on a failed section.
+- Validate narrow layouts, text zoom, keyboard activation, single focus stops and the actual application rendering. Approved static study references do not replace app acceptance.
+
 ## 9. Home Page Preview Board (Flow 7)
 
 - Home page must include a top-of-page preview board.
@@ -482,6 +495,13 @@ This section is normative and applies to every new endpoint, page, and performan
 
 - Board-message height must admit the complete two-row grammar at every supported width. Reserve its measured font and width envelopes before first paint, including all turn summaries and the bounded spectator-name box. Changes to wording, fonts or inline pills require primary/fallback measurements at 100% and 200% text, boundary probes and exact cold/loaded/reload anchor checks. Natural wrapping may require four or more lines; a universal three-line cap is not the contract.
 
+### Undo consent
+
+- Undo applies directly in self-play and against a computer controlled by the same human. While its durable receipt is pending, do not show an undo request, acceptance message, or approval controls. Confirm completion as “Move undone”.
+- Each accepted Undo has its own History boundary, collapsed by default even when it spans turns. If a viewer already selected a record that becomes undone, reveal only that record’s operation for that viewer. Honor a later explicit collapse until another explicit selection. Expanding it shows the original turn, actor and immutable records. A later Undo preserves earlier undone records and their original provenance. Display order is newest first, while stored records and replay stay chronological.
+- A pending local prediction is labelled pending until the durable acknowledgement. Missing historical boundary evidence remains unavailable. Do not reconstruct an accepted operation from matching times or names.
+- Only another human controller must approve Undo. Keep that player's request, Accept, Reject and Cancel request flow. Use authoritative seat-controller identities, never display names, to distinguish these cases.
+- Direct Undo keeps the existing serialized command, receipt and recovery path. Computer work is paused and reconciled before restoration, then resumes under the acknowledged position and control generation. Reopening a completed game by explicit Undo retains these same safeguards.
 ### Projected status during a sequence
 
 - During a live rush or push sequence, show every piece's status as it would be after the turn ended at its current position. Recompute the projection after each acknowledged sequence step, including defender retreats and follows.
@@ -494,6 +514,8 @@ This section is normative and applies to every new endpoint, page, and performan
 Use the current canonical player name in its owning color for identity references. One anonymous player is Guest; when both seats are anonymous, use Guest 1 and Guest 2 by fixed seat. Names that happen to be Red, Blue or Guest remain unchanged. Preserve profile actions, bidirectional isolation and complete accessible names for long or duplicate names. Accessible labels retain the owner color and identify the human's own seat independently of visible color. Useful relative control prompts and You won may remain.
 
 History actor references use canonical names rather than You or Opponent. Result titles identify the actual winner, never the active side or selected rematch side. Human self-play needs the winning-seat qualification: You won as Red/Blue for its owner and {player name} won as Red/Blue for viewers. Other results omit redundant visible color suffixes while retaining accessible color attribution. Commander explanations carry structured owner references; style the entire Your Blue commander phrase in the relevant color. Never infer an owner's color by matching user-supplied name text. Viewing, temporary computer control and replay must not change the recorded owner or gameplay authority.
+
+Curated instructional descriptions may resolve structured owner references only when real game context exists and the shipped scenario ID and original description match. Edited and imported prose stays untouched. Editing always exposes the original description, not resolved names or nonvisual affiliation text. Changing between display and editing must replace that description node before preserving editable content. Analysis explanations name the actual value owner, while raw evidence and exported owner enums keep their technical coordinate system.
 
 ### History endpoint roles
 

@@ -1,8 +1,10 @@
+import {createAccountContinuationOwner} from '../shell/account-continuation-owner.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { createRouteHydration } from '../shell/route-hydration.js';
+import { sameRouteRead, sameHomeReadScope, createHomeReadReplacement } from '../shell/home-section-reads.js';
 import { createIssueDiagnostics } from '../shell/issue-diagnostics.js';
 import { parseRouteFromHash, buildHomeHash, buildHashForRoute, FLYOUT_KEYS } from '../shell/routes.js';
 import { renderInvitationSurface } from '../shell/invitations.js';
@@ -40,7 +42,7 @@ function fixture({staleInvite=false}={}) {
     getGameViewModel:gameId=>({id:gameId}),
   };
   const diagnostics=createIssueDiagnostics({schedule:()=>1,environment:()=>({})});
-  const context=vm.createContext({cancelPendingBoardContextReplay(){},pendingBoardContextReplay:null,
+  const context=vm.createContext({createAccountContinuationOwner,cancelPendingBoardContextReplay(){},pendingBoardContextReplay:null,
     expandedViewerGames:new Set(),account:{snapshot:()=>({generation})},transport:owner,currentRoute:parseRouteFromHash('#/invite/first'),
     window:{location:{hash:'#/invite/first'},addEventListener:(name,fn)=>events[name]=fn,history:{replaceState:(_state,_title,hash)=>{context.window.location.hash=hash;}}},parseRouteFromHash,buildHashForRoute,FLYOUT_KEYS,URL,URLSearchParams,hydrateRoute:createRouteHydration(),
     appEl:{querySelectorAll:()=>[{classList:{add:noop}}],addEventListener:(_name,fn)=>clicks.push(fn)},
@@ -51,6 +53,7 @@ function fixture({staleInvite=false}={}) {
     getShellLayoutMode:()=>layout,saveDebugFlyoutOpen:noop,storage:{},scheduleGameShellStickyLayout:noop,scheduleResponsiveHomeSectionPageSizes:noop,
     prefersReducedMotion:()=>true,isPassivePageClick:()=>true,accountDialog:{isOpen:()=>false},delay:async()=>{},FLYOUT_MOTION_MS:1,
 
+    sameRouteRead,sameHomeReadScope,createHomeReadReplacement,
     getVisibleHomeSectionKeys:()=>[],getHomeSection:()=>{},getHomeSectionVisiblePageSize:()=>0,getHomeSectionColumnCount:()=>1,
     syncHomeSections:async()=>{homeLoads++;},syncLiveChannels:()=>{channels++;},
     invitationLoadFailureKind,issueDiagnostics:diagnostics,render:options=>renders.push(options),maybeRevealRouteTransition:()=>{},
