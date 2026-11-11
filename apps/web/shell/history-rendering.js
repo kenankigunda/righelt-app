@@ -1,3 +1,5 @@
+import {buildHistoryTimeline} from './history-timeline.js';
+
 // Shared production History rendering. Collaborators are read at render time so
 // current account, transport and layout state retain their original ownership.
 export function createHistoryRendering(getDependencies) {
@@ -8,13 +10,15 @@ const renderHistoryPreview = (game, preview, key) => {
 };
 const renderTurnHistory = (game) => {
   const {getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, undoHistory, expandedUndoneGroups, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView} = getDependencies();
-  const moves = visibleRecordedMoves([...(game.moves ?? []), ...(game.pendingMoves ?? [])],{includeUndone:true});
-  if (!game.inHistoryMode && !moves.length && !game.turns?.length && !game.historyUndoArchiveEntries?.some(entry => entry.move?.undone === true) && !Number.isSafeInteger(game.lastRestoration?.undoEventSeq)) return '<li class="small">No turns yet.</li>';
-  if (game.historyTurnIndex != null || game.historyContextMoves) {
-    for (const frozen of game.historyTurnMoves ?? game.historyContextMoves ?? []) if (frozen.action?.type!=='end_turn' && !moves.some(move=>move.moveId===frozen.moveId)) moves.push(frozen);
-  }
+  const archiveState=additionalHistory?.snapshot?.(game.id);
+  const timeline=buildHistoryTimeline(game.id,[...(game.moves??[]),...(game.pendingMoves??[])],game.historyUndoArchiveEntries??[],game.lastRestoration,{
+    archiveComplete:Boolean(archiveState?.loaded&&!archiveState.cursor),
+    extraMoves:game.historyTurnIndex!=null||game.historyContextMoves?game.historyTurnMoves??game.historyContextMoves??[]:[],
+  });
+  const moves=timeline.liveMoves;
+  if (!game.inHistoryMode && !timeline.records.length && !game.turns?.length && !game.historyUndoArchiveEntries?.some(entry => entry.move?.undone === true) && !Number.isSafeInteger(game.lastRestoration?.undoEventSeq)) return '<li class="small">No turns yet.</li>';
   const turns = new Map((game.turns ?? []).map(turn => [turn.index,{...turn,moves:[]}]));
-  for (const move of moves) {
+  for (const {move} of timeline.records) {
     if (!turns.has(move.turnIndex)) turns.set(move.turnIndex,{index:move.turnIndex,moves:[]});
     turns.get(move.turnIndex).moves.push(move);
   }
@@ -43,19 +47,37 @@ const renderTurnHistory = (game) => {
       <div class="history-item-info"><span class="history-move-line">${move.undone ? `Turn ${move.turnIndex+1} · ` : ''}Move ${move.displayMoveNumber ?? move.index+1}: ${escapeHtml(move.notation)}${pending?' · Pending':''}</span>${destroyedPieces.length > 0 ? `<ul class="history-destruction-list">${destroyed}</ul>` : ""}<span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span></div>
       ${selected ? renderHistoryPreview(previewGame,buildMovePreview(selectedHistoryPresentation(previewGame,{identityId:transport.getIdentityId()})?.record ?? move,{context:'history'}),`history:${game.id}:${move.moveId}`) : ''}${actions}</li>`;
   };
-  const groups = [...turns.values()].sort((a,b)=>b.index-a.index).map(turn=>{
-    const ordered = turn.moves.sort((a,b)=>(a.turnMoveIndex ?? a.index)-(b.turnMoveIndex ?? b.index));
-    const selected = game.inHistoryMode && game.historyTurnIndex === turn.index;
-    if (!selected && ordered.length && ordered.every(move => move.undone === true)) return '';
-    const first = ordered.find(move=>!move.undone) ?? ordered[0];
-    const side = historyTurnSide(turn,ordered);
-    const turnActor = ordered.find(move=>move.actorSide===side) ?? first;
-    const name = historyActorLabel(game,{...turnActor,actorSide:side},{identityId:transport.getIdentityId()});
-    const active = ordered.some(move=>!move.undone && !(game.pendingMoves??[]).includes(move));
-    return `<li class="history-turn ${playerToneClassForSide(side)}" data-key="history-turn:${escapeHtml(game.id)}:${turn.index}" data-testid="history-turn" aria-label="Turn ${turn.index+1} · ${escapeHtml(name)}">${selected||!active?'':`<button type="button" class="history-turn-hit secondary" data-action="jump-history-turn" data-game-id="${escapeHtml(game.id)}" data-turn-index="${turn.index}" aria-label="Inspect Turn ${turn.index+1} · ${escapeHtml(name)}"></button>`}<div class="history-turn-heading${selected?' is-selected':''}" data-key="turn:${escapeHtml(game.id)}:${turn.index}" ${selected?'aria-current="true"':''}>Turn ${turn.index+1}</div>
+  const selectableTurns=new Set(),selectedTurns=new Set();
+  const renderTurn=(turn,records,key)=>{
+    const ordered=[...records].reverse().map(record=>record.move);
+    const selected=game.inHistoryMode&&game.historyTurnIndex===turn.index&&!selectedTurns.has(turn.index);
+    if(selected)selectedTurns.add(turn.index);
+    const first=ordered[0];
+    const side=historyTurnSide(turn,ordered);
+    const turnActor=ordered.find(move=>move.actorSide===side)??first;
+    const name=historyActorLabel(game,{...turnActor,actorSide:side},{identityId:transport.getIdentityId()});
+    const active=records.some(record=>record.entry?.historyStatus!=='unknown'&&!(game.pendingMoves??[]).includes(record.move));
+    const selectable=!selected&&active&&!selectableTurns.has(turn.index);
+    if(active)selectableTurns.add(turn.index);
+    return `<li class="history-turn ${playerToneClassForSide(side)}" data-key="${escapeHtml(key)}" data-testid="history-turn" aria-label="Turn ${turn.index+1} · ${escapeHtml(name)}">${selectable?`<button type="button" class="history-turn-hit secondary" data-action="jump-history-turn" data-game-id="${escapeHtml(game.id)}" data-turn-index="${turn.index}" aria-label="Inspect Turn ${turn.index+1} · ${escapeHtml(name)}"></button>`:''}<div class="history-turn-heading${selected?' is-selected':''}" data-key="turn:${escapeHtml(game.id)}:${turn.index}:${escapeHtml(key)}" ${selected?'aria-current="true"':''}>Turn ${turn.index+1}</div>
       ${selected?renderHistoryPreview(game,buildTurnPreview(game.historyTurnMoves,{context:'history'}),`turn:${game.id}:${turn.index}`):''}
-      <ol class="history-list history-list-nested">${ordered.filter(move=>!move.undone).reverse().map(move => row(move)).join('')}</ol></li>`;
+      <ol class="history-list history-list-nested">${records.map(record=>row(record.move,record.entry)).join('')}</ol></li>`;
+  };
+  const undoGroups=timeline.groups;
+  undoHistory.observeUndoHistoryDisclosure(expandedUndoneGroups,game,undoGroups,transport);
+  const portions=new Set();
+  const groups=timeline.nodes.map(node=>{
+    if(node.type==='gap')return `<li class="small history-order-gap" role="status" data-key="${escapeHtml(node.key)}">${node.unknown?'Original move order unavailable for some loaded records.':'Earlier pages are not loaded between these moves.'}</li>`;
+    if(node.type==='undone')return undoHistory.renderUndoHistoryGroups(game.id,[node],row,expandedUndoneGroups,escapeHtml);
+    const canonical=!portions.has(node.turnIndex);portions.add(node.turnIndex);
+    const key=canonical?`history-turn:${game.id}:${node.turnIndex}`:`history-turn:${game.id}:${node.turnIndex}:portion:${node.records[0].id}`;
+    return renderTurn(turns.get(node.turnIndex)??{index:node.turnIndex},node.records,key);
   }).join('');
+  const emptyTurns=[...turns.values()].filter(turn=>!timeline.records.some(record=>record.move.turnIndex===turn.index)
+    || game.historyTurnIndex===turn.index&&!timeline.nodes.some(node=>node.type==='retained'&&node.turnIndex===turn.index));
+  const emptyRow=turn=>renderTurn(turn,[],`history-turn:${game.id}:${turn.index}`);
+  const leadingEmpty=emptyTurns.filter(turn=>turn.index===game.currentTurn?.index).map(emptyRow).join('');
+  const trailingEmpty=emptyTurns.filter(turn=>turn.index!==game.currentTurn?.index).reverse().map(emptyRow).join('');
   const live = game.inHistoryMode ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" data-testid="history-return-live">${icon('board')}Return to live view</button></li>` : '';
   const state = game.currentSnapshot ?? game.board?.state;
   const current = !game.inHistoryMode && game.currentTurn;
@@ -64,10 +86,7 @@ const renderTurnHistory = (game) => {
   const acknowledged=boardContexts.channel('acknowledged');
   const replayFallback=!game.inHistoryMode&&acknowledged?.gameId===game.id&&acknowledged.replay&&boardContexts.isDismissed(acknowledged.key)&&canReplayDisplayed(acknowledged.replay)
     ?`<li class="history-live-replay" data-key="live-replay:${escapeHtml(acknowledged.key)}"><button type="button" class="secondary" data-action="replay-board-context" data-board-context-key="${escapeHtml(acknowledged.key)}"${contextReplayEnabled(acknowledged.replay)?'':' disabled'}>Show me again</button></li>`:'';
-  const undoGroups = undoHistory.groupUndoHistory(game.id, [...moves, ...(game.moves ?? []).filter(move => move.action?.type === 'end_turn')], game.historyUndoArchiveEntries ?? [], game.lastRestoration);
-  undoHistory.observeUndoHistoryDisclosure(expandedUndoneGroups, game, undoGroups, transport);
-  const undoneGroups = undoHistory.renderUndoHistoryGroups(game.id, undoGroups, row, expandedUndoneGroups, escapeHtml);
-  return live + waiting + replayFallback + groups + undoneGroups;
+  return live + waiting + replayFallback + leadingEmpty + groups + trailingEmpty;
 };
 
 const renderAdditionalHistory = game => {
@@ -76,43 +95,43 @@ const renderAdditionalHistory = game => {
   const state=additionalHistory.snapshot(game.id);
   if(!state)return "";
   if(!state.metadata&&!state.loading&&!state.error)queueMicrotask(()=>void additionalHistory.ensure(game.id));
-  const archiveTurns = new Map();
   const archiveRecords=state.items.map(entry=>({...entry.move,moveId:entry.move?.moveId??entry.id}));
-  const archiveMoves=new Map(visibleRecordedMoves(archiveRecords,{includeUndone:true}).map(move=>[move.moveId,move]));
-  const archiveItems = state.items.filter(entry=>archiveMoves.has(entry.id)&&!game.historyContextMoves?.some(move=>move.moveId===entry.id)).map(entry=>({...entry,move:archiveMoves.get(entry.id)}));
+  const archiveItems=state.items.filter(entry=>entry.move&&!game.historyContextMoves?.some(move=>move.moveId===entry.id));
   const inspected = game.inspectedDecision;
   if (inspected && inspected.action?.type!=='end_turn' && !game.moves?.some(move=>move.moveId===inspected.moveId) && !archiveItems.some(entry=>entry.id===inspected.moveId)) archiveItems.unshift({id:inspected.moveId,move:inspected,at:inspected.at});
-  for (const entry of archiveItems.filter(entry => entry.move.undone !== true)) {
-    const index = entry.move.turnIndex;
-    if (!archiveTurns.has(index)) archiveTurns.set(index,[]);
-    archiveTurns.get(index).push(entry);
-  }
   const archiveRow = entry => {
     const selected=Boolean(game.inHistoryMode&&game.inspectedDecision?.moveId===entry.id);
     const previewGame={...game,historyContextMoves:[...archiveRecords,...(game.historyContextMoves??[])]};
     const preview=selected?renderHistoryPreview(previewGame,buildMovePreview(selectedHistoryPresentation(previewGame,{identityId:transport.getIdentityId()})?.record ?? entry.move,{context:'history'}),`archive:${game.id}:${entry.id}`):'';
     return `<li class="history-item ${playerToneClassForSide(entry.move.actorSide)}${selected?' is-selected':''}${entry.move.undone?' is-undone':''}" data-key="archive:${escapeHtml(entry.id)}" data-archive-move-id="${escapeHtml(entry.id)}" aria-label="${escapeHtml(historyActorLabel(game,entry.move,{identityId:transport.getIdentityId()}))}">${selected?'':`<button type="button" class="history-move-hit secondary" data-action="inspect-history-archive" data-game-id="${escapeHtml(game.id)}" data-decision-id="${escapeHtml(entry.id)}" aria-label="${escapeHtml(historyActorLabel(game,entry.move,{identityId:transport.getIdentityId()}))} · ${recordedMoveNumber(entry.move)==null?'Move unavailable':`Move ${recordedMoveNumber(entry.move)}`} · ${escapeHtml(entry.move.notation)}"></button>`}<div class="history-item-info history-archive-select" aria-current="${selected?'true':'false'}"><span class="history-move-line">${entry.move.undone ? `Turn ${entry.move.turnIndex+1} · ` : ''}${recordedMoveNumber(entry.move)==null?'Move unavailable':`Move ${recordedMoveNumber(entry.move)}:`} ${escapeHtml(entry.move.notation)}${entry.move.undone?' · Undone':entry.historyStatus==='unknown'?' · Status unavailable':''}</span><span class="history-move-at small">${escapeHtml(formatClientDateTime(entry.at))}</span></div>${preview}</li>`;
   };
-  const rows=[...archiveTurns.entries()].sort(([a],[b])=>b-a).map(([index,entries])=>{
-    entries.sort((a,b)=>(a.move.turnMoveIndex ?? a.move.index)-(b.move.turnMoveIndex ?? b.move.index));
-    const first=entries[0].move;
-    const side=historyTurnSide({index},entries.map(entry=>entry.move));
-    const turnActor=entries.find(entry=>entry.move.actorSide===side)?.move ?? first;
-    const selectedTurn=game.inHistoryMode && game.historyTurnIndex===index;
-    const selectableTurn=entries.some(entry=>entry.move.undone!==true && entry.historyStatus!=="unknown");
-    const turnName=COMPUTER_PROFILES[turnActor.computerProof?.profile]?.name??playerDisplayName(game,side);
-    const turnHit=selectedTurn||!selectableTurn?'':`<button type="button" class="history-turn-hit secondary" data-action="jump-history-turn" data-game-id="${escapeHtml(game.id)}" data-turn-index="${index}" aria-label="Inspect Turn ${index+1} · ${escapeHtml(turnName)}"></button>`;
-    const heading=`<div class="history-turn-heading${selectedTurn?' is-selected':''}" data-key="archive-turn:${escapeHtml(game.id)}:${index}" ${selectedTurn?'aria-current="true"':''}>Turn ${index+1}</div>`;
-    const contents=[...entries].reverse().map(archiveRow).join('');
-    return `<li class="history-turn ${playerToneClassForSide(side)}" data-key="archive-history-turn:${escapeHtml(game.id)}:${index}" aria-label="Turn ${index+1} · ${escapeHtml(turnName)}">${turnHit}${heading}${selectedTurn?renderHistoryPreview(game,buildTurnPreview(game.historyTurnMoves,{context:'history'}),`archive-turn:${game.id}:${index}`):''}<ol class="history-list history-list-nested">${contents}</ol></li>`;
-  }).join('');
+  let rows='';
+  if(!Array.isArray(game.historyUndoArchiveEntries)){
+    const timeline=buildHistoryTimeline(game.id,[],archiveItems,null,{archiveComplete:!state.cursor});
+    undoHistory.observeUndoHistoryDisclosure(expandedUndoneGroups,game,timeline.groups,transport);
+    const selectableTurns=new Set(),selectedTurns=new Set(),portions=new Set();
+    rows=timeline.nodes.map(node=>{
+      if(node.type==='gap')return `<li class="small history-order-gap" role="status" data-key="${escapeHtml(node.key)}">Original move order unavailable for some loaded records.</li>`;
+      if(node.type==='undone')return undoHistory.renderUndoHistoryGroups(game.id,[node],(move,entry)=>archiveRow({...entry,move}),expandedUndoneGroups,escapeHtml);
+      const index=node.turnIndex,entries=node.records.map(record=>({...record.entry,move:record.move}));
+      const chronological=[...entries].reverse(),first=chronological[0].move;
+      const side=historyTurnSide({index},chronological.map(entry=>entry.move));
+      const turnActor=chronological.find(entry=>entry.move.actorSide===side)?.move??first;
+      const selectedTurn=game.inHistoryMode&&game.historyTurnIndex===index&&!selectedTurns.has(index);
+      if(selectedTurn)selectedTurns.add(index);
+      const selectableTurn=!selectableTurns.has(index)&&entries.some(entry=>entry.historyStatus!=='unknown');
+      selectableTurns.add(index);
+      const turnName=historyActorLabel(game,{...turnActor,actorSide:side},{identityId:transport.getIdentityId()});
+      const turnHit=selectedTurn||!selectableTurn?'':`<button type="button" class="history-turn-hit secondary" data-action="jump-history-turn" data-game-id="${escapeHtml(game.id)}" data-turn-index="${index}" aria-label="Inspect Turn ${index+1} · ${escapeHtml(turnName)}"></button>`;
+      const canonical=!portions.has(index);portions.add(index);
+      const key=canonical?`archive-history-turn:${game.id}:${index}`:`archive-history-turn:${game.id}:${index}:portion:${node.records[0].id}`;
+      const heading=`<div class="history-turn-heading${selectedTurn?' is-selected':''}" data-key="${escapeHtml(key)}:heading" ${selectedTurn?'aria-current="true"':''}>Turn ${index+1}</div>`;
+      return `<li class="history-turn ${playerToneClassForSide(side)}" data-key="${escapeHtml(key)}" aria-label="Turn ${index+1} · ${escapeHtml(turnName)}">${turnHit}${heading}${selectedTurn?renderHistoryPreview(game,buildTurnPreview(game.historyTurnMoves,{context:'history'}),`archive-turn:${game.id}:${index}`):''}<ol class="history-list history-list-nested">${entries.map(archiveRow).join('')}</ol></li>`;
+    }).join('');
+  }
   const action=state.error?`<p role="status">We couldn’t load more history</p><button class="secondary" data-action="retry-history-archive" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Retry</button>`
     : state.available&&(!state.loaded||state.cursor)?`<button class="secondary" data-action="load-history-archive" data-game-id="${escapeHtml(game.id)}" ${state.loading?'disabled aria-busy="true"':''}>${icon('history')}${state.loaded?'Load more history':'More game history'}</button>`:"";
-  const undoGroups = undoHistory.groupUndoHistory(game.id, [], archiveItems);
-  if (!Array.isArray(game.historyUndoArchiveEntries)) undoHistory.observeUndoHistoryDisclosure(expandedUndoneGroups, game, undoGroups, transport);
-  const undoneGroups = Array.isArray(game.historyUndoArchiveEntries) ? ''
-    : undoHistory.renderUndoHistoryGroups(game.id, undoGroups, (move, entry) => archiveRow({...entry,move}), expandedUndoneGroups, escapeHtml);
-  return `<div data-testid="additional-history"><ol class="history-list" aria-label="Additional game history">${rows}${undoneGroups}</ol>${action}${state.loaded&&state.partial?'<p class="small">Some earlier history is unavailable</p>':''}</div>`;
+  return `<div data-testid="additional-history"><ol class="history-list" aria-label="Additional game history">${rows}</ol>${action}${state.loaded&&state.partial?'<p class="small">Some earlier history is unavailable</p>':''}</div>`;
 };
 
 const getBoardGame = game => {

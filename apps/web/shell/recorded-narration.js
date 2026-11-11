@@ -26,9 +26,9 @@ export const distinctRecordedRemovals = moves => {
 
 /** A read-only presentation lineage. Closure changes the last visible frame,
  * never creates a selectable History row or a synthetic narrated replay step. */
-export const visibleRecordedMoves = (moves,{includeUndone=false}={}) => {
+export const visibleRecordedMoves = (moves,{includeUndone=false,preserveInputOrder=false}={}) => {
   const result=[];
-  const ordered=[...(moves??[])].sort((left,right)=>Number.isInteger(left.index)&&Number.isInteger(right.index)?left.index-right.index:0);
+  const ordered=preserveInputOrder?[...(moves??[])]:[...(moves??[])].sort((left,right)=>Number.isInteger(left.index)&&Number.isInteger(right.index)?left.index-right.index:0);
   for(const move of ordered){
     if(!includeUndone&&move.undone)continue;
     if(move.action?.type!=='end_turn'){result.push(move);continue;}
