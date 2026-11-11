@@ -1184,9 +1184,9 @@ test("project previews use a plus badge while move-style previews use lightweigh
   assert.match(adapterSource, /const supplyPath = normalizeOverlayPath\(getSupplyPathForPiece\(snapshot, piece\)\);/);
   assert.match(adapterSource, /const commandPath = normalizeOverlayPath\(getCommandPathForPiece\(snapshot, piece\)\);/);
   assert.match(adapterSource, /buildSharedPathSegmentOffsetMaps\(\s*supplyPath,\s*commandPath,\s*\)/s);
-  assert.match(adapterSource, /drawPath\(supplyPath, commandStroke, "2 6", supplyOffsetsBySegmentKey, "supply"\);/);
-  assert.match(adapterSource, /const commandStroke = PREVIEW_STROKE_BY_OWNER\[piece\.owner\] \?\? PREVIEW_STROKE_BY_OWNER\.P1;/);
-  assert.match(adapterSource, /drawPath\(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey, "command"\);/);
+  assert.match(adapterSource, /drawPath\(supplyPath, connectionStroke\("supply",piece.owner\), CONNECTION_STYLE.supply.dash, supplyOffsetsBySegmentKey, "supply", piece.owner\);/);
+  assert.match(adapterSource, /const commandStroke = connectionStroke\("command",piece.owner\);/);
+  assert.match(adapterSource, /drawPath\(commandPath, commandStroke, CONNECTION_STYLE.command.dash, commandOffsetsBySegmentKey, "command", piece.owner\);/);
   assert.doesNotMatch(adapterSource, /drawPath\(commandPath, "#2470c7"\)/);
 });
 
@@ -1250,12 +1250,15 @@ test('combined explicit inspection keeps overlapping supply and command strokes 
     adapter.render({snapshot,selection:{selectedPieceId:'A',source:path[0],target:null},overlay:{mode:'interactive',inspection:{kind:'combined',pieceId:'A'}},legalActions:[],selectedPieceMoves:[]});
     const lines=overlayLinesEl.children.filter(child=>child.tagName==='LINE');
     assert.equal(lines.length,2);assert.notEqual(lines[0].getAttribute('y1'),lines[1].getAttribute('y1'));
+    for(const line of lines){const supply=line.getAttribute('data-legend-kind')==='supply';assert.equal(line.getAttribute('stroke'),supply?'var(--connection-supply)':'var(--player-p1)');assert.equal(line.getAttribute('stroke-dasharray'),supply?'7 5':'2 6');assert.equal(line.getAttribute('stroke-width'),'3');assert.equal(line.getAttribute('stroke-linecap'),'round');}
+    adapter.render({snapshot,selection:{selectedPieceId:'A',source:path[0],target:null},overlay:{mode:'interactive'},selectedPieceOverlayPhase:'supplyCommand',legalActions:[],selectedPieceMoves:[]});
+    const personal=overlayLinesEl.children.filter(child=>child.tagName==='LINE');assert.equal(personal.length,2);for(const line of personal){const supply=line.getAttribute('data-legend-kind')==='supply';assert.equal(line.getAttribute('stroke'),supply?'var(--connection-supply)':'var(--player-p1)');assert.equal(line.getAttribute('stroke-dasharray'),supply?'7 5':'2 6');}
     adapter.unmount();
   });
 });
 
 
-test('opposite-owner network inspection colors both paths and selects only the active supply square',async()=>{
+test('mixed-owner inspection uses semantic supply and owner command colors with only the active supply square',async()=>{
  await withFakeDocument(()=>{
   const {adapter,boardEl,overlayLinesEl}=createMountedAdapter();
   const snapshot={sideToMove:'P2',pieces:[{id:'C2',owner:'P2',kind:'commander',position:{row:6,col:3},supplied:true,commanded:true},{id:'A2',owner:'P2',kind:'unit',position:{row:4,col:3},supplied:true,commanded:true},{id:'C1',owner:'P1',kind:'commander',position:{row:3,col:6},supplied:true,commanded:true}],artifacts:{supply:[{player:'P1',shortestPathByPieceId:{C1:[{row:3,col:6},{row:0,col:6},{row:0,col:9}]}}],command:{shortestPathToCommanderByPieceId:{A2:[{row:4,col:3},{row:6,col:3}]}}}};
@@ -1264,7 +1267,7 @@ test('opposite-owner network inspection colors both paths and selects only the a
   adapter.render(payload);
   const lines=overlayLinesEl.querySelectorAll('line');
   assert(lines.some(line=>line.getAttribute('data-legend-kind')==='command'&&line.getAttribute('stroke')==='var(--player-p2)'));
-  assert(lines.some(line=>line.getAttribute('data-legend-kind')==='supply'&&line.getAttribute('stroke')==='var(--player-p1)'));
+  assert(lines.some(line=>line.getAttribute('data-legend-kind')==='supply'&&line.getAttribute('stroke')==='var(--connection-supply)'));
   assert.equal(getCell(boardEl,0,9).classList.contains('selected-supply-point'),true);
   assert.equal(getCell(boardEl,0,9).getAttribute('data-selected-supply-owner'),'P1');
   assert.equal(getCell(boardEl,6,3).classList.contains('selected-piece'),true);

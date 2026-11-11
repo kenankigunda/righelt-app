@@ -235,3 +235,4 @@ body {display:flow-root;}
 .board-context-sizing .board-context-scroll-cue {display:block;}
 
 .board-message-live:focus-visible,#shell-board:focus-visible {outline:2px solid var(--ink);outline-offset:4px;}
+.overlay-key .swatch.supply::before {background:var(--connection-supply-sample);}
