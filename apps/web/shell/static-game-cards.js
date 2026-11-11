@@ -1,5 +1,10 @@
+import {isTerminalOutcome} from './game-lifecycle.js';
 import { COMPUTER_PROFILES, isComputerProfile } from '../generated/packages/shared-types/src/computer-play.js';
 const clone = (value) => (value == null ? value : structuredClone(value));
+const revision = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+const confirmedStatus = card => revision(card?.eventSeq) !== null && revision(card?.gameplayRevision) !== null &&
+  (card?.confirmedOutcomeStatus === 'ongoing' || isTerminalOutcome(card?.confirmedOutcomeStatus)) &&
+  card.confirmedOutcomeStatus === (card.previewSnapshot ?? card.currentSnapshot ?? card.board?.state)?.outcome?.status ? card.confirmedOutcomeStatus : null;
 
 // Card identity survives temporary manual control. It conveys no turn authority.
 export const computerProfileForCard = (game, side) => {
@@ -30,6 +35,11 @@ export const computerOpponentLabel = game => {
 
 export const normalizeStaticGameCard = (card) => ({
   id: String(card?.id || ""),
+  eventSeq: revision(card?.eventSeq),
+  gameplayRevision: revision(card?.gameplayRevision),
+  confirmedOutcomeStatus: confirmedStatus(card),
+  selfPlayMode: card?.selfPlayMode === true,
+  myRoles: Array.isArray(card?.myRoles) ? card.myRoles.filter(role => ['Player 1','Player 2','Viewer','Guest','Both Players'].includes(role)) : [],
   createdAt: typeof card?.createdAt === "string" ? card.createdAt : "",
   lastMoveAt: typeof card?.lastMoveAt === "string" ? card.lastMoveAt : null,
   updatedAt: typeof card?.updatedAt === "string" ? card.updatedAt : "",
@@ -48,13 +58,19 @@ export const normalizeStaticGameCard = (card) => ({
   syncStatus: typeof card?.syncStatus === "string" ? card.syncStatus : "ready",
 });
 
-export const buildStaticGameCardFromGame = (game) =>
+export const buildStaticGameCardFromGame = (game, {eventSeq = null, confirmed = false} = {}) =>
   normalizeStaticGameCard({
     id: game?.id,
+    eventSeq,
+    gameplayRevision: game?.gameplayRevision,
+    confirmedOutcomeStatus: confirmed ? (game?.liveCurrentSnapshot ?? game?.board?.state)?.outcome?.status : null,
+    selfPlayMode: game?.selfPlayMode,
+    myRoles: game?.myRoles,
     createdAt: game?.createdAt,
     lastMoveAt: game?.lastMoveAt ?? null,
     updatedAt: game?.updatedAt,
-    moveCount: Array.isArray(game?.moves) ? game.moves.length : 0,
+    moveCount: typeof game?.moveCount === 'number' && Number.isFinite(game.moveCount)
+      ? game.moveCount : Array.isArray(game?.moves) ? game.moves.length : 0,
     previewSnapshot: game?.liveCurrentSnapshot ?? game?.board?.state ?? game?.currentSnapshot ?? null,
     myRole: game?.myRole,
     canJoinAsPlayer: game?.canJoinAsPlayer === true,

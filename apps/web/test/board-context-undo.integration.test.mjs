@@ -1,4 +1,4 @@
-import {createRecoveryPresentation} from '../shell/recovery-presentation.js';
+import {createGameAlertItems,renderGameAlertStackCard} from '../shell/game-alert-presentation.js';
 import {SYNC_TIMING} from '../generated/packages/shared-types/src/sync-protocol.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,8 +25,8 @@ function fixture(){
   recoveryPresentationOptions:()=>({}),presentedRecoveryMessage:value=>value.recovery?'Reload game':'',needsRecoveryAction:value=>Boolean(value.recovery),
   dismissedRecoveryNotices:new Map(),ignoredRevertRequests:new Set(),isDiagnosticOpen:()=>false,
   computerSession:{snapshot:()=>({phase})},undoRequestFeedback:null,undoRequestFeedbackGameId:null,escapeHtml:String};
- ctx.recoveryPresentation=createRecoveryPresentation(()=>({transport:ctx.transport}));
- runInNewContext(`${declaration('getRevertRequestKey')}${declaration('getActiveRevertRequest')}${declaration('getActivePendingRevertRequest')}${declaration('getGameAlertItems')}${source.slice(source.indexOf('const receiveBoardContext='),source.indexOf('const dispatchBoardMessageAction='))};globalThis.items=getGameAlertItems;globalThis.receive=receiveBoardContext;`,ctx);
+ ctx.getGameAlertItems=createGameAlertItems(()=>ctx);
+ runInNewContext(`${declaration('getRevertRequestKey')}${declaration('getActiveRevertRequest')}${declaration('getActivePendingRevertRequest')}globalThis.getActiveRevertRequest=getActiveRevertRequest;globalThis.getActivePendingRevertRequest=getActivePendingRevertRequest;${source.slice(source.indexOf('const receiveBoardContext='),source.indexOf('const dispatchBoardMessageAction='))};globalThis.items=getGameAlertItems;globalThis.receive=receiveBoardContext;`,ctx);
  const refresh=()=>ctx.receive({kind:'piece',mandatory:false,message:{text:'Piece help'}},{selectedPieceId:'piece',intentVersion:1,phase:null,continuationPhase:null,transient:false});
  const order=()=>stack.order(game.id,ctx.items(game));
  refresh();assert.match(order()[0].key,/^board-context:/);

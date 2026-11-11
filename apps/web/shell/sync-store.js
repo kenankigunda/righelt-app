@@ -1,4 +1,5 @@
 import {isObsoleteComputerRejection} from './computer-recovery.js';
+import { requiresUndoApproval } from '../generated/packages/shared-types/src/undo-policy.js';
 import { CURRENT_COMPUTER_MODEL, createComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
 import { IDENTITY_KEY } from "./persistence.js";
 import { STORAGE_GENERATION_HEADER, STORAGE_GENERATION_QUERY } from "../generated/packages/shared-types/src/storage-policy.js";
@@ -888,6 +889,7 @@ const buildOptimisticApprovedRevertGame = ({
   game,
   requesterIdentityId,
   currentIdentityId,
+  requestId,
   targetMoveId: explicitTargetMoveId = null,
 }) => {
   const pendingRevertRequest = game.pendingRevertRequest ?? game.myPendingRevertRequest ?? game.approvableRevertRequest ?? null;
@@ -906,12 +908,13 @@ const buildOptimisticApprovedRevertGame = ({
   const revertedAt = new Date().toISOString();
   const moves = Array.isArray(game.moves)
     ? game.moves.map((move, index) =>
-        index >= targetMoveIndex
+        index >= targetMoveIndex && move.undone !== true
           ? {
               ...clone(move),
               undone: true,
               undoneAt: revertedAt,
               undoneByIdentityId: requesterIdentityId,
+              pendingUndoRequestId: requestId,
             }
           : clone(move),
       )
@@ -1642,12 +1645,13 @@ export const createSyncStore = ({
         id: `revert-request:${requestId}`,
         gameId,
         buildOptimisticGame: (game) =>
-          !targetMove ? game : approverIdentityId
+          !targetMove ? game : requiresUndoApproval(requesterIdentityId, approverIdentityId)
             ? buildOptimisticRevertRequestGame({ game, requestId, requesterIdentityId, targetMoveId })
             : buildOptimisticApprovedRevertGame({
                 game,
                 requesterIdentityId,
                 currentIdentityId: requesterIdentityId,
+                requestId,
                 targetMoveId,
               }),
         commit: async () => transport.requestRevertToMove({ gameId, targetMoveId, requestId }),
@@ -1663,7 +1667,7 @@ export const createSyncStore = ({
       return runOptimisticGameOperation({
         id: `revert-approve:${requestId}`,
         gameId,
-        buildOptimisticGame: (game) => buildOptimisticApprovedRevertGame({ game, requesterIdentityId, currentIdentityId }),
+        buildOptimisticGame: (game) => buildOptimisticApprovedRevertGame({ game, requesterIdentityId, currentIdentityId, requestId }),
         commit: async () => transport.approveRevertRequest({ gameId, requestId }),
       });
     },

@@ -1,8 +1,13 @@
+import {createDestinationRouteOwner,destinationReadScope,destinationLiveGameId} from '../shell/destination-route-owner.js';
+import {createDestinationRecovery} from '../shell/destination-recovery.js';
+import {createNavigationHistory} from '../shell/navigation-history.js';
+import {createAccountContinuationOwner} from '../shell/account-continuation-owner.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { createRouteHydration } from '../shell/route-hydration.js';
+import { createHomeSectionReads, sameRouteRead, sameHomeReadScope, createHomeReadReplacement } from '../shell/home-section-reads.js';
 import { createIssueDiagnostics } from '../shell/issue-diagnostics.js';
 import { parseRouteFromHash, buildHomeHash, buildHashForRoute, FLYOUT_KEYS } from '../shell/routes.js';
 import { renderInvitationSurface } from '../shell/invitations.js';
@@ -18,10 +23,10 @@ const extract=(start,end)=>{
 };
 const routeFunctions=extract(source.includes('const routeReadKey =')?'const routeReadKey =':'const captureRouteRead =','const retryAccountContinuation =');
 const routeComparisons=extract('const getBaseRouteRenderKey =','let flyoutRenderOrder =');
-const cachedRoute=extract('const canHydrateRouteFromLocalState =','const startRouteSync =');
+const cachedRoute=extract('const canHydrateRouteFromLocalState =','let destinationNoticeEl=');
 const routeEvents=extract('window.addEventListener("hashchange"','window.addEventListener("load"');
 const passiveDismiss=extract('let utilityCloseFlight = null;', 'appEl.addEventListener("click", async (event) => {');
-const syncFunctions=extract('const startRouteSync =','const syncRouteDataPassive =');
+const syncFunctions=extract('const destinationRouteOwner=','const syncRouteDataPassive =');
 const hasRetry=source.includes('  if (action === "retry-invite-load")');
 if(!process.env.RIGHELT_INVITE_RECOVERY_SOURCE)assert.ok(hasRetry,'The candidate must expose the actual invitation retry action');
 const retryAction=hasRetry?extract('  if (action === "retry-invite-load")','  if (action === "toggle-diagnostic"'):'';
@@ -40,9 +45,10 @@ function fixture({staleInvite=false}={}) {
     getGameViewModel:gameId=>({id:gameId}),
   };
   const diagnostics=createIssueDiagnostics({schedule:()=>1,environment:()=>({})});
-  const context=vm.createContext({cancelPendingBoardContextReplay(){},pendingBoardContextReplay:null,
+  const destinationRecovery=createDestinationRecovery({setTimer:()=>null,clearTimer(){}});
+  const context=vm.createContext({document:{activeElement:null},structuredClone,createHomeSectionReads,createDestinationRouteOwner,destinationReadScope,destinationLiveGameId,destinationRecovery,syncDestinationNotice(){},createAccountContinuationOwner,cancelPendingBoardContextReplay(){},pendingBoardContextReplay:null,
     expandedViewerGames:new Set(),account:{snapshot:()=>({generation})},transport:owner,currentRoute:parseRouteFromHash('#/invite/first'),
-    window:{location:{hash:'#/invite/first'},addEventListener:(name,fn)=>events[name]=fn,history:{replaceState:(_state,_title,hash)=>{context.window.location.hash=hash;}}},parseRouteFromHash,buildHashForRoute,FLYOUT_KEYS,URL,URLSearchParams,hydrateRoute:createRouteHydration(),
+    window:{location:{hash:'#/invite/first',get href(){return 'https://local.test/'+this.hash;}},addEventListener:(name,fn)=>events[name]=fn,history:{state:null,replaceState(state,_title,hash){this.state=structuredClone(state);if(hash!==undefined)context.window.location.hash=hash;}}},parseRouteFromHash,buildHashForRoute,FLYOUT_KEYS,URL,URLSearchParams,hydrateRoute:createRouteHydration(),
     appEl:{querySelectorAll:()=>[{classList:{add:noop}}],addEventListener:(_name,fn)=>clicks.push(fn)},
     storyDialog:{refresh:noop},joinFeedback:{clear:noop},clearAccountContinuation:noop,closeHeaderMenu:noop,gameSound:{leaveGame:noop,play:noop,cancelPreview:noop},
     inlineProfiles:{close:noop},resultPresentation:{clear:noop},rematchDialog:{close:noop},retireTutorialSave:noop,
@@ -51,6 +57,7 @@ function fixture({staleInvite=false}={}) {
     getShellLayoutMode:()=>layout,saveDebugFlyoutOpen:noop,storage:{},scheduleGameShellStickyLayout:noop,scheduleResponsiveHomeSectionPageSizes:noop,
     prefersReducedMotion:()=>true,isPassivePageClick:()=>true,accountDialog:{isOpen:()=>false},delay:async()=>{},FLYOUT_MOTION_MS:1,
 
+    sameRouteRead,sameHomeReadScope,createHomeReadReplacement,
     getVisibleHomeSectionKeys:()=>[],getHomeSection:()=>{},getHomeSectionVisiblePageSize:()=>0,getHomeSectionColumnCount:()=>1,
     syncHomeSections:async()=>{homeLoads++;},syncLiveChannels:()=>{channels++;},
     invitationLoadFailureKind,issueDiagnostics:diagnostics,render:options=>renders.push(options),maybeRevealRouteTransition:()=>{},
@@ -59,10 +66,13 @@ function fixture({staleInvite=false}={}) {
     getInviteContextForGame:game=>game?{game}:null,renderInviteLanding:invite=>`<section data-loaded-invitation="${invite.game.id}"></section>`,renderGame:()=>'<section data-generic-game-skeleton></section>',
 
   });
+  context.navigationHistory=createNavigationHistory({history:context.window.history,getHash:()=>context.window.location.hash,capture:()=>({y:0,generation}),id:()=>String(Math.random())});
   const api=new vm.Script(`
     let inviteLoadState=null,resolvedInvite=${staleInvite?"{gameId:'stale-game'}":'null'},routeSyncRequestId=0,routeHydrated=false;
-    let hostInvite=null,inviteVisit=0,activeResultGameId=null,pendingResultReviewFocus=null,routeTransition=null,restoreHomePending=false,flyoutRenderOrder=[];
+    let hostInvite=null,inviteVisit=0,activeResultGameId=null,pendingResultReviewFocus=null,routeTransition=null,pendingRoutePosition=null,homeSectionsHydrated=false,destinationLoadPresentation=null,flyoutRenderOrder=[];
     ${source.includes("let homeReadJob = null;") ? extract("let homeReadJob = null;", "const hydrateRoute =") : ""}
+    const homeSectionReads=createHomeSectionReads({state:{homeSections:{},get homeReadVisit(){return homeReadVisit;},set homeReadVisit(value){homeReadVisit=value;},get homeReadJob(){return homeReadJob;},get homeSectionsHydrated(){return homeSectionsHydrated;},set homeSectionsHydrated(value){homeSectionsHydrated=value;}},pendingHomeSectionKeys:new Set()});
+    const applyHomeVisitPages=(...args)=>homeSectionReads.applyVisitPages(...args);
     ${routeComparisons}
     ${cachedRoute}
     ${routeFunctions}

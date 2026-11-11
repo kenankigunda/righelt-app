@@ -19,7 +19,7 @@ const createComputer=async page=>{
  await page.goto('/');await expect(page.getByTestId('home-create-game')).toBeVisible();
  const {game}=await guestRequest(page,'/api/shell/games',{selfPlayMode:true,computer:{p1:null,p2:'babs'}});
  await page.goto(`/#/game/${game.id}`);await switchGamePanel(page,'players');
- await expect(page.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:20000});return game.id;
+ await expect(page.getByRole('button',{name:'Babs, Blue, Computer player, Active here',exact:true})).toBeVisible({timeout:20000});return game.id;
 };
 
 test('a human destination survives fresh renewal and its first confirmation reaches one receipt',async({page},info)=>{
@@ -91,7 +91,7 @@ test('a human destination survives fresh renewal and its first confirmation reac
 test('closing the original tab automatically restores computer play in a new tab with the same owner',async({page,context},info)=>{
  const id=await createComputer(page);const next=await context.newPage();await page.close();
  await next.goto(`/#/game/${id}`);await switchGamePanel(next,'players');
- await expect(next.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:25000});
+ await expect(next.getByRole('button',{name:'Babs, Blue, Computer player, Active here',exact:true})).toBeVisible({timeout:25000});
  const submissions=[];next.on('request',request=>{if(request.method()!=='POST')return;try{const value=request.postDataJSON();if(value?.payload?.computer)submissions.push(value);}catch{}});
  const game=await projected(next,id);await switchGamePanel(next,'board');
  await submitPlayableAction(next,game.legalActions.find(action=>action.from&&action.to));
@@ -170,7 +170,7 @@ test('player card deliberately restores paused manual play and lost acknowledgem
    computer:body.game.computer,board:body.game.board,moves:body.game.moves,turns:body.game.turns,currentTurn:body.game.currentTurn});
   equal(authoritative(readback),authoritative(paused),'refusal must leave authoritative generation and state unchanged');
  },{id,header:STORAGE_GENERATION_HEADER});
- const card=page.getByRole('button',{name:'Babs, Blue, Paused',exact:true});await expect(card).toBeVisible();await card.click();
+ const card=page.getByRole('button',{name:'Babs, Blue, Computer player, Paused',exact:true});await expect(card).toBeVisible();await card.click();
  const resume=page.getByRole('button',{name:'Resume here',exact:true});await expect(resume).toBeEnabled();
  const sent=[];let dropped=false;
  await page.route(`**/api/shell/games/${id}/shared`,async route=>{
@@ -182,7 +182,7 @@ test('player card deliberately restores paused manual play and lost acknowledgem
   await route.continue();
  });
  await resume.click();
- await expect(page.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:25000});
+ await expect(page.getByRole('button',{name:'Babs, Blue, Computer player, Active here',exact:true})).toBeVisible({timeout:25000});
  await expect(page.getByRole('button',{name:'Resume here',exact:true})).toHaveCount(0);
  const game=await projected(page,id);
  expect([game.computer.paused,game.computer.manual,game.computer.singleStep,game.computer.takeoverTurn]).toEqual([false,false,false,null]);
@@ -197,13 +197,13 @@ test('player card deliberately restores paused manual play and lost acknowledgem
 test('competing tabs transfer control deliberately without changing seats or model',async({page,context},info)=>{
  const id=await createComputer(page),before=await projected(page,id),other=await context.newPage();
  await other.goto(`/#/game/${id}`);await switchGamePanel(other,'players');
- const elsewhere=other.getByRole('button',{name:'Babs, Blue, Active in another tab',exact:true});await expect(elsewhere).toBeVisible();await elsewhere.click();
+ const elsewhere=other.getByRole('button',{name:'Babs, Blue, Computer player, Active in another tab',exact:true});await expect(elsewhere).toBeVisible();await elsewhere.click();
  await other.getByRole('button',{name:'Resume here',exact:true}).click();
- await expect(other.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible();
- const first=page.getByRole('button',{name:'Babs, Blue, Active in another tab',exact:true});await expect(first).toBeVisible();await first.click();
+ await expect(other.getByRole('button',{name:'Babs, Blue, Computer player, Active here',exact:true})).toBeVisible();
+ const first=page.getByRole('button',{name:'Babs, Blue, Computer player, Active in another tab',exact:true});await expect(first).toBeVisible();await first.click();
  await page.getByRole('button',{name:'Resume here',exact:true}).click();
- await expect(page.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible();
- await expect(other.getByRole('button',{name:'Babs, Blue, Active in another tab',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Babs, Blue, Computer player, Active here',exact:true})).toBeVisible();
+ await expect(other.getByRole('button',{name:'Babs, Blue, Computer player, Active in another tab',exact:true})).toBeVisible();
  const after=await projected(page,id);expect(after.computer.generation).toBe(before.computer.generation+2);
  expect(after.computer.seats).toEqual(before.computer.seats);expect(after.computer.modelId).toBe(before.computer.modelId);expect(after.gameplayRevision).toBe(before.gameplayRevision);
  await page.screenshot({path:info.outputPath('computer-competing-tabs.png')});
@@ -219,7 +219,7 @@ test('abrupt browser termination releases authority after lease expiry',async({b
   await server.kill();await disconnected;expect((await exited).signal).toBe('SIGKILL');
   restored=await browser.newContext({baseURL,storageState});const other=await restored.newPage();
   await other.goto(`/#/game/${id}`);await switchGamePanel(other,'players');
-  await expect(other.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:25000});
+  await expect(other.getByRole('button',{name:'Babs, Blue, Computer player, Active here',exact:true})).toBeVisible({timeout:25000});
   const after=await projected(other,id);expect(after.computer.generation).toBeGreaterThan(before.computer.generation);expect(after.gameplayRevision).toBe(before.gameplayRevision);
  } finally {await restored?.close();await server.close();}
 });
@@ -242,7 +242,7 @@ test('a suspended JavaScript renderer reacquires authority when resumed',async({
   await cdp.send('Debugger.disable');await test.info().attach('suspension-events',{body:JSON.stringify(signals),contentType:'application/json'});
  }
  expect(signals).toEqual(['paused','resumed']);
- await expect(page.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible({timeout:10000});
+ await expect(page.getByRole('button',{name:'Babs, Blue, Computer player, Active here',exact:true})).toBeVisible({timeout:10000});
  await expect.poll(async()=>(await read()).computer.lease.expiresAt,{timeout:10000}).toBeGreaterThan(before.computer.lease.expiresAt);
  expect((await read()).gameplayRevision).toBe(initial.gameplayRevision);
 });
@@ -301,7 +301,7 @@ test('Home reuse starts Tau while the previous admitted control delivery is unre
   const response=await creation;expect(response.ok()).toBe(true);const game=(await response.json()).game;
   expect(game.id).not.toBe(oldId);expect(game.computer.seats).toEqual({p1:null,p2:'tau'});
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',game.id);await switchGamePanel(page,'players');
-  await expect(page.getByRole('button',{name:'Tau, Blue, Active here',exact:true})).toBeVisible();await expectOriginalUnresolved();
+  await expect(page.getByRole('button',{name:'Tau, Blue, Computer player, Active here',exact:true})).toBeVisible();await expectOriginalUnresolved();
   await switchGamePanel(page,'board');const playable=await projected(page,game.id);
   await submitPlayableAction(page,playable.legalActions.find(action=>action.from&&action.to));
   if((await projected(page,game.id)).canEndTurn)await page.locator('[data-board-preview-action="end-turn"]').click();
@@ -334,7 +334,7 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
  await expect.poll(async()=>{const g=await projected(page,id);return g.board.state.sideToMove==='P1'&&!g.board.state.continuation;}).toBe(true);
  const before=await projected(page,id);expect(before.legalActions.some(action=>action.type==='pass')).toBe(true);
  const pass=page.locator('#shell-board-preview-label [data-board-message-action="pass"], #shell-board-preview-label [data-board-preview-action="pass"]');
- await expect(page.getByRole('button',{name:'Babs, Blue, Active here',exact:true})).toBeVisible();await expect(pass).toBeVisible();
+ await expect(page.getByRole('button',{name:'Babs, Blue, Computer player, Active here',exact:true})).toBeVisible();await expect(pass).toBeVisible();
  expect(before.computer.lease.expiresAt).toBeGreaterThan(Date.now());
  let release,original,originalHeaders,observerReadyAt=null;const deliveries=[],writes=[],samples=[];
  const held=new Promise(resolve=>{release=resolve;});const pattern=`**/api/shell/games/${id}/**`;
@@ -369,7 +369,7 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
     const contextVisible=Boolean(context?.getClientRects().length&&getComputedStyle(context).visibility!=='hidden'&&getComputedStyle(context).display!=='none');
     return {at:Date.now(),gameId:document.querySelector('[data-testid="game-shell"]')?.getAttribute('data-game-id'),
      narration:context?.querySelector('.board-context-content')?.textContent.trim()??'',contextKey:context?.getAttribute('data-board-context')??null,contextVisible,
-     activity:card?.getAttribute('data-computer-activity'),activityText:card?.textContent.trim(),connected:!!card?.querySelector('.is-connected'),
+     activity:card?.getAttribute('data-computer-activity'),activityName:card?.closest('.participant-computer')?.getAttribute('aria-label'),markColor:card?.querySelector('.computer-status-mark')?getComputedStyle(card.querySelector('.computer-status-mark')).backgroundColor:null,
      announcement:document.querySelector('#shell-sync-announcement')?.textContent??'',
      reconnecting:wrap?.getAttribute('data-reconnecting'),busy:wrap?.getAttribute('aria-busy'),
      recovery:[...document.querySelectorAll('[data-testid="sync-recovery-banner"]')].map(node=>node.textContent),
@@ -399,7 +399,7 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   expect(early.length).toBeGreaterThan(0);expect(samples.some(sample=>sample.overflow)).toBe(false);
   const narration=samples[0].narration,contextKey=samples[0].contextKey;expect(narration).toMatch(/Babs /);expect(JSON.parse(contextKey)[1]).toBe(id);expect(JSON.parse(contextKey)[2]).toBe(before.gameplayRevision);
   for(const sample of early){
-   expect(sample.gameId).toBe(id);expect(sample.narration).toBe(narration);expect(sample.contextVisible).toBe(true);expect(sample.contextKey).toBe(contextKey);expect(sample.activity).toBe('here');expect(sample.activityText).toBe('Active here');expect(sample.connected).toBe(true);
+   expect(sample.gameId).toBe(id);expect(sample.narration).toBe(narration);expect(sample.contextVisible).toBe(true);expect(sample.contextKey).toBe(contextKey);expect(sample.activity).toBe('here');expect(sample.activityName).toBe('Babs, Blue, Computer player, Active here');expect(sample.markColor).toBe('rgb(62, 167, 106)');
    expect(sample.pass).toBe(true);expect(sample.passEnabled).toBe(true);expect(sample.samePass).toBe(true);
    expect(sample.announcement).not.toMatch(/Updating computer play|Needs attention|Reconnecting|Saving/);
    expect(sample.recovery.join(' ')).not.toMatch(/Updating computer play|Needs attention/);expect(sample.reconnecting).not.toBe('true');expect(sample.busy).not.toBe('true');
@@ -408,11 +408,11 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   await writeFile(info.outputPath('quiet-renew-first-send.json'),JSON.stringify({observerReadyAt,original,sampledAt,early},null,2));
   // Confirmation feedback is separate from intervention. Routine renewal loss
   // and lease expiry keep this card quiet while its admitted intent recovers.
-  await expect(page.getByRole('button',{name:'Babs, Blue, Waiting',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Babs, Blue, Computer player, Waiting',exact:true})).toBeVisible();
   await expect(pass).toBeDisabled();
   await expect(page.getByTestId('sync-recovery-banner')).toContainText(/updating computer play|retry|details/i);
   await expect.poll(()=>Date.now()).toBeGreaterThanOrEqual(heldAuthority.computer.lease.expiresAt);
-  await expect(page.getByRole('button',{name:'Babs, Blue, Waiting',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Babs, Blue, Computer player, Waiting',exact:true})).toBeVisible();
   await expect(page.locator('[data-computer-activity="attention"]')).toHaveCount(0);
   await info.attach('quiet-renew-expired-lease',{contentType:'image/png',body:await page.screenshot({path:info.outputPath('quiet-renew-expired-lease.png')})});
   expect(await journalRecord()).toEqual(original);expect(writes).toEqual([]);

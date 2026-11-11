@@ -32,7 +32,8 @@ export const visibleRecordedMoves = (moves,{includeUndone=false}={}) => {
   for(const move of ordered){
     if(!includeUndone&&move.undone)continue;
     if(move.action?.type!=='end_turn'){result.push(move);continue;}
-    const previousIndex=result.findLastIndex(previous=>previous.turnIndex===move.turnIndex&&Boolean(previous.undone)===Boolean(move.undone));
+    const previousIndex=result.findLastIndex(previous=>previous.turnIndex===move.turnIndex&&Boolean(previous.undone)===Boolean(move.undone)
+      && (!move.undone || (previous.undoEventSeq===move.undoEventSeq && previous.pendingUndoRequestId===move.pendingUndoRequestId)));
     const previous=result[previousIndex];
     if(!previous)continue;
     // Partial archives can retain a closure while omitting its real predecessor.

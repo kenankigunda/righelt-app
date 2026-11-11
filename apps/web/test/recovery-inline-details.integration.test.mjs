@@ -1,3 +1,7 @@
+import {createGameAlertItems} from '../shell/game-alert-presentation.js';
+import {recoveryActivity} from '../shell/notification-state.js';
+import {activityActorSide} from '../shell/activity-affiliation.js';
+import {SYNC_TIMING} from '../generated/packages/shared-types/src/sync-protocol.js';
 import {createRecoveryPresentation} from '../shell/recovery-presentation.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,6 +23,13 @@ test('a promoted long recovery has actionable inline details without a request f
  assert.match(recoveryMessage(game),/Still reconnecting.*view details/);
  const html=renderGameAlertCard({body:recoveryMessage(game),incidentId:transport.ensureRecoveryIncident(game.id)});
  assert.match(html,/data-action="toggle-diagnostic"/,'a notice promising details must expose its report');
+ // Exercise the current app-used item owner as well as the disclosure renderer.
+ // Playback/Undo/context leaves are absent in this real transport fixture.
+ const getItems=createGameAlertItems(()=>({transport,maybeUpdateUndoRequestOutcomeFeedback(){},presentedRecoveryMessage:recoveryMessage,needsRecoveryAction,recoveryPresentationOptions:()=>({}),issueDiagnostics,isDiagnosticOpen:()=>false,dismissedRecoveryNotices:new Map(),escapeHtml:String,recoveryActivity,activityActorSide,playbackRecoveryWait:{update:()=>0},viewingScope:()=> 'details-test',liveBoardVisible:()=>true,SYNC_TIMING,renderComputerProgress:()=>'',computerSession:null,getActiveRevertRequest:()=>null,getActivePendingRevertRequest:()=>null,boardContextScope:()=> 'details-test',boardContexts:{items:()=>[]},contextReplayEnabled:()=>false}));
+ const notice=getItems(game).find(item=>item.key.startsWith('live-sync:'));
+ assert.ok(notice);assert.match(notice.html,/data-action="toggle-diagnostic"/,'the actual notification owner must wire its transport-owned report');
+ assert.equal(issueDiagnostics.list().length,1);assert.equal(issueDiagnostics.get(transport.ensureRecoveryIncident(game.id)).events.filter(event=>event.stage==='notice_promoted').length,1);
+
 });
 
 test('promotion is idempotent and does not notify or mutate admission',t=>{

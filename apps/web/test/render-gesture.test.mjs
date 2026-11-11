@@ -1,7 +1,6 @@
+import {mountRenderGestureOwner} from '../shell/render-gesture-owner.js';
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFile} from "node:fs/promises";
-import vm from "node:vm";
 import { createRenderGestureGate, preserveBoardFocus } from "../shell/render-gesture.js";
 
 test("background renders keep a pressed control until activation, cancellation or drag end", () => {
@@ -66,19 +65,16 @@ test("board renders preserve the keyboard coordinate without overriding new focu
 // Execute the actual app event registrations with the real gate. The scheduler
 // models its existing next-task release; it never synthesizes an activation.
 const registeredGesture = async () => {
-  const source = await readFile(new URL('../shell/app.js', import.meta.url), 'utf8');
-  const start = source.indexOf('const renderGesture = createRenderGestureGate(');
-  const end = source.indexOf('// Background shell updates', start);
-  assert.ok(start > 0 && end > start);
   const listeners = new Map(), jobs = new Map(), renders = [];
   let serial = 0;
-  const window = {addEventListener(type, callback) { const list = listeners.get(type) ?? []; list.push(callback); listeners.set(type, list); }};
-  const document = {visibilityState:'visible', addEventListener:window.addEventListener};
+  const window = {addEventListener(type, callback) { const list = listeners.get(type) ?? []; list.push(callback); listeners.set(type, list); },removeEventListener(type,callback){listeners.set(type,(listeners.get(type)??[]).filter(value=>value!==callback));}};
+  const document = {visibilityState:'visible', addEventListener:window.addEventListener,removeEventListener:window.removeEventListener};
   const appEl = {contains:target => target?.inside !== false};
-  const sandbox = {window, document, appEl, render:options => renders.push(options), createRenderGestureGate:({render}) => createRenderGestureGate({render,schedule:fn => {jobs.set(++serial,fn);return serial;},cancel:id=>jobs.delete(id)})};
-  vm.createContext(sandbox);vm.runInContext(source.slice(start,end)+'\nglobalThis.actualGate=renderGesture;', sandbox);
-  const target = ({inside=true,control=true}={}) => ({inside,closest(selector){assert.equal(selector,'button, a, [data-action]');return control?this:null;}});
-  return {gate:sandbox.actualGate,renders,jobs,window,document,target,emit(type,event={}){for(const fn of listeners.get(type)??[])fn(event);},flush(){const work=[...jobs.values()];jobs.clear();for(const fn of work)fn();}};
+  const actualGate=createRenderGestureGate({render:options=>renders.push(options),schedule:fn=>{jobs.set(++serial,fn);return serial;},cancel:id=>jobs.delete(id)});
+  const owner=mountRenderGestureOwner({window,document,appEl,renderGesture:actualGate});
+  const notice={};
+  const target = ({inside=true,control=true,destination=false}={}) => ({inside,closest(selector){if(selector==='.destination-load-notice')return destination?notice:null;assert.equal(selector,'button, a, [data-action]');return control?this:null;}});
+  return {owner,gate:actualGate,renders,jobs,window,document,target,emit(type,event={}){for(const fn of listeners.get(type)??[])fn(event);},flush(){const work=[...jobs.values()];jobs.clear();for(const fn of work)fn();}};
 };
 
 test('registered legacy mouse press keeps the control mounted until activation', async () => {
@@ -88,6 +84,16 @@ test('registered legacy mouse press keeps the control mounted until activation',
   h.emit('mouseup',{target});assert.equal(h.renders.length,0);
   h.emit('click',{target});assert.equal(h.renders.length,0,'release waits until original click dispatch completes');
   h.flush();assert.equal(h.renders.length,1);assert.equal(h.renders[0].includeBoard,true);assert.equal(h.gate.defer({}),false);
+});
+
+test('registered destination native controls share the current pointer aliases and keyboard ownership outside app',async()=>{
+ const h=await registeredGesture(),control=h.target({inside:false,destination:true});
+ h.emit('pointerdown',{target:control,pointerId:3,pointerType:'mouse',button:0,isPrimary:true});h.emit('mousedown',{target:control,button:0});
+ h.emit('keydown',{target:control,key:'Enter',code:'Enter',repeat:false});assert.equal(h.gate.defer({includeBoard:true}),true);
+ h.emit('pointerup',{target:control,pointerId:3,button:0});h.emit('mouseup',{target:control,button:0});h.emit('click',{target:control,button:0});h.flush();
+ assert.equal(h.renders.length,0,'destination pointer release cannot retire an independent held key');
+ h.emit('keyup',{target:control,key:'Enter',code:'Enter'});h.flush();assert.equal(h.renders.length,1);assert.equal(h.gate.defer({}),false);
+ const whitespace=h.target({inside:false,destination:true,control:false});h.emit('mousedown',{target:whitespace});assert.equal(h.gate.defer({}),false);
 });
 
 test('registered pointer and compatibility mouse events share one release', async () => {
@@ -165,4 +171,12 @@ test('registered unowned pointer cancellation does not release a legacy mouse ho
     if(type==='visibilitychange')h.document.visibilityState='hidden';
     h.emit(type,{target:h.window});h.flush();assert.equal(h.renders.length,1);assert.equal(h.gate.defer({}),false);
   }
+});
+
+test('registered owner disposal removes only its listeners and releases its held control',async()=>{
+ const h=await registeredGesture();let unrelated=0;h.window.addEventListener('mousedown',()=>unrelated++);
+ const target=h.target();h.emit('mousedown',{target});assert.equal(h.gate.defer({includeBoard:true}),true);
+ h.owner.destroy();h.flush();assert.equal(h.renders.length,1);assert.equal(h.gate.defer({}),false);
+ h.emit('mousedown',{target});assert.equal(unrelated,2);assert.equal(h.gate.defer({}),false,'retired owner must not admit another press');
+ h.gate.destroy();
 });

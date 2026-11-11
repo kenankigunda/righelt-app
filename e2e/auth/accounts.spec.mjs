@@ -687,7 +687,7 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
   await page.route(/\/api\/shell\/games(?:\?|$)/, async route => {
     const request = route.request();
     const section = new URL(request.url()).searchParams.get("section");
-    if (request.method() !== "GET" || !["my", "other"].includes(section)) return route.continue();
+    if (request.method() !== "GET" || !["completed", "my", "other"].includes(section)) return route.continue();
     heldSections.add(section);
     await released;
     // Release the browser's real request without a second Node/TLS fetch.
@@ -697,16 +697,16 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
     await page.goto("/");
     const trigger = page.getByTestId("home-create-game");
     await expect(trigger).toBeVisible();
-    await expect.poll(() => [...heldSections].sort()).toEqual(["my", "other"]);
-    await expect(page.getByTestId("home-section-skeleton")).toHaveCount(2);
+    await expect.poll(() => [...heldSections].sort()).toEqual(["completed", "my", "other"]);
+    await expect(page.getByTestId("home-section-skeleton")).toHaveCount(3);
     const originalTrigger = await trigger.elementHandle();
     expect(originalTrigger).not.toBeNull();
     if (gesture === "pointer") { await trigger.hover(); await page.mouse.down(); }
     else { await trigger.focus(); await page.keyboard.down("Space"); }
-    // Home loading awaits both sections. Finish both while activation is held.
+    // Home loading awaits all three sections. Finish all three while activation is held.
     // The unchanged application deadline applies once real reads can proceed.
     await page.clock.resume();
-    const refreshed = Promise.all(["my", "other"].map(async section => {
+    const refreshed = Promise.all(["completed", "my", "other"].map(async section => {
       const response = await page.waitForResponse(response => {
         const url = new URL(response.url());
         return response.request().method() === "GET" && url.pathname === "/api/shell/games" && url.searchParams.get("section") === section;
@@ -837,6 +837,10 @@ test("keyboard board activation opens sign in without losing the board", async (
 });
 
 test("a delayed play continuation is discarded after a cross-tab account switch", async ({ page, request, baseURL }) => {
+  const foreground=async tab=>{
+    await tab.bringToFront();
+    await expect.poll(()=>tab.evaluate(()=>!document.hidden&&document.hasFocus())).toBe(true);
+  };
   await page.context().addInitScript(() => {
     const original = window.fetch.bind(window);
     window.__heldAccountLists = [];
@@ -908,6 +912,7 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
   page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates++; });
   try {
     await sibling.goto("/");
+    await foreground(page);
     await page.getByTestId("home-create-game").click();
     await enterUsername(page, first);
     await dialog(page).getByLabel("Password", { exact: true }).fill(password);
@@ -916,9 +921,12 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
     await expect(dialog(page)).not.toBeVisible();
     await expect.poll(() => page.evaluate(() => window.__heldAccountLists.length)).toBeGreaterThan(0);
     await expect(sibling.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
+    await foreground(sibling);
     await account(sibling);
-    signingOut = signOutAndOpenSignIn(sibling);
-    signingOut.catch(() => {}); // Cleanup below also drains this owned helper on assertion failure.
+    // Keep the normal confirmation budget after this fixture releases its
+    // intentional response-body hold, rather than spending it inside the hold.
+    signingOut = sibling.getByTestId("account-dialog").getByRole("button", {name:"Sign out",exact:true}).click();
+    signingOut.catch(() => {}); // Cleanup below also drains this owned native click on assertion failure.
     await expect.poll(async () => (await Promise.all([page, sibling].map(tab =>
       tab.evaluate(() => window.__heldLogoutBodies.length),
     ))).reduce((total, count) => total + count, 0)).toBe(1);
@@ -932,6 +940,8 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
       window.__heldLogoutBodies.splice(0).forEach(resolve => resolve());
     })));
     await signingOut;
+    await expect.poll(() => sibling.evaluate(() => localStorage.getItem("righelt.account.logout-pending.v1"))).toBeNull();
+    await openPlaySignIn(sibling);
     await enterUsername(sibling, second);
     await dialog(sibling).getByLabel("Password", { exact: true }).fill(password);
     await dialog(sibling).getByRole("button", { name: "Sign in", exact: true }).click();
@@ -942,6 +952,7 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
       ...window.__accountSessionReads,
       authenticated: document.querySelector('[data-testid="account-open"]')?.dataset.authenticated,
     }))).toEqual({ pending: 0, username: second, authenticated: "true" });
+    await foreground(page);
     await account(page);
     await expect(dialog(page)).toContainText(`@${second}`);
     await dialog(page).getByRole("button", { name: "Close", exact: true }).click();
@@ -982,10 +993,10 @@ test('a failed continuation read preserves the play choice for explicit retry', 
   });
   await dialog(page).getByRole('button', { name: 'Create account & continue', exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
-  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
+  await expect(page.getByTestId('account-continuation-error').getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
   expect(creates).toBe(0);
   denyReads = false;
-  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await page.getByTestId('account-continuation-error').getByRole('button', { name: 'Try again', exact: true }).click();
   await openRecoveredFriendChoice(page);
   expect(creates).toBe(0);
   await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
@@ -1025,6 +1036,41 @@ test("long profile names remain accessible to observers without covering the boa
     await expect(profile).toHaveAttribute('aria-expanded','true');await expect(profile).toBeFocused();
     await expect(profile).toHaveText(displayName);await expect(profile).toHaveAttribute('data-username',username);
   }finally{await observerContext.close();}
+  await page.getByRole('link',{name:'Righelt',exact:true}).click();
+  const card=page.locator('[data-home-section-root="my"] .mini-board-card-link-surface').first();
+  await expect(card.locator('.home-card-matchup bdi').first()).toHaveText(displayName);
+  await expect(card.locator('.mini-board-preview-status bdi')).toHaveText(displayName);
+  await expect(card.locator('.mini-board-preview-status .sr-only')).toHaveText('Red: ');
+  await page.screenshot({path:test.info().outputPath('canonical-home-name-desktop.png')});
+  await page.setViewportSize({width:390,height:900});
+  await expect.poll(()=>card.locator('.mini-board-preview-status').evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+  await card.scrollIntoViewIfNeeded();
+  await page.screenshot({path:test.info().outputPath('canonical-home-name-mobile.png')});
+  await page.setViewportSize({width:1440,height:1000});await card.click();
+  await expect(page.getByRole('button',{name:'Debug',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Debug',exact:true}).click();
+  const analysis=page.locator('[data-debug-section="analysis"]');await analysis.locator('summary').click();
+  await expect(analysis.locator('.debug-section-body > p').first().locator('bdi')).toHaveText(displayName);
+  await expect(analysis.locator('.debug-section-body > p').first().locator('.sr-only')).toHaveText('Red: ');
+  await page.getByRole('button',{name:'Close Debug mode',exact:true}).click();
+  const scenarioId=await page.evaluate(async()=>{const response=await fetch('/scenarios/catalog.json');if(!response.ok)throw Error('Catalog unavailable');const catalog=await response.json();return catalog.scenarios.find(item=>(item.resultingState??item.initialState)?.sideToMove==='P1'&&!item.savedSelection?.target)?.id;});
+  expect(scenarioId).toBeTruthy();
+  await page.getByRole('button',{name:'Scenarios',exact:true}).click();
+  await page.locator('#scenario-select').selectOption(scenarioId);
+  const preview=page.locator('.mini-board-card-scenario .mini-board-preview-status');
+  await expect(preview.locator('bdi')).toHaveText(displayName);await expect(preview.locator('.sr-only')).toHaveText('Red: ');
+  const curated=await page.evaluate(async()=>{const catalog=await(await fetch('/scenarios/catalog.json')).json();return catalog.scenarios.find(item=>item.id==='5bbc0ebf-ed20-4e12-8143-67eaa5cc8676');});
+  expect(curated).toBeTruthy();await page.locator('#scenario-select').selectOption(curated.id);
+  const description=page.locator('[data-scenario-editable="description"]');
+  await expect(description.locator('bdi')).toHaveText([displayName,'Open seat']);
+  await page.getByRole('button',{name:'Edit details',exact:true}).click();
+  await expect(description).toHaveAttribute('contenteditable','plaintext-only');
+  await expect(description).toHaveText(curated.description);await expect(description.locator('bdi')).toHaveCount(0);
+  await page.locator('#scenario-select').selectOption(scenarioId);
+  await page.getByRole('link',{name:'Righelt',exact:true}).click();
+  await expect(preview).toHaveText('Preview: Red to play');await expect(preview.locator('bdi')).toHaveCount(0);
+  await page.locator('#scenario-select').selectOption(curated.id);
+  await expect(description).toHaveText(curated.description);await expect(description.locator('bdi')).toHaveCount(0);
 });
 
  test("username lookup diagnostics redact entries and dismiss resolved details with stable focus", async ({ page }) => {

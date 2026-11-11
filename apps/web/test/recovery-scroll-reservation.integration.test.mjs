@@ -5,6 +5,7 @@ import {runInNewContext} from 'node:vm';
 import {mountRecoverySpace,syncRecoverySpace} from '../shell/recovery-space.js';
 import {createBoardContextLayout} from '../shell/board-context-layout.js';
 import {mountMobileNavigation} from '../shell/mobile-navigation.js';
+import {createHomeSectionReads} from '../shell/home-section-reads.js';
 
 const events=()=>{const listeners=new Map();return {addEventListener(k,f){if(!listeners.has(k))listeners.set(k,new Set());listeners.get(k).add(f);},removeEventListener(k,f){listeners.get(k)?.delete(f);},fire(k,event={}){for(const f of [...listeners.get(k)??[]])f(event);},count(){return [...listeners.values()].reduce((n,set)=>n+set.size,0);}};};
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
@@ -23,7 +24,8 @@ function fixture(){
  const doc={...events(),defaultView:win,fonts,hidden:false,documentElement:{scrollHeight:2000},querySelector:()=>null,getElementById:()=>app,querySelectorAll:()=>[],body:{append(){}},createElement:()=>({style:{},setAttribute(){},getBoundingClientRect:()=>({height:180}),remove(){}})};
  win.scrollTo=({top})=>{win.scrollY=top;win.fire('scroll',{target:doc});};
  const dispose=mountRecoverySpace(app,{window:win,document:doc}),layout=createBoardContextLayout(doc),nav=mountMobileNavigation({window:win,document:doc,isNarrow:()=>true});
- const context={window:win,pendingBoardContextReplay:null,cancelPendingBoardContextReplay(){throw Error('no replay');},boardContextVisit:0,boardContextOwner:{retire(){throw Error('same game');}},viewingIntent:{saveScroll(){},scrollTop:()=>0,cancelUndo(){}},replayController:null,replayRequests:{cancel(){}},getGamePanel:route=>route.panel,getShellLayoutModeForRoute:()=> 'narrow',transport:{getGameViewModel:()=>({inHistoryMode:false})},mobileNavigation:nav};
+ const homeSectionReads=createHomeSectionReads({state:{pendingHomeRefresh:null,homeFocusToRestore:null},pendingHomeSectionKeys:new Set()});
+ const context={pendingRoutePosition:null,homeSectionReads,window:win,pendingBoardContextReplay:null,cancelPendingBoardContextReplay(){throw Error('no replay');},boardContextVisit:0,boardContextOwner:{retire(){throw Error('same game');}},viewingIntent:{saveScroll(){},scrollTop:()=>0,cancelUndo(){}},replayController:null,replayRequests:{cancel(){}},getGamePanel:route=>route.panel,getShellLayoutModeForRoute:()=> 'narrow',transport:{getGameViewModel:()=>({inHistoryMode:false})},mobileNavigation:nav};
  runInNewContext(source.slice(begin,end)+'\nglobalThis.prepare=preparePanelTransition;',context);
  const flush=()=>{const batch=[...jobs.values()];jobs.clear();for(const fn of batch)fn();};
  return {win,doc,fonts,viewport,app,frame,header,layout,dispose,nav,jobs,timers,observers,values,flush,reserve:()=>reserve.get('--board-context-reserve'),headerBottom:value=>{headerDocumentBottom=value;},prepare(){context.prepare({name:'game',gameId:'game',panel:'players'},{name:'game',gameId:'game',panel:'board'});},admit(){syncRecoverySpace(app);layout.sync();},close(){layout.destroy();nav.destroy();dispose();assert.equal(jobs.size,0);assert.equal(timers.size,0);assert.equal(win.count()+doc.count()+fonts.count()+viewport.count(),0);assert(observers.every(o=>o.nodes.size===0));}};

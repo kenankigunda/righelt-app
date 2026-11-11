@@ -34,9 +34,11 @@ export const createDestructionSoundTracker = () => {
   };
 };
 
+export const STONE_CRACK_DURATION = .13;
+
 // A short, unpitched stone fracture: sharp attack with a granular, dry decay.
 export const playStoneCrack = audio => {
-  const duration = .13, t = audio.currentTime;
+  const duration = STONE_CRACK_DURATION, t = audio.currentTime;
   const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
   const samples = buffer.getChannelData(0);
   let seed = 0x51a7;

@@ -1,9 +1,22 @@
 :root {
+  /* Shared with notice layering; native modal dialogs retain the top layer. */
+  --shell-layer-loading-edge: 8;
+  --shell-layer-utility-backdrop: 10;
+  --shell-layer-utility: 11;
+  --shell-layer-navigation: 25;
+  --shell-layer-transition: 40;
+  --shell-layer-notice: 50;
   --surface-foundation: #f5f2e9;
   --surface-raised: #fffdf6;
   --text-primary: #252b2d;
   --text-secondary: #5e6465;
   --warning: #a5630f;
+  --computer-status-paused-bg: #f0bb55;
+  --computer-status-attention-bg: #f2a397;
+  --computer-status-finished-bg: #426e65;
+  --computer-status-moving-bg: var(--info);
+  --computer-status-dark-symbol: var(--text-primary);
+  --computer-status-light-symbol: var(--surface-raised);
   --divider: #d4d1c7;
   --surface-hover-quiet: rgb(37 43 45 / 6%);
   --player-red: #b42f36;
