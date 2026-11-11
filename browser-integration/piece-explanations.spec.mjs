@@ -1,4 +1,5 @@
 import {test, expect} from '@playwright/test';
+import {writeFile} from 'node:fs/promises';
 import {settledMessage,measureSemanticGeometry,assertSemanticGeometry} from './support/message-semantic-geometry.mjs';
 import {createRushBlockerScenario} from '../e2e/support/rush-blocker-scenario.mjs';
 
@@ -123,7 +124,9 @@ for (const width of [320, 390]) test(`selection explanations retain their actual
     sameCell:window.__rushSourceCell===document.querySelector('#board .cell[data-row="5"][data-col="5"]'),pointer:window.__rushSourcePointer})))
     .toMatchObject({selection:{selectedPieceId:'B',source:{row:5,col:5}},applied:[],sameCell:true,pointer:[{trusted:true,sameCell:true}]});
   await accountMessageGrowth();
-  await info.attach('Actual rush-source identity, legality and paint',{body:JSON.stringify({legality,paint,scope:'Real engine/runtime/adapter at existing width and200%text. Native hit/selection and computed paint, not physical display measurement.'}),contentType:'application/json'});
+  const sourceEvidencePath=info.outputPath(`rush-source-${width}-200.json`);
+  await writeFile(sourceEvidencePath,JSON.stringify({legality,paint,scope:'Real engine/runtime/adapter at existing width and200%text. Native hit/selection and computed paint, not physical display measurement.'}),{mode:0o600});
+  await info.attach('Actual rush-source identity, legality and paint',{path:sourceEvidencePath,contentType:'application/json'});
   await page.screenshot({path:info.outputPath(`rush-source-${width}-200.png`)});
 });
 
