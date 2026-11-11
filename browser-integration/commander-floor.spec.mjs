@@ -30,6 +30,7 @@ test('real non-target rush commander shares the quiet cell floor under the actua
  await page.screenshot({path:screenshotPath});
  await info.attach('quiet rush commander floor',{path:screenshotPath,contentType:'image/png'});
  if(info.project.name==='chromium'){
+  await expect(page.locator('.cell[data-row="4"][data-col="7"]')).toHaveAccessibleName('Square (4, 7)');
   await page.emulateMedia({forcedColors:'active'});
   await expect.poll(()=>floor.evaluate(el=>getComputedStyle(el).backgroundImage)).toBe('none');
   await expect.poll(()=>target.locator('.piece-mineral').evaluate(el=>getComputedStyle(el).display)).toBe('none');

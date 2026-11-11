@@ -4,6 +4,7 @@ import {importScenarioGame,switchGamePanel,submitPlayableAction} from '../suppor
 import {CURRENT_COMPUTER_MODEL} from '../../packages/shared-types/src/computer-play.ts';
 const catalog=JSON.parse(readFileSync(new URL('../../apps/web/scenarios/catalog.json',import.meta.url),'utf8'));
 const terminal=catalog.scenarios.find(row=>row.title==='Capture supply point to win by unsupplying the commander');
+const blueTerminal=catalog.scenarios.find(row=>row.title==='Commander surrounded loss of supply');
 const request=(page,path,body)=>page.evaluate(async({path,body})=>{
  const identityId=localStorage.getItem('righelt.identity.id.v1');
  const response=await fetch(path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({identityId,protocolVersion:2,...body})});
@@ -25,34 +26,74 @@ const test=base.extend({homeGames:[async({page,baseURL},use)=>{
  await page.goto('about:blank');
  await use({source,win,loss,ongoing});
 },{timeout:60000}]});
-for(const width of [390,1440])test(`Home separates completed games and names confirmed winners at ${width}px`,async({page,homeGames},info)=>{
+for(const width of [390,1440])test(`Home separates completed games and names confirmed winners at ${width}px`,async({page,baseURL,homeGames},info)=>{
+ const {gameId:blueId}=await importScenarioGame(page,blueTerminal,baseURL,{open:false});
+ const blue=await page.evaluate(async id=>{
+  const identityId=localStorage.getItem('righelt.identity.id.v1');
+  const response=await fetch(`/api/shell/games/${id}?identityId=${encodeURIComponent(identityId)}`);
+  if(!response.ok)throw Error('Expected acknowledged Blue-winning catalog game');
+  return (await response.json()).game;
+ },blueId);
+ expect(blue.board.state.outcome.status).toBe('p2_win');
+ await page.goto('about:blank');
  await page.setViewportSize({width,height:1100});await page.goto('/#/');
  const completed=page.locator('[data-home-section-root="completed"]');
  const active=page.locator('[data-home-section-root="my"]');
  await expect(completed.getByRole('heading',{name:'Your completed games',exact:true})).toBeVisible();
- await expect(completed.getByText('3 games',{exact:true})).toBeVisible();
+ await expect(completed.getByText('4 games',{exact:true})).toBeVisible();
  const card=id=>completed.locator(`a[data-game-id="${id}"]`);
- await expect(card(homeGames.win.id)).toContainText('You won');
- await expect(card(homeGames.loss.id)).toContainText('Tau won');await expect(card(homeGames.loss.id)).toContainText('You lost');
+ const revealCard=async id=>{
+  if(await card(id).count())return;
+  const next=completed.locator('[data-action="home-page-next"]');
+  const previous=completed.locator('[data-action="home-page-prev"]');
+  if(await next.isEnabled())await next.click();else await previous.click();
+  await expect(card(id)).toBeVisible();
+ };
+
+ await revealCard(homeGames.win.id);await expect(card(homeGames.win.id)).toContainText('You won');
+ await revealCard(homeGames.loss.id);await expect(card(homeGames.loss.id)).toContainText('Tau won');await expect(card(homeGames.loss.id)).toContainText('You lost');
  const lossLines=await card(homeGames.loss.id).locator('.home-card-result').evaluate(node=>({headlineBottom:node.querySelector('strong').getBoundingClientRect().bottom,detailTop:node.querySelector('.small').getBoundingClientRect().top,dpr:devicePixelRatio}));
  const tolerance=Math.max(.5,1/lossLines.dpr);
  expect(lossLines.detailTop).toBeGreaterThanOrEqual(lossLines.headlineBottom-tolerance);
- await expect(card(homeGames.source.id)).toContainText('Red won');
- for(const game of [homeGames.source,homeGames.win,homeGames.loss]){
+ await revealCard(homeGames.source.id);await expect(card(homeGames.source.id)).toContainText('Red won');
+ await revealCard(blue.id);await expect(card(blue.id)).toContainText('Blue won');
+ const winnerPaint=[];
+ for(const game of [homeGames.source,homeGames.win,homeGames.loss,blue]){
+  await revealCard(game.id);
   await expect(card(game.id)).toContainText('Review game');
   await expect(card(game.id).locator('.connection-status-icon')).toHaveCount(0);
   await expect(card(game.id).locator('button,a,[tabindex]')).toHaveCount(0);
   const square=await card(game.id).locator('.mini-board-preview-board .cell').first().boundingBox();
   expect(Math.abs(square.width-square.height)).toBeLessThanOrEqual(tolerance);
   await expect(active.locator(`a[data-game-id="${game.id}"]`)).toHaveCount(0);
+  const status=game.board.state.outcome.status;
+  expect(['p1_win','p2_win']).toContain(status);
+  const expected=status==='p1_win'?'rgb(194, 69, 47)':'rgb(45, 103, 199)';
+  const paint=await card(game.id).evaluate(link=>{
+   const strong=link.querySelector('.home-card-result > strong');
+   const detail=link.querySelector('.home-card-result > .small');
+   const rail=getComputedStyle(link,'::before');
+   return {winner:getComputedStyle(strong).color,card:getComputedStyle(link).color,detail:detail?getComputedStyle(detail).color:null,railContent:rail.content};
+  });
+  expect(paint.winner).toBe(expected);
+  for(const playerColor of ['rgb(194, 69, 47)','rgb(45, 103, 199)']){
+   expect(paint.card).not.toBe(playerColor);
+   if(paint.detail)expect(paint.detail).not.toBe(playerColor);
+  }
+  expect(['none','normal']).toContain(paint.railContent);
+  winnerPaint.push({outcome:status,...paint});
+
  }
+ const paintPath=info.outputPath('completed-winning-text-paint.json');
+ writeFileSync(paintPath,JSON.stringify({width,source:'acknowledged catalog and real branch games',winnerPaint},null,2),{mode:0o600});
+ await info.attach('completed winning text paint',{path:paintPath,contentType:'application/json'});
  await expect(active.locator(`a[data-game-id="${homeGames.ongoing.id}"]`)).toBeVisible();
- await expect(card(homeGames.loss.id).locator('..')).toHaveAttribute('data-winner-side','p1');
+ await revealCard(homeGames.loss.id);await expect(card(homeGames.loss.id).locator('..')).toHaveAttribute('data-winner-side','p1');
  const sectionOrder=await page.locator('.home-refresh > section').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('data-home-section-root')??(node.classList.contains('home-start')?'start':'other')));
  expect(sectionOrder.indexOf('completed')).toBeGreaterThan(sectionOrder.indexOf('start'));
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+Math.max(.5,1/devicePixelRatio))).toBe(true);
  await page.screenshot({path:info.outputPath('home-completed-winner-lines.png'),fullPage:true});
- await card(homeGames.loss.id).focus();await page.keyboard.press('Enter');
+ await revealCard(homeGames.loss.id);await card(homeGames.loss.id).focus();await page.keyboard.press('Enter');
  await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',homeGames.loss.id);
  await expect(page.locator('#shell-board-turn-indicator')).toHaveText('Game complete');
  await expect(page.locator('#shell-board-preview-label [data-board-message-action="pass"]')).toHaveCount(0);
