@@ -122,3 +122,21 @@ test('non-decision event and ordinal gaps do not split a contiguous loaded visib
  const sameCommit=[{id:'A',eventSeq:7,ordinal:0,move:move('A',0,true)},{id:'B',eventSeq:7,ordinal:3,move:move('B',1,true)}];
  assert.deepEqual(literal(timeline([],sameCommit)),[['B','A']]);
 });
+
+
+test('a collapsed selected older run stays closed when a retained bridge becomes undone and remaps its display key',()=>{
+ const owner={getIdentityId:()=> 'viewer'},expanded=new Set();
+ const b=move('B',0,true,10),c=move('C',1),d=move('D',2,true,11);
+ const view={id:'g',inHistoryMode:true,inspectedDecision:{moveId:'B'}};
+ let groups=groupUndoHistory('g',[b,c,d]);
+ observeUndoHistoryDisclosure(expanded,view,groups,owner);
+ assert.deepEqual([...expanded],['g:undo-run:accepted:B']);
+ toggleUndoHistoryGroup(expanded,'g:undo-run:accepted:B',owner);
+ groups=groupUndoHistory('g',[b,{...c,undone:true,undoEventSeq:12},d]);
+ assert.equal(observeUndoHistoryDisclosure(expanded,view,groups,owner),false,'a run-key remap is not a new History intent');
+ assert.equal(groups[0].key,'g:undo-run:accepted:D');assert.equal(expanded.size,0);
+ assert.equal(observeUndoHistoryDisclosure(expanded,view,groups,owner),false);assert.equal(expanded.size,0);
+ noteUndoHistorySelection(expanded,'g','B',owner);
+ assert.equal(observeUndoHistoryDisclosure(expanded,view,groups,owner),true,'a newer explicit selection still reveals the current run');
+ assert(expanded.has('g:undo-run:accepted:D'));
+});

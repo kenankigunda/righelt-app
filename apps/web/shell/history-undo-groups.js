@@ -68,10 +68,10 @@ export function observeUndoHistoryDisclosure(expanded, game, groups, owner) {
   const explicit=state.explicit.get(game.id);
   const generation=explicit?.moveId===selectedMoveId ? explicit.generation : previous?.generation ?? 0;
   const key=group?.key ?? null;
-  // Reveal a new selection/membership once. Re-rendering the same selection must
-  // honor a later explicit native collapse, rather than continually reopening.
+  // Reveal a new selection, or its first undone membership, once. A remapped
+  // display-run key is not a new selection and must preserve deliberate collapse.
   const permitted=!state.requiresExplicitSelection || explicit?.moveId===selectedMoveId;
-  const reveal=Boolean(permitted && group && (!previous || previous.moveId!==selectedMoveId || previous.key!==key || previous.generation!==generation));
+  const reveal=Boolean(permitted && group && (!previous || previous.moveId!==selectedMoveId || previous.key===null || previous.generation!==generation));
   if(reveal){state.choices.delete(key);if(!expanded.has(key))state.automatic.set(key,new Set(group.eventSeqs??[]));expanded.add(key);}
   state.states.set(game.id,{moveId:selectedMoveId,key,generation});
   return reveal;
