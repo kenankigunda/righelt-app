@@ -1654,6 +1654,7 @@ button.button-release-bounce,
 
 .mini-board-preview-status {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .row {
@@ -2195,6 +2196,8 @@ textarea:focus-visible {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.hover-tooltip {position:fixed;z-index:var(--shell-layer-utility);pointer-events:none;padding:5px 8px;background:var(--surface-raised);color:var(--ink);border:1px solid var(--divider);font:400 .875rem/1.4 var(--font-family);white-space:normal;overflow-wrap:anywhere;box-shadow:var(--shadow-raised);}
+@media(forced-colors:active){.hover-tooltip{background:Canvas;color:CanvasText;border-color:CanvasText;}}
 .account-dialog select { width: 100%; min-height: 44px; font: inherit; }
 
 /* Autosave feedback occupies the same inline slot as shared input actions. */
@@ -2290,39 +2293,39 @@ textarea:focus-visible {
 
 /* Approved compact History rail. Selection buttons are siblings, never parents
    of child move/action buttons; their stacking gives the most specific hit priority. */
-.history-turn {position:relative;isolation:isolate;margin:0;transform-origin:50% 50%;transition:transform 140ms var(--shell-game-entry-easing);}
+:is(.history-turn,.history-item-undone-group) {position:relative;isolation:isolate;margin:0;transform-origin:50% 50%;transition:transform 140ms var(--shell-game-entry-easing);}
 .history-turn-heading {min-height:44px;padding:0;display:flex;align-items:center;pointer-events:none;}
-.history-turn > .history-list-nested {margin:0 0 0 3px;padding-left:10px;gap:0;border-left:2px solid currentColor;pointer-events:none;}
-.history-list:has(> .history-turn) {gap:6px;}
-.history-turn > .history-list-nested > .history-item {position:relative;display:block;pointer-events:none;}
-.history-turn > .history-list-nested > .history-item::before {content:none;}
-.history-turn .history-move-line {min-height:44px;display:flex;align-items:center;overflow-wrap:anywhere;}
-.history-turn .history-item-info {pointer-events:none;}
-.history-turn .history-archive-select {min-height:0;}
-.app-root .history-turn button:is(.history-turn-hit,.history-move-hit).secondary {
+:is(.history-turn,.history-item-undone-group) > .history-list-nested {margin:0 0 0 3px;padding-left:10px;gap:0;border-left:2px solid currentColor;pointer-events:none;}
+.history-list:has(> :is(.history-turn,.history-item-undone-group)) {gap:6px;}
+:is(.history-turn,.history-item-undone-group) > .history-list-nested > .history-item {position:relative;display:block;pointer-events:none;}
+:is(.history-turn,.history-item-undone-group) > .history-list-nested > .history-item::before {content:none;}
+:is(.history-turn,.history-item-undone-group) .history-move-line {min-height:44px;display:flex;align-items:center;overflow-wrap:anywhere;}
+:is(.history-turn,.history-item-undone-group) .history-item-info {pointer-events:none;}
+:is(.history-turn,.history-item-undone-group) .history-archive-select {min-height:0;}
+.app-root :is(.history-turn,.history-item-undone-group) button:is(.history-turn-hit,.history-move-hit).secondary {
   position:absolute;inset:0;width:100%;height:100%;min-height:0;margin:0;padding:0;
   border:0;border-radius:0;clip-path:none;background:transparent;color:inherit;
   pointer-events:auto;transform:none!important;animation:none!important;
 }
 .history-turn-hit {z-index:0;}
 .history-move-hit {z-index:2;}
-.history-turn .history-item.is-selected {pointer-events:auto;z-index:2;cursor:default;}
-.history-turn .history-item-actions,.history-turn .history-inline-preview {position:relative;z-index:3;pointer-events:auto;}
-.history-turn:has(> .history-turn-hit:is(:active,.is-pressing)),
-.history-turn .history-item:has(> .history-move-hit:is(:active,.is-pressing)) {transform:translateY(1px) scale(.985);}
-.history-turn:has(> .history-turn-hit.button-release-bounce),
-.history-turn .history-item:has(> .history-move-hit.button-release-bounce) {animation:history-item-release 140ms var(--shell-game-entry-easing);}
-[data-hover-capability="hover"] .app-root .history-turn button:is(.history-turn-hit,.history-move-hit).secondary:hover,
-.app-root[data-hover-capability="hover"] .history-turn button:is(.history-turn-hit,.history-move-hit).secondary:hover {background:color-mix(in srgb,currentColor 5%,transparent);border:0;box-shadow:none;}
+:is(.history-turn,.history-item-undone-group) .history-item.is-selected {pointer-events:auto;z-index:2;cursor:default;}
+:is(.history-turn,.history-item-undone-group) .history-item-actions,:is(.history-turn,.history-item-undone-group) .history-inline-preview {position:relative;z-index:3;pointer-events:auto;}
+:is(.history-turn,.history-item-undone-group):has(> .history-turn-hit:is(:active,.is-pressing)),
+:is(.history-turn,.history-item-undone-group) .history-item:has(> .history-move-hit:is(:active,.is-pressing)) {transform:translateY(1px) scale(.985);}
+:is(.history-turn,.history-item-undone-group):has(> .history-turn-hit.button-release-bounce),
+:is(.history-turn,.history-item-undone-group) .history-item:has(> .history-move-hit.button-release-bounce) {animation:history-item-release 140ms var(--shell-game-entry-easing);}
+[data-hover-capability="hover"] .app-root :is(.history-turn,.history-item-undone-group) button:is(.history-turn-hit,.history-move-hit).secondary:hover,
+.app-root[data-hover-capability="hover"] :is(.history-turn,.history-item-undone-group) button:is(.history-turn-hit,.history-move-hit).secondary:hover {background:color-mix(in srgb,currentColor 5%,transparent);border:0;box-shadow:none;}
 @media(min-width:933px) and (pointer:fine) {
-  .history-turn-heading,.history-turn .history-move-line {min-height:1.5em;}
+  .history-turn-heading,:is(.history-turn,.history-item-undone-group) .history-move-line {min-height:1.5em;}
 }
 @media(prefers-reduced-motion:reduce) {
-  .history-turn {transition:none;}
-  .history-turn:has(> .history-turn-hit:is(:active,.is-pressing)),
-  .history-turn .history-item:has(> .history-move-hit:is(:active,.is-pressing)) {transform:none;}
-  .history-turn:has(> .history-turn-hit.button-release-bounce),
-  .history-turn .history-item:has(> .history-move-hit.button-release-bounce) {animation:none;}
+  :is(.history-turn,.history-item-undone-group) {transition:none;}
+  :is(.history-turn,.history-item-undone-group):has(> .history-turn-hit:is(:active,.is-pressing)),
+  :is(.history-turn,.history-item-undone-group) .history-item:has(> .history-move-hit:is(:active,.is-pressing)) {transform:none;}
+  :is(.history-turn,.history-item-undone-group):has(> .history-turn-hit.button-release-bounce),
+  :is(.history-turn,.history-item-undone-group) .history-item:has(> .history-move-hit.button-release-bounce) {animation:none;}
 }
 
-.app-root .history-turn button.history-undone-toggle.secondary {position:relative;z-index:3;pointer-events:auto;min-height:44px;border:0;border-radius:0;padding:0;background:transparent;color:inherit;font:inherit;text-align:left;}
+.app-root :is(.history-turn,.history-item-undone-group) button.history-undone-toggle.secondary {position:relative;z-index:3;pointer-events:auto;min-height:44px;border:0;border-radius:0;padding:0;background:transparent;color:inherit;font:inherit;text-align:left;}

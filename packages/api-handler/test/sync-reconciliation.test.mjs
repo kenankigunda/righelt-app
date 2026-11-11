@@ -1,3 +1,4 @@
+import {readDecision} from '../src/decision-archive.ts';
 import assert from "node:assert/strict";
 import test from "node:test";
 import { GameRoomDO } from "../src/game-room-do.ts";
@@ -190,4 +191,15 @@ test("request correlation replaces malformed IDs and echoes valid IDs without au
   const actual=response.headers.get("X-Righelt-Request-Id");assert.match(actual,/^[0-9a-f-]{36}$/);if(value===id)assert.equal(actual,id);
   assert.equal(response.headers.get("X-Righelt-Server-Build"),"deployed-version");
  }
+});
+
+test('an accepted Undo ignores forged group claims and reuses its real boundary after lost response and restart',async()=>{
+ const h=await harness(),sent=await h.command(),accepted=await h.call('moves',sent);assert.equal(accepted.accepted,true);
+ const command=await h.command({clientCommandId:'v2:boundary-undo',kind:'shared',payload:{operation:'revert-request',values:{targetMoveId:accepted.move.moveId,requestId:'request',undoEventSeq:999,lastRestoration:{undoEventSeq:999}}}});
+ h.DB.loseNextBatchResponse();await assert.rejects(h.call('shared',command),/Lost batch/);h.restart();
+ const repeated=await h.call('shared',command);assert.equal(repeated.accepted,true);assert.equal(repeated.duplicate,true);
+ const game=h.DB.getGameState('g'),seq=game.lastRestoration.undoEventSeq;assert(Number.isSafeInteger(seq)&&seq>0);assert.notEqual(seq,999);assert.equal(game.moves[0].undoEventSeq,seq);
+ const entry=await readDecision(h.env,'g',`restore-${seq}`);assert.equal(entry.restorationVersion,1);assert.equal(entry.requesterIdentityId,'actor');assert.deepEqual(entry.restoredIds,[accepted.move.moveId]);
+ const previous=structuredClone(game);await h.call('shared',command);assert.deepEqual(h.DB.getGameState('g'),previous);assert.equal(h.DB.getWrites().filter(x=>x.query.startsWith('INSERT INTO live_decision_archive')&&JSON.parse(x.params.at(-1)).kind==='restoration').length,1);
+ const changed=await h.command({clientCommandId:command.clientCommandId,kind:'shared',payload:{operation:'revert-request',values:{targetMoveId:'different'}}});assert.equal((await h.call('shared',changed)).commandOutcomes[0].reason,'command_id_conflict');assert.deepEqual(h.DB.getGameState('g').moves,previous.moves);
 });

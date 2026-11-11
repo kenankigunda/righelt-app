@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import {undoRenewAdmissionHarness} from './support/undo-renew-admission-fixture.mjs';
 import {createViewingIntent} from '../shell/viewing-state.js';
 import {resolveInitialSelectionHydration} from '../shell/selection-hydration.js';
+import * as undoHistory from '../shell/history-undo-groups.js';
 
 const source = readFileSync(new URL('../shell/app.js', import.meta.url), 'utf8');
 const start = source.indexOf('  if (action === "revert-to-move" || action === "undo-last-move")');
@@ -142,10 +143,10 @@ function hydrationHarness(continuation=null) {
   const viewingIntent=createViewingIntent(),token=viewingIntent.beginUndo('g',{targetMoveId:'m',revision:1,scope:'a'});
   viewingIntent.commitUndo('g',token);
   const calls=[],context=vm.createContext({
-    currentRoute:{name:'game',gameId:'g'},viewingIntent,viewingScope:()=> 'a',
+    currentRoute:{name:'game',gameId:'g'},viewingIntent,viewingScope:()=> 'a',undoHistory,expandedUndoneGroups:new Set(),
     consumedInitialSelectionActionKeyByGameId:new Map(),
     toStableKey:JSON.stringify,resolveInitialSelectionHydration,
-    transport:{getAuthoritativeGame:()=>game,returnToLive:()=>calls.push('live')},
+    transport:{getAuthoritativeGame:()=>game,returnToLive:()=>calls.push('live'),getIdentityId:()=> 'viewer'},
     boardRuntime:{clearSelection:()=>calls.push('clear')},mountedOverlayKey:'old',
     getShellLayoutMode:()=> 'wide',
   });
