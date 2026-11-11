@@ -58,6 +58,8 @@ test('guidance failure reaches local Details without changing legal play',async(
         if(endpoint==='legal'&&base&&closedKeys(value,['identityId','state','protocolVersion']))return;
         if(endpoint==='piece-moves'&&base&&closedKeys(value,['identityId','state','pieceId','protocolVersion'])&&validIdentity(value.pieceId))return;
         if(endpoint==='decision-history'&&base&&closedKeys(value,['identityId','cursor','protocolVersion']))return;
+        if(endpoint==='decision-history'&&base&&closedKeys(value,['identityId','metadataOnly','cursor','historyRevision','mode','protocolVersion'])
+          &&value.metadataOnly===true&&value.cursor===null&&integer(value.historyRevision)&&value.mode==='additional')return;
         if(endpoint==='decision-snapshot'&&base&&closedKeys(value,['identityId','decisionId','gameplayRevision','protocolVersion'])&&validIdentity(value.decisionId)&&integer(value.gameplayRevision))return;
         if(endpoint==='reconcile'&&base&&closedKeys(value,['protocolVersion','identityId','knownSnapshotEventSeq','commands'])
           &&integer(value.knownSnapshotEventSeq)&&Array.isArray(value.commands)&&value.commands.length===0)return;
@@ -110,6 +112,7 @@ test('guidance failure reaches local Details without changing legal play',async(
     expect(text).not.toContain('raw-state-marker');
     expect(stored.initial).not.toHaveProperty('authoritativeState');
     expect(stored.initial).not.toHaveProperty('tentativeState');
+    await page.screenshot({path:info.outputPath('guidance-diagnostic-details.png')});
     await page.getByRole('button',{name:'Debug',exact:true}).click();
     await expect(page.locator('[data-flyout="debug"]')).not.toBeVisible();
 
