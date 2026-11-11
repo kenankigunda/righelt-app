@@ -48,7 +48,8 @@ async function glassFace(root) {
 }
 async function selectFirstThree(field) {
   await field.focus();
-  await field.press('Home');
+  await field.press('ControlOrMeta+a');
+  await field.press('ArrowLeft');
   for (let i=0;i<3;i++) await field.press('Shift+ArrowRight');
   await expect(field).toBeFocused();
   expect(await field.evaluate(node => [node.selectionStart,node.selectionEnd])).toEqual([0,3]);
@@ -78,13 +79,14 @@ test('marble forms and glass settings preserve native errors, focus and the 700p
   await waitForOverlayEntry(account);
   const marble = await account.evaluate(node => {
     const style=getComputedStyle(node);
-    return {image:style.backgroundImage,background:style.backgroundColor,filter:style.backdropFilter || style.webkitBackdropFilter || 'none',shadow:style.boxShadow};
+    return {image:style.backgroundImage,background:style.backgroundColor,filter:style.backdropFilter || style.webkitBackdropFilter || 'none',shadow:style.boxShadow,clip:style.clipPath,radius:style.borderTopLeftRadius};
   });
   // Assert the executed raised-material branch, without pinning a retired exploratory asset or the final paint wash.
   expect(marble.image).toContain('url(');
   expect(marble.background).toMatch(/^rgb\(/);
   expect(marble.filter).toBe('none');
   expect(marble.shadow).not.toBe('none');
+  expect(marble.clip).toMatch(/^polygon\(/);expect(marble.radius).toBe('0px');
   await account.getByLabel('Username',{exact:true}).fill(`Local_${Date.now().toString(36)}`);
   await account.getByRole('button',{name:'Sign in',exact:true}).click();
   await expect(account.locator('[data-account-status]')).toHaveText('Enter your password.');
@@ -107,14 +109,21 @@ test('marble forms and glass settings preserve native errors, focus and the 700p
   await secret.fill(password);
   await expect(secret).not.toHaveAttribute('aria-invalid','true');
   await expect(account.getByTestId('password-requirements').locator('[data-state="met"]')).toHaveCount(3);
+  await page.evaluate(()=>document.fonts.ready);
+  await account.evaluate(async node=>{await Promise.all(node.getAnimations({subtree:true}).filter(animation=>animation.effect?.getComputedTiming().iterations!==Infinity).map(animation=>animation.finished.catch(()=>{})));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+  const pressSnapshot = node => {const range=document.createRange();range.selectNodeContents(node);return {box:node.getBoundingClientRect().toJSON(),label:range.getBoundingClientRect().toJSON(),shadow:getComputedStyle(node).boxShadow,transform:getComputedStyle(node).transform,fontStatus:document.fonts.status,active:document.activeElement?.getAttribute('type'),dialogScroll:node.closest('dialog')?.scrollTop,ancestors:[node,...(function*(element){for(let parent=element.parentElement;parent;parent=parent.parentElement)yield parent;})(node)].map(element=>({tag:element.tagName,transform:getComputedStyle(element).transform,animations:element.getAnimations().map(animation=>({state:animation.playState,time:animation.currentTime}))}))};};
   const hit = await submit.boundingBox();
   expect(hit.width).toBeGreaterThanOrEqual(44); expect(hit.height).toBeGreaterThanOrEqual(44);
-  const before = await submit.evaluate(node => {const range=document.createRange();range.selectNodeContents(node);return {box:node.getBoundingClientRect().toJSON(),label:range.getBoundingClientRect().toJSON(),shadow:getComputedStyle(node).boxShadow};});
+  const before = await submit.evaluate(pressSnapshot);
   await page.mouse.move(hit.x+hit.width/2,hit.y+hit.height/2); await page.mouse.down();
-  const held = await submit.evaluate(node => {const range=document.createRange();range.selectNodeContents(node);return {box:node.getBoundingClientRect().toJSON(),label:range.getBoundingClientRect().toJSON(),shadow:getComputedStyle(node).boxShadow};});
+  let reliefFailure;try{await expect.poll(()=>submit.evaluate(node=>getComputedStyle(node).boxShadow)).toMatch(/\) 0px 1px 0px 0px(?:,|$)/);}catch(error){reliefFailure=error;}
+  const held = await submit.evaluate(pressSnapshot);
+  const pressFile=info.outputPath('native-held-submit.json');await writeFile(pressFile,JSON.stringify({before,held},null,2),{mode:0o600});await info.attach('native-held-submit',{path:pressFile,contentType:'application/json'});
   expect(held.box.x).toBeCloseTo(before.box.x,1); expect(held.box.y).toBeCloseTo(before.box.y,1);
   expect(held.label.x).toBeCloseTo(before.label.x,1); expect(held.label.y).toBeCloseTo(before.label.y,1);
-  expect(held.shadow).not.toBe(before.shadow);
+  if(reliefFailure)throw reliefFailure;
+  expect(before.shadow).toMatch(/\) 0px 3px 0px 0px(?:,|$)/);
+  expect(held.shadow).toContain('0px 1px 2px 0px inset');
   // Release outside: the held-button observation must not create an account.
   await page.mouse.move(1,1); await page.mouse.up();
   await expect(account).toBeVisible();
@@ -164,8 +173,17 @@ test('glass Scenarios and Debug preserve native editing, selection and the 900px
   const select = scenarios.locator('#scenario-select');
   const options = await select.locator('option').evaluateAll(nodes => nodes.map(node=>node.value));
   expect(options.length).toBeGreaterThan(1);
-  await select.focus(); await select.press('Home'); await select.press('ArrowDown'); await select.press('Enter');
-  await expect(select).toHaveValue(options[1]);
+  await expect(select).toHaveValue(options[0]);
+  // The owned plain-control diagnostic proves trusted typeahead on this
+  // native backend; its popup Arrow/Enter protocols do not commit even outside the app.
+  const nativeSelect=await select.elementHandle();
+  await nativeSelect.evaluate(node=>{node.__nativeSelectionEvents=[];for(const type of ['keydown','keyup','input','change','focus','blur'])node.addEventListener(type,event=>node.__nativeSelectionEvents.push({type,key:event.key??null,trusted:event.isTrusted,value:node.value}));});
+  await select.focus();await select.press('u');
+  const selection=await nativeSelect.evaluate(node=>({value:node.value,connected:node.isConnected,events:node.__nativeSelectionEvents}));
+  const selectionFile=info.outputPath('native-select-events.json');await writeFile(selectionFile,JSON.stringify(selection,null,2),{mode:0o600});await info.attach('native-select-events',{path:selectionFile,contentType:'application/json'});
+  expect(selection.connected).toBe(true);
+  expect(selection.events.filter(event=>event.type==='input'||event.type==='change').map(event=>({type:event.type,trusted:event.trusted}))).toEqual([{type:'input',trusted:true},{type:'change',trusted:true}]);
+  await expect(select.locator('option:checked')).toHaveText('Uncommanded pieces are inactive');
   await expect(select).toBeFocused();
   const scroll = scenarios.locator('.shell-flyout-scroll');
   await page.setViewportSize({width:900,height:500});
@@ -186,6 +204,8 @@ test('glass Scenarios and Debug preserve native editing, selection and the 900px
   await expect(draft).toHaveValue('Original utility draft'); await expect(draft).toBeFocused();
   expect(await draft.evaluate(node=>[node.selectionStart,node.selectionEnd])).toEqual([0,3]);
   await record(info,'glass-scenario-select-and-draft',{material,options:options.length,phoneScrollOwner:true},scenarios);
+  await scenarios.getByRole('button',{name:'Close Scenarios',exact:true}).click();
+  await expect(scenarios).toHaveCount(0);
   const debug = await openUtility(page,'Debug');
   await expect(scenarios).toHaveCount(0); await glassFace(debug);
   await debug.locator('[data-debug-section="notes"] > summary').click();
@@ -193,9 +213,12 @@ test('glass Scenarios and Debug preserve native editing, selection and the 900px
   await note.fill('A private native draft'); await selectFirstThree(note);
   const flag = debug.getByLabel('Flag this decision',{exact:true});
   await flag.check(); await expect(flag).toBeChecked();
+  expect(await flag.evaluate(node=>getComputedStyle(node).appearance)).toMatch(/^(auto|checkbox)$/);
+  const checkedPath=info.outputPath('glass-debug-native-checked.png');await debug.screenshot({path:checkedPath});await info.attach('glass-debug-native-checked',{path:checkedPath,contentType:'image/png'});
   await flag.focus(); await flag.press('Space'); await expect(flag).not.toBeChecked();
   const label = await flag.locator('..').boundingBox();
   expect(label.width).toBeGreaterThanOrEqual(44); expect(label.height).toBeGreaterThanOrEqual(44);
+  const debugScroll=debug.locator('.shell-flyout-scroll');expect(await debugScroll.evaluate(node=>({overflow:node.scrollWidth-node.clientWidth,left:node.scrollLeft}))).toEqual({overflow:0,left:0});
   // This is the real forced-colors opaque fallback. It does not claim to emulate an engine lacking backdrop-filter.
   await page.emulateMedia({forcedColors:'active'});
   expect(await page.evaluate(()=>matchMedia('(forced-colors:active)').matches)).toBe(true);
