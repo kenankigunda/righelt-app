@@ -14,7 +14,7 @@ for(const width of [320,390,1440])test(`participant identities share an inline r
   expect(Math.abs(geometry.emblem.y-geometry.stack.y)).toBeLessThan(1);expect(Math.abs(geometry.emblem.y-geometry.slot.y)).toBeLessThan(1);expect(geometry.width).toBeLessThanOrEqual(width);expect(geometry.mark.left).toBeGreaterThanOrEqual(0);expect(geometry.mark.right).toBeLessThanOrEqual(geometry.viewport);
   const colors=await computer.evaluate(el=>({name:getComputedStyle(el.querySelector('.player-name')).color,emblem:getComputedStyle(el.querySelector('.player-emblem')).color,mark:getComputedStyle(el.querySelector('.computer-status-mark')).backgroundColor}));
   expect(colors.name).toBe(colors.emblem);expect(colors.mark).toBe(await human.locator('.connection-status-icon').evaluate(el=>getComputedStyle(el).backgroundColor));
-  await human.focus();await page.keyboard.press('Enter');await expect(human).toBeFocused();await expect(human).toHaveAttribute('aria-expanded','true');await expect(page.getByTestId('public-profile')).toHaveText('Joined January 2026');
+  await expect(human.locator('.player-name')).toHaveText('You');await human.focus();await page.keyboard.press('Enter');await expect(human).toBeFocused();await expect(human).toHaveAttribute('aria-expanded','true');await expect(page.getByTestId('public-profile')).toHaveText('Alice · Joined January 2026');
   await viewer.focus();await expect(viewer).toBeFocused();await page.keyboard.press('Enter');await expect(page.getByTestId('public-profile')).toHaveText('Playing as a guest.');await expect(human).toHaveAttribute('aria-expanded','false');
   if(side==='p2'&&profile==='horus')await page.screenshot({path:info.outputPath(`players-${width}-${scale}.png`),fullPage:true});
  }

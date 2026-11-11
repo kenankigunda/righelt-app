@@ -1,4 +1,5 @@
 import {isCompletedGame} from './game-lifecycle.js';
+import {recordedActorSide} from './recorded-narration.js';
 import {COMPUTER_PROFILES} from '../generated/packages/shared-types/src/computer-play.js';
 import {activityStateActorSide,normalizeActivitySide} from './activity-affiliation.js';
 
@@ -79,11 +80,23 @@ export function liveHistoryLabel(game,state,options={}) {
   return `Live · Waiting on ${label==='You'?'you':label==='Opponent'?'opponent':label} to move`;
 }
 
-// Recorded references use canonical names; useful live control prompts stay relative.
-export function historyActorLabel(game,move,options={}) {
-  const side=normalizeActivitySide(move?.actorSide)??activityStateActorSide(move?.selectionSnapshot);
-  if(!side)return 'Next player';
-  const profile=COMPUTER_PROFILES[move?.computerProof?.profile];
-  if(profile)return profile.name;
-  return playerDisplayName(game,side);
+// Recorded perspective follows saved human ownership, never temporary control or the live turn.
+export function recordedActorIdentity(game,move,options={}) {
+  const side=recordedActorSide(move);
+  if(!side)return {text:'Next player',side:null,owned:false,self:false};
+  const perspective=owningPerspective(game,options);
+  const owned=!move?.computerProof && perspective.sides.includes(side);
+  const self=owned && perspective.kind==='self';
+  const text=move?.computerProof
+    ? COMPUTER_PROFILES[move.computerProof.profile]?.name ?? playerDisplayName(game,side)
+    : owned ? self ? `You (${sideColorName(side)})` : 'You' : playerDisplayName(game,side);
+  return {text,side,owned,self};
+}
+export const historyActorLabel = (game,move,options={}) => recordedActorIdentity(game,move,options).text;
+
+/** Read-only replay attribution uses the pinned actor, not the currently active seat. */
+export function recordedReplayLabel(game,move,options={}) {
+  const actor=recordedActorIdentity(game,move,options);
+  if(actor.owned)return actor.self ? `Playing your recorded ${sideColorName(actor.side)} move` : 'Playing your recorded move';
+  return actor.side ? `Playing ${actor.text}’s recorded move` : 'Playing recorded move';
 }

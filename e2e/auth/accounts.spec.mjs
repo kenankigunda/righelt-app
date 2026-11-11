@@ -1014,10 +1014,11 @@ test("long profile names remain accessible to observers without covering the boa
   await expect(dialog(page).locator("[data-autosave-status]")).toHaveText("Saved");
   await dialog(page).getByRole("button", { name: "Close", exact: true }).click();
   const owner = page.getByTestId("participant-player-1").getByRole("button");
-  await expect(owner).toHaveText(displayName);
+  await expect(owner).toHaveText('You');
+  await expect(owner).toHaveAccessibleName(`${displayName}, you, Red, Connected`);
   const username=await owner.getAttribute('data-username');expect(username).toBeTruthy();
-  await owner.focus();await owner.press('Enter');await expect(page.getByTestId('public-profile')).toContainText('Joined');
-  await expect(owner).toHaveAttribute('aria-expanded','true');await expect(owner).toBeFocused();await expect(owner).toHaveText(displayName);
+  await owner.focus();await owner.press('Enter');await expect(page.getByTestId('public-profile')).toContainText('Joined');await expect(page.getByTestId('public-profile').locator('bdi')).toHaveText(displayName);
+  await expect(owner).toHaveAttribute('aria-expanded','true');await expect(owner).toBeFocused();await expect(owner).toHaveText('You');
   // The owner and a separate public observer receive the full
   // saved name, accessible identity and real profile control at the same width.
   const observerContext=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1366,height:900}});
@@ -1038,9 +1039,8 @@ test("long profile names remain accessible to observers without covering the boa
   }finally{await observerContext.close();}
   await page.getByRole('link',{name:'Righelt',exact:true}).click();
   const card=page.locator('[data-home-section-root="my"] .mini-board-card-link-surface').first();
-  await expect(card.locator('.home-card-matchup bdi').first()).toHaveText(displayName);
-  await expect(card.locator('.mini-board-preview-status bdi')).toHaveText(displayName);
-  await expect(card.locator('.mini-board-preview-status .sr-only')).toHaveText('Red: ');
+  await expect(card.locator('.home-card-matchup bdi').first()).toHaveText('You');
+  await expect(card.locator('.mini-board-preview-status')).toHaveText('Your turn to play');
   await page.screenshot({path:test.info().outputPath('canonical-home-name-desktop.png')});
   await page.setViewportSize({width:390,height:900});
   await expect.poll(()=>card.locator('.mini-board-preview-status').evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
@@ -1050,7 +1050,7 @@ test("long profile names remain accessible to observers without covering the boa
   await expect(page.getByRole('button',{name:'Debug',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Debug',exact:true}).click();
   const analysis=page.locator('[data-debug-section="analysis"]');await analysis.locator('summary').click();
-  await expect(analysis.locator('.debug-section-body > p').first().locator('bdi')).toHaveText(displayName);
+  await expect(analysis.locator('.debug-section-body > p').first().locator('bdi')).toHaveText('your perspective');
   await expect(analysis.locator('.debug-section-body > p').first().locator('.sr-only')).toHaveText('Red: ');
   await page.getByRole('button',{name:'Close Debug mode',exact:true}).click();
   const scenarioId=await page.evaluate(async()=>{const response=await fetch('/scenarios/catalog.json');if(!response.ok)throw Error('Catalog unavailable');const catalog=await response.json();return catalog.scenarios.find(item=>(item.resultingState??item.initialState)?.sideToMove==='P1'&&!item.savedSelection?.target)?.id;});

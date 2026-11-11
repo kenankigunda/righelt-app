@@ -74,7 +74,7 @@ test('computer history actors keep their plain name while current-turn copy stay
  const g={...game(),player2:{identityId:'red',computerProfile:'horus'},computer:{seats:{p2:'horus'}}};
  assert.equal(boardTurnLabel(g,{sideToMove:'P2'},options),'Opponent to play');
  assert.equal(historyActorLabel(g,{actorSide:'P2'},options),'Horus');
- assert.equal(historyActorLabel(g,{actorSide:'P1'},options),'Guest');
+ assert.equal(historyActorLabel(g,{actorSide:'P1'},options),'You');
  assert.equal(historyActorLabel(game(),{actorSide:'P2'},options),'Guest 2');
  assert.equal(historyActorLabel(game(),{actorSide:'P2',computerProof:{profile:'tau'}},options),'Tau');
 });
@@ -100,7 +100,7 @@ test('canonical player references keep names, fixed guest seats and nonvisual ow
  assert.deepEqual(playerIdentityLabel(named,'P2',options),{text:'Red <&> שלום',side:'P2',color:'Blue',accessibleName:'Red <&> שלום, Blue'});
  assert.equal(playerIdentityLabel(game(),'P1',options).text,'Guest 1');
  assert.equal(playerIdentityLabel({...named,player1:{identityId:'red'}},'P1',options).text,'Guest');
- assert.equal(historyActorLabel(named,{actorSide:'P1'},options),'Red <&> שלום');
+ assert.equal(historyActorLabel(named,{actorSide:'P1'},options),'You');
  assert.equal(historyActorLabel(game(),{actorSide:'P2'},options),'Guest 2');
  assert.deepEqual(playerIdentityLabel(named,'unknown',options),{text:'Player',side:null,color:null,accessibleName:'Player'});
 });

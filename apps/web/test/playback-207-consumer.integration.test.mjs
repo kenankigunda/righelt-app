@@ -39,7 +39,7 @@ test('production automatic presentation and recorded contexts keep canonical raw
   assert.deepEqual(humanControlledSides(game,{identityId}),perspective==='observer'?[]:['P1'],'manual computer control does not transfer human ownership');
   const human={...record,moveId:'human-record',actorSide:'P1',computerProof:undefined};
   context.acknowledgedBoardMessage(game,{phase:'idle'},{identityId,presentationMove:human});
-  assert.equal(store.channel('acknowledged').message.text,'Riley rushed from (1, 2) to (2, 2)','recorded human references stay canonical for owners and observers');
+  assert.equal(store.channel('acknowledged').message.text,perspective==='observer'?'Riley rushed from (1, 2) to (2, 2)':'You rushed from (1, 2) to (2, 2)','recorded human copy follows saved ownership, not temporary computer control');
   assert.equal(JSON.stringify(game),before,'recorded presentation cannot mutate acknowledged authority or History');
  }
 });

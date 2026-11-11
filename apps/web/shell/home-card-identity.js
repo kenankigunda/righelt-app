@@ -33,6 +33,7 @@ export function homeCardMatchup(game, { identityId } = {}) {
     const human = seats.find(seat => !seat.computer);
     if (human.identityId === identityId) ownSide = human.side;
   }
+  if (identityId == null) ownSide = null;
   const own = seats.find(seat => seat.side === ownSide);
   if (computers.length === 2 || !own?.identityId || (identityId != null && own.identityId !== identityId)) ownSide = null;
   const sameHuman = computers.length === 0 && seats[0].identityId && seats[0].identityId === seats[1].identityId;
@@ -41,7 +42,7 @@ export function homeCardMatchup(game, { identityId } = {}) {
   return { kind: ownSide ? 'player' : sameHuman ? 'watched-self' : 'viewer', ownSide, seats };
 }
 
-const renderName = (seat, label = seat.name) => `<strong class="player-tone-${seat.side}"><span class="sr-only">${sideColorName(seat.side)}: </span><bdi>${escape(label)}</bdi></strong>`;
+const renderName = (seat, label = seat.name) => `<strong class="player-tone-${seat.side}"${label==='You' ? ` aria-label="${escape(seat.name)}, you, ${sideColorName(seat.side)}"` : ''}><span class="sr-only">${sideColorName(seat.side)}: </span><bdi>${escape(label)}</bdi></strong>`;
 const renderParticipant = (seat, quiet = false) => {
   if (quiet) return renderName(seat);
   const status = seat.presence === 'open' ? 'open to join' : seat.presence;
@@ -55,16 +56,18 @@ export function renderHomeCardIdentity(game, options) {
   if (matchup.kind === 'player') {
     const own = matchup.seats.find(seat => seat.side === matchup.ownSide);
     const other = matchup.seats.find(seat => seat !== own);
-    return `<span class="home-card-matchup">${renderName(own)} <span>vs.</span> ${renderParticipant(other, options?.quiet)}</span>`;
+    return `<span class="home-card-matchup">${renderName(own,options?.identityId ? 'You' : own.name)} <span>vs.</span> ${renderParticipant(other, options?.quiet)}</span>`;
   }
   return `<span class="home-card-matchup">${renderParticipant(matchup.seats[0], options?.quiet)} <span>${matchup.kind === 'watched-self' ? '/' : 'vs.'}</span> ${renderParticipant(matchup.seats[1], options?.quiet)}${matchup.kind === 'watched-self' ? ' <span>· Both sides</span>' : ''}</span>`;
 }
 
 
 /** Only presentation: the actor comes from the preview, never the viewer role. */
-export function renderHomeCardTurn(game,snapshot) {
+export function renderHomeCardTurn(game,snapshot,options={}) {
   const side=snapshot?.sideToMove==='P1'?'p1':snapshot?.sideToMove==='P2'?'p2':null;
   if(!side)return 'Turn unknown';
-  const actor=homeCardMatchup(game).seats.find(seat=>seat.side===side);
+  const matchup=homeCardMatchup(game,options);
+  if(options.identityId && (matchup.kind==='self'||matchup.kind==='player'&&matchup.ownSide===side))return 'Your turn to play';
+  const actor=matchup.seats.find(seat=>seat.side===side);
   return `${renderName(actor)} to play`;
 }

@@ -153,7 +153,7 @@ test('human analysis explanation names the value owner without rewriting raw evi
  const game={id:'named-analysis',player1:{identityId:'red',profile:{displayName:'Kenan <&>'}},player2:{identityId:'blue',profile:{displayName:'Ada'}},moves:[],currentSnapshot:{sideToMove:'P2'}};
  const status={analysis:{gameId:game.id,phase:'complete',result:{status:'ready',value:.5,actions:[]}}};
  const html=renderDecisionDebug({game,status,state,signedIn:true});
- assert.match(html,/Values are from <span class="player-tone-p1"><span class="sr-only">Red: <\/span><bdi>Kenan &lt;&amp;&gt;<\/bdi><\/span>’s perspective/);
+ assert.match(html,/Values are from <span class="player-tone-p1"><span class="sr-only">Red: <\/span><bdi>Kenan &lt;&amp;&gt;’s perspective<\/bdi><\/span>/);
  assert.match(html,/Root value \(P1\/red\)/,'raw diagnostic coordinate systems remain explicit');
  assert.equal(game.player1.profile.displayName,'Kenan <&>');
 });

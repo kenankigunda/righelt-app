@@ -43,7 +43,7 @@ import {createLiveTurnOverview,liveTurnOverviewOverlay} from './live-turn-overvi
 import {mountHoverTooltips} from './hover-tooltip.js';
 import {captureHomeFocus,refreshHomeFocus,restoreHomeFocus,restoreHomeReadingPosition} from './home-focus.js';
 import {homeCardResult} from './home-card-result.js';
-import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
+import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName,recordedReplayLabel} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
 import { buildTurnReplay, createComputerReplay, COMPUTER_REPLAY_TIMING } from './computer-replay.js';
@@ -1894,7 +1894,7 @@ const renderDebugContent = () => {
     const key = toStableKey(position);
     if (inspectedLegal.key !== key) inspectedLegal = { key, actions: listBoardLegalActions(position) };
   }
-  return renderDecisionDebug({ game, selection: boardRuntime?.getSelection?.() ?? null,
+  return renderDecisionDebug({ game, identityId:transport.getIdentityId(), selection: boardRuntime?.getSelection?.() ?? null,
     legalActions: state.open.has('position') ? inspectedLegal.actions : null, status,
     diagnostics: { connection: wsStatus, lastEvent: wsLastEvent, sync: transport.getSyncMetrics(), pendingCommands: game?.pendingCommandCount, revision: game?.gameplayRevision, computer: game?.computer, runtime: { ...status, analysis: undefined } },
     state: getDecisionDebugState(gameId), signedIn: account.snapshot().session.authenticated }) + issuesHtml;
@@ -3245,7 +3245,7 @@ const mountBoardForGame = (game) => {
           if (replayFeedback?.gameId === game.id) return replayFeedback.phase === "loading"
             ? {text:"Preparing replay",action:{id:"replay-cancel",label:"Cancel replay"}}
             : {text:"Replay unavailable",actions:[{id:"replay-computer",label:"Try again"},{id:"replay-dismiss",label:"Dismiss"}]};
-          if (replay?.playing) return {text:replay.manual?BOARD_PROMPT.manualReplay:BOARD_PROMPT.replay,actions:[...(replay.manual?[{id:'replay-next',label:'Next'}]:[]),{id:'replay-stop',label:'Stop replay'}],context:{kind:'replay-progress',message:{rows:[selectedHistoryPresentation({...view,inHistoryMode:true,historyTurnIndex:null,inspectedDecision:replay.recordedMove})?.message??{text:'Historical move details unavailable'},{text:`Replay · ${Math.max(1,replay.step)} of ${replay.total}`}]}}};
+          if (replay?.playing) return {text:replay.manual?BOARD_PROMPT.manualReplay:BOARD_PROMPT.replay,actions:[...(replay.manual?[{id:'replay-next',label:'Next'}]:[]),{id:'replay-stop',label:'Stop replay'}],context:{kind:'replay-progress',message:{rows:[selectedHistoryPresentation({...view,inHistoryMode:true,historyTurnIndex:null,inspectedDecision:replay.recordedMove},{identityId:transport.getIdentityId()})?.message??{text:'Historical move details unavailable'},{text:recordedReplayLabel(view,replay.recordedMove,{identityId:transport.getIdentityId()})},{text:`Replay · ${Math.max(1,replay.step)} of ${replay.total}`}]}}};
           const options={canInteract:!(currentRoute.scenarios&&scenarioCapture?.mode==='frozen'&&scenarioCapture.gameId===game.id)&&hostInvite?.gameId!==game.id&&canControlLiveBoard(view),identityId:transport.getIdentityId()};
           acknowledgedBoardMessage(view,status,options);
           if(view?.inHistoryMode&&!selection.selectedPieceId&&!selection.inspection)return {text:BOARD_PROMPT.history};
