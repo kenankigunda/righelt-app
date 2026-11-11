@@ -712,7 +712,12 @@ html[data-page-active="false"] .home-refresh button.opponent-choice::before {bac
 
 /* Foundation consumers preserve native modality, target sizes and input owners.
    Relief is paint only; semantic cell rings and field errors remain stronger. */
-.account-dialog[data-presentation="modal"] {background:var(--marble-face),var(--surface-raised);background-position:0 0,var(--marble-face-origin);background-size:auto,var(--marble-face-scale);border-color:var(--divider);box-shadow:0 4px 0 var(--marble-edge),0 16px 44px rgb(36 46 55 / 20%);}
+.account-dialog[data-presentation="modal"] {
+ border-radius:0;clip-path:polygon(12px 0,calc(100% - 12px) 0,100% 12px,100% calc(100% - 12px),calc(100% - 12px) 100%,12px 100%,0 calc(100% - 12px),0 12px);
+ background:linear-gradient(135deg,var(--player-red) 0 16px,transparent 16px),linear-gradient(315deg,var(--player-blue) 0 24px,transparent 24px),var(--marble-face),var(--surface-raised);
+ background-position:top left,bottom right,0 0,var(--marble-face-origin),0 0;background-size:40px 40px,40px 40px,auto,var(--marble-face-scale),auto;background-repeat:no-repeat,no-repeat,repeat,repeat,repeat;
+ border-color:var(--divider);box-shadow:inset 0 -4px 0 var(--marble-edge),0 4px 0 var(--marble-edge),0 16px 44px rgb(36 46 55 / 20%);
+}
 :is(.account-dialog,.shell-flyout) :is(input:not([type="checkbox"]):not([type="radio"]),textarea,select),
 .account-dialog .input-with-action {background-color:#f5f8f8;border-color:var(--divider);box-shadow:inset 0 2px 3px rgb(36 46 55 / 13%),inset 0 -1px #fff;}
 .account-dialog .input-with-action > input {background:transparent;box-shadow:none;}

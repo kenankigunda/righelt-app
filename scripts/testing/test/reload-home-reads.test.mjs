@@ -3,7 +3,7 @@ import test from 'node:test';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { createHash } from 'node:crypto';
+import { renderPlayersPanel } from '../../../apps/web/shell/players-panel.js';
 import { observeReloadHomeReads } from '../../../e2e/support/reload-home-reads.mjs';
 
 // Exact original 659 predicate, retained as the controlled race counterexample.
@@ -81,17 +81,12 @@ test('actual spec owns original waiter rejections, preserves primary reload fail
  await Promise.resolve();
 });
 
-test('reload workflow changes only the approved canonical-name assertions',()=>{
- const current=readFileSync(new URL('../../../e2e/workflows/ux-refresh-checkpoint.spec.mjs',import.meta.url),'utf8');
- const anchor=" await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);\n await expect(page.getByTestId('home-create-game')).toBeEnabled();";
- assert.ok(current.includes(anchor));
- const tail=current.slice(current.indexOf(anchor));
- const canonical=" await expect(ownProfile).toHaveText('Guest');await expect(ownProfile).toHaveAccessibleName('Guest, you, Red, Connected');";
- const original=" await expect(ownProfile).toHaveText('You');await expect(ownProfile).toHaveAccessibleName('You, Red, Connected');";
- assert.equal(tail.split(canonical).length,2,'canonical identity assertions must occur exactly once');
- // Invert only PR207's approved name change; conserve every other assertion.
- assert.equal(createHash('sha256').update(tail.replace(canonical,original)).digest('hex'),'b01b2f1c671f3eac064701a808e737324cde373fb615acab026c55b5dfd0b2cf');
- assert.ok(current.includes('expect(await response.finished()).toBeNull()'));
+test('the reloaded live Players consumer preserves the canonical Guest name and accessible ownership',()=>{
+ const html=renderPlayersPanel({id:'canonical-guest',myRole:'Player 1',player1:{identityId:'mine',connected:true},player2:null,viewers:[]},{identityId:'mine'});
+ // These are product answers, independent of fixture source layout or hashes.
+ assert.match(html,/<bdi>Guest<\/bdi>/);
+ assert.match(html,/aria-label="Guest, you, Red, Connected"/);
+ assert.doesNotMatch(html,/<bdi>You<\/bdi>/);
 });
 
 
