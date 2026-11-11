@@ -1444,3 +1444,25 @@ for (const operation of ['createGame', 'launchHistoryBranch']) test(`${operation
   await handle.committed;
   assert.equal(sent.computerModelId, 'initial-1554');
 });
+
+
+test('optimistic direct Undo preserves earlier accepted provenance and assigns only a provisional request identity',async()=>{
+ const {transport,games}=createTransportHarness(),game=createRevertReadyGame();game.player2=null;
+ const old={...clone(game.moves[0]),index:1,moveId:'already-undone',undone:true,undoneAt:'first',undoneByIdentityId:'other',undoEventSeq:7};game.moves.push(old);games.set(game.id,game);
+ let reject,submitted,sent;const requestStarted=new Promise(yes=>sent=yes),response=new Promise((_resolve,no)=>reject=no);
+ const store=createSyncStore({storage:createMemoryStorage(),createTransportStore:()=>({...transport,requestRevertToMove:payload=>{submitted=payload;sent();return response;}}),createSyncClient:()=>({connectGame(){},disconnectGame(){},disconnectAll(){},getDesiredGameIds:()=>[]})});
+ const handle=store.requestRevertToMove({gameId:game.id,targetMoveId:'move-1'}),observed=assert.rejects(handle.committed,/controlled-rejection/);
+ const pending=store.getGameViewModel(game.id);assert.deepEqual(pending.moves[1],old);assert.equal(pending.moves[0].undoEventSeq,undefined);assert.match(pending.moves[0].pendingUndoRequestId,/^revert-/);assert.equal(pending.pendingRevertRequest,null);
+ await requestStarted;assert.equal(submitted.requestId,pending.moves[0].pendingUndoRequestId);reject(Error('controlled-rejection'));await observed;
+ assert.deepEqual(store.getGameViewModel(game.id).moves,game.moves,'Rollback cannot rewrite an earlier accepted group');
+});
+test('an authoritative Undo acknowledgement replaces provisional metadata without regrouping older records',async()=>{
+ const {transport,games}=createTransportHarness(),game=createRevertReadyGame();game.player2=null;
+ const old={...clone(game.moves[0]),index:1,moveId:'old',undone:true,undoneAt:'first',undoneByIdentityId:'other',undoEventSeq:7};game.moves.push(old);games.set(game.id,game);
+ let resolve;const response=new Promise(yes=>resolve=yes);
+ const store=createSyncStore({storage:createMemoryStorage(),createTransportStore:()=>({...transport,requestRevertToMove:()=>response}),createSyncClient:()=>({connectGame(){},disconnectGame(){},disconnectAll(){},getDesiredGameIds:()=>[]})});
+ const handle=store.requestRevertToMove({gameId:game.id,targetMoveId:'move-1'});handle.committed.catch(()=>{});
+ const authoritative=clone(store.getGameViewModel(game.id));delete authoritative.moves[0].pendingUndoRequestId;authoritative.moves[0].undoEventSeq=8;
+ games.set(game.id,authoritative);resolve(authoritative);await handle.committed;
+ const settled=store.getGameViewModel(game.id);assert.equal(settled.moves[0].pendingUndoRequestId,undefined);assert.equal(settled.moves[0].undoEventSeq,8);assert.deepEqual(settled.moves[1],old);
+});

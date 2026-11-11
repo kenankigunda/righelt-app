@@ -687,7 +687,7 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
   await page.route(/\/api\/shell\/games(?:\?|$)/, async route => {
     const request = route.request();
     const section = new URL(request.url()).searchParams.get("section");
-    if (request.method() !== "GET" || !["my", "other"].includes(section)) return route.continue();
+    if (request.method() !== "GET" || !["completed", "my", "other"].includes(section)) return route.continue();
     heldSections.add(section);
     await released;
     // Release the browser's real request without a second Node/TLS fetch.
@@ -697,16 +697,16 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
     await page.goto("/");
     const trigger = page.getByTestId("home-create-game");
     await expect(trigger).toBeVisible();
-    await expect.poll(() => [...heldSections].sort()).toEqual(["my", "other"]);
-    await expect(page.getByTestId("home-section-skeleton")).toHaveCount(2);
+    await expect.poll(() => [...heldSections].sort()).toEqual(["completed", "my", "other"]);
+    await expect(page.getByTestId("home-section-skeleton")).toHaveCount(3);
     const originalTrigger = await trigger.elementHandle();
     expect(originalTrigger).not.toBeNull();
     if (gesture === "pointer") { await trigger.hover(); await page.mouse.down(); }
     else { await trigger.focus(); await page.keyboard.down("Space"); }
-    // Home loading awaits both sections. Finish both while activation is held.
+    // Home loading awaits all three sections. Finish all three while activation is held.
     // The unchanged application deadline applies once real reads can proceed.
     await page.clock.resume();
-    const refreshed = Promise.all(["my", "other"].map(async section => {
+    const refreshed = Promise.all(["completed", "my", "other"].map(async section => {
       const response = await page.waitForResponse(response => {
         const url = new URL(response.url());
         return response.request().method() === "GET" && url.pathname === "/api/shell/games" && url.searchParams.get("section") === section;
@@ -982,10 +982,10 @@ test('a failed continuation read preserves the play choice for explicit retry', 
   });
   await dialog(page).getByRole('button', { name: 'Create account & continue', exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
-  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
+  await expect(page.getByTestId('account-continuation-error').getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
   expect(creates).toBe(0);
   denyReads = false;
-  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await page.getByTestId('account-continuation-error').getByRole('button', { name: 'Try again', exact: true }).click();
   await openRecoveredFriendChoice(page);
   expect(creates).toBe(0);
   await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
@@ -1025,6 +1025,41 @@ test("long profile names remain accessible to observers without covering the boa
     await expect(profile).toHaveAttribute('aria-expanded','true');await expect(profile).toBeFocused();
     await expect(profile).toHaveText(displayName);await expect(profile).toHaveAttribute('data-username',username);
   }finally{await observerContext.close();}
+  await page.getByRole('link',{name:'Righelt',exact:true}).click();
+  const card=page.locator('[data-home-section-root="my"] .mini-board-card-link-surface').first();
+  await expect(card.locator('.home-card-matchup bdi').first()).toHaveText(displayName);
+  await expect(card.locator('.mini-board-preview-status bdi')).toHaveText(displayName);
+  await expect(card.locator('.mini-board-preview-status .sr-only')).toHaveText('Red: ');
+  await page.screenshot({path:test.info().outputPath('canonical-home-name-desktop.png')});
+  await page.setViewportSize({width:390,height:900});
+  await expect.poll(()=>card.locator('.mini-board-preview-status').evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+  await card.scrollIntoViewIfNeeded();
+  await page.screenshot({path:test.info().outputPath('canonical-home-name-mobile.png')});
+  await page.setViewportSize({width:1440,height:1000});await card.click();
+  await expect(page.getByRole('button',{name:'Debug',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Debug',exact:true}).click();
+  const analysis=page.locator('[data-debug-section="analysis"]');await analysis.locator('summary').click();
+  await expect(analysis.locator('.debug-section-body > p').first().locator('bdi')).toHaveText(displayName);
+  await expect(analysis.locator('.debug-section-body > p').first().locator('.sr-only')).toHaveText('Red: ');
+  await page.getByRole('button',{name:'Close Debug mode',exact:true}).click();
+  const scenarioId=await page.evaluate(async()=>{const response=await fetch('/scenarios/catalog.json');if(!response.ok)throw Error('Catalog unavailable');const catalog=await response.json();return catalog.scenarios.find(item=>(item.resultingState??item.initialState)?.sideToMove==='P1'&&!item.savedSelection?.target)?.id;});
+  expect(scenarioId).toBeTruthy();
+  await page.getByRole('button',{name:'Scenarios',exact:true}).click();
+  await page.locator('#scenario-select').selectOption(scenarioId);
+  const preview=page.locator('.mini-board-card-scenario .mini-board-preview-status');
+  await expect(preview.locator('bdi')).toHaveText(displayName);await expect(preview.locator('.sr-only')).toHaveText('Red: ');
+  const curated=await page.evaluate(async()=>{const catalog=await(await fetch('/scenarios/catalog.json')).json();return catalog.scenarios.find(item=>item.id==='5bbc0ebf-ed20-4e12-8143-67eaa5cc8676');});
+  expect(curated).toBeTruthy();await page.locator('#scenario-select').selectOption(curated.id);
+  const description=page.locator('[data-scenario-editable="description"]');
+  await expect(description.locator('bdi')).toHaveText([displayName,'Open seat']);
+  await page.getByRole('button',{name:'Edit details',exact:true}).click();
+  await expect(description).toHaveAttribute('contenteditable','plaintext-only');
+  await expect(description).toHaveText(curated.description);await expect(description.locator('bdi')).toHaveCount(0);
+  await page.locator('#scenario-select').selectOption(scenarioId);
+  await page.getByRole('link',{name:'Righelt',exact:true}).click();
+  await expect(preview).toHaveText('Preview: Red to play');await expect(preview.locator('bdi')).toHaveCount(0);
+  await page.locator('#scenario-select').selectOption(curated.id);
+  await expect(description).toHaveText(curated.description);await expect(description.locator('bdi')).toHaveCount(0);
 });
 
  test("username lookup diagnostics redact entries and dismiss resolved details with stable focus", async ({ page }) => {

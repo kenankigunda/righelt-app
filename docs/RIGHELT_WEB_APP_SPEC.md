@@ -1,10 +1,14 @@
 # Righelt Web App Specification (v1)
 
+Read the [selected marble and glass contract](ai/MATERIAL_UX_CONTRACT.md) before planning or changing material presentation. It owns the approved November 1 visual extension while preserving the latest approved product workflows. Selection does not imply implementation or deployment.
+
 Status: Normative source of truth for product and UX behavior of the web application.
 
 This document defines application-level behavior around game creation, invites, joining, live updates, presence, history viewing, lobby listing, preview board, and onboarding tutorial.
 The surrounding web app must remain implementation-independent from the game board and may integrate any board backend/UI that conforms to this spec's board integration contract.
 If implementation behavior conflicts with this spec, this spec wins.
+
+Requirements state intended behavior. Approval, implementation, merge and deployment are separate facts. The [decision index](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index) identifies final approvals and superseded guidance. It does not certify a deployed build. [History presentation](ai/HISTORY_PRESENTATION.md), [recovery](ai/GAME_RECOVERY.md), and [the rules spec](RIGHELT_RULES_SPEC.md) own their detailed contracts.
 
 ## 1. Core Concepts
 
@@ -110,7 +114,7 @@ For the current board implementation:
   - when follow sequence is complete, board emits `turnEnded`
   - shell then advances to next turn and updates turn-owner
 
-### 1.1.1.4 Pass vs End Turn (Current Board Behavior)
+### 1.1.1.4 Pass vs End turn (Current Board Behavior)
 
 - `Pass` is a board action type.
   - It is submitted through normal board action flow.
@@ -121,10 +125,7 @@ For the current board implementation:
 - Board decides when to emit `turnEnded` for this game implementation.
   - Board auto-emits `turnEnded` when the turn should close (for example after `project`, after `pass`, or after other non-continuation commits).
 - Board may emit `turnEnded` early during optional continuation windows only when closure is currently legal (for example during rush after the rush chain is already resupplied).
-- When a rush continuation cannot end yet because the rush chain is still unsupplied, the board preview label must instruct the player to continue rushing and name one blocking piece with a coordinate chip.
-- If multiple rush-chain pieces are still blocking closure, the named piece must be:
-  - the most recently rushed unsupplied piece, if any
-  - otherwise the unsupplied blocker with the lowest row, then col, then piece id
+- Required rush-supply guidance follows the selection precedence in [stable board messages](#stable-board-messages-and-inline-actions). With nothing selected, name all and only pieces that must regain supply before closure. Selection replaces that summary with the piece or destination message.
 - During rush and push continuations, the board must continue to treat the initiating player's command/supply state as frozen from the moment that sequence started.
 - Any command/supply change created during the continuation is reconciled only after the continuation fully closes for frozen-status checks and forced-removal purposes.
 - `Move` and `Project` still use immediate destination-supply legality.
@@ -171,9 +172,9 @@ For the current board implementation:
   - otherwise -> neutral square chip treatment
 - Coordinate chips and their referenced board squares must share the same semantic highlight role; when a new square highlight role is introduced, a matching coordinate chip treatment must be introduced with it.
 - During push retreat flow, the pushed piece's square must use a dedicated retreat highlight treatment.
-- The retreat instruction should refer to that location as `highlighted square` in a pill matching the retreat highlight, rather than by coordinates.
+- The retreat instruction says Select a retreat for piece at, followed by the shared coordinate chip with the retreat role.
 - When a board preview label or similar instruction ends with a pill/chip or inline action button, no trailing punctuation is used after that UI token.
-- Ordinary prose-only board preview labels continue using the established trailing colon format.
+- Use grammatical sentences. Restrictions connect to a complete causal clause with because. Do not use an explanatory colon in Board copy. Action labels use sentence case: Pass, End turn, Show me again.
 
 ### 1.1.5 UI Motion Convention for Layout Stability
 
@@ -277,7 +278,7 @@ When a recipient opens either invite type:
 
 ## 6. Presence and Reconnection (Flow 4)
 
-- Next to participant names, UI must show a live activity indicator for each player and viewer.
+- Human presence appears beside participant names. Computers use the distinct Players activity contract below, rather than treating runner control as human connectivity.
 - When a participant disconnects (including inactivity/session drop), others in the game must see their status change to `Disconnected`.
 - When that participant reconnects on the same device identity:
   - Prior role is restored automatically.
@@ -290,7 +291,9 @@ When a recipient opens either invite type:
 - The history panel must group moves beneath their parent turn.
 - Use the approved compact owner-colored rail. Its affiliation belongs to the whole turn, including defender-retreat rows whose text retains the defender color. Turn headings visibly read `Turn N`; retain player attribution in accessible labels. Every move label retains its board-wide `Move N:` prefix.
 - The entire turn group is an implicit selection surface. Heading and surrounding space select the aggregate; each child move selects that exact move; child action buttons win over both. Use independent native button targets without nested buttons or duplicate keyboard activation. Selected move/turn targets are inert while their child move/action controls remain usable.
-- Keep the rail compact without collapsing turn contents. Display newest turns and newest moves first, including archived and expanded undone rows. Preserve chronological stored records, internal turn ownership, previews and replay; reverse copies only for row display. Preserve recorded destruction nesting, pending/archive states, frozen acknowledged selection and mobile preview reveal. Mobile selection and action targets stay at least 44px; desktop density follows the approved rail study. Reduced motion removes press/release movement.
+- Keep the rail compact without collapsing turn contents. Preserve newest-first display order for turns and every move list, recorded destruction nesting, pending/archive states, frozen acknowledged selection and mobile preview reveal. Mobile selection and action targets stay at least 44px; desktop density follows the approved rail study. Reduced motion removes press/release movement.
+- The History panel groups active moves beneath their parent turn. All displayed move lists are newest first, including within a turn and expanded undone disclosures. Display sorting never changes engine, replay or stored action chronology.
+- [History presentation](ai/HISTORY_PRESENTATION.md) owns compact turn rails, global Move numbers, frozen selections, inert selected targets, mobile preview parity, narration and Undo boundaries.
 - Users can click any move entry.
 - Clicking an entry switches board from `Live view` to `History view` at post-move state for that entry.
 - While user is in `History view`:
@@ -318,6 +321,19 @@ List behavior:
   - Seat is empty, or
   - Existing seat holder has been inactive for more than 5 minutes.
 - Such a takeover request must be approved by the opposite player before assignment.
+
+### Completed games on Home
+
+- Keep ongoing owned games in Continue playing. Put Your completed games below Start something new and above Other games. Only the current account's completed games belong in Your completed games. Other people's completed games remain in Other games.
+- Classify completion only from a confirmed `p1_win`, `p2_win` or `draw` outcome. Unknown status shows Game status unavailable, never a guessed winner or draw. A pending winning move or Undo does not change confirmed membership. Accepted Undo can reopen a game and update all affected counts, pages and cards together.
+- Filter membership before server counts and pagination. Preserve newest-activity ordering and stable ties. Clamp a removed last page. Each section has independent loading and recovery, and an empty completed section is hidden only after a successful zero count.
+- Home's first failed attempt remains a private whole read, followed by one 500ms retry. Only an exhausted second ordinary Home attempt may publish healthy sections after all work settles, retaining failed sections and explicit Retry. Account continuation, owner changes and auth/session/protocol/schema/storage/contract failures always refuse the whole read. No healthy section means global recovery. A failed section never restarts itself from a trailing refresh.
+- Membership freshness has its own bounded repair. If `home_list_changed` remains afterward, retain the entire previous cards/counts/focus with manual global recovery. Do not publish an unproven mixture or treat this as a recoverable network section failure.
+- Completed cards show the winner line beside the matchup and a subtle three-pixel rail in the winning side's color. Own victories say You won. Own losses name the actual winner, such as Tau won, with You lost beneath. Draw says Draw and No winner. Self-play uses Red won or Blue won without personal win/loss wording. Missing winner identity falls back to the actual side.
+- A completed card keeps its final board, saved move count and one full-card Review game link. It has no active-turn or presence cues and no nested interactive elements. The winner comes from the outcome's winning seat, independent of whose turn follows or shared computer ownership. Reuse shared player names and perspective rules, escape names and isolate their writing direction.
+- A card's board, result, count and identities form one confirmed revision. Older list replies must not overwrite a newer live projection or Undo reopening. Provisional previews stay separate. Recheck section membership and counts after concurrent updates rather than mixing old totals with newer cards.
+- Preserve a connected control the reader moved to during refresh. Otherwise retain the same card or a stable neighbor/heading in its previous section with no scroll jump. Announce a completed focus restoration. Refresh a trailing update after a successful batch, without creating a tight automatic retry on a failed section.
+- Validate narrow layouts, text zoom, keyboard activation, single focus stops and the actual application rendering. Approved static study references do not replace app acceptance.
 
 ## 9. Home Page Preview Board (Flow 7)
 
@@ -428,6 +444,8 @@ Tutorial restart:
 
 ## 13. Notifications and Prompts
 
+Notices are nonmodal and preserve incident identity, focused controls, open details and animation time. Their shared page layer stays above content, loading borders, menus, utility rails, mobile navigation and transition ribbons, and below native modal dialogs/backdrops. Check ancestor transforms, stacking contexts and clipping across both layouts and route transitions. Preserve native DOM/event ownership where possible. The study's token numbers and fallback root host are implementation proposals, not independently approved architecture. Notices never trap focus or make the background inert. [D13](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index) records the approved ordering.
+
 - Prompt text/content may vary, but these state prompts are required:
   - Opponent/viewer joined.
   - Your turn.
@@ -464,10 +482,15 @@ This section is normative and applies to every new endpoint, page, and performan
 
 ### Independent board legend inspection
 
-- Commander and Supply point keep separate inspection selections and owner contexts. Toggling one leaves the other intact. Selecting an unoccupied supply square updates only supply inspection and preserves the selected commander context. Normal piece selection may clear explicit networks to resume move selection.
-- Commander and supply icons, selected-label underlines, and their visible line swatches use their respective owner colors. Supply lines on the board use the supply owner's color. A selected supply square has an owner-colored selection treatment.
-- The selected label uses a 2px text underline with a 5px offset. Text remains neutral and existing icons remain unchanged. Do not add a selected tint, outline, check mark, or button-wide bottom rule. Keyboard focus has a separate visible outline and controls retain at least 44px touch targets.
-- Inspection never submits actions or changes rules authority. Explanatory line and group entries appear only when the corresponding overlay is actually drawn. Empty command networks are skipped.
+Approved intended behavior, including the November 1 supply/commander follow-up. Provenance: [D02](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
+
+- Commander and Supply point retain independent inspection targets and affiliation contexts. Supply point selection never clears the selected commander. Clearing one explicit inspector leaves the other intact. Inspection never submits, queues a move or changes authority.
+- Supply paths use fixed green `#2f8e63`, round 3px strokes and `7 5` dashes. Command paths use owner colors, round 3px strokes and `2 6` dots. Shared segments use separate lanes at -2.5px supply and +2.5px command under canonical endpoint ordering. Define styles once for both adapter branches. Compact 16×3px legend samples use 5/4 supply and 2/4 command mark/gap patterns. Identity emblems, pieces, selected supply square and label underlines keep affiliation colors.
+- Selected labels use a 2px text underline with a 5px offset and neutral text. Keep separate visible keyboard focus and at least 44px touch targets. Add no selected tint, outline, check mark or button-wide bottom rule.
+- Commander-piece clicks cycle moves → combined connections → moves when complete legal previews exist. Combined connections include the commander's recorded supply path and applicable nonzero command paths ending at that commander. The Commander legend remains an independent command-only inspector. Ordinary unit behavior remains unchanged.
+- An explicit Supply point inspector exclusively chooses the affiliation whose supplies are drawn. Blue commander plus red Supply point draws blue commands and only red supplies. Clearing red supply does not silently restore blue personal supply. A deliberate commander-piece activation may re-enter the combined phase.
+- Use recorded paths, affiliation and endpoints. Do not invent substitute routes. Zero-length supply at its own source is not missing supply. Skip empty command stops. In read-only contexts, show useful connections or selected-piece information without a move-preview phase. Preserve independent explicit layers.
+- Commander and Supply point identity controls remain present. Line samples and group descriptions appear only when their overlays are actually drawn. A real board change drops vanished targets and routes while preserving unrelated valid inspectors.
 
 ### Stable board messages and inline actions
 
@@ -477,11 +500,24 @@ This section is normative and applies to every new endpoint, page, and performan
 - All board-message coordinates, including move narration, use the shared coordinate-chip renderer with a space after the comma. Structured coordinates must stay separate from player-controlled names. Coordinate-chip text and action-label text share the surrounding prose baseline. Pass, End turn, and Show me again use the approved restrained treatment: .88em type, 1.5 line height, .2em vertical and .48em horizontal padding, a 1px border, and automatic height. Coordinate chips stay shorter at .9em type and 1.25em chip height, retaining semantic colors. Keep the existing 12px action icons. Reuse these renderers and exact metrics for primary and fallback sizing replicas. Expanded hit surfaces must be at least 44 by 44px, fit inside reserved message space, remain fully clickable across engines, and never overlap another action. Verify native keyboard activation, stable focus identity, disabled/busy behavior, cold fonts, zoom, narrow widths, and unchanged board anchors when changing token metrics.
 - Recorded narration uses acknowledged board-wide Move numbers and the recorded actor, including the defender for retreat. End-turn bookkeeping is never a selectable/narrated replay step: its final state and distinct removals belong to the preceding visible action. Turn summaries name distinct rush actors and list destinations in action order; event clauses use natural conjunctions and Oxford commas independently of coordinate punctuation.
 - Refreshing an unchanged board message must retain its live action buttons through pointer and keyboard press/release feedback. Ignore only the known temporary feedback classes (`is-pressing`, `is-releasing`, `button-release-bounce`) during structural comparison; action IDs, disabled state and genuine style classes remain semantic. Verify pointer-down → refresh → pointer-up and keyboard activation → release feedback → refresh with one action and stable focus.
-- Computer status uses human-facing phases: Waiting for the named computer, thinking, and saving their move. Preparation and control renewal remain waiting. Activity-dot ownership follows the computer named in the message rather than a pending human operation.
 - Narration describes the acknowledged sequence. Multiple rushed pieces name the distinct count and destinations in action order. Push summaries use the recorded destination and distinct follower count. Full text and coordinates remain available in scrollable context without increasing Board height.
+- Routine computer activity copy appears only while the human is waiting: Waiting for the named computer, thinking, and saving their move. Preparation and control renewal remain waiting. Once confirmed movement is shown, persistence and control work continue quietly in the background. Delayed actionable recovery notices are separate. Activity-dot ownership follows the computer named in the message rather than a pending human operation.
+- Narration uses acknowledged actions, exact actor/follower counts and the shared [History grammar](ai/HISTORY_PRESENTATION.md#recorded-narration). Live completed summaries and recorded replay use that same grammar. Push coordinates identify the attacker destination, which was the victim’s original square.
 
-- Board-message height must admit the complete two-row grammar at every supported width. Reserve its measured font and width envelopes before first paint, including all turn summaries and the bounded spectator-name box. Changes to wording, fonts or inline pills require primary/fallback measurements at 100% and 200% text, boundary probes and exact cold/loaded/reload anchor checks. Natural wrapping may require four or more lines; a universal three-line cap is not the contract.
+- Reserve only the measured routine prompt envelope at each actual width, font and text scale before first paint. Routine selection, inspection, waiting and ordinary confirmation keep the Board anchor. Opponent summaries and extended copy use independently scrollable Board context outside the finite prompt. They must not increase Board height. Do not reserve a turn-summary maximum or silently truncate full context. Use identical primary/fallback sizing replicas. Recheck cold/loaded/reload anchors at 100% and 200% text.
+- Distinct semantic messages and supporting details start on separate lines with uniform body size and 1.5 line height. Use identical row safety padding `max(0px, 23.0625px - .836em)`, an added .5em gap and full-rule offset -.25em from the following row border edge. Text-only and no-Pass rows retain the same padding. No gap appears for absent detail. Keep clauses and coordinate lists within their event.
+- Detached replay/recovery/status pills sit below their own message. Pass and End turn stay in grammatical sentences. Obligatory follows only the unselected supply warning, with no rule separating a message from its own pills.
+- With no selection, list all required rush-supply pieces. A selected piece, including automatic sole-helpful-piece selection, replaces the entire summary. A destination replaces the piece instruction with confirmation and a separate known supply effect. Hide the global summary and Obligatory while selected. Hover alone changes neither context. Deselecting restores the current complete obligation list.
+- The later finite-prompt contract adopted in PR246 supersedes D18’s earlier 450/280ms Board overflow motion. Font and text-scale corrections measure the approved finite grammar before reveal. Extended content scrolls in Board context. Preserve native press targets and the Board anchor through refresh and responsive changes.
+- Keep the actual native action node through semantically unchanged updates. Verify pointer-down/update/pointer-up, touch, Enter/Space, focus, disabled/busy state, wrapped hit areas and nonoverlap in Chromium, Firefox and WebKit. Temporary admission fences preserve selection, preview and inspection phase. Complete legal-query results, not coarse subsets or timeouts, establish move availability. Provenance: [D01, D03, D18](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
 
+### Undo consent
+
+- Undo applies directly in self-play and against a computer controlled by the same human. While its durable receipt is pending, do not show an undo request, acceptance message, or approval controls. Confirm completion as “Move undone”.
+- Each accepted Undo has its own History boundary, collapsed by default even when it spans turns. If a viewer already selected a record that becomes undone, reveal only that record’s operation for that viewer. Honor a later explicit collapse until another explicit selection. Expanding it shows the original turn, actor and immutable records. A later Undo preserves earlier undone records and their original provenance. Display order is newest first, while stored records and replay stay chronological.
+- A pending local prediction is labelled pending until the durable acknowledgement. Missing historical boundary evidence remains unavailable. Do not reconstruct an accepted operation from matching times or names.
+- Only another human controller must approve Undo. Keep that player's request, Accept, Reject and Cancel request flow. Use authoritative seat-controller identities, never display names, to distinguish these cases.
+- Direct Undo keeps the existing serialized command, receipt and recovery path. Computer work is paused and reconciled before restoration, then resumes under the acknowledged position and control generation. Reopening a completed game by explicit Undo retains these same safeguards.
 ### Projected status during a sequence
 
 - During a live rush or push sequence, show every piece's status as it would be after the turn ended at its current position. Recompute the projection after each acknowledged sequence step, including defender retreats and follows.
@@ -495,11 +531,47 @@ Use the current canonical player name in its owning color for identity reference
 
 History actor references use canonical names rather than You or Opponent. Result titles identify the actual winner, never the active side or selected rematch side. Human self-play needs the winning-seat qualification: You won as Red/Blue for its owner and {player name} won as Red/Blue for viewers. Other results omit redundant visible color suffixes while retaining accessible color attribution. Commander explanations carry structured owner references; style the entire Your Blue commander phrase in the relevant color. Never infer an owner's color by matching user-supplied name text. Viewing, temporary computer control and replay must not change the recorded owner or gameplay authority.
 
+Curated instructional descriptions may resolve structured owner references only when real game context exists and the shipped scenario ID and original description match. Edited and imported prose stays untouched. Editing always exposes the original description, not resolved names or nonvisual affiliation text. Changing between display and editing must replace that description node before preserving editable content. Analysis explanations name the actual value owner, while raw evidence and exported owner enums keep their technical coordinate system.
+
 ### History endpoint roles
 
-- Desktop and mobile History opt into dashed violet 2px source borders and solid green 2px target borders. Shared-role squares retain the dashed violet outer border plus an inset solid green 2px outline. Colors remain `#7650A6` and `#1F7A5A`.
-- Turn roles are the union of all acknowledged action endpoints, including intermediate shared squares. Preserve final positions, owner colors, source ghosts, destruction/projection marks and push/follow arrow deduplication. Defender retreats remain distinct. Individual axes remain unchanged; aggregate axes and step numbers stay absent.
-- The explicit History presentation context must reach both the desktop board runtime and mobile preview adapter. It resets when returning live. Live automatic opponent overviews and replay retain their existing appearance.
+[History presentation](ai/HISTORY_PRESENTATION.md#history-endpoint-roles) owns source, target and combined endpoint roles for desktop and mobile. Explicit History context must reach both adapters and reset on return live. Automatic live overviews and replay retain their separate presentation.
+
+### Computer identity and activity in Players
+
+Players retains each computer's 34px seat-colored identity emblem and actual, affiliation-colored name. A neutral 22px bot in one 24px slot replaces the small name-adjacent bot and separate presence circle. Its overlapping status mark carries the activity. Ordinary status words appear only in the complete row accessible name and shared hover tooltip, including when details are expanded. The existing row remains the sole disclosure target. Resume actions retain their permissions, disabled explanations and minimum 44px target.
+
+Consume the existing computer activity result without inferring control ownership or adding thinking/saving states. Active here uses a check and active elsewhere uses an outward arrow from a window, both in the existing connected green. Ordinary waiting/inactive uses a minus in the existing disconnected gray. Resuming uses a static circular arrow. Paused uses a 14px amber mark with 12px solid bars. Needs help uses a 15px light coral mark with a 13px dark warning triangle and contrasting exclamation. Finished uses a 15px muted teal mark with a 12px light flag. Confirmed move playback uses a blue mark and light play symbol. Remaining ordinary marks are 12px with 11px symbols. Use shared semantic tokens for the approved palette: connected `--connection-status-connected-bg` green `#3ea76a` for Active here/elsewhere, ordinary `--connection-status-disconnected-bg` gray `#c8c4bc`, paused amber `#f0bb55`, help coral `#f2a397`, finished teal `#426e65` and confirmed playback blue `#1a5ca1`. Paused/help symbols use dark `#252b2d`, and finished/playback symbols use light `#fffdf6`. Reuse connection ring tokens and define new state colors once rather than duplicating literals across renderers. Symbols remain distinct in forced colors and do not pulse or spin.
+
+The complete row name includes computer name, affiliation, computer kind and current activity. Decorative icons add no focus stops or duplicate accessible names. Hover text mirrors that name, stays inside the visual viewport, permits pointer entry, dismisses on Escape, and updates or disappears when the underlying row changes. This presentation is restricted to Players. It changes neither Home cards nor computer recovery, gameplay admission, leases or runner authority.
+
+Acceptance checks cover all activity states, both affiliations, 320px and desktop widths, 100% and 200% text size, native disclosure and permitted/disabled Resume, tooltip lifecycle, forced colors, reduced motion and no document overflow. Integrate the quiet-recovery producer and current Players naming/viewer work before final combined validation.
+
+Approved intended presentation. Implementation and combined release proof remain separate. Provenance: [D11](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
+
+### Completed games and Play again
+
+A confirmed terminal game is review-only. Stop new computer decisions and mutation controls, while allowing bounded presentation of already confirmed moves. Do not acquire computer control or show routine thinking for a finished game. A presentation failure is not a new calculation. Keep inspection, History, result viewing and permitted rematch available. Forecast destruction does not establish completion.
+
+History shows Play again beside the completed outcome and wraps it below at narrow widths. Keep the outcome announcement separate from the button. Reuse the existing rematch modal and icon. Show the action only for authoritative saved human-seat ownership under the current identity, including eligible guest and both-side play. Spectators, stale account continuations and temporary computer takeover gain no eligibility. Recheck ownership on direct entry and after sign-in. Selection of an old move never changes final-result eligibility.
+
+Opening, dismissing, preparing or retrying the modal creates no game. Only explicit Start game does. Preserve opponent and opposite-side defaults, native modal focus containment, Escape/Cancel and return focus to the current History trigger even after rerender. Account or route changes cancel stale intent. Friend choice starts a fresh invitation. New game before this move remains a separate action. Provenance: [D09, D14](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
+
+### Home sections and pagination
+
+Use Continue playing for unfinished owned games. Your completed games sits after Start something new and before Other games. Personal ownership follows the existing authorization mode. With account authentication active, only the authenticated account's account-owned games appear in either personal section. Signed-out requests receive no personal games, and legacy games stay in Other games even if their saved identity matches the account. Before account activation, the existing legacy mode retains identity-owned personal lists. This introduces no new account setting or activation permission. Membership precedes server counts and pagination. Other people's completed games stay in Other games. A winner line and subtle winning-side rail carry the outcome. Own losses name the winner, with You lost secondary. Use the current [identity policy](UX_PRINCIPLES.md#identify-people-and-visual-roles-separately), including self-play disambiguation, rather than older color-only result copy. Unknown outcomes are not draws. Preserve fresh off-page completion data.
+
+Play both sides is a standalone native action centered below opponent cards. Remove Choose your opponent. Placement changes preserve creation semantics, story entry, error handling and duplicate-submit protection.
+
+Pagination uses Ghost arrows at every width, quiet hover and visible focus. Both 44px native targets and the full Page X of Y remain on one physical line, including 320px and 200% text. Arrow and loading cue share a centered slot without moving the label or hit bounds. Preserve the 200ms visible and 5000ms slow thresholds. Show one existing slow message below the row. Preserve wraparound, cancellation and account fencing. On failure retain the current page and existing arrow retry, with no additional Retry action or newly invented failure UI. Provenance: [D10, D12](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
+
+### Route motion and scroll intent
+
+Deliberate Home navigation starts at the top while retaining list pages. Repeated Home does not add a visit. New game-card visits begin at the live Board at the top. Browser Back/Forward restores that visit’s panel, list pages and reading position. Preserve per-panel reading positions and selected History through responsive changes. Restore scroll and focus before reveal. Latest navigation cancels obsolete transition/recovery work, including rapid reversals to the same game. The approved Dense ribbon is 94% opaque with 160ms cover and 200ms reveal using existing easing, with a quiet covered hold. Forward sweeps left to right with the top-right corner leading. Back mirrors the complete outer silhouette and internal diagonals, with the top-left corner leading. Restrict route-content motion so shared headers and notices retain their layer order. Reduced motion preserves navigation and scroll semantics without the sweep. Test actual short windows, safe areas, keyboard focus and scroll owners. Provenance: [D06, D13](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
+
+### Unique required follow and confirmed playback
+
+Automatically perform a required follow only when complete current legality proves exactly one choice. Multiple alternatives remain the player's decision. Show animation and movement sound as the acknowledged action is presented, and offer Show me again for the entire push/retreat/follow sequence. Replay is visual-only and never submits another action. Preserve durable dependency and receipt identity across recovery. Incomplete search, stale authority and a temporary admission fence must not manufacture a unique move or duplicate an earlier command. Scope changes cancel obsolete pre-journal work while already durable intent reconciles its original receipt. Provenance: [D07, D17](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
 
 
 ### Stable human controls during computer maintenance
@@ -512,6 +584,24 @@ An explicit permitted action still enters the ordinary durable journal and recei
 
 Semantic messages use uniform body text, with a fine full-width rule between messages. Grammatical Pass and End turn actions and coordinate pills stay inline. Replay and status pills belong below their own message and wrap naturally. Rows share a .5em gap and max(0px, 23.0625px - .836em) padding. Keep native 44px targets and shared primary/fallback metrics.
 
-Only routine prompts establish the minimum message height. Opponent summaries, replay and extended explanations contribute their current measured height, never a permanent maximum reservation. Use the greater of the routine primary/fallback floor and current content. Expansion takes 450ms and collapse 280ms with cubic-bezier(.22,.72,.2,1), retargeting from the current interpolated height. Initial layout, font/size changes and reduced motion snap. A held native press freezes current geometry and defers compatible prose changes until release. Genuine action or availability changes remain immediate and every deferred refresh repeats the full availability checks.
+The later finite-prompt contract adopted in PR246 owns message geometry. Measure only the supported routine primary/fallback grammar. Opponent summaries, replay and extended explanations belong to independently scrollable Board context and do not enlarge the Board. D18’s earlier variable-height overflow and 450/280ms motion are superseded. A held native press freezes current geometry and defers compatible prose changes until release. Genuine action or availability changes remain immediate and every deferred refresh repeats the full availability checks.
 
 An unselected rush shows all and only required supply-restoration pieces with its Obligatory status. Any real piece selection, including automatic selection, replaces that global message. A selected destination owns its confirmation and a known supply effect appears separately. Preserve specific blocked-piece explanations. Hover alone does not change selection, and deselection restores the current required-piece summary. Viewing messages never queues a gameplay action.
+
+### Computer identity and activity in Players
+
+Players retains each computer's 34px seat-colored identity emblem and actual, affiliation-colored name. A neutral 22px bot in one 24px slot replaces the small name-adjacent bot and separate presence circle. Its overlapping status mark carries the activity. Ordinary status words appear only in the complete row accessible name and shared hover tooltip, including when details are expanded. The existing row remains the sole disclosure target. Resume actions retain their permissions, disabled explanations and minimum 44px target.
+
+Consume the existing computer activity result without inferring control ownership or adding thinking/saving states. Active here uses a check and active elsewhere uses an outward arrow from a window, both in the existing connected green. Ordinary waiting/inactive uses a minus in the existing disconnected gray. Resuming uses a static circular arrow. Paused uses a 14px amber mark with 12px solid bars. Needs help uses a 15px light coral mark with a 13px dark warning triangle and contrasting exclamation. Finished uses a 15px muted teal mark with a 12px light flag. Confirmed move playback uses a blue mark and light play symbol. Remaining ordinary marks are 12px with 11px symbols. Semantic colors are shared design tokens. Symbols remain distinct in forced colors and do not pulse or spin.
+
+The complete row name includes computer name, affiliation, computer kind and current activity. Decorative icons add no focus stops or duplicate accessible names. Hover text mirrors that name, stays inside the visual viewport, permits pointer entry, dismisses on Escape, and updates or disappears when the underlying row changes. The decorative mirror shares the existing utility layer below navigation, route ribbons and notices; native modal dialogs remain above it. This presentation is restricted to Players. It changes neither Home cards nor computer recovery, gameplay admission, leases or runner authority.
+
+Acceptance checks cover all activity states, both affiliations, 320px and desktop widths, 100% and 200% text size, native disclosure and permitted/disabled Resume, tooltip lifecycle, forced colors, reduced motion and no document overflow. Integrate the quiet-recovery producer and current Players naming/viewer work before final combined validation.
+
+### Global notice layers
+
+Game recovery and destination notices use the shared `--shell-layer-notice` page layer. They remain above board decorations, menus, nonmodal utility/account rails, mobile navigation and the route-transition ribbon. Native `showModal()` dialogs and their backdrops remain above notices in the browser top layer. Notices themselves stay nonmodal: they do not make the page inert, trap focus or intercept uncovered page input.
+
+Keep the existing notice DOM, delegated native controls, incident identity, live-region deduplication and document Tab order. Header ancestors must not acquire transforms, filters, isolation, opacity animation or clipping that traps the notice in a lower stacking context. Route reveal motion belongs on route content beneath the header. A document-level notice host is a fallback requiring a separate event/focus ownership review.
+
+Use the named page-layer tokens in `design-tokens.css` rather than component-specific escalation. Keep local card/stone layers local. Acceptance includes actual overlay pixels and native hit targets, unchanged focused controls through updates, modal Escape/focus restoration, nonmodal rail coexistence, narrow and zoomed layouts, and notice/ribbon coexistence during navigation. A computed layer number alone is insufficient visual proof.
