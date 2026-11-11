@@ -26,7 +26,7 @@ test('turn ownership and forced retreat attribution use sides, including a dual-
  const frames=buildTurnReplay({moves:g.moves,completedTurnIndex:0}).frames;
  assert.deepEqual(frames.map(frame=>frame.decisionId),['a','defender']);
  g.myRoles=['Player 1','Player 2'];assert.equal(latestOpponentTurn(g),null);
- g.computer={seats:{p1:'tau',p2:null}};assert.equal(latestOpponentTurn(g).side,'P1');
+ g.computer={seats:{p1:'tau',p2:null}};assert.equal(latestOpponentTurn(g),null,'current computer configuration cannot rewrite an earlier human turn');g.moves[0].computerProof={profile:'tau'};assert.equal(latestOpponentTurn(g).side,'P1');
 });
 test('undone, stale and malformed decisions do not create replayable opponent turns',()=>{
  const g=game();g.moves[0].undone=true;assert.equal(latestOpponentTurn(g),null);

@@ -1,3 +1,4 @@
+import {recordedActorSide} from './recorded-narration.js';
 import {BOARD_CONTEXT_PURPOSE} from './board-context-purpose.js';
 import {isCompletedGame} from './game-lifecycle.js';
 import {BOARD_PROMPT} from '../board/prompt-models.js';
@@ -22,7 +23,8 @@ export function latestOpponentTurn(game, {identityId} = {}) {
   const moves = (game.moves ?? []).filter(move => !move.undone && move.turnIndex === previous);
   if (!moves.length) return null;
   const side = normalizeActivitySide(turn.playerSeat) ?? normalizeActivitySide(moves[0].selectionSnapshot && getTurnOwnerSideForState(moves[0].selectionSnapshot)) ?? normalizeActivitySide(moves[0].actorSide);
-  if (!side || roles(game, identityId).has(side) && !computerProfile(game, side)) return null;
+  const recordedComputerOwner=side&&moves.some(move=>recordedActorSide(move)===side&&move.computerProof);
+  if (!side || roles(game, identityId).has(side) && !recordedComputerOwner) return null;
   // A forced retreat belongs to the defender, even within the attacker's turn.
   const last = [...moves].reverse().find(move => normalizeActivitySide(move.actorSide) === side);
   return last ? {turn, moves, last, side} : null;

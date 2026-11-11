@@ -1,6 +1,7 @@
 import {BOARD_CONTEXT_PURPOSE} from './board-context-purpose.js';
 import {normalizeActivitySide} from './activity-affiliation.js';
-import {describeRecordedMove,describeRecordedTurn,recordedNarrationCoordinates} from './recorded-narration.js';
+import {describeRecordedMove,describeRecordedTurn,recordedNarrationCoordinates,recordedActorSide} from './recorded-narration.js';
+import {getTurnOwnerSideForState} from '../generated/packages/shared-types/src/shell-live-turn.js';
 import { COMPUTER_PROFILES, COMPUTER_TIMING } from '../generated/packages/shared-types/src/computer-play.js';
 
 export function latestComputerTurn(game) {
@@ -9,7 +10,14 @@ export function latestComputerTurn(game) {
   for (const turn of [...(game.turns ?? [])].reverse()) {
     if (turn.status !== 'complete' && !(turn.index < (game.board?.state?.turnIndex ?? 0))) continue;
     const moves = active.filter(move => move.turnIndex === turn.index);
-    if (moves.some(move => move.computerProof)) return { turn, moves, last: moves.at(-1) };
+    const first=moves[0];
+    const side=normalizeActivitySide(turn.playerSeat)
+      ??(first?.selectionSnapshot?normalizeActivitySide(getTurnOwnerSideForState(first.selectionSnapshot)):null)
+      ??recordedActorSide(moves.find(move=>move.action?.type!=='retreat'&&move.action?.type!=='end_turn'));
+    const ownerMove=side&&[...moves].reverse().find(move=>recordedActorSide(move)===side&&move.computerProof);
+    // A computer defender Retreat does not make its attacker's turn a computer
+    // turn. Current manual control never rewrites the recorded owner either.
+    if (ownerMove) return { turn, moves, last: moves.at(-1), side, ownerMove };
   }
   return null;
 }
@@ -56,7 +64,7 @@ export function computerBoardMessage(game, status, { selectedPieceId } = {}) {
   const completed = latestComputerTurn(game);
   // Only retain narration for the immediately preceding computer turn.
   if (!completed || completed.turn.index !== (game.board?.state?.turnIndex ?? 0) - 1) return null;
-  const move = [...completed.moves].reverse().find(item => item.computerProof);
+  const move = completed.ownerMove;
   const completedName = COMPUTER_PROFILES[move?.computerProof?.profile]?.name ?? 'Computer';
-  return { purpose:BOARD_CONTEXT_PURPOSE.INCOMING, actorName:completedName, actorSide:normalizeActivitySide(completed.turn.playerSeat)??normalizeActivitySide(move?.actorSide), text: describeTurn(completed.moves,completedName), coordinates:moveCoordinates(completed.moves), action: { id: 'replay-computer', label: 'Show me again' } };
+  return { purpose:BOARD_CONTEXT_PURPOSE.INCOMING, actorName:completedName, actorSide:completed.side, text: describeTurn(completed.moves,completedName), coordinates:moveCoordinates(completed.moves), action: { id: 'replay-computer', label: 'Show me again' } };
 }

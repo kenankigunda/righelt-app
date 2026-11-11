@@ -74,3 +74,25 @@ test('actual context owner retires both purposes on scope changes without mutati
  key='account2:game:live';assert.equal(owner.current(token),false);assert.equal(store.channel('acknowledged'),null);assert.equal(store.channel('piece'),null);
  assert.equal(JSON.stringify(live),before);owner.retire();
 });
+
+test('mixed Push defender Retreat and Follow use the recorded turn owner after manual or temporary control',()=>{
+ for(const mode of ['manual','temporary']){
+  const local={...game(),myRoles:['Player 1','Player 2'],canControlComputer:true,controlSeat:'Player 2',
+   player1:{identityId:'me',profile:{displayName:'Maya'},computerProfile:null},player2:{identityId:'me',profile:{displayName:'Kenan'},computerProfile:null},
+   computer:{seats:{p1:null,p2:'tau'},manual:mode==='manual',takeoverTurn:mode==='temporary'?0:null},computerTurn:null,
+   moves:[
+    {moveId:'push',index:0,turnIndex:0,turnMoveIndex:0,actorSide:'P1',action:{type:'push',actorId:'attacker',from:{row:4,col:3},to:{row:4,col:4}},selectionSnapshot:{sideToMove:'P1',pieces:[]},snapshot:{sideToMove:'P2',pieces:[]}},
+    {moveId:'retreat',index:1,turnIndex:0,turnMoveIndex:1,actorSide:'P2',computerProof:{profile:'tau'},action:{type:'retreat',actorId:'defender',from:{row:4,col:4},to:{row:3,col:4}},selectionSnapshot:{sideToMove:'P2',pieces:[]},snapshot:{sideToMove:'P1',pieces:[]}},
+    {moveId:'follow',index:2,turnIndex:0,turnMoveIndex:2,actorSide:'P1',action:{type:'follow',actorId:'follower',from:{row:4,col:2},to:{row:4,col:3}},selectionSnapshot:{sideToMove:'P1',pieces:[]},snapshot:{sideToMove:'P2',pieces:[]}},
+   ]};
+  const before=JSON.stringify(local);
+  assert.equal(computerBoardMessage(local,{}),null,'a computer defender is not the owner of this human Push turn');
+  assert.equal(opponentBoardMessage(local,{}, {},{identityId:'me',canInteract:true}),null,'a recorded local human turn cannot become incoming because a defender was computer-controlled');
+  assert.equal(publish(local).context.purpose,'local-sequence','the complete local Push replay remains Board content');
+  const genuine={...local,computer:{...local.computer,seats:{p1:'tau',p2:null}},moves:local.moves.map(move=>({...move,computerProof:move.actorSide==='P1'?{profile:'tau'}:undefined}))};
+  const priorComputer=opponentBoardMessage(genuine,{}, {},{identityId:'me',canInteract:true}).context;
+  assert.equal(priorComputer.purpose,'incoming-narration');assert.equal(priorComputer.actorName,'Tau');assert.equal(priorComputer.actorSide,'P1');
+  assert.equal(priorComputer.text,'Tau pushed onto (4, 4) and had 1 piece follow');
+  assert.equal(JSON.stringify(local),before,'control changes never rewrite recorded ownership or action chronology');
+ }
+});
