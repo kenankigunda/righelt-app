@@ -53,7 +53,7 @@ const locatorHasClass = async (locator, className) =>
 const locatorHasDescendant = async (locator, selector) =>
   locator.evaluate((element, token) => Boolean(element.querySelector(token)), selector);
 
-test("scenario flyout selected card renders history-style recorded action previews", async ({ browser }) => {
+test("scenario flyout selected card renders history-style recorded action previews", async ({ browser }, info) => {
   const { context, page } = await createIsolatedPage(browser);
 
   try {
@@ -84,6 +84,9 @@ test("scenario flyout selected card renders history-style recorded action previe
     await expect
       .poll(() => locatorHasDescendant(cellLocator(previewRoot, projectAction.to), ".preview-created"))
       .toBe(true);
+    const imagePath = info.outputPath("scenario-recorded-preview.png");
+    await page.screenshot({ path: imagePath, fullPage: true });
+    await info.attach("Scenario recorded preview", { path: imagePath, contentType: "image/png" });
   } finally {
     await closeContextQuietly(context);
   }
