@@ -39,7 +39,7 @@ for(const completed of [false,true])test(`self-play Undo is direct while its rec
  await info.attach('direct-undo-command',{body:JSON.stringify({commandId:proof.command.clientCommandId,submissions:proof.sent.length,completed}),contentType:'application/json'});
 });
 
-test('another human still must approve Undo',async({page,otherPlayer,baseURL})=>{
+test('another human still must approve Undo',async({page,otherPlayer,baseURL},info)=>{
  await page.setViewportSize({width:390,height:844});const {gameId,gameHash}=await createGameFromHome(page);
  await openDirectGameLink(otherPlayer,baseURL,gameHash);await requestPlayerJoin(otherPlayer);await acceptPendingRequest(page);
  const initial=await readUndoGame(page,gameId,true);await submitPlayableAction(page,initial.legalActions.find(action=>action.from&&action.to));await expect.poll(async()=>(await readUndoGame(page,gameId,true)).moves.filter(move=>!move.undone).length).toBe(1);
@@ -47,6 +47,14 @@ test('another human still must approve Undo',async({page,otherPlayer,baseURL})=>
  await switchGamePanel(page,'history');const row=page.locator(`[data-testid="history-move-item"][data-move-id="${move.moveId}"]`);await selectRecordedUndoMove(row,move);await row.getByRole('button',{name:'Undo before this move',exact:true}).click();
  await expect(page.locator('[data-action="rescind-revert-request"]')).toBeVisible();await expect(otherPlayer.locator('[data-action="accept-revert-request"]')).toBeVisible();
  const waiting=await readUndoGame(page,gameId,true);expect(waiting.board.state).toEqual(before.board.state);expect(waiting.moves.filter(item=>!item.undone)).toHaveLength(1);expect(waiting.pendingRevertRequest.targetMoveId).toBe(move.moveId);
- await otherPlayer.locator('[data-action="accept-revert-request"]').click();await expect.poll(async()=>(await readUndoGame(page,gameId,true)).moves.filter(item=>!item.undone).length).toBe(0);
+ await otherPlayer.locator('[data-action="accept-revert-request"]').click();
+ const outcome=page.locator('#shell-game-alerts [data-paper-kind="undo-outcome"] .shell-game-alert');
+ await expect(outcome).toHaveText('Undo request accepted');
+ await expect.poll(()=>outcome.evaluate(node=>({inlineAnimationName:node.style.animationName,facePosition:getComputedStyle(node.querySelector('.notice-paper-face')).position}))).toEqual({inlineAnimationName:'none',facePosition:'absolute'});
+ const paperProof=await outcome.evaluate(node=>({text:node.textContent.trim(),kind:node.closest('[data-paper-kind]').dataset.paperKind,inlineAnimationName:node.style.animationName,facePosition:getComputedStyle(node.querySelector('.notice-paper-face')).position,rect:node.getBoundingClientRect().toJSON()}));
+ expect(paperProof.rect.width).toBeGreaterThan(0);expect(paperProof.rect.height).toBeGreaterThan(0);
+ const {writeFile}=await import('node:fs/promises');const proofPath=info.outputPath('actual-app-undo-paper.json');await writeFile(proofPath,JSON.stringify({gameId,moveId:move.moveId,...paperProof},null,2));await info.attach('actual-app-undo-paper',{path:proofPath,contentType:'application/json'});
+ await page.screenshot({path:info.outputPath('actual-app-undo-paper.png')});
+ await expect.poll(async()=>(await readUndoGame(page,gameId,true)).moves.filter(item=>!item.undone).length).toBe(0);
  await expect(page.locator('[data-action="rescind-revert-request"]')).toHaveCount(0);
 });

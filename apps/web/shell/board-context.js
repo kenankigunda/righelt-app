@@ -39,6 +39,7 @@ export function renderBoardContext(context,{replayEnabled=false}={}) {
  const body={...context.message};delete body.action;delete body.actions;delete body.context;
  const key=escape(context.key);
  return `<section class="shell-game-alert alert board-context-notice" data-board-context="${key}" aria-label="${context.mandatory?'Required Board guidance':'Board context'}" aria-live="off">
+  <span class="notice-paper-face" hidden aria-hidden="true"></span><span class="notice-paper-curl" hidden aria-hidden="true"></span>
   <div class="board-context-body" role="region" aria-label="${context.mandatory?'Required piece coordinates':'Board explanation'}" tabindex="0"><div class="board-context-content">${renderBoardMessageHtml(body)}</div></div>
   <span class="board-context-scroll-cue" aria-hidden="true">More ↓</span>
   ${context.replay?`<div class="board-context-actions"><button type="button" class="secondary board-context-replay" data-action="replay-board-context" data-board-context-key="${key}"${replayEnabled?'':' disabled'}>Show me again</button></div>`:''}

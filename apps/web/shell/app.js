@@ -11,10 +11,12 @@ import {
 } from './home-section-reads.js';
 import {createHistoryRendering} from './history-rendering.js';
 import * as undoHistory from './history-undo-groups.js';
+import {createGameAlertItems,renderGameAlertStackCard as renderAlertStackCard,createNotificationPatchLifecycle} from './game-alert-presentation.js';
 import {presentPlaybackBoardMessage,playbackTurnIndicator,publishAcknowledgedBoardMessage,contextReplayAvailable,refreshFollowControls} from './playback-presentation.js';
 import {isLiveBoardVisible} from './live-board-visibility.js';
 import {mountDecisionNoteEditor} from './decision-note-editor.js';
 import {renderResultPanel} from './result-panel.js';
+import {createNotificationPaper} from './notification-paper.js';
 import {selectedHistoryPresentation,recordedHistoryView,historyBoardMessage} from './history-narration.js';
 import {recordedMoveNumber,visibleRecordedMoves,recordedActorSide} from './recorded-narration.js';
 import {renderBoardMessageHtml} from '../board/message-presentation.js';
@@ -110,7 +112,7 @@ import { recoveryMessage, needsRecoveryAction, sharedMutationActions, isBoardRec
 import { createForegroundRecoveryWait } from './foreground-recovery.js';
 import { renderGameAlertCard } from "./game-alert.js";
 import { createNotificationStack, recoveryActivity } from "./notification-state.js";
-import { patchNotificationTree, patchNotificationHtml, replaceMainPreservingHeader } from "./notification-dom.js";
+import {replaceMainPreservingHeader} from "./notification-dom.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEngineBoardAdapter, createInitialBoardSnapshot, listBoardLegalActions } from "../board-adapters/engine-board-adapter.js";
 import { createMiniBoardPreview, syncMiniBoardPreviews } from "../board/mini-board-preview.js";
@@ -392,15 +394,22 @@ const accountDialog = createAccountDialog({ controller: account, onSound:kind=>g
   onLayoutChange: () => render({animatePanels:false,includeBoard:false}),
 });
 const gameSound = createGameSound({ storage, getIdentityId:()=>transport.getIdentityId() });
+const notificationPaper=createNotificationPaper({document,sound:gameSound,
+  scope:()=>`${account.snapshot().generation}:${currentRoute.name}:${getCurrentViewedGameId()??''}`});
+const notificationPatches=createNotificationPatchLifecycle(notificationPaper);
+const patchNotificationTree=(current,next)=>notificationPatches.patchTree(current,next);
+const patchNotificationHtml=(current,html)=>notificationPatches.patchHtml(current,html);
 const brand = createBrandController();
 createBrandGrid();
-document.addEventListener('pointerdown',()=>{gameSound.gesture();gameSound.cancelPreview();},{passive:true});
-document.addEventListener('keydown',()=>gameSound.gesture());
-document.addEventListener('visibilitychange',()=>gameSound.activityChanged());
+document.addEventListener('pointerdown',event=>{gameSound.gesture();gameSound.preparePaper(event);gameSound.cancelPreview();},{passive:true});
+document.addEventListener('keydown',event=>{gameSound.gesture();gameSound.preparePaper(event);});
+document.addEventListener('visibilitychange',()=>{gameSound.activityChanged();if(document.hidden)notificationPaper.cancel();});
+window.addEventListener('pagehide',()=>{notificationPaper.retire();gameSound.disposePaper();});
+window.addEventListener('hashchange',()=>notificationPaper.retire());
 const syncPageActivity = () => { document.documentElement.dataset.pageActive=String(!document.hidden && document.hasFocus()); };
 syncPageActivity();
 document.addEventListener('visibilitychange',syncPageActivity);
-window.addEventListener('blur',()=>{document.documentElement.dataset.pageActive='false';gameSound.activityChanged();});
+window.addEventListener('blur',()=>{document.documentElement.dataset.pageActive='false';gameSound.activityChanged();notificationPaper.cancel();});
 window.addEventListener('focus',()=>{syncPageActivity();gameSound.activityChanged();});
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 let tutorialSavingError = null;
@@ -1674,70 +1683,7 @@ const getFailedOperationsKey = (gameId) =>
     .map((operation) => `${operation.id}:${operation.status}`)
     .join("|");
 
-const getGameAlertItems = (game) => {
-  const failedOperations = transport.getFailedOperations?.(game.id) ?? [];
-  maybeUpdateUndoRequestOutcomeFeedback(game);
-
-  const items = failedOperations.map((operation) => ({
-    key: `failed:${operation.id}`, priority: "urgent",
-    html: renderGameAlertCard({
-      tone: "danger",
-      body: escapeHtml(operation.error?.message || "The operation could not be completed."),
-      action: `<button class="secondary mini-button" data-action="dismiss-failed-operation" data-operation-id="${escapeHtml(operation.id)}">${icon('close')}Dismiss</button>`,
-      testId: "sync-failure-banner", incidentId: (issueDiagnostics.list().find(r => r.key === `operation:${operation.id}`)?.id ?? issueDiagnostics.capture(`operation:${operation.id}`, { operation: operation.kind ?? "game_operation", code: operation.error?.code, gameId: game.id, stage: "operation_failed" })),
-    }),
-  }));
-
-  const message = presentedRecoveryMessage(game);
-  const recoveryNeedsAction = needsRecoveryAction(game, Date.now(), recoveryPresentationOptions(game));
-  for (const report of issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.key.startsWith("operation:"))) if (!failedOperations.some(op => `operation:${op.id}` === report.key)) issueDiagnostics.resolve(report.key);
-  const retained = issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.resolvedAt && isDiagnosticOpen(r.id));
-  for (const report of retained) items.push({ key: `resolved:${report.id}`, html: renderGameAlertCard({ body: "Resolved", incidentId: report.id, action: `<button class="secondary mini-button" data-action="dismiss-diagnostic" data-incident-id="${report.id}">${icon('close')}Dismiss</button>` }) });
-  if (!message) dismissedRecoveryNotices.delete(game.id);
-  const dismissed = dismissedRecoveryNotices.get(game.id) === message;
-  if (message && (!dismissed || game.storageBlocked)) {
-    items.unshift({
-      key: `live-sync:${game.id}:${game.recoveryEpisodeId ?? "current"}`, priority: recoveryNeedsAction ? "urgent" : "normal",
-      html: renderGameAlertCard({ tone: recoveryNeedsAction ? "warn" : "neutral", activity: recoveryActivity(game), actorSide: activityActorSide(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: recoveryNeedsAction ? game.incidentId : null,
-        action: !recoveryNeedsAction ? "" : game.storageBlocked
-          ? `<button class="secondary mini-button" data-action="retry-saving" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Retry saving</button>${dismissed ? "" : `<button class="secondary mini-button" data-action="dismiss-recovery-notice" data-game-id="${escapeHtml(game.id)}">${icon('close')}Dismiss</button>`}`
-          : game.upgradeRequired ? `<button class="secondary mini-button" data-action="refresh-game">${icon('rematch')}Reload game</button><a class="secondary mini-button button-link" href="#/">${icon('home')}Home</a>`
-          : ["session_changed", "invalid_credentials"].includes(game.recoveryIssue) ? `<button class="secondary mini-button" data-action="account-open">${icon('account')}Sign in</button>`
-          : `<button class="secondary mini-button" data-action="reconnect-safely" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Reload game</button><a class="secondary mini-button button-link" href="#/">${icon('home')}Home</a>`,
-      }),
-    });
-  }
-  if (game.historyNotice) items.push({ key: `history-change:${game.id}`, html: renderGameAlertCard({ body: escapeHtml(game.historyNotice) }) });
-
-  const playbackWait=playbackRecoveryWait.update({scope:`${viewingScope()}:${game.id}`,active:liveBoardVisible(),blocked:Boolean(game.confirmedPlayback?.retrying)});
-  if(playbackWait>=SYNC_TIMING.reconnectAlertMs)items.push({key:`confirmed-playback-recovery:${game.id}`,priority:playbackWait>=SYNC_TIMING.confirmationBudgetMs?'urgent':'normal',html:renderGameAlertCard({
-    body:playbackWait>=SYNC_TIMING.confirmationBudgetMs?'Still loading the move. Retrying in the background.':'Loading the move.',
-    testId:'confirmed-playback-recovery',action:playbackWait>=SYNC_TIMING.confirmationBudgetMs?`<button class="secondary mini-button" data-action="retry-confirmed-playback" ${game.confirmedPlayback.canRetry?'':'disabled'}>Retry</button>`:''})});
-  const computerNotice=renderComputerProgress(game,computerSession?.snapshot());
-  if(computerNotice) items.push({key:`computer:${game.id}`,priority:computerSession?.snapshot().phase==='recovery'?'urgent':'normal',html:computerNotice});
-  const approval = getActiveRevertRequest(game), waiting = getActivePendingRevertRequest(game);
-  const request = approval ?? waiting;
-  if (request) {
-    const move = game.moves?.find(entry => entry.moveId === request.targetMoveId);
-    const attrs = `data-game-id="${escapeHtml(game.id)}" data-request-id="${escapeHtml(request.requestId)}"`;
-    items.push({key:`undo-request:${request.requestId}`, priority:items.some(item=>item.priority==='urgent')?'normal':'urgent', html:renderGameAlertCard({activity:'waiting', actorSide:undoApprovalActorSide(game,request), testId:approval?'undo-approval-notice':'undo-waiting-notice',
-      body:approval ? `Undo requested before ${escapeHtml(move?.notation ?? 'this move')}` : 'Waiting for undo approval',
-      action:approval ? `<button data-action="accept-revert-request" ${attrs}>${icon('check')}Accept</button><button class="secondary" data-action="reject-revert-request" ${attrs}>${icon('close')}Reject</button>` : `<button class="secondary" data-action="rescind-revert-request" ${attrs}>${icon('close')}Cancel request</button>`})});
-  }
-
-  if (undoRequestFeedback && undoRequestFeedbackGameId === game.id) {
-    items.push({
-      key: `undo:${game.id}`,
-      html: renderGameAlertCard({
-        body: escapeHtml(undoRequestFeedback),
-      }),
-    });
-  }
-
-  boardContextScope();
-  for(const context of boardContexts.items(game.id))items.push({key:`board-context:${context.key}`,priority:'normal',html:renderBoardContext(context,{replayEnabled:contextReplayEnabled(context.replay)})});
-  return items;
-};
+const getGameAlertItems = createGameAlertItems(()=>({transport,maybeUpdateUndoRequestOutcomeFeedback,presentedRecoveryMessage,needsRecoveryAction,recoveryPresentationOptions,issueDiagnostics,isDiagnosticOpen,dismissedRecoveryNotices,escapeHtml,recoveryActivity,activityActorSide,playbackRecoveryWait,viewingScope,liveBoardVisible,SYNC_TIMING,renderComputerProgress,computerSession,getActiveRevertRequest,getActivePendingRevertRequest,undoApprovalActorSide,undoRequestFeedback,undoRequestFeedbackGameId,boardContextScope,boardContexts,contextReplayEnabled}));
 
 const focusCurrentAlertStackCard = (gameId) => {
   if (!gameId) {
@@ -1774,29 +1720,7 @@ const cycleGameAlertStack = (gameId, actionEl = null) => {
   refreshMountedAlertHeader(gameId, actionEl);
 };
 
-const renderGameAlertStackCard = ({ gameId, item, stackIndex, totalAlerts }) => {
-  const isActive = stackIndex === 0;
-  const interactive = totalAlerts > 1 && stackIndex === 0;
-  const ariaLabel = interactive
-    ? `Show next notification. ${stackIndex + 1} of ${totalAlerts} is active.`
-    : `Notification ${stackIndex + 1} of ${totalAlerts}.`;
-  return `<div
-      class="shell-game-alert-stack-card${isActive ? " is-active" : ""}${interactive ? " is-interactive" : ""}"
-      data-alert-stack-card
-      data-key="${escapeHtml(item.key)}"
-      data-notification-id="${escapeHtml(item.key)}"
-      data-stack-index="${stackIndex}"
-      data-stack-count="${totalAlerts}"
-      ${interactive
-        ? `data-action="cycle-game-alert-stack" data-game-id="${escapeHtml(gameId)}" tabindex="0"`
-        : isActive
-          ? 'tabindex="-1"'
-          : 'aria-hidden="true" tabindex="-1" inert'}
-      aria-label="${escapeHtml(ariaLabel)}"
-    >
-      ${item.html}
-    </div>`;
-};
+const renderGameAlertStackCard = options => renderAlertStackCard(options,escapeHtml);
 
 const historyRendering = createHistoryRendering(() => ({getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, undoHistory, expandedUndoneGroups, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView}));
 const renderHistoryPreview = (game, preview, key) => historyRendering.renderHistoryPreview(game, preview, key);
@@ -2820,6 +2744,7 @@ const shouldPatchMountedFlyouts = (routeKey = getRouteRenderKey(), baseRouteKey 
   appEl.querySelector(".shell-main-content") instanceof HTMLElement &&
   getMountedShellPageEl() instanceof HTMLElement;
 const syncRenderedMarkupSnapshot = () => {
+  notificationPaper.sync();
   syncRecoverySpace(appEl);
   boardContextLayout.sync();
   const mainContentEl = appEl?.querySelector?.(".shell-main-content");
@@ -3753,13 +3678,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   const didPatchContent=nextMarkup !== lastRenderedMarkup;
   const preserveHomeReadingPosition=currentRoute.name === 'home' && Boolean(homeFocusToRestore);
   if(preserveHomeReadingPosition)homeFocusToRestore=refreshHomeFocus(appEl,homeFocusToRestore,document);
-  if (nextMarkup !== lastRenderedMarkup) {
-    if (currentRoute.name !== "home" || !patchHomeAroundCreateControl(nextMarkup)) {
-      const currentMain=appEl.querySelector('.shell-main-content');
-      const nextMain=createMarkupRoot(nextMarkup)?.querySelector('.shell-main-content');
-      if(currentMain && nextMain){if(!replaceMainPreservingHeader(currentMain,nextMain))currentMain.replaceWith(nextMain);updateMountedFlyouts();}
-      else appEl.innerHTML = nextMarkup;
-    }
+  if (notificationPatches.patchMainMarkup({appEl,nextMarkup,lastRenderedMarkup,routeName:currentRoute.name,patchHomeAroundCreateControl,createMarkupRoot,updateMountedFlyouts})) {
     restoreScenarioDraftFocus?.();
     if(hostInvite && !hostInvite.focused){document.querySelector('[data-host-invite] [data-action="share-invite"]')?.focus({preventScroll:true});hostInvite.focused=true;}
     if (restoreInviteFocus && hostInvite?.focusTarget) {
@@ -4450,7 +4369,7 @@ accountInitialized = true;
 function resetAccountTransport(next) {
   historyHeadingFocus.retire();
   boardContextOwner.retire();
-  playbackRecoveryWait.reset();confirmedPlayback?.reset();confirmedFramePresenter?.destroy();gameSound.resetUpdates();
+  playbackRecoveryWait.reset();confirmedPlayback?.reset();confirmedFramePresenter?.destroy();gameSound.resetUpdates();notificationPaper.retire();
   forcedFollowSession?.cancel();
   inviteLoadState = null;
   if (currentRoute.name === "invite") resolvedInvite = null;
@@ -4882,7 +4801,7 @@ appEl.addEventListener("click", async (event) => {
   if(action==='share-invite'){await withPendingButton(getCopyInviteButtonKey(actionEl.dataset.gameId),()=>copyGameInvitation(actionEl.dataset.gameId,actionEl.dataset.inviteRole,true));return;}
   if (action === 'guest-profile') { void inlineProfiles.open(null,actionEl);return; }
   if(action==='retry-confirmed-playback'){confirmedPlayback?.retry();return;}
-  if (action === 'toggle-sound') { const enabled=gameSound.toggle();actionEl.innerHTML=icon(enabled?'sound':'muted');actionEl.setAttribute('aria-label',enabled?'Mute sound':'Enable sound');actionEl.setAttribute('aria-pressed',String(enabled));actionEl.title=`Sound ${enabled?'on':'off'}`;return; }
+  if (action === 'toggle-sound') { const enabled=gameSound.toggle();gameSound.preparePaper(event);actionEl.innerHTML=icon(enabled?'sound':'muted');actionEl.setAttribute('aria-label',enabled?'Mute sound':'Enable sound');actionEl.setAttribute('aria-pressed',String(enabled));actionEl.title=`Sound ${enabled?'on':'off'}`;return; }
   if (action === 'opponent-story') {
     // Initial session adoption retires dialogs. Open only after it settles.
     if (!await waitForAccountGate()) return;
