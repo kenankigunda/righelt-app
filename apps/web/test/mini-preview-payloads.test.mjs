@@ -1,24 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
 import { syncMiniBoardPreviews } from "../board/mini-board-preview.js";
 import { renderBoardMessageHtml } from "../board/message-presentation.js";
-
-// Exercise the real shell boundary without booting its network/board runtime.
-// The optional import also lets this exact test run on the pre-fix shell.
-const helperUrl = new URL("../shell/mini-preview-payloads.js", import.meta.url);
-const helpers = existsSync(helperUrl) ? await import(helperUrl.href) : {};
-const shellSource = readFileSync(new URL("../shell/app.js", import.meta.url), "utf8");
-const shellFunction = (name) => {
-  const start = shellSource.indexOf(`const ${name} = `);
-  assert.ok(start >= 0, `actual shell function ${name} exists`);
-  const end = shellSource.indexOf("\n};", start);
-  assert.ok(end > start, `actual shell function ${name} ends`);
-  return shellSource.slice(start, end + 3);
-};
-const historyRendererStart = shellSource.indexOf("const renderHistoryPreview = ");
-assert.ok(historyRendererStart >= 0);
-const historyRenderer = shellSource.slice(historyRendererStart, shellSource.indexOf(";\n", historyRendererStart) + 1);
+import { collectMountedMiniPreviewPayloads, createMiniPreviewRendering } from "../shell/mini-preview-payloads.js";
+import { createHomeCardRendering } from "../shell/home-card-rendering.js";
+import { createHistoryRendering } from "../shell/history-rendering.js";
+import { createRenderGestureGate } from "../shell/render-gesture.js";
 
 class Element {
   children = [];
@@ -48,38 +35,40 @@ const withShell = (run) => {
     const registry = new Map();
     const appEl = new Element();
     const events = [];
-    const boundary = new Function(
-      "appEl", "renderedMiniBoardPreviewPayloads", "miniBoardPreviewRegistry",
-      "syncMiniBoardPreviews", "createEngineBoardAdapter", "assertGameBoardAdapter",
-      "escapeHtml", "collectMountedMiniPreviewPayloads",
-      "getStaticCardPreviewPayload", "toStableKey", "getShellLayoutMode", "renderBoardMessageHtml", "selectedHistoryPresentation",
-      ["registerMiniBoardPreview", "renderMiniBoardPreviewRoot", "reconcileMiniBoardPreviews", "renderStaticMiniBoardCard"]
-        .map(shellFunction).join("\n") + "\n" + historyRenderer
-        + "\nreturn { renderMiniBoardPreviewRoot, reconcileMiniBoardPreviews, renderStaticMiniBoardCard, renderHistoryPreview };",
-    )(appEl, payloads, registry, syncMiniBoardPreviews, () => ({
-      mount(options) { events.push({ type: "mount", options }); },
-      render(options) { events.push({ type: "render", options }); },
-      unmount() { events.push({ type: "unmount" }); },
-    }), () => {}, (value) => String(value), helpers.collectMountedMiniPreviewPayloads,
-    () => { throw new Error("test cards must supply retained previewPayload"); }, JSON.stringify, () => "narrow", renderBoardMessageHtml, () => null);
+    const rendering = createMiniPreviewRendering({ payloads, escapeHtml: String });
+    const reconcile = () => syncMiniBoardPreviews({
+      previews: collectMountedMiniPreviewPayloads({ appEl, payloads }), registry,
+      createAdapter: () => ({
+        mount(options) { events.push({ type: "mount", options }); },
+        render(options) { events.push({ type: "render", options }); },
+        unmount() { events.push({ type: "unmount" }); },
+      }),
+    });
+    const home = createHomeCardRendering({ toStableKey: JSON.stringify, escapeHtml: String,
+      renderMiniBoardPreviewRoot: rendering.renderMiniBoardPreviewRoot });
+    const history = createHistoryRendering(() => ({ getShellLayoutMode: () => "narrow",
+      renderBoardMessageHtml, selectedHistoryPresentation: () => null,
+      renderMiniBoardPreviewRoot: rendering.renderMiniBoardPreviewRoot, toStableKey: JSON.stringify }));
     const rootFromMarkup = (markup) => {
       const root = new Element();
       root.setAttribute("data-mini-board-preview", "");
       root.setAttribute("data-preview-id", markup.match(/data-preview-id="([^"]+)"/)[1]);
       return root;
     };
-    const render = (previewId, payload = {}) => rootFromMarkup(boundary.renderMiniBoardPreviewRoot({ previewId, ...payload }));
+    const render = (previewId, payload = {}) => rootFromMarkup(rendering.renderMiniBoardPreviewRoot({ previewId, ...payload }));
     const renderModel = (kind, model) => rootFromMarkup(kind === "card"
-      ? boundary.renderStaticMiniBoardCard({ card: model, statusText: "In progress" })
-      : boundary.renderHistoryPreview(model, model.preview, kind));
-    const renderOwner = (renderContent, renderGesture) => new Function('renderContent','renderGesture','appEl',`
-      const historyHeadingFocus={capture(){},restore(){}},currentRoute={name:'home'},utilityMemory={capture(){},restore(){}},inlineProfiles={sync(){}},joinFeedback={restoreFocus(){}},pendingInvitationFocus={restore(){}};
-      const recoveryPresentationOptions=()=>{},syncDestinationNotice=()=>{},getCurrentViewedGameId=()=>null,preserveBoardFocus=(_options,commit)=>commit(),syncMountedGameShellPanelUi=()=>{},syncRenderedMarkupSnapshot=()=>{},getGamePanel=()=>null,isButtonPending=()=>false,resumeBoardContextReplay=()=>{};
-      const pendingResultReviewFocus=null,destinationRestoreFocus=false,document={activeElement:null};
-      ${shellFunction('render')}
+      ? home.renderStaticMiniBoardCard({ card: model, statusText: "In progress" })
+      : history.renderHistoryPreview(model, model.preview, kind));
+    const renderOwner = (renderContent, options = {}) => {
+      const scheduled = [];
+      const gate = createRenderGestureGate({ render: () => renderContent(),
+        schedule: callback => { scheduled.push(callback); return callback; }, cancel: () => {} });
+      if (options.held) gate.begin();
+      const render = () => { if (!gate.defer({ includeBoard: false })) renderContent(); };
+      render.release = () => { gate.end(); for (const callback of scheduled.splice(0)) callback(); };
       return render;
-    `)(renderContent,renderGesture,appEl);
-    run({ payloads, registry, appEl, events, render, renderModel, renderOwner, reconcile: boundary.reconcileMiniBoardPreviews });
+    };
+    run({ payloads, registry, appEl, events, render, renderModel, renderOwner, reconcile });
   } finally {
     globalThis.document = oldDocument;
     globalThis.HTMLElement = oldHTMLElement;
@@ -221,29 +210,29 @@ for (const kind of ["card", "live-history", "archived-history"]) {
 }
 
 
-// Current outer app render gate plus current Home-card registration and real
-// preview registry. Browser sinks are controlled; acknowledged model identities
-// remain actual input references. These source controls have not yet run.
-test("actual deferred Home render preserves mounted frame until acknowledged same-ID publication",()=>withShell(h=>{
+// Compose actual production render gate, Home/History renderers, registration,
+// collector and registry. The DOM/adapter are external controlled sinks. Native
+// app wiring is independently covered by the Home held-input acceptance journey.
+test("deferred Home publication preserves mounted frame until acknowledged same-ID publication",()=>withShell(h=>{
   const oldSnapshot=Object.freeze({sideToMove:'P1',pieces:Object.freeze([])});
   const nextSnapshot=Object.freeze({sideToMove:'P2',pieces:Object.freeze([])});
   const card=snapshot=>Object.freeze({id:'same-card',previewPayload:Object.freeze({...preview,snapshot})});
   const first=card(oldSnapshot),next=card(nextSnapshot),root=h.renderModel('card',first);
   h.appEl.appendChild(root);h.reconcile();const original=h.payloads.get('home:same-card');
-  let held=true,commits=0;
-  const render=h.renderOwner(()=>{commits++;h.renderModel('card',next);h.reconcile();},{defer:()=>held});
+  let commits=0;
+  const render=h.renderOwner(()=>{commits++;h.renderModel('card',next);h.reconcile();},{held:true});
   render();assert.equal(commits,0);assert.equal(h.payloads.get('home:same-card'),original);assert.equal(original.snapshot,oldSnapshot);
-  held=false;render();assert.equal(commits,1);assert.equal(h.appEl.children[0],root);
+  render.release();assert.equal(commits,1);assert.equal(h.appEl.children[0],root);
   assert.equal(h.payloads.get('home:same-card').snapshot,nextSnapshot);
   assert.equal(h.events.filter(x=>x.type==='render').at(-1).options.snapshot,nextSnapshot);
   assert.equal(oldSnapshot.sideToMove,'P1');assert.equal(nextSnapshot.sideToMove,'P2');
 }));
-test("actual acknowledged equivalent same-ID model may replace references without duplicate adapter rendering",()=>withShell(h=>{
+test("acknowledged equivalent same-ID model may replace references without duplicate adapter rendering",()=>withShell(h=>{
   const first=Object.freeze({id:'same-card',previewPayload:preview});const root=h.renderModel('card',first);h.appEl.appendChild(root);h.reconcile();
   const count=h.events.filter(x=>x.type==='render').length;
   const equivalentSnapshot=Object.freeze({sideToMove:'P1',pieces:Object.freeze([])});
   const next=Object.freeze({id:'same-card',previewPayload:Object.freeze({...preview,snapshot:equivalentSnapshot})});
-  const render=h.renderOwner(()=>{h.renderModel('card',next);h.reconcile();},{defer:()=>false});render();
+  const render=h.renderOwner(()=>{h.renderModel('card',next);h.reconcile();},{});render();
   assert.equal(h.appEl.children[0],root);assert.equal(h.payloads.get('home:same-card').snapshot,equivalentSnapshot);
   assert.equal(h.events.filter(x=>x.type==='render').length,count);
 }));

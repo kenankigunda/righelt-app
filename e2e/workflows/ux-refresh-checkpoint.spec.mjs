@@ -501,12 +501,13 @@ test('commander windows mask paths and center dots in real and ghost states',asy
  await expect(page.locator('#shell-board .commander.move-ghost').first()).toBeVisible();
  await expect.poll(()=>page.locator('#shell-board .cell').evaluateAll(cells=>cells.flatMap(el=>el.getAnimations()).filter(a=>a.playState==='running').length)).toBe(0);
  const states=await page.evaluate(()=>[...document.querySelectorAll('#shell-board .commander')].map(token=>{
-  const cutout=token.querySelector('.commander-cutout'),cell=token.closest('.cell');
+  const cutout=token.querySelector('.commander-cutout'),floor=token.querySelector('.commander-floor'),cell=token.closest('.cell');
   const ctx=document.createElement('canvas').getContext('2d');
   const rgba=color=>{ctx.clearRect(0,0,1,1);ctx.fillStyle=color;ctx.fillRect(0,0,1,1);return [...ctx.getImageData(0,0,1,1).data];};
-  return {fill:rgba(getComputedStyle(cutout).fill),background:rgba(getComputedStyle(cell).backgroundColor),opacity:getComputedStyle(token).opacity,cutoutOpacity:getComputedStyle(cutout).opacity};
+  const paint=node=>{const c=getComputedStyle(node);return {color:c.backgroundColor,image:c.backgroundImage,size:c.backgroundSize};};
+  return {fill:rgba(getComputedStyle(cutout).fill),background:rgba(getComputedStyle(cell).backgroundColor),cellPaint:paint(cell),floorPaint:floor?paint(floor):null,floorClip:floor?getComputedStyle(floor).clipPath:null,opacity:getComputedStyle(token).opacity,cutoutOpacity:getComputedStyle(cutout).opacity};
  }));
- expect(states.length).toBeGreaterThan(1);for(const state of states){expect(state.fill).toEqual(state.background);expect(state.opacity).toBe('1');expect(state.cutoutOpacity).toBe('1');}
+ expect(states.length).toBeGreaterThan(1);for(const state of states){expect(state.fill[3]).toBe(0);expect(state.background[3]).toBe(255);expect(state.floorPaint).toEqual(state.cellPaint);expect(state.floorClip).not.toBe('none');expect(state.opacity).toBe('1');expect(state.cutoutOpacity).toBe('1');}
  await page.screenshot({path:test.info().outputPath('commander-masked-window.png')});
 });
 

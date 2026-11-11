@@ -1,6 +1,7 @@
-// Authored source only. Native paint/pixel equivalence remains unverified.
+// Actual native paint and geometry under the complete application CSS cascade.
 import {test,expect} from '@playwright/test';
 import {readFileSync} from 'node:fs';
+import {writeFile} from 'node:fs/promises';
 const state=JSON.parse(readFileSync('apps/web/scenarios/catalog.json','utf8')).scenarios.find(s=>s.id==='bc6fb68f-7b20-4be5-a717-086ff15ec15f').initialState;
 
 test('real non-target rush commander shares the quiet cell floor under the actual full CSS cascade',async({page},info)=>{
@@ -19,8 +20,12 @@ test('real non-target rush commander shares the quiet cell floor under the actua
   const cell=node.closest('.cell'),token=node.closest('.piece-token'),svg=token.querySelector('svg'),paint=el=>{const c=getComputedStyle(el);return{color:c.backgroundColor,image:c.backgroundImage,size:c.backgroundSize,origin:c.backgroundOrigin};};
   return{cell:paint(cell),floor:paint(node),quiet:getComputedStyle(cell).getPropertyValue('--surface-hover-quiet').trim(),path:svg.querySelector('.piece-body').getAttribute('d'),viewBox:svg.getAttribute('viewBox'),tokenWidth:token.getBoundingClientRect().width,clip:getComputedStyle(node).clipPath,cells:document.querySelectorAll('#board > .cell').length,applied:window.boardFixture.applied().length,styles:[...document.styleSheets].map(sheet=>sheet.href)};
  });
- await info.attach('Actual quiet cell and commander floor',{body:JSON.stringify(sample,null,2),contentType:'application/json'});
+ const metricsPath=info.outputPath('quiet-commander-floor-metrics.json');
+ await writeFile(metricsPath,JSON.stringify(sample,null,2),{mode:0o600});
+ await info.attach('Actual quiet cell and commander floor',{path:metricsPath,contentType:'application/json'});
  expect(sample.floor).toEqual(sample.cell);expect(sample.cell.image).toMatch(/^linear-gradient\(/);expect(sample.cell.image).not.toContain('url(');expect(sample.cell.color).toMatch(/^rgb\(/);
  expect(sample.quiet).toBe('rgb(37 43 45 / 6%)');expect(sample.path).toBe('M3 7L8 2H16L21 7V17L24 20V24H0V20L3 17Z M6 11H18V16H6Z');expect(sample.viewBox).toBe('0 0 24 24');expect(sample.tokenWidth).toBe(20);expect(sample.clip).not.toBe('none');expect(sample.cells).toBe(100);expect(sample.applied).toBe(0);
- await page.screenshot({path:info.outputPath('quiet-rush-commander-floor.png')});
+ const screenshotPath=info.outputPath('quiet-rush-commander-floor.png');
+ await page.screenshot({path:screenshotPath});
+ await info.attach('quiet rush commander floor',{path:screenshotPath,contentType:'image/png'});
 });

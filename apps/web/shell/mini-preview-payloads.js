@@ -18,3 +18,70 @@ export const collectMountedMiniPreviewPayloads = ({ appEl, payloads }) => {
   }
   return previews;
 };
+
+// Rendering registers fresh acknowledged preview references; mounted DOM alone
+// determines which registrations survive reconciliation.
+export const createMiniPreviewRendering = ({ payloads, escapeHtml }) => {
+const registerMiniBoardPreview = ({
+  previewId,
+  snapshot,
+  selection = null,
+  overlay = { mode: "none" },
+  legalActions = [],
+  selectedPieceId = null,
+  selectedPieceMoves = [],
+  selectedPieceMovePreviews = [],
+  currentActionType = "pass",
+  selectedPieceOverlayPhase = "actionPreviews",
+  previewKey,
+  sizeVariant = "compact",
+}) => {
+  payloads.set(previewId, {
+    snapshot: snapshot ?? null,
+    selection: selection ?? null,
+    overlay,
+    legalActions,
+    selectedPieceId,
+    selectedPieceMoves,
+    selectedPieceMovePreviews,
+    currentActionType,
+    selectedPieceOverlayPhase,
+    previewKey,
+    sizeVariant,
+  });
+  return previewId;
+};
+
+const renderMiniBoardPreviewRoot = ({
+  previewId,
+  snapshot,
+  selection = null,
+  overlay = { mode: "none" },
+  legalActions = [],
+  selectedPieceId = null,
+  selectedPieceMoves = [],
+  selectedPieceMovePreviews = [],
+  currentActionType = "pass",
+  selectedPieceOverlayPhase = "actionPreviews",
+  previewKey,
+  sizeVariant = "compact",
+}) => {
+  const stablePreviewId = registerMiniBoardPreview({
+    previewId,
+    snapshot,
+    selection,
+    overlay,
+    legalActions,
+    selectedPieceId,
+    selectedPieceMoves,
+    selectedPieceMovePreviews,
+    currentActionType,
+    selectedPieceOverlayPhase,
+    previewKey,
+    sizeVariant,
+  });
+  return `<div class="mini-board-preview-surface" data-mini-board-preview data-preview-id="${escapeHtml(stablePreviewId)}"></div>`;
+};
+
+  return { renderMiniBoardPreviewRoot };
+};

@@ -128,7 +128,7 @@ import {replaceMainPreservingHeader} from "./notification-dom.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEngineBoardAdapter, createInitialBoardSnapshot, listBoardLegalActions } from "../board-adapters/engine-board-adapter.js";
 import { createMiniBoardPreview, syncMiniBoardPreviews } from "../board/mini-board-preview.js";
-import { collectMountedMiniPreviewPayloads } from "./mini-preview-payloads.js";
+import { collectMountedMiniPreviewPayloads, createMiniPreviewRendering } from "./mini-preview-payloads.js";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
@@ -667,66 +667,9 @@ const formatClientDateTime = (value) => {
   }).format(new Date(timestamp));
 };
 
-const registerMiniBoardPreview = ({
-  previewId,
-  snapshot,
-  selection = null,
-  overlay = { mode: "none" },
-  legalActions = [],
-  selectedPieceId = null,
-  selectedPieceMoves = [],
-  selectedPieceMovePreviews = [],
-  currentActionType = "pass",
-  selectedPieceOverlayPhase = "actionPreviews",
-  previewKey,
-  sizeVariant = "compact",
-}) => {
-  renderedMiniBoardPreviewPayloads.set(previewId, {
-    snapshot: snapshot ?? null,
-    selection: selection ?? null,
-    overlay,
-    legalActions,
-    selectedPieceId,
-    selectedPieceMoves,
-    selectedPieceMovePreviews,
-    currentActionType,
-    selectedPieceOverlayPhase,
-    previewKey,
-    sizeVariant,
-  });
-  return previewId;
-};
-
-const renderMiniBoardPreviewRoot = ({
-  previewId,
-  snapshot,
-  selection = null,
-  overlay = { mode: "none" },
-  legalActions = [],
-  selectedPieceId = null,
-  selectedPieceMoves = [],
-  selectedPieceMovePreviews = [],
-  currentActionType = "pass",
-  selectedPieceOverlayPhase = "actionPreviews",
-  previewKey,
-  sizeVariant = "compact",
-}) => {
-  const stablePreviewId = registerMiniBoardPreview({
-    previewId,
-    snapshot,
-    selection,
-    overlay,
-    legalActions,
-    selectedPieceId,
-    selectedPieceMoves,
-    selectedPieceMovePreviews,
-    currentActionType,
-    selectedPieceOverlayPhase,
-    previewKey,
-    sizeVariant,
-  });
-  return `<div class="mini-board-preview-surface" data-mini-board-preview data-preview-id="${escapeHtml(stablePreviewId)}"></div>`;
-};
+const { renderMiniBoardPreviewRoot } = createMiniPreviewRendering({
+  payloads: renderedMiniBoardPreviewPayloads, escapeHtml,
+});
 
 const formatOutcomeStatus = (outcome) => {
   if (typeof outcome === "string" && outcome.trim().length > 0) {

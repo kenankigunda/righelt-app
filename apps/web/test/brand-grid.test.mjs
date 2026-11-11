@@ -1,20 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
 import * as brand from '../shell/brand.js';
 
-// The selected canvas has no page-grid owner. Reintroducing its startup call
-// used to install subtree/scroll observers and animation work on every page.
-test('the removed page grid has no startup, paint or lifecycle owner',()=>{
- const source=readFileSync(new URL('../shell/brand.js',import.meta.url),'utf8');
- const app=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
- const css=readFileSync(new URL('../shell/refresh.css',import.meta.url),'utf8');
- assert.equal('createBrandGrid' in brand,false);
- assert.doesNotMatch(source,/MutationObserver|requestAnimationFrame|brand-background-grid/);
- assert.doesNotMatch(app,/createBrandGrid/);
- assert.doesNotMatch(css,/\.brand-grid|--grid-origin/);
- assert.doesNotMatch(readFileSync(new URL('../design-tokens.css',import.meta.url),'utf8'),/repeating-linear-gradient|brand-background-grid/,'failed refresh CSS cannot reveal an obsolete fallback page grid');
- assert.equal(typeof brand.createBrandController,'function','wordmark activity remains independently owned');
+// Native app wiring and complete CSS paint are exercised by brand-grid.spec.
+test('wordmark renders independently of a page-grid owner',()=>{
+ assert.equal(typeof brand.createBrandController,'function');
  assert.match(brand.renderWordmark(),/class="brand-motif"/);
 });
 

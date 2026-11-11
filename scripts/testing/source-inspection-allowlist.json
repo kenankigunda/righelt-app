@@ -1179,5 +1179,16 @@
       "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     }
   ],
-  "artifacts": []
+  "artifacts": [
+    {
+      "file": "apps/web/test/marble-foundation.test.mjs",
+      "kind": "generated",
+      "targets": [
+        "unresolved:new URL(`../../../${asset.target}`,import.meta.url)",
+        "unresolved:new URL(path,import.meta.url)"
+      ],
+      "reason": "Approved generated delivery artifacts must retain exact fourteen selected SHA256 hashes/byte counts and Friend R33 provenance. Static SVG/WebP bytes must remain bounded and exclude interactive/animated metadata. CSS and product JS are not read or asserted.",
+      "whyExecutionInsufficient": "Executing a renderer cannot establish which exact approved bytes were shipped, absence of embedded SVG scripts/external resources, or frozen encoded asset size/format metadata. Reads are confined to selected asset manifest and approved materials/delivery asset bytes."
+    }
+  ]
 }

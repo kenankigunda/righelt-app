@@ -3,16 +3,10 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {FRIEND_STORY} from '../shell/opponent-stories.js';
-const read=path=>readFileSync(new URL(path,import.meta.url),'utf8');
-
-test('the first document canvas and stylesheet fallbacks use the same quiet white base',()=>{
- const index=read('../index.html'),critical=index.match(/<style id="document-canvas">([^<]+)<\/style>/)?.[1];
- assert.ok(critical,'canvas is independent of optional texture readiness');
- assert.match(critical,/background:#f7f8f8/);assert.ok(index.indexOf('id="document-canvas"')<index.indexOf('rel="stylesheet"'));
- assert.match(read('../design-tokens.css'),/--surface-foundation: #f7f8f8;/);
- assert.match(read('../styles.css'),/--bg: #f7f8f8;/);
- assert.doesNotMatch(read('../shell/shell.css'),/radial-gradient\(circle at 12% 8%/);
-});
+const read=path=>{
+ assert.ok(['../assets/materials/marble-face.svg','../assets/materials/marble-canvas.svg','../../../docs/ai/marble/selected-assets.json'].includes(path),'only generated asset artifacts may be read');
+ return readFileSync(new URL(path,import.meta.url),'utf8');
+};
 
 test('marble materials are small static vector resources without interactive or animated owners',()=>{
  for(const name of ['marble-face','marble-canvas']){
@@ -21,9 +15,7 @@ test('marble materials are small static vector resources without interactive or 
   assert.match(asset,/<svg[^>]+viewBox=/);assert.match(asset,/<path /);
   assert.doesNotMatch(asset,/<(?:script|foreignObject|image|filter|animate|set)\b|onload=|https?:\/\/(?!www.w3.org)/i);
  }
- const css=read('../shell/refresh.css');
- assert.match(css,/body \{background-color:var\(--surface-foundation\);background-image:var\(--marble-canvas\)/);
- assert.match(css,/@media\(forced-colors:active\) \{body\{background-image:none;\}\}/);
+
 });
 
 test('the shared raster material stays static, opaque and inside its frozen delivery budget',()=>{
@@ -49,6 +41,7 @@ test('only the exact fourteen approved delivery assets reach their mapped consum
  const manifest=JSON.parse(read('../../../docs/ai/marble/selected-assets.json'));
  assert.equal(manifest.assets.length,14);let bytes=0;
  for(const asset of manifest.assets){
+  assert.match(asset.target,/^apps\/web\/assets\/opponents\/[a-z0-9-]+\.webp$/,'approved delivery artifact path only');
   const data=readFileSync(new URL(`../../../${asset.target}`,import.meta.url));
   assert.equal(createHash('sha256').update(data).digest('hex'),asset.sha256,asset.id);
   assert.equal(data.length,asset.bytes);bytes+=data.length;
