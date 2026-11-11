@@ -1,3 +1,6 @@
+import {incomingNarrationContext,renderIncomingNarration} from '../shell/incoming-narration.js';
+import {createBoardContextReceiver} from '../shell/board-context-receiver.js';
+import {activeRevertRequest,activePendingRevertRequest} from '../shell/undo-request-presentation.js';
 import {createGameAlertItems,renderGameAlertStackCard} from '../shell/game-alert-presentation.js';
 import {publishAcknowledgedBoardMessage} from '../shell/playback-presentation.js';
 import {renderResultPanel} from '../shell/result-panel.js';
@@ -6,10 +9,8 @@ import {withPushSequenceMessage} from '../shell/push-sequence-replay.js';
 import {historyBoardMessage} from '../shell/history-narration.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {runInNewContext} from 'node:vm';
 import {createNotificationStack,recoveryActivity} from '../shell/notification-state.js';
-import {createBoardContextStore,renderBoardContext} from '../shell/board-context.js';
+import {createBoardContextStore,renderBoardContext,renderBoardContextDetails} from '../shell/board-context.js';
 import {renderGameAlertCard} from '../shell/game-alert.js';
 import {renderComputerProgress} from '../shell/computer-view.js';
 import {activityActorSide,undoApprovalActorSide} from '../shell/activity-affiliation.js';
@@ -18,8 +19,6 @@ import {opponentBoardMessage} from '../shell/opponent-narration.js';
 import {captureDisplayedReplay} from '../shell/displayed-replay.js';
 import {CURRENT_COMPUTER_MODEL} from '../generated/packages/shared-types/src/computer-play.js';
 import {createForegroundRecoveryWait} from '../shell/foreground-recovery.js';
-const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
-const declaration=name=>{const start=source.indexOf('const '+name+' =');assert(start>=0);const end=source.indexOf('\nconst ',start+6);assert(end>start);return source.slice(start,end);};
 function fixture(){
  let held=null,failures=[],phase='idle';
  const game={id:'g',gameplayRevision:1,myRoles:['Player 2'],controlSeat:'Player 2',
@@ -30,37 +29,39 @@ function fixture(){
  const stack=createNotificationStack({getInteractionKey:()=>held}),store=createBoardContextStore();
  const ctx={SYNC_TIMING,viewingScope:()=> 'fixture',recoveryPresentationOptions:()=>({}),playbackRecoveryWait:{update:()=>0},liveBoardVisible:()=>true,historyBoardMessage,opponentBoardMessage,withPushSequenceMessage,captureDisplayedReplay,structuredClone,boardContexts:store,renderBoardContext,renderGameAlertCard,renderComputerProgress,recoveryActivity,activityActorSide,undoApprovalActorSide,icon,notificationStack:stack,
   boardContextScope:()=> 'fixture',boardContextOwner:{commit(){}},displayedReplayFrame:()=>game,
-  appEl:{querySelector:()=>null},document:{activeElement:null,hidden:false},queueBoardContextRefresh(){},
+  appEl:{contains:()=>false,querySelector:()=>null},document:{activeElement:null,hidden:false},queueBoardContextRefresh(){},
   contextReplayEnabled:()=>false,transport:{ensureRecoveryIncident:()=>null,getFailedOperations:()=>failures,getIdentityId:()=> 'me'},
   maybeUpdateUndoRequestOutcomeFeedback(){},issueDiagnostics:{list:()=>[],capture:()=> 'incident',resolve(){}},
   recoveryPresentationOptions:()=>({}),presentedRecoveryMessage:value=>value.recovery?'Reload game':'',needsRecoveryAction:value=>Boolean(value.recovery),
   dismissedRecoveryNotices:new Map(),ignoredRevertRequests:new Set(),isDiagnosticOpen:()=>false,
   computerSession:{snapshot:()=>({phase})},undoRequestFeedback:null,undoRequestFeedbackGameId:null,escapeHtml:String};
  ctx.getGameAlertItems=createGameAlertItems(()=>ctx);
- runInNewContext(`${declaration('getRevertRequestKey')}${declaration('getActiveRevertRequest')}${declaration('getActivePendingRevertRequest')}globalThis.getActiveRevertRequest=getActiveRevertRequest;globalThis.getActivePendingRevertRequest=getActivePendingRevertRequest;${source.slice(source.indexOf('const acknowledgedBoardMessage='),source.indexOf('const dispatchBoardMessageAction='))};globalThis.items=getGameAlertItems;globalThis.receive=receiveBoardContext;globalThis.ack=acknowledgedBoardMessage;`,Object.assign(ctx,{publishAcknowledgedBoardMessage,renderResultPanel}));
+ ctx.getActiveRevertRequest=game=>activeRevertRequest(game,ctx.ignoredRevertRequests);ctx.getActivePendingRevertRequest=activePendingRevertRequest;
+ ctx.items=ctx.getGameAlertItems;ctx.receive=createBoardContextReceiver(()=>ctx);
+ ctx.ack=(view,status,options)=>publishAcknowledgedBoardMessage(view,status,options,ctx);
  const refresh=()=>ctx.receive({kind:'piece',mandatory:false,message:{text:'Piece help'}},{selectedPieceId:'piece',intentVersion:1,phase:null,continuationPhase:null,transient:false});
  const order=()=>stack.order(game.id,ctx.items(game));
  assert.equal(order()[0].key,'computer:g');
- return {game,ctx,stack,store,refresh,order,ack:()=>ctx.ack(game,{phase:'idle'},{canInteract:true,identityId:'me'}),clearPiece:()=>ctx.receive(null,{selectedPieceId:null,intentVersion:2,phase:null,continuationPhase:null,transient:false}),hold:value=>{held=value;},fail:value=>{failures=value;},phase:value=>{phase=value;}};
+ return {game,ctx,stack,store,refresh,order,ack:()=>ctx.ack(game,{phase:'idle'},{canInteract:true,identityId:'me'}),incoming:()=>renderIncomingNarration(incomingNarrationContext(store.items(game.id),game.id),{layout:'wide'}),clearPiece:()=>ctx.receive(null,{selectedPieceId:null,intentVersion:2,phase:null,continuationPhase:null,transient:false}),hold:value=>{held=value;},fail:value=>{failures=value;},phase:value=>{phase=value;}};
 }
 
-test('new acknowledged summary becomes visible over a persistent normal opponent update',()=>{
+test('new acknowledged summary has its own host beside a persistent normal opponent notice',()=>{
  const f=fixture();f.ack();const active=f.order()[0],ack=f.store.channel('acknowledged');
- assert.equal(active.key,`board-context:${ack.key}`);assert.match(active.html,/Show me again/);
+ assert.equal(active.key,'computer:g');assert.match(f.incoming(),/Show me again/);assert.doesNotMatch(active.html,/data-incoming-context/);
  assert.deepEqual(Array.from(ack.replay.moveIds),['a']);assert.equal(ack.replay.owner,f.ctx.transport);
  f.clearPiece();f.ack();assert.equal(f.order()[0].key,active.key);
 });
-test('quiet renders and changed copy do not defeat an explicit cycle',()=>{
- const f=fixture();f.ack();f.order();assert(f.stack.advance('g',f.ctx.items(f.game)));assert.equal(f.order()[0].key,'computer:g');
- f.game.moves[0].action.to.row=3;f.ack();f.clearPiece();assert.equal(f.order()[0].key,'computer:g');
+test('quiet incoming publication cannot defeat an explicit notice cycle',()=>{
+ const f=fixture();f.fail([{id:'failure',error:{message:'A real notice'}}]);f.ack();f.order();assert(f.stack.advance('g',f.ctx.items(f.game)));assert.equal(f.order()[0].key,'computer:g');
+ f.ack();f.clearPiece();assert.equal(f.order()[0].key,'computer:g');assert.match(f.incoming(),/Show me again/);
 });
-test('explicit piece help takes precedence then acknowledged context returns when selection clears',()=>{
- const f=fixture();f.refresh();const piece=f.order()[0].key;f.ack();assert.equal(f.order()[0].key,piece);
- f.clearPiece();assert.equal(f.order()[0].key,`board-context:${f.store.channel('acknowledged').key}`);
+test('piece help stays in Board while incoming narration and urgent notices retain independent hosts',()=>{
+ const f=fixture();f.refresh();assert.match(renderBoardContextDetails(f.store.items('g')),/Piece help/);f.ack();assert.equal(f.order()[0].key,'computer:g');assert.match(renderBoardContextDetails(f.store.items('g')),/Piece help/);
+ f.clearPiece();assert.equal(f.order()[0].key,'computer:g');assert.match(f.incoming(),/Show me again/);
 });
-test('focused notice holds a new acknowledged summary until interaction ends',()=>{
+test('focused notice retains its controls while incoming narration uses its own host',()=>{
  const f=fixture();f.hold('computer:g');f.ack();assert.equal(f.order()[0].key,'computer:g');
- f.hold(null);assert.equal(f.order()[0].key,`board-context:${f.store.channel('acknowledged').key}`);
+ f.hold(null);assert.equal(f.order()[0].key,'computer:g');assert.match(f.incoming(),/Show me again/);
 });
 test('urgent recovery and undo remain ahead of normal acknowledged context',()=>{
  for(const blocker of ['recovery','undo']){
@@ -74,7 +75,7 @@ test('dismissed context stays dismissed on quiet renders and a genuinely new acc
  const f=fixture();f.ack();const old=f.store.channel('acknowledged').key;assert(f.store.dismiss(old));
  f.clearPiece();f.ack();assert.equal(f.order()[0].key,'computer:g');assert(f.store.isDismissed(old));
  f.game.gameplayRevision=2;f.game.moves[0].moveId='b';f.ack();const next=f.store.channel('acknowledged');
- assert.notEqual(next.key,old);assert.equal(f.order()[0].key,`board-context:${next.key}`);assert.deepEqual(Array.from(next.replay.moveIds),['b']);
+ assert.notEqual(next.key,old);assert.equal(f.order()[0].key,'computer:g');assert.match(f.incoming(),/Show me again/);assert.deepEqual(Array.from(next.replay.moveIds),['b']);
 });
 
 for(const kind of ['placeholder','dismissed'])test(`a ${kind} piece entry cannot hide a new accepted summary`,()=>{
@@ -84,7 +85,7 @@ for(const kind of ['placeholder','dismissed'])test(`a ${kind} piece entry cannot
  f.ack();
  if(kind==='placeholder')f.ctx.receive(null,{selectedPieceId:'piece',intentVersion:1,phase:null,continuationPhase:null,transient:false});
  else f.refresh();
- assert.equal(f.order()[0].key,`board-context:${f.store.channel('acknowledged').key}`);
+ assert.equal(f.order()[0].key,'computer:g');assert.match(f.incoming(),/Show me again/);
 });
 
 test('selected recorded History detail uses acknowledged context without replay authority or Board-sized copy',()=>{
@@ -127,10 +128,10 @@ function playbackRecoveryFixture(){
   setTimer:(fn,delay)=>{const id=++nextTimer;timers.set(id,{fn,at:now+delay});return id;},clearTimer:id=>timers.delete(id),onChange:()=>f.order()});
  f.ctx.liveBoardVisible=()=>visible;
  f.game.confirmedPlayback={retrying:true,canRetry:true};f.ack();
- const acknowledged=`board-context:${f.store.channel('acknowledged').key}`;
- assert.equal(f.order()[0].key,acknowledged,'Seed the actual preferred acknowledged context');
+ const acknowledged='computer:g',incomingKey=`board-context:${f.store.channel('acknowledged').key}`;
+ assert.equal(f.order()[0].key,acknowledged,'Incoming narration does not become a notification stack card');assert.match(f.incoming(),/Show me again/);
  f.ctx.card=options=>renderGameAlertStackCard(options,f.ctx.escapeHtml);
- return {...f,acknowledged,recoveryKey:`confirmed-playback-recovery:${f.game.id}`,
+ return {...f,acknowledged,incomingKey,recoveryKey:`confirmed-playback-recovery:${f.game.id}`,
   advance(to){assert(to>=now);for(;;){const due=[...timers].filter(([,timer])=>timer.at<=to).sort((a,b)=>a[1].at-b[1].at)[0];if(!due)break;now=due[1].at;timers.delete(due[0]);due[1].fn();}now=to;return f.order();},
   visible(value){visible=value;return f.order();},blocked(value){f.game.confirmedPlayback.retrying=value;return f.order();},
   cardFor(key){const items=f.order(),index=items.findIndex(item=>item.key===key);assert(index>=0);return f.ctx.card({gameId:f.game.id,item:items[index],stackIndex:index,totalAlerts:items.length});}};
@@ -152,12 +153,11 @@ test('overdue playback Retry becomes an active accessible notice only at the rea
  assert.match(card,/Still loading the move\. Retrying in the background\./);
 });
 
-test('a focused context holds overdue playback Retry until interaction ends',()=>{
- const f=playbackRecoveryFixture();f.hold(f.acknowledged);
- const held=f.advance(15000);assert.equal(held.find(item=>item.key===f.recoveryKey).priority,'urgent');assert.equal(held[0].key,f.acknowledged);
- assert.match(f.cardFor(f.recoveryKey),/aria-hidden="true" tabindex="-1" inert/);
- f.hold(null);assert.equal(f.order()[0].key,f.recoveryKey);
+test('a focused incoming host cannot conceal an actionable overdue playback Retry notice',()=>{
+ const f=playbackRecoveryFixture();f.hold(f.incomingKey);
+ const held=f.advance(15000);assert.equal(held.find(item=>item.key===f.recoveryKey).priority,'urgent');assert.equal(held[0].key,f.recoveryKey);
  assert.doesNotMatch(withoutPaperDecoration(f.cardFor(f.recoveryKey)),/aria-hidden="true"|\sinert(?:\s|>)/);
+ assert.match(f.incoming(),/Show me again/);f.hold(null);assert.equal(f.order()[0].key,f.recoveryKey);
 });
 
 test('hidden time and settled playback cannot carry an old Retry deadline into a new foreground wait',()=>{

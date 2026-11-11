@@ -1,7 +1,7 @@
 export const MOBILE_NAVIGATION = Object.freeze({ idleMs: 3000, hideDistance: 24, revealDistance: 12 });
 
 export function mountMobileNavigation({ window, document, isNarrow, isBlocked = () => false }) {
-  let visible = true, timer = null, previousY = Math.max(0, window.scrollY), distance = 0, direction = 0, destroyed = false, keyboardHandoff = false;
+  let incomingKey = null, visible = true, timer = null, previousY = Math.max(0, window.scrollY), distance = 0, direction = 0, destroyed = false, keyboardHandoff = false;
   const nav = () => document.querySelector('.shell-mobile-tabbar');
   const keyboardFocus = () => Boolean(nav()?.contains(document.activeElement) && (keyboardHandoff || document.activeElement?.matches(':focus-visible')));
   const render = () => {
@@ -16,7 +16,7 @@ export function mountMobileNavigation({ window, document, isNarrow, isBlocked = 
     window.clearTimeout(timer);
     if (!isNarrow() || destroyed) return;
     timer = window.setTimeout(() => {
-      if (keyboardFocus() || nav()?.matches(':hover') && window.matchMedia('(hover:hover)').matches) { schedule(); return; }
+      if (keyboardFocus() || incomingKey !== null && nav()?.contains(document.activeElement) || nav()?.matches(':hover') && window.matchMedia('(hover:hover)').matches) { schedule(); return; }
       visible = false; render();
     }, MOBILE_NAVIGATION.idleMs);
   };
@@ -59,6 +59,16 @@ export function mountMobileNavigation({ window, document, isNarrow, isBlocked = 
   window.addEventListener('blur', onBlur);
   return {
     sync: render,
+    incoming(key) {
+      if (key === null) { incomingKey = null; return false; }
+      if (destroyed || !isNarrow() || typeof key !== 'string' || incomingKey === key) return false;
+      incomingKey = key;
+      window.clearTimeout(timer); timer = null;
+      // A new flyout does not override focused or deliberate navigation.
+      if (nav()?.contains(document.activeElement)) return false;
+      visible = false; render();
+      return true;
+    },
     reveal,
     restoreScroll(top) {
       window.scrollTo({ top: Math.max(0, top), behavior: 'instant' }); resetScroll();

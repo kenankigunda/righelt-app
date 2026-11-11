@@ -9,7 +9,7 @@ const renderHistoryPreview = (game, preview, key) => {
   ? `<div class="history-inline-preview" data-testid="history-inline-preview"><p class="history-inline-narration">${renderBoardMessageHtml(selectedHistoryPresentation(game,{identityId:transport.getIdentityId()})?.message??{text:'Historical details unavailable'})}</p>${preview.snapshot ? renderMiniBoardPreviewRoot({previewId:key,...preview,previewKey:toStableKey(preview)}) : '<p role="status">Preview unavailable</p>'}</div>` : "";
 };
 const renderTurnHistory = (game) => {
-  const {getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, undoHistory, expandedUndoneGroups, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView} = getDependencies();
+  const {renderIncomingHistory, getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, undoHistory, expandedUndoneGroups, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView} = getDependencies();
   const archiveState=additionalHistory?.snapshot?.(game.id);
   const timeline=buildHistoryTimeline(game.id,[...(game.moves??[]),...(game.pendingMoves??[])],game.historyUndoArchiveEntries??[],game.lastRestoration,{
     archiveComplete:Boolean(archiveState?.loaded&&!archiveState.cursor),
@@ -90,7 +90,8 @@ const renderTurnHistory = (game) => {
   const acknowledged=boardContexts.channel('acknowledged');
   const replayFallback=!game.inHistoryMode&&acknowledged?.gameId===game.id&&acknowledged.replay&&boardContexts.isDismissed(acknowledged.key)&&canReplayDisplayed(acknowledged.replay)
     ?`<li class="history-live-replay" data-key="live-replay:${escapeHtml(acknowledged.key)}"><button type="button" class="secondary" data-action="replay-board-context" data-board-context-key="${escapeHtml(acknowledged.key)}"${contextReplayEnabled(acknowledged.replay)?'':' disabled'}>Show me again</button></li>`:'';
-  return live + waiting + replayFallback + leadingEmpty + groups + trailingEmpty;
+  const incoming=getShellLayoutMode()==='wide'?renderIncomingHistory?.(game)??'':'';
+  return live + (incoming?`<li class="history-incoming-container">${incoming}</li>`:'') + waiting + replayFallback + leadingEmpty + groups + trailingEmpty;
 };
 
 const renderAdditionalHistory = game => {

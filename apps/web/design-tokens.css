@@ -1,5 +1,6 @@
 :root {
   /* Shared with notice layering; native modal dialogs retain the top layer. */
+  --shell-layer-incoming: 4;
   --shell-layer-loading-edge: 8;
   --shell-layer-utility-backdrop: 10;
   --shell-layer-utility: 11;

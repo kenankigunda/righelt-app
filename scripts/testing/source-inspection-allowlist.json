@@ -10,30 +10,9 @@
       "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
-      "file": "apps/web/test/board-context-acknowledged.integration.test.mjs",
-      "targets": [
-        "apps/web/shell/app.js"
-      ],
-      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
-    },
-    {
       "file": "apps/web/test/board-context-owned-removal.integration.test.mjs",
       "targets": [
         "unresolved:new URL('../shell/'+file,import.meta.url)"
-      ],
-      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
-    },
-    {
-      "file": "apps/web/test/board-context-owner.integration.test.mjs",
-      "targets": [
-        "apps/web/shell/app.js"
-      ],
-      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
-    },
-    {
-      "file": "apps/web/test/board-context-undo.integration.test.mjs",
-      "targets": [
-        "apps/web/shell/app.js"
       ],
       "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },

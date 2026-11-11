@@ -1,5 +1,5 @@
 import {BOARD_PROMPT} from '../board/prompt-models.js';
-import {acknowledgedContextPurpose} from './board-context-purpose.js';
+import {acknowledgedContextPurpose,BOARD_CONTEXT_PURPOSE} from './board-context-purpose.js';
 import {updateComputerBoardLoading} from './board-message-layout.js';
 import {selectedHistoryPresentation,historyBoardMessage} from './history-narration.js';
 import {recordedActorSide} from './recorded-narration.js';
@@ -50,7 +50,7 @@ export function publishAcknowledgedBoardMessage(view,status,options,{boardContex
  const previousKey=boardContexts.channel('acknowledged')?.key;
  const changed=boardContexts.update('acknowledged',context);
  const piece=boardContexts.channel('piece');
- if(previousKey!==context.key&&!boardContexts.isDismissed(context.key)&&!(piece?.gameId===view.id&&piece.message&&!piece.transient&&!boardContexts.isDismissed(piece.key)))notificationStack.prefer(view.id,`board-context:${context.key}`);
+ if(purpose!==BOARD_CONTEXT_PURPOSE.INCOMING&&previousKey!==context.key&&!boardContexts.isDismissed(context.key)&&!(piece?.gameId===view.id&&piece.message&&!piece.transient&&!boardContexts.isDismissed(piece.key)))notificationStack.prefer(view.id,`board-context:${context.key}`);
  if(changed)queueBoardContextRefresh();
 
 }

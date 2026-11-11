@@ -71,7 +71,7 @@ test('completed history omits empty loser Turn48 while preserving final Turn47 a
  const completed={...game,moves:[finalMove],turns,currentTurn:turns[2],board:{state:{outcome:{status:'p1_win'}}}};
  const html=context.render(completed);
  assert.doesNotMatch(html,/Turn 48/);assert.match(html,/Turn 47/);assert.match(html,/Move 25: PUSH/);assert.match(html,/Turn 46/);
- assert.match(context.render({...completed,board:{state:{outcome:{status:'ongoing'}}}}),/Turn 48/);
+ assert.doesNotMatch(context.render({...completed,board:{state:{outcome:{status:'ongoing'}}}}),/Turn 48/,'an empty current turn is not a recorded heading in ongoing play either');
  assert.match(context.render({...completed,moves:[finalMove,{...moves[2],turnIndex:47,moveId:'ack-final'}]}),/Turn 48/);
  assert.doesNotMatch(context.render({...completed,inHistoryMode:true,currentSnapshot:{outcome:{status:'ongoing'}}}),/Turn 48/);
  assert.match(context.render({...completed,turns:[...turns.slice(0,2),{...turns[2],endedAt:'real-pass'}]}),/Turn 48/);

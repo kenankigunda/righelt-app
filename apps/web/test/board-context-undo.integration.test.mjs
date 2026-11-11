@@ -1,35 +1,34 @@
+import {createBoardContextReceiver} from '../shell/board-context-receiver.js';
+import {activeRevertRequest,activePendingRevertRequest} from '../shell/undo-request-presentation.js';
 import {createGameAlertItems,renderGameAlertStackCard} from '../shell/game-alert-presentation.js';
 import {SYNC_TIMING} from '../generated/packages/shared-types/src/sync-protocol.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {runInNewContext} from 'node:vm';
 import {createNotificationStack,recoveryActivity} from '../shell/notification-state.js';
-import {createBoardContextStore,renderBoardContext} from '../shell/board-context.js';
+import {createBoardContextStore,renderBoardContext,renderBoardContextDetails} from '../shell/board-context.js';
 import {renderGameAlertCard} from '../shell/game-alert.js';
 import {renderComputerProgress} from '../shell/computer-view.js';
 import {activityActorSide,undoApprovalActorSide} from '../shell/activity-affiliation.js';
 import {icon} from '../shell/ui.js';
 import {CURRENT_COMPUTER_MODEL} from '../generated/packages/shared-types/src/computer-play.js';
-const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
-const declaration=name=>{const start=source.indexOf('const '+name+' =');assert(start>=0);const end=source.indexOf('\nconst ',start+6);assert(end>start);return source.slice(start,end);};
 function fixture(){
  let held=null,failures=[],phase='idle';
  const game={id:'g',gameplayRevision:1,moves:[{moveId:'m',notation:'MOVE'}],currentSnapshot:{sideToMove:'P1'},board:{state:{outcome:{status:'ongoing'}}},player1:{identityId:'requester'},player2:{identityId:'approver'}};
  const stack=createNotificationStack({getInteractionKey:()=>held}),store=createBoardContextStore();
  const ctx={SYNC_TIMING,viewingScope:()=> 'fixture',recoveryPresentationOptions:()=>({}),playbackRecoveryWait:{update:()=>0},liveBoardVisible:()=>true,boardContexts:store,renderBoardContext,renderGameAlertCard,renderComputerProgress,recoveryActivity,activityActorSide,undoApprovalActorSide,icon,notificationStack:stack,
   boardContextScope:()=> 'fixture',boardContextOwner:{commit(){}},displayedReplayFrame:()=>game,
-  appEl:{querySelector:()=>null},document:{activeElement:null},queueBoardContextRefresh(){},
+  appEl:{contains:()=>false,querySelector:()=>null},document:{activeElement:null},queueBoardContextRefresh(){},
   contextReplayEnabled:()=>false,transport:{ensureRecoveryIncident:()=>null,getFailedOperations:()=>failures},
   maybeUpdateUndoRequestOutcomeFeedback(){},issueDiagnostics:{list:()=>[],capture:()=> 'incident',resolve(){}},
   recoveryPresentationOptions:()=>({}),presentedRecoveryMessage:value=>value.recovery?'Reload game':'',needsRecoveryAction:value=>Boolean(value.recovery),
   dismissedRecoveryNotices:new Map(),ignoredRevertRequests:new Set(),isDiagnosticOpen:()=>false,
   computerSession:{snapshot:()=>({phase})},undoRequestFeedback:null,undoRequestFeedbackGameId:null,escapeHtml:String};
  ctx.getGameAlertItems=createGameAlertItems(()=>ctx);
- runInNewContext(`${declaration('getRevertRequestKey')}${declaration('getActiveRevertRequest')}${declaration('getActivePendingRevertRequest')}globalThis.getActiveRevertRequest=getActiveRevertRequest;globalThis.getActivePendingRevertRequest=getActivePendingRevertRequest;${source.slice(source.indexOf('const receiveBoardContext='),source.indexOf('const dispatchBoardMessageAction='))};globalThis.items=getGameAlertItems;globalThis.receive=receiveBoardContext;`,ctx);
+ ctx.getActiveRevertRequest=game=>activeRevertRequest(game,ctx.ignoredRevertRequests);ctx.getActivePendingRevertRequest=activePendingRevertRequest;
+ ctx.items=ctx.getGameAlertItems;ctx.receive=createBoardContextReceiver(()=>ctx);
  const refresh=()=>ctx.receive({kind:'piece',mandatory:false,message:{text:'Piece help'}},{selectedPieceId:'piece',intentVersion:1,phase:null,continuationPhase:null,transient:false});
  const order=()=>stack.order(game.id,ctx.items(game));
- refresh();assert.match(order()[0].key,/^board-context:/);
+ refresh();assert.deepEqual(order(),[]);assert.match(renderBoardContextDetails(store.items('g')),/Piece help/);
  return {game,ctx,stack,store,refresh,order,hold:value=>{held=value;},fail:value=>{failures=value;},phase:value=>{phase=value;}};
 }
 const request=id=>({requestId:id,targetMoveId:'m',requesterIdentityId:'requester'});
@@ -48,14 +47,16 @@ for(const blocker of ['failed-operation','sync-recovery','computer-recovery'])te
  f.fail([]);f.game.recovery=false;f.game.storageBlocked=false;f.phase('idle');delete f.game.computer;
  assert.equal(f.order()[0].key,'undo-request:r');
 });
-test('focused context holds new undo until release and explicit cycling stays stable',()=>{
- const f=fixture(),contextKey=f.order()[0].key;f.hold(contextKey);f.game.approvableRevertRequest=request('r');assert.equal(f.order()[0].key,contextKey);
- f.hold(null);assert.equal(f.order()[0].key,'undo-request:r');
+test('focused Board detail cannot conceal Undo while actual focused notices retain explicit cycling',()=>{
+ const f=fixture();f.hold(`board-context:${f.store.channel('piece').key}`);f.game.approvableRevertRequest=request('r');assert.equal(f.order()[0].key,'undo-request:r');
+ assert.match(renderBoardContextDetails(f.store.items('g')),/Piece help/);f.hold(null);
+ f.game.historyNotice='History changed';const contextKey='history-change:g';f.order();
  assert.equal(f.stack.advance('g',f.ctx.items(f.game)),true);assert.equal(f.order()[0].key,contextKey);
- f.refresh();assert.equal(f.order()[0].key,contextKey,'a quiet context refresh cannot undo explicit cycle');
+ f.hold(contextKey);f.refresh();assert.equal(f.order()[0].key,contextKey,'a quiet Board refresh cannot undo an explicit notice cycle');
+ f.hold(null);assert.equal(f.order()[0].key,contextKey);
 });
 test('replacement and removal retain request identity and never stale action attributes',()=>{
  const f=fixture();f.game.myPendingRevertRequest=request('first');assert.equal(f.order()[0].key,'undo-request:first');
  f.game.myPendingRevertRequest=request('second');const active=f.order()[0];assert.equal(active.key,'undo-request:second');assert.match(active.html,/data-request-id="second"/);assert.doesNotMatch(active.html,/data-request-id="first"/);
- delete f.game.myPendingRevertRequest;assert.match(f.order()[0].key,/^board-context:/);assert(!f.ctx.items(f.game).some(item=>item.key.startsWith('undo-request:')));
+ delete f.game.myPendingRevertRequest;assert.deepEqual(f.order(),[]);assert.match(renderBoardContextDetails(f.store.items('g')),/Piece help/);assert(!f.ctx.items(f.game).some(item=>item.key.startsWith('undo-request:')));
 });

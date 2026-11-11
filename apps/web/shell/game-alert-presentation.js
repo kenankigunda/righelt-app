@@ -1,3 +1,4 @@
+import {boardContextPlacement} from './board-context-purpose.js';
 import {createRecoveryPresentation} from './recovery-presentation.js';
 import {icon} from './ui.js';
 import {renderGameAlertCard} from './game-alert.js';
@@ -73,7 +74,7 @@ export function createGameAlertItems(getDependencies) {
   }
 
   boardContextScope();
-  for(const context of boardContexts.items(game.id))items.push({key:`board-context:${context.key}`,priority:'normal',html:renderBoardContext(context,{replayEnabled:contextReplayEnabled(context.replay)})});
+  for(const context of boardContexts.items(game.id).filter(context=>boardContextPlacement(context)==='notice'))items.push({key:`board-context:${context.key}`,priority:'normal',html:renderBoardContext(context,{replayEnabled:contextReplayEnabled(context.replay)})});
   return items;
 };
 
