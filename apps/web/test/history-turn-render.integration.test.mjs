@@ -201,3 +201,19 @@ test('unified loaded history owns archive rows once while the original paging co
  const complete=context.render(view)+context.archive(view);
  assert.equal((complete.match(/data-undo-boundary="accepted"/g)??[]).length,1);assert.match(complete,/2 moves undone/);
 });
+
+
+test('selected unified archive rows retain truthful availability and never acquire new Undo or branch actions',()=>{
+ for(const historyStatus of ['unknown','active'])for(const numbered of [false,true]){
+  const record={...moves[0],moveId:'archived-selection',notation:'Saved move',snapshot:{pieces:[]},...(numbered?{index:19,displayMoveNumber:20}:{index:undefined,displayMoveNumber:undefined})};
+  const entries=[{id:record.moveId,eventSeq:1,ordinal:0,move:record,historyStatus}];
+  const view={...game,moves:[],turns:[],historyUndoArchiveEntries:entries,inHistoryMode:true,inspectedDecision:record};
+  const before=structuredClone(view),html=context.render(view);
+  assert.doesNotMatch(html,/data-action="(?:revert-to-move|launch-history-branch)"/,'archive rendering must not expand original action eligibility');
+  if(historyStatus==='unknown')assert.match(html,/Status unavailable/);
+  if(!numbered){assert.match(html,/Move unavailable/);assert.doesNotMatch(html,/Move NaN|Move undefined/);}
+  assert.match(html,/data-archive-move-id="archived-selection"/);
+  assert.match(html,/data-testid="history-inline-preview"/);
+  assert.deepEqual(view,before);
+ }
+});
