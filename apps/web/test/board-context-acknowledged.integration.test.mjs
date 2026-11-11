@@ -182,3 +182,10 @@ test('paper decoration inverse cannot conceal hidden semantic Retry ancestry or 
  assert.match(withoutPaperDecoration(card+'<span aria-hidden="true">Other content</span>'),hidden);
  assert.throws(()=>withoutPaperDecoration(card.replace('notice-paper-curl','unapproved-decoration')),/one approved decorative span/);
 });
+
+test('typed Board and incoming publications never alter notice-stack preference',()=>{
+ const f=fixture();f.ctx.notificationStack.prefer=()=>assert.fail('Board and incoming hosts do not own notice selection');
+ f.refresh();f.ack();assert.match(renderBoardContextDetails(f.store.items('g')),/Piece help/);assert.match(f.incoming(),/Show me again/);
+ f.clearPiece();f.game.inHistoryMode=true;f.game.historyIndex=0;f.game.inspectedDecision={...f.game.moves[0],index:0};f.ack();
+ assert.match(renderBoardContextDetails(f.store.items('g')),/Tau<\/bdi> rushed/);
+});

@@ -1,18 +1,16 @@
-import {renderBoardContext} from './board-context.js';
-import {syncRecoverySpace} from './recovery-space.js';
-
-// Reserve the same bounded view before context exists. Message arrival, hover
-// and dismissal never participate in this measurement or move the Board.
+// The finite prompt never participates in message-driven size growth. A separate
+// Board-wrap clearance centers the actual grid where the viewport has room.
+// Floating notices and incoming narration are deliberately absent from metrics.
 export function createBoardContextLayout(doc=document) {
  const win=doc.defaultView;
- let key=null,frameOwner=null,probe=null,raf=null,pointer=false,keyboard=false,nativeKey=false,probeObserver=null,disposed=false,intentEpoch=0;
+ let key=null,frameOwner=null,raf=null,pointer=false,keyboard=false,nativeKey=false,disposed=false,intentEpoch=0;
  const observedBodies=new Set();
  const syncOverflow=()=>{
   if(disposed)return;
   const current=new Set();
   for(const body of doc.querySelectorAll('.board-context-body')){
    const overflow=body.scrollHeight>body.clientHeight+1;body.tabIndex=overflow?0:-1;
-   body.closest('.board-context-notice')?.setAttribute('data-context-overflow',String(overflow));
+   body.closest('.board-context-notice,.board-context-detail')?.setAttribute('data-context-overflow',String(overflow));
    // The natural content can change while its capped scrollport stays fixed.
    current.add(body);if(body.firstElementChild)current.add(body.firstElementChild);
   }
@@ -23,31 +21,32 @@ export function createBoardContextLayout(doc=document) {
  const measure=()=>{
   raf=null;if(disposed)return;
   const app=doc.getElementById('app'),frame=app?.querySelector('[data-game-shell-root]');
-  if(!frame||app.dataset.shellLayoutMode!=='narrow'){frame?.style.removeProperty('--board-context-reserve');frameOwner=null;key=null;return;}
-  // A replacement frame has not painted yet and needs its initial reservation.
-  // Existing frames still defer metric changes throughout a native press.
-  if((pointer||nativeKey)&&frameOwner===frame)return;
-  const anchor=app.querySelector('.shell-header-status'),heading=frame.querySelector('.board-heading');
-  if(!anchor||!heading)return;
-  // Refresh the existing owner here as well as at app commits: font/viewport
-  // callbacks can run before its queued measurement. Never create a new owner.
-  const recovery=syncRecoverySpace(app),documentSpace=Number.isFinite(recovery?.documentTop);
-  const scrollY=Number.isFinite(win.scrollY)?win.scrollY:0;
-  const style=win.getComputedStyle(frame),anchorRect=anchor.getBoundingClientRect(),width=anchorRect.width;
-  const anchorTop=documentSpace?recovery.documentTop:anchorRect.top;
-  const nextKey=`${win.innerWidth}:${win.innerHeight}:${width}:${anchorTop}:${style.fontSize}:${style.fontFamily}`;
-  if(key===nextKey&&frameOwner===frame)return;
-  if(!probe){
-   probe=doc.createElement('div');probe.className='board-context-sizing';probe.setAttribute('aria-hidden','true');probe.inert=true;
-   probe.innerHTML=renderBoardContext({key:'sizing',message:{text:'Board explanation'},replay:{}});
-   doc.body.append(probe);if(win.ResizeObserver){probeObserver=new win.ResizeObserver(metrics);probeObserver.observe(probe);}
+  const wrap=frame?.querySelector('[data-testid="game-board-wrap"]');
+  if(!frame||app.dataset.shellLayoutMode!=='narrow'){
+   frameOwner?.style.removeProperty('--board-center-clearance');wrap?.style.removeProperty('--board-center-clearance');frameOwner=null;key=null;return;
   }
-  probe.style.width=`${width}px`;
-  const previous=parseFloat(frame.style.getPropertyValue('--board-context-reserve'))||0;
-  const naturalTop=heading.getBoundingClientRect().top+(documentSpace?scrollY:0)-previous;
-  const clearance=Math.max(0,Math.ceil(anchorTop+probe.getBoundingClientRect().height+12-naturalTop));
-  frame.style.setProperty('--board-context-reserve',`${clearance}px`);
-  frameOwner=frame;key=nextKey;
+  const grid=wrap?.querySelector('[data-testid="game-board"]'),legend=frame.querySelector('.overlay-key');
+  if(!wrap||!grid||wrap.closest?.('[inert]'))return;
+  // An unpainted replacement can admit its own initial geometry. A mounted
+  // native press keeps the geometry it started with until its matching release.
+  if((pointer||nativeKey)&&frameOwner===wrap)return;
+  const rect=grid.getBoundingClientRect(),legendRect=legend?.getBoundingClientRect();
+  const previous=parseFloat(wrap.style.getPropertyValue('--board-center-clearance'))||0;
+  const scroll=Number.isFinite(win.scrollY)?win.scrollY:0,viewport=win.visualViewport;
+  const top=Number.isFinite(viewport?.offsetTop)?viewport.offsetTop:0;
+  const height=Number.isFinite(viewport?.height)?viewport.height:win.innerHeight;
+  if(![rect.top,rect.height,height].every(Number.isFinite)||rect.height<=0||height<=0)return;
+  const naturalCenter=rect.top+rect.height/2+scroll-previous;
+  const naturalLegendBottom=legendRect?legendRect.bottom+scroll-previous:null;
+  const style=win.getComputedStyle(frame);
+  // Document coordinates make ordinary page scrolling a no-op. No scroll
+  // listener, focus movement, Board remount or message-slot height is involved.
+  const nextKey=JSON.stringify([win.innerWidth,height,top,naturalCenter,naturalLegendBottom,rect.height,style.fontSize,style.fontFamily]);
+  if(key===nextKey&&frameOwner===wrap)return;
+  const desired=Math.max(0,top+height/2-naturalCenter);
+  const available=Number.isFinite(naturalLegendBottom)?Math.max(0,top+height-8-naturalLegendBottom):desired;
+  wrap.style.setProperty('--board-center-clearance',`${Math.max(0,Math.min(desired,available))}px`);
+  frameOwner=wrap;key=nextKey;
  };
  const schedule=()=>{if(!disposed&&raf===null)raf=win.requestAnimationFrame(measure);};
  const metrics=()=>{syncOverflow();key=null;schedule();};
@@ -73,20 +72,20 @@ export function createBoardContextLayout(doc=document) {
  };
  const focus=event=>{
   const target=event.target;
-  if(!keyboard||pointer||!target?.matches?.('#shell-board-preview-label button,#shell-board .cell,#shell-board,.board-message-live'))return;
+  if(!keyboard||pointer||!target?.matches?.('#shell-board-preview-label button,#shell-board .cell,#shell-board,.board-message-live,.board-context-detail button,.board-context-detail .board-context-body'))return;
   reveal(target);
  };
- const down=()=>{intentEpoch++;pointer=true;keyboard=false;};
- const up=()=>{pointer=false;schedule();};
- const keyup=event=>{if(event.key==='Enter'||event.key===' '){nativeKey=false;schedule();}};
+ const down=event=>{intentEpoch++;if(!pointer)pointer=String(event.pointerId??'native');keyboard=false;};
+ const up=event=>{if(pointer!==String(event.pointerId??'native'))return;pointer=false;schedule();};
+ const keyup=event=>{if(event.key===nativeKey){nativeKey=false;schedule();}};
  const retire=()=>{intentEpoch++;pointer=false;nativeKey=false;key=null;schedule();};
- const keys=event=>{intentEpoch++;if(!['Shift','Control','Alt','Meta'].includes(event.key))keyboard=true;if(event.key==='Enter'||event.key===' ')nativeKey=true;};
+ const keys=event=>{intentEpoch++;if(!['Shift','Control','Alt','Meta'].includes(event.key))keyboard=true;if((event.key==='Enter'||event.key===' ')&&!nativeKey)nativeKey=event.key;};
  doc.addEventListener('focusin',focus);doc.addEventListener('pointerdown',down,true);
  doc.addEventListener('pointerup',up,true);doc.addEventListener('pointercancel',up,true);doc.addEventListener('keydown',keys,true);doc.addEventListener('keyup',keyup,true);
- win.addEventListener('blur',retire);doc.addEventListener('visibilitychange',retire);win.addEventListener('resize',metrics);doc.fonts?.addEventListener?.('loadingdone',metrics);
+ win.addEventListener('blur',retire);doc.addEventListener('visibilitychange',retire);win.addEventListener('resize',metrics);win.visualViewport?.addEventListener('resize',metrics);doc.fonts?.addEventListener?.('loadingdone',metrics);
  return {
   reveal,
   sync(){measure();syncOverflow();},
-  destroy(){disposed=true;if(raf!==null)win.cancelAnimationFrame(raf);probeObserver?.disconnect();bodyObserver?.disconnect();observedBodies.clear();probe?.remove();frameOwner?.style.removeProperty('--board-context-reserve');doc.removeEventListener('focusin',focus);doc.removeEventListener('pointerdown',down,true);doc.removeEventListener('pointerup',up,true);doc.removeEventListener('pointercancel',up,true);doc.removeEventListener('keydown',keys,true);doc.removeEventListener('keyup',keyup,true);win.removeEventListener('blur',retire);doc.removeEventListener('visibilitychange',retire);win.removeEventListener('resize',metrics);doc.fonts?.removeEventListener?.('loadingdone',metrics);},
+  destroy(){disposed=true;if(raf!==null)win.cancelAnimationFrame(raf);bodyObserver?.disconnect();observedBodies.clear();frameOwner?.style.removeProperty('--board-center-clearance');doc.removeEventListener('focusin',focus);doc.removeEventListener('pointerdown',down,true);doc.removeEventListener('pointerup',up,true);doc.removeEventListener('pointercancel',up,true);doc.removeEventListener('keydown',keys,true);doc.removeEventListener('keyup',keyup,true);win.removeEventListener('blur',retire);doc.removeEventListener('visibilitychange',retire);win.removeEventListener('resize',metrics);win.visualViewport?.removeEventListener('resize',metrics);doc.fonts?.removeEventListener?.('loadingdone',metrics);},
  };
 }

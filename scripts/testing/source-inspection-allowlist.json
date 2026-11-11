@@ -284,20 +284,6 @@
       "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
     },
     {
-      "file": "apps/web/test/recovery-order-admission.integration.test.mjs",
-      "targets": [
-        "apps/web/shell/app.js"
-      ],
-      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
-    },
-    {
-      "file": "apps/web/test/recovery-scroll-reservation.integration.test.mjs",
-      "targets": [
-        "apps/web/shell/app.js"
-      ],
-      "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."
-    },
-    {
       "file": "apps/web/test/result-review-render.integration.test.mjs",
       "targets": [
         "apps/web/shell/app.js"

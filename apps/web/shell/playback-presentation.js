@@ -1,5 +1,5 @@
 import {BOARD_PROMPT} from '../board/prompt-models.js';
-import {acknowledgedContextPurpose,BOARD_CONTEXT_PURPOSE} from './board-context-purpose.js';
+import {acknowledgedContextPurpose} from './board-context-purpose.js';
 import {updateComputerBoardLoading} from './board-message-layout.js';
 import {selectedHistoryPresentation,historyBoardMessage} from './history-narration.js';
 import {recordedActorSide} from './recorded-narration.js';
@@ -38,7 +38,7 @@ export function refreshFollowControls({boardRuntime,followWorking,replayPlaying,
  refreshContext();
 }
 
-export function publishAcknowledgedBoardMessage(view,status,options,{boardContexts,queueBoardContextRefresh,transport,boardContextScope,document,notificationStack}) {
+export function publishAcknowledgedBoardMessage(view,status,options,{boardContexts,queueBoardContextRefresh,transport,boardContextScope,document}) {
 
  const recorded=options.presentationMove;
  const presentation=recorded?{...view,inHistoryMode:true,historyTurnIndex:null,inspectedDecision:recorded}:view;
@@ -47,10 +47,8 @@ export function publishAcknowledgedBoardMessage(view,status,options,{boardContex
  const replay=['replay-computer','replay-push-sequence'].includes(body.action?.id)?captureDisplayedReplay({source:body.action.id==='replay-push-sequence'?'push-sequence':'opponent-turn',game:view,owner:transport,scope:boardContextScope(),identityId:transport.getIdentityId(),visible:!document.hidden}):null;
  const purpose=acknowledgedContextPurpose({selectedHistory:view.inHistoryMode,recordedMove:recorded,message:body});
  const context={purpose,actorSide:recorded?recordedActorSide(recorded):body.actorSide??null,gameId:view.id,key:replay?.key??JSON.stringify(recorded?[boardContextScope(),view.id,'confirmed-frame',recorded.moveId]:[boardContextScope(),view.id,view.gameplayRevision,'completion']),message:body,replay,mandatory:false,transient:false};
- const previousKey=boardContexts.channel('acknowledged')?.key;
  const changed=boardContexts.update('acknowledged',context);
- const piece=boardContexts.channel('piece');
- if(purpose!==BOARD_CONTEXT_PURPOSE.INCOMING&&previousKey!==context.key&&!boardContexts.isDismissed(context.key)&&!(piece?.gameId===view.id&&piece.message&&!piece.transient&&!boardContexts.isDismissed(piece.key)))notificationStack.prefer(view.id,`board-context:${context.key}`);
+
  if(changed)queueBoardContextRefresh();
 
 }

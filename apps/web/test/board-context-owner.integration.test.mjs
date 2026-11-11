@@ -36,7 +36,7 @@ function fixture(t){
  doc.body=node('body');doc.activeElement=doc.body;doc.createElement=()=>node('announcement');
  const board=node('board-guidance'),button=node('replay'),dismiss=node('dismiss');
  const root=node('root');
- const app={ownerDocument:doc,contains:value=>[board,button,dismiss,root].includes(value),querySelector:selector=>selector==='[data-game-shell-root]'?{dataset:{gameId:'game'}}:selector==='[data-testid="game-board-wrap"]'?root:selector==='.board-message-live'?board:null};
+ const app={ownerDocument:doc,querySelectorAll:()=>[],contains:value=>[board,button,dismiss,root].includes(value),querySelector:selector=>selector==='[data-game-shell-root]'?{dataset:{gameId:'game'}}:selector==='[data-testid="game-board-wrap"]'?root:selector==='.board-message-live'?board:null};
  let resolveArchive;const archive=new Promise(resolve=>{resolveArchive=resolve;});
  const transport={getGameViewModel:()=>context.view,getAuthoritativeGame:()=>context.view,getIdentityId:()=>'me',decisionHistory:()=>archive};
  const requests=createReplayRequest();
@@ -202,4 +202,15 @@ for(const interruption of ['none','outside-focus','new-intent'])test(`incoming h
  p.restoreIncomingFocus(token);await Promise.resolve();
  assert.equal(f.doc.activeElement,interruption==='none'?replacement:interruption==='outside-focus'?f.board:f.doc.body);
  assert.equal(f.reveals.length,0,'fixed incoming host never triggers a Board-page scroll reveal');
+});
+
+test('hidden Board detail never consumes an announcement ahead of the actual visible incoming host',async t=>{
+ const f=fixture(t),p=f.context.presentation;
+ p.store.update('piece',{key:'hidden-piece',gameId:'game',purpose:'piece-inspection',message:{text:'Hidden inspection'}});
+ p.store.update('acknowledged',{key:'visible-incoming',gameId:'game',purpose:'incoming-narration',message:{text:'Incoming turn'}});
+ const hidden={dataset:{boardContext:'hidden-piece'},closest:selector=>selector.includes('[inert]')?{}:null};
+ const visible={dataset:{boardContext:'visible-incoming'},closest:()=>null};
+ f.context.appEl.querySelectorAll=()=>[hidden,visible];p.queue();await f.flush();
+ assert.equal(p.announcement.textContent,'Incoming turn');assert.equal(p.store.takeAnnouncement('hidden-piece'),'Hidden inspection','hidden content was not marked announced');
+ p.queue();await f.flush();assert.equal(p.store.takeAnnouncement('visible-incoming'),null,'only the actually exposed host announces once');
 });

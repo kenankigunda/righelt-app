@@ -53,7 +53,7 @@ export function createBoardContextPresentation({appEl,document,getDependencies,c
    const history=appEl.querySelector('[data-game-panel="history"]');if(history)d.patchToolHtml(history,d.renderHistoryPanel(game));
    d.syncIncomingNarrationHost(game);d.syncBoardContextDetails?.(game);restoreIncomingFocus(incomingFocus);
    d.syncRecoverySpace(appEl);boardContextLayout.sync();
-   const active=appEl.querySelector('[data-alert-stack-card].is-active [data-board-context]')??appEl.querySelector('[data-context-active-host="true"]');
+   const active=[...appEl.querySelectorAll('[data-alert-stack-card].is-active [data-board-context],[data-context-active-host="true"]')].find(host=>!host.closest('[inert],[hidden],[aria-hidden="true"]'));
    const text=active&&boardContexts.takeAnnouncement(active.dataset.boardContext);if(text)contextAnnouncement.textContent=text;
   });
  };

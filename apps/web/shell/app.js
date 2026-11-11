@@ -1,3 +1,4 @@
+import {createPanelTransitionPreparation} from './panel-transition-preparation.js';
 import {revertRequestKey,activeRevertRequest,activePendingRevertRequest} from './undo-request-presentation.js';
 import {createDisplayedReplayStarter} from './displayed-replay-starter.js';
 import {renderBoardContextDetails} from './board-context.js';
@@ -1116,25 +1117,11 @@ const getAdjacentGamePanel = (panel = getGamePanel(), direction = 0) => {
   const nextIndex = Math.min(Math.max(getGamePanelIndex(panel) + direction, 0), GAME_PANEL_KEYS.length - 1);
   return GAME_PANEL_KEYS[nextIndex];
 };
-const preparePanelTransition = (previous, next) => {
-  if(boardContextState.pendingBoardContextReplay&&(next.name!=='game'||next.gameId!==boardContextState.pendingBoardContextReplay.descriptor.gameId||getGamePanel(next)!=='board'))cancelPendingBoardContextReplay();
-  if(previous.name!==next.name||previous.gameId!==next.gameId){boardContextVisit++;boardContextOwner.retire();}
-  if (previous.name === "game" && (next.name !== "game" || next.gameId !== previous.gameId)) liveTurnOverview.leave();
-  homeSectionReads.leaveHome(previous,next);
-  if (previous.name === 'game' && (next.gameId !== previous.gameId || getGamePanel(previous) !== getGamePanel(next))) {
-    viewingIntent.saveScroll(previous.gameId, getGamePanel(previous), window.scrollY);
-  }
-  if (next.name !== 'game') { if(previous.gameId)viewingIntent.cancelUndo(previous.gameId); replayController?.stop('navigation'); return; }
-  const changedPanel = next.gameId !== previous.gameId || getGamePanel(previous) !== getGamePanel(next);
-  if (changedPanel) { replayRequests.cancel(); replayController?.stop("navigation"); }
-  if (getShellLayoutModeForRoute(next) === 'narrow' && changedPanel) {
-    if (getGamePanel(next) === 'board') {
-      const selected = transport.getGameViewModel(next.gameId)?.inHistoryMode;
-      if (selected) transport.returnToLive({gameId:next.gameId});
-    }
-    if (!pendingRoutePosition) window.requestAnimationFrame(() => mobileNavigation?.restoreScroll(viewingIntent.scrollTop(next.gameId, getGamePanel(next))));
-  }
-};
+const preparePanelTransition = createPanelTransitionPreparation(()=>({
+  pendingBoardContextReplay:boardContextState.pendingBoardContextReplay,cancelPendingBoardContextReplay,
+  retireBoardContext(){boardContextVisit++;boardContextOwner.retire();},liveTurnOverview,homeSectionReads,viewingIntent,window,
+  getGamePanel,getShellLayoutModeForRoute,transport,replayController,replayRequests,pendingRoutePosition,mobileNavigation,
+}));
 
 const getCurrentFlyoutState = () => ({
   ...Object.fromEntries(FLYOUT_KEYS.map((key) => [key, currentRoute[key] === true])),
