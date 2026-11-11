@@ -4,7 +4,7 @@ import {renderHomeCardIdentity,renderHomeCardTurn} from '../shell/home-card-iden
 import {renderPlayersPanel} from '../shell/players-panel.js';
 import {participantButton,createInlineProfiles} from '../shell/public-profile.js';
 import {selectedHistoryPresentation} from '../shell/history-narration.js';
-import {recordedReplayLabel,historyActorLabel,playerDisplayName} from '../shell/perspective-labels.js';
+import {recordedReplayLabel,historyActorLabel,playerDisplayName,viewerAliasQualifiers} from '../shell/perspective-labels.js';
 import {analysisPerspectiveCopy,renderDecisionDebug} from '../shell/computer-view.js';
 import {confirmedPlaybackMessage} from '../shell/playback-presentation.js';
 import {renderResultPanel} from '../shell/result-panel.js';
@@ -105,4 +105,30 @@ test('finished matchup uses confirmed saved ownership without changing winner or
   assert.ok(html.includes(`<bdi dir="auto">${expected}</bdi></span> vs <span class="player-tone-p2">`));
   assert.match(html,/>Ada<\/span> won|>Ada<\/bdi>/);assert.doesNotMatch(html,/You won/);
  }
+});
+
+
+test('owning You alias and a different canonical You remain visibly distinct without text-based ownership',()=>{
+ for(const side of ['P1','P2'])for(const username of ['real-you',undefined]){
+  const role=side==='P1'?'Player 1':'Player 2',identityId=side==='P1'?'red':'blue',otherSide=side==='P1'?'P2':'P1';
+  const otherKey=otherSide==='P1'?'player1':'player2';
+  const value={...game(role),[otherKey]:{identityId:otherSide==='P1'?'red':'blue',profile:{displayName:'You',...(username?{username}: {})}}};
+  const before=structuredClone(value),options={identityId};
+  const home=renderHomeCardIdentity(value,options),players=renderPlayersPanel(value,options);
+  assert.equal(playerDisplayName(value,otherSide),'You');
+  const expected=username ? '@real-you' : side==='P1'?'Blue':'Red';
+  assert.ok(home.includes(`<bdi>${expected}</bdi>`));assert.ok(players.includes(`<bdi>${expected}</bdi>`));
+  if(username)assert.ok(players.includes(`aria-label="You, ${otherSide==='P1'?'Red':'Blue'}, @real-you, Disconnected"`));
+  if(!username){const ownColor=side==='P1'?'Red':'Blue';assert.ok(home.includes(`<bdi>${ownColor}</bdi>`));assert.ok(players.includes(`<bdi>${ownColor}</bdi>`));}
+  const canonical=side==='P1'?'Maya':'Ada',color=side==='P1'?'Red':'Blue';
+  assert.ok(home.includes(`aria-label="${canonical}, you, ${color}"`));
+  assert.ok(players.includes(`aria-label="${canonical}, you, ${color}, Disconnected"`));
+  assert.doesNotMatch(home,/aria-label="You, you,/);assert.doesNotMatch(players,/aria-label="You, you,/);
+  assert.match(home,/<bdi>You<\/bdi>/);assert.match(players,/<bdi>You<\/bdi>/);
+  assert.deepEqual(value,before);
+ }
+ assert.deepEqual(viewerAliasQualifiers([{side:'P1',name:'Maya',owned:false},{side:'P2',name:'You',username:'real-you',owned:false}]),{});
+ assert.deepEqual(viewerAliasQualifiers([{side:'P1',name:'You',owned:true},{side:'P2',name:'You',owned:true}]),{});
+ const literal={...game('Viewer'),player2:{identityId:'blue',profile:{displayName:'You',username:'real-you'}}};
+ const viewer=renderHomeCardIdentity(literal,{identityId:'red'});assert.doesNotMatch(viewer,/@real-you|You, you,/);
 });

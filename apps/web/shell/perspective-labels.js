@@ -100,3 +100,16 @@ export function recordedReplayLabel(game,move,options={}) {
   if(actor.owned)return actor.self ? `Playing your recorded ${sideColorName(actor.side)} move` : 'Playing your recorded move';
   return actor.side ? `Playing ${actor.text}’s recorded move` : 'Playing recorded move';
 }
+
+/** Ownership is supplied by the saved-seat model. Text comparison only detects
+ * a visible alias collision, never grants ownership or rewrites a real name. */
+export function viewerAliasQualifiers(labels=[]) {
+  const owned=labels.filter(label=>label.owned);
+  if(owned.length!==1)return {};
+  const collision=labels.find(label=>!label.owned && label.name==='You');
+  if(!collision)return {};
+  const username=typeof collision.username==='string' && collision.username.trim() ? collision.username : null;
+  return username ? {[collision.side]:`@${username}`} : {
+    [owned[0].side]:sideColorName(owned[0].side),[collision.side]:sideColorName(collision.side),
+  };
+}
