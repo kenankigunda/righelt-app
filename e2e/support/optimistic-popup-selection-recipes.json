@@ -52,8 +52,8 @@
   {
     "file": "apps/web/shell/app.js",
     "servedPath": "/shell/app.js",
-    "sourceSha256": "a38d6a603c743cd515cd9b89d75d26d54a1e9287edd5c0a37bb8f2a9e107012a",
-    "outputSha256": "5ae9db944b5163d56b7d5c4886006132ba1ca921ce1430a5a276892dd31f8afb",
+    "sourceSha256": "9300deac0035110e3aeafa50d460b1767f26c875c7a61cd268fbad6ea4eac25a",
+    "outputSha256": "6e27ac3babeaf36b91ef57d275fe4a08f475f73c0d19ecb5dd6a492be7838a79",
     "operations": [
       {
         "start": 2527,
@@ -62,44 +62,44 @@
         "after": "function __popupValue(kind,value,scope){try{const probe=Object.getOwnPropertyDescriptor(globalThis,'__popupSelectionProbe')?.value;const record=probe&&Object.getOwnPropertyDescriptor(probe,'record')?.value;if(typeof record==='function')record(kind,value,scope);}catch{}return value;}\n"
       },
       {
-        "start": 171860,
-        "end": 171901,
+        "start": 171930,
+        "end": 171971,
         "before": "selectionAction: hydratedSelectionAction,",
         "after": "selectionAction: __popupValue('load-selection-action',hydratedSelectionAction,boardRuntime),"
       },
       {
-        "start": 178464,
-        "end": 178568,
+        "start": 178639,
+        "end": 178743,
         "before": "consumedInitialSelectionActionKeyByGameId.set(game.id, initialSelectionHydration.nextConsumedActionKey);",
         "after": "consumedInitialSelectionActionKeyByGameId.set(__popupValue('consume-game',game.id,boardRuntime), __popupValue('consume-action-key',initialSelectionHydration.nextConsumedActionKey,boardRuntime));"
       },
       {
-        "start": 178579,
-        "end": 178621,
+        "start": 178754,
+        "end": 178796,
         "before": "void boardRuntime.loadSnapshot(snapshot, {",
         "after": "void __popupValue('load-runtime',boardRuntime).loadSnapshot(snapshot, {"
       },
       {
-        "start": 178699,
-        "end": 178740,
+        "start": 178874,
+        "end": 178915,
         "before": "selectionAction: hydratedSelectionAction,",
         "after": "selectionAction: __popupValue('load-selection-action',hydratedSelectionAction,boardRuntime),"
       },
       {
-        "start": 180940,
-        "end": 181044,
+        "start": 181115,
+        "end": 181219,
         "before": "consumedInitialSelectionActionKeyByGameId.set(game.id, initialSelectionHydration.nextConsumedActionKey);",
         "after": "consumedInitialSelectionActionKeyByGameId.set(__popupValue('consume-game',game.id,boardRuntime), __popupValue('consume-action-key',initialSelectionHydration.nextConsumedActionKey,boardRuntime));"
       },
       {
-        "start": 181051,
-        "end": 181093,
+        "start": 181226,
+        "end": 181268,
         "before": "void boardRuntime.loadSnapshot(snapshot, {",
         "after": "void __popupValue('load-runtime',boardRuntime).loadSnapshot(snapshot, {"
       },
       {
-        "start": 181159,
-        "end": 181200,
+        "start": 181334,
+        "end": 181375,
         "before": "selectionAction: hydratedSelectionAction,",
         "after": "selectionAction: __popupValue('load-selection-action',hydratedSelectionAction,boardRuntime),"
       }
@@ -108,8 +108,8 @@
   {
     "file": "apps/web/board/runtime/board-runtime.js",
     "servedPath": "/board/runtime/board-runtime.js",
-    "sourceSha256": "fa907be51d1740b4cbcfdbd209acca7cfcdf0904d33531f33a292439d8bc0ad9",
-    "outputSha256": "643081f1a61fc105eb5599a08c38754ca88a7a69191506c94e2c43f453ca6929",
+    "sourceSha256": "273bccd32269b27a19b89bec9442d163b53a5ed582d70f2b0742567a1035f72f",
+    "outputSha256": "95a1a1aad7d426c376fcc7b76f56c27a1e90e001f280c32dd20fc8904efce8a6",
     "operations": [
       {
         "start": 0,
@@ -118,122 +118,122 @@
         "after": "function __popupValue(kind,value,scope){try{const probe=Object.getOwnPropertyDescriptor(globalThis,'__popupSelectionProbe')?.value;const record=probe&&Object.getOwnPropertyDescriptor(probe,'record')?.value;if(typeof record==='function')record(kind,value,scope);}catch{}return value;}\n"
       },
       {
-        "start": 2309,
-        "end": 2439,
+        "start": 2379,
+        "end": 2509,
         "before": "export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuidanceClient = createRushSupplyGuidanceClient() }) {",
         "after": "export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuidanceClient = createRushSupplyGuidanceClient() }) {\n const __popupRuntimeScope={};__popupValue('runtime-create',true,__popupRuntimeScope);"
       },
       {
-        "start": 11142,
-        "end": 11170,
+        "start": 11638,
+        "end": 11666,
         "before": "      selectedTarget = null;",
         "after": "      selectedTarget = __popupValue('selection-target-clear',null,__popupRuntimeScope);"
       },
       {
-        "start": 11230,
-        "end": 11261,
+        "start": 11726,
+        "end": 11757,
         "before": "selectedTarget = { ...target };",
         "after": "selectedTarget = __popupValue('selection-target',{ ...target },__popupRuntimeScope);"
       },
       {
-        "start": 24305,
-        "end": 24384,
+        "start": 24801,
+        "end": 24880,
         "before": "      rushSupplyGuidance: rushGuidance,\n      selection: getCurrentSelection(),",
         "after": "      rushSupplyGuidance: rushGuidance,\n      selection: __popupValue('render-selection',getCurrentSelection(),__popupRuntimeScope),"
       },
       {
-        "start": 42595,
-        "end": 42652,
+        "start": 43091,
+        "end": 43148,
         "before": "const clearSelection = ({preserveNetworks=false}={}) => {",
         "after": "const clearSelection = ({preserveNetworks=false}={}) => {\n    __popupValue('selection-clear',true,__popupRuntimeScope);"
       },
       {
-        "start": 46393,
-        "end": 46443,
+        "start": 46889,
+        "end": 46939,
         "before": "selectedPieceId = forcedSelection.selectedPieceId;",
         "after": "selectedPieceId = __popupValue('selection-forced-piece',forcedSelection.selectedPieceId,__popupRuntimeScope);"
       },
       {
-        "start": 70158,
-        "end": 70198,
+        "start": 70654,
+        "end": 70694,
         "before": "const bindElements = (nextElements) => {",
         "after": "const bindElements = (nextElements) => {\n    __popupValue('runtime-bind',true,__popupRuntimeScope);"
       },
       {
-        "start": 70573,
-        "end": 70589,
+        "start": 71069,
+        "end": 71085,
         "before": "if (sameNodes) {",
         "after": "if (__popupValue('bind-same-nodes',sameNodes,__popupRuntimeScope)) {"
       },
       {
-        "start": 72357,
-        "end": 72401,
+        "start": 72853,
+        "end": 72897,
         "before": "selectedPieceId = selectedPiece?.id ?? null;",
         "after": "selectedPieceId = __popupValue('selection-piece',selectedPiece?.id ?? null,__popupRuntimeScope);"
       },
       {
-        "start": 72628,
-        "end": 72686,
+        "start": 73124,
+        "end": 73182,
         "before": "selectedPieceId = selectionState?.selectedPieceId ?? null;",
         "after": "selectedPieceId = __popupValue('selection-state-piece',selectionState?.selectedPieceId ?? null,__popupRuntimeScope);"
       },
       {
-        "start": 73595,
-        "end": 73633,
+        "start": 74091,
+        "end": 74129,
         "before": "const previousInspection = inspection;",
         "after": "const previousInspection = __popupValue('load-inspection',inspection,__popupRuntimeScope);"
       },
       {
-        "start": 75568,
-        "end": 75589,
+        "start": 76064,
+        "end": 76085,
         "before": "if (resetSelection) {",
         "after": "if (__popupValue('load-reset',resetSelection,__popupRuntimeScope)) {"
       },
       {
-        "start": 75618,
-        "end": 75654,
+        "start": 76114,
+        "end": 76150,
         "before": "} else if (!preservePiecePreviews) {",
         "after": "} else if (!__popupValue('load-preserve',preservePiecePreviews,__popupRuntimeScope)) {"
       },
       {
-        "start": 76161,
-        "end": 76227,
+        "start": 76657,
+        "end": 76723,
         "before": "if (selectionAction && overlayMode === OVERLAY_MODE.INTERACTIVE) {",
         "after": "if (__popupValue('load-action',selectionAction,__popupRuntimeScope) && __popupValue('load-interactive',overlayMode === OVERLAY_MODE.INTERACTIVE,__popupRuntimeScope)) {"
       },
       {
-        "start": 77017,
-        "end": 77049,
+        "start": 77513,
+        "end": 77545,
         "before": "inspection = previousInspection;",
         "after": "inspection = __popupValue('load-restore-inspection',previousInspection,__popupRuntimeScope);"
       },
       {
-        "start": 77563,
-        "end": 77600,
+        "start": 78059,
+        "end": 78096,
         "before": "selectedPieceId = inspection.pieceId;",
         "after": "selectedPieceId = __popupValue('selection-inspection-piece',inspection.pieceId,__popupRuntimeScope);"
       },
       {
-        "start": 78478,
-        "end": 78522,
+        "start": 78974,
+        "end": 79018,
         "before": "selectedPieceId = selectedPiece?.id ?? null;",
         "after": "selectedPieceId = __popupValue('selection-piece',selectedPiece?.id ?? null,__popupRuntimeScope);"
       },
       {
-        "start": 80366,
-        "end": 80389,
+        "start": 80922,
+        "end": 80945,
         "before": "const destroy = () => {",
         "after": "const destroy = () => {\n    __popupValue('runtime-destroy',true,__popupRuntimeScope);"
       },
       {
-        "start": 84491,
-        "end": 84517,
+        "start": 85081,
+        "end": 85107,
         "before": "  return {\n    initialize,",
         "after": "  return __popupValue('runtime-public',{\n    initialize,"
       },
       {
-        "start": 86170,
-        "end": 86209,
+        "start": 86760,
+        "end": 86799,
         "before": "    syncInteractionCapabilities,\n  };\n}",
         "after": "    syncInteractionCapabilities,\n  },__popupRuntimeScope);\n}"
       }

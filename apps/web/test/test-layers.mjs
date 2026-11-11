@@ -21,6 +21,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "computer-recovery.test.mjs",
   "live-turn-overview.test.mjs",
   "game-lifecycle.test.mjs",
+  "guidance-diagnostics.test.mjs",
   "history-turn-preview.test.mjs",
   "recorded-narration.test.mjs",
   "history-narration.test.mjs",

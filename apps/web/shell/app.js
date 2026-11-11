@@ -37,6 +37,7 @@ import {BOARD_PROMPT} from '../board/prompt-models.js';
 import {renderDismissButton} from './dismiss-control.js';
 import {createConfirmedFramePresenter} from './confirmed-frame-presenter.js';
 import {createConfirmedComputerPlayback} from './confirmed-computer-playback.js';
+import {createGuidanceIncidentSink} from './guidance-diagnostics.js';
 import {isOngoingGame,isCompletedGame} from './game-lifecycle.js';
 import {createLiveTurnOverview,liveTurnOverviewOverlay} from './live-turn-overview.js';
 import {mountHoverTooltips} from './hover-tooltip.js';
@@ -3299,6 +3300,7 @@ const mountBoardForGame = (game) => {
         },
       }),
       controls: {
+        onGuidanceDiagnostic: createGuidanceIncidentSink({gameId:game.id,diagnostics:issueDiagnostics}),
         onInteractionSound: event => gameSound.interaction(event),
         getDisplayOverlay:selection=>liveTurnOverviewOverlay(selection,{game:getBoardGame(transport.getGameViewModel(game.id)),overview:liveTurnOverview,confirmedPlayback,replayController,forcedFollow:()=>forcedFollowWorking(game.id)}),
         onPieceSelected:piece=>liveTurnOverview.selected(piece),
