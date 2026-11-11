@@ -193,7 +193,7 @@ function historyRouteHarness(t) {
     moves:[0,1].map(index=>({index,moveId:`m${index}`,snapshot:snapshot(index),selectionSnapshot:snapshot(index),notation:'MOVE',at:'2026-01-01'}))}});
   transport.selectHistoryMove({gameId:'g',moveIndex:0});
   const noop=()=>{};
-  const context={undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,pendingBoardContextReplay:null,cancelPendingBoardContextReplay:noop,boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',isCompletedGame,renderResultText,renderHistoryResult,HTMLElement:Element,appEl,transport,currentRoute:{name:'game',gameId:'g',panel:'history'},
+  const context={undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,pendingBoardContextReplay:null,cancelPendingBoardContextReplay:noop,boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',isCompletedGame,renderResultText,renderHistoryResult,HTMLElement:Element,appEl,transport,currentRoute:{name:'game',gameId:'g',panel:'history'},pendingRoutePosition:null,
     lastRenderedRouteKey:'g|history|debug:false',lastRenderedBaseRouteKey:'g',lastRenderedTransitionPhaseKey:'idle',
     activeResultGameId:null,mountedBoardGameId:null,FLYOUT_KEYS:[],
     getGamePanel:route=>(route??context.currentRoute).panel,

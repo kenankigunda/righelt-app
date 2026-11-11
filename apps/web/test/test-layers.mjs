@@ -1,4 +1,5 @@
 export const WEB_UNIT_TEST_FILES = Object.freeze([
+  "destination-recovery.test.mjs",
   "dismiss-control.test.mjs",
   "board-context.test.mjs",
   "board-loading-message-owner.test.mjs",
@@ -39,7 +40,6 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "notification-state.test.mjs",
   "brand-grid.test.mjs",
   "auth-startup-helper.test.mjs",
-  "render-gesture.test.mjs",
   "public-profile.test.mjs",
   "adapter-render-status.test.mjs",
   "api-proxy.test.mjs",
@@ -89,6 +89,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "operation-manager.test.mjs",
   "optimistic-live.test.mjs",
   "routing.test.mjs",
+  "navigation-history.test.mjs",
   "shell-host.test.mjs",
   "shell-render-stability.test.mjs",
   "sync-store.test.mjs",
@@ -100,7 +101,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "ui-guards.test.mjs",
 ]);
 
-export const WEB_INTEGRATION_TEST_FILES = Object.freeze(["playback-context.integration.test.mjs","initial-load-native-fixture.integration.test.mjs","client-settlement-observer.integration.test.mjs","home-read-recovery.integration.test.mjs","board-context-owner.integration.test.mjs","board-context-layout.integration.test.mjs","board-context-undo.integration.test.mjs","board-context-acknowledged.integration.test.mjs"]);
+export const WEB_INTEGRATION_TEST_FILES = Object.freeze(["destination-recovery.integration.test.mjs","home-navigation-owner.integration.test.mjs","navigation-visit-owner.integration.test.mjs","playback-context.integration.test.mjs","initial-load-native-fixture.integration.test.mjs","client-settlement-observer.integration.test.mjs","home-read-recovery.integration.test.mjs","board-context-owner.integration.test.mjs","board-context-layout.integration.test.mjs","board-context-undo.integration.test.mjs","board-context-acknowledged.integration.test.mjs"]);
 const WEB_INTEGRATION_TEST_FILE_SET = new Set(WEB_INTEGRATION_TEST_FILES);
 
 const WEB_UNIT_TEST_FILE_SET = new Set(WEB_UNIT_TEST_FILES);
