@@ -145,6 +145,6 @@ for(const sample of [
 
 test('actual Board-detail ancestor receives overflow cue without a notice wrapper',t=>{
  const f=fixture(t),body=f.body(48,180),detail={attributes:{},setAttribute(key,value){this.attributes[key]=value;}};
- body.closest=selector=>selector.split(',').includes('.board-context-detail')?detail:null;f.setBodies([body]);f.layout.sync();
+ body.closest=selector=>selector.split(',').map(part=>part.trim()).includes('.board-context-detail')?detail:null;f.setBodies([body]);f.layout.sync();
  assert.equal(body.tabIndex,0);assert.equal(detail.attributes['data-context-overflow'],'true');body.scrollHeight=48;f.sample();assert.equal(detail.attributes['data-context-overflow'],'false');
 });
