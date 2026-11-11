@@ -1,3 +1,5 @@
+import {BOARD_CONTEXT_PURPOSE} from './board-context-purpose.js';
+import {normalizeActivitySide} from './activity-affiliation.js';
 import {describeRecordedMove,describeRecordedTurn,recordedNarrationCoordinates} from './recorded-narration.js';
 import { COMPUTER_PROFILES, COMPUTER_TIMING } from '../generated/packages/shared-types/src/computer-play.js';
 
@@ -56,5 +58,5 @@ export function computerBoardMessage(game, status, { selectedPieceId } = {}) {
   if (!completed || completed.turn.index !== (game.board?.state?.turnIndex ?? 0) - 1) return null;
   const move = [...completed.moves].reverse().find(item => item.computerProof);
   const completedName = COMPUTER_PROFILES[move?.computerProof?.profile]?.name ?? 'Computer';
-  return { text: describeTurn(completed.moves,completedName), coordinates:moveCoordinates(completed.moves), action: { id: 'replay-computer', label: 'Show me again' } };
+  return { purpose:BOARD_CONTEXT_PURPOSE.INCOMING, actorName:completedName, actorSide:normalizeActivitySide(completed.turn.playerSeat)??normalizeActivitySide(move?.actorSide), text: describeTurn(completed.moves,completedName), coordinates:moveCoordinates(completed.moves), action: { id: 'replay-computer', label: 'Show me again' } };
 }

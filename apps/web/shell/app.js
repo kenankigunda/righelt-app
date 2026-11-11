@@ -1,3 +1,4 @@
+import {runtimeContextPurpose} from './board-context-purpose.js';
 import {createRecoveryPresentation} from './recovery-presentation.js';
 import {mountRenderGestureOwner} from './render-gesture-owner.js';
 import {createDestinationRouteOwner,destinationReadScope,terminalColdDestination,destinationHidesGameBody,readGameDestination,destinationLiveGameId} from './destination-route-owner.js';
@@ -222,7 +223,7 @@ const receiveBoardContext=(context,meta)=>{
  }
  const focused=appEl.querySelector('[data-board-context]')?.contains(document.activeElement);
  if(context&&meta.transient&&focused)return;
- const value=context?{...context,key,gameId:game.id,transient:context.mandatory?false:meta.transient}:meta.selectedPieceId?{key,gameId:game.id,message:null,transient:false}:null;
+ const value=context?{...context,purpose:runtimeContextPurpose(context),key,gameId:game.id,transient:context.mandatory?false:meta.transient}:meta.selectedPieceId?{key,gameId:game.id,message:null,transient:false}:null;
  if(boardContexts.update('piece',value))queueBoardContextRefresh();
 };
 const dispatchBoardMessageAction=(id,{trigger=null,descriptor=null}={})=>{

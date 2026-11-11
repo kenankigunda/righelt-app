@@ -14,7 +14,7 @@ export function createBoardContextStore() {
    if(!context){const changed=current.has(channel);current.delete(channel);return changed;}
    if(typeof context.key!=='string'||!context.key||!context.gameId)throw Error('Board context requires an identity');
    const previous=entries.get(context.key);
-   const signature=JSON.stringify({message:context.message,mandatory:Boolean(context.mandatory),transient:Boolean(context.transient)});
+   const signature=JSON.stringify({message:context.message,purpose:context.purpose,actorSide:context.actorSide,mandatory:Boolean(context.mandatory),transient:Boolean(context.transient)});
    const changed=current.get(channel)!==context.key||previous?.signature!==signature;
    entries.set(context.key,{...context,channel,signature});current.set(channel,context.key);prune(entries);
    return changed;

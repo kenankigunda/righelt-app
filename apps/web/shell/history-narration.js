@@ -1,3 +1,4 @@
+import {BOARD_CONTEXT_PURPOSE} from './board-context-purpose.js';
 import {BOARD_PROMPT} from '../board/prompt-models.js';
 import {COMPUTER_PROFILES} from '../generated/packages/shared-types/src/computer-play.js';
 import {historyActorLabel,recordedActorIdentity} from './perspective-labels.js';
@@ -36,5 +37,5 @@ export function recordedHistoryView(game){
 /** Recorded detail belongs to context, outside the finite Board prompt budget. */
 export function historyBoardMessage(game,options={}){
  const presentation=selectedHistoryPresentation(game,options);
- return presentation?{text:BOARD_PROMPT.history,context:presentation.message}:null;
+ return presentation?{text:BOARD_PROMPT.history,context:{...presentation.message,purpose:BOARD_CONTEXT_PURPOSE.HISTORY}}:null;
 }

@@ -1,3 +1,4 @@
+import {BOARD_CONTEXT_PURPOSE} from './board-context-purpose.js';
 import {isCompletedGame} from './game-lifecycle.js';
 import {BOARD_PROMPT} from '../board/prompt-models.js';
 import {playerDisplayName} from './perspective-labels.js';
@@ -59,12 +60,12 @@ export function opponentBoardMessage(game, status, selection = {}, {canInteract 
     const computer = computerBoardMessage(game,status,selection);
     if (computer) return withPrompt(computer);
     if (!completed) return null;
-    return withPrompt({text:describeTurn(completed.moves,'Your opponent'),coordinates:moveCoordinates(completed.moves),action:{id:'replay-computer',label:'Show me again'}});
+    return withPrompt({purpose:BOARD_CONTEXT_PURPOSE.INCOMING,actorName:playerDisplayName(game,completed.side),actorSide:completed.side,text:describeTurn(completed.moves,playerDisplayName(game,completed.side)),coordinates:moveCoordinates(completed.moves),action:{id:'replay-computer',label:'Show me again'}});
   }
   if (!own.size) {
     if (completed && !started) {
       const actorName=playerDisplayName(game,completed.side);
-      return withPrompt({text:describeTurn(completed.moves,actorName),coordinates:moveCoordinates(completed.moves),actorName,action:{id:'replay-computer',label:'Show me again'}});
+      return withPrompt({purpose:BOARD_CONTEXT_PURPOSE.INCOMING,actorSide:completed.side,text:describeTurn(completed.moves,actorName),coordinates:moveCoordinates(completed.moves),actorName,action:{id:'replay-computer',label:'Show me again'}});
     }
     if (!actor) return 'Waiting for the game';
     const actorName=playerDisplayName(game,actor);
