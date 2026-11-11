@@ -2,8 +2,8 @@
   "version": 1,
   "html": {
     "path": "/",
-    "sourceSha256": "e23c45b259dee3cb040ee7f528b642eddf486ce32f9e0f70a3243b7fc9f39c37",
-    "outputSha256": "ce1d377bb7607ee925b5434ce2f0a95a166052d1f3996796ed9b0931eb86c22d",
+    "sourceSha256": "f62fc8d3730d2b4194ad81ec2094ab062e682352c9a847852a7d37a67eb46107",
+    "outputSha256": "e6edfe0172cba6c8f74b2050d2105c7ad7d838164328192202859a68c52c6b30",
     "before": "    <main id=\"app\" class=\"app-root\" aria-live=\"polite\" hidden></main>",
     "after": "    <img hidden alt=\"\" loading=\"eager\" decoding=\"sync\" data-initial-load-pageshow-gate src=\"/assets/opponents/friend-portrait.webp?initial-load-page-show-gate=1\" />\n    <main id=\"app\" class=\"app-root\" aria-live=\"polite\" hidden></main>",
     "count": 1
@@ -11,7 +11,7 @@
   "asset": {
     "path": "/assets/opponents/friend-portrait.webp",
     "query": "?initial-load-page-show-gate=1",
-    "sourceSha256": "6a16cd22c574a0d7cfcb7d7d1032c67cee3669635fe50b87bb17d6ee0612ab17",
-    "bytes": 21276
+    "sourceSha256": "82303cbdbfefc438a8c0e2ca2a2a12d9b99d98bf9002ae71789f9e7f17f318be",
+    "bytes": 22650
   }
 }
