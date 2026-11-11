@@ -551,6 +551,8 @@ test('all approved artwork consumers fit and natural story motion survives bidir
  const stationary=async(dialog,before)=>{const after=await dialog.locator('.opponent-story-copy,.story-heading,.story-modal-actions,[data-story-step]').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().toJSON()));expect(after).toHaveLength(before.length);for(let i=0;i<after.length;i++)for(const key of ['x','y','width','height'])expect(after[i][key]).toBeCloseTo(before[i][key],0);};
  try{
   await page.setViewportSize({width:1440,height:900});await page.goto('/');await page.evaluate(()=>document.fonts.ready);
+  await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+  await expect(page.getByTestId('home-create-game')).toBeEnabled();
   for(const id of ['babs','tau','horus'])evidence.portraits.push(await verifyImage(page.locator('button[data-opponent="'+id+'"]').locator('img'),id+'-portrait'));
   evidence.portraits.push(await verifyImage(page.getByTestId('home-create-game').locator('img'),'friend-portrait'));
   for(const [id,scenes] of Object.entries(expected)){
