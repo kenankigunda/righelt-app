@@ -1387,6 +1387,11 @@ const syncNarrowHeaderMenuDom = () => {
     }
     panel.classList.add("is-open");
   } else {
+    // Retire only focus still owned by this menu. An outside control or a
+    // newly opened dialog keeps the focus it deliberately acquired.
+    if (panel.contains(document.activeElement)) {
+      button.focus({ preventScroll: true });
+    }
     panel.classList.remove("is-open");
   }
   syncRenderedMarkupSnapshot();
