@@ -3,11 +3,25 @@ import { canonicalCommandJson, encodedSyncBytes } from '../../shared-types/src/s
 import type { LiveGame, MoveEntry } from './shell-live-core';
 import type { LiveGameEnv, D1Statement } from './shell-live-db';
 
-export type ArchivedDecision = { id: string; kind: 'decision' | 'restoration' | 'turn' | 'initial' | 'finalization'; revision: number; eventSeq: number; ordinal: number; at: string; move?: MoveEntry; finalizedMove?: MoveEntry; restoredIds?: string[]; targetDecisionId?: string; state?: LiveGame['board']['state']; partial?: boolean };
+export type ArchivedDecision = { id: string; kind: 'decision' | 'restoration' | 'turn' | 'initial' | 'finalization'; revision: number; eventSeq: number; ordinal: number; at: string; move?: MoveEntry; finalizedMove?: MoveEntry; restoredIds?: string[]; targetDecisionId?: string; requesterIdentityId?: string; restorationVersion?: 1; state?: LiveGame['board']['state']; partial?: boolean };
 const insert = (env: LiveGameEnv, gameId: string, entry: ArchivedDecision) => env.DB.prepare('INSERT INTO live_decision_archive (game_id, decision_id, event_seq, event_ordinal, gameplay_revision, payload_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6)').bind(gameId, entry.id, entry.eventSeq, entry.ordinal, entry.revision, JSON.stringify(entry));
 
+export type AcceptedRestoration = { targetDecisionId: string; requesterIdentityId: string };
+
+/** Only the accepted handler supplies this context, after resolving the durable base. */
+export function stampAcceptedRestoration(before: LiveGame | null, game: LiveGame, eventSeq: number, context: AcceptedRestoration) {
+  if (!Number.isSafeInteger(eventSeq) || eventSeq < 1 || typeof context.targetDecisionId !== 'string' || !context.targetDecisionId
+    || typeof context.requesterIdentityId !== 'string' || !context.requesterIdentityId
+    || game.lastRestoration?.decisionId !== context.targetDecisionId) throw new Error('invalid_restoration_context');
+  const old = new Map(before?.moves.map(move => [move.moveId, move]) ?? []);
+  for (const move of game.moves) {
+    if (move.undone === true && old.get(move.moveId)?.undone !== true) move.undoEventSeq = eventSeq;
+  }
+  game.lastRestoration = { ...game.lastRestoration, undoEventSeq: eventSeq };
+}
+
 /** These statements join the same D1 batch as the projection and command receipt. */
-export function archiveStatements(env: LiveGameEnv, before: LiveGame | null, game: LiveGame, eventSeq: number): D1Statement[] {
+export function archiveStatements(env: LiveGameEnv, before: LiveGame | null, game: LiveGame, eventSeq: number, acceptedRestoration?: AcceptedRestoration): D1Statement[] {
   const statements: D1Statement[] = [];
   const revision = game.gameplayRevision;
   const needsBackfill = before?.archiveStartRevision === undefined;
@@ -28,7 +42,8 @@ export function archiveStatements(env: LiveGameEnv, before: LiveGame | null, gam
     }
   }
   const restoredIds = game.moves.filter((move) => move.undone && before?.moves.some((old) => old.moveId === move.moveId && !old.undone)).map((move) => move.moveId);
-  if (restoredIds.length || game.lastRestoration?.at !== before?.lastRestoration?.at) append({ id: `restore-${eventSeq}`, kind: 'restoration', revision, eventSeq, at: game.updatedAt, restoredIds, targetDecisionId: game.lastRestoration?.decisionId, state: game.board.state });
+  if (acceptedRestoration && (game.lastRestoration?.undoEventSeq !== eventSeq || game.lastRestoration.decisionId !== acceptedRestoration.targetDecisionId)) throw new Error('restoration_sequence_mismatch');
+  if (acceptedRestoration || restoredIds.length || game.lastRestoration?.at !== before?.lastRestoration?.at) append({ id: `restore-${eventSeq}`, kind: 'restoration', revision, eventSeq, at: game.updatedAt, restoredIds, targetDecisionId: game.lastRestoration?.decisionId, ...(acceptedRestoration ? { requesterIdentityId: acceptedRestoration.requesterIdentityId, restorationVersion: 1 as const } : {}), state: game.board.state });
   else if (before && revision !== before.gameplayRevision && !added.length) append({ id: `turn-${eventSeq}`, kind: 'turn', revision, eventSeq, at: game.updatedAt, state: game.board.state });
   if (needsBackfill || (before && revision !== before.gameplayRevision && revision % COMPUTER_LIMITS.checkpointEvery === 0)) {
     statements.push(env.DB.prepare('INSERT INTO live_position_checkpoints (game_id, gameplay_revision, state_json) VALUES (?1, ?2, ?3)').bind(game.id, revision, JSON.stringify(game.board.state)));
@@ -94,18 +109,28 @@ export async function readAdditionalDecisionPage(env: LiveGameEnv, game: LiveGam
       WHERE amendment.game_id=original.game_id AND json_extract(amendment.payload_json,'$.kind')='finalization'
       AND json_extract(amendment.payload_json,'$.targetDecisionId')=original.decision_id
       ORDER BY amendment.event_seq DESC,amendment.event_ordinal DESC LIMIT 1) AS finalized_payload_json,
+    (SELECT CASE WHEN EXISTS(SELECT 1 FROM json_each(restoration.payload_json,'$.restoredIds') WHERE value=original.decision_id)
+        OR (json_extract(restoration.payload_json,'$.restorationVersion')=1 AND target.decision_id IS NOT NULL AND ${boundaryBefore})
+      THEN restoration.event_seq ELSE NULL END ${restorationJoins}
+      AND (${boundaryBefore} OR EXISTS(SELECT 1 FROM json_each(restoration.payload_json,'$.restoredIds') WHERE value=original.decision_id))
+      ORDER BY restoration.event_seq,restoration.event_ordinal LIMIT 1) AS undo_event_seq,
     EXISTS(SELECT 1 ${restorationJoins} AND (${boundaryBefore}
       OR EXISTS(SELECT 1 FROM json_each(restoration.payload_json,'$.restoredIds') WHERE value=original.decision_id))) AS restored,
     EXISTS(SELECT 1 ${restorationJoins} AND target.decision_id IS NULL
       AND (fallback.decision_id IS NULL OR fallback.event_seq>original.event_seq
         OR (fallback.event_seq=original.event_seq AND fallback.event_ordinal>original.event_ordinal))) AS uncertain
-    ${filter} ORDER BY original.event_seq,original.event_ordinal LIMIT ?4`).bind(...bindings).all<{payload_json:string;finalized_payload_json?:string|null;restored:number;uncertain:number}>();
+    ${filter} ORDER BY original.event_seq,original.event_ordinal LIMIT ?4`).bind(...bindings).all<{payload_json:string;finalized_payload_json?:string|null;restored:number;uncertain:number;undo_event_seq:number|null}>();
   const entries=(rows.results??[]).map(row=>{
     const entry:ArchivedDecision=JSON.parse(row.payload_json);
     const move=row.finalized_payload_json?JSON.parse(row.finalized_payload_json).finalizedMove:entry.move;
     const undone=Boolean(move?.undone||row.restored);
     const historyStatus=undone?'undone':row.uncertain?'unknown':'active';
-    return {...entry,historyStatus,move:{...move,undone:historyStatus==='unknown'?undefined:undone}};
+    const provedSequence = Number.isSafeInteger(row.undo_event_seq) && Number(row.undo_event_seq) > 0 ? Number(row.undo_event_seq) : undefined;
+    const conflict = move?.undoEventSeq !== undefined && move.undoEventSeq !== provedSequence;
+    const undoEventSeq = undone && !conflict ? provedSequence : undefined;
+    // Positive integers alone are not proof. Keep original storage untouched,
+    // but expose only membership bound to the first real restoration event.
+    return {...entry,historyStatus,move:{...move,undone:historyStatus==='unknown'?undefined:undone,undoEventSeq,...(conflict ? {undoBoundaryStatus:'conflict'} : {})}};
   });
   const items=entries.slice(0,COMPUTER_LIMITS.historyPage),last=items.at(-1);
   return {available:entries.length>0,items,nextCursor:entries.length>items.length&&last?{eventSeq:last.eventSeq,ordinal:last.ordinal}:null};

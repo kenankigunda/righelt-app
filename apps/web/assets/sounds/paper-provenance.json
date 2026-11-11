@@ -1,0 +1,43 @@
+{
+  "source": "https://freesound.org/people/Mafon2/sounds/360646/",
+  "title": "Paper drawn with rustle",
+  "author": "Mafon2",
+  "license": "CC0 1.0",
+  "licenseURL": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "sourceDescription": "envelope being unfold",
+  "previewURL": "https://cdn.freesound.org/previews/360/360646_1196472-hq.mp3",
+  "previewSha256": "6160753a5438653dc67e5217cbf9782841880e479128ad9b93e3991263df8372",
+  "edits": "Mono22050Hz, two excerpts, time-compressed to motion intervals, gentle100\u2013220Hz high-pass/6\u20138kHz low-pass,12ms attack/35ms release, peak0.18. Distinct recorded excerpts, not reversed playback or synthesized whoosh.",
+  "clips": [
+    {
+      "file": "paper-unfurl.wav",
+      "sourceSeconds": [
+        0.82,
+        1.36
+      ],
+      "durationSeconds": 0.38598639455782313,
+      "peak": 0.18,
+      "rms": 0.013727491505120173,
+      "sha256": "1cd93401257c961e10f0c62b7522003753047f9f81c7b40d7dfa1e849fc71b90"
+    },
+    {
+      "file": "paper-refurl.wav",
+      "sourceSeconds": [
+        1.46,
+        1.98
+      ],
+      "durationSeconds": 0.36997732426303853,
+      "peak": 0.18,
+      "rms": 0.01493390749483781,
+      "sha256": "00a58475f55f1368bb18b0ad96579029929c5fd7bc2e088a725b77574d8a68d2"
+    }
+  ],
+  "limits": "No independent acoustic listening or same-device perceived-loudness comparison claimed.",
+  "sourcePageVerification": {
+    "date": "2026-11-07",
+    "url": "https://freesound.org/people/Mafon2/sounds/360646/",
+    "license": "CC0 1.0",
+    "sourceMetadata": "3.520s/stereo48000Hz",
+    "scope": "Root live primary source page/license verification. Selected edited clips unchanged; no re-audit of missing raw conversion archive or acoustic quality."
+  }
+}

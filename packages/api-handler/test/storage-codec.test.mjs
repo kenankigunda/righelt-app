@@ -1,3 +1,4 @@
+import {stampAcceptedRestoration} from '../src/decision-archive.ts';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { encodeStorage,decodeStorage,sha256,stateWriteLimits,storageWriterEnabled } from "../src/storage-codec.ts";
@@ -175,4 +176,14 @@ test("writer promotion, rollback and omitted game scope fail safely",()=>{
  assert.equal(storageWriterEnabled(scoped,"false",scoped.STORAGE_WRITER_CANARY_GAME_ID),false);
  assert.equal(storageWriterEnabled(scoped,"invalid",scoped.STORAGE_WRITER_CANARY_GAME_ID),false);
  assert.equal(stateWriteLimits({...scoped,STORAGE_WRITER_CANARY_GAME_ID:""},"another-game").rawBytes,16*1024*1024);
+});
+
+for(const compressed of [false,true])test(`accepted Undo boundaries and missing legacy provenance survive ${compressed?'compressed':'JSON'} reload`,async()=>{
+ const game=createInitialGame({gameId:'undo-codec-'+compressed,identityId:'actor',selfPlayMode:true});
+ for(let i=0;i<3;i++)assert.equal(applyServerAction(game,{type:'pass'}).ok,true);
+ const before=structuredClone(game),target=game.moves[1].moveId;assert.equal(applyRevertToMove(game,target,'actor').ok,true);
+ stampAcceptedRestoration(before,game,7,{targetDecisionId:target,requesterIdentityId:'actor'});
+ const legacy={...structuredClone(game.moves[2]),moveId:'legacy-undone',index:3,undoneAt:null};delete legacy.undoEventSeq;delete legacy.undoneByIdentityId;game.moves.push(legacy);
+ const DB=createFakeD1(),env={DB,STORAGE_COMPRESSION:String(compressed)};await persistGameState(env,game,7,null,{baseEventSeq:0});
+ const loaded=await loadGameProjection(env,game.id);assert.equal(loaded.kind,'ok');assert.deepEqual(loaded.game.moves,game.moves);assert.deepEqual(loaded.game.lastRestoration,game.lastRestoration);assert.equal(loaded.game.moves[3].undoEventSeq,undefined);assert.equal(loaded.game.moves[3].undoneByIdentityId,undefined);
 });

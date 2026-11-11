@@ -1,3 +1,4 @@
+import {readDecision} from '../src/decision-archive.ts';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { listLegalActions } from "../../game-engine/src/legal";
@@ -185,6 +186,47 @@ test("live transport: create/paged-list/get game lifecycle is server-backed", as
   assert.equal(directBody.game.viewers.some((viewer) => viewer.identityId === "id-direct"), false);
   assert.equal(directBody.game.canJoinAsViewer, true);
   assert.equal(directBody.game.canJoinAsPlayer, true);
+});
+
+test("live transport: completed Home section filters before counting and pagination", async () => {
+  const ids = {};
+  const fixtures = [
+    ['win1', 'id-completed-owner', 'p1_win'],
+    ['win2', 'id-completed-owner', 'p2_win'],
+    ['draw', 'id-completed-owner', 'draw'],
+    ['live', 'id-completed-owner', 'ongoing'],
+    ['unknown', 'id-completed-owner', 'future_result'],
+    ['otherWin', 'id-someone-else', 'p1_win'],
+  ];
+  for (const [index, [name, identityId, status]] of fixtures.entries()) {
+    const response = await handleApiRequest(req('/api/shell/games', 'POST', {identityId, selfPlayMode:false}), env);
+    assert.equal(response.status, 200);
+    const {game} = await response.json();
+    ids[name] = game.id;
+    env.DB.overwriteGameState(game.id, value => ({...value,
+      updatedAt: `2026-10-30T12:00:0${index}.000Z`, lastMoveAt: `2026-10-30T12:00:0${index}.000Z`,
+      board:{...value.board, state:{...value.board.state, outcome:{status}}},
+    }));
+  }
+  const page = async (section, page = 0) => {
+    const response = await handleApiRequest(req(`/api/shell/games?identityId=id-completed-owner&section=${section}&page=${page}&pageSize=2&debug=0`), env);
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  const first = await page('completed');
+  assert.equal(first.totalGames, 3);
+  assert.equal(first.totalPages, 2);
+  assert.deepEqual(first.games.map(game => game.id), [ids.draw, ids.win2]);
+  assert.deepEqual(first.games.map(game => game.confirmedOutcomeStatus), ['draw','p2_win']);
+  assert(first.games.every(game => Number.isSafeInteger(game.eventSeq) && Number.isSafeInteger(game.gameplayRevision)));
+  assert(first.games.every(game => game.myRoles.includes('Player 1')));
+  const clamped = await page('completed', 999);
+  assert.equal(clamped.page, 1);
+  assert.deepEqual(clamped.games.map(game => game.id), [ids.win1]);
+  assert.deepEqual((await page('my')).games.map(game => game.id), [ids.live]);
+  const other = await page('other');
+  assert.equal(other.totalGames, 2);
+  assert.deepEqual(other.games.map(game => game.id), [ids.otherWin, ids.unknown]);
 });
 
 test("live transport: legacy playgroundMode create payload is normalized to selfPlayMode", async () => {
@@ -1440,6 +1482,12 @@ test("live transport: revert request requires approval and marks moves undone on
   assert.equal(approveBody.game.pendingRevertRequest, null);
   assert.equal(approveBody.game.moves.filter((move) => move.undone === true).length >= 1, true);
   assert.equal(approveBody.game.moves.find((move) => move.moveId === targetMoveId)?.undone, true);
+  const undoSequence = approveBody.game.lastRestoration.undoEventSeq;
+  assert.equal(undoSequence, approveBody.eventSeq);
+  assert.ok(approveBody.game.moves.filter(move => move.undone).every(move => move.undoEventSeq === undoSequence));
+  const restoration = await readDecision(env, gameId, `restore-${undoSequence}`);
+  assert.equal(restoration.requesterIdentityId, "id-owner", "Approval does not replace the requester with the approver");
+  assert.equal(restoration.restorationVersion, 1);
   assert.equal(approveBody.game.inHistoryMode, false);
   assert.equal(approveBody.game.historyIndex, null);
 
@@ -1478,6 +1526,8 @@ test("live transport: dual-seat identity auto-approves revert requests", async (
   const requestBody = await requestRevert.json();
   assert.equal(requestRevert.status, 200);
   assert.equal(requestBody.autoApproved, true);
+  assert.equal(requestBody.game.notifications[0], "Undo applied");
+  assert.equal(requestBody.game.notifications.some(note => /undo request/i.test(note)), false);
   assert.equal(requestBody.pendingApproval, undefined);
   assert.equal(requestBody.game.pendingRevertRequest, null);
   assert.equal(requestBody.game.moves[0].undone, true);

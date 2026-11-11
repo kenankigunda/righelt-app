@@ -1,3 +1,10 @@
+import {createGameAlertItems,renderGameAlertStackCard,renderRecoveryActions} from '../shell/game-alert-presentation.js';
+import {createHomeCardRendering,getStaticCardPreviewSnapshot,getStaticCardPreviewPayload} from '../shell/home-card-rendering.js';
+import {escapeDebug} from '../shell/computer-view.js';
+import {renderHomeCardIdentity,renderHomeCardTurn} from '../shell/home-card-identity.js';
+import {createHomeSectionReads,createHomeSectionState} from '../shell/home-section-reads.js';
+import {historyRenderingFixture} from './support/history-rendering-context.mjs';
+import {groupUndoHistory,renderUndoHistoryGroups} from '../shell/history-undo-groups.js';
 import {selectedHistoryPresentation} from '../shell/history-narration.js';
 import {recordedMoveNumber,visibleRecordedMoves} from '../shell/recorded-narration.js';
 import {renderBoardMessageHtml} from '../board/message-presentation.js';
@@ -44,13 +51,14 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const renderHeaderNarrowMenu = \(\) =>/);
   assert.match(source, /const renderHeaderAlertZone = \(\) => \{/);
   assert.match(source, /const notificationStack = createNotificationStack\(\);/);
-  assert.match(source, /const getGameAlertItems = \(game\) => \{/);
-  assert.match(source, /const renderGameAlertStackCard = \(\{ gameId, item, stackIndex, totalAlerts \}\) => \{/);
-  assert.match(source, /const isActive = stackIndex === 0;/);
-  assert.match(source, /data-action="cycle-game-alert-stack"/);
-  assert.doesNotMatch(source, /data-action="cycle-game-alert-stack" data-game-id="\$\{escapeHtml\(gameId\)\}" role="button" tabindex="0"/);
-  assert.match(source, /: isActive\s*\? 'tabindex="-1"'/);
-  assert.match(source, /: 'aria-hidden="true" tabindex="-1" inert'/);
+  const stackCard=options=>renderGameAlertStackCard({gameId:'g',item:{key:'item',html:''},totalAlerts:2,...options},String);
+  const active=stackCard({stackIndex:0}),inactive=stackCard({stackIndex:1});
+  assert.match(active,/data-action="cycle-game-alert-stack"/);assert.match(active,/tabindex="0"/);assert.doesNotMatch(active,/role="button"/);
+  assert.match(inactive,/aria-hidden="true" tabindex="-1" inert/);
+  assert.match(stackCard({stackIndex:0,totalAlerts:1}),/tabindex="-1"/);
+  const items=createGameAlertItems(()=>({transport:{getFailedOperations:()=>[{id:'failure',error:{message:'Failed'}}]},maybeUpdateUndoRequestOutcomeFeedback(){},presentedRecoveryMessage:()=>null,needsRecoveryAction:()=>false,recoveryPresentationOptions:()=>({}),issueDiagnostics:{list:()=>[],capture:()=> 'incident'},isDiagnosticOpen:()=>false,dismissedRecoveryNotices:new Map(),escapeHtml:String,playbackRecoveryWait:{update:()=>0},viewingScope:()=> 'g',liveBoardVisible:()=>true,SYNC_TIMING:{reconnectAlertMs:4000,confirmationBudgetMs:15000},renderComputerProgress:()=>'',computerSession:{snapshot:()=>({})},getActiveRevertRequest:()=>null,getActivePendingRevertRequest:()=>null,undoRequestFeedback:null,undoRequestFeedbackGameId:null,boardContextScope(){},boardContexts:{items:()=>[]},contextReplayEnabled:()=>false}))({id:'g'});
+  assert.match(items[0].html,/data-testid="sync-failure-banner"/);assert.match(items[0].html,/data-action="dismiss-failed-operation"/);
+
   assert.match(source, /const viewedGameId = getCurrentViewedGameId\(\);/);
   assert.match(source, /data-shell-alert-zone="\$\{gameAlerts \|\| startupStatus \? "active" : "idle"\}"/);
   assert.match(source, /data-action="toggle-header-menu"/);
@@ -65,12 +73,9 @@ test("shell render patches same-route game updates without replacing the board p
   assert.doesNotMatch(source.slice(source.indexOf("const renderHeader ="), source.indexOf("const renderHome =")), />Home<\/(?:a|span)>/);
   assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*return renderDecisionDebug/s);
   assert.match(source, /const getDocumentTitle = \(\) => \{\s*const gameId = getCurrentViewedGameId\(\);\s*if \(gameId\) \{\s*return `\$\{formatDisplayGameId\(gameId\)\} \| Righelt`;\s*\}\s*return "Righelt";\s*\};/s);
-  assert.match(source, /const failedOperations = transport\.getFailedOperations\?\.\(game\.id\) \?\? \[\];/);
   assert.match(source, /const getFailedOperationsKey = \(gameId\) =>/);
   assert.match(source, /failedOperationsKey: getFailedOperationsKey\(game\.id\)/);
   assert.match(source, /const failedOperationsKey = getFailedOperationsKey\(game\.id\);/);
-  assert.match(source, /testId:\s*"sync-failure-banner"/);
-  assert.match(source, /data-action="dismiss-failed-operation"/);
   assert.match(source, /let isBuildingGameAlerts = false;/);
   assert.match(source, /const renderGameAlertsHtml = \(game, inviteFromRole = null\) => \{[\s\S]*isBuildingGameAlerts = true;[\s\S]*finally \{\s*isBuildingGameAlerts = false;\s*\}/s);
   assert.match(source, /if \(!isBuildingGameAlerts\) \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
@@ -122,7 +127,6 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /getAvailableShellContentWidth\(viewportWidth, route\) >= SHELL_WIDE_SCREEN_MIN_WIDTH \? "wide" : "narrow"/);
   assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) => getShellLayoutModeForRoute\(currentRoute, viewportWidth\);/);
   assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
-  assert.match(source, /window\.requestAnimationFrame\(\(\) => \{\s*scrollHomeSectionToTop\(sectionKey\);\s*\}\);/s);
   assert.match(source, /const syncShellLayoutMode = \(\) => \{/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", layoutMode\);/);
   assert.match(source, /appEl\.setAttribute\("data-shell-route", currentRoute\?\.name \|\| "unknown"\);/);
@@ -201,10 +205,6 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /querySelectorAll\("\.panel"\)/);
   assert.match(source, /class="panel" data-shell-panel="board"/);
   assert.match(source, /scheduleGameShellStickyLayout\(\);/);
-  assert.match(source, /const scheduleResponsiveHomeSectionPageSizes = \(\) => \{/);
-  assert.match(source, /window\.cancelAnimationFrame\(homeSectionResizeFrame\);/);
-  assert.match(source, /homeSectionResizeFrame = window\.requestAnimationFrame\(\(\) => \{/);
-  assert.match(source, /const didUpdate = await syncResponsiveHomeSectionPageSizes\(\);/);
   assert.match(source, /render\(\{ animatePanels: false, includeBoard: false \}\);/);
   assert.match(source, /window\.addEventListener\("resize", \(\) => \{[\s\S]*?normalizeRouteFlyoutState\(currentRoute,[\s\S]*?scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
   assert.match(source, /window\.addEventListener\("load", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
@@ -234,10 +234,8 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /document\.title = getDocumentTitle\(\);/);
   assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedHeader\(\);\s*updateMountedFlyouts\(\);\s*restoreScenarioDraftFocus\?\.\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*syncMountedGameShellPanelUi\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
   assert.match(source, /shouldUseIncrementalGameShell\(\) &&[\s\S]*getRouteTransitionPhaseKey\(\) === lastRenderedTransitionPhaseKey[\s\S]*updateMountedHeader\(\);\s*updateHeaderFields\(\);\s*syncScenarioAuthoringControls\(\);\s*updateMountedGameShell\(/s);
-  assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*if \(currentRoute\.name !== "home" \|\| !patchHomeAroundCreateControl\(nextMarkup\)\) \{[\s\S]*currentMain\.replaceWith\(nextMain\);updateMountedFlyouts\(\);[\s\S]*else appEl\.innerHTML = nextMarkup;\s*\}\s*restoreScenarioDraftFocus\?\.\(\);[\s\S]*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
-  assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.match(source, /data-flyout-link="home"/);
-  assert.match(source, /flyoutLink \? `data-flyout-link="\$\{escapeHtml\(flyoutLink\)\}"` : ""/);
+
   assert.doesNotMatch(source, /data-flyout-link="tutorial"/);
   assert.match(source, /data-action="copy-invite" data-game-id=/);
   assert.doesNotMatch(source, /replaceWith\(previousBoardPanel\)/);
@@ -271,13 +269,20 @@ test("sync store manages subscriptions through the active route game id", () => 
   assert.match(syncStoreSource, /liveSync\.connectGame\(gameId\);/);
 });
 
-test("history renderer groups turns newest first and moves chronologically", () => {
-  assert.match(source, /class="history-turn /);
-  assert.match(source, /sort\(\(a,b\)=>b.index-a.index\)/);
-  assert.match(source, /a.turnMoveIndex \?\? a.index/);
-  assert.match(source, /data-action="toggle-undone-group"/);
-  assert.match(source, /data-action="jump-history-turn"/);
-  assert.match(source, /data-action="revert-to-move"/);
+test("history renderer orders turns newest first and keeps native selection targets", () => {
+ const {renderTurnHistory}=historyRenderingFixture();
+ const game={id:'accepted-game',inHistoryMode:true,historyIndex:0,myRoles:['Player 1'],moves:[
+  {moveId:'first',index:0,turnIndex:0,turnMoveIndex:0,actorSide:'P1',notation:'First'},
+  {moveId:'second',index:1,turnIndex:1,turnMoveIndex:0,actorSide:'P2',notation:'Second'}]};
+ const html=renderTurnHistory(game);
+ assert.deepEqual([...html.matchAll(/data-testid="history-turn" aria-label="Turn (\d+) ·/g)].map(match=>Number(match[1])),[2,1]);
+ assert.match(html,/data-action="jump-history-turn"/);
+ assert.match(html,/data-action="revert-to-move"/);
+ const groups=groupUndoHistory('accepted-game',[{moveId:'accepted-move',index:0,turnIndex:0,undone:true,undoEventSeq:17}]);
+ const undo=renderUndoHistoryGroups('accepted-game',groups,()=>'<li>Recorded move</li>',new Set(),String);
+ assert.match(undo,/data-action="toggle-undone-group"/);
+ assert.match(undo,/data-undo-event-seq="17"/);
+ assert.match(undo,/aria-expanded="false"/);
 });
 
 test("transport subscriptions drive immediate game-shell updates", () => {
@@ -361,14 +366,23 @@ test("shell renders durable browser E2E selectors for core workflow surfaces", (
   assert.match(readFileSync(join(testDir, "..", "shell", "players-panel.js"), "utf8"), /data-testid="participants-list"/);
   assert.match(source, /data-testid="game-board"/);
   assert.match(readFileSync(join(testDir,"..","shell","panel-loading.js"),"utf8"), /data-testid="history-list"/);
-  assert.match(source, /data-testid="history-move-item"/);
-  assert.match(source, /data-testid="history-pending-move-item"/);
-  assert.match(source, /data-testid="history-destruction-item"/);
-  assert.match(source, /data-testid="history-return-live"/);
+  const {renderTurnHistory}=historyRenderingFixture();
+  const recorded={moveId:'recorded',index:0,turnIndex:0,turnMoveIndex:0,actorSide:'P1',notation:'Pass',action:{type:'pass'},selectionSnapshot:{pieces:[]},snapshot:{pieces:[]},destroyedPieces:[{ownerSeat:'p2',position:{row:2,col:3}}]};
+  const history=renderTurnHistory({id:'native-selectors',myRoles:['Player 1'],inHistoryMode:true,historyIndex:0,moves:[recorded],pendingMoves:[{...recorded,moveId:'pending',index:1,turnMoveIndex:1}]});
+  assert.match(history, /data-testid="history-move-item"/);
+  assert.match(history, /data-testid="history-pending-move-item"/);
+  assert.match(history, /data-testid="history-destruction-item"/);
+  assert.match(history, /data-testid="history-return-live"/);
   assert.match(source, /data-testid="approval-gate"/);
   assert.match(source, /data-testid="accept-request"/);
   assert.match(source, /data-testid="ignore-request"/);
-  assert.match(source, /testId:approval\?'undo-approval-notice':'undo-waiting-notice'/);
+  for(const approval of [false,true]){
+    const request={requestId:'undo',targetMoveId:'move'};
+    const getItems=createGameAlertItems(()=>({transport:{getFailedOperations:()=>[]},maybeUpdateUndoRequestOutcomeFeedback(){},presentedRecoveryMessage:()=>null,needsRecoveryAction:()=>false,recoveryPresentationOptions:()=>({}),issueDiagnostics:{list:()=>[]},dismissedRecoveryNotices:new Map(),escapeHtml:String,playbackRecoveryWait:{update:()=>0},viewingScope:()=> 'g',liveBoardVisible:()=>true,SYNC_TIMING:{reconnectAlertMs:4000,confirmationBudgetMs:15000},renderComputerProgress:()=>'',computerSession:{snapshot:()=>({})},getActiveRevertRequest:()=>approval?request:null,getActivePendingRevertRequest:()=>approval?null:request,undoApprovalActorSide:()=>null,undoRequestFeedback:null,boardContextScope(){},boardContexts:{items:()=>[]}}));
+    const html=getItems({id:'g'})[0].html;
+    assert.match(html,new RegExp(`data-testid="${approval?'undo-approval-notice':'undo-waiting-notice'}"`));
+    assert.match(html,new RegExp(`data-action="${approval?'accept-revert-request':'rescind-revert-request'}"`));
+  }
   assert.match(source, /data-testid="invite-join-player"/);
   assert.match(source, /data-testid="invite-join-viewer"/);
 });
@@ -380,27 +394,27 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /data-mini-board-preview data-preview-id=/);
   assert.match(source, /const reconcileMiniBoardPreviews = \(\) => \{/);
   assert.match(source, /syncMiniBoardPreviews\(\{/);
-  assert.match(source, /const getStaticCardPreviewSnapshot = \(card\) => card\?\.previewSnapshot \?\? null;/);
-  assert.match(source, /const getStaticCardPreviewPayload = \(card\) => \(\{/);
+  const snapshot={sideToMove:'P2',outcome:{status:'ongoing'}},registered=[];
+  const card={id:'card',eventSeq:8,gameplayRevision:3,confirmedOutcomeStatus:'ongoing',myRole:'Player 1',myRoles:['Player 1'],moveCount:4,createdAt:'2026-10-01',previewSnapshot:snapshot,player1:{identityId:'me',profile:{displayName:'Kenan'}},player2:{identityId:'other',profile:{displayName:'Ada'}}};
+  assert.equal(getStaticCardPreviewSnapshot(card),snapshot);assert.equal(getStaticCardPreviewSnapshot(null),null);
+  assert.equal(getStaticCardPreviewPayload(card).snapshot,snapshot);
+  const presenter=createHomeCardRendering({getTransport:()=>({getIdentityId:()=> 'me'}),escapeHtml:escapeDebug,toStableKey:JSON.stringify,buildGameHash:id=>`#/game/${id}`,getCurrentFlyoutState:()=>({}),formatDisplayGameId:String,formatClientDateTime:String,renderMiniBoardPreviewRoot:value=>{registered.push(value);return '<div data-mini-board-preview></div>';}});
+  const html=presenter.renderHomeGameCard(card);
+  assert.equal(registered[0].previewId,'home:card');assert.equal(registered[0].snapshot,snapshot);
+  assert.match(html,/class="mini-board-card"/);assert.match(html,/class="mini-board-card-link-surface"[\s\S]*href="#\/game\/card"/);assert.match(html,/data-game-id="card"/);assert.match(html,/data-flyout-link="game"/);assert.match(html,/Last move on 2026-10-01/);
+  for(const syncStatus of ['desynced','confirming'])assert.match(presenter.renderHomeGameCard({...card,syncStatus}),/<span class="status-chip">Recovering<\/span>/);
+  assert.match(presenter.renderHomeGameCard({...card,pendingPreviewSnapshot:snapshot}),/Update pending/);
+  assert.match(html,/<div class="mini-board-card-copy">/);assert.match(html,/<div class="mini-board-card-meta mini-board-card-meta-primary">/);assert.match(html,/Move 5/);
+  const completed=presenter.renderHomeGameCard({...card,confirmedOutcomeStatus:'p2_win'});assert.match(completed,/4 moves/);assert.match(completed,/Review game/);
   assert.match(source, /const scenarioPreviewPayload = selectedScenario \? buildScenarioStaticPreviewModel\(selectedScenario\) : null;/);
-  assert.match(source, /previewId: `\$\{variant\}:\$\{card\.id\}`/);
-  assert.match(source, /class="mini-board-card"/);
-  assert.match(source, /class="mini-board-card-link-surface"[\s\S]*href=/);
-  assert.match(source, /data-game-id="\$\{escapeHtml\(game\.id\)\}"/);
-  assert.match(source, /Last move on \$\{escapeHtml\(formatClientDateTime\(game\.lastMoveAt \|\| game\.createdAt\)\)\}/);
-  assert.match(
-    source,
-    /const recoveryChip =[\s\S]*game\.syncStatus === "desynced" \|\| game\.syncStatus === "confirming"[\s\S]*'<span class="status-chip">Recovering<\/span>' : "";/,
-  );
   assert.match(source, /const isDualSeatIdentity = \(game\) =>/);
   assert.match(source, /return '<strong class="player-tone-both">both players<\/strong>';/);
   assert.match(source, /const renderConnectionStatusIcon = \(status, label\) =>/);
-  assert.match(source, /import \{ renderHomeCardIdentity \} from "\.\/home-card-identity\.js"/);
-  assert.match(source, /renderHomeCardIdentity\(game, \{identityId: transport\.getIdentityId\(\)\}\)/);
+  const named={myRole:'Player 1',player1:{identityId:'me',profile:{displayName:'Kenan'}},player2:{identityId:'other',profile:{displayName:'Ada'}}};
+  const quiet=renderHomeCardIdentity(named,{identityId:'me',quiet:true});
+  assert.match(quiet,/<bdi>Kenan<\/bdi>/);assert.match(quiet,/<bdi>Ada<\/bdi>/);assert.doesNotMatch(quiet,/connection-status-icon/);
+  assert.match(renderHomeCardTurn(named,{sideToMove:'P2'}),/Blue: <\/span><bdi>Ada<\/bdi><\/strong> to play/);
   assert.doesNotMatch(source, /renderHomeSeatConnectionLine|renderHomeConnectionSummary|renderHomeRoleLine/);
-  assert.match(source, /<div class="mini-board-card-copy">/);
-  assert.match(source, /<div class="mini-board-card-meta mini-board-card-meta-primary">/);
-  assert.match(source, /const moveLabel = `Move \$\{game\.moveCount \+ 1\}`;/);
   assert.match(source, /reconcileMiniBoardPreviews\(\);\s*syncMountedGameShellPanelUi\(shellRoot\);\s*initializeDesktopBoardFit\(\);\s*scheduleGameShellStickyLayout\(\);/);
 });
 
@@ -487,7 +501,9 @@ test("history navigation uses pointer-down press state with a single mouseup rel
 test("upgrade fencing keeps a static recovery notice without discarding viewing context", () => {
  const subscriber=source.slice(source.indexOf('const subscribeToTransport'),source.indexOf('subscribeToTransport();'));
  assert.doesNotMatch(subscriber,/location\.reload|sync-v2-refresh/);
- assert.match(source,/game\.upgradeRequired \? `<button class="secondary[^"\n]*" data-action="refresh-game"/);
+ const upgrade=renderRecoveryActions({game:{id:'g',upgradeRequired:true},dismissed:false,recoveryNeedsAction:true,escapeHtml:String});
+ assert.match(upgrade,/<button class="secondary[^"\n]*" data-action="refresh-game">[\s\S]*?Reload game<\/button>/);
+ assert.match(upgrade,/<a[^>]+href="#\/">[\s\S]*?Home<\/a>/);assert.doesNotMatch(upgrade,/reconnect-safely/);
  assert.match(source,/if \(!game && transport\.isUpgradeRequired\?\.\(gameId\)\) \{\s*return `<section[^`]+data-action="refresh-game"/);
 });
 
@@ -518,7 +534,25 @@ test('all history undo/create actions belong to moves and the top keeps only Ret
  const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');const panel=source.slice(source.indexOf('const renderHistoryPanel ='),source.indexOf('const renderBoardPanel ='));
  assert.doesNotMatch(panel,/data-action="(?:launch-history-branch|revert-to-move|undo-last-move)"/);
  assert.doesNotMatch(source,/data-action="undo-last-move"/);
- const moves=source.slice(source.indexOf('const renderTurnHistory ='),source.indexOf('const renderHeader ='));
- assert.match(moves,/history-item-actions/);assert.match(moves,/data-action="launch-history-branch"/);assert.match(moves,/data-action="revert-to-move"/);assert.match(moves,/data-testid="history-return-live"/);
+ const {renderTurnHistory}=historyRenderingFixture();
+ const moves=renderTurnHistory({id:'move-actions',myRoles:['Player 1'],inHistoryMode:true,historyIndex:0,moves:[{moveId:'selected',index:0,turnIndex:0,turnMoveIndex:0,actorSide:'P1',notation:'Pass',action:{type:'pass'},selectionSnapshot:{pieces:[]},snapshot:{pieces:[]}}]});
+ const returnLine=moves.match(/<li class="history-empty-line history-return-live">[\s\S]*?<\/li>/)?.[0];
+ assert.ok(returnLine,'The native Return to live line must exist');assert.match(returnLine,/data-testid="history-return-live"/);
+ assert.doesNotMatch(returnLine,/data-action="(?:launch-history-branch|revert-to-move|undo-last-move)"/);
+ const selectedRow=moves.match(/<li class="history-item [^"]*"[^>]*data-move-id="selected"[\s\S]*?<\/li>/)?.[0];
+ assert.ok(selectedRow,'The selected move row must exist');assert.match(selectedRow,/history-item-actions/);assert.match(selectedRow,/data-action="launch-history-branch"/);assert.match(selectedRow,/data-action="revert-to-move"/);
  const css=readFileSync(new URL('../shell/shell.css',import.meta.url),'utf8');assert.match(css,/\.shell-header-menu-button \{\s*display: flex;\s*align-items: center;\s*justify-content: center;/);
+});
+
+test('Home responsive frames cancel stale scheduling and page navigation scrolls after settled publication',async()=>{
+ let frameId=0;const frames=new Map(),cancelled=[],events=[];
+ const window={requestAnimationFrame:fn=>{frames.set(++frameId,fn);return frameId;},cancelAnimationFrame:id=>{cancelled.push(id);frames.delete(id);}};
+ const owner={getHomeListRevision:()=>null},read={owner,homeDebug:false};
+ const state={homeSections:{my:{...createHomeSectionState('My games'),loaded:true,totalGames:8,totalPages:3,gameIds:['a','b','c'],visiblePageSize:3,visibleColumnCount:3,serverPageGameIdsByPage:{0:['a','b','c','d'],1:['e','f','g','h']}}},currentRoute:{name:'home'},homeReadVisit:1,homeSectionResizeFrame:0,lastHomeBatchRevision:null,transport:owner};
+ const pending=new Set(),controller=createHomeSectionReads({state,window,getVisibleHomeSectionKeys:()=>['my'],getHomeSection:key=>state.homeSections[key],setHomeSection:(key,value)=>state.homeSections[key]=value,
+ getHomeSectionVisiblePageSize:()=>3,getHomeSectionColumnCount:()=>1,captureRouteRead:()=>read,assertCurrentRouteRead:value=>assert.equal(value,read),routeReadIsCurrent:value=>value===read,
+ pendingHomeSectionKeys:pending,isHomeSectionPending:key=>pending.has(key),render:()=>events.push(['render',pending.size]),syncLiveChannels:()=>events.push(['sync']),gameSound:{play(){}},scrollHomeSectionToTop:key=>events.push(['scroll',key])});
+ controller.scheduleResponsive();const old=state.homeSectionResizeFrame;controller.scheduleResponsive();assert(cancelled.includes(old));assert.equal(frames.size,1);
+ await [...frames.values()][0]();frames.clear();assert.equal(state.homeSectionResizeFrame,0);assert.equal(state.homeSections.my.visibleColumnCount,1);assert.deepEqual(events,[['sync'],['render',0]]);
+ events.length=0;await controller.next('my');assert.deepEqual(events,[['render',1],['sync'],['render',0]]);assert.equal(pending.size,0);assert.equal(frames.size,1);[...frames.values()][0]();assert.deepEqual(events.at(-1),['scroll','my']);
 });

@@ -1,6 +1,7 @@
 @import url('../design-tokens.css');
 @import url('./loading.css');
 @import url('./result-presentation.css');
+@import url('./notification-paper.css');
 @font-face { font-family: Manrope; src: url('../assets/fonts/Manrope-variable.ttf') format('truetype'); font-weight: 200 800; font-display: swap; }
 :root { --font-family: Manrope, var(--font-family-fallback); --player-p1:#c2452f; --player-p2:#2d67c7; --radius-card:20px; --shell-elevated-surface:var(--surface-raised); }
 body { font-family:var(--font-family); background:var(--surface-foundation); }
@@ -371,7 +372,7 @@ html[data-page-active="false"] .shell-header button.ui-icon-button {transition:n
 @media(max-width:480px){.game-result{padding:24px;margin:16px 0 32px;}}
 
 /* Account settings occupy the same side rail as the secondary tools. */
-.account-dialog[data-presentation="flyout"] {position:fixed;inset:0 0 0 auto;margin:0;width:var(--shell-flyout-wide-width);max-width:none;height:100dvh;max-height:100dvh;padding:28px;z-index:100;overflow-y:auto;--corner-start:var(--player-p1);--corner-end:var(--player-p2);--flyout-offset-x:100%;--flyout-offset-y:0%;animation:account-rail-enter 180ms ease-out;transition:transform 180ms ease,opacity 180ms ease;}
+.account-dialog[data-presentation="flyout"] {position:fixed;inset:0 0 0 auto;margin:0;width:var(--shell-flyout-wide-width);max-width:none;height:100dvh;max-height:100dvh;padding:28px;z-index:var(--shell-layer-utility);overflow-y:auto;--corner-start:var(--player-p1);--corner-end:var(--player-p2);--flyout-offset-x:100%;--flyout-offset-y:0%;animation:account-rail-enter 180ms ease-out;transition:transform 180ms ease,opacity 180ms ease;}
 .account-dialog[data-presentation="flyout"] .account-form {position:relative;}
 .account-player-signature {display:flex;align-items:center;gap:14px;margin:4px 0 24px;}
 .account-player-signature .player-emblem {width:64px;height:64px;color:var(--action-color);}
@@ -609,6 +610,29 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 
 .player-kind-icon {display:inline-flex;align-items:center;color:var(--muted);}
 .player-kind-icon .righelt-icon {width:14px;height:14px;}
+.participant-identity[data-player-side="p1"] .participant-computer .player-name {color:var(--player-p1);}
+.participant-identity[data-player-side="p2"] .participant-computer .player-name {color:var(--player-p2);}
+[data-testid="participants-list"] .participant-computer {width:100%;min-height:44px;flex-wrap:nowrap;}
+[data-testid="participants-list"] .participant-computer .player-name-stack {flex:1;max-width:none;overflow:visible;}
+.computer-tab-status.computer-status-badge {position:relative;display:inline-flex;width:24px;height:24px;flex:0 0 24px;justify-content:center;align-items:center;color:var(--text-primary);overflow:visible;}
+.computer-status-badge > .righelt-icon {width:22px;height:22px;stroke-width:2;}
+.computer-status-mark {--status-bg:var(--connection-status-disconnected-bg);--status-ring:var(--connection-status-disconnected-ring);position:absolute;right:-2px;bottom:-2px;display:flex;align-items:center;justify-content:center;width:12px;height:12px;border-radius:50%;background:var(--status-bg);color:var(--computer-status-dark-symbol);box-shadow:inset 0 0 0 1px var(--status-ring),0 0 0 1.5px var(--surface-raised);}
+.computer-status-mark .righelt-icon {width:11px;height:11px;stroke-width:2.7;}
+.computer-status-badge:is([data-computer-activity="here"],[data-computer-activity="elsewhere"]) .computer-status-mark {--status-bg:var(--connection-status-connected-bg);--status-ring:var(--connection-status-connected-ring);}
+.computer-status-badge[data-computer-activity="paused"] .computer-status-mark {--status-bg:var(--computer-status-paused-bg);width:14px;height:14px;right:-3px;bottom:-3px;}
+.computer-status-badge[data-computer-activity="paused"] .computer-status-mark .righelt-icon {width:12px;height:12px;fill:currentColor;stroke-width:0;}
+.computer-status-badge:is([data-computer-activity="elsewhere"],[data-computer-activity="finished"],[data-computer-activity="attention"]) .computer-status-mark {width:15px;height:15px;right:-3px;bottom:-3px;}
+.computer-status-badge:is([data-computer-activity="elsewhere"],[data-computer-activity="finished"]) .computer-status-mark .righelt-icon {width:12px;height:12px;stroke-width:2.2;}
+.computer-status-badge[data-computer-activity="attention"] .computer-status-mark {--status-bg:var(--computer-status-attention-bg);}
+.computer-status-badge[data-computer-activity="attention"] .computer-status-mark .righelt-icon {width:13px;height:13px;}
+.computer-status-badge[data-computer-activity="attention"] .computer-status-mark path:first-child {fill:currentColor;stroke-width:0;}
+.computer-status-badge[data-computer-activity="attention"] .computer-status-mark path:last-child {stroke:var(--status-bg);stroke-width:2.6;stroke-linecap:round;}
+.computer-status-badge[data-computer-activity="finished"] .computer-status-mark {--status-bg:var(--computer-status-finished-bg);color:var(--computer-status-light-symbol);}
+.computer-status-badge[data-computer-activity="moving"] .computer-status-mark {--status-bg:var(--computer-status-moving-bg);color:var(--computer-status-light-symbol);}
+@media(forced-colors:active){
+  .computer-tab-status.computer-status-badge {color:CanvasText;}
+  .computer-status-mark {--status-bg:Canvas !important;--status-ring:CanvasText !important;color:CanvasText !important;forced-color-adjust:none;box-shadow:inset 0 0 0 1px CanvasText,0 0 0 1.5px Canvas;}
+}
 .history-result-summary {margin:0 0 var(--section-item-gap,12px);}
 
 /* Players and audience share one surface, with natural page scrolling. */
@@ -634,4 +658,16 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 #app .players-section-actions button.invite-action:hover {color:var(--ink);}
 
 .viewer-roster button.participant-profile,.perspective-participants button.participant-profile {min-height:44px;}
+
+.home-card-result { display:grid; align-items:start; gap:4px; margin-block:8px; overflow-wrap:anywhere; }
+.home-card-result > strong { color:var(--ink); }
+.home-card-result > .small { color:var(--text-secondary); }
+[data-winner-side="p1"] { --home-winner-color:var(--player-p1); }
+[data-winner-side="p2"] { --home-winner-color:var(--player-p2); }
+.mini-board-card[data-winner-side] > .mini-board-card-link-surface { position:relative; }
+.mini-board-card[data-winner-side] > .mini-board-card-link-surface::before { content:''; position:absolute; inset-block:20px; inset-inline-start:0; width:3px; background:var(--home-winner-color); pointer-events:none; }
+
+/* A short completed list can have wide cards. Its miniature still represents
+   the square board instead of stretching fixed-height rows horizontally. */
+.home-refresh .mini-board-preview-board .cell { min-height:0; aspect-ratio:1; }
 .overlay-key .swatch.supply::before {background:var(--connection-supply-sample);}
