@@ -1149,4 +1149,4 @@ button:disabled {
 
 /* Attenuate carving at miniature scale; forced colors retains system outlines. */
 .mini-board-preview-wrap .cell {--cell-recess-shadow:inset .5px 1px 1px rgb(44 57 66 / 16%),inset -.5px -.5px 0 #fff;}
-@media(forced-colors:active){.cell{--cell-recess-shadow:none;}}
+@media(forced-colors:active){.cell{--cell-recess-shadow:inset 0 0 0 0 transparent!important;}}
