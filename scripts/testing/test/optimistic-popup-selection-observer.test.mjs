@@ -101,3 +101,39 @@ test('unroute rejection still drains held request and all routes before finish e
 test('finish attachment error cannot replace original primary and never calls browser evaluate',async()=>{
  const f=await contextFixture(),primary=Error('primary');let observed;try{try{throw primary;}finally{await f.owner.finish({attach:async()=>{throw Error('attachment');}});}}catch(e){observed=e;}assert.equal(observed,primary);assert.equal(f.listeners.size,0);
 });
+
+// Approved218 changes only this product signature. Invert both signatures to
+// keep the original sealed observer semantics and the unchanged clear hook.
+const {createHash}=await import('node:crypto');
+const legacyClearSignature='const clearSelection = () => {';
+const preserveClearSignature='const clearSelection = ({preserveNetworks=false}={}) => {';
+const clearHook="\n    __popupValue('selection-clear',true,__popupRuntimeScope);";
+const legacyRuntimeRecipeGolden='44cfddec27d38d225d3e686529c0ff363713fa2b35de777d5c9d6f12c20b9c9c';
+function normalized218RuntimeRecipe(recipe){
+ const targets=recipe.operations.filter(op=>op.before===preserveClearSignature);assert.equal(targets.length,1,'exact approved218 signature mapping');
+ assert.equal(targets[0].after,preserveClearSignature+clearHook,'immutable clear observation body');
+ return Object.fromEntries(Object.entries(recipe).filter(([key])=>!['sourceSha256','outputSha256'].includes(key)).map(([key,value])=>[key,key==='operations'?value.map(op=>Object.fromEntries(Object.entries(op).filter(([field])=>!['start','end'].includes(field)).map(([field,text])=>[field,op===targets[0]&&['before','after'].includes(field)?text.replace(preserveClearSignature,legacyClearSignature):text]))):value]));
+}
+const normalized218Hash=recipe=>createHash('sha256').update(JSON.stringify(normalized218RuntimeRecipe(recipe))).digest('hex');
+test('218 clear signature compatibility preserves both original signatures and every sealed observer operation',()=>{
+ const recipe=recipes.find(item=>item.file.endsWith('/board-runtime.js'));assert.equal(normalized218Hash(recipe),legacyRuntimeRecipeGolden);
+ const missing=structuredClone(recipe);missing.operations=missing.operations.filter(op=>op.before!==preserveClearSignature);assert.throws(()=>normalized218Hash(missing),/exact approved218/);
+ const reversed=structuredClone(recipe),target=reversed.operations.find(op=>op.before===preserveClearSignature);target.after=legacyClearSignature+clearHook;assert.throws(()=>normalized218Hash(reversed),/immutable clear/);
+ const altered=structuredClone(recipe);altered.operations.find(op=>op.before===preserveClearSignature).after+=' ';assert.throws(()=>normalized218Hash(altered),/immutable clear/);
+ const count=structuredClone(recipe);count.operations.pop();assert.notEqual(normalized218Hash(count),legacyRuntimeRecipeGolden);
+});
+test('218 signature observation retains defaults, argument errors and throwing-sink isolation',()=>{
+ const recipe=recipes.find(item=>item.file.endsWith('/board-runtime.js'));
+ const signature=recipe.operations.find(op=>op.before===preserveClearSignature);
+ assert.ok(signature,'one explicitly approved signature artifact');
+ for(const throws of [false,true]){
+  const marker={},observed=[],context={marker,observed,__popupRuntimeScope:1,__popupSelectionProbe:{record(){if(throws)throw Error('observer');}}};
+  // Only the pinned observer artifact is evaluated. The body supplies an
+  // external effect, never a sliced or rewritten product implementation.
+  runInNewContext(recipe.operations[0].after+signature.after+'\n observed.push(preserveNetworks); return marker; };globalThis.clear=clearSelection;',context);
+  assert.equal(context.clear(),marker);assert.equal(context.clear({preserveNetworks:true}),marker);assert.equal(context.clear({preserveNetworks:false}),marker);
+  assert.deepEqual(observed,[false,true,false]);
+  const sentinel=Error('preserve getter');assert.throws(()=>context.clear({get preserveNetworks(){throw sentinel;}}),error=>error===sentinel);
+  assert.deepEqual(observed,[false,true,false],'original argument failure prevents the body');
+ }
+});
