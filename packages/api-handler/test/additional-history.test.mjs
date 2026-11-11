@@ -56,3 +56,32 @@ test('a partial legacy restoration uses known restored IDs without inventing an 
  const meta=await readAdditionalDecisionPage(f.env,f.game,null,true);
  assert.equal(meta.available,true);assert.match(f.reads.at(-1).sql,/SELECT 1 AS available/);assert.doesNotMatch(f.reads.at(-1).sql,/restoration|finalization|SELECT original\.payload_json/);
 });
+
+
+test('archived Undo groups use the first proved operation and never a later overlapping restoration',async t=>{
+ const f=fixture();t.after(()=>f.db.close());
+ f.append({id:'restore-first',kind:'restoration',eventSeq:206,at:'same',targetDecisionId:'move-3',restoredIds:['move-3']});
+ f.append({id:'restore-second',kind:'restoration',eventSeq:207,at:'same',restorationVersion:1,requesterIdentityId:'bob',targetDecisionId:'move-2',restoredIds:[]});
+ const page=await readAdditionalDecisionPage(f.env,f.game,null),byId=new Map(page.items.map(entry=>[entry.id,entry.move]));
+ assert.equal(byId.get('move-2').undoEventSeq,207,'New accepted target interval has a real event identity');
+ assert.equal(byId.get('move-3').undoEventSeq,206,'Later overlapping Undo cannot take earlier explicit membership');
+ assert.equal(byId.get('move-4').undone,true);assert.equal(byId.get('move-4').undoEventSeq,undefined,'Earlier legacy interval-only provenance remains unavailable');
+ assert.equal(byId.get('move-1').undoEventSeq,undefined);
+ const original=JSON.parse(f.db.prepare('SELECT payload_json FROM live_decision_archive WHERE decision_id=?').get('move-3').payload_json);assert.equal(original.move.undoEventSeq,undefined);
+});
+test('an unknown legacy target cannot invent an accepted archive boundary',async t=>{
+ const f=fixture();t.after(()=>f.db.close());
+ f.append({id:'partial-new',kind:'restoration',eventSeq:206,restorationVersion:1,targetDecisionId:'missing',restoredIds:['move-3']});
+ const page=await readAdditionalDecisionPage(f.env,f.game,null),byId=new Map(page.items.map(entry=>[entry.id,entry]));
+ assert.equal(byId.get('move-3').move.undoEventSeq,206,'Explicit stored membership is positive evidence');
+ assert.equal(byId.get('move-4').move.undoEventSeq,undefined,'Fallback range alone is not a proved operation boundary');
+ assert.equal(byId.get('move-1').historyStatus,'unknown');assert.equal(byId.get('move-1').move.undoEventSeq,undefined);
+});
+
+test('positive stored archive claims without matching restoration evidence cannot become accepted boundaries',async t=>{
+ const f=fixture();t.after(()=>f.db.close());
+ const claim={id:'unproved',kind:'decision',eventSeq:206,move:{...f.moves[0],moveId:'unproved',undone:true,undoEventSeq:999}};f.append(claim);
+ const page=await readAdditionalDecisionPage(f.env,f.game,null),projected=page.items.find(entry=>entry.id==='unproved');
+ assert.equal(projected.move.undone,true);assert.equal(projected.move.undoEventSeq,undefined);assert.equal(projected.move.undoBoundaryStatus,'conflict');
+ assert.deepEqual(JSON.parse(f.db.prepare('SELECT payload_json FROM live_decision_archive WHERE decision_id=?').get('unproved').payload_json).move,claim.move);
+});
