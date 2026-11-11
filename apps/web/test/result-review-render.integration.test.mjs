@@ -1,3 +1,4 @@
+import {createHomeSectionReads} from '../shell/home-section-reads.js';
 import {runWithHistoryRendering} from './support/history-rendering-context.mjs';
 import * as undoHistory from '../shell/history-undo-groups.js';
 import {publishAcknowledgedBoardMessage} from '../shell/playback-presentation.js';
@@ -218,6 +219,7 @@ function historyRouteHarness(t) {
     syncRenderedMarkupSnapshot:()=>{context.lastRenderedRouteKey=context.getRouteRenderKey();},
     viewingIntent:{saveScroll:noop,cancelUndo:noop,scrollTop:()=>0},replayRequests:{cancel:noop},replayController:null,mobileNavigation:null,
   };
+  context.homeSectionReads=createHomeSectionReads({state:context,pendingHomeSectionKeys:new Set()});
   runWithHistoryRendering(`
     ${patchHelper}
     let desktopBoardFit=null;

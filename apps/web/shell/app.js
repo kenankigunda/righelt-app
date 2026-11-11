@@ -1,3 +1,13 @@
+import {createAccountContinuationOwner} from './account-continuation-owner.js';
+import {
+  createHomeSectionReads, HOME_SECTION_SERVER_PAGE_SIZE, HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,
+  HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE, createHomeSectionState, getHomeSectionVisibleTotalPages,
+  getHomeSectionSafePage, getHomeSectionVisibleRange, getHomeSectionRequiredServerPages,
+  getHomeSectionServerPageGameIds, hasHomeSectionServerPages, getHomeSectionVisibleGameIdsFromCache,
+  getHomeSectionCachedGameIndex, sameRouteRead, sameHomeReadScope,
+  homeReadMayRetry, homeSectionShowsSkeleton, homeSectionIsEmpty,
+  homeSectionVisiblePageSize,
+} from './home-section-reads.js';
 import {createHistoryRendering} from './history-rendering.js';
 import * as undoHistory from './history-undo-groups.js';
 import {presentPlaybackBoardMessage,playbackTurnIndicator,publishAcknowledgedBoardMessage,contextReplayAvailable,refreshFollowControls} from './playback-presentation.js';
@@ -19,6 +29,8 @@ import {renderDismissButton} from './dismiss-control.js';
 import {createConfirmedFramePresenter} from './confirmed-frame-presenter.js';
 import {createConfirmedComputerPlayback} from './confirmed-computer-playback.js';
 import {isOngoingGame,isCompletedGame} from './game-lifecycle.js';
+import {captureHomeFocus,refreshHomeFocus,restoreHomeFocus,restoreHomeReadingPosition} from './home-focus.js';
+import {homeCardResult} from './home-card-result.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
@@ -459,9 +471,6 @@ const HISTORY_RELEASE_BOUNCE_MS = 140;
 const GAME_ENTRY_ROUTE_TRANSITION_MS = 320;
 const GAME_ENTRY_ROUTE_TRANSITION_COVER_MS = 160;
 const GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS = 200;
-const HOME_SECTION_SERVER_PAGE_SIZE = 4;
-const HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT = 3;
-const HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE = 4;
 const HOME_SECTION_CARD_MIN_WIDTH_REM = 22;
 const HOME_SECTION_CARD_GAP_REM = 0.85;
 const HOME_CAROUSEL_MOTION_MS = 220;
@@ -490,23 +499,12 @@ const GAME_SHELL_PANEL_TRANSITION_MS = 220;
 const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
 const lastAnimatedHomeSectionTokenByKey = new Map();
-const createHomeSectionState = (title) => ({
-  title,
-  page: 0,
-  totalPages: 0,
-  totalGames: 0,
-  gameIds: [],
-  serverPage: 0,
-  serverTotalPages: 0,
-  serverPageGameIds: [],
-  serverPageGameIdsByPage: {},
-  visiblePageSize: HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,
-  visibleColumnCount: 1,
-  slideDirection: "none",
-  animationToken: 0,
-});
+let homeFocusToRestore = null;
+let pendingHomeRefresh = null;
+let lastHomeBatchRevision = null;
 let homeSections = {
   my: createHomeSectionState("My games"),
+  completed: createHomeSectionState("Your completed games"),
   other: createHomeSectionState("Other games"),
   smoke: createHomeSectionState("Deploy smoke player"),
 };
@@ -912,73 +910,13 @@ const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
 };
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
 const canControlLiveBoard = (game) => isOngoingGame(game) && account.canPlay() && !(game?.gameplayMutationsBlocked ?? game?.sharedMutationsBlocked) && Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
-const getVisibleHomeSectionKeys = (route = currentRoute) => (route?.debug ? ["my", "other", "smoke"] : ["my", "other"]);
+const getVisibleHomeSectionKeys = (route = currentRoute) => (route?.debug ? ["my", "completed", "other", "smoke"] : ["my", "completed", "other"]);
 const getHomeSection = (sectionKey) => homeSections[sectionKey] ?? createHomeSectionState(sectionKey);
 const setHomeSection = (sectionKey, nextState) => {
   homeSections = {
     ...homeSections,
     [sectionKey]: nextState,
   };
-};
-const getHomeSectionVisibleTotalPages = (totalGames, visiblePageSize) =>
-  totalGames <= 0 ? 0 : Math.ceil(totalGames / visiblePageSize);
-const getHomeSectionSafePage = (totalGames, visiblePageSize, page) => {
-  const totalPages = getHomeSectionVisibleTotalPages(totalGames, visiblePageSize);
-  return totalPages === 0 ? 0 : Math.min(Math.max(0, page), totalPages - 1);
-};
-const getHomeSectionVisibleRange = ({ totalGames, visiblePageSize, page }) => {
-  const safePage = getHomeSectionSafePage(totalGames, visiblePageSize, page);
-  const start = safePage * visiblePageSize;
-  const end = Math.min(totalGames, start + visiblePageSize);
-  return { safePage, start, end };
-};
-const getHomeSectionRequiredServerPages = ({ totalGames, visiblePageSize, page }) => {
-  if (totalGames <= 0) {
-    return [];
-  }
-  const { start, end } = getHomeSectionVisibleRange({ totalGames, visiblePageSize, page });
-  if (end <= start) {
-    return [];
-  }
-  const firstServerPage = Math.floor(start / HOME_SECTION_SERVER_PAGE_SIZE);
-  const lastServerPage = Math.floor((end - 1) / HOME_SECTION_SERVER_PAGE_SIZE);
-  return Array.from({ length: lastServerPage - firstServerPage + 1 }, (_, index) => firstServerPage + index);
-};
-const getHomeSectionServerPageGameIds = (section, serverPage) =>
-  Array.isArray(section.serverPageGameIdsByPage?.[serverPage]) ? section.serverPageGameIdsByPage[serverPage] : [];
-const hasHomeSectionServerPages = (section, serverPages) =>
-  serverPages.every((serverPage) => Array.isArray(section.serverPageGameIdsByPage?.[serverPage]));
-const getHomeSectionVisibleGameIdsFromCache = (section, { page = section.page, visiblePageSize = section.visiblePageSize } = {}) => {
-  const { totalGames } = section;
-  if (totalGames <= 0) {
-    return [];
-  }
-  const requiredServerPages = getHomeSectionRequiredServerPages({ totalGames, visiblePageSize, page });
-  if (!hasHomeSectionServerPages(section, requiredServerPages)) {
-    return null;
-  }
-  const { start, end } = getHomeSectionVisibleRange({ totalGames, visiblePageSize, page });
-  const visibleCount = Math.max(0, end - start);
-  if (visibleCount === 0) {
-    return [];
-  }
-  const serverStart = requiredServerPages[0] * HOME_SECTION_SERVER_PAGE_SIZE;
-  const flattened = requiredServerPages.flatMap((serverPage) => getHomeSectionServerPageGameIds(section, serverPage));
-  const offset = Math.max(0, start - serverStart);
-  return flattened.slice(offset, offset + visibleCount);
-};
-const getHomeSectionCachedGameIndex = (section, gameId) => {
-  if (!gameId) {
-    return null;
-  }
-  const pageEntries = Object.entries(section.serverPageGameIdsByPage ?? {}).sort(([left], [right]) => Number(left) - Number(right));
-  for (const [pageKey, ids] of pageEntries) {
-    const offset = Array.isArray(ids) ? ids.indexOf(gameId) : -1;
-    if (offset >= 0) {
-      return (Number(pageKey) * HOME_SECTION_SERVER_PAGE_SIZE) + offset;
-    }
-  }
-  return null;
 };
 const resetRouteWsStatus = () => {
   wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
@@ -1302,6 +1240,7 @@ const getAdjacentGamePanel = (panel = getGamePanel(), direction = 0) => {
 const preparePanelTransition = (previous, next) => {
   if(pendingBoardContextReplay&&(next.name!=='game'||next.gameId!==pendingBoardContextReplay.descriptor.gameId||getGamePanel(next)!=='board'))cancelPendingBoardContextReplay();
   if(previous.name!==next.name||previous.gameId!==next.gameId){boardContextVisit++;boardContextOwner.retire();}
+  homeSectionReads.leaveHome(previous,next);
   if (previous.name === 'game' && (next.gameId !== previous.gameId || getGamePanel(previous) !== getGamePanel(next))) {
     viewingIntent.saveScroll(previous.gameId, getGamePanel(previous), window.scrollY);
   }
@@ -1426,16 +1365,7 @@ const getHomeSectionColumnCount = (sectionKey) => {
   }
   return Math.max(1, Math.floor((sectionWidth + gapWidth) / (cardWidth + gapWidth)));
 };
-const getHomeSectionVisiblePageSize = (sectionKey) => {
-  const columnCount = getHomeSectionColumnCount(sectionKey);
-  if (columnCount >= 3) {
-    return HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT;
-  }
-  if (columnCount === 2) {
-    return HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE;
-  }
-  return HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT;
-};
+const getHomeSectionVisiblePageSize = sectionKey => homeSectionVisiblePageSize(getHomeSectionColumnCount(sectionKey));
 const isNarrowHeaderMode = () => getShellLayoutMode() === "narrow";
 const closeHeaderMenu = () => {
   headerMenuOpen = false;
@@ -2270,7 +2200,7 @@ const getInviteContextForGame = (game, routeName = currentRoute.name) => {
   };
 };
 
-const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyoutLink = null, gameId = null, header, meta, statusText }) => {
+const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyoutLink = null, gameId = null, header, meta, statusText, winnerSide = null }) => {
   const previewPayload = card?.previewPayload ?? getStaticCardPreviewPayload(card);
   const previewKey = toStableKey({
     snapshot: previewPayload.snapshot,
@@ -2307,7 +2237,7 @@ const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyout
   if (!href) {
     return `<div class="mini-board-card mini-board-card-${escapeHtml(variant)}">${body}</div>`;
   }
-  return `<article class="mini-board-card">
+  return `<article class="mini-board-card"${winnerSide ? ` data-winner-side="${winnerSide.toLowerCase()}"` : ''}>
     <a
       class="mini-board-card-link-surface"
       href="${href}"
@@ -2321,10 +2251,13 @@ const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyout
 
 const renderHomeGameCard = (game) => {
   const snapshot = getStaticCardPreviewSnapshot(game);
-  const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
-  const moveLabel = `Move ${game.moveCount + 1}`;
+  const result = homeCardResult(game, {identityId:transport.getIdentityId()});
+  const completed = result.kind === 'completed';
+  const statusText = result.kind === 'ongoing' ? snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable" : result.label;
+  const moveLabel = completed ? `${game.moveCount} ${game.moveCount === 1 ? 'move' : 'moves'}` : `Move ${game.moveCount + 1}`;
+  const resultHtml = completed ? `<div class="home-card-result${result.winnerSide ? ` player-tone-${result.winnerSide.toLowerCase()}` : ''}"><strong><bdi>${escapeHtml(result.label)}</bdi></strong>${result.detail ? `<span class="small">${escapeHtml(result.detail)}</span>` : ''}</div>` : '';
   const recoveryChip =
-    game.syncStatus === "desynced" || game.syncStatus === "confirming" ? '<span class="status-chip">Recovering</span>' : "";
+    game.pendingPreviewSnapshot ? '<span class="status-chip">Update pending</span>' : game.syncStatus === "desynced" || game.syncStatus === "confirming" ? '<span class="status-chip">Recovering</span>' : "";
   return renderStaticMiniBoardCard({
     card: game,
     href: buildGameHash(game.id, null, getCurrentFlyoutState()),
@@ -2336,10 +2269,11 @@ const renderHomeGameCard = (game) => {
       </div>
       ${recoveryChip}`,
     meta: `<div class="mini-board-card-meta mini-board-card-meta-primary">
-        ${renderHomeCardIdentity(game, {identityId: transport.getIdentityId()})}
+        ${renderHomeCardIdentity(game, {identityId: transport.getIdentityId(), quiet:completed})}
         <span class="small">${escapeHtml(moveLabel)}</span>
-      </div>`,
-    statusText,
+      </div>${resultHtml}`,
+    statusText: completed ? result.action : result.kind === 'pending' ? `${statusText} · ${result.action}` : statusText,
+    winnerSide: completed ? result.winnerSide : null,
   });
 };
 
@@ -2368,11 +2302,12 @@ const renderHomeStartButton = () =>
 
 const renderHomeGameSection = (sectionKey) => {
   const section = getHomeSection(sectionKey);
-  if ((isHomeSectionPending(sectionKey) || !routeHydrated) && section.gameIds.length === 0) {
+  if (section.error) return `<section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}"><h2>${escapeHtml(section.title)}</h2><p role="status">We couldn't load these games.</p><button class="secondary" data-action="home-section-retry" data-home-section="${escapeHtml(sectionKey)}" ${isHomeSectionPending(sectionKey) ? 'disabled' : ''}>Try again</button></section>`;
+  if (homeSectionShowsSkeleton(section,isHomeSectionPending(sectionKey))) {
     return renderHomeSectionSkeleton(sectionKey === "my" ? "Continue playing" : section.title,{sectionKey});
   }
   const games = section.gameIds.map((gameId) => transport.getHomeGameCard(gameId)).filter(Boolean);
-  if (games.length === 0 || section.totalGames === 0) {
+  if (homeSectionIsEmpty(section,games)) {
     return "";
   }
   const showPaging = section.totalPages > 1;
@@ -3675,260 +3610,50 @@ const animateHomeSectionTransitions = () => {
   }
 };
 
-const loadHomeSectionServerPage = async (
-  sectionKey,
-  serverPage,
-  {
-    visiblePageSize = getHomeSectionVisiblePageSize(sectionKey),
-    visibleColumnCount = getHomeSectionColumnCount(sectionKey),
-    adapter = null,
-  } = {},
-) => {
-  const read = adapter?.read ?? captureRouteRead();
-  const previous = (adapter?.getSection ?? getHomeSection)(sectionKey);
-  const response = await (adapter?.readPage ?? (options => read.owner.loadGamesPage(options)))({
-    section: sectionKey,
-    page: serverPage,
-    pageSize: HOME_SECTION_SERVER_PAGE_SIZE,
-    debug: read.homeDebug === true,
-  });
-  if (adapter) adapter.assertCurrent(); else assertCurrentRouteRead(read);
-  const normalizedServerPage = typeof response.page === "number" ? response.page : 0;
-  const serverPageGameIds = Array.isArray(response.games) ? response.games.map((game) => game.id) : [];
-  const nextSection = {
-    ...previous,
-    totalGames: typeof response.totalGames === "number" ? response.totalGames : 0,
-    serverPage: normalizedServerPage,
-    serverTotalPages: typeof response.totalPages === "number" ? response.totalPages : 0,
-    serverPageGameIds,
-    serverPageGameIdsByPage: {
-      ...previous.serverPageGameIdsByPage,
-      [normalizedServerPage]: serverPageGameIds,
-    },
-    visiblePageSize,
-    visibleColumnCount,
-  };
-  (adapter?.setSection ?? setHomeSection)(sectionKey, nextSection);
-  return nextSection;
-};
-
-const loadHomeSectionPage = async (
-  sectionKey,
-  {
-    page = getHomeSection(sectionKey).page,
-    direction = "none",
-    visiblePageSize = getHomeSectionVisiblePageSize(sectionKey),
-    visibleColumnCount = getHomeSectionColumnCount(sectionKey),
-    adapter = null,
-  } = {},
-) => {
-  const read = adapter?.read ?? captureRouteRead();
-  const previous = (adapter?.getSection ?? getHomeSection)(sectionKey);
-  let nextSection = {
-    ...previous,
-    visiblePageSize,
-    visibleColumnCount,
-  };
-  const initialServerPage = Math.floor((Math.max(0, page) * visiblePageSize) / HOME_SECTION_SERVER_PAGE_SIZE);
-  const shouldPrimeCache = Object.keys(nextSection.serverPageGameIdsByPage ?? {}).length === 0;
-  if (shouldPrimeCache) {
-    nextSection = await loadHomeSectionServerPage(sectionKey, initialServerPage, { visiblePageSize, visibleColumnCount, adapter });
-  }
-  const requiredServerPages = getHomeSectionRequiredServerPages({
-    totalGames: nextSection.totalGames,
-    visiblePageSize,
-    page,
-  });
-  for (const serverPage of requiredServerPages) {
-    if (!hasHomeSectionServerPages(nextSection, [serverPage])) {
-      nextSection = await loadHomeSectionServerPage(sectionKey, serverPage, { visiblePageSize, visibleColumnCount, adapter });
-    }
-  }
-  const normalizedPage = getHomeSectionSafePage(nextSection.totalGames, visiblePageSize, page);
-  const normalizedTotalPages = getHomeSectionVisibleTotalPages(nextSection.totalGames, visiblePageSize);
-  const visibleGameIds = getHomeSectionVisibleGameIdsFromCache(nextSection, {
-    page: normalizedPage,
-    visiblePageSize,
-  }) ?? [];
-  const nextDirection = normalizedTotalPages > 1 && normalizedPage !== previous.page ? direction : "none";
-  if (adapter) adapter.assertCurrent(); else assertCurrentRouteRead(read);
-  (adapter?.setSection ?? setHomeSection)(sectionKey, {
-    ...nextSection,
-    page: normalizedPage,
-    totalPages: normalizedTotalPages,
-    gameIds: visibleGameIds,
-    slideDirection: nextDirection,
-    animationToken: nextDirection === "none" ? previous.animationToken : previous.animationToken + 1,
-  });
-  if(!adapter && nextDirection !== "none")gameSound.play(nextDirection === "prev" ? "page-back" : "page");
-};
-
-const syncResponsiveHomeSectionPageSizes = async () => {
-  const visibleSectionKeys = getVisibleHomeSectionKeys();
-  let updated = false;
-  for (const sectionKey of visibleSectionKeys) {
-    const section = getHomeSection(sectionKey);
-    const nextVisibleColumnCount = getHomeSectionColumnCount(sectionKey);
-    const nextVisiblePageSize = getHomeSectionVisiblePageSize(sectionKey);
-    if (section.visiblePageSize === nextVisiblePageSize && section.visibleColumnCount === nextVisibleColumnCount) {
-      continue;
-    }
-    const anchorGameId = section.gameIds[0] ?? null;
-    const anchorIndex = getHomeSectionCachedGameIndex(section, anchorGameId);
-    const nextPage = anchorIndex === null ? section.page : Math.floor(anchorIndex / nextVisiblePageSize);
-    if (section.visiblePageSize === nextVisiblePageSize) {
-      const visibleGameIds = getHomeSectionVisibleGameIdsFromCache(section, {
-        page: nextPage,
-        visiblePageSize: nextVisiblePageSize,
-      }) ?? section.gameIds;
-      setHomeSection(sectionKey, {
-        ...section,
-        page: nextPage,
-        totalPages: getHomeSectionVisibleTotalPages(section.totalGames, nextVisiblePageSize),
-        gameIds: visibleGameIds,
-        visibleColumnCount: nextVisibleColumnCount,
-      });
-    } else {
-      await loadHomeSectionPage(sectionKey, {
-        page: nextPage,
-        direction: "none",
-        visiblePageSize: nextVisiblePageSize,
-        visibleColumnCount: nextVisibleColumnCount,
-      });
-    }
-    updated = true;
-  }
-  return updated;
-};
-
-const homeReadMayRetry = error => {
-  const code = error?.code ?? "";
-  if (/auth|credential|session|protocol|schema|storage|upgrade|contract|invalid_home_page/i.test(code)) return false;
-  return code === "request_timeout" || !code && error?.diagnosticEvidence?.stage === "request_failed"
-    || [500, 502, 503, 504].includes(error?.status);
-};
-const syncHomeSections = async (read = captureRouteRead(), isActive = () => true) => {
-  if (pendingResponsiveHomeRead) {
-    // Starting a newer full read fulfills the old resize obligation, regardless
-    // of its eventual success or failure. Retain the marker until RAF consumes it.
-    pendingResponsiveHomeRead = sameHomeReadScope(pendingResponsiveHomeRead.read, read)
-      ? { ...pendingResponsiveHomeRead, read, fulfilledByNewer: true } : null;
-  }
-  homeReadJob?.retire();
-  let retired = false, batch = null, delayTimer = null, rejectDelay = null;
-  const job = {
-    read,
-    retire() {
-      retired = true; batch?.retire();
-      clearTimeout(delayTimer); delayTimer = null;
-      rejectDelay?.(Object.assign(new Error("session_changed"), { code: "session_changed" })); rejectDelay = null;
-      if (homeReadJob === job) homeReadJob = null;
-    },
-  };
-  homeReadJob = job;
-  const assertCurrent = () => {
-    assertCurrentRouteRead(read, () => !retired && homeReadJob === job && isActive());
-  };
-  let recovered = Boolean(homeReadRecovery);
-  try {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      assertCurrent();
-      batch = read.owner.createHomeRead({ isCurrent: () => !retired && homeReadJob === job && isActive() && routeReadIsCurrent(read) });
-      const attemptBatch = batch;
-      const assertAttemptCurrent = () => {
-        assertCurrent();
-        if (batch !== attemptBatch) throw Object.assign(new Error("session_changed"), { code: "session_changed" });
-      };
-      // Everything page filling can mutate, including caches/counts and hidden
-      // sections, lives in this attempt's map until the whole read is ready.
-      const sectionMap = structuredClone(homeSections);
-      const adapter = { read, readPage: options => attemptBatch.readPage(options), assertCurrent: assertAttemptCurrent,
-        getSection: key => sectionMap[key] ?? createHomeSectionState(key),
-        setSection: (key, value) => { sectionMap[key] = value; } };
-      const visibleSectionKeys = getVisibleHomeSectionKeys({ debug: read.homeDebug });
-      try {
-        await Promise.all(visibleSectionKeys.map(async sectionKey => {
-          const section = adapter.getSection(sectionKey);
-          adapter.setSection(sectionKey, { ...section, serverPageGameIdsByPage: {},
-            visiblePageSize: getHomeSectionVisiblePageSize(sectionKey), visibleColumnCount: getHomeSectionColumnCount(sectionKey), slideDirection: "none" });
-          await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none", adapter });
-        }));
-        for (const sectionKey of ["my", "other", "smoke"].filter(key => !visibleSectionKeys.includes(key))) {
-          adapter.setSection(sectionKey, { ...adapter.getSection(sectionKey), page: 0, totalPages: 0, totalGames: 0, gameIds: [],
-            serverPage: 0, serverTotalPages: 0, serverPageGameIds: [], serverPageGameIdsByPage: {},
-            visiblePageSize: HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT, visibleColumnCount: 1, slideDirection: "none" });
-        }
-        assertAttemptCurrent();
-        const continuation = accountContinuation && sameRouteRead(accountContinuation, read) ? accountContinuation : null;
-        // These adjacent synchronous publications have no await/emit gap.
-        attemptBatch.commit();
-        homeSections = sectionMap;
-        // A successful count refresh can clamp our own page. Advance only this
-        // proven read's input snapshot, never accept a concurrent user change.
-        read.inputs = JSON.stringify([homeReadVisit, read.homeDebug, getVisibleHomeSectionKeys({ debug: read.homeDebug }).map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])]);
-        if (continuation) continuation.inputs = read.inputs;
-        homeReadRecovery = null;
-        return { recovered };
-      } catch (error) {
-        attemptBatch.retire();
-        assertCurrent();
-        recovered = true;
-        homeReadRecovery ??= { read, error: null };
-        storyDialog.refresh();
-        if (accountContinuation && sameRouteRead(accountContinuation, read)) accountContinuation.recoveryEpisode = true;
-        if (attempt === 0 && homeReadMayRetry(error)) {
-          // Keep the same Home loading keys and recovery episode across retry;
-          // the existing Home owner retains its 200ms cue / 5s context clock.
-          render({ animatePanels: false, includeBoard: false });
-          await new Promise((resolve, reject) => {
-            rejectDelay = reject;
-            delayTimer = setTimeout(() => { delayTimer = null; rejectDelay = null; resolve(); }, SYNC_TIMING.retryDelaysMs[0]);
-          });
-          assertCurrent();
-          continue;
-        }
-        homeReadRecovery.error = error;
-        throw error;
-      }
-    }
-  } finally { job.retire(); }
-};
-
-const queueResponsiveHomeSectionPageSizes = () => {
-  window.cancelAnimationFrame(homeSectionResizeFrame);
-  homeSectionResizeFrame = window.requestAnimationFrame(() => {
-    homeSectionResizeFrame = 0;
-    void (async () => {
-      const replacement = pendingResponsiveHomeRead;
-      if (replacement) {
-        const current = routeReadIsCurrent(replacement.read);
-        // Validation can itself discover a newer input retirement. Consume only
-        // this snapshot; do not erase its freshly queued replacement.
-        if (pendingResponsiveHomeRead === replacement) pendingResponsiveHomeRead = null;
-        if (!current) return;
-        // Fulfillment survives completion or terminal failure before this frame.
-        // Do not start a third batch or fall through to standalone pagination.
-        if (replacement.fulfilledByNewer || homeReadJob) return;
-        startRouteSync({ renderStart: false });
-        return;
-      }
-      if (currentRoute.name !== "home") {
-        return;
-      }
-      const didUpdate = await syncResponsiveHomeSectionPageSizes();
-      if (!didUpdate) {
-        return;
-      }
-      syncLiveChannels();
-      render({ animatePanels: false, includeBoard: false });
-    })();
-  });
-};
-
-const scheduleResponsiveHomeSectionPageSizes = () => {
-  captureRouteRead(); // Input retirement queues its own exact replacement.
-  queueResponsiveHomeSectionPageSizes();
-};
+const homeSectionReads = createHomeSectionReads({
+  state: {
+    get transport() { return transport; },
+    get homeSections() { return homeSections; }, set homeSections(value) { homeSections = value; },
+    get homeReadVisit() { return homeReadVisit; }, set homeReadVisit(value) { homeReadVisit = value; },
+    get homeReadJob() { return homeReadJob; }, set homeReadJob(value) { homeReadJob = value; },
+    get pendingResponsiveHomeRead() { return pendingResponsiveHomeRead; }, set pendingResponsiveHomeRead(value) { pendingResponsiveHomeRead = value; },
+    get homeReadRecovery() { return homeReadRecovery; }, set homeReadRecovery(value) { homeReadRecovery = value; },
+    get accountContinuation() { return accountContinuation; }, set accountContinuation(value) { accountContinuation = value; },
+    get currentRoute() { return currentRoute; }, set currentRoute(value) { currentRoute = value; },
+    get pendingHomeRefresh() { return pendingHomeRefresh; }, set pendingHomeRefresh(value) { pendingHomeRefresh = value; },
+    get lastHomeBatchRevision() { return lastHomeBatchRevision; }, set lastHomeBatchRevision(value) { lastHomeBatchRevision = value; },
+    get homeFocusToRestore() { return homeFocusToRestore; }, set homeFocusToRestore(value) { homeFocusToRestore = value; },
+    get routeHydrated() { return routeHydrated; }, set routeHydrated(value) { routeHydrated = value; },
+    get homeSectionResizeFrame() { return homeSectionResizeFrame; }, set homeSectionResizeFrame(value) { homeSectionResizeFrame = value; },
+  },
+  getHomeSection: (...args) => getHomeSection(...args),
+  setHomeSection: (...args) => setHomeSection(...args),
+  getHomeSectionVisiblePageSize: (...args) => getHomeSectionVisiblePageSize(...args),
+  getHomeSectionColumnCount: (...args) => getHomeSectionColumnCount(...args),
+  getVisibleHomeSectionKeys: (...args) => getVisibleHomeSectionKeys(...args),
+  captureRouteRead: (...args) => captureRouteRead(...args),
+  assertCurrentRouteRead: (...args) => assertCurrentRouteRead(...args),
+  routeReadIsCurrent: (...args) => routeReadIsCurrent(...args),
+  render: (...args) => render(...args),
+  syncLiveChannels: (...args) => syncLiveChannels(...args),
+  startRouteSync: (...args) => startRouteSync(...args),
+  isHomeSectionPending: (...args) => isHomeSectionPending(...args),
+  scrollHomeSectionToTop: (...args) => scrollHomeSectionToTop(...args),
+  captureHomeFocus: (...args) => captureHomeFocus(...args),
+  restoreHomeReadingPosition: (...args) => restoreHomeReadingPosition(...args),
+  restoreHomeFocus: (...args) => restoreHomeFocus(...args),
+  resumeAccountContinuation: (pending,settlement) => retryAccountContinuation({expectedPending:pending,settlement}),
+  pendingHomeSectionKeys, gameSound, storyDialog: { refresh: (...args) => storyDialog.refresh(...args) }, appEl, document, window, syncAnnouncement,
+});
+const loadHomeSectionServerPage = (...args) => homeSectionReads.loadServerPage(...args);
+const loadHomeSectionPage = (...args) => homeSectionReads.loadPage(...args);
+const syncResponsiveHomeSectionPageSizes = (...args) => homeSectionReads.syncResponsive(...args);
+const syncHomeSections = (...args) => homeSectionReads.syncSections(...args);
+const scheduleHomeListRefresh = (...args) => homeSectionReads.scheduleRefresh(...args);
+const stabilizeAfterHomeRead = (...args) => homeSectionReads.stabilize(...args);
+const restoreHomeReadingIntent = (...args) => homeSectionReads.restoreReading(...args);
+const queueResponsiveHomeSectionPageSizes = (...args) => homeSectionReads.queueResponsive(...args);
+const scheduleResponsiveHomeSectionPageSizes = (...args) => homeSectionReads.scheduleResponsive(...args);
 
 const renderGesture = createRenderGestureGate({ render: options => render(options) });
 // Compatibility mouse events alias their admitted pointer control, so one
@@ -4118,6 +3843,9 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   brand.setHome(currentRoute.name === 'home');
   appEl.dataset.actionAffiliation = resolveActionAffiliation({game:transport.getGameViewModel(currentRoute.gameId),identityId:transport.getIdentityId()});
   const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">${renderHeader()}${body}</div>${renderFlyouts()}</div>`;
+  const didPatchContent=nextMarkup !== lastRenderedMarkup;
+  const preserveHomeReadingPosition=currentRoute.name === 'home' && Boolean(homeFocusToRestore);
+  if(preserveHomeReadingPosition)homeFocusToRestore=refreshHomeFocus(appEl,homeFocusToRestore,document);
   if (nextMarkup !== lastRenderedMarkup) {
     if (currentRoute.name !== "home" || !patchHomeAroundCreateControl(nextMarkup)) {
       const currentMain=appEl.querySelector('.shell-main-content');
@@ -4140,7 +3868,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
     lastRenderedRouteKey = routeKey;
     lastRenderedBaseRouteKey = baseRouteKey;
     lastRenderedTransitionPhaseKey = getRouteTransitionPhaseKey();
-    if (animatePanels) {
+    if (animatePanels && !preserveHomeReadingPosition) {
       animatePanelHeightChanges(previousPanelHeights);
       animateFlyoutPositionChanges(previousFlyoutRects);
     }
@@ -4156,6 +3884,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   updateHeaderFields();
   syncMountedGameShellPanelUi();
   reconcileMiniBoardPreviews();
+  restoreHomeReadingIntent({patched:didPatchContent});
   animateHomeSectionTransitions();
   syncScenarioAuthoringControls();
   if(currentRoute.name==='game' && activeResultGameId===currentRoute.gameId){destroyMountedBoardRuntime();resultPresentation.mount(appEl.querySelector('.game-result'),currentRoute.gameId);if(!hadResultView)appEl.querySelector('.game-result h1')?.focus({preventScroll:true});return;}
@@ -4263,6 +3992,33 @@ const observeHomeReadVisit = event => {
   // matching only the final URL would let stale work regain ownership.
   advanceHomeReadVisit();
 };
+const accountContinuationOwner = createAccountContinuationOwner(()=>({
+  state:{
+    get accountContinuation(){return accountContinuation;},set accountContinuation(value){accountContinuation=value;},
+    get accountContinuationError(){return accountContinuationError;},set accountContinuationError(value){accountContinuationError=value;},
+    get accountContinuationIncidentId(){return accountContinuationIncidentId;},set accountContinuationIncidentId(value){accountContinuationIncidentId=value;},
+    get homeReadJob(){return homeReadJob;},set homeReadJob(value){homeReadJob=value;},
+    get pendingResponsiveHomeRead(){return pendingResponsiveHomeRead;},set pendingResponsiveHomeRead(value){pendingResponsiveHomeRead=value;},
+    get routeHydrated(){return routeHydrated;},set routeHydrated(value){routeHydrated=value;},
+    get homeReadChoice(){return homeReadChoice;},set homeReadChoice(value){homeReadChoice=value;},
+    get transport(){return transport;},
+    get homeReadRecovery(){return homeReadRecovery;},set homeReadRecovery(value){homeReadRecovery=value;},
+    get homeSectionResizeFrame(){return homeSectionResizeFrame;},set homeSectionResizeFrame(value){homeSectionResizeFrame=value;},
+  },
+  get homeSectionReads(){return homeSectionReads;},
+  get captureRouteRead(){return captureRouteRead;},
+  get routeReadIsCurrent(){return routeReadIsCurrent;},
+  get render(){return render;},
+  get syncRouteDataAndLiveChannels(){return syncRouteDataAndLiveChannels;},
+  queueResponsiveHomeSectionPageSizes:(...args)=>queueResponsiveHomeSectionPageSizes(...args),
+  get issueDiagnostics(){return issueDiagnostics;},
+  get account(){return account;},
+  get getGameResult(){return getGameResult;},
+  get rematchDialog(){return rematchDialog;},
+  get appEl(){return appEl;},
+  get CSS(){return CSS;},
+  get window(){return window;},
+}));
 const captureRouteRead = () => {
   // A queued authority refresh can run after the URL changes but before the
   // browser delivers hashchange. Keep the read and its deduplication key on
@@ -4284,39 +4040,9 @@ const captureRouteRead = () => {
     inputs: JSON.stringify([homeReadVisit, homeDebug, getVisibleHomeSectionKeys({ debug: homeDebug }).map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])]),
   };
   read.epoch = hydrateRoute.observe(read);
-  if (homeReadJob && !sameRouteRead(homeReadJob.read, read)) {
-    const previousJob = homeReadJob;
-    previousJob.retire();
-    // Any caller can observe an input change, including an in-flight batch's
-    // current-owner predicate. Only this same Home authority owes a replacement.
-    if (previousJob.read.inputs !== read.inputs && sameHomeReadScope(previousJob.read, read)) {
-      pendingResponsiveHomeRead = { job: previousJob, read, fulfilledByNewer: false };
-      queueResponsiveHomeSectionPageSizes();
-    }
-  }
-  if (pendingResponsiveHomeRead) {
-    const pending = pendingResponsiveHomeRead;
-    if (!sameHomeReadScope(pending.read, read)) {
-      pendingResponsiveHomeRead = null;
-      window.cancelAnimationFrame(homeSectionResizeFrame);homeSectionResizeFrame = 0;
-    }
-    else if (pending.read.inputs !== read.inputs) {
-      pendingResponsiveHomeRead = { ...pending, read };
-      queueResponsiveHomeSectionPageSizes();
-    }
-  }
-  if (homeReadRecovery && !sameRouteRead(homeReadRecovery.read, read)) homeReadRecovery = null;
-  if (homeReadChoice && !sameRouteRead(homeReadChoice.read, read)) homeReadChoice = null;
+  accountContinuationOwner.observeRead(read);
   return read;
 };
-const sameRouteRead = (read, current) => read.generation === current.generation && read.routeKey === current.routeKey
-  && read.owner === current.owner && read.epoch === current.epoch
-  && (read.route.name !== "home" || read.inputs === current.inputs);
-// Compare only input changes through the same authority primitive. Home visit
-// is explicit because returning to an identical URL must not revive old work.
-const sameHomeReadScope = (read, current) => read.route.name === "home" && current.route.name === "home"
-  && read.homeVisit === current.homeVisit
-  && sameRouteRead({ ...read, inputs: current.inputs }, current);
 const routeReadIsCurrent = read => sameRouteRead(read, captureRouteRead());
 const assertCurrentRouteRead = (read, isActive = () => true) => {
   if (!routeReadIsCurrent(read) || !isActive()) throw Object.assign(new Error("session_changed"), { code: "session_changed" });
@@ -4348,50 +4074,8 @@ const syncRouteDataAndLiveChannels = (read = captureRouteRead()) => {
   });
 };
 
-const retryAccountContinuation = async () => {
-  const pending = accountContinuation;
-  if (!pending || pending.running || !routeReadIsCurrent(pending)) return;
-  pending.running = true;
-  accountContinuationError = false;
-  render({ animatePanels: false, includeBoard: false });
-  try {
-    const result = await syncRouteDataAndLiveChannels();
-    if (result?.recovered) pending.recoveryEpisode = true;
-  } catch (error) {
-    if (pending.route.name === "home") pending.recoveryEpisode = true;
-    if (accountContinuation === pending && routeReadIsCurrent(pending)) {
-      pending.running = false;
-      accountContinuationError = true;
-      accountContinuationIncidentId = issueDiagnostics.capture("account-continuation", { ...error?.diagnosticEvidence, operation: "account_continuation", stage: "route_read_failed", code: error?.code ?? "unavailable", status: error?.status ?? null, gameId: pending.route?.gameId });
-      render({ animatePanels: false, includeBoard: false });
-    }
-    return;
-  }
-  if (accountContinuation !== pending || !routeReadIsCurrent(pending)) return;
-  // Claim before invoking the original action. A failed write is never replayed.
-  accountContinuation = null;
-  accountContinuationError = false;
-  issueDiagnostics.resolve("account-continuation");
-  routeHydrated = true;
-  render({ animatePanels: false });
-  // Recovery restores the retained choice. Only a new explicit Start may write.
-  if (pending.recoveryEpisode) {
-    if (pending.route.name === "home" && ["create-game", "create-self-play"].includes(pending.intent?.action)) {
-      homeReadChoice = { read: pending, action: pending.intent.action };
-      render({ animatePanels: false, includeBoard: false });
-    }
-    return;
-  }
-  const intent = pending.intent;
-  if (!intent || !account.canPlay() || intent.hash !== window.location.hash) return;
-  if (intent.action === "rematch") {
-    const result = getGameResult(transport.getAuthoritativeGame(intent.gameId), transport.getIdentityId());
-    if (result) rematchDialog.open(result, appEl.querySelector('[data-action="view-result"]'));
-    return;
-  }
-  const selector = `[data-action="${CSS.escape(intent.action)}"]${intent.gameId ? `[data-game-id="${CSS.escape(intent.gameId)}"]` : ""}${intent.moveIndex ? `[data-move-index="${CSS.escape(intent.moveIndex)}"]` : ""}`;
-  appEl.querySelector(selector)?.click();
-};
+
+const retryAccountContinuation = (...args)=>accountContinuationOwner.retry(...args);
 const completeAccountContinuation = async intent => {
   accountContinuation = { ...captureRouteRead(), intent, running: false, recoveryEpisode: Boolean(homeReadRecovery) };
   await retryAccountContinuation();
@@ -4821,7 +4505,7 @@ const subscribeToTransport = () => transport.subscribe((change) => {
   const liveReplayGame = transport.getAuthoritativeGame(getCurrentViewedGameId());
   replayRequests.reconcile(currentReplayContext());
   replayController?.reconcile({gameId:liveReplayGame?.id,revision:liveReplayGame?.gameplayRevision,lineageHead:liveReplayGame?.moves?.filter(move=>!move.undone).at(-1)?.moveId ?? null});
-  if (change?.gameId) maybeReturnAfterUndo(change.gameId);
+  if (change?.gameId) { maybeReturnAfterUndo(change.gameId); scheduleHomeListRefresh(); }
   if (currentRoute.debug && currentRoute.gameId && !getDecisionDebugState(currentRoute.gameId).loaded && !getDecisionDebugState(currentRoute.gameId).loading) {
     const state = getDecisionDebugState(currentRoute.gameId); state.loading = true;
     void loadDebugHistory(currentRoute.gameId).catch(error => { state.error = error.message; state.loaded = true; }).finally(() => { state.loading = false; });
@@ -4886,7 +4570,8 @@ function resetAccountTransport(next) {
   destroyMountedBoardRuntime();
   clearRouteTransition({ renderNow: false });
 
-  homeSections = { my: createHomeSectionState("My games"), other: createHomeSectionState("Other games"), smoke: createHomeSectionState("Deploy smoke player") };
+  homeFocusToRestore=null;lastHomeBatchRevision=null;
+  homeSections = { my: createHomeSectionState("My games"), completed: createHomeSectionState("Your completed games"), other: createHomeSectionState("Other games"), smoke: createHomeSectionState("Deploy smoke player") };
   syncStore = makeAccountSyncStore(next);transport = syncStore;subscribeToTransport();
   if (visible) {
     for (const key of ['canRecordMove','canEndTurn','canInvite','canPlayAsBothPlayers','canUndoLastMove']) visible[key] = false;
@@ -5680,33 +5365,13 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === "home-section-retry") {
+    await homeSectionReads.retry(actionEl.getAttribute('data-home-section'));
+    return;
+  }
   if (action === "home-page-prev" || action === "home-page-next") {
-    const sectionKey = actionEl.getAttribute("data-home-section");
-    const section = getHomeSection(sectionKey);
-    if (!sectionKey || section.totalPages <= 1 || isHomeSectionPending(sectionKey)) {
-      return;
-    }
-    const delta = action === "home-page-prev" ? -1 : 1;
-    const nextPage = (section.page + delta + section.totalPages) % section.totalPages;
-    const pageGeneration=account.snapshot().generation;
-    pendingHomeSectionKeys.add(sectionKey);
-    render({ animatePanels: false, includeBoard: false });
-    try {
-      await loadHomeSectionPage(sectionKey, {
-        page: nextPage,
-        direction: action === "home-page-prev" ? "prev" : "next",
-      });
-      syncLiveChannels();
-    } catch (error) {
-      window.__righeltLastError = error instanceof Error ? error.message : String(error);
-    } finally {
-      if(pageGeneration!==account.snapshot().generation)return;
-      pendingHomeSectionKeys.delete(sectionKey);
-      render({ animatePanels: false, includeBoard: false });
-      window.requestAnimationFrame(() => {
-        scrollHomeSectionToTop(sectionKey);
-      });
-    }
+    const sectionKey = actionEl.getAttribute('data-home-section');
+    await (action === 'home-page-prev' ? homeSectionReads.previous(sectionKey) : homeSectionReads.next(sectionKey));
     return;
   }
 
