@@ -50,8 +50,8 @@ test('another human still must approve Undo',async({page,otherPlayer,baseURL},in
  await otherPlayer.locator('[data-action="accept-revert-request"]').click();
  const outcome=page.locator('#shell-game-alerts [data-paper-kind="undo-outcome"] .shell-game-alert');
  await expect(outcome).toHaveText('Undo request accepted');
- await expect.poll(()=>outcome.evaluate(node=>({animation:node.style.animation,facePosition:getComputedStyle(node.querySelector('.notice-paper-face')).position}))).toEqual({animation:'none',facePosition:'absolute'});
- const paperProof=await outcome.evaluate(node=>({text:node.textContent.trim(),kind:node.closest('[data-paper-kind]').dataset.paperKind,animation:node.style.animation,facePosition:getComputedStyle(node.querySelector('.notice-paper-face')).position,rect:node.getBoundingClientRect().toJSON()}));
+ await expect.poll(()=>outcome.evaluate(node=>({inlineAnimationName:node.style.animationName,facePosition:getComputedStyle(node.querySelector('.notice-paper-face')).position}))).toEqual({inlineAnimationName:'none',facePosition:'absolute'});
+ const paperProof=await outcome.evaluate(node=>({text:node.textContent.trim(),kind:node.closest('[data-paper-kind]').dataset.paperKind,inlineAnimationName:node.style.animationName,facePosition:getComputedStyle(node.querySelector('.notice-paper-face')).position,rect:node.getBoundingClientRect().toJSON()}));
  expect(paperProof.rect.width).toBeGreaterThan(0);expect(paperProof.rect.height).toBeGreaterThan(0);
  const {writeFile}=await import('node:fs/promises');const proofPath=info.outputPath('actual-app-undo-paper.json');await writeFile(proofPath,JSON.stringify({gameId,moveId:move.moveId,...paperProof},null,2));await info.attach('actual-app-undo-paper',{path:proofPath,contentType:'application/json'});
  await page.screenshot({path:info.outputPath('actual-app-undo-paper.png')});
