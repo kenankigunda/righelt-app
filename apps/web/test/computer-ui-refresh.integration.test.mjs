@@ -8,6 +8,7 @@ import {SYNC_TIMING} from '../generated/packages/shared-types/src/sync-protocol.
 import {createFramePresentation,COMPUTER_UI_FRAME_MEASURE} from '../shell/frame-presentation.js';
 import {COMPUTER_PRESENTATION} from '../shell/computer-session.js';
 import {createForegroundRecoveryWait} from '../shell/foreground-recovery.js';
+import {createRecoveryPresentation} from '../shell/recovery-presentation.js';
 
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const slice=(start,end)=>{
@@ -42,7 +43,7 @@ test('quiet renewal mounted UI refresh clears stale loading and announcement onl
   currentRoute:{name:'game',gameId:game.id},viewingScope:()=> 'account:storage',
   createForegroundRecoveryWait:options=>createForegroundRecoveryWait({...options,setTimer:()=>1,clearTimer(){}}),
   boardRuntime:{refreshStatus(){}},updateParticipantCards(){},setActivityActor(){},activityActorSide(){return 'P1';},
-  recoveryMessage,needsRecoveryAction,isBoardRecoveryPending,Date,SYNC_TIMING,LOADING_CUE_DELAY_MS:500,
+  createRecoveryPresentation,recoveryMessage,needsRecoveryAction,isBoardRecoveryPending,Date,SYNC_TIMING,LOADING_CUE_DELAY_MS:500,
   clearTimeout(){},setTimeout(){return 1;},updateMountedHeader(){},
  });
  const update=script.runInContext(context);update();

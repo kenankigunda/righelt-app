@@ -1,3 +1,4 @@
+import {createRecoveryPresentation} from './recovery-presentation.js';
 import {icon} from './ui.js';
 import {renderGameAlertCard} from './game-alert.js';
 import {renderBoardContext} from './board-context.js';
@@ -12,6 +13,7 @@ export const renderRecoveryActions=({game,dismissed,recoveryNeedsAction,escapeHt
 
 /** Reads live application dependencies on every render; it never owns gameplay. */
 export function createGameAlertItems(getDependencies) {
+ const recoveryPresentation=createRecoveryPresentation(getDependencies);
  return (game) => {
   const {transport,maybeUpdateUndoRequestOutcomeFeedback,presentedRecoveryMessage,needsRecoveryAction,recoveryPresentationOptions,issueDiagnostics,isDiagnosticOpen,dismissedRecoveryNotices,escapeHtml,recoveryActivity,activityActorSide,playbackRecoveryWait,viewingScope,liveBoardVisible,SYNC_TIMING,renderComputerProgress,computerSession,getActiveRevertRequest,getActivePendingRevertRequest,undoApprovalActorSide,boardContextScope,boardContexts,contextReplayEnabled}=getDependencies();
   const failedOperations = transport.getFailedOperations?.(game.id) ?? [];
@@ -37,7 +39,7 @@ export function createGameAlertItems(getDependencies) {
   if (message && (!dismissed || game.storageBlocked)) {
     items.unshift({
       key: `live-sync:${game.id}:${game.recoveryEpisodeId ?? "current"}`, priority: recoveryNeedsAction ? "urgent" : "normal",
-      html: renderGameAlertCard({ tone: recoveryNeedsAction ? "warn" : "neutral", activity: recoveryActivity(game), actorSide: activityActorSide(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: recoveryNeedsAction ? game.incidentId : null,
+      html: renderGameAlertCard({ tone: recoveryNeedsAction ? "warn" : "neutral", activity: recoveryActivity(game), actorSide: activityActorSide(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: recoveryPresentation.incidentId(game,recoveryNeedsAction),
         action: renderRecoveryActions({game,dismissed,recoveryNeedsAction,escapeHtml}),
       }),
     });

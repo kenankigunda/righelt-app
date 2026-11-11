@@ -1,3 +1,4 @@
+import {createRecoveryPresentation} from './recovery-presentation.js';
 import {mountRenderGestureOwner} from './render-gesture-owner.js';
 import {createDestinationRouteOwner,destinationReadScope,terminalColdDestination,destinationHidesGameBody,readGameDestination,destinationLiveGameId} from './destination-route-owner.js';
 import {createNavigationVisitOwner} from './navigation-visit-owner.js';
@@ -269,15 +270,8 @@ const foregroundRecoveryWait = createForegroundRecoveryWait({ onChange: () => {
   updateRecoveryAnnouncement(game);
 } });
 const playbackRecoveryWait=createForegroundRecoveryWait({onChange:()=>render({animatePanels:false,includeBoard:false})});
-const recoveryPresentationOptions = game => ({
-  foregroundWaitMs: foregroundRecoveryWait.update({
-    scope: `${viewingScope()}:${currentRoute.name === 'game' ? currentRoute.gameId : ''}:${game?.recoveryEpisodeId ?? ''}`,
-    active: !document.hidden && currentRoute.name === 'game' && currentRoute.gameId === game?.id && !game?.inHistoryMode,
-    blocked: Boolean(game?.sharedMutationsBlocked && (game.recovering || game.syncStatus === 'confirming' || game.confirmationOverdue)),
-  }),
-  computerSaveActive: game?.id === getCurrentViewedGameId() && computerSession?.snapshot().phase === 'saving',
-  quietComputerRenewal: quietComputerRenewal(game),
-});
+const recoveryPresentation=createRecoveryPresentation(()=>({foregroundRecoveryWait,viewingScope,currentRoute,document,getCurrentViewedGameId,computerSession,quietComputerRenewal,transport}));
+const recoveryPresentationOptions = game => recoveryPresentation.options(game);
 const presentedRecoveryMessage = game => recoveryMessage(game, Date.now(), recoveryPresentationOptions(game));
 document.addEventListener('visibilitychange', () => {
   foregroundRecoveryWait.reset();
