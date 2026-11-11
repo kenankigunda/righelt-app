@@ -51,3 +51,11 @@ test('partial archive never assigns a later closure to an earlier action',()=>{
  const closure={...move('end_turn'),moveId:'closure',index:5,turnIndex:2,turnMoveIndex:4,snapshot:{label:'after-omitted-actions'}};
  assert.deepEqual(visibleRecordedMoves([first,closure])[0].snapshot,{label:'A-only'});
 });
+
+test('closure folding never attaches another accepted or provisional Undo operation to an earlier record',()=>{
+ const action={moveId:'action',index:1,turnIndex:0,turnMoveIndex:0,undone:true,undoEventSeq:7,action:{type:'move'},snapshot:{label:'own'}};
+ const closure={moveId:'closure',index:2,turnIndex:0,turnMoveIndex:1,undone:true,undoEventSeq:8,action:{type:'end_turn'},snapshot:{label:'other'}};
+ const original=structuredClone([action,closure]);assert.equal(visibleRecordedMoves([action,closure],{includeUndone:true})[0].snapshot.label,'own');
+ assert.equal(visibleRecordedMoves([action,{...closure,undoEventSeq:7}],{includeUndone:true})[0].snapshot.label,'other');
+ assert.equal(visibleRecordedMoves([{...action,undoEventSeq:undefined,pendingUndoRequestId:'one'},{...closure,undoEventSeq:undefined,pendingUndoRequestId:'two'}],{includeUndone:true})[0].snapshot.label,'own');assert.deepEqual([action,closure],original);
+});

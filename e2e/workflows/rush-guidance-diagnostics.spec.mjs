@@ -1,8 +1,15 @@
 import {test,expect} from '@playwright/test';
-import {createIsolatedPage,closeContextQuietly,importScenarioGame} from '../support/app.mjs';
+import {writeFile} from 'node:fs/promises';
+import {createIsolatedPage,importScenarioGame} from '../support/app.mjs';
 import {createRushBlockerScenario,assertRushBlockerState} from '../support/rush-blocker-scenario.mjs';
 import {readProjectedGame} from '../support/computer-projection.mjs';
 import {installGuidanceWorkerFault} from '../support/guidance-worker-fault.mjs';
+
+const attachJSON=async(info,name,value)=>{
+  const path=info.outputPath(`${name}.json`);
+  await writeFile(path,JSON.stringify(value,null,2)+'\n',{mode:0o600});
+  await info.attach(name,{path,contentType:'application/json'});
+};
 
 const optionalScalar=(value,key)=>Object.hasOwn(value,key)&&['boolean','number','string'].includes(typeof value[key])
   ?{exposed:true,value:value[key]}:{exposed:false};
@@ -61,7 +68,7 @@ test('guidance failure reaches local Details without changing legal play',async(
   };
   page.on('request',observeRequest);
   await page.addInitScript(installGuidanceWorkerFault);
-  let primary;
+  let hasPrimary=false;
   try {
     const {scenario,state,reconnect}=createRushBlockerScenario();
     const {gameId}=await importScenarioGame(page,scenario,baseURL);
@@ -130,19 +137,31 @@ test('guidance failure reaches local Details without changing legal play',async(
     expect(observation.records.filter(row=>row.kind==='injected')).toHaveLength(1);
     expect(observation.records.filter(row=>row.kind==='response')).toHaveLength(1);
     expect(observation.records.some(row=>row.kind==='delegated-guidance')).toBe(true);
-    await info.attach('normalized guidance diagnostic wiring',{body:JSON.stringify({observation,mutationRequests,incidentId,
+    await attachJSON(info,'normalized-guidance-diagnostic-wiring',{observation,mutationRequests,incidentId,
       configuredDeadlineMs:2000,injectedFailureCode:'rules_budget_exceeded',realTimeoutExpiryProved:false,runtimeBefore,runtimeAfter,publicSyncScalars:before.syncScalars,
-      actualAppSinkAndDetails:true,authorityUnchanged:true}),contentType:'application/json'});
-  } catch(error) {primary=error;throw error;}
+      actualAppSinkAndDetails:true,authorityUnchanged:true});
+  } catch(error) {hasPrimary=true;throw error;}
   finally {
-    page.off('request',observeRequest);
+    const secondary=[];
+    let cleanupFailed=false,cleanupFailure;
+    const incomplete=(phase,error)=>{
+      if(!cleanupFailed)cleanupFailure=error;
+      cleanupFailed=true;
+      const entry={phase,name:typeof error?.name==='string'?error.name:'Error',incomplete:true};
+      secondary.push(entry);
+      try{info.annotations.push({type:'guidance-cleanup-incomplete',description:`${phase}: ${entry.name}`});}catch{}
+      try{console.error(JSON.stringify({kind:'guidance-worker-fixture-cleanup-incomplete',...entry,hasPrimary}));}catch{}
+    };
+    let observation={issues:['restore-not-recorded']};
     try {
-      const observation=await page.evaluate(()=>{const fixture=globalThis.__guidanceWorkerFault;fixture?.restore();return fixture?.snapshot()??{issues:['fixture-not-installed']};});
-      await info.attach('guidance worker boundary cleanup',{body:JSON.stringify({observation,mutationRequests,observationIssues}),contentType:'application/json'});
-      if(!primary)expect(observation.issues).toEqual([]);
-    } catch(error) {
-      console.error(JSON.stringify({kind:'guidance-worker-fixture-cleanup-incomplete',name:error?.name??'Error'}));
-      if(!primary)throw error;
-    } finally {await closeContextQuietly(context);}
+      page.off('request',observeRequest);
+      observation=await page.evaluate(()=>{const fixture=globalThis.__guidanceWorkerFault;fixture?.restore();return fixture?.snapshot()??{issues:['fixture-not-installed']};});
+      expect(observation.issues).toEqual([]);
+    } catch(error) {incomplete('worker-restore',error);}
+    try {await context.close();}catch(error){incomplete('context-close',error);}
+    try {
+      await attachJSON(info,'guidance-worker-boundary-cleanup',{observation,mutationRequests,observationIssues,secondary,incomplete:cleanupFailed,hasPrimary});
+    }catch(error){incomplete('proof-persistence',error);}
+    if(cleanupFailed&&!hasPrimary)throw cleanupFailure;
   }
 });

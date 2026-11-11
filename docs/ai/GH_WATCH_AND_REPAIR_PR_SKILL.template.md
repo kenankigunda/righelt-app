@@ -11,6 +11,9 @@ For Righelt only: `PR validation` over the exact `pr-gate` profile is the only b
 
 Separate ready for review, ready to merge and ready to activate. A code repair request does not authorize merge, deployment, activation, access changes or resuming a paused schedule. Preserve unresolved operational evidence as explicit requirements, without silently expanding a bounded repair into deployment work.
 
+For Righelt only, follow the durable testing standard in the pinned release's `docs/ai/TESTING_STRATEGY.md`. Execute production behavior instead of slicing or evaluating product source. Migrate affected legacy assertions, preserve independent expected answers, and show targeted negative proof. Keep focused real-app wiring and native proof for browser contracts. Run `check:test-durability` before slower checks. Do not expand the frozen legacy inventory. Other repositories retain their own testing policy.
+
+
 ## Resolve the target and authority
 
 1. Resolve the repository, PR number or URL, branch, and deployment provider from the request or current worktree. Use `gh pr view` for the current branch when the user does not provide a PR number.

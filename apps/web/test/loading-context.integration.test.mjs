@@ -60,7 +60,7 @@ test('externally managed sources stay suppressed and real modal context stays in
 const app=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const headerItemsSource=app.slice(app.indexOf('const getHeaderAlertItems ='),app.indexOf('const renderGameAlertsHtml ='));
 const escapeHtml=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
-const headerItems=({scope='route-a',contexts=[],startupError=null,gameItems=[]}={})=>Function('loadingContextScope','slowLoadingContexts','accountStartupError','renderGameAlertCard','escapeHtml','getGameAlertItems',`${headerItemsSource};return getHeaderAlertItems;`)(()=>scope,contexts,startupError,renderGameAlertCard,escapeHtml,()=>gameItems);
+const headerItems=({scope='route-a',contexts=[],startupError=null,gameItems=[],destinationBlocked=false}={})=>Function('loadingContextScope','slowLoadingContexts','accountStartupError','renderGameAlertCard','escapeHtml','getGameAlertItems','destinationLoadPresentation',`${headerItemsSource};return getHeaderAlertItems;`)(()=>scope,contexts,startupError,renderGameAlertCard,escapeHtml,()=>gameItems,{blocked:destinationBlocked});
 test('actual header alert mapping uses the current scope, one escaped status and existing urgent items without republishing external metadata',()=>{
  const contexts=[{key:'loading:route-a:home',scope:'route-a',message:'<Games & waiting>'},{key:'old',scope:'previous-route',message:'Old context'}];
  const urgent={key:'real-error',priority:'urgent',html:'Actual recovery'};
@@ -70,4 +70,11 @@ test('actual header alert mapping uses the current scope, one escaped status and
  assert.equal((items[1].html.match(/role="status"/g)||[]).length,1);assert.doesNotMatch(items[1].html,/data-loading-(?:key|state)/);
  assert.deepEqual(headerItems({contexts,startupError:'Startup failed'})(null),[]);
  assert.equal(headerItems({contexts})(null).length,1);
+});
+
+test('cold destination owns its read notice while real game recovery alerts remain available',()=>{
+ const contexts=[{key:'home-read',scope:'route-a',message:'Your games are taking longer'}];
+ const saving={key:'saving',html:'Actual durable recovery'};
+ assert.deepEqual(headerItems({contexts,gameItems:[saving],destinationBlocked:true})({id:'g'}),[saving]);
+ assert.equal(headerItems({contexts,gameItems:[saving],destinationBlocked:false})({id:'g'}).length,2);
 });

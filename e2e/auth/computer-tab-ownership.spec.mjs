@@ -26,7 +26,7 @@ test('same-tab relogin cannot reuse the old lease and Resume here acknowledges f
  await page.getByRole('button',{name:'Play Babs',exact:true}).click();
  const response=await computerCreation;expect(response.ok()).toBe(true);const game=(await response.json()).game;
  await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',game.id);
- const card=label=>page.getByRole('button',{name:`Babs, Blue, ${label}`,exact:true});
+ const card=label=>page.getByRole('button',{name:`Babs, Blue, Computer player, ${label}`,exact:true});
  await expect(card('Active here')).toBeVisible();
  const tabMarker=await page.evaluate(()=>window.leaseTabMarker=crypto.randomUUID());
  const oldContext=await page.evaluate(async()=>{const response=await fetch('/api/auth/session');if(!response.ok)throw Error('Session read failed');return (await response.json()).contextId;});

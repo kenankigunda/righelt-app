@@ -63,11 +63,25 @@ export function fontEnvelopeBudgetForBrowser(envelope,coldIntrinsic,{browserName
  return {...ideal,browserName,qualificationMode:'firefox-typed-css-used',rows,groups:qualifiedGroups,contentMax:Math.max(...qualifiedGroups.map(group=>group.contentMax)),slotMax:Math.max(...qualifiedGroups.map(group=>group.slotMax))};
 }
 
+// The accepted current grammar has 79 variants per font. PR193 added eleven
+// models to each original 68-row set. IDs and fonts are checked
+// independently, so a duplicate row cannot conceal an omitted sizing model.
+export function fontEnvelopeInventoryViolations(rows){
+ const expected=new Set(['primary','fallback'].flatMap(font=>Array.from({length:79},(_,index)=>`${font}|prompt:${index}`))),seen=new Set(),violations=[];
+ if(rows.length!==158)violations.push({kind:'grammar-count',actual:rows.length,expected:158});
+ for(const row of rows){
+  const key=typeof row.font==='string'&&typeof row.variant==='string'?`${row.font}|${row.variant}`:null;
+  if(!expected.has(key)||seen.has(key))violations.push({kind:'grammar-identity',font:row.font,variant:row.variant,reason:seen.has(key)?'duplicate':'unknown'});
+  seen.add(key);
+ }
+ for(const key of expected)if(!seen.has(key))violations.push({kind:'grammar-identity',missing:key});
+ return violations;
+}
+
 // Preserve every row/group oracle without paying for tens of thousands of
 // Playwright assertion objects. Raw samples remain attached by the caller.
 export function validateFontEnvelope(envelope,coldIntrinsic,{browserName}={}){
- const violations=[],rows=Array.isArray(envelope?.rows)?envelope.rows:[];
- if(rows.length!==136)violations.push({kind:'grammar-count',actual:rows.length,expected:136});
+ const rows=Array.isArray(envelope?.rows)?envelope.rows:[],violations=fontEnvelopeInventoryViolations(rows);
  for(let index=0;index<rows.length;index++)if(![null,'required-retry'].includes(rows[index].pattern??null))violations.push({kind:'unknown-pattern',index,pattern:rows[index].pattern});
  const tagged=rows.filter(row=>row.pattern==='required-retry');
  if(tagged.length!==2)violations.push({kind:'typed-count',actual:tagged.length,expected:2});
