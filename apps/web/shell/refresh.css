@@ -662,7 +662,10 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 /* Marble foundation: bounded, static material. Textures never own layout,
    readiness or motion; the white base remains usable if either asset fails. */
 :root {
- --marble-face:linear-gradient(rgb(255 255 255 / 65%),rgb(255 255 255 / 65%)),url('../assets/materials/marble-white-raster-v2.webp');
+ --marble-texture:url('../assets/materials/marble-white-raster-v2.webp');
+ --marble-face:linear-gradient(rgb(255 255 255 / 65%),rgb(255 255 255 / 65%)),var(--marble-texture);
+ --marble-face-origin:-768px -768px;
+ --marble-face-scale:2048px 2048px;
  --marble-canvas:url('../assets/materials/marble-white-raster-v2.webp');
  --stone-grain:var(--marble-face);
  --marble-edge:#c7ccce;
@@ -680,17 +683,22 @@ body {background-color:var(--surface-foundation);background-image:var(--marble-c
   linear-gradient(135deg,var(--corner-start) 0 16px,transparent 16px) top left / 40px 40px no-repeat,
   linear-gradient(315deg,var(--corner-end) 0 24px,transparent 24px) bottom right / 40px 40px no-repeat,
   var(--marble-face),linear-gradient(135deg,#fff,#f7f9f9);
+ background-position:top left,bottom right,0 0,var(--marble-face-origin),0 0;
+ background-size:40px 40px,40px 40px,auto,var(--marble-face-scale),auto;
 }
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::after,
 .story-modal::after,.game-result::after {background:linear-gradient(115deg,#e3e6e7,var(--marble-edge));}
-.home-refresh button.opponent-choice::before,.home-refresh .mini-board-card::before {background:var(--marble-face),linear-gradient(135deg,#fff,#fafcfc);}
+.home-refresh button.opponent-choice::before,.home-refresh .mini-board-card::before {background:var(--marble-face),linear-gradient(135deg,#fff,#fafcfc);background-position:0 0,var(--marble-face-origin),0 0;background-size:auto,var(--marble-face-scale),auto;}
+.home-refresh button.opponent-choice:nth-child(2){--marble-face-origin:-920px -720px;}
+.home-refresh button.opponent-choice:nth-child(3){--marble-face-origin:-760px -1040px;}
+.home-refresh button.opponent-choice:nth-child(4){--marble-face-origin:-1024px -896px;}
 .home-refresh button.opponent-choice::after,.home-refresh .mini-board-card::after {background:var(--marble-edge);}
-[data-hover-capability="hover"] .home-refresh button.opponent-choice:not(:disabled):hover::before {background:linear-gradient(rgb(37 43 45 / 3%),rgb(37 43 45 / 3%)),var(--marble-face),#fff;}
+[data-hover-capability="hover"] .home-refresh button.opponent-choice:not(:disabled):hover::before {background:linear-gradient(rgb(247 247 247 / 65%),rgb(247 247 247 / 65%)),var(--marble-texture),linear-gradient(#fff,#fafcfc);background-position:0 0,var(--marble-face-origin),0 0;background-size:auto,var(--marble-face-scale),auto;}
 @media(forced-colors:active) {body{background-image:none;}}
 
 /* Foundation consumers preserve native modality, target sizes and input owners.
    Relief is paint only; semantic cell rings and field errors remain stronger. */
-.account-dialog[data-presentation="modal"] {background:var(--marble-face),var(--surface-raised);border-color:var(--divider);box-shadow:0 4px 0 var(--marble-edge),0 16px 44px rgb(36 46 55 / 20%);}
+.account-dialog[data-presentation="modal"] {background:var(--marble-face),var(--surface-raised);background-position:0 0,var(--marble-face-origin);background-size:auto,var(--marble-face-scale);border-color:var(--divider);box-shadow:0 4px 0 var(--marble-edge),0 16px 44px rgb(36 46 55 / 20%);}
 :is(.account-dialog,.shell-flyout) :is(input:not([type="checkbox"]):not([type="radio"]),textarea,select),
 .account-dialog .input-with-action {background-color:#f5f8f8;border-color:var(--divider);box-shadow:inset 0 2px 3px rgb(36 46 55 / 13%),inset 0 -1px #fff;}
 .account-dialog .input-with-action > input {background:transparent;box-shadow:none;}
@@ -703,7 +711,7 @@ body {background-color:var(--surface-foundation);background-image:var(--marble-c
 .account-dialog[data-presentation="modal"] button[type="submit"]:not(:disabled):is(:active,.is-pressing) {box-shadow:0 1px 0 color-mix(in srgb,var(--action-color),#000 28%),inset 0 1px 2px rgb(0 0 0 / 14%);}
 :is(.shell-flyout,.account-dialog[data-presentation="flyout"])::before {background:linear-gradient(135deg,rgb(255 255 255 / 94%),rgb(235 244 248 / 94%));backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:inset 0 1px #fff,inset 1px 0 rgb(255 255 255 / 85%);}
 :is(.shell-flyout,.account-dialog[data-presentation="flyout"])::after {background:linear-gradient(115deg,rgb(218 230 235 / 92%),rgb(176 193 202 / 90%));}
-.shell-header-menu-panel {background:var(--marble-face),var(--surface-raised);border-color:var(--divider);}
+.shell-header-menu-panel {background:var(--marble-face),var(--surface-raised);background-position:0 0,var(--marble-face-origin);background-size:auto,var(--marble-face-scale);border-color:var(--divider);}
 .mini-board-preview-wrap .cell {--cell-floor-image:none;}
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
  :is(.shell-flyout,.account-dialog[data-presentation="flyout"])::before {background:#f4f8fa;}
