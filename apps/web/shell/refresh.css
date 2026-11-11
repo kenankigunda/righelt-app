@@ -650,11 +650,10 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 
 .home-card-result { display:grid; align-items:start; gap:4px; margin-block:8px; overflow-wrap:anywhere; }
 .home-card-result > strong { color:var(--ink); }
+.home-card-result > strong.player-tone-p1 {color:var(--player-p1);}
+.home-card-result > strong.player-tone-p2 {color:var(--player-p2);}
 .home-card-result > .small { color:var(--text-secondary); }
-[data-winner-side="p1"] { --home-winner-color:var(--player-p1); }
-[data-winner-side="p2"] { --home-winner-color:var(--player-p2); }
-.mini-board-card[data-winner-side] > .mini-board-card-link-surface { position:relative; }
-.mini-board-card[data-winner-side] > .mini-board-card-link-surface::before { content:''; position:absolute; inset-block:20px; inset-inline-start:0; width:3px; background:var(--home-winner-color); pointer-events:none; }
+/* Completed games keep neutral card faces. Only the winner text is affiliated. */
 
 /* A short completed list can have wide cards. Its miniature still represents
    the square board instead of stretching fixed-height rows horizontally. */
@@ -663,13 +662,13 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 /* Marble foundation: bounded, static material. Textures never own layout,
    readiness or motion; the white base remains usable if either asset fails. */
 :root {
- --marble-face:linear-gradient(rgb(255 255 255 / 88%),rgb(255 255 255 / 88%)),url('../assets/materials/marble-white-raster-v1.webp');
- --marble-canvas:url('../assets/materials/marble-canvas.svg'),url('../assets/materials/marble-white-raster-v1.webp');
+ --marble-face:linear-gradient(rgb(255 255 255 / 65%),rgb(255 255 255 / 65%)),url('../assets/materials/marble-white-raster-v2.webp');
+ --marble-canvas:url('../assets/materials/marble-white-raster-v2.webp');
  --stone-grain:var(--marble-face);
  --marble-edge:#c7ccce;
  --marble-contact-shadow:0 3px 4px rgb(36 46 55 / 14%);
 }
-body {background-color:var(--surface-foundation);background-image:var(--marble-canvas);background-size:100% 960px,1024px 1024px;}
+body {background-color:var(--surface-foundation);background-image:var(--marble-canvas);background-size:1024px 1024px;}
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,
 .story-modal,.game-result {
  --stone-edge:var(--marble-edge);

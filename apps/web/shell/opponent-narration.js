@@ -36,9 +36,9 @@ export function ownsBoardActor(game, identityId) {
 export function opponentBoardMessage(game, status, selection = {}, {canInteract = false, identityId} = {}) {
   if (!game || game.inHistoryMode) return null;
   if (selection.selectedPieceId || selection.inspection) return null;
-  if (isCompletedGame(game) && game.pendingComputerSaveStartedAt == null) return {text:BOARD_PROMPT.complete,context:{text:'Game complete'}};
+  if (isCompletedGame(game) && game.pendingComputerSaveStartedAt == null) return {text:BOARD_PROMPT.complete};
   if (game.computerTurn || game.pendingComputerSaveStartedAt != null) return computerBoardMessage(game, status, selection);
-  if ((game.board?.state?.outcome?.status && game.board.state.outcome.status !== 'ongoing') || game.status === 'finished') return {text:BOARD_PROMPT.complete,context:{text:'Game complete'}};
+  if ((game.board?.state?.outcome?.status && game.board.state.outcome.status !== 'ongoing') || game.status === 'finished') return {text:BOARD_PROMPT.complete};
   const localTurn = canInteract || ownsBoardActor(game,identityId);
   if (canInteract && game.control === 'opponent' && !game.board?.state?.continuation) return null;
   if (localTurn && game.board?.state?.continuation) return null;

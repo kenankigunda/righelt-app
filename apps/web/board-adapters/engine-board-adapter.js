@@ -1346,7 +1346,8 @@ export function createEngineBoardAdapter() {
             cell.appendChild(marker);
           }
 
-          for (const removalEffect of (Array.isArray(removalEffects) ? removalEffects : []).filter((effect) => effect.piece && coordKey(effect.position) === `${row},${col}`)) {
+          const namedRemovals = (Array.isArray(removalEffects) ? removalEffects : []).filter((effect) => effect.piece && coordKey(effect.position) === key);
+          for (const removalEffect of namedRemovals) {
             const removalPiece = buildPieceToken(removalEffect.piece);
             removalPiece.classList.add("removal-piece");
             removalPiece.style.setProperty?.("--removal-flash-duration", `${REMOVAL_EFFECT_DURATION_MS / REMOVAL_FLASH_COUNT}ms`);
@@ -1438,6 +1439,11 @@ export function createEngineBoardAdapter() {
             cell.appendChild(rowAxis);
           }
 
+          // Empty native buttons have no named content. Keep piece, supply and
+          // removal names from their tokens; later rush guidance owns its labels.
+          if (effectiveInteractionMode === "interactive" && !cellPiece && !isSupplyPoint(row, col) && namedRemovals.length === 0) {
+            cell.setAttribute("aria-label", `Square (${row}, ${col})`);
+          }
           if (!existingCell) boardEl.appendChild(cell);
           cellByCoordinateKey.set(key, cell);
         }

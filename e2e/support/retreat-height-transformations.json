@@ -1,7 +1,7 @@
 {
   "/board-adapters/engine-board-adapter.js": {
     "file": "apps/web/board-adapters/engine-board-adapter.js",
-    "sourceSha256": "1fe11ee004534b20db118aecac54b0c3aaa041b30c808063d5bf8e2707bf0453",
+    "sourceSha256": "c502ab7611f033b97369b52b667c387e06c26ec65296a5af33031191d7048cc9",
     "prefix": "const __retreatHeightProbe=(event,data,owner)=>{try{const sink=globalThis.__retreatHeightRecord;if(typeof sink==='function')sink(event,typeof data==='function'?data():data,owner);}catch{}};\nconst __retreatHeightValue=(event,value,data=null,owner=null)=>{__retreatHeightProbe(event,data??(()=>({value})),owner);return value;};\n",
     "operations": [
       {
@@ -21,7 +21,7 @@
         "anchorCount": 1
       }
     ],
-    "outputSha256": "eebaa4870bd96aee3950e04285963f8f7e69b837232356b2ae1fd18121b7539b"
+    "outputSha256": "61bc518cdb0cec37dd8f8c9db33879b484b414f917fb8c282a05b5374a8488bc"
   },
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",

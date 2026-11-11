@@ -33,14 +33,13 @@ test('real non-target rush commander shares the quiet cell floor under the actua
   await page.emulateMedia({forcedColors:'active'});
   await expect.poll(()=>floor.evaluate(el=>getComputedStyle(el).backgroundImage)).toBe('none');
   await expect.poll(()=>target.locator('.piece-mineral').evaluate(el=>getComputedStyle(el).display)).toBe('none');
-  const focused=page.locator('#board .cell:focus');
-  for(let step=0;step<12;step++){
+  for(let step=0;step<102;step++){
    await page.keyboard.press('Tab');
-   if(await focused.count())break;
+   if(await target.evaluate(el=>el===document.activeElement))break;
   }
-  await expect(focused).toHaveCount(1);await expect(focused).toBeFocused();
-  await expect(focused).toHaveAttribute('aria-label',/\S/);
-  await expect.poll(()=>focused.evaluate(el=>{const c=getComputedStyle(el);return c.outlineStyle!=='none'?parseFloat(c.outlineWidth):0;})).toBeGreaterThan(0);
+  await expect(target).toBeFocused();
+  await expect(target).toHaveAccessibleName(/Other legal rush/);
+  await expect.poll(()=>target.evaluate(el=>{const c=getComputedStyle(el);return c.outlineStyle!=='none'?parseFloat(c.outlineWidth):0;})).toBeGreaterThan(0);
   expect(await page.evaluate(()=>window.boardFixture.applied().length)).toBe(0);
   const forcedPath=info.outputPath('forced-colors-keyboard-floor.png');
   await page.screenshot({path:forcedPath});

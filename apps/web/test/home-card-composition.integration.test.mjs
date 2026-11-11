@@ -27,14 +27,14 @@ const card = (overrides = {}) => ({
 });
 const statusHtml = html => html.match(/<p class="small mini-board-preview-status">([\s\S]*?)<\/p>/)?.[1];
 
-test('confirmed result and pending Undo retain quiet canonical identities, winner rail and Review game', () => {
+test('confirmed result and pending Undo retain quiet canonical identities, winner label color and Review game', () => {
   for (const manual of [false, true]) {
     const input = card({confirmedOutcomeStatus:'p2_win', pendingPreviewSnapshot:snapshot(),
       computer:{manual, seats:{p1:null,p2:'horus'}}});
     const before = structuredClone(input), h = renderer();
     const html = h.render(input);
     assert.match(html, /data-winner-side="p2"/);
-    assert.match(html, /<strong><bdi>Horus won<\/bdi><\/strong>/);
+    assert.match(html, /<div class="home-card-result"><strong class="player-tone-p2"><bdi>Horus won<\/bdi><\/strong><span class="small">You lost<\/span><\/div>/);
     assert.match(html, /<span class="small">You lost<\/span>/);
     assert.equal(statusHtml(html), 'Review game');
     assert.match(html, /<span class="sr-only">Red: <\/span><bdi>&lt;Kenan&gt;<\/bdi>/);
@@ -125,4 +125,26 @@ test('ongoing scenario preview names the preview actor without borrowing live tu
  assert.equal(scenarioPreviewStatus(null,model.snapshot).statusText,'Preview: Blue to play');
  assert.equal(scenarioPreviewStatus(null,null).statusText,'Snapshot unavailable');
  assert.deepEqual(active,before);
+});
+
+// Literal expected labels and tones are independent of homeCardResult's implementation.
+for (const [name, overrides, identityId, label, tone, detail] of [
+  ['owned Red win', {confirmedOutcomeStatus:'p1_win'}, 'owner', 'You won', 'p1', null],
+  ['owned Blue loss', {confirmedOutcomeStatus:'p2_win'}, 'owner', 'Ada won', 'p2', 'You lost'],
+  ['viewer Red win', {confirmedOutcomeStatus:'p1_win',myRole:'Viewer'}, 'visitor', '&lt;Kenan&gt; won', 'p1', null],
+  ['viewer Blue win', {confirmedOutcomeStatus:'p2_win',myRole:'Viewer'}, 'visitor', 'Ada won', 'p2', null],
+  ['self-play Red win', {confirmedOutcomeStatus:'p1_win',myRole:'Both Players',selfPlayMode:true,player2:{identityId:'owner'}}, 'owner', 'Red won', 'p1', null],
+  ['self-play Blue win', {confirmedOutcomeStatus:'p2_win',myRole:'Both Players',selfPlayMode:true,player2:{identityId:'owner'}}, 'owner', 'Blue won', 'p2', null],
+  ['actual draw', {confirmedOutcomeStatus:'draw'}, 'owner', 'Draw', null, 'No winner'],
+]) test(`completed Home result colors only its winning label: ${name}`, () => {
+  const input=card(overrides), before=structuredClone(input);
+  const html=renderer(identityId).render(input);
+  const result=html.match(/<div class="home-card-result">([\s\S]*?)<\/div>/)?.[1];
+  assert.ok(result, 'result container remains neutral');
+  assert.equal(result, `<strong${tone ? ` class="player-tone-${tone}"` : ''}><bdi>${label}</bdi></strong>${detail ? `<span class="small">${detail}</span>` : ''}`);
+  assert.equal(statusHtml(html),'Review game');
+  assert.match(html, /<article class="mini-board-card"/);
+  assert.match(html, /data-flyout-link="game"/);
+  assert.match(html, /data-game-id="same-game"/);
+  assert.deepEqual(input,before);
 });

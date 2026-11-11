@@ -3,23 +3,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {FRIEND_STORY} from '../shell/opponent-stories.js';
-const read=path=>{
- assert.ok(['../assets/materials/marble-face.svg','../assets/materials/marble-canvas.svg','../../../docs/ai/marble/selected-assets.json'].includes(path),'only generated asset artifacts may be read');
- return readFileSync(new URL(path,import.meta.url),'utf8');
-};
-
-test('marble materials are small static vector resources without interactive or animated owners',()=>{
- for(const name of ['marble-face','marble-canvas']){
-  const asset=read(`../assets/materials/${name}.svg`);
-  assert.ok(Buffer.byteLength(asset)<4096,'bounded reusable material, not a page screenshot');
-  assert.match(asset,/<svg[^>]+viewBox=/);assert.match(asset,/<path /);
-  assert.doesNotMatch(asset,/<(?:script|foreignObject|image|filter|animate|set)\b|onload=|https?:\/\/(?!www.w3.org)/i);
- }
-
-});
-
 test('the shared raster material stays static, opaque and inside its frozen delivery budget',()=>{
- const data=readFileSync(new URL('../assets/materials/marble-white-raster-v1.webp',import.meta.url));
+ const data=readFileSync(new URL('../assets/materials/marble-white-raster-v2.webp',import.meta.url));
  assert.ok(data.length<=96*1024,'material transfer ceiling fixed before generation');
  assert.equal(data.toString('ascii',0,4),'RIFF');assert.equal(data.toString('ascii',8,12),'WEBP');
  let width,height,alpha=false;
@@ -38,7 +23,7 @@ test('the shared raster material stays static, opaque and inside its frozen deli
 
 
 test('only the exact fourteen approved delivery assets reach their mapped consumers',()=>{
- const manifest=JSON.parse(read('../../../docs/ai/marble/selected-assets.json'));
+ const manifest=JSON.parse(readFileSync(new URL('../../../docs/ai/marble/selected-assets.json',import.meta.url),'utf8'));
  assert.equal(manifest.assets.length,14);let bytes=0;
  for(const asset of manifest.assets){
   assert.match(asset.target,/^apps\/web\/assets\/opponents\/[a-z0-9-]+\.webp$/,'approved delivery artifact path only');

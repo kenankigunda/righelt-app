@@ -1330,3 +1330,50 @@ test('History endpoint roles preserve shared-square roles without leaking into l
   adapter.unmount();
  });
 });
+
+
+test("empty native Board cells have coordinate names without replacing piece, supply or rush names", async () => {
+  await withFakeDocument(() => {
+    const {adapter, boardEl} = createMountedAdapter();
+    const snapshot = {sideToMove:"P1", pieces:[], continuation:null};
+    const payload = {snapshot, selection:{selectedPieceId:null,source:null,target:null}, overlay:{mode:"interactive"}, legalActions:[], selectedPieceMoves:[], selectedPieceMovePreviews:[], removalEffects:[]};
+    adapter.render(payload);
+    const empty = getCell(boardEl,4,7);
+    assert.equal(empty.tagName,"BUTTON");
+    assert.equal(empty.getAttribute("aria-label"),"Square (4, 7)");
+    assert.equal(getCell(boardEl,0,0).getAttribute("aria-label"),"Square (0, 0)");
+    assert.equal(getCell(boardEl,9,7).getAttribute("aria-label"),"Square (9, 7)");
+    assert.equal(empty.classList.contains("unselectable"),true);
+    const supply = getCell(boardEl,0,9);
+    assert.equal(supply.getAttribute("aria-label"),null);
+    assert.equal(supply.querySelector(".supply-point-marker").getAttribute("aria-label"),"Red supply point");
+    const piece = {id:"A",owner:"P1",kind:"unit",position:{row:4,col:7},supplied:true,commanded:true};
+    snapshot.pieces = [piece]; adapter.render(payload);
+    assert.equal(getCell(boardEl,4,7),empty,"naming must retain the mounted input target");
+    assert.equal(empty.getAttribute("aria-label"),null,"the live piece keeps its existing content name");
+    assert.equal(empty.querySelector(".piece-token").getAttribute("aria-label"),"Red unit");
+    assert.equal(empty.classList.contains("unselectable"),false);
+    snapshot.pieces=[]; adapter.render(payload);
+    assert.equal(getCell(boardEl,4,7),empty);
+    assert.equal(empty.getAttribute("aria-label"),"Square (4, 7)");
+    const removal={piece,position:{row:4,col:7},reason:"destroyed",message:"Removed",startedAt:0};
+    adapter.render({...payload,removalEffects:[removal]});
+    assert.equal(empty.getAttribute("aria-label"),null,"a named removal token is not replaced by the fallback");
+    assert.equal(empty.querySelector(".removal-piece").getAttribute("aria-label"),"Red unit");
+    piece.position={row:4,col:2}; snapshot.pieces=[piece];
+    const action={type:"rush",actorId:"A",from:{row:4,col:2},to:{row:4,col:3}};
+    const guided={...payload,selection:{selectedPieceId:"A",source:action.from,target:action.to},legalActions:[action],selectedPieceMoves:[action],selectedPieceMovePreviews:[action],rushSupplyGuidance:{actions:[{action,immediate:true}],obligationPieceIds:[]}};
+    adapter.render(guided);
+    assert.equal(getCell(boardEl,4,2).getAttribute("aria-label"),"Supply-restoring rush available for piece at (4, 2)");
+    assert.equal(getCell(boardEl,4,3).getAttribute("aria-label"),"Rush to (4, 3): Restores required supply");
+    const ghost = getCell(boardEl,4,3).querySelector(".move-ghost");
+    assert.equal(ghost.getAttribute("aria-label"),"Red unit");
+    assert.equal(ghost.getAttribute("aria-hidden"),"true");
+    adapter.render({...payload,interactionMode:"static"});
+    const miniature=getCell(boardEl,4,7);
+    assert.equal(miniature.tagName,"DIV");
+    assert.equal(miniature.getAttribute("aria-hidden"),"true");
+    assert.equal(miniature.getAttribute("aria-label"),null);
+    adapter.unmount();
+  });
+});
