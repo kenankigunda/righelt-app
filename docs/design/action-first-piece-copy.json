@@ -1,0 +1,165 @@
+{
+  "base": "5a7d6c716c0bf06ef8af2549da21acb20023a79c",
+  "incomingReferences": {
+    "193": "51045d3fe2121a44022b6171af45736a0483de8c",
+    "242": "c41346a7c2c65a27d0a9e7fc613b84d7ae653886"
+  },
+  "rows": [
+    {
+      "case": "Selected retreat",
+      "before": "Piece at (4, 2) – Select a retreat",
+      "after": "Select a retreat for piece at (4, 2)"
+    },
+    {
+      "case": "Inactive command",
+      "before": "Piece at (4, 2) – Inactive: no command connection",
+      "after": "No command connection for piece at (4, 2)"
+    },
+    {
+      "case": "Inactive supply",
+      "before": "Piece at (4, 2) – Inactive: no supply connection",
+      "after": "No supply connection for piece at (4, 2)"
+    },
+    {
+      "case": "Inactive both",
+      "before": "Piece at (4, 2) – Inactive: no command or supply connection",
+      "after": "No command or supply connection for piece at (4, 2)"
+    },
+    {
+      "case": "Opponent inspection",
+      "before": "Opponent piece at (4, 2)",
+      "after": "Opponent’s supply and command lines for piece at (4, 2)"
+    },
+    {
+      "case": "Opponent without source coordinate",
+      "before": "Opponent piece",
+      "after": "Opponent’s supply and command lines"
+    },
+    {
+      "case": "No legal moves",
+      "before": "Piece at (4, 2) – No moves",
+      "after": "No moves for piece at (4, 2)"
+    },
+    {
+      "case": "Blocked supply destination",
+      "before": "Piece at (4, 2) – Destination would have no supply",
+      "after": "Destination would have no supply for piece at (4, 2)"
+    },
+    {
+      "case": "Blocked push strength",
+      "before": "Piece at (4, 2) – Group too weak to push",
+      "after": "Group too weak to push for piece at (4, 2)"
+    },
+    {
+      "case": "Unknown blocked reason",
+      "before": "Piece at (4, 2) – Move unavailable",
+      "after": "Move unavailable for piece at (4, 2)"
+    },
+    {
+      "case": "Rush blocker",
+      "before": "Rush to reconnect piece at (4, 2)",
+      "after": "Restore connection for piece at (4, 2) with a rush"
+    },
+    {
+      "case": "Secondary rush blocker",
+      "before": "Reconnect piece at (9, 9)",
+      "after": "Restore connection for piece at (9, 9)"
+    },
+    {
+      "case": "Rush availability, accessible",
+      "before": "Piece at (4, 2), supply-restoring rush available",
+      "after": "Supply-restoring rush available for piece at (4, 2)"
+    },
+    {
+      "case": "Live destruction metadata",
+      "before": "Piece at (4, 2) destroyed due to loss of supply",
+      "after": "Destruction for piece at (4, 2) due to loss of supply"
+    },
+    {
+      "case": "Retreat destruction metadata",
+      "before": "Piece at (4, 2) destroyed because it could not retreat",
+      "after": "Destruction for piece at (4, 2) because it could not retreat"
+    },
+    {
+      "case": "History destruction metadata",
+      "before": "Piece at (4, 2) destroyed.",
+      "after": "Destruction for piece at (4, 2)."
+    },
+    {
+      "case": "Frozen rush, missing command",
+      "before": "Piece at (4, 2) – Cannot move: no command at start of rush",
+      "after": "Cannot move: no command at start of rush for piece at (4, 2)"
+    },
+    {
+      "case": "Frozen rush, missing supply",
+      "before": "Piece at (4, 2) – Cannot move: no supply at start of rush",
+      "after": "Cannot move: no supply at start of rush for piece at (4, 2)"
+    },
+    {
+      "case": "Frozen rush, missing command or supply",
+      "before": "Piece at (4, 2) – Cannot move: no command or supply at start of rush",
+      "after": "Cannot move: no command or supply at start of rush for piece at (4, 2)"
+    },
+    {
+      "case": "At risk during rush, missing command",
+      "before": "Piece at (4, 2) – No command connection",
+      "after": "No command connection for piece at (4, 2)"
+    },
+    {
+      "case": "At risk during rush, missing supply",
+      "before": "Piece at (4, 2) – No supply connection",
+      "after": "No supply connection for piece at (4, 2)"
+    },
+    {
+      "case": "At risk during rush, missing command or supply",
+      "before": "Piece at (4, 2) – No command or supply connection",
+      "after": "No command or supply connection for piece at (4, 2)"
+    },
+    {
+      "case": "Frozen push, missing command",
+      "before": "Piece at (4, 2) – Cannot move: no command at start of push",
+      "after": "Cannot move: no command at start of push for piece at (4, 2)"
+    },
+    {
+      "case": "Frozen push, missing supply",
+      "before": "Piece at (4, 2) – Cannot move: no supply at start of push",
+      "after": "Cannot move: no supply at start of push for piece at (4, 2)"
+    },
+    {
+      "case": "Frozen push, missing command or supply",
+      "before": "Piece at (4, 2) – Cannot move: no command or supply at start of push",
+      "after": "Cannot move: no command or supply at start of push for piece at (4, 2)"
+    },
+    {
+      "case": "At risk during push, missing command",
+      "before": "Piece at (4, 2) – No command connection",
+      "after": "No command connection for piece at (4, 2)"
+    },
+    {
+      "case": "At risk during push, missing supply",
+      "before": "Piece at (4, 2) – No supply connection",
+      "after": "No supply connection for piece at (4, 2)"
+    },
+    {
+      "case": "At risk during push, missing command or supply",
+      "before": "Piece at (4, 2) – No command or supply connection",
+      "after": "No command or supply connection for piece at (4, 2)"
+    }
+  ],
+  "preserved": [
+    "Coordinates remain real coordinate-chip spans, whose visual text omits parentheses by the established contract.",
+    "Piece IDs, ownership, status classification, legal actions, continuation state and destruction causes are unchanged.",
+    "Existing action-first selected-move and supply/command messages remain unchanged.",
+    "Compact destruction event labels remain Lost supply / No retreat / Destroyed, derived from structured reasons.",
+    "Generated engine removal messages and saved historical data remain unchanged. They are not the current visible event label.",
+    "Piece symbols retain Red/Blue and commander/unit accessible identity. These are identity labels, not piece-leading informational messages.",
+    "Coordinate-less explanation fallbacks retain their useful information without inventing coordinates."
+  ],
+  "overlap": {
+    "200": "Recorded move narration and History grammar unchanged.",
+    "218": "Inspection selection, toggle cycles and network geometry unchanged.",
+    "189": "Forced retreat/follow selection and submission unchanged.",
+    "193": "No hover-height, pacing or playback changes.",
+    "242": "No focus restoration or mouse-gate changes."
+  }
+}

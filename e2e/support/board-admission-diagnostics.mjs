@@ -284,7 +284,7 @@ export async function persistComputerRecoveryEvidence({handoff,info,payload,writ
 
 // Serialized by Playwright. Only allowlisted scalars and local weak equality
 // tokens leave the page; original app objects and stable keys are never copied.
-export function installBoardAdmissionCollector({targetRow,targetCol,sourceAttemptOrdinal,recoveryCategories,recoveryNamespace}){
+export function installBoardAdmissionCollector({targetRow,targetCol,sourceAttemptOrdinal,recoveryCategories,recoveryNamespace,armAction=null}){
  if(sourceAttemptOrdinal!==undefined&&(!Number.isSafeInteger(sourceAttemptOrdinal)||sourceAttemptOrdinal<1))throw Error('Invalid source attempt ordinal');
  const sourceEnabled=sourceAttemptOrdinal!==undefined;let sourceActive=false,sourceRef=null,sourceReads=0;
  const subjects=new WeakMap();let next=0,sequence=0,armed=false;
@@ -402,7 +402,10 @@ export function installBoardAdmissionCollector({targetRow,targetCol,sourceAttemp
   const currentRoot=document.querySelector?.('[data-testid="game-board"]')??null;
   const cellRoot=cell?.closest?.('[data-testid="game-board"]')??null;
   const path=event.composedPath?.()??[];
-  if(dispatchPhase==='capture' && event.isTrusted && event.type==='pointerdown' && row===targetRow && col===targetCol){
+  const matchingActivation=armAction==='end-turn'
+   ? event.type==='click'&&event.isTrusted===false&&target?.dataset?.boardPreviewAction==='end-turn'
+   : armAction===null&&event.isTrusted&&event.type==='pointerdown'&&row===targetRow&&col===targetCol;
+  if(dispatchPhase==='capture' && matchingActivation){
    if(armed){log.supersededActivations++;log.incomplete=true;}
    armed=true;log.activationGeneration++;log.activation=[];log.activationDropped=0;
   }
@@ -415,7 +418,7 @@ export function installBoardAdmissionCollector({targetRow,targetCol,sourceAttemp
 
 }
 
-export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targetCol,baseURL,sourceAttemptOrdinal,computerSessionRecovery=false,moduleTransform}){
+export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targetCol,baseURL,sourceAttemptOrdinal,computerSessionRecovery=false,moduleTransform,armAction=null}){
  if(sourceAttemptOrdinal!==undefined&&(!Number.isSafeInteger(sourceAttemptOrdinal)||sourceAttemptOrdinal<1))throw Error('Invalid source attempt ordinal');
  const recipes=JSON.parse(await readFile(new URL(computerSessionRecovery?'./computer-session-recovery-transformation.json':'./board-admission-transformations.json',import.meta.url),'utf8'));
  const transforms=[],errors=[];let installed=false;
@@ -440,8 +443,8 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
  const pattern=url=>url.origin===origin && Object.hasOwn(recipes,url.pathname);
  try{
   if(recoveryHandoff)recoveryHandoff=await installComputerRecoveryBindingOwner(page,recoveryNamespace,recoveryHandoff);
-  if(sourceAttemptOrdinal===undefined)await page.addInitScript(installBoardAdmissionCollector,{targetRow,targetCol,...(computerSessionRecovery?{recoveryCategories:COMPUTER_RECOVERY_CATEGORIES,recoveryNamespace}:{})});
-  else await page.addInitScript({content:`(()=>{const SOURCE_PRESS_PREFIX=${JSON.stringify(SOURCE_PRESS_PREFIX)};const SOURCE_PRESS_MAX_BYTES=${SOURCE_PRESS_MAX_BYTES};const cloneBoardSourceHandoff=(${cloneBoardSourceHandoff.toString()});(${installBoardAdmissionCollector.toString()})(${JSON.stringify({targetRow,targetCol,sourceAttemptOrdinal})});})();`});
+  if(sourceAttemptOrdinal===undefined)await page.addInitScript(installBoardAdmissionCollector,{targetRow,targetCol,armAction,...(computerSessionRecovery?{recoveryCategories:COMPUTER_RECOVERY_CATEGORIES,recoveryNamespace}:{})});
+  else await page.addInitScript({content:`(()=>{const SOURCE_PRESS_PREFIX=${JSON.stringify(SOURCE_PRESS_PREFIX)};const SOURCE_PRESS_MAX_BYTES=${SOURCE_PRESS_MAX_BYTES};const cloneBoardSourceHandoff=(${cloneBoardSourceHandoff.toString()});(${installBoardAdmissionCollector.toString()})(${JSON.stringify({targetRow,targetCol,sourceAttemptOrdinal,armAction,...(computerSessionRecovery?{recoveryCategories:COMPUTER_RECOVERY_CATEGORIES,recoveryNamespace}:{})})});})();`});
   await page.route(pattern,handler);installed=true;
  }catch(error){
   sourceRetention?.stop();const cleanup=[];
@@ -459,12 +462,14 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
   },
   async persist(options={}){
    if(recoveryHandoff){
+    try{
     let bindingCleanupError;try{await recoveryHandoff.disposeBindingDelivery();}catch(error){bindingCleanupError=error;recoveryHandoff.failed('read-failed');}
     await recoveryHandoff.awaitDelivery(options);
     const handoff=recoveryHandoff.consume(),observation=handoff.observation;
     const missingModules=Object.keys(recipes).filter(pathname=>!transforms.some(row=>row.pathname===pathname));
     const payload={caseTitle:info.title,observation,handoff:{...handoff,observation:undefined},transforms,errors,missingModules,incomplete:handoff.incomplete||errors.length>0||missingModules.length>0||!observation?.activation?.length||Boolean(observation?.incomplete)||Boolean(observation?.rulesTimeouts?.incomplete),clock:'page.performance/timeOrigin; Node persistence wall clock separate',nodePersistedAt:new Date().toISOString()};
     await persistComputerRecoveryEvidence({handoff,info,payload,primaryError:bindingCleanupError,removeRoute:async()=>{if(installed)await page.unroute(pattern,handler);}});return;
+    }finally{sourceRetention?.stop();}
    }
    try{
    let observation=null,incomplete=errors.length>0;
@@ -472,7 +477,7 @@ export async function installBoardAdmissionDiagnostics(page,info,{targetRow,targ
    sourceRetention?.stop();
    const retained=sourceRetention?.snapshot(observation);
    const missingModules=Object.keys(recipes).filter(pathname=>!transforms.some(row=>row.pathname===pathname));
-   const payload={caseTitle:info.title,observation,...(retained??{}),transforms,errors,missingModules,incomplete:incomplete||Boolean(retained?.retention.incomplete)||missingModules.length>0||!observation?.activation?.length||Boolean(observation?.incomplete),clock:'page.performance/timeOrigin; Node persistence wall clock separate',nodePersistedAt:new Date().toISOString()};
+   const payload={caseTitle:info.title,activationMode:armAction==='end-turn'?'synthetic-end-turn-click':'trusted-board-pointerdown',observation,...(retained??{}),transforms,errors,missingModules,incomplete:incomplete||Boolean(retained?.retention.incomplete)||missingModules.length>0||!observation?.activation?.length||Boolean(observation?.incomplete),clock:'page.performance/timeOrigin; Node persistence wall clock separate',nodePersistedAt:new Date().toISOString()};
    try{await writeFile(info.outputPath('board-admission-observation.json'),JSON.stringify(payload,null,2));}
    catch{safeBoardDiagnostic('evidence-write-incomplete');}
    try{await info.attach('board-admission-observation',{body:JSON.stringify(payload),contentType:'application/json'});}

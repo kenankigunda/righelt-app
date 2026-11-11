@@ -1,5 +1,5 @@
 /** Display connectivity can differ from frozen action eligibility during a sequence. */
-export const SELECTED_CONTINUATION_LABELS=Object.freeze({rushBlocker:'Reconnect piece at',retreat:'Select a retreat',follow:'Select a follow'});
+export const SELECTED_CONTINUATION_LABELS=Object.freeze({rushBlocker:'Restore connection for piece at',retreat:'Select a retreat',follow:'Select a follow'});
 export const getPieceRenderStatus = piece => ({
   supplied: piece?.displaySupplied ?? piece?.supplied ?? false,
   commanded: piece?.displayCommanded ?? piece?.commanded ?? false,
@@ -21,7 +21,7 @@ export function getSelectedPieceExplanation(piece, snapshot) {
   const missing = !condition.supplied && !condition.commanded ? 'command or supply'
     : !condition.supplied ? 'supply' : 'command';
   if (condition.type === 'frozen') return `Cannot move: no ${missing} at start of ${condition.sequence}`;
-  return condition.type === 'at-risk' ? `No ${missing} connection` : `Inactive: no ${missing} connection`;
+  return `No ${missing} connection`;
 }
 
 // Finite real presentation variants let the board reserve its final message height.

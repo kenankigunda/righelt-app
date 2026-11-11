@@ -1,3 +1,4 @@
+import {createObservedAudioSession} from '../../../e2e/support/observed-audio-session.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -307,8 +308,8 @@ test('error categories remain source-derived and changed output remains hash pro
  const altered={...recipe,operations:recipe.operations.map(op=>op.after.includes('runtime-host-error')?{...op,after:op.after+' '}:op)};
  assert.throws(()=>transformBoardAdmissionModule(source,altered),/output hash mismatch/);
  const wrongOutput={...recipe,outputSha256:'0'.repeat(64)};assert.throws(()=>transformBoardAdmissionModule(source,wrongOutput),/output hash mismatch/);
- assert.equal(recipe.operations.filter(op=>op.after.includes('runtime-host-error')).length,1);assert.equal(recipe.operations.length,23);
- const unchanged={"/board-adapters/engine-board-adapter.js":"0cc91b8a7d5e6ab2c032f8939ca610780a21297d5393ac2bd7f57c9a7d89b773","/shell/live-transport.js":"7fd9201236e13df0b88783a50d611b7c71f75f324061bc226319f413a8d5d1fe","/board/hosts/shell-host.js":"6f8f475dfe5108ead572c51375b3bafb85a94ee998ef91e2abd01f738cd575db","/shell/app.js":"e1da3a1bbce9b8e54cbc76af720452227056be516896cf6ad95d8efe2ff7c8ca"};
+ assert.equal(recipe.operations.filter(op=>op.after.includes('runtime-host-error')).length,1);assert.equal(recipe.operations.length,25);
+ const unchanged={"/board-adapters/engine-board-adapter.js":"f9ecb9c09eb5da8c77d4deaed7e37acc4730e9e94c9bacb5a88aa0549b3ed60f","/shell/live-transport.js":"7fd9201236e13df0b88783a50d611b7c71f75f324061bc226319f413a8d5d1fe","/board/hosts/shell-host.js":"6f8f475dfe5108ead572c51375b3bafb85a94ee998ef91e2abd01f738cd575db","/shell/app.js":"e1da3a1bbce9b8e54cbc76af720452227056be516896cf6ad95d8efe2ff7c8ca"};
  for(const [key,expected] of Object.entries(unchanged)){assert.equal(createHash('sha256').update(JSON.stringify(recipes[key])).digest('hex'),expected);}
 });
 
@@ -903,5 +904,93 @@ test('actual computer installer reports timeout-buffer loss with otherwise compl
   await diagnostic.persist();const payload=JSON.parse(await readFile(temp+'/board-admission-observation.json','utf8'));
   assert.deepEqual(payload.missingModules,[]);assert.deepEqual(payload.errors,[]);assert.equal(payload.handoff.incomplete,false);assert.equal(payload.observation.incomplete,false);assert.ok(payload.observation.activation.length>0);
   assert.equal(payload.incomplete,true,'separate timeout-buffer loss cannot be hidden by otherwise complete coverage');
+ }finally{await fs.rm(temp,{recursive:true,force:true});}
+});
+
+test('preview click instrumentation preserves lookup order and stops before end-turn when blocked',()=>{
+ const recipe=recipes['/board/runtime/board-runtime.js'],op=recipe.operations.find(op=>op.after.includes('runtime-preview-entry'));
+ const run=(body,blocked,{external=false,action='end-turn',throwLookup=false,inspection=false,legal=true}={})=>{
+  const calls=[],failure=new Error('lookup');let entries=0;
+  const button={getAttribute(name){calls.push(name);return action;}};
+  const target={closest(selector){calls.push(selector);if(throwLookup)throw failure;return selector.includes('message')?(external?button:null):button;}};
+  const event={target,isTrusted:false,currentTarget:{}};
+  const names=['interactionBlocked','elements','controls','submitPass','endCurrentTurn','rushGuidanceKey','syncRushGuidance','renderStatusContent','inspection','legalActions'];
+  const handler=new Function(...names,recipe.prefix+body+';return handleBoardPreviewClick;')(blocked,{boardPreviewLabelEl:event.currentTarget},{onBoardMessageAction:()=>calls.push('external')},()=>calls.push('pass'),()=>{entries++;},null,()=>{},()=>{},inspection,legal?[{type:'end_turn'}]:[]);
+  try{handler(event);return{calls,entries};}catch(error){assert.equal(error,failure);return{calls,entries,threw:true};}
+ };
+ for(const blocked of [true,false])for(const options of [{},{external:true},{external:true,inspection:true},{external:true,legal:false},{action:'pass'},{throwLookup:true}])assert.deepEqual(run(op.after,blocked,options),run(op.before,blocked,options));
+ assert.equal(run(op.after,true).entries,0);assert.equal(run(op.after,false).entries,1);
+});
+test('end-turn guard instrumentation preserves every original short-circuit getter count and thrown identity',()=>{
+ const recipe=recipes['/board/runtime/board-runtime.js'],op=recipe.operations.find(op=>op.after.includes('runtime-end-turn-entry'));
+ const expression=body=>body.match(/if \((.*)\) \{/)[1],names=['state','destroyed','interactionBlocked','submitting','overlayMode','OVERLAY_MODE','host'];
+ const run=(body,stop,throws=false)=>{
+  const reads=[],failure=new Error('host getter');
+  const host={get endTurn(){reads.push('endTurn');if(throws)throw failure;return stop===5?null:()=>{};},get canInteract(){reads.push('canInteract');return()=>{reads.push('permission call');return stop!==6;};}};
+  const values=[stop===0?null:{},stop===1,stop===2,stop===3,stop===4?'recorded':'interactive',{INTERACTIVE:'interactive'},host];
+  try{return{result:new Function(...names,recipe.prefix+'return Boolean('+expression(body)+');')(...values),reads};}catch(error){assert.equal(error,failure);return{threw:true,reads};}
+ };
+ for(let stop=0;stop<8;stop++)for(const throwing of [false,true])assert.deepEqual(run(op.after,stop,throwing),run(op.before,stop,throwing));
+});
+test('opt-in end-turn collection arms only the original untrusted actual button click',()=>{
+ const {log,listeners}=collector({armAction:'end-turn'}),cell={dataset:{row:'3',col:'0'},closest:()=>null};
+ listeners.get('pointerdown:capture')({type:'pointerdown',isTrusted:true,target:{closest:()=>cell}});assert.equal(log.activationGeneration,0);
+ const button={dataset:{boardPreviewAction:'end-turn'},closest:()=>null};
+ listeners.get('click:capture')({type:'click',isTrusted:true,target:button});assert.equal(log.activationGeneration,0);
+ listeners.get('click:capture')({type:'click',isTrusted:false,target:button});assert.equal(log.activationGeneration,1);assert.equal(log.activation[0].trusted,false);
+ const ordinary=collector();ordinary.listeners.get('click:capture')({type:'click',isTrusted:false,target:button});assert.equal(ordinary.log.activationGeneration,0);
+});
+test('preview observation records weak stale versus current label equality without exporting nodes',()=>{
+ const {sandbox,record,log}=collector({armAction:'end-turn'}),r=recipes['/board/runtime/board-runtime.js'],op=r.operations.find(op=>op.after.includes('runtime-preview-entry'));
+ const prefix=op.after.slice(op.after.indexOf('    boardAdmissionProbe'),op.after.indexOf('    const externalAction'));
+ const current={},stale={};sandbox.current=current;sandbox.stale=stale;
+ vm.runInContext(r.prefix+`const elements={boardPreviewLabelEl:current};for(const label of [current,stale]){const event={isTrusted:false,currentTarget:label};${prefix}}`,sandbox);
+ const entries=log.first.filter(row=>row.event==='runtime-preview-entry'),labels=log.first.filter(row=>row.event==='runtime-preview-live-label');
+ assert.equal(entries[0].sameNodes,true);assert.equal(entries[1].sameNodes,false);assert.equal(entries[0].subjectToken,labels[0].subjectToken);assert.notEqual(entries[1].subjectToken,labels[1].subjectToken);
+ record('privacy',{owner:current,gameId:'secret',state:{private:true}},current);assert(!JSON.stringify(log).includes('private'));assert(!JSON.stringify(log).includes('secret'));
+});
+
+
+test('synthetic end-turn mode rejects wrong target, descendants, trusted click and unsupported mode without fabricating activation',()=>{
+ const button={dataset:{boardPreviewAction:'end-turn'},closest:()=>null,isConnected:true};
+ for(const target of [{dataset:{boardPreviewAction:'pass'}},{dataset:{},closest:()=>button}]){
+  const h=collector({armAction:'end-turn'});h.listeners.get('click:capture')({type:'click',isTrusted:false,target});assert.equal(h.log.activationGeneration,0);
+ }
+ const h=collector({armAction:'unsupported'});h.listeners.get('pointerdown:capture')({type:'pointerdown',isTrusted:true,target:{closest:()=>({dataset:{row:'3',col:'0'}})}});assert.equal(h.log.activationGeneration,0);
+ const selected=collector({armAction:'end-turn'});selected.listeners.get('click:capture')({type:'click',isTrusted:false,target:button});selected.listeners.get('click:capture')({type:'click',isTrusted:false,target:button});assert.equal(selected.log.supersededActivations,1);assert.equal(selected.log.incomplete,true);
+});
+
+test('actual audio session threads diagnostic test information and persists after attachment rejection',async()=>{
+ const calls=[],failure=new Error('attachment'),owner={evaluate:async()=>({})},viewer={evaluate:async()=>({})};
+ const context=page=>({addInitScript:async()=>{},newPage:async()=>page});
+ const info={title:'real audio remote finalization deduplicates its durable receipt while its owner stays muted',project:{use:{baseURL:'http://127.0.0.1:9888'}},outputPath:value=>value,attach:async()=>{calls.push('attach');throw failure;}};
+ const dependencies={instrument(){},writeObservation:async()=>{},installAdmission:async(page,actual,options)=>{assert.equal(page,owner);assert.equal(actual,info);assert.equal(options.armAction,'end-turn');calls.push('install');return{persist:async()=>calls.push('persist')};}};
+ const session=await createObservedAudioSession({ownerContext:context(owner),viewerContext:context(viewer)},info,dependencies);
+ await assert.rejects(session.attach(info),error=>error===failure);assert.deepEqual(calls,['install','attach','persist']);
+});
+
+
+test('actual source init paths retain synthetic opt-in together with source/recovery options',async()=>{
+ const fs=await import('node:fs/promises'),temp=await fs.mkdtemp((await import('node:os')).tmpdir()+'/source-options-');
+ try{
+ for(const sourceAttemptOrdinal of [undefined,2])for(const cleanupFails of [false,true]){
+  const cleanupFailure=Error('targeted unroute failure');
+  let init;const page={...recoveryPage(),addInitScript:async(...args)=>{init=args;return{async dispose(){}};},route:async()=>{},unroute:async()=>{if(cleanupFails)throw cleanupFailure;}};
+  const diagnostic=await installBoardAdmissionDiagnostics(page,{title:'options',outputPath:name=>temp+'/'+name,async attach(){}},{baseURL:'http://127.0.0.1:9888',targetRow:3,targetCol:0,sourceAttemptOrdinal,computerSessionRecovery:true,armAction:'end-turn'});
+  try{
+  let options;if(sourceAttemptOrdinal===undefined)options=init[1];else{
+   const sandbox={TextEncoder,crypto:globalThis.crypto,performance:{timeOrigin:1,now:()=>1},document:{addEventListener(){}} ,addEventListener(){}};vm.createContext(sandbox);vm.runInContext(init[0].content,sandbox);
+   assert.equal(sandbox.__boardAdmissionObservation.sourceWindow.expectedOrdinal,2);
+   assert.ok(sandbox.__boardAdmissionObservation.recoveryNamespace);assert.equal(typeof sandbox.__boardAdmissionObservation.documentNonce,'string');
+   assert.ok(init[0].content.includes('"armAction":"end-turn"'));assert.ok(init[0].content.includes('"recoveryCategories":'));
+  }
+  if(options){assert.equal(options.armAction,'end-turn');assert.deepEqual(options.recoveryCategories,COMPUTER_RECOVERY_CATEGORIES);assert.ok(options.recoveryNamespace);}
+  }finally{
+   // Setup-only Page leaves never produced a final DTO. The real persistence
+   // path must reject that missing handoff while still retiring every listener.
+   await assert.rejects(diagnostic.persist(),error=>error instanceof AggregateError&&error.errors.some(failure=>/Computer recovery final handoff incomplete/.test(failure.message))&&(!cleanupFails||error.errors.includes(cleanupFailure)));
+   assert.equal(page.listenerCount(),0);
+  }
+ }
  }finally{await fs.rm(temp,{recursive:true,force:true});}
 });

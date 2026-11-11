@@ -19,7 +19,7 @@ export const createDestructionTransitions = () => {
       const cancelled = !baseline && previous.records.some((record) => !ids.has(record.eventId) && retainedMoves.has(record.transitionMoveKey));
       const effects = baseline || cancelled ? [] : records.filter((record) => !previous.ids.has(record.eventId)).map(({ transitionMoveKey, ...record }) => ({
         ...record,
-        message: `Piece at (${record.position.row}, ${record.position.col}) destroyed ${record.reason === 'no_retreat' ? 'because it could not retreat' : 'due to loss of supply'}`,
+        message: `Destruction for piece at (${record.position.row}, ${record.position.col}) ${record.reason === 'no_retreat' ? 'because it could not retreat' : 'due to loss of supply'}`,
       }));
       // History loadSnapshot owns replay cancellation and marker settlement.
       const clear = frozen || Boolean(previous?.frozen) || !game?.inHistoryMode && (reset || cancelled || Boolean(game?.recovering && !previous?.recovering));
