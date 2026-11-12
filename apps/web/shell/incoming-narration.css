@@ -1,0 +1,49 @@
+/* Incoming narration has a distinct host. Its material is supplied by the
+   selected marble foundation, while the History host stays flat. */
+[data-incoming-narration-root] {display:contents;}
+.history-incoming-container {list-style:none;margin:0;padding:0;}
+.history-incoming {display:flex;flex-direction:column;align-items:flex-start;gap:var(--section-item-gap,.75rem);margin:0;padding:0;border:0;background:none;box-shadow:none;}
+.incoming-owner-p1 {--incoming-owner-color:var(--player-p1);}
+.incoming-owner-p2 {--incoming-owner-color:var(--player-p2);}
+.incoming-owner-neutral {--incoming-owner-color:var(--ink);}
+:is(.history-incoming,.incoming-move-flyout) .board-message-name {color:var(--incoming-owner-color);display:inline;max-inline-size:none;overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere;}
+.incoming-narration-copy {overflow-wrap:anywhere;line-height:1.5;}
+:is(.incoming-narration-replay,.incoming-narration-toggle) {min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:.4rem;}
+.incoming-move-flyout {position:fixed;inset:auto 0 0;z-index:var(--shell-layer-incoming);box-sizing:border-box;border:0;border-top:3px solid var(--incoming-owner-color);border-radius:0;padding:16px max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));background-color:var(--surface-raised);background-image:var(--marble-face,none);background-position:0 0,var(--marble-face-origin,0 0);background-size:auto,var(--marble-face-scale,auto);box-shadow:0 -3px 10px rgb(36 46 55 / 16%);color:var(--ink);}
+.incoming-move-flyout::before {content:"";position:absolute;top:-4px;left:max(16px,env(safe-area-inset-left));width:52px;height:5px;background:var(--incoming-owner-color);clip-path:polygon(0 0,100% 0,calc(100% - 5px) 100%,5px 100%);pointer-events:none;}
+.incoming-narration-content {display:grid;justify-items:start;gap:var(--section-item-gap,.75rem);overflow:visible;max-height:none;}
+.incoming-narration-toggle {margin-top:8px;}
+.incoming-move-flyout[data-expanded="false"] {padding-top:4px;padding-bottom:max(4px,env(safe-area-inset-bottom));}
+.incoming-move-flyout[data-expanded="false"] .incoming-narration-toggle {margin-top:0;}
+
+/* Keep the full native hit regions and row geometry. Only text and rail paint
+   respond to hover, so neither a thicker rail nor bold text moves a target. */
+.app-root [data-game-panel="history"] .history-item-waiting {display:block;padding-left:0;}
+.app-root [data-game-panel="history"] .history-item-waiting::before {content:none;}
+.app-root [data-game-panel="history"] .history-list:has(> .history-incoming-container) > .history-item-waiting {margin-block:var(--section-item-gap,.75rem);}
+.app-root [data-game-panel="history"] .history-turn > .history-turn-heading {font-weight:600;}
+.app-root [data-game-panel="history"] .history-turn > .history-list-nested {position:relative;border-left-color:transparent;}
+.app-root [data-game-panel="history"] .history-turn > .history-list-nested::before {content:"";position:absolute;inset:0 auto 0 -2px;width:1px;background:currentColor;pointer-events:none;}
+.app-root [data-game-panel="history"] .history-turn:has(> .history-turn-heading.is-selected,> .history-list-nested > .history-item.is-selected) > .history-list-nested::before {width:2px;}
+[data-hover-capability="hover"] .app-root [data-game-panel="history"] .history-turn:hover > .history-list-nested::before,
+.app-root[data-hover-capability="hover"] [data-game-panel="history"] .history-turn:hover > .history-list-nested::before {width:2px;}
+[data-hover-capability="hover"] .app-root [data-game-panel="history"] .history-turn:hover > .history-turn-heading,
+.app-root[data-hover-capability="hover"] [data-game-panel="history"] .history-turn:hover > .history-turn-heading,
+[data-hover-capability="hover"] .app-root [data-game-panel="history"] .history-item:hover .history-move-line,
+.app-root[data-hover-capability="hover"] [data-game-panel="history"] .history-item:hover .history-move-line {font-weight:800;}
+[data-hover-capability="hover"] .app-root [data-game-panel="history"] button:is(.history-turn-hit,.history-move-hit).secondary:hover,
+.app-root[data-hover-capability="hover"] [data-game-panel="history"] button:is(.history-turn-hit,.history-move-hit).secondary:hover {background:transparent;border:0;box-shadow:none;}
+@media(forced-colors:active) {
+ .incoming-move-flyout {background:Canvas;color:CanvasText;border-color:CanvasText;}
+ .incoming-move-flyout::before {background:CanvasText;forced-color-adjust:none;}
+ :is(.history-incoming,.incoming-move-flyout) .board-message-name {color:CanvasText;}
+ .app-root [data-game-panel="history"] .history-turn > .history-list-nested::before {background:CanvasText;forced-color-adjust:none;}
+}
+
+/* Details remain with Board, below its finite routine prompt. They own a
+   scrollport rather than increasing the prompt's reserved grammar. */
+.board-context-detail {position:relative;min-width:0;margin-block:.25rem .65rem;padding:0;border:0;background:none;box-shadow:none;color:var(--ink);}
+.board-context-detail .board-context-dismiss {position:absolute;inset-block-start:0;inset-inline-end:0;}
+.board-context-detail .board-context-replay {min-width:44px;min-height:44px;}
+.board-context-detail .board-context-scroll-cue {color:var(--muted);}
+.board-context-detail .board-context-body:focus-visible {outline-color:var(--ink);}

@@ -1,4 +1,5 @@
 import {renderBoardMessageHtml} from '../board/message-presentation.js';
+import {boardContextPlacement} from './board-context-purpose.js';
 import {renderDismissButton} from './dismiss-control.js';
 
 const escape = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
@@ -14,7 +15,7 @@ export function createBoardContextStore() {
    if(!context){const changed=current.has(channel);current.delete(channel);return changed;}
    if(typeof context.key!=='string'||!context.key||!context.gameId)throw Error('Board context requires an identity');
    const previous=entries.get(context.key);
-   const signature=JSON.stringify({message:context.message,mandatory:Boolean(context.mandatory),transient:Boolean(context.transient)});
+   const signature=JSON.stringify({message:context.message,purpose:context.purpose,actorSide:context.actorSide,mandatory:Boolean(context.mandatory),transient:Boolean(context.transient)});
    const changed=current.get(channel)!==context.key||previous?.signature!==signature;
    entries.set(context.key,{...context,channel,signature});current.set(channel,context.key);prune(entries);
    return changed;
@@ -35,14 +36,20 @@ export function createBoardContextStore() {
 
 // Text and structured coordinates use the same escaped renderer as the Board.
 // The context owner dispatches replay. Runtime recovery controls stay in Board.
-export function renderBoardContext(context,{replayEnabled=false}={}) {
+export function renderBoardContext(context,{replayEnabled=false,placement='notice'}={}) {
  const body={...context.message};delete body.action;delete body.actions;delete body.context;
  const key=escape(context.key);
- return `<section class="shell-game-alert alert board-context-notice" data-board-context="${key}" aria-label="${context.mandatory?'Required Board guidance':'Board context'}" aria-live="off">
-  <span class="notice-paper-face" hidden aria-hidden="true"></span><span class="notice-paper-curl" hidden aria-hidden="true"></span>
+ const board=placement==='board';
+ return `<section class="${board?'board-context-detail':'shell-game-alert alert board-context-notice'}"${board?' data-context-active-host="true"':''} data-board-context="${key}" aria-label="${context.mandatory?'Required Board guidance':'Board context'}" aria-live="off">
+  ${board?'':'<span class="notice-paper-face" hidden aria-hidden="true"></span><span class="notice-paper-curl" hidden aria-hidden="true"></span>'}
   <div class="board-context-body" role="region" aria-label="${context.mandatory?'Required piece coordinates':'Board explanation'}" tabindex="0"><div class="board-context-content">${renderBoardMessageHtml(body)}</div></div>
   <span class="board-context-scroll-cue" aria-hidden="true">More ↓</span>
   ${context.replay?`<div class="board-context-actions"><button type="button" class="secondary board-context-replay" data-action="replay-board-context" data-board-context-key="${key}"${replayEnabled?'':' disabled'}>Show me again</button></div>`:''}
   ${context.mandatory?'':renderDismissButton({label:'Dismiss Board context',className:'board-context-dismiss',attributes:{'data-action':'dismiss-board-context','data-board-context-key':context.key}})}
  </section>`;
+}
+
+export function renderBoardContextDetails(contexts,{replayEnabled=()=>false}={}) {
+ return contexts.filter(context=>boardContextPlacement(context)==='board')
+  .map(context=>renderBoardContext(context,{placement:'board',replayEnabled:replayEnabled(context.replay)})).join('');
 }

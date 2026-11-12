@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {latestOpponentTurn, opponentBoardMessage} from '../shell/opponent-narration.js';
 import {buildTurnReplay, buildComputerTurnReplay} from '../shell/computer-replay.js';
 const game = () => ({myRoles:['Player 2'],player1:{identityId:'other'},player2:{identityId:'me'},controlSeat:'Player 2',board:{state:{turnIndex:1,sideToMove:'P2'}},turns:[{index:0,playerSeat:'Player 1',status:'complete'}],moves:[{moveId:'a',turnIndex:0,turnMoveIndex:0,actorSide:'P1',selectionSnapshot:{pieces:[],sideToMove:'P1'},snapshot:{pieces:[],sideToMove:'P2'},action:{type:'rush',from:{row:1,col:2},to:{row:2,col:3}}}]});
-test('human completed turn offers role narration and the existing isolated replay action',()=>{
+test('human completed turn offers named narration and the existing isolated replay action',()=>{
  const g=game(),message=opponentBoardMessage(g,{}, {},{canInteract:true,identityId:'me'});
- assert.equal(message.context.text,'Your opponent rushed from (1, 2) to (2, 3)');
+ assert.equal(message.context.text,'Guest 1 rushed from (1, 2) to (2, 3)');
  assert.equal(message.context.action.label,'Show me again');
  assert.equal(latestOpponentTurn(g).last.moveId,'a');
  assert.equal(opponentBoardMessage(g,{}, {selectedPieceId:'piece'},{canInteract:true}),null);
@@ -16,7 +16,7 @@ test('read only boards never receive gameplay or replay CTAs for another player'
  const g=game();g.controlSeat='Player 1';
  assert.equal(opponentBoardMessage(g,{}),'Waiting for your opponent');
  g.myRoles=[];g.moves.push({...g.moves[0],moveId:'current',turnIndex:1});assert.equal(opponentBoardMessage(g,{}).text,'Guest 1 to play');
- g.controlSeat='Player 2';assert.match(opponentBoardMessage(g,{}, {},{identityId:'me'}).context.text,/Your opponent/);
+ g.controlSeat='Player 2';assert.match(opponentBoardMessage(g,{}, {},{identityId:'me'}).context.text,/Guest 1/);
  g.pendingCommandCount=1;assert.equal(opponentBoardMessage(g,{}).text,'Guest 2 to play');
  g.inHistoryMode=true;assert.equal(opponentBoardMessage(g,{}),null);
 });
@@ -26,7 +26,7 @@ test('turn ownership and forced retreat attribution use sides, including a dual-
  const frames=buildTurnReplay({moves:g.moves,completedTurnIndex:0}).frames;
  assert.deepEqual(frames.map(frame=>frame.decisionId),['a','defender']);
  g.myRoles=['Player 1','Player 2'];assert.equal(latestOpponentTurn(g),null);
- g.computer={seats:{p1:'tau',p2:null}};assert.equal(latestOpponentTurn(g).side,'P1');
+ g.computer={seats:{p1:'tau',p2:null}};assert.equal(latestOpponentTurn(g),null,'current computer configuration cannot rewrite an earlier human turn');g.moves[0].computerProof={profile:'tau'};assert.equal(latestOpponentTurn(g).side,'P1');
 });
 test('undone, stale and malformed decisions do not create replayable opponent turns',()=>{
  const g=game();g.moves[0].undone=true;assert.equal(latestOpponentTurn(g),null);
@@ -62,7 +62,7 @@ test('spectators can replay named guest completed turns only before the next ack
   g.moves[1].undone=true;assert.equal(opponentBoardMessage(g,{}).context.action.label,'Show me again');
   g.sharedMutationsBlocked=true;assert.equal(opponentBoardMessage(g,{}).context.action.label,'Show me again');
  }
- const g=game();assert.match(opponentBoardMessage(g,{}, {},{identityId:'me'}).context.text,/Your opponent/);
+ const g=game();assert.match(opponentBoardMessage(g,{}, {},{identityId:'me'}).context.text,/Guest 1/);
 });
 
 test('optimistic computer terminal saves finish before confirmed game-complete narration',()=>{
@@ -81,19 +81,19 @@ test('legal untouched local turns offer Pass beside human and computer narration
  }
 });
 
-test('spectator narration uses participant names and preserves owned relative wording',()=>{
+test('incoming narration preserves participant names for spectators and human owners',()=>{
  const g=game();g.myRoles=[];g.player1.profile={displayName:'Étoile 星'};g.player2.profile={username:'BlueMoon'};
  const message=opponentBoardMessage(g,{});assert.equal(message.context.text,'Étoile 星 rushed from (1, 2) to (2, 3)');assert.equal(message.context.action.label,'Show me again');assert.equal(message.context.actorName,'Étoile 星');
  g.moves.push({...g.moves[0],moveId:'current',turnIndex:1});assert.equal(opponentBoardMessage(g,{}).text,'BlueMoon to play');
- assert.match(opponentBoardMessage(g,{}, {},{identityId:'me'}).context.text,/Your opponent/);
+ assert.equal(opponentBoardMessage(g,{}, {},{identityId:'me'}).context.text,'Étoile 星 rushed from (1, 2) to (2, 3)');
  g.controlSeat='Player 1';assert.equal(opponentBoardMessage(g,{}, {},{identityId:'me'}),'Waiting for your opponent');
  const actorSides=g.moves.map(move=>move.actorSide);assert.deepEqual(actorSides,['P1','P1']);
 });
 
 test('a pending computer control is not described as saving a human move',()=>{
  const g={...game(),pendingCommandCount:1,pendingComputerControl:true};
- assert.match(opponentBoardMessage(g,{}).context.text,/Your opponent/);
- g.pendingComputerControl=false;assert.match(opponentBoardMessage(g,{}).context.text,/Your opponent/);
+ assert.match(opponentBoardMessage(g,{}).context.text,/Guest 1/);
+ g.pendingComputerControl=false;assert.match(opponentBoardMessage(g,{}).context.text,/Guest 1/);
 });
 
 

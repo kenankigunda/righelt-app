@@ -444,6 +444,8 @@ Tutorial restart:
 
 ## 13. Notifications and Prompts
 
+The confirmed November 11 [incoming presentation follow-up](ai/INCOMING_NARRATION.md) gives incoming move narration a desktop History host or mobile bottom flyout. Other notices keep their authority and layering. Its implementation and deployment are tracked separately from the original refresh.
+
 Notices are nonmodal and preserve incident identity, focused controls, open details and animation time. Their shared page layer stays above content, loading borders, menus, utility rails, mobile navigation and transition ribbons, and below native modal dialogs/backdrops. Check ancestor transforms, stacking contexts and clipping across both layouts and route transitions. Preserve native DOM/event ownership where possible. The study's token numbers and fallback root host are implementation proposals, not independently approved architecture. Notices never trap focus or make the background inert. [D13](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index) records the approved ordering.
 
 - Prompt text/content may vary, but these state prompts are required:

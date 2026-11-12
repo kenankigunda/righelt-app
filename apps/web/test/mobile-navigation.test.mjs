@@ -134,3 +134,16 @@ for (const end of ['pointerdown', 'blur', 'outside focus']) test(`first Tab hand
     assert.equal(f.controls.inert, true, 'old handoff cannot revive on later pointer focus');
   } finally { f.close(); }
 });
+
+test('new incoming flyout hides tabs once, preserves deliberate reveal and never hides focused navigation',()=>{
+ const f=handoffFixture();
+ try{
+  f.focus(f.outside);f.mounted.reveal();assert.equal(f.mounted.incoming('turn:1'),true);
+  assert.equal(f.nav.dataset.visible,'false');assert.equal(f.controls.inert,true);assert.equal(f.timers.size,0);
+  f.mounted.reveal();assert.equal(f.mounted.incoming('turn:1'),false);assert.equal(f.nav.dataset.visible,'true','quiet same-turn publication cannot override deliberate navigation');
+  f.focus(f.players,false);assert.equal(f.mounted.incoming('turn:2'),false);assert.equal(f.nav.dataset.visible,'true');assert.equal(f.controls.inert,false);
+  assert.equal(f.timers.size,0,'arrival retires the old idle timer while preserving focused navigation');
+  f.focus(f.outside);assert.equal(f.mounted.incoming('turn:3'),true);f.scroll(100);f.scroll(80);assert.equal(f.nav.dataset.visible,'true','existing upscroll reveal remains authoritative');
+  f.mounted.incoming(null);f.mounted.reveal();f.expire();assert.equal(f.nav.dataset.visible,'false','ordinary idle behavior returns when the incoming host retires');
+ }finally{f.close();}
+});

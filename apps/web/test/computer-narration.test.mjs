@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { latestComputerTurn, computerBoardMessage, describeComputerMove, describeTurn } from '../shell/computer-narration.js';
 import {COMPUTER_PROFILES} from '../generated/packages/shared-types/src/computer-play.js';
-const move={moveId:'m',turnIndex:0,computerProof:{profile:'tau'},action:{type:'rush',from:{row:1,col:2},to:{row:2,col:3}}};
-const game=()=>({computer:{seats:{p1:'tau',p2:null}},board:{state:{turnIndex:1}},turns:[{index:0,status:'complete'},{index:1,status:'active'}],moves:[move]});
+const move={moveId:'m',turnIndex:0,actorSide:'P1',computerProof:{profile:'tau'},action:{type:'rush',from:{row:1,col:2},to:{row:2,col:3}}};
+const game=()=>({computer:{seats:{p1:'tau',p2:null}},board:{state:{turnIndex:1}},turns:[{index:0,playerSeat:'Player 1',status:'complete'},{index:1,status:'active'}],moves:[move]});
 test('narration and replay CTA belong to completed preceding computer turn until selection',()=>{
   const g=game();assert.equal(latestComputerTurn(g).last.moveId,'m');
   const message=computerBoardMessage(g,{});
@@ -96,4 +96,9 @@ test('computer board priority is intervention, confirmed playback, active calcul
  const status={phase:'saving',profile:'tau',speculation:{phase:'computing'},activity:{needsHelp:true}};
  assert.equal(computerBoardMessage(g,status),'Tau needs help');status.activity.needsHelp=false;assert.equal(computerBoardMessage(g,status),'Tau is making their move');
  delete g.confirmedPlayback;assert.equal(computerBoardMessage(g,status),'Tau is thinking');status.speculation=null;assert.equal(computerBoardMessage(g,status),'Tau is saving their move');
+});
+
+test('a defender proof without a known recorded turn owner cannot label an incoming computer turn',()=>{
+ const g=game();g.turns[0]={index:0,status:'complete'};g.moves=[{moveId:'defender-only',turnIndex:0,actorSide:'P2',computerProof:{profile:'tau'},action:{type:'retreat',from:{row:4,col:4},to:{row:3,col:4}}}];
+ assert.equal(latestComputerTurn(g),null);assert.equal(computerBoardMessage(g,{}),null);
 });

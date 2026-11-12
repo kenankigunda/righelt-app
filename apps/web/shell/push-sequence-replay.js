@@ -1,3 +1,4 @@
+import {BOARD_CONTEXT_PURPOSE} from './board-context-purpose.js';
 import {recordedMoveNumber,visibleRecordedMoves} from './recorded-narration.js';
 import { normalizeActivitySide } from './activity-affiliation.js';
 
@@ -40,7 +41,7 @@ export function buildPushSequenceReplay({ moves, startId, endId, gameId, revisio
 export function withPushSequenceMessage(message, game, selection, identityId) {
   if (!game || game.inHistoryMode || selection.selectedPieceId || selection.inspection || (message?.action?.id === 'replay-computer'||message?.context?.action?.id==='replay-computer')) return message;
   if (!latestLocalPushSequence(game, identityId)) return message;
-  const sequence = { text: 'Push sequence', action: { id: 'replay-push-sequence', label: 'Show me again' } };
+  const sequence = { purpose:BOARD_CONTEXT_PURPOSE.SEQUENCE, text: 'Push sequence', action: { id: 'replay-push-sequence', label: 'Show me again' } };
   const pass = game.legalActions?.some(action => action.type === 'pass');
   const end = game.legalActions?.some(action => action.type === 'end_turn');
   const prompt = message ? typeof message === 'string' ? { text: message } : message : {

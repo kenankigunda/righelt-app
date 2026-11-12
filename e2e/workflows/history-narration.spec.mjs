@@ -16,7 +16,7 @@ for(const width of [390,1440])for(const example of examples)test(`${example.name
 
  for(const move of moves){
   const row=page.locator(`[data-testid="history-move-item"][data-move-id="${move.moveId}"]`);await row.locator(':scope > .history-move-hit').click();
-  const narration=width<900?page.locator('.history-inline-narration'):page.locator('#shell-game-alerts [data-alert-stack-card].is-active [data-board-context] .board-context-content');
+  const narration=width<900?page.locator('.history-inline-narration'):page.getByRole('region',{name:'Board context'}).locator('.board-context-content');
   await expect(narration).toBeVisible();
   await expect.poll(()=>narration.evaluate(node=>{const copy=node.cloneNode(true);for(const chip of copy.querySelectorAll('.board-preview-coordinate-chip'))chip.textContent=`(${chip.textContent})`;return copy.textContent;})).toContain(actionCopy(move.action));
   await expect(row).toContainText(`Move ${move.displayMoveNumber??move.index+1}:`);
@@ -26,7 +26,7 @@ for(const width of [390,1440])for(const example of examples)test(`${example.name
  }
  const last=page.locator(`[data-testid="history-move-item"][data-move-id="${moves.at(-1).moveId}"]`);
  await last.locator('xpath=ancestor::li[contains(@class,"history-turn")]/button[contains(@class,"history-turn-hit")]').click({position:{x:12,y:12}});
- const narration=width<900?page.locator('.history-inline-narration'):page.locator('#shell-game-alerts [data-alert-stack-card].is-active [data-board-context] .board-context-content');
+ const narration=width<900?page.locator('.history-inline-narration'):page.getByRole('region',{name:'Board context'}).locator('.board-context-content');
  await expect(narration).toBeVisible();
  const plain=()=>narration.evaluate(node=>{const copy=node.cloneNode(true);for(const chip of copy.querySelectorAll('.board-preview-coordinate-chip'))chip.textContent=`(${chip.textContent})`;return copy.textContent;});
  if(example.name==='Three rushes')await expect.poll(plain).toContain('rushed 3 pieces to (5, 5), (6, 4), and (5, 3)');

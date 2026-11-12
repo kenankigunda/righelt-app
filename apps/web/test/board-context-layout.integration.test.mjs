@@ -8,6 +8,7 @@ function fixture(t){
   constructor(callback){this.callback=callback;this.nodes=new Set();this.disconnected=false;observers.push(this);}
   observe(node){this.nodes.add(node);}unobserve(node){this.nodes.delete(node);}disconnect(){this.nodes.clear();this.disconnected=true;}
  },requestAnimationFrame:fn=>{frames.push(fn);return frames.length;},cancelAnimationFrame(){}};
+ win.visualViewport=events();
  let bodies=[],focusCalls=0,scrollCalls=0;
  const doc={...events(),defaultView:win,fonts,getElementById:()=>null,querySelectorAll:()=>bodies,activeElement:null};
  const body=(clientHeight=48,scrollHeight=48)=>{
@@ -16,7 +17,7 @@ function fixture(t){
   return {clientHeight,scrollHeight,tabIndex:-1,firstElementChild:content,closest:()=>notice,notice,focus(){focusCalls++;},scrollIntoView(){scrollCalls++;}};
  };
  const layout=createBoardContextLayout(doc);
- t.after(()=>{layout.destroy();assert(observers.every(observer=>observer.disconnected));assert.equal(doc.count()+win.count()+fonts.count(),0);assert.equal(focusCalls+scrollCalls,0);});
+ t.after(()=>{layout.destroy();assert(observers.every(observer=>observer.disconnected));assert.equal(doc.count()+win.count()+fonts.count()+win.visualViewport.count(),0);assert.equal(focusCalls+scrollCalls,0);});
  return {layout,doc,win,fonts,observers,frames,body,setBodies:next=>{bodies=next;},sample:()=>observers[0].callback(),flush:()=>{while(frames.length)frames.shift()();}};
 }
 test('natural-content resize updates overflow without changing capped scrollport or moving focus',t=>{
@@ -37,47 +38,64 @@ test('context replacement prunes body and natural-content observation owners and
 });
 
 function mountedFixture(t){
- const f=fixture(t);let top=58;
+ const f=fixture(t);let frame,scroll=0,naturalTop=120,legendBottom=500;
  const makeFrame=()=>{
   const values=new Map();const style={getPropertyValue:key=>values.get(key)??'',setProperty:(key,value)=>values.set(key,value),removeProperty:key=>values.delete(key)};
-  return {style,querySelector:()=>({getBoundingClientRect:()=>({top:90+(parseFloat(style.getPropertyValue('--board-context-reserve'))||0)})})};
+  const grid={getBoundingClientRect:()=>({top:naturalTop-scroll+(parseFloat(style.getPropertyValue('--board-center-clearance'))||0),height:320})};
+  const wrap={style,querySelector:()=>grid,closest:()=>null};
+  const legend={getBoundingClientRect:()=>({bottom:legendBottom-scroll+(parseFloat(style.getPropertyValue('--board-center-clearance'))||0)})};
+  return {style:{},wrap,querySelector:selector=>selector==='[data-testid="game-board-wrap"]'?wrap:legend};
  };
- let frame=makeFrame();
- const anchor={getBoundingClientRect:()=>({top,width:366})};
- const app={dataset:{shellLayoutMode:'narrow'},querySelector:selector=>selector==='[data-game-shell-root]'?frame:anchor};
- f.win.innerWidth=390;f.win.innerHeight=740;f.win.getComputedStyle=()=>({fontSize:'16px',fontFamily:'Manrope'});
- f.doc.getElementById=()=>app;f.doc.body={append(){}};
- f.doc.createElement=()=>({style:{},setAttribute(){},getBoundingClientRect:()=>({height:180}),remove(){}});
- return {...f,app,current:()=>frame,moveAnchor:value=>{top=value;},replace:()=>{frame=makeFrame();return frame;}};
+ frame=makeFrame();const app={dataset:{shellLayoutMode:'narrow'},querySelector:()=>frame};
+ f.win.innerWidth=390;f.win.innerHeight=740;f.win.scrollY=0;f.win.getComputedStyle=()=>({fontSize:'16px',fontFamily:'Manrope'});
+ Object.assign(f.win.visualViewport,{height:740,offsetTop:0});
+ f.doc.getElementById=()=>app;
+ return {...f,app,current:()=>frame.wrap,resize:height=>{f.win.visualViewport.height=height;f.win.innerHeight=height;},setScroll:value=>{scroll=value;f.win.scrollY=value;},setTop:value=>{naturalTop=value;},setLegend:value=>{legendBottom=value;},replace:()=>{frame=makeFrame();return frame.wrap;}};
 }
-for(const input of ['pointer','Enter',' '])test(`a replacement frame admits reserve during held ${JSON.stringify(input)} without moving the existing frame`,t=>{
+for(const input of ['pointer','Enter',' '])test(`a replacement Board admits center clearance during held ${JSON.stringify(input)} without moving its predecessor`,t=>{
  const f=mountedFixture(t);f.layout.sync();const previous=f.current();
- assert.equal(previous.style.getPropertyValue('--board-context-reserve'),'160px');
- if(input==='pointer')f.doc.fire('pointerdown');else f.doc.fire('keydown',{key:input});
- f.moveAnchor(90);f.layout.sync();
- assert.equal(previous.style.getPropertyValue('--board-context-reserve'),'160px','the existing native press keeps its admitted geometry');
- const next=f.replace();f.layout.sync();
- assert.equal(next.style.getPropertyValue('--board-context-reserve'),'192px','the unpainted replacement cannot wait for release to admit its reserve');
- if(input==='pointer')f.doc.fire('pointerup');else f.doc.fire('keyup',{key:input});
- f.flush();assert.equal(next.style.getPropertyValue('--board-context-reserve'),'192px');
+ assert.equal(previous.style.getPropertyValue('--board-center-clearance'),'90px');
+ if(input==='pointer')f.doc.fire('pointerdown',{pointerId:7});else f.doc.fire('keydown',{key:input});
+ f.resize(800);f.layout.sync();assert.equal(previous.style.getPropertyValue('--board-center-clearance'),'90px');
+ const next=f.replace();f.layout.sync();assert.equal(next.style.getPropertyValue('--board-center-clearance'),'120px');
+ if(input==='pointer')f.doc.fire('pointerup',{pointerId:7});else f.doc.fire('keyup',{key:input});
+ f.flush();assert.equal(next.style.getPropertyValue('--board-center-clearance'),'120px');
 });
-test('new loading and live frames share reserve and desktop clears the current owner',t=>{
- const f=mountedFixture(t);f.layout.sync();const first=f.current().style.getPropertyValue('--board-context-reserve');
- const live=f.replace();f.layout.sync();assert.equal(live.style.getPropertyValue('--board-context-reserve'),first);
- f.app.dataset.shellLayoutMode='wide';f.layout.sync();assert.equal(live.style.getPropertyValue('--board-context-reserve'),'');
+test('visible viewport metrics center grid without allocating notification height or scrolling',t=>{
+ const f=mountedFixture(t);f.win.visualViewport.height=500;f.win.visualViewport.offsetTop=50;f.layout.sync();
+ assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'20px');
+ f.win.visualViewport.height=400;f.win.visualViewport.fire('resize');f.flush();
+ assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'0px','short screens preserve the usable grid rather than add impossible clearance');
+});
+test('ordinary reader scroll leaves admitted Board geometry unchanged even across context sync',t=>{
+ const f=mountedFixture(t);f.layout.sync();f.setScroll(130);f.layout.sync();
+ assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'90px');
+});
+test('legend clearance bounds centering while desktop removes the owned metric',t=>{
+ const f=mountedFixture(t);f.setLegend(700);f.layout.sync();assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'32px');
+ const current=f.current();f.app.dataset.shellLayoutMode='wide';f.layout.sync();assert.equal(current.style.getPropertyValue('--board-center-clearance'),'');
+});
+for(const input of ['pointer','Enter'])test(`unrelated release cannot move a Board held by ${input}`,t=>{
+ const f=mountedFixture(t);f.layout.sync();
+ if(input==='pointer')f.doc.fire('pointerdown',{pointerId:7});else f.doc.fire('keydown',{key:'Enter'});
+ f.resize(800);
+ if(input==='pointer')f.doc.fire('pointerup',{pointerId:8});else f.doc.fire('keyup',{key:' '});
+ f.flush();f.layout.sync();assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'90px');
+ if(input==='pointer')f.doc.fire('pointerup',{pointerId:7});else f.doc.fire('keyup',{key:'Enter'});
+ f.flush();assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'120px');
 });
 
 function revealFixture(t){
  const win={...events(),innerHeight:600,requestAnimationFrame(){return 1;},cancelAnimationFrame(){}};
  let calls=0;
  const notice={getBoundingClientRect:()=>({bottom:333.734375})},nav={getBoundingClientRect:()=>({top:540,height:60})};
- let frame={dataset:{gameId:'g'}};
- const app={dataset:{shellLayoutMode:'narrow'},querySelector:selector=>selector==='[data-game-shell-root]'?frame:selector.includes('is-active')?notice:nav};
+ let frame={dataset:{gameId:'g'}},incoming=null;
+ const app={dataset:{shellLayoutMode:'narrow'},querySelector:selector=>selector==='[data-game-shell-root]'?frame:selector.includes('is-active')?notice:selector==='.incoming-move-flyout'?incoming:nav};
  const doc={...events(),defaultView:win,fonts:events(),getElementById:()=>app,querySelectorAll:()=>[],activeElement:null};
  const target={isConnected:true,style:{},matches:()=>true,getBoundingClientRect:()=>({top:271.640625,bottom:327.125}),scrollIntoView(options){assert.deepEqual(options,{block:'nearest',inline:'nearest',behavior:'instant'});calls++;}};
  const layout=createBoardContextLayout(doc);t.after(()=>layout.destroy());
  const focus=()=>{doc.activeElement=target;doc.fire('focusin',{target});};
- return {win,doc,target,layout,focus,calls:()=>calls,frame:()=>frame,replaceFrame(){frame={dataset:{gameId:'g'}};}};
+ return {win,doc,target,layout,focus,calls:()=>calls,frame:()=>frame,setIncoming(value){incoming=value;},replaceFrame(){frame={dataset:{gameId:'g'}};}};
 }
 test('native Tab reveals its still-focused action even when a background page does not run animation frames',async t=>{
  const f=revealFixture(t);f.doc.fire('keydown',{key:'Tab'});f.focus();assert.equal(f.calls(),0,'wait until native focus finishes');
@@ -123,4 +141,28 @@ for(const sample of [
  const rect=f.target.getBoundingClientRect();
  if(!sample.name.startsWith('clamped')){assert(rect.top>=341.734375);assert(rect.bottom<=532);}
  else assert(rect.top<341.734375||rect.bottom>532,'a document clamp remains an unmet clearance, never a claimed repair');
+});
+
+test('actual Board-detail ancestor receives overflow cue without a notice wrapper',t=>{
+ const f=fixture(t),body=f.body(48,180),detail={attributes:{},setAttribute(key,value){this.attributes[key]=value;}};
+ body.closest=selector=>selector.split(',').map(part=>part.trim()).includes('.board-context-detail')?detail:null;f.setBodies([body]);f.layout.sync();
+ assert.equal(body.tabIndex,0);assert.equal(detail.attributes['data-context-overflow'],'true');body.scrollHeight=48;f.sample();assert.equal(detail.attributes['data-context-overflow'],'false');
+});
+
+test('visual viewport pan updates on its own scroll event while a held input still fences geometry',t=>{
+ const f=mountedFixture(t);f.layout.sync();f.doc.fire('pointerdown',{pointerId:0});
+ f.win.visualViewport.offsetTop=30;f.win.visualViewport.fire('scroll');f.flush();assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'90px');
+ f.doc.fire('pointerup',{pointerId:0});f.flush();assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'120px');
+ f.win.visualViewport.offsetTop=50;f.win.visualViewport.fire('scroll');f.flush();assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'140px');
+ f.setScroll(100);f.win.visualViewport.fire('scroll');f.flush();assert.equal(f.current().style.getPropertyValue('--board-center-clearance'),'140px','ordinary reader scroll cannot change the admitted document geometry');
+});
+
+test('explicit Board focus reveals above the actual incoming overlay without moving flyout focus',async t=>{
+ const f=revealFixture(t);f.setIncoming({closest:()=>null,getBoundingClientRect:()=>({top:400,height:200})});
+ f.target.getBoundingClientRect=()=>({top:430,bottom:474});f.doc.fire('keydown',{key:'Tab'});f.focus();await Promise.resolve();
+ assert.equal(f.calls(),1);assert.equal(f.target.style.scrollMarginBlockEnd,'208px','one outward-rounded reveal clears incoming top400 by8px');
+});
+test('retired incoming host does not constrain explicit Board focus',async t=>{
+ const f=revealFixture(t);f.setIncoming({closest:()=>({}),getBoundingClientRect:()=>({top:400,height:200})});
+ f.target.getBoundingClientRect=()=>({top:430,bottom:474});f.doc.fire('keydown',{key:'Tab'});f.focus();await Promise.resolve();assert.equal(f.calls(),0);
 });

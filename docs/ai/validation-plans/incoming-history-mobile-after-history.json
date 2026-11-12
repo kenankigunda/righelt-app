@@ -1,0 +1,62 @@
+{
+  "version": 3,
+  "questions": [
+    {
+      "id": "incoming-history-and-mobile-presentation",
+      "description": "Incoming recorded turns use desktop History and the mobile flyout, while Board details, notices, responsive centering, native focus, and existing inset header motion retain independent ownership.",
+      "paths": [
+        "apps/web/",
+        "browser-integration/invite-history-polish.spec.mjs",
+        "browser-integration/support/invite-history-polish.html",
+        "docs/",
+        "e2e/workflows/incoming-narration-presentation.spec.mjs"
+      ],
+      "checks": [
+        "PR gate"
+      ],
+      "evidence": [
+        {
+          "check": "PR gate",
+          "requirements": [
+            "client-state",
+            "accessibility",
+            "layout-tolerance",
+            "native-focus"
+          ]
+        },
+        {
+          "check": "Boundary E2E",
+          "files": [
+            "e2e/workflows/incoming-narration-presentation.spec.mjs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "durable-presentation-tests",
+      "description": "The refactored presentation tests execute production behavior without retaining superseded source-inspection exceptions.",
+      "paths": [
+        "e2e/workflows/history-narration.spec.mjs",
+        "e2e/support/",
+        "scripts/testing/source-inspection-allowlist.json"
+      ],
+      "checks": [
+        "PR gate"
+      ],
+      "evidence": [
+        {
+          "check": "PR gate",
+          "requirements": [
+            "test-infrastructure"
+          ]
+        },
+        {
+          "check": "Boundary E2E",
+          "files": [
+            "e2e/workflows/history-narration.spec.mjs"
+          ]
+        }
+      ]
+    }
+  ]
+}

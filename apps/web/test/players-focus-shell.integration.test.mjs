@@ -33,6 +33,7 @@ test('mounted Players presence refresh patches the join subtree and retains the 
   patchToolHtml:(current,markup)=>{assert.equal(current,join);patched.push(markup);},
   joinMarkupByElement:new Map(),routeTransition:null,panelPendingFocus:new Map(),panelSizeAnimations:new Map(),
   isButtonPending:()=>false,getCopyInviteButtonKey:()=> 'copy',applySharedMutationGates(){},FLYOUT_KEYS:[],
+  boardContextPresentation:{captureIncomingFocus:()=>null,restoreIncomingFocus(){}},syncIncomingNarrationHost(){},syncBoardContextDetails(){},
   reconcileMiniBoardPreviews(){},syncMountedGameShellPanelUi(){},scheduleGameShellStickyLayout(){},mountedBoardGameId:null,
  };
  runInNewContext(`let desktopBoardFit=null;${source.slice(source.indexOf('const initializeDesktopBoardFit ='),source.indexOf('const applyGameShellStickyLayout ='))}${source.slice(start,end)};globalThis.refresh=game=>updateMountedGameShell({game,includeBoard:false});`,context);

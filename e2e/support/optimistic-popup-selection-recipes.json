@@ -52,54 +52,54 @@
   {
     "file": "apps/web/shell/app.js",
     "servedPath": "/shell/app.js",
-    "sourceSha256": "d8c2fc66d27181c79685eea583aa13d6b81adc0085edda6b7f15282ecb51ab3d",
-    "outputSha256": "4535805c430dc4f4cd29e680955b26cd127c2bfad22d0fc807ad805a011fa694",
+    "sourceSha256": "ed1d68a4608300762c8a26be6a2b2f1560247a3fa8a8cde80a34c2c41025d099",
+    "outputSha256": "7f94abc30e0ca8c0894457448123e2b3af4962d3be6a2aac6d43a436d98fed69",
     "operations": [
       {
-        "start": 2527,
-        "end": 2527,
+        "start": 3071,
+        "end": 3071,
         "before": "",
         "after": "function __popupValue(kind,value,scope){try{const probe=Object.getOwnPropertyDescriptor(globalThis,'__popupSelectionProbe')?.value;const record=probe&&Object.getOwnPropertyDescriptor(probe,'record')?.value;if(typeof record==='function')record(kind,value,scope);}catch{}return value;}\n"
       },
       {
-        "start": 168938,
-        "end": 168979,
+        "start": 164546,
+        "end": 164587,
         "before": "selectionAction: hydratedSelectionAction,",
         "after": "selectionAction: __popupValue('load-selection-action',hydratedSelectionAction,boardRuntime),"
       },
       {
-        "start": 175778,
-        "end": 175882,
+        "start": 171440,
+        "end": 171544,
         "before": "consumedInitialSelectionActionKeyByGameId.set(game.id, initialSelectionHydration.nextConsumedActionKey);",
         "after": "consumedInitialSelectionActionKeyByGameId.set(__popupValue('consume-game',game.id,boardRuntime), __popupValue('consume-action-key',initialSelectionHydration.nextConsumedActionKey,boardRuntime));"
       },
       {
-        "start": 175893,
-        "end": 175935,
+        "start": 171555,
+        "end": 171597,
         "before": "void boardRuntime.loadSnapshot(snapshot, {",
         "after": "void __popupValue('load-runtime',boardRuntime).loadSnapshot(snapshot, {"
       },
       {
-        "start": 176013,
-        "end": 176054,
+        "start": 171675,
+        "end": 171716,
         "before": "selectionAction: hydratedSelectionAction,",
         "after": "selectionAction: __popupValue('load-selection-action',hydratedSelectionAction,boardRuntime),"
       },
       {
-        "start": 178254,
-        "end": 178358,
+        "start": 173916,
+        "end": 174020,
         "before": "consumedInitialSelectionActionKeyByGameId.set(game.id, initialSelectionHydration.nextConsumedActionKey);",
         "after": "consumedInitialSelectionActionKeyByGameId.set(__popupValue('consume-game',game.id,boardRuntime), __popupValue('consume-action-key',initialSelectionHydration.nextConsumedActionKey,boardRuntime));"
       },
       {
-        "start": 178365,
-        "end": 178407,
+        "start": 174027,
+        "end": 174069,
         "before": "void boardRuntime.loadSnapshot(snapshot, {",
         "after": "void __popupValue('load-runtime',boardRuntime).loadSnapshot(snapshot, {"
       },
       {
-        "start": 178473,
-        "end": 178514,
+        "start": 174135,
+        "end": 174176,
         "before": "selectionAction: hydratedSelectionAction,",
         "after": "selectionAction: __popupValue('load-selection-action',hydratedSelectionAction,boardRuntime),"
       }

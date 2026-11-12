@@ -4,6 +4,10 @@ This is the detailed intended presentation contract for active, pending, archive
 
 A turn means one player's turn. Defender retreats stay inside the attacker's turn. Show newest turns and move rows first. Stored action chronology and replay stay chronological. Visible headings read `Turn X`, with player attribution retained in accessible labels. Move rows use owner color and retain accessible actor attribution without repeating visible names.
 
+## Confirmed November 11 incoming follow-up
+
+The [incoming presentation contract](INCOMING_NARRATION.md) moves incoming narration to desktop History or a mobile bottom flyout and refines Live spacing, empty current headings and hover rails. It preserves selected History and recorded chronology. This approved follow-up requires its own implementation and delivery evidence. The separately confirmed Undo grouping change owns its own composition.
+
 ## Order and selection
 
 A turn means one player's turn. Defender retreats stay inside the attacker's turn and retain their own actor attribution. All displayed move rows are newest first, including within turns, pending lists, archive lists and expanded Undo disclosures. Reverse display order only. Engine arrays, recorded action chronology, turn reconstruction and sequence playback remain chronological. Preserve stable IDs, original global Move numbers and lineage.

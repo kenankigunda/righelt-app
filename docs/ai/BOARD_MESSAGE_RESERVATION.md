@@ -9,3 +9,7 @@ This pattern has a specific content allowance: the larger of the original inline
 Each pattern keeps its own independently measured intrinsic fallback. The controller takes the fixed maximum across every group and both font families, then adds outer paint clearance once. A taller natural fallback remains admissible without transferring its allowance to unrelated patterns. Unknown patterns, unsupported metrics and unmapped content remain observable degraded or unsupported states. Safe natural reflow does not establish fixed-height acceptance.
 
 Font qualification checks each row against its own pattern cap and cold intrinsic fallback. It retains cold, loaded and settled reload anchor checks, complete grammar coverage, generic fallback checks, action targets and focus clearance. A source arithmetic bound is not browser evidence. Linux font qualification and real game loading/live positioning must pass separately.
+
+## Confirmed November 11 incoming follow-up
+
+The [incoming presentation contract](INCOMING_NARRATION.md) removes the mobile space reserved for notification/context overlays. Any viewport centering uses separate Board geometry. It does not grow this finite prompt, reserve a turn-summary maximum or revive D18 overflow motion. Extended Board details remain independently scrollable. The confirmed follow-up requires actual-app evidence after its predecessors are integrated.

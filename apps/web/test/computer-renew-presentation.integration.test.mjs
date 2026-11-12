@@ -29,7 +29,7 @@ test('quiet renewal keeps its durable envelope without disabling legal human-tur
  const turn={index:2,playerSeat:'Player 1',status:'active',moveIndexes:[]};
  let game={id:'quiet-renew-game',createdAt:new Date(now).toISOString(),updatedAt:new Date(now).toISOString(),gameplayRevision:0,
   board:{state},currentSnapshot:state,currentTurn:turn,turns:[{index:1,status:'complete'},turn],
-  moves:[{moveId:'prior-computer-move',index:0,turnIndex:1,snapshot:{...structuredClone(state),turnIndex:1,sideToMove:'P2'},action:{type:'project',from:{row:6,col:3},to:{row:6,col:1}},computerProof:{profile:'babs'}}],
+  moves:[{moveId:'prior-computer-move',index:0,turnIndex:1,turnMoveIndex:0,actorSide:'P2',snapshot:{...structuredClone(state),turnIndex:1,sideToMove:'P2'},action:{type:'project',from:{row:6,col:3},to:{row:6,col:1}},computerProof:{profile:'babs'}}],
   myRole:'Player 1',player1:{identityId:'owner'},player2:{identityId:'owner'},canControlComputer:true,canRecordMove:true,
   legalActions:listLegalActions(state),viewers:[],pendingJoinRequests:[],sharedReceipts:true,
   computer:createComputerControl('owner',{p1:null,p2:'babs'})};

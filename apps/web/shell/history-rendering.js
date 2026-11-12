@@ -9,7 +9,7 @@ const renderHistoryPreview = (game, preview, key) => {
   ? `<div class="history-inline-preview" data-testid="history-inline-preview"><p class="history-inline-narration">${renderBoardMessageHtml(selectedHistoryPresentation(game,{identityId:transport.getIdentityId()})?.message??{text:'Historical details unavailable'})}</p>${preview.snapshot ? renderMiniBoardPreviewRoot({previewId:key,...preview,previewKey:toStableKey(preview)}) : '<p role="status">Preview unavailable</p>'}</div>` : "";
 };
 const renderTurnHistory = (game) => {
-  const {getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, undoHistory, expandedUndoneGroups, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView} = getDependencies();
+  const {renderIncomingHistory, getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, undoHistory, expandedUndoneGroups, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView} = getDependencies();
   const archiveState=additionalHistory?.snapshot?.(game.id);
   const timeline=buildHistoryTimeline(game.id,[...(game.moves??[]),...(game.pendingMoves??[])],game.historyUndoArchiveEntries??[],game.lastRestoration,{
     archiveComplete:Boolean(archiveState?.loaded&&!archiveState.cursor),
@@ -77,8 +77,9 @@ const renderTurnHistory = (game) => {
     const key=canonical?`history-turn:${game.id}:${node.turnIndex}`:`history-turn:${game.id}:${node.turnIndex}:portion:${node.records[0].id}`;
     return renderTurn(turns.get(node.turnIndex)??{index:node.turnIndex},node.records,key);
   }).join('');
-  const emptyTurns=[...turns.values()].filter(turn=>!timeline.records.some(record=>record.move.turnIndex===turn.index)
-    || game.historyTurnIndex===turn.index&&!timeline.nodes.some(node=>node.type==='retained'&&node.turnIndex===turn.index));
+  const emptyTurns=[...turns.values()].filter(turn=>(!timeline.records.some(record=>record.move.turnIndex===turn.index)
+    || game.historyTurnIndex===turn.index&&!timeline.nodes.some(node=>node.type==='retained'&&node.turnIndex===turn.index))
+    && (turn.index!==game.currentTurn?.index||Boolean(turn.endedAt)||Boolean(turn.moveIndexes?.length)));
   const emptyRow=turn=>renderTurn(turn,[],`history-turn:${game.id}:${turn.index}`);
   const leadingEmpty=emptyTurns.filter(turn=>turn.index===game.currentTurn?.index).map(emptyRow).join('');
   const trailingEmpty=emptyTurns.filter(turn=>turn.index!==game.currentTurn?.index).reverse().map(emptyRow).join('');
@@ -90,7 +91,8 @@ const renderTurnHistory = (game) => {
   const acknowledged=boardContexts.channel('acknowledged');
   const replayFallback=!game.inHistoryMode&&acknowledged?.gameId===game.id&&acknowledged.replay&&boardContexts.isDismissed(acknowledged.key)&&canReplayDisplayed(acknowledged.replay)
     ?`<li class="history-live-replay" data-key="live-replay:${escapeHtml(acknowledged.key)}"><button type="button" class="secondary" data-action="replay-board-context" data-board-context-key="${escapeHtml(acknowledged.key)}"${contextReplayEnabled(acknowledged.replay)?'':' disabled'}>Show me again</button></li>`:'';
-  return live + waiting + replayFallback + leadingEmpty + groups + trailingEmpty;
+  const incoming=getShellLayoutMode()==='wide'?renderIncomingHistory?.(game)??'':'';
+  return live + (incoming?`<li class="history-incoming-container">${incoming}</li>`:'') + waiting + replayFallback + leadingEmpty + groups + trailingEmpty;
 };
 
 const renderAdditionalHistory = game => {
