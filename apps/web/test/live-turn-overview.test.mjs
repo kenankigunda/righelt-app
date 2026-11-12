@@ -47,7 +47,7 @@ test('background hydration is scoped and a failed visual read never blocks or mo
  failing.sync(g,options);await idle();assert.equal(failing.overlay(),null);assert.deepEqual(g,before);
 });
 test('computer-owned identity still shows only the opposing computer turn to its human side',()=>{
- const g=game();g.player1.identityId='me';g.player1.computerProfile='horus';g.computer={seats:{p1:'horus',p2:null}};g.myRoles=['Player 1','Player 2'];
+ const g=game();g.player1.identityId='me';g.player1.computerProfile='horus';g.computer={seats:{p1:'horus',p2:null}};g.myRoles=['Player 1','Player 2'];g.moves[0].computerProof={profile:'horus'};
  const overview=createLiveTurnOverview({loadMoves:()=>[]});overview.sync(g,options);assert.equal(overview.overlay().mode,'recorded-turn');
 });
 

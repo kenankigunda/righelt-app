@@ -20,6 +20,7 @@ import { getGameResult } from "../shell/game-result.js";
 import {historyActorLabel} from '../shell/perspective-labels.js';
 import { participantName, participantDisplayName } from "../shell/public-profile.js";
 import { createRenderGestureGate } from "../shell/render-gesture.js";
+import {createPanelTransitionPreparation} from '../shell/panel-transition-preparation.js';
 import { renderResultMark, createResultPresentation } from '../shell/result-presentation.js';
 import { icon } from '../shell/ui.js';
 import { createLiveTransportStore } from '../shell/live-transport.js';
@@ -186,7 +187,7 @@ function historyRouteHarness(t) {
   tab.getAttribute=()=>mountedPanel;
   shell.getAttribute=()=> 'g';
   shell.querySelector=selector=>selector==='[data-game-panel="history"]'?history:selector.includes('aria-pressed="true"')?tab:null;
-  const appEl=new Element();appEl.querySelector=()=>main;
+  const appEl=new Element();appEl.querySelector=selector=>[':scope > [data-incoming-narration-root]','[data-board-context-details]'].includes(selector)?null:main;
   const snapshot=index=>({pieces:[],sideToMove:'P1',turnIndex:index});
   const transport=createLiveTransportStore({storage:{getItem:()=> 'actor',setItem(){}},fetcher:()=>{throw Error('History is cached; no request is needed');}});
   transport.applyLiveGameUpdate({game:{id:'g',createdAt:'2026-01-01',updatedAt:'2026-01-01',gameplayRevision:1,
@@ -194,7 +195,7 @@ function historyRouteHarness(t) {
     moves:[0,1].map(index=>({index,moveId:`m${index}`,snapshot:snapshot(index),selectionSnapshot:snapshot(index),notation:'MOVE',at:'2026-01-01'}))}});
   transport.selectHistoryMove({gameId:'g',moveIndex:0});
   const noop=()=>{};
-  const context={undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,pendingBoardContextReplay:null,cancelPendingBoardContextReplay:noop,boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',isCompletedGame,renderResultText,renderHistoryResult,HTMLElement:Element,appEl,transport,currentRoute:{name:'game',gameId:'g',panel:'history'},pendingRoutePosition:null,
+  const context={undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,pendingBoardContextReplay:null,cancelPendingBoardContextReplay:noop,retireBoardContext:noop,liveTurnOverview:{leave:noop},boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',viewingScope:()=>'fixture',isCompletedGame,renderResultText,renderHistoryResult,HTMLElement:Element,appEl,transport,currentRoute:{name:'game',gameId:'g',panel:'history'},getCurrentRoute:()=>context.currentRoute,pendingRoutePosition:null,
     lastRenderedRouteKey:'g|history|debug:false',lastRenderedBaseRouteKey:'g',lastRenderedTransitionPhaseKey:'idle',
     activeResultGameId:null,mountedBoardGameId:null,FLYOUT_KEYS:[],
     getGamePanel:route=>(route??context.currentRoute).panel,
@@ -205,6 +206,7 @@ function historyRouteHarness(t) {
     document:{getElementById:()=>null,querySelector:()=>main},
     getCurrentFlyoutState:()=>({}),buildInviteHash:()=>'',
     icon,historyActorLabel,liveHistoryLabel,renderHistorySlots,canReadAdditionalHistory,activityStateActorSide,
+    incomingNarrationState:{observe:()=>({context:null,expanded:false})},incomingNarrationContext:()=>null,renderIncomingNarration:()=>'',contextReplayEnabled:()=>false,
     account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})},
     escapeHtml:String,formatClientDateTime:String,toStableKey:JSON.stringify,
     revealSelectedHistory:()=>{},buildMovePreview:move=>({snapshot:move.snapshot}),buildTurnPreview:()=>({}),getControlSeatForTurn:(_state,seat)=>seat,historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:()=>"You",playerToneClassForSide:()=>'',playerToneClassForSeat:()=>'',
@@ -217,28 +219,28 @@ function historyRouteHarness(t) {
     updateHeaderFields:noop,reconcileMiniBoardPreviews:noop,animateHomeSectionTransitions:noop,syncScenarioAuthoringControls:noop,
     createDesktopBoardFit:()=>({sync:options=>assert.equal(options.onlyNew,true)}),boardRuntime:null,
     scheduleGameShellStickyLayout:noop,syncShellLayoutMode:()=>'narrow',applySharedMutationGates:noop,mountBoardForGame:noop,
+    boardContextPresentation:{captureIncomingFocus:()=>null,restoreIncomingFocus(){}},syncIncomingNarrationHost:noop,syncBoardContextDetails:noop,
     syncRenderedMarkupSnapshot:()=>{context.lastRenderedRouteKey=context.getRouteRenderKey();},
     viewingIntent:{saveScroll:noop,cancelUndo:noop,scrollTop:()=>0},replayRequests:{cancel:noop},replayController:null,mobileNavigation:null,
   };
   context.homeSectionReads=createHomeSectionReads({state:context,pendingHomeSectionKeys:new Set()});
+  context.prepare=createPanelTransitionPreparation(()=>context);
   runWithHistoryRendering(`
     ${patchHelper}
     let desktopBoardFit=null;
     ${extract('const initializeDesktopBoardFit =','const applyGameShellStickyLayout =')}
-    ${extract('const preparePanelTransition =','const getCurrentFlyoutState =')}
     ${extract('const renderHistoryPreview =','const renderHeader =')}
     ${extract('const renderAdditionalHistory =','const renderHistoryPanel =')}
     ${extract('const renderHistoryPanel =','const renderBoardPanel =')}
     ${extract('const updateMountedGameShell =','const doesMountedFlyoutStateMatchRoute =')}
     globalThis.paintHistory = () => updateMountedGameShell({game:transport.getGameViewModel('g'),includeBoard:false});
-    globalThis.prepare = preparePanelTransition;
     globalThis.paint = () => {
       const hadResultView=false,routeKey=getRouteRenderKey(),baseRouteKey=getBaseRouteRenderKey();
       const animatePanels=false,includeBoard=false,restoreScenarioDraftFocus=null;
       ${extract('  const shouldPatchFlyoutsOnly =','  let body = "";')}
       throw Error('The existing game must update incrementally, without replacing its shell');
     };
-  `,Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
+  `,Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel,createPanelTransitionPreparation}));
   const jobs=new Map();let id=0;
   const gate=createRenderGestureGate({render:()=>context.paint(),schedule:fn=>{jobs.set(++id,fn);return id;},cancel:key=>jobs.delete(key)});
   const render=()=>{if(!gate.defer({includeBoard:false}))context.paint();};

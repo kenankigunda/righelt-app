@@ -421,7 +421,7 @@ test("shell renders and reconciles mini board previews for home and debug surfac
 test("app uses route skeleton sync and localized loading instead of a global busy wrapper", async () => {
   assert.doesNotMatch(source, /const withBusy = async/);
   assert.doesNotMatch(source, /let busy = false;/);
-  const mount=source.slice(source.indexOf('mountLoadingFeedback(document,{'),source.indexOf('const currentReplayContext ='));
+  const mount=source.slice(source.indexOf('mountLoadingFeedback(document,{'),source.indexOf('const currentReplayContext='));
   assert.match(mount,/getScope:loadingContextScope/);
   assert.match(mount,/onContextsChange:contexts=>\{\s*slowLoadingContexts=contexts;/);
   assert.match(mount,/if\(updateMountedHeader\(\)\)syncRenderedMarkupSnapshot\(\);/);

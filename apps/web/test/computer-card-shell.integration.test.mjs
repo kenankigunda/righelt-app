@@ -34,6 +34,7 @@ function harness(){
   buildInviteHash:()=> '#/invite/g',getCurrentFlyoutState:()=>({}),renderJoinInvitePanel:()=>`<h2>Players</h2>${renderParticipantsPanel()}<button data-action="copy-invite">Invite someone to view</button>`,
   joinMarkupByElement:new Map(),routeTransition:null,panelPendingFocus:new Map(),panelSizeAnimations:new Map(),isButtonPending:()=>false,getCopyInviteButtonKey:()=> 'copy',
   applySharedMutationGates(){},FLYOUT_KEYS:[],reconcileMiniBoardPreviews(){},syncMountedGameShellPanelUi(){},scheduleGameShellStickyLayout(){},mountedBoardGameId:null,
+  boardContextPresentation:{captureIncomingFocus:()=>null,restoreIncomingFocus(){}},syncIncomingNarrationHost(){},syncBoardContextDetails(){},
  };
  runInNewContext(`let desktopBoardFit=null;${source.slice(source.indexOf('const initializeDesktopBoardFit ='),source.indexOf('const applyGameShellStickyLayout ='))}${update}\n${mounted}\nglobalThis.toggle=()=>{const action='toggle-computer-card',actionEl={dataset:{gameId:'g',computerSide:'P2'}};${toggle}};globalThis.refresh=()=>updateMountedGameShell({game:${JSON.stringify(game)},includeBoard:false});`,context);
  return{context,game,patches,list,join,resume,toggleButton,document,setActivity:value=>{activity=value;}};
