@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {renderGameRoleLabel,renderGameRoleLine} from '../shell/game-role-presentation.js';
+import {
+  renderGameParticipantLabel,
+  renderGameParticipantReferences,
+  renderGameRoleLabel,
+  renderGameRoleLine,
+} from '../shell/game-role-presentation.js';
 
 const person = (identityId, profile = undefined, extra = {}) => ({identityId, ...(profile ? {profile} : {}), ...extra});
 
@@ -38,4 +43,22 @@ test('summary identity escapes visible and accessible names without changing the
   assert.match(html,/aria-label="&lt;You &amp; Me&gt;, Red"/);
   assert.match(html,/<bdi dir="auto">&lt;You &amp; Me&gt;<\/bdi>/);
   assert.deepEqual(game,before);
+});
+
+test('active-turn and latest summary text use canonical participant identities instead of seat labels', () => {
+  const twoGuests={player1:person('guest-1'),player2:person('guest-2')};
+  assert.match(renderGameParticipantLabel('Player 2',twoGuests), /class="player-tone-p2" aria-label="Guest 2, Blue"/);
+  assert.match(renderGameParticipantLabel('Player 2',twoGuests), /<bdi dir="auto">Guest 2<\/bdi>/);
+  assert.equal(
+    renderGameParticipantReferences('Turn 1 ended. Player 2 to play',twoGuests),
+    'Turn 1 ended. <strong class="player-tone-p2" aria-label="Guest 2, Blue"><bdi dir="auto">Guest 2</bdi></strong> to play',
+  );
+  assert.doesNotMatch(renderGameParticipantReferences('Player 1 passed. Player 2 to play',twoGuests), /Player [12]/);
+
+  const named={player1:person('owner',{displayName:'<Owner>'}),player2:person('other',{username:'rival&friend'})};
+  const html=renderGameParticipantReferences('Player 1 passed. Player 2 to play',named);
+  assert.match(html, /&lt;Owner&gt;/);
+  assert.match(html, /rival&amp;friend/);
+  assert.match(html, /<bdi dir="auto">/);
+  assert.doesNotMatch(html, /<Owner>|rival&friend/);
 });

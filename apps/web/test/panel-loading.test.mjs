@@ -12,14 +12,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import * as slots from '../shell/panel-loading.js';
-import {renderGameRoleLine} from '../shell/game-role-presentation.js';
+import {renderGameParticipantLabel,renderGameParticipantReferences,renderGameRoleLine} from '../shell/game-role-presentation.js';
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const extract=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));
 test('actual summary and history renderers use shared content flow without changing values',()=>{
- const context={undoHistory,additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,isCompletedGame,renderHistoryResult,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},...slots,escapeHtml:String,formatDisplayGameId:String,formatClientDateTime:()=> 'Oct 25, 2026, 4:17 AM',renderGameRoleLine,renderSeatLabel:String,colorizePlayerReferences:String,renderTurnHistory:()=>'<li>Actual move</li>',renderAdditionalHistory:()=>'<div>Additional</div>',getGameResult:()=>null,transport:{getAuthoritativeGame:()=>({}),getIdentityId:()=> 'owner'}};
+ const context={undoHistory,additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,isCompletedGame,renderHistoryResult,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},...slots,escapeHtml:String,formatDisplayGameId:String,formatClientDateTime:()=> 'Oct 25, 2026, 4:17 AM',renderGameRoleLine,renderGameParticipantLabel,renderGameParticipantReferences,renderTurnHistory:()=>'<li>Actual move</li>',renderAdditionalHistory:()=>'<div>Additional</div>',getGameResult:()=>null,transport:{getAuthoritativeGame:()=>({}),getIdentityId:()=> 'owner'}};
  runWithHistoryRendering(`${extract('const renderGameSummaryPanel =','const renderJoinInvitePanel =')}${extract('const renderHistoryPanel =','const renderBoardPanel =')};globalThis.summary=renderGameSummaryPanel;globalThis.history=renderHistoryPanel;`,context);
- const summary=context.summary({id:'known',createdAt:'date',myRole:'Both Players',notifications:['Ready'],currentTurn:{index:0,playerSeat:'Player 1',moveIndexes:[]}});
- assert.match(summary,/Game <span class="mono">known/);assert.match(summary,/Started Oct 25/);assert.match(summary,/Latest: Ready/);
+ const summary=context.summary({id:'known',createdAt:'date',myRole:'Both Players',notifications:['Turn 1 ended. Player 2 to play'],player1:{identityId:'guest-1'},player2:{identityId:'guest-2'},currentTurn:{index:0,playerSeat:'Player 1',moveIndexes:[]}});
+ assert.match(summary,/Game <span class="mono">known/);assert.match(summary,/Started Oct 25/);assert.match(summary,/Active turn: 1 · [\s\S]*Guest 1/);assert.match(summary,/Latest: Turn 1 ended. [\s\S]*Guest 2[\s\S]* to play/);assert.doesNotMatch(summary,/Player [12]/);
  for(const html of [summary,slots.renderSummaryLoading('Game known')]){
   assert.equal((html.match(/<p class="small"/g)||[]).length,4);assert.match(html,/section-stack/);assert.match(html,/section-followup/);
  }
