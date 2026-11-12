@@ -45,7 +45,7 @@ import {captureHomeFocus,refreshHomeFocus,restoreHomeFocus,restoreHomeReadingPos
 import {homeCardResult} from './home-card-result.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName,recordedReplayLabel} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
-import {renderGameRoleLine} from './game-role-presentation.js';
+import {renderGameParticipantLabel,renderGameParticipantReferences,renderGameRoleLine} from './game-role-presentation.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
 import { buildTurnReplay, createComputerReplay, COMPUTER_REPLAY_TIMING } from './computer-replay.js';
 import { createForcedFollow } from './forced-follow.js';
@@ -617,13 +617,8 @@ const getControlSeatForTurn = (state, turnOwnerSeat) => {
 const playerToneClassForSeat = (seat) =>
   seat === "Player 1" ? "player-tone-p1" : seat === "Player 2" ? "player-tone-p2" : seat === "Both Players" ? "player-tone-both" : "player-tone-neutral";
 const playerToneClassForSide = (side) => (side === "P1" ? "player-tone-p1" : side === "P2" ? "player-tone-p2" : "player-tone-neutral");
-const renderSeatLabel = (seat) => `<span class="${playerToneClassForSeat(seat)}">${escapeHtml(seat || "Unknown")}</span>`;
 const renderConnectionStatusIcon = (status, label) =>
   `<span class="connection-status-icon is-${escapeHtml(status)}" role="img" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
-const colorizePlayerReferences = (text) =>
-  escapeHtml(text || "")
-    .replaceAll("Player 1", '<span class="player-tone-p1">Player 1</span>')
-    .replaceAll("Player 2", '<span class="player-tone-p2">Player 2</span>');
 
 const formatDisplayGameId = (gameId) => {
   const value = String(gameId || "");
@@ -2227,11 +2222,11 @@ const renderGameSummaryPanel = (game) => {
       role:renderGameRoleLine(game),
       turn:`Active turn: ${
           game.currentTurn
-            ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${renderSeatLabel(game.currentTurn.playerSeat)} · ${escapeHtml(
+            ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${renderGameParticipantLabel(game.currentTurn.playerSeat,game)} · ${escapeHtml(
                 String(game.currentTurn.moveIndexes.length),
               )} move(s)`
             : "n/a"
-        }`,latest:`Latest: ${colorizePlayerReferences(latestNote)}`});
+        }`,latest:`Latest: ${renderGameParticipantReferences(latestNote,game)}`});
 };
 
 const renderJoinInvitePanel = (game, inviteLink) => {

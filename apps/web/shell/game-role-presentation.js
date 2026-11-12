@@ -19,6 +19,27 @@ const renderIdentity = (game, side) => {
   return `<strong class="${toneForSide(side)}" aria-label="${escape(identity.accessibleName)}"><bdi dir="auto">${escape(identity.text)}</bdi></strong>`;
 };
 
+/** Game summary prose names participants while stored seat roles remain the
+ * source of authority. Unknown roles retain a neutral, escaped fallback. */
+export function renderGameParticipantLabel(role, game = null) {
+  const side = sideForRole(role);
+  return side ? renderIdentity(game, side) : `<strong>${escape(role || 'Unknown')}</strong>`;
+}
+
+/** Replace only authoritative seat tokens from server-authored summary text.
+ * Escape all other text before composing identity markup. */
+export function renderGameParticipantReferences(text, game = null) {
+  const source = String(text ?? '');
+  let html = '';
+  let cursor = 0;
+  for (const match of source.matchAll(/Player [12]/g)) {
+    html += escape(source.slice(cursor, match.index));
+    html += renderGameParticipantLabel(match[0], game);
+    cursor = match.index + match[0].length;
+  }
+  return html + escape(source.slice(cursor));
+}
+
 /** Presentation only: roles continue to carry authority while the summary uses
  * the participant identity people recognize elsewhere in the game. */
 export function renderGameRoleLabel(role, game = null) {
