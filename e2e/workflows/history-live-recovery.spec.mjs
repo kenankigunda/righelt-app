@@ -39,7 +39,7 @@ test("history mode stays latched while live updates append and return-to-live re
     await openDirectGameLink(playerPage, baseURL, gameHash);
     await requestPlayerJoin(playerPage);
     await acceptPendingRequest(creatorPage);
-    await expect(playerPage.getByTestId("game-role")).toContainText("Player 2");
+    await expect(playerPage.getByTestId("game-role")).toContainText("Guest 2");
 
     await makeAnyLegalMove(creatorPage, "p1");
     const historyCountBeforeSelection = await getHistoryMoveCount(creatorPage);
@@ -57,7 +57,7 @@ test("history mode stays latched while live updates append and return-to-live re
     await returnToLive(creatorPage);
     releaseLive?.();
     await expect(creatorPage.getByTestId("history-return-live")).toHaveCount(0);
-    await expect(creatorPage.getByTestId("game-role")).toContainText("Player 1");
+    await expect(creatorPage.getByTestId("game-role")).toContainText("Guest 1");
   } finally {
     await closeContextQuietly(creatorContext);
     await closeContextQuietly(playerContext);

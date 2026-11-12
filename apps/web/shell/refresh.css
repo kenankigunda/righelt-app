@@ -755,6 +755,8 @@ html[data-page-active="false"] .home-refresh button.opponent-choice::before {bac
 }
 @media(forced-colors:active) {
  .cell {--cell-floor-image:none;--cell-floor-color:Canvas;background-color:Canvas;}
+ .cell.group-member {border-style:dashed;}
+ .cell.continuation-pending {outline:2px solid Highlight;outline-offset:-4px;}
  .account-dialog[data-presentation="modal"],.shell-header-menu-panel {background:Canvas;}
  :is(.shell-flyout,.account-dialog[data-presentation="flyout"])::before {background:Canvas;backdrop-filter:none;-webkit-backdrop-filter:none;}
 }

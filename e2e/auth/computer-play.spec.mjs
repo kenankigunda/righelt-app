@@ -62,7 +62,8 @@ async function registerComputerTester(page, { home = true, accountOnly = false }
   } else await page.getByRole('button', { name: 'Play both sides', exact: true }).click();
   const account = page.getByTestId('account-dialog');
   await account.getByRole('button', { name: 'Create account', exact: true }).click();
-  await account.getByLabel('Username', { exact: true }).fill(`Computer_${Date.now().toString(36)}`);
+  const username=`Computer_${Date.now().toString(36)}`;
+  await account.getByLabel('Username', { exact: true }).fill(username);
   await account.getByLabel('Password', { exact: true }).fill('A computer play password 482');
   await account.getByRole('button', { name: 'Create account & continue', exact: true }).click();
   if (accountOnly) {
@@ -72,6 +73,7 @@ async function registerComputerTester(page, { home = true, accountOnly = false }
     await expect(page.getByTestId('game-shell')).toBeVisible();
     if (home) await page.goto('/#/');
   }
+  return username;
 }
 
 test('ordinary computer play records real worker evidence, preserves private notes, and branches from the displayed decision', async ({ page }, testInfo) => {
@@ -82,7 +84,7 @@ test('ordinary computer play records real worker evidence, preserves private not
     errorDetails.push({ phase: journeyPhase, name: error.name, timestamp: new Date().toISOString() });
     console.error('computer-play browser error:', error.message);
   });
-  await registerComputerTester(page);
+  const username=await registerComputerTester(page);
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
   const create = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST' && response.request().postDataJSON()?.computer?.p2 === 'babs');
   const initialControl = captureInitialComputerControl(page);
@@ -94,7 +96,7 @@ test('ordinary computer play records real worker evidence, preserves private not
   expect(created.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
   expect(createResponse.request().postDataJSON().computerModelId).toBe(CURRENT_COMPUTER_MODEL.id);
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
-  await expect(page.getByTestId('game-role')).toContainText('Player 1');
+  await expect(page.getByTestId('game-role')).toContainText(username);
   await waitForInitialComputerControl(page, created, initialControl);
   const humanName = created.player1.profile.displayName || created.player1.profile.username;
   await switchGamePanel(page,'players');
@@ -300,7 +302,7 @@ test(`${profile} prepares and plays as Player 2 with the production model`, asyn
 
 test(`${profile} branches from a human decision and plays as Player 1 with the production model`, async ({ page }, info) => {
   // Each real-model journey keeps its own unchanged test budget and fresh account.
-  await registerComputerTester(page, { home: false });
+  const username=await registerComputerTester(page, { home: false });
   const sourceId = await page.getByTestId('game-shell').getAttribute('data-game-id');
   const created = await projected(page, sourceId);
   await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase', 'idle');
@@ -324,7 +326,7 @@ test(`${profile} branches from a human decision and plays as Player 1 with the p
     const branched = (await (await branchResponse).json()).game;
     expect(branched.board.state).toEqual(created.board.state);
     expect(branched.computer.seats).toEqual({ p1: profile, p2: null });
-    await expect(popup.getByTestId('game-role')).toContainText('Player 2');
+    await expect(popup.getByTestId('game-role')).toContainText(username);
     expect(branched.computer.modelId).toBe(CURRENT_COMPUTER_MODEL.id);
     const computerFirst = await waitForComputerDecision(popup, branched.id, profile, { modelId: branched.computer.modelId });
     expect(computerFirst.moves.find(move => move.computerProof)?.computerProof.profile).toBe(profile);

@@ -22,7 +22,7 @@ test("third browser falls back to viewer-only join when both player seats are al
     await openDirectGameLink(playerPage, baseURL, gameHash);
     await requestPlayerJoin(playerPage);
     await acceptPendingRequest(creatorPage);
-    await expect(playerPage.getByTestId("game-role")).toContainText("Player 2");
+    await expect(playerPage.getByTestId("game-role")).toContainText("Guest 2");
 
     await openDirectGameLink(viewerPage, baseURL, gameHash);
     await expectViewerFallbackJoinSurface(viewerPage);

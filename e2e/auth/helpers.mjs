@@ -59,11 +59,11 @@ export async function waitForFriendIntroduction(page) {
   await expect(story).toBeVisible();
   return story;
 }
-export async function continueFriendIntroduction(page, {play = true} = {}) {
+export async function continueFriendIntroduction(page, {play = true, expectedRole = 'Guest'} = {}) {
   const story=await waitForFriendIntroduction(page);
   if (!play) {await story.getByRole('button',{name:'Close opponent story',exact:true}).click();return;}
   await story.getByRole('button',{name:'Start a friend game',exact:true}).click();
   await expect(page).toHaveURL(/#\/game\//);
-  await expect(page.getByTestId('game-role')).toContainText('Player 1');
+  await expect(page.getByTestId('game-role')).toContainText(expectedRole);
   await page.getByRole('button',{name:'Close invite',exact:true}).click();
 }

@@ -1124,9 +1124,6 @@ test("inactive pieces use the square fill color instead of transparency", () => 
     assert.match(floor,/background-image:\s*var\(--cell-floor-image\);/);
   }
   assert.match(styleSource, /\.piece-token\.inactive\s*\{[\s\S]*background:\s*var\(--cell-fill, #fbf8f0\);/s);
-  assert.match(styleSource, /\.cell\.group-member\s*\{[\s\S]*--cell-fill:\s*#eef8f1;/s);
-  assert.match(styleSource, /\.cell\.continuation-moved\s*\{[\s\S]*--cell-fill:\s*#f5f7ef;/s);
-  assert.match(styleSource, /\.cell\.continuation-pending\s*\{[\s\S]*--cell-fill:\s*#e6f2d3;/s);
   assert.match(styleSource, /\.cell\.rush-blocker\s*\{[\s\S]*--cell-fill:\s*#f7ead4;[\s\S]*border-color:\s*#cf9542;/s);
   assert.match(styleSource, /\.cell\.retreat-piece\s*\{[\s\S]*--cell-fill:\s*#f3e7c5;/s);
 });

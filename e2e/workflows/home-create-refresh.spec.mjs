@@ -119,7 +119,7 @@ test('logical early-create intent waits for guest bootstrap without opening acco
     await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
     expect((await created).ok()).toBe(true);
     await expect(page).toHaveURL(/#\/game\//);
-    await expect(page.getByTestId('game-role')).toContainText('Player 1');
+    await expect(page.getByTestId('game-role')).toContainText('Guest');
     await expect(page.getByTestId('account-dialog')).not.toBeVisible();
     expect(creates).toHaveLength(1);
     expect(bootstrapRequests).toBe(1);
@@ -176,7 +176,7 @@ for (const input of ['pointer', 'keyboard']) test(`home refresh preserves ${inpu
     await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
     await expect.poll(() => creates.length).toBe(1);
     await expect(page.getByTestId('game-shell')).toBeVisible();
-    await expect(page.getByTestId('game-role')).toContainText('Player 1');
+    await expect(page.getByTestId('game-role')).toContainText('Guest');
   } finally { release(); await page.mouse.up(); await page.keyboard.up("Space"); await page.unrouteAll({ behavior: 'ignoreErrors' }); }
 });
 

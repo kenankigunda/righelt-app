@@ -98,7 +98,7 @@ export const createGameFromHome = async (page, capabilities = {friendIntroductio
   await expect(page.getByRole("dialog", { name: "Invite a friend" })).toBeVisible();
   await expect(page.getByTestId("game-shell")).toBeVisible();
   await closeHostInvitation(page);
-  await expect(page.getByTestId("game-role")).toContainText("Player 1");
+  await expect(page.getByTestId("game-role")).toContainText("Guest");
 
   const url = new URL(page.url());
   const match = url.hash.match(/^#\/game\/([^?]+)/);

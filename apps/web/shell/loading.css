@@ -11,14 +11,16 @@
 @container loading-cards (max-width:735px){.mini-board-card-list-skeleton > :not(:first-child){display:none}}
 .skeleton-pulse { animation:none; background:color-mix(in srgb,var(--ink,#26302f) 6%,transparent); border-radius:0; clip-path:polygon(6px 0,calc(100% - 6px) 0,100% 6px,100% calc(100% - 6px),calc(100% - 6px) 100%,6px 100%,0 calc(100% - 6px),0 6px); }
 button.button-pending,.button-link.button-pending,.account-username-status[data-state="pending"],.account-autosave[data-state="saving"] { animation:none;background-image:none; }
-.loading-pieces { display:inline-flex;gap:3px;align-items:center;justify-content:center;width:1.4em;height:1.25em;flex:none;vertical-align:middle;margin-inline-start:.3em;color:var(--activity-color,var(--action-color,var(--player-red,#b92d38)));pointer-events:none;visibility:hidden; }
+.loading-pieces { display:inline-flex;gap:3px;align-items:center;justify-content:center;align-self:center;width:1.4em;height:1.25em;flex:none;line-height:1;vertical-align:middle;margin-inline-start:.3em;color:var(--activity-color,var(--action-color,var(--player-red,#b92d38)));pointer-events:none;visibility:hidden; }
 .loading-pieces i { display:block;width:.3em;height:.3em;background:currentColor;clip-path:polygon(25% 0,75% 0,100% 25%,100% 75%,75% 100%,25% 100%,0 75%,0 25%);animation:righelt-piece-setting 1.4s ease-out infinite both;animation-play-state:paused; }
 .loading-pieces i:nth-child(2){animation-delay:.16s}.loading-pieces i:nth-child(3){animation-delay:.32s}
 :is([data-loading-phase="visible"],[data-loading-phase="slow"]) > .loading-pieces,:is([data-loading-phase="visible"],[data-loading-phase="slow"]) > .loading-icon-slot > .loading-pieces {visibility:visible}
 :is([data-loading-phase="visible"],[data-loading-phase="slow"]) > .loading-pieces i,:is([data-loading-phase="visible"],[data-loading-phase="slow"]) > .loading-icon-slot > .loading-pieces i {animation-play-state:running}
-@keyframes righelt-piece-setting {0%,12%{transform:translateY(-.24em);opacity:.2}35%,80%{transform:translateY(0);opacity:1}100%{transform:translateY(0);opacity:.2}}
+/* Scale in place so every loading piece stays on the icon slot's centerline.
+   Pagination arrows use that same centerline for their horizontal shaft. */
+@keyframes righelt-piece-setting {0%,12%{transform:scale(.76);opacity:.2}35%,80%{transform:scale(1);opacity:1}100%{transform:scale(1);opacity:.2}}
 .loading-control {position:relative;display:inline-flex;align-items:center;justify-content:center;gap:9px}
-.loading-icon-slot {display:inline-grid;place-items:center;flex:none;min-width:1.4em;height:1.25em;vertical-align:middle}
+.loading-icon-slot {display:inline-grid;place-items:center;align-self:center;flex:none;min-width:1.4em;height:1.25em;line-height:1;vertical-align:middle}
 .loading-icon-slot > * {grid-area:1 / 1}
 .loading-icon-slot > .loading-pieces {color:currentColor;margin-inline-start:0}
 .loading-control:is([data-loading-phase="visible"],[data-loading-phase="slow"]) .loading-icon-slot > svg {visibility:hidden}

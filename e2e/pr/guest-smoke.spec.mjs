@@ -28,7 +28,7 @@ test("guest game creation, observation and reload preserve one legal move", asyn
     await openDirectGameLink(opponent, baseURL, gameHash);
     await requestPlayerJoin(opponent);
     await acceptPendingRequest(owner);
-    await expect(opponent.getByTestId("game-role")).toContainText("Player 2");
+    await expect(opponent.getByTestId("game-role")).toContainText("Guest 2");
     await openDirectGameLink(observer, baseURL, gameHash);
     await joinAsViewer(observer);
     await Promise.all(
@@ -56,7 +56,7 @@ test("guest game creation, observation and reload preserve one legal move", asyn
       "data-game-id",
       gameId,
     );
-    await expect(owner.getByTestId("game-role")).toContainText("Player 1");
+    await expect(owner.getByTestId("game-role")).toContainText("Guest 1");
     expect((await projected(owner, gameId)).gameplayRevision).toBe(
       before.gameplayRevision + 1,
     );

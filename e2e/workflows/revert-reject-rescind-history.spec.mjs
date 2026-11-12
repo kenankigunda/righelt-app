@@ -48,7 +48,7 @@ test("rejecting an undo request keeps a history viewer pinned to history mode", 
     await openDirectGameLink(guest.page, baseURL, gameHash);
     await requestPlayerJoin(guest.page);
     await acceptPendingRequest(owner.page);
-    await expect(guest.page.getByTestId("game-role")).toContainText("Player 2");
+    await expect(guest.page.getByTestId("game-role")).toContainText("Guest 2");
 
     await makeAnyLegalMove(owner.page, "p1");
     await openHistoryMode(guest.page, 0);
@@ -77,7 +77,7 @@ test("rescinding an undo request keeps the requester pinned to history mode", as
     await openDirectGameLink(guest.page, baseURL, gameHash);
     await requestPlayerJoin(guest.page);
     await acceptPendingRequest(owner.page);
-    await expect(guest.page.getByTestId("game-role")).toContainText("Player 2");
+    await expect(guest.page.getByTestId("game-role")).toContainText("Guest 2");
 
     await makeAnyLegalMove(owner.page, "p1");
     await openHistoryMode(owner.page, 0);

@@ -62,13 +62,14 @@ for (const { width, zoom } of [{ width: 320, zoom: 1 }, { width: 390, zoom: 1 },
     await page.goto("/");
     if (zoom !== 1) await page.addStyleTag({ content: `.account-dialog { zoom: ${zoom}; }` });
     await openPlaySignIn(page);
-    await enterUsername(page, uniqueName());
+    const username = uniqueName();
+    await enterUsername(page, username);
     await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
     await dialog(page).getByLabel("Password", { exact: true }).fill(password);
     await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
     await expect(dialog(page)).not.toBeVisible();
-    await continueFriendIntroduction(page);
-    await expect(page.getByTestId("game-role")).toContainText("Player 1");
+    await continueFriendIntroduction(page,{expectedRole:username});
+    await expect(page.getByTestId("game-role")).toContainText(username);
     await (await revealAccountEntry(page)).click();
     // The account rail moves up from the viewport edge on mobile. Under CI
     // frame pressure a native click can hit a transiently stable position.
