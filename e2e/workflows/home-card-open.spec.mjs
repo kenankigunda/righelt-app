@@ -37,7 +37,7 @@ test("home cards render, open the full game, and refresh after live progress", a
 
     await homeCard.click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
-    await expect(page.getByTestId("game-role")).toContainText("Player 1");
+    await expect(page.getByTestId("game-role")).toContainText("Guest");
 
     const historyCount = await getHistoryMoveCount(page);
     await makeAnyLegalMove(page, "p1");

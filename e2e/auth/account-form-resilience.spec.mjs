@@ -40,7 +40,7 @@ test("correctable creation errors preserve the username and allow correction wit
   expect(requests).toBe(1);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await page.getByRole("button", { name: "Start a friend game", exact: true }).click();
-  await expect(page.getByTestId("game-role")).toContainText("Player 1");
+  await expect(page.getByTestId("game-role")).toContainText(username);
   expect(requests).toBe(2);
 });
 

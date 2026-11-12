@@ -2,7 +2,7 @@ import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import {test,expect} from '@playwright/test';
 import {continueFriendIntroduction,openPlaySignIn} from './helpers.mjs';
 import {AUTH_REQUEST_HEADER,AUTH_PROTOCOL_HEADER,AUTH_PROTOCOL_VERSION,SESSION_CONTEXT_HEADER} from '../../packages/shared-types/src/auth-policy.js';
-async function register(page,username){await page.goto('/');await openPlaySignIn(page);const d=page.getByTestId('account-dialog');await d.getByRole('button',{name:'Create account',exact:true}).click();await d.getByLabel('Username',{exact:true}).fill(username);await d.getByLabel('Password',{exact:true}).fill('Autosave testing password 42');await d.getByRole('button',{name:'Create account & continue',exact:true}).click();await expect(d).not.toBeVisible();await continueFriendIntroduction(page);await expect(page.getByTestId('game-role')).toContainText('Player 1');}
+async function register(page,username){await page.goto('/');await openPlaySignIn(page);const d=page.getByTestId('account-dialog');await d.getByRole('button',{name:'Create account',exact:true}).click();await d.getByLabel('Username',{exact:true}).fill(username);await d.getByLabel('Password',{exact:true}).fill('Autosave testing password 42');await d.getByRole('button',{name:'Create account & continue',exact:true}).click();await expect(d).not.toBeVisible();await continueFriendIntroduction(page,{expectedRole:username});await expect(page.getByTestId('game-role')).toContainText(username);}
 async function prepareAutosaveAccount(page,baseURL,username){
  // Prepare this test's prerequisites through the browser context's real cookie jar.
  // The adjacent test retains UI registration, and all autosave interactions stay in the UI.
@@ -18,7 +18,7 @@ async function prepareAutosaveAccount(page,baseURL,username){
  expect(game.id).toBeTruthy();expect(game.ownershipMode).toBe('account_v1');expect(game.selfPlayMode).toBe(false);
  expect(game.myRoles).toEqual(['Player 1']);expect(game.player1.identityId).toBe(session.account.id);expect(game.player2).toBeNull();
  await page.goto(`${origin}/#/game/${encodeURIComponent(game.id)}`);
- await expect(page.getByTestId('game-board')).toBeVisible();await expect(page.getByTestId('game-role')).toContainText('Player 1');
+ await expect(page.getByTestId('game-board')).toBeVisible();await expect(page.getByTestId('game-role')).toContainText(username);
  const browserSession=await page.evaluate(async()=>{const response=await fetch('/api/auth/session');return {status:response.status,body:await response.json()};});
  expect(browserSession.status).toBe(200);expect(browserSession.body.account.id).toBe(session.account.id);
  expect(browserSession.body.account.username).toBe(username);expect(browserSession.body.contextId).toBe(session.contextId);

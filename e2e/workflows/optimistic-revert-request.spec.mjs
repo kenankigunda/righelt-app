@@ -66,7 +66,7 @@ test("undo-last-move keeps the optimistic revert request id aligned when approva
     await openDirectGameLink(guest.page, baseURL, created.gameHash);
     await requestPlayerJoin(guest.page);
     await acceptPendingRequest(owner.page);
-    await expect(guest.page.getByTestId("game-role")).toContainText("Player 2");
+    await expect(guest.page.getByTestId("game-role")).toContainText("Guest 2");
 
     await makeAnyLegalMove(owner.page);
 

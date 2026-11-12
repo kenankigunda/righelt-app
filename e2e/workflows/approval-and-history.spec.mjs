@@ -22,7 +22,7 @@ test("direct-link join request can be approved and stays correct through history
     await requestPlayerJoin(requesterPage);
     await acceptPendingRequest(creatorPage);
 
-    await expect(requesterPage.getByTestId("game-role")).toContainText("Player 2");
+    await expect(requesterPage.getByTestId("game-role")).toContainText("Guest 2");
     await expect(creatorPage.getByTestId("participant-player-2").getByRole("img",{name:"Connected",exact:true})).toBeVisible();
 
     const requesterHistoryCount = await getHistoryMoveCount(requesterPage);
@@ -36,7 +36,7 @@ test("direct-link join request can be approved and stays correct through history
     await openHistoryAndReturnLive(creatorPage);
 
     await requesterPage.reload();
-    await expect(requesterPage.getByTestId("game-role")).toContainText("Player 2");
+    await expect(requesterPage.getByTestId("game-role")).toContainText("Guest 2");
   } finally {
     await closeContextQuietly(creatorContext);
     await closeContextQuietly(requesterContext);

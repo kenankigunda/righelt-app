@@ -45,6 +45,7 @@ import {captureHomeFocus,refreshHomeFocus,restoreHomeFocus,restoreHomeReadingPos
 import {homeCardResult} from './home-card-result.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName,recordedReplayLabel} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
+import {renderGameRoleLine} from './game-role-presentation.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
 import { buildTurnReplay, createComputerReplay, COMPUTER_REPLAY_TIMING } from './computer-replay.js';
 import { createForcedFollow } from './forced-follow.js';
@@ -617,22 +618,6 @@ const playerToneClassForSeat = (seat) =>
   seat === "Player 1" ? "player-tone-p1" : seat === "Player 2" ? "player-tone-p2" : seat === "Both Players" ? "player-tone-both" : "player-tone-neutral";
 const playerToneClassForSide = (side) => (side === "P1" ? "player-tone-p1" : side === "P2" ? "player-tone-p2" : "player-tone-neutral");
 const renderSeatLabel = (seat) => `<span class="${playerToneClassForSeat(seat)}">${escapeHtml(seat || "Unknown")}</span>`;
-const isDualSeatIdentity = (game) =>
-  Boolean(game?.player1?.identityId) && Boolean(game?.player2?.identityId) && game.player1.identityId === game.player2.identityId;
-const renderRoleLabel = (role, game = null) => {
-  if (isPlayerRole(role) && (game?.player1?.computerProfile || game?.player2?.computerProfile)) {
-    if (game.player1?.computerProfile && game.player2?.computerProfile) return '<strong>watching computers</strong>';
-    const humanSeat = game.player1?.computerProfile ? 'Player 2' : 'Player 1';
-    return `<strong class="${playerToneClassForSeat(humanSeat)}">${humanSeat}</strong>`;
-  }
-  if (isDualSeatIdentity(game) && isPlayerRole(role)) {
-    return '<strong class="player-tone-both">both players</strong>';
-  }
-  if (role === "Player 1" || role === "Player 2") {
-    return `<strong class="${playerToneClassForSeat(role)}">${escapeHtml(role)}</strong>`;
-  }
-  return `<strong>${escapeHtml(role || "Unknown")}</strong>`;
-};
 const renderConnectionStatusIcon = (status, label) =>
   `<span class="connection-status-icon is-${escapeHtml(status)}" role="img" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
 const colorizePlayerReferences = (text) =>
@@ -2239,7 +2224,7 @@ const renderGameSummaryPanel = (game) => {
   const latestNote = ({ "Player request approved": "Join request approved", "Play as both players enabled": "You’re now playing both sides", "Undo applied": "Move undone" })[rawNote] ?? (/accepted the undo request$/.test(rawNote) ? "Undo request accepted" : /rejected the undo request$/.test(rawNote) ? "Undo request declined. Play can continue." : /rescinded the undo request$/.test(rawNote) ? "Undo request cancelled. Play can continue." : rawNote);
   return renderSummarySlots({title:`Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span>`,
       started:`Started ${escapeHtml(formatClientDateTime(game.createdAt))}`,
-      role:`Role: ${renderRoleLabel(game.myRole, game)}`,
+      role:renderGameRoleLine(game),
       turn:`Active turn: ${
           game.currentTurn
             ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${renderSeatLabel(game.currentTurn.playerSeat)} · ${escapeHtml(

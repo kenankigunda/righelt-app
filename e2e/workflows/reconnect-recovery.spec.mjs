@@ -22,7 +22,7 @@ test("approved player reconnects after offline interruption and catches up witho
     await requestPlayerJoin(playerPage);
     await acceptPendingRequest(creatorPage);
 
-    await expect(playerPage.getByTestId("game-role")).toContainText("Player 2");
+    await expect(playerPage.getByTestId("game-role")).toContainText("Guest 2");
     const playerHistoryCount = await getHistoryMoveCount(playerPage);
 
     await setOfflineState(playerPage, true);
@@ -36,7 +36,7 @@ test("approved player reconnects after offline interruption and catches up witho
       })
       .toBeGreaterThan(playerHistoryCount);
 
-    await expect(playerPage.getByTestId("game-role")).toContainText("Player 2");
+    await expect(playerPage.getByTestId("game-role")).toContainText("Guest 2");
     await expect(playerPage.getByTestId("pending-player-request-notice")).toHaveCount(0);
     await expect(creatorPage.getByTestId("participant-player-2").getByRole("img",{name:"Connected",exact:true})).toBeVisible();
   } finally {

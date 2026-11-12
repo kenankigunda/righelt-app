@@ -29,7 +29,7 @@ test('creation helper waits for guest startup recovery before choosing Friend', 
     const outcome = await creation;
     if (outcome.error) throw outcome.error;
     expect(await page.evaluate(() => window.friendClicks)).toBe(1);
-    await expect(page.getByTestId('game-role')).toContainText('Player 1');
+    await expect(page.getByTestId('game-role')).toContainText('Guest');
   } finally {
     release();
     await page.unrouteAll({ behavior: 'wait' });

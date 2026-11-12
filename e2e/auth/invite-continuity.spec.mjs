@@ -56,12 +56,12 @@ async function register(page, username, play = false) {
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
-  await continueFriendIntroduction(page);
+  await continueFriendIntroduction(page,{expectedRole:username});
   await expect(page).toHaveURL(/#\/game\//);
   if (!play) await page.goto("/");
   if (play) {
     await expect(page).toHaveURL(/#\/game\//);
-    await expect(page.getByTestId("game-role")).toContainText("Player 1");
+    await expect(page.getByTestId("game-role")).toContainText(username);
   }
 }
 
@@ -92,7 +92,8 @@ async function signOut(page) {
 }
 
 async function sharedInvite(host) {
-  await register(host, uniqueName(), true);
+  const hostUsername=uniqueName();
+  await register(host, hostUsername, true);
   const gameUrl = host.url();
   await switchGamePanel(host, "players");
   const invite = host.getByTestId("copy-invite");
@@ -109,7 +110,7 @@ async function sharedInvite(host) {
   const url = await host.evaluate(() => window.__righeltLastInvite);
   expect(new URL(url).hash).toMatch(/^#\/invite\//);
   expect(url).not.toBe(gameUrl);
-  return { url, gameUrl };
+  return { url, gameUrl, hostUsername };
 }
 
 async function playHostMove(host) {
@@ -198,12 +199,12 @@ for (const method of ["login", "registration"]) {
         await dialog(visitor).getByRole("button", { name: "Create account & continue", exact: true }).click();
       }
       await expect(dialog(visitor)).not.toBeVisible();
-      await expect(visitor.getByTestId("game-role")).toContainText("Player 2");
+      await expect(visitor.getByTestId("game-role")).toContainText(username);
       const expectedGame = new URL(invite.gameUrl).hash.match(/^#\/game\/([^?]+)/)[1];
       await expect(visitor).toHaveURL(url => url.hash.match(/^#\/game\/([^?]+)/)?.[1] === expectedGame);
       expect(joins).toHaveLength(1);
       expect(joins[0].mode).toBe("player");
       expect(joins[0].inviteToken).toBe(decodeURIComponent(new URL(invite.url).hash.match(/^#\/invite\/([^?]+)/)[1]));
-      await expect(page.getByTestId("game-role")).toContainText("Player 1");
+      await expect(page.getByTestId("game-role")).toContainText(invite.hostUsername);
   });
 }

@@ -147,7 +147,7 @@ async function converged(pages) {
  values.forEach((v,index)=>{expect(v.board).toHaveLength(100);expect(v.board.some(c=>c.p.length)).toBe(true);v.history.forEach(m=>expect(m.id).toBeTruthy());v.board.forEach(cell=>cell.p.forEach(piece=>expect(piece.id).toBeTruthy()));expectPerspective(v,index);});
  values.forEach(v=>expect(semanticDigest(v)).toEqual(semanticDigest(values[0])));
  for(let i=0;i<pages.length;i++){
-  await expect(pages[i].getByTestId('game-role')).toContainText(['Player 1','Player 2','Viewer'][i]);
+  await expect(pages[i].getByTestId('game-role')).toContainText(['Guest 1','Guest 2','Viewer'][i]);
   await expect(pages[i].getByTestId('sync-recovery-banner')).toHaveCount(0,{timeout:25000});
   await expect(pages[i].getByTestId('history-pending-move-item')).toHaveCount(0);
  }
@@ -233,7 +233,7 @@ test('E04 reload unresolved journal then visibility resume preserves original ID
 test('E06 same identity tabs reconcile one journal without duplicating a committed move',async({browser,baseURL},info)=>{
  const p=await party(browser,baseURL);
   const twin=await p.contexts[0].newPage();const tf=await wire(twin);
-  await twin.goto(`${baseURL}${p.gameHash}`);await expect(twin.getByTestId('game-role')).toContainText('Player 1');
+  await twin.goto(`${baseURL}${p.gameHash}`);await expect(twin.getByTestId('game-role')).toContainText('Guest 1');
   p.faults[0].loseAtApply=true;
   await move(p.pages[0],p.gameId);
   await expect.poll(()=>p.faults[0].commands.length).toBeGreaterThan(0);

@@ -100,7 +100,7 @@ test('original serial schedule exceeds five seconds while the actual helper over
 function actualRetryRoute({failedReads=1}={}){
   const source=readFileSync(new URL('../../../e2e/auth/accounts.spec.mjs',import.meta.url),'utf8');
   const testStart=source.indexOf('test("registration helper retries one failed continuation read');
-  const start=source.indexOf('async route => {',testStart),end=source.indexOf('\n  });\n  const registration',start);
+  const start=source.indexOf('async route => {',testStart),end=source.indexOf('\n  });\n  const username=',start);
   assert.ok(testStart>=0&&start>testStart&&end>start);
   const f=fixture(),context=vm.createContext({URL,Error,fulfillHeldContinuationRead,held:f.released.promise});
   vm.runInContext(`let registrations=1,failedReads=${failedReads},retriedReads=0,retryRequest;let failures=0;const failed=()=>failures++;globalThis.handler=${source.slice(start,end)}};globalThis.state=()=>({failedReads,retriedReads,retryRequest,failures});`,context);

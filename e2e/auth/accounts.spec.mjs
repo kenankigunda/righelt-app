@@ -85,7 +85,7 @@ async function register(page, username, { gate = false, readRecovery = false } =
   await expect(page).toHaveURL(new RegExp(`#/game/${encodeURIComponent(game.id)}(?:\\?|$)`));
   if (gate) {
     await expect(page).toHaveURL(/#\/game\//);
-    await expect(page.getByTestId("game-role")).toContainText("Player 1");
+    await expect(page.getByTestId("game-role")).toContainText(username);
     await page.getByRole("button",{name:"Close invite",exact:true}).click();
   } else {
     await expect(page).toHaveURL(/#\/game\//);
@@ -122,7 +122,8 @@ test("registration helper does not return home when game creation fails", async 
     await held;
     await route.abort("aborted");
   });
-  const registration = register(page, uniqueName()).then(
+  const username=uniqueName();
+  const registration = register(page, username).then(
     () => ({}), error => ({ error }),
   );
   const stoppedEarly = registration.then(outcome => {
@@ -132,7 +133,7 @@ test("registration helper does not return home when game creation fails", async 
   try {
     await Promise.race([creationStarted, stoppedEarly]);
     await Promise.race([
-      expect(page.getByTestId("game-role")).toContainText("Player 1"),
+      expect(page.getByTestId("game-role")).toContainText(username),
       stoppedEarly,
     ]);
     expect(creates).toBe(1);
@@ -168,7 +169,8 @@ test("registration helper waits for a failed bootstrap retry before submitting",
     await route.continue();
   });
   // Capture rejection immediately, including when demonstrating the old race.
-  const registration = register(page, uniqueName(), { gate: true }).then(value => ({ value }), error => ({ error }));
+  const username=uniqueName();
+  const registration = register(page, username, { gate: true }).then(value => ({ value }), error => ({ error }));
   try {
     await retry;
     await expect(page.getByTestId("home-create-game")).toBeVisible();
@@ -179,7 +181,7 @@ test("registration helper waits for a failed bootstrap retry before submitting",
     const outcome = await registration;
     if (outcome.error) throw outcome.error;
     expect(registerRequests).toBe(1);
-    await expect(page.getByTestId("game-role")).toContainText("Player 1");
+    await expect(page.getByTestId("game-role")).toContainText(username);
   } finally {
     release();
     await registration;
@@ -211,7 +213,8 @@ test("registration helper retries one failed continuation read without repeating
     }
     await route.continue();
   });
-  const registration = register(page, uniqueName(), { gate: true, readRecovery: {released:held,request:()=>retryRequest} }).then(value => ({ value }), error => ({ error }));
+  const username=uniqueName();
+  const registration = register(page, username, { gate: true, readRecovery: {released:held,request:()=>retryRequest} }).then(value => ({ value }), error => ({ error }));
   const stoppedBeforeRetry = registration.then(outcome => {
     throw outcome.error ?? new Error("Registration completed before the held continuation retry");
   });
@@ -230,7 +233,7 @@ test("registration helper retries one failed continuation read without repeating
     expect(retriedReads).toBe(1);
     expect(registrations).toBe(1);
     expect(creates).toBe(1);
-    await expect(page.getByTestId("game-role")).toContainText("Player 1");
+    await expect(page.getByTestId("game-role")).toContainText(username);
   } finally {
     release();
     await registration;
@@ -256,7 +259,8 @@ test("failed page reads after registration preserve the original action and reso
   await page.goto('/');
   await openPlaySignIn(page);
   await dialog(page).getByRole('button',{name:'Create account',exact:true}).click();
-  await enterUsername(page,uniqueName());
+  const username = uniqueName();
+  await enterUsername(page,username);
   await dialog(page).getByLabel('Password',{exact:true}).fill(password);
   await dialog(page).getByRole('button',{name:'Create account & continue',exact:true}).click();
   const error = page.getByTestId('account-continuation-error');
@@ -281,7 +285,7 @@ test("failed page reads after registration preserve the original action and reso
   expect(await page.evaluate(async () => (await (await fetch('/api/auth/session')).json()).contextId)).toBe(session);
   expect(registrations).toBe(1);
   await openRecoveredFriendChoice(page);
-  await continueFriendIntroduction(page);
+  await continueFriendIntroduction(page,{expectedRole:username});
   await expect(page.getByTestId('game-shell')).toBeVisible();
   expect(registrations).toBe(1);
 });
@@ -308,7 +312,7 @@ test("registration preserves the play attempt and the same seat works in another
   const username = uniqueName();
   await register(page, username, { gate: true });
   await expect(page.getByTestId("game-shell")).toBeVisible();
-  await expect(page.getByTestId("game-role")).toContainText("Player 1");
+  await expect(page.getByTestId("game-role")).toContainText(username);
   const gameUrl = page.url();
   const cookies = await page.context().cookies();
   const cookie = cookies.find(item => item.name === "__Host-righelt_session");
@@ -320,7 +324,7 @@ test("registration preserves the play attempt and the same seat works in another
     await expect(other.getByTestId("game-shell")).toBeVisible();
     await expect(other.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
     await signIn(other, username);
-    await expect(other.getByTestId("game-role")).toContainText("Player 1");
+    await expect(other.getByTestId("game-role")).toContainText(username);
     expect(other.url()).toBe(gameUrl);
     const before = await getHistoryMoveCount(page);
     await makeAccountMove(other);
@@ -380,7 +384,7 @@ passwordSessionTest("password change revokes old sessions while retaining the cu
   await other.reload();
   await expect(other.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
   await signIn(other, username, replacement);
-  await expect(other.getByTestId("game-role")).toContainText("Player 1");
+  await expect(other.getByTestId("game-role")).toContainText(username);
   await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
   await expect(sibling.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
 });
@@ -397,7 +401,7 @@ test("browser logout revokes shared tabs but retains an independent session", as
     const other = await separate.newPage();
     await other.goto(gameUrl);
     await signIn(other, username);
-    await expect(other.getByTestId("game-role")).toContainText("Player 1");
+    await expect(other.getByTestId("game-role")).toContainText(username);
     await expect(other.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
     await account(page);
     await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
@@ -407,7 +411,7 @@ test("browser logout revokes shared tabs but retains an independent session", as
     await expect(sibling.getByTestId("game-board")).toBeVisible();
     await other.reload();
     await expect(other.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
-    await expect(other.getByTestId("game-role")).toContainText("Player 1");
+    await expect(other.getByTestId("game-role")).toContainText(username);
   } finally { await sibling.close(); await separate.close(); }
 });
 
@@ -446,7 +450,7 @@ test("offline logout blocks local authority until server revocation finishes", a
   await page.reload();
   await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
   await signIn(page, username);
-  await expect(page.getByTestId("game-role")).toContainText("Player 1");
+  await expect(page.getByTestId("game-role")).toContainText(username);
   expect(await getHistoryMoveCount(page)).toBe(before);
 });
 
@@ -459,7 +463,7 @@ test("expiry leaves the board visible and signing in restores the same seat", as
   await expect(page.getByTestId("game-board")).toBeVisible();
   await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
   await signIn(page, username);
-  await expect(page.getByTestId("game-role")).toContainText("Player 1");
+  await expect(page.getByTestId("game-role")).toContainText(username);
   expect(await getHistoryMoveCount(page)).toBe(before);
 });
 
@@ -814,7 +818,7 @@ test("keyboard board activation opens sign in without losing the board", async (
     const owner = await otherContext.newPage();
     await owner.goto(gameUrl);
     await signIn(owner, username);
-    await expect(owner.getByTestId("game-role")).toContainText("Player 1");
+    await expect(owner.getByTestId("game-role")).toContainText(username);
     await account(page);
     await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
     await expect(dialog(page)).not.toBeVisible();
@@ -983,7 +987,8 @@ test('a failed continuation read preserves the play choice for explicit retry', 
   await page.goto('/');
   await page.getByTestId("home-create-game").click();
   await dialog(page).getByRole('button', { name: 'Create account', exact: true }).click();
-  await enterUsername(page, uniqueName());
+  const username=uniqueName();
+  await enterUsername(page, username);
   await dialog(page).getByLabel('Password', { exact: true }).fill(password);
   let denyReads = true;
   let creates = 0;
@@ -1002,7 +1007,7 @@ test('a failed continuation read preserves the play choice for explicit retry', 
   expect(creates).toBe(0);
   await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
   await expect(page).toHaveURL(/#\/game\//);
-  await expect(page.getByTestId('game-role')).toContainText('Player 1');
+  await expect(page.getByTestId('game-role')).toContainText(username);
   expect(creates).toBe(1);
 });
 

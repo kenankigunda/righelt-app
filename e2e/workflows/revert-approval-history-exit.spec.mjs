@@ -49,7 +49,7 @@ test("accepting undo preserves each selected retained entry until explicit retur
     await openDirectGameLink(guest.page, baseURL, gameHash);
     await requestPlayerJoin(guest.page);
     await acceptPendingRequest(owner.page);
-    await expect(guest.page.getByTestId("game-role")).toContainText("Player 2");
+    await expect(guest.page.getByTestId("game-role")).toContainText("Guest 2");
 
     await makeAnyLegalMove(owner.page, "p1");
     await makeAnyLegalMove(guest.page, "p2");

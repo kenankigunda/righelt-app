@@ -24,6 +24,7 @@ import { renderResultMark, createResultPresentation } from '../shell/result-pres
 import { icon } from '../shell/ui.js';
 import { createLiveTransportStore } from '../shell/live-transport.js';
 import {activityStateActorSide} from '../shell/activity-affiliation.js';
+import {renderGameRoleLabel} from '../shell/game-role-presentation.js';
 
 const source = readFileSync(new URL("../shell/app.js", import.meta.url), "utf8");
 const extract = (start, end) => {
@@ -137,17 +138,17 @@ test("optimistic terminal state cannot expose a result or open it before confirm
 test("computer seats have distinct human, watch, history and result labels despite shared authority", () => {
   const person = {identityId:'me', profile:{username:'owner', displayName:'Owner'}};
   const game = {id:'g', player1:person, player2:{...person, computerProfile:'babs'}, selfPlayMode:true, computer:{seats:{p1:null,p2:'babs'},manual:false}, board:{state:{outcome:{status:'p1_win'}}}, moves:[]};
-  const context = {undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},renderHistorySlots,renderResultMark,playerDisplayName,isPlayerRole:role=>['Player 1','Player 2'].includes(role),escapeHtml:String,participantName,participantDisplayName,getGameResult,transport:{getIdentityId:()=> 'me',getAuthoritativeGame:()=>game},additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})},formatDisplayGameId:String,icon:()=>'',renderTurnHistory:()=>`<li data-testid="history-move-item">${historyActorLabel(game,{actorSide:'P2'},{identityId:'me'})} · Move 1: Pass</li>`};
+  const context = {undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},renderHistorySlots,renderResultMark,playerDisplayName,renderRoleLabel:renderGameRoleLabel,isPlayerRole:role=>['Player 1','Player 2'].includes(role),escapeHtml:String,participantName,participantDisplayName,getGameResult,transport:{getIdentityId:()=> 'me',getAuthoritativeGame:()=>game},additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})},formatDisplayGameId:String,icon:()=>'',renderTurnHistory:()=>`<li data-testid="history-move-item">${historyActorLabel(game,{actorSide:'P2'},{identityId:'me'})} · Move 1: Pass</li>`};
   runWithHistoryRendering(`${extract('const playerToneClassForSeat =','const renderConnectionStatusIcon =')}
     const renderResult=game=>renderResultPanel(game,{transport,escapeHtml,formatDisplayGameId});
     ${extract('const renderAdditionalHistory =','const renderHistoryPanel =')}
     ${extract('const renderHistoryPanel =','const renderBoardPanel =')}
     globalThis.role = renderRoleLabel; globalThis.result = renderResult; globalThis.history = renderHistoryPanel;`, Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
-  assert.match(context.role('Player 1', game), />Player 1</);
-  assert.match(context.role('Player 1', {...game,player1:{...person,computerProfile:'tau'},player2:person}), />Player 2</);
+  assert.match(context.role('Player 1', game), />Owner<\/bdi>/);
+  assert.match(context.role('Player 1', {...game,player1:{...person,computerProfile:'tau'},player2:person,computer:{seats:{p1:'tau',p2:null}}}), />Owner<\/bdi>/);
   assert.match(context.role('Player 1', {...game,player1:{...person,computerProfile:'tau'}}), /watching computers/);
   assert.match(context.role('Viewer', game), />Viewer</);
-  assert.match(context.role('Player 1', {...game,player2:person}), /both players/);
+  assert.match(context.role('Player 1', {...game,player2:person,computer:undefined}), /both players/);
   assert.match(context.result(game), /<span class="player-tone-p1"><span class="sr-only">Red: <\/span><bdi dir="auto">You<\/bdi><\/span> vs <span class="player-tone-p2"><span class="sr-only">Blue: <\/span><bdi dir="auto">Babs<\/bdi>/);
   const history = context.history(game);
   assert.match(history, /history-move-item">Babs · Move 1/);

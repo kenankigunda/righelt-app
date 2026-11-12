@@ -108,7 +108,8 @@ test("creation checklist starts neutral and validates an eight-character passwor
   const checklist = dialog(page).getByTestId("password-requirements");
   for (const name of ["length", "differentFromUsername", "notCommon"])
     await expect(checklist.locator(`[data-requirement="${name}"]`)).toHaveAttribute("data-state", "neutral");
-  await enterUsername(page, uniqueName());
+  const username = uniqueName();
+  await enterUsername(page, username);
   await dialog(page).getByLabel("Password", { exact: true }).fill("password");
   const common = checklist.locator('[data-requirement="notCommon"]');
   await expect(common).toHaveAttribute("data-state", "unmet");
@@ -127,11 +128,11 @@ test("creation checklist starts neutral and validates an eight-character passwor
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveAttribute("type", "password");
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
-  await continueFriendIntroduction(page);
-  await expect(page.getByTestId("game-role")).toContainText("Player 1");
+  await continueFriendIntroduction(page,{expectedRole:username});
+  await expect(page.getByTestId("game-role")).toContainText(username);
   const gameUrl = page.url();
   await page.reload();
-  await expect(page.getByTestId("game-role")).toContainText("Player 1");
+  await expect(page.getByTestId("game-role")).toContainText(username);
   expect(page.url()).toBe(gameUrl);
 });
 

@@ -29,7 +29,7 @@ test('the initial invitation survives a viewer and closes once its friend joins'
   const friendContext=await browser.newContext({baseURL,viewport:{width:390,height:844}});contexts.push(friendContext);const friend=await friendContext.newPage();
   await friend.goto(`/#/invite/${game.inviteToken}?as=blue`);const join=friend.getByRole('button',{name:'Play as Blue',exact:true});await expect(join).toBeEnabled();
   expect(await join.evaluate(e=>getComputedStyle(e).getPropertyValue('--action-color').trim()===getComputedStyle(e).getPropertyValue('--player-p2').trim())).toBe(true);
-  await join.click();await expect(friend.getByTestId('game-role')).toContainText('Player 2');
+  await join.click();await expect(friend.getByTestId('game-role')).toContainText('Guest 2');
   await expect(dialog).toHaveCount(0);await expect(page.getByTestId('game-board')).toBeVisible();
   await expect.poll(()=>page.locator('#shell-board .cell').first().evaluate(e=>document.activeElement===e)).toBe(true);
   await page.evaluate(()=>window.finishInviteCopy());await expect(dialog).toHaveCount(0);await expect(page.getByText('Link copied! Ready to share.',{exact:true})).toHaveCount(0);
@@ -66,7 +66,7 @@ test('a pending friend request surfaces approval without prematurely settling th
   await expect(guest.getByRole('heading',{name:'Waiting for approval',exact:true})).toBeVisible();
   await expect(page.getByTestId('approval-gate')).toBeVisible();await expect(page.getByTestId('accept-request')).toBeEnabled();
   for(const control of [page.getByTestId('accept-request'),page.getByTestId('ignore-request')])await expect(control.locator('svg path')).toHaveAttribute('d',/.+/);
-  await page.getByTestId('accept-request').click();await expect(guest.getByTestId('game-role')).toContainText('Player 2');
+  await page.getByTestId('accept-request').click();await expect(guest.getByTestId('game-role')).toContainText('Guest 2');
   await expect(page.getByTestId('approval-gate')).toHaveCount(0);await expect(page.getByRole('dialog',{name:'Invite a friend',exact:true})).toHaveCount(0);
   await expect(page.getByTestId('game-board')).toBeVisible();
  }finally{await context.close();}
@@ -118,7 +118,7 @@ test('join failures stay visible for manual retry and late failures cannot follo
   await guest.getByRole('link',{name:'Back home',exact:true}).click();await expect(guest.getByTestId('home-create-game')).toBeVisible();release();
   await expect(error).toHaveCount(0);await expect(guest.getByTestId('home-create-game')).toBeVisible();expect(requests).toBe(4);
   await guest.goto(invite);await expect(join).toBeEnabled();await expect(error).toHaveCount(0);
-  attempt='success';await join.click();await expect(guest.getByTestId('game-role')).toContainText('Player 2');await expect(error).toHaveCount(0);expect(requests).toBe(5);
+  attempt='success';await join.click();await expect(guest.getByTestId('game-role')).toContainText('Guest 2');await expect(error).toHaveCount(0);expect(requests).toBe(5);
  }catch(error){primaryError=error;throw error;}finally{
   try{if(guest)await info.attach('Guest invite native focus',{body:JSON.stringify(await guest.evaluate(()=>({focused:document.hasFocus(),hidden:document.hidden,activeAction:document.activeElement?.getAttribute('data-action')??null,activeTag:document.activeElement?.tagName??null,events:window.inviteFocusObservations})).catch(error=>({readError:String(error)})),null,2),contentType:'application/json'});}
   catch(error){if(!primaryError)throw error;info.annotations.push({type:'diagnostic capture failure',description:String(error)});}

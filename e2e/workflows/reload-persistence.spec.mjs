@@ -24,7 +24,7 @@ test("approved player reloads onto the latest live state without returning to gu
     await requestPlayerJoin(playerPage);
     await acceptPendingRequest(creatorPage);
 
-    await expect(playerPage.getByTestId("game-role")).toContainText("Player 2");
+    await expect(playerPage.getByTestId("game-role")).toContainText("Guest 2");
     const beforeMoves = await getHistoryMoveCount(playerPage);
 
     await makeAnyLegalMove(creatorPage, "p1");
@@ -37,7 +37,7 @@ test("approved player reloads onto the latest live state without returning to gu
     // relying on a flyout query parameter to seed the initial render order.
     await playerPage.goto(`${baseURL}${gameHash.split("?")[0]}`);
     await playerPage.reload();
-    await expect(playerPage.getByTestId("game-role")).toContainText("Player 2");
+    await expect(playerPage.getByTestId("game-role")).toContainText("Guest 2");
     await expectHistoryMoveCountToEqualOrExceed(playerPage, syncedHistoryCount);
     await expect(playerPage.getByRole("heading", { name: "Debug mode", exact: true })).toBeVisible();
     await expect(playerPage.getByTestId("pending-player-request-notice")).toHaveCount(0);

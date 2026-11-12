@@ -18,10 +18,10 @@ async function register(page, username, play = false) {
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
-  await continueFriendIntroduction(page);
+  await continueFriendIntroduction(page,{expectedRole:username});
   await expect(page).toHaveURL(/#\/game\//);
   if (!play) await page.goto("/");
-  if (play) await expect(page.getByTestId("game-role")).toContainText("Player 1");
+  if (play) await expect(page.getByTestId("game-role")).toContainText(username);
 }
 async function canary(page, baseURL) {
   // Use this isolated browser context's real cookie jar to prepare the canary.
@@ -62,7 +62,8 @@ test("an old guest invite stays view-only and offers a fresh account game", asyn
   await expect(dialog(page)).toBeVisible();
   await dialog(page).getByRole("button", { name: "Close", exact: true }).click();
   expect(page.url()).toBe(url);
-  await register(page, `Legacy_${Date.now().toString(36)}`);
+  const username = `Legacy_${Date.now().toString(36)}`;
+  await register(page, username);
   await page.goto(url);
   await expect(page.getByTestId("game-board")).toBeVisible();
   const legacy = await request(page, "/api/shell/games/cutover-legacy-fixture");
@@ -73,13 +74,14 @@ test("an old guest invite stays view-only and offers a fresh account game", asyn
   const denied = await request(page, "/api/shell/games/cutover-legacy-fixture/join", { mode: "player" });
   expect(denied.body.error).toBe("legacy_read_only");
   await page.getByRole("button", { name: "Start new game", exact: true }).click();
-  await continueFriendIntroduction(page);
-  await expect(page.getByTestId("game-role")).toContainText("Player 1");
+  await continueFriendIntroduction(page,{expectedRole:username});
+  await expect(page.getByTestId("game-role")).toContainText(username);
   expect(page.url()).not.toBe(url);
 });
 
 test("cutover maintenance preserves public boards and confines smoke writes to the canary", async ({ page, browser, baseURL }) => {
-  await register(page, `Cutover_${Date.now().toString(36)}`, true);
+  const username = `Cutover_${Date.now().toString(36)}`;
+  await register(page, username, true);
   const gameUrl = page.url();
   const gameId = decodeURIComponent(new URL(gameUrl).hash.match(/^#\/game\/([^?]+)/)[1]);
   const before = await getHistoryMoveCount(page);
@@ -107,7 +109,7 @@ test("cutover maintenance preserves public boards and confines smoke writes to t
     expect(accepted.body.game.myRoles.sort()).toEqual(["Player 1", "Player 2"]);
     await control("maintenance-off");
     await page.reload();
-    await expect(page.getByTestId("game-role")).toContainText("Player 1");
+    await expect(page.getByTestId("game-role")).toContainText(username);
     const fresh = await request(page, `/api/shell/games/${gameId}`);
     expect(fresh.body.game.canRecordMove).toBe(true);
     const action = fresh.body.game.legalActions.find(item => item.from && item.to);

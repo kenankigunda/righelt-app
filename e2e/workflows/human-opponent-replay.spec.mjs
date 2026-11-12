@@ -51,12 +51,12 @@ const replayTest=test.extend({
   // separate coverage in the reopening/Pass workflow below.
   const [gameId]=await createGamesViaApi(owner,1),gameHash=`#/game/${encodeURIComponent(gameId)}`;
   await owner.goto(`${baseURL}/${gameHash}`);await expect(owner.getByTestId('game-shell')).toHaveAttribute('data-game-id',gameId);
-  await expect(owner.getByTestId('game-role')).toContainText('Player 1');
+  await expect(owner.getByTestId('game-role')).toContainText('Guest');
   await expect(owner.locator('[data-action="play-as-both-players"]')).toBeEnabled();
   await expect(owner.getByTestId('sync-recovery-banner')).toHaveCount(0);
   await expect(owner.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
   await openDirectGameLink(opponent,baseURL,gameHash);await requestPlayerJoin(opponent);await acceptPendingRequest(owner);
-  await expect(opponent.getByTestId('game-role')).toContainText('Player 2');
+  await expect(opponent.getByTestId('game-role')).toContainText('Guest 2');
   await openDirectGameLink(viewer,baseURL,gameHash);await joinAsViewer(viewer);
   await Promise.all([owner,opponent,viewer].map(page=>switchGamePanel(page,'board')));
   await use({owner,opponent,viewer,gameId});
@@ -236,7 +236,7 @@ for(const width of [390,1440])test(`reopening human play preserves narration and
  const [owner,opponent]=await Promise.all(contexts.map(context=>context.newPage()));
  const {gameId,gameHash}=await createGameFromHome(owner);
  await openDirectGameLink(opponent,baseURL,gameHash);await requestPlayerJoin(opponent);await acceptPendingRequest(owner);
- await expect(opponent.getByTestId('game-role')).toContainText('Player 2');
+ await expect(opponent.getByTestId('game-role')).toContainText('Guest 2');
  await Promise.all([owner,opponent].map(page=>switchGamePanel(page,'board')));
  for(const [index,page] of [owner,opponent].entries()){
   await expect.poll(async()=>(await projected(page,gameId)).board.state.sideToMove).toBe(index===0?'P1':'P2');
@@ -284,7 +284,7 @@ async function createOverviewFriendGame({ownedRoleContext,baseURL,width}) {
  const [gameId]=await createGamesViaApi(owner,1),gameHash=`#/game/${encodeURIComponent(gameId)}`;
  await owner.goto(`${baseURL}/${gameHash}`);await expect(owner.getByTestId('game-shell')).toHaveAttribute('data-game-id',gameId);
  await openDirectGameLink(opponent,baseURL,gameHash);await requestPlayerJoin(opponent);await acceptPendingRequest(owner);
- await expect(opponent.getByTestId('game-role')).toContainText('Player 2');
+ await expect(opponent.getByTestId('game-role')).toContainText('Guest 2');
  await Promise.all([owner,opponent].map(page=>switchGamePanel(page,'board')));
  const initial=await projected(owner,gameId),action=initial.legalActions.find(action=>action.type==='move'&&action.to?.row===4&&action.to?.col===6);
  expect(action).toBeTruthy();await submitPlayableAction(owner,action);

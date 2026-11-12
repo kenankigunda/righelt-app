@@ -197,7 +197,7 @@ test.describe('narrow board and history',()=>{
     let approvalSeen=false;
     try{
       await openDirectGameLink(guest,baseURL,gameHash);await requestPlayerJoin(guest);await acceptPendingRequest(page);
-      await expect(guest.getByTestId('game-role')).toContainText('Player 2');
+      await expect(guest.getByTestId('game-role')).toContainText('Guest 2');
       await makeAnyLegalMove(page);await makeAnyLegalMove(guest,'p2');await makeAnyLegalMove(page);
       const game=await readGame(page,gameId),first=game.moves[0],second=game.moves[1],third=game.moves[2];
       expect(third).toBeTruthy();

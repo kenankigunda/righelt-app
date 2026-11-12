@@ -22,7 +22,7 @@ test("rush blocker preview chip matches the highlighted square", async ({ browse
     assertRushBlockerState(imported.board.state);
 
     const previewLabel = page.locator("#shell-board-preview-label");
-    await expect(page.getByTestId("game-role")).toContainText("Player 1");
+    await expect(page.getByTestId("game-role")).toContainText("Guest");
     await expect(previewLabel.locator(".board-obligatory-pill")).toHaveText("Obligatory");
     await expect(previewLabel).toContainText("Select a rush to restore supply");
     const requiredContext=page.locator('[data-alert-stack-card].is-active [data-board-context][aria-label="Required Board guidance"]');

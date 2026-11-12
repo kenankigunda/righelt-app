@@ -25,7 +25,7 @@ for (const delivery of ['WebSocket', 'HTTP fallback']) test(`unseen opponent upd
     const { gameId, gameHash } = await createGameFromHome(owner);
     await openDirectGameLink(opponent, baseURL, gameHash);
     await requestPlayerJoin(opponent); await acceptPendingRequest(owner);
-    await expect(opponent.getByTestId('game-role')).toContainText('Player 2');
+    await expect(opponent.getByTestId('game-role')).toContainText('Guest 2');
     await switchGamePanel(owner, 'board');
     const initial = await projected(owner, gameId);
     await submitPlayableAction(owner, initial.legalActions.find(action => action.type === 'move' && action.from && action.to));

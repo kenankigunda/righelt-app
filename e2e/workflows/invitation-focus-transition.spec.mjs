@@ -64,7 +64,7 @@ for(const mode of ['replacement','no-transition','user-moved-focus']){
     await expect(page.getByRole('dialog',{name:'Invite a friend',exact:true})).toBeVisible();
     await page.getByRole('button',{name:'Close invite',exact:true}).click();await page.clock.runFor(0);
     await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',body.game.id);
-    await expect(page.getByTestId('game-role')).toContainText('Player 1');
+    await expect(page.getByTestId('game-role')).toContainText('Guest');
     // Use the real navigation controls while the existing display clock is held.
     // Each activation releases only its already-scheduled zero-delay gesture task.
     await expect(page.locator('#app')).toHaveAttribute('data-shell-layout-mode','narrow');

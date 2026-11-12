@@ -7,8 +7,17 @@ for(const width of [320,390,1440])for(const scale of [100,200])test(`Ghost arrow
   const row=page.locator('.home-games-section-controls'),buttons=row.locator('button');await expect(buttons).toHaveCount(2);
   const measure=()=>row.evaluate(row=>{const rect=el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,cx:r.x+r.width/2,cy:r.y+r.height/2};};return {row:rect(row),label:rect(row.querySelector('p')),buttons:[...row.querySelectorAll('button')].map(button=>({box:rect(button),slot:rect(button.querySelector('.loading-icon-slot')),border:getComputedStyle(button).borderTopColor,hit:[[.5,.5],[.02,.5],[.98,.5],[.5,.02],[.5,.98]].every(([x,y])=>{const r=button.getBoundingClientRect();return document.elementFromPoint(r.x+r.width*x,r.y+r.height*y)?.closest('button')===button;})})),overflow:document.documentElement.scrollWidth>innerWidth};});
   const idle=await measure();expect(idle.overflow).toBe(false);for(const button of idle.buttons){expect(button.box.width).toBeGreaterThanOrEqual(44);expect(button.box.height).toBeGreaterThanOrEqual(44);expect(button.hit).toBe(true);expect(Math.abs(button.slot.cx-button.box.cx)).toBeLessThanOrEqual(.1);expect(button.border).toBe('rgba(0, 0, 0, 0)');expect(Math.abs(button.box.cy-idle.label.cy)).toBeLessThanOrEqual(.1);}
+  const arrowShafts=await buttons.evaluateAll(nodes=>nodes.map(button=>{const svg=button.querySelector('.loading-icon-slot > svg'),box=svg.getBoundingClientRect(),view=svg.viewBox.baseVal;return box.y+box.height*((12-view.y)/view.height);}));
   await page.evaluate(()=>window.setPending(true));await expect(buttons.first()).toBeDisabled();await page.evaluate(()=>window.advance(199));await expect(row.locator('[data-loading-phase="quiet"]')).toHaveCount(2);await expect(page.locator('.loading-context')).toHaveCount(0);
   await page.evaluate(()=>window.advance(1));await expect(row.locator('[data-loading-phase="visible"]')).toHaveCount(2);
+  for(const time of [0,300,900]){
+   const dots=await buttons.evaluateAll((nodes,time)=>nodes.map(button=>{
+    const cue=button.querySelector('.loading-pieces');
+    for(const animation of cue.getAnimations({subtree:true})){animation.currentTime=time;animation.pause();}
+    return[...cue.querySelectorAll('i')].map(piece=>{const box=piece.getBoundingClientRect();return box.y+box.height/2;});
+   }),time);
+   dots.forEach((centers,index)=>centers.forEach(center=>expect(Math.abs(center-arrowShafts[index])).toBeLessThanOrEqual(.1)));
+  }
   await page.evaluate(()=>window.advance(4800));await expect(page.locator('.home-games-section > .loading-context[role="status"]')).toHaveCount(1);await expect(row.locator('.loading-context')).toHaveCount(0);
   const slow=await measure();expect(slow.row).toEqual(idle.row);expect(slow.label).toEqual(idle.label);expect(slow.buttons.map(item=>item.box)).toEqual(idle.buttons.map(item=>item.box));
   await page.evaluate(()=>window.setPending(false));await expect(page.locator('.loading-context')).toHaveCount(0);

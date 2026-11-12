@@ -491,7 +491,7 @@ test('pending player approval keeps the invitation surface blocking until approv
  await expect(guest.getByTestId('invite-join-player')).toHaveCount(0);
  await page.locator('[data-action="accept-request"]').click();
  await expect(guest.getByRole('heading',{name:'Waiting for approval',exact:true})).toHaveCount(0);
- await expect(guest.getByTestId('game-role')).toContainText('Player 2');
+ await expect(guest.getByTestId('game-role')).toContainText('Guest 2');
  }finally{await context.close();}
 });
 

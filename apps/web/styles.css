@@ -458,6 +458,9 @@ button {
 
 .cell.group-member {
   --cell-fill: #eef8f1;
+  --cell-floor-image:
+    linear-gradient(rgb(96 176 119 / 16%), rgb(96 176 119 / 16%)),
+    var(--marble-face, none);
 }
 
 .cell.continuation-member {
@@ -466,10 +469,22 @@ button {
 
 .cell.continuation-moved {
   --cell-fill: #f5f7ef;
+  --cell-floor-image:
+    linear-gradient(rgb(154 169 103 / 12%), rgb(154 169 103 / 12%)),
+    var(--marble-face, none);
 }
 
 .cell.continuation-pending {
   --cell-fill: #e6f2d3;
+  --cell-floor-image:
+    linear-gradient(rgb(123 181 66 / 28%), rgb(123 181 66 / 28%)),
+    var(--marble-face, none);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cell.continuation-member {
+    transition: none;
+  }
 }
 
 .cell.rush-blocker {
@@ -838,9 +853,15 @@ button {
 .axis-label {
   position: absolute;
   z-index: 4;
+  display: inline-flex;
+  inline-size: 0.875rem;
+  block-size: 0.875rem;
+  align-items: center;
+  justify-content: center;
   font-size: 0.68rem;
   font-weight: 700;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
   pointer-events: none;
 }
@@ -860,18 +881,18 @@ button {
 
 .axis-label.axis-strong {
   color: var(--move-selection-ring);
-  font-weight: 900;
-  text-shadow: 0 0 0.01px currentColor;
+  font-size: 0.8rem;
+  font-weight: 400;
 }
 
 .axis-label.col-axis {
-  bottom: -11px;
+  bottom: -0.8125rem;
   left: 50%;
   transform: translateX(-50%);
 }
 
 .axis-label.row-axis {
-  left: -11px;
+  left: -0.8125rem;
   top: 50%;
   transform: translateY(-50%);
 }

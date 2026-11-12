@@ -19,7 +19,7 @@ test("participant badges show disconnect and reconnect transitions for the joine
     await requestPlayerJoin(guest.page);
     await acceptPendingRequest(owner.page);
 
-    await expect(guest.page.getByTestId("game-role")).toContainText("Player 2");
+    await expect(guest.page.getByTestId("game-role")).toContainText("Guest 2");
     await expect(owner.page.getByTestId("participant-player-2").getByRole("img",{name:"Connected",exact:true})).toBeVisible();
 
     const guestGameUrl = guest.page.url();
@@ -27,7 +27,7 @@ test("participant badges show disconnect and reconnect transitions for the joine
     await expect(owner.page.getByTestId("participant-player-2").getByRole("img",{name:"Disconnected",exact:true})).toBeVisible();
 
     await guest.page.goto(guestGameUrl);
-    await expect(guest.page.getByTestId("game-role")).toContainText("Player 2");
+    await expect(guest.page.getByTestId("game-role")).toContainText("Guest 2");
     await expect(owner.page.getByTestId("participant-player-2").getByRole("img",{name:"Connected",exact:true})).toBeVisible();
   } finally {
     await closeContextQuietly(owner.context);

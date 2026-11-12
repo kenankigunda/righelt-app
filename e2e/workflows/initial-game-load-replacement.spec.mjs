@@ -26,7 +26,7 @@ test('initial position-first load accepts a browser pageshow replacement without
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',gameId);await expect(page.getByTestId('position-load-error')).toHaveCount(0);
   await expect(wrap).toHaveAttribute('aria-busy','false');
   await expect(page.locator('#shell-board-preview-label')).not.toContainText('Loading play');await expect(page.locator('#app')).toHaveAttribute('data-shell-transition-phase','idle');
-  await expect(page.getByTestId('game-role')).toContainText(expected.game.myRole);await expect(page.getByTestId('history-move-item')).toHaveCount(0);await expect(page.getByTestId('game-board').locator('[data-piece-id]')).toHaveCount(initialState.pieces.length);await expect.poll(()=>boardPieces(page)).toEqual(expectedPieces);
+  await expect(page.getByTestId('game-role')).toContainText('Guest');await expect(page.getByTestId('history-move-item')).toHaveCount(0);await expect(page.getByTestId('game-board').locator('[data-piece-id]')).toHaveCount(initialState.pieces.length);await expect.poll(()=>boardPieces(page)).toEqual(expectedPieces);
   observation=await page.evaluate(readInitialLoadObservation);
   validateInitialLoadObservation(observation.native,{requestMs:SYNC_TIMING.requestTimeoutMs,documentNonce});expect(observation.lastError.present).toBe(false);relay=owner.snapshot();expect(relay.errors).toEqual([]);expect(relay.dropped).toBe(0);expect(relay.reconcileCount).toBe(1);expect(relay.legacyReads).toBe(0);expect(relay.sharedWrites).toBe(0);expect(relay.sockets).toHaveLength(2);
   await page.screenshot({path:info.outputPath('initial-load-replacement-ready.png')});
