@@ -8,11 +8,11 @@
         "apps/web/",
         "browser-integration/invite-history-polish.spec.mjs",
         "browser-integration/support/invite-history-polish.html",
-        "docs/"
+        "docs/",
+        "e2e/workflows/incoming-narration-presentation.spec.mjs"
       ],
       "checks": [
-        "PR gate",
-        "Browser integration"
+        "PR gate"
       ],
       "evidence": [
         {
@@ -25,9 +25,9 @@
           ]
         },
         {
-          "check": "Browser integration",
+          "check": "Boundary E2E",
           "files": [
-            "browser-integration/invite-history-polish.spec.mjs"
+            "e2e/workflows/incoming-narration-presentation.spec.mjs"
           ]
         }
       ]
@@ -37,6 +37,7 @@
       "description": "The refactored presentation tests execute production behavior without retaining superseded source-inspection exceptions.",
       "paths": [
         "e2e/workflows/history-narration.spec.mjs",
+        "e2e/support/",
         "scripts/testing/source-inspection-allowlist.json"
       ],
       "checks": [

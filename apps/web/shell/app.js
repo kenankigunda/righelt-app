@@ -4872,9 +4872,10 @@ appEl.addEventListener("click", async (event) => {
   if(action==='toggle-incoming-narration'){
     const context=boardContexts.channel('acknowledged');
     if(context?.purpose!==BOARD_CONTEXT_PURPOSE.INCOMING||context.gameId!==getCurrentViewedGameId()||context.key!==actionEl.dataset.boardContextKey)return;
-    const focusReturn=boardContextFocus.begin(actionEl,{allowRemoval:true});
+    const restoreToggleFocus=document.activeElement===actionEl;
     if(incomingNarrationState.toggle(context.key))render({animatePanels:false,includeBoard:false});
-    focusReturn.restore(()=>[...appEl.querySelectorAll('[data-action="toggle-incoming-narration"]')].find(button=>button.dataset.boardContextKey===context.key));
+    const replacement=[...appEl.querySelectorAll('[data-action="toggle-incoming-narration"]')].find(button=>button.dataset.boardContextKey===context.key);
+    if(restoreToggleFocus&&replacement?.isConnected&&!replacement.disabled&&!replacement.closest('[inert]'))replacement.focus({preventScroll:true});
     return;
   }
   if(action==='replay-board-context'){boardContextPresentation.replayAction(actionEl);return;}
