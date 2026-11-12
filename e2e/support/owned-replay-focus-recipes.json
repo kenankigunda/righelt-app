@@ -86,34 +86,34 @@
     ]
   },
   {
-    "file": "apps/web/shell/app.js",
-    "servedPath": "/shell/app.js",
-    "sourceSha256": "d8c2fc66d27181c79685eea583aa13d6b81adc0085edda6b7f15282ecb51ab3d",
-    "outputSha256": "f397a74554d84157202a057078c8cd3ad283990b78dd9f43a9674d974f7051f3",
+    "file": "apps/web/shell/displayed-replay-starter.js",
+    "servedPath": "/shell/displayed-replay-starter.js",
+    "sourceSha256": "a466937f9c27fd9bbae81b47407b3d53a3e6c72a04adace69d712de1c076ee1a",
+    "outputSha256": "8f15a83092ca2770f70b268e6309ebe9dc367e50f9d883810ee22390af573125",
     "operations": [
       {
-        "start": 2527,
-        "end": 2527,
+        "start": 286,
+        "end": 286,
         "before": "",
         "after": "const __ownedFocusValue=(kind,value,scope)=>{try{globalThis.__ownedFocusProbe?.record(kind,value,scope);}catch{}return value;};\n"
       },
       {
-        "start": 212327,
-        "end": 212385,
-        "before": "const focusReturn=boardContextFocus.begin(trigger,{allows:",
-        "after": "const focusReturn=boardContextFocus.begin(__ownedFocusValue(\"replay-trigger\",(trigger),null),{allows:"
+        "start": 1219,
+        "end": 1267,
+        "before": "const focusReturn=p.focus.begin(trigger,{allows:",
+        "after": "const focusReturn=p.focus.begin(__ownedFocusValue(\"replay-trigger\",(trigger),null),{allows:"
       },
       {
-        "start": 214266,
-        "end": 214459,
-        "before": "const finish=()=>{\n    boardRuntime?.setInteractionBlocked(forcedFollowWorking(gameId)||Boolean(confirmedPlayback?.snapshot().playing));boardRuntime?.refreshStatus();queueBoardContextRefresh();",
-        "after": "const finish=()=>{\n    __ownedFocusValue(\"finish-enter\",(trigger),focusReturn);\n    boardRuntime?.setInteractionBlocked(forcedFollowWorking(gameId)||Boolean(confirmedPlayback?.snapshot().playing));boardRuntime?.refreshStatus();queueBoardContextRefresh();\n    __ownedFocusValue(\"finish-after-render\",(trigger),focusReturn);"
+        "start": 3371,
+        "end": 3408,
+        "before": "const finish=()=>{\n   refresh(false);",
+        "after": "const finish=()=>{\n   __ownedFocusValue(\"finish-enter\",(trigger),focusReturn);\n   refresh(false);\n   __ownedFocusValue(\"finish-after-render\",(trigger),focusReturn);"
       },
       {
-        "start": 215332,
-        "end": 215688,
-        "before": "onChange:replay=>{\n      const playing=replay.playing;\n      const refresh=()=>{boardRuntime?.setInteractionBlocked(playing||forcedFollowWorking(gameId)||Boolean(confirmedPlayback?.snapshot().playing));boardRuntime?.refreshStatus();queueBoardContextRefresh();};\n      if(playing)refresh();else focusReturn.renderOwnedRemoval(refresh);\n    },onFinish:finish",
-        "after": "onChange:replay=>{\n      const playing=__ownedFocusValue(\"change-playing\",(replay.playing),focusReturn);\n      const refresh=()=>{boardRuntime?.setInteractionBlocked(playing||forcedFollowWorking(gameId)||Boolean(confirmedPlayback?.snapshot().playing));boardRuntime?.refreshStatus();queueBoardContextRefresh();__ownedFocusValue(\"change-after-render\",(trigger),focusReturn);};\n      if(playing)refresh();else focusReturn.renderOwnedRemoval(refresh);\n    },onFinish:finish"
+        "start": 4124,
+        "end": 4254,
+        "before": "onChange:replay=>{\n   if(replay.playing)refresh(true);else focusReturn.renderOwnedRemoval(()=>refresh(false));\n  },onFinish:finish",
+        "after": "onChange:replay=>{\n   const playing=__ownedFocusValue(\"change-playing\",(replay.playing),focusReturn);\n   const refreshObserved=value=>{refresh(value);__ownedFocusValue(\"change-after-render\",(trigger),focusReturn);};\n   if(playing)refreshObserved(true);else focusReturn.renderOwnedRemoval(()=>refreshObserved(false));\n  },onFinish:finish"
       }
     ]
   }
