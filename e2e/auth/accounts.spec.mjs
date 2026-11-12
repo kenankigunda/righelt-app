@@ -569,7 +569,8 @@ test("current public names follow the account across browsers through the minima
     await other.reload();
     await switchGamePanel(other,"players");
     const ownPlayer=other.getByTestId("participant-player-1").getByRole("button");
-    await expect(ownPlayer).toContainText("Étoile 🌟");
+    await expect(ownPlayer).toContainText("You");
+    await expect(ownPlayer).not.toContainText("Étoile 🌟");
     await expect(ownPlayer).toHaveAccessibleName("Étoile 🌟, you, Red, Connected");
     await expect(ownPlayer).toHaveAttribute("data-username",username);
     await expect(other.getByTestId("history-player-names")).toHaveCount(0);
