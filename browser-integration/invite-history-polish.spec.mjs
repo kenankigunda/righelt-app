@@ -27,7 +27,7 @@ test('additional history exposes real availability, keeps pages and hides exhaus
  await expect.poll(()=>page.evaluate(()=>window.historyRequests.length)).toBe(2);
  await page.evaluate(()=>window.historyRequests[1].resolve({available:true,items:[{id:'a',at:'2026-01-01',move:{moveId:'a',turnIndex:0,turnMoveIndex:0,actorSide:'P1',notation:'MOVE A',undone:false,snapshot:window.archiveSnapshot}},{id:'b',at:'2026-01-01',move:{turnIndex:1,turnMoveIndex:0,actorSide:'P2',notation:'MOVE B',undone:true}}],nextCursor:{eventSeq:2,ordinal:0}}));
  const undone=page.locator('[data-undo-boundary="unavailable"]');
- const disclosure=undone.getByRole('button',{name:'1 undone move · Original Undo boundary unavailable',exact:true});
+ const disclosure=undone.getByRole('button',{name:'1 undone move · Original Undo boundary unavailable · Original move order unavailable',exact:true});
  await expect(disclosure).toHaveAttribute('aria-expanded','false');await expect(undone.locator('[data-archive-move-id="b"]')).toHaveCount(0);
  await disclosure.click();await expect(disclosure).toHaveAttribute('aria-expanded','true');
  await expect(page.locator('[data-archive-move-id]')).toHaveCount(2);await expect(page.locator('[data-archive-move-id="a"]')).toHaveAttribute('aria-label','Guest 1');await expect(page.locator('[data-archive-move-id="b"]')).toHaveAttribute('aria-label','Guest 2');await expect(page.locator('.history-actor')).toHaveCount(0);await expect(page.locator('.history-turn-heading')).toHaveText(['Turn 1']);await expect(page.locator('[data-archive-move-id="b"]')).toContainText('Undone');await expect(page.locator('[data-archive-move-id="b"]')).toContainText('Turn 2');
@@ -37,7 +37,7 @@ test('additional history exposes real availability, keeps pages and hides exhaus
  await expect(selected.locator('[data-action="revert-to-move"],[data-action="launch-history-branch"]')).toHaveCount(0);expect(await page.evaluate(()=>window.historyRequests.length)).toBe(2);
  await page.evaluate(()=>window.returnArchiveLive());await expect(page.getByTestId('history-inline-preview')).toHaveCount(0);await expect(selected).not.toHaveClass(/is-selected/);
  await page.getByRole('button',{name:'Load more history',exact:true}).click();await expect.poll(()=>page.evaluate(()=>window.historyRequests.length)).toBe(3);
- await page.evaluate(()=>window.historyRequests[2].reject(Error('unavailable')));await expect(page.getByRole('status')).toContainText('We couldn’t load more history');await expect(page.locator('[data-archive-move-id]')).toHaveCount(2);
+ await page.evaluate(()=>window.historyRequests[2].reject(Error('unavailable')));await expect(page.getByRole('status').filter({hasText:'We couldn’t load more history'})).toContainText('We couldn’t load more history');await expect(page.locator('[data-archive-move-id]')).toHaveCount(2);
  await page.getByRole('button',{name:'Retry',exact:true}).click();await expect.poll(()=>page.evaluate(()=>window.historyRequests.length)).toBe(4);
  expect(await page.evaluate(()=>window.historyRequests[3].values.cursor)).toEqual({eventSeq:2,ordinal:0});
  await page.evaluate(()=>window.historyRequests[3].resolve({available:true,items:[{id:'c',at:'2026-01-01',move:{turnIndex:2,turnMoveIndex:0,actorSide:'P1',notation:'PASS',undone:false}}],nextCursor:null}));await expect(page.locator('[data-archive-move-id]')).toHaveCount(3);
@@ -48,6 +48,25 @@ test('additional history exposes real availability, keeps pages and hides exhaus
 test('short games with no additional records never show an archive CTA',async({page})=>{
  await page.evaluate(()=>window.renderHistory());await expect.poll(()=>page.evaluate(()=>window.historyRequests.length)).toBe(1);
  await page.evaluate(()=>window.historyRequests[0].resolve({available:false,items:[],nextCursor:null}));await expect(page.locator('[data-testid="additional-history"]')).toBeAttached();await expect(page.getByRole('button')).toHaveCount(0);
+});
+
+for(const interaction of ['focus','press'])test(`merged undone History runs retain the native ${interaction} target`,async({page})=>{
+ const initial=await page.evaluate(()=>window.startUndoMerge());
+ const olderKey=initial.find(group=>group.members.includes('B')).key;
+ const disclosure=page.locator(`[data-group-key="${olderKey}"]`);
+ await disclosure.evaluate(node=>window.originalMergeDisclosure=node);
+ if(interaction==='focus')await disclosure.focus();
+ else {
+  const box=await disclosure.boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();
+  await expect(disclosure).toHaveClass(/is-pressing/);
+ }
+ const merged=await page.evaluate(()=>window.mergeUndoRuns());
+ expect(merged).toEqual([{key:olderKey,members:['D','C','B']}]);
+ const retained=page.locator(`[data-group-key="${olderKey}"]`);
+ await expect(retained).toHaveText('3 moves undone');
+ expect(await retained.evaluate(node=>node===window.originalMergeDisclosure)).toBe(true);
+ if(interaction==='focus')await expect(retained).toBeFocused();
+ else {await expect(retained).toHaveClass(/is-pressing/);await page.mouse.up();}
 });
 
 for(const route of ['home','game','invite'])test(`held ${route} Edge cuts keep moving without moving the surface`,async({page},info)=>{

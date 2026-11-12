@@ -13,12 +13,22 @@ export const patchSectionContent = (current,next) => {
     && current.dataset.loadingKey && current.dataset.loadingKey === next.dataset.loadingKey;
   const cues = samePendingKey ? [...current.children].filter(child => child.matches('.loading-pieces')) : [];
   const retainedCue = cues.length === 1 && ![...next.children].some(child => child.matches('.loading-pieces')) ? cues[0] : null;
+  const retainedHistoryPress = current.matches?.('.history-undone-toggle.is-pressing')
+    && next.matches?.('.history-undone-toggle') && current.dataset.groupKey === next.dataset.groupKey;
   for(const attr of [...current.attributes])if(!(persistent && attr.name === 'open') && !(retainedCue && attr.name === 'data-loading-phase') && !next.hasAttribute(attr.name))current.removeAttribute(attr.name);
-  for(const attr of next.attributes)if(current.getAttribute(attr.name)!==attr.value)current.setAttribute(attr.name,attr.value);
+  for(const attr of next.attributes){
+    const value=attr.name==='class'&&retainedHistoryPress ? `${attr.value} is-pressing` : attr.value;
+    if(current.getAttribute(attr.name)!==value)current.setAttribute(attr.name,value);
+  }
   if (persistent && (current.tagName === 'TEXTAREA' || current.tagName === 'INPUT' || current.isContentEditable)) return;
   const staticChildren = () => [...current.childNodes].filter(child => child !== retainedCue);
   const staticChildAt = index => retainedCue ? staticChildren()[index] : current.childNodes[index];
   const old=[...current.childNodes].filter(child => child !== retainedCue),fresh=[...next.childNodes];
+  const freshKeys=new Set(fresh.filter(child=>child.nodeType===Node.ELEMENT_NODE).map(child=>child.getAttribute('data-key')).filter(Boolean));
+  for(const child of old){
+    const key=child.nodeType===Node.ELEMENT_NODE?child.getAttribute('data-key'):null;
+    if(key&&!freshKeys.has(key))child.remove();
+  }
   fresh.forEach((child,index)=>{
     const key = child.nodeType === Node.ELEMENT_NODE ? child.getAttribute('data-key') : null;
     const existing = key ? old.find(node => node.nodeType === Node.ELEMENT_NODE && node.getAttribute('data-key') === key) : staticChildAt(index);

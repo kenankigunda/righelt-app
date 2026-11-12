@@ -17,6 +17,7 @@ const context={undoHistory,selectedHistoryPresentation,recordedMoveNumber,visibl
  transport:{getIdentityId:()=> 'me'},icon:()=>'',formatClientDateTime:String,expandedUndoneGroups:new Set(),liveHistoryLabel:()=> 'Waiting'};
 const renderer=createHistoryRendering(()=>context);
 context.render=renderer.renderTurnHistory;
+test.beforeEach(()=>{context.expandedUndoneGroups=new Set();context.archiveState=undefined;});
 const moves=[{index:0,turnIndex:0,turnMoveIndex:0,moveId:'a',actorSide:'P1',notation:'Push',snapshot:{pieces:[]}},
  {index:1,turnIndex:0,turnMoveIndex:1,moveId:'b',actorSide:'P2',notation:'Retreat',snapshot:{pieces:[]}},
  {index:2,turnIndex:1,turnMoveIndex:0,moveId:'c',actorSide:'P2',notation:'Move',snapshot:{pieces:[]}}];
@@ -51,7 +52,7 @@ context.account={snapshot:()=>({enabled:false})};
 context.additionalHistory={snapshot:()=>context.archiveState};
 context.archive=renderer.renderAdditionalHistory;
 test('archive entries share turn grouping, actor accessibility and inert selected action previews',()=>{
- context.archiveState={metadata:true,loaded:true,items:[{id:'b',move:moves[1],at:'date'},{id:'a',move:moves[0],at:'date'}]};
+ context.archiveState={metadata:true,loaded:true,items:[{id:'b',eventSeq:1,ordinal:1,move:moves[1],at:'date'},{id:'a',eventSeq:1,ordinal:0,move:moves[0],at:'date'}]};
  const html=context.archive({...game,moves:[],inHistoryMode:true,inspectedDecision:moves[1]});
  assert.match(html,/Turn 1 · Attacker/);
  assert(html.indexOf('Retreat')<html.indexOf('Push'));
@@ -128,7 +129,7 @@ test('display reversal leaves stored decisions and replay frames chronological',
  assert.deepEqual(records,before);
 });
 test('archived rows display newest first without mutating source entries or turn ownership',()=>{
- const records=replayRecords(),items=[records[2],records[0],records[1]].map(move=>({id:move.moveId,move,at:'date'})),before=structuredClone(items);
+ const records=replayRecords(),items=[records[2],records[0],records[1]].map(move=>({id:move.moveId,eventSeq:1,ordinal:move.index,move,at:'date'})),before=structuredClone(items);
  context.archiveState={metadata:true,loaded:true,items};
  const html=context.archive({...game,moves:[],turns:[{index:0,playerSeat:'Player 1'}]});
  assert.deepEqual(archivedIds(html),['follow','retreat','push']);
@@ -138,26 +139,26 @@ test('archived rows display newest first without mutating source entries or turn
 test('pending and expanded undone rows each display newest first without reordering records',()=>{
  const active=replayRecords(),undone=active.slice(0,2).map((move,index)=>({...move,moveId:'undone-'+index,index:index+3,turnMoveIndex:index+3,undone:true,undoEventSeq:42})),pending={...active[0],moveId:'pending',index:5,turnMoveIndex:5};
  const records=[...active,...undone],before=structuredClone({records,pending});
- context.expandedUndoneGroups.add('g:undo:accepted:42');
- try{assert.deepEqual(displayedIds(context.render({...game,moves:records,pendingMoves:[pending],turns:[{index:0,playerSeat:'Player 1'}]})),['pending','follow','retreat','push','undone-1','undone-0']);}
- finally{context.expandedUndoneGroups.delete('g:undo:accepted:42');}
+ context.expandedUndoneGroups.add('g:undo-run:accepted:undone-1');
+ try{assert.deepEqual(displayedIds(context.render({...game,moves:records,pendingMoves:[pending],turns:[{index:0,playerSeat:'Player 1'}]})),['pending','undone-1','undone-0','follow','retreat','push']);}
+ finally{context.expandedUndoneGroups.delete('g:undo-run:accepted:undone-1');}
  assert.deepEqual({records,pending},before);
 });
 
-test('actual live renderer collapses each accepted Undo once across turns and separates legacy records',()=>{
+test('actual live renderer collapses one contiguous accepted run across operations and separates legacy records',()=>{
  const records=[{...moves[0],moveId:'active'},{...moves[1],moveId:'first-one',undone:true,undoEventSeq:10},{...moves[2],moveId:'first-two',index:3,undone:true,undoEventSeq:10},{...moves[2],moveId:'second',index:4,undone:true,undoEventSeq:11},{...moves[2],moveId:'legacy',index:5,undone:true}];
  const original=structuredClone(records);context.expandedUndoneGroups.clear();
  const collapsed=context.render({...game,moves:records});
- assert.equal((collapsed.match(/data-undo-boundary="accepted"/g)??[]).length,2);assert.match(collapsed,/Original Undo boundary unavailable/);assert.doesNotMatch(collapsed,/data-move-id="first-one"/);
- context.expandedUndoneGroups.add('g:undo:accepted:10');
- const expanded=context.render({...game,moves:records});assert.match(expanded,/data-move-id="first-one"/);assert.match(expanded,/data-move-id="first-two"/);assert.doesNotMatch(expanded,/data-move-id="second"/);assert(expanded.indexOf('data-move-id="first-two"')<expanded.indexOf('data-move-id="first-one"'));assert.deepEqual(records,original);context.expandedUndoneGroups.clear();
+ assert.equal((collapsed.match(/data-undo-boundary="accepted"/g)??[]).length,1);assert.match(collapsed,/Original Undo boundary unavailable/);assert.doesNotMatch(collapsed,/data-move-id="first-one"/);
+ context.expandedUndoneGroups.add('g:undo-run:accepted:second');
+ const expanded=context.render({...game,moves:records});assert.match(expanded,/data-move-id="first-one"/);assert.match(expanded,/data-move-id="first-two"/);assert.match(expanded,/data-move-id="second"/);assert(expanded.indexOf('data-move-id="first-two"')<expanded.indexOf('data-move-id="first-one"'));assert.deepEqual(records,original);context.expandedUndoneGroups.clear();
 });
 test('loaded archive members merge with the live operation without a second archive disclosure',()=>{
  const live={...moves[0],undone:true,undoEventSeq:12},archived={...moves[2],moveId:'evicted',index:3,undone:true,undoEventSeq:12};
- const entries=[{id:archived.moveId,move:archived,historyStatus:'undone'}];context.archiveState={metadata:true,loaded:true,items:entries};
+ const entries=[{id:archived.moveId,eventSeq:1,ordinal:0,move:archived,historyStatus:'undone'}];context.archiveState={metadata:true,loaded:true,items:entries};
  const view={...game,moves:[live],historyUndoArchiveEntries:entries};context.expandedUndoneGroups.clear();
  const combined=context.render(view)+context.archive(view);assert.equal((combined.match(/data-undo-event-seq="12"/g)??[]).length,1);assert.match(combined,/2 moves undone/);
- context.expandedUndoneGroups.add('g:undo:accepted:12');const open=context.render(view);assert.match(open,/data-move-id="a"/);assert.match(open,/data-archive-move-id="evicted"/);assert.match(open,/data-action="inspect-history-archive"/);context.expandedUndoneGroups.clear();
+ context.expandedUndoneGroups.add('g:undo-run:accepted:a');const open=context.render(view);assert.match(open,/data-move-id="a"/);assert.match(open,/data-archive-move-id="evicted"/);assert.match(open,/data-action="inspect-history-archive"/);context.expandedUndoneGroups.clear();
 });
 
 for(const mode of ['narrow','wide'])test(`actual ${mode} History preserves a selected-now-undone record without overriding explicit collapse`,()=>{
@@ -167,7 +168,52 @@ for(const mode of ['narrow','wide'])test(`actual ${mode} History preserves a sel
   context.render(view);const after={...view,moves:[{...record,undone:true,undoEventSeq:31}]};
   const revealed=context.render(after);assert.match(revealed,/data-undo-event-seq="31"/);assert.match(revealed,/aria-expanded="true"/);assert.match(revealed,/data-move-id="chosen"/);assert.match(revealed,/aria-current="true"/);assert.equal(after.inHistoryMode,true);
   if(mode==='narrow')assert.match(revealed,/data-testid="history-inline-preview"/);else assert.doesNotMatch(revealed,/data-testid="history-inline-preview"/);
-  context.expandedUndoneGroups.delete('g:undo:accepted:31');const collapsed=context.render(after);assert.match(collapsed,/aria-expanded="false"/);assert.doesNotMatch(collapsed,/data-move-id="chosen"/);
+  context.expandedUndoneGroups.delete('g:undo-run:accepted:chosen');const collapsed=context.render(after);assert.match(collapsed,/aria-expanded="false"/);assert.doesNotMatch(collapsed,/data-move-id="chosen"/);
   undoHistory.noteUndoHistorySelection(context.expandedUndoneGroups,'g','chosen',context.transport);assert.match(context.render(after),/data-move-id="chosen"/);
  }finally{context.getShellLayoutMode=saved;context.expandedUndoneGroups.clear();}
+});
+
+
+test('retained moves stay chronological around contiguous undone runs',()=>{
+ const m=(id,index,undone=false,seq=10)=>({...moves[0],moveId:id,index,turnIndex:0,turnMoveIndex:index,notation:id,...(undone?{undone:true,undoEventSeq:seq}:{})});
+ const records=[m('A',0),m('B',1),m('C',2,true),m('D',3,true),m('E',2),m('F',3,true,11)];
+ context.expandedUndoneGroups.add('g:undo-run:accepted:F');context.expandedUndoneGroups.add('g:undo-run:accepted:D');
+ // Keep the original-operation disclosures open in the baseline negative too, so the expected failure isolates placement rather than key migration.
+ context.expandedUndoneGroups.add('g:undo:accepted:10');context.expandedUndoneGroups.add('g:undo:accepted:11');
+ const html=context.render({...game,moves:records,turns:[{index:0,playerSeat:'Player 1'}]});
+ assert.deepEqual(displayedIds(html),['F','E','D','C','B','A']);
+ assert.equal((html.match(/data-action="jump-history-turn"/g)??[]).length,1,'split retained turn portions add no new selectable turns');
+ assert.equal((html.match(/data-move-id="E"/g)??[]).length,1);
+ assert(html.indexOf('data-move-id="F"')<html.indexOf('data-move-id="E"'));
+});
+
+test('unified loaded history owns archive rows once while the original paging controls survive partial and error states',()=>{
+ const archived={...moves[0],moveId:'old',index:199,undone:true,undoEventSeq:40};
+ const entries=[{id:'old',eventSeq:1,ordinal:0,move:archived,historyStatus:'undone'}];
+ const live={...moves[0],moveId:'new',index:0,undone:true,undoEventSeq:41};
+ context.archiveState={metadata:true,loaded:true,items:entries,available:true,cursor:{eventSeq:1,ordinal:0},partial:true};
+ const view={...game,moves:[live],historyUndoArchiveEntries:entries};
+ const html=context.render(view)+context.archive(view);
+ assert.equal((html.match(/data-undo-boundary="accepted"/g)??[]).length,2,'unloaded pages prevent a false contiguous merge');
+ assert.match(html,/Earlier pages are not loaded between these moves/);assert.match(html,/Load more history/);assert.match(html,/Some earlier history is unavailable/);
+ context.archiveState.error=Error('local read');assert.match(context.archive(view),/Retry/);
+ context.archiveState.error=null;context.archiveState.cursor=null;
+ const complete=context.render(view)+context.archive(view);
+ assert.equal((complete.match(/data-undo-boundary="accepted"/g)??[]).length,1);assert.match(complete,/2 moves undone/);
+});
+
+
+test('selected unified archive rows retain truthful availability and never acquire new Undo or branch actions',()=>{
+ for(const historyStatus of ['unknown','active'])for(const numbered of [false,true]){
+  const record={...moves[0],moveId:'archived-selection',notation:'Saved move',snapshot:{pieces:[]},...(numbered?{index:19,displayMoveNumber:20}:{index:undefined,displayMoveNumber:undefined})};
+  const entries=[{id:record.moveId,eventSeq:1,ordinal:0,move:record,historyStatus}];
+  const view={...game,moves:[],turns:[],historyUndoArchiveEntries:entries,inHistoryMode:true,inspectedDecision:record};
+  const before=structuredClone(view),html=context.render(view);
+  assert.doesNotMatch(html,/data-action="(?:revert-to-move|launch-history-branch)"/,'archive rendering must not expand original action eligibility');
+  if(historyStatus==='unknown')assert.match(html,/Status unavailable/);
+  if(!numbered){assert.match(html,/Move unavailable/);assert.doesNotMatch(html,/Move NaN|Move undefined/);}
+  assert.match(html,/data-archive-move-id="archived-selection"/);
+  assert.match(html,/data-testid="history-inline-preview"/);
+  assert.deepEqual(view,before);
+ }
 });

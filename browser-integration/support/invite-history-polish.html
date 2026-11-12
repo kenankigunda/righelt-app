@@ -10,6 +10,7 @@ import {visibleRecordedMoves,recordedMoveNumber} from '/apps/web/shell/recorded-
 import {renderBoardMessageHtml} from '/apps/web/board/message-presentation.js';
 
 import {syncMiniBoardPreviews} from '/apps/web/board/mini-board-preview.js';
+import {createMiniPreviewRendering} from '/apps/web/shell/mini-preview-payloads.js';
 import {createEngineBoardAdapter,createInitialBoardSnapshot} from '/apps/web/board-adapters/engine-board-adapter.js';
 import {icon} from '/apps/web/shell/ui.js';
 import {renderInvitationSurface} from '/apps/web/shell/invitations.js';
@@ -29,7 +30,7 @@ import {COMPUTER_PROFILES} from '/apps/web/generated/packages/shared-types/src/c
 const source=await(await fetch('/apps/web/shell/app.js')).text(),root=document.querySelector('#app');
 const extract=(start,end)=>{const a=source.indexOf(start),b=source.indexOf(end,a);if(a<0||b<=a)throw Error(`Missing actual template ${start}`);return source.slice(a,b);};
 const escapeHtml=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const seatHelpers=Function('escapeHtml',`${extract('const playerToneClassForSeat =','const isDualSeatIdentity =')};return {playerToneClassForSeat,playerToneClassForSide,renderSeatLabel};`)(escapeHtml);
+const seatHelpers=Function('escapeHtml',`${extract('const playerToneClassForSeat =','const renderConnectionStatusIcon =')};return {playerToneClassForSeat,playerToneClassForSide,renderSeatLabel};`)(escapeHtml);
 const attrs=Function('isButtonPending','escapeHtml',`${extract('const renderButtonStateAttributes =','const renderPendingStateAttributes =')};return renderButtonStateAttributes;`)(()=>false,escapeHtml);
 window.renderInvite=(role='blue',extra={})=>{
  const game={id:'g',player1:{identityId:'host'},player2:null,canJoinAsPlayer:true,showJoinActions:true,canJoinAsViewer:true,...extra};
@@ -42,7 +43,7 @@ window.historyRequests=[];let revision=7;
 const owner={};
 const history=createAdditionalHistory({getScope:gameId=>({gameId,owner,generation:1,revision}),load:(scope,values)=>new Promise((resolve,reject)=>window.historyRequests.push({values,resolve:body=>resolve({gameplayRevision:revision,partial:false,...body}),reject})),onChange:()=>drawHistory()});
 const renderedMiniBoardPreviewPayloads=new Map(),registry=new Map();let inspectedDecision=null;
-const renderMini=Function('renderedMiniBoardPreviewPayloads','escapeHtml',`${extract('const registerMiniBoardPreview =','const formatOutcomeStatus =')};return renderMiniBoardPreviewRoot;`)(renderedMiniBoardPreviewPayloads,escapeHtml);
+const {renderMiniBoardPreviewRoot:renderMini}=createMiniPreviewRendering({payloads:renderedMiniBoardPreviewPayloads,escapeHtml});
 const archiveGame={id:'g',myRole:'Viewer',player1:{identityId:'red'},player2:{identityId:'blue'}};
 const historyDeps={undoHistory,expandedUndoneGroups:new Set(),selectedHistoryPresentation,visibleRecordedMoves,recordedMoveNumber,renderBoardMessageHtml,canReadAdditionalHistory,...seatHelpers,playerDisplayName,buildMovePreview,buildTurnPreview,historyTurnSide,COMPUTER_PROFILES,account:{snapshot:()=>({enabled:false})},getShellLayoutMode:()=> 'narrow',renderMiniBoardPreviewRoot:renderMini,toStableKey:JSON.stringify,additionalHistory:history,escapeHtml,formatClientDateTime:()=> 'Jan 1',icon,historyActorLabel,transport:{getIdentityId:()=> 'viewer'}};
 const historyRendering=createHistoryRendering(()=>historyDeps);
@@ -50,6 +51,18 @@ const renderHistory=game=>historyRendering.renderAdditionalHistory(game);
 function drawHistory(){root.classList.add("panel");const next=root.cloneNode(false);next.innerHTML=renderHistory({...archiveGame,inHistoryMode:Boolean(inspectedDecision),inspectedDecision});patchSectionContent(root,next);syncMiniBoardPreviews({previews:[...root.querySelectorAll('[data-mini-board-preview]')].map(rootEl=>({rootEl,...renderedMiniBoardPreviewPayloads.get(rootEl.dataset.previewId)})),registry,createAdapter:()=>createEngineBoardAdapter()});}
 root.addEventListener('click',event=>{const action=event.target.closest('[data-action]')?.dataset.action;if(action==='toggle-undone-group'){undoHistory.toggleUndoHistoryGroup(historyDeps.expandedUndoneGroups,event.target.closest('[data-action]').dataset.groupKey,historyDeps.transport);drawHistory();}if(action==='inspect-history-archive'){const id=event.target.closest('[data-action]').dataset.decisionId;inspectedDecision={...history.snapshot('g').items.find(entry=>entry.id===id).move,moveId:id};drawHistory();}if(action==='load-history-archive'){void history.more('g');drawHistory();}if(action==='retry-history-archive'){void history.retry('g');drawHistory();}});
 window.renderHistory=drawHistory;window.archiveSnapshot=createInitialBoardSnapshot();window.returnArchiveLive=()=>{inspectedDecision=null;drawHistory();};window.nextHistoryRevision=()=>{revision++;drawHistory();};
+const mergeOwner={getIdentityId:()=> 'viewer'},mergeGame={id:'merge',inHistoryMode:false};
+const mergeMove=(moveId,index,undone=false,undoEventSeq=10)=>({moveId,index,turnIndex:index,turnMoveIndex:0,notation:moveId,action:{type:'rush'},...(undone?{undone:true,undoEventSeq}:{})});
+let mergeExpanded=new Set(),mergeMoves=[];
+const drawUndoMerge=()=>{
+ const groups=undoHistory.groupUndoHistory(mergeGame.id,mergeMoves);
+ undoHistory.observeUndoHistoryDisclosure(mergeExpanded,mergeGame,groups,mergeOwner);
+ const next=root.cloneNode(false);next.innerHTML=`<ol class="history-list" data-key="undo-merge-list">${undoHistory.renderUndoHistoryGroups(mergeGame.id,groups,move=>`<li data-move-id="${move.moveId}">${move.notation}</li>`,mergeExpanded,escapeHtml)}</ol>`;patchSectionContent(root,next);
+ return groups.map(group=>({key:group.key,members:group.records.map(record=>record.move.moveId)}));
+};
+window.startUndoMerge=()=>{mergeExpanded=new Set();mergeMoves=[mergeMove('B',0,true),mergeMove('C',1),mergeMove('D',2,true,11)];return drawUndoMerge();};
+window.mergeUndoRuns=()=>{mergeMoves=[mergeMoves[0],{...mergeMoves[1],undone:true,undoEventSeq:12},mergeMoves[2]];return drawUndoMerge();};
+root.addEventListener('pointerdown',event=>{const toggle=event.target.closest('.history-undone-toggle');if(toggle){root.querySelectorAll('.history-undone-toggle.is-pressing').forEach(node=>node.classList.remove('is-pressing'));toggle.classList.add('is-pressing');}});
 const makeLayer=Function(`${extract('const ensureRouteTransitionLayer =','\nensureShellStylesheet();')};return ensureRouteTransitionLayer;`)();
 const renderHomeLoading=Function('loadingAttributes','escapeHtml','getHomeSectionColumnCount','renderHomeStartButton',`${extract('const renderHomeCardSkeleton =','const renderBoardLoadingPreview =')};return renderHomeSectionSkeleton;`)(loadingAttributes,escapeHtml,()=>1,()=> '');
 // Actual alert mapping/stack/zone share the same keyed header space as the app.
