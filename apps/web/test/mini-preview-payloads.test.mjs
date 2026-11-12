@@ -48,6 +48,7 @@ const withShell = (run) => {
       renderMiniBoardPreviewRoot: rendering.renderMiniBoardPreviewRoot });
     const history = createHistoryRendering(() => ({ getShellLayoutMode: () => "narrow",
       renderBoardMessageHtml, selectedHistoryPresentation: () => null,
+      transport: { getIdentityId: () => null },
       renderMiniBoardPreviewRoot: rendering.renderMiniBoardPreviewRoot, toStableKey: JSON.stringify }));
     const rootFromMarkup = (markup) => {
       const root = new Element();
