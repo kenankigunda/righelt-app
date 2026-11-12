@@ -13,7 +13,7 @@ function fixture({ failBlocklist = false } = {}) {
     return nodes.get(key);
   }
   const query = key => key === "input" ? [...nodes.values()].find(value => value.name) : nodes.get(key) || null;
-  const element = { classList:{add(){},remove(){}},dataset: {}, open: false, setAttribute() {}, addEventListener(key, fn) { listeners.set(key, fn); }, showModal() { this.open = true; }, close() { this.open = false; }, replaceChildren() { nodes.clear(); markup = ""; }, querySelector: query, querySelectorAll() { return []; } };
+  const element = { classList:{add(){},remove(){}},dataset: {}, open: false, setAttribute() {}, addEventListener(key, fn) { listeners.set(key, fn); }, showModal() { this.open = true; }, close() { this.open = false; }, replaceChildren() { nodes.clear(); markup = ""; }, querySelector: query, querySelectorAll(selector) { return selector === "[data-account-local-invalid]" ? [...nodes.values()].filter(value => value.dataset.accountLocalInvalid === "true") : []; } };
   Object.defineProperty(element, "innerHTML", { get: () => markup, set(value) {
     markup = value; nodes.clear(); const form = node("form"); form.querySelectorAll = () => [node("button[type=submit]")];
     form.dataset.entryMode = value.match(/data-entry-mode="([^"]+)"/)?.[1];
@@ -291,4 +291,38 @@ test("a held control keeps current validation and flushes lookup plus checklist 
   assert.ok(issueDiagnostics.get(report.id).resolvedAt);
   assert.equal(issueDiagnostics.list().length, 1);
   issueDiagnostics.clear();
+});
+
+
+// Source-owned local fields only. These combined material semantics controls
+// are authored but unexecuted until the released source-check window is granted.
+test("local Username and Password rejection marks only the named field and preserves its source feedback",async()=>{
+ const f=fixture();await f.submit();
+ const username=f.node('[name="username"]'),password=f.node('[name="password"]');
+ assert.equal(username['aria-invalid'],'true');assert.equal(password['aria-invalid'],undefined);assert.equal(f.document.activeElement,username);assert.equal(f.acts.length,0);
+ f.input('username','Alice');assert.equal(username['aria-invalid'],undefined);await f.submit();
+ assert.equal(password['aria-invalid'],'true');assert.equal(username['aria-invalid'],undefined);assert.equal(f.document.activeElement,password);
+ assert.equal(f.node('[data-account-status]').textContent,'Enter your password.');
+ f.input('password','short');assert.equal(password['aria-invalid'],undefined);await f.submit();assert.equal(f.acts[0][0],'login');
+});
+test("known taken Username and unmet creation/change password requirements retain exact local ownership",async()=>{
+ const f=fixture();f.input('username','Alice');await f.click('data-create');await f.flush();
+ f.input('username','Taken_Name');f.debounce();await f.flush();f.lookups.at(-1).resolve({exists:true});await f.flush();await f.submit();
+ assert.equal(f.node('[name="username"]')['aria-invalid'],'true');assert.equal(f.node('[name="password"]')['aria-invalid'],undefined);assert.equal(f.acts.length,0);
+ f.input('username','Another_Name');f.input('password','x');await f.submit();assert.equal(f.node('[name="password"]')['aria-invalid'],'true');assert.equal(f.node('[name="username"]')['aria-invalid'],undefined);
+ f.dialog.open('password');await f.flush();f.input('newPassword','x');await f.submit();assert.equal(f.node('[name="newPassword"]')['aria-invalid'],'true');
+});
+test("next deliberate submit clears local flags even for autofill and global errors mark no field",async()=>{
+ for(const code of ['invalid_credentials','rate_limited','temporarily_unavailable']){
+  const f=fixture();await f.submit();const username=f.node('[name="username"]'),password=f.node('[name="password"]');assert.equal(username['aria-invalid'],'true');
+  // Native autofill can supply live values without an input event.
+  username.value='Alice';password.value='short';f.controller.act=async()=>{throw Object.assign(Error(code),{code});};await f.submit();
+  assert.equal(username['aria-invalid'],undefined);assert.equal(password['aria-invalid'],undefined);assert.equal(username.dataset.accountLocalInvalid,undefined);
+ }
+});
+test("retired local field input cannot clear the new dialog generation's rejection",async()=>{
+ const f=fixture();await f.submit();const old=f.node('[name="username"]');assert.equal(old['aria-invalid'],'true');
+ f.dialog.open();await f.flush();await f.submit();const current=f.node('[name="username"]');assert.notEqual(current,old);assert.equal(current['aria-invalid'],'true');
+ f.listeners.get('input')({target:old});assert.equal(current['aria-invalid'],'true');
+ f.input('username','Alice');assert.equal(current['aria-invalid'],undefined);
 });

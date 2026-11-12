@@ -5,7 +5,6 @@
 @font-face { font-family: Manrope; src: url('../assets/fonts/Manrope-variable.ttf') format('truetype'); font-weight: 200 800; font-display: swap; }
 :root { --font-family: Manrope, var(--font-family-fallback); --player-p1:#c2452f; --player-p2:#2d67c7; --radius-card:20px; --shell-elevated-surface:var(--surface-raised); }
 body { font-family:var(--font-family); background:var(--surface-foundation); }
-.brand-grid { position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:-1; overflow:hidden; }
 .shell-header { margin:8px 0 22px; }
 .shell-header-title-link { display:block; width:min(100%,330px); }
 .shell-header h1 { line-height:1; }
@@ -87,7 +86,6 @@ body { isolation:isolate; }
 [data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:not(.cell):not(.board-preview-inline-button):not(:where(.legend-inspection)):not(.secondary):not(.opponent-choice):not(.ui-icon-button):not(.participant-profile):not(:disabled):hover { background:var(--action-hover); }
 
 /* Surfaces share angular accents; controls keep their softer, tactile shape. */
-.brand-grid { mask-image:radial-gradient(ellipse 1050px 850px at var(--grid-origin-x,220px) var(--grid-origin-y,60px),#000 0%,rgb(0 0 0 / 65%) 30%,rgb(0 0 0 / 28%) 85%); }
 .home-refresh > .panel, .game-shell-frame .panel:not([data-shell-panel="board"]), .game-shell-mobile-panel .panel:not([data-shell-panel="board"]) {
   position:relative; border-radius:0 18px 0 18px;
   clip-path:polygon(20px 0,100% 0,100% calc(100% - 20px),calc(100% - 20px) 100%,0 100%,0 20px);
@@ -116,8 +114,6 @@ body { isolation:isolate; }
 [data-shell-panel="board"] .axis-label.col-axis { bottom:-18px; }
 [data-shell-panel="board"] .axis-label.row-axis { left:-18px; }
 
-[data-shell-panel="board"] .cell.target.target-side-p1:not(.continuation-member) { border-color:color-mix(in srgb,var(--player-p1) 35%,#cac7bd);box-shadow:none; }
-[data-shell-panel="board"] .cell.target.target-side-p2:not(.continuation-member) { border-color:color-mix(in srgb,var(--player-p2) 35%,#cac7bd);box-shadow:none; }
 [data-shell-panel="board"] .cell.target .piece-token.move-ghost { opacity:.22; }
 [data-shell-panel="board"] .board-wrap { padding-bottom:24px; }
 .invite-choice-row[hidden] { display:none; }
@@ -183,6 +179,7 @@ body { isolation:isolate; }
   --stone-grain:url('../assets/stone-grain.webp');
 }
 body {background-image:var(--stone-grain);background-color:var(--surface-foundation);}
+.shell-main-content > section.panel,
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,
 .story-modal,.game-result,.shell-flyout,.account-dialog[data-presentation="flyout"] {
   --stone-depth:6px;--stone-edge:#c9c0ad;--corner-start:transparent;--corner-end:transparent;
@@ -190,6 +187,7 @@ body {background-image:var(--stone-grain);background-color:var(--surface-foundat
   background:transparent;box-shadow:none;
   filter:drop-shadow(0 3px 3px rgb(54 45 30 / 16%));
 }
+.shell-main-content > section.panel::before,
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::before,
 .story-modal::before,.game-result::before,.shell-flyout::before,.account-dialog[data-presentation="flyout"]::before {
   content:'';position:absolute;inset:0;width:auto;height:auto;transform:none;pointer-events:none;z-index:-1;
@@ -200,6 +198,7 @@ body {background-image:var(--stone-grain);background-color:var(--surface-foundat
     var(--stone-grain),linear-gradient(135deg,#fffdf7,#f2ede1);
   box-shadow:inset 0 1px 0 #fff,inset 1px 0 0 rgb(255 255 255 / 80%);
 }
+.shell-main-content > section.panel::after,
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::after,
 .story-modal::after,.game-result::after,.shell-flyout::after,.account-dialog[data-presentation="flyout"]::after {
   content:'';position:absolute;inset:0 0 calc(-1 * var(--stone-depth));width:auto;height:auto;transform:none;pointer-events:none;z-index:-2;
@@ -245,8 +244,8 @@ body {background-image:var(--stone-grain);background-color:var(--surface-foundat
 @media(prefers-reduced-motion:reduce){.home-refresh button.opponent-choice{transition:none;}.home-refresh button.opponent-choice:active{translate:none;}}
 
 /* Interaction washes remain subordinate to pieces and illustrations. */
-[data-shell-panel="board"] .cell:is(.source,.target,.selected-piece) {--cell-surface:color-mix(in srgb,var(--corner-start) 5%,var(--cell-fill));background:var(--cell-surface);}
-[data-hover-capability="hover"] [data-shell-panel="board"] .cell:not(.unselectable):hover {--cell-surface:color-mix(in srgb,var(--corner-start) 5%,var(--cell-fill));background:var(--cell-surface);color:var(--ink);}
+[data-shell-panel="board"] .cell:is(.source,.target,.selected-piece) {background-color:var(--cell-floor-color);}
+[data-hover-capability="hover"] [data-shell-panel="board"] .cell:not(.unselectable):hover {background-color:var(--cell-floor-color);color:var(--ink);}
 /* Neutral supporting game surfaces; only the Board carries player corners. */
 :is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel:not([data-shell-panel="board"]) {
   --corner-start:transparent!important;--corner-end:transparent!important;
@@ -293,12 +292,7 @@ body {background-image:var(--stone-grain);background-color:var(--surface-foundat
 html[data-page-active="false"] .shell-header button.ui-icon-button {background:transparent!important;box-shadow:none!important;border-color:transparent!important;transform:none!important;}
 html[data-page-active="false"] .home-refresh button.opponent-choice {background:transparent!important;box-shadow:none!important;transform:none!important;}
 html[data-page-active="false"] .home-refresh button.opponent-choice::before {background:var(--stone-grain),linear-gradient(135deg,#fffef9,#f8f3e8);}
-/* Keep the full-viewport grid static: decoration must not delay interaction. */
-.brand-grid {
- mask-image:radial-gradient(ellipse 1050px 850px at var(--grid-origin-x,220px) var(--grid-origin-y,60px),#000 0%,rgb(0 0 0 / 55%) 30%,rgb(0 0 0 / 20%) 85%),radial-gradient(ellipse 650px 650px at 100% 100%,rgb(0 0 0 / 85%),transparent 85%);
- mask-composite:add;opacity:1;
-}
-.story-art {perspective:900px;}
+.story-art {perspective:none;}
 .story-art img {transform-origin:50% 50%;backface-visibility:hidden;transition:none;}
 .shell-flyout {background:var(--stone-grain),var(--surface-raised);border-color:#cfc5b3;box-shadow:-4px 0 0 #d2c8b7,-9px 0 18px rgb(54 45 30 / 12%);}
 .shell-flyout-header {background:transparent;border-bottom:1px solid #d4cbb9;align-items:center;padding-bottom:12px;}
@@ -310,9 +304,7 @@ html[data-page-active="false"] .home-refresh button.opponent-choice::before {bac
  @starting-style {.shell-flyout.is-open {transform:translate(var(--flyout-offset-x),var(--flyout-offset-y));opacity:0;}}
 }
 @media(prefers-reduced-motion:reduce){.shell-flyout{transition:none;}}
-.story-art {overflow:hidden;}
-.story-turn-shade {position:absolute;inset:0 auto 0 0;width:20%;background:linear-gradient(90deg,transparent,#403726,transparent);opacity:0;pointer-events:none;filter:blur(8px);}
-@media(prefers-reduced-motion:reduce){.story-turn-shade{display:none;}}
+.story-art {overflow:visible;clip-path:inset(-20px -8%);isolation:isolate;}
 html[data-page-active="false"] .shell-header button.ui-icon-button {transition:none;}
 
 /* Accounts use the same quiet stone and action language without changing forms. */
@@ -527,7 +519,7 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 }
 
 /* The commander window is a solid part of the square, including ghost previews. */
-.cell .commander-cutout {fill:var(--cell-surface,var(--cell-fill));stroke:none;opacity:1;}
+.cell .commander-cutout {fill:transparent;stroke:none;}
 .cell .piece-token.commander {opacity:1;z-index:2;}
 .cell .piece-stack {z-index:2;}
 .cell .piece-stack .piece-token.stacked-underlay {z-index:0;}
@@ -661,13 +653,132 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 
 .home-card-result { display:grid; align-items:start; gap:4px; margin-block:8px; overflow-wrap:anywhere; }
 .home-card-result > strong { color:var(--ink); }
+.home-card-result > strong.player-tone-p1 {color:var(--player-p1);}
+.home-card-result > strong.player-tone-p2 {color:var(--player-p2);}
 .home-card-result > .small { color:var(--text-secondary); }
-[data-winner-side="p1"] { --home-winner-color:var(--player-p1); }
-[data-winner-side="p2"] { --home-winner-color:var(--player-p2); }
-.mini-board-card[data-winner-side] > .mini-board-card-link-surface { position:relative; }
-.mini-board-card[data-winner-side] > .mini-board-card-link-surface::before { content:''; position:absolute; inset-block:20px; inset-inline-start:0; width:3px; background:var(--home-winner-color); pointer-events:none; }
+/* Completed games keep neutral card faces. Only the winner text is affiliated. */
 
 /* A short completed list can have wide cards. Its miniature still represents
    the square board instead of stretching fixed-height rows horizontally. */
 .home-refresh .mini-board-preview-board .cell { min-height:0; aspect-ratio:1; }
 .overlay-key .swatch.supply::before {background:var(--connection-supply-sample);}
+/* Marble foundation: bounded, static material. Textures never own layout,
+   readiness or motion; the white base remains usable if either asset fails. */
+:root {
+ --marble-texture:url('../assets/materials/marble-white-raster-v2.webp');
+ --marble-face:linear-gradient(rgb(255 255 255 / 65%),rgb(255 255 255 / 65%)),var(--marble-texture);
+ --marble-face-origin:-768px -768px;
+ --marble-face-scale:2048px 2048px;
+ --marble-canvas:url('../assets/materials/marble-white-raster-v2.webp');
+ --stone-grain:var(--marble-face);
+ --marble-edge:#c7ccce;
+ --marble-contact-shadow:0 3px 4px rgb(36 46 55 / 14%);
+}
+body {background-color:var(--surface-foundation);background-image:var(--marble-canvas);background-size:1024px 1024px;}
+.shell-main-content > section.panel,
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,
+.story-modal,.game-result {
+ --stone-edge:var(--marble-edge);
+ filter:drop-shadow(var(--marble-contact-shadow));
+}
+.shell-main-content > section.panel::before,
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::before,
+.story-modal::before,.game-result::before {
+ background:
+  linear-gradient(135deg,var(--corner-start) 0 16px,transparent 16px) top left / 40px 40px no-repeat,
+  linear-gradient(315deg,var(--corner-end) 0 24px,transparent 24px) bottom right / 40px 40px no-repeat,
+  var(--marble-face),linear-gradient(135deg,#fff,#f7f9f9);
+ background-position:top left,bottom right,0 0,var(--marble-face-origin),0 0;
+ background-size:40px 40px,40px 40px,auto,var(--marble-face-scale),auto;
+}
+.shell-main-content > section.panel::after,
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::after,
+.story-modal::after,.game-result::after {background:linear-gradient(115deg,#e3e6e7,var(--marble-edge));}
+.home-refresh button.opponent-choice::before,.home-refresh .mini-board-card::before {background:var(--marble-face),linear-gradient(135deg,#fff,#fafcfc);background-position:0 0,var(--marble-face-origin),0 0;background-size:auto,var(--marble-face-scale),auto;}
+.home-refresh button.opponent-choice:nth-child(2){--marble-face-origin:-920px -720px;}
+.home-refresh button.opponent-choice:nth-child(3){--marble-face-origin:-760px -1040px;}
+.home-refresh button.opponent-choice:nth-child(4){--marble-face-origin:-1024px -896px;}
+/* The Board has four mineral corner cuts rather than the generic two.
+   Keep those anchors separate from the quiet working-face bitmap. */
+:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel[data-shell-panel="board"]::before {
+ background:linear-gradient(135deg,var(--corner-start) 0 16px,transparent 16px),
+ linear-gradient(225deg,var(--corner-start) 0 16px,transparent 16px),
+ linear-gradient(45deg,var(--corner-end) 0 16px,transparent 16px),
+ linear-gradient(315deg,var(--corner-end) 0 16px,transparent 16px),
+ var(--marble-face),linear-gradient(135deg,#fff,#f7f9f9);
+ background-position:top left,top right,bottom left,bottom right,0 0,var(--marble-face-origin),0 0;
+ background-size:40px 40px,40px 40px,40px 40px,40px 40px,auto,var(--marble-face-scale),auto;
+ background-repeat:no-repeat,no-repeat,no-repeat,no-repeat,repeat,repeat,repeat;
+}
+html[data-page-active="false"] .home-refresh button.opponent-choice::before {background:var(--marble-face),linear-gradient(135deg,#fff,#fafcfc);background-position:0 0,var(--marble-face-origin),0 0;background-size:auto,var(--marble-face-scale),auto;}
+.rematch-opponent-card::before,.rematch-opponent-card:has(input:checked)::before {background-position:0 0,var(--marble-face-origin),0 0;background-size:auto,var(--marble-face-scale),auto;}
+.home-refresh button.opponent-choice::after,.home-refresh .mini-board-card::after {background:var(--marble-edge);}
+[data-hover-capability="hover"] .home-refresh button.opponent-choice:not(:disabled):hover::before {background:linear-gradient(rgb(247 247 247 / 65%),rgb(247 247 247 / 65%)),var(--marble-texture),linear-gradient(#fff,#fafcfc);background-position:0 0,var(--marble-face-origin),0 0;background-size:auto,var(--marble-face-scale),auto;}
+@media(forced-colors:active) {body{background-image:none;}}
+
+/* Foundation consumers preserve native modality, target sizes and input owners.
+   Relief is paint only; semantic cell rings and field errors remain stronger. */
+.account-dialog[data-presentation="modal"] {
+ border-radius:0;clip-path:polygon(12px 0,calc(100% - 12px) 0,100% 12px,100% calc(100% - 12px),calc(100% - 12px) 100%,12px 100%,0 calc(100% - 12px),0 12px);
+ background:linear-gradient(135deg,var(--player-red) 0 16px,transparent 16px),linear-gradient(315deg,var(--player-blue) 0 24px,transparent 24px),var(--marble-face),var(--surface-raised);
+ background-position:top left,bottom right,0 0,var(--marble-face-origin),0 0;background-size:40px 40px,40px 40px,auto,var(--marble-face-scale),auto;background-repeat:no-repeat,no-repeat,repeat,repeat,repeat;
+ border-color:var(--divider);box-shadow:inset 0 -4px 0 var(--marble-edge),0 4px 0 var(--marble-edge),0 16px 44px rgb(36 46 55 / 20%);
+}
+:is(.account-dialog,.shell-flyout) :is(input:not([type="checkbox"]):not([type="radio"]),textarea,select),
+.account-dialog .input-with-action {background-color:#f5f8f8;border-color:var(--divider);box-shadow:inset 0 2px 3px rgb(36 46 55 / 13%),inset 0 -1px #fff;}
+.account-dialog .input-with-action > input {background:transparent;box-shadow:none;}
+/* Native utility checks keep a visible checked glyph; the label owns the target. */
+.shell-flyout input[type="checkbox"] {appearance:auto;-webkit-appearance:checkbox;box-sizing:border-box;width:20px;height:20px;min-width:20px;min-height:20px;flex:none;padding:0;margin:0;border:0;border-radius:0;background:transparent;box-shadow:none;}
+.shell-flyout label:has(> input[type="checkbox"]) {display:flex;align-items:center;gap:10px;min-height:44px;line-height:1.5;}
+
+:is(.account-dialog,.shell-flyout) :is(input,textarea,select):focus-visible,
+.account-dialog .input-with-action:has(> input:focus-visible) {outline:2px solid var(--ink);outline-offset:2px;}
+.account-dialog .input-with-action > input:focus-visible {outline:none;}
+:is(.account-dialog,.shell-flyout) :is(input,textarea,select):is([aria-invalid="true"],:user-invalid),
+.account-dialog .input-with-action:has(> input:is([aria-invalid="true"],:user-invalid)) {border-color:var(--danger,#b42318);outline-color:var(--danger,#b42318);}
+.account-dialog[data-presentation="modal"] button[type="submit"] {box-shadow:0 3px 0 color-mix(in srgb,var(--action-color),#000 28%),inset 0 1px rgb(255 255 255 / 30%);}
+.account-dialog[data-presentation="modal"] button[type="submit"]:not(:disabled):is(:active,.is-pressing) {box-shadow:0 1px 0 color-mix(in srgb,var(--action-color),#000 28%),inset 0 1px 2px rgb(0 0 0 / 14%);}
+:is(.shell-flyout,.account-dialog[data-presentation="flyout"])::before {background:linear-gradient(135deg,rgb(255 255 255 / 94%),rgb(235 244 248 / 94%));backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:inset 0 1px #fff,inset 1px 0 rgb(255 255 255 / 85%);}
+:is(.shell-flyout,.account-dialog[data-presentation="flyout"])::after {background:linear-gradient(115deg,rgb(218 230 235 / 92%),rgb(176 193 202 / 90%));}
+.shell-header-menu-panel {
+ border-radius:0;clip-path:polygon(10px 0,calc(100% - 10px) 0,100% 10px,100% calc(100% - 10px),calc(100% - 10px) 100%,10px 100%,0 calc(100% - 10px),0 10px);
+ background:var(--marble-face),var(--surface-raised);background-position:0 0,var(--marble-face-origin);background-size:auto,var(--marble-face-scale);border-color:var(--divider);
+ box-shadow:inset 0 -3px 0 var(--marble-edge),inset 0 1px 0 rgb(255 255 255 / 90%),var(--shell-elevated-shadow);
+}
+/* A miniature is a quiet marble object on the single utility glass face,
+   without the inherited warm paper card surrounding it. Keep its layout. */
+.shell-flyout[data-flyout="scenarios"] .mini-board-card-scenario {background:transparent;border-color:transparent;border-radius:0;box-shadow:none;}
+.shell-flyout[data-flyout="scenarios"] .mini-board-preview-surface {background:var(--marble-face),var(--surface-raised);background-position:0 0,var(--marble-face-origin);background-size:auto,var(--marble-face-scale);}
+.mini-board-preview-wrap .cell {--cell-floor-image:none;}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
+ :is(.shell-flyout,.account-dialog[data-presentation="flyout"])::before {background:#f4f8fa;}
+}
+@media(forced-colors:active) {
+ .cell {--cell-floor-image:none;--cell-floor-color:Canvas;background-color:Canvas;}
+ .account-dialog[data-presentation="modal"],.shell-header-menu-panel {background:Canvas;}
+ :is(.shell-flyout,.account-dialog[data-presentation="flyout"])::before {background:Canvas;backdrop-filter:none;-webkit-backdrop-filter:none;}
+}
+
+/* Full artwork survives the reverse6% anticipation inside a fixed8% envelope;
+   only later travel crosses that boundary. Copy and native controls stay still. */
+.story-art img {filter:drop-shadow(0 2px 1px rgb(36 50 70 / 15%));}
+.story-art-wrap {--story-caret-outset:16px;}
+.story-art-wrap [data-story-step] {transform:none;animation:none;}
+.story-art-wrap [data-story-step="-1"] {translate:calc(-1 * var(--story-caret-outset)) 0;}
+.story-art-wrap [data-story-step="1"] {translate:var(--story-caret-outset) 0;}
+@media(max-width:700px){.story-art-wrap{--story-caret-outset:12px;}}
+@media(forced-colors:active){.story-art img{filter:none;}}
+
+/* Quiet mineral faces preserve the native silhouettes and occupied footprint.
+   No filter, layout owner or per-piece resource is introduced. */
+.piece-body {stroke:color-mix(in srgb,currentColor 66%,#fff);stroke-width:.45;paint-order:stroke fill;}
+.piece-mineral {fill:none;stroke:#fff;stroke-width:.45;stroke-opacity:.2;stroke-linecap:round;pointer-events:none;}
+.piece-token.inactive .piece-body {stroke:currentColor;stroke-width:1.8;fill:var(--cell-fill,#f8fafa);}
+.piece-token.inactive .piece-mineral {display:none;}
+.cell .piece-token.commander.ghost .piece-mineral {opacity:.35;}
+[data-shell-panel="board"] .cell.target .piece-token.commander.move-ghost .piece-mineral {opacity:.22;}
+.mini-board-preview-wrap .piece-mineral {display:none;}
+@media(forced-colors:active){.piece-mineral{display:none;}.piece-body{stroke:currentColor;}}
+@media(forced-colors:active){.shell-flyout[data-flyout="scenarios"] .mini-board-preview-surface {background:Canvas;}}
+
+@media(forced-colors:active){.shell-main-content > section.panel::before,.shell-main-content > section.panel::after {background:Canvas;}}

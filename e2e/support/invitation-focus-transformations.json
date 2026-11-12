@@ -1,7 +1,7 @@
 {
   "pathname": "/shell/app.js",
-  "sourceSha256": "9300deac0035110e3aeafa50d460b1767f26c875c7a61cd268fbad6ea4eac25a",
-  "outputSha256": "eef6752d8db4cf950ceb91e74a65bf8502e7bddf1581bf0f6c207ef2f784419b",
+  "sourceSha256": "83091f1ad9b15b26fd0e33f9bb7839d8675c395c3edd4473ee96b62993119531",
+  "outputSha256": "f53f2658987b5f3f7ad1036e98c03ffdf87e31f508061bba9bfb2e40a4381f10",
   "operations": [
     {
       "start": 7174,
@@ -12,103 +12,103 @@
       "anchorCount": 1
     },
     {
-      "start": 195763,
-      "end": 195763,
+      "start": 193873,
+      "end": 193873,
       "before": "",
       "after": "  if (nextMarkup !== lastRenderedMarkup) observeInviteFocus(\"render-before-replacement\");\n",
       "anchor": "  if (notificationPatches.patchMainMarkup({appEl,nextMarkup,lastRenderedMarkup,routeName:currentRoute.name,patchHomeAroundCreateControl,createMarkupRoot,updateMountedFlyouts})) {\n",
       "anchorCount": 1
     },
     {
-      "start": 195942,
-      "end": 195942,
+      "start": 194052,
+      "end": 194052,
       "before": "",
       "after": "    observeInviteFocus(\"render-after-replacement\");\n",
       "anchor": "  if (notificationPatches.patchMainMarkup({appEl,nextMarkup,lastRenderedMarkup,routeName:currentRoute.name,patchHomeAroundCreateControl,createMarkupRoot,updateMountedFlyouts})) {\n    restoreScenarioDraftFocus?.();\n",
       "anchorCount": 1
     },
     {
-      "start": 199166,
-      "end": 199166,
+      "start": 197276,
+      "end": 197276,
       "before": "",
       "after": "  const observeFocus = phase => { if (typeof pendingKey === \"string\" && pendingKey.startsWith(\"copy-invite:\")) observeInviteFocus(phase); };\n  observeFocus(\"pending-before-set\");\n",
       "anchor": "  const pendingGeneration=account.snapshot().generation;\n  pendingButtonKeys.add(pendingKey);\n",
       "anchorCount": 1
     },
     {
-      "start": 199203,
-      "end": 199203,
+      "start": 197313,
+      "end": 197313,
       "before": "",
       "after": "  observeFocus(\"pending-after-set\");\n",
       "anchor": "  pendingButtonKeys.add(pendingKey);\n  if (renderStart) {\n",
       "anchorCount": 1
     },
     {
-      "start": 199224,
-      "end": 199224,
+      "start": 197334,
+      "end": 197334,
       "before": "",
       "after": "    observeFocus(\"pending-before-start-render\");\n",
       "anchor": "  if (renderStart) {\n    render({ animatePanels: false, includeBoard: false });\n",
       "anchorCount": 1
     },
     {
-      "start": 199283,
-      "end": 199283,
+      "start": 197393,
+      "end": 197393,
       "before": "",
       "after": "    observeFocus(\"pending-after-start-render\");\n",
       "anchor": "    render({ animatePanels: false, includeBoard: false });\n  }\n",
       "anchorCount": 6
     },
     {
-      "start": 199527,
-      "end": 199527,
+      "start": 197637,
+      "end": 197637,
       "before": "",
       "after": "    observeFocus(\"pending-before-clear\");\n",
       "anchor": "    if(pendingGeneration!==account.snapshot().generation)return;\n    pendingButtonKeys.delete(pendingKey);\n",
       "anchorCount": 1
     },
     {
-      "start": 199569,
-      "end": 199569,
+      "start": 197679,
+      "end": 197679,
       "before": "",
       "after": "    observeFocus(\"pending-after-clear\");\n",
       "anchor": "    pendingButtonKeys.delete(pendingKey);\n    if (renderEnd) {\n",
       "anchorCount": 1
     },
     {
-      "start": 199590,
-      "end": 199590,
+      "start": 197700,
+      "end": 197700,
       "before": "",
       "after": "      observeFocus(\"pending-before-end-render\");\n",
       "anchor": "    if (renderEnd) {\n      render({ animatePanels: false, includeBoard: false });\n",
       "anchorCount": 1
     },
     {
-      "start": 199651,
-      "end": 199651,
+      "start": 197761,
+      "end": 197761,
       "before": "",
       "after": "      observeFocus(\"pending-after-end-render\");\n",
       "anchor": "      render({ animatePanels: false, includeBoard: false });\n    }\n",
       "anchorCount": 7
     },
     {
-      "start": 224692,
-      "end": 224960,
+      "start": 222802,
+      "end": 223070,
       "before": "    try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { if(!active())return;inviteFallback={gameId,link,role};setInviteFeedback('Copy the link below to share it.'); }\n",
       "after": "    try { observeInviteFocus(\"clipboard-before-await\"); await navigator.clipboard.writeText(link); observeInviteFocus(\"clipboard-resolved\");if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { observeInviteFocus(\"clipboard-rejected\"); if(!active())return;inviteFallback={gameId,link,role};setInviteFeedback('Copy the link below to share it.'); }\n",
       "anchor": "    window.__righeltLastInvite=link;\n    try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { if(!active())return;inviteFallback={gameId,link,role};setInviteFeedback('Copy the link below to share it.'); }\n  }catch(error){if(active()){ issueDiagnostics.capture(`invite:${gameId}`, { gameId, operation: 'create_invite', stage: 'failed', code: error.code ?? 'unavailable' }); setInviteFeedback('We couldn’t create your invite link. Please try again.'); }}\n",
       "anchorCount": 1
     },
     {
-      "start": 279289,
-      "end": 279289,
+      "start": 277614,
+      "end": 277614,
       "before": "",
       "after": "    observeInviteFocus(\"action-entry\", actionEl);\n",
       "anchor": "    }\n    const invitationPanel = actionEl.closest('[data-game-panel=\"join\"]');\n    if (invitationPanel instanceof HTMLElement) panelPendingFocus.delete(invitationPanel);\n    pendingInvitationFocus.begin(actionEl, getCopyInviteButtonKey(gameId));\n    await withPendingButton(getCopyInviteButtonKey(gameId),()=>copyGameInvitation(gameId,actionEl.dataset.inviteRole || 'viewer'));\n",
       "anchorCount": 1
     }
   ],
-  "originalNativeBodySha256": "759fedc40d2cb772748f9b3c08f4127ae6fd9d8d524d816963b87748ab940515",
+  "originalNativeBodySha256": "6055778756de11e7d2111d1b4ba19d75a49f59033c9ddb039bb2cc9b4dc9b854",
   "servedPathWitness": {
     "kind": "retained-native-failed-focus-trace",
     "revision": "674a1d975929cde8d1cad3af010d79271485c415",

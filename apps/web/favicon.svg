@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Righelt">
+  <path d="M9 1H55L63 9V55L55 63H9L1 55V9Z" fill="#fdfefe" stroke="#ccd1d3" stroke-width="2"/>
+  <path d="M4 45L19 38L29 40L43 31L60 28" fill="none" stroke="#ccd1d3" stroke-opacity=".6" stroke-width="1"/>
+  <path d="M2 12L10 4H27" fill="none" stroke="#b42f36" stroke-width="3"/>
+  <path d="M37 60H54L60 54" fill="none" stroke="#245e9b" stroke-width="3"/>
+  <path transform="translate(9 -1) scale(.43)" fill="#252b2d" fill-rule="evenodd" stroke-linejoin="round" d="M4 20H51C109 20 119 74 77 88L107 126H71L47 93H34V126H4Z M34 44V69H49C71 69 71 44 49 44Z"/>
+</svg>

@@ -1,3 +1,4 @@
+import {readFile,writeFile} from 'node:fs/promises';
 import { observeReloadHomeReads } from '../support/reload-home-reads.mjs';
 import {installInvitationFocusDiagnostics} from '../support/invitation-focus-diagnostics.mjs';
 import { waitForOverlayEntry } from "../support/overlay-motion.mjs";
@@ -83,10 +84,43 @@ test('phone home and Babs carets fit without horizontal overflow',async({page})=
  await expect(page.getByRole('button',{name:'Mute sound',exact:true})).toBeVisible();
  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.screenshot({path:test.info().outputPath('home-phone.png')});
+ const menuTrigger=page.getByRole('button',{name:'Open navigation menu',exact:true});await menuTrigger.click();
+ const menu=page.locator('.shell-header-menu-panel');await expect(menu).toBeVisible();
+ await expect.poll(()=>menu.evaluate(el=>el.getAnimations().filter(a=>a.playState==='running').length)).toBe(0);
+ const menuPaint=await menu.evaluate(el=>{const s=getComputedStyle(el),r=el.getBoundingClientRect();return{radius:s.borderRadius,clip:s.clipPath,image:s.backgroundImage,shadow:s.boxShadow,rect:r.toJSON(),viewport:innerWidth,rows:[...el.querySelectorAll('button')].map(button=>{const b=button.getBoundingClientRect(),style=getComputedStyle(button);return{text:button.textContent.trim(),height:b.height,left:b.left,right:b.right,background:style.backgroundColor,shadow:style.boxShadow};})};});
+ expect(menuPaint.radius).toBe('0px');expect(menuPaint.clip.startsWith('polygon(')).toBe(true);expect(menuPaint.image).toContain('url(');expect(menuPaint.rect.left).toBeGreaterThanOrEqual(0);expect(menuPaint.rect.right).toBeLessThanOrEqual(menuPaint.viewport);
+ expect(menuPaint.rows.map(row=>row.text)).toEqual(['Account','Scenarios','Debug']);for(const row of menuPaint.rows){expect(row.height).toBeGreaterThanOrEqual(44);expect(row.shadow).toBe('none');}
+ const menuMetrics=test.info().outputPath('mobile-menu-native.json');await writeFile(menuMetrics,JSON.stringify(menuPaint,null,2),{mode:0o600});await test.info().attach('mobile menu native paint',{path:menuMetrics,contentType:'application/json'});
+ await page.screenshot({path:test.info().outputPath('mobile-menu-clipped-marble.png')});
+ await menu.getByRole('button',{name:'Scenarios',exact:true}).focus();await expect(menu.getByRole('button',{name:'Scenarios',exact:true})).toBeFocused();await page.keyboard.press('Escape');await expect(menu).toHaveAttribute('aria-hidden','true');await expect(menuTrigger).toHaveAttribute('aria-expanded','false');await expect(menu.getByRole('button',{name:'Scenarios',exact:true,includeHidden:true})).toHaveAttribute('tabindex','-1');menuPaint.afterEscape=await menu.evaluate(el=>({focusInside:el.contains(document.activeElement),focusedAction:document.activeElement?.getAttribute('data-action'),activeElement:document.activeElement?.tagName}));await writeFile(menuMetrics,JSON.stringify(menuPaint,null,2),{mode:0o600});await expect(menuTrigger).toBeFocused();
+ await menuTrigger.click();await expect(menu).toHaveAttribute('aria-hidden','false');const outsideSound=page.getByRole('button',{name:'Mute sound',exact:true});await outsideSound.focus();await page.keyboard.press('Escape');await expect(outsideSound).toBeFocused();await expect(menu).toHaveAttribute('aria-hidden','true');
+ await menuTrigger.click();await expect(page.locator('.shell-header-menu-panel')).toBeVisible();const outsideHeading=page.getByRole('heading',{name:'Start something new',exact:true});const outsideRect=await outsideHeading.boundingBox();expect(outsideRect.x+1).toBeLessThan(menuPaint.rect.left);await outsideHeading.click({position:{x:1,y:1}});await expect(page.locator('.shell-header-menu-panel')).toHaveAttribute('aria-hidden','true');
  await page.locator('button[data-opponent="babs"]').click();const dialog=page.getByRole('dialog',{name:'Babs',exact:true});await expect(dialog).toBeVisible();
  await expect(dialog.getByRole('button',{name:'Next story image'})).toBeVisible();
  await expect.poll(()=>dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ await expect.poll(()=>dialog.evaluate(el=>el.getAnimations({subtree:true}).filter(a=>a.playState==='running'&&a.effect?.getTiming().iterations!==Infinity).length)).toBe(0);
+ await expect.poll(()=>dialog.evaluate(el=>getComputedStyle(el).opacity)).toBe('1');
+ await expect.poll(()=>dialog.locator('[data-story-image][data-active="true"]').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);
  await page.screenshot({path:test.info().outputPath('babs-phone.png')});
+ // System foreground preserves all three menu bars when forced colors removes
+ // decorative backgrounds. The native button still owns opening and Escape.
+ await dialog.getByRole('button',{name:'Close opponent story',exact:true}).click();await expect(dialog).not.toBeVisible();
+ await page.emulateMedia({forcedColors:'active'});expect(await page.evaluate(()=>matchMedia('(forced-colors:active)').matches)).toBe(true);
+ const forcedTrigger=page.getByRole('button',{name:'Open navigation menu',exact:true});await expect(forcedTrigger).toBeVisible();await expect(forcedTrigger).toHaveAttribute('aria-expanded','false');
+ const forcedMenu=await forcedTrigger.evaluate(el=>{const backgroundChain=[];for(let ancestor=el;ancestor;ancestor=ancestor.parentElement){const style=getComputedStyle(ancestor);backgroundChain.push({tag:ancestor.tagName,className:ancestor.className,background:style.backgroundColor,image:style.backgroundImage,filter:style.filter,backdrop:style.backdropFilter,opacity:style.opacity});const channels=style.backgroundColor.match(/[\d.]+/g)?.map(Number);if(channels&&(channels.length===3||channels[3]===1))break;}return{button:el.getBoundingClientRect().toJSON(),backgroundChain,bars:[...el.querySelectorAll('.shell-header-menu-icon > span')].map(bar=>({rect:bar.getBoundingClientRect().toJSON(),background:getComputedStyle(bar).backgroundColor,adjust:getComputedStyle(bar).forcedColorAdjust,visibility:getComputedStyle(bar).visibility,display:getComputedStyle(bar).display}))};});
+ const luminance=color=>{const channels=color.match(/[\d.]+/g).map(Number);expect(channels.length).toBeGreaterThanOrEqual(3);if(channels.length===4)expect(channels[3]).toBe(1);const linear=channels.slice(0,3).map(value=>{const c=value/255;return c<=.04045?c/12.92:((c+.055)/1.055)**2.4;});return linear[0]*.2126+linear[1]*.7152+linear[2]*.0722;};
+ const forcedMetrics=test.info().outputPath('mobile-menu-forced-colors.json');await writeFile(forcedMetrics,JSON.stringify(forcedMenu,null,2),{mode:0o600});await test.info().attach('forced colors menu bars',{path:forcedMetrics,contentType:'application/json'});
+ for(const ancestor of forcedMenu.backgroundChain){expect(ancestor.image).toBe('none');expect(ancestor.filter).toBe('none');expect(ancestor.backdrop).toBe('none');expect(ancestor.opacity).toBe('1');const channels=ancestor.background.match(/[\d.]+/g).map(Number);if(channels.length===4)expect([0,1]).toContain(channels[3]);}
+ const backgroundLuminance=luminance(forcedMenu.backgroundChain.at(-1).background);forcedMenu.contrasts=forcedMenu.bars.map(bar=>{const levels=[backgroundLuminance,luminance(bar.background)].sort((a,b)=>a-b);return(levels[1]+.05)/(levels[0]+.05);});
+ await writeFile(forcedMetrics,JSON.stringify(forcedMenu,null,2),{mode:0o600});
+ expect(forcedMenu.button.width).toBeGreaterThanOrEqual(44);expect(forcedMenu.button.height).toBeGreaterThanOrEqual(44);expect(forcedMenu.bars).toHaveLength(3);
+ for(const [index,bar] of forcedMenu.bars.entries()){expect(bar.display).not.toBe('none');expect(bar.visibility).toBe('visible');expect(bar.rect.width).toBeGreaterThan(0);expect(bar.rect.height).toBe(2);expect(bar.adjust).toBe('none');expect(forcedMenu.contrasts[index]).toBeGreaterThanOrEqual(3);expect(bar.rect.left).toBeGreaterThanOrEqual(forcedMenu.button.left);expect(bar.rect.right).toBeLessThanOrEqual(forcedMenu.button.right);}
+ const closedImage=test.info().outputPath('mobile-menu-forced-colors-closed.png');await page.screenshot({path:closedImage});await test.info().attach('forced colors closed menu',{path:closedImage,contentType:'image/png'});
+ await forcedTrigger.click();await expect(menu).toHaveAttribute('aria-hidden','false');await expect(page.getByRole('button',{name:'Close navigation menu',exact:true})).toHaveAttribute('aria-expanded','true');
+ await expect.poll(()=>menu.evaluate(el=>el.getAnimations().filter(a=>a.playState==='running').length)).toBe(0);await expect.poll(()=>menu.evaluate(el=>getComputedStyle(el).opacity)).toBe('1');
+ const openImage=test.info().outputPath('mobile-menu-forced-colors-open.png');await page.screenshot({path:openImage});await test.info().attach('forced colors open menu',{path:openImage,contentType:'image/png'});
+ await menu.getByRole('button',{name:'Scenarios',exact:true}).focus();await page.keyboard.press('Escape');await expect(menu).toHaveAttribute('aria-hidden','true');await expect(forcedTrigger).toBeFocused();await expect(menu.getByRole('button',{name:'Scenarios',exact:true,includeHidden:true})).toHaveAttribute('tabindex','-1');
+ await page.emulateMedia({forcedColors:'none'});
 });
 
 test('Friend invite stays open after player copy and Players shares viewer intent',async({page,browser})=>{
@@ -224,25 +258,47 @@ test('copy feedback preserves focus and collapses its space when empty',async({p
  await expect(page.getByText('Commander',{exact:true})).toBeVisible();
 });
 
-test('storybook turn animates artwork while story copy stays fixed',async({page})=>{
+test('storybook artwork draws back then slides while story copy stays fixed',async({page})=>{
  await page.goto('/');await page.locator('button[data-opponent="babs"]').click();
  const modal=page.getByRole('dialog',{name:'Babs',exact:true});await expect(modal).toBeVisible();
  await waitForOverlayEntry(modal);
  const copy=modal.locator('.opponent-story-copy');const before=await copy.boundingBox();
- // Record the real animation when it starts: CI may deliver the next
- // browser command after the 520ms animation has already finished.
- await modal.locator('.story-turn-shade').evaluate(el => {
-   const animate = el.animate.bind(el);
-   el.animate = (...args) => {
-     const animation = animate(...args);
-     el.dataset.observedAnimations = String(el.getAnimations().length);
-     return animation;
-   };
+ // Hold the actual owned image animations. This is geometry/keyframe proof,
+ // not a wall-clock performance measurement or a synthetic animation replica.
+ await modal.evaluate(el=>{
+   window.observedStoryAnimations=[];
+   for(const image of el.querySelectorAll('[data-story-image]')){
+     const animate=image.animate.bind(image);
+     image.animate=(...args)=>{
+       const animation=animate(...args);animation.pause();
+       window.observedStoryAnimations.push(animation);return animation;
+     };
+   }
  });
- await modal.getByRole('button',{name:'Next story image'}).click();
- await expect(modal.locator('[data-story-image]').nth(1)).toHaveAttribute('data-active','true');
- expect(Number(await modal.locator('.story-turn-shade').getAttribute('data-observed-animations'))).toBeGreaterThan(0);
- expect((await copy.boundingBox()).y).toBeCloseTo(before.y,0);
+ for(const [name,index,direction] of [['Next story image',1,1],['Previous story image',0,-1]]){
+   await modal.getByRole('button',{name}).click();
+   await expect(modal.locator('[data-story-image]').nth(index)).toHaveAttribute('data-active','true');
+   const held=await modal.evaluate(async el=>{
+     const animations=window.observedStoryAnimations;
+     await Promise.all(animations.map(animation=>animation.ready));
+     for(const animation of animations)animation.currentTime=animation.effect.getTiming().duration*.2;
+     const frames=animations.map(animation=>({duration:animation.effect.getTiming().duration,frames:animation.effect.getKeyframes().map(frame=>({transform:frame.transform,opacity:frame.opacity,offset:frame.offset}))}));
+     return {frames,shadeCount:el.querySelectorAll('.story-turn-shade').length};
+   });
+   expect(held.frames).toHaveLength(2);expect(held.shadeCount).toBe(0);
+   for(const animation of held.frames){expect(animation.duration).toBe(760);for(const frame of animation.frames)expect(Number(frame.opacity)).toBe(1);}
+   expect(held.frames[0].frames[1].transform).toBe(`translateX(${6*direction}%)`);
+   expect(held.frames[0].frames.at(-1).transform).toBe(`translateX(${-112*direction}%)`);
+   expect(held.frames[1].frames[1].transform).toBe(`translateX(${118*direction}%)`);
+   const current=await copy.boundingBox();
+   for(const key of ['x','y','width','height'])expect(current[key]).toBeCloseTo(before[key],0);
+   await modal.evaluate(async()=>{
+     const animations=window.observedStoryAnimations;window.observedStoryAnimations=[];
+     for(const animation of animations)animation.play();
+     await Promise.all(animations.map(animation=>animation.finished));
+   });
+   await expect.poll(()=>modal.locator('[data-story-image]').evaluateAll(images=>images.flatMap(image=>image.getAnimations()).length)).toBe(0);
+ }
 });
 
 for(const outcome of ['success','failure'])test(`Players restores the selected invitation role after delayed clipboard ${outcome}`,async({page,baseURL},info)=>{
@@ -250,7 +306,7 @@ for(const outcome of ['success','failure'])test(`Players restores the selected i
  try {
  await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:()=>new Promise((resolve,reject)=>{window.completeClipboard=resolve;window.failClipboard=()=>reject(new Error('Clipboard unavailable'));})}}));
  await page.goto('/');await page.getByTestId('home-create-game').click();await page.getByRole('button',{name:'Start a friend game',exact:true}).click();await page.getByRole('button',{name:'Close invite',exact:true}).click();
- const panel=page.locator('[data-game-panel="join"]');const viewer=panel.locator('[data-invite-role="viewer"]');await viewer.focus();await page.keyboard.press('Enter');
+ const panel=page.locator('[data-game-panel="join"]');const viewer=panel.locator('[data-invite-role="viewer"]');await viewer.press('Enter');
  await page.waitForFunction(()=>window.completeClipboard);await expect(viewer).toHaveAttribute('aria-busy','true');
  await page.evaluate(outcome=>outcome==='success'?window.completeClipboard():window.failClipboard(),outcome);
  await expect(viewer).not.toHaveAttribute('aria-busy','true');await expect(viewer).toBeFocused();
@@ -330,6 +386,8 @@ test('Friend introduction uses one illustration, cancels without creating, and p
  const intro=page.getByRole('dialog',{name:'Friend',exact:true});await expect(intro).toBeVisible();
  await expect(intro.locator('img')).toHaveCount(1);await expect(intro.locator('[data-story-step]')).toHaveCount(0);
  await expect.poll(()=>intro.locator('img').evaluate(el=>el.complete && el.naturalWidth>0)).toBe(true);
+ await expect.poll(()=>intro.evaluate(el=>el.getAnimations({subtree:true}).filter(a=>a.playState==='running'&&a.effect?.getTiming().iterations!==Infinity).length)).toBe(0);
+ await expect.poll(()=>intro.evaluate(el=>getComputedStyle(el).opacity)).toBe('1');
  await page.screenshot({path:test.info().outputPath('friend-introduction.png')});
  await page.mouse.click(2,2);await expect(intro).not.toBeVisible();expect(creates).toBe(0);
  await page.getByTestId('home-create-game').click();await intro.getByRole('button',{name:'Start a friend game'}).click();
@@ -465,6 +523,7 @@ test('an open flyout retains its node and animation state across game navigation
 });
 
 test('commander windows mask paths and center dots in real and ghost states',async({page})=>{
+ await page.setViewportSize({width:1440,height:900});
  await page.goto('/');
  const created=page.waitForResponse(response=>response.request().method()==='POST' && new URL(response.url()).pathname==='/api/shell/games');
  await page.getByRole('button',{name:'Play both sides',exact:true}).click();
@@ -479,12 +538,13 @@ test('commander windows mask paths and center dots in real and ghost states',asy
  await expect(page.locator('#shell-board .commander.move-ghost').first()).toBeVisible();
  await expect.poll(()=>page.locator('#shell-board .cell').evaluateAll(cells=>cells.flatMap(el=>el.getAnimations()).filter(a=>a.playState==='running').length)).toBe(0);
  const states=await page.evaluate(()=>[...document.querySelectorAll('#shell-board .commander')].map(token=>{
-  const cutout=token.querySelector('.commander-cutout'),cell=token.closest('.cell');
+  const cutout=token.querySelector('.commander-cutout'),floor=token.querySelector('.commander-floor'),cell=token.closest('.cell');
   const ctx=document.createElement('canvas').getContext('2d');
   const rgba=color=>{ctx.clearRect(0,0,1,1);ctx.fillStyle=color;ctx.fillRect(0,0,1,1);return [...ctx.getImageData(0,0,1,1).data];};
-  return {fill:rgba(getComputedStyle(cutout).fill),background:rgba(getComputedStyle(cell).backgroundColor),opacity:getComputedStyle(token).opacity,cutoutOpacity:getComputedStyle(cutout).opacity};
+  const paint=node=>{const c=getComputedStyle(node);return {color:c.backgroundColor,image:c.backgroundImage,size:c.backgroundSize};};
+  return {fill:rgba(getComputedStyle(cutout).fill),background:rgba(getComputedStyle(cell).backgroundColor),cellPaint:paint(cell),floorPaint:floor?paint(floor):null,floorClip:floor?getComputedStyle(floor).clipPath:null,opacity:getComputedStyle(token).opacity,cutoutOpacity:getComputedStyle(cutout).opacity};
  }));
- expect(states.length).toBeGreaterThan(1);for(const state of states){expect(state.fill).toEqual(state.background);expect(state.opacity).toBe('1');expect(state.cutoutOpacity).toBe('1');}
+ expect(states.length).toBeGreaterThan(1);for(const state of states){expect(state.fill[3]).toBe(0);expect(state.background[3]).toBe(255);expect(state.floorPaint).toEqual(state.cellPaint);expect(state.floorClip).not.toBe('none');expect(state.opacity).toBe('1');expect(state.cutoutOpacity).toBe('1');}
  await page.screenshot({path:test.info().outputPath('commander-masked-window.png')});
 });
 
@@ -498,4 +558,98 @@ test('scroll viewport stays inside clipped modal corners when enlarged',async({p
  const geometry=await dialog.evaluate(el=>{const outer=el.getBoundingClientRect(),inner=el.querySelector('.modal-content').getBoundingClientRect();return {top:inner.top-outer.top,bottom:outer.bottom-inner.bottom,left:inner.left-outer.left,right:outer.right-inner.right};});
  expect(geometry.top).toBeGreaterThanOrEqual(24);expect(geometry.bottom).toBeGreaterThanOrEqual(24);expect(geometry.left).toBeGreaterThanOrEqual(10);expect(geometry.right).toBeGreaterThanOrEqual(10);
  await content.evaluate(el=>el.scrollTop=el.scrollHeight);await expect(dialog.getByRole('button',{name:'Start a friend game'})).toBeInViewport();await expect(dialog.getByRole('button',{name:'Close opponent story'})).toBeInViewport();
+});
+
+
+// One real consumer journey; visual/reference acceptance uses the attached originals.
+test('all approved artwork consumers fit and natural story motion survives bidirectional interruption',async({page},info)=>{
+ const evidence={scenes:[],portraits:[],motion:[],gaps:[],creates:[]},errors=[];let primary,hasPrimary=false;
+ const store=async()=>{const file=info.outputPath('artwork-consumers-and-natural-motion.json');await writeFile(file,JSON.stringify(evidence,null,2)+'\n',{mode:0o600});await info.attach('artwork consumers and natural motion',{path:file,contentType:'application/json'});};
+ const screenshot=async(name)=>{const file=info.outputPath(name+'.png'),before=await page.evaluate(()=>performance.now());await page.screenshot({path:file,animations:'allow'});const after=await page.evaluate(()=>performance.now());(evidence.originals??=[]).push({name,file,before,after,clock:'Actual page performance.now brackets; no exact capture-frame timestamp claim'});await info.attach(name,{path:file,contentType:'image/png'});};
+ const onRequest=request=>{if(request.method()==='POST'&&new URL(request.url()).pathname==='/api/shell/games')evidence.creates.push({method:'POST',path:'/api/shell/games'});};
+ const onPageError=error=>errors.push(error.message);page.on('request',onRequest);page.on('pageerror',onPageError);
+ const expected={babs:['babs-1-discovery','babs-2-rematch','babs-3-research'],tau:['tau-1-gardens','tau-2-connections','tau-3-patience'],horus:['horus-1-watchtower','horus-2-studying','horus-3-opinion']};
+ const assets=JSON.parse(await readFile(new URL('../../apps/web/assets/opponents/manifest.json',import.meta.url),'utf8'));
+ expect(assets).toHaveLength(14);
+ evidence.qualifiedArtifactIdentity={source:'Existing independent14delivery-hash proof; this nativecase proves actualconsumer binding/decoding/fit, not a second artifact hash pass.',assets:assets.map(({id,src,sha256})=>({id,src,sha256}))};
+ const settled=async(dialog)=>{
+  await expect.poll(()=>dialog.locator('[data-story-image]').evaluateAll(images=>images.flatMap(image=>image.getAnimations()).filter(animation=>animation.playState==='running'||animation.playState==='pending').length)).toBe(0);
+ };
+ const choose=async(dialog,name,index)=>{await dialog.getByRole('button',{name,exact:true}).click();await expect(dialog.locator('[data-story-image]').nth(index)).toHaveAttribute('data-active','true');await settled(dialog);};
+ const imageState=locator=>locator.evaluate(img=>{const r=img.getBoundingClientRect(),p=img.parentElement.getBoundingClientRect(),s=getComputedStyle(img);return{src:new URL(img.currentSrc||img.src).pathname,complete:img.complete,width:img.naturalWidth,height:img.naturalHeight,fit:s.objectFit,opacity:s.opacity,rect:r.toJSON(),parent:p.toJSON(),viewport:{width:innerWidth,height:innerHeight},overflow:img.parentElement.scrollWidth-img.parentElement.clientWidth};});
+ const verifyImage=async(locator,id)=>{await expect.poll(()=>locator.evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);const state=await imageState(locator);expect(state.src).toBe('/assets/opponents/'+id+'.webp');expect(state.fit).toBe('contain');expect(state.width).toBeGreaterThan(0);expect(state.height).toBeGreaterThan(0);expect(state.rect.width).toBeGreaterThan(0);expect(state.rect.height).toBeGreaterThan(0);expect(state.rect.left).toBeGreaterThanOrEqual(state.parent.left-1);expect(state.rect.right).toBeLessThanOrEqual(state.parent.right+1);expect(state.rect.top).toBeGreaterThanOrEqual(state.parent.top-1);expect(state.rect.bottom).toBeLessThanOrEqual(state.parent.bottom+1);expect(state.rect.left).toBeGreaterThanOrEqual(-1);expect(state.rect.right).toBeLessThanOrEqual(state.viewport.width+1);expect(state.rect.top).toBeGreaterThanOrEqual(-1);expect(state.rect.bottom).toBeLessThanOrEqual(state.viewport.height+1);return state;};
+ const stationary=async(dialog,before)=>{const after=await dialog.locator('.opponent-story-copy,.story-heading,.story-modal-actions,[data-story-step]').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().toJSON()));expect(after).toHaveLength(before.length);for(let i=0;i<after.length;i++)for(const key of ['x','y','width','height'])expect(after[i][key]).toBeCloseTo(before[i][key],0);};
+ try{
+  await page.setViewportSize({width:1440,height:900});await page.goto('/');await page.evaluate(()=>document.fonts.ready);
+  await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+  await expect(page.getByTestId('home-create-game')).toBeEnabled();
+  for(const id of ['babs','tau','horus'])evidence.portraits.push(await verifyImage(page.locator('button[data-opponent="'+id+'"]').locator('img'),id+'-portrait'));
+  evidence.portraits.push(await verifyImage(page.getByTestId('home-create-game').locator('img'),'friend-portrait'));
+  for(const [id,scenes] of Object.entries(expected)){
+   await page.locator('button[data-opponent="'+id+'"]').click();const dialog=page.getByRole('dialog',{name:{babs:'Babs',tau:'Tau',horus:'Horus'}[id],exact:true});await expect(dialog).toBeVisible();await waitForOverlayEntry(dialog);
+   // Native manual selection stops the normal carousel; no clock or animation override.
+   await choose(dialog,'Previous story image',2);
+   await choose(dialog,'Next story image',0);
+   const fixed=await dialog.locator('.opponent-story-copy,.story-heading,.story-modal-actions,[data-story-step]').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().toJSON()));
+   for(let index=0;index<3;index++){
+    if(index)await choose(dialog,'Next story image',index);
+    const image=dialog.locator('[data-story-image][data-active="true"]');const state=await verifyImage(image,scenes[index]);expect(state.width).toBe(1200);expect(state.height).toBe(800);expect(state.rect.width/state.rect.height).toBeCloseTo(1.5,2);expect(await dialog.evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);await stationary(dialog,fixed);evidence.scenes.push({id:scenes[index],...state});await screenshot(scenes[index]);
+   }
+   await choose(dialog,'Previous story image',1);await choose(dialog,'Previous story image',0);
+   if(id==='babs'){
+    // Passive bounded observation starts with real pointer input. It never changes time,
+    // replaces animate(), modifies styles, or submits gameplay.
+    await dialog.evaluate(el=>{
+     const images=[...el.querySelectorAll('[data-story-image]')],nodes=[...el.querySelectorAll('.opponent-story-copy,.story-heading,.story-modal-actions,[data-story-step]')];
+     const observation={frames:[],inputs:[],dropped:0,done:false};window.__artworkNativeObservation=observation;let started=false,frames=0;
+     const rect=node=>node.getBoundingClientRect().toJSON();
+     const sample=()=>{if(observation.done)return;if(++frames>600){observation.dropped++;observation.done=true;return;}observation.frames.push({at:performance.now(),images:images.map(image=>{const s=getComputedStyle(image);return{src:new URL(image.currentSrc||image.src).pathname,active:image.dataset.active,opacity:Number(s.opacity),transform:s.transform,filter:s.filter,rect:rect(image),animations:image.getAnimations().map(animation=>({time:animation.currentTime,duration:animation.effect.getTiming().duration,playState:animation.playState}))};}),fixed:nodes.map(rect),clips:[el.querySelector('.story-art'),el.querySelector('.modal-content'),el].map(node=>({rect:rect(node),overflowX:getComputedStyle(node).overflowX,overflowY:getComputedStyle(node).overflowY})),shade:el.querySelectorAll('.story-turn-shade').length});requestAnimationFrame(sample);};
+     const input=event=>{const button=event.target.closest('[data-story-step]');if(!button)return;observation.inputs.push({at:performance.now(),step:Number(button.dataset.storyStep),activeAnimations:images.flatMap(image=>image.getAnimations()).map(a=>({time:a.currentTime,duration:a.effect.getTiming().duration,playState:a.playState}))});if(!started){started=true;requestAnimationFrame(sample);}};
+     el.addEventListener('pointerdown',input,true);observation.stop=()=>{observation.done=true;el.removeEventListener('pointerdown',input,true);};
+    });
+    for(const direction of [1,-1]){
+     const first=direction===1?'Next story image':'Previous story image',second=direction===1?'Previous story image':'Next story image';
+     await dialog.getByRole('button',{name:first,exact:true}).click();
+     const early=await dialog.evaluate(()=>new Promise((resolve,reject)=>{const observation=window.__artworkNativeObservation,inputAt=observation.inputs.at(-1).at;let waited=0;const read=()=>{const frame=observation.frames.find(frame=>frame.at>=inputAt&&frame.images.some(image=>image.animations.some(a=>a.playState==='running'&&a.time>0&&a.time<a.duration*.2)));if(frame){resolve({frame,observedAt:performance.now(),framesWaited:waited});return;}if(++waited>=60||observation.done){reject(new Error('No qualifying early native frame within passive60frame bound'));return;}requestAnimationFrame(read);};read();}));
+     const before=early.frame;await screenshot('natural-'+direction+'-early');
+     const interrupted=await dialog.evaluate(el=>[...el.querySelectorAll('[data-story-image]')].some(image=>image.getAnimations().some(a=>a.playState==='running'&&a.currentTime<a.effect.getTiming().duration)));
+     if(!interrupted)evidence.gaps.push('Direction '+direction+': native second input could not interrupt an active first animation.');
+     await choose(dialog,second,0);const actualSecondInput=await dialog.evaluate(()=>window.__artworkNativeObservation.inputs.at(-1));if(!actualSecondInput.activeAnimations.some(a=>a.playState==='running'&&a.time<a.duration))evidence.gaps.push('Direction '+direction+': actual second pointerdown missed active first animation.');await stationary(dialog,fixed);evidence.motion.push({direction,earlyObservation:early,beforeScreenshot:before,interrupted,final:await imageState(dialog.locator('[data-story-image][data-active="true"]'))});await screenshot('natural-'+direction+'-settled');
+    }
+    const observation=await dialog.evaluate(()=>{const o=window.__artworkNativeObservation;o.stop();return{frames:o.frames,inputs:o.inputs,dropped:o.dropped};});evidence.motionFrames=observation;expect(observation.dropped).toBe(0);
+    const violations=[];for(const frame of observation.frames){if(frame.shade)violations.push({at:frame.at,kind:'unexpected shade'});for(const image of frame.images)if(image.animations.length&&(image.opacity!==1||image.filter.includes('brightness')))violations.push({at:frame.at,kind:'animated image opacity/filter',src:image.src,opacity:image.opacity,filter:image.filter});for(let i=0;i<fixed.length;i++)for(const key of ['x','y','width','height'])if(Math.abs(frame.fixed[i][key]-fixed[i][key])>=.5)violations.push({at:frame.at,kind:'copy/control moved',node:i,key,before:fixed[i][key],after:frame.fixed[i][key]});}expect(violations).toEqual([]);
+    for(const transition of evidence.motion)expect(transition.final.src).toBe('/assets/opponents/babs-1-discovery.webp');
+    // Returning to the original scene reverses its actual path. It must not
+    // replay a full outgoing/incoming excursion merely to restore that scene.
+    const discovery=evidence.scenes.find(scene=>scene.id==='babs-1-discovery');
+    const returnEnvelopes=[];
+    for(const index of [1,3]){
+     const input=observation.inputs[index],end=observation.inputs[index+1]?.at??Infinity;
+     const before=observation.frames.filter(frame=>frame.at<=input.at).at(-1)?.images.find(image=>image.src.endsWith('/babs-1-discovery.webp'));
+     // requestAnimationFrame observes compositor positions at frame boundaries.
+     // Keep a bounded, resolution-scaled compositor sampling allowance. A
+     // near-home return stays within 10% at this desktop width; an already
+     // displaced reversal gets only 4% more travel. Either remains far below
+     // the full outgoing/incoming excursion, so a replay still fails decisively.
+     const samplingTolerance=Math.max(16,discovery.rect.width*.04);
+     const allowance=Math.max(discovery.rect.width*.06,Math.abs((before?.rect.x??discovery.rect.x)-discovery.rect.x))+samplingTolerance;
+     const selected=observation.frames.filter(frame=>frame.at>=input.at&&frame.at<end).flatMap(frame=>frame.images.filter(image=>image.active==='true'&&image.src.endsWith('/babs-1-discovery.webp')).map(image=>({at:frame.at,x:image.rect.x})));
+     expect(selected.length).toBeGreaterThan(0);
+     returnEnvelopes.push({inputAt:input.at,direction:input.step,homeX:discovery.rect.x,samplingTolerance,allowance,maxDeparture:Math.max(...selected.map(image=>Math.abs(image.x-discovery.rect.x)))});
+    }
+    evidence.returnEnvelopes=returnEnvelopes;
+    for(const envelope of returnEnvelopes)expect(envelope.maxDeparture).toBeLessThanOrEqual(envelope.allowance);
+
+    evidence.visualReview={status:'PENDING_INDEPENDENT_REVIEW',questions:['Outgoing first-frame visibility and opacity during anticipation','Actual clip envelopes through clearance','Direction reversal and interruption continuity'],limit:'Raw geometry alone is not raster visibility proof; absence of a qualifying actual original remains an acceptance gap.'};
+   }
+   await dialog.getByRole('button',{name:'Close opponent story',exact:true}).click();await expect(dialog).not.toBeVisible();
+  }
+  await page.getByTestId('home-create-game').click();const friend=page.getByRole('dialog',{name:'Friend',exact:true});await expect(friend).toBeVisible();await waitForOverlayEntry(friend);await expect(friend.locator('img')).toHaveCount(1);await expect(friend.locator('[data-story-step]')).toHaveCount(0);evidence.friend=await verifyImage(friend.locator('img'),'friend-introduction');await friend.getByRole('button',{name:'Close opponent story',exact:true}).click();
+  expect(evidence.creates).toEqual([]);expect(errors).toEqual([]);expect(evidence.gaps).toEqual([]);expect(evidence.scenes).toHaveLength(9);evidence.nativeWorkflow='PASS_WITH_EXPLICIT_VISUAL_REVIEW_PENDING';
+ }catch(error){hasPrimary=true;primary=error;}finally{
+  evidence.pageErrors=errors;page.off('request',onRequest);page.off('pageerror',onPageError);evidence.secondaryErrors=[];
+  try{const raw=await page.evaluate(()=>{const o=window.__artworkNativeObservation;if(!o)return null;const snapshot={frames:o.frames,inputs:o.inputs,dropped:o.dropped};o.stop();return snapshot;});if(raw&&!evidence.motionFrames)evidence.motionFrames=raw;}catch(error){evidence.secondaryErrors.push({stage:'observer-capture-and-stop',name:error?.name??typeof error,message:String(error)});if(!hasPrimary){hasPrimary=true;primary=error;}}
+  try{await store();}catch(error){evidence.secondaryErrors.push({stage:'evidence-persist',name:error?.name??typeof error,message:String(error)});if(!hasPrimary){hasPrimary=true;primary=error;}try{await info.attach('artwork secondary evidence failure',{body:Buffer.from(JSON.stringify(evidence)),contentType:'application/json'});}catch(secondary){console.error('Secondary artwork attachment failure:',secondary);}}
+  if(hasPrimary)throw primary;
+ }
 });

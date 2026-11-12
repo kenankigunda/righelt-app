@@ -115,7 +115,7 @@ import { createAccountDialog } from './account-dialog.js';
 import { renderPieceSymbol } from '../piece-symbols.js';
 import { invitationOptions, renderInvitationSurface, createHostInvitation, hostInvitationSettled } from './invitations.js';
 import { createIntroductionPreferences, createOpponentSession } from './opponent-session.js';
-import { renderWordmark, createBrandController, createBrandGrid, resolveActionAffiliation } from './brand.js';
+import { renderWordmark, createBrandController, resolveActionAffiliation } from './brand.js';
 import { icon, soundToggle, headerActionContent } from './ui.js';
 import { createGameSound } from './sound.js';
 import { createModal } from './modal.js';
@@ -128,6 +128,7 @@ import {replaceMainPreservingHeader} from "./notification-dom.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEngineBoardAdapter, createInitialBoardSnapshot, listBoardLegalActions } from "../board-adapters/engine-board-adapter.js";
 import { createMiniBoardPreview, syncMiniBoardPreviews } from "../board/mini-board-preview.js";
+import { collectMountedMiniPreviewPayloads, createMiniPreviewRendering } from "./mini-preview-payloads.js";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
@@ -405,7 +406,6 @@ const notificationPatches=createNotificationPatchLifecycle(notificationPaper);
 const patchNotificationTree=(current,next)=>notificationPatches.patchTree(current,next);
 const patchNotificationHtml=(current,html)=>notificationPatches.patchHtml(current,html);
 const brand = createBrandController();
-createBrandGrid();
 document.addEventListener('pointerdown',event=>{gameSound.gesture();gameSound.preparePaper(event);gameSound.cancelPreview();},{passive:true});
 document.addEventListener('keydown',event=>{gameSound.gesture();gameSound.preparePaper(event);});
 document.addEventListener('visibilitychange',()=>{gameSound.activityChanged();if(document.hidden)notificationPaper.cancel();});
@@ -667,66 +667,9 @@ const formatClientDateTime = (value) => {
   }).format(new Date(timestamp));
 };
 
-const registerMiniBoardPreview = ({
-  previewId,
-  snapshot,
-  selection = null,
-  overlay = { mode: "none" },
-  legalActions = [],
-  selectedPieceId = null,
-  selectedPieceMoves = [],
-  selectedPieceMovePreviews = [],
-  currentActionType = "pass",
-  selectedPieceOverlayPhase = "actionPreviews",
-  previewKey,
-  sizeVariant = "compact",
-}) => {
-  renderedMiniBoardPreviewPayloads.set(previewId, {
-    snapshot: snapshot ?? null,
-    selection: selection ?? null,
-    overlay,
-    legalActions,
-    selectedPieceId,
-    selectedPieceMoves,
-    selectedPieceMovePreviews,
-    currentActionType,
-    selectedPieceOverlayPhase,
-    previewKey,
-    sizeVariant,
-  });
-  return previewId;
-};
-
-const renderMiniBoardPreviewRoot = ({
-  previewId,
-  snapshot,
-  selection = null,
-  overlay = { mode: "none" },
-  legalActions = [],
-  selectedPieceId = null,
-  selectedPieceMoves = [],
-  selectedPieceMovePreviews = [],
-  currentActionType = "pass",
-  selectedPieceOverlayPhase = "actionPreviews",
-  previewKey,
-  sizeVariant = "compact",
-}) => {
-  const stablePreviewId = registerMiniBoardPreview({
-    previewId,
-    snapshot,
-    selection,
-    overlay,
-    legalActions,
-    selectedPieceId,
-    selectedPieceMoves,
-    selectedPieceMovePreviews,
-    currentActionType,
-    selectedPieceOverlayPhase,
-    previewKey,
-    sizeVariant,
-  });
-  return `<div class="mini-board-preview-surface" data-mini-board-preview data-preview-id="${escapeHtml(stablePreviewId)}"></div>`;
-};
+const { renderMiniBoardPreviewRoot } = createMiniPreviewRendering({
+  payloads: renderedMiniBoardPreviewPayloads, escapeHtml,
+});
 
 const formatOutcomeStatus = (outcome) => {
   if (typeof outcome === "string" && outcome.trim().length > 0) {
@@ -1444,6 +1387,11 @@ const syncNarrowHeaderMenuDom = () => {
     }
     panel.classList.add("is-open");
   } else {
+    // Retire only focus still owned by this menu. An outside control or a
+    // newly opened dialog keeps the focus it deliberately acquired.
+    if (panel.contains(document.activeElement)) {
+      button.focus({ preventScroll: true });
+    }
     panel.classList.remove("is-open");
   }
   syncRenderedMarkupSnapshot();
@@ -2794,32 +2742,10 @@ const reconcileMiniBoardPreviews = () => {
   if (!(appEl instanceof HTMLElement)) {
     return;
   }
-  const previews = Array.from(appEl.querySelectorAll("[data-mini-board-preview]"))
-    .map((rootEl) => {
-      if (!(rootEl instanceof HTMLElement)) {
-        return null;
-      }
-      const previewId = rootEl.getAttribute("data-preview-id");
-      const payload = previewId ? renderedMiniBoardPreviewPayloads.get(previewId) : null;
-      if (!payload) {
-        return null;
-      }
-      return {
-        rootEl,
-        snapshot: payload.snapshot,
-        selection: payload.selection,
-        overlay: payload.overlay,
-        legalActions: payload.legalActions,
-        selectedPieceId: payload.selectedPieceId,
-        selectedPieceMoves: payload.selectedPieceMoves,
-        selectedPieceMovePreviews: payload.selectedPieceMovePreviews,
-        currentActionType: payload.currentActionType,
-        selectedPieceOverlayPhase: payload.selectedPieceOverlayPhase,
-        previewKey: payload.previewKey,
-        sizeVariant: payload.sizeVariant,
-      };
-    })
-    .filter(Boolean);
+  const previews = collectMountedMiniPreviewPayloads({
+    appEl,
+    payloads: renderedMiniBoardPreviewPayloads,
+  });
 
   syncMiniBoardPreviews({
     previews,
@@ -4599,6 +4525,11 @@ appEl.addEventListener("click", async (event) => {
   const routeLink = target.closest('a[href^="#/"]');
   if (routeLink && event.button === 0 && !event.defaultPrevented && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
     navigationHistory.save();
+    if (routeLink.dataset.flyoutLink === 'home' && currentRoute.name === 'not-found' && window.location.hash === routeLink.hash) {
+      event.preventDefault();
+      navigateTo(routeLink.hash);
+      return;
+    }
     if (routeLink.dataset.flyoutLink === 'home' && currentRoute.name === 'home') {
       event.preventDefault();
       window.scrollTo({ top: 0, behavior: 'instant' });

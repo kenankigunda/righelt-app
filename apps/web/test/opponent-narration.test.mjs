@@ -37,7 +37,7 @@ test('undone, stale and malformed decisions do not create replayable opponent tu
 
 test("local retreat keeps its real action prompt and terminal boards stay informational",()=>{
  const g=game();g.control="opponent";assert.equal(opponentBoardMessage(g,{}, {},{canInteract:true}),null);
- g.board.state.outcome={status:"P1-wins"};assert.equal(opponentBoardMessage(g,{}).context.text,"Game complete");
+ g.board.state.outcome={status:"P1-wins"};assert.deepEqual(opponentBoardMessage(g,{}),{text:'Review the game in History'});
 });
 test('selection and line inspection precede every generic opponent or computer status',()=>{
  for(const canInteract of [false,true])for(const selection of [{selectedPieceId:'piece'},{inspection:{kind:'supply',owner:'P1'}}]){
@@ -68,7 +68,7 @@ test('spectators can replay named guest completed turns only before the next ack
 test('optimistic computer terminal saves finish before confirmed game-complete narration',()=>{
  const g=game();g.computer={seats:{p1:'tau'}};g.pendingComputerProfile='tau';g.pendingComputerSaveStartedAt=123;g.board.state.outcome={status:'p1_win'};
  assert.equal(opponentBoardMessage(g,{}),'Tau is saving their move');delete g.pendingComputerSaveStartedAt;
- assert.equal(opponentBoardMessage(g,{}).context.text,'Game complete');
+ assert.deepEqual(opponentBoardMessage(g,{}),{text:'Review the game in History'});
 });
 test('legal untouched local turns offer Pass beside human and computer narration only',()=>{
  for(const computer of [false,true]){
@@ -112,8 +112,21 @@ test('quiet renewal keeps actual opponent narration and replay while the interac
 test('terminal authority takes precedence over stale computer work while inspection stays available',()=>{
  for(const status of ['p1_win','p2_win','draw']){
  const g=game();Object.assign(g,{computer:{seats:{p1:'tau'}},computerTurn:'tau'});g.board.state.outcome={status};
- assert.equal(opponentBoardMessage(g,{phase:'saving'}).context.text,'Game complete');
+ assert.deepEqual(opponentBoardMessage(g,{phase:'saving'}),{text:'Review the game in History'});
  assert.equal(opponentBoardMessage(g,{}, {selectedPieceId:'piece'}),null);
  assert.equal(opponentBoardMessage({...g,inHistoryMode:true},{}),null);
+ }
+});
+
+
+test('completed games keep their finite Board prompt without a redundant notification context',()=>{
+ for(const terminal of [{status:'finished'},{board:{state:{turnIndex:1,sideToMove:'P2',outcome:{status:'p1_win'}}}}]){
+  const g={...game(),...terminal};
+  const before=structuredClone(g);
+  assert.deepEqual(opponentBoardMessage(g,{}, {},{canInteract:false,identityId:'me'}),{text:'Review the game in History'});
+  assert.deepEqual(g,before,'presentation does not alter completed game authority');
+  assert.equal(opponentBoardMessage(g,{}, {selectedPieceId:'piece'}),null);
+  assert.equal(opponentBoardMessage(g,{}, {inspection:{kind:'supply',owner:'P1'}}),null);
+  assert.equal(opponentBoardMessage({...g,inHistoryMode:true},{}),null);
  }
 });

@@ -2,6 +2,7 @@ import {icon} from '../shell/ui.js';
 import {createDestinationRouteOwner,readGameDestination} from '../shell/destination-route-owner.js';
 import {createDestinationRecovery} from '../shell/destination-recovery.js';
 import {createGameAlertItems,renderGameAlertStackCard,renderRecoveryActions} from '../shell/game-alert-presentation.js';
+import {createMiniPreviewRendering} from '../shell/mini-preview-payloads.js';
 import {createHomeCardRendering,getStaticCardPreviewSnapshot,getStaticCardPreviewPayload} from '../shell/home-card-rendering.js';
 import {escapeDebug} from '../shell/computer-view.js';
 import {renderHomeCardIdentity,renderHomeCardTurn} from '../shell/home-card-identity.js';
@@ -390,19 +391,17 @@ test("shell renders durable browser E2E selectors for core workflow surfaces", (
 });
 
 test("shell renders and reconciles mini board previews for home and debug surfaces", () => {
-  assert.match(source, /const miniBoardPreviewRegistry = new Map\(\);/);
-  assert.match(source, /const renderedMiniBoardPreviewPayloads = new Map\(\);/);
-  assert.match(source, /const renderMiniBoardPreviewRoot = \(\{[\s\S]*previewId,[\s\S]*snapshot,[\s\S]*selection = null,[\s\S]*previewKey,[\s\S]*sizeVariant = "compact"[\s\S]*\}\) => \{/);
-  assert.match(source, /data-mini-board-preview data-preview-id=/);
-  assert.match(source, /const reconcileMiniBoardPreviews = \(\) => \{/);
-  assert.match(source, /syncMiniBoardPreviews\(\{/);
+  const payloads=new Map();
+  const mini=createMiniPreviewRendering({payloads,escapeHtml:escapeDebug});
   const snapshot={sideToMove:'P2',outcome:{status:'ongoing'}},registered=[];
   const card={id:'card',eventSeq:8,gameplayRevision:3,confirmedOutcomeStatus:'ongoing',myRole:'Player 1',myRoles:['Player 1'],moveCount:4,createdAt:'2026-10-01',previewSnapshot:snapshot,player1:{identityId:'me',profile:{displayName:'Kenan'}},player2:{identityId:'other',profile:{displayName:'Ada'}}};
   assert.equal(getStaticCardPreviewSnapshot(card),snapshot);assert.equal(getStaticCardPreviewSnapshot(null),null);
   assert.equal(getStaticCardPreviewPayload(card).snapshot,snapshot);
-  const presenter=createHomeCardRendering({getTransport:()=>({getIdentityId:()=> 'me'}),escapeHtml:escapeDebug,toStableKey:JSON.stringify,buildGameHash:id=>`#/game/${id}`,getCurrentFlyoutState:()=>({}),formatDisplayGameId:String,formatClientDateTime:String,renderMiniBoardPreviewRoot:value=>{registered.push(value);return '<div data-mini-board-preview></div>';}});
+  const presenter=createHomeCardRendering({getTransport:()=>({getIdentityId:()=> 'me'}),escapeHtml:escapeDebug,toStableKey:JSON.stringify,buildGameHash:id=>`#/game/${id}`,getCurrentFlyoutState:()=>({}),formatDisplayGameId:String,formatClientDateTime:String,renderMiniBoardPreviewRoot:value=>{registered.push(value);return mini.renderMiniBoardPreviewRoot(value);}});
   const html=presenter.renderHomeGameCard(card);
   assert.equal(registered[0].previewId,'home:card');assert.equal(registered[0].snapshot,snapshot);
+  assert.equal(payloads.get('home:card').snapshot,snapshot);
+  assert.match(html,/data-mini-board-preview data-preview-id="home:card"/);
   assert.match(html,/class="mini-board-card"/);assert.match(html,/class="mini-board-card-link-surface"[\s\S]*href="#\/game\/card"/);assert.match(html,/data-game-id="card"/);assert.match(html,/data-flyout-link="game"/);assert.match(html,/Last move on 2026-10-01/);
   for(const syncStatus of ['desynced','confirming'])assert.match(presenter.renderHomeGameCard({...card,syncStatus}),/<span class="status-chip">Recovering<\/span>/);
   assert.match(presenter.renderHomeGameCard({...card,pendingPreviewSnapshot:snapshot}),/Update pending/);

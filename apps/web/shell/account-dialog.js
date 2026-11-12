@@ -420,7 +420,14 @@ export const createAccountDialog = ({
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   });
+  // Only this dialog's current field nodes own local rejection state. A stale
+  // input from a retired rendering cannot clear a newer dialog's feedback.
+  const clearLocalFieldError = (field) => {
+    if (!field || !Array.from(dialog.querySelectorAll('[data-account-local-invalid]')).includes(field)) return;
+    field.removeAttribute("aria-invalid"); delete field.dataset.accountLocalInvalid;
+  };
   const onInput = (event) => {
+    clearLocalFieldError(event.target);
     if (mode === "account" && event.target.name === "displayName") { autosave?.change(event.target.value); return; }
     if (["password", "newPassword"].includes(event.target.name)) { if (mode === "login") cancelLoginHint(); passwordTouched = true; updateRequirements(); return; }
     if (!["login", "register"].includes(mode) || event.target.name !== "username") return;
@@ -495,9 +502,14 @@ export const createAccountDialog = ({
     const form = event.target;
     if (mode === "account") { autosave?.change(dialog.querySelector('[name="displayName"]')?.value || ""); await autosave?.flush(); return; }
     if (controller.snapshot().busy || submittingFlow === flow) return;
+    dialog.querySelectorAll('[data-account-local-invalid]').forEach(clearLocalFieldError);
     // Always inspect live values: native autofill need not emit input events.
     const field = name => dialog.querySelector(`[name="${name}"]`);
-    const rejectField = (name, message, state = "error") => { status(message, state); field(name)?.focus(); };
+    const rejectField = (name, message, state = "error") => {
+      const target = field(name);
+      if (target) { target.setAttribute("aria-invalid", "true"); target.dataset.accountLocalInvalid = "true"; }
+      status(message, state); target?.focus();
+    };
     if (["login", "register"].includes(mode) && !validEntryUsername(field("username")?.value)) { rejectField("username", "Use 3–24 letters, digits or underscores for your username."); return; }
     if (mode === "register" && lookupName === canonicalEntryUsername(field("username")?.value) && lookupState === "taken") { rejectField("username", messages.username_unavailable); return; }
     if (mode === "account" && !normalizeDisplayName(field("displayName")?.value, field("username")?.value || controller.snapshot().session.account?.username || "").ok) { rejectField("displayName", "Use a display name of up to 32 characters without control characters."); return; }
