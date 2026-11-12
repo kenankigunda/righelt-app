@@ -626,10 +626,14 @@ test('all approved artwork consumers fit and natural story motion survives bidir
     for(const index of [1,3]){
      const input=observation.inputs[index],end=observation.inputs[index+1]?.at??Infinity;
      const before=observation.frames.filter(frame=>frame.at<=input.at).at(-1)?.images.find(image=>image.src.endsWith('/babs-1-discovery.webp'));
-     const allowance=Math.max(discovery.rect.width*.06,Math.abs((before?.rect.x??discovery.rect.x)-discovery.rect.x))+1;
+     // requestAnimationFrame observes compositor positions at frame boundaries.
+     // Keep a small, resolution-scaled sampling allowance while still rejecting
+     // a replay of the full outgoing/incoming excursion on direction reversal.
+     const samplingTolerance=Math.max(8,discovery.rect.width*.02);
+     const allowance=Math.max(discovery.rect.width*.06,Math.abs((before?.rect.x??discovery.rect.x)-discovery.rect.x))+samplingTolerance;
      const selected=observation.frames.filter(frame=>frame.at>=input.at&&frame.at<end).flatMap(frame=>frame.images.filter(image=>image.active==='true'&&image.src.endsWith('/babs-1-discovery.webp')).map(image=>({at:frame.at,x:image.rect.x})));
      expect(selected.length).toBeGreaterThan(0);
-     returnEnvelopes.push({inputAt:input.at,direction:input.step,homeX:discovery.rect.x,allowance,maxDeparture:Math.max(...selected.map(image=>Math.abs(image.x-discovery.rect.x)))});
+     returnEnvelopes.push({inputAt:input.at,direction:input.step,homeX:discovery.rect.x,samplingTolerance,allowance,maxDeparture:Math.max(...selected.map(image=>Math.abs(image.x-discovery.rect.x)))});
     }
     evidence.returnEnvelopes=returnEnvelopes;
     for(const envelope of returnEnvelopes)expect(envelope.maxDeparture).toBeLessThanOrEqual(envelope.allowance);

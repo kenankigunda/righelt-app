@@ -8,6 +8,9 @@ test('existing fallback and placeholder routes share marble without starting a g
  const inspect=async(name,{forced=false}={})=>{
   const panel=page.locator('.shell-main-content > section.panel');await expect(panel).toHaveCount(1);await expect(panel).toBeVisible();
   await page.evaluate(()=>document.fonts.ready);
+  // The fallback route can replace its first painted panel while the heading
+  // remains visible. Sample only the connected, fully painted replacement.
+  await expect.poll(()=>panel.evaluate(element=>{const rect=element.getBoundingClientRect(),style=getComputedStyle(element),face=getComputedStyle(element,'::before'),edge=getComputedStyle(element,'::after');return element.isConnected&&rect.width>0&&rect.height>0&&style.borderRadius==='0px'&&face.clipPath.startsWith('polygon(')&&edge.clipPath.startsWith('polygon(');})).toBe(true);
   const state=await panel.evaluate(element=>{const rect=element.getBoundingClientRect(),style=getComputedStyle(element),face=getComputedStyle(element,'::before'),edge=getComputedStyle(element,'::after');return{rect:rect.toJSON(),viewport:{width:innerWidth,height:innerHeight},radius:style.borderRadius,background:style.backgroundColor,face:{content:face.content,clip:face.clipPath,image:face.backgroundImage,color:face.backgroundColor},edge:{content:edge.content,clip:edge.clipPath,image:edge.backgroundImage}};});
   samples.push({name,forced,...state});
   const metrics=info.outputPath('root-panel-native.json');await writeFile(metrics,JSON.stringify({samples,writes},null,2),{mode:0o600});await info.attach('root panel native paint',{path:metrics,contentType:'application/json'});
