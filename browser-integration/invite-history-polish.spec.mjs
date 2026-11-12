@@ -50,6 +50,25 @@ test('short games with no additional records never show an archive CTA',async({p
  await page.evaluate(()=>window.historyRequests[0].resolve({available:false,items:[],nextCursor:null}));await expect(page.locator('[data-testid="additional-history"]')).toBeAttached();await expect(page.getByRole('button')).toHaveCount(0);
 });
 
+for(const interaction of ['focus','press'])test(`merged undone History runs retain the native ${interaction} target`,async({page})=>{
+ const initial=await page.evaluate(()=>window.startUndoMerge());
+ const olderKey=initial.find(group=>group.members.includes('B')).key;
+ const disclosure=page.locator(`[data-group-key="${olderKey}"]`);
+ await disclosure.evaluate(node=>window.originalMergeDisclosure=node);
+ if(interaction==='focus')await disclosure.focus();
+ else {
+  const box=await disclosure.boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();
+  await expect(disclosure).toHaveClass(/is-pressing/);
+ }
+ const merged=await page.evaluate(()=>window.mergeUndoRuns());
+ expect(merged).toEqual([{key:olderKey,members:['D','C','B']}]);
+ const retained=page.locator(`[data-group-key="${olderKey}"]`);
+ await expect(retained).toHaveText('3 moves undone');
+ expect(await retained.evaluate(node=>node===window.originalMergeDisclosure)).toBe(true);
+ if(interaction==='focus')await expect(retained).toBeFocused();
+ else {await expect(retained).toHaveClass(/is-pressing/);await page.mouse.up();}
+});
+
 for(const route of ['home','game','invite'])test(`held ${route} Edge cuts keep moving without moving the surface`,async({page},info)=>{
  const fonts=await page.evaluate(route=>window.holdSweep(route),route);
  const fontPath=info.outputPath(`held-${route}-font-readiness.json`);await writeFile(fontPath,JSON.stringify(fonts,null,2));await info.attach('held-surface-font-readiness',{path:fontPath,contentType:'application/json'});

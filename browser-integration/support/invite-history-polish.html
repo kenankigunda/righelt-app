@@ -50,6 +50,18 @@ const renderHistory=game=>historyRendering.renderAdditionalHistory(game);
 function drawHistory(){root.classList.add("panel");const next=root.cloneNode(false);next.innerHTML=renderHistory({...archiveGame,inHistoryMode:Boolean(inspectedDecision),inspectedDecision});patchSectionContent(root,next);syncMiniBoardPreviews({previews:[...root.querySelectorAll('[data-mini-board-preview]')].map(rootEl=>({rootEl,...renderedMiniBoardPreviewPayloads.get(rootEl.dataset.previewId)})),registry,createAdapter:()=>createEngineBoardAdapter()});}
 root.addEventListener('click',event=>{const action=event.target.closest('[data-action]')?.dataset.action;if(action==='toggle-undone-group'){undoHistory.toggleUndoHistoryGroup(historyDeps.expandedUndoneGroups,event.target.closest('[data-action]').dataset.groupKey,historyDeps.transport);drawHistory();}if(action==='inspect-history-archive'){const id=event.target.closest('[data-action]').dataset.decisionId;inspectedDecision={...history.snapshot('g').items.find(entry=>entry.id===id).move,moveId:id};drawHistory();}if(action==='load-history-archive'){void history.more('g');drawHistory();}if(action==='retry-history-archive'){void history.retry('g');drawHistory();}});
 window.renderHistory=drawHistory;window.archiveSnapshot=createInitialBoardSnapshot();window.returnArchiveLive=()=>{inspectedDecision=null;drawHistory();};window.nextHistoryRevision=()=>{revision++;drawHistory();};
+const mergeOwner={getIdentityId:()=> 'viewer'},mergeGame={id:'merge',inHistoryMode:false};
+const mergeMove=(moveId,index,undone=false,undoEventSeq=10)=>({moveId,index,turnIndex:index,turnMoveIndex:0,notation:moveId,action:{type:'rush'},...(undone?{undone:true,undoEventSeq}:{})});
+let mergeExpanded=new Set(),mergeMoves=[];
+const drawUndoMerge=()=>{
+ const groups=undoHistory.groupUndoHistory(mergeGame.id,mergeMoves);
+ undoHistory.observeUndoHistoryDisclosure(mergeExpanded,mergeGame,groups,mergeOwner);
+ const next=root.cloneNode(false);next.innerHTML=`<ol class="history-list" data-key="undo-merge-list">${undoHistory.renderUndoHistoryGroups(mergeGame.id,groups,move=>`<li data-move-id="${move.moveId}">${move.notation}</li>`,mergeExpanded,escapeHtml)}</ol>`;patchSectionContent(root,next);
+ return groups.map(group=>({key:group.key,members:group.records.map(record=>record.move.moveId)}));
+};
+window.startUndoMerge=()=>{mergeExpanded=new Set();mergeMoves=[mergeMove('B',0,true),mergeMove('C',1),mergeMove('D',2,true,11)];return drawUndoMerge();};
+window.mergeUndoRuns=()=>{mergeMoves=[mergeMoves[0],{...mergeMoves[1],undone:true,undoEventSeq:12},mergeMoves[2]];return drawUndoMerge();};
+root.addEventListener('pointerdown',event=>{const toggle=event.target.closest('.history-undone-toggle');if(toggle){root.querySelectorAll('.history-undone-toggle.is-pressing').forEach(node=>node.classList.remove('is-pressing'));toggle.classList.add('is-pressing');}});
 const makeLayer=Function(`${extract('const ensureRouteTransitionLayer =','\nensureShellStylesheet();')};return ensureRouteTransitionLayer;`)();
 const renderHomeLoading=Function('loadingAttributes','escapeHtml','getHomeSectionColumnCount','renderHomeStartButton',`${extract('const renderHomeCardSkeleton =','const renderBoardLoadingPreview =')};return renderHomeSectionSkeleton;`)(loadingAttributes,escapeHtml,()=>1,()=> '');
 // Actual alert mapping/stack/zone share the same keyed header space as the app.
