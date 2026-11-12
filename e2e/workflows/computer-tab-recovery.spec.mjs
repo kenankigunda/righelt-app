@@ -410,6 +410,12 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   // and lease expiry keep this card quiet while its admitted intent recovers.
   await expect(page.getByRole('button',{name:'Babs, Blue, Computer player, Waiting',exact:true})).toBeVisible();
   await expect(pass).toBeDisabled();
+  await pass.evaluate(button=>{
+   const samples=[{disabled:button.disabled,hidden:document.hidden,focused:document.hasFocus()}];
+   const observer=new MutationObserver(()=>samples.push({disabled:button.disabled,hidden:document.hidden,focused:document.hasFocus()}));
+   observer.observe(button,{attributes:true,attributeFilter:['disabled']});
+   globalThis.__tabReturnAvailability={button,samples,observer};
+  });
   await expect(page.getByTestId('sync-recovery-banner')).toContainText(/updating computer play|retry|details/i);
   await expect.poll(()=>Date.now()).toBeGreaterThanOrEqual(heldAuthority.computer.lease.expiresAt);
   await expect(page.getByRole('button',{name:'Babs, Blue, Computer player, Waiting',exact:true})).toBeVisible();
@@ -418,6 +424,13 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   expect(await journalRecord()).toEqual(original);expect(writes).toEqual([]);
   const fenced=await projected(page,id);expect(fenced.board).toEqual(before.board);expect(fenced.moves).toEqual(before.moves);expect(fenced.gameplayRevision).toBe(before.gameplayRevision);
   for(const envelope of deliveries)expect(envelope).toEqual(original);
+  await page.evaluate(()=>{
+   Object.defineProperty(document,'hidden',{configurable:true,value:true});
+   Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});
+   document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect.poll(()=>page.evaluate(()=>document.hidden)).toBe(true);
+  await pass.evaluate(button=>button.click());expect(writes).toEqual([]);
   release();
   // The first delivery may now have timed out. Submit the exact admitted intent
   // through the existing native request context, never a fresh command ID.
@@ -426,11 +439,25 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   expect(outcomes).toHaveLength(1);expect(outcomes[0]).toMatchObject({outcome:'rejected',reason:'computer_control_changed',fingerprint:original.fingerprint,gameplayRevision:before.gameplayRevision});
   await expect.poll(journalRecord).toBe(null);await expect(pass).toBeVisible();
   const after=await projected(page,id);expect(after.board).toEqual(before.board);expect(after.moves).toEqual(before.moves);expect(after.gameplayRevision).toBe(before.gameplayRevision);expect(writes).toEqual([]);
-  await writeFile(info.outputPath('quiet-renew-real-journey.json'),JSON.stringify({observerReadyAt,original,sampledAt,samples,outcome:outcomes[0],writes},null,2));
+  await page.evaluate(()=>{delete document.hidden;delete document.visibilityState;document.dispatchEvent(new Event('visibilitychange'));});
+  await expect.poll(()=>page.evaluate(()=>document.hidden)).toBe(false);
+  await expect.poll(()=>page.evaluate(()=>window.__righeltLiveSyncMetrics?.activeSocketCount??0)).toBeGreaterThan(0);
+  await expect(pass).toBeEnabled();
+  const tabReturn=await pass.evaluate(button=>{const owner=globalThis.__tabReturnAvailability;owner.observer.disconnect();return {sameButton:owner.button===button,disabled:button.disabled,samples:owner.samples,hidden:document.hidden,focused:document.hasFocus()};});
+  expect(tabReturn).toMatchObject({sameButton:true,disabled:false,hidden:false});
+  expect(tabReturn.samples.map(({disabled,hidden})=>({disabled,hidden}))).toEqual([
+   {disabled:true,hidden:false},
+   {disabled:false,hidden:true},
+   {disabled:true,hidden:false},
+   {disabled:false,hidden:false},
+  ]);
+  await pass.click();await expect.poll(async()=>(await projected(page,id)).gameplayRevision).toBe(before.gameplayRevision+1);
+  const passed=await projected(page,id);expect(passed.moves.at(-1).action).toEqual({type:'pass'});expect(writes).toHaveLength(1);
+  await writeFile(info.outputPath('quiet-renew-real-journey.json'),JSON.stringify({observerReadyAt,original,sampledAt,samples,outcome:outcomes[0],tabReturn,writes},null,2));
   await info.attach('quiet-renew-real-journey',{contentType:'application/json',path:info.outputPath('quiet-renew-real-journey.json')});
  }finally{
   try{await writeFile(info.outputPath('quiet-renew-raw-samples.json'),JSON.stringify({observerReadyAt,original,samples},null,2));await info.attach('quiet-renew-raw-samples',{contentType:'application/json',path:info.outputPath('quiet-renew-raw-samples.json')});}catch{}
-  release();page.off('console',consoleSample);page.off('request',observeWrite);await page.unrouteAll({behavior:'wait'});}
+  release();await page.evaluate(()=>{delete document.hidden;delete document.visibilityState;document.dispatchEvent(new Event('visibilitychange'));globalThis.__tabReturnAvailability?.observer?.disconnect();delete globalThis.__tabReturnAvailability;}).catch(()=>{});page.off('console',consoleSample);page.off('request',observeWrite);await page.unrouteAll({behavior:'wait'});}
 });
 
 
