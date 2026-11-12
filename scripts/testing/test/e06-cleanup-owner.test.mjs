@@ -80,7 +80,7 @@ test('actual old E06 closes resources inside the body; current E06 leaves them t
   const makeTest=value=>{definition=value;return {info:()=>info};};
   const expect=value=>({toContainText:async wanted=>assert.ok(value.text.includes(wanted)),toHaveLength:wanted=>assert.equal(value.length,wanted),toBe:wanted=>assert.equal(value,wanted)});
   expect.poll=read=>({toBeGreaterThan:async wanted=>assert.ok((await read())>wanted),toBe:async wanted=>assert.equal(await read(),wanted)});
-  const twin={async goto(){events.push('goto');},getByTestId(){return {text:'Player 1'};},async reload(){events.push('reload');}};
+  const twin={async goto(){events.push('goto');},getByTestId(){return {text:'Guest 1'};},async reload(){events.push('reload');}};
   const context=vm.createContext({WeakMap,Map,Set,JSON,cleanup:disposeFaultContexts,base:{extend:makeTest},expect,
    party:async()=>{
     resources=context.fixtureOwned.get(info);state=setup(resources);
