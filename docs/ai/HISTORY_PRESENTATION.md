@@ -55,7 +55,7 @@ The after-action/final-turn position, affiliation colors, source ghosts, project
 
 ## Recorded History narration and replay
 
-The History feature owns acknowledged action grammar, archive closure and compact native turn/move targets. Detailed narration uses Board context and mobile inline previews. Board guidance retains its finite prompt budget.
+The History feature owns acknowledged action grammar, archive closure and compact native turn/move targets. The confirmed November 11 naming follow-up uses second person for a recorded human actor’s saved seat owned by the captured viewer. Self-play retains Red/Blue attribution. Other actors keep canonical names. Recorded computer proof remains authoritative even during temporary human control. This changes presentation only, without changing record identity, action chronology, stored ownership or gameplay permission. Detailed narration uses Board context and mobile inline previews. Board guidance retains its finite prompt budget.
 
 PR193 owns the later automatic computer playback integration. Its confirmed-frame presenter must carry the recorded move identity, board-wide number, actor, action coordinates and closure-normalized final state into this shared grammar. Automatic playback must preserve finite Board guidance, context ownership and cancellation. It must add its own current-source unit/integration and native playback proof. Public History200/203 and the approved246 baseline do not contain that runtime, so History validation does not earn automatic playback acceptance.
 

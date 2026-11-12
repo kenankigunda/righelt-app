@@ -81,12 +81,13 @@ test('actual spec owns original waiter rejections, preserves primary reload fail
  await Promise.resolve();
 });
 
-test('the reloaded live Players consumer preserves the canonical Guest name and accessible ownership',()=>{
+test('the reloaded live Players consumer shows viewer-relative ownership while preserving the canonical Guest identity',()=>{
  const html=renderPlayersPanel({id:'canonical-guest',myRole:'Player 1',player1:{identityId:'mine',connected:true},player2:null,viewers:[]},{identityId:'mine'});
  // These are product answers, independent of fixture source layout or hashes.
- assert.match(html,/<bdi>Guest<\/bdi>/);
+ assert.match(html,/<bdi>You<\/bdi>/);
+ assert.match(html,/data-profile-name="Guest"/);
  assert.match(html,/aria-label="Guest, you, Red, Connected"/);
- assert.doesNotMatch(html,/<bdi>You<\/bdi>/);
+ assert.doesNotMatch(html,/<bdi>Guest<\/bdi>/);
 });
 
 

@@ -18,11 +18,12 @@ export const participantName = (person, {inlineComputerBadge = false} = {}) =>
     : person?.profile
     ? `<span class="player-name"><bdi>${escape(person.profile.displayName || person.profile.username)}</bdi></span><span class="player-username"><bdi>@${escape(person.profile.username)}</bdi></span>`
     : `<bdi>Guest player</bdi>`;
-export const participantButton = (person, {key = person?.profile?.username || person?.identityId || "guest", side = "neutral", presence = "", displayName, accessibleName} = {}) => {
+export const participantButton = (person, {key = person?.profile?.username || person?.identityId || "guest", side = "neutral", presence = "", displayName, accessibleName, profileName, qualifier} = {}) => {
   if (person?.computerProfile && COMPUTER_PROFILES[person.computerProfile]) return `<span class="participant-identity" data-player-side="${escape(side)}"><span class="participant-profile participant-computer"${accessibleName ? ` role="group" aria-label="${escape(accessibleName)}"` : ''}>${renderPlayerEmblem(person.computerProfile)}<span class="player-name-stack">${participantName(person,{inlineComputerBadge:true})}</span><span class="connection-status-icon is-connected" role="img" aria-label="Computer player" title="Computer player"></span></span></span>`;
   const username = person?.profile?.username;
   const name = displayName === undefined ? participantName(person) : `<span class="player-name"><bdi>${escape(displayName)}</bdi></span>`;
-  return `<span class="participant-identity" data-player-side="${escape(side)}"><button class="participant-profile" data-profile-key="${escape(key)}" aria-expanded="false" ${accessibleName ? `aria-label="${escape(accessibleName)}"` : ''} data-action="${username ? "public-profile" : "guest-profile"}" ${username ? `data-username="${escape(username)}"` : `data-identity-id="${escape(person?.identityId)}"`}>${renderPlayerEmblem(username || "guest")}<span class="player-name-stack">${name}</span>${presence}</button><span class="player-profile-details" data-profile-slot="${escape(key)}"></span></span>`;
+  const qualifierHtml=qualifier && displayName!==undefined ? `<span class="player-username"><bdi>${escape(qualifier)}</bdi></span>` : '';
+  return `<span class="participant-identity" data-player-side="${escape(side)}"><button class="participant-profile" data-profile-key="${escape(key)}"${profileName ? ` data-profile-name="${escape(profileName)}"` : ''} aria-expanded="false" ${accessibleName ? `aria-label="${escape(accessibleName)}"` : ''} data-action="${username ? "public-profile" : "guest-profile"}" ${username ? `data-username="${escape(username)}"` : `data-identity-id="${escape(person?.identityId)}"`}>${renderPlayerEmblem(username || "guest")}<span class="player-name-stack">${name}${qualifierHtml}</span>${presence}</button><span class="player-profile-details" data-profile-slot="${escape(key)}"></span></span>`;
 };
 export const formatJoinedMonth = month => /^\d{4}-(0[1-9]|1[0-2])$/.test(month)
   ? new Intl.DateTimeFormat("en", {year:"numeric",month:"long",timeZone:"UTC"}).format(new Date(`${month}-01T00:00:00Z`)) : "";
@@ -62,7 +63,7 @@ export const createInlineProfiles = ({document = globalThis.document, fetcher = 
       const slot = button.parentElement.querySelector('[data-profile-slot]');
       if (!slot) continue;
       slot.id = `player-profile-details-${index}`;button.setAttribute("aria-controls",slot.id);
-      const markup = open ? `<span data-testid="public-profile" role="status" ${state.pending ? loadingAttributes(`profile:${state.key}`, "This profile is taking a little longer to load.") : ""}>${escape(state.text)}</span>` : '';
+      const markup = open ? `<span data-testid="public-profile" role="status" ${state.pending ? loadingAttributes(`profile:${state.key}`, "This profile is taking a little longer to load.") : ""}>${button.dataset.profileName ? `<bdi>${escape(button.dataset.profileName)}</bdi> · ` : ''}${escape(state.text)}</span>` : '';
       if (slot.innerHTML === markup) continue;
       const from = slot.getBoundingClientRect().height;
       slot.getAnimations?.().forEach(animation => animation.cancel());

@@ -69,21 +69,21 @@ const removalEvents=(moves,actorSide)=>{
     :`${verb} ${records.length} pieces`;
   return [clause(own,'lost'),clause(opposing,'destroyed'),unknown?'Removal details unavailable':null];
 };
-const actionEvent=action=>{
+const actionEvent=(action,{owned=false}={})=>{
   if(action?.type==='pass')return 'passed';
   if(action?.type==='push')return point(action.to)?`pushed onto ${coordinate(action.to)}`:null;
-  const verb={move:'moved commander',project:'projected new piece',rush:'rushed',retreat:'retreated',follow:'followed'}[action?.type];
+  const verb={move:owned?'moved your commander':'moved commander',project:'projected new piece',rush:'rushed',retreat:'retreated',follow:'followed'}[action?.type];
   return verb&&point(action.from)&&point(action.to)?`${verb} from ${coordinate(action.from)} to ${coordinate(action.to)}`:null;
 };
-export function describeRecordedMove(move,name){
-  const action=actionEvent(move?.action);
+export function describeRecordedMove(move,name,options={}){
+  const action=actionEvent(move?.action,options);
   if(!action)return null;
   return `${name} ${joinNarrationEvents([action,...removalEvents([move],recordedActorSide(move))])}`;
 }
-export function describeRecordedTurn(moves,name){
+export function describeRecordedTurn(moves,name,options={}){
   const active=visibleRecordedMoves([...(moves??[])].sort((left,right)=>(left.turnMoveIndex??left.index)-(right.turnMoveIndex??right.index)));
   if(!active.length)return null;
-  if(active.length===1)return describeRecordedMove(active[0],name);
+  if(active.length===1)return describeRecordedMove(active[0],name,options);
   const owner=recordedActorSide(active.find(move=>move.action?.type!=='retreat'));
   const push=active.find(move=>move.action?.type==='push');
   let events;
@@ -96,7 +96,7 @@ export function describeRecordedTurn(moves,name){
     const actors=new Set(rushes.map(move=>move.action.actorId).filter(Boolean));
     events=actors.size>1&&rushes.every(move=>point(move.action.to))
       ?[`rushed ${actors.size} pieces to ${joinNarrationEvents(rushes.map(move=>coordinate(move.action.to)))}`]
-      :active.map(move=>actionEvent(move.action));
+      :active.map(move=>actionEvent(move.action,options));
   }
   if(events.some(event=>event===null)&&!push)return null;
   return `${name} ${joinNarrationEvents([...events,...removalEvents(active,owner)])}`;

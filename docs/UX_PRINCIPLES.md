@@ -458,6 +458,8 @@ These defaults apply to desktop, mobile and embedded previews. Reuse their share
 
 Prefer actual player names in their affiliation colors. Omit redundant visible Red/Blue words. Retain necessary self-play and invitation disambiguation, with the identifying phrase in the matching color. Keep useful color qualifiers in accessible labels without a special accessibility mode. One anonymous player is Guest. Two anonymous players are Guest 1 and Guest 2, tied to their saved seats. Never rewrite a person's actual name Red or Blue, freeform content, internal side values or raw diagnostics to enforce this copy policy.
 
+The confirmed November 11 viewer-relative naming decision scopes D04 further: use You for the owning human in Home, Players, finished matchups and recorded History/replay. Keep canonical profile identity and accessible affiliation, saved ownership and recorded computer attribution. Self-play keeps its explicit side distinctions. Analysis retains the fixed Red score perspective and colors only the perspective phrase. The rest of its sentence, including your move, stays neutral. See the [identity contract](RIGHELT_WEB_APP_SPEC.md#canonical-player-references-and-accessible-affiliation).
+
 Identity color does not define every semantic role. Supply and command paths, action endpoints, activity states and owner emblems each have their own documented meaning. Preserve non-color distinctions, accessible attribution and independent inspector selections. See [legend inspection](RIGHELT_WEB_APP_SPEC.md#independent-board-legend-inspection) and [Players](ai/PLAYERS_CARD_CONTRACT.md). Provenance: [D02, D04, D11](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
 
 ## Keep feedback above decoration and below modal decisions

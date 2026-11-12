@@ -119,7 +119,7 @@ const renderHomeGameCard = (game) => {
       </div>${resultHtml}`,
     statusText: completed ? result.action : result.kind === 'pending' ? `${statusText} · ${result.action}` : statusText,
     winnerSide: completed ? result.winnerSide : null,
-    statusMarkup: result.kind === 'ongoing' && snapshot?.outcome?.status === 'ongoing' ? renderHomeCardTurn(game, snapshot) : null,
+    statusMarkup: result.kind === 'ongoing' && snapshot?.outcome?.status === 'ongoing' ? renderHomeCardTurn(game, snapshot, {identityId:getTransport().getIdentityId()}) : null,
   });
 };
 

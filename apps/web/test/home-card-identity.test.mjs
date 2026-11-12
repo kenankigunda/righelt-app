@@ -22,12 +22,12 @@ test('configured computer identity survives manual control and fresh list/full-g
  }
 });
 
-test('Named players use actual seat colors, independent of turn or list/full-game projections',()=>{
+test('Owned Home identity uses You with actual accessible name and seat color',()=>{
  for(const side of ['p1','p2']){
   const input=game(side==='p1'?'Player 1':'Player 2');const identityId=side==='p1'?'me':'other';
   for(const card of [input,normalizeStaticGameCard(input),buildStaticGameCardFromGame(input)]){
    const model=homeCardMatchup(card,{identityId});assert.equal(model.ownSide,side);assert.equal(model.kind,'player');
-   const html=renderHomeCardIdentity(card,{identityId});assert.match(html,new RegExp(`player-tone-${side}"><span class="sr-only">${side==='p1'?'Red':'Blue'}: </span><bdi>${side==='p1'?'Red':'Blue'} player`));
+   const html=renderHomeCardIdentity(card,{identityId});assert.match(html,new RegExp(`player-tone-${side}" aria-label="${side==='p1'?'Red':'Blue'} player, you, ${side==='p1'?'Red':'Blue'}"><span class="sr-only">${side==='p1'?'Red':'Blue'}: </span><bdi>You`));
    assert.match(html,/<span>vs\.<\/span>/);assert.equal((html.match(/connection-status-icon/g)||[]).length,1);
    assert.match(html,new RegExp(`player-tone-${side==='p1'?'p2':'p1'}"><span class="sr-only">${side==='p1'?'Blue':'Red'}: </span><bdi>${side==='p1'?'Blue':'Red'} player`));
   }
@@ -40,7 +40,7 @@ test('computer profile overrides owner profile, owns its real color and is alway
   input[computerSide]={...input[computerSide],computerProfile:profile,connected:false};
   const before=structuredClone(input),model=homeCardMatchup(input,{identityId:'me'});
   assert.equal(model.ownSide,computerSide==='player1'?'p2':'p1');
-  const html=renderHomeCardIdentity(input,{identityId:'me'});assert.match(html,new RegExp(`<bdi>${name}<`));assert.match(html,/is-connected/);assert.match(html,/<bdi>Owner<\/bdi>/);assert.doesNotMatch(html,/is-disconnected|both sides/);assert.deepEqual(input,before);
+  const html=renderHomeCardIdentity(input,{identityId:'me'});assert.match(html,new RegExp(`<bdi>${name}<`));assert.match(html,/is-connected/);assert.match(html,/<bdi>You<\/bdi>/);assert.doesNotMatch(html,/is-disconnected|both sides/);assert.deepEqual(input,before);
  }
  const watched={...game('Viewer'),player1:{computerProfile:'babs',identityId:'owner',connected:false},player2:{computerProfile:'horus',identityId:'owner',connected:false}};
  assert.equal(homeCardMatchup(watched,{identityId:'owner'}).kind,'viewer');const html=renderHomeCardIdentity(watched,{identityId:'owner'});assert.doesNotMatch(html,/>You</);assert.equal((html.match(/is-connected/g)||[]).length,2);assert.match(html,/Babs/);assert.match(html,/Horus/);
@@ -76,21 +76,22 @@ test('explicit Both Players ownership with one computer uses the human seat afte
  for(const side of ['player1','player2']){
   const source={myRole:'Both Players',player1:person('me',{displayName:'Owner'}),player2:person('me',{displayName:'Owner'})};source[side].computerProfile='horus';
   for(const card of [source,normalizeStaticGameCard(source),buildStaticGameCardFromGame(source)]){
-   const html=renderHomeCardIdentity(card,{identityId:'me'});assert.match(html,/<bdi>Owner<\/bdi>/);assert.match(html,/Horus/);assert.match(html,new RegExp(`player-tone-${side==='player1'?'p2':'p1'}"><span class="sr-only">${side==='player1'?'Blue':'Red'}: </span><bdi>Owner`));assert.match(html,/aria-label="Computer player"/);assert.doesNotMatch(html,/Horus connected|both sides/);
+   const html=renderHomeCardIdentity(card,{identityId:'me'});assert.match(html,/<bdi>You<\/bdi>/);assert.match(html,/Horus/);assert.match(html,new RegExp(`player-tone-${side==='player1'?'p2':'p1'}" aria-label="Owner, you, ${side==='player1'?'Blue':'Red'}"><span class="sr-only">${side==='player1'?'Blue':'Red'}: </span><bdi>You`));assert.match(html,/aria-label="Computer player"/);assert.doesNotMatch(html,/Horus connected|both sides/);
    for(const myRole of ['Viewer','Guest'])assert.doesNotMatch(renderHomeCardIdentity({...card,myRole},{identityId:'me'}),/>You</);
    assert.doesNotMatch(renderHomeCardIdentity(card,{identityId:'different'}),/>You</);assert.doesNotMatch(renderHomeCardIdentity(card),/>You</);
   }
  }
 });
 
-test('canonical Home identities use names, stable guest seats and nonvisual affiliation',()=>{
+test('Home uses You for an owning viewer and retains canonical guest opponents',()=>{
  const named={...game(),player1:person('me',{displayName:'Kenan'}),player2:person('other',{displayName:'Ada'})};
  const html=renderHomeCardIdentity(named,{identityId:'me'});
- assert.match(html,/<bdi>Kenan<\/bdi>/);assert.doesNotMatch(html,/<bdi>You<\/bdi>/);
- assert.match(html,/<span class="sr-only">Red: <\/span><bdi>Kenan/);
+ assert.match(html,/<bdi>You<\/bdi>/);assert.match(html,/aria-label="Kenan, you, Red"/);
+ assert.match(html,/<span class="sr-only">Red: <\/span><bdi>You/);
  assert.match(html,/<span class="sr-only">Blue: <\/span><bdi>Ada/);
  const guests={...named,player1:person('me'),player2:person('other')};
- assert.match(renderHomeCardIdentity(guests,{identityId:'me'}),/<bdi>Guest 1<\/bdi>/);
+ assert.match(renderHomeCardIdentity(guests,{identityId:'me'}),/<bdi>You<\/bdi>/);
+ assert.match(renderHomeCardIdentity(guests,{identityId:'me'}),/aria-label="Guest 1, you, Red"/);
  assert.match(renderHomeCardIdentity(guests,{identityId:'me'}),/<bdi>Guest 2<\/bdi>/);
  guests.player1=named.player1;assert.match(renderHomeCardIdentity(guests),/<bdi>Guest<\/bdi>/);
 });
@@ -104,4 +105,20 @@ test('ongoing Home status names the actual preview actor with nonvisual affiliat
  assert.match(renderHomeCardTurn(input,{sideToMove:'P2'}),/<bdi>Horus<\/bdi>/);
  assert.equal(renderHomeCardTurn(input,{sideToMove:'missing'}),'Turn unknown');
  delete input.computer;assert.deepEqual(input,before);
+});
+
+
+test('a canonical literal You never invents owning ARIA for spectators or an opponent',()=>{
+ const named={...game('Viewer'),player1:person('me',{displayName:'You'}),player2:person('other',{displayName:'You'})};
+ const before=structuredClone(named);
+ for(const identityId of ['me','other','spectator',undefined]){
+  const html=renderHomeCardIdentity(named,{identityId});
+  assert.equal((html.match(/<bdi>You<\/bdi>/g)??[]).length,2);
+  assert.doesNotMatch(html,/aria-label="You, you,/);
+  assert.doesNotMatch(renderHomeCardTurn(named,{sideToMove:'P1'},{identityId}),/aria-label="You, you,/);
+ }
+ const owned=renderHomeCardIdentity({...named,myRole:'Player 1'},{identityId:'me'});
+ assert.match(owned,/aria-label="You, you, Red"/);
+ assert.doesNotMatch(owned,/aria-label="You, you, Blue"/);
+ assert.deepEqual(named,before);
 });

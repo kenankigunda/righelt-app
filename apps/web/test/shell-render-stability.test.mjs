@@ -413,7 +413,7 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /const renderConnectionStatusIcon = \(status, label\) =>/);
   const named={myRole:'Player 1',player1:{identityId:'me',profile:{displayName:'Kenan'}},player2:{identityId:'other',profile:{displayName:'Ada'}}};
   const quiet=renderHomeCardIdentity(named,{identityId:'me',quiet:true});
-  assert.match(quiet,/<bdi>Kenan<\/bdi>/);assert.match(quiet,/<bdi>Ada<\/bdi>/);assert.doesNotMatch(quiet,/connection-status-icon/);
+  assert.match(quiet,/<bdi>You<\/bdi>/);assert.match(quiet,/<bdi>Ada<\/bdi>/);assert.doesNotMatch(quiet,/connection-status-icon/);
   assert.match(renderHomeCardTurn(named,{sideToMove:'P2'}),/Blue: <\/span><bdi>Ada<\/bdi><\/strong> to play/);
   assert.doesNotMatch(source, /renderHomeSeatConnectionLine|renderHomeConnectionSummary|renderHomeRoleLine/);
   assert.match(source, /reconcileMiniBoardPreviews\(\);\s*syncMountedGameShellPanelUi\(shellRoot\);\s*initializeDesktopBoardFit\(\);\s*scheduleGameShellStickyLayout\(\);/);
