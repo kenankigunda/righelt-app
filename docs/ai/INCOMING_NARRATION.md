@@ -47,6 +47,8 @@ Preserve urgent notices, native targets, focus, touch, pointer and keyboard inpu
 
 Use executed production modules for classification, collapse, revision retirement, route ownership, notice independence, focus fences and geometry calculations. Keep independent literal expected answers and targeted causal negative controls. Leave unrelated legacy tests to T-136.
 
+Completed-game gameplay turn descriptions and activity remain Board-owned rather than notifications. Generating or changing completed-game winning-turn behavior belongs to its separate follow-up and is not part of this presentation change.
+
 After the actual marble, Naming and History predecessors are integrated, answer the remaining native questions with focused complete journeys:
 
 - Desktop incoming ownership, flat History placement, full names and coordinates, replay and stable selected History.

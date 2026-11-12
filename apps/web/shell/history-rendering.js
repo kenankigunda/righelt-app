@@ -77,8 +77,9 @@ const renderTurnHistory = (game) => {
     const key=canonical?`history-turn:${game.id}:${node.turnIndex}`:`history-turn:${game.id}:${node.turnIndex}:portion:${node.records[0].id}`;
     return renderTurn(turns.get(node.turnIndex)??{index:node.turnIndex},node.records,key);
   }).join('');
-  const emptyTurns=[...turns.values()].filter(turn=>!timeline.records.some(record=>record.move.turnIndex===turn.index)
-    || game.historyTurnIndex===turn.index&&!timeline.nodes.some(node=>node.type==='retained'&&node.turnIndex===turn.index));
+  const emptyTurns=[...turns.values()].filter(turn=>(!timeline.records.some(record=>record.move.turnIndex===turn.index)
+    || game.historyTurnIndex===turn.index&&!timeline.nodes.some(node=>node.type==='retained'&&node.turnIndex===turn.index))
+    && (turn.index!==game.currentTurn?.index||Boolean(turn.endedAt)||Boolean(turn.moveIndexes?.length)));
   const emptyRow=turn=>renderTurn(turn,[],`history-turn:${game.id}:${turn.index}`);
   const leadingEmpty=emptyTurns.filter(turn=>turn.index===game.currentTurn?.index).map(emptyRow).join('');
   const trailingEmpty=emptyTurns.filter(turn=>turn.index!==game.currentTurn?.index).reverse().map(emptyRow).join('');

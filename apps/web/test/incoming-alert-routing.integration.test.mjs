@@ -35,6 +35,13 @@ for(const purpose of ['selected-history','piece-inspection','required-continuati
   if(context.mandatory)assert.doesNotMatch(html,/dismiss-board-context/);else assert.match(html,/dismiss-board-context/);
  });
 }
+test('completed-game gameplay activity remains Board-owned and never becomes a notification',()=>{
+ const f=fixture(),context={key:'completed-activity',gameId:'g',purpose:'board-context',message:{text:'Maya completed the winning turn'}};
+ f.store.update('acknowledged',context);
+ assert.equal(boardContextPlacement(context),'board');
+ assert.deepEqual(f.items({id:'g'}).map(item=>item.key),['failed:failure']);
+ assert.match(renderBoardContextDetails(f.store.items('g')),/Maya completed the winning turn/);
+});
 test('final outer classification never promotes unknown or incoming contexts to Board details',()=>{
  const contexts=[{key:'unknown',gameId:'g',message:{purpose:'piece-inspection',text:'Unknown'}},{key:'incoming',gameId:'g',purpose:'incoming-narration',message:{purpose:'selected-history',text:'Incoming'}}];
  assert.deepEqual(contexts.map(boardContextPlacement),['notice','incoming']);assert.equal(renderBoardContextDetails(contexts),'');
