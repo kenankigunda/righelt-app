@@ -178,6 +178,7 @@ mountLoadingEdges(document);
 void fetch("/deploy-meta.json", { cache: "no-store", signal: AbortSignal.timeout(5000) }).then(response => response.json()).then(meta => { globalThis.__righeltObservedDeploymentSha = meta.sha ?? meta.commitSha ?? "unavailable"; }).catch(() => {});
 const appEl = document.getElementById("app");
 const incomingNarrationState=createIncomingNarrationState();
+let pendingIncomingToggleFocus=null;
 let boardContextVisit=0;
 const boardContextPresentation=createBoardContextPresentation({appEl,document,getDependencies:()=>({
  transport,viewingScope,boardContextVisit,currentRoute,getBoardGame,getCurrentViewedGameId,incomingNarrationState,replayRequests,replayController,
@@ -3391,7 +3392,7 @@ const captureScenarioDraftFocus = (baseRouteKey) => {
 };
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
-  if (renderGesture.defer({ animatePanels, includeBoard })) return;
+  if (renderGesture.defer({ animatePanels, includeBoard })) return false;
   const historyFocus=historyHeadingFocus.capture();
   recoveryPresentationOptions(currentRoute.name === 'game' ? transport.getGameViewModel(currentRoute.gameId) : null);
   syncDestinationNotice();
@@ -3415,8 +3416,11 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   }
   joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });
   pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });
+  const incomingToggleFocus=pendingIncomingToggleFocus;
+  pendingIncomingToggleFocus=null;
+  boardContextPresentation.restoreIncomingFocus(incomingToggleFocus,{afterOwnedRender:true});
   resumeBoardContextReplay();
-  return result;
+  return true;
 };
 const renderContent = ({ animatePanels, includeBoard }) => {
   const hadResultView = Boolean(appEl.querySelector('.game-result'));
@@ -4873,9 +4877,13 @@ appEl.addEventListener("click", async (event) => {
     const context=boardContexts.channel('acknowledged');
     if(context?.purpose!==BOARD_CONTEXT_PURPOSE.INCOMING||context.gameId!==getCurrentViewedGameId()||context.key!==actionEl.dataset.boardContextKey)return;
     const restoreToggleFocus=document.activeElement===actionEl;
-    if(incomingNarrationState.toggle(context.key))render({animatePanels:false,includeBoard:false});
+    const committed=incomingNarrationState.toggle(context.key)?render({animatePanels:false,includeBoard:false}):true;
+    if(restoreToggleFocus&&committed===false){
+      pendingIncomingToggleFocus?.owner.release();
+      pendingIncomingToggleFocus=boardContextPresentation.captureIncomingFocus();
+    }
     const replacement=[...appEl.querySelectorAll('[data-action="toggle-incoming-narration"]')].find(button=>button.dataset.boardContextKey===context.key);
-    if(restoreToggleFocus&&replacement?.isConnected&&!replacement.disabled&&!replacement.closest('[inert]'))replacement.focus({preventScroll:true});
+    if(restoreToggleFocus&&committed!==false&&replacement?.isConnected&&!replacement.disabled&&!replacement.closest('[inert]'))replacement.focus({preventScroll:true});
     return;
   }
   if(action==='replay-board-context'){boardContextPresentation.replayAction(actionEl);return;}

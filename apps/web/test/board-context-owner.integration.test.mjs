@@ -204,6 +204,33 @@ for(const interruption of ['none','outside-focus','new-intent'])test(`incoming h
  assert.equal(f.reveals.length,0,'fixed incoming host never triggers a Board-page scroll reveal');
 });
 
+test('a matching synchronous incoming toggle replacement remains owned through a following render',async t=>{
+ const f=fixture(t),p=f.context.presentation;
+ f.button.dataset={action:'toggle-incoming-narration',boardContextKey:'accepted-turn'};
+ f.button.closest=selector=>selector==='[data-incoming-context]'?{}:null;f.button.focus();
+ const token=p.captureIncomingFocus();assert(token);f.button.isConnected=false;f.doc.activeElement=f.doc.body;
+ const first={isConnected:true,disabled:false,dataset:{...f.button.dataset},closest:selector=>selector==='[data-incoming-context]'?{}:null,focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
+ first.focus();assert.equal(f.doc.activeElement,first,'the synchronous handler focuses its first replacement');
+ first.isConnected=false;f.doc.activeElement=f.doc.body;
+ const settled={...first,isConnected:true,focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
+ f.context.appEl.querySelectorAll=()=>[settled];p.restoreIncomingFocus(token);await Promise.resolve();
+ assert.equal(f.doc.activeElement,settled,'the following committed render retains the same owned toggle focus');
+ assert.equal(f.reveals.length,0);
+});
+
+for(const cancellation of [null,'outside-pointer'])test(`a deferred native toggle restores after its owned render: ${cancellation??'current intent'}`,t=>{
+ const f=fixture(t),p=f.context.presentation;
+ f.button.dataset={action:'toggle-incoming-narration',boardContextKey:'accepted-turn'};
+ f.button.closest=selector=>selector==='[data-incoming-context]'?{}:null;f.button.focus();
+ const token=p.captureIncomingFocus();assert(token);f.doc.activeElement=f.doc.body;
+ const replacement={isConnected:true,disabled:false,dataset:{...f.button.dataset},closest:selector=>selector==='[data-incoming-context]'?{}:null,focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
+ f.context.appEl.querySelectorAll=()=>[replacement];
+ if(cancellation)f.doc.fire('pointerdown',{target:{}});
+ p.restoreIncomingFocus(token,{afterOwnedRender:true});
+ assert.equal(f.doc.activeElement,cancellation?f.doc.body:replacement);
+ assert.equal(f.reveals.length,0);
+});
+
 test('hidden Board detail never consumes an announcement ahead of the actual visible incoming host',async t=>{
  const f=fixture(t),p=f.context.presentation;
  p.store.update('piece',{key:'hidden-piece',gameId:'game',purpose:'piece-inspection',message:{text:'Hidden inspection'}});

@@ -50,7 +50,9 @@ for(const width of [390,1440])test(`arriving opponent turn uses the responsive i
    await test.step('mobile flyout collapse preserves focus ownership',async()=>{
     const collapse=flyout.getByRole('button',{name:'Hide previous turn',exact:true});await collapse.focus();await expect(collapse).toBeFocused();await collapse.dispatchEvent('click');
     const expand=flyout.getByRole('button',{name:'Show previous turn',exact:true});await expect(expand).toBeFocused();await expect(flyout).toHaveAttribute('data-expanded','false');
-    await expand.dispatchEvent('click');await expect(collapse).toBeFocused();await expect(flyout).toHaveAttribute('data-expanded','true');
+    await expand.press('Enter');await expect(collapse).toBeFocused();await expect(flyout).toHaveAttribute('data-expanded','true');
+    await collapse.press('Enter');await expect(expand).toBeFocused();await expect(flyout).toHaveAttribute('data-expanded','false');
+    await expand.press('Enter');await expect(collapse).toBeFocused();await expect(flyout).toHaveAttribute('data-expanded','true');
    },{timeout:15000});
    await test.step('mobile History activation retains the flyout',async()=>{
     const reveal=opponent.getByRole('button',{name:'Show game navigation',exact:true}),historyTab=nav.locator('[data-action="switch-game-panel"][data-panel="history"]');

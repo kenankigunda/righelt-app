@@ -31,10 +31,17 @@ export function createBoardContextPresentation({appEl,document,getDependencies,c
  const captureIncomingFocus=()=>{
   const target=document.activeElement;
   if(!appEl.contains(target)||!target?.closest?.('[data-incoming-context]'))return null;
-  return {target,action:target.dataset.action,key:target.dataset.boardContextKey,owner:boardContextFocus.begin(target,{allowRemoval:true})};
+  const action=target.dataset.action,key=target.dataset.boardContextKey;
+  const matchingReplacement=candidate=>candidate?.dataset?.action===action&&candidate?.dataset?.boardContextKey===key&&candidate.closest?.('[data-incoming-context]');
+  return {target,action,key,owner:boardContextFocus.begin(target,{allowRemoval:true,allows:matchingReplacement})};
  };
- const restoreIncomingFocus=token=>{
+ const restoreIncomingFocus=(token,{afterOwnedRender=false}={})=>{
   if(!token)return;
+  if(afterOwnedRender){
+   const target=[...appEl.querySelectorAll('[data-incoming-context] [data-action]')].find(candidate=>candidate.dataset.action===token.action&&candidate.dataset.boardContextKey===token.key&&!candidate.closest?.('[inert]'));
+   if(token.owner.intentCurrent()&&target?.isConnected&&!target.disabled)target.focus({preventScroll:true});
+   token.owner.release();return;
+  }
   if(token.target.isConnected&&!token.target.closest?.('[inert]')){token.owner.release();return;}
   token.owner.restore(()=>[...appEl.querySelectorAll('[data-incoming-context] [data-action]')].find(target=>target.dataset.action===token.action&&target.dataset.boardContextKey===token.key&&!target.closest?.('[inert]'))
    ??appEl.querySelector('[data-game-panel="history"] > h2'));
