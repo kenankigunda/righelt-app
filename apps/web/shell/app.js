@@ -4,7 +4,7 @@ import {createDisplayedReplayStarter} from './displayed-replay-starter.js';
 import {renderBoardContextDetails} from './board-context.js';
 import {BOARD_CONTEXT_PURPOSE} from './board-context-purpose.js';
 import {createBoardContextPresentation} from './board-context-presentation.js';
-import {incomingNarrationContext,createIncomingNarrationState,renderIncomingNarration} from './incoming-narration.js';
+import {incomingNarrationContext,createIncomingNarrationState,renderIncomingNarration,syncIncomingNarrationRoot} from './incoming-narration.js';
 import {createConfirmedRemovalPresentation,presentRemovalTransportChange} from './removal-presentation.js';
 import {createRecoveryPresentation} from './recovery-presentation.js';
 import {mountRenderGestureOwner} from './render-gesture-owner.js';
@@ -2305,9 +2305,7 @@ const renderIncomingNarrationHost = (game, layout) => {
 };
 const syncIncomingNarrationHost = game => {
   const html=renderIncomingNarrationHost(game,'narrow');
-  let host=appEl.querySelector(':scope > [data-incoming-narration-root]');
-  if(!host&&html){host=document.createElement('div');host.setAttribute('data-incoming-narration-root','');appEl.append(host);}
-  if(host)patchToolHtml(host,html);
+  syncIncomingNarrationRoot(appEl,html,patchToolHtml);
 };
 const renderHistoryPanel = (game) => {
   if (game.positionOnly && game.positionHistoryPending) return renderHistorySlots({ rows: '', extra: `<p class="small" role="status">${game.positionError ? 'Game history could not finish loading. Try loading play again.' : 'Loading game history'}</p>` });

@@ -36,6 +36,25 @@ export function createIncomingNarrationState() {
   };
 }
 
+// The narrow flyout paints at the bottom of the viewport, but its native
+// controls must precede the live Board controls in document order. Mount it
+// between the page header and game shell so focus traverses forward to Pass
+// without wrapping through the Board's cell buttons.
+export function syncIncomingNarrationRoot(app, html, patch) {
+  let host = app.querySelector('[data-incoming-narration-root]');
+  if (!host && html) {
+    host = app.ownerDocument.createElement('div');
+    host.setAttribute('data-incoming-narration-root', '');
+  }
+  if (!host) return null;
+  const gameShell = app.querySelector('[data-game-shell-root]');
+  const parent = gameShell?.parentElement ?? app;
+  const anchor = gameShell ?? app.firstElementChild;
+  if (host.parentElement !== parent || host.nextElementSibling !== anchor) parent.insertBefore(host, anchor);
+  patch(host, html);
+  return host;
+}
+
 export function renderIncomingNarration(context, {layout, expanded = true, replayEnabled = false} = {}) {
   if (!context || context.purpose !== BOARD_CONTEXT_PURPOSE.INCOMING || !['wide','narrow'].includes(layout)) return '';
   const side = context.actorSide === 'P1' ? 'p1' : context.actorSide === 'P2' ? 'p2' : 'neutral';
