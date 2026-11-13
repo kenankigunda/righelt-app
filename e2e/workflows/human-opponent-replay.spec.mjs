@@ -233,12 +233,13 @@ for(const width of [390,1440])test(`reopening human play preserves narration and
 });
 
 async function expectLiveOverview(page,board,visible) {
- const recorded=board.locator('.recorded-action-source-piece');
- if(!visible){await expect(recorded).toHaveCount(0);return;}
- // A source token alone could belong to an acknowledged/manual playback frame.
- // A usable live Pass and actual recorded paint together establish this surface.
+ const washes=board.locator('.previous-turn-source,.previous-turn-target,.previous-turn-deletion');
+ if(!visible){await expect(washes).toHaveCount(0);return;}
+ // A usable live Pass and square-only paint together establish this surface.
  await expect(label(page).getByRole('button',{name:'Pass',exact:true})).toBeEnabled();
- await expect(recorded.first()).toBeVisible();
+ await expect(washes.first()).toBeVisible();
+ await expect(board).toHaveAttribute('data-presentation-context','previous-turn');
+ await expect(board.locator('.recorded-action-source-piece,.move-ghost,.history-role-source,.history-role-target')).toHaveCount(0);
 }
 
 async function createOverviewFriendGame({ownedRoleContext,baseURL,width}) {
@@ -255,7 +256,10 @@ async function createOverviewFriendGame({ownedRoleContext,baseURL,width}) {
  expect(action).toBeTruthy();await submitPlayableAction(owner,action);
  const board=opponent.getByTestId('game-board'),cell=point=>board.locator(`.cell[data-row="${point.row}"][data-col="${point.col}"]`);
  await expectLiveOverview(opponent,board,true);
- await expect(cell(action.from).locator('.recorded-action-source-piece')).toBeVisible();
+ await expect(cell(action.from)).toHaveClass(/previous-turn-source/);
+ await expect(cell(action.to)).toHaveClass(/previous-turn-target/);
+ const washPaint=await Promise.all([action.from,action.to].map(point=>cell(point).evaluate(node=>getComputedStyle(node).backgroundImage)));
+ expect(washPaint[0],`source and destination washes must remain visually distinct: ${JSON.stringify(washPaint)}`).not.toBe(washPaint[1]);
  await expect(cell(action.to).locator(`.piece-token[data-piece-id="${action.actorId}"]:not(.move-ghost)`)).toBeVisible();
  return {owner,opponent,gameId,board,cell};
 }
@@ -276,11 +280,11 @@ for(const width of [390,1440])test(`live opponent overview preserves play and vi
  await expect(label(opponent)).not.toHaveAttribute('data-loading-state','pending');await cell(empty()).click();await expectLiveOverview(opponent,board,true);
  await cell(own.position).click();await expectLiveOverview(opponent,board,false);
  await expect(label(opponent)).not.toHaveAttribute('data-loading-state','pending');await cell(empty()).click();await expect(replayButton(opponent)).toBeVisible();
- await expectLiveOverview(opponent,board,false);
+ await expectLiveOverview(opponent,board,true);
  assertUnchanged(before,await projected(opponent,gameId));expect(writes).toEqual([]);opponent.off('request',watch);
  await opponent.reload();await expect(opponent.getByTestId('game-shell')).toBeVisible();await switchGamePanel(opponent,'board');
  await expectLiveOverview(opponent,board,true);
- await cell(own.position).click();await expect(label(opponent)).not.toHaveAttribute('data-loading-state','pending');await cell(empty()).click();await expectLiveOverview(opponent,board,false);
+ await cell(own.position).click();await expect(label(opponent)).not.toHaveAttribute('data-loading-state','pending');await cell(empty()).click();await expectLiveOverview(opponent,board,true);
  await opponent.locator('.shell-header-title-link').click();await expect(opponent.getByTestId('home-create-game')).toBeVisible();
  await opponent.locator(`.mini-board-card-link-surface[data-game-id="${gameId}"]`).click();await switchGamePanel(opponent,'board');
  await expectLiveOverview(opponent,board,true);

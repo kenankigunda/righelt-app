@@ -8,9 +8,9 @@ for(const phase of ['confirmed-view','confirmed-frame','manual-replay','forced-f
  let displaying=false;
  const read=selection=>liveTurnOverviewOverlay(selection,{game:displaying&&phase==='confirmed-view'?{...game,confirmedPlayback:{playing:true}}:game,overview,
   confirmedPlayback:{snapshot:()=>({playing:displaying&&phase==='confirmed-frame'})},replayController:{snapshot:()=>({playing:displaying&&phase==='manual-replay'})},forcedFollow:()=>displaying&&phase==='forced-follow'});
- assert.equal(read({}).mode,'recorded-turn');
+ assert.equal(read({}).mode,'previous-turn');
  for(const inspection of [{kind:'command'},{kind:'supply'},{kind:'combined'}])assert.equal(read({inspection}),null);
- assert.equal(read({selectedPieceId:'opponent'}),null);assert.equal(read({}).mode,'recorded-turn');
+ assert.equal(read({selectedPieceId:'opponent'}),null);assert.equal(read({}).mode,'previous-turn');
  const before=structuredClone(game);displaying=true;assert.equal(read({}),null,'live aggregate must not replace a displayed recorded frame');
- displaying=false;assert.equal(read({}).mode,'recorded-turn','ordinary live overview returns when recorded presentation settles');assert.deepEqual(game,before);
+ displaying=false;assert.equal(read({}).mode,'previous-turn','ordinary live overview returns when recorded presentation settles');assert.deepEqual(game,before);
 });

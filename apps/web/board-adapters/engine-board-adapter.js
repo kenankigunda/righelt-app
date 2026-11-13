@@ -1141,7 +1141,7 @@ export function createEngineBoardAdapter() {
       renderedInteractionMode = effectiveInteractionMode;
       if (boardEl?.setAttribute) {
         boardEl.setAttribute("data-interaction-mode", effectiveInteractionMode);
-        boardEl.setAttribute("data-presentation-context", overlay?.presentationContext === 'history' ? 'history' : 'default');
+        boardEl.setAttribute("data-presentation-context", ['history','previous-turn'].includes(overlay?.presentationContext) ? overlay.presentationContext : 'default');
       }
       const removalByCoordinateKey = new Map(
         (Array.isArray(removalEffects) ? removalEffects : []).map((effect) => [coordKey(effect.position), effect]),
@@ -1176,6 +1176,8 @@ export function createEngineBoardAdapter() {
       // whose appearance must remain independent of History's role treatment.
       const historyRoles = overlay?.presentationContext === 'history' && !isLiveInteractiveBoard
         ? new Map((overlay.endpointRoles ?? []).map(cell => [`${cell.row},${cell.col}`,cell])) : new Map();
+      const previousTurnRoles = overlay?.presentationContext === 'previous-turn' && overlay?.mode === 'previous-turn'
+        ? new Map((overlay.previousTurnCells ?? []).map(cell => [`${cell.row},${cell.col}`,cell])) : new Map();
 
       for (let row = 0; row < BOARD_SIZE; row += 1) {
         for (let col = 0; col < BOARD_SIZE; col += 1) {
@@ -1197,6 +1199,10 @@ export function createEngineBoardAdapter() {
           const historyRole = historyRoles.get(key);
           if (historyRole?.source) cell.classList.add('history-role-source');
           if (historyRole?.target) cell.classList.add('history-role-target');
+          const previousTurnRole=previousTurnRoles.get(key);
+          const previousTurnKind=previousTurnRole?.target?'target':previousTurnRole?.deletionSide?'deletion':previousTurnRole?.source?'source':null;
+          const previousTurnSide=previousTurnKind==='deletion'?previousTurnRole?.deletionSide:previousTurnRole?.side;
+          if(previousTurnKind&&['P1','P2'].includes(previousTurnSide))cell.classList.add(`previous-turn-${previousTurnKind}`,`previous-turn-side-${previousTurnSide.toLowerCase()}`);
           const cellPiece = findPieceAt(snapshot, row, col);
           const effectiveSelection =
             overlay?.mode === "recorded-action"
