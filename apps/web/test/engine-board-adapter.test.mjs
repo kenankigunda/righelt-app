@@ -1326,6 +1326,30 @@ test('History endpoint roles preserve shared-square roles without leaking into l
  });
 });
 
+test('live previous-turn roles render one priority wash per square without recorded decoration',async()=>{
+ await withFakeDocument(()=>{
+  const {adapter,boardEl,overlayLinesEl}=createMountedAdapter();
+  const snapshot={sideToMove:'P2',pieces:[{id:'a',owner:'P1',kind:'unit',position:{row:4,col:3},supplied:true,commanded:true}]};
+  const previousTurnCells=[
+   {row:4,col:2,source:true,target:false,side:'P1',deletionSide:null},
+   {row:4,col:3,source:true,target:true,side:'P1',deletionSide:'P2'},
+   {row:5,col:3,source:false,target:false,side:'P1',deletionSide:'P2'},
+  ];
+  adapter.render({snapshot,selection:{source:null,target:null,selectedPieceId:null},overlay:{mode:'previous-turn',presentationContext:'previous-turn',previousTurnCells},legalActions:[],selectedPieceMoves:[],interactionMode:'interactive'});
+  assert.equal(boardEl.getAttribute('data-presentation-context'),'previous-turn');
+  assert.equal(getCell(boardEl,4,2).classList.contains('previous-turn-source'),true);
+  assert.equal(getCell(boardEl,4,2).classList.contains('previous-turn-side-p1'),true);
+  assert.equal(getCell(boardEl,4,3).classList.contains('previous-turn-target'),true);
+  assert.equal(getCell(boardEl,4,3).classList.contains('previous-turn-deletion'),false);
+  assert.equal(getCell(boardEl,4,3).classList.contains('previous-turn-side-p1'),true);
+  assert.equal(getCell(boardEl,5,3).classList.contains('previous-turn-deletion'),true);
+  assert.equal(getCell(boardEl,5,3).classList.contains('previous-turn-side-p2'),true);
+  assert.equal(boardEl.querySelectorAll('.recorded-action-source-piece,.move-ghost,.history-destruction-piece').length,0);
+  assert.equal(overlayLinesEl.children.length,0);
+  adapter.unmount();
+ });
+});
+
 
 test("empty native Board cells have coordinate names without replacing piece, supply or rush names", async () => {
   await withFakeDocument(() => {

@@ -1117,6 +1117,21 @@ button:disabled {
 [data-presentation-context="history"] .cell.history-role-target { border:2px solid var(--move-target); box-shadow:var(--cell-recess-shadow); }
 [data-presentation-context="history"] .cell.history-role-source.history-role-target { border:2px dashed var(--move-source); box-shadow:inset 0 0 0 2px var(--move-target), var(--cell-recess-shadow); }
 
+/* The live previous-turn cue is deliberately quieter than History. It changes
+   only the square floor and keeps the board interactive. */
+[data-presentation-context="previous-turn"] .cell.previous-turn-side-p1 { --previous-turn-color:var(--player-p1); }
+[data-presentation-context="previous-turn"] .cell.previous-turn-side-p2 { --previous-turn-color:var(--player-p2); }
+[data-presentation-context="previous-turn"] .cell.previous-turn-source,
+[data-presentation-context="previous-turn"] .cell.previous-turn-deletion {
+  --previous-turn-weight:7%;
+}
+[data-presentation-context="previous-turn"] .cell.previous-turn-target {
+  --previous-turn-weight:17%;
+}
+[data-presentation-context="previous-turn"] .cell:is(.previous-turn-source,.previous-turn-deletion,.previous-turn-target) {
+  --cell-floor-image:linear-gradient(color-mix(in srgb,var(--previous-turn-color) var(--previous-turn-weight),transparent),color-mix(in srgb,var(--previous-turn-color) var(--previous-turn-weight),transparent)),var(--marble-face,none);
+}
+
 /* Warning semantics are independent of either player's affiliation. */
 .board-obligatory-pill {
   display: inline-block;
