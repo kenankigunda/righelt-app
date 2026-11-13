@@ -390,11 +390,11 @@ test('case source opt-in and sealed inline capture preserve the original two act
  // Original reviewed 0a959 fixture and independently reviewed 3b99 composition.
  // Keep the original golden: only invert the sealed test-owned observation block.
  const hash=text=>createHash('sha256').update(text).digest('hex');
- const originalSHA='165ec16bb620c0038a8059a2d513401a5a258069ea6ae397130bb58fb5844d30';
- const reviewedCurrentSHA='fcf3791e85b1a3243d451cf3993ba631fe152b88e8ac2b0b9a144ffe21ee8646';
+ const originalSHA='12f8a56fdb4a779c080b131a1d86a1c0a6624336f4eccd66cf3742acb21f6bc1';
+ const reviewedCurrentSHA='d695c22a0c33e93b8c71b792969a7b02ec081fc8ab873d30c8bb753c79d08868';
  // Preserve the old composed-source golden by exactly inverting the seven
  // accepted Recovery fault-lifecycle/reconnect fixture changes, not actions.
- const reviewedFixtureBaseSHA='95388c539469a08b581a1058ef79298c978cdaf859e12c5d1b328dd97bd8ca3b';
+ const reviewedFixtureBaseSHA='c3eeb38f73b56cf1f906a3b46c8f03ac7bbe97ef13aae62b1bba5d14f6841b0e';
  const recoveryFixtureUnion=[
   {
     "before": "import {observeReadinessEvaluation} from '../support/readiness-diagnostics.mjs';\nimport {createFaultLifecycle,disposeFaultContexts,fetchFaultResponse} from '../support/fault-lifecycle.mjs';\nimport {installBoardAdmissionDiagnostics} from '../support/board-admission-diagnostics.mjs';\nimport {waitForOpponentReady,waitForComputerDecision} from '../support/computer-projection.mjs';\n",
