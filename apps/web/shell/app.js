@@ -8,6 +8,7 @@ import {incomingNarrationContext,createIncomingNarrationState,renderIncomingNarr
 import {createRecoveryPresentation} from './recovery-presentation.js';
 import {mountRenderGestureOwner} from './render-gesture-owner.js';
 import {createDestinationRouteOwner,destinationReadScope,terminalColdDestination,destinationHidesGameBody,readGameDestination,destinationLiveGameId} from './destination-route-owner.js';
+import {mountRouteHeldPulse} from './route-held-pulse.js';
 import {createNavigationVisitOwner} from './navigation-visit-owner.js';
 import {createAccountContinuationOwner} from './account-continuation-owner.js';
 import {createHomeCardRendering,scenarioPreviewStatus,formatSideToMoveLabel,getStaticCardPreviewSnapshot,getStaticCardPreviewSelection,getStaticCardPreviewPayload} from './home-card-rendering.js';
@@ -444,6 +445,7 @@ let homeSectionResizeFrame = 0;
 let activePanelSwipe = null;
 let panelTransitionResetTimer = null;
 let routeTransition = null;
+let routeHeldPulse = null;
 let pendingRoutePosition = null;
 window.history.scrollRestoration = 'manual';
 let routeTransitionCoverTimer = null;
@@ -988,6 +990,7 @@ const syncRouteTransitionLayer = () => {
   routeTransitionLayerEl.setAttribute("data-active", routeTransition ? "true" : "false");
   routeTransitionLayerEl.setAttribute("data-transition", routeTransition?.type || "none");
   routeTransitionLayerEl.setAttribute("data-phase", routeTransition?.phase || "idle");
+  routeHeldPulse?.update();
 };
 const clearRouteTransitionTimers = () => {
   if (routeTransitionCoverTimer) {
@@ -3781,6 +3784,7 @@ const destinationRecovery=createDestinationRecovery({
 });
 const syncDestinationNotice = () => {
   destinationLoadPresentation=destinationRecovery.update({scope:destinationReadScope(captureRouteRead()),visible:!document.hidden});
+  routeHeldPulse?.update();
   const message=destinationRecoveryMessage(destinationLoadPresentation,currentRoute.name);
   if(!message){
     if(destinationNoticeEl){
@@ -5416,6 +5420,16 @@ window.addEventListener("touchcancel", () => {
 
 mobileNavigation = mountMobileNavigation({window,document,isNarrow:()=>currentRoute.name==='game' && getShellLayoutMode()==='narrow',isBlocked:()=>Boolean(document.querySelector('dialog[open]'))});
 mobileNavigation.reveal();
+
+// Bind after destination state exists. This reads only scalar ownership and
+// never starts, retries, resolves, or otherwise participates in route work.
+routeHeldPulse=mountRouteHeldPulse({element:routeTransitionLayerEl,document,window,getState:()=>({
+  owner:routeTransition,phase:routeTransition?.phase,
+  scope:destinationReadScope({generation:account.snapshot().generation,epoch:hydrateRoute.currentEpoch(),routeKey:routeReadKey(window.location.hash),homeVisit:homeReadVisit}),
+  pendingScope:destinationLoadPresentation?.scope,
+  current:isGameEntryRouteTransitionActive(currentRoute)&&isGameEntryRouteTransitionActive(parseRouteFromHash(window.location.hash)),
+  pending:destinationLoadPresentation?.pending===true,ready:routeHydrated,failure:destinationLoadPresentation?.kind,
+})});
 
 let startupFlight = false, startupComplete = false, startupRetryTimer = null, startupRetryDelay = 1000;
 const initialRender = async () => {
