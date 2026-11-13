@@ -7,10 +7,16 @@ const graphemes=value=>segmenter?[...segmenter.segment(String(value))].map(part=
 const length=value=>graphemes(value).length;
 const initial=value=>`${graphemes(String(value).trim())[0]??''}.`;
 const seatText=seat=>seat.label+(seat.qualifier?` (${seat.qualifier})`:'');
-const coreText=(model,seats=model.seats,participant=model.participant)=>model.kind==='self'?'You play both sides':model.kind==='watched-self'?`${seatText(participant)} plays both sides`:seats.map(seatText).join(' vs. ');
+const coreText=(model,seats=model.seats,participant=model.participant)=>model.kind==='self'||model.kind==='watched-self'?seatText(participant):seats.map(seatText).join(' vs. ');
+const compactQualifier=value=>String(value).startsWith('@')?`@${graphemes(String(value).slice(1))[0]??''}…`:initial(value);
+const compactSeat=seat=>({...seat,label:seat.label==='Open seat'?'Open':seat.label,qualifier:seat.qualifier?compactQualifier(seat.qualifier):seat.qualifier});
+const startDateText=value=>{
+ const timestamp=Date.parse(String(value??''));
+ return Number.isFinite(timestamp)?new Intl.DateTimeFormat('en',{month:'short',day:'numeric'}).format(new Date(timestamp)):null;
+};
 
-export function browserMatchupTitle(model,{maxCharacters=DOCUMENT_TITLE_MAX_CHARACTERS}={}){
- const withSuffix=value=>`${value}${DOCUMENT_TITLE_SUFFIX}`;
+export function browserMatchupTitle(model,{maxCharacters=DOCUMENT_TITLE_MAX_CHARACTERS,startedAt=null}={}){
+ const date=startDateText(startedAt),withSuffix=value=>`${value}${date?` | ${date}`:''}${DOCUMENT_TITLE_SUFFIX}`;
  let seats=model.seats?.map(seat=>({...seat}))??[],participant=model.participant?{...model.participant}:null;
  let value=withSuffix(coreText(model,seats,participant));
  if(length(value)<=maxCharacters)return value;
@@ -24,13 +30,21 @@ export function browserMatchupTitle(model,{maxCharacters=DOCUMENT_TITLE_MAX_CHAR
   value=withSuffix(coreText(model,seats,participant));
   if(length(value)<=maxCharacters)break;
  }
+ if(length(value)>maxCharacters){
+  seats=seats.map(compactSeat);participant=participant?compactSeat(participant):participant;
+  value=withSuffix(coreText(model,seats,participant));
+ }
+ if(length(value)>maxCharacters){
+  const fixedLength=length(withSuffix('')),available=Math.max(1,maxCharacters-fixedLength),core=graphemes(coreText(model,seats,participant));
+  value=withSuffix(`${core.slice(0,Math.max(1,available-1)).join('')}…`);
+ }
  return value;
 }
 
 export function documentTitleForRoute({routeName,routeHydrated=false,game=null,identityId=null,inviteResolved=false,unavailable=false}={}){
  if(routeName==='invite'&&!inviteResolved)return `Invitation${DOCUMENT_TITLE_SUFFIX}`;
  if(routeName!=='game'&&routeName!=='invite')return 'Righelt';
- if(game)return browserMatchupTitle(gameTitleModel(game,{identityId}));
+ if(game)return browserMatchupTitle(gameTitleModel(game,{identityId}),{startedAt:game.createdAt});
  if(unavailable||routeHydrated)return `Game unavailable${DOCUMENT_TITLE_SUFFIX}`;
  return `Loading game${DOCUMENT_TITLE_SUFFIX}`;
 }
