@@ -1,51 +1,51 @@
 {
   "version": 1,
   "modulePath": "/shell/app.js",
-  "sourceSha256": "5a61de33c4db57a8d60dfddf248956e5b01e882446aea44dce35e799d81c7cb0",
-  "outputSha256": "7095c7f6df199b7b6eee116bd683466a3deb1c283652b22a6ba6a4093ae142ac",
+  "sourceSha256": "acf28f40b44f172bf275a2e67f096948409e92ee90ca49a219e30aff2256d946",
+  "outputSha256": "5c99cc8aadb243bf034f10bb6c72a0c5ac38634e4b72045eb7e804a0d2c2c271",
   "prefix": "const __righeltResultReviewFocusProbe = (kind, refs = {}) => { try { globalThis.__RIGHELT_RESULT_REVIEW_FOCUS_PROBE__?.(kind, refs); } catch {} };\n",
   "operations": [
     {
       "label": "context-history-patch",
-      "start": 13848,
-      "end": 13906,
+      "start": 13914,
+      "end": 13972,
       "before": "renderHistoryPanel,patchToolHtml,syncIncomingNarrationHost",
       "after": "renderHistoryPanel,patchToolHtml:(element,html)=>{const history=element?.matches?.('[data-game-panel=\"history\"]');if(history)__righeltResultReviewFocusProbe(\"history-before-context-patch\",{root:element});const value=patchToolHtml(element,html);if(history)__righeltResultReviewFocusProbe(\"history-after-context-patch\",{root:element});return value;},syncIncomingNarrationHost"
     },
     {
       "label": "incremental-history-patch",
-      "start": 147842,
-      "end": 147926,
+      "start": 147964,
+      "end": 148048,
       "before": "    patchToolHtml(historyEl, renderHistoryPanel(game));\n    revealSelectedHistory();",
       "after": "    __righeltResultReviewFocusProbe(\"history-before-incremental-patch\",{root:historyEl});\n    patchToolHtml(historyEl, renderHistoryPanel(game));\n    __righeltResultReviewFocusProbe(\"history-after-incremental-patch\",{root:historyEl});\n    revealSelectedHistory();"
     },
     {
       "label": "committed-render-entry",
-      "start": 181545,
-      "end": 181618,
+      "start": 181667,
+      "end": 181740,
       "before": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;",
       "after": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;\n  __righeltResultReviewFocusProbe(\"render-committed-entry\");"
     },
     {
       "label": "original-focus-once",
-      "start": 182885,
-      "end": 182994,
+      "start": 183007,
+      "end": 183116,
       "before": "if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }",
       "after": "if (heading) { heading.tabIndex = -1; __righeltResultReviewFocusProbe(\"focus-before\", {node:heading}); heading.focus({preventScroll:true}); __righeltResultReviewFocusProbe(\"focus-after\", {node:heading}); pendingResultReviewFocus = null; }"
     },
     {
       "label": "existing-render-tail",
-      "start": 182999,
-      "end": 183381,
+      "start": 183121,
+      "end": 183503,
       "before": "  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  const incomingToggleFocus=pendingIncomingToggleFocus;\n  pendingIncomingToggleFocus=null;\n  boardContextPresentation.restoreIncomingFocus(incomingToggleFocus,{afterOwnedRender:true});\n  resumeBoardContextReplay();",
       "after": "  __righeltResultReviewFocusProbe(\"render-before-join\");\n  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  __righeltResultReviewFocusProbe(\"render-after-join\");\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  const incomingToggleFocus=pendingIncomingToggleFocus;\n  pendingIncomingToggleFocus=null;\n  boardContextPresentation.restoreIncomingFocus(incomingToggleFocus,{afterOwnedRender:true});\n  resumeBoardContextReplay();\n  __righeltResultReviewFocusProbe(\"render-after-resume\");"
     },
     {
       "label": "explicit-analysis",
-      "start": 249549,
-      "end": 249605,
-      "before": "if (action === \"analysis\") { resultPresentation.clear();",
-      "after": "if (action === \"analysis\") { __righeltResultReviewFocusProbe(\"analysis-entry\"); resultPresentation.clear();"
+      "start": 250094,
+      "end": 250183,
+      "before": "if (action === \"analysis\") { completedReviewEntryGeneration++;resultPresentation.clear();",
+      "after": "if (action === \"analysis\") { __righeltResultReviewFocusProbe(\"analysis-entry\"); completedReviewEntryGeneration++;resultPresentation.clear();"
     }
   ],
   "indexEncoding": "UTF16 code units; source has no astral codepoints, independently assert before application"

@@ -46,7 +46,7 @@ function harness({ resultMounted = true, activeResult = null } = {}) {
   const context = {undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,
     resultPresentation:createResultPresentation(),
     HTMLElement: Element, appEl, currentRoute: { name: "game", gameId: "g", panel: "board" },
-    activeResultGameId: activeResult,
+    activeResultGameId: activeResult, completedReviewEntryGeneration: 0,
     lastRenderedRouteKey: "g|board|debug:false", lastRenderedBaseRouteKey: "g", lastRenderedTransitionPhaseKey: "idle",
     getGamePanel: () => context.currentRoute.panel,
     getMountedGameShellRoot: () => ({querySelector:()=>({getAttribute:()=>mountedPanel})}),
