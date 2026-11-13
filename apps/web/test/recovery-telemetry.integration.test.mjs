@@ -72,7 +72,7 @@ test('a silent recovery episode crosses the real transport, uploader and API wit
   const f = await fixture(t);
   t.mock.timers.enable({ apis: ['setTimeout'] });
   f.transport.setConnectionRecovering(f.gameId, true, { reason: 'socket_closed', advertisedEventSeq: 2,
-    socketGeneration: 3, identityId: 'private-identity', authContextId: 'private-context',
+    closeCode: 1006, closeClean: false, socketGeneration: 3, identityId: 'private-identity', authContextId: 'private-context',
     authoritativeState: { private: 'private-state' }, browser: 'private-agent', gameLink: 'https://private-link' });
   t.mock.timers.tick(SYNC_TIMING.confirmationBudgetMs);
   assert.equal(f.store.getGameViewModel(f.gameId).recovering, true);
