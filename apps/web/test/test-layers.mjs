@@ -39,6 +39,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "scenario-capture.test.mjs",
   "scenario-player-copy.test.mjs",
   "dom-patch.test.mjs",
+  "document-icon.test.mjs",
   "notification-state.test.mjs",
   "brand-grid.test.mjs",
   "marble-foundation.test.mjs",
