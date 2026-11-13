@@ -5,6 +5,7 @@ import {renderBoardContextDetails} from './board-context.js';
 import {BOARD_CONTEXT_PURPOSE} from './board-context-purpose.js';
 import {createBoardContextPresentation} from './board-context-presentation.js';
 import {incomingNarrationContext,createIncomingNarrationState,renderIncomingNarration} from './incoming-narration.js';
+import {createConfirmedRemovalPresentation,presentRemovalTransportChange} from './removal-presentation.js';
 import {createRecoveryPresentation} from './recovery-presentation.js';
 import {mountRenderGestureOwner} from './render-gesture-owner.js';
 import {createDestinationRouteOwner,destinationReadScope,terminalColdDestination,destinationHidesGameBody,readGameDestination,destinationLiveGameId} from './destination-route-owner.js';
@@ -79,7 +80,7 @@ const liveTurnOverview = createLiveTurnOverview({
 });
 let mobileNavigation = null;
 let replayController = null;
-let confirmedPlayback=null,confirmedFramePresenter=null,confirmedDisplayGameId=null,lastPlaybackVisibility=null;
+let confirmedPlayback=null,confirmedFramePresenter=null,confirmedDisplayGameId=null,lastPlaybackVisibility=null,removalPresentation=null;
 let forcedFollowSession = null;
 let forcedFollowVisual = null;
 const forcedFollowWorking = gameId => Boolean(forcedFollowSession?.snapshot().working && forcedFollowSession.snapshot().gameId === gameId);
@@ -95,7 +96,6 @@ const patchToolHtml = (element, html) => {
   const next = element.cloneNode(false); next.innerHTML = html;
   patchSectionContent(element, next);
 };
-import { createDestructionTransitions } from "./destruction-transitions.js";
 import { isPassivePageClick } from "./passive-click.js";
 import {mountLoadingEdges} from './loading-edge.js';
 import {mountRecoverySpace,syncRecoverySpace} from './recovery-space.js';
@@ -351,13 +351,13 @@ const patchNotificationHtml=(current,html)=>notificationPatches.patchHtml(curren
 const brand = createBrandController();
 document.addEventListener('pointerdown',event=>{gameSound.gesture();gameSound.preparePaper(event);gameSound.cancelPreview();},{passive:true});
 document.addEventListener('keydown',event=>{gameSound.gesture();gameSound.preparePaper(event);});
-document.addEventListener('visibilitychange',()=>{gameSound.activityChanged();if(document.hidden)notificationPaper.cancel();});
-window.addEventListener('pagehide',()=>{notificationPaper.retire();gameSound.disposePaper();});
-window.addEventListener('hashchange',()=>notificationPaper.retire());
+document.addEventListener('visibilitychange',()=>{gameSound.activityChanged();if(document.hidden){notificationPaper.cancel();removalPresentation?.retire();}});
+window.addEventListener('pagehide',()=>{removalPresentation?.retire();notificationPaper.retire();gameSound.disposePaper();});
+window.addEventListener('hashchange',()=>{gameSound.cancelDestruction();notificationPaper.retire();});
 const syncPageActivity = () => { document.documentElement.dataset.pageActive=String(!document.hidden && document.hasFocus()); };
 syncPageActivity();
 document.addEventListener('visibilitychange',syncPageActivity);
-window.addEventListener('blur',()=>{document.documentElement.dataset.pageActive='false';gameSound.activityChanged();notificationPaper.cancel();});
+window.addEventListener('blur',()=>{document.documentElement.dataset.pageActive='false';gameSound.activityChanged();notificationPaper.cancel();removalPresentation?.retire();});
 window.addEventListener('focus',()=>{syncPageActivity();gameSound.activityChanged();});
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 let tutorialSavingError = null;
@@ -3287,6 +3287,7 @@ const mountBoardForGame = (game) => {
 };
 
 const destroyMountedBoardRuntime = () => {
+  removalPresentation?.retire();
   replayRequests.cancel();
   replayController?.destroy();boardContextState.activeReplayFocusCleanup?.();boardContextState.activeReplayFocusCleanup=null;boardContextState.activeDisplayedReplay=null;
   replayController = null;
@@ -3851,7 +3852,7 @@ const makeAccountSyncStore = auth => createSyncStore({
   fetcher: account.fetch,
   onAuthLost: () => account.authorityLost(),
   onEvent: (payload, context = {}) => {
-    gameSound.observe(payload,{opponentNotifications:false,silent:!liveBoardVisible() || Boolean(payload?.game?.moves?.findLast(move=>!move.undone)?.computerProof) || context.initial || currentRoute.name!=='game' || payload?.game?.id!==currentRoute.gameId || Boolean(transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode) || Boolean(replayController?.snapshot()?.playing || replayRequests.snapshot())});
+    gameSound.observe(payload,{deferDestruction:true,opponentNotifications:false,silent:!liveBoardVisible() || Boolean(payload?.game?.moves?.findLast(move=>!move.undone)?.computerProof) || context.initial || currentRoute.name!=='game' || payload?.game?.id!==currentRoute.gameId || Boolean(transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode) || Boolean(replayController?.snapshot()?.playing || replayRequests.snapshot())});
     wsLastEvent = payload?.type
       ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
       : "unknown";
@@ -4096,7 +4097,6 @@ const loadDebugHistory = async (gameId, more = false) => {
   state.loaded = true; state.cursor = page.nextCursor; state.partial = page.partial; applyDecisionNotes(state, personal.notes); updateComputerUi();
 };
 
-const destructionTransitions = createDestructionTransitions();
 const maybeReturnAfterUndo = gameId => {
   if (currentRoute.name !== 'game' || currentRoute.gameId !== gameId) return;
   const acceptedGame=transport.getAuthoritativeGame(gameId);
@@ -4108,6 +4108,18 @@ const maybeReturnAfterUndo = gameId => {
   if (getShellLayoutMode() === 'narrow') navigateTo(buildGameHash(gameId,null,getCurrentGameHashState('board')));
 };
 const liveBoardVisible = () => isLiveBoardVisible({document,currentRoute,inHistoryMode:transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode,replaying:replayController?.snapshot().playing,layout:getShellLayoutMode(),appEl,window});
+const activeRemovalHead = game => game?.moves?.filter(move=>!move.undone).at(-1)?.moveId ?? null;
+removalPresentation=createConfirmedRemovalPresentation({
+  getScope:game=>`${viewingScope()}:${game?.id??''}`,
+  eligible:game=>routeHydrated&&mountedBoardGameId===game?.id&&getCurrentViewedGameId()===game?.id&&!document.hidden&&document.hasFocus()&&liveBoardVisible()&&!confirmedPlayback?.snapshot().playing&&!replayController?.snapshot().playing&&!currentRoute.scenarios,
+  isCurrent:game=>{const current=transport.getAuthoritativeGame(game?.id);return Boolean(current&&current.gameplayRevision===game.gameplayRevision&&activeRemovalHead(current)===activeRemovalHead(game));},
+  present:effects=>boardRuntime?.showRemovalEffects(effects,null),
+  pending:effects=>boardRuntime?.setPendingRemovalEffects(effects),
+  clear:()=>boardRuntime?.clearRemovalEffects(),
+  consume:(game,options)=>gameSound.presentedRemovals(game,{...options,silent:true}),
+  cue:(game,options)=>gameSound.presentedRemovals(game,options),
+  cancelSound:gameSound.cancelDestruction,
+});
 const syncConfirmedPlayback = () => {
   const gameId=getCurrentViewedGameId(),game=transport.getAuthoritativeGame(gameId),view=transport.getGameViewModel(gameId);
   lastPlaybackVisibility=liveBoardVisible();
@@ -4159,13 +4171,7 @@ const subscribeToTransport = () => transport.subscribe((change) => {
     hostInvite=null;inviteVisit++;inviteFeedback="";inviteFallback=null;
   }
   const frozenCapture = Boolean(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === visibleGameId);
-  const transition = destructionTransitions.update(game, { frozen: frozenCapture, reset: change?.baseline === true || change?.type === "optimistic_rollback" || change?.type === "history_mode_changed" || change?.type === "computer_display" });
-  if (transition.clear) boardRuntime?.clearRemovalEffects();
-  render({
-    animatePanels: false,
-    includeBoard: change?.type !== "optimistic_enqueue",
-  });
-  if (mountedBoardGameId === visibleGameId && !game?.inHistoryMode && !frozenCapture) boardRuntime?.showRemovalEffects(transition.effects, null);
+  presentRemovalTransportChange({render,presentation:removalPresentation,transport,gameId:visibleGameId,view:game,frozen:frozenCapture,change});
   if (releaseInvitationFocus) {
     const generation=account.snapshot().generation;
     window.requestAnimationFrame(()=>{
@@ -4180,7 +4186,7 @@ accountInitialized = true;
 function resetAccountTransport(next) {
   historyHeadingFocus.retire();
   boardContextOwner.retire();
-  playbackRecoveryWait.reset();confirmedPlayback?.reset();confirmedFramePresenter?.destroy();gameSound.resetUpdates();notificationPaper.retire();
+  playbackRecoveryWait.reset();confirmedPlayback?.reset();confirmedFramePresenter?.destroy();removalPresentation?.retire();gameSound.resetUpdates();notificationPaper.retire();
   forcedFollowSession?.cancel();
   inviteLoadState = null;
   if (currentRoute.name === "invite") resolvedInvite = null;
@@ -5129,7 +5135,7 @@ appEl.addEventListener("click", async (event) => {
     if (action === 'begin-scenario-capture' && game?.historyLoading) return;
     const historyContext = resolveHistoryScenarioExportContext(game);
     boardRuntime?.clearRemovalEffects();
-    destructionTransitions.update(game, { reset: true });
+    removalPresentation.retire();
     scenarioCapture = action === 'begin-scenario-capture' ? beginScenarioCapture(game, transport.getIdentityId(), historyContext) : null;
     if (scenarioCapture && !historyContext) {
       boardRuntime?.syncInteractionCapabilities?.();

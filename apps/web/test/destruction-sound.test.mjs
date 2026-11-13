@@ -70,3 +70,10 @@ test('a rejected browser resume remains silent without changing the saved sound 
  const values=new Map();const sound=createGameSound({createAudio:()=>f.audio,storage:{getItem:key=>values.get(key),setItem:(key,value)=>values.set(key,value)}});
  sound.gesture();await Promise.resolve();assert.equal(sound.play('destruction'),false);assert.equal(sound.enabled(),true);assert.equal(values.size,0);
 });
+
+test('owned crack cancellation disconnects exactly once and partial native construction preserves its primary',()=>{
+ let disconnected=0,ended=0;const f=audioFixture(),nodes=[];const make=f.audio.createBufferSource;
+ for(const name of ['createBufferSource','createBiquadFilter','createGain']){const original=f.audio[name];f.audio[name]=()=>{const n=original();n.disconnect=()=>disconnected++;nodes.push(n);return n;};}
+ const voice=playStoneCrack(f.audio,{onEnded:()=>ended++});voice.cancel();voice.cancel();nodes[0].onended();assert.equal(disconnected,3);assert.equal(ended,1);
+ const primary=Error('native gain construction');let cleaned=0;const bad=audioFixture().audio;bad.createBufferSource=()=>({...make(),disconnect(){cleaned++;}});bad.createGain=()=>{throw primary;};assert.throws(()=>playStoneCrack(bad),error=>error===primary);assert.equal(cleaned,1);
+});

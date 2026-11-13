@@ -20,6 +20,8 @@ const unwrapOperationResult = async (value) => {
 };
 
 export const createShellBoardHost = ({ transport, gameId, canInteract, canPresentActions, canSelect, getInspectionSnapshot = () => null, getGameView = () => transport.getGameViewModel(gameId), rulesExecutor = createRulesExecutor() }) => ({
+  confirmedRemovalsOnly: true,
+  getPendingRemovalEffects: () => (getGameView()?.pendingMoves ?? []).filter(move => !move.undone).flatMap(move => move.destroyedPieces ?? []),
   asyncPieceMoves: rulesExecutor.asynchronous,
   cancelPieceMoves: () => rulesExecutor.cancelAll(),
   async loadInitialState() {

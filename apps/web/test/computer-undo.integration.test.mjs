@@ -148,9 +148,12 @@ function hydrationHarness(continuation=null) {
     toStableKey:JSON.stringify,resolveInitialSelectionHydration,
     transport:{getAuthoritativeGame:()=>game,returnToLive:()=>calls.push('live'),getIdentityId:()=> 'viewer'},
     boardRuntime:{clearSelection:()=>calls.push('clear')},mountedOverlayKey:'old',
+    gameSound:{cancelDestruction(){}},
+    createConfirmedRemovalPresentation:()=>({update(){}}),
     getShellLayoutMode:()=> 'wide',
   });
   undoSelectionScript.runInContext(context);
+  assert.equal(typeof context.removalPresentation?.update,'function');
   return {context,game,action,calls,viewingIntent};
 }
 test('accepted ordinary undo clears both legal old previews before the next board render',()=>{

@@ -726,6 +726,15 @@ button {
   pointer-events: none;
 }
 
+/* Optimistic removals are inert forecasts. Confirmation owns animation. */
+.piece-token.removal-piece.pending-removal-piece { animation: none; opacity: 1; }
+.cell .piece-token.removal-piece.pending-removal-piece :is(.piece-symbol,.piece-body,.piece-mineral) { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .piece-token.removal-piece,
+  .cell .piece-token.removal-piece :is(.piece-symbol,.piece-body,.piece-mineral) { animation: none; opacity: 1; }
+}
+
 .piece-token.history-destruction-piece {
   position: absolute;
   left: 50%;

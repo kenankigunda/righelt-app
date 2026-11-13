@@ -1236,7 +1236,7 @@ export function createEngineBoardAdapter() {
           }
           const removalEffect = removalByCoordinateKey.get(`${row},${col}`);
           if (removalEffect) {
-            if (removalEffect.reason !== "history_destroyed") {
+            if (!removalEffect.pending && removalEffect.reason !== "history_destroyed") {
               cell.classList.add("removal-effect");
               cell.setAttribute("data-removal-label", removalEffect.message);
             }
@@ -1346,10 +1346,14 @@ export function createEngineBoardAdapter() {
             cell.appendChild(marker);
           }
 
-          const namedRemovals = (Array.isArray(removalEffects) ? removalEffects : []).filter((effect) => effect.piece && coordKey(effect.position) === key);
+          const namedRemovals = (Array.isArray(removalEffects) ? removalEffects : []).filter((effect) => effect.piece && (!effect.pending || !cellPiece) && coordKey(effect.position) === key);
           for (const removalEffect of namedRemovals) {
             const removalPiece = buildPieceToken(removalEffect.piece);
             removalPiece.classList.add("removal-piece");
+            if (removalEffect.pending) {
+              removalPiece.classList.add("pending-removal-piece", "ghost");
+              removalPiece.setAttribute("aria-hidden", "true");
+            }
             removalPiece.style.setProperty?.("--removal-flash-duration", `${REMOVAL_EFFECT_DURATION_MS / REMOVAL_FLASH_COUNT}ms`);
             removalPiece.style.setProperty?.("--removal-flash-count", String(REMOVAL_FLASH_COUNT));
             const animationDelayMs = getRemovalAnimationDelayMs(removalEffect);
@@ -1481,7 +1485,7 @@ export function createEngineBoardAdapter() {
         scope: boardEl,
         enabled: effectiveInteractionMode === "interactive" && !["recorded-action", "recorded-turn"].includes(overlay?.mode),
         events: (Array.isArray(removalEffects) ? removalEffects : [])
-          .filter(effect => effect.reason !== "history_destroyed" && effect.position)
+          .filter(effect => !effect.pending && effect.reason !== "history_destroyed" && effect.position)
           .map(effect => ({
             id: effect.eventId ?? `${effect.startedAt}:${effect.pieceId}:${coordKey(effect.position)}`,
             anchorEl: cellByCoordinateKey.get(coordKey(effect.position)),
