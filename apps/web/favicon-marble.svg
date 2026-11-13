@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Righelt">
+  <path d="M9 1H55L63 9V55L55 63H9L1 55V9Z" fill="#fdfefe" stroke="#ccd1d3" stroke-width="2"/>
+  <path d="M4 47L19 39L30 42L44 31L60 27" fill="none" stroke="#ccd1d3" stroke-opacity=".55"/>
+  <g transform="translate(4 19) scale(1.08)" fill="#b42f36" stroke-linejoin="round">
+    <path fill-rule="evenodd" d="M3 7L8 2H16L21 7V17L24 20V24H0V20L3 17Z M6 11H18V16H6Z"/>
+    <path d="M8 5Q12 7 16 5M4 18Q8 20 12 18M15 19Q18 21 22 21" fill="none" stroke="#fff" stroke-opacity=".2" stroke-width="1"/>
+  </g>
+  <g transform="translate(34 19) scale(1.08)" fill="#245e9b" stroke-linejoin="round">
+    <path d="M9 0H15V6H19V12H24V24H16V16H8V24H0V12H5V6H9Z"/>
+    <path d="M10 3Q13 4 14 7M3 15Q5 18 5 22M18 14Q20 17 21 21" fill="none" stroke="#fff" stroke-opacity=".2" stroke-width="1"/>
+  </g>
+</svg>

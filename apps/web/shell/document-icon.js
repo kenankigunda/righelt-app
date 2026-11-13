@@ -1,5 +1,5 @@
 export const DOCUMENT_ICON = Object.freeze({
-  base: "./favicon.svg",
+  base: "./favicon-marble.svg",
   attention: "./favicon-attention.svg",
 });
 
