@@ -2,8 +2,8 @@
   {
     "file": "apps/web/shell/board-context-owner.js",
     "servedPath": "/shell/board-context-owner.js",
-    "sourceSha256": "386d4a61ad1af199b791e9b67d0eb9ef3484f65beba20f12b449c25993bb6fbc",
-    "outputSha256": "aada3fe5897e54a52297d71dab3491205c43f3d6b8fd1a2c29ebbe5f6aa1e987",
+    "sourceSha256": "9a7b8cfaf6139be210eceeae9cad3fbf289c1452ab99c32e2cf3344cf4f18350",
+    "outputSha256": "bea495bf70189630549ca5865654aad14eb2c3ddc639667e8188c8ab9e39efda",
     "operations": [
       {
         "start": 0,
@@ -67,19 +67,19 @@
       },
       {
         "start": 2492,
-        "end": 2821,
-        "before": "const current=()=>live&&!disposed&&!doc.hidden&&owner.current(token)\n   &&(owned(doc.activeElement)||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]')))||(removedControl!==null&&doc.activeElement===doc.body&&!removedControl.isConnected));",
-        "after": "const current=()=>__ownedFocusValue(\"return-current\",(__ownedFocusValue(\"return-live\",(live),trigger)&&!disposed&&!doc.hidden&&__ownedFocusValue(\"return-owner-current\",(owner.current(token)),trigger)\n   &&(owned(__ownedFocusValue(\"return-active\",(doc.activeElement),trigger))||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]')))||(removedControl!==null&&doc.activeElement===doc.body&&!removedControl.isConnected))),trigger);"
+        "end": 2864,
+        "before": "const intentCurrent=()=>live&&!disposed&&!doc.hidden&&owner.current(token);\n  const current=()=>intentCurrent()\n   &&(owned(doc.activeElement)||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]')))||(removedControl!==null&&doc.activeElement===doc.body&&!removedControl.isConnected));",
+        "after": "const intentCurrent=()=>__ownedFocusValue(\"return-live\",(live),trigger)&&!disposed&&!doc.hidden&&__ownedFocusValue(\"return-owner-current\",(owner.current(token)),trigger);\n  const current=()=>__ownedFocusValue(\"return-current\",(intentCurrent()\n   &&(owned(__ownedFocusValue(\"return-active\",(doc.activeElement),trigger))||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]')))||(removedControl!==null&&doc.activeElement===doc.body&&!removedControl.isConnected))),trigger);"
       },
       {
-        "start": 3708,
-        "end": 3731,
+        "start": 3751,
+        "end": 3774,
         "before": "const target=resolve();",
         "after": "const target=__ownedFocusValue(\"return-target\",(resolve()),trigger);"
       },
       {
-        "start": 3852,
-        "end": 3889,
+        "start": 3895,
+        "end": 3932,
         "before": "if(doc.activeElement===target)reveal(",
         "after": "if(__ownedFocusValue(\"after-focus-active\",(doc.activeElement),trigger)===target)reveal("
       }
