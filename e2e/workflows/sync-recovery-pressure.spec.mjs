@@ -122,16 +122,17 @@ const semanticDigest=value=>({board:value.board,history:value.history,activeTurn
 function expectPerspective(value,index) {
  const own=index===0?'P1':index===1?'P2':null;
  const label=side=>own?(side===own?'You':'Opponent'):`Guest ${side==='P1'?1:2}`;
+ const historyLabel=side=>side===own?'You':`Guest ${side==='P1'?1:2}`;
  const actor=label(value.presentation.actor);
  expect(value.presentation.heading).toBe(actor==='You'?'Your turn to play':`${actor} to play`);
  if(value.presentation.live)expect(value.presentation.live).toBe(`Live · Waiting on ${actor==='You'?'you':actor==='Opponent'?'opponent':actor} to move`);
  expect(value.presentation.visibleMoveActorNames).toBe(0);
- for(const entry of value.presentation.actors)expect(entry.text).toBe(`Guest ${entry.side==='P1'?1:2}`);
+ for(const entry of value.presentation.actors)expect(entry.text).toBe(historyLabel(entry.side));
 }
 async function converged(pages) {
  for(const page of pages)await expect(page.getByTestId("game-board")).toBeVisible();
  // Canonical tokens/decision IDs converge across identities. Their visible
- // You/Opponent/Guest labels intentionally differ and are checked separately.
+ // Current-turn copy uses You/Opponent while History preserves opponent names.
  await expect.poll(async()=>{
   const values=await Promise.all(pages.map(digest));
   return {
@@ -302,7 +303,7 @@ test(`E05 intentional ${frozenRole} history survives disconnection and home navi
    const endTurn=p.pages[1].locator('[data-board-preview-action="end-turn"]');
    if(await endTurn.isVisible()){await endTurn.click();await converged(p.pages);}
   }
-  await expect(p.pages[actorIndex].getByTestId('active-turn-label')).toContainText(`Player ${actorIndex+1}`);
+  await expect(p.pages[actorIndex].getByTestId('active-turn-label')).toContainText(`Guest ${actorIndex+1}`);
   const frozen=p.pages[frozenIndex], actor=p.pages[actorIndex];
   const history=frozen.getByTestId('history-move-item').first();const selected=await history.getAttribute('data-move-id');
   const beforeLiveMove=await actor.getByTestId('history-move-item').count();
