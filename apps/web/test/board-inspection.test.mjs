@@ -110,6 +110,19 @@ test('read-only commander starts with combined connections and repeat clears onl
  h.click(point(3,3));assert.equal(h.runtime.getInspection().kind,'combined');assert.equal(h.writes,0);
 });
 
+test('opponent commander combined inspection keeps the opponent-qualified prompt',async()=>{
+ const state=position(),commander=state.pieces.find(item=>item.id==='B');
+ const unit=piece('B-unit','P2','unit',point(5,3));state.pieces.push(unit);
+ state.artifacts.supply[1].shortestPathByPieceId.B=[commander.position,point(9,3),point(9,0)];
+ state.artifacts.command.shortestPathToCommanderByPieceId['B-unit']=[unit.position,commander.position];
+ const h=harness();await h.runtime.loadSnapshot(state,{legalActions:[]});
+ h.click(commander.position);await Promise.resolve();
+ assert.equal(h.runtime.getInspection().kind,'combined');
+ assert.equal(h.prompt.replace(/<[^>]+>/g,''),'Opponent’s supply and command lines for piece at 6, 3');
+ assert.match(h.contextHtml,/Opponent’s supply and command lines for piece at/);
+ assert.equal(h.writes,0);
+});
+
 
 test('external replay actions remain usable while board input is blocked',async()=>{
   const actions=[];
