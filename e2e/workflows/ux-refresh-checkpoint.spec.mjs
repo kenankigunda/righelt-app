@@ -63,7 +63,7 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  await expect(legend.nth(1)).toHaveAccessibleName('Red supply point inspection');
  await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
  const ownProfile=page.getByTestId('participant-player-1').locator('[data-action="guest-profile"]');
- await expect(ownProfile).toHaveText('Guest');await expect(ownProfile).toHaveAccessibleName('Guest, you, Red, Connected');
+ await expect(ownProfile).toHaveText('You');await expect(ownProfile).toHaveAccessibleName('Guest, you, Red, Connected');
  // Resolve and measure the current connected SVG in one page turn. The driver
  // must not carry a replaced marker handle into the style publication check.
  await expect.poll(()=>page.evaluate(()=>{
