@@ -3,6 +3,7 @@ import {settledMessage,measureBoardMessageGeometry,assertSettledBoardMessageGrow
 import {CURRENT_COMPUTER_MODEL} from '../../packages/shared-types/src/computer-play.ts';
 import {ACTION_CONTRACT_HEADER,ACTION_CONTRACT_VERSION} from '../../apps/web/generated/packages/shared-types/src/sync-protocol.js';
 import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
+import {switchGamePanel} from '../support/app.mjs';
 
 test.use({viewport:{width:390,height:740},hasTouch:true});
 const notice=page=>page.locator('[data-computer-status]');
@@ -29,7 +30,8 @@ test('computer save failures take priority while the delayed saving notice stays
   let holdGameplay=true,attemptSeen=false,originalCommand;const submissions=[];
   // The proof save keeps its normal five-second failure budget. Lose only
   // the durable gameplay submission; real reconciliation and leases stay live.
-  await context.route('**/apply',async route=>{const command=route.request().postDataJSON();if(command?.payload?.computer){originalCommand??=command;submissions.push({id:command.clientCommandId,generation:command.payload.computer.generation});if(holdGameplay){attemptSeen=true;await route.abort();return;}}await route.continue();});
+  const applyRoute=async route=>{const command=route.request().postDataJSON();if(command?.payload?.computer){originalCommand??=command;submissions.push({id:command.clientCommandId,generation:command.payload.computer.generation});if(holdGameplay){attemptSeen=true;await route.abort();return;}}await route.continue();};
+  await context.route('**/apply',applyRoute);
   try{
     await settledMessage(page);const before=await geometry(page),beforeMessage=await measureBoardMessageGeometry(page);
     expect(beforeMessage.documentBoard).toEqual(before);
@@ -48,7 +50,10 @@ test('computer save failures take priority while the delayed saving notice stays
     await expect(delayed).toBeVisible();
     await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
     await expect(page.getByTestId('sync-recovery-banner')).toContainText('Still checking your move. You can retry or view details.',{timeout:10000});
-    await expect(page.getByTestId('sync-recovery-banner').getByRole('button',{name:'Reload game',exact:true})).toBeVisible();
+    await expect(page.getByTestId('sync-recovery-banner').getByRole('button',{name:'Retry connection',exact:true})).toBeVisible();
+    await expect(page.getByTestId('sync-recovery-banner').getByRole('link',{name:'Home',exact:true})).toBeVisible();
+    await expect(page.getByTestId('sync-recovery-banner').getByRole('button',{name:'Reload game',exact:true})).toHaveCount(0);
+    await expect(page.getByTestId('sync-recovery-banner').getByRole('button',{name:'Details',exact:true})).toBeVisible();
     await expect(page.locator('[data-alert-stack-card][inert] .shell-game-alert-copy').first()).toBeHidden();
     await expect(page.locator('[data-alert-stack-card][inert] button').first()).toBeHidden();
     expect(await page.getByTestId('sync-recovery-banner').evaluate(el=>!el.closest('[hidden],[inert],[aria-hidden="true"]'))).toBe(true);
@@ -63,18 +68,18 @@ test('computer save failures take priority while the delayed saving notice stays
     // A transient recovery card here does not establish a terminal failure.
     await expect.poll(()=>page.evaluate(readProjectedGame,{id:game.id,guest:true,expectedComputer:{modelId:game.computer.modelId,profile:'babs'}}),{timeout:30000}).toBeTruthy();
     await expect(notice(page)).toHaveCount(0);
-    const acceptedContext=page.locator('[data-alert-stack-card] [data-board-context]:has(.board-context-replay)');
+    const acceptedContext=page.locator('[data-incoming-context]:has([data-action="replay-board-context"])');
     await expect(acceptedContext).toHaveCount(1);
-    const acceptedContextKey=await acceptedContext.getAttribute('data-board-context');
+    const acceptedReplay=acceptedContext.getByRole('button',{name:'Show me again',exact:true});
+    const acceptedContextKey=await acceptedReplay.getAttribute('data-board-context-key');
     expect(acceptedContextKey).toBeTruthy();
     // The validated obsolete computer rejection is quiet; the accepted
     // replacement has its own current context without a human retry prompt.
     await expect(page.getByTestId('sync-failure-banner')).toHaveCount(0);
-    await expect(page.locator('[data-alert-stack-card]')).toHaveCount(1);
-    await expect(page.locator('[data-alert-stack-card].is-active')).toHaveAttribute('data-stack-count','1');
+    await expect(page.locator('[data-alert-stack-card]')).toHaveCount(0);
     await expect(acceptedContext).toBeVisible();
-    await expect(acceptedContext).toHaveAttribute('data-board-context',acceptedContextKey);
-    await expect(acceptedContext.getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
+    await expect(acceptedReplay).toHaveAttribute('data-board-context-key',acceptedContextKey);
+    await expect(acceptedReplay).toBeVisible();
     await settledMessage(page);
     const growth={scope:'Accepted narration geometry only; notices retained their original exact geometry checks',before:beforeMessage,after:await measureBoardMessageGeometry(page)};
     try{await persistGeometryEvidence(info,'accepted-message-growth.json',growth);growth.movement=assertSettledBoardMessageGrowth(growth.before,growth.after);growth.status='complete';}
@@ -91,7 +96,12 @@ test('computer save failures take priority while the delayed saving notice stays
     expect(receipt.ok()).toBe(true);
     expect((await receipt.json()).commandOutcomes).toEqual([expect.objectContaining({clientCommandId:originalCommand.clientCommandId,fingerprint:originalCommand.fingerprint,outcome:'rejected',reason:'computer_control_changed'})]);
     for(const generation of new Set(submissions.map(command=>command.generation)))expect(new Set(submissions.filter(command=>command.generation===generation).map(command=>command.id)).size).toBe(1);
-  }finally{holdGameplay=false;await context.unrouteAll({behavior:'wait'});}
+    await acceptedContext.getByRole('button',{name:'Hide previous turn',exact:true}).click();
+    await expect(acceptedContext.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(0);
+    await switchGamePanel(page,'history');
+    await expect(page.locator('[data-mobile-panel="history"]')).toHaveAttribute('data-active','true');
+    await expect(page.locator('.history-live-replay')).toHaveCount(0);
+  }finally{holdGameplay=false;}
 });
 
 for(const failure of ['transient','terminal'])test(failure==='transient'

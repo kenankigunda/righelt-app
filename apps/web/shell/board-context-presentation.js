@@ -4,6 +4,7 @@ import {createBoardContextLayout} from './board-context-layout.js';
 import {publishAcknowledgedBoardMessage,contextReplayAvailable} from './playback-presentation.js';
 import {displayedReplayIsCurrent} from './displayed-replay.js';
 import {createBoardContextReceiver} from './board-context-receiver.js';
+import {displayedReplayFocusTarget} from './displayed-replay-starter.js';
 
 // App and focused tests execute the same presentation owner. Live collaborators
 // are read at invocation, so account/transport replacement cannot leave a stale
@@ -78,11 +79,32 @@ export function createBoardContextPresentation({appEl,document,getDependencies,c
   return publishAcknowledgedBoardMessage(view,status,options,{boardContexts,queueBoardContextRefresh,transport:d.transport,boardContextScope,document,notificationStack:d.notificationStack});
  };
  const receiveBoardContext=createBoardContextReceiver(()=>({displayedReplayFrame,boardContextScope,boardContextOwner,boardContexts,notificationStack:getDependencies().notificationStack,appEl,document,queueBoardContextRefresh}));
- const dispatchBoardMessageAction=(id,{trigger=null,descriptor=null}={})=>{
+ const dispatchBoardMessageAction=(id,{trigger=null,descriptor=null,returnFocus=false}={})=>{
   const d=getDependencies();
   if(id==='retry-confirmed-playback')d.confirmedPlayback?.retry();
   if(id==='replay-computer')void d.startComputerReplay(descriptor??boardContexts.channel('acknowledged')?.replay??activeDisplayedReplay,trigger);
-  if(id==='replay-stop')d.replayController?.stop('stopped');
+  if(id==='replay-stop'){
+   const replayDescriptor=activeDisplayedReplay,returnOwnedFocus=Boolean(returnFocus||document.activeElement===trigger&&trigger?.isConnected&&!trigger.disabled);
+   let observer=null,timer=null;
+   const cleanup=()=>{observer?.disconnect();observer=null;if(timer!==null)document.defaultView.clearTimeout(timer);timer=null;};
+   const focusReturn=returnOwnedFocus?boardContextFocus.begin(trigger,{allowRemoval:true,allows:displayedReplayFocusTarget,onRetire:cleanup}):null;
+   if(focusReturn)focusReturn.renderOwnedRemoval(()=>d.replayController?.stop('stopped'));else d.replayController?.stop('stopped');
+   const target=()=>{
+    const targets=[...appEl.querySelectorAll('[data-action="replay-board-context"][data-board-context-key]')].filter(target=>displayedReplayFocusTarget(target)&&!target.disabled&&!target.closest('[inert]'));
+    return targets.find(target=>target.dataset.boardContextKey===replayDescriptor?.key)??targets[0]??null;
+   };
+   const settle=()=>{
+    if(!focusReturn)return true;
+    if(document.activeElement===trigger&&trigger.isConnected&&!displayedReplayFocusTarget(trigger)){focusReturn.release();return true;}
+    if(trigger.isConnected&&displayedReplayFocusTarget(trigger))return false;
+    if(!focusReturn.current()){focusReturn.release();return true;}
+    const next=target();if(!next)return false;focusReturn.restoreNow(()=>next);return true;
+   };
+   if(focusReturn&&!settle()){
+    observer=new document.defaultView.MutationObserver(settle);observer.observe(appEl,{subtree:true,childList:true,attributes:true,attributeFilter:['disabled','inert','data-action','data-board-message-action']});
+    timer=document.defaultView.setTimeout(()=>focusReturn.release(),2000);
+   }
+  }
   if(id==='replay-next')d.replayController?.next();
   if(id==='replay-cancel'||id==='replay-dismiss'){activeDisplayedReplay=null;activeReplayFocusCleanup?.();activeReplayFocusCleanup=null;d.replayRequests.cancel();}
  };

@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test';
-import {readSideCardAnchors,expectSideCardAnchors} from '../support/side-card-loading.mjs';
+import {readSideCardAnchors,expectSideCardColumns} from '../support/side-card-loading.mjs';
 import {writeFile} from 'node:fs/promises';
 import {createGameFromHome,makeAnyLegalMove,switchGamePanel} from '../support/app.mjs';
 
@@ -190,7 +190,7 @@ for(const [width,height,text]of[[1440,800,100],[390,740,100],[1440,800,200]])tes
   const loaded=await read(page);compareGeometry(loading,loaded);
   const loadedSideCards=await readSideCardAnchors(page);
   await writeFile(info.outputPath('side-card-anchors.json'),JSON.stringify({loading:loadingSideCards,loaded:loadedSideCards},null,2));
-  expectSideCardAnchors(loadingSideCards,loadedSideCards);
+  expectSideCardColumns(loadingSideCards,loadedSideCards);
   await page.screenshot({path:info.outputPath('hydrated.png')});
   const {frames,timeline}=await page.evaluate(()=>{window.recordDesktopFrames=false;return {frames:window.desktopFrames,timeline:window.desktopLoadingTimeline};});expect(frames.length).toBeGreaterThan(1);
   await writeFile(info.outputPath('loading-timeline.json'),JSON.stringify(timeline,null,2));

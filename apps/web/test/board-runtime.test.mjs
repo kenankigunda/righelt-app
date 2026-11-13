@@ -3561,6 +3561,15 @@ test('message and ordinary Pass share one guarded admission with stale-state and
  release();await new Promise(resolve=>setTimeout(resolve,0));fire();assert.equal(applied.length,1);
 });
 
+test('external Board actions report native keyboard or active-control focus ownership',()=>{
+ let click;const sources=[],doc={activeElement:null},action={ownerDocument:doc,getAttribute:()=> 'replay-stop',closest:selector=>selector==='[data-board-message-action]'?action:null};
+ const label={innerHTML:'',textContent:'',addEventListener:(kind,callback)=>{if(kind==='click')click=callback;},removeEventListener:noop};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getSelectedPieceSummary:()=>null},host:{},controls:{onBoardMessageAction:(_id,source)=>sources.push(source)}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ click({target:action,isTrusted:true,detail:0});doc.activeElement=action;click({target:action,isTrusted:true,detail:1});doc.activeElement=null;click({target:action,isTrusted:true,detail:1});
+ assert.deepEqual(sources.map(source=>source.returnFocus),[true,true,false]);destroyUninitializedNodeRuntime(runtime);
+});
+
 test('complete asynchronous blocked-only previews initialize the action layer',async()=>{
  let complete, phase;
  const pending=new Promise(resolve=>complete=resolve);
