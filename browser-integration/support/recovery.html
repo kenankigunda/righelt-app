@@ -27,6 +27,7 @@ const modes={
  paused:{game:{storageBlocked:true},body:"Saving is paused.",dismissed:true},
  upgrade:{game:{upgradeRequired:true}},
  signin:{game:{recovering:true,recoveryIssue:"invalid_credentials"}},
+ terminal:{game:{recovering:true,connectionFailed:true,recoveryIssue:"connection_failed"},layout:"terminal-recovery"},
  failure:{tone:"danger",body:"Board changed before your move was recorded. Check it and try again.",action:button("Dismiss","dismiss-failed-operation")},
  resolved:{tone:"",body:"Resolved",action:button("Dismiss","dismiss-diagnostic")},
  information:{tone:"",body:"History changed. Showing the closest available move.",diagnostics:false},
@@ -36,7 +37,7 @@ window.renderMode=(name,options={})=>{
  const mode=modes[name],game=options.game??mode.game;
  const action=mode.action??(game?recoveryActions(game,mode.dismissed??false):""),body=options.longMessage?"The response is taking longer than expected. Your moves are saved on this device while Righelt checks their receipts. Please keep this game open until recording finishes.":mode.body??recoveryMessage(game);
  if(!body&&!action){document.querySelector('#shell-game-alerts').innerHTML="";return;}
- const html=renderGameAlertCard({tone:mode.tone??"warn",body,action,incidentId:options.diagnostics===false||mode.diagnostics===false?null:incident,testId:"fixture-alert"});
+ const html=renderGameAlertCard({tone:mode.tone??"warn",layout:mode.layout??"",body,action,incidentId:options.diagnostics===false||mode.diagnostics===false?null:incident,testId:"fixture-alert"});
  document.querySelector('#shell-game-alerts').innerHTML=`<div class="shell-game-alert-stack-card is-active">${html}</div>`+(options.stacked?`<div class="shell-game-alert-stack-card" data-stack-index="1" aria-hidden="true">${renderGameAlertCard({body:"Another notification"})}</div>`:"");
 };
 window.setRecovery=game=>{

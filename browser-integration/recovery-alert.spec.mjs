@@ -146,6 +146,16 @@ for(const width of [320,390])test(`normal recovery keeps Home beside Reload game
  await page.screenshot({path:info.outputPath('recovery-actions-normal.png')});
 });
 
+for(const width of [320,390])test(`terminal recovery keeps Details below the primary controls at ${width}px with enlarged text`,async({page})=>{
+ await page.setViewportSize({width,height:844});await page.emulateMedia({reducedMotion:'reduce'});await openFixture(page);
+ await page.evaluate(()=>{document.documentElement.style.fontSize='200%';window.renderMode('terminal');});
+ const alert=page.getByTestId('fixture-alert'),actions=alert.locator('.shell-game-alert-actions'),details=alert.getByRole('button',{name:'Details',exact:true});
+ await containedControls(page);await expect(alert).toHaveClass(/is-terminal-recovery/);
+ expect(await actions.evaluate(node=>[...node.children].map(child=>child.textContent.trim()))).toEqual(['Retry connection','Reload game','Home']);
+ const actionBox=await actions.boundingBox(),detailsBox=await details.boundingBox();
+ expect(detailsBox.y).toBeGreaterThanOrEqual(actionBox.y+actionBox.height);
+});
+
 test('recovery fixture follows the actual quiet and actionable timing contract',async({page})=>{
  await openFixture(page);await page.clock.install();const started=await page.evaluate(()=>Date.now());
  const game={recovering:true,recoveryStartedAt:started};
