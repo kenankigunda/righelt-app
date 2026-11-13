@@ -13,6 +13,8 @@ import {mountRouteHeldPulse} from './route-held-pulse.js';
 import {createNavigationVisitOwner} from './navigation-visit-owner.js';
 import {createAccountContinuationOwner} from './account-continuation-owner.js';
 import {createHomeCardRendering,scenarioPreviewStatus,formatSideToMoveLabel,getStaticCardPreviewSnapshot,getStaticCardPreviewSelection,getStaticCardPreviewPayload} from './home-card-rendering.js';
+import {renderGameTitle} from './game-title.js';
+import {documentTitleForRoute} from './document-title.js';
 import {
   createHomeSectionReads, scrollHomeSectionIntoView, HOME_SECTION_SERVER_PAGE_SIZE, HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,
   HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE, createHomeSectionState, getHomeSectionVisibleTotalPages,
@@ -563,20 +565,14 @@ const playerToneClassForSide = (side) => (side === "P1" ? "player-tone-p1" : sid
 const renderConnectionStatusIcon = (status, label) =>
   `<span class="connection-status-icon is-${escapeHtml(status)}" role="img" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
 
-const formatDisplayGameId = (gameId) => {
-  const value = String(gameId || "");
-  if (!value.startsWith("game-")) {
-    return value.slice(0, 6);
-  }
-  return `game-${value.slice(5, 11)}`;
-};
-
 const getDocumentTitle = () => {
-  const gameId = getCurrentViewedGameId();
-  if (gameId) {
-    return `${formatDisplayGameId(gameId)} | Righelt`;
-  }
-  return "Righelt";
+  const gameId=currentRoute.name==='game'?currentRoute.gameId:currentRoute.name==='invite'?resolvedInvite?.gameId:null;
+  const game=gameId?transport.getGameViewModel(gameId):null;
+  return documentTitleForRoute({
+    routeName:currentRoute.name,routeHydrated,game,identityId:transport.getIdentityId(),
+    inviteResolved:Boolean(currentRoute.name==='invite'&&resolvedInvite?.gameId&&game),
+    unavailable:Boolean(currentRoute.name==='game'&&destinationLoadPresentation?.kind&&destinationLoadPresentation.kind!=='retry'),
+  });
 };
 
 const formatClientDateTime = (value) => {
@@ -1986,7 +1982,7 @@ const homeCardRendering = createHomeCardRendering({
   toStableKey:(...args)=>toStableKey(...args),escapeHtml:(...args)=>escapeHtml(...args),
   renderMiniBoardPreviewRoot:(...args)=>renderMiniBoardPreviewRoot(...args),
   buildGameHash:(...args)=>buildGameHash(...args),getCurrentFlyoutState:(...args)=>getCurrentFlyoutState(...args),
-  formatDisplayGameId:(...args)=>formatDisplayGameId(...args),formatClientDateTime:(...args)=>formatClientDateTime(...args),
+  formatClientDateTime:(...args)=>formatClientDateTime(...args),
 });
 const renderStaticMiniBoardCard = (...args) => homeCardRendering.renderStaticMiniBoardCard(...args);
 const renderHomeGameCard = (...args) => homeCardRendering.renderHomeGameCard(...args);
@@ -2135,7 +2131,7 @@ const renderInvitePageSkeleton = () => `
 const renderGameSummaryPanel = (game) => {
   const rawNote = game.notifications[0] || "Ready";
   const latestNote = ({ "Player request approved": "Join request approved", "Play as both players enabled": "You’re now playing both sides", "Undo applied": "Move undone" })[rawNote] ?? (/accepted the undo request$/.test(rawNote) ? "Undo request accepted" : /rejected the undo request$/.test(rawNote) ? "Undo request declined. Play can continue." : /rescinded the undo request$/.test(rawNote) ? "Undo request cancelled. Play can continue." : rawNote);
-  return renderSummarySlots({title:`Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span>`,
+  return renderSummarySlots({title:renderGameTitle(game,{identityId:transport.getIdentityId()}),
       started:`Started ${escapeHtml(formatClientDateTime(game.createdAt))}`,
       role:renderGameRoleLine(game),
       turn:`Active turn: ${
@@ -2376,7 +2372,7 @@ const renderGameShellFrame = (game, { loading = false } = {}) => `
     <div class="game-shell-track-wrap">
       <section class="layout-grid game-shell-track" data-game-shell-track>
         <div class="stack game-shell-mobile-panel" data-mobile-panel="players" data-shell-sticky-target="left" data-sticky-enabled="false">
-          <section class="panel" data-game-panel="summary">${loading ? renderSummaryLoading(`Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span>`) : renderGameSummaryPanel(game)}</section>
+          <section class="panel" data-game-panel="summary">${loading ? renderSummaryLoading(renderGameTitle(game,{loading:true})) : renderGameSummaryPanel(game)}</section>
           <section class="panel" data-game-panel="join">${loading ? renderPlayersLoading() : renderJoinInvitePanel(game, `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || game.id, getCurrentFlyoutState())}`)}</section>
 
         </div>
@@ -2910,7 +2906,7 @@ const renderApprovalGate = (game, request) => {
   `;
 };
 
-const renderResult = game => renderResultPanel(game,{transport,escapeHtml,formatDisplayGameId});
+const renderResult = game => renderResultPanel(game,{transport,escapeHtml});
 
 const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   // A socket may supply the snapshot before route hydration finishes. Keep

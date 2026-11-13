@@ -77,7 +77,6 @@ test("shell render patches same-route game updates without replacing the board p
   assert.doesNotMatch(source, /renderHeaderHomeAction/);
   assert.doesNotMatch(source.slice(source.indexOf("const renderHeader ="), source.indexOf("const renderHome =")), />Home<\/(?:a|span)>/);
   assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*return renderDecisionDebug/s);
-  assert.match(source, /const getDocumentTitle = \(\) => \{\s*const gameId = getCurrentViewedGameId\(\);\s*if \(gameId\) \{\s*return `\$\{formatDisplayGameId\(gameId\)\} \| Righelt`;\s*\}\s*return "Righelt";\s*\};/s);
   assert.match(source, /const getFailedOperationsKey = \(gameId\) =>/);
   assert.match(source, /failedOperationsKey: getFailedOperationsKey\(game\.id\)/);
   assert.match(source, /const failedOperationsKey = getFailedOperationsKey\(game\.id\);/);

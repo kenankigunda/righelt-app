@@ -1,6 +1,7 @@
 import {isTerminalOutcome} from './game-lifecycle.js';
 import {homeCardResult} from './home-card-result.js';
-import {renderHomeCardIdentity,renderHomeCardTurn} from './home-card-identity.js';
+import {renderHomeCardTurn} from './home-card-identity.js';
+import {renderGameTitle} from './game-title.js';
 export const formatSideToMoveLabel = (snapshot) => {
   if (snapshot?.sideToMove === "P1") {
     return "Red to play";
@@ -44,7 +45,7 @@ export function scenarioPreviewStatus(game,snapshot) {
 }
 
 /** Render acknowledged Home cards and static previews without changing authority. */
-export function createHomeCardRendering({getTransport,toStableKey,escapeHtml,renderMiniBoardPreviewRoot,buildGameHash,getCurrentFlyoutState,formatDisplayGameId,formatClientDateTime}) {
+export function createHomeCardRendering({getTransport,toStableKey,escapeHtml,renderMiniBoardPreviewRoot,buildGameHash,getCurrentFlyoutState,formatClientDateTime}) {
 const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyoutLink = null, gameId = null, header, meta, statusText, winnerSide = null, statusMarkup = null }) => {
   const previewPayload = card?.previewPayload ?? getStaticCardPreviewPayload(card);
   const previewKey = toStableKey({
@@ -109,12 +110,11 @@ const renderHomeGameCard = (game) => {
     flyoutLink: "game",
     gameId: game.id,
     header: `<div>
-        <span class="mini-board-card-link">${escapeHtml(formatDisplayGameId(game.id))}</span>
+        <span class="mini-board-card-link">${renderGameTitle(game,{identityId:getTransport().getIdentityId(),presence:!completed})}</span>
         <p class="small mini-board-card-subtitle">Last move on ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
       </div>
       ${recoveryChip}`,
     meta: `<div class="mini-board-card-meta mini-board-card-meta-primary">
-        ${renderHomeCardIdentity(game, {identityId: getTransport().getIdentityId(), quiet:completed})}
         <span class="small">${escapeHtml(moveLabel)}</span>
       </div>${resultHtml}`,
     statusText: completed ? result.action : result.kind === 'pending' ? `${statusText} · ${result.action}` : statusText,
