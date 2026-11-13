@@ -1,7 +1,9 @@
+import { recoveryTimelineSnapshot } from './recovery-telemetry.js';
+
 // Local, explicitly allowlisted evidence. Never store whole requests or game models.
 export const DIAGNOSTIC_LIMITS = Object.freeze({ ageMs: 86400000, events: 200, reports: 20, bytes: 1048576 });
 const KEY = "righelt.issues.v1";
-const fields = new Set("gameId gameLink mode browser clientBuild serverBuild deploymentVersion commandId fingerprint requestId requestKind requestPhase status durationMs elapsedMs socketGeneration deadlineMs stage retry generation recoveryEpisodeId closeCode closeClean online visibility pendingCount appliedEventSeq advertisedEventSeq gameplayRevision operation code receipt authoritativeState tentativeState action continuation timezone".split(" "));
+const fields = new Set("gameId gameLink mode browser clientBuild serverBuild deploymentVersion commandId fingerprint requestId requestKind requestPhase requestRelationship activeEpisodeRelation status durationMs elapsedMs socketGeneration deadlineMs stage retry generation recoveryEpisodeId closeCode closeClean online visibility pendingCount appliedEventSeq advertisedEventSeq gameplayRevision operation code receipt authoritativeState tentativeState action continuation timezone".split(" "));
 const safe = (value, depth = 0) => {
   if (depth > 12) return "[truncated]";
   if (value === undefined) return "[unavailable]";
@@ -22,7 +24,8 @@ const diagnosticEnvironment = () => {
     visibility: read(() => globalThis.document?.visibilityState),
   };
 };
-export function createIssueDiagnostics({ storage, now = Date.now, schedule = setTimeout, environment = diagnosticEnvironment } = {}) {
+export function createIssueDiagnostics({ storage, now = Date.now, schedule = setTimeout, environment = diagnosticEnvironment,
+  recoveryTimeline = recoveryTimelineSnapshot } = {}) {
   let reports = [], timer;
   try { const parsed = JSON.parse(storage?.getItem(KEY) ?? "[]"); if (Array.isArray(parsed)) reports = parsed.filter(r => r?.schemaVersion === 1 && typeof r.id === "string" && Number.isFinite(r.startedAt)).map(r => ({ schemaVersion: 1, id: r.id, key: String(r.key).slice(0,256), startedAt: r.startedAt, resolvedAt: Number.isFinite(r.resolvedAt) ? r.resolvedAt : null, initial: sanitizeDiagnostic(r.initial), truncated: r.truncated === true, events: (r.events ?? []).slice(-200).map(e => ({ at: e.at, ...sanitizeDiagnostic(e) })) })); } catch {}
   const trim = () => {
@@ -54,7 +57,17 @@ export function createIssueDiagnostics({ storage, now = Date.now, schedule = set
     list() { trim(); return structuredClone(reports); },
     get(id) { trim(); return structuredClone(reports.find(r => r.id === id) ?? null); },
     clear() { reports = []; try { storage?.removeItem(KEY); } catch {} },
-    text(id) { const r = api.get(id); if (!r) return "Details unavailable"; return `${r.resolvedAt ? "Resolved issue" : "Issue"}: ${r.initial.operation ?? "recovery"}\nIncident: ${r.id}\nTime: ${new Date(r.startedAt).toISOString()}\nGame: ${r.initial.gameLink ?? r.initial.gameId ?? "unavailable"}\nStage: ${r.initial.stage ?? "unavailable"}\n\n${JSON.stringify(r, null, 2)}`; }
+    text(id) {
+      const r = api.get(id); if (!r) return "Details unavailable";
+      const attempts = [r.initial, ...r.events];
+      const failure = attempts.findLast(event => event.requestRelationship === "failure" && typeof event.requestId === "string") ?? null;
+      const requestFields = ["requestId", "requestKind", "requestPhase", "requestRelationship", "activeEpisodeRelation", "status", "durationMs", "deadlineMs", "serverBuild", "stage", "retry", "generation", "recoveryEpisodeId"];
+      const failedRecoveryRequest = failure ? Object.fromEntries(requestFields.filter(key => failure[key] !== undefined).map(key => [key, failure[key]])) : null;
+      let timeline = [];
+      try { timeline = recoveryTimeline().filter(event => !r.initial.gameId || !event.gameId || event.gameId === r.initial.gameId); } catch {}
+      const details = { failedRecoveryRequest, recoveryTimeline: timeline, incident: r };
+      return `${r.resolvedAt ? "Resolved issue" : "Issue"}: ${r.initial.operation ?? "recovery"}\nIncident: ${r.id}\nTime: ${new Date(r.startedAt).toISOString()}\nGame: ${r.initial.gameLink ?? r.initial.gameId ?? "unavailable"}\nStage: ${r.initial.stage ?? "unavailable"}\n\n${JSON.stringify(details, null, 2)}`;
+    }
   }; trim(); return api;
 }
 let localStorage; try { if (typeof window !== "undefined") localStorage = window.localStorage; } catch {}

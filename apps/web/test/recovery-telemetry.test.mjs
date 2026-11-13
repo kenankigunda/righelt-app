@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRecoveryTelemetry, RECOVERY_TELEMETRY_LIMITS } from '../shell/recovery-telemetry.js';
+import { createRecoveryTelemetry, createRecoveryTimeline, RECOVERY_TELEMETRY_LIMITS } from '../shell/recovery-telemetry.js';
 import { validateRecoveryDiagnosticBatch, RECOVERY_DIAGNOSTICS } from '../../../packages/shared-types/src/recovery-diagnostics.js';
 
 const tick = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
@@ -10,7 +10,7 @@ const fixture = (options = {}) => {
   const telemetry = createRecoveryTelemetry({ clock: () => at,
     budget: { windowStarted: null, batches: 0 },
     schedule: (job, delay) => { jobs.set(++id, { job, delay }); return id; }, cancel: key => jobs.delete(key),
-    environment: () => ({ online: true, visibility: 'visible', observedDeploymentSha: 'a'.repeat(40), loadedBuild: 'unavailable', identityId: 'secret' }),
+    environment: () => ({ online: true, visibility: 'visible', observedDeploymentSha: 'a'.repeat(40), loadedBuild: 'b'.repeat(40), identityId: 'secret' }),
     fetcher: async (path, init) => { calls.push({ path, init }); return new Response(null, { status: 202 }); }, ...options });
   return { telemetry, jobs, calls, advance: ms => { at += ms; },
     run: delay => { const entry = [...jobs].find(([, value]) => value.delay === delay); assert.ok(entry, `missing timer ${delay}`); jobs.delete(entry[0]); entry[1].job(); } };
@@ -32,7 +32,8 @@ test('uploads only validated scalar evidence with credentials omitted and no mut
   assert.equal(body.events[0].reason, 'unknown');
   assert.equal(JSON.stringify(body).includes('secret'), false);
   assert.equal(body.events[0].observedDeploymentSha, 'a'.repeat(40));
-  assert.equal(body.events[0].loadedBuild, 'unavailable');
+  assert.equal(body.events[0].loadedBuild, 'b'.repeat(40));
+  assert.notEqual(body.events[0].loadedBuild, body.events[0].observedDeploymentSha);
 });
 
 test('event bursts retain a bounded queue and explicitly report dropped history', async () => {
@@ -110,4 +111,25 @@ test('replacing an uploader cannot replenish the shared page upload allowance', 
   first.telemetry.retire();
   const replacement = fixture({ budget }); replacement.telemetry.record(event); await replacement.telemetry.flush();
   assert.equal(replacement.calls.length, 0);
+});
+
+test('page recovery timeline is bounded, immutable and retains only closed recovery evidence', () => {
+  const timeline = createRecoveryTimeline({ limit: 2 });
+  const first = timeline.record({ type: 'socket', at: 1, reason: 'socket_closed', closeCode: 1006,
+    closeClean: false, socketGeneration: 4, owner: 'connection', ownerAction: 'transferred',
+    result: 'failed', activeEpisodeRelation: 'active', token: 'secret', error: 'private failure',
+    command: { payload: 'secret' }, game: { state: 'secret' } });
+  timeline.record({ type: 'recovery_started', at: 2, reason: 'manual_reconnect', recoveryGeneration: 5,
+    owner: 'repair', ownerAction: 'acquired', retry: 2, polling: true, manualRetry: true, result: 'started' });
+  timeline.record({ type: 'recovery_completed', at: 3, owner: 'repair', ownerAction: 'released',
+    requestId: crypto.randomUUID(), requestKind: 'reconcile', requestRelationship: 'failure',
+    activeEpisodeRelation: 'unrelated', result: 'resolved', terminalFailure: false });
+  assert.equal(Object.isFrozen(first), true);
+  assert.deepEqual(timeline.snapshot().map(event => event.at), [2, 3]);
+  assert.equal(Object.isFrozen(timeline.snapshot()), true);
+  assert.equal(JSON.stringify(timeline.snapshot()).includes('secret'), false);
+  assert.equal(JSON.stringify(timeline.snapshot()).includes('private failure'), false);
+  assert.equal(timeline.snapshot()[0].manualRetry, true);
+  assert.equal(timeline.snapshot()[0].polling, true);
+  assert.equal(timeline.snapshot()[1].activeEpisodeRelation, 'unrelated');
 });

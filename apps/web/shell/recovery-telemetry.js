@@ -1,6 +1,41 @@
 import { RECOVERY_DIAGNOSTICS, sanitizeRecoveryDiagnosticEvent } from '../generated/packages/shared-types/src/recovery-diagnostics.js';
 
 export const RECOVERY_TELEMETRY_LIMITS = Object.freeze({ queue: 64, batchesPerHour: 20, windowMs: 3_600_000, batchDelayMs: 1_000, requestMs: 5_000 });
+export const RECOVERY_TIMELINE_LIMIT = 128;
+const timelineEnums = Object.freeze({
+  owner: new Set(['connection', 'repair', 'recovery', 'request']),
+  ownerAction: new Set(['acquired', 'transferred', 'released']),
+  result: new Set(['started', 'blocked', 'succeeded', 'failed', 'resolved', 'terminal_failure', 'superseded']),
+  activeEpisodeRelation: new Set(['active', 'unrelated', 'none']),
+});
+const timelineFlags = new Set(['closeClean', 'polling', 'manualRetry', 'terminalFailure']);
+const timelineCounters = new Set(['closeCode', 'connectionGeneration']);
+
+export function createRecoveryTimeline({ limit = RECOVERY_TIMELINE_LIMIT } = {}) {
+  const maximum = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, RECOVERY_TIMELINE_LIMIT) : RECOVERY_TIMELINE_LIMIT;
+  let events = [];
+  return Object.freeze({
+    record(input) {
+      try {
+        const common = sanitizeRecoveryDiagnosticEvent({ ...input,
+          eventId: typeof input?.eventId === 'string' ? input.eventId : crypto.randomUUID() });
+        if (!common) return null;
+        const event = { ...common };
+        for (const [key, values] of Object.entries(timelineEnums)) if (values.has(input[key])) event[key] = input[key];
+        for (const key of timelineFlags) if (typeof input[key] === 'boolean') event[key] = input[key];
+        for (const key of timelineCounters) if (Number.isSafeInteger(input[key]) && input[key] >= 0 && input[key] <= 65535) event[key] = input[key];
+        if (input.reason === 'http_poll') event.polling = true;
+        if (input.reason === 'manual_reconnect') event.manualRetry = true;
+        const frozen = Object.freeze(event);
+        events = [...events, frozen].slice(-maximum);
+        return frozen;
+      } catch { return null; }
+    },
+    snapshot() { return Object.freeze([...events]); },
+  });
+}
+const pageTimeline = createRecoveryTimeline();
+export const recoveryTimelineSnapshot = () => pageTimeline.snapshot();
 // Shared across account/transport replacements in this page, without retaining
 // any identity or event. Reloading the document starts a fresh page allowance.
 const pageBudget = { windowStarted: null, batches: 0 };
@@ -10,9 +45,10 @@ const pageBudget = { windowStarted: null, batches: 0 };
 export function createRecoveryTelemetry({ fetcher = globalThis.fetch, clock = Date.now,
   schedule = setTimeout, cancel = clearTimeout, uuid = () => crypto.randomUUID(),
   budget = pageBudget,
+  timeline = pageTimeline,
   environment = () => ({ online: globalThis.navigator?.onLine,
     visibility: globalThis.document?.visibilityState,
-    observedDeploymentSha: globalThis.__righeltObservedDeploymentSha, loadedBuild: 'unavailable' }),
+    observedDeploymentSha: globalThis.__righeltObservedDeploymentSha, loadedBuild: globalThis.__righeltClientBuild }),
 } = {}) {
   let retired = false, queue = [], dropped = 0, timer = null, inflight = null;
   const clearTimer = () => { if (timer !== null) cancel(timer); timer = null; };
@@ -57,7 +93,9 @@ export function createRecoveryTelemetry({ fetcher = globalThis.fetch, clock = Da
     record(input) {
       try {
         if (retired) return;
-        const event = sanitizeRecoveryDiagnosticEvent({ ...environment(), ...input, at: clock(), eventId: uuid() });
+        const candidate = { ...environment(), ...input, at: clock(), eventId: uuid() };
+        timeline.record(candidate);
+        const event = sanitizeRecoveryDiagnosticEvent(candidate);
         if (!event) return;
         if (queue.length >= RECOVERY_TELEMETRY_LIMITS.queue) { queue.shift(); dropped++; }
         queue.push(event); scheduleFlush();

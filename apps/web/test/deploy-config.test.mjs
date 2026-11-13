@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { stampClientBuild, readEmbeddedClientBuild } from "../../../scripts/client-build-identity.mjs";
+import { boundarySmoke } from "../../../scripts/deploy-boundary-smoke.mjs";
 
 const webDir = path.resolve(import.meta.dirname, "..");
 const wranglerConfigPath = path.join(webDir, "wrangler.toml");
@@ -52,4 +54,26 @@ test("automatic deployment accepts only successful push CI runs on main", () => 
   assert.match(source, /github\.event\.workflow_run\.event == 'push'/);
   assert.match(source, /github\.event\.workflow_run\.head_branch == 'main'/);
   assert.doesNotMatch(source, /workflows: \["Nightly validation"\]/);
+});
+
+test("client build stamping accepts one exact commit and fails closed otherwise", () => {
+  const source = 'globalThis.__righeltClientBuild = "unavailable"; // RIGHELT_CLIENT_BUILD';
+  const sha = "a".repeat(40);
+  const stamped = stampClientBuild(source, sha);
+  assert.equal(readEmbeddedClientBuild(stamped), sha);
+  for (const invalid of ["", "main", "A".repeat(40)]) assert.throws(() => stampClientBuild(source, invalid));
+  assert.throws(() => stampClientBuild("export {};", sha));
+});
+
+test("deployment smoke verifies the exact loaded main artifact commit", async () => {
+  const sha = "b".repeat(40), privateOrigin = "https://private.example", origin = "https://public.example";
+  const fetcher = async url => {
+    if (url.pathname === "/api/health" && url.origin === origin) return Response.json({ok:true,bindings:{db:true,gameRooms:true}});
+    if (url.pathname === "/api/health" && url.origin === privateOrigin) return new Response(null,{status:404,headers:{server:"cloudflare"}});
+    if (url.pathname === "/main.js") return new Response(`globalThis.__righeltClientBuild = "${sha}"; // RIGHELT_CLIENT_BUILD`);
+    throw Error(`unexpected ${url}`);
+  };
+  await assert.doesNotReject(boundarySmoke({origin,privateOrigin,expectedCommit:sha,fetcher}));
+  await assert.rejects(boundarySmoke({origin,privateOrigin,expectedCommit:"c".repeat(40),fetcher}),/loaded client commit/i);
+  await assert.rejects(boundarySmoke({origin,privateOrigin,expectedCommit:"main",fetcher}),/expected deployment commit/i);
 });

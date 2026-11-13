@@ -58,6 +58,11 @@ jobs:
       - name: Build browser runtime
         run: pnpm build:web-engine
 
+      - name: Stamp exact browser client commit
+        env:
+          DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+        run: node scripts/client-build-identity.mjs apps/web/main.js "$DEPLOY_SHA"
+
       - name: Preflight configuration check
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -165,6 +170,7 @@ jobs:
       - name: Verify public Pages and private API boundaries
         env:
           CLOUDFLARE_API_BASE_URL: ${{ vars.CLOUDFLARE_API_BASE_URL }}
+          DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
         run: node scripts/deploy-boundary-smoke.mjs
 
       - name: Verify authenticated canary account
@@ -179,4 +185,5 @@ jobs:
         if: inputs.prepare_accounts
         env:
           CLOUDFLARE_API_BASE_URL: ${{ vars.CLOUDFLARE_API_BASE_URL }}
+          DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
         run: node scripts/deploy-boundary-smoke.mjs --preparation

@@ -1,5 +1,7 @@
 import { buildHomeHash, isShellRootHash, isShellRouteHash } from "./shell/routes.js";
 
+globalThis.__righeltClientBuild = "unavailable"; // RIGHELT_CLIENT_BUILD
+
 if (isShellRootHash(window.location.hash)) {
   window.location.replace(`${window.location.pathname}${window.location.search}${buildHomeHash()}`);
 } else if (!isShellRouteHash(window.location.hash)) {

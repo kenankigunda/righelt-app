@@ -75,3 +75,18 @@ test("diagnostic total event and byte budgets retain initial evidence and mark t
  for(let i=0;i<200;i++)d.capture("large",{browser:"x".repeat(2048),authoritativeState:{pieces:Array.from({length:100},(_,id)=>({id:String(id),owner:"P1",position:{row:0,col:0},kind:"unit"}))}});
  assert.ok(new TextEncoder().encode(JSON.stringify(d.list())).length<=1048576);assert.ok(d.list().at(-1).initial);assert.ok(d.list().at(-1).events.every(event=>event.authoritativeState===undefined));
 });
+
+test("copied recovery details isolate the failed request from later successful reads", () => {
+ const failedId=crypto.randomUUID(),laterId=crypto.randomUUID(),timeline=[
+  Object.freeze({at:1001,type:"request_failed",gameId:"g",requestId:failedId,requestKind:"apply",requestRelationship:"failure",activeEpisodeRelation:"active",result:"failed"}),
+  Object.freeze({at:1002,type:"health",gameId:"g",requestId:laterId,requestKind:"read",requestRelationship:"latest_observed",activeEpisodeRelation:"unrelated",result:"succeeded"}),
+ ];
+ const d=createIssueDiagnostics({now:()=>1000,environment:()=>({}),recoveryTimeline:()=>Object.freeze(timeline)});
+ const id=d.capture("recovery:g",{operation:"move_recovery",gameId:"g",stage:"command_confirmation",requestId:failedId,requestKind:"apply",requestPhase:"body",requestRelationship:"failure",activeEpisodeRelation:"active",status:503});
+ d.capture("recovery:g",{stage:"retry",requestId:laterId,requestKind:"read",requestPhase:"complete",requestRelationship:"latest_observed",activeEpisodeRelation:"unrelated",status:200});
+ const details=JSON.parse(d.text(id).split("\n\n").at(-1));
+ assert.equal(details.failedRecoveryRequest.requestId,failedId);
+ assert.equal(details.failedRecoveryRequest.status,503);
+ assert.equal(details.recoveryTimeline.at(-1).requestId,laterId);
+ assert.notEqual(details.failedRecoveryRequest.requestId,details.recoveryTimeline.at(-1).requestId);
+});

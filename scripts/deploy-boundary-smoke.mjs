@@ -1,13 +1,16 @@
 import { requireDeploymentOrigin } from "./deployment-origin.mjs";
 import { fileURLToPath } from "node:url";
+import { readEmbeddedClientBuild } from "./client-build-identity.mjs";
 export async function boundarySmoke({
   origin,
   privateOrigin,
+  expectedCommit,
   preparation = false,
   fetcher = fetch,
 }) {
   requireDeploymentOrigin(origin, "RIGHELT_SITE_ORIGIN");
   requireDeploymentOrigin(privateOrigin, "CLOUDFLARE_API_BASE_URL");
+  if (!/^[a-f0-9]{40}$/.test(expectedCommit ?? "")) throw Error("Expected deployment commit is missing or malformed");
   const health = await fetcher(new URL("/api/health", origin), {
     signal: AbortSignal.timeout(15000),
   });
@@ -35,6 +38,11 @@ export async function boundarySmoke({
     throw Error(
       "Direct API did not return an expected Cloudflare route rejection",
     );
+  const client = await fetcher(new URL("/main.js", origin), {
+    signal: AbortSignal.timeout(15000), cache: "no-store",
+  });
+  if (!client.ok || readEmbeddedClientBuild(await client.text()) !== expectedCommit)
+    throw Error("Loaded client commit does not match the expected deployment commit");
   if (preparation) {
     const r = await fetcher(new URL("/api/shell/bootstrap", origin), {
         signal: AbortSignal.timeout(15000),
@@ -50,6 +58,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     await boundarySmoke({
       origin: process.env.RIGHELT_SITE_ORIGIN,
       privateOrigin: process.env.CLOUDFLARE_API_BASE_URL,
+      expectedCommit: process.env.DEPLOY_SHA,
       preparation: process.argv.includes("--preparation"),
     });
     console.log(

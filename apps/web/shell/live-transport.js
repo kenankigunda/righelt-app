@@ -563,6 +563,8 @@ export const createLiveTransportStore = ({
       tentativeState: optimistic.derivedGame?.board?.state, action: command?.action,
       browser: globalThis.navigator?.userAgent, visibility: globalThis.document?.visibilityState, online: globalThis.navigator?.onLine,
       clientBuild: globalThis.__righeltClientBuild ?? "unavailable", retry: Math.max(optimistic.retryAttempt ?? 0, optimistic.recoveryRetryAttempt ?? 0), generation: optimistic.recoveryGeneration ?? 0, recoveryEpisodeId: optimistic.recoveryEpisodeId ?? "unavailable",
+      requestRelationship: error?.diagnosticEvidence ? "failure" : "latest_observed",
+      activeEpisodeRelation: optimistic.recoveryEpisodeId ? "active" : "none",
       elapsedMs: Math.max(0, Date.now() - (optimistic.recoveryStartedAt ?? (Date.parse(optimistic.pendingCommands[0]?.queuedAt) || Date.now()))),
       ...optimistic.connectionEvidence,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, mode: authoritative?.computer ? "computer" : authoritative?.selfPlayMode ? "play_both" : "multiplayer",
@@ -596,7 +598,14 @@ export const createLiveTransportStore = ({
         upgradeRequired: optimistic.upgradeRequired === true, confirmationOverdue: optimistic.confirmationOverdue === true,
         sharedMutationsBlocked: Boolean(rulesChecking || optimistic.storageBlocked || recovering || optimistic.upgradeRequired || sharedPending),
         syncStatus: optimistic.syncStatus, mode: game?.computer ? 'computer' : game?.selfPlayMode ? 'play_both' : 'multiplayer',
-        retry: Math.max(optimistic.retryAttempt ?? 0, optimistic.recoveryRetryAttempt ?? 0), ...extra });
+        retry: Math.max(optimistic.retryAttempt ?? 0, optimistic.recoveryRetryAttempt ?? 0),
+        connectionGeneration: optimistic.connectionRecoveryEpoch ?? 0,
+        owner: 'recovery', ownerAction: type === 'recovery_completed' ? 'released' : type === 'recovery_started' ? 'acquired' : undefined,
+        result: type === 'recovery_completed' ? 'resolved' : type === 'recovery_started' ? 'started' : type === 'recovery_blocked'
+          ? optimistic.storageBlocked || optimistic.upgradeRequired ? 'terminal_failure' : 'blocked' : undefined,
+        activeEpisodeRelation: optimistic.recoveryEpisodeId ? 'active' : 'none',
+        polling: extra.reason === 'http_poll', manualRetry: extra.reason === 'manual_reconnect',
+        terminalFailure: type === 'recovery_blocked' && Boolean(optimistic.storageBlocked || optimistic.upgradeRequired), ...extra });
     } catch { /* Diagnostics cannot acquire, clear or interrupt recovery authority. */ }
   };
   // Presentation may request details, but only the transport owns episode evidence.
@@ -1069,8 +1078,8 @@ export const createLiveTransportStore = ({
       if (optimistic.attempt !== attempt) return;
       if(error.retryAfterMs)optimistic.retryNotBefore=Date.now()+error.retryAfterMs;
       const unresolved = error === unresolvedCommandOutcome;
-      if (!unresolved) captureRecoveryIssue(gameId, "command_confirmation", error);
       if (!optimistic.recoveryStartedAt) { optimistic.recoveryStartedAt = Date.parse(command.queuedAt) || Date.now(); optimistic.recoveryEpisodeId = crypto.randomUUID(); }
+      if (!unresolved) captureRecoveryIssue(gameId, "command_confirmation", error);
       optimistic.recoveryIssue = unresolved ? null : error.code ?? (error.message === "invalid_confirmation" ? "invalid_response" : "unavailable");
       if (error.code === "upgrade_required") markUpgradeRequired(gameId);
       optimistic.syncStatus = "confirming";
@@ -1254,7 +1263,7 @@ export const createLiveTransportStore = ({
     if (recovering) optimistic.connectionRecoveryEpoch = (optimistic.connectionRecoveryEpoch ?? 0) + 1;
     optimistic.connectionRecovering = recovering || optimistic.forceSnapshot === true;
     if (optimistic.connectionRecovering && !wasRecovering) {
-      reportRecoveryDiagnostic(gameId, 'recovery_started', { reason: evidence.reason });
+      reportRecoveryDiagnostic(gameId, 'recovery_started', evidence);
       if (!recoveryDiagnosticTimers.has(gameId)) {
         const timer = setTimeout(() => {
           recoveryDiagnosticTimers.delete(gameId);
@@ -1262,6 +1271,8 @@ export const createLiveTransportStore = ({
         }, timing.confirmationBudgetMs);
         timer.unref?.(); recoveryDiagnosticTimers.set(gameId, timer);
       }
+    } else if (optimistic.connectionRecovering && wasRecovering && recovering) {
+      reportRecoveryDiagnostic(gameId, 'health', { ...evidence, ownerAction: 'transferred', result: 'superseded' });
     } else if (!optimistic.connectionRecovering) {
       clearTimeout(recoveryDiagnosticTimers.get(gameId)); recoveryDiagnosticTimers.delete(gameId);
     }
