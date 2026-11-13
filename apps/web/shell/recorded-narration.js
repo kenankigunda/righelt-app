@@ -25,13 +25,15 @@ export const recordedActorSide = move => normalizeActivitySide(move?.actorSide)
 const removalIdentity=(record,move)=>record.pieceId??record.piece?.id
   ?? move?.selectionSnapshot?.pieces?.find(piece=>normalizeActivitySide(piece.owner)===normalizeActivitySide(record.ownerSeat)&&piece.position?.row===record.position?.row&&piece.position?.col===record.position?.col)?.id
   ?? record.eventId ?? JSON.stringify([record.ownerSeat,record.position,record.kind,record.reason]);
+const actionDestroyedPieces = move => Array.isArray(move?.recordedActionDestroyedPieces)
+  ? move.recordedActionDestroyedPieces : Array.isArray(move?.destroyedPieces) ? move.destroyedPieces : [];
 const recordedCapture = move => {
   const action=move?.action,actorSide=recordedActorSide(move);
   if(action?.type!=='push'||!point(action.to)||!actorSide)return null;
   const target=move?.selectionSnapshot?.pieces?.find(piece=>piece.position?.row===action.to.row&&piece.position?.col===action.to.col);
   const targetSide=normalizeActivitySide(target?.owner);
   if(!target?.id||!targetSide||targetSide===actorSide)return null;
-  return (move.destroyedPieces??[]).find(record=>
+  return actionDestroyedPieces(move).find(record=>
     record?.reason==='no_retreat'
     && record.pieceId===target.id
     && normalizeActivitySide(record.ownerSeat??record.piece?.owner)===targetSide
@@ -68,6 +70,9 @@ export const visibleRecordedMoves = (moves,{includeUndone=false,preserveInputOrd
     if(Number.isInteger(previous.index)&&Number.isInteger(move.index)&&!boardAdjacent)continue;
     if(Number.isInteger(previous.turnMoveIndex)&&Number.isInteger(move.turnMoveIndex)&&!turnAdjacent)continue;
     result[previousIndex]={...previous,snapshot:move.snapshot??previous.snapshot,
+      // Keep direct-action provenance separate from closure removals. This is a
+      // presentation lineage field, never an authoritative stored-game change.
+      recordedActionDestroyedPieces:actionDestroyedPieces(previous),
       destroyedPieces:distinctRecordedRemovals([previous,move])};
   }
   return result;

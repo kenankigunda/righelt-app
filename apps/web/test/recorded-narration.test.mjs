@@ -39,8 +39,10 @@ test('same-square own loss and turn-end destruction are never inferred as captur
  assert.equal(describeRecordedMove(ownLoss,'Maya'),'Maya pushed onto (4, 4) and lost piece at (4, 4)');
  const turnEnd={...move('push'),selectionSnapshot:{pieces:[piece('A','P1',a),piece('defender','P2',b)]},destroyedPieces:[{...removal('defender','p2',b),reason:'loss_of_supply'}]};
  assert.equal(describeRecordedMove(turnEnd,'Maya'),'Maya pushed onto (4, 4) and destroyed piece at (4, 4)');
- const beforeClosure={...turnEnd,destroyedPieces:[]},closure={...move('end_turn'),index:41,turnMoveIndex:1,destroyedPieces:turnEnd.destroyedPieces};
+ const beforeClosure={...turnEnd,destroyedPieces:[]},closure={...move('end_turn'),index:41,turnMoveIndex:1,destroyedPieces:[{...removal('defender','p2',b),reason:'no_retreat'}]};
  assert.equal(describeRecordedTurn([beforeClosure,closure],'Maya'),'Maya pushed onto (4, 4) and destroyed piece at (4, 4)');
+ const folded=visibleRecordedMoves([beforeClosure,closure])[0];
+ assert.deepEqual(folded.recordedActionDestroyedPieces,[]);assert.equal(describeRecordedMove(folded,'Maya'),'Maya pushed onto (4, 4) and destroyed piece at (4, 4)');
  const wrongIdentity={...turnEnd,destroyedPieces:[{...removal('different-piece','p2',b),reason:'no_retreat'}]};
  assert.equal(describeRecordedMove(wrongIdentity,'Maya'),'Maya pushed onto (4, 4) and destroyed piece at (4, 4)');
 });
