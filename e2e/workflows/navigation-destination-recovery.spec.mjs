@@ -17,12 +17,14 @@ test('a held cold destination exposes delayed recovery, retries503reads and rest
  page.on('request',request=>{if(mutation(request))writes.push(request.url());});
  await page.route(url=>[`/api/shell/games/${id}`,`/api/shell/games/${id}/position`,`/api/shell/games/${id}/reconcile`].includes(url.pathname),async route=>{reads++;if(mode==='hold')await gate;if(mode==='healthy')await route.continue();else await route.fulfill({status:503,json:{error:'temporarily_unavailable'}});});
  try{
+  await page.evaluate(()=>{window.destinationNoticeMountStates=[];new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes)if(node.nodeType===Node.ELEMENT_NODE&&node.matches?.('[data-testid="destination-load-notice"]')){const capture=()=>window.destinationNoticeMountStates.push({state:node.dataset.state,hidden:node.hidden,inert:node.hasAttribute('inert'),ariaHidden:node.getAttribute('aria-hidden')});capture();new MutationObserver(capture).observe(node,{attributes:true,attributeFilter:['data-state','hidden','inert','aria-hidden']});}}).observe(document.body,{childList:true});});
   await page.evaluate(()=>addEventListener('click',event=>{if(event.target.closest('.mini-board-card-link-surface'))window.departureY=scrollY;},{capture:true,once:true}));
   await card.tap();await expect.poll(()=>reads).toBeGreaterThan(0);
   const notice=page.getByTestId('destination-load-notice'),layer=page.locator('#shell-route-transition-layer');
   await page.waitForTimeout(1000);await expect(notice).not.toBeVisible();await expect(layer).toHaveAttribute('data-phase','covered');
   const swipe=layer.locator('.shell-route-transition-layer-swipe');await swipe.evaluate(node=>{window.retainedDestinationSwipe=node;window.retainedDestinationFieldClock=node.getAnimations({subtree:true}).find(animation=>animation.animationName==='shell-held-facet-pulse')??null;});
   await expect(notice).toBeVisible({timeout:5500});await expect(notice).toContainText('Opening your game');
+  expect(await page.evaluate(()=>window.destinationNoticeMountStates.some(entry=>entry.state==='entering'&&!entry.hidden&&!entry.inert&&entry.ariaHidden===null))).toBe(true);
   await expect(notice).toHaveAttribute('data-presentation','quiet-field');await expect(notice.locator('.shell-game-alert')).toHaveCount(0);
   const mobileComposition=await notice.evaluate(node=>{const noticeRect=node.getBoundingClientRect(),content=node.querySelector('.destination-load-field-content').getBoundingClientRect();return {centerDelta:Math.abs((content.top+content.height/2)-(noticeRect.top+noticeRect.height/2)),width:content.width,viewport:innerWidth};});
   expect(mobileComposition.viewport).toBe(390);expect(mobileComposition.centerDelta).toBeLessThanOrEqual(1);expect(mobileComposition.width).toBeLessThanOrEqual(290);
@@ -42,10 +44,11 @@ test('a held cold destination exposes delayed recovery, retries503reads and rest
   mode='fail';release();await expect.poll(()=>reads).toBeGreaterThan(1);
   await expect(layer).toHaveAttribute('data-phase','covered');await expect(page.getByTestId('game-board')).toHaveCount(0);
   await page.screenshot({path:info.outputPath('cold-503-recovery.png')});
-  await page.evaluate(()=>{window.destinationNoticeStates=[];const node=document.querySelector('[data-testid="destination-load-notice"]');new MutationObserver(()=>window.destinationNoticeStates.push({state:node.dataset.state,phase:document.querySelector('#shell-route-transition-layer')?.dataset.phase})).observe(node,{attributes:true,attributeFilter:['data-state','hidden']});});
+  await page.evaluate(()=>{window.destinationNoticeStates=[];const node=document.querySelector('[data-testid="destination-load-notice"]'),capture=()=>window.destinationNoticeStates.push({state:node.dataset.state,phase:document.querySelector('#shell-route-transition-layer')?.dataset.phase,inert:node.hasAttribute('inert'),ariaHidden:node.getAttribute('aria-hidden'),activeInside:node.contains(document.activeElement)});new MutationObserver(capture).observe(node,{attributes:true,attributeFilter:['data-state','hidden','inert','aria-hidden']});});
   await notice.getByRole('button',{name:'Retry',exact:true}).tap();mode='healthy';
   await expect(page.getByTestId('game-board')).toBeVisible({timeout:15000});await expect(layer).toHaveAttribute('data-phase','idle');await expect(notice).not.toBeVisible();
   expect(await page.evaluate(()=>window.destinationNoticeStates.some(entry=>entry.state==='exiting'))).toBe(true);
+  expect(await page.evaluate(()=>window.destinationNoticeStates.some(entry=>entry.state==='exiting'&&entry.inert&&entry.ariaHidden==='true'&&!entry.activeInside))).toBe(true);
   expect(writes).toEqual([]);
   await page.setViewportSize({width:390,height:844});
   let homeReads=0;await page.route(url=>url.pathname==='/api/shell/games',async route=>{homeReads++;await route.fulfill({status:503,json:{error:'temporarily_unavailable'}});});
@@ -90,6 +93,18 @@ test('a confirmed missing destination offers a native Home exit without retry or
  const count=reads;await page.waitForTimeout(1000);expect(reads).toBe(count);
  await page.screenshot({path:info.outputPath('missing-reduced-motion.png')});
  await notice.getByRole('link',{name:'Home',exact:true}).tap();await expect(page.getByTestId('home-create-game')).toBeVisible();await expect(notice).not.toBeVisible();
+ await page.unrouteAll({behavior:'wait'});
+});
+
+test('leaving through a focused Home control retires the stale notice and focus',async({ownedContext,baseURL})=>{
+ const context=await ownedContext({baseURL,viewport:{width:390,height:844},hasTouch:true,reducedMotion:'reduce'}),page=await context.newPage();
+ await page.addInitScript(()=>{window.WebSocket=undefined;});
+ const [id]=await createGamesViaApi(page,1);await page.goto('/');
+ await page.route(url=>[`/api/shell/games/${id}`,`/api/shell/games/${id}/position`,`/api/shell/games/${id}/reconcile`].includes(url.pathname),route=>route.fulfill({status:404,json:{error:'game_not_found'}}));
+ await page.locator(`[data-game-id="${id}"].mini-board-card-link-surface`).tap();
+ const notice=page.getByTestId('destination-load-notice'),home=notice.getByRole('link',{name:'Home',exact:true});
+ await expect(notice).toContainText('This game is no longer available');await home.focus();await expect(home).toBeFocused();await home.tap();
+ await expect(page.getByTestId('home-create-game')).toBeVisible();await expect(notice).not.toBeVisible();await expect(notice).toHaveAttribute('inert','');expect(await notice.evaluate(node=>node.contains(document.activeElement))).toBe(false);
  await page.unrouteAll({behavior:'wait'});
 });
 

@@ -1,8 +1,31 @@
 const actionLabel = action => action === 'signin' ? 'Sign in' : action === 'reload' ? 'Reload' : 'Retry';
+const entryGenerations=new WeakMap();
 
 export const quietFieldDestinationNotice = ({transition,message}={}) => Boolean(
   message && transition?.type === 'game-entry' && ['covering','covered','revealing'].includes(transition.phase)
 );
+
+export const mountDestinationNotice = element => {
+  entryGenerations.set(element,0);
+  element.hidden=true;element.inert=true;element.setAttribute('inert','');element.setAttribute('aria-hidden','true');
+};
+
+export const retireDestinationNotice = (element,{quietField,documentObject=element.ownerDocument}={}) => {
+  const active=documentObject?.activeElement,ownedFocus=Boolean(active&&element.contains(active));
+  entryGenerations.set(element,(entryGenerations.get(element)??0)+1);
+  element.dataset.state=quietField?'exiting':'hidden';element.inert=true;element.setAttribute('inert','');element.setAttribute('aria-hidden','true');
+  if(ownedFocus)active.blur?.();
+  return ownedFocus;
+};
+
+export const presentDestinationNotice = (element,{quietField,requestAnimationFrame}={}) => {
+  const inactive=element.hidden||element.inert||element.hasAttribute('inert')||element.getAttribute('aria-hidden')==='true';
+  const generation=(entryGenerations.get(element)??0)+1;entryGenerations.set(element,generation);
+  element.dataset.state=quietField&&inactive?'entering':'visible';
+  element.hidden=false;element.inert=false;element.removeAttribute('inert');element.removeAttribute('aria-hidden');
+  if(element.dataset.state==='entering')requestAnimationFrame(()=>{if(entryGenerations.get(element)===generation&&!element.hidden&&!element.inert&&element.dataset.state==='entering')element.dataset.state='visible';});
+  return element.dataset.state;
+};
 
 export const renderQuietFieldDestinationNotice = ({message,escapeHtml,icon,homeHref}) => {
   const action=message.action?`<button type="button" class="destination-load-field-action" data-destination-action="${escapeHtml(message.action)}">${icon(message.action==='signin'?'account':'rematch')}<span>${actionLabel(message.action)}</span></button>`:'';

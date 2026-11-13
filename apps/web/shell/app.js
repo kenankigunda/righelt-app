@@ -32,7 +32,7 @@ import {isLiveBoardVisible} from './live-board-visibility.js';
 import {mountDecisionNoteEditor} from './decision-note-editor.js';
 import {renderResultPanel} from './result-panel.js';
 import {createDestinationRecovery,destinationRecoveryMessage} from './destination-recovery.js';
-import {quietFieldDestinationNotice,renderQuietFieldDestinationNotice} from './destination-load-notice.js';
+import {mountDestinationNotice,presentDestinationNotice,quietFieldDestinationNotice,renderQuietFieldDestinationNotice,retireDestinationNotice} from './destination-load-notice.js';
 import {createNavigationHistory} from './navigation-history.js';
 import {createNotificationPaper} from './notification-paper.js';
 import {selectedHistoryPresentation,recordedHistoryView,historyBoardMessage} from './history-narration.js';
@@ -3788,11 +3788,9 @@ const syncDestinationNotice = () => {
   const message=destinationRecoveryMessage(destinationLoadPresentation,currentRoute.name);
   if(!message){
     if(destinationNoticeEl&&!destinationNoticeEl.hidden){
-      const ownedFocus=destinationNoticeEl.contains(document.activeElement);
       if(destinationNoticeRetireTimer)window.clearTimeout(destinationNoticeRetireTimer);
       const quietField=destinationNoticeEl.dataset.presentation==='quiet-field';
-      destinationNoticeEl.dataset.state=quietField?'exiting':'hidden';
-      destinationNoticeEl.setAttribute('aria-hidden','true');
+      const ownedFocus=retireDestinationNotice(destinationNoticeEl,{quietField,documentObject:document});
       if(quietField){
         const retiring=destinationNoticeEl;
         destinationNoticeRetireTimer=window.setTimeout(()=>{
@@ -3810,6 +3808,7 @@ const syncDestinationNotice = () => {
   if(!destinationNoticeEl){
     destinationNoticeEl=document.createElement('div');destinationNoticeEl.className='destination-load-notice';
     destinationNoticeEl.setAttribute('data-testid','destination-load-notice');destinationNoticeEl.setAttribute('role','status');destinationNoticeEl.setAttribute('aria-live','polite');destinationNoticeEl.setAttribute('aria-atomic','true');
+    mountDestinationNotice(destinationNoticeEl);
     document.body.append(destinationNoticeEl);
     destinationNoticeEl.addEventListener('click',async event=>{
       const action=event.target.closest('[data-destination-action]')?.dataset.destinationAction;
@@ -3820,9 +3819,6 @@ const syncDestinationNotice = () => {
     });
   }
   if(destinationNoticeRetireTimer){window.clearTimeout(destinationNoticeRetireTimer);destinationNoticeRetireTimer=null;}
-  const wasHidden=destinationNoticeEl.hidden;
-  destinationNoticeEl.hidden=false;
-  destinationNoticeEl.removeAttribute('aria-hidden');
   const quietField=quietFieldDestinationNotice({transition:routeTransition,message});
   destinationNoticeEl.dataset.presentation=quietField?'quiet-field':'card';
   const action=message.action?`<button class="secondary mini-button" data-destination-action="${message.action}">${icon(message.action==='signin'?'account':'rematch')}${message.action==='signin'?'Sign in':message.action==='reload'?'Reload':'Retry'}</button>`:'';
@@ -3831,10 +3827,7 @@ const syncDestinationNotice = () => {
     ?renderQuietFieldDestinationNotice({message,escapeHtml,icon,homeHref:buildHomeHash()})
     :renderGameAlertCard({tone:'neutral',activity:'static',body:escapeHtml(message.message),action:action+home});
   if(destinationNoticeEl.innerHTML!==html)patchToolHtml(destinationNoticeEl,html);
-  if(quietField&&wasHidden){
-    destinationNoticeEl.dataset.state='entering';
-    window.requestAnimationFrame(()=>{if(!destinationNoticeEl.hidden&&destinationNoticeEl.dataset.state==='entering')destinationNoticeEl.dataset.state='visible';});
-  }else destinationNoticeEl.dataset.state='visible';
+  presentDestinationNotice(destinationNoticeEl,{quietField,requestAnimationFrame:callback=>window.requestAnimationFrame(callback)});
 };
 document.addEventListener('visibilitychange',()=>syncDestinationNotice());
 window.addEventListener('pagehide',()=>{destinationRecovery.update({scope:destinationReadScope(captureRouteRead()),visible:false});});

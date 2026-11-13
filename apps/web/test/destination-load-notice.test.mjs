@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {quietFieldDestinationNotice,renderQuietFieldDestinationNotice} from '../shell/destination-load-notice.js';
+import {mountDestinationNotice,presentDestinationNotice,quietFieldDestinationNotice,renderQuietFieldDestinationNotice,retireDestinationNotice} from '../shell/destination-load-notice.js';
 
 const escapeHtml=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 const icon=name=>`<svg data-icon="${name}" aria-hidden="true"></svg>`;
@@ -25,4 +25,31 @@ test('Quiet field renders escaped centered copy and only applicable recovery act
  assert.doesNotMatch(waiting,/shell-game-alert|alert|toast|banner|loading-pieces/);
  const initial=renderQuietFieldDestinationNotice({message:{heading:'Opening your game',support:null,action:null,home:false},escapeHtml,icon,homeHref:'#/'});
  assert.doesNotMatch(initial,/destination-load-field-actions|<p>/);
+});
+
+const noticeFixture=()=>{
+ const attributes=new Map(),frames=[],body={};
+ const documentObject={activeElement:body},element={hidden:false,inert:false,dataset:{},ownerDocument:documentObject,
+  setAttribute(name,value){attributes.set(name,String(value));},removeAttribute(name){attributes.delete(name);},hasAttribute:name=>attributes.has(name),getAttribute:name=>attributes.get(name)??null,
+  contains(node){return node?.notice===this;}};
+ const control={notice:element,tabIndex:0,closest(selector){return selector==='[inert]'&&element.hasAttribute('inert')?element:null;},blur(){documentObject.activeElement=body;}};
+ return{element,control,body,documentObject,frames,frame:callback=>frames.push(callback),attributes};
+};
+
+test('first mount enters from the hidden inert state before becoming visible on a frame',()=>{
+ const fixture=noticeFixture();mountDestinationNotice(fixture.element);
+ assert.equal(fixture.element.hidden,true);assert.equal(fixture.element.inert,true);assert.equal(fixture.element.getAttribute('aria-hidden'),'true');
+ assert.equal(presentDestinationNotice(fixture.element,{quietField:true,requestAnimationFrame:fixture.frame}),'entering');
+ assert.equal(fixture.element.hidden,false);assert.equal(fixture.element.inert,false);assert.equal(fixture.element.hasAttribute('inert'),false);assert.equal(fixture.element.getAttribute('aria-hidden'),null);assert.equal(fixture.frames.length,1);
+ fixture.frames[0]();assert.equal(fixture.element.dataset.state,'visible');
+});
+
+test('exit is immediately inert and untabbable, blurs stale focus, and safely re-enters',()=>{
+ const fixture=noticeFixture();mountDestinationNotice(fixture.element);presentDestinationNotice(fixture.element,{quietField:true,requestAnimationFrame:fixture.frame});
+ fixture.documentObject.activeElement=fixture.control;
+ assert.equal(retireDestinationNotice(fixture.element,{quietField:true,documentObject:fixture.documentObject}),true);
+ assert.equal(fixture.element.dataset.state,'exiting');assert.equal(fixture.element.inert,true);assert.equal(fixture.element.hasAttribute('inert'),true);assert.equal(fixture.element.getAttribute('aria-hidden'),'true');assert.equal(fixture.control.closest('[inert]'),fixture.element);assert.equal(fixture.documentObject.activeElement,fixture.body);
+ assert.equal(presentDestinationNotice(fixture.element,{quietField:true,requestAnimationFrame:fixture.frame}),'entering');
+ assert.equal(fixture.element.inert,false);assert.equal(fixture.element.hasAttribute('inert'),false);assert.equal(fixture.element.getAttribute('aria-hidden'),null);
+ fixture.frames.shift()();assert.equal(fixture.element.dataset.state,'entering');fixture.frames.shift()();assert.equal(fixture.element.dataset.state,'visible');
 });
