@@ -1,7 +1,7 @@
 {
   "pathname": "/shell/app.js",
-  "sourceSha256": "253649c8a1e3914a776c07f669fec2ec9d17ab02c4235294723d90d10f2be195",
-  "outputSha256": "c908adcba2de455e95124aac96a5b35b5276d2c010db69f627cb62c54406415b",
+  "sourceSha256": "5a61de33c4db57a8d60dfddf248956e5b01e882446aea44dce35e799d81c7cb0",
+  "outputSha256": "a1039c87784448010b579dc805429168935b5f5386c9ebf3f6ca0be363f0190a",
   "operations": [
     {
       "start": 7774,
@@ -100,8 +100,8 @@
       "anchorCount": 1
     },
     {
-      "start": 270213,
-      "end": 270213,
+      "start": 270160,
+      "end": 270160,
       "before": "",
       "after": "    observeInviteFocus(\"action-entry\", actionEl);\n",
       "anchor": "    }\n    const invitationPanel = actionEl.closest('[data-game-panel=\"join\"]');\n    if (invitationPanel instanceof HTMLElement) panelPendingFocus.delete(invitationPanel);\n    pendingInvitationFocus.begin(actionEl, getCopyInviteButtonKey(gameId));\n    await withPendingButton(getCopyInviteButtonKey(gameId),()=>copyGameInvitation(gameId,actionEl.dataset.inviteRole || 'viewer'));\n",
