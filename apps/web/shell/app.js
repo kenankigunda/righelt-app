@@ -120,6 +120,7 @@ import { renderPieceSymbol } from '../piece-symbols.js';
 import { invitationOptions, renderInvitationSurface, createHostInvitation, hostInvitationSettled } from './invitations.js';
 import { createIntroductionPreferences, createOpponentSession } from './opponent-session.js';
 import { renderWordmark, createBrandController, resolveActionAffiliation } from './brand.js';
+import {actionAwaitsPlayer,createDocumentIconOwner} from './document-icon.js';
 import { icon, soundToggle, headerActionContent } from './ui.js';
 import { createGameSound } from './sound.js';
 import { createModal } from './modal.js';
@@ -177,6 +178,7 @@ const loadingContextScope=()=>`${account.snapshot().generation}:${activeStorageG
 mountLoadingEdges(document);
 void fetch("/deploy-meta.json", { cache: "no-store", signal: AbortSignal.timeout(5000) }).then(response => response.json()).then(meta => { globalThis.__righeltObservedDeploymentSha = meta.sha ?? meta.commitSha ?? "unavailable"; }).catch(() => {});
 const appEl = document.getElementById("app");
+const documentIcon=createDocumentIconOwner({documentObject:document});
 const incomingNarrationState=createIncomingNarrationState();
 let pendingIncomingToggleFocus=null;
 let boardContextVisit=0;
@@ -3425,13 +3427,20 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
 const renderContent = ({ animatePanels, includeBoard }) => {
   const hadResultView = Boolean(appEl.querySelector('.game-result'));
   const resultFocus = document.activeElement?.closest('.game-result') ? {action:document.activeElement.getAttribute('data-action'),href:document.activeElement.getAttribute('href')} : null;
-  if(currentRoute.name==='game' && routeHydrated){
-    const game=transport.getGameViewModel(currentRoute.gameId), confirmed=transport.getAuthoritativeGame(currentRoute.gameId);
+  const currentGame=currentRoute.name==='game' && routeHydrated ? transport.getGameViewModel(currentRoute.gameId) : null;
+  if(currentGame){
+    const game=currentGame, confirmed=transport.getAuthoritativeGame(currentRoute.gameId);
     if (activeResultGameId === currentRoute.gameId && confirmed?.board?.state?.outcome && !getGameResult(confirmed, transport.getIdentityId())) activeResultGameId = null;
     if(!game?.confirmedPlayback && resultTransitions.observe(confirmed,{inHistory:game?.inHistoryMode,hidden:document.hidden,storyOpen:storyDialog.isOpen()})){activeResultGameId=currentRoute.gameId;resultPresentation.enter(confirmed.id,getGameResult(confirmed,transport.getIdentityId()));}
     if(storyDialog.gameId()===currentRoute.gameId && getGameResult(confirmed,transport.getIdentityId()))storyDialog.setMatchStatus('Game finished',true);
   }
   document.title = getDocumentTitle();
+  documentIcon.sync(actionAwaitsPlayer({
+    currentGame:currentGame?.id===currentRoute.gameId,
+    canControl:canControlLiveBoard(currentGame),
+    ownsActor:ownsBoardActor(currentGame,transport.getIdentityId()),
+    computerTurn:currentGame?.computerTurn,
+  }));
   syncRouteTransitionForCurrentRoute();
   const routeKey = getRouteRenderKey();
   const baseRouteKey = getBaseRouteRenderKey();
