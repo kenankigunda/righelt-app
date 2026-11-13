@@ -893,6 +893,21 @@ button.secondary:disabled {
   margin: 0;
 }
 
+/* Terminal recovery keeps primary choices together. Details remains a stable,
+   secondary row and can never squeeze Reload or Home out of the action area. */
+.shell-game-alert.is-terminal-recovery {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "copy" "actions" "disclosure" "details";
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+.shell-game-alert.is-terminal-recovery .shell-game-alert-actions {
+  max-width: none;
+  justify-content: flex-start;
+}
+.shell-game-alert.is-terminal-recovery .issue-caret {
+  justify-self: start;
+}
+
 .shell-game-alert:not(:has(.issue-diagnostic)) {
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas: "copy" "actions";
@@ -916,6 +931,10 @@ button.secondary:disabled {
     grid-template-areas: "copy copy" "actions disclosure" "details details";
     grid-template-rows: auto auto minmax(0, 1fr);
   }
+  .shell-game-alert.is-terminal-recovery {
+    grid-template-areas: "copy" "actions" "disclosure" "details";
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+  }
 }
 
 @container game-alert (min-width: 480px) {
@@ -930,6 +949,12 @@ button.secondary:disabled {
     grid-template-rows: auto;
   }
   .shell-game-alert-actions { max-width: 13rem; align-self: center; justify-content: flex-end; }
+  .shell-game-alert.is-terminal-recovery {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "copy" "actions" "disclosure" "details";
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+  }
+  .shell-game-alert.is-terminal-recovery .shell-game-alert-actions { max-width: none; justify-content: flex-start; }
 }
 
 @keyframes shell-game-alert-reveal {

@@ -1,5 +1,6 @@
 import {readGameDestination} from '../shell/destination-route-owner.js';
 import {renderRecoveryActions} from '../shell/game-alert-presentation.js';
+import {renderGameAlertCard} from '../shell/game-alert.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -39,7 +40,7 @@ test('recovery action templates keep semantic navigation, visible labels and dec
  const render=(game,dismissed,escapeHtml,icons,now=15000)=>actualActions(game,dismissed,escapeHtml,icons,needsRecoveryAction(game,now));
  const html=render({id:'game<1',recovering:true,recoveryStartedAt:0},false,value=>String(value).replaceAll('<','&lt;'),icon);
  assert.match(html,/data-action="reconnect-safely" data-game-id="game&lt;1"/);
- assert.match(html,/>Reload game<\/button>/);assert.doesNotMatch(html,/Reload now/);
+ assert.match(html,/>Retry connection<\/button>/);assert.doesNotMatch(html,/Reload game|Reload now/);
  assert.match(html,/<a[^>]+href="#\/">[\s\S]*?Home<\/a>/);
  assert.equal((html.match(/aria-hidden="true"/g)||[]).length,2);
  assert.equal((html.match(/focusable="false"/g)||[]).length,2);
@@ -48,6 +49,20 @@ test('recovery action templates keep semantic navigation, visible labels and dec
   assert.match(markup,new RegExp(`data-action="${action}"`));
   assert.match(markup,new RegExp(`</svg>${label}</button>`));
  }
+});
+
+test('terminal connection failure keeps Retry primary and Reload, Home, and Details in stable hierarchy',()=>{
+ const game={id:'terminal-game',connectionFailed:true,recovering:true,recoveryIssue:'connection_failed'};
+ assert.equal(needsRecoveryAction(game,0),true);
+ assert.equal(recoveryMessage(game,0),'Connection failed. Retry to keep playing or view details.');
+ const actions=renderRecoveryActions({game,dismissed:false,escapeHtml:String,recoveryNeedsAction:true});
+ assert.match(actions,/^<button data-action="reconnect-safely"[^>]*>[\s\S]*Retry connection<\/button>/);
+ assert.match(actions,/data-action="refresh-game">Reload game<\/button>/);
+ assert.match(actions,/<a[^>]+href="#\/">[\s\S]*Home<\/a>$/);
+ const card=renderGameAlertCard({layout:'terminal-recovery',body:recoveryMessage(game,0),action:actions,incidentId:'incident-terminal'});
+ assert.match(card,/shell-game-alert is-terminal-recovery/);
+ assert.ok(card.indexOf('shell-game-alert-actions')<card.indexOf('>Details<'),'Details follows the primary action group');
+ assert.match(source,/if \(action === "refresh-game"\) \{ window\.location\.reload\(\); return; \}/);
 });
 
 // Execute the actual app action expression against the same exported timing

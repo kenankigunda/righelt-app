@@ -93,6 +93,9 @@ test('pageshow and safe reconnect retain the active game under a stale offline h
   await f.store.reconnectSafely(f.gameId);
   assert.ok(f.requests.filter(r => r.url.endsWith('/reconcile')).length > reads,
     'the advertised safe-reconnect action must perform recovery rather than resolve as a no-op');
+  assert.equal(f.store.getGameViewModel(f.gameId).recovering, true,
+    'HTTP may refresh state but cannot grant socket action authority');
+  await f.receive(f.sockets.at(-1));
   assert.equal(f.store.getGameViewModel(f.gameId).recovering, false);
   assert.equal((await f.current()).game.gameplayRevision, 0);
   assert.equal(f.requests.filter(r => /\/(apply|end-turn|shared)$/.test(r.url)).length, 0);
@@ -106,7 +109,10 @@ test('an actual socket failure still reconciles while the offline hint remains f
   await settle();
   assert.deepEqual(f.client.getDesiredGameIds(), [f.gameId]);
   await until(() => f.requests.some(r => r.url.endsWith('/reconcile')));
-  await until(() => !f.store.getGameViewModel(f.gameId).recovering);
+  assert.equal(f.store.getGameViewModel(f.gameId).recovering, true,
+    'successful fallback reads keep gameplay fenced until a current socket is ready');
+  await until(() => f.sockets.length >= 2);
+  await f.receive(f.sockets.at(-1));
   assert.equal(f.store.getGameViewModel(f.gameId).canRecordMove, true);
   assert.equal(f.store.getGameViewModel(f.gameId).pendingCommandCount, 0);
 });
@@ -172,7 +178,8 @@ test('a throwing WebSocket constructor falls back to HTTP and a bounded reconnec
     'a synchronous constructor failure must reach the recovery owner instead of escaping route activation');
   assert.deepEqual(f.client.getDesiredGameIds(), [f.gameId]);
   await until(() => f.requests.some(r => r.url.endsWith('/reconcile')));
-  await until(() => !f.store.getGameViewModel(f.gameId).recovering);
+  assert.equal(f.store.getGameViewModel(f.gameId).recovering, true,
+    'constructor fallback cannot grant authority without the replacement socket');
   await until(() => f.sockets.length === 1);
   await f.receive(f.sockets[0]);
   assert.equal(constructions, 2);
