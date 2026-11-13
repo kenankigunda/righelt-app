@@ -63,7 +63,7 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  await expect(legend.nth(1)).toHaveAccessibleName('Red supply point inspection');
  await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
  const ownProfile=page.getByTestId('participant-player-1').locator('[data-action="guest-profile"]');
- await expect(ownProfile).toHaveText('Guest');await expect(ownProfile).toHaveAccessibleName('Guest, you, Red, Connected');
+ await expect(ownProfile).toHaveText('You');await expect(ownProfile).toHaveAccessibleName('Guest, you, Red, Connected');
  // Resolve and measure the current connected SVG in one page turn. The driver
  // must not carry a replaced marker handle into the style publication check.
  await expect.poll(()=>page.evaluate(()=>{
@@ -384,6 +384,9 @@ test('Friend introduction uses one illustration, cancels without creating, and p
  let creates=0;page.on('request',r=>{if(r.method()==='POST' && new URL(r.url()).pathname==='/api/shell/games')creates++;});
  await page.goto('/');await page.getByTestId('home-create-game').click();
  const intro=page.getByRole('dialog',{name:'Friend',exact:true});await expect(intro).toBeVisible();
+ await expect(intro.getByRole('heading',{name:'A rivalry of your own',exact:true})).toBeVisible();
+ await expect(intro.getByRole('heading',{name:'Friend',exact:true})).toHaveCount(0);
+ await expect(intro.getByText('Send an invitation. Let the rivalry begin.',{exact:true})).toHaveCount(0);
  await expect(intro.locator('img')).toHaveCount(1);await expect(intro.locator('[data-story-step]')).toHaveCount(0);
  await expect.poll(()=>intro.locator('img').evaluate(el=>el.complete && el.naturalWidth>0)).toBe(true);
  await expect.poll(()=>intro.evaluate(el=>el.getAnimations({subtree:true}).filter(a=>a.playState==='running'&&a.effect?.getTiming().iterations!==Infinity).length)).toBe(0);

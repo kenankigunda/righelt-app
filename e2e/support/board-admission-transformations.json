@@ -337,8 +337,8 @@
   },
   "/shell/app.js": {
     "file": "apps/web/shell/app.js",
-    "sourceSha256": "253649c8a1e3914a776c07f669fec2ec9d17ab02c4235294723d90d10f2be195",
-    "outputSha256": "2c04a307ea612f5af3cc790382554143a315d8003ec2ea1a4b9b7c059c9dbfa2",
+    "sourceSha256": "5a61de33c4db57a8d60dfddf248956e5b01e882446aea44dce35e799d81c7cb0",
+    "outputSha256": "6d4bfa88c178786947f8032529fa58acd4abacee53fff78d7adad187667d3f69",
     "operations": [
       {
         "start": 165577,
@@ -357,24 +357,24 @@
         "anchorCount": 1
       },
       {
-        "start": 242385,
-        "end": 242455,
+        "start": 242332,
+        "end": 242402,
         "before": "  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n",
         "after": "  if (boardAdmissionValue(\"shell-on-board\", event.target.closest?.(\"#shell-board\")) && boardAdmissionValue(\"shell-account-denied\", !account.canPlay())) {\n",
         "anchor": "\nappEl.addEventListener(\"pointerdown\", event => {\n  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n    event.preventDefault();event.stopImmediateProp",
         "anchorCount": 1
       },
       {
-        "start": 242650,
-        "end": 242720,
+        "start": 242597,
+        "end": 242667,
         "before": "  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n",
         "after": "  if (boardAdmissionValue(\"shell-on-board\", event.target.closest?.(\"#shell-board\")) && boardAdmissionValue(\"shell-account-denied\", !account.canPlay())) {\n",
         "anchor": "true);\nappEl.addEventListener(\"click\", event => {\n  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n    event.preventDefault();event.stopImmediateProp",
         "anchorCount": 1
       },
       {
-        "start": 288880,
-        "end": 288880,
+        "start": 288827,
+        "end": 288827,
         "before": "",
         "after": "    boardAdmissionProbe(\"shell-release-bounce\", () => ({connected:Boolean(pressedControlEl.isConnected)}), pressedControlEl);\n",
         "anchor": "\n  if (pressedControlEl instanceof HTMLElement) {\n    playControlReleaseBounce(pressedControlEl);\n  ",
