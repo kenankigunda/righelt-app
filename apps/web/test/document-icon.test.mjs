@@ -29,6 +29,12 @@ test("document icon owner swaps fixed same-origin assets once per genuine state 
   assert.deepEqual(owner.snapshot(), { attention: false });
 });
 
+test("the marble base icon does not reuse the legacy cache key", () => {
+  assert.equal(new URL(DOCUMENT_ICON.base, "https://righelt.pages.dev/").origin, "https://righelt.pages.dev");
+  assert.equal(new URL(DOCUMENT_ICON.base, "https://righelt.pages.dev/").pathname, "/favicon-marble.svg");
+  assert.notEqual(DOCUMENT_ICON.base, "./favicon.svg");
+});
+
 test("document icon owner fails closed when the fallback icon is unavailable", () => {
   const fixture = iconFixture({ present: false });
   const owner = createDocumentIconOwner({ documentObject: fixture.documentObject });

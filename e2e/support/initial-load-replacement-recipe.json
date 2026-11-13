@@ -2,8 +2,8 @@
   "version": 1,
   "html": {
     "path": "/",
-    "sourceSha256": "f0ad0114fa32b450fe05df5d166c3c903b70ac2336e03750e79147fbaa1548ea",
-    "outputSha256": "4d7c913cbf1bd5caf927276199d46123a4199773e201785bda1bc77ab82890fe",
+    "sourceSha256": "4eb4d24a1c0ca001d581f37c38eeb14cd236634e6ca8eb7b323b839941b07575",
+    "outputSha256": "3ebdf9902bac962e63fa85f100d8f58e80cfb5b9c1fd0f9ba78cc06161181277",
     "before": "    <main id=\"app\" class=\"app-root\" aria-live=\"polite\" hidden></main>",
     "after": "    <img hidden alt=\"\" loading=\"eager\" decoding=\"sync\" data-initial-load-pageshow-gate src=\"/assets/opponents/friend-portrait.webp?initial-load-page-show-gate=1\" />\n    <main id=\"app\" class=\"app-root\" aria-live=\"polite\" hidden></main>",
     "count": 1
