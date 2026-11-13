@@ -13,6 +13,13 @@ test('narrow Board restores the live snapshot, controller and authority without 
   game.sharedMutationsBlocked=true;
   assert.equal(deriveBoardView(game,{narrow:true,identityId:'human'}).canRecordMove,false);
 });
+test('narrow completed-game Board keeps the selected History turn because there is no live view', () => {
+  const terminal={...snapshot('P1',5),outcome:{status:'p1_win'}};
+  const game={inHistoryMode:true,historyTurnIndex:4,currentSnapshot:snapshot('P2',4),board:{state:terminal},liveCurrentSnapshot:terminal};
+  assert.equal(deriveBoardView(game,{narrow:true,identityId:'human'}),game);
+  assert.equal(game.inHistoryMode,true);
+  assert.equal(game.historyTurnIndex,4);
+});
 test('undo returns only after authoritative acceptance and unchanged viewing intent', () => {
   for(const browse of [false,true]) {
     const intent=createViewingIntent(), token=intent.beginUndo('g',{targetMoveId:'m',revision:1,scope:'account'});
