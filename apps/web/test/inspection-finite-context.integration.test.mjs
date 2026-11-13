@@ -20,7 +20,7 @@ for(const mode of ['supply-only','own-source','mixed-affiliations'])test(`actual
  if(mode==='mixed-affiliations')f.runtime.toggleNetworkInspection('supply',{owner:'P2'});
  assert.equal(isMappedBoardPromptHtml(f.html),true,'inspection guidance must use existing finite Board grammar');assert.notEqual(f.label.dataset.promptUnmapped,'true');
  const detail=renderBoardMessageHtml(f.context?.message??{});
- if(mode==='supply-only')assert.match(detail,/Supply line for commander at.*No connected units/);
+ if(mode==='supply-only')assert.match(detail,/Commander at.*has a supply line but no connected units/);
  if(mode==='own-source')assert.match(detail,/At its supply point.*No connected units/);
  if(mode==='mixed-affiliations')assert.match(detail,/Blue supply lines and Red command lines/);
  assert.deepEqual(f.state,before);assert.deepEqual(f.runtime.getLegalActions(),[]);
