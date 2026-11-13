@@ -69,7 +69,7 @@ function fixture({staleInvite=false}={}) {
   context.navigationHistory=createNavigationHistory({history:context.window.history,getHash:()=>context.window.location.hash,capture:()=>({y:0,generation}),id:()=>String(Math.random())});
   const api=new vm.Script(`
     let inviteLoadState=null,resolvedInvite=${staleInvite?"{gameId:'stale-game'}":'null'},routeSyncRequestId=0,routeHydrated=false;
-    let hostInvite=null,inviteVisit=0,activeResultGameId=null,pendingResultReviewFocus=null,routeTransition=null,pendingRoutePosition=null,homeSectionsHydrated=false,destinationLoadPresentation=null,flyoutRenderOrder=[];
+    let hostInvite=null,inviteVisit=0,activeResultGameId=null,pendingResultReviewFocus=null,completedReviewEntryGeneration=0,routeTransition=null,pendingRoutePosition=null,homeSectionsHydrated=false,destinationLoadPresentation=null,flyoutRenderOrder=[];
     ${source.includes("let homeReadJob = null;") ? extract("let homeReadJob = null;", "const hydrateRoute =") : ""}
     const homeSectionReads=createHomeSectionReads({state:{homeSections:{},get homeReadVisit(){return homeReadVisit;},set homeReadVisit(value){homeReadVisit=value;},get homeReadJob(){return homeReadJob;},get homeSectionsHydrated(){return homeSectionsHydrated;},set homeSectionsHydrated(value){homeSectionsHydrated=value;}},pendingHomeSectionKeys:new Set()});
     const applyHomeVisitPages=(...args)=>homeSectionReads.applyVisitPages(...args);

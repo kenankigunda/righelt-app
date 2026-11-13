@@ -656,6 +656,10 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .home-card-result > strong.player-tone-p1 {color:var(--player-p1);}
 .home-card-result > strong.player-tone-p2 {color:var(--player-p2);}
 .home-card-result > .small { color:var(--text-secondary); }
+.home-card-result-line { display:inline-flex; align-items:baseline; gap:.25em; white-space:nowrap; }
+.home-card-result-line > strong { color:var(--ink); }
+.home-card-result-line > strong.player-tone-p1 {color:var(--player-p1);}
+.home-card-result-line > strong.player-tone-p2 {color:var(--player-p2);}
 /* Completed games keep neutral card faces. Only the winner text is affiliated. */
 
 /* A short completed list can have wide cards. Its miniature still represents

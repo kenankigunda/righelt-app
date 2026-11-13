@@ -1,5 +1,5 @@
-import { SYNC_TIMING } from '../generated/packages/shared-types/src/sync-protocol.js';
-export const HOME_SECTION_SERVER_PAGE_SIZE = 4;
+import { HOME_PAGE_LIMIT, SYNC_TIMING } from '../generated/packages/shared-types/src/sync-protocol.js';
+export const HOME_SECTION_SERVER_PAGE_SIZE = HOME_PAGE_LIMIT;
 export const HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT = 3;
 export const HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE = 4;
 export const createHomeSectionState = (title) => ({

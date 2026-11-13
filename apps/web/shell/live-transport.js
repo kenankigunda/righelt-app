@@ -10,7 +10,7 @@ import { loadIdentity, saveIdentity } from "./persistence.js";
 import { defaultNotationForAction, rebaseProjectedMetadata } from "./optimistic-live.js";
 import { buildStaticGameCardFromGame, normalizeStaticGameCard } from "./static-game-cards.js";
 import { createCommandJournal } from "./command-journal.js";
-import { POSITION_PROJECTION, ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, SYNC_PROTOCOL_VERSION, SYNC_TIMING, SYNC_LIMITS, LIVE_HISTORY, SHARED_OPERATIONS, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
+import { HOME_PAGE_LIMIT, POSITION_PROJECTION, ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, SYNC_PROTOCOL_VERSION, SYNC_TIMING, SYNC_LIMITS, LIVE_HISTORY, SHARED_OPERATIONS, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
 
 import { applyHistoryIntent, historyMoveKey, needsRecoveryAction } from "./recovery-view.js";
 import { activityStateActorSide } from "./activity-affiliation.js";
@@ -198,6 +198,7 @@ export const createLiveTransportStore = ({
   let gameById = new Map();
   const computerDisplays = new Map();
   let homeGameCardById = new Map();
+  const completedReviewPreviewByKey = new Map();
   let activeHomeRead = null;
   let homeListRevision = 0;
   const homeMembershipFields = card => ({gameplayRevision:card?.gameplayRevision,status:card?.confirmedOutcomeStatus,count:card?.moveCount,lastMoveAt:card?.lastMoveAt,
@@ -1612,8 +1613,29 @@ export const createLiveTransportStore = ({
       || body.section !== undefined && body.section !== section || body.games.some(game => typeof game?.id !== "string" || !game.id))) {
       throw Object.assign(new Error("invalid_home_page"), { code: "invalid_home_page" });
     }
-    return { ...body, homeListChanged: startedRevision !== homeListRevision,
-      games: Array.isArray(body.games) ? body.games.map(game => normalizeStaticGameCard(game)) : [] };
+    let normalized=Array.isArray(body.games) ? body.games.map(game => normalizeStaticGameCard(game)) : [];
+    if(section==='completed'){
+      const key=game=>Number.isSafeInteger(game.gameplayRevision)?`${game.id}:${game.gameplayRevision}`:null;
+      const missing=normalized.filter(game=>key(game)&&!completedReviewPreviewByKey.has(key(game))).slice(0,HOME_PAGE_LIMIT)
+        .map(game=>({gameId:game.id,gameplayRevision:game.gameplayRevision}));
+      if(missing.length){
+        try{
+          const previews=await boundedRequest('/api/shell/games/review-previews',{method:'POST',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({identityId,items:missing})},controller,staged);
+          for(const item of Array.isArray(previews.items)?previews.items:[]){
+            const previewKey=Number.isSafeInteger(item?.gameplayRevision)?`${item.gameId}:${item.gameplayRevision}`:null;
+            if(item?.ok===true&&previewKey&&missing.some(requested=>requested.gameId===item.gameId&&requested.gameplayRevision===item.gameplayRevision)){
+              completedReviewPreviewByKey.set(previewKey,item);
+              while(completedReviewPreviewByKey.size>48)completedReviewPreviewByKey.delete(completedReviewPreviewByKey.keys().next().value);
+            }
+          }
+        }catch(error){
+          if(error?.code==='session_changed'||controller?.signal?.aborted||!active)throw Object.assign(new Error('session_changed'),{code:'session_changed'});
+        }
+      }
+      assertActive();
+      normalized=normalized.map(game=>normalizeStaticGameCard({...game,reviewPreview:completedReviewPreviewByKey.get(key(game))??null}));
+    }
+    return { ...body, homeListChanged: startedRevision !== homeListRevision, games:normalized };
   };
   const loadGamesPage = async (options = {}) => {
     const body = await readGamesPage(options);
@@ -2459,6 +2481,7 @@ export const createLiveTransportStore = ({
       globalThis.window?.removeEventListener?.("pagehide", onRulesPageHide);
       globalThis.window?.removeEventListener?.("pageshow", onRulesPageShow);
       historyLoads.clear();historyCache.clear();
+      completedReviewPreviewByKey.clear();
       for(const waiter of sharedWaiters.values())waiter.reject(Object.assign(new Error("session_changed"),{code:"session_changed"}));
       sharedWaiters.clear();
       listeners.clear();

@@ -1,8 +1,9 @@
 import { applyHistoryIntent } from './recovery-view.js';
+import { isCompletedGame } from './game-lifecycle.js';
 
 // Inspection is personal. Narrow History must never change live Board authority.
 export function deriveBoardView(game, { narrow = false, identityId = '' } = {}) {
-  if (!game || !narrow || !game.inHistoryMode) return game;
+  if (!game || !narrow || !game.inHistoryMode || isCompletedGame(game)) return game;
   const live = structuredClone(game);
   live.board.state = structuredClone(game.liveCurrentSnapshot ?? game.board.state);
   applyHistoryIntent(live, { moveId: null }, identityId);

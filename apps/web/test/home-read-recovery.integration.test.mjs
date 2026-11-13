@@ -116,8 +116,9 @@ async function fixture(t,{journalAdapter,seed=true,authEnabled=true}={}) {
   const game=snapshot();
   const store=createLiveTransportStore({storage:memory(),auth,commandJournal:durable,shouldDeferCommandSend:()=>true,
     fetcher:async(url,init={})=>{
-      if(init.method==='POST'){writes.push({url,body:JSON.parse(init.body)});return Response.json({ok:true,protocolVersion:2,eventSeq:1,game});}
       const parsed=new URL(url,'http://fixture');
+      if(init.method==='POST'&&parsed.pathname==='/api/shell/games/review-previews')return Response.json({ok:true,items:[]});
+      if(init.method==='POST'){writes.push({url,body:JSON.parse(init.body)});return Response.json({ok:true,protocolVersion:2,eventSeq:1,game});}
       if(parsed.pathname==='/api/shell/games'){
         const request={section:parsed.searchParams.get('section'),page:Number(parsed.searchParams.get('page')),debug:parsed.searchParams.get('debug'),signal:init.signal};
         calls.push(request);return responder(request);

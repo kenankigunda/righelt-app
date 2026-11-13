@@ -46,7 +46,7 @@ function harness({ resultMounted = true, activeResult = null } = {}) {
   const context = {undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,
     resultPresentation:createResultPresentation(),
     HTMLElement: Element, appEl, currentRoute: { name: "game", gameId: "g", panel: "board" },
-    activeResultGameId: activeResult,
+    activeResultGameId: activeResult, completedReviewEntryGeneration: 0,
     lastRenderedRouteKey: "g|board|debug:false", lastRenderedBaseRouteKey: "g", lastRenderedTransitionPhaseKey: "idle",
     getGamePanel: () => context.currentRoute.panel,
     getMountedGameShellRoot: () => ({querySelector:()=>({getAttribute:()=>mountedPanel})}),
@@ -165,6 +165,8 @@ test("retained historical turns keep an exit even after undo removes the live tu
     assert.match(context.history(game), /data-testid="history-return-live"/);
     assert.doesNotMatch(context.history({...game,inHistoryMode:false}), /data-testid="history-return-live"/);
   }
+  const completed={id:'retained',currentTurn:{index:2,playerSeat:'Player 1'},turns:[],moves:[],inHistoryMode:true,historyTurnIndex:1,board:{state:{outcome:{status:'draw'}}}};
+  assert.doesNotMatch(context.history(completed),/data-testid="history-return-live"/);
 });
 
 test('actual result renderer affiliates victory with the authoritative winning side',()=>{

@@ -29,6 +29,7 @@ import type {
   StateSyncEvent,
 } from "../../shared-types/src/events";
 import { listLegalActions as enumerateLegalActions } from "../../game-engine/src/legal";
+import {isTerminalOutcome} from '../../shared-types/src/engine';
 import {
   addNotification,
   assignIdentityToScenarioSeat,
@@ -66,6 +67,7 @@ import {
   type JoinRequest,
   type LaunchParticipantCopyMode,
   type LiveGame,
+  type MoveEntry,
   withViewModel,
 } from "./shell-live-core";
 import { loadGameProjection, persistGameState, resolveInvite, type D1Statement, type LiveGameEnv } from "./shell-live-db";
@@ -73,6 +75,38 @@ import { loadGameProjection, persistGameState, resolveInvite, type D1Statement, 
 const listLegalActions: typeof enumerateLegalActions = (...args) => boundedEngineOperation(() => enumerateLegalActions(...args));
 
 const HEARTBEAT_TIMEOUT_MS = 95_000;
+
+const samePosition=(left:{row:number;col:number}|undefined,right:{row:number;col:number}|undefined)=>Boolean(left&&right&&left.row===right.row&&left.col===right.col);
+const recordedStartPiece=(move:MoveEntry)=>move.selectionSnapshot.pieces.find(piece=>piece.id===move.action.actorId)
+  ??move.selectionSnapshot.pieces.find(piece=>samePosition(piece.position,move.action.from));
+const presentationAction=(action:MoveEntry['action'])=>({type:action.type,...(action.actorId?{actorId:action.actorId}:{}),...(action.from?{from:clone(action.from)}:{}),...(action.to?{to:clone(action.to)}:{}),...(action.targetId?{targetId:action.targetId}:{})});
+const completedReviewPreview=(game:LiveGame)=>{
+  if(!isTerminalOutcome(game.board.state.outcome.status))return null;
+  const active=game.moves.filter(move=>move.undone!==true),last=active.at(-1);
+  if(!last)return null;
+  const moves=active.filter(move=>move.turnIndex===last.turnIndex).sort((a,b)=>a.turnMoveIndex-b.turnMoveIndex);
+  const endpointByPosition=new Map<string,{row:number;col:number;source:boolean;target:boolean}>(),routes=new Set<string>();
+  const recordedActions:unknown[]=[],destroyedPieces:unknown[]=[];
+  for(const move of moves){
+    for(const [role,position] of [['source',move.action.from],['target',move.action.to]] as const){
+      if(!position||!Number.isInteger(position.row)||!Number.isInteger(position.col))continue;
+      const key=`${position.row},${position.col}`,cell=endpointByPosition.get(key)??{row:position.row,col:position.col,source:false,target:false};
+      cell[role]=true;endpointByPosition.set(key,cell);
+    }
+    const start=recordedStartPiece(move);
+    if(!['end_turn','pass'].includes(move.action.type)){
+      const route=JSON.stringify([start?.owner,move.action.from?.row,move.action.from?.col,move.action.to?.row,move.action.to?.col]);
+      if(!['push','follow'].includes(move.action.type)||!routes.has(route)){
+        routes.add(route);recordedActions.push({recordedAction:presentationAction(move.action),recordedActionStartPiece:start?clone(start):null});
+      }
+    }
+    for(const record of move.destroyedPieces??[]){
+      const piece=move.selectionSnapshot.pieces.find(candidate=>samePosition(candidate.position,record.position));
+      destroyedPieces.push({row:record.position.row,col:record.position.col,ownerSeat:record.ownerSeat,kind:piece?.kind??(record.reason==='commander_unsupplied'?'commander':'unit'),supplied:piece?.supplied??record.supplied,commanded:piece?.commanded??record.commanded,piece:piece?clone(piece):null});
+    }
+  }
+  return {gameId:game.id,gameplayRevision:game.gameplayRevision,turnIndex:last.turnIndex,outcomeStatus:game.board.state.outcome.status,actorSide:moves[0]?.actorSide??null,preview:{snapshot:clone(game.board.state),selection:null,overlay:{mode:'recorded-turn',presentationContext:'history',endpointRoles:[...endpointByPosition.values()],recordedActions,destroyedPieces},legalActions:[],selectedPieceId:null,selectedPieceMoves:[],selectedPieceMovePreviews:[],currentActionType:'pass',selectedPieceOverlayPhase:'actionPreviews'}};
+};
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -480,12 +514,18 @@ export class GameRoomDO {
     }
     const game = loaded;
     if (!authActive(this.env) && game.ownershipMode === "account_v1") throw new AuthProblem("temporarily_unavailable", 503);
-    if (authActive(this.env) && game.ownershipMode !== "account_v1" && !["/prepare-branch", "/legal", "/piece-moves", "/piece-actions", '/decision-history', '/decision-snapshot', '/decision-attempts', '/decision-attempt', '/decision-notes'].includes(path)) throw new AuthProblem("legacy_read_only", 403);
+    if (authActive(this.env) && game.ownershipMode !== "account_v1" && !["/prepare-branch", "/legal", "/piece-moves", "/piece-actions", '/decision-history', '/decision-snapshot', '/decision-attempts', '/decision-attempt', '/decision-notes', '/review-preview'].includes(path)) throw new AuthProblem("legacy_read_only", 403);
     if (["/moves", "/apply", "/end-turn", "/shared", "/reconcile"].includes(path)) {
       return this.handleSyncCommand(path, body, game);
     }
     if (!["/history", "/live", "/presence", "/legal", "/piece-actions", "/piece-moves"].includes(path) && body.protocolVersion !== 2) {
       return json({ ok: false, error: "upgrade_required", protocolVersion: 2 }, 426);
+    }
+
+    if(request.method==='POST'&&path==='/review-preview'){
+      if(body.gameplayRevision!==game.gameplayRevision)return json({ok:false,error:'history_changed',gameplayRevision:game.gameplayRevision},409);
+      const preview=completedReviewPreview(game);
+      return preview?json({ok:true,...preview}):json({ok:false,error:'completed_review_unavailable'},409);
     }
 
     if (request.method === "POST" && path === "/prepare-branch") {

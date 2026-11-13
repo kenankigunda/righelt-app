@@ -4,6 +4,7 @@ import {COMPUTER_PROFILES} from '../generated/packages/shared-types/src/computer
 import {historyActorLabel,recordedActorIdentity} from './perspective-labels.js';
 import {historyTurnSide} from './history-preview.js';
 import {describeRecordedMove,describeRecordedTurn,recordedMoveNumber,recordedActorSide,recordedNarrationCoordinates,recordedMoveWithClosure} from './recorded-narration.js';
+import {completedTurnTitle,isCompletedWinningTurn} from './completed-review.js';
 
 export const HISTORY_HIT_TARGET_CONTRACT='move-button-v1';
 
@@ -15,7 +16,8 @@ export function selectedHistoryPresentation(game,options={}){
  if(game.historyTurnIndex!=null){
   const moves=game.historyTurnMoves??[],turn=game.turns?.find(turn=>turn.index===game.historyTurnIndex),side=historyTurnSide(turn,moves);
   const actor=moves.find(move=>recordedActorSide(move)===side),name=actorName(game,actor,side,options);
-  return {caption:{text:`Turn ${game.historyTurnIndex+1}`,side},message:{text:describeRecordedTurn(moves,name,{owned:ownedActor(game,actor,options)})??'Historical turn details unavailable',actorName:name,coordinates:recordedNarrationCoordinates(moves)}};
+  const completedTitle=isCompletedWinningTurn(game)?completedTurnTitle(game,options.identityId,game.historyTurnIndex):null;
+  return {caption:{text:completedTitle??`Turn ${game.historyTurnIndex+1}`,side},message:{text:describeRecordedTurn(moves,name,{owned:ownedActor(game,actor,options)})??'Historical turn details unavailable',actorName:name,coordinates:recordedNarrationCoordinates(moves)}};
  }
  const move=selectedHistoricalRecord(game);
  const number=recordedMoveNumber(move),side=recordedActorSide(move),name=actorName(game,move,side,options);

@@ -83,7 +83,7 @@ const renderTurnHistory = (game) => {
   const emptyRow=turn=>renderTurn(turn,[],`history-turn:${game.id}:${turn.index}`);
   const leadingEmpty=emptyTurns.filter(turn=>turn.index===game.currentTurn?.index).map(emptyRow).join('');
   const trailingEmpty=emptyTurns.filter(turn=>turn.index!==game.currentTurn?.index).reverse().map(emptyRow).join('');
-  const live = game.inHistoryMode ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" data-testid="history-return-live">${icon('board')}Return to live view</button></li>` : '';
+  const live = game.inHistoryMode && !isCompletedGame(game) ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" data-testid="history-return-live">${icon('board')}Return to live view</button></li>` : '';
   const state = game.currentSnapshot ?? game.board?.state;
   const current = !game.inHistoryMode && game.currentTurn;
   const waiting = current && (state?.continuation || !current.moveIndexes?.length) ? `<li class="history-item history-item-waiting ${playerToneClassForSeat(game.controlSeat ?? current.playerSeat)} is-live-selected" aria-disabled="true"><span class="history-move-line">${escapeHtml(liveHistoryLabel(game,state,{identityId:transport.getIdentityId()}))}</span></li>` : '';

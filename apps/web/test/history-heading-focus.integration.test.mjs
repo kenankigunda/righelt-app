@@ -16,7 +16,7 @@ function fixture(){
  let context,current=null,count=0,replace=true,during=null;
  const element=(isHeading=false)=>({isConnected:true,focusCalls:[],matches:selector=>isHeading&&selector==='[data-game-panel="history"] h2',contains(target){return target===this;},closest(){return isHeading&&context.currentRoute.panel!=='history'?{}:null;},focus(options){this.focusCalls.push(options);doc.activeElement=this;doc.emit('focusin',{target:this});}});
  const jobs=new Map();let sequence=0;
- context={destinationRestoreFocus:false,syncDestinationNotice(){},document:doc,appEl:{querySelector:()=>current},currentRoute:{name:'game',gameId:'g',panel:'board'},generation:1,visit:1,pendingResultReviewFocus:null,pendingIncomingToggleFocus:null,activeResultGameId:'g',
+ context={destinationRestoreFocus:false,syncDestinationNotice(){},document:doc,appEl:{querySelector:()=>current},currentRoute:{name:'game',gameId:'g',panel:'board'},generation:1,visit:1,completedReviewEntryGeneration:0,pendingResultReviewFocus:null,pendingIncomingToggleFocus:null,activeResultGameId:'g',
   recoveryPresentationOptions:()=>({}),transport:{getGameViewModel:()=>null},
   getGamePanel:()=>context.currentRoute.panel,getCurrentViewedGameId:()=>context.currentRoute.gameId,preserveBoardFocus,
   utilityMemory:{capture(){},restore(){}},inlineProfiles:{sync(){}},syncMountedGameShellPanelUi(){},syncRenderedMarkupSnapshot(){},joinFeedback:{restoreFocus(){}},resumeBoardContextReplay(){},

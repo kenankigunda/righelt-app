@@ -2903,7 +2903,7 @@ for (const expires of [false, true]) test(`real resume joins pending reconciliat
 test('a delayed Home list cannot overwrite a newer confirmed board or Undo reopening', async t => {
   const storage = createMemoryStorage(); storage.setItem(IDENTITY_KEY, 'id-a');
   let reply;
-  const store = createLiveTransportStore({storage, fetcher:async () => new Promise(resolve => {reply=resolve;}), random:()=>0.1});
+  const store = createLiveTransportStore({storage, fetcher:async url => String(url).includes('/review-previews')?Response.json({ok:true,items:[]}):new Promise(resolve => {reply=resolve;}), random:()=>0.1});
   t.after(()=>store.retire());
   const game=buildLiveGame(); game.gameplayRevision=4;
   game.board.state.outcome={status:'p1_win'}; game.liveCurrentSnapshot=clone(game.board.state);
@@ -2930,7 +2930,7 @@ test('a delayed Home list cannot overwrite a newer confirmed board or Undo reope
 
 test('a newly learned off-page completion invalidates older ongoing totals even when the old visible page omits it',async t=>{
  const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');const replies={};
- const store=createLiveTransportStore({storage,fetcher:async url=>new Promise(resolve=>{replies[new URL(String(url),'https://example.test').searchParams.get('section')]=resolve;})});
+ const store=createLiveTransportStore({storage,fetcher:async url=>String(url).includes('/review-previews')?Response.json({ok:true,items:[]}):new Promise(resolve=>{replies[new URL(String(url),'https://example.test').searchParams.get('section')]=resolve;})});
  t.after(()=>store.retire());
  const my=store.loadGamesPage({section:'my'}),completed=store.loadGamesPage({section:'completed'});
  await new Promise(resolve=>setImmediate(resolve));
@@ -2944,7 +2944,7 @@ test('a newly learned off-page completion invalidates older ongoing totals even 
 test('reversed concurrent Home section replies cannot reuse stale ongoing membership after confirmed completion',async t=>{
   const storage=createMemoryStorage(); storage.setItem(IDENTITY_KEY,'id-a');
   const replies={};
-  const store=createLiveTransportStore({storage,fetcher:async url=>new Promise(resolve=>{replies[new URL(String(url),'https://example.test').searchParams.get('section')]=resolve;}),random:()=>0.1});
+  const store=createLiveTransportStore({storage,fetcher:async url=>String(url).includes('/review-previews')?Response.json({ok:true,items:[]}):new Promise(resolve=>{replies[new URL(String(url),'https://example.test').searchParams.get('section')]=resolve;}),random:()=>0.1});
   t.after(()=>store.retire());
   const my=store.loadGamesPage({section:'my'}), completed=store.loadGamesPage({section:'completed'});
   await new Promise(resolve=>setImmediate(resolve));
@@ -2956,6 +2956,35 @@ test('reversed concurrent Home section replies cannot reuse stale ongoing member
   assert.equal(oldPage.homeListChanged,true);
   assert.equal(store.getHomeGameCard('overlap').confirmedOutcomeStatus,'p1_win');
   assert.equal(oldPage.games[0].eventSeq,10);
+});
+
+test('completed Home previews are fetched once per game revision and stale cached revisions are replaced',async t=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');let revision=3,eventSeq=8,previewReads=0;
+ const snapshot={sideToMove:'P2',turnIndex:revision,pieces:[],outcome:{status:'p1_win'}};
+ const fetcher=async(url,init={})=>{
+  if(String(url).includes('/review-previews')){
+   previewReads++;const [{gameId,gameplayRevision}]=JSON.parse(init.body).items;
+   return Response.json({ok:true,items:[{ok:true,gameId,gameplayRevision,turnIndex:gameplayRevision-1,outcomeStatus:'p1_win',preview:{snapshot:{...snapshot,turnIndex:gameplayRevision},selection:null,overlay:{mode:'recorded-turn',presentationContext:'history',endpointRoles:[],recordedActions:[],destroyedPieces:[]},legalActions:[],selectedPieceId:null,selectedPieceMoves:[],selectedPieceMovePreviews:[],currentActionType:'pass',selectedPieceOverlayPhase:'actionPreviews'}}]});
+  }
+  return Response.json({ok:true,section:'completed',page:0,pageSize:6,totalGames:1,totalPages:1,games:[{id:'completed-cache',eventSeq,gameplayRevision:revision,confirmedOutcomeStatus:'p1_win',moveCount:4,previewSnapshot:{...snapshot,turnIndex:revision}}]});
+ };
+ const store=createLiveTransportStore({storage,fetcher});t.after(()=>store.retire());
+ await store.loadGamesPage({section:'completed'});await store.loadGamesPage({section:'completed'});
+ assert.equal(previewReads,1);assert.equal(store.getHomeGameCard('completed-cache').reviewPreview.gameplayRevision,3);
+ revision=4;eventSeq=9;await store.loadGamesPage({section:'completed'});
+ assert.equal(previewReads,2);assert.equal(store.getHomeGameCard('completed-cache').reviewPreview.gameplayRevision,4);
+});
+
+test('completed Home preview requests never exceed one visible four-card page',async t=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');let requested=[];
+ const games=Array.from({length:5},(_,index)=>({id:`completed-${index}`,eventSeq:1,gameplayRevision:1,confirmedOutcomeStatus:'draw',moveCount:1,previewSnapshot:{sideToMove:'P1',turnIndex:0,pieces:[],outcome:{status:'draw'}}}));
+ const fetcher=async(url,init={})=>{
+  if(String(url).includes('/review-previews')){requested=JSON.parse(init.body).items;return Response.json({ok:true,items:[]});}
+  return Response.json({ok:true,section:'completed',page:0,pageSize:5,totalGames:5,totalPages:1,games});
+ };
+ const store=createLiveTransportStore({storage,fetcher});t.after(()=>store.retire());
+ await store.loadGamesPage({section:'completed',pageSize:5});
+ assert.deepEqual(requested.map(item=>item.gameId),games.slice(0,4).map(game=>game.id));
 });
 
 
