@@ -705,12 +705,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       const connectionPrompt=()=>supply&&command?'Supply and command lines':supply?'Supply lines':command?'Command lines':'No connection';
       if(personalPiece?.kind==='commander'&&!explicit){
         const point=formatCoordinate(personalPiece.position),atSupply=sameCoordinate(personalPiece.position,supplyPointForOwner(personalPiece.owner));
-        const text=supply&&command?`Supply and command lines for piece at ${point}`
+        const opponent=personalPiece.owner!==state.sideToMove;
+        const combinedPrompt=renderCoordinate=>opponent?opponentInspectionPrompt(personalPiece.position,renderCoordinate):`Supply and command lines for piece at ${renderCoordinate(personalPiece.position)}`;
+        const text=supply&&command?combinedPrompt(formatCoordinate)
           :supply?`Supply line for commander at ${point}. No connected units.`
           :command?`Command lines for commander at ${point}${atSupply?'. Already at its supply point.':''}`
           :atSupply?'At its supply point. No connected units.':`Commander at ${point}. No connections.`;
         addStatusContext({text,coordinates},{kind:'inspection'});
-        if(supply&&command)setBoardPreviewPromptHtml(`Supply and command lines for piece at ${renderBoardPreviewCoordinate(personalPiece.position)}`);
+        if(supply&&command)setBoardPreviewPromptHtml(combinedPrompt(renderBoardPreviewCoordinate));
         else setBoardPreviewPrompt(connectionPrompt());return;
       }
       if(inspection.kind==='networks'){
