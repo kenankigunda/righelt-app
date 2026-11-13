@@ -32,6 +32,7 @@ import {isLiveBoardVisible} from './live-board-visibility.js';
 import {mountDecisionNoteEditor} from './decision-note-editor.js';
 import {renderResultPanel} from './result-panel.js';
 import {createDestinationRecovery,destinationRecoveryMessage} from './destination-recovery.js';
+import {quietFieldDestinationNotice,renderQuietFieldDestinationNotice} from './destination-load-notice.js';
 import {createNavigationHistory} from './navigation-history.js';
 import {createNotificationPaper} from './notification-paper.js';
 import {selectedHistoryPresentation,recordedHistoryView,historyBoardMessage} from './history-narration.js';
@@ -3776,7 +3777,7 @@ const canHydrateRouteFromLocalState = (route = currentRoute) => {
   return Boolean(transport.getGameViewModel(route.gameId));
 };
 
-let destinationNoticeEl=null,destinationLoadPresentation=null,destinationRestoreFocus=false;
+let destinationNoticeEl=null,destinationNoticeRetireTimer=null,destinationLoadPresentation=null,destinationRestoreFocus=false;
 const destinationRecovery=createDestinationRecovery({
   onChange:()=>syncDestinationNotice(),
   onRetry:()=>{if(!document.hidden && destinationRecovery.currentScope()===destinationReadScope(captureRouteRead()) && ['home','game'].includes(currentRoute.name))startRouteSync({renderStart:false});},
@@ -3786,9 +3787,22 @@ const syncDestinationNotice = () => {
   routeHeldPulse?.update();
   const message=destinationRecoveryMessage(destinationLoadPresentation,currentRoute.name);
   if(!message){
-    if(destinationNoticeEl){
+    if(destinationNoticeEl&&!destinationNoticeEl.hidden){
       const ownedFocus=destinationNoticeEl.contains(document.activeElement);
-      destinationNoticeEl.hidden=true;destinationNoticeEl.innerHTML='';
+      if(destinationNoticeRetireTimer)window.clearTimeout(destinationNoticeRetireTimer);
+      const quietField=destinationNoticeEl.dataset.presentation==='quiet-field';
+      destinationNoticeEl.dataset.state=quietField?'exiting':'hidden';
+      destinationNoticeEl.setAttribute('aria-hidden','true');
+      if(quietField){
+        const retiring=destinationNoticeEl;
+        destinationNoticeRetireTimer=window.setTimeout(()=>{
+          destinationNoticeRetireTimer=null;
+          if(retiring.dataset.state!=='exiting')return;
+          retiring.hidden=true;retiring.innerHTML='';retiring.dataset.state='hidden';
+        },140);
+      }else{
+        destinationNoticeEl.hidden=true;destinationNoticeEl.innerHTML='';
+      }
       if(ownedFocus && routeHydrated)destinationRestoreFocus=true;
     }
     return;
@@ -3805,11 +3819,22 @@ const syncDestinationNotice = () => {
       if(action==='signin'){await closeUtilityFlyouts();accountDialog.open('login',null,event.target);}
     });
   }
+  if(destinationNoticeRetireTimer){window.clearTimeout(destinationNoticeRetireTimer);destinationNoticeRetireTimer=null;}
+  const wasHidden=destinationNoticeEl.hidden;
   destinationNoticeEl.hidden=false;
+  destinationNoticeEl.removeAttribute('aria-hidden');
+  const quietField=quietFieldDestinationNotice({transition:routeTransition,message});
+  destinationNoticeEl.dataset.presentation=quietField?'quiet-field':'card';
   const action=message.action?`<button class="secondary mini-button" data-destination-action="${message.action}">${icon(message.action==='signin'?'account':'rematch')}${message.action==='signin'?'Sign in':message.action==='reload'?'Reload':'Retry'}</button>`:'';
   const home=message.home?`<a class="secondary mini-button button-link" data-destination-action="home" href="${escapeHtml(buildHomeHash())}">${icon('home')}Home</a>`:'';
-  const html=renderGameAlertCard({tone:'neutral',activity:'static',body:escapeHtml(message.message),action:action+home});
+  const html=quietField
+    ?renderQuietFieldDestinationNotice({message,escapeHtml,icon,homeHref:buildHomeHash()})
+    :renderGameAlertCard({tone:'neutral',activity:'static',body:escapeHtml(message.message),action:action+home});
   if(destinationNoticeEl.innerHTML!==html)patchToolHtml(destinationNoticeEl,html);
+  if(quietField&&wasHidden){
+    destinationNoticeEl.dataset.state='entering';
+    window.requestAnimationFrame(()=>{if(!destinationNoticeEl.hidden&&destinationNoticeEl.dataset.state==='entering')destinationNoticeEl.dataset.state='visible';});
+  }else destinationNoticeEl.dataset.state='visible';
 };
 document.addEventListener('visibilitychange',()=>syncDestinationNotice());
 window.addEventListener('pagehide',()=>{destinationRecovery.update({scope:destinationReadScope(captureRouteRead()),visible:false});});
