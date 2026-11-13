@@ -1768,18 +1768,24 @@ textarea:focus-visible {
     inset 0 1px 0 rgba(255, 255, 255, 0.92);
 }
 
-/* Game identity is a flush mineral inlay, not a player emblem or a button. */
+/* The localized start date occupies one fixed top-aligned slot. Names wrap beside it. */
 .game-identity-title {display:inline-flex;align-items:flex-start;gap:.55rem;min-width:0;max-width:100%;vertical-align:middle;}
-.game-inlay {display:block;flex:none;width:2rem;height:2rem;overflow:visible;border:0;border-radius:0;box-shadow:none;filter:none;}
+.game-date-inlay {display:block;flex:none;align-self:flex-start;width:3rem;height:3.5rem;overflow:visible;border:0;border-radius:0;box-shadow:none;filter:none;}
+.game-date-orbit-highlight,.game-date-orbit {fill:none;stroke-linecap:round;stroke-linejoin:round;}
+.game-date-orbit-highlight {stroke:#fff;stroke-width:2.6;opacity:.78;}
+.game-date-orbit {stroke-width:.85;}
+.game-date-month,.game-date-day {fill:var(--ink);font-family:Manrope,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;font-weight:650;}
+.game-date-month {font-size:11px;}.game-date-day {font-size:19px;}
+.game-date-inlay.is-loading {opacity:.32;}
 .game-title-matchup {display:flex;align-items:baseline;flex-wrap:wrap;gap:.3rem;min-width:0;max-width:100%;overflow-wrap:anywhere;}
 .game-title-player {display:inline-flex;align-items:baseline;gap:.3rem;min-width:0;max-width:100%;font-weight:700;}
+.game-title-player .player-emblem {width:1.0625rem;height:1.0625rem;align-self:flex-start;margin-top:.16rem;}
 .game-title-player bdi {min-width:0;overflow-wrap:anywhere;}
 .game-title-player .connection-status-icon {flex:none;align-self:center;}
 .game-title-versus {font-weight:500;color:var(--muted);}
 .mini-board-card-header > div {min-width:0;}
-.mini-board-card-link .game-inlay {width:1.75rem;height:1.75rem;}
 .game-title-matchup .player-tone-both {color:#7b53ab;}
-@media (forced-colors:active) {.game-inlay {forced-color-adjust:none;}.game-title-matchup .player-tone-both {color:CanvasText;}}
+@media (forced-colors:active) {.game-date-inlay,.player-emblem {forced-color-adjust:none;}.game-date-orbit-highlight {stroke:Canvas;}.game-date-month,.game-date-day {fill:CanvasText;}.game-title-matchup .player-tone-both {color:CanvasText;}}
 
 .scenario-save-panel,
 .scenario-selected-summary {

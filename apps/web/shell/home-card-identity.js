@@ -7,13 +7,14 @@ const escape = value => String(value ?? '').replace(/[&<>"']/g, character =>
 const seatForRole = role => role === 'Player 1' ? 'p1' : role === 'Player 2' ? 'p2' : null;
 
 const participant = (person, side, game) => {
-  const computer = COMPUTER_PROFILES[computerProfileForCard(game, side)];
+  const computerProfile=computerProfileForCard(game,side),computer = COMPUTER_PROFILES[computerProfile];
   return {
     side,
     name: person || computer ? playerDisplayName(game,side) : 'Open seat',
     identityId: person?.identityId,
     username: person?.profile?.username,
     computer: Boolean(computer),
+    emblemKey: computer ? `computer:${computerProfile}` : person?.profile?.username ? `account:${person.profile.username}` : person?.identityId ? `guest:${person.identityId}` : null,
     presence: computer || person?.connected === true ? 'connected' : person ? 'disconnected' : 'open',
   };
 };

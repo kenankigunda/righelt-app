@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {gameInlayModel,renderGameInlay} from '../shell/game-inlay.js';
 import {gameTitleModel,renderGameTitle} from '../shell/game-title.js';
 import {createHomeCardRendering} from '../shell/home-card-rendering.js';
+import {renderPlayerEmblem} from '../shell/player-emblem.js';
 
 const person=(identityId,displayName,extra={})=>({identityId,profile:{displayName},connected:true,...extra});
 const game=(overrides={})=>({id:'game-known',myRole:'Player 1',player1:person('red','Red name'),player2:person('blue','Blue name'),...overrides});
@@ -33,16 +34,27 @@ test('self-play, watched self-play, anonymous seats and empty seats have explici
 });
 
 test('rendered identity escapes names, isolates direction, and limits presence to Home',()=>{
- const unsafe=game({player2:person('blue','<img dir=rtl>')});
+ const unsafe=game({createdAt:'2026-11-13T23:30:00Z',player2:person('blue','<img dir=rtl>')});
  const quiet=renderGameTitle(unsafe,{identityId:'red'});
  assert.match(quiet,/<bdi dir="auto">&lt;img dir=rtl&gt;<\/bdi>/);
  assert.doesNotMatch(quiet,/connection-status-icon/);
  assert.doesNotMatch(quiet,/game-known/);
  assert.match(quiet,/aria-hidden="true" focusable="false"/);
+ assert.match(quiet,/class="game-date-inlay"/);
+ assert.equal((quiet.match(/class="player-emblem"/g)||[]).length,2);
  const home=renderGameTitle(unsafe,{identityId:'red',presence:true});
  assert.equal((home.match(/connection-status-icon/g)||[]).length,1);
  const viewer=renderGameTitle({...unsafe,myRole:'Viewer'},{identityId:'viewer',presence:true});
  assert.equal((viewer.match(/connection-status-icon/g)||[]).length,2);
+});
+
+test('player marks follow stable identities rather than seat color or display name',()=>{
+ const first=renderGameTitle(game({createdAt:'2026-11-13T23:30:00Z',player1:{...person('stable','First name'),profile:{username:'same-user',displayName:'First name'}}}),{identityId:'stable'});
+ const changed=renderGameTitle(game({createdAt:'2026-11-13T23:30:00Z',myRole:'Player 2',player1:{...person('stable','Renamed'),profile:{username:'same-user',displayName:'Renamed'}}}),{identityId:'blue'});
+ const stableMark=renderPlayerEmblem('account:same-user');
+ assert.ok(first.includes(stableMark));
+ assert.ok(changed.includes(stableMark));
+ assert.doesNotMatch(stableMark,/player-p1|player-p2|currentColor/);
 });
 
 test('Tessera v1 has stable known answers and bounded independent SVG instances',()=>{

@@ -1,6 +1,7 @@
 import {homeCardMatchup} from './home-card-identity.js';
 import {sideColorName,viewerAliasQualifiers} from './perspective-labels.js';
-import {renderGameInlay} from './game-inlay.js';
+import {renderGameDateInlay} from './game-date-inlay.js';
+import {renderPlayerEmblem} from './player-emblem.js';
 
 const escape=value=>String(value??'').replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
 const genericLabels=new Set(['You','Guest','Guest 1','Guest 2','Open seat']);
@@ -25,15 +26,15 @@ export function gameTitleModel(game,{identityId}={}){
 }
 
 const statusMarkup=seat=>{const status=seat.presence==='open'?'open to join':seat.presence,label=seat.computer?'Computer player':`${seat.label} ${status}`;return `<span class="connection-status-icon is-${seat.presence}" role="img" aria-label="${escape(label)}" title="${escape(label)}"></span>`;};
-const participantMarkup=seat=>`<span class="game-title-player player-tone-${seat.side}"><span class="sr-only">${seat.color}: </span><bdi dir="auto">${escape(seat.label)}</bdi>${seat.qualifier?`<span class="small player-identity-qualifier"> <bdi dir="auto">${escape(seat.qualifier)}</bdi></span>`:''}</span>`;
+const participantMarkup=seat=>`<span class="game-title-player player-tone-${seat.side}">${seat.emblemKey?renderPlayerEmblem(seat.emblemKey):''}<span class="sr-only">${seat.color}: </span><bdi dir="auto">${escape(seat.label)}</bdi>${seat.qualifier?`<span class="small player-identity-qualifier"> <bdi dir="auto">${escape(seat.qualifier)}</bdi></span>`:''}</span>`;
 
 /** Presence is requested only by live Home cards. Game and result headings omit it. */
 export function renderGameTitle(game,{identityId,presence=false,loading=false}={}){
- const inlay=renderGameInlay(game.id);
+ const inlay=renderGameDateInlay(game?.createdAt);
  if(loading)return `<span class="game-identity-title">${inlay}<span>Loading game</span></span>`;
  const model=gameTitleModel(game,{identityId});
  let text;
- if(model.kind==='self')text='<strong class="player-tone-both">You play both sides</strong>';
+ if(model.kind==='self')text=`<strong class="game-title-player player-tone-both">${model.participant.emblemKey?renderPlayerEmblem(model.participant.emblemKey):''}<span>You play both sides</span></strong>`;
  else if(model.kind==='watched-self')text=`${participantMarkup(model.participant)} <span>plays both sides</span>${presence?model.seats.map(statusMarkup).join(''):''}`;
  else text=model.seats.map((seat,index)=>`${participantMarkup(seat)}${presence&&(model.kind==='viewer'||!seat.owned)?statusMarkup(seat):''}${index===0?' <span class="game-title-versus">vs.</span> ':''}`).join('');
  return `<span class="game-identity-title">${inlay}<span class="game-title-matchup">${text}</span></span>`;
