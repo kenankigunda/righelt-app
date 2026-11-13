@@ -119,13 +119,13 @@ for(const reduced of [false,true]) test(`confirmation fades the board and sweeps
 for(const width of [320,390])test(`recovery actions keep icons, labels and navigation at ${width}px with enlarged text`,async({page},info)=>{
  await page.setViewportSize({width,height:844});await page.emulateMedia({reducedMotion:'reduce'});await openFixture(page);
  await page.evaluate(()=>{document.documentElement.style.fontSize='200%';window.renderMode('overdue',{diagnostics:false});});
- const alert=page.getByTestId('fixture-alert'),reload=alert.getByRole('button',{name:'Reload game',exact:true}),home=alert.getByRole('link',{name:'Home',exact:true});
- await expect(reload).toHaveAttribute('data-action','reconnect-safely');await expect(home).toHaveAttribute('href','#/');
- for(const control of [reload,home]){
+ const alert=page.getByTestId('fixture-alert'),retry=alert.getByRole('button',{name:'Retry connection',exact:true}),home=alert.getByRole('link',{name:'Home',exact:true});
+ await expect(retry).toHaveAttribute('data-action','reconnect-safely');await expect(home).toHaveAttribute('href','#/');
+ for(const control of [retry,home]){
   await expect(control.locator('svg')).toHaveAttribute('aria-hidden','true');
   await expect(control.locator('svg path')).toHaveAttribute('d',/.+/);
  }
- await containedControls(page);await reload.focus();await expect(reload).toBeFocused();
+ await containedControls(page);await retry.focus();await expect(retry).toBeFocused();
  // Safari's default keyboard navigation uses Option-Tab to include links.
  await page.keyboard.press(info.project.name==='webkit'?'Alt+Tab':'Tab');await expect(home).toBeFocused();
  await page.screenshot({path:info.outputPath('recovery-actions-enlarged.png')});
@@ -138,12 +138,22 @@ for(const width of [320,390])test(`recovery actions keep icons, labels and navig
  expect((await runScopedAxeScan({page,include:'[data-testid="fixture-alert"]'})).violations).toEqual([]);
 });
 
-for(const width of [320,390])test(`normal recovery keeps Home beside Reload game at ${width}px`,async({page},info)=>{
+for(const width of [320,390])test(`normal recovery keeps Home beside Retry connection at ${width}px`,async({page},info)=>{
  await page.setViewportSize({width,height:844});await page.emulateMedia({reducedMotion:'reduce'});await openFixture(page);
  await page.evaluate(()=>window.renderMode('overdue',{diagnostics:false}));
- const alert=page.getByTestId('fixture-alert'),reload=alert.getByRole('button',{name:'Reload game',exact:true}),home=alert.getByRole('link',{name:'Home',exact:true});
- await containedControls(page);const a=await reload.boundingBox(),b=await home.boundingBox();expect(b.x).toBeGreaterThanOrEqual(a.x+a.width);expect(b.y).toBeCloseTo(a.y,1);
+ const alert=page.getByTestId('fixture-alert'),retry=alert.getByRole('button',{name:'Retry connection',exact:true}),home=alert.getByRole('link',{name:'Home',exact:true});
+ await containedControls(page);const a=await retry.boundingBox(),b=await home.boundingBox();expect(b.x).toBeGreaterThanOrEqual(a.x+a.width);expect(b.y).toBeCloseTo(a.y,1);
  await page.screenshot({path:info.outputPath('recovery-actions-normal.png')});
+});
+
+for(const width of [320,390])test(`terminal recovery keeps Details below the primary controls at ${width}px with enlarged text`,async({page})=>{
+ await page.setViewportSize({width,height:844});await page.emulateMedia({reducedMotion:'reduce'});await openFixture(page);
+ await page.evaluate(()=>{document.documentElement.style.fontSize='200%';window.renderMode('terminal');});
+ const alert=page.getByTestId('fixture-alert'),actions=alert.locator('.shell-game-alert-actions'),details=alert.getByRole('button',{name:'Details',exact:true});
+ await containedControls(page);await expect(alert).toHaveClass(/is-terminal-recovery/);
+ expect(await actions.evaluate(node=>[...node.children].map(child=>child.textContent.trim()))).toEqual(['Retry connection','Reload game','Home']);
+ const actionBox=await actions.boundingBox(),detailsBox=await details.boundingBox();
+ expect(detailsBox.y).toBeGreaterThanOrEqual(actionBox.y+actionBox.height);
 });
 
 test('recovery fixture follows the actual quiet and actionable timing contract',async({page})=>{
@@ -152,6 +162,6 @@ test('recovery fixture follows the actual quiet and actionable timing contract',
  for(const [elapsed,visible,actionable] of [[3999,false,false],[4000,true,false],[14999,true,false],[15000,true,true]]){
   await page.clock.setFixedTime(started+elapsed);await page.evaluate(game=>window.renderMode('quiet',{game,diagnostics:false}),game);
   await expect(page.getByTestId('fixture-alert')).toHaveCount(visible?1:0);
-  await expect(page.getByRole('button',{name:'Reload game',exact:true})).toHaveCount(actionable?1:0);
+  await expect(page.getByRole('button',{name:'Retry connection',exact:true})).toHaveCount(actionable?1:0);
  }
 });
