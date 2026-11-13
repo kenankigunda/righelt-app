@@ -29,7 +29,24 @@ export function createCompletedReviewOwner({getTransport,onError=()=>{}}) {
     const key=`${game.id}:${game.gameplayRevision}:${turnIndex}`;
     if(owner?.transport===transport&&owner.key===key)return owner.promise;
     const current={transport,key,promise:null};
-    current.promise=Promise.resolve().then(()=>transport.selectHistoryTurn({gameId:game.id,turnIndex})).catch(error=>{if(owner===current)onError(error);});
+    const selected=result=>{
+      const view=result??transport.getGameViewModel?.(game.id);
+      return view?.inHistoryMode===true&&view?.historyTurnIndex===turnIndex;
+    };
+    const enter=async attempt=>{
+      try{
+        const result=await transport.selectHistoryTurn({gameId:game.id,turnIndex});
+        if(selected(result))return result;
+        if(owner===current&&attempt===0)return enter(1);
+        if(owner===current)owner=null;
+        return result;
+      }catch(error){
+        if(owner===current&&attempt===0)return enter(1);
+        if(owner===current){owner=null;onError(error);}
+        return null;
+      }
+    };
+    current.promise=Promise.resolve().then(()=>enter(0));
     owner=current;
     return current.promise;
   };

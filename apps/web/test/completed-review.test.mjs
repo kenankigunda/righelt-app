@@ -35,7 +35,7 @@ test('the selected decisive turn presents the completed win or draw title while 
 });
 
 test('completed review owner selects once per transport revision and leaves earlier inspected turns alone',async()=>{
- const calls=[],transport={selectHistoryTurn:value=>{calls.push(value);return Promise.resolve();}};
+ const calls=[],transport={selectHistoryTurn:value=>{calls.push(value);return Promise.resolve({...game(),inHistoryMode:true,historyTurnIndex:value.turnIndex});}};
  const owner=createCompletedReviewOwner({getTransport:()=>transport});
  const completed=game();
  await owner.sync(completed);await owner.sync(completed);
@@ -43,4 +43,25 @@ test('completed review owner selects once per transport revision and leaves earl
  assert.equal(owner.sync({...completed,inHistoryMode:true,historyTurnIndex:2}),null);
  await owner.sync({...completed,gameplayRevision:5});
  assert.equal(calls.length,2);
+});
+
+test('completed review retries a resolved History failure and caches only the entered decisive turn',async()=>{
+ const completed=game(),calls=[];
+ const transport={selectHistoryTurn:value=>{
+  calls.push(value);
+  return Promise.resolve(calls.length===1?{...completed,inHistoryMode:false,historyLoading:false,historyError:'turn_not_found'}:{...completed,inHistoryMode:true,historyTurnIndex:value.turnIndex});
+ }};
+ const owner=createCompletedReviewOwner({getTransport:()=>transport});
+ await owner.sync(completed);
+ assert.deepEqual(calls,[{gameId:'g',turnIndex:4},{gameId:'g',turnIndex:4}]);
+ await owner.sync(completed);
+ assert.equal(calls.length,2,'a proven decisive-turn selection remains owned');
+});
+
+test('completed review retires a repeated failed selection so a later render can try again',async()=>{
+ const completed=game(),calls=[];
+ const transport={selectHistoryTurn:value=>{calls.push(value);return Promise.resolve({...completed,inHistoryMode:false,historyLoading:false,historyError:'turn_not_found'});}};
+ const owner=createCompletedReviewOwner({getTransport:()=>transport});
+ await owner.sync(completed);assert.equal(calls.length,2);
+ await owner.sync(completed);assert.equal(calls.length,4);
 });

@@ -121,7 +121,7 @@ const parseNonNegativeInt = (value: string | null) => {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 };
 
-const COMPLETED_REVIEW_PREVIEW_PAGE_LIMIT = 6;
+const COMPLETED_REVIEW_PREVIEW_PAGE_LIMIT = 4;
 
 export const __resetLiveGameStateForTests = () => {
   // No process-local live state remains in the HTTP routing layer.

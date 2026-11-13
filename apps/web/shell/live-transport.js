@@ -1616,7 +1616,7 @@ export const createLiveTransportStore = ({
     let normalized=Array.isArray(body.games) ? body.games.map(game => normalizeStaticGameCard(game)) : [];
     if(section==='completed'){
       const key=game=>Number.isSafeInteger(game.gameplayRevision)?`${game.id}:${game.gameplayRevision}`:null;
-      const missing=normalized.filter(game=>key(game)&&!completedReviewPreviewByKey.has(key(game))).slice(0,6)
+      const missing=normalized.filter(game=>key(game)&&!completedReviewPreviewByKey.has(key(game))).slice(0,4)
         .map(game=>({gameId:game.id,gameplayRevision:game.gameplayRevision}));
       if(missing.length){
         try{

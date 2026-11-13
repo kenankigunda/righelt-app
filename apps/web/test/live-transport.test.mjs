@@ -2975,6 +2975,18 @@ test('completed Home previews are fetched once per game revision and stale cache
  assert.equal(previewReads,2);assert.equal(store.getHomeGameCard('completed-cache').reviewPreview.gameplayRevision,4);
 });
 
+test('completed Home preview requests never exceed one visible four-card page',async t=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');let requested=[];
+ const games=Array.from({length:5},(_,index)=>({id:`completed-${index}`,eventSeq:1,gameplayRevision:1,confirmedOutcomeStatus:'draw',moveCount:1,previewSnapshot:{sideToMove:'P1',turnIndex:0,pieces:[],outcome:{status:'draw'}}}));
+ const fetcher=async(url,init={})=>{
+  if(String(url).includes('/review-previews')){requested=JSON.parse(init.body).items;return Response.json({ok:true,items:[]});}
+  return Response.json({ok:true,section:'completed',page:0,pageSize:5,totalGames:5,totalPages:1,games});
+ };
+ const store=createLiveTransportStore({storage,fetcher});t.after(()=>store.retire());
+ await store.loadGamesPage({section:'completed',pageSize:5});
+ assert.deepEqual(requested.map(item=>item.gameId),games.slice(0,4).map(game=>game.id));
+});
+
 
 test('a confirmed result arriving during Home journal hydration invalidates the earlier section count',async t=>{
   const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
