@@ -35,3 +35,34 @@ for(const layout of ['separate','context'])test(`recorded narration preserves fo
  }
  await stop.click();expect(await page.evaluate(()=>window.replayStopActivations)).toBe(1);
 });
+
+test('generated capture and split narration retain native coordinate and name boundaries',async({page})=>{
+ await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
+ const expected=await page.evaluate(async()=>{
+  const {describeRecordedMove,describeRecordedTurn,recordedNarrationCoordinates}=await import('/apps/web/shell/recorded-narration.js');
+  const {renderBoardMessageHtml}=await import('/apps/web/board/message-presentation.js');
+  const actorName='名字 <&> שלום — a deliberately long player name',from={row:4,col:3},to={row:4,col:4};
+  const piece=(id,owner,position)=>({id,owner,kind:'unit',position});
+  const move=(type,id='A')=>({index:40,turnIndex:4,actorSide:'P1',action:{type,actorId:id,from,to},selectionSnapshot:{pieces:[]},snapshot:{pieces:[]},destroyedPieces:[]});
+  const host=document.querySelector('.board-message-slot');
+  const push={...move('push'),selectionSnapshot:{pieces:[piece('A','P1',from),piece('defender','P2',to)]},destroyedPieces:[{pieceId:'defender',ownerSeat:'p2',position:to,reason:'no_retreat'}]};
+  const captureText=describeRecordedMove(push,actorName),capture=document.createElement('p');capture.id='generated-capture';capture.innerHTML=renderBoardMessageHtml({text:captureText,actorName,coordinates:recordedNarrationCoordinates([push])});host.appendChild(capture);
+  const follow={...move('follow','follower'),turnMoveIndex:1,destroyedPieces:[
+   {pieceId:'own',ownerSeat:'p1',position:{row:5,col:3},reason:'loss_of_supply'},
+   {pieceId:'other',ownerSeat:'p2',position:{row:5,col:4},reason:'loss_of_supply'},
+  ]};
+  const plainPush={...move('push'),selectionSnapshot:{pieces:[piece('A','P1',from),piece('defender','P2',to)]}};
+  const splitText=describeRecordedTurn([plainPush,follow],actorName),split=document.createElement('p');split.id='generated-split';split.innerHTML=renderBoardMessageHtml({text:splitText,actorName,coordinates:recordedNarrationCoordinates([plainPush,follow])});host.appendChild(split);
+  return{actorName,captureText,splitText};
+ });
+ const capture=page.locator('#generated-capture'),split=page.locator('#generated-split');
+ const plain=locator=>locator.evaluate(node=>{const copy=node.cloneNode(true);for(const chip of copy.querySelectorAll('.board-preview-coordinate-chip'))chip.textContent=`(${chip.textContent})`;return copy.textContent;});
+ await expect.poll(()=>plain(capture)).toBe(expected.captureText);await expect(capture.locator('.board-message-name')).toHaveText(expected.actorName);
+ await expect(capture.locator('.board-preview-coordinate-chip')).toHaveCount(2);
+ await expect.poll(()=>plain(split)).toBe(expected.splitText);await expect(split.locator('.board-message-name')).toHaveCount(2);
+ await expect(split.locator('.board-message-name')).toHaveText([expected.actorName,expected.actorName]);
+ await expect(split.locator('.board-preview-coordinate-chip')).toHaveCount(3);
+ expect(await split.locator('.board-preview-coordinate-chip').evaluateAll(chips=>chips.every(chip=>!chip.nextSibling?.textContent?.startsWith(',')))).toBe(true);
+ expect(await split.locator('.board-message-name').evaluateAll(names=>names.every(name=>name.dir==='auto'&&name.title===name.textContent))).toBe(true);
+ expect(await split.locator('.board-preview-coordinate-chip').evaluateAll(chips=>chips.every(chip=>getComputedStyle(chip).verticalAlign==='baseline'))).toBe(true);
+});

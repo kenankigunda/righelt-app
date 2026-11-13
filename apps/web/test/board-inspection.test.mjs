@@ -309,8 +309,8 @@ test('commander connection copy follows drawn roles and keeps shared coordinate 
  assert.match(both.prompt,/Supply and command lines/);assert.match(both.contextHtml,/Supply and command lines for piece at/);assert.match(both.contextHtml,/board-preview-coordinate-chip/);
  const supply=structuredClone(state);supply.artifacts.command.shortestPathToCommanderByPieceId={};
  const supplyOnly=harness({canInteract:false});await supplyOnly.runtime.loadSnapshot(supply,{legalActions:[]});supplyOnly.click(point(3,3));
- assert.match(supplyOnly.prompt,/Supply lines/);assert.match(supplyOnly.contextHtml,/Supply line for commander at/);assert.match(supplyOnly.contextHtml,/No connected units\./);assert.match(supplyOnly.contextHtml,/board-preview-coordinate-chip/);
+ assert.match(supplyOnly.prompt,/Supply lines/);assert.match(supplyOnly.contextHtml,/Commander at/);assert.match(supplyOnly.contextHtml,/has a supply line but no connected units\./);assert.match(supplyOnly.contextHtml,/board-preview-coordinate-chip/);
  const atPoint=structuredClone(state);atPoint.pieces[0].position=point(0,9);atPoint.pieces[1].position=point(0,6);atPoint.artifacts.supply[0].shortestPathByPieceId.C1=[point(0,9)];atPoint.artifacts.command.shortestPathToCommanderByPieceId.A=[point(0,6),point(0,9)];
  const commandOnly=harness({canInteract:false});await commandOnly.runtime.loadSnapshot(atPoint,{legalActions:[]});commandOnly.click(point(0,9));
- assert.match(commandOnly.prompt,/Command lines/);assert.match(commandOnly.contextHtml,/Command lines for commander at/);assert.match(commandOnly.contextHtml,/Already at its supply point\./);assert.doesNotMatch(commandOnly.prompt,/No supply connection/);assert.equal(commandOnly.writes,0);
+ assert.match(commandOnly.prompt,/Command lines/);assert.match(commandOnly.contextHtml,/Commander at/);assert.match(commandOnly.contextHtml,/is already at its supply point and has command lines\./);assert.doesNotMatch(commandOnly.prompt,/No supply connection/);assert.equal(commandOnly.writes,0);
 });

@@ -37,11 +37,21 @@ const renderCopy = (text, coordinates = []) => {
     return point ? renderCoordinateChip(point,point.chipClass) : escape(part);
   }).join('');
 };
+const renderActorName = actorName => `<bdi class="board-message-name" dir="auto" title="${escape(actorName)}">${escape(actorName)}</bdi>`;
+const renderActorRest = (rest,coordinates,actorName) => {
+  const marker=`. ${actorName} also `;
+  let cursor=0,index,copy='';
+  while((index=rest.indexOf(marker,cursor))>=0){
+    copy+=renderCopy(rest.slice(cursor,index+2),coordinates)+renderActorName(actorName);
+    cursor=index+2+actorName.length;
+  }
+  return copy+renderCopy(rest.slice(cursor),coordinates);
+};
 export function renderBoardMessageHtml(message, {sizing = false} = {}) {
   if (message.rows) return message.rows.map(row => `<span class="board-message-row">${renderBoardMessageHtml(row,{sizing})}</span>`).join('');
   if(message.confirmation)return `${escape(message.text??'Confirm')} <strong>${escape(message.confirmation.text)} ${renderCoordinateChip(message.confirmation.point,message.confirmation.pointClass)}</strong>`;
   const {text,actorName,rest,actions}=boardMessagePresentation(message);
-  const copy=actorName?`<bdi class="board-message-name" dir="auto" title="${escape(actorName)}">${escape(actorName)}</bdi>${renderCopy(rest,message.coordinates)}`:renderCopy(text,message.coordinates);
+  const copy=actorName?`${renderActorName(actorName)}${renderActorRest(rest,message.coordinates,actorName)}`:renderCopy(text,message.coordinates);
   const {inline,detached}=partitionMessageActions(actions);
   const sentence=copy+(message.badge?` <span class="board-obligatory-pill"${boardPromptPattern(message)?` data-board-prompt-pattern="${DETACHED_REQUIRED_RETRY}"`:""}>${escape(message.badge)}</span>`:'')+inline.map(action=>` ${renderBoardInlineAction(action,{sizing})}`).join('');
   return sentence+(detached.length?`<span class="board-message-actions">${detached.map(action=>renderBoardInlineAction(action,{sizing})).join(' ')}</span>`:'');

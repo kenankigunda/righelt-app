@@ -19,6 +19,19 @@ test('turn summary names the turn owner while retaining distinct defender attrib
  assert.equal(result.caption.text,'Turn 5');assert.equal(result.message.text,'Maya <(8, 8)> pushed onto (4, 4) and had 1 piece follow');
  assert.equal(selectedHistoryPresentation({...game,inspectedDecision:retreat}).message.actorName,'Kenan');
 });
+test('three-plus turn events split naturally while retaining structured coordinate pills',()=>{
+ const push=move('push'),follow={...move('follow'),turnMoveIndex:1,action:{type:'follow',actorId:'follower',from,to},destroyedPieces:[
+  {pieceId:'own',ownerSeat:'P1',position:{row:5,col:3}},
+  {pieceId:'opponent',ownerSeat:'P2',position:{row:5,col:4}},
+ ]};
+ const result=selectedHistoryPresentation({...game,historyTurnIndex:4,turns:[{index:4,playerSeat:'Player 1'}],historyTurnMoves:[push,follow]});
+ assert.equal(result.message.text,'Maya <(8, 8)> pushed onto (4, 4) and had 1 piece follow. Maya <(8, 8)> also lost piece at (5, 3) and destroyed piece at (5, 4)');
+ const html=renderBoardMessageHtml(result.message);
+ assert.match(html,/piece follow\. <bdi[^>]*>Maya &lt;\(8, 8\)&gt;<\/bdi> also lost piece/);
+ assert.equal((html.match(/<bdi class="board-message-name"/g)??[]).length,2);
+ assert.equal((html.match(/board-preview-coordinate-chip /g)??[]).length,3);
+ assert.doesNotMatch(html,/board-preview-coordinate-chip[^>]*>[^<]+<\/span>,/);
+});
 test('unknown historical metadata does not briefly become a live turn caption or guessed move number',()=>{
  const result=selectedHistoryPresentation(game);assert.equal(result.caption.text,'Move unavailable');assert.equal(result.message.text,'Historical move details unavailable');
  assert.equal(selectedHistoryPresentation({...game,inHistoryMode:false}),null);

@@ -8,6 +8,16 @@ export const joinNarrationEvents = events => {
   const present=events.filter(Boolean);
   return present.length<2 ? present[0]??'' : present.length===2 ? present.join(' and ') : `${present.slice(0,-1).join(', ')}, and ${present.at(-1)}`;
 };
+const describeNarrationEvents = (name,events) => {
+  const present=events.filter(Boolean);
+  if(present.length<3)return `${name} ${joinNarrationEvents(present)}`;
+  const sentences=[];
+  for(let index=0;index<present.length;index+=2){
+    const pair=present.slice(index,index+2);
+    sentences.push(`${name}${index?' also':''} ${joinNarrationEvents(pair)}`);
+  }
+  return sentences.join('. ');
+};
 export const recordedMoveNumber = move => Number.isInteger(move?.displayMoveNumber) && move.displayMoveNumber>0
   ? move.displayMoveNumber : Number.isInteger(move?.index) && move.index>=0 ? move.index+1 : null;
 export const recordedActorSide = move => normalizeActivitySide(move?.actorSide)
@@ -15,6 +25,22 @@ export const recordedActorSide = move => normalizeActivitySide(move?.actorSide)
 const removalIdentity=(record,move)=>record.pieceId??record.piece?.id
   ?? move?.selectionSnapshot?.pieces?.find(piece=>normalizeActivitySide(piece.owner)===normalizeActivitySide(record.ownerSeat)&&piece.position?.row===record.position?.row&&piece.position?.col===record.position?.col)?.id
   ?? record.eventId ?? JSON.stringify([record.ownerSeat,record.position,record.kind,record.reason]);
+const actionDestroyedPieces = move => Array.isArray(move?.recordedActionDestroyedPieces)
+  ? move.recordedActionDestroyedPieces : Array.isArray(move?.destroyedPieces) ? move.destroyedPieces : [];
+const recordedCapture = move => {
+  const action=move?.action,actorSide=recordedActorSide(move);
+  if(action?.type!=='push'||!point(action.to)||!actorSide)return null;
+  const target=move?.selectionSnapshot?.pieces?.find(piece=>piece.position?.row===action.to.row&&piece.position?.col===action.to.col);
+  const targetSide=normalizeActivitySide(target?.owner);
+  if(!target?.id||!targetSide||targetSide===actorSide)return null;
+  return actionDestroyedPieces(move).find(record=>
+    record?.reason==='no_retreat'
+    && record.pieceId===target.id
+    && normalizeActivitySide(record.ownerSeat??record.piece?.owner)===targetSide
+    && record.position?.row===action.to.row
+    && record.position?.col===action.to.col
+  )??null;
+};
 export const distinctRecordedRemovals = moves => {
   const records=new Map();
   for(const move of moves)for(const record of move.destroyedPieces??[]){
@@ -44,6 +70,9 @@ export const visibleRecordedMoves = (moves,{includeUndone=false,preserveInputOrd
     if(Number.isInteger(previous.index)&&Number.isInteger(move.index)&&!boardAdjacent)continue;
     if(Number.isInteger(previous.turnMoveIndex)&&Number.isInteger(move.turnMoveIndex)&&!turnAdjacent)continue;
     result[previousIndex]={...previous,snapshot:move.snapshot??previous.snapshot,
+      // Keep direct-action provenance separate from closure removals. This is a
+      // presentation lineage field, never an authoritative stored-game change.
+      recordedActionDestroyedPieces:actionDestroyedPieces(previous),
       destroyedPieces:distinctRecordedRemovals([previous,move])};
   }
   return result;
@@ -56,8 +85,9 @@ export const recordedMoveWithClosure=(move,context=[])=>{
   if(!move.moveId)return move;
   return visibleRecordedMoves([...records.values()],{includeUndone:true}).find(record=>record.moveId===move.moveId)??move;
 };
-const removalEvents=(moves,actorSide)=>{
-  const removed=distinctRecordedRemovals(moves),own=[],opposing=[];
+const removalEvents=(moves,actorSide,captured=[])=>{
+  const capturedRecords=new Set(captured.filter(Boolean));
+  const removed=distinctRecordedRemovals(moves).filter(record=>!capturedRecords.has(record)),own=[],opposing=[];
   let unknown=false;
   for(const record of removed){
     const owner=normalizeActivitySide(record.ownerSeat??record.piece?.owner);
@@ -78,7 +108,8 @@ const actionEvent=(action,{owned=false}={})=>{
 export function describeRecordedMove(move,name,options={}){
   const action=actionEvent(move?.action,options);
   if(!action)return null;
-  return `${name} ${joinNarrationEvents([action,...removalEvents([move],recordedActorSide(move))])}`;
+  const capture=recordedCapture(move);
+  return describeNarrationEvents(name,[action,capture?`captured piece at ${coordinate(capture.position)}`:null,...removalEvents([move],recordedActorSide(move),[capture])]);
 }
 export function describeRecordedTurn(moves,name,options={}){
   const active=visibleRecordedMoves([...(moves??[])].sort((left,right)=>(left.turnMoveIndex??left.index)-(right.turnMoveIndex??right.index)));
@@ -86,11 +117,13 @@ export function describeRecordedTurn(moves,name,options={}){
   if(active.length===1)return describeRecordedMove(active[0],name,options);
   const owner=recordedActorSide(active.find(move=>move.action?.type!=='retreat'));
   const push=active.find(move=>move.action?.type==='push');
+  const captures=active.map(recordedCapture).filter(Boolean);
   let events;
   if(push){
     if(!actionEvent(push.action))return null;
     const followers=new Set(active.filter(move=>move.action?.type==='follow'&&move.action.actorId&&move.action.actorId!==push.action.actorId).map(move=>move.action.actorId));
-    events=[actionEvent(push.action),followers.size?`had ${followers.size} ${followers.size===1?'piece':'pieces'} follow`:null];
+    const capture=recordedCapture(push);
+    events=[actionEvent(push.action),capture?`captured piece at ${coordinate(capture.position)}`:null,followers.size?`had ${followers.size} ${followers.size===1?'piece':'pieces'} follow`:null];
   }else{
     const rushes=active.filter(move=>move.action?.type==='rush');
     const actors=new Set(rushes.map(move=>move.action.actorId).filter(Boolean));
@@ -99,7 +132,7 @@ export function describeRecordedTurn(moves,name,options={}){
       :active.map(move=>actionEvent(move.action,options));
   }
   if(events.some(event=>event===null)&&!push)return null;
-  return `${name} ${joinNarrationEvents([...events,...removalEvents(active,owner)])}`;
+  return describeNarrationEvents(name,[...events,...removalEvents(active,owner,captures)]);
 }
 export const recordedNarrationCoordinates = moves => moves.flatMap(move=>[
   move.action?.from,move.action?.to,...(move.destroyedPieces??[]).map(record=>record.position),

@@ -708,9 +708,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
         const opponent=personalPiece.owner!==state.sideToMove;
         const combinedPrompt=renderCoordinate=>opponent?opponentInspectionPrompt(personalPiece.position,renderCoordinate):`Supply and command lines for piece at ${renderCoordinate(personalPiece.position)}`;
         const text=supply&&command?combinedPrompt(formatCoordinate)
-          :supply?`Supply line for commander at ${point}. No connected units.`
-          :command?`Command lines for commander at ${point}${atSupply?'. Already at its supply point.':''}`
-          :atSupply?'At its supply point. No connected units.':`Commander at ${point}. No connections.`;
+          :supply?`Commander at ${point} has a supply line but no connected units.`
+          :command&&atSupply?`Commander at ${point} is already at its supply point and has command lines.`
+          :command?`Command lines for commander at ${point}`
+          :atSupply?'At its supply point. No connected units.':`Commander at ${point} has no connections.`;
         addStatusContext({text,coordinates},{kind:'inspection'});
         if(supply&&command)setBoardPreviewPromptHtml(combinedPrompt(renderBoardPreviewCoordinate));
         else setBoardPreviewPrompt(connectionPrompt());return;
@@ -744,7 +745,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
 
     if (pieceSummary && selectedPieceId && host.canPresentActions?.(state) === false) {
       if (selectedSource && personalConnectionsCleared && getBoardPieceById(selectedPieceId)?.kind === 'commander') {
-        addStatusContext({text:`Commander at ${formatCoordinate(selectedSource)}. No connections.`,coordinates:[selectedSource]},{kind:'inspection'});
+        addStatusContext({text:`Commander at ${formatCoordinate(selectedSource)} has no connections.`,coordinates:[selectedSource]},{kind:'inspection'});
         setBoardPreviewPrompt('No connection');
         return;
       }
