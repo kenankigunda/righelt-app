@@ -6,7 +6,7 @@ import { resultSound } from './result-presentation.js';
 import { createOpponentMoveTracker, isOpponentAction } from './opponent-move-sound.js';
 // Device preference is independent of authentication. Only deliberate mute is inherited.
 export const SOUND_KEY = 'righelt.device.sound-enabled';
-export const INCOMING_REMINDER_MS = 30_000;
+export const INCOMING_REMINDER_MS = 60_000;
 const OPPONENT_CUE_SPACING_MS = 160;
 
 export const isOpponentMove = (game, commandId, identityId = null) => {
@@ -39,6 +39,7 @@ export const createGameSound = ({
   try { enabled = storage?.getItem(SOUND_KEY) !== 'false'; } catch {}
   const cancelPreview = () => {}; // Hover never schedules audio. Retained for interaction reset callers.
   const clearIncoming = () => { if (reminderTimer !== null) clearTimer(reminderTimer); reminderTimer = null; pendingIncoming = false; };
+  const retireIncomingEpisode = () => { unseenGames.clear();clearIncoming(); };
   const clearOpponentCues = () => { for (const timer of opponentCueTimers) clearTimer(timer); opponentCueTimers.clear(); nextOpponentCueAt = 0; };
   const gesture = () => {
     if (!enabled || !active()) return;
@@ -115,8 +116,8 @@ export const createGameSound = ({
     },INCOMING_REMINDER_MS);
   };
   const incoming = (gameId='legacy') => {
+    if(!enabled)return false;
     unseenGames.add(gameId);paperAudio.interrupt();
-    if(!enabled){pendingIncoming=true;return false;}
     // Several opponent actions form one outstanding reminder, never overlapping loops.
     if(pendingIncoming)return false;
     pendingIncoming=true;
@@ -135,10 +136,10 @@ export const createGameSound = ({
   return {
     enabled:()=>enabled, gesture, play, cancelPreview,
     preparePaper:paperAudio.prepare,paper:paperAudio.play,cancelPaper:paperAudio.cancel,disposePaper:paperAudio.dispose,
-    activityChanged(){cancelPreview();if(!active()){cancelDestruction();clearOpponentCues();paperAudio.cancel();}},
-    toggle(){enabled=!enabled;cancelDestruction();paperAudio.cancel();cancelPreview();if(reminderTimer!==null)clearTimer(reminderTimer);reminderTimer=null;clearOpponentCues();try{storage?.setItem(SOUND_KEY,String(enabled));}catch{} if(enabled){gesture();scheduleReminder();}else void audio?.suspend().catch(()=>{});return enabled;},
+    activityChanged(){cancelPreview();if(active())retireIncomingEpisode();else{cancelDestruction();clearOpponentCues();paperAudio.cancel();}},
+    toggle(){enabled=!enabled;cancelDestruction();paperAudio.cancel();cancelPreview();clearOpponentCues();try{storage?.setItem(SOUND_KEY,String(enabled));}catch{} if(enabled)gesture();else{retireIncomingEpisode();void audio?.suspend().catch(()=>{});}return enabled;},
     hide(){cancelDestruction();cancelPreview();clearOpponentCues();paperAudio.cancel();},
-    leaveGame(){cancelDestruction();paperAudio.cancel();cancelPreview();clearOpponentCues();if(unseenGames.size)incoming(unseenGames.values().next().value);},
+    leaveGame(){cancelDestruction();paperAudio.cancel();cancelPreview();clearOpponentCues();retireIncomingEpisode();},
     interaction({kind,key}){
       if(!active()){cancelPreview();return;}
       if(kind==='preview-hover' || kind==='preview-leave')return;
@@ -157,7 +158,7 @@ export const createGameSound = ({
     authoritative(game, { sequence, scope, silent = false, deferComputer = false, unseen = false } = {}) {
       const observed = opponentMoves.update(game, { sequence, scope, baseline: silent });
       const updates=observed.moves.filter(move=>isOpponentAction(game,move,getIdentityId()));
-      if(!silent&&updates.length)unseenGames.add(game.id);
+      if(!silent&&enabled&&updates.length)unseenGames.add(game.id);
       const fresh = updates.filter(move => !(deferComputer && move.computerProof));
       const lastMove = game?.moves?.findLast(move => !move.undone);
       const finished = observed.finished && isOpponentAction(game, lastMove, getIdentityId()) && !(deferComputer && lastMove?.computerProof);
@@ -171,7 +172,7 @@ export const createGameSound = ({
       if (finished && !fresh.includes(lastMove)) played = opponentCue(resultSound(getGameResult(game, getIdentityId()))) || played;
       return played;
     },
-    resetUpdates(){cancelDestruction();paperAudio.dispose();unseenGames.clear();clearIncoming();clearOpponentCues();},
+    resetUpdates(){cancelDestruction();paperAudio.dispose();retireIncomingEpisode();clearOpponentCues();},
     viewing({gameId,live=false,playbackFinished=true}={}){
       if(live&&active()&&playbackFinished){unseenGames.delete(gameId);if(!unseenGames.size)clearIncoming();}
       else if(!live&&unseenGames.has(gameId))incoming(gameId);

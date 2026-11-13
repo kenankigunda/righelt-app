@@ -56,12 +56,12 @@ test('computer optimistic publication never sounds or suppresses its authoritati
   assert.deepEqual(f.notes, [820]);
 });
 
-test('background authoritative moves retain one immediate incoming cue and one reminder loop', () => {
+test('background authoritative moves retain one immediate incoming cue and one 60-second reminder loop', () => {
   const f = audioFixture(); f.sound.authoritative(game(0, [])); f.hide();
   f.sound.authoritative(game(1, [move('a')])); assert.deepEqual(f.notes, [460,690]); assert.equal(f.timers.size, 1);
   f.sound.authoritative(game(2, [move('a'), move('b')])); assert.deepEqual(f.notes, [460,690]); assert.equal(f.timers.size, 1);
-  assert.equal([...f.timers.values()][0].ms, 30000); f.flush(); assert.deepEqual(f.notes, [460, 690, 460, 690]);
-  f.show(); assert.equal(f.timers.size, 1);f.sound.viewing({gameId:'g',live:true});assert.equal(f.timers.size,0);
+  assert.equal([...f.timers.values()][0].ms, 60000); f.flush(); assert.deepEqual(f.notes, [460, 690, 460, 690]);
+  f.show(); assert.equal(f.timers.size, 0);f.sound.viewing({gameId:'g',live:false});assert.equal(f.timers.size,0);
 });
 
 test('history and replay inspection receive an update chime while human acknowledgements stay quiet', () => {
@@ -89,9 +89,9 @@ test('opponent terminal finalization sounds once when its move was already recei
   f.sound.authoritative(terminal); assert.deepEqual(f.notes, [820, 560]);
 });
 
-test('one unseen batch keeps its shared update chime through History and Players until live playback finishes',()=>{
- const f=audioFixture();f.sound.authoritative(game(0,[]));f.hide();const update=game(1,[move('a')]);f.sound.authoritative(update,{unseen:true});assert.deepEqual(f.notes,[460,690]);assert.equal(f.timers.size,1);
- f.show();f.sound.viewing({gameId:'g',live:false});f.sound.authoritative(update,{unseen:true});f.sound.viewing({gameId:'g',live:false});assert.deepEqual(f.notes,[460,690]);assert.equal(f.timers.size,1);
+test('one active unseen batch keeps its shared update chime through History and Players until live playback finishes',()=>{
+ const f=audioFixture();f.sound.authoritative(game(0,[]));const update=game(1,[move('a')]);f.sound.authoritative(update,{unseen:true});assert.deepEqual(f.notes,[460,690]);assert.equal(f.timers.size,1);
+ f.sound.viewing({gameId:'g',live:false});f.sound.authoritative(update,{unseen:true});f.sound.viewing({gameId:'g',live:false});assert.deepEqual(f.notes,[460,690]);assert.equal(f.timers.size,1);
  f.flush();assert.deepEqual(f.notes,[460,690,460,690]);f.sound.viewing({gameId:'g',live:true,playbackFinished:false});assert.equal(f.timers.size,1);f.sound.viewing({gameId:'g',live:true,playbackFinished:true});assert.equal(f.timers.size,0);
  f.sound.authoritative(game(2,[move('a'),move('b')]),{unseen:true});assert.deepEqual(f.notes,[460,690,460,690,460,690]);assert.equal(f.timers.size,1);
 });
