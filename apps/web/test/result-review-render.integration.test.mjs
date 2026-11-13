@@ -165,6 +165,8 @@ test("retained historical turns keep an exit even after undo removes the live tu
     assert.match(context.history(game), /data-testid="history-return-live"/);
     assert.doesNotMatch(context.history({...game,inHistoryMode:false}), /data-testid="history-return-live"/);
   }
+  const completed={id:'retained',currentTurn:{index:2,playerSeat:'Player 1'},turns:[],moves:[],inHistoryMode:true,historyTurnIndex:1,board:{state:{outcome:{status:'draw'}}}};
+  assert.doesNotMatch(context.history(completed),/data-testid="history-return-live"/);
 });
 
 test('actual result renderer affiliates victory with the authoritative winning side',()=>{

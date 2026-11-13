@@ -26,6 +26,10 @@ test('explicit History-to-Board selection returns live once but existing route-p
  const f=fixture();f.d.pendingRoutePosition={};f.d.transport.getGameViewModel=()=>({inHistoryMode:true});f.prepare(game('g','history'),game('g'));
  assert.deepEqual(f.calls.at(-1),['live',{gameId:'g'}]);assert.equal(f.queued.length,0);
 });
+test('completed History selection remains selected when mobile navigation returns to Board',()=>{
+ const f=fixture();f.d.pendingRoutePosition={};f.d.isCompletedGame=()=>true;f.d.transport.getGameViewModel=()=>({inHistoryMode:true,board:{state:{outcome:{status:'p1_win'}}}});f.prepare(game('g','history'),game('g'));
+ assert(!f.calls.some(call=>Array.isArray(call)&&call[0]==='live'));
+});
 for(const interruption of ['Home','other-game','account','transport','navigation-owner','uncommitted-route','hidden','wide-before-frame'])test(`queued panel restoration yields to ${interruption}`,()=>{
  const f=fixture();f.prepare(game('g','players'),game('g'));
  if(interruption==='Home')f.prepare(game('g'),{name:'home'});

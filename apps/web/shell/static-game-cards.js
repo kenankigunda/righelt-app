@@ -5,6 +5,12 @@ const revision = value => Number.isSafeInteger(value) && value >= 0 ? value : nu
 const confirmedStatus = card => revision(card?.eventSeq) !== null && revision(card?.gameplayRevision) !== null &&
   (card?.confirmedOutcomeStatus === 'ongoing' || isTerminalOutcome(card?.confirmedOutcomeStatus)) &&
   card.confirmedOutcomeStatus === (card.previewSnapshot ?? card.currentSnapshot ?? card.board?.state)?.outcome?.status ? card.confirmedOutcomeStatus : null;
+const normalizeReviewPreview = card => {
+  const value=card?.reviewPreview,gameplayRevision=revision(card?.gameplayRevision);
+  if(!value||value.gameId!==String(card?.id||'')||revision(value.gameplayRevision)!==gameplayRevision||revision(value.turnIndex)===null)return null;
+  if(!isTerminalOutcome(value.outcomeStatus)||value.preview?.snapshot?.outcome?.status!==value.outcomeStatus||value.preview?.overlay?.mode!=='recorded-turn'||value.preview?.overlay?.presentationContext!=='history')return null;
+  return clone(value);
+};
 
 // Card identity survives temporary manual control. It conveys no turn authority.
 export const computerProfileForCard = (game, side) => {
@@ -51,6 +57,7 @@ export const normalizeStaticGameCard = (card) => ({
         : 0,
   previewSnapshot: clone(card?.previewSnapshot ?? card?.currentSnapshot ?? card?.board?.state ?? null),
   previewSelection: clone(card?.previewSelection ?? null),
+  reviewPreview: normalizeReviewPreview(card),
   myRole: typeof card?.myRole === "string" ? card.myRole : "Guest",
   canJoinAsPlayer: card?.canJoinAsPlayer === true,
   player1: normalizeParticipant(card?.player1 ? {...card.player1, computerProfile:computerProfileForCard(card, 'p1')} : null),

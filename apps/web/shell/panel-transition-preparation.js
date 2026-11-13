@@ -13,7 +13,8 @@ export function createPanelTransitionPreparation(getDependencies) {
   const changedPanel=next.gameId!==previous.gameId||d.getGamePanel(previous)!==d.getGamePanel(next);
   if(changedPanel){d.replayRequests.cancel();d.replayController?.stop('navigation');}
   if(d.getShellLayoutModeForRoute(next)==='narrow'&&changedPanel){
-   if(d.getGamePanel(next)==='board'&&d.transport.getGameViewModel(next.gameId)?.inHistoryMode)d.transport.returnToLive({gameId:next.gameId});
+   const viewed=d.transport.getGameViewModel(next.gameId);
+   if(d.getGamePanel(next)==='board'&&viewed?.inHistoryMode&&!d.isCompletedGame?.(viewed))d.transport.returnToLive({gameId:next.gameId});
    if(!d.pendingRoutePosition){
     const owner=d.transport,scope=d.viewingScope(),navigation=d.mobileNavigation;
     d.window.requestAnimationFrame(()=>{

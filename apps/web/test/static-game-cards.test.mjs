@@ -120,3 +120,13 @@ test('a terminal-looking preview cannot claim a result without confirmed revisio
 test('conflicting result metadata and miniature state cannot establish a confirmed winner',()=>{
   assert.equal(normalizeStaticGameCard({eventSeq:4,gameplayRevision:2,confirmedOutcomeStatus:'p1_win',previewSnapshot:{outcome:{status:'ongoing'}}}).confirmedOutcomeStatus,null);
 });
+
+test('completed review preview survives only its exact game and gameplay revision fence',()=>{
+ const preview={gameId:'g',gameplayRevision:4,turnIndex:2,outcomeStatus:'draw',preview:{snapshot:{outcome:{status:'draw'}},overlay:{mode:'recorded-turn',presentationContext:'history'}}};
+ const accepted=normalizeStaticGameCard({id:'g',gameplayRevision:4,reviewPreview:preview});
+ assert.deepEqual(accepted.reviewPreview,preview);assert.notEqual(accepted.reviewPreview,preview);
+ for(const patch of [{id:'other'},{gameplayRevision:5},{reviewPreview:{...preview,outcomeStatus:'p1_win'}}]){
+  const input={id:'g',gameplayRevision:4,reviewPreview:preview,...patch};
+  assert.equal(normalizeStaticGameCard(input).reviewPreview,null);
+ }
+});

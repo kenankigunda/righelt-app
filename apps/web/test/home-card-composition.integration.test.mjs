@@ -34,8 +34,8 @@ test('confirmed result and pending Undo retain quiet canonical identities, winne
     const before = structuredClone(input), h = renderer();
     const html = h.render(input);
     assert.match(html, /data-winner-side="p2"/);
-    assert.match(html, /<div class="home-card-result"><strong class="player-tone-p2"><bdi>Horus won<\/bdi><\/strong><span class="small">You lost<\/span><\/div>/);
-    assert.match(html, /<span class="small">You lost<\/span>/);
+    assert.match(html, /<div class="home-card-result"><span class="home-card-result-line"><strong class="player-tone-p2"><bdi>Horus won<\/bdi><\/strong><\/span><\/div>/);
+    assert.doesNotMatch(html, /You lost/);
     assert.equal(statusHtml(html), 'Review game');
     assert.match(html, /<span class="sr-only">Red: <\/span><bdi dir="auto">You<\/bdi>/);
     assert.match(html, /<span class="sr-only">Blue: <\/span><bdi dir="auto">Horus<\/bdi>/);
@@ -141,10 +141,20 @@ for (const [name, overrides, identityId, label, tone, detail] of [
   const html=renderer(identityId).render(input);
   const result=html.match(/<div class="home-card-result">([\s\S]*?)<\/div>/)?.[1];
   assert.ok(result, 'result container remains neutral');
-  assert.equal(result, `<strong${tone ? ` class="player-tone-${tone}"` : ''}><bdi>${label}</bdi></strong>${detail ? `<span class="small">${detail}</span>` : ''}`);
+  assert.equal(result, `<span class="home-card-result-line"><strong${tone ? ` class="player-tone-${tone}"` : ''}><bdi>${label}</bdi></strong></span>`);
   assert.equal(statusHtml(html),'Review game');
   assert.match(html, /<article class="mini-board-card"/);
   assert.match(html, /data-flyout-link="game"/);
   assert.match(html, /data-game-id="same-game"/);
   assert.deepEqual(input,before);
+});
+
+test('completed Home card uses the decisive-turn History preview and colors only the winner phrase',()=>{
+ const final=snapshot('p1_win'),decisive={...final,pieces:[{id:'C1',owner:'P1',kind:'commander',position:{row:4,col:6}}]};
+ const input=normalizeStaticGameCard({...card({confirmedOutcomeStatus:'p1_win',previewSnapshot:final}),reviewPreview:{
+  gameId:'same-game',gameplayRevision:3,turnIndex:6,outcomeStatus:'p1_win',preview:{snapshot:decisive,selection:null,overlay:{mode:'recorded-turn',presentationContext:'history',endpointRoles:[{row:3,col:6,source:true,target:false}],recordedActions:[],destroyedPieces:[]},legalActions:[],selectedPieceId:null,selectedPieceMoves:[],selectedPieceMovePreviews:[],currentActionType:'pass',selectedPieceOverlayPhase:'actionPreviews'}
+ }});
+ const h=renderer(),html=h.render(input),result=html.match(/<div class="home-card-result">([\s\S]*?)<\/div>/)?.[1];
+ assert.equal(result,'<span class="home-card-result-line"><strong class="player-tone-p1"><bdi>You won</bdi></strong><span> on Turn 7</span></span>');
+ assert.deepEqual(h.registered[0].snapshot,decisive);assert.equal(h.registered[0].overlay.mode,'recorded-turn');
 });

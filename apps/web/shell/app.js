@@ -46,6 +46,7 @@ import {createConfirmedFramePresenter} from './confirmed-frame-presenter.js';
 import {createConfirmedComputerPlayback} from './confirmed-computer-playback.js';
 import {createGuidanceIncidentSink} from './guidance-diagnostics.js';
 import {isOngoingGame,isCompletedGame} from './game-lifecycle.js';
+import {createCompletedReviewOwner} from './completed-review.js';
 import {createLiveTurnOverview,liveTurnOverviewOverlay} from './live-turn-overview.js';
 import {mountHoverTooltips} from './hover-tooltip.js';
 import {captureHomeFocus,refreshHomeFocus,restoreHomeFocus,restoreHomeReadingPosition} from './home-focus.js';
@@ -1123,7 +1124,7 @@ const preparePanelTransition = createPanelTransitionPreparation(()=>({
   pendingBoardContextReplay:boardContextState.pendingBoardContextReplay,cancelPendingBoardContextReplay,
   retireBoardContext(){boardContextVisit++;boardContextOwner.retire();},liveTurnOverview,homeSectionReads,viewingIntent,window,
   getGamePanel,getShellLayoutModeForRoute,transport,replayController,replayRequests,pendingRoutePosition,mobileNavigation,
-  viewingScope,getCurrentRoute:()=>currentRoute,document,
+  viewingScope,getCurrentRoute:()=>currentRoute,document,isCompletedGame,
 }));
 
 const getCurrentFlyoutState = () => ({
@@ -3430,6 +3431,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   const currentGame=currentRoute.name==='game' && routeHydrated ? transport.getGameViewModel(currentRoute.gameId) : null;
   if(currentGame){
     const game=currentGame, confirmed=transport.getAuthoritativeGame(currentRoute.gameId);
+    completedReviewOwner.sync(game);
     if (activeResultGameId === currentRoute.gameId && confirmed?.board?.state?.outcome && !getGameResult(confirmed, transport.getIdentityId())) activeResultGameId = null;
     if(!game?.confirmedPlayback && resultTransitions.observe(confirmed,{inHistory:game?.inHistoryMode,hidden:document.hidden,storyOpen:storyDialog.isOpen()})){activeResultGameId=currentRoute.gameId;resultPresentation.enter(confirmed.id,getGameResult(confirmed,transport.getIdentityId()));}
     if(storyDialog.gameId()===currentRoute.gameId && getGameResult(confirmed,transport.getIdentityId()))storyDialog.setMatchStatus('Game finished',true);
@@ -3892,6 +3894,7 @@ const makeAccountSyncStore = auth => createSyncStore({
 let activeStorageGeneration = account.snapshot().storageGeneration;
 let syncStore = makeAccountSyncStore(account.snapshot());
 let transport = syncStore;
+const completedReviewOwner=createCompletedReviewOwner({getTransport:()=>transport,onError:error=>{window.__righeltLastError=error instanceof Error?error.message:String(error);}});
 mountLoadingFeedback(document,{
   getScope:loadingContextScope,
   onContextsChange:contexts=>{
@@ -4191,6 +4194,7 @@ function resetAccountTransport(next) {
   utilityMemory.clear(); expandedViewerGames.clear(); expandedComputerCards.clear();
   viewingIntent.clear();
   liveTurnOverview.leave();
+  completedReviewOwner.clear();
   replayController?.stop("account-changed");
   preparation.cancel();
   computerSession?.suspend(); scenarioCapture = null; scenarioMetadataDrafts.clear(); decisionDebugStates.clear();
@@ -4942,6 +4946,7 @@ appEl.addEventListener("click", async (event) => {
   if (action === "return-live") {
     const gameId = actionEl.getAttribute("data-game-id");
     if (!gameId) return;
+    if(isCompletedGame(transport.getGameViewModel(gameId)))return;
     clearHistoryPress();
     playHistoryReleaseBounce(actionEl);
     await animateHistoryDeselection(actionEl);

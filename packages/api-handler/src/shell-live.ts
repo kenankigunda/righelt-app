@@ -121,6 +121,8 @@ const parseNonNegativeInt = (value: string | null) => {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 };
 
+const COMPLETED_REVIEW_PREVIEW_PAGE_LIMIT = 6;
+
 export const __resetLiveGameStateForTests = () => {
   // No process-local live state remains in the HTTP routing layer.
 };
@@ -243,6 +245,42 @@ export const handleLiveGameRequest = async (
       },
       cacheControl: CACHE_NO_STORE,
     };
+  }
+
+  if (request.method === "POST" && route.length === 2 && route[0] === "games" && route[1] === "review-previews") {
+    if (!hasGameRoomsBinding(env)) {
+      return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
+    }
+    const body = await parseBody(request);
+    const identityId = asIdentity(body.identityId);
+    const rawItems = Array.isArray(body.items) ? body.items : [];
+    const items = rawItems.map(item => {
+      const record = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      return { gameId: asIdentity(record.gameId), gameplayRevision: record.gameplayRevision };
+    });
+    const ids = items.map(item => item.gameId);
+    if (!identityId || items.length === 0 || items.length > COMPLETED_REVIEW_PREVIEW_PAGE_LIMIT ||
+      items.some(item => !item.gameId || !Number.isSafeInteger(item.gameplayRevision) || (item.gameplayRevision as number) < 0) ||
+      new Set(ids).size !== ids.length) {
+      return { handled: true, status: 400, body: { ok: false, error: "invalid_review_preview_batch" }, cacheControl: CACHE_NO_STORE };
+    }
+    const results = await Promise.all(items.map(async item => {
+      try {
+        const response = await fetchGameRoom(request, env, item.gameId as string, "/review-preview", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ identityId, gameplayRevision: item.gameplayRevision, protocolVersion: 2 }),
+        });
+        const result = await response.json().catch(() => ({})) as Record<string, unknown>;
+        if (!response.ok) {
+          return { gameId: item.gameId, gameplayRevision: item.gameplayRevision, ok: false, status: response.status, error: typeof result.error === "string" ? result.error : "preview_unavailable" };
+        }
+        return { ok: true, gameId: item.gameId, gameplayRevision: item.gameplayRevision, turnIndex: result.turnIndex, outcomeStatus: result.outcomeStatus, actorSide: result.actorSide, preview: result.preview };
+      } catch {
+        return { gameId: item.gameId, gameplayRevision: item.gameplayRevision, ok: false, status: 503, error: "preview_unavailable" };
+      }
+    }));
+    return { handled: true, status: 200, body: { ok: true, items: results }, cacheControl: CACHE_NO_STORE };
   }
 
   if (request.method === "GET" && route.length === 2 && route[0] === "invites") {
