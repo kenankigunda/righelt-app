@@ -57,8 +57,10 @@ export async function assertMobileBoardCellAccess(page,info,{before,readState,as
   expect(hidden.navBottom).toBeGreaterThanOrEqual(0);expect(shown.navBottom).toBe(Math.max(8,hidden.navBottom));
   expect(shown.nav.bottom).toBeLessThanOrEqual(shown.viewport.height-Math.max(8,hidden.navBottom));expect(hidden.reveal.bottom).toBeLessThanOrEqual(hidden.viewport.height-hidden.navBottom);
   expect({width:hidden.board.width,height:hidden.board.height,x:hidden.board.x+hidden.scrollX,y:hidden.board.y+hidden.scrollY}).toEqual({width:shown.board.width,height:shown.board.height,x:shown.board.x+shown.scrollX,y:shown.board.y+shown.scrollY});
-  const target=hidden.cells.find(cell=>shown.cells.find(previous=>previous.row===cell.row&&previous.col===cell.col)?.navCovered);
-  expect(target,'a previously covered cell must receive the native click').toBeTruthy();
+  const previouslyCovered=hidden.cells.find(cell=>shown.cells.find(previous=>previous.row===cell.row&&previous.col===cell.col)?.navCovered);
+  const target=previouslyCovered??hidden.cells.filter(cell=>cell.owned&&cell.rect.top>=0&&cell.rect.bottom<=hidden.viewport.height).at(-1);
+  expect(target,'the hidden navigation state must leave a visible Board cell available for native input').toBeTruthy();
+  if(!previouslyCovered)expect(shown.cells.every(cell=>!cell.navCovered),'the shown navigation must either expose every Board cell or provide a covered-cell hit-test target').toBe(true);
   await page.evaluate(()=>{window.mobileCellAccessClick=null;const board=document.querySelector('#shell-board');const listener=event=>{const cell=event.target.closest('.cell');if(cell)window.mobileCellAccessClick={trusted:event.isTrusted,row:cell.dataset.row,col:cell.dataset.col};};board.addEventListener('click',listener,{once:true});window.mobileCellAccess.removeCellListener=()=>board.removeEventListener('click',listener);});
   await page.mouse.click(target.x,target.y);
   expect(await page.evaluate(()=>window.mobileCellAccessClick)).toEqual({trusted:true,row:target.row,col:target.col});

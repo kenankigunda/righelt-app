@@ -61,13 +61,18 @@ for(const width of [390,1440])test(`arriving opponent turn uses the responsive i
      const tabs=[...document.querySelectorAll('[data-action="switch-game-panel"][data-panel="history"]')].map(node=>{const bounds=node.getBoundingClientRect(),style=getComputedStyle(node);return {rect:bounds.toJSON(),display:style.display,visibility:style.visibility,opacity:style.opacity,inViewport:bounds.right>0&&bounds.bottom>0&&bounds.left<innerWidth&&bounds.top<innerHeight,navVisible:node.closest('.shell-mobile-tabbar')?.dataset.visible??null};});
      return {viewport:{width:innerWidth,height:innerHeight},scroll:{x:scrollX,y:scrollY},nav:rect(nav),flyout:rect(flyout),tabs};
     });
-    await reveal.click({force:true});await expect(nav).toHaveAttribute('data-visible','true');
+    const expandedHit=await flyout.evaluate(node=>{const nav=document.querySelector('.shell-mobile-tabbar'),toggle=node.querySelector('[data-action="toggle-incoming-narration"]'),r=toggle.getBoundingClientRect(),hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {flyoutZ:Number(getComputedStyle(node).zIndex),navZ:Number(getComputedStyle(nav).zIndex),owned:hit===toggle||toggle.contains(hit)};});
+    expect(expandedHit.owned).toBe(true);expect(expandedHit.flyoutZ).toBeGreaterThan(expandedHit.navZ);
+    await flyout.getByRole('button',{name:'Hide previous turn',exact:true}).click();await expect(flyout).toHaveAttribute('data-expanded','false');
+    const collapsedHit=await reveal.evaluate(button=>{const flyout=document.querySelector('.incoming-move-flyout'),r=button.getBoundingClientRect(),hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {flyoutZ:Number(getComputedStyle(flyout).zIndex),navZ:Number(getComputedStyle(button.closest('.shell-mobile-tabbar')).zIndex),owned:hit===button||button.contains(hit)};});
+    expect(collapsedHit.owned).toBe(true);expect(collapsedHit.navZ).toBeGreaterThan(collapsedHit.flyoutZ);
+    await reveal.click();await expect(nav).toHaveAttribute('data-visible','true');
     const immediate=await geometry();await info.attach('mobile navigation geometry after reveal',{body:JSON.stringify(immediate),contentType:'application/json'});expect(immediate.tabs).toHaveLength(1);
     await expect.poll(async()=> (await geometry()).tabs.filter(tab=>tab.display!=='none'&&tab.visibility==='visible'&&Number(tab.opacity)>0&&tab.inViewport).length,{message:'Expected the sole History tab to finish entering the viewport'}).toBe(1);
     await info.attach('mobile navigation geometry settled',{body:JSON.stringify(await geometry()),contentType:'application/json'});
     await historyTab.click({noWaitAfter:true});await expect(historyTab).toHaveAttribute('aria-pressed','true');await expect(opponent.locator('[data-mobile-panel="history"]')).toHaveAttribute('data-active','true');await expect(flyout).toBeVisible();
    },{timeout:15000});
-   await test.step('mobile flyout stays viewport-fixed below navigation',async()=>{
+   await test.step('collapsed mobile flyout stays viewport-fixed below navigation',async()=>{
     const geometry=await flyout.evaluate(node=>{
      const rect=node.getBoundingClientRect(),nav=document.querySelector('.shell-mobile-tabbar'),navRect=nav.getBoundingClientRect();
      return {position:getComputedStyle(node).position,left:rect.left,right:rect.right,bottom:rect.bottom,viewport:{width:innerWidth,height:innerHeight},navVisible:nav.dataset.visible,overlap:navRect.bottom>rect.top&&navRect.top<rect.bottom,z:{flyout:Number(getComputedStyle(node).zIndex),nav:Number(getComputedStyle(nav).zIndex)}};
@@ -80,7 +85,7 @@ for(const width of [390,1440])test(`arriving opponent turn uses the responsive i
 
   await test.step('replay returns to Board without mutating authority',async()=>{
    const beforeReplay=await projected(opponent,gameId);await opponent.emulateMedia({reducedMotion:'reduce'});
-   if(width===390)await replay.click({force:true,noWaitAfter:true});else await replay.click();
+   if(width===390){const mobileFlyout=opponent.getByRole('complementary',{name:'Previous turn',exact:true});await switchGamePanel(opponent,'board');const expand=mobileFlyout.getByRole('button',{name:'Show previous turn',exact:true});await expand.focus();await expand.press('Enter');await expect(mobileFlyout).toHaveAttribute('data-expanded','true');await replay.click();}else await replay.click();
    await expect(opponent.locator('.computer-replay')).toBeVisible();
    if(width===390)await switchGamePanel(opponent,'board');
    const next=opponent.getByRole('button',{name:'Next',exact:true});await expect(next).toBeVisible();await next.click();await expect(opponent.locator('.computer-replay')).toHaveCount(0);

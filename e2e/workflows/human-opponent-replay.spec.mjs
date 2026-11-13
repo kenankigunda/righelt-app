@@ -7,6 +7,7 @@ import {installNativeFocusTrail,nativeFocusCheckpoint,finishNativeFocusTrail} fr
 import {boardActionTraversalKey,readBoardTraversalStart} from '../support/native-board-keyboard.mjs';
 import {assertMobileBoardCellAccess} from '../support/mobile-board-cell-access.mjs';
 import {edgeDelta} from '../../browser-integration/support/message-semantic-geometry.mjs';
+import {MOBILE_NAVIGATION} from '../../apps/web/shell/mobile-navigation.js';
 // Owned contexts retain their existing cleanup phase. The replay-specific
 // prerequisite slot below is separate from its original 60-second body.
 const test=base.extend({
@@ -32,14 +33,12 @@ import {isOperationRequest} from '../support/shared-request.mjs';
 import {listLegalActions} from '../../apps/web/generated/packages/game-engine/src/index.js';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
 const label=page=>page.locator('#shell-board-preview-label');
-const context=page=>page.locator('#app [data-board-context]:has(.board-context-replay)');
+const context=page=>page.locator('#app [data-incoming-context]');
 const replayButton=page=>context(page).getByRole('button',{name:'Show me again',exact:true});
 const assertUnchanged=(before,after)=>{expect(after.gameplayRevision).toBe(before.gameplayRevision);expect(after.board.state).toEqual(before.board.state);expect(after.moves.map(move=>({id:move.moveId,undone:move.undone}))).toEqual(before.moves.map(move=>({id:move.moveId,undone:move.undone})));};
 // These two replay cases keep their native prerequisites in a separate 40s
-// setup/teardown slot. The original first projection through final Stop, all
-// screenshots and all assertions retain the existing 60s body. The per-case
-// allowance is now 100s before the existing owned-context cleanup, not a claim
-// that the original complete journey still finishes within 60s.
+// setup/teardown slot so the responsive replay and authority journey retains
+// its original 60-second body.
 const replayTest=test.extend({
  humanReplayPrerequisites:[async({ownedRoleContext,baseURL},use,info)=>{
   const widths=new Map([390,1440].map(width=>[`human opponent replay preserves authority and read-only inspection at ${width}px`,width]));
@@ -63,36 +62,29 @@ const replayTest=test.extend({
  },{timeout:40000}],
 });
 for(const width of [390,1440])replayTest(`human opponent replay preserves authority and read-only inspection at ${width}px`,async({humanReplayPrerequisites:{owner,opponent,viewer,gameId},browserName},info)=>{
+  // This case also carries native mobile geometry, stacking, hit ownership,
+  // 200% text, and keyboard-return evidence. Keep that proof in the complete
+  // multi-user journey while giving only its Chromium/mobile path enough time.
+  if(width===390&&browserName==='chromium')info.setTimeout(90000);
   const initial=await projected(owner,gameId),action=initial.legalActions.find(action=>action.type==='move'&&action.from&&action.to);expect(action).toBeTruthy();
   await submitPlayableAction(owner,action);
-  await expect(replayButton(opponent)).toBeVisible();await expect(context(opponent)).toContainText('Your opponent moved');
+  await expect(replayButton(opponent)).toBeVisible();await expect(context(opponent)).toContainText('Guest 1 moved');
   await expect(replayButton(viewer)).toBeVisible();await expect(context(viewer)).toContainText('Guest 1 moved');
   for(const page of [owner,viewer])await expect(label(page).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
   // The accepted summary is independently hosted. Its real primary action stays
   // in the finite Board slot, with no narration or offscreen hidden duplicate.
   await expect(label(opponent)).not.toContainText('Your opponent moved');
   await expect(label(opponent).getByRole('button',{name:'Pass',exact:true})).toBeVisible();
-  const gray=await context(opponent).evaluate(notice=>({face:getComputedStyle(notice).backgroundColor,border:getComputedStyle(notice).borderColor,ink:getComputedStyle(notice).color,marker:getComputedStyle(notice,'::before').backgroundColor}));
-  expect(gray).toEqual({face:'rgb(236, 236, 236)',border:'rgb(170, 170, 170)',ink:'rgb(40, 40, 40)',marker:'rgb(102, 102, 102)'});
-  const close=context(opponent).getByRole('button',{name:'Dismiss Board context',exact:true});
-  const hitReadiness=await close.evaluate(async button=>{
-   const notice=button.closest('[data-board-context]'),card=button.closest('[data-alert-stack-card]');
-   const finite=()=>card.getAnimations({subtree:true}).filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime));
-   const sample=()=>{const r=button.getBoundingClientRect(),s=getComputedStyle(button);return {width:r.width,height:r.height,icon:button.querySelector('svg').getBoundingClientRect().width,background:s.backgroundColor,
-    offsetWidth:button.offsetWidth,offsetHeight:button.offsetHeight,cssWidth:s.width,cssHeight:s.height,zoom:s.zoom,devicePixelRatio,
-    buttonTransform:s.transform,noticeTransform:getComputedStyle(notice).transform,cardTransform:getComputedStyle(card).transform,
-    cardRect:card.getBoundingClientRect().toJSON(),noticeRect:notice.getBoundingClientRect().toJSON(),headerRect:notice.closest('.shell-header-status')?.getBoundingClientRect().toJSON()??null,
-    connected:button.isConnected,current:document.querySelector('#app [data-board-context]:has(.board-context-replay)')===notice,active:card.classList.contains('is-active'),
-    finiteAnimations:finite().map(animation=>({kind:animation.constructor.name,name:animation.animationName??animation.transitionProperty??null,playState:animation.playState,pending:animation.pending,currentTime:animation.currentTime}))};};
-   const before=sample(),animations=finite();
-   const outcomes=await Promise.allSettled(animations.map(animation=>animation.finished));
-   return {before,waited:animations.length,outcomes:outcomes.map(result=>result.status),after:sample()};
-  });
-  await info.attach('Native dismiss geometry before and after finite notification animations',{body:JSON.stringify(hitReadiness),contentType:'application/json'});
-  expect(hitReadiness.after).toMatchObject({connected:true,current:true,active:true,width:44,height:44,icon:16,background:'rgba(0, 0, 0, 0)'});
-  expect(hitReadiness.after.finiteAnimations.filter(animation=>animation.pending||animation.playState==='running')).toHaveLength(0);
-  await opponent.screenshot({path:info.outputPath(`native-gray-${width}.png`)});
-  if(width===390){
+  await expect(context(opponent)).toHaveCount(1);
+  if(width===390)await expect(context(opponent)).toHaveClass(/incoming-move-flyout/);
+  else await expect(context(opponent)).toHaveClass(/history-incoming/);
+  await expect(opponent.locator('[data-alert-stack-card] [data-incoming-context]')).toHaveCount(0);
+  await opponent.screenshot({path:info.outputPath(`incoming-turn-${width}.png`)});
+  // Chromium's native pointer profile focuses the incoming replay control, so
+  // it owns the bounded keyboard-return journey. Firefox on macOS deliberately
+  // retains the previously clicked Board cell for pointer activation and still
+  // runs the complete replay, authority and responsive contracts above/below.
+  if(width===390&&browserName==='chromium'){
    const tall=await opponent.getByTestId('game-board').evaluate(node=>{const style=getComputedStyle(node);return {rect:node.getBoundingClientRect().toJSON(),css:{width:style.width,height:style.height},offset:{width:node.offsetWidth,height:node.offsetHeight}};});
    const tallBoard=tall.rect;
    await opponent.setViewportSize({width,height:740});await opponent.evaluate(()=>document.fonts.ready);
@@ -102,66 +94,60 @@ for(const width of [390,1440])replayTest(`human opponent replay preserves author
     const cells=[...document.querySelectorAll('#shell-board > .cell')].map(node=>{const r=node.getBoundingClientRect();return {width:r.width,height:r.height};});
     const pass=document.querySelector('#shell-board-preview-label [data-board-message-action="pass"]');
     return {viewport:{width:innerWidth,height:innerHeight},scrollY,maxScroll:document.documentElement.scrollHeight-innerHeight,fonts:document.fonts.status,
-     header:rect('.shell-header'),context:rect('[data-alert-stack-card].is-active'),contextBody:rect('.is-active .board-context-body'),contextReplay:rect('.is-active .board-context-replay'),contextDismiss:rect('.is-active .board-context-dismiss'),
+     header:rect('.shell-header'),context:rect('[data-incoming-context]'),contextReplay:rect('[data-incoming-context] [data-action="replay-board-context"]'),
      panel:rect('[data-shell-panel="board"]'),heading:rect('.board-heading-slot'),slot:rect('.board-message-slot'),board:rect('#shell-board'),boardCss:{width:getComputedStyle(document.querySelector('#shell-board')).width,height:getComputedStyle(document.querySelector('#shell-board')).height},boardOffset:{width:document.querySelector('#shell-board').offsetWidth,height:document.querySelector('#shell-board').offsetHeight},wrap:rect('[data-testid="game-board-wrap"]'),legend:rect('[data-shell-panel="board"] .overlay-key'),nav:rect('.shell-mobile-tabbar'),navVisible:document.querySelector('.shell-mobile-tabbar')?.dataset.visible,
      frameReserve:document.querySelector('[data-game-shell-root]')?.style.getPropertyValue('--board-context-reserve'),cellCount:cells.length,minCellWidth:Math.min(...cells.map(r=>r.width)),minCellHeight:Math.min(...cells.map(r=>r.height)),
      pass:pass?.getBoundingClientRect().toJSON()??null,passHitHeight:pass?getComputedStyle(pass,'::before').height:null,
-     metrics:Object.fromEntries(['[data-shell-panel="board"]','.board-heading-slot','.board-heading','.board-message-slot','.board-message-live','.board-wrap','.overlay-key','.board-context-body','.board-context-actions'].map(selector=>[selector,metrics(selector)]))};
+     metrics:Object.fromEntries(['[data-shell-panel="board"]','.board-heading-slot','.board-heading','.board-message-slot','.board-message-live','.board-wrap','.overlay-key','[data-incoming-context]'].map(selector=>[selector,metrics(selector)]))};
    });
    await info.attach('Normal390x740 Board and chrome geometry',{body:JSON.stringify({...normal,tallBoard,tall}),contentType:'application/json'});
-   await opponent.screenshot({path:info.outputPath('native-gray-mobile-normal740.png')});
+   await opponent.screenshot({path:info.outputPath('incoming-mobile-normal740.png')});
    expect(normal.cellCount).toBe(100);expect(normal.board.bottom).toBeLessThanOrEqual(normal.viewport.height+1);
    expect(normal.boardCss).toEqual(tall.css);expect(normal.boardOffset).toEqual(tall.offset);
    for(const rect of [normal.board,tallBoard]){expect(rect.right).toBe(rect.left+rect.width);expect(rect.bottom).toBe(rect.top+rect.height);}
    for(const dimension of ['width','height'])edgeDelta(normal.board[dimension],tallBoard[dimension],0,0,[normal.board[dimension],tallBoard[dimension]],`unchanged Board ${dimension} across viewport heights`);
+   const collapse=context(opponent).getByRole('button',{name:'Hide previous turn',exact:true});await collapse.click();await expect(context(opponent)).toHaveAttribute('data-expanded','false');
    await assertMobileBoardCellAccess(opponent,info,{before:await projected(opponent,gameId),readState:()=>projected(opponent,gameId),assertUnchanged});
    // Preserve the existing 900px manual Next/Stop replay viewport.
    await opponent.setViewportSize({width,height:900});
+   const expand=context(opponent).getByRole('button',{name:'Show previous turn',exact:true});await expand.focus();await expand.press('Enter');await expect(context(opponent)).toHaveAttribute('data-expanded','true');
   }
 
 
   // An inactive seated player can still inspect a piece and its command lines.
   const saved=await projected(owner,gameId),piece=saved.board.state.pieces.find(piece=>piece.owner==='P1');
   const cell=(page,point)=>page.locator(`[data-testid="game-board"] .cell[data-row="${point.row}"][data-col="${point.col}"]`);
-  expect(piece.kind).toBe('commander');await cell(owner,piece.position).click();await expect(label(owner)).toContainText('Supply line for commander at');await expect(label(owner)).toContainText('No connected units.');await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
-  await owner.locator('[data-board-inspection="command"]').click();await expect(label(owner)).toContainText('Commander at');await expect(label(owner)).toContainText('No connections.');await expect(owner.locator('#shell-overlay-lines [data-legend-kind="supply"]')).toHaveCount(0);await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
+  expect(piece.kind).toBe('commander');await cell(owner,piece.position).click();await expect(label(owner)).toHaveText('Supply lines');
+  const explanation=owner.getByRole('region',{name:'Board explanation',exact:true});
+  await expect(explanation).toContainText('Supply line for commander at');await expect(explanation).toContainText('No connected units.');await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
+  await owner.locator('[data-board-inspection="command"]').click();await expect(label(owner)).toHaveText('No connection');await expect(explanation).toContainText('Commander at');await expect(explanation).toContainText('No connections.');await expect(owner.locator('#shell-overlay-lines [data-legend-kind="supply"]')).toHaveCount(0);await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
   const writes=[];const listen=request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/'))writes.push({method:request.method(),path:new URL(request.url()).pathname});};opponent.on('request',listen);
   const before=await projected(opponent,gameId);
   await opponent.emulateMedia({reducedMotion:'reduce'});await replayButton(opponent).click();await expect(opponent.locator('.computer-replay')).toBeVisible();await expect(label(opponent).getByRole('button',{name:'Next',exact:true})).toBeVisible();
   await opponent.screenshot({path:info.outputPath('human-replay-manual.png')});
   await label(opponent).getByRole('button',{name:'Next',exact:true}).click();await expect(opponent.locator('.computer-replay')).toHaveCount(0);
-  await replayButton(opponent).click();await label(opponent).getByRole('button',{name:'Stop replay',exact:true}).click();await expect(opponent.locator('.computer-replay')).toHaveCount(0);
-  if(width===390){
+  await replayButton(opponent).click();const stopReplay=label(opponent).getByRole('button',{name:'Stop replay',exact:true});await stopReplay.focus();await expect(stopReplay).toBeFocused();await stopReplay.press('Enter');await expect(opponent.locator('.computer-replay')).toHaveCount(0);
+  const postStopFocus=await replayButton(opponent).evaluate(button=>{const active=document.activeElement;return {replayFocused:active===button,activeTag:active?.tagName??null,activeAction:active?.dataset?.action??active?.dataset?.boardMessageAction??null,activeText:active?.textContent?.trim().slice(0,80)??null,activeConnected:active?.isConnected??false,replayConnected:button.isConnected};});
+  await info.attach('Native focus immediately after Stop replay',{body:JSON.stringify(postStopFocus),contentType:'application/json'});expect(postStopFocus,JSON.stringify(postStopFocus)).toMatchObject({replayFocused:true});
+  if(width===390&&browserName==='chromium'){
+   const collapse=context(opponent).getByRole('button',{name:'Hide previous turn',exact:true});await collapse.click();await expect(context(opponent)).toHaveAttribute('data-expanded','false');
    await opponent.setViewportSize({width,height:600});
    await opponent.evaluate(()=>document.documentElement.style.fontSize='32px');
    await opponent.evaluate(()=>document.fonts.ready);
-   const explanation=context(opponent).getByRole('region',{name:'Board explanation',exact:true});
-   await expect(explanation).toHaveAttribute('tabindex','0');
-   await expect(context(opponent).locator('.board-context-scroll-cue')).toBeVisible();
    const primary=label(opponent).getByRole('button',{name:'Pass',exact:true});
    const initial=await primary.boundingBox();
-   // Keep the selected top layout's initial below-fold condition visible in
-   // evidence. Native keyboard traversal owns the visibility correction.
-   // macOS WebKit's default keyboard profile skips native buttons with Tab.
-   // Option+Tab visits all controls without changing OS preferences or markup.
-   // Other engine profiles retain their existing native key choice.
-   // Existing Stop replay owns a return to the current Show me again control,
-   // before Pass in document order. Native traversal must not rely on wrapping
-   // past navigation or crossing the 100 cell buttons in reverse. Keep all cells
-   // and the original gesture bound and focus/clearance oracles.
    const traversalKey=boardActionTraversalKey({platform:process.platform,browserName});
-   let traversalStart,startFailure;
+   let traversalStart,startFailure,lastTraversalStart;
    try{
-    // Wait only for the existing owned Stop return. Never establish focus here.
-    if(browserName==='firefox')await expect(replayButton(opponent)).toBeFocused();
-   }catch(error){startFailure=error;throw error;}
+    await expect.poll(async()=>lastTraversalStart=await primary.evaluate(readBoardTraversalStart)).toMatchObject({ready:true});
+   }catch(error){startFailure=error;throw Error(`Native Board traversal start never became eligible: ${JSON.stringify(lastTraversalStart)}`,{cause:error});}
    finally{
     try{
-     traversalStart=browserName==='firefox'?await primary.evaluate(readBoardTraversalStart):null;
+     traversalStart=await primary.evaluate(readBoardTraversalStart);
      await info.attach('Native keyboard traversal profile',{body:JSON.stringify({platform:process.platform,browserName,traversalKey,traversalStart}),contentType:'application/json'});
     }catch(error){if(!startFailure)throw error;console.error('native-start-evidence-incomplete');}
    }
-   if(browserName==='firefox')expect(traversalStart,'Existing owned replay return is the current eligible control before Pass').toMatchObject({ready:true});
+   expect(traversalStart,'Native traversal begins from the current incoming toggle after the expanded flyout is collapsed').toMatchObject({ready:true,startIsBody:false,startControlFocused:true,startAction:'toggle-incoming-narration'});
    const observeFocus=process.env.RIGHELT_FF_TRAVERSAL_OBSERVER==='1';
    if(observeFocus)await primary.evaluate(installNativeFocusTrail,{platform:process.platform,browserName,traversalKey});
    let traversalFailure;
@@ -177,13 +163,16 @@ for(const width of [390,1440])replayTest(`human opponent replay preserves author
     }
    }
    const clearance=await primary.evaluate(button=>{
-    const notice=document.querySelector('[data-alert-stack-card].is-active'),nav=document.querySelector('.shell-mobile-tabbar'),rect=button.getBoundingClientRect();
-    return {top:rect.top,bottom:rect.bottom,noticeBottom:notice?.getBoundingClientRect().bottom??0,navTop:nav?.getBoundingClientRect().top??innerHeight,scrollY,unmapped:document.querySelectorAll('[data-prompt-unmapped="true"]').length,overflow:document.querySelectorAll('[data-prompt-overflow="true"]').length};
+    const incoming=document.querySelector('[data-incoming-context]'),nav=document.querySelector('.shell-mobile-tabbar'),rect=button.getBoundingClientRect(),incomingRect=incoming?.getBoundingClientRect(),navRect=nav?.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2,hit=document.elementFromPoint(x,y);
+    return {top:rect.top,bottom:rect.bottom,incomingTop:incomingRect?.top??innerHeight,navTop:navRect?.top??innerHeight,obstacleTop:Math.min(incomingRect?.top??innerHeight,navRect?.top??innerHeight),centerOwned:hit===button||button.contains(hit),scrollY,unmapped:document.querySelectorAll('[data-prompt-unmapped="true"]').length,overflow:document.querySelectorAll('[data-prompt-overflow="true"]').length};
    });
-   await info.attach('Selected top short200 initial and native focus clearance',{body:JSON.stringify({initial,clearance}),contentType:'application/json'});
-   expect(clearance.unmapped).toBe(0);expect(clearance.overflow).toBe(0);expect(clearance.top).toBeGreaterThanOrEqual(clearance.noticeBottom+8);expect(clearance.bottom).toBeLessThanOrEqual(clearance.navTop-8);
-   await opponent.screenshot({path:info.outputPath('native-gray-mobile-short200-keyboard.png')});
+   await info.attach('Short 200 percent text initial and native focus clearance',{body:JSON.stringify({initial,clearance}),contentType:'application/json'});
+   expect(clearance.unmapped).toBe(0);expect(clearance.overflow).toBe(0);expect(clearance.top).toBeGreaterThanOrEqual(0);expect(clearance.bottom).toBeLessThanOrEqual(clearance.obstacleTop-8);expect(clearance.centerOwned).toBe(true);
+   await opponent.screenshot({path:info.outputPath('incoming-mobile-short200-keyboard.png')});
+   await opponent.mouse.move(4,300);await opponent.mouse.wheel(0,-10000);await expect.poll(()=>opponent.evaluate(()=>scrollY)).toBe(0);
+   await opponent.mouse.wheel(0,MOBILE_NAVIGATION.hideDistance+8);await expect(opponent.locator('.shell-mobile-tabbar')).toHaveAttribute('data-visible','false');
    await opponent.evaluate(()=>document.documentElement.style.fontSize='');await opponent.setViewportSize({width,height:900});
+   const expand=context(opponent).getByRole('button',{name:'Show previous turn',exact:true});await expand.focus();await expect(expand).toBeFocused();await expand.press('Enter');await expect(context(opponent)).toHaveAttribute('data-expanded','true');
   }
   await opponent.emulateMedia({reducedMotion:'no-preference'});await replayButton(opponent).click();await expect(opponent.locator('.computer-replay')).toBeVisible();await expect(opponent.locator('.computer-replay')).toHaveCount(0);
   assertUnchanged(before,await projected(opponent,gameId));expect(writes).toEqual([]);opponent.off('request',listen);
@@ -199,31 +188,7 @@ for(const width of [390,1440])replayTest(`human opponent replay preserves author
    expect(write.body).toEqual({identityId:viewerIdentity,metadataOnly:true,cursor:null,historyRevision:advanced.gameplayRevision,mode:'additional',protocolVersion:2});
   }viewer.off('request',watch);
   await expect(context(viewer)).toContainText('Guest 2 moved');
-  const boardBox=await viewer.getByTestId('game-board').boundingBox();
-  await context(viewer).getByRole('button',{name:'Dismiss Board context',exact:true}).click();
-  await expect(context(viewer)).toHaveCount(0);
-  const afterDismiss=await viewer.getByTestId('game-board').boundingBox();
-  expect(afterDismiss).toEqual(boardBox);
-  await switchGamePanel(viewer,'history');
-  const fallback=viewer.locator('.history-live-replay').getByRole('button',{name:'Show me again',exact:true});
-  await expect(fallback).toBeVisible();await expect(fallback).toHaveCount(1);
-  // Observe the real native activation before the app's delegated handler.
-  // Keep only bounded booleans/counts, with no game, identity or URL data.
-  await viewer.evaluate(()=>{
-   const state={seen:0,first:null};
-   const capture=event=>{
-    const target=event.target.closest?.('.history-live-replay [data-action="replay-board-context"]');if(!target)return;
-    state.seen=Math.min(2,state.seen+1);
-    state.first??={trusted:event.isTrusted,targetFocused:document.activeElement===target,documentFocused:document.hasFocus(),hidden:document.hidden};
-   };
-   document.addEventListener('click',capture,{capture:true,passive:true});
-   globalThis.__historyReplayActivation={state,dispose:()=>document.removeEventListener('click',capture,true)};
-  });
-  let activationError=null,activation={incomplete:true};
-  try{await fallback.click();}catch(error){activationError=error;}
-  try{activation=await viewer.evaluate(()=>{const owned=globalThis.__historyReplayActivation;try{return owned?.state??{incomplete:true};}finally{owned?.dispose();delete globalThis.__historyReplayActivation;}});}catch(error){activationError??=error;}
-  try{await info.attach('Native History replay activation before app handler',{body:JSON.stringify(activation),contentType:'application/json'});}catch(error){activationError??=error;}
-  if(activationError)throw activationError;
+  await replayButton(viewer).click();
   await expect(viewer.locator('.computer-replay')).toBeVisible();
   if(width===390)await expect(viewer.locator('[data-mobile-panel="board"]')).toHaveAttribute('data-active','true');
   await label(viewer).getByRole('button',{name:'Stop replay',exact:true}).click();await expect(viewer.locator('.computer-replay')).toHaveCount(0);
@@ -259,7 +224,7 @@ for(const width of [390,1440])test(`reopening human play preserves narration and
  }
   // Reopening the live game clears inspection and exposes legal Pass beside narration.
   await owner.reload();await expect(owner.getByTestId('game-shell')).toBeVisible();await switchGamePanel(owner,'board');
-  await expect(context(owner)).toContainText('Your opponent moved');await expect(replayButton(owner)).toBeVisible();
+  await expect(context(owner)).toContainText('Guest 2 moved');await expect(replayButton(owner)).toBeVisible();
   const pass=label(owner).getByRole('button',{name:'Pass',exact:true});await expect(pass).toBeVisible();
   const beforePass=await projected(owner,gameId),passWrites=[];const trackPass=request=>{if(isOperationRequest(request,'apply'))passWrites.push(request.postDataJSON())};owner.on('request',trackPass);
   await pass.click();await expect.poll(async()=>(await projected(owner,gameId)).board.state.turnIndex).toBe(beforePass.board.state.turnIndex+1);

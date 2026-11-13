@@ -25,7 +25,7 @@
   },
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",
-    "sourceSha256": "8456b459eba5a5f0daca0d817513a3058ba29ca601212a36a5b2114eb66babba",
+    "sourceSha256": "3989efdb8070ba803d65e75f23592af6b5dcde95e015be704320069c70356cec",
     "prefix": "const __retreatHeightProbe=(event,data,owner)=>{try{const sink=globalThis.__retreatHeightRecord;if(typeof sink==='function')sink(event,typeof data==='function'?data():data,owner);}catch{}};\nconst __retreatHeightValue=(event,value,data=null,owner=null)=>{__retreatHeightProbe(event,data??(()=>({value})),owner);return value;};\n",
     "operations": [
       {
@@ -69,7 +69,7 @@
         "anchorCount": 1
       }
     ],
-    "outputSha256": "f3b2436bebd57ee903d39620914618d9b4c4d0f4eb68811f4d1f5dc7ab4ea2ac"
+    "outputSha256": "231a21a71476fa08a0b0e594a1740c7daf210dd0a907d2e69ebff070983059fc"
   },
   "/board/message-height.js": {
     "file": "apps/web/board/message-height.js",

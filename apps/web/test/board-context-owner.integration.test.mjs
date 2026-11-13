@@ -1,5 +1,5 @@
 import {createBoardContextPresentation} from '../shell/board-context-presentation.js';
-import {createDisplayedReplayStarter} from '../shell/displayed-replay-starter.js';
+import {createDisplayedReplayStarter,displayedReplayFocusTarget} from '../shell/displayed-replay-starter.js';
 import {createIncomingNarrationState} from '../shell/incoming-narration.js';
 import {createRenderGestureGate} from '../shell/render-gesture.js';
 import {createDestinationRouteOwner,destinationReadScope} from '../shell/destination-route-owner.js';
@@ -24,6 +24,15 @@ const events=()=>{
  return {addEventListener(type,fn){if(!listeners.has(type))listeners.set(type,new Set());listeners.get(type).add(fn);},removeEventListener(type,fn){listeners.get(type)?.delete(fn);},fire(type,extra={}){for(const fn of [...listeners.get(type)??[]])fn({type,...extra});},count(){return [...listeners.values()].reduce((n,set)=>n+set.size,0);}};
 };
 const accepted=()=>({id:'game',gameplayRevision:4,myRoles:['Player 2'],player1:{identityId:'other'},player2:{identityId:'me'},board:{state:{turnIndex:1,sideToMove:'P2'}},turns:[{index:0,playerSeat:'Player 1',status:'complete'}],moves:[{moveId:'move',turnIndex:0,actorSide:'P1',action:{type:'move',from:{row:1,col:2},to:{row:2,col:2}}}]});
+test('displayed replay focus accepts every supported live replacement host and rejects unrelated controls',()=>{
+ const acceptedSelectors=[];
+ for(const selector of ['#shell-board-preview-label [data-action^="replay-"]','#shell-board-preview-label [data-board-message-action^="replay-"]','[data-incoming-context] [data-action="replay-board-context"]','.history-live-replay [data-action="replay-board-context"]']){
+  const target={closest:query=>{acceptedSelectors.push(query);return query.split(',').includes(selector)?{}:null;}};
+  assert.equal(displayedReplayFocusTarget(target),true);
+ }
+ assert.equal(displayedReplayFocusTarget({closest:()=>null}),false);
+ assert.equal(acceptedSelectors.every(query=>query.includes('[data-incoming-context]')&&query.includes('.history-live-replay')),true);
+});
 function fixture(t){
  const queued=[],reveals=[],plays=[],admissions=[],renders=[],win=events(),doc={...events(),defaultView:win,hidden:false};
  const owners=[],observers=new Set();
@@ -53,7 +62,7 @@ function fixture(t){
  notificationStack:{prefer(){}},updateMountedHeader:()=>false,renderHistoryPanel:()=>'',patchToolHtml(){},syncRenderedMarkupSnapshot(){},boardRuntime:{refreshStatus(){},setInteractionBlocked(){}},
 
  createEngineBoardAdapter(){},prefersReducedMotion:()=>false,
- createComputerReplay:options=>({play:async payload=>{plays.push(payload);options.onFinish();},destroy(){},snapshot:()=>({playing:false}),stop(){}}),CSS:{escape:value=>value},
+ createComputerReplay:options=>({play:async payload=>{plays.push(payload);context.beforeReplayFinish?.();options.onFinish();},destroy(){},snapshot:()=>({playing:false}),stop(){}}),CSS:{escape:value=>value},
  };
  context.boardContextVisit=0;context.incomingNarrationState=createIncomingNarrationState();context.replayController=null;
  context.renderGesture=createRenderGestureGate({render:context.render,schedule:fn=>{queued.push(fn);return fn;},cancel:fn=>{const index=queued.indexOf(fn);if(index>=0)queued.splice(index,1);}});owners.push(context.renderGesture);
@@ -65,7 +74,7 @@ function fixture(t){
   get routeHydrated(){return context.routeHydrated;},set routeHydrated(value){context.routeHydrated=value;}};
  const destinationOwner=createDestinationRouteOwner(()=>({...context,state:routeState,cancelPendingBoardContextReplay:presentation.cancel}));
  const c={receive:presentation.receive,ack:presentation.ack,scope:presentation.scope,owner:presentation.owner,store:presentation.store,replay:context.startComputerReplay,dismiss:presentation.dismiss,
-  replayAction:presentation.replayAction,routeSync:destinationOwner.start,resume:presentation.resume,pending:()=>presentation.state.pendingBoardContextReplay,focus:presentation.focus,
+  replayAction:presentation.replayAction,dispatch:presentation.dispatch,routeSync:destinationOwner.start,resume:presentation.resume,pending:()=>presentation.state.pendingBoardContextReplay,focus:presentation.focus,
   retire:()=>{context.boardContextVisit++;presentation.owner.retire();}};
  const meta=(intentVersion=0)=>({selectedPieceId:null,phase:null,continuationPhase:null,intentVersion,transient:false});
  c.receive(null,meta());
@@ -76,7 +85,7 @@ function fixture(t){
   while(queued.length)queued.shift()();await Promise.resolve();
   while(queued.length)queued.shift()();await Promise.resolve();
  };while(queued.length)queued.shift()();admissions.length=0;
- return {c,doc,win,context,board,button,dismiss,root,requests,plays,reveals,admissions,renders,meta,flush,releaseArchive:()=>resolveArchive({items:[{id:context.view.moves[0].moveId,move:{...context.view.moves[0],index:0,turnMoveIndex:0,selectionSnapshot:{pieces:[],sideToMove:'P1'},snapshot:{pieces:[],sideToMove:'P2'}}}],nextCursor:null}),descriptor:()=>captureDisplayedReplay({game:context.view,owner:transport,scope:c.scope(),identityId:'me'})};
+ return {c,doc,win,context,board,button,dismiss,root,requests,plays,reveals,admissions,renders,meta,flush,notifyMutations:()=>{for(const observer of [...observers])observer.callback([]);},releaseArchive:()=>resolveArchive({items:[{id:context.view.moves[0].moveId,move:{...context.view.moves[0],index:0,turnMoveIndex:0,selectionSnapshot:{pieces:[],sideToMove:'P1'},snapshot:{pieces:[],sideToMove:'P2'}}}],nextCursor:null}),descriptor:()=>captureDisplayedReplay({game:context.view,owner:transport,scope:c.scope(),identityId:'me'})};
 }
 
 test('actual queued context refresh invokes the real recovery helper before layout and coalesces changes',async t=>{
@@ -127,6 +136,40 @@ for(const boundary of ['blank pointer','blur','hidden','replacement body','new a
 });
 test('same-intent replay completion returns focus with explicit pointer-mode visibility correction',async t=>{
  const f=fixture(t);f.button.focus();const pending=f.c.replay(f.descriptor(),f.button);f.releaseArchive();await pending;await f.flush();assert.equal(f.plays.length,1);assert.deepEqual(f.plays[0].frames.map(frame=>frame.decisionId),['move']);assert.deepEqual(f.plays[0].frames[0].after,{pieces:[],sideToMove:'P2'});assert.equal(f.doc.activeElement,f.button);assert.deepEqual(f.reveals,[f.button]);
+});
+
+test('incoming replay completion returns focus to its rerendered live action',async t=>{
+ const f=fixture(t),descriptor=f.descriptor(),replacement={...f.button,isConnected:true,dataset:{action:'replay-board-context',boardContextKey:descriptor.key},focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
+ f.button.dataset={...replacement.dataset};f.button.closest=selector=>selector.includes('[data-incoming-context]')?{}:null;f.button.focus();
+ const querySelector=f.context.appEl.querySelector.bind(f.context.appEl);
+ let replacementSelector=null;f.context.appEl.querySelector=selector=>{if(selector.includes(`[data-board-context-key="${descriptor.key}"]`)){replacementSelector=selector;return replacement;}return querySelector(selector);};
+ f.context.beforeReplayFinish=()=>{f.button.isConnected=false;f.doc.activeElement=f.doc.body;};
+ const pending=f.c.replay(descriptor,f.button);f.releaseArchive();await pending;await f.flush();
+ assert.equal(f.plays.length,1);assert.match(replacementSelector,/^\[data-incoming-context\]/);assert.equal(f.doc.activeElement,replacement);assert.deepEqual(f.reveals,[replacement]);
+});
+
+test('keyboard-owned Stop replay returns to the visible live incoming action after synchronous removal',async t=>{
+ const f=fixture(t),reasons=[],descriptor=f.descriptor(),replacement={isConnected:true,disabled:false,dataset:{action:'replay-board-context',boardContextKey:descriptor.key},closest:selector=>selector.includes('[data-incoming-context]')?{}:null,focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
+ f.context.presentation.state.activeDisplayedReplay={...descriptor,key:'retired-replay-key'};f.context.appEl.querySelectorAll=()=>[replacement];
+ f.button.dataset.boardMessageAction='replay-stop';f.button.closest=selector=>selector.includes('#shell-board-preview-label')&&f.button.dataset.boardMessageAction?.startsWith('replay-')?{}:null;f.button.focus();
+ f.context.replayController={stop(reason){reasons.push(reason);f.button.isConnected=false;f.doc.activeElement=f.doc.body;}};
+ f.c.dispatch('replay-stop',{trigger:f.button,returnFocus:true});await f.flush();assert.deepEqual(reasons,['stopped']);assert.equal(f.doc.activeElement,replacement);assert.deepEqual(f.reveals,[]);f.context.replayController=null;
+});
+
+test('keyboard-owned Stop replay waits for its deferred render removal before returning focus',async t=>{
+ const f=fixture(t),descriptor=f.descriptor(),replacement={isConnected:true,disabled:false,dataset:{action:'replay-board-context',boardContextKey:descriptor.key},closest:selector=>selector.includes('[data-incoming-context]')?{}:null,focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
+ f.context.presentation.state.activeDisplayedReplay=descriptor;f.context.appEl.querySelectorAll=()=>[replacement];
+ f.button.dataset.boardMessageAction='replay-stop';f.button.closest=selector=>selector.includes('#shell-board-preview-label')&&f.button.dataset.boardMessageAction?.startsWith('replay-')?{}:null;f.button.focus();
+ f.context.replayController={stop(){}};f.c.dispatch('replay-stop',{trigger:f.button,returnFocus:true});assert.equal(f.doc.activeElement,f.button);
+ f.button.isConnected=false;f.doc.activeElement=f.doc.body;f.notifyMutations();assert.equal(f.doc.activeElement,replacement);f.context.replayController=null;
+});
+
+test('Stop replay preserves a same-node primary action instead of moving focus to incoming narration',async t=>{
+ const f=fixture(t),descriptor=f.descriptor(),replacement={isConnected:true,disabled:false,dataset:{action:'replay-board-context',boardContextKey:descriptor.key},closest:selector=>selector.includes('[data-incoming-context]')?{}:null,focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
+ f.context.presentation.state.activeDisplayedReplay=descriptor;f.context.appEl.querySelectorAll=()=>[replacement];
+ f.button.dataset.boardMessageAction='replay-stop';f.button.closest=selector=>selector.includes('#shell-board-preview-label')&&f.button.dataset.boardMessageAction?.startsWith('replay-')?{}:null;f.button.focus();
+ f.context.replayController={stop(){f.button.dataset.boardMessageAction='pass';}};
+ f.c.dispatch('replay-stop',{trigger:f.button,returnFocus:true});await f.flush();assert.equal(f.doc.activeElement,f.button);f.context.replayController=null;
 });
 
 for(const focused of [true,false])for(const cancellation of [null,'new pointer','new focus','new key','blur','hidden','new account','new view','new intent','new route','new frame','failed navigation'])test(`actual LIVE History fallback waits for mounted Board once, native focus ${focused}, cancellation ${cancellation}`,async t=>{

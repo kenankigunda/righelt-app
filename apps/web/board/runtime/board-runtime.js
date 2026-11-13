@@ -1480,7 +1480,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       if (action === "retry-rush-guidance") { rushGuidanceKey = null; syncRushGuidance(); renderStatusContent(); }
       else if (action === "pass") submitPass();
       else if(action==='end-turn'){if(!inspection&&legalActions.some(action=>action.type==='end_turn'))void endCurrentTurn();}
-      else controls.onBoardMessageAction?.(action,{trigger:externalAction});
+      else controls.onBoardMessageAction?.(action,{trigger:externalAction,returnFocus:externalAction.ownerDocument?.activeElement===externalAction||event.isTrusted&&event.detail===0});
       return;
     }
     if (interactionBlocked) return;
