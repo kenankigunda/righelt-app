@@ -4057,7 +4057,7 @@ const opponentSession = createOpponentSession({ preferences:createIntroductionPr
   navigateTo(buildGameHash(handle.result.id,null,getCurrentFlyoutState()));
   return handle.result;
 } });
-const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: opponent => homeReadRecovery ? {state:'preparing',message:'Your games are still reconnecting.'} : opponent === 'friend' ? {state:'ready',message:'Send an invitation. Let the rivalry begin.'} : getComputerReadiness(),
+const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: opponent => homeReadRecovery ? {state:'preparing',message:'Your games are still reconnecting.'} : opponent === 'friend' ? {state:'ready'} : getComputerReadiness(),
   onPlay: intent => {
     if(homeReadRecovery)return {state:'error',message:'Reconnect your games before starting.'};
     if(intent.opponent !== 'friend') return opponentSession.play(intent);

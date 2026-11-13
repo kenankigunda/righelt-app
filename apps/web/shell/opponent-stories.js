@@ -35,7 +35,7 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
     status.dataset.loadingContext = 'external';
     status.dataset.loadingMessage = "Preparing your opponent is taking a little longer than usual.";
     status.dataset.loadingState = readiness.state === "preparing" ? "pending" : "idle";
-    modal.element.querySelector("[data-story-readiness]").textContent = readiness.message || (readiness.state === "ready" ? "Ready to play" : "Preparing opponent…");
+    modal.element.querySelector("[data-story-readiness]").textContent = readiness.message || (readiness.state === "ready" ? (opponent === "friend" ? "" : "Ready to play") : "Preparing opponent…");
     const retry = modal.element.querySelector("[data-story-retry]");
     if (retry) retry.hidden = readiness.state !== "error";
   };
@@ -107,7 +107,7 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
         <div class="story-art-wrap" data-single-image="${!multipleScenes}">${multipleScenes ? `<button class="ui-icon-button story-caret" data-story-step="-1" aria-label="Previous story image">${icon('left')}</button>` : ""}
         <div class="story-art">${story.scenes.map(([file, alt], i) => `<img data-story-image data-active="${i === 0}" aria-hidden="${i !== 0}" ${i ? "data-src" : "src"}="/assets/opponents/${file}.webp" width="960" height="640" alt="${alt}">`).join("")}</div>
         ${multipleScenes ? `<button class="ui-icon-button story-caret" data-story-step="1" aria-label="Next story image">${icon('right')}</button>` : ""}</div>
-        <div class="story-copy"><div class="story-heading"><h2 id="opponent-story-title">${story.name}</h2><span>${story.difficulty}</span></div>
+        <div class="story-copy">${id === "friend" ? `<span class="sr-only" id="opponent-story-title">${story.name}</span><div class="story-heading"><h2>${story.difficulty}</h2></div>` : `<div class="story-heading"><h2 id="opponent-story-title">${story.name}</h2><span>${story.difficulty}</span></div>`}
         <p class="opponent-story-copy">${story.story}</p><p role="status" data-story-readiness></p><div class="story-modal-actions">${mode === "intro" ? `<button data-story-play disabled>${icon('play')}${story.playLabel || `Play ${story.name}`}</button><button class="secondary" data-story-retry hidden>Retry</button>` : `<button data-modal-close>${icon('back')}Return to game</button><button data-story-result hidden>View result</button>`}</div></div>`, options.trigger, options.mode === "revisit" ? null : () => document.querySelector(`button[data-opponent="${id}"]`));
       modal.element.dataset.opponent = id;
       modal.element.dataset.actionAffiliation = side === "p2" ? "blue" : "red";

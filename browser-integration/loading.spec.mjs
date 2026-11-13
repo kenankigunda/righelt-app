@@ -63,6 +63,16 @@ test('closing a pending opponent introduction retires its clock before the cue a
  await expect(page.getByRole('dialog',{name:'Friend',exact:true}).locator('[data-story-play]')).toBeEnabled();
  await expect(page.getByRole('dialog',{name:'Friend',exact:true}).locator('[data-story-play]')).not.toHaveAttribute('data-loading-phase');
 });
+test('Friend introduction uses its rivalry line as the sole visible heading without redundant readiness copy',async({page})=>{
+ await page.waitForFunction(()=>window.controllersReady);
+ await page.evaluate(()=>window.story.open('friend'));
+ const dialog=page.getByRole('dialog',{name:'Friend',exact:true});
+ await expect(dialog).toBeVisible();
+ await expect(dialog.getByRole('heading',{name:'A rivalry of your own',exact:true})).toBeVisible();
+ await expect(dialog.getByRole('heading',{name:'Friend',exact:true})).toHaveCount(0);
+ await expect(dialog.locator('[data-story-readiness]')).toHaveText('');
+ await expect(dialog.getByRole('button',{name:'Start a friend game',exact:true})).toBeEnabled();
+});
 test('real rematch and profile controllers expose slow feedback then retire it on completion',async({page})=>{
  await page.waitForFunction(()=>window.controllersReady);await freezeLoadingClock(page);
  await page.evaluate(()=>{window.rematch.open({opponent:'friend',rematchSide:'p1'});document.querySelector('[data-rematch-start]').click();});
