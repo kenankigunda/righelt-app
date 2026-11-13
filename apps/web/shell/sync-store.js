@@ -561,7 +561,18 @@ export const createLiveSyncClient = ({
     });
 
     ws.addEventListener("close", (event) => {
-      if (!current()) { closeReasonBySocket.delete(ws); return; }
+      if (!current()) {
+        const staleCloseReason = closeReasonBySocket.get(ws);
+        closeReasonBySocket.delete(ws);
+        // Browsers report a failed connection as error followed by close. The
+        // error already owns recovery and retires this socket, but the later
+        // close is the only callback carrying the native close code. Preserve
+        // that bounded evidence without reopening or transferring recovery.
+        if (staleCloseReason === "recovery:socket_error") recordMetric("socket_closed", {
+          gameId, reason: "socket_closed", closeCode: event.code, closeClean: event.wasClean, socketGeneration: generation,
+        });
+        return;
+      }
       if (auth?.enabled && event.code === 4001 && !retired) { retired = true; disconnectAll(); onAuthLost(); return; }
       const closeReason = closeReasonBySocket.get(ws) ?? "unexpected_close";
       closeReasonBySocket.delete(ws);
@@ -584,11 +595,12 @@ export const createLiveSyncClient = ({
         return;
       }
       onStatus({ state: "closed", gameId, reconnectAttempts: reconnectAttemptsByGameId.get(gameId) ?? 0 });
-      recordMetric("socket_closed", { gameId, reason: closeReason });
       if (desiredGameIds.has(gameId)) {
         // Receipt/snapshot recovery starts now, independently of socket backoff.
         void repair(gameId, "socket_closed", { initialDone: connection.initialDone, closeCode: event.code, closeClean: event.wasClean, socketGeneration: generation, advertisedEventSeq: advertisedEventSeqByGameId.get(gameId) ?? 0 });
       }
+      recordMetric("socket_closed", { gameId, reason: "socket_closed",
+        closeCode: event.code, closeClean: event.wasClean, socketGeneration: generation });
     });
   };
 
@@ -1330,10 +1342,13 @@ export const createSyncStore = ({
         socket_opened: 'socket', socket_error: 'socket', socket_closed: 'socket', socket_constructor_failed: 'socket',
         socket_readiness_deferred: 'readiness', socket_readiness_accepted: 'readiness',
         network_hint: 'lifecycle', connections_suspended: 'lifecycle' };
+      const recoveryContext = metric.gameId ? transport.getRecoveryDiagnosticContext?.(metric.gameId) : null;
       if (types[metric.type]) reportDiagnostic({ type: types[metric.type], gameId: metric.gameId,
         ...(metric.type === 'socket_readiness_accepted' ? { gate: 'ready' } : metric.type === 'socket_readiness_deferred' ? { gate: 'unknown' } : {}),
         reason: metric.reason ?? (metric.type === 'network_hint' ? 'network_hint' : metric.type === 'socket_constructor_failed' ? 'websocket_constructor_failed' : undefined),
         retry: metric.reconnectAttempts, socketGeneration: metric.socketGeneration,
+        closeCode: metric.closeCode, closeClean: metric.closeClean,
+        episodeId: recoveryContext?.episodeId, activeEpisodeRelation: recoveryContext?.activeEpisodeRelation ?? 'none',
         online: metric.online });
       onMetric(metric);
     },

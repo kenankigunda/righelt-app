@@ -10,6 +10,7 @@ import { createFakeD1 } from '../../../packages/api-handler/test/support/fake-d1
 import { createFakeGameRooms } from '../../../packages/api-handler/test/support/fake-game-rooms.mjs';
 import { RECOVERY_DIAGNOSTICS, validateRecoveryDiagnosticBatch } from '../../../packages/shared-types/src/recovery-diagnostics.js';
 import { SYNC_TIMING } from '../generated/packages/shared-types/src/sync-protocol.js';
+import { socketEnvironment } from './support/socket-environment.mjs';
 
 const origin = 'https://test';
 const turn = () => new Promise(resolve => setImmediate(resolve));
@@ -107,6 +108,33 @@ test('a silent recovery episode crosses the real transport, uploader and API wit
   t.mock.timers.reset();
 });
 
+test('an error-first native 1006 close enriches the active local episode without changing recovery ownership', async t => {
+  const f = await fixture(t, { holdReconcile: true });
+  const sockets = socketEnvironment(t);
+  f.store.setActiveGameId(f.gameId);
+  const socket = sockets.sockets[0];
+  assert.ok(socket);
+  socket.emit('open');
+  socket.close = () => { socket.readyState = 2; };
+
+  socket.emit('error');
+  await until(f.hasReconcile);
+  const recoveryStartCount = f.timeline.snapshot().filter(row => row.type === 'recovery_started').length;
+  assert.ok(recoveryStartCount >= 1);
+  socket.emit('close', { code: 1006, wasClean: false });
+  f.releaseReconcile();
+
+  const close = f.timeline.snapshot().find(row => row.type === 'socket' && row.reason === 'socket_closed');
+  assert.ok(close);
+  assert.equal(close.closeCode, 1006);
+  assert.equal(close.closeClean, false);
+  assert.equal(close.socketGeneration, 1);
+  assert.equal(close.activeEpisodeRelation, 'active');
+  assert.ok(recoveryStartCount > 0 && f.timeline.snapshot().some(row => row.type === 'recovery_started' && row.episodeId === close.episodeId));
+  assert.equal(f.timeline.snapshot().filter(row => row.type === 'recovery_started').length, recoveryStartCount,
+    'close diagnostics do not acquire or transfer recovery');
+});
+
 test('completed recovery evidence describes the settled ready state rather than the preceding confirming state', async t => {
   const f = await fixture(t, { holdReconcile: true });
   f.transport.setConnectionRecovering(f.gameId, true, { reason: 'invalid_socket_event' });
@@ -125,6 +153,9 @@ test('completed recovery evidence describes the settled ready state rather than 
   assert.equal(completed.sharedMutationsBlocked, false);
   assert.equal(completed.connectionRecovering, false);
   assert.equal(completed.pendingCount, 0);
+  const settledContext = f.transport.getRecoveryDiagnosticContext(f.gameId);
+  assert.equal(settledContext.episodeId, completed.episodeId, 'the completed episode remains available as bounded context');
+  assert.equal(settledContext.activeEpisodeRelation, 'none', 'a retained completed episode is never reported as active');
   assert.equal((await f.current()).game.gameplayRevision, 0, 'recovery diagnostics cannot commit gameplay');
 });
 
