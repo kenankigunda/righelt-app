@@ -64,3 +64,29 @@ for(const kind of ['unit','commander','late-unique'])test(`deferred ${kind} prev
  const path=info.outputPath('native-preview-intent-proof.json');await writeFile(path,JSON.stringify(proof,null,2));
  await info.attach('native deferred intent, click-to-message timings and query count',{path,contentType:'application/json'});
 });
+
+test('opponent commander click keeps qualified combined inspection and its coordinate',async({page})=>{
+ await page.goto('/browser-integration/support/board-message.html');await page.waitForFunction(()=>window.fixtureReady);
+ await page.evaluate(async()=>{
+  const {createBoardRuntime}=await import('/apps/web/board/runtime/board-runtime.js');
+  const {createEngineBoardAdapter}=await import('/apps/web/board-adapters/engine-board-adapter.js');
+  const commander={id:'C2',owner:'P2',kind:'commander',position:{row:6,col:3},supplied:true,commanded:true};
+  const unit={id:'B2',owner:'P2',kind:'unit',position:{row:5,col:3},supplied:true,commanded:true};
+  const state={boardSize:10,sideToMove:'P1',turnIndex:0,continuation:null,outcome:{status:'ongoing'},pieces:[commander,unit],artifacts:{
+   supply:[{player:'P2',shortestPathByPieceId:{C2:[commander.position,{row:9,col:3},{row:9,col:0}]}}],
+   command:{shortestPathToCommanderByPieceId:{B2:[unit.position,commander.position]}},
+  }};
+  let writes=0;const adapter=createEngineBoardAdapter();
+  const runtime=createBoardRuntime({boardAdapter:adapter,host:{canSelect:()=>true,canInteract:()=>true,
+   loadPieceMoves:async()=>({state,actions:[],previewActions:[]}),applyAction:async()=>{writes++;return{accepted:false};}}});
+  runtime.bindElements({boardEl:document.querySelector('#board'),overlayLinesEl:document.querySelector('#lines'),boardPreviewLabelEl:document.querySelector('#preview')});
+  await runtime.loadSnapshot(state,{legalActions:[]});
+  window.opponentCommanderInspection={read:()=>({writes,inspection:runtime.getInspection()})};
+ });
+ await page.locator('#board .cell[data-row="6"][data-col="3"]').click();
+ const message=page.locator('#preview');
+ await expect(message).toHaveText('Opponent’s supply and command lines for piece at 6, 3');
+ await expect(message.locator('.board-preview-coordinate-chip')).toHaveText('6, 3');
+ const proof=await page.evaluate(()=>window.opponentCommanderInspection.read());
+ expect(proof.inspection?.kind).toBe('combined');expect(proof.writes).toBe(0);
+});
