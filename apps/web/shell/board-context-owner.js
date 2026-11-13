@@ -47,7 +47,8 @@ export function createBoardContextFocus({doc,owner,reveal=()=>{},enqueue=queueMi
    }
   };
   returns.add(release);
-  const current=()=>live&&!disposed&&!doc.hidden&&owner.current(token)
+  const intentCurrent=()=>live&&!disposed&&!doc.hidden&&owner.current(token);
+  const current=()=>intentCurrent()
    &&(owned(doc.activeElement)||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]')))||(removedControl!==null&&doc.activeElement===doc.body&&!removedControl.isConnected));
   // Only this synchronous renderer can grant a one-shot return after removing
   // its currently focused replay control. Initial body focus, an earlier
@@ -73,7 +74,7 @@ export function createBoardContextFocus({doc,owner,reveal=()=>{},enqueue=queueMi
    release();return doc.activeElement===target?target:null;
   };
   return {
-   current,release,restoreNow,renderOwnedRemoval,
+   current,intentCurrent,release,restoreNow,renderOwnedRemoval,
    consume(){const valid=current();release();return valid;},
    restore(resolve){return new Promise(done=>enqueue(()=>done(restoreNow(resolve))));},
   };

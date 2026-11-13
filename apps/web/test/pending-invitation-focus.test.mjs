@@ -126,7 +126,7 @@ test('actual render wrapper preserves completed copy focus through a later same-
  const end=source.indexOf('const renderContent =',start);assert.ok(start>0&&end>start);
  const f=fixture();f.manager.begin(f.original,'copy:a');f.finish();let current=f.original,replacements=0;
  const destinationRecovery=createDestinationRecovery(),noticeUpdates=[],read={generation:1,epoch:1,routeKey:'#/game/a',homeVisit:0};
- const context={document:f.document,pendingInvitationFocus:f.manager,isButtonPending:()=>false,destinationRestoreFocus:false,syncDestinationNotice:()=>noticeUpdates.push(destinationRecovery.update({scope:destinationReadScope(read),visible:!f.document.hidden})),
+ const context={document:f.document,pendingInvitationFocus:f.manager,pendingIncomingToggleFocus:null,boardContextPresentation:{restoreIncomingFocus(){}},isButtonPending:()=>false,destinationRestoreFocus:false,syncDestinationNotice:()=>noticeUpdates.push(destinationRecovery.update({scope:destinationReadScope(read),visible:!f.document.hidden})),
   renderGesture:{defer:()=>false},utilityMemory:{capture(){},restore(){}},inlineProfiles:{sync(){}},syncMountedGameShellPanelUi(){},
   historyHeadingFocus:{capture(){},restore(){}},syncRenderedMarkupSnapshot(){},resumeBoardContextReplay(){},recoveryPresentationOptions(){},
   currentRoute:{gameId:'a'},pendingResultReviewFocus:null,getGamePanel:()=>f.scope.panel,getCurrentViewedGameId:()=> 'a',
