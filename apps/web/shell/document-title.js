@@ -8,6 +8,8 @@ const length=value=>graphemes(value).length;
 const initial=value=>`${graphemes(String(value).trim())[0]??''}.`;
 const seatText=seat=>seat.label+(seat.qualifier?` (${seat.qualifier})`:'');
 const coreText=(model,seats=model.seats,participant=model.participant)=>model.kind==='self'||model.kind==='watched-self'?seatText(participant):seats.map(seatText).join(' vs. ');
+const compactQualifier=value=>String(value).startsWith('@')?`@${graphemes(String(value).slice(1))[0]??''}…`:initial(value);
+const compactSeat=seat=>({...seat,label:seat.label==='Open seat'?'Open':seat.label,qualifier:seat.qualifier?compactQualifier(seat.qualifier):seat.qualifier});
 const startDateText=value=>{
  const timestamp=Date.parse(String(value??''));
  return Number.isFinite(timestamp)?new Intl.DateTimeFormat('en',{month:'short',day:'numeric'}).format(new Date(timestamp)):null;
@@ -27,6 +29,14 @@ export function browserMatchupTitle(model,{maxCharacters=DOCUMENT_TITLE_MAX_CHAR
   else seats[candidate.index]={...seats[candidate.index],label:initial(seats[candidate.index].label),shortenable:false};
   value=withSuffix(coreText(model,seats,participant));
   if(length(value)<=maxCharacters)break;
+ }
+ if(length(value)>maxCharacters){
+  seats=seats.map(compactSeat);participant=participant?compactSeat(participant):participant;
+  value=withSuffix(coreText(model,seats,participant));
+ }
+ if(length(value)>maxCharacters){
+  const fixedLength=length(withSuffix('')),available=Math.max(1,maxCharacters-fixedLength),core=graphemes(coreText(model,seats,participant));
+  value=withSuffix(`${core.slice(0,Math.max(1,available-1)).join('')}…`);
  }
  return value;
 }

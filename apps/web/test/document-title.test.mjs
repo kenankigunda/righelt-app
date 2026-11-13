@@ -5,6 +5,7 @@ import {gameTitleModel} from '../shell/game-title.js';
 
 const person=(identityId,displayName)=>({identityId,profile:{displayName},connected:true});
 const game=(overrides={})=>({id:'game-title',createdAt:'2026-11-11T20:00:00Z',myRole:'Player 1',player1:person('red','Alex'),player2:person('blue','Blair'),...overrides});
+const graphemeLength=value=>[...new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(value)].length;
 
 test('browser titles cover every route state with the approved punctuation',()=>{
  assert.equal(documentTitleForRoute({routeName:'home'}),'Righelt');
@@ -32,6 +33,19 @@ test('40-character budget shortens the longer human name first and preserves gra
  assert.equal(title,'E. vs. M. | Nov 11 | Righelt');
  const unicode=gameTitleModel(game({myRole:'Viewer',player1:person('red','e\u0301'.repeat(30)),player2:person('blue','Blair')}),{identityId:'viewer'});
  assert.match(browserMatchupTitle(unicode,{startedAt:'2026-11-11T20:00:00Z'}),/^e\u0301\./u);
+});
+
+test('date addition keeps alias collisions and generic seats within the title budget',()=>{
+ const collision=game({player2:{identityId:'blue',profile:{displayName:'You',username:'x'.repeat(24)},connected:true}});
+ const qualified=documentTitleForRoute({routeName:'game',game:collision,identityId:'red'});
+ assert.equal(qualified,'You vs. You (@x…) | Nov 11 | Righelt');
+ assert.ok(graphemeLength(qualified)<=DOCUMENT_TITLE_MAX_CHARACTERS);
+ const colors=documentTitleForRoute({routeName:'game',game:game({player2:person('blue','You')}),identityId:'red'});
+ assert.equal(colors,'You (R.) vs. You (B.) | Nov 11 | Righelt');
+ assert.ok(graphemeLength(colors)<=DOCUMENT_TITLE_MAX_CHARACTERS);
+ const open=documentTitleForRoute({routeName:'game',game:game({myRole:'Viewer',player1:null,player2:null}),identityId:'viewer'});
+ assert.equal(open,'Open vs. Open | Nov 11 | Righelt');
+ assert.ok(graphemeLength(open)<=DOCUMENT_TITLE_MAX_CHARACTERS);
 });
 
 test('route input fences late identity and retains a known title during reconnect',()=>{
