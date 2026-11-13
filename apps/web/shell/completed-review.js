@@ -23,11 +23,14 @@ export const isCompletedWinningTurn = game =>
 export function createCompletedReviewOwner({getTransport,onError=()=>{}}) {
   let owner=null;
   const clear=()=>{owner=null;};
-  const sync=game=>{
+  const sync=(game,entryGeneration=0)=>{
     const transport=getTransport(),turnIndex=completedTurnIndex(game);
-    if(!transport||!game||game.inHistoryMode||game.historyLoading||!Number.isSafeInteger(turnIndex))return null;
-    const key=`${game.id}:${game.gameplayRevision}:${turnIndex}`;
-    if(owner?.transport===transport&&owner.key===key)return owner.promise;
+    if(!transport||!game||game.historyLoading||!Number.isSafeInteger(turnIndex))return null;
+    const key=`${entryGeneration}:${game.id}:${game.gameplayRevision}:${turnIndex}`;
+    if(owner?.transport===transport&&owner.key===key)return game.inHistoryMode&&game.historyTurnIndex!==turnIndex?null:owner.promise;
+    if(game.inHistoryMode&&game.historyTurnIndex===turnIndex){
+      const current={transport,key,promise:Promise.resolve(game)};owner=current;return current.promise;
+    }
     const current={transport,key,promise:null};
     const selected=result=>{
       const view=result??transport.getGameViewModel?.(game.id);

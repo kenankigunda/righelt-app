@@ -10,7 +10,7 @@ import { loadIdentity, saveIdentity } from "./persistence.js";
 import { defaultNotationForAction, rebaseProjectedMetadata } from "./optimistic-live.js";
 import { buildStaticGameCardFromGame, normalizeStaticGameCard } from "./static-game-cards.js";
 import { createCommandJournal } from "./command-journal.js";
-import { POSITION_PROJECTION, ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, SYNC_PROTOCOL_VERSION, SYNC_TIMING, SYNC_LIMITS, LIVE_HISTORY, SHARED_OPERATIONS, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
+import { HOME_PAGE_LIMIT, POSITION_PROJECTION, ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, SYNC_PROTOCOL_VERSION, SYNC_TIMING, SYNC_LIMITS, LIVE_HISTORY, SHARED_OPERATIONS, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
 
 import { applyHistoryIntent, historyMoveKey, needsRecoveryAction } from "./recovery-view.js";
 import { activityStateActorSide } from "./activity-affiliation.js";
@@ -1616,7 +1616,7 @@ export const createLiveTransportStore = ({
     let normalized=Array.isArray(body.games) ? body.games.map(game => normalizeStaticGameCard(game)) : [];
     if(section==='completed'){
       const key=game=>Number.isSafeInteger(game.gameplayRevision)?`${game.id}:${game.gameplayRevision}`:null;
-      const missing=normalized.filter(game=>key(game)&&!completedReviewPreviewByKey.has(key(game))).slice(0,4)
+      const missing=normalized.filter(game=>key(game)&&!completedReviewPreviewByKey.has(key(game))).slice(0,HOME_PAGE_LIMIT)
         .map(game=>({gameId:game.id,gameplayRevision:game.gameplayRevision}));
       if(missing.length){
         try{

@@ -56,6 +56,12 @@ for(const width of [390,1440])test(`completed game opens on its decisive turn an
  await switchGamePanel(page,'board');await expect(page.locator('#shell-board-turn-indicator')).toHaveText(`Turn ${earlierTurn+1}`);
  await switchGamePanel(page,'history');await expect(page.locator('.history-turn-heading[aria-current="true"]')).toHaveText(`Turn ${earlierTurn+1}`);
 
+ await page.locator('a[href="#/"]').first().click();
+ const reentryCard=page.locator('[data-home-section-root="completed"]').locator(`a[data-game-id="${gameId}"]`);await expect(reentryCard).toBeVisible();
+ await reentryCard.focus();await page.keyboard.press('Enter');
+ await expect(page.locator('.history-turn-heading[aria-current="true"]')).toHaveText(`Turn ${finalTurn+1}`);
+ await expect(page.getByTestId('history-return-live')).toHaveCount(0);
+
  await page.reload();await expect(page.locator('.history-turn-heading[aria-current="true"]')).toHaveText(`Turn ${finalTurn+1}`);
  await expect(page.getByTestId('history-return-live')).toHaveCount(0);
  await page.screenshot({path:info.outputPath('completed-decisive-turn-review.png'),fullPage:true});

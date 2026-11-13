@@ -65,3 +65,14 @@ test('completed review retires a repeated failed selection so a later render can
  await owner.sync(completed);assert.equal(calls.length,2);
  await owner.sync(completed);assert.equal(calls.length,4);
 });
+
+test('completed review preserves same-visit inspection but resets a fresh route entry to the decisive turn',async()=>{
+ const completed=game(),calls=[];
+ const transport={selectHistoryTurn:value=>{calls.push(value);return Promise.resolve({...completed,inHistoryMode:true,historyTurnIndex:value.turnIndex});}};
+ const owner=createCompletedReviewOwner({getTransport:()=>transport});
+ await owner.sync(completed,1);assert.equal(calls.length,1);
+ const earlier={...completed,inHistoryMode:true,historyTurnIndex:2};
+ await owner.sync(earlier,1);assert.equal(calls.length,1,'same-visit earlier-turn inspection remains selected');
+ await owner.sync(earlier,2);assert.equal(calls.length,2,'fresh route entry selects the decisive turn again');
+ assert.deepEqual(calls.at(-1),{gameId:'g',turnIndex:4});
+});

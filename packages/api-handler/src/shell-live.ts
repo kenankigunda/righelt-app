@@ -1,4 +1,4 @@
-import { POSITION_PROJECTION } from "../../shared-types/src/sync-protocol";
+import { HOME_PAGE_LIMIT, POSITION_PROJECTION } from "../../shared-types/src/sync-protocol";
 import { computerModelForCreation } from '../../shared-types/src/computer-play';
 import { storageRoomName } from "./storage-generation";
 import { AUTH_PROTOCOL_VERSION } from '../../shared-types/src/auth-policy.js';
@@ -120,8 +120,6 @@ const parseNonNegativeInt = (value: string | null) => {
   const parsed = Number.parseInt(value, 10);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 };
-
-const COMPLETED_REVIEW_PREVIEW_PAGE_LIMIT = 4;
 
 export const __resetLiveGameStateForTests = () => {
   // No process-local live state remains in the HTTP routing layer.
@@ -259,7 +257,7 @@ export const handleLiveGameRequest = async (
       return { gameId: asIdentity(record.gameId), gameplayRevision: record.gameplayRevision };
     });
     const ids = items.map(item => item.gameId);
-    if (!identityId || items.length === 0 || items.length > COMPLETED_REVIEW_PREVIEW_PAGE_LIMIT ||
+    if (!identityId || items.length === 0 || items.length > HOME_PAGE_LIMIT ||
       items.some(item => !item.gameId || !Number.isSafeInteger(item.gameplayRevision) || (item.gameplayRevision as number) < 0) ||
       new Set(ids).size !== ids.length) {
       return { handled: true, status: 400, body: { ok: false, error: "invalid_review_preview_batch" }, cacheControl: CACHE_NO_STORE };
