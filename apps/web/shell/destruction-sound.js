@@ -37,7 +37,7 @@ export const createDestructionSoundTracker = () => {
 export const STONE_CRACK_DURATION = .13;
 
 // A short, unpitched stone fracture: sharp attack with a granular, dry decay.
-export const playStoneCrack = audio => {
+export const playStoneCrack = (audio,{onEnded=()=>{}}={}) => {
   const duration = STONE_CRACK_DURATION, t = audio.currentTime;
   const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
   const samples = buffer.getChannelData(0);
@@ -47,9 +47,15 @@ export const playStoneCrack = audio => {
     const time=i/audio.sampleRate;
     samples[i] = ((seed/4294967296)*2-1) * Math.exp(-time/ .022) * (1 + .35*Math.cos(time*740));
   }
-  const source=audio.createBufferSource(),filter=audio.createBiquadFilter(),gain=audio.createGain();
-  source.buffer=buffer;filter.type='highpass';filter.frequency.value=650;filter.Q.value=.6;gain.gain.value=.16;
-  source.connect(filter);filter.connect(gain);gain.connect(audio.destination);
-  source.start(t);source.stop(t+duration);
-  source.onended=()=>{source.disconnect();filter.disconnect();gain.disconnect();};
+  const nodes=[];let source,closed=false;
+  const disconnect=()=>{if(closed)return;closed=true;for(const node of nodes){try{node.disconnect();}catch{}}onEnded();};
+  try{
+    source=audio.createBufferSource();nodes.push(source);
+    const filter=audio.createBiquadFilter();nodes.push(filter);
+    const gain=audio.createGain();nodes.push(gain);
+    source.buffer=buffer;filter.type='highpass';filter.frequency.value=650;filter.Q.value=.6;gain.gain.value=.16;
+    source.connect(filter);filter.connect(gain);gain.connect(audio.destination);
+    source.onended=disconnect;source.start(t);source.stop(t+duration);
+    return {cancel(){try{source.stop();}catch{}disconnect();}};
+  }catch(error){try{source?.stop();}catch{}try{disconnect();}catch{}throw error;}
 };

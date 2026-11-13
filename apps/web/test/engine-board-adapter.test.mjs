@@ -1374,3 +1374,13 @@ test("empty native Board cells have coordinate names without replacing piece, su
     adapter.unmount();
   });
 });
+
+test('pending removed-token copy is static, hidden from accessibility, unlabeled and never covers a replacement piece',async()=>{
+ await withFakeDocument(async()=>{
+  const {adapter,boardEl}=createMountedAdapter(),piece={id:'old',owner:'P1',kind:'unit',position:{row:4,col:3},supplied:true,commanded:true};
+  const payload={snapshot:{sideToMove:'P1',pieces:[]},selection:{selectedPieceId:null,source:null,target:null},overlay:{mode:'none'},legalActions:[],selectedPieceMoves:[],selectedPieceMovePreviews:[],removalEffects:[{pending:true,pieceId:'old',eventId:'pending:old',piece,position:piece.position,reason:'no_retreat',message:'Not confirmed'}]};
+  try{adapter.render(payload);const cell=getCell(boardEl,4,3),copy=cell.querySelector('.pending-removal-piece');assert(copy);assert.equal(copy.getAttribute('aria-hidden'),'true');assert.equal(cell.classList.contains('removal-effect'),false);assert.equal(cell.getAttribute('data-removal-label')??null,null);
+   adapter.render({...payload,snapshot:{sideToMove:'P1',pieces:[{...piece,id:'replacement',owner:'P2'}]}});const updated=getCell(boardEl,4,3);assert.equal(updated.querySelector('.pending-removal-piece'),null);assert(updated.querySelector('.piece-token'));
+  }finally{adapter.unmount();}
+ });
+});

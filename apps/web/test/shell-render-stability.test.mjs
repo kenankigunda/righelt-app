@@ -1,4 +1,5 @@
 import {icon} from '../shell/ui.js';
+import {createConfirmedRemovalPresentation,presentRemovalTransportChange} from '../shell/removal-presentation.js';
 import {createDestinationRouteOwner,readGameDestination} from '../shell/destination-route-owner.js';
 import {createDestinationRecovery} from '../shell/destination-recovery.js';
 import {createGameAlertItems,renderGameAlertStackCard,renderRecoveryActions} from '../shell/game-alert-presentation.js';
@@ -151,7 +152,6 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const mountedGameShell = getMountedGameShellRoot\(\);/);
   assert.match(source, /shouldUseIncrementalGameShell\(\)/);
   assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),/s);
-  assert.match(source, /includeBoard: change\?\.type !== "optimistic_enqueue"/);
   assert.match(source, /const getAnimatedPanels = \(\) =>/);
   assert.match(source, /const getAnimatedFlyoutEls = \(layoutMode = getShellLayoutMode\(\)\) => \{/);
   assert.match(source, /const mainContentEl = layoutMode === "wide" \? appEl\.querySelector\("\.shell-main-content"\) : null;/);
@@ -289,9 +289,13 @@ test("history renderer orders turns newest first and keeps native selection targ
 });
 
 test("transport subscriptions drive immediate game-shell updates", () => {
-  const start=source.indexOf("const subscribeToTransport ="),end=source.indexOf("\nsubscribeToTransport();",start);
-  assert.ok(start>=0&&end>start);
-  assert.match(source.slice(start,end), /transport\.subscribe\(\(change\) => \{[\s\S]*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);[\s\S]*boardRuntime\?\.showRemovalEffects\(transition\.effects, null\);/s);
+  const events=[];let confirmed={id:'g',moves:[],board:{state:{pieces:[{id:'A',position:{row:4,col:2}}]}}};
+  const presentation=createConfirmedRemovalPresentation({getScope:()=> 'owner:g',eligible:()=>true,present:()=>events.push('visual'),pending:()=>{},clear:()=>{},consume:()=>{},cue:()=>events.push('cue'),cancelSound:()=>{}});
+  const deps={render:options=>events.push(options),presentation,transport:{getAuthoritativeGame:()=>confirmed,getLastEventSeq:()=>2},gameId:'g',view:confirmed,frozen:false};
+  presentRemovalTransportChange({...deps,change:{baseline:true}});events.length=0;
+  presentRemovalTransportChange({...deps,change:{type:'optimistic_enqueue'}});assert.deepEqual(events,[{animatePanels:false,includeBoard:false}]);events.length=0;
+  confirmed={id:'g',moves:[{moveId:'accepted',destroyedPieces:[{pieceId:'A',eventId:'accepted:A',position:{row:4,col:2},reason:'no_retreat'}]}],board:{state:{pieces:[]}}};
+  presentRemovalTransportChange({...deps,view:confirmed,change:{type:'authoritative_update'}});assert.deepEqual(events,[{animatePanels:false,includeBoard:true},'visual','cue']);presentation.dispose();
   assert.match(source, /const canHydrateRouteFromLocalState = \(route = currentRoute\) => \{/);
   assert.match(source, /return Boolean\(transport\.getGameViewModel\(route\.gameId\)\);/);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);

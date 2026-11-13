@@ -17,11 +17,11 @@ test('destruction copy leads with the event and preserves cause, coordinates and
  }
 });
 
-test('new live records play once, including append on turn completion and pending confirmation',()=>{
+test('only confirmed live records begin removal, including append on turn completion',()=>{
  const t=createDestructionTransitions();
  assert.deepEqual(t.update(game()).effects,[]);
- assert.equal(t.update({...game(),pendingMoves:[{clientCommandId:'command',destroyedPieces:[record('A')]}]}).effects.length,1);
- assert.equal(t.update(game([record('A')])).effects.length,0);
+ assert.equal(t.update({...game(),pendingMoves:[{clientCommandId:'command',destroyedPieces:[record('A')]}]}).effects.length,0);
+ assert.equal(t.update(game([record('A')])).effects.length,1);
  assert.equal(t.update(game([record('A'),record('B')])).effects.length,1);
  assert.equal(t.update(game([record('A'),record('B')])).effects.length,0);
 });
@@ -107,4 +107,9 @@ test('frozen capture clears live overlays and silently baselines arrivals and ex
 test('actual computed History removal metadata changes only its lead and leaves saved records untouched',()=>{
  const original={row:4,col:2,piece:{id:'A',owner:'P2',kind:'unit',position:{row:4,col:2},supplied:false,commanded:true},message:'Saved original message'};
  const before=structuredClone(original),effect=buildHistoryRemovalEffects([original])[0];assert.equal(effect.message,'Destruction for piece at (4, 2).');assert.equal(effect.reason,'history_destroyed');assert.equal(effect.pieceId,'A');assert.deepEqual(effect.position,{row:4,col:2});assert.deepEqual(effect.piece,original.piece);assert.deepEqual(original,before);assert.notEqual(effect.piece,original.piece);
+});
+
+test('legacy position-only confirmed record is not duplicated by removed-identity fallback',()=>{
+ const tracker=createDestructionTransitions(),before={id:'legacy',moves:[],board:{state:{pieces:[{id:'A',owner:'P1',position:{row:4,col:2}}]}}};tracker.update(before);
+ const result=tracker.update({id:'legacy',moves:[{moveId:'m',destroyedPieces:[{position:{row:4,col:2},ownerSeat:'p1',reason:'loss_of_supply'}]}],board:{state:{pieces:[]}}},{sequence:2});assert.equal(result.effects.length,1);
 });

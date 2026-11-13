@@ -151,7 +151,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   let selectedPieceMovesKnown = false;
   let pendingPieceMoves = null;
   const pieceMoveCache = new Map();
-  let removalEffects = [];
+  let removalEffects = [], pendingRemovalEffects = [];
   const playedRemovalEvents = new Set();
   let selectedPieceId = null;
   let selectedSource = null;
@@ -546,13 +546,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   const getPushRetreatPrompt = (snapshot, currentPieceId) => renderPushRetreatPrompt(snapshot,currentPieceId,renderBoardPreviewCoordinate);
 
   const clearRemovalEffects = () => {
-    removalEffects = [];
+    removalEffects = [];pendingRemovalEffects = [];
     pendingHistoryDestroyedPieces = [];
     removalEffectsOnComplete = null;
     if (removalEffectsTimer) {
       clearTimeout(removalEffectsTimer);
       removalEffectsTimer = null;
     }
+    if (!destroyed) renderBoard();
   };
 
   const renderBoard = () => {
@@ -573,7 +574,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       legalActions,
       selectedPieceMoves: effectiveMoves.selectedPieceMoves,
       selectedPieceMovePreviews: effectiveMoves.selectedPieceMovePreviews,
-      removalEffects,
+      removalEffects: [...pendingRemovalEffects, ...removalEffects],
       allowFreeSelection: getAllowFreeSelection(),
       currentActionType: getActionType(),
       selectedPieceOverlayPhase: host.canPresentActions?.(state) === false ? "supplyCommand" : selectedPieceOverlayPhase,
@@ -1095,8 +1096,15 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     renderBoard();
   };
 
+  const setPendingRemovalEffects = (effects, previousState = state) => {
+    pendingRemovalEffects = (effects ?? []).filter(effect => !effect.eventId || !playedRemovalEvents.has(effect.eventId)).map(effect => ({...effect,pending:true,piece:effect.piece ?? previousState?.pieces?.find(piece => piece.id === effect.pieceId) ?? null}));
+    renderBoard();
+  };
+
   const showRemovalEffects = (effects, previousState, { onComplete = null } = {}) => {
     const startedAt = Date.now();
+    const ids = new Set((effects ?? []).map(effect => effect.eventId).filter(Boolean));
+    pendingRemovalEffects = pendingRemovalEffects.filter(effect => !effect.eventId || !ids.has(effect.eventId));
     const incoming = (Array.isArray(effects) ? effects : []).filter((effect) => {
       if (!effect.eventId) return true;
       if (playedRemovalEvents.has(effect.eventId)) return false;
@@ -1182,7 +1190,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
           }
         }
 
-        showRemovalEffects(body.removedPieces, previousState);
+        if (host.confirmedRemovalsOnly) setPendingRemovalEffects(host.getPendingRemovalEffects?.() ?? body.removedPieces, previousState);
+        else showRemovalEffects(body.removedPieces, previousState);
         refreshSelectionLabels();
         renderBoard();
         renderStatus();
@@ -1866,6 +1875,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     clearSelection,
     loadSnapshot,
     showRemovalEffects,
+    setPendingRemovalEffects,
     clearRemovalEffects,
     setSelectionFromAction,
     getState: () => state,

@@ -25,7 +25,8 @@ export const createGameSound = ({
   paperOptions = {},
 } = {}) => {
   let enabled = true, audio, reminderTimer = null, pendingIncoming = false;
-  const destructionSounds = createDestructionSoundTracker();
+  const destructionSounds = createDestructionSoundTracker(), destructionVoices = new Set();
+  const cancelDestruction = () => { for (const voice of destructionVoices) voice.cancel(); destructionVoices.clear(); };
   const opponentMoves = createOpponentMoveTracker();
   const unseenGames=new Set();
   const displayedMoves=new Set();
@@ -53,7 +54,7 @@ export const createGameSound = ({
     const duration = (kind === "enter" || kind === "leave") && Number.isFinite(transitionDuration) ? Math.max(.04, Math.min(1, transitionDuration)) : cueDuration;
     try {
       const t = audio.currentTime;
-      if (kind === 'destruction') {paperPriorityUntil=Math.max(paperPriorityUntil,t+STONE_CRACK_DURATION);playStoneCrack(audio);return true;}
+      if (kind === 'destruction') {paperPriorityUntil=Math.max(paperPriorityUntil,t+STONE_CRACK_DURATION);let voice=null,ended=false;voice=playStoneCrack(audio,{onEnded:()=>{ended=true;if(voice)destructionVoices.delete(voice);}});if(!ended)destructionVoices.add(voice);while(destructionVoices.size>32){const first=destructionVoices.values().next().value;first.cancel();destructionVoices.delete(first);}return true;}
       if (['result-victory','result-defeat','result-draw'].includes(kind)) {
         const notes = kind === 'result-victory' ? [560,700,840] : kind === 'result-defeat' ? [420,360] : [520,520];
         paperPriorityUntil=Math.max(paperPriorityUntil,t+(notes.length-1)*.1+.17);
@@ -134,10 +135,10 @@ export const createGameSound = ({
   return {
     enabled:()=>enabled, gesture, play, cancelPreview,
     preparePaper:paperAudio.prepare,paper:paperAudio.play,cancelPaper:paperAudio.cancel,disposePaper:paperAudio.dispose,
-    activityChanged(){cancelPreview();if(!active()){clearOpponentCues();paperAudio.cancel();}},
-    toggle(){enabled=!enabled;paperAudio.cancel();cancelPreview();if(reminderTimer!==null)clearTimer(reminderTimer);reminderTimer=null;clearOpponentCues();try{storage?.setItem(SOUND_KEY,String(enabled));}catch{} if(enabled){gesture();scheduleReminder();}else void audio?.suspend().catch(()=>{});return enabled;},
-    hide(){cancelPreview();clearOpponentCues();paperAudio.cancel();},
-    leaveGame(){paperAudio.cancel();cancelPreview();clearOpponentCues();if(unseenGames.size)incoming(unseenGames.values().next().value);},
+    activityChanged(){cancelPreview();if(!active()){cancelDestruction();clearOpponentCues();paperAudio.cancel();}},
+    toggle(){enabled=!enabled;cancelDestruction();paperAudio.cancel();cancelPreview();if(reminderTimer!==null)clearTimer(reminderTimer);reminderTimer=null;clearOpponentCues();try{storage?.setItem(SOUND_KEY,String(enabled));}catch{} if(enabled){gesture();scheduleReminder();}else void audio?.suspend().catch(()=>{});return enabled;},
+    hide(){cancelDestruction();cancelPreview();clearOpponentCues();paperAudio.cancel();},
+    leaveGame(){cancelDestruction();paperAudio.cancel();cancelPreview();clearOpponentCues();if(unseenGames.size)incoming(unseenGames.values().next().value);},
     interaction({kind,key}){
       if(!active()){cancelPreview();return;}
       if(kind==='preview-hover' || kind==='preview-leave')return;
@@ -170,7 +171,7 @@ export const createGameSound = ({
       if (finished && !fresh.includes(lastMove)) played = opponentCue(resultSound(getGameResult(game, getIdentityId()))) || played;
       return played;
     },
-    resetUpdates(){paperAudio.dispose();unseenGames.clear();clearIncoming();clearOpponentCues();},
+    resetUpdates(){cancelDestruction();paperAudio.dispose();unseenGames.clear();clearIncoming();clearOpponentCues();},
     viewing({gameId,live=false,playbackFinished=true}={}){
       if(live&&active()&&playbackFinished){unseenGames.delete(gameId);if(!unseenGames.size)clearIncoming();}
       else if(!live&&unseenGames.has(gameId))incoming(gameId);
@@ -183,14 +184,20 @@ export const createGameSound = ({
       if(move.snapshot?.outcome?.status&&move.snapshot.outcome.status!=='ongoing')return play(resultSound(getGameResult({...game,board:{state:move.snapshot}},getIdentityId())))||destroyed;
       return destroyed||play('move');
     },
-    observe(payload,{silent=false, opponentNotifications = true}={}){
+    presentedRemovals(game,{sequence,commandId,silent=false}={}){
+      const count=destructionSounds.update(game,{sequence,commandId,baseline:silent});let played=false;
+      for(let i=0;i<count;i++)if(!silent)played=play('destruction')||played;
+      return played;
+    },
+    cancelDestruction,
+    observe(payload,{silent=false, opponentNotifications = true,deferDestruction=false}={}){
       const id=payload?.game?.id, seq=payload?.eventSeq;
       if(!id || !Number.isSafeInteger(seq))return false;
       const previous=sequences.get(id);if(previous && seq<=previous.seq)return false;
       const state=payload.game.board?.state;
       const terminal=Boolean(state?.outcome?.status && state.outcome.status!=='ongoing');
       sequences.set(id,{seq,pieces:state?.pieces?.length,terminal});
-      const destructionBatches=destructionSounds.update(payload.game,{commandId:payload.clientCommandId,sequence:seq,baseline:silent || payload.type!=='event_appended' || !['move_recorded','turn_ended'].includes(payload.reason)});
+      const destructionBatches=deferDestruction?0:destructionSounds.update(payload.game,{commandId:payload.clientCommandId,sequence:seq,baseline:silent || payload.type!=='event_appended' || !['move_recorded','turn_ended'].includes(payload.reason)});
       // Initial snapshots and replay never notify. Local acknowledgements may
       // confirm a destruction; their ordinary move cue is still deduplicated.
       if(silent || payload.type!=='event_appended' || !['move_recorded','turn_ended','moves_reverted'].includes(payload.reason))return false;
