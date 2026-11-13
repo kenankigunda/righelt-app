@@ -66,7 +66,7 @@ test('actual shared sound engine keeps incoming reminders ahead of paper until v
  assert.equal(sound.paper('enter',{key:'blocked',eventAt:0}),false);
  sound.viewing({gameId:'g',live:true,playbackFinished:false});assert.equal(timers.size,1);assert.equal(sound.paper('retire',{key:'still-blocked',eventAt:0}),false);
  sound.viewing({gameId:'g',live:true,playbackFinished:true});assert.equal(timers.size,0);f.audio.currentTime=1;assert.equal(sound.paper('enter',{key:'after-completion',eventAt:0}),true);
- assert.equal(INCOMING_REMINDER_MS,30000);sound.disposePaper();assert.equal(f.contexts(),1);
+ assert.equal(INCOMING_REMINDER_MS,60000);sound.disposePaper();assert.equal(f.contexts(),1);
 });
 test('only the two exact approved clip URLs are requested',async()=>{
  const f=fixture();f.paper.prepare(f.trusted);await flush();f.paper.prepare(f.trusted);await flush();assert.deepEqual(f.loads.map(row=>row.url).sort(),Object.values(PAPER_CLIPS).sort());
