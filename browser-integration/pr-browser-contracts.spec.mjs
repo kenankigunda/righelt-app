@@ -124,3 +124,32 @@ test("production account authority retires before cross-tab rehydration", async 
     await peer.close();
   }
 });
+
+test("empty full and mini board squares keep their recess without center dots", async ({ page }) => {
+  await page.goto("/browser-integration/support/board-message.html");
+  await page.setContent(`
+    <link rel="stylesheet" href="/apps/web/styles.css">
+    <link rel="stylesheet" href="/apps/web/shell/shell.css">
+    <div class="board">
+      <div class="cell"><span class="piece-empty" aria-hidden="true"></span></div>
+    </div>
+    <div class="board mini-board-preview-board">
+      <div class="cell"><span class="piece-empty" aria-hidden="true"></span></div>
+    </div>
+  `);
+
+  const treatments = await page.locator(".cell").evaluateAll(cells => cells.map(cell => {
+    const empty = cell.querySelector(".piece-empty");
+    return {
+      centerContent: getComputedStyle(empty, "::before").content,
+      emptyWidth: getComputedStyle(empty).width,
+      cellShadow: getComputedStyle(cell).boxShadow,
+    };
+  }));
+
+  expect(treatments).toEqual([
+    expect.objectContaining({ centerContent: "none", emptyWidth: "10px" }),
+    expect.objectContaining({ centerContent: "none", emptyWidth: "6px" }),
+  ]);
+  for (const treatment of treatments) expect(treatment.cellShadow).toContain("inset");
+});

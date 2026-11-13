@@ -1092,11 +1092,9 @@ test("rush blocker square receives the dedicated rush-blocker highlight", async 
   });
 });
 
-test("empty-cell preview markers use a geometry-based centered dot", () => {
+test("empty board cells keep an inert accessibility-neutral marker", () => {
   assert.match(adapterSource, /marker\.className = "piece-empty";\s*marker\.setAttribute\("aria-hidden", "true"\);/s);
   assert.doesNotMatch(adapterSource, /marker\.textContent = "\.";/);
-  assert.match(styleSource, /\.piece-empty\s*\{[\s\S]*width:\s*10px;[\s\S]*height:\s*10px;[\s\S]*display:\s*inline-flex;/s);
-  assert.match(styleSource, /\.piece-empty::before\s*\{[\s\S]*width:\s*4px;[\s\S]*height:\s*4px;[\s\S]*border-radius:\s*50%;/s);
 });
 
 test("overlay lines are constrained to the board box, excluding axis-label padding", () => {
