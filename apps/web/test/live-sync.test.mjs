@@ -723,6 +723,32 @@ test("pageshow restores desired games and retired lifecycle handlers stay inert"
   await flushAsync(5); assert.equal(MockSocket.instances.length, count);
 });
 
+test("terminal recovery stops automatic socket and HTTP work until an explicit Retry", async t => {
+  let reconciles = 0;
+  const client = controlledClient(t, { degradedPollMs: 5, onReconcile: async () => { reconciles++; } });
+  client.connectGame("terminal-game");
+  const socket = MockSocket.instances[0];
+  socket.emit("open");
+  socket.emit("message", { data: JSON.stringify(snapshot("terminal-game", 1)) });
+
+  assert.equal(client.stopRecovery("terminal-game"), true);
+  assert.equal(client.stopRecovery("terminal-game"), false, "terminal transition is idempotent");
+  const stoppedSocketCount = MockSocket.instances.length;
+  const stoppedReconcileCount = reconciles;
+  globalThis.window.dispatchEvent("online");
+  globalThis.window.dispatchEvent("pageshow");
+  globalThis.document.hidden = false;
+  globalThis.document.visibilityState = "visible";
+  globalThis.document.dispatchEvent("visibilitychange");
+  await flushAsync(20);
+  assert.equal(MockSocket.instances.length, stoppedSocketCount);
+  assert.equal(reconciles, stoppedReconcileCount);
+
+  await client.reconnectSafely("terminal-game");
+  assert.equal(reconciles, stoppedReconcileCount + 1, "Retry creates a fresh reconciliation owner");
+  assert.equal(MockSocket.instances.length, stoppedSocketCount + 1, "Retry creates a fresh socket generation");
+});
+
 test("socket failures reconcile immediately but retain increasing capped reconnect backoff", async (t) => {
   const originals = { WebSocket:globalThis.WebSocket, window:globalThis.window, document:globalThis.document, random:Math.random };
   let reconciles = 0, httpUnavailable = false; const delays = [], recoveries = [];

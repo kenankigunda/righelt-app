@@ -87,6 +87,7 @@ const recoveryWaitMs = (game, now) => {
   return starts.length ? Math.max(0, now - Math.min(...starts)) : 0;
 };
 export const needsRecoveryAction = (game, now = Date.now(), { foregroundWaitMs } = {}) => Boolean(game.storageBlocked || game.upgradeRequired
+  || game.connectionFailed
   || ["session_changed", "invalid_credentials", "invalid_response"].includes(game.recoveryIssue)
   || (foregroundWaitMs === undefined ? game.confirmationOverdue || recoveryWaitMs(game, now) >= SYNC_TIMING.confirmationBudgetMs : foregroundWaitMs >= SYNC_TIMING.confirmationBudgetMs));
 
@@ -96,6 +97,7 @@ export const recoveryMessage = (game, now = Date.now(), { computerSaveActive = f
     ? "Still recording earlier moves. Please wait before making another."
     : game.unsavedCommand ? "We couldn’t save your move. Please try again."
       : "We’re having trouble saving. Please try again.";
+  if (game.connectionFailed) return "Connection failed. Retry to keep playing or view details.";
   if (["session_changed", "invalid_credentials"].includes(game.recoveryIssue)) return "Please sign in again to continue.";
   if (game.recoveryIssue === "invalid_response") return "We couldn’t record your move. Please reconnect.";
   if (!game.recovering && game.syncStatus !== "confirming" && !game.confirmationOverdue) return "";

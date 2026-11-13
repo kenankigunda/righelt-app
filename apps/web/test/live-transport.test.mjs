@@ -1796,7 +1796,10 @@ test("manual reconnect supersedes an old snapshot wait and requests a fresh snap
  const old=store.reconcileGame(game.id);const retired=assert.rejects(old,/recovery_superseded/);await tick();
  store.prepareSafeReconnect(game.id);const fresh=store.reconcileGame(game.id);
  release(Response.json({protocolVersion:2,gameId:game.id,eventSeq:1,gameplayRevision:game.gameplayRevision??0,commandOutcomes:[]}));
- await retired;await fresh;assert.equal(requests[1].knownSnapshotEventSeq,0);assert.equal(store.getGameViewModel(game.id).sharedMutationsBlocked,false);store.retire();
+ await retired;await fresh;assert.equal(requests[1].knownSnapshotEventSeq,0);
+ assert.equal(store.getGameViewModel(game.id).sharedMutationsBlocked,true,'fresh HTTP snapshot cannot grant socket authority');
+ await store.finishSocketRecovery(game.id);
+ assert.equal(store.getGameViewModel(game.id).sharedMutationsBlocked,false);store.retire();
 });
 
 for(const lateCommit of [false,true])test(`uncertain admission ${lateCommit?"committed late":"was not committed"} recovers the original command exactly once`,async()=>{
@@ -2319,6 +2322,8 @@ test('terminal cleanup preserves exact timed-out shared intent until durable rec
  const requests=h.calls.network.filter(row=>String(row.url).endsWith('/shared'));
  assert.equal(requests.length,2);assert.deepEqual(requests[1].body,uncertain);
  assert.equal(h.view().storageBlocked,false);assert.deepEqual(await h.durable.list('id-a',h.game.id),[]);
+ assert.equal(h.view().recovering,false,'durable shared repair clears non-socket recovery over HTTP');
+ assert.equal(h.view().sharedMutationsBlocked,false);
 });
 
 for(const variant of ['altered','stop','switch'])test(`timed-out shared cleanup preserves ${variant} safety policy`,{timeout:10000},async t=>{
@@ -3062,6 +3067,27 @@ test('installing an already confirmed snapshot publishes its Home evidence atomi
  store.applyLiveGameUpdate({game,eventSeq:10});
  assert.equal(store.getHomeListRevision(),revision,'the same confirmed card must not flip through unproven status during installation');
  assert.deepEqual(store.getHomeGameCard(game.id),card);
+});
+
+test('terminal connection failure is fenced to one episode and manual Retry creates a fresh episode',async t=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'terminal-owner');
+ const store=createLiveTransportStore({storage,fetcher:()=>{throw Error('no request expected');}});t.after(()=>store.retire());
+ const game=buildLiveGame();store.applyLiveGameUpdate({game,eventSeq:1});
+ assert.equal(store.setConnectionRecovering(game.id,true,{reason:'socket_closed'}),true);
+ const first=store.getGameViewModel(game.id).recoveryEpisodeId;assert.ok(first);
+ assert.equal(store.stopConnectionRecovery(game.id,{episodeId:'stale-episode'}),false);
+ assert.equal(store.stopConnectionRecovery(game.id,{episodeId:first}),true);
+ const failed=store.getGameViewModel(game.id);
+ assert.equal(failed.connectionFailed,true);assert.equal(failed.recoveryIssue,'connection_failed');
+ assert.equal(failed.gameplayMutationsBlocked,true);assert.equal(failed.sharedMutationsBlocked,true);
+ await assert.rejects(store.reconcileGame(game.id),/connection_failed/);
+ assert.equal(store.stopConnectionRecovery(game.id,{episodeId:first}),false,'terminal transition is idempotent');
+
+ assert.equal(store.retryConnectionRecovery(game.id),true);
+ assert.equal(store.getGameViewModel(game.id).connectionFailed,false);
+ assert.equal(store.setConnectionRecovering(game.id,true,{reason:'manual_reconnect'}),true);
+ const next=store.getGameViewModel(game.id).recoveryEpisodeId;assert.ok(next);assert.notEqual(next,first);
+ assert.equal(store.stopConnectionRecovery(game.id,{episodeId:first}),false,'the old owner cannot terminate the fresh episode');
 });
 
 for(const [eventSeq,gameplayRevision] of [[9,3],[null,3],[null,5]])test(`weaker live evidence cannot replace a stronger whole Home card seq=${eventSeq} revision=${gameplayRevision}`,async t=>{

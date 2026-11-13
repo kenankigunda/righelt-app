@@ -257,6 +257,7 @@ test("sync store setActiveGameId manages live sync connections", () => {
       subscribe: () => () => {},
       getIdentityId: () => "id-test",
       getLastEventSeq: () => 0,
+      getGameViewModel: () => null,
     }),
     createSyncClient: () => ({
       connectGame: (gameId) => {

@@ -303,6 +303,8 @@ export const createLiveTransportStore = ({
         attempt: null,
         storageBlocked: false,
         confirmationOverdue: false,
+        socketAuthorityRequired: false,
+        connectionFailed: false,
         hydrated: false,
         outcomes: new Map(),
         admission: Promise.resolve(),
@@ -400,8 +402,9 @@ export const createLiveTransportStore = ({
     next.recoveryEpisodeId = optimistic.recoveryEpisodeId ?? null;
     next.recoveryGeneration = optimistic.recoveryGeneration ?? 0;
     next.recoveryIssue = optimistic.recoveryIssue ?? null;
+    next.connectionFailed = optimistic.connectionFailed === true;
     next.incidentId = optimistic.incidentId ?? null;
-    next.recovering = optimistic.connectionRecovering === true || optimistic.syncStatus === "confirming" || next.confirmationOverdue;
+    next.recovering = optimistic.connectionFailed === true || optimistic.connectionRecovering === true || optimistic.syncStatus === "confirming" || next.confirmationOverdue;
     next.upgradeRequired = optimistic.upgradeRequired === true;
     next.storageLimitReached = optimistic.storageError?.code === "command_limit_reached" || /limit/.test(optimistic.storageError?.message ?? "");
     next.rulesChecking = Boolean(optimistic.admissionProjection || optimistic.projectionJob?.pending);
@@ -613,10 +616,10 @@ export const createLiveTransportStore = ({
         connectionGeneration: optimistic.connectionRecoveryEpoch ?? 0,
         owner: 'recovery', ownerAction: type === 'recovery_completed' ? 'released' : type === 'recovery_started' ? 'acquired' : undefined,
         result: type === 'recovery_completed' ? 'resolved' : type === 'recovery_started' ? 'started' : type === 'recovery_blocked'
-          ? optimistic.storageBlocked || optimistic.upgradeRequired ? 'terminal_failure' : 'blocked' : undefined,
+          ? optimistic.connectionFailed || optimistic.storageBlocked || optimistic.upgradeRequired ? 'terminal_failure' : 'blocked' : undefined,
         activeEpisodeRelation: optimistic.recoveryEpisodeId ? 'active' : 'none',
         polling: extra.reason === 'http_poll', manualRetry: extra.reason === 'manual_reconnect',
-        terminalFailure: type === 'recovery_blocked' && Boolean(optimistic.storageBlocked || optimistic.upgradeRequired), ...extra });
+        terminalFailure: type === 'recovery_blocked' && Boolean(optimistic.connectionFailed || optimistic.storageBlocked || optimistic.upgradeRequired), ...extra });
     } catch { /* Diagnostics cannot acquire, clear or interrupt recovery authority. */ }
   };
   // Presentation may request details, but only the transport owns episode evidence.
@@ -963,7 +966,7 @@ export const createLiveTransportStore = ({
   const scheduleRetry = (gameId, retryAttempt, reconcileFirst = true, retryAfterMs = 0) => {
     if (!active) return;
     const optimistic = getOptimisticState(gameId);
-    if (optimistic.upgradeRequired) return;
+    if (optimistic.upgradeRequired || optimistic.connectionFailed) return;
     if (optimistic.retryTimer) clearTimeout(optimistic.retryTimer);
     const delays = timing.retryDelaysMs;
     const delay = Math.min(5000, delays[Math.min(retryAttempt, delays.length - 1)] * (1 - timing.retryJitter + random() * timing.retryJitter * 2));
@@ -1113,7 +1116,7 @@ export const createLiveTransportStore = ({
       // Replay only the unchanged durable envelope. The server resolves an existing
       // receipt first, then enforces authority, dependencies and expected state.
       const replayAfterReadTimeout = reconcileFirst && error.code === "request_timeout" && error.diagnosticEvidence?.requestKind === "reconcile";
-      if (!optimistic.upgradeRequired && error.code !== "session_changed" && error.code !== "invalid_credentials") scheduleRetry(gameId, retryAttempt, !replayAfterReadTimeout, error.retryAfterMs);
+      if (!optimistic.connectionFailed && !optimistic.upgradeRequired && error.code !== "session_changed" && error.code !== "invalid_credentials") scheduleRetry(gameId, retryAttempt, !replayAfterReadTimeout, error.retryAfterMs);
     } finally {
       attempt.finish();
       if (optimistic.attempt === attempt) { optimistic.attempt = null; optimistic.inflightCommandId = null; }
@@ -1276,17 +1279,26 @@ export const createLiveTransportStore = ({
 
   const setConnectionRecovering = (gameId, recovering, evidence = {}) => {
     const optimistic = getOptimisticState(gameId);
+    const {
+      requireSocketAuthority = false,
+      socketAuthorityProven = false,
+      ...diagnosticEvidence
+    } = evidence;
+    if (recovering && optimistic.connectionFailed) return false;
     const wasRecovering = optimistic.connectionRecovering;
+    if (recovering && requireSocketAuthority) optimistic.socketAuthorityRequired = true;
+    if (!recovering && optimistic.socketAuthorityRequired && !socketAuthorityProven) return false;
+    if (!recovering && socketAuthorityProven) optimistic.socketAuthorityRequired = false;
     const recoveryAgeMs = Math.min(RECOVERY_DIAGNOSTICS.maximumAgeMs, Math.max(0, Date.now() - (optimistic.recoveryStartedAt ?? Date.now())));
     if (recovering && !optimistic.recoveryStartedAt) {
       optimistic.recoveryStartedAt = Date.now();
       optimistic.recoveryEpisodeId = crypto.randomUUID();
     }
-    optimistic.connectionEvidence = { ...optimistic.connectionEvidence, ...evidence };
+    optimistic.connectionEvidence = { ...optimistic.connectionEvidence, ...diagnosticEvidence };
     if (recovering) optimistic.connectionRecoveryEpoch = (optimistic.connectionRecoveryEpoch ?? 0) + 1;
     optimistic.connectionRecovering = recovering || optimistic.forceSnapshot === true;
     if (optimistic.connectionRecovering && !wasRecovering) {
-      reportRecoveryDiagnostic(gameId, 'recovery_started', evidence);
+      reportRecoveryDiagnostic(gameId, 'recovery_started', diagnosticEvidence);
       if (!recoveryDiagnosticTimers.has(gameId)) {
         const timer = setTimeout(() => {
           recoveryDiagnosticTimers.delete(gameId);
@@ -1295,7 +1307,7 @@ export const createLiveTransportStore = ({
         timer.unref?.(); recoveryDiagnosticTimers.set(gameId, timer);
       }
     } else if (optimistic.connectionRecovering && wasRecovering && recovering) {
-      reportRecoveryDiagnostic(gameId, 'health', { ...evidence, ownerAction: 'transferred', result: 'superseded' });
+      reportRecoveryDiagnostic(gameId, 'health', { ...diagnosticEvidence, ownerAction: 'transferred', result: 'superseded' });
     } else if (!optimistic.connectionRecovering) {
       clearTimeout(recoveryDiagnosticTimers.get(gameId)); recoveryDiagnosticTimers.delete(gameId);
     }
@@ -1313,9 +1325,52 @@ export const createLiveTransportStore = ({
     }
     recalculateOptimisticGame(gameId);
     emitChange({ type: "connection_recovery_changed", gameId, recovering });
+    return true;
+  };
+  const stopConnectionRecovery = (gameId, { episodeId } = {}) => {
+    const optimistic = getOptimisticState(gameId);
+    const hasActiveRecovery = optimistic.connectionRecovering || optimistic.syncStatus === "confirming" || optimistic.confirmationOverdue;
+    if (optimistic.connectionFailed || !hasActiveRecovery || !optimistic.recoveryEpisodeId
+      || episodeId && episodeId !== optimistic.recoveryEpisodeId) return false;
+    optimistic.connectionFailed = true;
+    optimistic.recoveryIssue = "connection_failed";
+    clearTimeout(optimistic.recoveryRetryTimer); optimistic.recoveryRetryTimer = null;
+    clearTimeout(optimistic.retryTimer); optimistic.retryTimer = null;
+    clearTimeout(optimistic.budgetTimer); optimistic.budgetTimer = null;
+    const owner = optimistic.recoveryOwner;
+    if (owner) {
+      owner.superseded = true;
+      owner.reject?.(Object.assign(new Error("connection_failed"), { code: "connection_failed" }));
+      optimistic.recoveryOwner = null; optimistic.recoveryPromise = null;
+    }
+    // Retire only a safe read. An accepted or uncertain write remains under
+    // its durable command and receipt ownership after the automatic budget.
+    if (optimistic.attempt?.commandId === null) {
+      const attempt = optimistic.attempt;
+      optimistic.attempt = null;
+      attempt.controller.abort(); attempt.finish();
+    }
+    reportRecoveryDiagnostic(gameId, 'recovery_blocked', { stage: 'connection_failed', terminalFailure: true });
+    recalculateOptimisticGame(gameId);
+    emitChange({ type: "connection_failed", gameId, episodeId: optimistic.recoveryEpisodeId });
+    return true;
+  };
+  const retryConnectionRecovery = (gameId) => {
+    const optimistic = getOptimisticState(gameId);
+    if (!optimistic.connectionFailed) return false;
+    optimistic.connectionFailed = false;
+    if (optimistic.recoveryIssue === "connection_failed") optimistic.recoveryIssue = null;
+    reportRecoveryDiagnostic(gameId, 'health', { stage: 'manual_retry', manualRetry: true });
+    optimistic.recoveryStartedAt = null;
+    optimistic.recoveryEpisodeId = null;
+    optimistic.socketAuthorityRequired = false;
+    recalculateOptimisticGame(gameId);
+    emitChange({ type: "connection_retry_started", gameId });
+    return true;
   };
   const reconcileGame = (gameId) => {
     const optimistic = getOptimisticState(gameId);
+    if (optimistic.connectionFailed) return Promise.reject(Object.assign(new Error("connection_failed"), { code: "connection_failed" }));
     if (optimistic.upgradeRequired) return Promise.reject(Object.assign(new Error("upgrade_required"), { code: "upgrade_required" }));
     if (optimistic.recoveryPromise) return optimistic.recoveryPromise;
     const owner = {}; optimistic.recoveryOwner = owner;
@@ -1362,8 +1417,8 @@ export const createLiveTransportStore = ({
     })]).catch(error => {
       if (!active || owner.superseded) throw error;
       if(error.retryAfterMs)optimistic.retryNotBefore=Date.now()+error.retryAfterMs;
-      if (optimistic.pendingCommands.length && !optimistic.retryTimer && !optimistic.upgradeRequired) scheduleRetry(gameId,optimistic.retryAttempt??0,true,error.retryAfterMs);
-      if (!optimistic.pendingCommands.length && !optimistic.upgradeRequired && error.code !== "session_changed" && error.code !== "invalid_credentials") {
+      if (!optimistic.connectionFailed && optimistic.pendingCommands.length && !optimistic.retryTimer && !optimistic.upgradeRequired) scheduleRetry(gameId,optimistic.retryAttempt??0,true,error.retryAfterMs);
+      if (!optimistic.connectionFailed && !optimistic.pendingCommands.length && !optimistic.upgradeRequired && error.code !== "session_changed" && error.code !== "invalid_credentials") {
         const retry = optimistic.recoveryRetryAttempt ?? 0;
         optimistic.recoveryRetryAttempt = retry + 1;
         const delay = timing.retryDelaysMs[Math.min(retry, timing.retryDelaysMs.length - 1)] * (1 - timing.retryJitter + random() * timing.retryJitter * 2);
@@ -1391,12 +1446,12 @@ export const createLiveTransportStore = ({
     if (!current()) return deferred('stale_connection');
     const admission = optimistic.admission;
     await admission.catch(() => {});
-    const blocked = () => optimistic.storageBlocked || optimistic.unsavedCommand || optimistic.upgradeRequired
+    const blocked = () => optimistic.connectionFailed || optimistic.storageBlocked || optimistic.unsavedCommand || optimistic.upgradeRequired
       || ['session_changed', 'invalid_credentials'].includes(optimistic.recoveryIssue)
       || auth?.enabled && !auth.session.authenticated;
     const sameRecovery = () => (optimistic.recoveryGeneration ?? 0) === recoveryGeneration
       && optimistic.connectionRecoveryEpoch === recoveryEpoch;
-    const blockedGate = () => optimistic.storageBlocked || optimistic.unsavedCommand ? 'storage'
+    const blockedGate = () => optimistic.connectionFailed ? 'connection_failed' : optimistic.storageBlocked || optimistic.unsavedCommand ? 'storage'
       : optimistic.upgradeRequired ? 'upgrade' : 'session';
     if (!current()) return deferred('stale_connection');
     if (!sameRecovery()) return deferred('recovery_changed');
@@ -1432,7 +1487,7 @@ export const createLiveTransportStore = ({
       optimistic.attempt = null;
       attempt.controller.abort(); attempt.finish();
     }
-    setConnectionRecovering(gameId, false);
+    setConnectionRecovering(gameId, false, { socketAuthorityProven: true });
     reportRecoveryDiagnostic(gameId, 'readiness', { gate: 'ready' });
     return true;
   };
@@ -2332,6 +2387,8 @@ export const createLiveTransportStore = ({
     },
     finishSocketRecovery,
     setConnectionRecovering,
+    stopConnectionRecovery,
+    retryConnectionRecovery,
     prepareSafeReconnect(gameId) {
       const optimistic = getOptimisticState(gameId);
       optimistic.forceSnapshot = true;
@@ -2346,7 +2403,7 @@ export const createLiveTransportStore = ({
       if (optimistic.attempt) {
         optimistic.attempt.controller.abort(); optimistic.attempt.finish(); optimistic.attempt = null; optimistic.inflightCommandId = null;
       }
-      setConnectionRecovering(gameId, true);
+      setConnectionRecovering(gameId, true, { requireSocketAuthority: true });
     },
     retrySaving,
     getCommandOutcome: (gameId, commandId) => getOptimisticState(gameId).outcomes.get(commandId) ?? null,

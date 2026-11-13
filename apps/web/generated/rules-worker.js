@@ -2608,7 +2608,7 @@ function applyAction(state, action, options) {
 var LIVE_HISTORY = Object.freeze({ requestHeader: "X-Righelt-Projection", requestValue: "history-v1", socketQuery: "historyProjection", snapshotValue: "summary-v1" });
 var SHARED_OPERATIONS = Object.freeze(["revert-request", "revert-approve", "revert-reject", "revert-rescind", "computer-control"]);
 var SYNC_LIMITS = Object.freeze({ commandsPerRequest: 16, outstandingPerGame: 16, outstandingPerIdentity: 128, commandIdCharacters: 128, historyCacheEntries: 64, envelopeBytes: 64 * 1024, bodyBytes: 1024 * 1024 });
-var SYNC_TIMING = Object.freeze({ requestTimeoutMs: 5e3, recoveryPassMs: 1e4, reconnectAlertMs: 4e3, confirmationBudgetMs: 15e3, degradedPollMs: 5e3, degradedSlowPollMs: 3e4, degradedSlowAfterMs: 6e4, heartbeatIntervalMs: 5e3, inboundTimeoutMs: 15e3, retryDelaysMs: Object.freeze([500, 1e3, 2e3, 4e3, 5e3]), maximumRetryAfterMs: 2147483647, retryJitter: 0.2 });
+var SYNC_TIMING = Object.freeze({ requestTimeoutMs: 5e3, recoveryPassMs: 1e4, reconnectAlertMs: 4e3, confirmationBudgetMs: 15e3, connectionFailureMs: 6e4, degradedPollMs: 5e3, degradedSlowPollMs: 3e4, degradedSlowAfterMs: 6e4, heartbeatIntervalMs: 5e3, inboundTimeoutMs: 15e3, retryDelaysMs: Object.freeze([500, 1e3, 2e3, 4e3, 5e3]), maximumRetryAfterMs: 2147483647, retryJitter: 0.2 });
 
 // apps/web/generated/packages/shared-types/src/computer-play.js
 var COMPUTER_TIMING = Object.freeze({ phaseLabelAfterMs: 500, detailAfterMs: 5e3, saveNoticeAfterMs: 1e4, stalledAfterMs: 3e4, renewAfterMs: SYNC_TIMING.heartbeatIntervalMs, leaseMs: SYNC_TIMING.inboundTimeoutMs });

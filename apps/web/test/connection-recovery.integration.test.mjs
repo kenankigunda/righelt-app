@@ -75,16 +75,23 @@ test("fallback retires the old socket and HTTP restores play independently of so
   assert.equal(f.store.getLastEventSeq(f.gameId), snapshot.eventSeq);
 });
 
-test("socket close starts HTTP recovery without waiting for reconnect readiness", async (t) => {
+test("socket close lets HTTP refresh state without restoring action authority", async (t) => {
   const f = await setup(t, { timeout: 1000 });
   f.store.setActiveGameId(f.gameId); const original = f.sockets[0]; original.emit("open");
   const snapshot = await f.current(); original.receive({ ...snapshot, protocolVersion:2, gameId:f.gameId, type:"state_sync" });
   await until(() => !f.store.getGameViewModel(f.gameId).recovering);
   original.close();
-  await until(() => f.reconciles.length === 1 && !f.store.getGameViewModel(f.gameId).recovering);
-  assert.equal(f.sockets.length, 1, "HTTP recovery finishes before socket backoff");
+  await until(() => f.reconciles.length === 1);
+  const refreshed = f.store.getGameViewModel(f.gameId);
+  assert.equal(refreshed.recovering, true, "HTTP state cannot resolve socket recovery");
+  assert.equal(refreshed.sharedMutationsBlocked, true);
+  assert.equal(refreshed.canRecordMove, false);
   await until(() => f.sockets.length === 2);
-  assert.equal(f.sockets[1].readyState, 0, "HTTP recovery cannot depend on socket readiness");
+  const replacement = f.sockets[1];
+  assert.equal(replacement.readyState, 0);
+  replacement.emit("open");
+  replacement.receive({ type: "heartbeat_ack", protocolVersion: 2, gameId: f.gameId, eventSeq: snapshot.eventSeq });
+  await until(() => !f.store.getGameViewModel(f.gameId).recovering);
   const game = f.store.getGameViewModel(f.gameId);
   assert.equal(game.sharedMutationsBlocked, false);
   assert.equal(game.canRecordMove, true);

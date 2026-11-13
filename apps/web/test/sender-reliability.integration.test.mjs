@@ -549,6 +549,10 @@ for(const committed of [false,true])test(`shared undo recovery preserves one dur
  assert.equal(saved.notifications.filter(note=>note === "Undo applied").length,1);
  assert.equal(saved.notifications.some(note=>note.includes("accepted the undo")),false);
  assert.equal((await f.journal.list(f.store.getIdentityId(),f.gameId)).length,0);
+ const ready=f.store.getGameViewModel(f.gameId);
+ assert.equal(ready.recovering,false,'HTTP reconciliation clears non-socket shared recovery');
+ assert.equal(ready.sharedMutationsBlocked,false);
+ assert.equal(ready.pendingCommandCount,0);
 });
 
 test("a shared request lost before arrival replays after unrelated gameplay advances",async(t)=>{

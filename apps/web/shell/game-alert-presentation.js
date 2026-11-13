@@ -10,7 +10,8 @@ export const renderRecoveryActions=({game,dismissed,recoveryNeedsAction,escapeHt
           ? `<button class="secondary mini-button" data-action="retry-saving" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Retry saving</button>${dismissed ? "" : `<button class="secondary mini-button" data-action="dismiss-recovery-notice" data-game-id="${escapeHtml(game.id)}">${icon('close')}Dismiss</button>`}`
           : game.upgradeRequired ? `<button class="secondary mini-button" data-action="refresh-game">${icon('rematch')}Reload game</button><a class="secondary mini-button button-link" href="#/">${icon('home')}Home</a>`
           : ["session_changed", "invalid_credentials"].includes(game.recoveryIssue) ? `<button class="secondary mini-button" data-action="account-open">${icon('account')}Sign in</button>`
-          : `<button class="secondary mini-button" data-action="reconnect-safely" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Reload game</button><a class="secondary mini-button button-link" href="#/">${icon('home')}Home</a>`;
+          : game.connectionFailed ? `<button data-action="reconnect-safely" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Retry connection</button><button class="secondary mini-button" data-action="refresh-game">Reload game</button><a class="secondary mini-button button-link" href="#/">${icon('home')}Home</a>`
+          : `<button class="secondary mini-button" data-action="reconnect-safely" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Retry connection</button><a class="secondary mini-button button-link" href="#/">${icon('home')}Home</a>`;
 
 /** Reads live application dependencies on every render; it never owns gameplay. */
 export function createGameAlertItems(getDependencies) {
@@ -40,7 +41,7 @@ export function createGameAlertItems(getDependencies) {
   if (message && (!dismissed || game.storageBlocked)) {
     items.unshift({
       key: `live-sync:${game.id}:${game.recoveryEpisodeId ?? "current"}`, priority: recoveryNeedsAction ? "urgent" : "normal",
-      html: renderGameAlertCard({ tone: recoveryNeedsAction ? "warn" : "neutral", activity: recoveryActivity(game), actorSide: activityActorSide(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: recoveryPresentation.incidentId(game,recoveryNeedsAction),
+      html: renderGameAlertCard({ tone: recoveryNeedsAction ? "warn" : "neutral", layout: game.connectionFailed ? 'terminal-recovery' : '', activity: recoveryActivity(game), actorSide: activityActorSide(game), body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: recoveryPresentation.incidentId(game,recoveryNeedsAction),
         action: renderRecoveryActions({game,dismissed,recoveryNeedsAction,escapeHtml}),
       }),
     });

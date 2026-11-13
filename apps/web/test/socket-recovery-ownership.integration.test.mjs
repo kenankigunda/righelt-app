@@ -10,6 +10,7 @@ import apiWorker from '../../api/index.js';
 import { createFakeD1 } from '../../../packages/api-handler/test/support/fake-d1.mjs';
 import { createFakeGameRooms } from '../../../packages/api-handler/test/support/fake-game-rooms.mjs';
 import { socketEnvironment } from './support/socket-environment.mjs';
+import { createRecoveryEpisodeClock } from '../shell/recovery-episode-clock.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const until = async predicate => {
@@ -47,7 +48,9 @@ test('socket authority retires an obsolete HTTP read without a new incident, ret
   store.setActiveGameId(gameId); await receive(sockets.sockets[0]);
   await until(() => !store.getGameViewModel(gameId).recovering);
   sockets.sockets[0].close();
-  await until(() => reads === 1 && !store.getGameViewModel(gameId).recovering && sockets.sockets.length >= 2);
+  await until(() => reads === 1 && store.getGameViewModel(gameId).recovering && sockets.sockets.length >= 2);
+  await receive(sockets.sockets[1]);
+  await until(() => !store.getGameViewModel(gameId).recovering);
   sockets.sockets[1].close();
   await until(() => reads === 2 && sockets.sockets.length >= 3);
   await receive(sockets.sockets.at(-1));
@@ -68,6 +71,161 @@ test('socket authority retires an obsolete HTTP read without a new incident, ret
   assert.deepEqual(await journal.list(store.getIdentityId(), gameId), []);
   assert.equal(requests.filter(request => /\/(apply|end-turn|shared)$/.test(request.url)).length, 0);
   assert.equal((await current()).game.gameplayRevision, 0);
+});
+
+test('a stale initial-load readiness pass and successful HTTP reads cannot retire a later unclean close', async t => {
+  const sockets = socketEnvironment(t), errors = [], diagnostics = [];
+  const env = { DB: createFakeD1() }; env.GAME_ROOMS = createFakeGameRooms(() => env);
+  const actual = (url, init = {}) => apiWorker.fetch(new Request(`https://test${url}`, init), env);
+  const data = new Map(), storage = { getItem: key => data.get(key) ?? null,
+    setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
+  const journal = createCommandJournal({ indexedDB: new IDBFactory() });
+  let journalReads = 0, releaseStaleHydration, releaseOldPoll, syncReconciles = 0;
+  let currentRepairRead = false, currentRepairSettled = false, releaseCurrentRepair;
+  const heldJournal = { ...journal, list: async (...args) => {
+    if (++journalReads === 1) await new Promise(resolve => { releaseStaleHydration = resolve; });
+    return journal.list(...args);
+  } };
+  const store = createSyncStore({
+    storage, commandJournal: heldJournal, onError: error => errors.push(error),
+    diagnostics: { record: event => diagnostics.push(event) },
+    createTransportStore: options => {
+      const transport = createLiveTransportStore(options);
+      const reconcile = transport.reconcileGame;
+      transport.reconcileGame = gameId => {
+        syncReconciles++;
+        if (syncReconciles === 1) return Promise.resolve();
+        if (syncReconciles === 2) return new Promise(resolve => { releaseOldPoll = resolve; });
+        return reconcile(gameId);
+      };
+      return transport;
+    },
+    createSyncClient: options => createLiveSyncClient({ ...options, reconnectBaseMs: 1, reconnectMaxMs: 1, degradedPollMs: 10 }),
+    fetcher: async (url, init = {}) => {
+      if (url.endsWith('/reconcile')) return new Promise((resolve, reject) => {
+        currentRepairRead = true;
+        releaseCurrentRepair = () => actual(url, init).then(resolve, reject).finally(() => { currentRepairSettled = true; });
+        init.signal.addEventListener('abort', () => {
+          reject(Object.assign(new Error('current repair read retired by socket authority'), { name: 'AbortError' }));
+        }, { once: true });
+      });
+      return actual(url, init);
+    },
+  });
+  sockets.own(store);
+  const created = store.createGame({ computer: { p1: null, p2: 'babs' } }); await created.committed;
+  const gameId = created.gameId;
+  const current = async () => (await actual(`/api/shell/games/${gameId}?identityId=${store.getIdentityId()}`)).json();
+  const receive = async socket => {
+    const body = await current(); socket.emit('open');
+    socket.emit('message', { data: JSON.stringify({ ...body, protocolVersion: 2, gameId, type: 'state_sync' }) });
+  };
+  const acknowledge = async socket => {
+    const body = await current(); socket.emit('open');
+    socket.emit('message', { data: JSON.stringify({ protocolVersion: 2, gameId, type: 'heartbeat_ack', eventSeq: body.eventSeq }) });
+  };
+
+  store.setActiveGameId(gameId);
+  sockets.sockets[0].emit('close', { code: 1006, wasClean: false });
+  await until(() => syncReconciles === 1 && sockets.sockets.length >= 2);
+  await until(() => syncReconciles === 2 && Boolean(releaseOldPoll));
+
+  const replacement = sockets.sockets[1];
+  await receive(replacement);
+  await until(() => Boolean(releaseStaleHydration));
+  replacement.emit('close', { code: 1006, wasClean: false });
+  await until(() => syncReconciles === 3);
+
+  const unrelatedRead = store.loadGame(gameId, { openAsViewer: true });
+  releaseStaleHydration();
+  releaseOldPoll();
+  await until(() => currentRepairRead && journalReads >= 2);
+  await unrelatedRead;
+  await sleep(10);
+
+  const blocked = store.getGameViewModel(gameId);
+  assert.equal(blocked.recovering, true, 'the later close keeps recovery authority after stale readiness settles');
+  assert.equal(blocked.sharedMutationsBlocked, true);
+  assert.equal(blocked.canRecordMove, false, 'an unrelated successful read cannot grant gameplay authority');
+  assert.equal(diagnostics.filter(event => event.type === 'recovery_completed').length, 0);
+
+  releaseCurrentRepair();
+  await until(() => currentRepairSettled);
+  await sleep(10);
+  const polled = store.getGameViewModel(gameId);
+  assert.equal(polled.recovering, true, 'HTTP reconciliation may refresh state but cannot grant socket action authority');
+  assert.equal(polled.sharedMutationsBlocked, true);
+  assert.equal(polled.canRecordMove, false);
+  assert.equal(diagnostics.filter(event => event.type === 'recovery_completed').length, 0);
+
+  await until(() => sockets.sockets.length >= 3);
+  await acknowledge(sockets.sockets.at(-1));
+  await until(() => !store.getGameViewModel(gameId).recovering);
+  const ready = store.getGameViewModel(gameId);
+  assert.equal(ready.sharedMutationsBlocked, false);
+  assert.equal(ready.canRecordMove, true);
+  assert.equal(diagnostics.filter(event => event.type === 'recovery_completed').length, 1);
+  assert.equal(errors.length, 0);
+});
+
+test('one active minute terminalizes command-only recovery without losing its durable identity', async t => {
+  const browser = socketEnvironment(t);
+  const env = { DB: createFakeD1() }; env.GAME_ROOMS = createFakeGameRooms(() => env);
+  const actual = (url, init = {}) => apiWorker.fetch(new Request(`https://test${url}`, init), env);
+  const data = new Map(), storage = { getItem: key => data.get(key) ?? null,
+    setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
+  const journal = createCommandJournal({ indexedDB: new IDBFactory() });
+  let now = 0, nextTimer = 0, syncOptions, stopped = 0, applyRequests = 0;
+  const timers = new Map();
+  const setTimer = (callback, delay) => { const id = ++nextTimer; timers.set(id, { callback, at: now + delay }); return id; };
+  const clearTimer = id => timers.delete(id);
+  const advance = milliseconds => {
+    const target = now + milliseconds;
+    while (true) {
+      const next = [...timers.entries()].sort((left, right) => left[1].at - right[1].at)[0];
+      if (!next || next[1].at > target) break;
+      timers.delete(next[0]); now = next[1].at; next[1].callback();
+    }
+    now = target;
+  };
+  const desired = new Set();
+  const liveClient = {
+    connectGame: gameId => desired.add(gameId), getDesiredGameIds: () => [...desired],
+    disconnectGame: gameId => desired.delete(gameId), disconnectAll: () => desired.clear(), retire: () => desired.clear(),
+    stopRecovery: () => { stopped++; return true; },
+    reconnectSafely: async gameId => { syncOptions.onRecovery({ gameId, reason: 'manual_reconnect' }); },
+  };
+  const store = createSyncStore({ storage, commandJournal: journal,
+    timing: { requestTimeoutMs: 20, confirmationBudgetMs: 15, retryDelaysMs: [100_000], retryJitter: 0 },
+    createRecoveryClock: options => createRecoveryEpisodeClock({ ...options, clock: () => now, setTimer, clearTimer }),
+    createSyncClient: options => { syncOptions = options; return liveClient; },
+    fetcher: async (url, init = {}) => {
+      if (url.endsWith('/apply')) { applyRequests++; throw Object.assign(new Error('offline'), { code: 'request_timeout' }); }
+      return actual(url, init);
+    },
+  });
+  browser.own(store);
+  const created = store.createGame({ selfPlayMode: true }); await created.committed;
+  store.setActiveGameId(created.gameId);
+  const game = store.getGameViewModel(created.gameId), action = game.legalActions.find(value => value.type === 'move');
+  const handle = await store.applyGameAction({ gameId: created.gameId, state: game.currentSnapshot, action });
+  void handle.committed.catch(() => {});
+  await until(() => Boolean(store.getGameViewModel(created.gameId).recoveryEpisodeId));
+  const firstEpisode = store.getGameViewModel(created.gameId).recoveryEpisodeId;
+  const [envelope] = await journal.list(store.getIdentityId(), created.gameId); assert.ok(envelope);
+
+  advance(60_000);
+  const failed = store.getGameViewModel(created.gameId);
+  assert.equal(failed.connectionFailed, true); assert.equal(failed.recoveryIssue, 'connection_failed');
+  assert.equal(failed.sharedMutationsBlocked, true); assert.equal(failed.canRecordMove, false);
+  assert.equal(stopped, 1); assert.equal(applyRequests, 1);
+  assert.deepEqual(await journal.list(store.getIdentityId(), created.gameId), [envelope], 'terminal failure preserves the exact durable command');
+
+  await store.reconnectSafely(created.gameId);
+  const retried = store.getGameViewModel(created.gameId);
+  assert.equal(retried.connectionFailed, false); assert.equal(retried.recovering, true);
+  assert.ok(retried.recoveryEpisodeId); assert.notEqual(retried.recoveryEpisodeId, firstEpisode);
+  assert.deepEqual(await journal.list(store.getIdentityId(), created.gameId), [envelope]);
 });
 
 const transportFixture = async (t, hooks = {}) => {
