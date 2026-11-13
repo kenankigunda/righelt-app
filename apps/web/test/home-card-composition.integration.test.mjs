@@ -11,7 +11,7 @@ function renderer(identityId = 'owner') {
     getTransport:()=>({getIdentityId:()=>identityId}),
     toStableKey:JSON.stringify,escapeHtml:escapeDebug,
     buildGameHash:id=>`#/game/${id}`,getCurrentFlyoutState:()=>({}),
-    formatDisplayGameId:String,formatClientDateTime:String,
+    formatClientDateTime:String,
     renderMiniBoardPreviewRoot:value=>{registered.push(value);return '<div data-mini-board-preview></div>';},
   });
   return {render:rendering.renderHomeGameCard,registered};
@@ -37,8 +37,8 @@ test('confirmed result and pending Undo retain quiet canonical identities, winne
     assert.match(html, /<div class="home-card-result"><strong class="player-tone-p2"><bdi>Horus won<\/bdi><\/strong><span class="small">You lost<\/span><\/div>/);
     assert.match(html, /<span class="small">You lost<\/span>/);
     assert.equal(statusHtml(html), 'Review game');
-    assert.match(html, /<span class="sr-only">Red: <\/span><bdi>You<\/bdi>/);
-    assert.match(html, /<span class="sr-only">Blue: <\/span><bdi>Horus<\/bdi>/);
+    assert.match(html, /<span class="sr-only">Red: <\/span><bdi dir="auto">You<\/bdi>/);
+    assert.match(html, /<span class="sr-only">Blue: <\/span><bdi dir="auto">Horus<\/bdi>/);
     assert.doesNotMatch(html, /connection-status-icon|Computer player|to play/);
     assert.match(html, /4 moves/);
     assert.match(html, /Update pending/);
@@ -76,7 +76,7 @@ test('only genuinely ongoing Home status uses the preview actor, retaining real 
     const before = structuredClone(input), h = renderer();
     const html = h.render(input);
     assert.equal(statusHtml(html), '<strong class="player-tone-p2"><span class="sr-only">Blue: </span><bdi>Horus</bdi></strong> to play');
-    assert.match(html, /<span class="sr-only">Red: <\/span><bdi>You<\/bdi>/);
+    assert.match(html, /<span class="sr-only">Red: <\/span><bdi dir="auto">You<\/bdi>/);
     assert.match(html, /Computer player/);
     assert.doesNotMatch(html, /You play both sides|<bdi>Babs<\/bdi>|Review game|data-winner-side=/);
     assert.deepEqual(input, before, 'manual control and conflicting stale profile markers remain untouched');

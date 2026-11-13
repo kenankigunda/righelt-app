@@ -1748,6 +1748,19 @@ textarea:focus-visible {
     inset 0 1px 0 rgba(255, 255, 255, 0.92);
 }
 
+/* Game identity is a flush mineral inlay, not a player emblem or a button. */
+.game-identity-title {display:inline-flex;align-items:flex-start;gap:.55rem;min-width:0;max-width:100%;vertical-align:middle;}
+.game-inlay {display:block;flex:none;width:2rem;height:2rem;overflow:visible;border:0;border-radius:0;box-shadow:none;filter:none;}
+.game-title-matchup {display:flex;align-items:baseline;flex-wrap:wrap;gap:.3rem;min-width:0;max-width:100%;overflow-wrap:anywhere;}
+.game-title-player {display:inline-flex;align-items:baseline;gap:.3rem;min-width:0;max-width:100%;font-weight:700;}
+.game-title-player bdi {min-width:0;overflow-wrap:anywhere;}
+.game-title-player .connection-status-icon {flex:none;align-self:center;}
+.game-title-versus {font-weight:500;color:var(--muted);}
+.mini-board-card-header > div {min-width:0;}
+.mini-board-card-link .game-inlay {width:1.75rem;height:1.75rem;}
+.game-title-matchup .player-tone-both {color:#7b53ab;}
+@media (forced-colors:active) {.game-inlay {forced-color-adjust:none;}.game-title-matchup .player-tone-both {color:CanvasText;}}
+
 .scenario-save-panel,
 .scenario-selected-summary {
   display: grid;

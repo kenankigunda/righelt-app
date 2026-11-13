@@ -64,7 +64,7 @@ test('actual result summary identifies true human both-side ownership without re
   const game={...finished(winner,names),selfPlayMode:true,selfPlayStartSide:'p2'};game.player2.identityId='red';
   const context={game,getGameResult,renderResultText,playerDisplayName,transport:{getIdentityId:()=> 'red',getAuthoritativeGame:()=>game},escapeHtml:String,renderResultMark:()=>'',formatDisplayGameId:String,icon:()=>''};
   context.html=renderResultPanel(game,context);
-  assert.match(context.html,/<p>You play both sides<\/p>/);assert.doesNotMatch(context.html,/Guest 1.* vs |Ada.* vs /);
+  assert.match(context.html,/You play both sides/);assert.doesNotMatch(context.html,/Guest 1.*vs\.|Ada.*vs\./);
   assert.match(context.html,new RegExp(`data-result-tone="victory" data-winner="${winner}"`));
   const manual={...game,computer:{seats:{p1:'horus',p2:null},manual:true},player1:{identityId:'red',computerProfile:'horus'}};
   const manualContext={...context,game:manual,transport:{getIdentityId:()=> 'red',getAuthoritativeGame:()=>manual}};

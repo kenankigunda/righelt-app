@@ -102,7 +102,7 @@ test('finished matchup uses confirmed saved ownership without changing winner or
  for(const [id,expected] of [['red','You'],['viewer','Maya']]){
   const value={...game(),board:{state:{outcome:{status:'p2_win',reason:'p1_commander_destroyed'}}}};
   const html=renderResultPanel({id:'g'},{transport:{getAuthoritativeGame:()=>value,getIdentityId:()=>id},escapeHtml:escape,formatDisplayGameId:String});
-  assert.ok(html.includes(`<bdi dir="auto">${expected}</bdi></span> vs <span class="player-tone-p2">`));
+  assert.match(html,new RegExp(`<bdi dir="auto">${expected}</bdi>[\\s\\S]*game-title-versus">vs\\.<[\\s\\S]*game-title-player player-tone-p2`));
   assert.match(html,/>Ada<\/span> won|>Ada<\/bdi>/);assert.doesNotMatch(html,/You won/);
  }
 });
