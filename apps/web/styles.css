@@ -851,14 +851,6 @@ button {
   pointer-events: none;
 }
 
-.piece-empty::before {
-  content: "";
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: #94a0a4;
-}
-
 .axis-label {
   position: absolute;
   z-index: 4;

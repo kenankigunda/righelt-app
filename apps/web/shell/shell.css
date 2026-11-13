@@ -1686,11 +1686,6 @@ button.button-release-bounce,
   height: 6px;
 }
 
-.mini-board-preview-board .piece-empty::before {
-  width: 3px;
-  height: 3px;
-}
-
 .mini-board-preview-board .axis-label {
   font-size: 0.52rem;
 }
