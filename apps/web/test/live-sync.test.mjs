@@ -639,6 +639,35 @@ test("silent foreground sockets recover without an offline event and coalesce re
   next.emit("open"); next.emit("message", { data: JSON.stringify({ type: "heartbeat_ack", protocolVersion: 2, gameId: "g", eventSeq: 1 }) });
 });
 
+test("an error-first native close preserves exact close evidence without acquiring another repair owner", async (t) => {
+  const recoveries = [], metrics = [];
+  let release;
+  const client = controlledClient(t, {
+    onRecovery: value => recoveries.push(value),
+    onMetric: value => metrics.push(value),
+    onReconcile: () => new Promise(resolve => { release = resolve; }),
+  });
+  client.connectGame("g");
+  const socket = MockSocket.instances[0];
+  socket.emit("open");
+  socket.emit("message", { data: JSON.stringify(snapshot("g", 1)) });
+  // Native browsers deliver the close event after the error callback returns.
+  socket.close = () => { socket.readyState = 2; };
+
+  socket.emit("error");
+  socket.emit("close", { code: 1006, wasClean: false });
+  await until(() => metrics.some(value => value.type === "socket_closed"));
+
+  assert.equal(recoveries.length, 1, "the close enriches diagnostics without starting a second repair");
+  assert.equal(recoveries[0].reason, "socket_error");
+  const closed = metrics.find(value => value.type === "socket_closed");
+  assert.equal(closed.reason, "socket_closed");
+  assert.equal(closed.closeCode, 1006);
+  assert.equal(closed.closeClean, false);
+  assert.equal(closed.socketGeneration, 1);
+  release();
+});
+
 test("initial socket timeout retires its generation before HTTP and reopen uses the applied HTTP cursor", async (t) => {
   let cursor = 3, repairs = 0, release;
   const client = controlledClient(t, { getLastEventSeq: () => cursor, initialSnapshotTimeoutMs: 15, onReconcile: () => {

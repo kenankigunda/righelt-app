@@ -2324,6 +2324,12 @@ export const createLiveTransportStore = ({
     loadGamePieceMoves,
     reconcileGame,
     ensureRecoveryIncident,
+    getRecoveryDiagnosticContext: gameId => {
+      const optimistic = optimisticStateByGameId.get(gameId);
+      const episodeId = optimistic?.recoveryEpisodeId;
+      const recovering = Boolean(optimistic?.connectionRecovering || optimistic?.syncStatus === 'confirming' || optimistic?.confirmationOverdue);
+      return { episodeId, activeEpisodeRelation: episodeId && recovering ? 'active' : 'none' };
+    },
     finishSocketRecovery,
     setConnectionRecovering,
     prepareSafeReconnect(gameId) {
