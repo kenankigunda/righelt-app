@@ -365,10 +365,8 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
    const read=()=>{
     const label=document.querySelector('#shell-board-preview-label'),card=document.querySelector('[data-computer-activity]'),wrap=document.querySelector('[data-testid="game-board-wrap"]');
     const pass=label?.querySelector('[data-board-message-action="pass"], [data-board-preview-action="pass"]');if(!firstPass)firstPass=pass;
-    const context=document.querySelector('[data-alert-stack-card].is-active [data-board-context]');
-    const contextVisible=Boolean(context?.getClientRects().length&&getComputedStyle(context).visibility!=='hidden'&&getComputedStyle(context).display!=='none');
     return {at:Date.now(),gameId:document.querySelector('[data-testid="game-shell"]')?.getAttribute('data-game-id'),
-     narration:context?.querySelector('.board-context-content')?.textContent.trim()??'',contextKey:context?.getAttribute('data-board-context')??null,contextVisible,
+     guidance:label?.textContent.trim()??'',
      activity:card?.getAttribute('data-computer-activity'),activityName:card?.closest('.participant-computer')?.getAttribute('aria-label'),markColor:card?.querySelector('.computer-status-mark')?getComputedStyle(card.querySelector('.computer-status-mark')).backgroundColor:null,
      announcement:document.querySelector('#shell-sync-announcement')?.textContent??'',
      reconnecting:wrap?.getAttribute('data-reconnecting'),busy:wrap?.getAttribute('aria-busy'),
@@ -397,9 +395,9 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   await expect(pass).toBeVisible();await expect(pass).toBeEnabled();expect(await journalRecord()).toEqual(original);
   const early=samples.filter(sample=>sample.at>=original.submittedAt&&sample.at<=sampledAt);
   expect(early.length).toBeGreaterThan(0);expect(samples.some(sample=>sample.overflow)).toBe(false);
-  const narration=samples[0].narration,contextKey=samples[0].contextKey;expect(narration).toMatch(/Babs /);expect(JSON.parse(contextKey)[1]).toBe(id);expect(JSON.parse(contextKey)[2]).toBe(before.gameplayRevision);
+  const guidance=samples[0].guidance;expect(guidance).toMatch(/Select a piece or\s*Pass/);
   for(const sample of early){
-   expect(sample.gameId).toBe(id);expect(sample.narration).toBe(narration);expect(sample.contextVisible).toBe(true);expect(sample.contextKey).toBe(contextKey);expect(sample.activity).toBe('here');expect(sample.activityName).toBe('Babs, Blue, Computer player, Active here');expect(sample.markColor).toBe('rgb(62, 167, 106)');
+   expect(sample.gameId).toBe(id);expect(sample.guidance).toBe(guidance);expect(sample.activity).toBe('here');expect(sample.activityName).toBe('Babs, Blue, Computer player, Active here');expect(sample.markColor).toBe('rgb(62, 167, 106)');
    expect(sample.pass).toBe(true);expect(sample.passEnabled).toBe(true);expect(sample.samePass).toBe(true);
    expect(sample.announcement).not.toMatch(/Updating computer play|Needs attention|Reconnecting|Saving/);
    expect(sample.recovery.join(' ')).not.toMatch(/Updating computer play|Needs attention/);expect(sample.reconnecting).not.toBe('true');expect(sample.busy).not.toBe('true');
@@ -410,6 +408,12 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   // and lease expiry keep this card quiet while its admitted intent recovers.
   await expect(page.getByRole('button',{name:'Babs, Blue, Computer player, Waiting',exact:true})).toBeVisible();
   await expect(pass).toBeDisabled();
+  await pass.evaluate(button=>{
+   const samples=[{disabled:button.disabled,hidden:document.hidden,focused:document.hasFocus()}];
+   const observer=new MutationObserver(()=>samples.push({disabled:button.disabled,hidden:document.hidden,focused:document.hasFocus()}));
+   observer.observe(button,{attributes:true,attributeFilter:['disabled']});
+   globalThis.__tabReturnAvailability={button,samples,observer};
+  });
   await expect(page.getByTestId('sync-recovery-banner')).toContainText(/updating computer play|retry|details/i);
   await expect.poll(()=>Date.now()).toBeGreaterThanOrEqual(heldAuthority.computer.lease.expiresAt);
   await expect(page.getByRole('button',{name:'Babs, Blue, Computer player, Waiting',exact:true})).toBeVisible();
@@ -418,6 +422,13 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   expect(await journalRecord()).toEqual(original);expect(writes).toEqual([]);
   const fenced=await projected(page,id);expect(fenced.board).toEqual(before.board);expect(fenced.moves).toEqual(before.moves);expect(fenced.gameplayRevision).toBe(before.gameplayRevision);
   for(const envelope of deliveries)expect(envelope).toEqual(original);
+  await page.evaluate(()=>{
+   Object.defineProperty(document,'hidden',{configurable:true,value:true});
+   Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});
+   document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect.poll(()=>page.evaluate(()=>document.hidden)).toBe(true);
+  await pass.evaluate(button=>button.click());expect(writes).toEqual([]);
   release();
   // The first delivery may now have timed out. Submit the exact admitted intent
   // through the existing native request context, never a fresh command ID.
@@ -426,11 +437,25 @@ test('a routine human-turn renewal stays quiet until real control becomes uncert
   expect(outcomes).toHaveLength(1);expect(outcomes[0]).toMatchObject({outcome:'rejected',reason:'computer_control_changed',fingerprint:original.fingerprint,gameplayRevision:before.gameplayRevision});
   await expect.poll(journalRecord).toBe(null);await expect(pass).toBeVisible();
   const after=await projected(page,id);expect(after.board).toEqual(before.board);expect(after.moves).toEqual(before.moves);expect(after.gameplayRevision).toBe(before.gameplayRevision);expect(writes).toEqual([]);
-  await writeFile(info.outputPath('quiet-renew-real-journey.json'),JSON.stringify({observerReadyAt,original,sampledAt,samples,outcome:outcomes[0],writes},null,2));
+  await page.evaluate(()=>{delete document.hidden;delete document.visibilityState;document.dispatchEvent(new Event('visibilitychange'));});
+  await expect.poll(()=>page.evaluate(()=>document.hidden)).toBe(false);
+  await expect.poll(()=>page.evaluate(()=>window.__righeltLiveSyncMetrics?.activeSocketCount??0)).toBeGreaterThan(0);
+  await expect(pass).toBeEnabled();
+  const tabReturn=await pass.evaluate(button=>{const owner=globalThis.__tabReturnAvailability;owner.observer.disconnect();return {sameButton:owner.button===button,disabled:button.disabled,samples:owner.samples,hidden:document.hidden,focused:document.hasFocus()};});
+  expect(tabReturn).toMatchObject({sameButton:true,disabled:false,hidden:false});
+  expect(tabReturn.samples.map(({disabled,hidden})=>({disabled,hidden}))).toEqual([
+   {disabled:true,hidden:false},
+   {disabled:false,hidden:true},
+   {disabled:true,hidden:false},
+   {disabled:false,hidden:false},
+  ]);
+  await pass.click();await expect.poll(async()=>(await projected(page,id)).gameplayRevision).toBe(before.gameplayRevision+1);
+  const passed=await projected(page,id);expect(passed.moves.at(-1).action).toEqual({type:'pass'});expect(writes).toHaveLength(1);
+  await writeFile(info.outputPath('quiet-renew-real-journey.json'),JSON.stringify({observerReadyAt,original,sampledAt,samples,outcome:outcomes[0],tabReturn,writes},null,2));
   await info.attach('quiet-renew-real-journey',{contentType:'application/json',path:info.outputPath('quiet-renew-real-journey.json')});
  }finally{
   try{await writeFile(info.outputPath('quiet-renew-raw-samples.json'),JSON.stringify({observerReadyAt,original,samples},null,2));await info.attach('quiet-renew-raw-samples',{contentType:'application/json',path:info.outputPath('quiet-renew-raw-samples.json')});}catch{}
-  release();page.off('console',consoleSample);page.off('request',observeWrite);await page.unrouteAll({behavior:'wait'});}
+  release();await page.evaluate(()=>{delete document.hidden;delete document.visibilityState;document.dispatchEvent(new Event('visibilitychange'));globalThis.__tabReturnAvailability?.observer?.disconnect();delete globalThis.__tabReturnAvailability;}).catch(()=>{});page.off('console',consoleSample);page.off('request',observeWrite);await page.unrouteAll({behavior:'wait'});}
 });
 
 

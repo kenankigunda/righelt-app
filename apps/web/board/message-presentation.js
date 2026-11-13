@@ -48,7 +48,7 @@ export function renderBoardMessageHtml(message, {sizing = false} = {}) {
 }
 
 /** Patch changed narration without detaching its focused replay/action controls. */
-export function patchBoardMessage(element, html) {
+export function patchBoardMessage(element, html, {isRuntimeDisabled=()=>false}={}) {
   const doc = element?.ownerDocument;
   if (!doc?.createElement) return false;
   const next = doc.createElement('span');
@@ -56,7 +56,7 @@ export function patchBoardMessage(element, html) {
   const compatible = (left,right) => {
     if (left.nodeType !== right.nodeType || left.nodeName !== right.nodeName) return false;
     if (left.nodeType === 1) {
-      const attrs = node => [...node.attributes].filter(attr => attr.name !== 'title').map(attr => {
+      const attrs = node => [...node.attributes].filter(attr => attr.name !== 'title' && !(attr.name === 'disabled' && isRuntimeDisabled(node))).map(attr => {
         // Keep native press feedback on the live control through quiet refreshes.
         // Semantic attributes (including disabled/action identity) still matter.
         const inlineAction=node.matches?.('button[data-board-message-action],button[data-board-preview-action]');
