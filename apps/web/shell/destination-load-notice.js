@@ -12,10 +12,29 @@ export const mountDestinationNotice = element => {
 
 export const retireDestinationNotice = (element,{quietField,documentObject=element.ownerDocument}={}) => {
   const active=documentObject?.activeElement,ownedFocus=Boolean(active&&element.contains(active));
-  entryGenerations.set(element,(entryGenerations.get(element)??0)+1);
+  const generation=(entryGenerations.get(element)??0)+1;entryGenerations.set(element,generation);
   element.dataset.state=quietField?'exiting':'hidden';element.inert=true;element.setAttribute('inert','');element.setAttribute('aria-hidden','true');
   if(ownedFocus)active.blur?.();
-  return ownedFocus;
+  return {ownedFocus,generation};
+};
+
+export const createDestinationNoticeRetirementOwner = ({setTimeout,clearTimeout}) => {
+  let owner=null;
+  const cancel=()=>{if(owner)clearTimeout(owner.timer);owner=null;};
+  return {
+    cancel,
+    schedule(element,generation,delay=140){
+      cancel();
+      const episode={element,generation,timer:null};
+      episode.timer=setTimeout(()=>{
+        if(owner!==episode||entryGenerations.get(element)!==generation||element.dataset.state!=='exiting')return;
+        element.hidden=true;element.innerHTML='';element.dataset.state='hidden';owner=null;
+      },delay);
+      owner=episode;
+      return episode;
+    },
+    owns:episode=>owner===episode,
+  };
 };
 
 export const presentDestinationNotice = (element,{quietField,requestAnimationFrame}={}) => {

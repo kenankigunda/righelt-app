@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mountDestinationNotice,presentDestinationNotice,quietFieldDestinationNotice,renderQuietFieldDestinationNotice,retireDestinationNotice} from '../shell/destination-load-notice.js';
+import {createDestinationNoticeRetirementOwner,mountDestinationNotice,presentDestinationNotice,quietFieldDestinationNotice,renderQuietFieldDestinationNotice,retireDestinationNotice} from '../shell/destination-load-notice.js';
 
 const escapeHtml=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 const icon=name=>`<svg data-icon="${name}" aria-hidden="true"></svg>`;
@@ -47,9 +47,23 @@ test('first mount enters from the hidden inert state before becoming visible on 
 test('exit is immediately inert and untabbable, blurs stale focus, and safely re-enters',()=>{
  const fixture=noticeFixture();mountDestinationNotice(fixture.element);presentDestinationNotice(fixture.element,{quietField:true,requestAnimationFrame:fixture.frame});
  fixture.documentObject.activeElement=fixture.control;
- assert.equal(retireDestinationNotice(fixture.element,{quietField:true,documentObject:fixture.documentObject}),true);
+ assert.equal(retireDestinationNotice(fixture.element,{quietField:true,documentObject:fixture.documentObject}).ownedFocus,true);
  assert.equal(fixture.element.dataset.state,'exiting');assert.equal(fixture.element.inert,true);assert.equal(fixture.element.hasAttribute('inert'),true);assert.equal(fixture.element.getAttribute('aria-hidden'),'true');assert.equal(fixture.control.closest('[inert]'),fixture.element);assert.equal(fixture.documentObject.activeElement,fixture.body);
  assert.equal(presentDestinationNotice(fixture.element,{quietField:true,requestAnimationFrame:fixture.frame}),'entering');
  assert.equal(fixture.element.inert,false);assert.equal(fixture.element.hasAttribute('inert'),false);assert.equal(fixture.element.getAttribute('aria-hidden'),null);
  fixture.frames.shift()();assert.equal(fixture.element.dataset.state,'entering');fixture.frames.shift()();assert.equal(fixture.element.dataset.state,'visible');
+});
+
+test('a stale delayed exit cannot settle or disown a newer retirement episode',()=>{
+ const fixture=noticeFixture(),timers=[],cleared=[];
+ const retirement=createDestinationNoticeRetirementOwner({setTimeout:callback=>{const timer={callback};timers.push(timer);return timer;},clearTimeout:timer=>cleared.push(timer)});
+ mountDestinationNotice(fixture.element);fixture.element.innerHTML='current notice';presentDestinationNotice(fixture.element,{quietField:true,requestAnimationFrame:fixture.frame});
+ const first=retireDestinationNotice(fixture.element,{quietField:true,documentObject:fixture.documentObject}),firstOwner=retirement.schedule(fixture.element,first.generation);
+ presentDestinationNotice(fixture.element,{quietField:true,requestAnimationFrame:fixture.frame});retirement.cancel();
+ const second=retireDestinationNotice(fixture.element,{quietField:true,documentObject:fixture.documentObject}),secondOwner=retirement.schedule(fixture.element,second.generation);
+ assert.equal(retirement.owns(firstOwner),false);assert.equal(retirement.owns(secondOwner),true);assert.equal(cleared.includes(firstOwner.timer),true);
+ firstOwner.timer.callback();
+ assert.equal(retirement.owns(secondOwner),true);assert.equal(fixture.element.hidden,false);assert.equal(fixture.element.innerHTML,'current notice');assert.equal(fixture.element.dataset.state,'exiting');
+ secondOwner.timer.callback();
+ assert.equal(retirement.owns(secondOwner),false);assert.equal(fixture.element.hidden,true);assert.equal(fixture.element.innerHTML,'');assert.equal(fixture.element.dataset.state,'hidden');
 });

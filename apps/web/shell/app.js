@@ -32,7 +32,7 @@ import {isLiveBoardVisible} from './live-board-visibility.js';
 import {mountDecisionNoteEditor} from './decision-note-editor.js';
 import {renderResultPanel} from './result-panel.js';
 import {createDestinationRecovery,destinationRecoveryMessage} from './destination-recovery.js';
-import {mountDestinationNotice,presentDestinationNotice,quietFieldDestinationNotice,renderQuietFieldDestinationNotice,retireDestinationNotice} from './destination-load-notice.js';
+import {createDestinationNoticeRetirementOwner,mountDestinationNotice,presentDestinationNotice,quietFieldDestinationNotice,renderQuietFieldDestinationNotice,retireDestinationNotice} from './destination-load-notice.js';
 import {createNavigationHistory} from './navigation-history.js';
 import {createNotificationPaper} from './notification-paper.js';
 import {selectedHistoryPresentation,recordedHistoryView,historyBoardMessage} from './history-narration.js';
@@ -3777,7 +3777,8 @@ const canHydrateRouteFromLocalState = (route = currentRoute) => {
   return Boolean(transport.getGameViewModel(route.gameId));
 };
 
-let destinationNoticeEl=null,destinationNoticeRetireTimer=null,destinationLoadPresentation=null,destinationRestoreFocus=false;
+let destinationNoticeEl=null,destinationLoadPresentation=null,destinationRestoreFocus=false;
+const destinationNoticeRetirement=createDestinationNoticeRetirementOwner({setTimeout:(callback,delay)=>window.setTimeout(callback,delay),clearTimeout:timer=>window.clearTimeout(timer)});
 const destinationRecovery=createDestinationRecovery({
   onChange:()=>syncDestinationNotice(),
   onRetry:()=>{if(!document.hidden && destinationRecovery.currentScope()===destinationReadScope(captureRouteRead()) && ['home','game'].includes(currentRoute.name))startRouteSync({renderStart:false});},
@@ -3788,16 +3789,11 @@ const syncDestinationNotice = () => {
   const message=destinationRecoveryMessage(destinationLoadPresentation,currentRoute.name);
   if(!message){
     if(destinationNoticeEl&&!destinationNoticeEl.hidden){
-      if(destinationNoticeRetireTimer)window.clearTimeout(destinationNoticeRetireTimer);
+      destinationNoticeRetirement.cancel();
       const quietField=destinationNoticeEl.dataset.presentation==='quiet-field';
-      const ownedFocus=retireDestinationNotice(destinationNoticeEl,{quietField,documentObject:document});
+      const {ownedFocus,generation}=retireDestinationNotice(destinationNoticeEl,{quietField,documentObject:document});
       if(quietField){
-        const retiring=destinationNoticeEl;
-        destinationNoticeRetireTimer=window.setTimeout(()=>{
-          destinationNoticeRetireTimer=null;
-          if(retiring.dataset.state!=='exiting')return;
-          retiring.hidden=true;retiring.innerHTML='';retiring.dataset.state='hidden';
-        },140);
+        destinationNoticeRetirement.schedule(destinationNoticeEl,generation);
       }else{
         destinationNoticeEl.hidden=true;destinationNoticeEl.innerHTML='';
       }
@@ -3818,7 +3814,7 @@ const syncDestinationNotice = () => {
       if(action==='signin'){await closeUtilityFlyouts();accountDialog.open('login',null,event.target);}
     });
   }
-  if(destinationNoticeRetireTimer){window.clearTimeout(destinationNoticeRetireTimer);destinationNoticeRetireTimer=null;}
+  destinationNoticeRetirement.cancel();
   const quietField=quietFieldDestinationNotice({transition:routeTransition,message});
   destinationNoticeEl.dataset.presentation=quietField?'quiet-field':'card';
   const action=message.action?`<button class="secondary mini-button" data-destination-action="${message.action}">${icon(message.action==='signin'?'account':'rematch')}${message.action==='signin'?'Sign in':message.action==='reload'?'Reload':'Retry'}</button>`:'';
