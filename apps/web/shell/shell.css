@@ -145,7 +145,16 @@ body {
 .shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-swipe::after {
   animation: none;
 }
-@keyframes shell-held-facet-pulse { 0%,100% { opacity:.55; } 50% { opacity:1; } }
+/* Pulse only the existing pseudo-facets while this exact covered read waits. */
+.shell-route-transition-layer[data-phase="covered"][data-held-pulse="true"] .shell-route-transition-layer-swipe::before,
+.shell-route-transition-layer[data-phase="covered"][data-held-pulse="true"] .shell-route-transition-layer-swipe::after {
+  animation:shell-held-facet-pulse 1400ms ease-in-out infinite;
+}
+@keyframes shell-held-facet-pulse { 0%,100% { filter:brightness(.94); } 50% { filter:brightness(1.06); } }
+@media(prefers-reduced-motion:reduce) {
+ .shell-route-transition-layer[data-phase="covered"][data-held-pulse="true"] .shell-route-transition-layer-swipe::before,
+ .shell-route-transition-layer[data-phase="covered"][data-held-pulse="true"] .shell-route-transition-layer-swipe::after {animation:none;}
+}
 [data-loading-hidden] .shell-route-transition-layer-swipe::before,
 [data-loading-hidden] .shell-route-transition-layer-swipe::after { animation-play-state:paused!important; }
 
