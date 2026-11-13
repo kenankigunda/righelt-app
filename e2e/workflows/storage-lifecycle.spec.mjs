@@ -1,4 +1,5 @@
 import {e2eControlPort} from '../../scripts/e2e-control.mjs';
+import {readFileSync} from 'node:fs';
 import {test,expect} from '@playwright/test';
 import {createGameFromHome,makeAnyLegalMove,getHistoryMoveCount,openHistoryMode,returnToLive} from '../support/app.mjs';
 
@@ -55,4 +56,15 @@ test('reset fences a stale tab and creates a fresh game in the new generation',a
  await page.screenshot({path:info.outputPath('storage-reset.png')});
  const fresh=await createGameFromHome(page);expect(fresh.gameId).not.toBe(gameId);
  const removed=await request.get(`/api/shell/games/${gameId}?identityId=stale`);expect(removed.status()).toBe(404);
+ // Reproduce the stale-generation scenario-import boundary, then prove that
+ // the restored stack accepts the same valid operation in its new generation.
+ const scenario=JSON.parse(readFileSync(new URL('../../apps/web/scenarios/catalog.json',import.meta.url),'utf8')).scenarios[0];
+ const identityId=await page.evaluate(()=>localStorage.getItem('righelt.identity.id.v1'));
+ expect(identityId).toBeTruthy();
+ const data={identityId,scenario,protocolVersion:2};
+ const staleImport=await request.post('/api/shell/scenarios/import',{headers:{'X-Righelt-Storage-Generation':before.storageGeneration},data});
+ expect(staleImport.status()).toBe(409);expect((await staleImport.json()).error).toBe('storage_reset');
+ const restoredImport=await request.post('/api/shell/scenarios/import',{headers:{'X-Righelt-Storage-Generation':after.storageGeneration},data});
+ expect(restoredImport.status()).toBe(200);
+ const imported=await restoredImport.json();expect(imported.game.id).toBeTruthy();expect(imported.game.id).not.toBe(gameId);
 });
