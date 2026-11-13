@@ -4,7 +4,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { createSyncStore } from '../shell/sync-store.js';
 import { createLiveTransportStore } from '../shell/live-transport.js';
 import { createCommandJournal } from '../shell/command-journal.js';
-import { createRecoveryTelemetry } from '../shell/recovery-telemetry.js';
+import { createRecoveryTelemetry, createRecoveryTimeline } from '../shell/recovery-telemetry.js';
 import apiWorker from '../../api/index.js';
 import { createFakeD1 } from '../../../packages/api-handler/test/support/fake-d1.mjs';
 import { createFakeGameRooms } from '../../../packages/api-handler/test/support/fake-game-rooms.mjs';
@@ -25,7 +25,9 @@ async function fixture(t, { diagnosticSink, mutateUpload, holdReconcile = false 
   const env = { DB: createFakeD1() };
   env.GAME_ROOMS = createFakeGameRooms(() => env);
   const actual = (url, init = {}) => apiWorker.fetch(new Request(`${origin}${url}`, init), env);
+  const timeline = createRecoveryTimeline();
   const telemetry = createRecoveryTelemetry({
+    timeline,
     schedule: (callback, delay) => { timers.set(++timerId, { callback, delay }); return timerId; },
     cancel: id => timers.delete(id),
     environment: () => ({ online: true, visibility: 'visible', loadedBuild: 'unavailable', observedDeploymentSha: 'a'.repeat(40) }),
@@ -62,7 +64,7 @@ async function fixture(t, { diagnosticSink, mutateUpload, holdReconcile = false 
   await creation.committed;
   const gameId = creation.gameId;
   const current = async () => (await actual(`/api/shell/games/${gameId}?identityId=${store.getIdentityId()}`)).json();
-  return { store, transport, telemetry, logs, uploads, gameplayRequests, journal, gameId, current,
+  return { store, transport, telemetry, timeline, logs, uploads, gameplayRequests, journal, gameId, current,
     hasReconcile: () => Boolean(releaseReconcile), releaseReconcile: () => releaseReconcile(), timers };
 }
 
@@ -70,7 +72,7 @@ test('a silent recovery episode crosses the real transport, uploader and API wit
   const f = await fixture(t);
   t.mock.timers.enable({ apis: ['setTimeout'] });
   f.transport.setConnectionRecovering(f.gameId, true, { reason: 'socket_closed', advertisedEventSeq: 2,
-    socketGeneration: 3, identityId: 'private-identity', authContextId: 'private-context',
+    closeCode: 1006, closeClean: false, socketGeneration: 3, identityId: 'private-identity', authContextId: 'private-context',
     authoritativeState: { private: 'private-state' }, browser: 'private-agent', gameLink: 'https://private-link' });
   t.mock.timers.tick(SYNC_TIMING.confirmationBudgetMs);
   assert.equal(f.store.getGameViewModel(f.gameId).recovering, true);
@@ -89,6 +91,15 @@ test('a silent recovery episode crosses the real transport, uploader and API wit
   assert.equal(stalled.socketGeneration, 3);
   assert.equal(stalled.loadedBuild, 'unavailable');
   assert.equal(stalled.observedDeploymentSha, 'a'.repeat(40));
+  const localStart = f.timeline.snapshot().find(row => row.type === 'recovery_started');
+  assert.equal(localStart.closeCode, 1006);
+  assert.equal(localStart.closeClean, false);
+  assert.equal(localStart.socketGeneration, 3);
+  assert.equal(localStart.owner, 'recovery');
+  assert.equal(localStart.ownerAction, 'acquired');
+  assert.equal(localStart.result, 'started');
+  assert.equal(localStart.activeEpisodeRelation, 'active');
+  assert.ok(Number.isSafeInteger(localStart.connectionGeneration));
   assert.equal(JSON.stringify(reports).includes('private-'), false);
   assert.equal(f.uploads[0].status, 202);
   assert.equal(f.gameplayRequests.length, 1, 'diagnostic promotion must not trigger recovery or gameplay requests');

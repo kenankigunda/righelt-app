@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createIssueDiagnostics, sanitizeDiagnostic } from "../shell/issue-diagnostics.js";
 import { recoveryMessage } from "../shell/recovery-view.js";
+import { createRecoveryTimeline } from "../shell/recovery-telemetry.js";
 const memory = () => { const map = new Map(); return { getItem: k => map.get(k), setItem: (k,v) => map.set(k,v), removeItem: k => map.delete(k) }; };
 test("request phase and route kind survive sanitized persisted diagnostics", () => {
  const storage = memory(), jobs = [];
@@ -74,4 +75,36 @@ test("diagnostic total event and byte budgets retain initial evidence and mark t
  assert.ok(d.list().reduce((sum,r)=>sum+r.events.length,0)<=200);assert.equal(d.get(last).initial.operation,"initial");assert.ok(d.list().some(r=>r.truncated));
  for(let i=0;i<200;i++)d.capture("large",{browser:"x".repeat(2048),authoritativeState:{pieces:Array.from({length:100},(_,id)=>({id:String(id),owner:"P1",position:{row:0,col:0},kind:"unit"}))}});
  assert.ok(new TextEncoder().encode(JSON.stringify(d.list())).length<=1048576);assert.ok(d.list().at(-1).initial);assert.ok(d.list().at(-1).events.every(event=>event.authoritativeState===undefined));
+});
+
+test("copied recovery details isolate the failed request from later successful reads", () => {
+ const failedId=crypto.randomUUID(),laterId=crypto.randomUUID(),gameId=`game-${crypto.randomUUID()}`,timeline=createRecoveryTimeline();
+ timeline.record({at:1001,type:"request_failed",gameId,requestId:failedId,requestKind:"apply",requestRelationship:"failure",activeEpisodeRelation:"active",result:"failed"});
+ timeline.record({at:1002,type:"health",gameId,requestId:laterId,requestKind:"read",requestRelationship:"latest_observed",activeEpisodeRelation:"unrelated",result:"succeeded"});
+ const d=createIssueDiagnostics({now:()=>1000,environment:()=>({}),recoveryTimeline:()=>timeline.snapshot()});
+ const id=d.capture(`recovery:${gameId}`,{operation:"move_recovery",gameId,stage:"command_confirmation",requestId:failedId,requestKind:"apply",requestPhase:"body",requestRelationship:"failure",activeEpisodeRelation:"active",status:503});
+ d.capture(`recovery:${gameId}`,{stage:"response_received",requestId:laterId,requestKind:"read",requestPhase:"complete",requestRelationship:"latest_observed",activeEpisodeRelation:"unrelated",status:200});
+ const details=JSON.parse(d.text(id).split("\n\n").at(-1));
+ assert.equal(details.failedRecoveryRequest.requestId,failedId);
+ assert.equal(details.failedRecoveryRequest.status,503);
+ assert.equal(details.requestTimeline.at(-1).requestId,laterId);
+ assert.equal(details.requestTimeline.at(-1).activeEpisodeRelation,"unrelated");
+ assert.equal(details.requestTimeline.at(-1).result,"succeeded");
+ assert.equal(details.recoveryTimeline.at(-1).requestId,laterId);
+ assert.notEqual(details.failedRecoveryRequest.requestId,details.recoveryTimeline.at(-1).requestId);
+});
+
+test("recovery copy projection excludes valid command, board, action and arbitrary incident sentinels", () => {
+ const gameId=`game-${crypto.randomUUID()}`,requestId=crypto.randomUUID(),commandId=`v2:${crypto.randomUUID()}`;
+ const d=createIssueDiagnostics({environment:()=>({browser:"SENTINEL_BROWSER"}),recoveryTimeline:()=>[]});
+ const id=d.capture(`recovery:${gameId}`,{operation:"move_recovery",gameId,gameLink:"https://SENTINEL_GAME",stage:"command_confirmation",
+  requestId,requestKind:"apply",requestPhase:"body",requestRelationship:"failure",activeEpisodeRelation:"active",status:503,
+  commandId,fingerprint:"SENTINEL_FINGERPRINT",receipt:"SENTINEL_RECEIPT",code:"SENTINEL_ERROR",
+  authoritativeState:{boardSize:10,sideToMove:"P1",turnIndex:2,pieces:[{id:"SENTINEL_AUTH_STATE",owner:"P1",kind:"unit",position:{row:1,col:2}}]},
+  tentativeState:{boardSize:10,sideToMove:"P2",turnIndex:3,pieces:[{id:"SENTINEL_TENTATIVE_STATE",owner:"P2",kind:"unit",position:{row:2,col:3}}]},
+  action:{type:"move",actorId:"SENTINEL_ACTION",from:{row:1,col:2},to:{row:1,col:3}}});
+ const copied=d.text(id);
+ assert.match(copied,new RegExp(requestId));
+ for(const sentinel of [commandId,"SENTINEL_FINGERPRINT","SENTINEL_RECEIPT","SENTINEL_ERROR","SENTINEL_AUTH_STATE","SENTINEL_TENTATIVE_STATE","SENTINEL_ACTION","SENTINEL_BROWSER","SENTINEL_GAME"])
+  assert.equal(copied.includes(sentinel),false,sentinel);
 });

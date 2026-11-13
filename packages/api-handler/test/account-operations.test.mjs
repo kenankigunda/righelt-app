@@ -70,9 +70,12 @@ test("deployment boundary requires provider rejection, never timeout or arbitrar
     boundarySmoke({
       origin,
       privateOrigin,
+      expectedCommit: deploymentRevision,
       fetcher: async (url) =>
         url.origin === origin
-          ? Response.json({ ok: true, bindings: { db: true, gameRooms: true } })
+          ? url.pathname === "/main.js"
+            ? new Response(`globalThis.__righeltClientBuild = "${deploymentRevision}"; // RIGHELT_CLIENT_BUILD`)
+            : Response.json({ ok: true, bindings: { db: true, gameRooms: true } })
           : typeof result === "function"
             ? result()
             : result,
@@ -101,10 +104,13 @@ test("preparation smoke requires closed maintenance and enabled credentials", as
     const work = boundarySmoke({
       origin,
       privateOrigin,
+      expectedCommit: deploymentRevision,
       preparation: true,
       fetcher: async (url) =>
         url.origin === privateOrigin
           ? new Response("", { status: 404, headers: { "cf-ray": "fixture" } })
+          : url.pathname === "/main.js"
+            ? new Response(`globalThis.__righeltClientBuild = "${deploymentRevision}"; // RIGHELT_CLIENT_BUILD`)
           : Response.json(
               url.pathname === "/api/health"
                 ? { ok: true, bindings: { db: true, gameRooms: true } }
@@ -328,13 +334,15 @@ test("deployment shares the explicit origin or canonical Pages fallback across p
     const cli = spawnSync(process.execPath, [fileURLToPath(new URL("../../../scripts/deploy-account-services.mjs", import.meta.url)), "--check-only"], { env: { PATH: "", DEPLOY_SHA: deploymentRevision, RIGHELT_SITE_ORIGIN: selectedOrigin, CLOUDFLARE_API_BASE_URL: privateOrigin, RIGHELT_STORAGE_GENERATION:preparedStorageGeneration }, encoding: "utf8" });
     assert.equal(cli.status, 0, cli.stderr);
     const calls = [];
-    assert.deepEqual(await boundarySmoke({ origin: selectedOrigin, privateOrigin, fetcher: async url => {
+    assert.deepEqual(await boundarySmoke({ origin: selectedOrigin, privateOrigin, expectedCommit: deploymentRevision, fetcher: async url => {
       calls.push(url.href);
       return url.origin === selectedOrigin
-        ? Response.json({ ok: true, bindings: { db: true, gameRooms: true } })
+        ? url.pathname === "/main.js"
+          ? new Response(`globalThis.__righeltClientBuild = "${deploymentRevision}"; // RIGHELT_CLIENT_BUILD`)
+          : Response.json({ ok: true, bindings: { db: true, gameRooms: true } })
         : new Response("", { status: 404, headers: { server: "cloudflare" } });
     } }), { ok: true });
-    assert.deepEqual(calls, [`${selectedOrigin}/api/health`, `${privateOrigin}/api/health`]);
+    assert.deepEqual(calls, [`${selectedOrigin}/api/health`, `${privateOrigin}/api/health`, `${selectedOrigin}/main.js`]);
     assert.throws(() => validateDeployment({ RIGHELT_SITE_ORIGIN: selectedOrigin, CLOUDFLARE_API_BASE_URL: privateOrigin, RIGHELT_AUTH_ENABLED: "true" }), /secret/);
   }
   for (const invalidOrigin of ["http://custom.test", "https://custom.test/path", "https://custom.test/", "https://a.test,https://b.test"]) {
