@@ -11,13 +11,16 @@ const PHASES=Object.freeze([
 ]);
 
 const formatter=(locale,options)=>new Intl.DateTimeFormat(locale,options);
-const partsObject=(value,locale,timeZone)=>Object.fromEntries(formatter(locale,{month:'short',day:'numeric',hour:'numeric',hourCycle:'h23',timeZone}).formatToParts(value).map(part=>[part.type,part.value]));
+const partsObject=(value,locale,timeZone)=>Object.fromEntries(formatter(locale,{month:'short',day:'numeric',timeZone}).formatToParts(value).map(part=>[part.type,part.value]));
+// Phase arithmetic never parses localized numerals. Visible date text and the
+// full accessible label still use the viewer's requested numbering system.
+const numericHour=(value,locale,timeZone)=>Number(formatter(locale,{hour:'numeric',hourCycle:'h23',numberingSystem:'latn',timeZone}).formatToParts(value).find(part=>part.type==='hour')?.value);
 
 /** Presentation only. Righelt's immutable game creation instant is the available start contract. */
 export function gameDateInlayModel(startedAt,{locale,timeZone}={}){
   const instant=new Date(String(startedAt??''));
   if(!Number.isFinite(instant.getTime()))return null;
-  const parts=partsObject(instant,locale,timeZone),hour=Number(parts.hour),phase=PHASES.find(candidate=>hour<candidate.until)??PHASES.at(-1);
+  const parts=partsObject(instant,locale,timeZone),hour=numericHour(instant,locale,timeZone),phase=PHASES.find(candidate=>hour<candidate.until)??PHASES.at(-1);
   const label=formatter(locale,{dateStyle:'long',timeStyle:'short',timeZone}).format(instant);
   return{month:parts.month,day:parts.day,hour,phase:phase.name,position:phase.position,palette:phase.palette,moon:phase.moon===true,label};
 }

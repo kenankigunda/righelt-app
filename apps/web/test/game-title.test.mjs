@@ -57,6 +57,17 @@ test('player marks follow stable identities rather than seat color or display na
  assert.doesNotMatch(stableMark,/player-p1|player-p2|currentColor/);
 });
 
+test('game identity remains anchored to immutable createdAt after later activity',()=>{
+ const createdAt='2026-02-10T20:15:00.000Z',updatedAt='2027-09-21T04:45:00.000Z';
+ const initial=renderGameTitle(game({createdAt,updatedAt,lastMoveAt:createdAt,moveCount:0}),{identityId:'red'});
+ const later=renderGameTitle(game({createdAt,updatedAt,lastMoveAt:updatedAt,moveCount:19,gameplayRevision:12}),{identityId:'red'});
+ const createdLabel=new Intl.DateTimeFormat(undefined,{dateStyle:'long',timeStyle:'short'}).format(new Date(createdAt));
+ const updatedLabel=new Intl.DateTimeFormat(undefined,{dateStyle:'long',timeStyle:'short'}).format(new Date(updatedAt));
+ assert.ok(initial.includes(`aria-label="Started ${createdLabel}, `));
+ assert.ok(!initial.includes(updatedLabel));
+ assert.equal(later,initial);
+});
+
 test('Tessera v1 has stable known answers and bounded independent SVG instances',()=>{
  const answers=new Map([
   ['game-000000000000000000000000000000000000','e979118e5856d538f641642a82e1bc01657a5a6d751c1489b5bcb726dbd8cf23'],
