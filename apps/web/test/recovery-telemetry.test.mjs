@@ -115,10 +115,11 @@ test('replacing an uploader cannot replenish the shared page upload allowance', 
 
 test('page recovery timeline is bounded, immutable and retains only closed recovery evidence', () => {
   const timeline = createRecoveryTimeline({ limit: 2 });
+  const commandId = `v2:${crypto.randomUUID()}`;
   const first = timeline.record({ type: 'socket', at: 1, reason: 'socket_closed', closeCode: 1006,
     closeClean: false, socketGeneration: 4, owner: 'connection', ownerAction: 'transferred',
     result: 'failed', activeEpisodeRelation: 'active', token: 'secret', error: 'private failure',
-    command: { payload: 'secret' }, game: { state: 'secret' } });
+    commandId, command: { payload: 'secret' }, game: { state: 'secret' } });
   timeline.record({ type: 'recovery_started', at: 2, reason: 'manual_reconnect', recoveryGeneration: 5,
     owner: 'repair', ownerAction: 'acquired', retry: 2, polling: true, manualRetry: true, result: 'started' });
   timeline.record({ type: 'recovery_completed', at: 3, owner: 'repair', ownerAction: 'released',
@@ -129,6 +130,7 @@ test('page recovery timeline is bounded, immutable and retains only closed recov
   assert.equal(Object.isFrozen(timeline.snapshot()), true);
   assert.equal(JSON.stringify(timeline.snapshot()).includes('secret'), false);
   assert.equal(JSON.stringify(timeline.snapshot()).includes('private failure'), false);
+  assert.equal(JSON.stringify(first).includes(commandId), false);
   assert.equal(timeline.snapshot()[0].manualRetry, true);
   assert.equal(timeline.snapshot()[0].polling, true);
   assert.equal(timeline.snapshot()[1].activeEpisodeRelation, 'unrelated');

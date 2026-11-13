@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {issueDiagnostics} from '../shell/issue-diagnostics.js';
 import {renderDiagnosticDisclosure,handleDiagnosticAction} from '../shell/diagnostic-disclosure.js';
 
-test('labelled inline details copies the complete sanitized Debug report and confirms success',async t=>{
+test('labelled inline details copies the closed recovery support report and confirms success',async t=>{
  issueDiagnostics.clear();t.after(()=>issueDiagnostics.clear());
  const original=Object.getOwnPropertyDescriptor(globalThis,'navigator');let copied;
  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{clipboard:{writeText:async value=>{copied=value;}}}});
@@ -16,7 +16,7 @@ test('labelled inline details copies the complete sanitized Debug report and con
  await handleDiagnosticAction(target('copy-diagnostic'));
  assert.equal(copied,issueDiagnostics.text(id));assert.doesNotMatch(copied,/SECRET/);
  assert.match(renderDiagnosticDisclosure(id),/role="status">Full details copied\./);
- assert.equal(renderDiagnosticDisclosure(id,'recent').includes('same-command'),true);
+ assert.equal(renderDiagnosticDisclosure(id,'recent').includes('same-command'),false);
 });
 
 test('denied clipboard keeps full manual text and an accessible status',async t=>{
@@ -29,5 +29,5 @@ test('denied clipboard keeps full manual text and an accessible status',async t=
  await handleDiagnosticAction({dataset:{action:'copy-diagnostic',incidentId:id}});
  const html=renderDiagnosticDisclosure(id);
  assert.match(html,/role="status">Copy the full details below\./);assert.match(html,/<pre tabindex="0">/);
- assert.match(html,/move_recovery/);assert.doesNotMatch(html,/Full details copied\./);
+ assert.match(html,/Recovery issue/);assert.doesNotMatch(html,/Full details copied\./);
 });

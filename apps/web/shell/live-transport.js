@@ -125,6 +125,7 @@ export const createLiveTransportStore = ({
 } = {}) => {
   let active = true;
   const recoveryDiagnosticTimers = new Map();
+  const requestRecoveryOwners = new WeakMap();
   let rulesGameId = null;
   let rulesVisible = !globalThis.document?.hidden;
   let rulesEpoch = 0;
@@ -140,27 +141,37 @@ export const createLiveTransportStore = ({
   });
   let serverActionContract = null;
   const rawFetcher = fetcher;
+  const recoveryRelation = (gameId, owner) => {
+    const current = gameId ? getOptimisticState(gameId) : null;
+    if (!owner || !current?.recoveryEpisodeId) return current?.recoveryEpisodeId ? 'unrelated' : 'none';
+    return owner.episodeId === current.recoveryEpisodeId
+      && owner.recoveryGeneration === current.recoveryGeneration
+      && owner.connectionGeneration === current.connectionRecoveryEpoch ? 'active' : 'unrelated';
+  };
   fetcher = async (url, init = {}, evidence = {}) => {
     assertActive();
     if (init.method === "POST" && typeof init.body === "string") init = { ...init, body: JSON.stringify({ ...JSON.parse(init.body), protocolVersion: SYNC_PROTOCOL_VERSION }) };
     const requestId = crypto.randomUUID(), started = Date.now();
+    const gameId = /\/games\/([^/?]+)/.exec(url)?.[1];
+    const requestOwner = requestRecoveryOwners.get(evidence) ?? null;
     const routeKind = /\/games\/[^/?]+\/([^/?]+)/.exec(url)?.[1];
     Object.assign(evidence, { requestId, status: null, durationMs: 0, serverBuild: "unavailable", requestPhase: "headers",
-      requestKind: ["apply", "end-turn", "reconcile"].includes(routeKind) ? routeKind : "read" });
+      requestKind: ["apply", "end-turn", "reconcile"].includes(routeKind) ? routeKind : "read",
+      activeEpisodeRelation: recoveryRelation(gameId, requestOwner) });
     init = { ...init, headers: { ...init.headers, "X-Righelt-Request-Id": requestId, [ACTION_CONTRACT_HEADER]: String(ACTION_CONTRACT_VERSION), [LIVE_HISTORY.requestHeader]: LIVE_HISTORY.requestValue, ...(auth?.storageGeneration ? { [STORAGE_GENERATION_HEADER]: auth.storageGeneration } : {}) } };
     let response;
     try { response = await rawFetcher(url, init); }
     catch(error) {
       const data = { ...evidence, durationMs: Date.now() - started, status: null, stage: "request_failed", serverBuild: "unavailable" };
       if (error && typeof error === "object") error.diagnosticEvidence = data;
-      const gameId = /\/games\/([^/?]+)/.exec(url)?.[1];
+      data.activeEpisodeRelation = recoveryRelation(gameId, requestOwner);
       if (gameId && !init.signal?.aborted) getOptimisticState(gameId).requestEvidence = data;
       throw error;
     }
     Object.assign(evidence, { status: response.status, durationMs: Date.now() - started, serverBuild: response.headers?.get?.("X-Righelt-Server-Build") ?? "unavailable", requestPhase: "body" });
     const data = { ...evidence, stage: "response_received" };
+    data.activeEpisodeRelation = recoveryRelation(gameId, requestOwner);
     response.righeltDiagnosticEvidence = data;
-    const gameId = /\/games\/([^/?]+)/.exec(url)?.[1];
     if (gameId && !init.signal?.aborted) {
       const optimistic = getOptimisticState(gameId);
       data.gameId = gameId;
@@ -918,9 +929,15 @@ export const createLiveTransportStore = ({
     return result;
   };
 
-  const boundedRequest = async (url, init, controller = new AbortController(), cancelOnAbort = false) => {
+  const boundedRequest = async (url, init, controller = new AbortController(), cancelOnAbort = false, recoveryOwned = false) => {
     let timer, onAbort;
     const evidence = {}, started = Date.now();
+    if (recoveryOwned) {
+      const gameId = /\/games\/([^/?]+)/.exec(url)?.[1], optimistic = gameId ? getOptimisticState(gameId) : null;
+      requestRecoveryOwners.set(evidence, { episodeId: optimistic?.recoveryEpisodeId ?? null,
+        recoveryGeneration: optimistic?.recoveryGeneration ?? 0,
+        connectionGeneration: optimistic?.connectionRecoveryEpoch ?? 0 });
+    }
     try {
       return await Promise.race([
         Promise.resolve().then(() => {
@@ -988,7 +1005,7 @@ export const createLiveTransportStore = ({
     const body = await boundedRequest(`/api/shell/games/${encodeURIComponent(gameId)}/reconcile`, {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ protocolVersion: 2, identityId, knownSnapshotEventSeq: getOptimisticState(gameId).forceSnapshot ? 0 : lastEventSeqByGameId.get(gameId) ?? 0, commands: envelopes }),
-    }, controller);
+    }, controller, false, true);
     if (!isCurrent()) return null;
     const result = processResponse(gameId, body, envelopes);
     if (getOptimisticState(gameId).forceSnapshot && !body.game) throw Object.assign(new Error("snapshot_required"), { code: "invalid_response" });
@@ -1070,7 +1087,7 @@ export const createLiveTransportStore = ({
       if (optimistic.upgradeRequired) return;
       const body = await boundedRequest(`/api/shell/games/${encodeURIComponent(gameId)}/${command.kind === "shared" ? "shared" : command.kind === "apply" ? "apply" : "end-turn"}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(command.envelope),
-      }, attempt.controller);
+      }, attempt.controller, false, true);
       if (optimistic.attempt !== attempt) return;
       processResponse(gameId, body, [command.envelope]);
       if (optimistic.pendingCommands.includes(command)) throw unresolvedCommandOutcome;
@@ -1079,6 +1096,12 @@ export const createLiveTransportStore = ({
       if(error.retryAfterMs)optimistic.retryNotBefore=Date.now()+error.retryAfterMs;
       const unresolved = error === unresolvedCommandOutcome;
       if (!optimistic.recoveryStartedAt) { optimistic.recoveryStartedAt = Date.parse(command.queuedAt) || Date.now(); optimistic.recoveryEpisodeId = crypto.randomUUID(); }
+      if (error?.diagnosticEvidence) {
+        error.diagnosticEvidence.recoveryEpisodeId = optimistic.recoveryEpisodeId;
+        error.diagnosticEvidence.recoveryGeneration = optimistic.recoveryGeneration ?? 0;
+        error.diagnosticEvidence.connectionGeneration = optimistic.connectionRecoveryEpoch ?? 0;
+        error.diagnosticEvidence.activeEpisodeRelation = 'active';
+      }
       if (!unresolved) captureRecoveryIssue(gameId, "command_confirmation", error);
       optimistic.recoveryIssue = unresolved ? null : error.code ?? (error.message === "invalid_confirmation" ? "invalid_response" : "unavailable");
       if (error.code === "upgrade_required") markUpgradeRequired(gameId);

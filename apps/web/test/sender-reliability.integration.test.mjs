@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { IDBFactory } from "fake-indexeddb";
 import { createSyncStore } from "../shell/sync-store.js";
+import { createLiveTransportStore } from "../shell/live-transport.js";
 import { createCommandJournal } from "../shell/command-journal.js";
 import { SYNC_TIMING, commandFingerprint } from "../generated/packages/shared-types/src/sync-protocol.js";
 import { issueDiagnostics } from "../shell/issue-diagnostics.js";
@@ -29,14 +30,16 @@ const setup = async ({ journal: override, timing = {}, fault = (url, init, call)
   const journal = override ?? createCommandJournal({ indexedDB });
   const requests = [];
   const actual = (url, init = {}) => apiWorker.fetch(new Request(`https://test${url}`, init), env);
+  let transport;
   const create = () => createSyncStore({ storage, commandJournal: journal, timing: { ...SYNC_TIMING, requestTimeoutMs: 30, confirmationBudgetMs: 65, retryDelaysMs: [10], retryJitter: 0, ...timing },
     fetcher: (url, init) => { if (init?.body) requests.push(JSON.parse(init.body)); return fault(url, init, () => actual(url, init)); },
+    createTransportStore: options => (transport = createLiveTransportStore(options)),
     createSyncClient: () => ({ connectGame() {}, disconnectGame() {}, disconnectAll() {}, getDesiredGameIds: () => [] }),
   });
   const store = create(); const created = store.createGame({ selfPlayMode: true }); await created.committed;
   const gameId = created.gameId;
   const move = async (target = store) => { const game = target.getGameViewModel(gameId); const action = game.legalActions.find((entry) => entry.type === "move") ?? game.legalActions[0]; return target.applyGameAction({ gameId, state: game.currentSnapshot, action }); };
-  return { store, create, gameId, move, journal, requests, env, actual };
+  return { store, create, get transport(){return transport;}, gameId, move, journal, requests, env, actual };
 };
 
 test("healthy reads do not reopen a resolved command recovery report",async(t)=>{
@@ -115,7 +118,7 @@ for (const hungBody of [false, true]) test(`timeout diagnostics retain their own
   t.after(() => f.store.retire());
   await f.move();
   await until(() => Boolean(hangingRequestId));
-  await f.store.loadGame(f.gameId);
+  await f.transport.loadGame(f.gameId);
   await until(() => issueDiagnostics.list().some(report => report.key === `recovery:${f.gameId}` && report.events.some(event => event.stage === "command_confirmation")));
   const event = issueDiagnostics.list().find(report => report.key === `recovery:${f.gameId}`).events.find(event => event.stage === "command_confirmation");
   assert.equal(event.requestId, hangingRequestId);
@@ -124,6 +127,19 @@ for (const hungBody of [false, true]) test(`timeout diagnostics retain their own
   assert.equal(event.requestKind, "apply");
   assert.equal(event.requestPhase, hungBody ? "body" : "headers");
   assert.equal(event.deadlineMs, 100);
+  assert.equal(event.activeEpisodeRelation, "active");
+  await f.transport.loadGame(f.gameId);
+  const report = issueDiagnostics.list().find(report => report.key === `recovery:${f.gameId}`);
+  const laterRead = report.events.findLast(candidate => candidate.requestKind === "read" && candidate.status === 200);
+  assert.ok(laterRead, "the later successful product read is retained as separate evidence");
+  assert.equal(laterRead.activeEpisodeRelation, "unrelated");
+  assert.notEqual(laterRead.requestId, hangingRequestId);
+  const copied = JSON.parse(issueDiagnostics.text(report.id).split("\n\n").at(-1));
+  assert.equal(copied.failedRecoveryRequest.requestId, hangingRequestId);
+  assert.notEqual(copied.failedRecoveryRequest.requestId, laterRead.requestId);
+  const copiedLaterRead = copied.requestTimeline.findLast(candidate => candidate.requestId === laterRead.requestId);
+  assert.equal(copiedLaterRead.activeEpisodeRelation, "unrelated");
+  assert.equal(copiedLaterRead.result, "succeeded");
 });
 
 for (const competingMove of [false, true]) test(`reconcile outage drains three dependent commands with ${competingMove ? "stale-state rejection" : "ordered acceptance"}`, async (t) => {

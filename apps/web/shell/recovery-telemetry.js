@@ -1,4 +1,4 @@
-import { RECOVERY_DIAGNOSTICS, sanitizeRecoveryDiagnosticEvent } from '../generated/packages/shared-types/src/recovery-diagnostics.js';
+import { RECOVERY_DIAGNOSTICS, RECOVERY_DIAGNOSTIC_ENUMS, sanitizeRecoveryDiagnosticEvent } from '../generated/packages/shared-types/src/recovery-diagnostics.js';
 
 export const RECOVERY_TELEMETRY_LIMITS = Object.freeze({ queue: 64, batchesPerHour: 20, windowMs: 3_600_000, batchDelayMs: 1_000, requestMs: 5_000 });
 export const RECOVERY_TIMELINE_LIMIT = 128;
@@ -10,6 +10,69 @@ const timelineEnums = Object.freeze({
 });
 const timelineFlags = new Set(['closeClean', 'polling', 'manualRetry', 'terminalFailure']);
 const timelineCounters = new Set(['closeCode', 'connectionGeneration']);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const safeInteger = value => Number.isSafeInteger(value) && value >= 0;
+
+const projectTimelineEvent = input => {
+  try {
+    const common = sanitizeRecoveryDiagnosticEvent(input);
+    if (!common) return null;
+    const event = { ...common };
+    // The local timeline is deliberately narrower than the remote recovery
+    // intake: command identity belongs to durable command evidence, not to
+    // copied recovery support details.
+    delete event.commandId;
+    for (const [key, values] of Object.entries(timelineEnums)) if (values.has(input[key])) event[key] = input[key];
+    for (const key of timelineFlags) if (typeof input[key] === 'boolean') event[key] = input[key];
+    for (const key of timelineCounters) if (safeInteger(input[key]) && input[key] <= 65535) event[key] = input[key];
+    if (input.reason === 'http_poll') event.polling = true;
+    if (input.reason === 'manual_reconnect') event.manualRetry = true;
+    return Object.freeze(event);
+  } catch { return null; }
+};
+
+const projectRequestEvidence = input => {
+  if (!input || !UUID.test(input.requestId ?? '')) return null;
+  return Object.freeze(Object.fromEntries(Object.entries({
+    requestId: input.requestId,
+    requestKind: RECOVERY_DIAGNOSTIC_ENUMS.requestKind.includes(input.requestKind) ? input.requestKind : undefined,
+    requestPhase: RECOVERY_DIAGNOSTIC_ENUMS.requestPhase.includes(input.requestPhase) ? input.requestPhase : undefined,
+    requestRelationship: RECOVERY_DIAGNOSTIC_ENUMS.requestRelationship.includes(input.requestRelationship) ? input.requestRelationship : undefined,
+    activeEpisodeRelation: timelineEnums.activeEpisodeRelation.has(input.activeEpisodeRelation) ? input.activeEpisodeRelation : undefined,
+    result: input.requestRelationship === 'failure' || input.stage === 'request_failed' ? 'failed'
+      : input.stage === 'response_received' && Number.isInteger(input.status) && input.status >= 200 && input.status <= 299 ? 'succeeded' : undefined,
+    status: Number.isInteger(input.status) && input.status >= 100 && input.status <= 599 ? input.status : undefined,
+    durationMs: safeInteger(input.durationMs) ? input.durationMs : undefined,
+    deadlineMs: safeInteger(input.deadlineMs) ? input.deadlineMs : undefined,
+    serverBuild: input.serverBuild === 'unavailable' || UUID.test(input.serverBuild ?? '') ? input.serverBuild : undefined,
+    stage: RECOVERY_DIAGNOSTIC_ENUMS.stage.includes(input.stage) ? input.stage : undefined,
+    retry: safeInteger(input.retry) ? input.retry : undefined,
+    generation: safeInteger(input.generation) ? input.generation : undefined,
+    recoveryEpisodeId: UUID.test(input.recoveryEpisodeId ?? '') ? input.recoveryEpisodeId : undefined,
+  }).filter(([, value]) => value !== undefined)));
+};
+
+export function projectRecoveryCopyDetails(report, timeline = []) {
+  try {
+    const attempts = [report?.initial, ...(Array.isArray(report?.events) ? report.events : [])].filter(Boolean);
+    const failure = attempts.findLast(event => event.requestRelationship === 'failure' && UUID.test(event.requestId ?? '')) ?? null;
+    const failedRecoveryRequest = projectRequestEvidence(failure);
+    const requestTimeline = Object.freeze(attempts.map(projectRequestEvidence).filter(Boolean).slice(-RECOVERY_TIMELINE_LIMIT));
+    const recoveryTimeline = Object.freeze(timeline.map(projectTimelineEvent).filter(Boolean));
+    return Object.freeze({ schemaVersion: 1,
+      incident: Object.freeze({
+        ...(UUID.test(report?.id ?? '') ? { id: report.id } : {}),
+        ...(safeInteger(report?.startedAt) ? { startedAt: report.startedAt } : {}),
+        ...(safeInteger(report?.resolvedAt) ? { resolvedAt: report.resolvedAt } : {}),
+        ...(report?.truncated === true ? { truncated: true } : {}),
+      }),
+      failedRecoveryRequest,
+      requestTimeline,
+      recoveryTimeline,
+    });
+  } catch { return Object.freeze({ schemaVersion: 1, incident: Object.freeze({}), failedRecoveryRequest: null,
+    requestTimeline: Object.freeze([]), recoveryTimeline: Object.freeze([]) }); }
+}
 
 export function createRecoveryTimeline({ limit = RECOVERY_TIMELINE_LIMIT } = {}) {
   const maximum = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, RECOVERY_TIMELINE_LIMIT) : RECOVERY_TIMELINE_LIMIT;
@@ -17,16 +80,9 @@ export function createRecoveryTimeline({ limit = RECOVERY_TIMELINE_LIMIT } = {})
   return Object.freeze({
     record(input) {
       try {
-        const common = sanitizeRecoveryDiagnosticEvent({ ...input,
+        const frozen = projectTimelineEvent({ ...input,
           eventId: typeof input?.eventId === 'string' ? input.eventId : crypto.randomUUID() });
-        if (!common) return null;
-        const event = { ...common };
-        for (const [key, values] of Object.entries(timelineEnums)) if (values.has(input[key])) event[key] = input[key];
-        for (const key of timelineFlags) if (typeof input[key] === 'boolean') event[key] = input[key];
-        for (const key of timelineCounters) if (Number.isSafeInteger(input[key]) && input[key] >= 0 && input[key] <= 65535) event[key] = input[key];
-        if (input.reason === 'http_poll') event.polling = true;
-        if (input.reason === 'manual_reconnect') event.manualRetry = true;
-        const frozen = Object.freeze(event);
+        if (!frozen) return null;
         events = [...events, frozen].slice(-maximum);
         return frozen;
       } catch { return null; }

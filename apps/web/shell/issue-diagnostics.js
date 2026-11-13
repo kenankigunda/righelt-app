@@ -1,4 +1,4 @@
-import { recoveryTimelineSnapshot } from './recovery-telemetry.js';
+import { projectRecoveryCopyDetails, recoveryTimelineSnapshot } from './recovery-telemetry.js';
 
 // Local, explicitly allowlisted evidence. Never store whole requests or game models.
 export const DIAGNOSTIC_LIMITS = Object.freeze({ ageMs: 86400000, events: 200, reports: 20, bytes: 1048576 });
@@ -59,14 +59,13 @@ export function createIssueDiagnostics({ storage, now = Date.now, schedule = set
     clear() { reports = []; try { storage?.removeItem(KEY); } catch {} },
     text(id) {
       const r = api.get(id); if (!r) return "Details unavailable";
-      const attempts = [r.initial, ...r.events];
-      const failure = attempts.findLast(event => event.requestRelationship === "failure" && typeof event.requestId === "string") ?? null;
-      const requestFields = ["requestId", "requestKind", "requestPhase", "requestRelationship", "activeEpisodeRelation", "status", "durationMs", "deadlineMs", "serverBuild", "stage", "retry", "generation", "recoveryEpisodeId"];
-      const failedRecoveryRequest = failure ? Object.fromEntries(requestFields.filter(key => failure[key] !== undefined).map(key => [key, failure[key]])) : null;
       let timeline = [];
       try { timeline = recoveryTimeline().filter(event => !r.initial.gameId || !event.gameId || event.gameId === r.initial.gameId); } catch {}
-      const details = { failedRecoveryRequest, recoveryTimeline: timeline, incident: r };
-      return `${r.resolvedAt ? "Resolved issue" : "Issue"}: ${r.initial.operation ?? "recovery"}\nIncident: ${r.id}\nTime: ${new Date(r.startedAt).toISOString()}\nGame: ${r.initial.gameLink ?? r.initial.gameId ?? "unavailable"}\nStage: ${r.initial.stage ?? "unavailable"}\n\n${JSON.stringify(details, null, 2)}`;
+      if (r.key.startsWith("recovery:") || r.initial.operation === "move_recovery") {
+        const details = projectRecoveryCopyDetails(r, timeline);
+        return `${r.resolvedAt ? "Resolved recovery issue" : "Recovery issue"}\nIncident: ${details.incident.id ?? "unavailable"}\nTime: ${details.incident.startedAt === undefined ? "unavailable" : new Date(details.incident.startedAt).toISOString()}\n\n${JSON.stringify(details, null, 2)}`;
+      }
+      return `${r.resolvedAt ? "Resolved issue" : "Issue"}: ${r.initial.operation ?? "recovery"}\nIncident: ${r.id}\nTime: ${new Date(r.startedAt).toISOString()}\nGame: ${r.initial.gameLink ?? r.initial.gameId ?? "unavailable"}\nStage: ${r.initial.stage ?? "unavailable"}\n\n${JSON.stringify(r, null, 2)}`;
     }
   }; trim(); return api;
 }
