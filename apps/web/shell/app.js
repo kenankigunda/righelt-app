@@ -114,8 +114,9 @@ import { createRecoveryTelemetry } from './recovery-telemetry.js';
 import { renderDiagnosticDisclosure, handleDiagnosticAction, isDiagnosticOpen, closeDiagnostic } from "./diagnostic-disclosure.js";
 import { patchSectionContent } from "./dom-patch.js";
 import { SWIPE_EASING_CSS } from './navigation-motion.js';
-import { getGameResult, getEligibleRematchResult, renderResultText, renderHistoryResult, createResultTransitions, createRematchDialog } from './game-result.js';
-import { renderResultMark, createResultPresentation } from './result-presentation.js';
+import { getGameResult, getEligibleRematchResult, renderResultText, renderHistoryResult, createRematchDialog } from './game-result.js';
+import { renderResultMark, createResultPresentation, resultSound } from './result-presentation.js';
+import {createConfirmedResultOwner} from './confirmed-result.js';
 import { createRouteHydration } from './route-hydration.js';
 import { invitationLoadFailureKind, renderInviteLoadRecovery } from './invite-load-recovery.js';
 import { createRenderGestureGate, preserveBoardFocus } from './render-gesture.js';
@@ -386,8 +387,9 @@ const toStableKey = (value) => {
   return JSON.stringify(value);
 };
 
-const resultTransitions = createResultTransitions();
+const confirmedResultOwner = createConfirmedResultOwner();
 const resultPresentation = createResultPresentation();
+const resumePendingResult=()=>{if(currentRoute.name==='game'&&confirmedResultOwner.snapshot(currentRoute.gameId)?.mode==='pending')queueMicrotask(()=>render({animatePanels:false,includeBoard:false}));};
 let activeResultGameId = null;
 let pendingResultReviewFocus = null;
 let currentRoute = parseRouteFromHash(window.location.hash);
@@ -1992,7 +1994,12 @@ const getHeaderAlertItems = game => {
     html:renderGameAlertCard({tone:'neutral',activity:'processing',body:`<span role="status">${escapeHtml(context.message)}</span>`,testId:'slow-loading-notice'}),
   }));
   const position = game?.positionOnly && game.positionError ? [{ key: "position-load", html: renderGameAlertCard({ tone: "warn", body: '<span role="status">The board is saved, but play could not finish loading.</span>', action: '<button class="secondary mini-button" data-action="retry-game-load">Try again</button>', testId: "position-load-error" }) }] : [];
-  return [...position,...(game?getGameAlertItems(game):[]),...slow];
+  const confirmedResult=game?confirmedResultOwner.snapshot(game.id):null;
+  const resultNotice=confirmedResult?.mode==='manual'&&!confirmedResult.noticeDismissed?[{
+    key:'confirmed-result',
+    html:renderGameAlertCard({tone:'neutral',body:'<span role="status">Game finished. Your selected turn is still open.</span>',action:`<button class="secondary mini-button" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button><button class="secondary mini-button" data-action="dismiss-result-notice" data-game-id="${escapeHtml(game.id)}">Dismiss</button>`,testId:'confirmed-result-notice'}),
+  }]:[];
+  return [...position,...resultNotice,...(game?getGameAlertItems(game):[]),...slow];
 };
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
@@ -3360,9 +3367,12 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   const currentGame=currentRoute.name==='game' && routeHydrated ? transport.getGameViewModel(currentRoute.gameId) : null;
   if(currentGame){
     const game=currentGame, confirmed=transport.getAuthoritativeGame(currentRoute.gameId);
-    completedReviewOwner.sync(game,completedReviewEntryGeneration);
+    const observed=confirmedResultOwner.observe(confirmed);
+    if(observed.becameTerminal)confirmedPlayback.reset();
     if (activeResultGameId === currentRoute.gameId && confirmed?.board?.state?.outcome && !getGameResult(confirmed, transport.getIdentityId())) activeResultGameId = null;
-    if(resultTransitions.observe(confirmed,{inHistory:game?.inHistoryMode,hidden:document.hidden,storyOpen:storyDialog.isOpen()},confirmedPlayback/*result*/)){activeResultGameId=currentRoute.gameId;resultPresentation.enter(confirmed.id,getGameResult(confirmed,transport.getIdentityId()));}
+    const resultDecision=confirmedResultOwner.evaluate(confirmed?.id,{current:true,visible:!document.hidden&&document.hasFocus(),dialogOpen:storyDialog.isOpen()||rematchDialog.isOpen()||branchDialog.isOpen()||accountDialog.isOpen(),inHistory:game?.inHistoryMode});
+    if(resultDecision.present){activeResultGameId=currentRoute.gameId;resultPresentation.enter(confirmed.id,getGameResult(confirmed,transport.getIdentityId()));}
+    if(activeResultGameId!==currentRoute.gameId&&resultDecision.allowReview)completedReviewOwner.sync(game,completedReviewEntryGeneration);
     if(storyDialog.gameId()===currentRoute.gameId && getGameResult(confirmed,transport.getIdentityId()))storyDialog.setMatchStatus('Game finished',true);
   }
   document.title = getDocumentTitle();
@@ -3968,7 +3978,7 @@ const prepareOpponent = (owner, opponent) => {
   if (getComputerReadiness(owner).state !== 'unavailable' && !document.hidden) return preparation.start(owner);
 };
 const readinessForChoice = (owner, opponent) => COMPUTER_PROFILES[opponent] ? getComputerReadiness(owner) : { state: 'ready', message: '' };
-const rematchDialog = createRematchDialog({createModal,getReadiness:opponent=>readinessForChoice('rematch',opponent),onOpponentChange:opponent=>prepareOpponent('rematch',opponent),onRetry:opponent=>prepareOpponent('rematch',opponent),onClose:()=>preparation.cancel('rematch'),onStart:async({opponent,side},{isCurrent})=>{
+const rematchDialog = createRematchDialog({createModal,getReadiness:opponent=>readinessForChoice('rematch',opponent),onOpponentChange:opponent=>prepareOpponent('rematch',opponent),onRetry:opponent=>prepareOpponent('rematch',opponent),onClose:()=>{preparation.cancel('rematch');resumePendingResult();},onStart:async({opponent,side},{isCurrent})=>{
   if(!await waitForAccountGate() || !isCurrent())return;
   if(!account.canPlay())throw new Error('Sign in to start another game.');
   if(readinessForChoice('rematch',opponent).state!=='ready')throw new Error('Prepare your opponent first.');
@@ -3987,7 +3997,7 @@ const getBranchReadiness = opponent => {
     ? { state: 'preparing', message: 'Updating this game' }
     : readiness;
 };
-const branchDialog = createRematchDialog({ createModal, getReadiness:getBranchReadiness, onOpponentChange:opponent=>prepareOpponent('branch',opponent), onRetry:opponent=>prepareOpponent('branch',opponent), onClose:()=>preparation.cancel('branch'), title: 'Create a new game here', labelId: 'branch-title', onStart: async ({ opponent, side }, { isCurrent }) => {
+const branchDialog = createRematchDialog({ createModal, getReadiness:getBranchReadiness, onOpponentChange:opponent=>prepareOpponent('branch',opponent), onRetry:opponent=>prepareOpponent('branch',opponent), onClose:()=>{preparation.cancel('branch');resumePendingResult();}, title: 'Create a new game here', labelId: 'branch-title', onStart: async ({ opponent, side }, { isCurrent }) => {
   if (!account.canPlay() || !pendingBranch || !isCurrent()) throw new Error('Sign in to create a game.');
   const readiness = getBranchReadiness(opponent);
   if (readiness.state !== 'ready') throw new Error(readiness.message || 'Prepare your opponent first.');
@@ -4021,7 +4031,7 @@ const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: oppon
     navigateTo(buildGameHash(handle.result.id,null,getCurrentFlyoutState()));
     openFriendInvite(handle.result.id);
     return {state:'started'};
-  }, onRetry:opponent=>prepareOpponent('intro',opponent), onClose:reason=>{preparation.cancel('intro');opponentSession.cancel();if(reason === 'dismiss')gameSound.play('intro-back');},
+  }, onRetry:opponent=>prepareOpponent('intro',opponent), onClose:reason=>{preparation.cancel('intro');opponentSession.cancel();if(reason === 'dismiss')gameSound.play('intro-back');resumePendingResult();},
   onPresentation: () => { const root=document.createElement('div');root.className='story-presentation-board';root.setAttribute('aria-hidden','true');document.body.append(root);const preview=createMiniBoardPreview({rootEl:root,preview:{snapshot:createInitialBoardSnapshot(),previewKey:'intro'},createAdapter:createEngineBoardAdapter});return ()=>{preview.destroy();root.remove();}; },
 });
 
@@ -4030,7 +4040,9 @@ document.addEventListener('visibilitychange', () => {
   else if (storyDialog.isOpen()) void prepareOpponent('intro',storyDialog.opponent());
   else if (rematchDialog.isOpen()) void prepareOpponent('rematch',rematchDialog.opponent());
   else if (branchDialog.isOpen()) void prepareOpponent('branch',branchDialog.opponent());
+  if(!document.hidden)resumePendingResult();
 });
+window.addEventListener('focus',resumePendingResult);
 window.addEventListener('pagehide', () => {preparation.cancel();resultPresentation.clear();});
 
 mountDecisionNoteEditor({document,getCurrentViewedGameId,getDecisionDebugState,updateComputerUi});
@@ -4098,6 +4110,11 @@ window.addEventListener('resize',()=>{if(liveBoardVisible()!==lastPlaybackVisibi
 window.addEventListener('pagehide',()=>{playbackRecoveryWait.reset();confirmedPlayback.destroy();confirmedFramePresenter.destroy();});
 window.addEventListener('pageshow',()=>syncConfirmedPlayback());
 const subscribeToTransport = () => transport.subscribe((change) => {
+  if(change?.type==='authoritative_update'&&change.gameId){
+    const observation=confirmedResultOwner.observe(transport.getAuthoritativeGame(change.gameId));
+    if(observation.becameTerminal)confirmedPlayback.reset();
+    if(observation.changed&&currentRoute.name==='game'&&currentRoute.gameId===change.gameId)queueMicrotask(()=>render({animatePanels:false,includeBoard:false}));
+  }
   if(['authoritative_update','history_mode_changed'].includes(change?.type))syncConfirmedPlayback();
   branchDialog.refresh();
   const liveReplayGame = transport.getAuthoritativeGame(getCurrentViewedGameId());
@@ -4152,7 +4169,7 @@ function resetAccountTransport(next) {
   activeStorageGeneration=next.storageGeneration;
   if(storageChanged){storageResetPending=true;storageResetNotice=true;resolvedInvite=null;}
   clearAccountContinuation();
-  resultTransitions.clear();resultPresentation.clear();activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();branchDialog.close();pendingBranch=null;
+  confirmedResultOwner.clear();resultPresentation.clear();activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();branchDialog.close();pendingBranch=null;
   hostInvite=null;inviteVisit++;inviteFeedback="";inviteFallback=null;preparedPlayerInvitations.clear();
   gameSound.leaveGame();storyDialog.close();inlineProfiles.close();
   const gameId = getCurrentViewedGameId();
@@ -4457,8 +4474,9 @@ appEl.addEventListener("click", async (event) => {
     accountDialog.open("login", intent, actionEl);
     return;
   }
-  if (action === "view-result") { if (transport.getGameViewModel(actionGameId)?.confirmedPlayback || !getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId())) return; resultPresentation.clear();activeResultGameId = actionGameId; render({ animatePanels: false }); return; }
-  if (action === "analysis") { completedReviewEntryGeneration++;resultPresentation.clear();pendingResultReviewFocus = actionGameId; activeResultGameId = null; render({ animatePanels: false }); navigateTo(buildGameHash(actionGameId, null, getCurrentGameHashState("history"))); return; }
+  if (action === "view-result") { const result=getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId());if (transport.getGameViewModel(actionGameId)?.confirmedPlayback || !result) return; confirmedResultOwner.present(actionGameId);resultPresentation.enter(actionGameId,result);gameSound.play(resultSound(result));activeResultGameId = actionGameId; render({ animatePanels: false }); return; }
+  if (action === "dismiss-result-notice") {confirmedResultOwner.dismissNotice(actionGameId);render({animatePanels:false,includeBoard:false});return;}
+  if (action === "analysis") { confirmedResultOwner.review(actionGameId);completedReviewEntryGeneration++;resultPresentation.clear();pendingResultReviewFocus = actionGameId; activeResultGameId = null; render({ animatePanels: false }); navigateTo(buildGameHash(actionGameId, null, getCurrentGameHashState("history"))); return; }
   if (action === "rematch") {
     const result = getEligibleRematchResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId());
     const selector=`[data-action="rematch"][data-game-id="${CSS.escape(actionGameId)}"]`;
@@ -4875,7 +4893,8 @@ appEl.addEventListener("click", async (event) => {
     const gameId = actionEl.getAttribute('data-game-id');
     const turnIndex = Number(actionEl.getAttribute('data-turn-index'));
     const restoreSelectionFocus = captureHistorySelectionFocus({ document, root: appEl, trigger: actionEl, keyboard: event.detail === 0 });
-    await historySelectionActions.run({
+    confirmedResultOwner.deliberateHistory(gameId);
+    const selection=await historySelectionActions.run({
       scope: `${gameId}:turn:${turnIndex}`,
       select: async () => {
         viewingIntent.navigate(gameId);
@@ -4885,6 +4904,7 @@ appEl.addEventListener("click", async (event) => {
       sound: "history",
       after: () => { revealSelectedHistory(); restoreSelectionFocus(); },
     });
+    if(!selection.accepted&&!transport.getGameViewModel(gameId)?.inHistoryMode&&confirmedResultOwner.abandonHistory(gameId))render({animatePanels:false,includeBoard:false});
     return;
   }
 
@@ -4894,8 +4914,8 @@ appEl.addEventListener("click", async (event) => {
     const moveId=actionEl.getAttribute("data-move-id")??actionEl.closest(".history-item[data-move-id]")?.getAttribute("data-move-id")??null;
     if (!gameId || !Number.isFinite(moveIndex)) return;
     const restoreSelectionFocus = captureHistorySelectionFocus({ document, root: appEl, trigger: actionEl, keyboard: event.detail === 0 });
-    clearControlPress();
-    await historySelectionActions.run({
+    clearControlPress();confirmedResultOwner.deliberateHistory(gameId);
+    const selection=await historySelectionActions.run({
       scope: `${gameId}:move:${moveId ?? moveIndex}`,
       select: () => {
         if (transport.getGameViewModel(gameId)?.historyIndex !== moveIndex || !transport.getGameViewModel(gameId)?.inHistoryMode) viewingIntent.navigate(gameId);
@@ -4906,6 +4926,7 @@ appEl.addEventListener("click", async (event) => {
       sound: "history",
       after: () => { revealSelectedHistory(); restoreSelectionFocus(); },
     });
+    if(!selection.accepted&&!transport.getGameViewModel(gameId)?.inHistoryMode&&confirmedResultOwner.abandonHistory(gameId))render({animatePanels:false,includeBoard:false});
     return;
   }
 
@@ -4913,6 +4934,7 @@ appEl.addEventListener("click", async (event) => {
     const gameId = actionEl.getAttribute("data-game-id");
     if (!gameId) return;
     if(isCompletedGame(transport.getGameViewModel(gameId)))return;
+    confirmedResultOwner.live(gameId);
     await historySelectionActions.run({
       scope: `${gameId}:live`,
       select: () => {
