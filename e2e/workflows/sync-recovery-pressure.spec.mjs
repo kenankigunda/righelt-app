@@ -118,12 +118,21 @@ async function digest(page) {
   };
  });
 }
-const semanticDigest=value=>({board:value.board,history:value.history,activeTurn:value.presentation.active,actor:value.presentation.actor});
+const activeTurnParts=value=>{
+ const match=/^Active turn: (\d+) · (.*) · (\d+) move\(s\)$/.exec(value.presentation.active??'');
+ return match?{number:Number(match[1]),label:match[2],moves:Number(match[3])}:null;
+};
+const semanticDigest=value=>{
+ const turn=activeTurnParts(value);
+ return {board:value.board,history:value.history,activeTurn:turn&&{number:turn.number,moves:turn.moves},actor:value.presentation.actor};
+};
 function expectPerspective(value,index) {
  const own=index===0?'P1':index===1?'P2':null;
  const label=side=>own?(side===own?'You':'Opponent'):`Guest ${side==='P1'?1:2}`;
+ const summaryLabel=side=>own?(side===own?'You':'Guest'):`Guest ${side==='P1'?1:2}`;
  const historyLabel=side=>side===own?'You':`Guest ${side==='P1'?1:2}`;
  const actor=label(value.presentation.actor);
+ const activeTurn=activeTurnParts(value);expect(activeTurn).not.toBeNull();expect(activeTurn.label).toBe(summaryLabel(value.presentation.actor));
  expect(value.presentation.heading).toBe(actor==='You'?'Your turn to play':`${actor} to play`);
  if(value.presentation.live)expect(value.presentation.live).toBe(`Live · Waiting on ${actor==='You'?'you':actor==='Opponent'?'opponent':actor} to move`);
  expect(value.presentation.visibleMoveActorNames).toBe(0);
@@ -131,19 +140,19 @@ function expectPerspective(value,index) {
 }
 async function converged(pages) {
  for(const page of pages)await expect(page.getByTestId("game-board")).toBeVisible();
- // Canonical tokens/decision IDs converge across identities. Their visible
- // Current-turn copy uses You/Opponent while History preserves opponent names.
+ // Canonical tokens, decision IDs, and turn counters converge across identities.
+ // Viewer-relative labels remain presentation assertions, not shared state.
  await expect.poll(async()=>{
   const values=await Promise.all(pages.map(digest));
   return {
    boardsComplete:values.every(v=>v.board.length===100),
    boardsPopulated:values.every(v=>v.board.some(c=>c.p.length)),
    pieceIdsReady:values.every(v=>v.board.every(c=>c.p.every(piece=>typeof piece.id==='string'&&piece.id.length>0))),
-   activeLabelsReady:values.every(v=>typeof v.presentation.active==='string'&&v.presentation.active.trim().length>0&&Boolean(v.presentation.actor)),
+   activeTurnsReady:values.every(v=>activeTurnParts(v)!==null&&Boolean(v.presentation.actor)),
    historyIdsReady:values.every(v=>v.history.every(m=>typeof m.id==='string'&&m.id.length>0)),
    snapshotsEqual:values.every(v=>JSON.stringify(semanticDigest(v))===JSON.stringify(semanticDigest(values[0]))),
   };
- },{timeout:25000}).toEqual({boardsComplete:true,boardsPopulated:true,pieceIdsReady:true,activeLabelsReady:true,historyIdsReady:true,snapshotsEqual:true});
+ },{timeout:25000}).toEqual({boardsComplete:true,boardsPopulated:true,pieceIdsReady:true,activeTurnsReady:true,historyIdsReady:true,snapshotsEqual:true});
  const values=await Promise.all(pages.map(digest));
  values.forEach((v,index)=>{expect(v.board).toHaveLength(100);expect(v.board.some(c=>c.p.length)).toBe(true);v.history.forEach(m=>expect(m.id).toBeTruthy());v.board.forEach(cell=>cell.p.forEach(piece=>expect(piece.id).toBeTruthy()));expectPerspective(v,index);});
  values.forEach(v=>expect(semanticDigest(v)).toEqual(semanticDigest(values[0])));
