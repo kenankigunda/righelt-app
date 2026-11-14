@@ -14,12 +14,12 @@ function removalFixture(){
  const after=applyAction(before,action,{onRemoval:event=>events.push(event)}).state;
  return{before,after,action,records:destructionRecords(events,'accepted-operation')};
 }
-async function setup({audioState='running',muted=false}={}){
+async function setup({audioState='running',muted=false,motionPreference=null}={}){
  const real=removalFixture(),events=[],sources=[];let now=0,visible=true,view={id:'g',currentSnapshot:real.before,pendingMoves:[],legalActions:[real.action],currentTurn:{playerSeat:'Player 1'}},unmounted=false;
  const audio={state:audioState,currentTime:0,sampleRate:8000,destination:{},resume:()=>Promise.resolve(),suspend:()=>Promise.resolve(),createBuffer:(_,length)=>({getChannelData:()=>new Float32Array(length)}),createBufferSource:()=>{const n={connect(){},disconnect(){},start(){events.push({kind:'crack',time:now});},stop(){},onended:null};sources.push(n);return n;},createBiquadFilter:()=>({connect(){},disconnect(){},frequency:{},Q:{}}),createGain:()=>({connect(){},disconnect(){},gain:{}})};
  const sound=createGameSound({createAudio:()=>audio});sound.gesture();if(muted)sound.toggle();
  const host=createShellBoardHost({gameId:'g',canInteract:()=>true,getGameView:()=>view,transport:{getGameViewModel:()=>view,applyGameAction:async()=>({accepted:true,state:real.after,removedPieces:real.records})}});
- const runtime=createBoardRuntime({host,boardAdapter:{mount(){},unmount(){unmounted=true;},render(payload){assert.equal(unmounted,false,'retirement never renders an unmounted adapter');events.push({kind:'render',time:now,effects:structuredClone(payload.removalEffects)});},getSelectedPieceSummary:()=>null}});
+ const runtime=createBoardRuntime({host,motionPreference,boardAdapter:{mount(){},unmount(){unmounted=true;},render(payload){assert.equal(unmounted,false,'retirement never renders an unmounted adapter');events.push({kind:'render',time:now,effects:structuredClone(payload.removalEffects)});},getSelectedPieceSummary:()=>null}});
  runtime.bindElements({boardEl:{},overlayLinesEl:{}});await runtime.loadSnapshot(real.before,{legalActions:[real.action]});
  const owner=createConfirmedRemovalPresentation({getScope:()=> 'account1:g',eligible:()=>visible,present:effects=>runtime.showRemovalEffects(effects,real.before),pending:effects=>runtime.setPendingRemovalEffects(effects,real.before),clear:()=>runtime.clearRemovalEffects(),consume:(game,options)=>sound.presentedRemovals(game,{...options,silent:true}),cue:(game,options)=>sound.presentedRemovals(game,options),cancelSound:sound.cancelDestruction});
  const baseline={id:'g',moves:[],board:{state:real.before}};owner.update(baseline);
@@ -36,6 +36,21 @@ test('actual engine to shell pending result stays static and silent, then confir
   f.setTime(527);await f.runtime.loadSnapshot(f.real.after,{legalActions:[]});f.owner.update(accepted,{sequence:2});
   const crack=f.events.findIndex(event=>event.kind==='crack');assert(crack>0);assert.equal(f.events[crack].time,527);assert.equal(f.events[crack-1].kind,'render');assert.equal(f.events[crack-1].time,527);assert(f.events[crack-1].effects.some(effect=>effect.pieceId==='C2'&&!effect.pending));
   f.owner.update(accepted,{sequence:3});assert.equal(f.events.filter(event=>event.kind==='crack').length,1);assert.equal(JSON.stringify(f.baseline),before);
+ }finally{await f.dispose();}
+});
+
+test('reduced motion consumes a confirmed pending removal without leaving a transient visual',async()=>{
+ const motionPreference={matches:true,addEventListener(){},removeEventListener(){}};
+ const f=await setup({motionPreference});try{
+  const pending={id:'g',currentSnapshot:f.real.after,pendingMoves:[{clientCommandId:'accepted-operation',destroyedPieces:f.real.records}],legalActions:[],currentTurn:{playerSeat:'Player 1'}};
+  f.setView(pending);await f.runtime.submitCurrentAction(f.real.action);f.owner.update(f.baseline,{view:pending});
+  assert(f.events.filter(event=>event.kind==='render').at(-1).effects.every(effect=>effect.pending));
+  const accepted={id:'g',moves:[{clientCommandId:'accepted-operation',destroyedPieces:f.real.records}],board:{state:f.real.after}};
+  f.setTime(527);await f.runtime.loadSnapshot(f.real.after,{legalActions:[]});f.owner.update(accepted,{sequence:2});
+  assert.deepEqual(f.events.filter(event=>event.kind==='render').at(-1).effects,[]);
+  assert.equal(f.events.filter(event=>event.kind==='crack').length,1);
+  f.owner.update(accepted,{sequence:3});
+  assert.equal(f.events.filter(event=>event.kind==='crack').length,1);
  }finally{await f.dispose();}
 });
 

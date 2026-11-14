@@ -1355,6 +1355,24 @@ test('live previous-turn roles render one priority wash per square without recor
  });
 });
 
+test('pending recording presentation follows only the affected live piece and remains named',async()=>{
+ await withFakeDocument(()=>{
+  const {adapter,boardEl}=createMountedAdapter();
+  const moved={id:'moved',owner:'P1',kind:'unit',position:{row:4,col:3},supplied:true,commanded:true};
+  const steady={id:'steady',owner:'P1',kind:'unit',position:{row:5,col:3},supplied:true,commanded:true};
+  const payload={snapshot:{sideToMove:'P1',pieces:[moved,steady]},selection:{source:null,target:null,selectedPieceId:null},overlay:{mode:'interactive'},legalActions:[],selectedPieceMoves:[],selectedPieceMovePreviews:[],removalEffects:[],pendingRecordingPieceIds:new Set(['moved'])};
+  adapter.render(payload);
+  const token=getCell(boardEl,4,3).querySelector('.piece-token');
+  assert.equal(token.classList.contains('pending-recording-piece'),true);
+  assert.equal(token.getAttribute('aria-label'),'Red unit, recording move');
+  assert.equal(getCell(boardEl,5,3).querySelector('.piece-token').classList.contains('pending-recording-piece'),false);
+  adapter.render({...payload,pendingRecordingPieceIds:new Set()});
+  assert.equal(getCell(boardEl,4,3).querySelector('.piece-token').classList.contains('pending-recording-piece'),false);
+  assert.equal(getCell(boardEl,4,3).querySelector('.piece-token').getAttribute('aria-label'),'Red unit');
+  adapter.unmount();
+ });
+});
+
 
 test("empty native Board cells have coordinate names without replacing piece, supply or rush names", async () => {
   await withFakeDocument(() => {

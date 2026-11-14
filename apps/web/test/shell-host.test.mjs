@@ -1,6 +1,28 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createShellBoardHost } from "../board/hosts/shell-host.js";
+import { createShellBoardHost, getPendingRecordingPieceIds } from "../board/hosts/shell-host.js";
+
+test("pending recording pieces include placed and moved pieces still visible in the optimistic snapshot", () => {
+  const piece = (id, row, col) => ({ id, owner: "P1", kind: "unit", position: { row, col } });
+  const game = {
+    currentSnapshot: { pieces: [piece("moved", 4, 5), piece("placed", 6, 6), piece("steady", 8, 8)] },
+    pendingMoves: [
+      {
+        selectionSnapshot: { pieces: [piece("moved", 4, 4), piece("steady", 8, 8), piece("removed-later", 7, 7)] },
+        snapshot: { pieces: [piece("moved", 4, 5), piece("placed", 6, 6), piece("steady", 8, 8)] },
+      },
+      {
+        undone: true,
+        selectionSnapshot: { pieces: [piece("steady", 8, 8)] },
+        snapshot: { pieces: [piece("steady", 8, 9)] },
+      },
+    ],
+  };
+
+  assert.deepEqual([...getPendingRecordingPieceIds(game)].sort(), ["moved", "placed"]);
+  game.pendingMoves = [];
+  assert.deepEqual([...getPendingRecordingPieceIds(game)], []);
+});
 
 test("shell host endTurn calls transport even when cached canEndTurn is false", async () => {
   const transport = {

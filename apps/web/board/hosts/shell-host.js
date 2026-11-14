@@ -19,9 +19,30 @@ const unwrapOperationResult = async (value) => {
   return resolved;
 };
 
+const samePosition = (left, right) =>
+  left?.row === right?.row && left?.col === right?.col;
+
+export const getPendingRecordingPieceIds = (game) => {
+  const pending = Array.isArray(game?.pendingMoves) ? game.pendingMoves : [];
+  const visibleIds = new Set((game?.currentSnapshot?.pieces ?? []).map((piece) => piece.id));
+  const affected = new Set();
+  for (const move of pending) {
+    if (move?.undone) continue;
+    const beforeById = new Map((move?.selectionSnapshot?.pieces ?? []).map((piece) => [piece.id, piece]));
+    for (const piece of move?.snapshot?.pieces ?? []) {
+      const before = beforeById.get(piece.id);
+      if ((!before || !samePosition(before.position, piece.position)) && visibleIds.has(piece.id)) {
+        affected.add(piece.id);
+      }
+    }
+  }
+  return affected;
+};
+
 export const createShellBoardHost = ({ transport, gameId, canInteract, canPresentActions, canSelect, getMutationSurface, getInspectionSnapshot = () => null, getGameView = () => transport.getGameViewModel(gameId), rulesExecutor = createRulesExecutor() }) => ({
   confirmedRemovalsOnly: true,
   getPendingRemovalEffects: () => (getGameView()?.pendingMoves ?? []).filter(move => !move.undone).flatMap(move => move.destroyedPieces ?? []),
+  getPendingRecordingPieceIds: () => getPendingRecordingPieceIds(getGameView()),
   asyncPieceMoves: rulesExecutor.asynchronous,
   cancelPieceMoves: () => rulesExecutor.cancelAll(),
   async loadInitialState() {

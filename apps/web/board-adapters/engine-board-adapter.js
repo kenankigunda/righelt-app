@@ -1134,6 +1134,7 @@ export function createEngineBoardAdapter() {
       selectedPieceMoves,
       selectedPieceMovePreviews,
       removalEffects,
+      pendingRecordingPieceIds,
       allowFreeSelection,
       currentActionType,
       interactionMode: renderInteractionMode,
@@ -1181,6 +1182,10 @@ export function createEngineBoardAdapter() {
           // actions. This is a forecast, never a removal event or overlay.
           token.classList.add('projected-destruction-piece');
           token.setAttribute('aria-label',`${piece.owner==='P1'?'Red':'Blue'} ${piece.kind}, will be destroyed if the turn ends now`);
+        }
+        if (pendingRecordingPieceIds?.has?.(piece.id)) {
+          token.classList.add('pending-recording-piece');
+          token.setAttribute('aria-label', `${token.getAttribute('aria-label')}, recording move`);
         }
         return token;
       };

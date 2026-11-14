@@ -177,6 +177,17 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
 
  await expect.poll(()=>confirmationRequested).toBe(true);
  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toBeVisible();
+ const recordingPieces=page.locator('#shell-board .piece-token.pending-recording-piece');
+ await expect(recordingPieces).toHaveCount(1);
+ expect(await recordingPieces.evaluateAll(nodes=>nodes.map(node=>node.dataset.pieceId))).toEqual(['A1']);
+ expect(await recordingPieces.evaluateAll(nodes=>nodes.map(node=>({name:node.getAttribute('aria-label'),animation:getComputedStyle(node).animationName})))).toEqual([
+  {name:'Red unit, will be destroyed if the turn ends now, recording move',animation:'pending-recording-piece-pulse'},
+ ]);
+ await page.emulateMedia({reducedMotion:'reduce'});
+ expect(await recordingPieces.evaluateAll(nodes=>nodes.map(node=>({animation:getComputedStyle(node).animationName,outline:getComputedStyle(node).outlineStyle})))).toEqual([
+  {animation:'none',outline:'solid'},
+ ]);
+ await page.emulateMedia({reducedMotion:'no-preference'});
  game=await currentGame(page,gameId);expect(game.board.state.continuation.phase).toBe("retreat");
 
  const message=page.locator("#shell-board-preview-label");
@@ -200,6 +211,7 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
 
  socketsUnavailable=false;holdConfirmation=false;releaseConfirmation();
  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0,{timeout:10000});
+ await expect(recordingPieces).toHaveCount(0);
  await page.screenshot({path:info.outputPath("retreat-recovered.png")});
  // Admission returns only after the definitive original receipt and a fresh
  // authoritative socket. Verify the required defender's legal destination.

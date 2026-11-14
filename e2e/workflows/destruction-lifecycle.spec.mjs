@@ -66,6 +66,21 @@ function armDestructionWitness({key,count,signatures=null}) {
 }
 const observedCount=(page,key)=>expect.poll(()=>page.evaluate(key=>window.destructionWitnesses[key].witness.outcome,key)).toBe('observed');
 const disposeDestructionWitnesses=page=>page.evaluate(()=>{for(const entry of Object.values(window.destructionWitnesses??{}))entry.dispose();});
+const REDUCED_MOTION_SETTLEMENT_MS=800;
+function armNoRemovalCommitWitness(key){
+ const records=[];
+ const observer=new MutationObserver(mutations=>{
+  for(const mutation of mutations)for(const node of mutation.addedNodes){
+   if(node.nodeType!==Node.ELEMENT_NODE)continue;
+   const removals=[...(node.matches?.('.removal-piece')?[node]:[]),...(node.querySelectorAll?.('.removal-piece')??[])].filter(piece=>piece.closest('#shell-board'));
+   if(removals.length)records.push({at:performance.now(),count:removals.length});
+  }
+ });
+ observer.observe(document.documentElement,{childList:true,subtree:true});
+ (window.noRemovalCommitWitnesses??={})[key]={records,dispose:()=>observer.disconnect()};
+}
+const readNoRemovalCommitWitness=(page,key)=>page.evaluate(key=>structuredClone(window.noRemovalCommitWitnesses[key].records),key);
+const disposeNoRemovalCommitWitness=(page,key)=>page.evaluate(key=>window.noRemovalCommitWitnesses[key].dispose(),key);
 
 for (const mobile of [false,true]) test(`turn-end losses animate once for player and viewer and persist in history (${mobile?'phone':'desktop'})`,async({createOwnedContext,baseURL},testInfo)=>{
  const owner=await createOwnedContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1100},hasTouch:mobile});
@@ -127,6 +142,40 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
   const witness=retainedMotionWitness??await page.evaluate(()=>window.destructionMotionWitness??null).catch(error=>({readError:String(error)}));
   await testInfo.attach('destruction-motion-witness',{body:JSON.stringify(witness,null,2),contentType:'application/json'});
  }
+});
+
+test('reduced motion never commits removal frames and settles active effects and History promptly',async({page,baseURL})=>{
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await importScenarioGame(page,{...scenario,id:'f90fdb4c-00dd-4d44-a87f-a708e31a8621'},baseURL);
+ await switchGamePanel(page,'board');
+ await submitPlayableAction(page,fixture.action);
+ const end=page.locator('[data-board-preview-action="end-turn"]');
+ await expect(end).toBeVisible();
+ await page.evaluate(armNoRemovalCommitWitness,'live-reduced');
+ await end.click();
+ const liveEffects=page.locator('#shell-board .removal-piece');
+ await expect(page.getByTestId('history-destruction-item')).toHaveCount(2);
+ expect(await readNoRemovalCommitWitness(page,'live-reduced')).toEqual([]);
+ await disposeNoRemovalCommitWitness(page,'live-reduced');
+ await expect(liveEffects).toHaveCount(0,{timeout:REDUCED_MOTION_SETTLEMENT_MS});
+
+ await switchGamePanel(page,'history');
+ await page.evaluate(armNoRemovalCommitWitness,'history-reduced');
+ await page.getByTestId('history-move-item').first().click();
+ await expect(page.locator('#shell-board .history-destruction-piece')).toHaveCount(2,{timeout:REDUCED_MOTION_SETTLEMENT_MS});
+ expect(await readNoRemovalCommitWitness(page,'history-reduced')).toEqual([]);
+ await disposeNoRemovalCommitWitness(page,'history-reduced');
+ await expect(page.locator('#shell-board .removal-piece')).toHaveCount(0,{timeout:REDUCED_MOTION_SETTLEMENT_MS});
+
+ await page.emulateMedia({reducedMotion:'no-preference'});
+ await importScenarioGame(page,{...scenario,id:'5f236940-50c9-4bf4-a078-6388d99f1817'},baseURL);
+ await switchGamePanel(page,'board');
+ await submitPlayableAction(page,fixture.action);
+ const secondEnd=page.locator('[data-board-preview-action="end-turn"]');
+ await expect(secondEnd).toBeVisible();await secondEnd.click();
+ await expect(liveEffects).toHaveCount(2);
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await expect(liveEffects).toHaveCount(0,{timeout:REDUCED_MOTION_SETTLEMENT_MS});
 });
 
 const projectFixture=JSON.parse(fs.readFileSync(new URL('../../packages/game-engine/test/fixtures/destruction-project.json',import.meta.url)));

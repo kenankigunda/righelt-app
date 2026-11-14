@@ -3432,6 +3432,158 @@ test("U-11: history destruction transition settles into overlay state and clears
   }
 });
 
+test("reduced motion settles history destruction immediately without a transient effect", async () => {
+  const renderCalls = [];
+  const scheduledTimers = [];
+  const motionPreference = {
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: { hidden: false, addEventListener() {}, removeEventListener() {} },
+  });
+  globalThis.setTimeout = (fn, delay) => {
+    const handle = { fn, delay };
+    scheduledTimers.push(handle);
+    return handle;
+  };
+  globalThis.clearTimeout = () => {};
+
+  try {
+    const runtime = createBoardRuntime({
+      motionPreference,
+      boardAdapter: {
+        mount: noop,
+        render: (payload) => renderCalls.push(payload),
+        getSelectedPieceSummary: () => null,
+        getPieceById: () => null,
+        getPieceAt: () => null,
+        nextSelectionForCell: () => ({
+          selection: { selectedPieceId: null, source: null, target: null },
+          nextActionType: "pass",
+        }),
+      },
+      host: {
+        applyAction: async () => ({ accepted: false }),
+        loadInitialState: async () => ({ state: null, legalActions: [] }),
+        loadLegalActions: async () => ({ state: null, legalActions: [] }),
+        loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+      },
+    });
+    runtime.bindElements({ boardEl: {}, overlayLinesEl: {}, boardPreviewLabelEl: null, boardTurnIndicatorEl: null });
+
+    const destroyedRecord = {
+      row: 4,
+      col: 7,
+      ownerSeat: "p2",
+      kind: "commander",
+      piece: { id: "C2", owner: "P2", kind: "commander", position: { row: 4, col: 7 } },
+    };
+    await runtime.loadSnapshot(
+      { sideToMove: "P2", turnIndex: 2, continuation: null, outcome: null, pieces: [] },
+      { legalActions: [], overlayMode: "recorded-action", destroyedPieces: [destroyedRecord] },
+    );
+
+    assert.deepEqual(runtime.getOverlay().destroyedPieces, [destroyedRecord]);
+    assert.equal(scheduledTimers.length, 0);
+    assert.deepEqual(renderCalls.at(-1)?.removalEffects, []);
+    assert.deepEqual(renderCalls.at(-1)?.overlay?.destroyedPieces, [destroyedRecord]);
+    runtime.destroy();
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    if (originalDocument) Object.defineProperty(globalThis, "document", originalDocument);
+    else delete globalThis.document;
+  }
+});
+
+test("enabling reduced motion settles the owned effect once and preserves pending forecasts", async () => {
+  const renderCalls = [];
+  const scheduledTimers = new Map();
+  const listeners = new Set();
+  const motionPreference = {
+    matches: false,
+    addEventListener(type, listener) { if (type === "change") listeners.add(listener); },
+    removeEventListener(type, listener) { if (type === "change") listeners.delete(listener); },
+  };
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: { hidden: false, addEventListener() {}, removeEventListener() {} },
+  });
+  let timerId = 0;
+  globalThis.setTimeout = (fn, delay) => {
+    const handle = ++timerId;
+    scheduledTimers.set(handle, { fn, delay });
+    return handle;
+  };
+  globalThis.clearTimeout = (handle) => scheduledTimers.delete(handle);
+
+  try {
+    const runtime = createBoardRuntime({
+      motionPreference,
+      boardAdapter: {
+        mount: noop,
+        unmount: noop,
+        render: (payload) => renderCalls.push(payload),
+        getSelectedPieceSummary: () => null,
+        getPieceById: () => null,
+        getPieceAt: () => null,
+        nextSelectionForCell: () => ({
+          selection: { selectedPieceId: null, source: null, target: null },
+          nextActionType: "pass",
+        }),
+      },
+      host: { canInteract: () => true },
+    });
+    runtime.bindElements({ boardEl: {}, overlayLinesEl: {}, boardPreviewLabelEl: null, boardTurnIndicatorEl: null });
+    await runtime.loadSnapshot(
+      { sideToMove: "P1", turnIndex: 1, continuation: null, outcome: null, pieces: [] },
+      { legalActions: [] },
+    );
+
+    let completed = 0;
+    runtime.showRemovalEffects([{ eventId: "confirmed-1", pieceId: "A1", row: 2, col: 3 }], null, {
+      onComplete: () => { completed += 1; },
+    });
+    runtime.setPendingRemovalEffects([{ eventId: "pending-2", pieceId: "B1", row: 5, col: 6 }], null);
+    assert.equal(scheduledTimers.size, 1);
+    assert.deepEqual(renderCalls.at(-1).removalEffects.map((effect) => [effect.eventId, Boolean(effect.pending)]), [
+      ["pending-2", true],
+      ["confirmed-1", false],
+    ]);
+
+    motionPreference.matches = true;
+    for (const listener of listeners) listener({ matches: true });
+    assert.equal(completed, 1);
+    assert.equal(scheduledTimers.size, 0);
+    assert.deepEqual(renderCalls.at(-1).removalEffects.map((effect) => [effect.eventId, Boolean(effect.pending)]), [
+      ["pending-2", true],
+    ]);
+
+    for (const listener of listeners) listener({ matches: true });
+    assert.equal(completed, 1);
+    runtime.showRemovalEffects([{ eventId: "confirmed-1", pieceId: "A1", row: 2, col: 3 }], null);
+    assert.deepEqual(renderCalls.at(-1).removalEffects.map((effect) => effect.eventId), ["pending-2"]);
+    assert.equal(scheduledTimers.size, 0);
+
+    runtime.destroy();
+    assert.equal(listeners.size, 0);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    if (originalDocument) Object.defineProperty(globalThis, "document", originalDocument);
+    else delete globalThis.document;
+  }
+});
+
 test("board runtime refreshes a preserved branch selection from the new legal actions", async () => {
   const action = { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } };
   const snapshot = {
