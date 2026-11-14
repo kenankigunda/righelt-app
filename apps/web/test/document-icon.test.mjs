@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { celestialMarkMarkup } from "../shell/celestial-mark.js";
 import { DOCUMENT_ICON, actionAwaitsPlayer, createDocumentIconOwner, documentIconHref, gameDocumentIconSvg, gameDocumentStartedAt } from "../shell/document-icon.js";
+import { gameDateInlayModel } from "../shell/game-date-inlay.js";
 
 const iconFixture = ({ present = true, href = DOCUMENT_ICON.base } = {}) => {
   const attributes = new Map([["href", href]]);
@@ -66,6 +68,16 @@ test("game icons reuse the immutable localized date identity and preserve the se
   assert.match(attention, /<circle cx="51" cy="13" r="9" fill="black"\/>/);
   assert.match(attention, /<circle cx="51" cy="13" r="6" fill="#d47a16"\/>/);
   assert.notEqual(documentIconHref({ startedAt }), documentIconHref({ startedAt, attention: true }));
+});
+
+test("game favicons use the shared celestial mark geometry without weakening the attention mask", () => {
+  const startedAt = "2026-11-13T21:00:00.000Z";
+  const options = { locale: "en-US", timeZone: "UTC" };
+  const model = gameDateInlayModel(startedAt, options);
+  const sharedMark = celestialMarkMarkup(model, { offset: [8, 4] });
+  assert.match(sharedMark, /data-celestial="moon"/);
+  assert.ok(gameDocumentIconSvg(startedAt, options).includes(sharedMark));
+  assert.ok(gameDocumentIconSvg(startedAt, { ...options, attention: true }).includes(sharedMark));
 });
 
 test("game route identity retires to Home during loading, unavailable, or non-game routes", () => {

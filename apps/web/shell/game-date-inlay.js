@@ -1,3 +1,5 @@
+import {celestialMarkMarkup} from './celestial-mark.js';
+
 const escape=value=>String(value??'').replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
 
 const PHASES=Object.freeze([
@@ -28,9 +30,7 @@ export function gameDateInlayModel(startedAt,{locale,timeZone}={}){
 export function renderGameDateInlay(startedAt,options={}){
   const model=gameDateInlayModel(startedAt,options);
   if(!model)return '<svg class="game-date-inlay is-loading" viewBox="0 0 48 56" aria-hidden="true" focusable="false"><path class="game-date-orbit-highlight" d="M3 37V10l7-7h28l7 7v27"/><path class="game-date-orbit" d="M3 37V10l7-7h28l7 7v27"/></svg>';
-  const [x,y]=model.position,[deep,soft]=model.palette;
-  const celestial=model.moon
-    ? `<path class="game-date-celestial" fill="${deep}" d="M${x+2.7} ${y-3.5}a3.5 3.5 0 1 0 0 7 3.2 3.2 0 0 1 0-7Z"/><circle cx="${x-1.5}" cy="${y-1.2}" r=".55" fill="${soft}"/>`
-    : `<circle class="game-date-celestial" cx="${x}" cy="${y}" r="3.1" fill="${deep}"/>`;
+  const [deep]=model.palette;
+  const celestial=celestialMarkMarkup(model,{className:'game-date-celestial'});
   return `<svg class="game-date-inlay" viewBox="0 0 48 56" role="img" aria-label="${escape(`Started ${model.label}, ${model.phase}`)}" focusable="false"><path class="game-date-orbit-highlight" d="M3 37V10l7-7h28l7 7v27"/><path class="game-date-orbit" stroke="${deep}" d="M3 37V10l7-7h28l7 7v27"/>${celestial}<text class="game-date-month" x="24" y="19">${escape(model.month)}</text><text class="game-date-day" x="24" y="36">${escape(model.day)}</text></svg>`;
 }

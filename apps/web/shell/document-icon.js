@@ -1,4 +1,5 @@
 import { gameDateInlayModel } from "./game-date-inlay.js";
+import { celestialMarkMarkup } from "./celestial-mark.js";
 
 export const DOCUMENT_ICON = Object.freeze({
   base: "./favicon-overlap.svg",
@@ -11,13 +12,6 @@ const escapeXml = (value) => String(value ?? "").replace(/[&<>"']/g, character =
 
 const svgDataUrl = (svg) => `data:image/svg+xml,${encodeURIComponent(svg)}`;
 
-const celestialMarkup = (model) => {
-  const [x, y] = model.position, [deep, soft] = model.palette, offsetX = x + 8, offsetY = y + 4;
-  return model.moon
-    ? `<path fill="${deep}" d="M${offsetX + 2.7} ${offsetY - 3.5}a3.5 3.5 0 1 0 0 7 3.2 3.2 0 0 1 0-7Z"/><circle cx="${offsetX - 1.5}" cy="${offsetY - 1.2}" r=".55" fill="${soft}"/>`
-    : `<circle cx="${offsetX}" cy="${offsetY}" r="3.1" fill="${deep}"/>`;
-};
-
 export const gameDocumentIconSvg = (startedAt, { attention = false, locale, timeZone } = {}) => {
   const model = gameDateInlayModel(startedAt, { locale, timeZone });
   if (!model) return null;
@@ -26,7 +20,7 @@ export const gameDocumentIconSvg = (startedAt, { attention = false, locale, time
     : "";
   const contentMask = attention ? ' mask="url(#attention-gap)"' : "";
   const dot = attention ? '<circle cx="51" cy="13" r="6" fill="#d47a16"/>' : "";
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Righelt game started ${escapeXml(model.label)}">${mask}<g${contentMask}><path d="M11 41V14l7-7h28l7 7v27" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" opacity=".78"/><path d="M11 41V14l7-7h28l7 7v27" fill="none" stroke="${model.palette[0]}" stroke-width=".85" stroke-linecap="round" stroke-linejoin="round"/>${celestialMarkup(model)}<text x="32" y="23" fill="#27313a" font-family="system-ui,sans-serif" font-size="11" font-weight="650" text-anchor="middle" dominant-baseline="middle">${escapeXml(model.month)}</text><text x="32" y="40" fill="#27313a" font-family="system-ui,sans-serif" font-size="19" font-weight="650" text-anchor="middle" dominant-baseline="middle">${escapeXml(model.day)}</text></g>${dot}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Righelt game started ${escapeXml(model.label)}">${mask}<g${contentMask}><path d="M11 41V14l7-7h28l7 7v27" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" opacity=".78"/><path d="M11 41V14l7-7h28l7 7v27" fill="none" stroke="${model.palette[0]}" stroke-width=".85" stroke-linecap="round" stroke-linejoin="round"/>${celestialMarkMarkup(model, { offset: [8, 4] })}<text x="32" y="23" fill="#27313a" font-family="system-ui,sans-serif" font-size="11" font-weight="650" text-anchor="middle" dominant-baseline="middle">${escapeXml(model.month)}</text><text x="32" y="40" fill="#27313a" font-family="system-ui,sans-serif" font-size="19" font-weight="650" text-anchor="middle" dominant-baseline="middle">${escapeXml(model.day)}</text></g>${dot}</svg>`;
 };
 
 export const documentIconHref = ({ startedAt = null, attention = false, locale, timeZone } = {}) => {
