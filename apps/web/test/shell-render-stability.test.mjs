@@ -485,21 +485,13 @@ test("only an explicit scenario capture forces click target selection", () => {
   );
 });
 
-test("history navigation uses pointer-down press state with a single mouseup release bounce", () => {
-  assert.match(source, /const startHistoryPress = \(actionEl\) => \{/);
+test("history navigation shares the native control press and release owner", () => {
   assert.match(source, /const startControlPress = \(controlEl\) => \{/);
-  assert.match(source, /const clearHistoryPress = \(\) => \{/);
   assert.match(source, /const clearControlPress = \(\) => \{/);
-  assert.match(source, /const playHistoryReleaseBounce = \(actionEl\) => \{/);
   assert.match(source, /const playControlReleaseBounce = \(controlEl\) => \{/);
-  assert.match(source, /boardWrapEl\.classList\.add\("history-board-pressing"\);/);
-  assert.match(source, /boardWrapEl\.classList\.add\("history-board-release"\);/);
-  assert.match(source, /actionEl\.classList\.add\("history-item-release"\);/);
   assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*const controlEl = target\.closest\("button, \.button-link, \.mini-board-card-link-surface"\);[\s\S]*startControlPress\(controlEl\);/s);
-  assert.match(source, /window\.addEventListener\("pointerup", \(event\) => \{[\s\S]*action === "jump-history" \|\| action === "return-live"[\s\S]*return;[\s\S]*clearHistoryPress\(\);\s*\}\);/s);
-  assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*action !== "jump-history" && action !== "return-live"[\s\S]*startHistoryPress\(actionEl\);/s);
-  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*clearControlPress\(\);[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);/s);
-  assert.match(source, /if \(action === "return-live"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);/s);
+  assert.match(source, /window\.addEventListener\("pointerup", \(\) => \{[\s\S]*playControlReleaseBounce\(pressedControlEl\);[\s\S]*clearControlPress\(\);\s*\}\);/s);
+  assert.doesNotMatch(source, /startHistoryPress|clearHistoryPress|playHistoryReleaseBounce|history-board-pressing|history-board-release/);
   assert.doesNotMatch(source, /jump-destruction/);
 });
 

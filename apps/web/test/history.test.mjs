@@ -287,11 +287,8 @@ test("UX-04: undone parent moves cross out destruction rows too", () => {
   assert.match(shellCssSrc, /\.history-item\.is-undone \.history-destruction-item/);
 });
 
-test("UX-05 (source): pointerdown history press gating no longer treats destruction rows as separate actions", () => {
+test("UX-05 (source): history entries use the shared control press owner without destruction actions", () => {
   assert.doesNotMatch(appSource, /jump-destruction/);
-  const pdIdx = appSource.indexOf('startHistoryPress(actionEl)');
-  assert.ok(pdIdx !== -1, "startHistoryPress must be called in pointerdown");
-  const guardStart = appSource.lastIndexOf('action !== "jump-history"', pdIdx);
-  const guardSrc = appSource.slice(guardStart, pdIdx + 50);
-  assert.doesNotMatch(guardSrc, /jump-destruction/);
+  assert.match(appSource, /const controlEl = target\.closest\("button, \.button-link, \.mini-board-card-link-surface"\);[\s\S]*startControlPress\(controlEl\);/s);
+  assert.doesNotMatch(appSource, /startHistoryPress|history-board-pressing|history-board-release/);
 });
