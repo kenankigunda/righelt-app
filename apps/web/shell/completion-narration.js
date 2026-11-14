@@ -20,16 +20,20 @@ const actor=(game,owner,result)=>{
  if(result.side===ownerSide)return {text:'You',side:ownerSide};
  return {text:playerDisplayName(game,ownerSide),side:ownerSide};
 };
+const sentenceActor=(game,owner,result)=>{
+ const label=actor(game,owner,result);
+ return label&&label.text.startsWith('You')?{...label,text:`you${label.text.slice(3)}`}:label;
+};
 const removalOwner=record=>side(record?.ownerSeat??record?.piece?.owner);
 const commanderRemoval=(record,owner)=>removalOwner(record)===owner
  && (record?.kind==='commander'||record?.piece?.kind==='commander')&&point(record?.position);
 
-const resultParts=(result,count,complete)=>{
+const resultParts=(result,count,complete,{terminal=true}={})=>{
  if(!result.winner){
-  const text=complete?`The game ended in a draw after ${count} ${count===1?'move':'moves'}.`:'The game ended in a draw.';
+  const text=complete?`The game ended in a draw after ${count} ${count===1?'move':'moves'}${terminal?'.':''}`:`The game ended in a draw${terminal?'.':''}`;
   return [{text}];
  }
- const text=complete?`${result.title} in ${count} ${count===1?'move':'moves'}.`:`${result.title}.`;
+ const text=complete?`${result.title} in ${count} ${count===1?'move':'moves'}${terminal?'.':''}`:`${result.title}${terminal?'.':''}`;
  return [{text,side:result.winner,colorNamed:result.controlsBothSides}];
 };
 const commanderCause=(game,record,result)=>{
@@ -53,11 +57,16 @@ const commanderCause=(game,record,result)=>{
  };
  return byReason[reason]?.()??null;
 };
+const incomingTurnLoser=(record,result)=>{
+ const incoming=side(record.cause.incomingSide),winner=side(result.winner);
+ return incoming&&winner===other(incoming)&&record.decisive.action?.type==='pass'
+  &&record.decisive.decisionId===null&&side(record.decisive.actorSide)===incoming?incoming:null;
+};
 const provenCauseParts=(game,record,result)=>{
  const cause=record.cause;
  if(cause.kind==='incoming-turn-immobility'){
-  const incoming=side(cause.incomingSide),winner=side(result.winner);
-  if(!incoming||winner!==other(incoming))return null;
+  const incoming=incomingTurnLoser(record,result);
+  if(!incoming)return null;
   const label=actor(game,incoming,result);
   return label?[label,{text:' had no legal move except Pass.'}]:null;
  }
@@ -77,6 +86,23 @@ const provenCauseParts=(game,record,result)=>{
   return [{text:'Their final rush sequence cut off supply to '},label,{text:'.'}];
  return null;
 };
+const joinedCauseParts=(game,record,result,count,complete)=>{
+ if(!complete||!result.winner)return null;
+ const winner=side(result.winner),loser=other(winner),cause=record.cause,action=record.decisive.action;
+ if(cause.kind==='incoming-turn-immobility'&&count===0){
+  const incoming=incomingTurnLoser(record,result);
+  if(!incoming||incoming!==loser)return null;
+  const label=sentenceActor(game,incoming,result);
+  return label?[{text:' because '},label,{text:' had no legal move.'}]:null;
+ }
+ if(cause.kind!=='relevant-continuation-finality'||!Number.isSafeInteger(cause.endpointCount)
+   ||cause.endpointCount<1||!Number.isSafeInteger(cause.optionalEndpointCount)||cause.optionalEndpointCount<0
+   ||action?.type!=='retreat'||typeof record.decisive.decisionId!=='string'||!record.decisive.decisionId
+   ||side(record.decisive.actorSide)!==loser)return null;
+ if(result.controlsBothSides)return [{text:' after '},{text:`you retreated as ${sideColorName(loser)}`,side:loser,colorNamed:true},{text:'.'}];
+ if(result.side===loser)return [{text:' after '},{text:'you retreated',side:loser},{text:'.'}];
+ return [{text:' after '},{text:playerDisplayName(game,loser),side:loser},{text:' retreated.'}];
+};
 
 /** Consume only the closed, persisted terminal record. Missing or partial facts
  * remain independently absent and never fall back to visible History. */
@@ -89,8 +115,12 @@ export function completedOutcomeNarration(game,{identityId}={}){
   ||!record.cause||typeof record.cause.kind!=='string')return null;
  const complete=record.activeActionCountComplete===true&&Number.isSafeInteger(record.activeActionCount)
   &&record.activeActionCount>=0;
- const parts=resultParts(result,record.activeActionCount,complete);
- const cause=provenCauseParts(game,record,result);
- if(cause)parts.push({text:' '},...cause);
+ const joinedCause=joinedCauseParts(game,record,result,record.activeActionCount,complete);
+ const parts=resultParts(result,record.activeActionCount,complete,{terminal:!joinedCause});
+ if(joinedCause)parts.push(...joinedCause);
+ else {
+  const cause=provenCauseParts(game,record,result);
+  if(cause)parts.push({text:' '},...cause);
+ }
  return {text:parts.map(part=>part.text).join(''),parts,coordinates:point(record.decisive.action?.to)?[record.decisive.action.to]:[]};
 }

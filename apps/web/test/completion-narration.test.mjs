@@ -8,11 +8,11 @@ import {MAX_HISTORY} from '../generated/packages/shared-types/src/history.js';
 const person=(identityId,name)=>({identityId,profile:{displayName:name}});
 const commander=(id,owner)=>({id,owner,kind:'commander',position:{row:owner==='P1'?0:9,col:0},supplied:true,commanded:true});
 const fixture=({status='p1_win',reason='p2_commander_destroyed',count=2,complete=true,lineageComplete=complete,
- cause,action,removals,decisionId='final',includeImported=true,extra={}}={})=>{
+ cause,action,removals,decisionId='final',includeImported=true,actorSide=decisionId===null?'P2':'P1',extra={}}={})=>{
  const decisiveAction=action??{type:'push',actorId:'u1',from:{row:8,col:2},to:{row:9,col:2}};
  const terminal={outcome:{status,reason},pieces:[commander('c1','P1')]};
  const removed=removals??[{pieceId:'c2',kind:'commander',position:{row:9,col:2},ownerSeat:'p2',supplied:false,commanded:false,reason:'commander_unsupplied'}];
- const record={version:1,decisive:{action:decisiveAction,actorSide:decisionId===null?'P2':'P1',decisionId,clientCommandId:'v2:final',turnIndex:4},
+ const record={version:1,decisive:{action:decisiveAction,actorSide,decisionId,clientCommandId:'v2:final',turnIndex:4},
   board:structuredClone(terminal),result:{status,reason},removals:removed,
   cause:cause??{kind:'relevant-continuation-finality',endpointCount:2,optionalEndpointCount:1},commit:{eventSeq:9,gameplayRevision:7,clientCommandId:'v2:final'},
   lineage:{version:includeImported?1:null,complete:lineageComplete,importedMoveCount:includeImported?1:0,
@@ -20,7 +20,7 @@ const fixture=({status='p1_win',reason='p2_commander_destroyed',count=2,complete
  const imported={moveId:'imported-one',index:0,displayMoveNumber:1,turnIndex:3,turnMoveIndex:0,actorSide:'P2',action:{type:'pass'},
   selectionSnapshot:{sideToMove:'P2',pieces:[]},snapshot:terminal,destroyedPieces:[],importedFrom:{gameId:'source',decisionId:'source-one',gameplayRevision:3}};
  const move=decisionId===null?null:{moveId:decisionId,index:includeImported?1:0,displayMoveNumber:includeImported?2:1,turnIndex:4,turnMoveIndex:0,
-  actorSide:'P1',clientCommandId:'v2:final',action:decisiveAction,selectionSnapshot:{sideToMove:'P1',pieces:[]},snapshot:terminal,destroyedPieces:structuredClone(removed)};
+  actorSide,clientCommandId:'v2:final',action:decisiveAction,selectionSnapshot:{sideToMove:'P1',pieces:[]},snapshot:terminal,destroyedPieces:structuredClone(removed)};
  const moves=[...(includeImported?[imported]:[]),...(move?[move]:[]),{moveId:'undone-noise',turnIndex:99,undone:true}];
  const turns=[...(includeImported?[{index:3,playerSeat:'Player 2',status:'complete',endedAt:'earlier',moveIndexes:[0]}]:[]),
   {index:4,playerSeat:decisionId===null?'Player 2':'Player 1',status:'complete',endedAt:'terminal',moveIndexes:move?[move.index]:[]}];
@@ -64,10 +64,12 @@ test('saved supply, immobility and draw causes use only their closed provenance 
  const supply=fixture({reason:'p2_commander_unsupplied',cause:{kind:'commander-settlement',reason:'p2_commander_unsupplied'},removals:[]});
  assert.equal(completedOutcomeNarration(supply,{identityId:'me'}).text,'You won in 2 moves. Guest’s commander lost its supply.');
  const immobile=fixture({reason:'p2_incoming_turn_immobility',count:0,cause:{kind:'incoming-turn-immobility',incomingSide:'P2'},
-  action:{type:'pass'},removals:[],decisionId:null,includeImported:false});
+  action:{type:'pass'},removals:[],decisionId:null,includeImported:false,extra:{player2:person('other','Alex')}});
  assert.equal(immobile.historyTurnMoves.length,0);assert.equal(immobile.terminalOutcome.decisive.decisionId,null);
- assert.equal(completedOutcomeNarration(immobile,{identityId:'me'}).text,'You won in 0 moves. Guest had no legal move except Pass.');
- assert.equal(selectedHistoryPresentation(immobile,{identityId:'me'}).message.text,'You won in 0 moves. Guest had no legal move except Pass.');
+ assert.equal(completedOutcomeNarration(immobile,{identityId:'me'}).text,'You won in 0 moves because Alex had no legal move.');
+ assert.equal(selectedHistoryPresentation(immobile,{identityId:'me'}).message.text,'You won in 0 moves because Alex had no legal move.');
+ const mismatched=structuredClone(immobile);mismatched.terminalOutcome.decisive.actorSide='P1';
+ assert.equal(completedOutcomeNarration(mismatched,{identityId:'me'}).text,'You won in 0 moves.');
  const draw=fixture({status:'draw',reason:'both_commanders_unsupplied',count:1,cause:{kind:'commander-settlement',reason:'both_commanders_unsupplied'},removals:[],extra:{myRole:'Viewer',myRoles:[]}});
  assert.equal(completedOutcomeNarration(draw,{identityId:'viewer'}).text,'The game ended in a draw after 1 move. Horus’s commander and Guest’s commander lost their supply.');
 });
@@ -95,10 +97,30 @@ test('a coordinate-like player name stays literal while the proven action coordi
  assert.match(html,/player-tone-p2[^>]*>[\s\S]*\(9, 2\)’s commander/);
 });
 
-test('post-retreat finality keeps its cause sentence absent until wording is approved',()=>{
- const postRetreat=fixture({reason:'p2_commander_unsupplied',cause:{kind:'relevant-continuation-finality',endpointCount:2,optionalEndpointCount:1},
-  action:{type:'retreat',actorId:'c2',from:{row:9,col:1},to:{row:8,col:1}},removals:[]});
- assert.equal(completedOutcomeNarration(postRetreat,{identityId:'me'}).text,'You won in 2 moves.');
+test('proven decisive retreat uses approved viewer-relative naming without claiming a mechanism',()=>{
+ const postRetreat=fixture({reason:'p2_commander_unsupplied',count:12,actorSide:'P2',
+  cause:{kind:'relevant-continuation-finality',endpointCount:2,optionalEndpointCount:1},
+  action:{type:'retreat',actorId:'c2',from:{row:9,col:1},to:{row:8,col:1}},removals:[],
+  extra:{player1:person('sam','Sam'),player2:person('alex','Alex')}});
+ assert.equal(completedOutcomeNarration(postRetreat,{identityId:'sam'}).text,'You won in 12 moves after Alex retreated.');
+ assert.equal(completedOutcomeNarration(postRetreat,{identityId:'alex'}).text,'Sam won in 12 moves after you retreated.');
+ assert.equal(completedOutcomeNarration(postRetreat,{identityId:'viewer'}).text,'Sam won in 12 moves after Alex retreated.');
+
+ const selfPlay=fixture({reason:'p2_commander_unsupplied',count:12,actorSide:'P2',
+  cause:{kind:'relevant-continuation-finality',endpointCount:2,optionalEndpointCount:1},
+  action:{type:'retreat',actorId:'c2',from:{row:9,col:1},to:{row:8,col:1}},removals:[],
+  extra:{selfPlayMode:true,selfPlayStartSide:'p1',player1:person('me','Sam'),player2:person('me','Sam'),myRole:'Both Players',myRoles:['Player 1','Player 2']}});
+ assert.equal(completedOutcomeNarration(selfPlay,{identityId:'me'}).text,'You won as Red in 12 moves after you retreated as Blue.');
+});
+
+test('retreat wording fails closed without complete count, losing-side actor, or retreat provenance',()=>{
+ const approved={reason:'p2_commander_unsupplied',actorSide:'P2',cause:{kind:'relevant-continuation-finality',endpointCount:2,optionalEndpointCount:1},
+  action:{type:'retreat',actorId:'c2',from:{row:9,col:1},to:{row:8,col:1}},removals:[]};
+ assert.equal(completedOutcomeNarration(fixture({...approved,complete:false}),{identityId:'me'}).text,'You won.');
+ assert.equal(completedOutcomeNarration(fixture({...approved,actorSide:'P1'}),{identityId:'me'}).text,'You won in 2 moves.');
+ assert.equal(completedOutcomeNarration(fixture({...approved,decisionId:null}),{identityId:'me'}).text,'You won in 2 moves.');
+ assert.equal(completedOutcomeNarration(fixture({...approved,action:{type:'rush',actorIds:['u1'],to:{row:8,col:1}}}),{identityId:'me'}).text,
+  'You won in 2 moves. Their final rush sequence cut off supply to Guest’s commander.');
 });
 
 test('self-play and bidi identities retain explicit side meaning and escaped color scopes',()=>{
