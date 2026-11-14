@@ -1,14 +1,17 @@
 import {shouldLiveSyncRoute} from './routes.js';
+import {homeContinuationLayoutCompatible,sameRouteRead} from './home-section-reads.js';
 export const destinationReadScope = read => `${read.generation}:${read.epoch}:${read.routeKey}:${read.homeVisit ?? 0}`;
 export const terminalColdDestination = ({route,game,presentation}) => route.name==='game' && !game && Boolean(presentation?.kind && presentation.kind!=='retry');
 export const destinationHidesGameBody = (game,presentation) => !game && Boolean(presentation?.kind && presentation.kind!=='retry');
+export const bindHomeDestinationAfterRender = (before,after) => sameRouteRead(before,after)
+  ? before : homeContinuationLayoutCompatible(before,after) ? after : null;
 
 // Safe read lifecycle only. Actual gameplay admission remains with its existing owners.
 export const createDestinationRouteOwner = getDependencies => {
 const start = ({ renderStart = true } = {}) => {
   const {state,captureRouteRead,routeReadIsCurrent,canHydrateRouteFromLocalState,destinationRecovery,syncDestinationNotice,syncLiveChannels,render,syncRouteDataAndLiveChannels,issueDiagnostics,cancelPendingBoardContextReplay,window,invitationLoadFailureKind,maybeRevealRouteTransition}=getDependencies();
   const requestId = ++state.routeSyncRequestId;
-  const read = captureRouteRead();
+  let read = captureRouteRead();
   const destinationRead=['game','home'].includes(read.route.name);
   const usableDestination=read.route.name==='game'?canHydrateRouteFromLocalState(read.route):read.route.name==='home' && state.homeSectionsHydrated;
   if(destinationRead)destinationRecovery.begin(destinationReadScope(read),{blocked:!usableDestination});else destinationRecovery.reset();
@@ -20,6 +23,7 @@ const start = ({ renderStart = true } = {}) => {
   syncLiveChannels();
   if (renderStart) {
     render({ animatePanels: false, includeBoard: false });
+    if (read.route.name === 'home') read = bindHomeDestinationAfterRender(read,captureRouteRead()) ?? read;
   }
   void (async () => {
     let succeeded=false;

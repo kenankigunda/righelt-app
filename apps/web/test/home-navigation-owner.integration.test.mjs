@@ -10,8 +10,8 @@ import {createRouteHydration} from '../shell/route-hydration.js';
 
 const idle=()=>new Promise(setImmediate);
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return{promise,resolve};};
-const fixture=()=>{
- let generation=1,hash='#/',id=0,total=8,response=async value=>value;
+const fixture=({renderPageSize=null}={})=>{
+ let generation=1,hash='#/',id=0,total=8,visiblePageSize=3,response=async value=>value;
  const requests=[],commits=[],scrolls=[],focus=[],frames=[],timers=new Map(),pending=new Set();
  const state={currentRoute:{name:'home'},homeReadVisit:0,homeReadJob:null,pendingResponsiveHomeRead:null,homeReadRecovery:null,
   accountContinuation:null,homeReadChoice:null,routeSyncRequestId:0,inviteLoadState:null,resolvedInvite:null,routeHydrated:false,homeSectionsHydrated:false,pendingRoutePosition:null,
@@ -30,7 +30,7 @@ const fixture=()=>{
  let controller,visitOwner,destinationOwner,continuationOwner;
  const capture=()=>{
   const read={generation,hash,routeKey:'#/',owner:transport,route:{name:'home'},homeDebug:false,homeVisit:state.homeReadVisit,
-   inputs:JSON.stringify([state.homeReadVisit,false,['my','completed','other'].map(key=>[key,state.homeSections[key].page,3,1])])};
+   inputs:JSON.stringify([state.homeReadVisit,false,['my','completed','other'].map(key=>[key,state.homeSections[key].page,visiblePageSize,1])])};
   read.epoch=hydrate.observe(read);continuationOwner.observeRead(read);return read;
  };
  const current=read=>sameRouteRead(read,capture());
@@ -42,7 +42,7 @@ const fixture=()=>{
  const appEl={querySelector:()=>target};
  const history=createNavigationHistory({history:browser.history,getHash:()=>hash,id:()=>`visit-${++id}`,
   capture:()=>({y:browser.scrollY,generation,pages:Object.fromEntries(Object.entries(state.homeSections).map(([key,value])=>[key,value.page])),focusGameId:'my-3'})});
- const render=()=>{};
+ const render=()=>{if(renderPageSize!==null)visiblePageSize=renderPageSize;};
  const recovery=createDestinationRecovery({clock:()=>0,setTimer:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimer:key=>timers.delete(key)});
  const sync=read=>hydrate(read??capture(),active=>controller.syncSections(read??capture(),active));
  const destinationDeps={state,captureRouteRead:capture,routeReadIsCurrent:current,canHydrateRouteFromLocalState:()=>false,
@@ -51,7 +51,7 @@ const fixture=()=>{
   window:browser,invitationLoadFailureKind:()=> 'retry',maybeRevealRouteTransition:()=>{if(state.routeHydrated)visitOwner.restore();}};
  destinationOwner=createDestinationRouteOwner(()=>destinationDeps);
  controller=createHomeSectionReads({state,getHomeSection:key=>state.homeSections[key],setHomeSection:(key,value)=>{state.homeSections={...state.homeSections,[key]:value};},
-  getVisibleHomeSectionKeys:()=>['my','completed','other'],getHomeSectionVisiblePageSize:()=>3,getHomeSectionColumnCount:()=>1,
+  getVisibleHomeSectionKeys:()=>['my','completed','other'],getHomeSectionVisiblePageSize:()=>visiblePageSize,getHomeSectionColumnCount:()=>1,
   captureRouteRead:capture,routeReadIsCurrent:current,assertCurrentRouteRead:assertCurrent,
   render,syncLiveChannels(){},startRouteSync:options=>destinationOwner.start(options),pendingHomeSectionKeys:pending,isHomeSectionPending:key=>pending.has(key),captureHomeFocus:()=>null,restoreHomeReadingPosition(){},restoreHomeFocus:()=>false,syncAnnouncement:{},
   window:browser,document:{},appEl,gameSound:{play(){}},storyDialog:{refresh(){}},
@@ -66,6 +66,21 @@ const fixture=()=>{
   pop:saved=>{browser.history.state=saved;visitOwner.pop({state:saved});},
   tickReadRetry(){const entry=[...timers.entries()].find(([,value])=>value.ms===500);assert.ok(entry,'actual Home retry must be pending');timers.delete(entry[0]);entry[1].fn();},retire(){state.homeReadJob?.retire();recovery.reset();}};
 };
+
+test('first Home render rebinds a layout-only read before ownership begins',async()=>{
+ const f=fixture({renderPageSize:4});f.destinationOwner.start();await idle();await idle();
+ assert.equal(f.state.routeHydrated,true);assert.equal(f.state.homeSectionsHydrated,true);
+ assert.deepEqual(f.state.homeSections.my.gameIds,['my-0','my-1','my-2','my-3']);
+ assert.ok(f.requests.length>0);assert.ok(f.requests.every(row=>row.pageSize===4));f.retire();
+});
+
+test('warm Home render rebinds and publishes the fresh measured window',async()=>{
+ const f=fixture({renderPageSize:4});await f.sync();f.state.routeHydrated=true;
+ assert.deepEqual(f.state.homeSections.my.gameIds,['my-0','my-1','my-2']);f.setTotal(9);
+ f.destinationOwner.start();await idle();await idle();
+ assert.equal(f.state.routeHydrated,true);assert.equal(f.state.homeSectionsHydrated,true);
+ assert.equal(f.state.homeSections.my.totalGames,9);assert.deepEqual(f.state.homeSections.my.gameIds,['my-0','my-1','my-2','my-3']);f.retire();
+});
 
 for(const clamp of [false,true])test(`saved visit page identity stays covered until atomic publication clamp=${clamp}`,async()=>{
  const f=fixture();await f.sync();await f.controller.loadPage('my',{page:1});f.state.routeHydrated=true;f.history.save();
