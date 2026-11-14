@@ -12,7 +12,7 @@ from .training_recipe import recipe_binding
 from .architecture import architecture_binding, model_architecture
 
 SOURCES = ('trainer.py', 'model.py', 'curriculum.py', 'runner.py', 'replay.py',
-           'checkpoint.py', 'training_recipe.py', 'canary.py', 'hosted_canary.py', 'execution_recipe.py')
+           'checkpoint.py', 'production.py', 'training_recipe.py', 'canary.py', 'hosted_canary.py', 'execution_recipe.py')
 
 
 def digest(value):
@@ -28,6 +28,7 @@ def settings(mode, training_recipe=None):
                 'weightDecay': CONFIG['training']['weightDecay']},
             'losses': {'policy': 1, 'observedTerminalValue': 1, 'futureFacts': 0, 'teacherValue': 0},
             'sampling': 'seeded-shuffle-bounded-replay-pass',
+            'dataContract':json.loads((ROOT/'tools/ai-trainer/learning-evidence-contract.json').read_text()),
             'fixtureContract': json.loads((ROOT/'tools/hosted-compute/fixture-contract.json').read_text()) if mode == 'closed-loop-fixture' else None,
             'teaching': 'none', 'automaticSwitches': 'curriculum.observe-source-bound',
             'sourceFiles': {name: hashlib.sha256((ROOT/'tools/ai-trainer/righelt_training'/name).read_bytes()).hexdigest() for name in SOURCES}}

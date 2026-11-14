@@ -18,7 +18,18 @@ def corpus_record(binding):
     positions = corpus['positions']
     withheld = {p['stateHash'] for p in positions if p['partition'] != 'train'}
     protected = {p['encodingHash'] for p in positions if p['partition'] != 'train' and not p.get('sharedOpening',False)}
+    curation=corpus.get('curation',{})
+    if 'sourceQualificationSchema' in curation and (type(curation['sourceQualificationSchema']) is not int or curation['sourceQualificationSchema'] != 1):
+        raise ValueError('unsupported source qualification schema')
+    protected_families={p.get('sourceFamily') for p in positions if p['partition']!='train'} if 'sourceQualificationSchema' in curation else set()
     for p in positions:
+        if corpus.get('curation', {}).get('sourceQualificationSchema') == 1:
+            if (p.get('sourcePurpose') not in ('competitive','exploratory','unclassified')
+                or p.get('actorProvenance',{}).get('kind') not in ('human','computer','unknown')
+                or not p.get('sourceFamily') or not p.get('label',{}).get('scope')
+                or p.get('learnerEligibility') != {'historicalPolicy':False,'historicalOptimalNonterminalValue':False,'competitiveScore':False}
+                or p['partition']=='train' and (p.get('historyStatus')!='active' or p.get('sourceFamily') in protected_families)):
+                raise ValueError('invalid scoped source qualification')
         if p['partition'] not in ('train', 'validation'):
             raise ValueError('invalid production partition')
         if p['partition'] == 'train' and (p['gameId'] in held or p['stateHash'] in withheld or p['encodingHash'] in protected):
@@ -44,11 +55,12 @@ def production_job(position, *, seed, index, model_version, binding):
     # Explicit game grouping was frozen before this mapping. Salt only maps a
     # training family's name into the legacy buffer's hash-partition contract.
     for salt in range(10000):
-        family = f"production:{position['gameId']}:{salt}"
+        family = f"production:{position.get('sourceFamily',position['gameId'])}:{salt}"
         if partition_for_family(family) == 'train':
             return {'command': 'generate', 'id': f'game-{seed}-{index}', 'seed': seed,
                     'familyId': family, 'partition': 'train', 'kind': 'simple',
                     'initialState': position['state'], 'modelVersion': model_version,
                     'productionSource': {k: position[k] for k in ('gameId', 'decisionId', 'stateHash', 'category')}
-                    | {'corpusSha256': binding['sha256']}}
+                    | {'corpusSha256': binding['sha256']}
+                    | ({'qualification':{k:position[k] for k in ('sourceFamily','sourcePurpose','actorProvenance','label','terminalBoundary','learnerEligibility')}} if 'sourcePurpose' in position else {})}
     raise ValueError('cannot map production family')

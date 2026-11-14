@@ -52,21 +52,28 @@ export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds
       .sort((a,b)=>a.event_seq-b.event_seq || a.event_ordinal-b.event_ordinal);
     const partition=heldOut.includes(game.game_id)?'validation':'train';
     let current=null,verified=0;
-    const known=new Map(),moves=new Map(),candidates=[];
+    const known=new Map(),knownPaths=new Map(),moves=new Map(),candidates=[];
+    let activePath=[];
+    const remember=()=>{
+      const hash=deterministicStateHash(current);known.set(hash,current);
+      const previous=knownPaths.get(hash);
+      knownPaths.set(hash,knownPaths.has(hash)&&JSON.stringify(previous)!==JSON.stringify(activePath)?null:activePath?.slice()??null);
+    };
     const report={gameId:game.game_id,partition,verifiedDecisions:0,restorations:0,turns:0,excluded:[]};
     for(const row of rows) {
       check();const record=JSON.parse(row.payload_json);
       try {
         if(record.kind==='initial') {
           if(record.partial)throw Error('Partial production root');
-          current=record.state;known.set(deterministicStateHash(current),current);
+          current=record.state;activePath=[];remember();
         } else if(record.kind==='decision') {
           const move=record.move;
           if(!current)throw Error('Unverified production lineage');
           exactRetainedState(current,move.selectionSnapshot,bounded);
           const before=current;
           current=exactRetainedState(transitionArchivedAction(before,move.action,bounded,move.retreatSemantics),move.snapshot,bounded);
-          known.set(deterministicStateHash(current),current);moves.set(record.id,move);verified++;
+          activePath=activePath?[...activePath,record.id]:null;
+          remember();moves.set(record.id,move);verified++;
           if(before.outcome.status==='ongoing')candidates.push({
             gameId:game.game_id,decisionId:record.id,revision:record.revision,
             state:structuredClone(before),stateHash:deterministicStateHash(before),partition,
@@ -77,7 +84,7 @@ export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds
         } else if(record.kind==='turn') {
           if(!current)throw Error('Unverified turn lineage');
           current=exactRetainedState(transitionArchivedAction(current,{type:'end_turn'},bounded),record.state,bounded);
-          known.set(deterministicStateHash(current),current);report.turns++;
+          remember();report.turns++;
         } else if(record.kind==='finalization') {
           const move=moves.get(record.targetDecisionId);
           if(!move)throw Error('Finalization target absent');
@@ -87,6 +94,7 @@ export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds
         } else if(record.kind==='restoration') {
           const restored=known.get(deterministicStateHash(record.state));
           if(!restored)throw Error('Restoration target not independently replayed');
+          activePath=knownPaths.get(deterministicStateHash(record.state))?.slice()??null;
           current=restored;report.restorations++;
         } else throw Error('Unsupported production event '+record.kind);
       } catch(error) {
@@ -94,6 +102,7 @@ export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds
         // Never restart trust from a later self-reported selection snapshot.
         // A restoration to an independently verified position can recover it.
         current=null;
+        if(record.kind==='restoration')activePath=null;
       }
     }
     report.verifiedDecisions=verified;
@@ -101,13 +110,15 @@ export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds
     report.currentStateVerified=!!current && deterministicStateHash(current)===deterministicStateHash(live);
     report.recordedOutcome=live.outcome;
     report.finalHash=current?deterministicStateHash(current):null;
-    reports.push(report);starts.push(...candidates);
+    report.activeLineVerified=activePath!==null;
+    const activeIds=new Set(activePath??[]);
+    reports.push(report);starts.push(...candidates.map(p=>({...p,historyStatus:activePath===null?'unknown':activeIds.has(p.decisionId)?'active':'undone'})));
   }
   // Shared opening prefixes and identical positions cannot leak into training
   // from a second game. All withheld-position hashes take precedence.
   const withheld=new Set(starts.filter(x=>x.partition!=='train').map(x=>x.stateHash));
   const protectedEncodings=new Set(starts.filter(x=>x.partition!=='train'&&!x.sharedOpening).map(x=>x.encodingHash));
-  const seen=new Set();const positions=starts.filter(x=>{
+  const seen=new Set();const positions=starts.sort((a,b)=>(a.historyStatus==='active'?0:1)-(b.historyStatus==='active'?0:1)).filter(x=>{
     if(x.partition==='train' && (withheld.has(x.stateHash)||protectedEncodings.has(x.encodingHash)))return false;
     const key=x.partition+':'+x.stateHash;if(seen.has(key))return false;
     seen.add(key);return true;

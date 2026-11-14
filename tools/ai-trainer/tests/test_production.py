@@ -77,3 +77,33 @@ class ProductionTest(unittest.TestCase):
             b.append({'id':'g','familyId':family,'partition':'train','termination':'terminal',
                       'outcome':{'status':'draw'},'decisions':[{'id':'d','legal':[0],'policy':[]}]})
         self.assertEqual(len(b.positions),0)
+
+    def test_qualified_corpus_rejects_held_out_families_unknown_schemas_and_target_upgrades(self):
+        with tempfile.TemporaryDirectory() as d:
+            binding=self.fixture(d);path=Path(binding['path']);corpus=json.loads(path.read_text())
+            corpus['curation']={'sourceQualificationSchema':1}
+            row=corpus['positions'][0]
+            row.update(sourcePurpose='exploratory',sourceFamily='same-family',actorProvenance={'kind':'unknown'},
+                label={'category':'verified-start','scope':'Verified prefix only'},historyStatus='active',terminalBoundary='quarantined',
+                learnerEligibility={'historicalPolicy':False,'historicalOptimalNonterminalValue':False,'competitiveScore':False})
+            def bind():
+                path.write_text(json.dumps(corpus));return {**binding,'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+            self.assertEqual(len(load_corpus(bind())),1)
+            corpus['positions'].append({**row,'partition':'validation','gameId':'held','stateHash':'different','encodingHash':'b'*64})
+            with self.assertRaisesRegex(ValueError,'qualification'):load_corpus(bind())
+            corpus['positions'].pop()
+            for schema in (None,2,True):
+                corpus['curation']['sourceQualificationSchema']=schema
+                with self.assertRaisesRegex(ValueError,'schema'):load_corpus(bind())
+            corpus['curation']['sourceQualificationSchema']=1;row['learnerEligibility']['historicalPolicy']=True
+            with self.assertRaisesRegex(ValueError,'qualification'):load_corpus(bind())
+
+    def test_related_source_starts_share_family_and_preserve_purpose_as_metadata(self):
+        from righelt_training.production import production_job
+        base={'gameId':'source-a','decisionId':'a','stateHash':'state','category':'ordinary','state':{'outcome':{'status':'ongoing'}},
+            'sourceFamily':'shared-S08','sourcePurpose':'exploratory','actorProvenance':{'kind':'human'},'label':{'category':'verified-start','scope':'No imitation target'},
+            'terminalBoundary':'quarantined','learnerEligibility':{'historicalPolicy':False,'historicalOptimalNonterminalValue':False,'competitiveScore':False}}
+        a=production_job(base,seed=107,index=0,model_version='model',binding={'sha256':'corpus'})
+        b=production_job({**base,'gameId':'resalted-source-b'},seed=107,index=1,model_version='model',binding={'sha256':'corpus'})
+        self.assertEqual(a['familyId'],b['familyId']);self.assertEqual(a['productionSource']['qualification']['sourcePurpose'],'exploratory')
+        self.assertNotIn('sourcePurpose',a['initialState'])

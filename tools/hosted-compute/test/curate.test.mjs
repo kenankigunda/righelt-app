@@ -23,3 +23,22 @@ test('seeded selection is order-independent and fresh guards contain no held-out
   assert(a.corpus.positions.some(p=>p.partition==='train'&&p.revision>100));
   assert(!JSON.stringify(a.corpus).includes('privateFinal')); assert(a.corpus.curation.inclusionMapSha256);
 });
+
+test('source purpose and actor survive curation, undo branches stay out and unresolved prefixes stay usable',()=>{
+ const report={gameId:'probe',partition:'train',currentStateVerified:false,activeLineVerified:true,verifiedDecisions:2,excluded:[]};
+ const position={gameId:'probe',decisionId:'active',revision:1,state:{outcome:{status:'ongoing'}},stateHash:'a',encodingHash:'a',partition:'train',category:'ordinary',historyStatus:'active',computerProof:{profile:'horus',account:'must-not-upload'}};
+ const source={positions:[position,{...position,decisionId:'discarded',stateHash:'b',historyStatus:'undone'}],reports:[report],heldOut:[],sha256:'source'};
+ const result=minimizeCorpus(source,{salt:'a'.repeat(64),sourceRegistry:{probe:{sourcePurpose:'exploratory',sourceFamily:'S08'}}});
+ assert.equal(result.corpus.positions.length,1);const p=result.corpus.positions[0];
+ assert.equal(p.sourcePurpose,'exploratory');assert.deepEqual(p.actorProvenance,{kind:'computer',profile:'horus'});
+ assert.equal(p.terminalBoundary,'quarantined');assert.equal(p.learnerEligibility.historicalPolicy,false);assert.equal(p.learnerEligibility.historicalOptimalNonterminalValue,false);
+ assert.equal(result.corpus.excludedBranches.length,1);assert(!JSON.stringify(result.corpus).includes('must-not-upload'));
+ assert.throws(()=>minimizeCorpus(source,{salt:'a'.repeat(64),sourceRegistry:{probe:{sourceFamily:'S08',decisions:{active:{sourceFamily:'unrelated'}}}}}),/whole game/);
+});
+test('related source families cannot cross held-out boundaries even with different states',()=>{
+ const rows=['train','held','unrelated'].map(id=>({gameId:id,decisionId:id,revision:1,state:{outcome:{status:'ongoing'}},stateHash:id,encodingHash:id,partition:id==='held'?'validation':'train',category:'ordinary',historyStatus:'active'}));
+ const reports=rows.map(p=>({gameId:p.gameId,partition:p.partition,currentStateVerified:true,verifiedDecisions:1,excluded:[]}));
+ const result=minimizeCorpus({positions:rows,reports,heldOut:['held'],sha256:'source'},{salt:'a'.repeat(64),sourceRegistry:{train:{sourceFamily:'same'},held:{sourceFamily:'same'}}});
+ assert.equal(result.corpus.positions.filter(p=>p.partition==='train').length,1);
+ assert.equal(result.inclusion.excluded.find(r=>r.sourceGameId==='train').reason,'held-out-related-family');
+});

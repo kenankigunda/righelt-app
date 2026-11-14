@@ -110,7 +110,7 @@ ADOPTION_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for n
 HOSTED_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for name in (
     'device','hosted_receipts','hosted_cleanup','hosted_snapshot','execution_recipe','hosted_canary'))
 
-PROOF_PATHS=('tools/hosted-compute/policy.json','tools/hosted-compute/fixture-contract.json','packages/game-engine/src','packages/computer-player/src','packages/shared-types/src',
+PROOF_PATHS=('tools/ai-trainer/learning-evidence-contract.json','tools/ai-trainer/tactical-evidence.mjs','tools/hosted-compute/data-contract.mjs','tools/hosted-compute/policy.json','tools/hosted-compute/fixture-contract.json','packages/game-engine/src','packages/computer-player/src','packages/shared-types/src',
     'tools/ai-trainer/production-corpus.mjs','tools/ai-trainer/snapshot-production.py',
     'tools/ai-trainer/righelt_training/production.py','tools/ai-trainer/righelt_training/curriculum.py',
     'tools/ai-trainer/righelt_training/replay.py',

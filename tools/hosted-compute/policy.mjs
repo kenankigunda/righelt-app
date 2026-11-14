@@ -34,6 +34,10 @@ export function validateManifest(m) {
   assert(new Set(m.inputs.map(a => a.name)).size === m.inputs.length, 'duplicate input name');
   assert(m.inputs.some(a => a.sha256 === m.checkpointSha256) && m.inputs.some(a => a.sha256 === m.corpusSha256) && m.inputs.some(a => a.sha256 === m.recipeSha256), 'checkpoint, corpus and recipe must be in input inventory');
   assert(m.inputs.some(a => a.sha256 === m.executionRecipeSha256), 'execution recipe input required');
+  if (m.developmentEvidence !== undefined) {
+    assert(m.developmentEvidence?.schema===1 && Object.keys(m.developmentEvidence).sort().join(',')==='contractSha256,packetSha256,receiptSha256,schema', 'invalid development evidence binding');
+    for(const key of ['contractSha256','packetSha256','receiptSha256']) assert(/^[a-f0-9]{64}$/.test(m.developmentEvidence[key]) && m.inputs.some(a=>a.sha256===m.developmentEvidence[key]),'development evidence must be a frozen input');
+  }
   assert(Array.isArray(m.phases) && m.phases.length > 0 && m.phases.length <= 12, 'bounded phases required');
   assert(new Set(m.phases.map(p => p.id)).size === m.phases.length, 'duplicate phase');
   for (const p of m.phases) {

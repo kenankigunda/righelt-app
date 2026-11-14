@@ -4,6 +4,7 @@ export function executionIdentity(manifest, manifestSha256, phase, generation) {
   return { campaign: manifest.id, phase: phase.id, manifestSha256, generation, seed: manifest.seed,
     sourceRevision: manifest.sourceRevision, dependencySha256: manifest.dependencySha256,
     recipeSha256: manifest.recipeSha256, executionRecipeSha256: manifest.executionRecipeSha256,
+    ...(manifest.developmentEvidence?{developmentEvidence:manifest.developmentEvidence}:{}),
     inputCheckpointSha256: manifest.checkpointSha256, dataSha256: manifest.corpusSha256 };
 }
 // A completed receipt from a prior host is valid only through an exact durable

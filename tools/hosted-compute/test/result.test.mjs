@@ -49,3 +49,13 @@ test('fixture builder rejects unqualified prepared seeds before constructing com
  const {canaryManifest}=await import('../canary-manifest.mjs');
  assert.throws(()=>canaryManifest({prepared:{fixtureOnly:true,seed:108}}),/fixture seed/);
 });
+
+test('development input receipt identity cannot change between input and result',async()=>{
+ const f=await fixture();f.manifest.developmentEvidence={schema:1,packetSha256:f.inputs[0].sha256,receiptSha256:f.inputs[1].sha256,contractSha256:f.inputs[2].sha256};
+ await f.launch();const done=await f.completion();
+ await f.core.finish('pilot',1,done);assert.equal((await f.state()).nextStatus,'complete');
+ const execution=executionIdentity(f.manifest,'m',f.manifest.phases[0],1);
+ assert.equal(execution.developmentEvidence.receiptSha256,f.inputs[1].sha256);
+ const stale={...f.manifest,developmentEvidence:{...f.manifest.developmentEvidence,receiptSha256:'f'.repeat(64)}};
+ const {validateManifest}=await import('../policy.mjs');assert.throws(()=>validateManifest(stale),/frozen input/);
+});

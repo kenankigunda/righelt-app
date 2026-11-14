@@ -64,7 +64,7 @@ class Curriculum:
                 from .production import production_job
                 groups = {}
                 for position in self.production_positions:
-                    groups.setdefault(position['gameId'], {}).setdefault(position['category'], []).append(position)
+                    groups.setdefault(position.get('sourceFamily',position['gameId']), {}).setdefault(position['category'], []).append(position)
                 group = groups[rng.choice(sorted(groups))]
                 positions = group[rng.choice(sorted(group))]
                 return production_job(rng.choice(positions), seed=seed, index=index,
