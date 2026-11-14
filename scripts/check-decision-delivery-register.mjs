@@ -27,9 +27,17 @@ export const checkDecisionDeliveryRegister = (registerPath) => {
 
   for (const entry of register.queue) {
     const taskId = entry.taskId || "unknown task";
+    if (!entry.decisionId) errors.push(`${taskId} is missing a decision ID.`);
+    if (!entry.taskId) errors.push(`Queue entry ${entry.decisionId || "with unknown decision"} is missing a task ID.`);
     addUnique(errors, decisionOwners, "decision ID", entry.decisionId, taskId);
     addUnique(errors, taskOwners, "task ID", entry.taskId, taskId);
 
+    const missingLinks = [
+      !entry.taskPath && "task path",
+      !entry.handoff && "handoff",
+      !(entry.references || []).length && "selected reference",
+    ].filter(Boolean);
+    if (missingLinks.length) errors.push(`${taskId} is missing required queue links: ${missingLinks.join(", ")}.`);
     const requiredPaths = [entry.taskPath, entry.handoff, ...(entry.references || [])].filter(Boolean);
     for (const relativePath of requiredPaths) {
       if (!existsSync(path.join(repositoryRoot, relativePath))) {
@@ -41,12 +49,6 @@ export const checkDecisionDeliveryRegister = (registerPath) => {
     if (!latest) {
       errors.push(`${taskId} has no delivery evidence.`);
       continue;
-    }
-
-    if (latest.stage === "approved-and-queued") {
-      if (!entry.taskPath || !entry.handoff || !(entry.references || []).length) {
-        errors.push(`${taskId} is queued without a task, handoff, and selected reference.`);
-      }
     }
 
     if (latest.stage === "pr-opened") {

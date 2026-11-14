@@ -50,3 +50,18 @@ test("rejects duplicate ownership and missing queue links", () => {
   assert.ok(errors.some((error) => error.includes("Duplicate task ID")));
   assert.ok(errors.some((error) => error.includes("references missing path")));
 });
+
+test("rejects missing ownership and links after approval", () => {
+  const missing = {
+    ...completeEntry,
+    decisionId: "",
+    taskId: "",
+    taskPath: "",
+    handoff: "",
+    references: [],
+  };
+  const errors = checkDecisionDeliveryRegister(fixture([missing]));
+  assert.ok(errors.some((error) => error.includes("missing a decision ID")));
+  assert.ok(errors.some((error) => error.includes("missing a task ID")));
+  assert.ok(errors.some((error) => error.includes("missing required queue links: task path, handoff, selected reference")));
+});
