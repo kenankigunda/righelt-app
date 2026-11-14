@@ -1,14 +1,15 @@
 import {test,expect} from '@playwright/test';
 
 test('completed History Play again wraps safely and preserves native keyboard cancellation',async({page})=>{
- for(const width of [320,390]){
+ for(const {width,textScale} of [{width:320,textScale:1},{width:390,textScale:1},{width:320,textScale:2}]){
   await page.setViewportSize({width,height:760});
   await page.goto('/browser-integration/support/history-play-again.html');
   await page.waitForFunction(()=>window.fixtureReady);
+  if(textScale>1)await page.evaluate(scale=>{document.documentElement.style.fontSize=`${scale*100}%`;},textScale);
   const action=page.getByRole('button',{name:'Play again',exact:true}),summary=page.getByTestId('history-result-summary');
-  await expect(action).toBeVisible();await expect(summary).toBeVisible();
+  await expect(action).toBeVisible();await expect(summary).toBeVisible();await expect(summary).toContainText('A deliberately long opponent name that must wrap safely');
   const geometry=await page.evaluate(()=>{const action=document.querySelector('[data-action="rematch"]').getBoundingClientRect(),summary=document.querySelector('[data-testid="history-result-summary"]').getBoundingClientRect();return {action:{left:action.left,right:action.right,top:action.top,bottom:action.bottom},summary:{left:summary.left,right:summary.right,top:summary.top,bottom:summary.bottom},scrollWidth:document.documentElement.scrollWidth};});
-  expect(geometry.scrollWidth).toBeLessThanOrEqual(width);expect(geometry.action.left).toBeGreaterThanOrEqual(geometry.summary.left);expect(geometry.action.top).toBeGreaterThanOrEqual(geometry.summary.top);
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(width);expect(geometry.action.left).toBeGreaterThanOrEqual(geometry.summary.left);expect(geometry.action.top).toBeGreaterThanOrEqual(geometry.summary.bottom);
  }
  await page.setViewportSize({width:320,height:760});
  const action=page.getByRole('button',{name:'Play again',exact:true});await action.focus();await page.keyboard.press('Enter');

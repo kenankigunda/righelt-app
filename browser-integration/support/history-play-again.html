@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Completed History Play again</title><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><style>body{margin:0;padding:12px}main{width:min(100%,38rem);margin:auto}.panel{margin:0}</style></head><body><main id="app"></main><script type="module">
 import {createModal} from '/apps/web/shell/modal.js';
 import {createRematchDialog,getEligibleRematchResult,renderHistoryResult} from '/apps/web/shell/game-result.js';
-const game={id:'completed-long-name',player1:{identityId:'owner',profile:{displayName:'A deliberately long participant name that must wrap safely'}},player2:{identityId:'friend',profile:{displayName:'Guest friend'}},board:{state:{outcome:{status:'p1_win',reason:'p2_commander_destroyed'}}}};
+const game={id:'completed-long-name',player1:{identityId:'friend',profile:{displayName:'A deliberately long opponent name that must wrap safely'}},player2:{identityId:'owner',profile:{displayName:'Signed-in participant'}},board:{state:{outcome:{status:'p1_win',reason:'p2_commander_destroyed'}}}};
 let starts=0;
 const rematch=createRematchDialog({createModal,onStart:async()=>{starts++;}});
 const selector='[data-action="rematch"][data-game-id="completed-long-name"]';
