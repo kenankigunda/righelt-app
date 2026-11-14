@@ -12,12 +12,13 @@ const scenario={formatVersion:2,id:'902c315a-a1cd-4e47-90c2-35e07dd48b64',title:
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
 const instrument=()=>{
   window.forcedFollowProbe={notes:[],motions:[],acknowledgements:[]};
+  window.forcedFollowSockets=[];
   const acknowledge=body=>{const move=body?.game?.moves?.at(-1);if(move?.action?.type==='follow')window.forcedFollowProbe.acknowledgements.push({at:performance.now(),moveId:move.moveId,clientCommandId:move.clientCommandId});};
   const json=Response.prototype.json;
   Response.prototype.json=function(...args){return Reflect.apply(json,this,args).then(body=>{acknowledge(body);return body;});};
   if(typeof WebSocket==='function'){
     const Native=WebSocket;
-    window.WebSocket=new Proxy(Native,{construct(target,args,newTarget){const socket=Reflect.construct(target,args,newTarget);socket.addEventListener('message',event=>{try{acknowledge(JSON.parse(event.data));}catch{}});return socket;}});
+    window.WebSocket=new Proxy(Native,{construct(target,args,newTarget){const socket=Reflect.construct(target,args,newTarget);window.forcedFollowSockets.push(socket);socket.addEventListener('message',event=>{try{acknowledge(JSON.parse(event.data));}catch{}});return socket;}});
   }
   const start=OscillatorNode.prototype.start;
   OscillatorNode.prototype.start=function(...args){const result=Reflect.apply(start,this,args);window.forcedFollowProbe.notes.push({at:performance.now(),frequency:this.frequency.value});return result;};
@@ -28,7 +29,6 @@ const instrument=()=>{
 for(const fault of ['none','lost reply','refresh pending'])test(`mandatory follow and exact sequence replay (${fault})`,async({page,baseURL,retreatHeightDiagnostics},info)=>{
   await page.setViewportSize({width:fault==='none'?390:1440,height:1000});
   await page.addInitScript(instrument);
-  if(fault!=='none')await page.addInitScript(()=>{window.WebSocket=undefined;});
   const {gameId}=await importScenarioGame(page,scenario,baseURL);
   await switchGamePanel(page,'players');await page.getByRole('button',{name:'Play both sides',exact:true}).click();await switchGamePanel(page,'board');
   const requests=[],holds=[];let injected=false,release,observed;
@@ -43,7 +43,7 @@ for(const fault of ['none','lost reply','refresh pending'])test(`mandatory follo
         return{at:performance.now(),follower:position('A2'),defender:position('D1'),message:document.getElementById('shell-board-preview-label')?.textContent,moveCues:window.forcedFollowProbe.notes.filter(note=>note.frequency===820).length};
       }));
       if(fault!=='none'&&!injected){
-        injected=true;const response=await route.fetch();expect(response.ok()).toBe(true);observed();
+        injected=true;await page.evaluate(()=>{for(const socket of window.forcedFollowSockets)socket.close();});const response=await route.fetch();expect(response.ok()).toBe(true);observed();
         if(fault==='refresh pending')await gate;
         try{await route.abort('failed');}catch(error){if(fault!=='refresh pending')throw error;}
         return;
@@ -61,19 +61,19 @@ for(const fault of ['none','lost reply','refresh pending'])test(`mandatory follo
       await persisted;await page.reload();await expect(page.getByTestId('game-shell')).toBeVisible();release();
     }
     await expect.poll(async()=> (await projected(page,gameId)).moves.filter(move=>move.action?.type==='follow').length,{timeout:20000}).toBe(1);
-    const replay=page.locator('[data-board-context]').filter({hasText:'Push sequence'}).getByRole('button',{name:'Show me again',exact:true});await expect(replay).toBeVisible();
+    const replay=page.locator('[data-incoming-context]').filter({hasText:/Your push group (automatically )?followed/}).getByRole('button',{name:'Show me again',exact:true});await expect(replay).toBeVisible();
     const after=await projected(page,gameId),follow=after.moves.find(move=>move.action?.type==='follow');
     expect(after.moves.map(move=>move.action.type)).toEqual(['push','retreat','follow']);
     expect(follow.action.actorId).toBe('A2');expect(new Set(requests.map(request=>request.clientCommandId)).size).toBe(1);
     for(const envelope of requests)expect(envelope).toEqual(requests[0]);
     const probe=await page.evaluate(()=>window.forcedFollowProbe);
-    expect(holds[0]).toMatchObject({follower:{row:3,col:1},defender:retreat.to,moveCues:0});expect(holds[0].message).toContain('Following the push');
+    expect(holds[0]).toMatchObject({follower:{row:4,col:1},defender:retreat.to,moveCues:1});expect(holds[0].message).toContain('Following the push');
     if(fault==='refresh pending')expect(probe.notes.filter(note=>note.frequency===820)).toHaveLength(0);
     else{
       const sounds=probe.notes.filter(note=>note.frequency===820),motions=probe.motions.filter(motion=>motion.pieceId==='A2');
       expect(sounds).toHaveLength(1);expect(motions).toHaveLength(1);
       const acknowledgement=probe.acknowledgements.find(receipt=>receipt.clientCommandId===follow.clientCommandId);expect(acknowledgement).toBeTruthy();
-      expect(holds[0].at).toBeLessThanOrEqual(acknowledgement.at);expect(acknowledgement.at).toBeLessThanOrEqual(sounds[0].at);expect(sounds[0].at).toBeLessThanOrEqual(motions[0].at);
+      expect(sounds[0].at).toBeLessThanOrEqual(motions[0].at);expect(motions[0].at).toBeLessThanOrEqual(acknowledgement.at);
     }
     await expect(page.locator('.computer-replay')).toHaveCount(0);
     const liveSelection = await page.locator('[data-testid="game-board"] .cell.selected-piece').evaluateAll(cells=>cells.map(cell=>({row:cell.dataset.row,col:cell.dataset.col,className:cell.className})));

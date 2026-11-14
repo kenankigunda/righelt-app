@@ -37,7 +37,7 @@ export function buildTurnReplay({moves, completedTurnIndex, gameId, revision, li
 }
 
 /** Isolated visual playback. This module deliberately has no transport/search dependency. */
-export function createComputerReplay({rootEl, createAdapter, onChange = () => {}, onFinish = () => {}, reducedMotion = () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true, createPreview = createReplayPreview, timing = null, holdFinal = false, automatic = false, onFrame = () => {}, setTimer = setTimeout, clearTimer = clearTimeout}) {
+export function createComputerReplay({rootEl, createAdapter, onChange = () => {}, onFinish = () => {}, reducedMotion = () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true, createPreview = createReplayPreview, timing = null, holdFinal = false, automatic = false, blocksInput = true, onFrame = () => {}, setTimer = setTimeout, clearTimer = clearTimeout}) {
   const doc = rootEl.ownerDocument;
   const playbackTiming = timing ?? (automatic ? AUTOMATIC_LIVE_TIMING : COMPUTER_REPLAY_TIMING);
   let replay = null, layer = null, preview = null, index = -1, generation = 0, timer = null, settleWait = null;
@@ -112,7 +112,7 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
     try {
     layer = doc.createElement('div');
     layer.className = 'computer-replay'; layer.setAttribute('aria-hidden', 'true');
-    Object.assign(layer.style, {position: 'absolute', inset: '0', zIndex: '3', pointerEvents: 'auto'});
+    Object.assign(layer.style, {position: 'absolute', inset: '0', zIndex: '3', pointerEvents: blocksInput ? 'auto' : 'none'});
     layer.addEventListener('click', event => {event.preventDefault(); event.stopPropagation();});
     preview = createPreview({rootEl: layer, createAdapter, sizeVariant: 'replay', preview: {snapshot: replay.frames[0].before, overlay: {mode: 'none'}, previewKey: `${generation}:before`}});
     // Populate the isolated board while detached so its first visible frame is

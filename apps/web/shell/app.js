@@ -60,9 +60,8 @@ import {renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHisto
 import {renderGameSummaryPanel as renderGameSummaryPanelContent} from './game-summary-panel.js';
 import {renderConnectionStatusIcon} from './participant-status.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
-import { createComputerReplay, COMPUTER_REPLAY_TIMING } from './computer-replay.js';
+import { AUTOMATIC_LIVE_TIMING, createComputerReplay } from './computer-replay.js';
 import { createForcedFollow } from './forced-follow.js';
-import { latestLocalPushSequence, withPushSequenceMessage } from './push-sequence-replay.js';
 import { deriveBoardView, createViewingIntent } from './viewing-state.js';
 import { mountMobileNavigation } from './mobile-navigation.js';
 import { opponentBoardMessage, latestOpponentTurn, ownsBoardActor } from './opponent-narration.js';
@@ -3101,7 +3100,7 @@ const mountBoardForGame = (game) => {
           const historyMessage=historyBoardRuntimeMessage(view,selection,{identityId:options.identityId});
           if(historyMessage)return historyMessage;
           if(forcedFollowWorking(game.id))return BOARD_PROMPT.following;
-          return withPushSequenceMessage(opponentBoardMessage(view,status,selection,options),view,selection,transport.getIdentityId());
+          return opponentBoardMessage(view,status,selection,options);
         },
         onBoardMessageAction:(id,source)=>dispatchBoardMessageAction(id,source),
         onBoardContext:receiveBoardContext,
@@ -3886,10 +3885,15 @@ const showForcedFollowVisual = async (state, move = null) => {
   forcedFollowVisual?.destroy();
   const rootEl = appEl.querySelector('[data-testid="game-board-wrap"]');
   if (!rootEl) throw new Error('follow_visual_unavailable');
-  forcedFollowVisual = createComputerReplay({rootEl,createAdapter:()=>createEngineBoardAdapter(),reducedMotion:prefersReducedMotion,holdFinal:true,
-    timing:{motion:move?COMPUTER_REPLAY_TIMING.motion:0,pause:0},onChange:updateForcedFollowUi,onFinish:updateForcedFollowUi});
+  let presented;
+  const displayed=new Promise(resolve=>{presented=resolve;});
+  const visual=forcedFollowVisual = createComputerReplay({rootEl,createAdapter:()=>createEngineBoardAdapter(),automatic:Boolean(move),blocksInput:!move,reducedMotion:prefersReducedMotion,holdFinal:!move,
+    timing:move?AUTOMATIC_LIVE_TIMING:{motion:0,pause:0},onFrame:presented,onChange:updateForcedFollowUi,onFinish:event=>{if(forcedFollowVisual===visual)forcedFollowVisual=null;updateForcedFollowUi(event);}});
   const context = currentReplayContext();
-  await forcedFollowVisual.play({gameId:context.gameId,revision:context.revision,lineageHead:context.lineageHead,frames:[{decisionId:move?.moveId ?? 'follow-wait',action:move?.action ?? {type:'hold'},before:move?.selectionSnapshot ?? state,after:move?.snapshot ?? state,destroyedPieces:move?.destroyedPieces ?? []}]});
+  const playback=visual.play({gameId:context.gameId,revision:context.revision,lineageHead:context.lineageHead,frames:[{decisionId:move?.moveId ?? move?.clientCommandId ?? 'follow-wait',action:move?.action ?? {type:'hold'},before:move?.selectionSnapshot ?? state,after:move?.snapshot ?? state,destroyedPieces:move?.destroyedPieces ?? []}]});
+  if(!move){await playback;return;}
+  const shown=await Promise.race([displayed.then(()=>true),playback.then(()=>false)]);
+  if(!shown)throw new Error('follow_visual_unavailable');
 };
 forcedFollowSession = createForcedFollow({ getContext: () => {
   const gameId = currentRoute.name === 'game' ? currentRoute.gameId : null;

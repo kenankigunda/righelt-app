@@ -31,7 +31,7 @@ export function runtimeContextPurpose(context) {
 // Only a producer's final outer purpose can move a mixed-channel message.
 // Unknown legacy contexts stay in their existing notice owner until classified.
 export function boardContextPlacement(context) {
-  if (context?.purpose === BOARD_CONTEXT_PURPOSE.INCOMING) return 'incoming';
+  if ([BOARD_CONTEXT_PURPOSE.INCOMING,BOARD_CONTEXT_PURPOSE.SEQUENCE].includes(context?.purpose)) return 'incoming';
   return purposes.has(context?.purpose) ? 'board' : 'notice';
 }
 

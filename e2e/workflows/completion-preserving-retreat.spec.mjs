@@ -279,7 +279,7 @@ test('human retreat excludes the stranded square and automatically completes the
  try{
  const retreatCommand=await submit(page,gameId,safe.action);
  await completedMandatoryFollow(page,gameId,retreatCommand.command.clientCommandId,followCapture);
- await expect(page.locator('[data-board-context]').filter({hasText:'Push sequence'}).getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
+ await expect(page.locator('[data-incoming-context]').filter({hasText:/Your push group (automatically )?followed/}).getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
  await page.screenshot({path:info.outputPath('safe-retreat-follow-completed.png')});
  await info.attach('captured-retreat-provenance',{body:JSON.stringify({sha256:RETREAT_CAPTURE_SHA256,provenance:f.provenance,unsafe,receipt:rejected.commandOutcomes},null,2),contentType:'application/json'});
  followCapture.assertSingle();

@@ -57,6 +57,16 @@ test('final outer purpose routes a synthetic incoming frame without trusting its
  assert.equal(renderIncomingNarration({...synthetic,purpose:'selected-history',message:{...synthetic.message,purpose:'incoming-narration'}},{layout:'narrow'}),'');
 });
 
+test('local push sequence reuses the desktop History and mobile flyout owner with accurate controls',()=>{
+ const sequence={...entry(),purpose:'local-sequence',actorSide:'P1',message:{text:'Your push group automatically followed',action:{id:'replay-push-sequence',label:'Show me again'}},replay:{source:'push-sequence',moveIds:['push','follow'],revision:8}};
+ assert.equal(incomingNarrationContext([sequence],'g'),sequence);
+ const wide=renderIncomingNarration(sequence,{layout:'wide',replayEnabled:true});
+ assert.match(wide,/history-incoming incoming-owner-p1/);assert.match(wide,/Your push group automatically followed/);assert.match(wide,/Show me again/);
+ const narrow=renderIncomingNarration(sequence,{layout:'narrow',expanded:true,replayEnabled:true});
+ assert.match(narrow,/aria-label="Push sequence"/);assert.match(narrow,/>Hide push sequence<svg/);
+ assert.doesNotMatch(narrow,/Previous turn|board-context-detail/);
+});
+
 test('mobile incoming root mounts once between the header and game shell and repairs reversed order',()=>{
  const document={createElement:()=>({attributes:new Map(),parentElement:null,nextElementSibling:null,setAttribute(name,value){this.attributes.set(name,value);}})};
  const header={name:'header'},shell={name:'game-shell'},children=[header,shell],patches=[];

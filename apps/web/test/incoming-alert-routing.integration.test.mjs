@@ -24,7 +24,7 @@ test('actual notice producer keeps urgent errors while typed Board details use t
  assert.deepEqual(f.items({id:'g'}).map(item=>item.key),['failed:failure','board-context:unknown'],'unknown outer purpose cannot be silently moved with a mixed channel');
 });
 
-for(const purpose of ['selected-history','piece-inspection','required-continuation','replay-progress','local-sequence','board-context']) {
+for(const purpose of ['selected-history','piece-inspection','required-continuation','replay-progress','board-context']) {
  test(`outer ${purpose} remains a scrollable Board detail with native actions`,()=>{
   const f=fixture();const context={key:'detail',gameId:'g',purpose,mandatory:purpose==='required-continuation',replay:{moveIds:['record']},message:{purpose:'incoming-narration',text:'Recorded & inspected (2, 3)',action:'must-not-submit'}};
   f.store.update('piece',context);
@@ -35,6 +35,12 @@ for(const purpose of ['selected-history','piece-inspection','required-continuati
   if(context.mandatory)assert.doesNotMatch(html,/dismiss-board-context/);else assert.match(html,/dismiss-board-context/);
  });
 }
+test('completed local sequence uses the incoming History/mobile owner instead of Board details',()=>{
+ const f=fixture(),context={key:'sequence',gameId:'g',purpose:'local-sequence',replay:{moveIds:['push','follow']},message:{text:'Your push group followed'}};
+ f.store.update('acknowledged',context);
+ assert.equal(boardContextPlacement(context),'incoming');assert.equal(renderBoardContextDetails(f.store.items('g')),'');
+ assert.deepEqual(f.items({id:'g'}).map(item=>item.key),['failed:failure']);
+});
 test('completed-game gameplay activity remains Board-owned and never becomes a notification',()=>{
  const f=fixture(),context={key:'completed-activity',gameId:'g',purpose:'board-context',message:{text:'Maya completed the winning turn'}};
  f.store.update('acknowledged',context);

@@ -88,7 +88,8 @@ test('mixed Push defender Retreat and Follow use the recorded turn owner after m
   const before=JSON.stringify(local);
   assert.equal(computerBoardMessage(local,{}),null,'a computer defender is not the owner of this human Push turn');
   assert.equal(opponentBoardMessage(local,{}, {},{identityId:'me',canInteract:true}),null,'a recorded local human turn cannot become incoming because a defender was computer-controlled');
-  assert.equal(publish(local).context.purpose,'local-sequence','the complete local Push replay remains Board content');
+  const sequence=publish(local).context;assert.equal(sequence.purpose,'local-sequence','the complete local Push replay remains History/mobile content');
+  assert.equal(sequence.message.text,'Your push group followed');
   const genuine={...local,computer:{...local.computer,seats:{p1:'tau',p2:null}},moves:local.moves.map(move=>({...move,computerProof:move.actorSide==='P1'?{profile:'tau'}:undefined}))};
   const priorComputer=opponentBoardMessage(genuine,{}, {},{identityId:'me',canInteract:true}).context;
   assert.equal(priorComputer.purpose,'incoming-narration');assert.equal(priorComputer.actorName,'Tau');assert.equal(priorComputer.actorSide,'P1');

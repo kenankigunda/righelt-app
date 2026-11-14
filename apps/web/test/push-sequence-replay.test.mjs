@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { latestLocalPushSequence,buildPushSequenceReplay,withPushSequenceMessage } from '../shell/push-sequence-replay.js';
+import { latestLocalPushSequence,buildPushSequenceReplay,isAutomaticFollowMove,withPushSequenceMessage } from '../shell/push-sequence-replay.js';
+import {followGame,applyFollow} from './support/forced-follow.mjs';
 const state=col=>({pieces:[{id:'A',position:{row:4,col}}]});
 const moves=()=>['move','push','retreat','follow','follow','move'].map((type,index)=>({moveId:`m${index}`,turnIndex:index===5?1:0,turnMoveIndex:index,actorSide:type==='retreat'||index===5?'P2':'P1',action:{type},selectionSnapshot:state(index),snapshot:state(index+1)}));
 const game=()=>({id:'g',moves:moves(),player1:{identityId:'human'},player2:{identityId:'friend'},legalActions:[{type:'pass'}],board:{state:{turnIndex:1}}});
@@ -22,9 +23,22 @@ test('sequence replay rejects missing, undone, disjoint or incomplete acknowledg
 
 test('local sequence replay remains available while a computer thinks, without replacing opponent-turn replay',()=>{
   const current=game(),message=withPushSequenceMessage('Horus is thinking',current,{},'human');
-  assert.equal(message.context.action.id,'replay-push-sequence');assert.equal(message.text,'Horus is thinking');
+  assert.equal(message.context.action.id,'replay-push-sequence');assert.equal(message.context.text,'Your push group followed');assert.equal(message.text,'Horus is thinking');
   const opponent={text:'Your opponent moved',action:{id:'replay-computer',label:'Show me again'}};
   assert.equal(withPushSequenceMessage(opponent,current,{},'human'),opponent);
   assert.equal(withPushSequenceMessage(null,current,{selectedPieceId:'A'},'human'),null);
   assert.equal(latestLocalPushSequence({...current,moves:[...current.moves,{...current.moves[5],moveId:'new-human',actorSide:'P1'}]},'human'),null);
+});
+
+test('automatic copy requires every acknowledged follow to have been the sole legal action in its recorded before-state',()=>{
+  const before=followGame(),accepted=applyFollow(before,before.legalActions[0],'auto-follow'),follow=accepted.moves[0];
+  assert.equal(isAutomaticFollowMove(follow),true);
+  const push={moveId:'push',turnIndex:follow.turnIndex,turnMoveIndex:0,actorSide:'P1',action:{type:'push'},selectionSnapshot:state(0),snapshot:follow.selectionSnapshot};
+  const automatic={...follow,turnMoveIndex:1};
+  const current={...game(),moves:[push,automatic]};
+  const source=latestLocalPushSequence(current,'human');assert.equal(source.automatic,true);
+  assert.equal(withPushSequenceMessage(null,current,{},'human').context.text,'Your push group automatically followed');
+  const choice=followGame({multiple:true}),manual={...automatic,action:choice.legalActions[0],selectionSnapshot:choice.board.state};
+  assert.equal(isAutomaticFollowMove(manual),false);
+  assert.equal(latestLocalPushSequence({...current,moves:[push,manual]},'human').automatic,false);
 });

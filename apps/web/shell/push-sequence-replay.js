@@ -1,6 +1,8 @@
 import {BOARD_CONTEXT_PURPOSE} from './board-context-purpose.js';
 import {recordedMoveNumber,visibleRecordedMoves} from './recorded-narration.js';
 import { normalizeActivitySide } from './activity-affiliation.js';
+import {listLegalActions} from '../generated/packages/game-engine/src/index.js';
+import {canonicalCommandJson} from '../generated/packages/shared-types/src/sync-protocol.js';
 
 const isHumanSide = (game, side, turn, identityId) => {
   if (!side) return false;
@@ -22,9 +24,19 @@ export function latestLocalPushSequence(game, identityId) {
     }
     if (!push.moveId || !sequence.at(-1)?.moveId || sequence.at(-1)?.action.type !== 'follow') return null;
     if (moves.slice(start + sequence.length).some(move => isHumanSide(game, normalizeActivitySide(move.actorSide), move.turnIndex, identityId))) return null;
-    return { startId: push.moveId, endId: sequence.at(-1).moveId, moves: sequence };
+    const follows=sequence.filter(move=>move.action?.type==='follow');
+    const automatic=follows.length>0&&follows.every(isAutomaticFollowMove);
+    return { startId: push.moveId, endId: sequence.at(-1).moveId, moves: sequence, automatic };
   }
   return null;
+}
+
+export function isAutomaticFollowMove(move) {
+  if(move?.action?.type!=='follow'||!move.selectionSnapshot)return false;
+  try {
+    const legal=listLegalActions(move.selectionSnapshot);
+    return legal.length===1&&canonicalCommandJson(legal[0])===canonicalCommandJson(move.action);
+  } catch { return false; }
 }
 
 export function buildPushSequenceReplay({ moves, startId, endId, gameId, revision, lineageHead }) {
@@ -40,8 +52,9 @@ export function buildPushSequenceReplay({ moves, startId, endId, gameId, revisio
 
 export function withPushSequenceMessage(message, game, selection, identityId) {
   if (!game || game.inHistoryMode || selection.selectedPieceId || selection.inspection || (message?.action?.id === 'replay-computer'||message?.context?.action?.id==='replay-computer')) return message;
-  if (!latestLocalPushSequence(game, identityId)) return message;
-  const sequence = { purpose:BOARD_CONTEXT_PURPOSE.SEQUENCE, text: 'Push sequence', action: { id: 'replay-push-sequence', label: 'Show me again' } };
+  const completed=latestLocalPushSequence(game,identityId);
+  if (!completed) return message;
+  const sequence = { purpose:BOARD_CONTEXT_PURPOSE.SEQUENCE, actorSide:normalizeActivitySide(completed.moves[0].actorSide), text: completed.automatic?'Your push group automatically followed':'Your push group followed', action: { id: 'replay-push-sequence', label: 'Show me again' } };
   const pass = game.legalActions?.some(action => action.type === 'pass');
   const end = game.legalActions?.some(action => action.type === 'end_turn');
   const prompt = message ? typeof message === 'string' ? { text: message } : message : {
