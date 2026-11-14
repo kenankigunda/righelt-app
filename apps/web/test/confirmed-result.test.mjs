@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createConfirmedResultOwner,confirmedResultKey} from '../shell/confirmed-result.js';
+import {createConfirmedResultOwner,confirmedResultKey,resumeAfterDialogFocusRestore} from '../shell/confirmed-result.js';
 
 const game=(status='ongoing',revision=1,extra={})=>({id:'g',gameplayRevision:revision,board:{state:{outcome:{status,reason:status==='ongoing'?null:'p2_commander_unsupplied'}}},...extra});
 
@@ -29,10 +29,23 @@ test('deliberate History turns a pending result into dismissible manual entry',(
 });
 
 test('a failed History selection releases its intent without consuming the pending result',()=>{
- const owner=createConfirmedResultOwner();owner.observe(game());owner.deliberateHistory('g');owner.observe(game('p1_win',2));
+ const owner=createConfirmedResultOwner();owner.observe(game());const intent=owner.deliberateHistory('g');owner.observe(game('p1_win',2));
  assert.equal(owner.evaluate('g',{current:true,inHistory:true}).notice,true);
- assert.equal(owner.abandonHistory('g'),true);
+ assert.equal(owner.abandonHistory(intent),true);
  assert.equal(owner.evaluate('g',{current:true}).present,true);
+});
+
+test('an older failed History selection cannot abandon a newer selection around terminal delivery',()=>{
+ const owner=createConfirmedResultOwner();owner.observe(game());const older=owner.deliberateHistory('g'),newer=owner.deliberateHistory('g');
+ owner.observe(game('p1_win',2));assert.equal(owner.evaluate('g',{current:true,inHistory:true}).notice,true);
+ assert.equal(owner.abandonHistory(older),false);assert.equal(owner.evaluate('g',{current:true,inHistory:true}).notice,true);
+ assert.equal(owner.abandonHistory(newer),true);assert.equal(owner.evaluate('g',{current:true}).present,true);
+});
+
+test('dialog result resume waits until native trigger-focus restoration has completed',()=>{
+ const order=[];let resume;
+ resumeAfterDialogFocusRestore(()=>order.push('result-focus'),callback=>{resume=callback;});
+ order.push('trigger-focus');assert.deepEqual(order,['trigger-focus']);resume();assert.deepEqual(order,['trigger-focus','result-focus']);
 });
 
 test('undo retires stale ownership and a genuine later finish is independently eligible',()=>{

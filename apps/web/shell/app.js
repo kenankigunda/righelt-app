@@ -116,7 +116,7 @@ import { patchSectionContent } from "./dom-patch.js";
 import { SWIPE_EASING_CSS } from './navigation-motion.js';
 import { getGameResult, getEligibleRematchResult, renderResultText, renderHistoryResult, createRematchDialog } from './game-result.js';
 import { renderResultMark, createResultPresentation, resultSound } from './result-presentation.js';
-import {createConfirmedResultOwner} from './confirmed-result.js';
+import {createConfirmedResultOwner,resumeAfterDialogFocusRestore} from './confirmed-result.js';
 import { createRouteHydration } from './route-hydration.js';
 import { invitationLoadFailureKind, renderInviteLoadRecovery } from './invite-load-recovery.js';
 import { createRenderGestureGate, preserveBoardFocus } from './render-gesture.js';
@@ -348,9 +348,10 @@ const account = createAccountController({ storage,
   onTransition: (next, source) => { if (accountInitialized) { accountDialog.onTransition(source); resetAccountTransport(next); } },
   onChange: () => { document.documentElement.dataset.viewPreference = account.snapshot().session.account?.preferences?.view || "focused"; if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) { accountDialog.refreshSession(); render({ animatePanels: false, includeBoard: false }); if(storageResetPending && account.snapshot().ready){storageResetPending=false;queueMicrotask(()=>{navigateTo("#/");startRouteSync();});} } },
 });
-const accountDialog = createAccountDialog({ controller: account, onSound:kind=>gameSound.play(kind), onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
+let accountDialog=null;
+accountDialog = createAccountDialog({ controller: account, onSound:kind=>gameSound.play(kind), onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
   onComplete: intent => { void completeAccountContinuation(intent); },
-  onLayoutChange: () => render({animatePanels:false,includeBoard:false}),
+  onLayoutChange: () => {const update=()=>render({animatePanels:false,includeBoard:false});if(accountDialog?.isOpen())update();else resumeAfterDialogFocusRestore(update);},
 });
 const gameSound = createGameSound({ storage, getIdentityId:()=>transport.getIdentityId() });
 const notificationPaper=createNotificationPaper({document,sound:gameSound,
@@ -4893,7 +4894,7 @@ appEl.addEventListener("click", async (event) => {
     const gameId = actionEl.getAttribute('data-game-id');
     const turnIndex = Number(actionEl.getAttribute('data-turn-index'));
     const restoreSelectionFocus = captureHistorySelectionFocus({ document, root: appEl, trigger: actionEl, keyboard: event.detail === 0 });
-    confirmedResultOwner.deliberateHistory(gameId);
+    const historyIntent=confirmedResultOwner.deliberateHistory(gameId);
     const selection=await historySelectionActions.run({
       scope: `${gameId}:turn:${turnIndex}`,
       select: async () => {
@@ -4904,7 +4905,7 @@ appEl.addEventListener("click", async (event) => {
       sound: "history",
       after: () => { revealSelectedHistory(); restoreSelectionFocus(); },
     });
-    if(!selection.accepted&&!transport.getGameViewModel(gameId)?.inHistoryMode&&confirmedResultOwner.abandonHistory(gameId))render({animatePanels:false,includeBoard:false});
+    if(!selection.accepted&&!transport.getGameViewModel(gameId)?.inHistoryMode&&confirmedResultOwner.abandonHistory(historyIntent))render({animatePanels:false,includeBoard:false});
     return;
   }
 
@@ -4914,7 +4915,7 @@ appEl.addEventListener("click", async (event) => {
     const moveId=actionEl.getAttribute("data-move-id")??actionEl.closest(".history-item[data-move-id]")?.getAttribute("data-move-id")??null;
     if (!gameId || !Number.isFinite(moveIndex)) return;
     const restoreSelectionFocus = captureHistorySelectionFocus({ document, root: appEl, trigger: actionEl, keyboard: event.detail === 0 });
-    clearControlPress();confirmedResultOwner.deliberateHistory(gameId);
+    clearControlPress();const historyIntent=confirmedResultOwner.deliberateHistory(gameId);
     const selection=await historySelectionActions.run({
       scope: `${gameId}:move:${moveId ?? moveIndex}`,
       select: () => {
@@ -4926,7 +4927,7 @@ appEl.addEventListener("click", async (event) => {
       sound: "history",
       after: () => { revealSelectedHistory(); restoreSelectionFocus(); },
     });
-    if(!selection.accepted&&!transport.getGameViewModel(gameId)?.inHistoryMode&&confirmedResultOwner.abandonHistory(gameId))render({animatePanels:false,includeBoard:false});
+    if(!selection.accepted&&!transport.getGameViewModel(gameId)?.inHistoryMode&&confirmedResultOwner.abandonHistory(historyIntent))render({animatePanels:false,includeBoard:false});
     return;
   }
 

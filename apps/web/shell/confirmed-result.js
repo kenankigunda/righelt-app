@@ -9,11 +9,13 @@ const terminalKey = game => {
   return `legacy:${game?.gameplayRevision??''}:${outcome.status}:${outcome.reason??''}`;
 };
 const isCommitKey=key=>typeof key==='string'&&key.startsWith('commit:');
+export const resumeAfterDialogFocusRestore=(callback,schedule=queueMicrotask)=>schedule(callback);
 
 // Page-local result ownership. Authority creates eligibility; route, focus and
 // dialog state only decide when an already-confirmed result may be presented.
 export function createConfirmedResultOwner(){
   const entries=new Map();
+  let historyGeneration=0;
   const entry=gameId=>entries.get(gameId)??null;
   const observe=game=>{
     if(!game?.id||!game?.board?.state?.outcome)return {changed:false,becameTerminal:false};
@@ -32,9 +34,9 @@ export function createConfirmedResultOwner(){
     Object.assign(previous,{status,key,mode:'pending',noticeDismissed:false});
     return {changed:true,becameTerminal:true};
   };
-  const deliberateHistory=gameId=>{const current=entry(gameId);if(!current)return;current.deliberateHistory=true;if(current.mode==='pending')current.mode='manual';};
-  const abandonHistory=gameId=>{const current=entry(gameId);if(!current)return false;current.deliberateHistory=false;if(current.mode==='manual'){current.mode='pending';current.noticeDismissed=false;return true;}return false;};
-  const live=gameId=>{const current=entry(gameId);if(current&&!isTerminalOutcome(current.status))current.deliberateHistory=false;};
+  const deliberateHistory=gameId=>{const current=entry(gameId),token={gameId,generation:++historyGeneration};if(!current)return token;current.deliberateHistory=true;current.historyGeneration=token.generation;if(current.mode==='pending')current.mode='manual';return token;};
+  const abandonHistory=token=>{const current=entry(token?.gameId);if(!current||current.historyGeneration!==token?.generation)return false;current.deliberateHistory=false;current.historyGeneration=null;if(current.mode==='manual'){current.mode='pending';current.noticeDismissed=false;return true;}return false;};
+  const live=gameId=>{const current=entry(gameId);if(current&&!isTerminalOutcome(current.status)){current.deliberateHistory=false;current.historyGeneration=null;}};
   const evaluate=(gameId,{current=false,visible=true,dialogOpen=false,inHistory=false}={})=>{
     const value=entry(gameId);
     if(!value||!isTerminalOutcome(value.status))return {present:false,allowReview:false,notice:false};
