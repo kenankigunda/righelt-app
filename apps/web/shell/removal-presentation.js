@@ -45,6 +45,6 @@ export function createConfirmedRemovalPresentation({getScope,eligible,present,pe
 // Transport changes render the current board before the authoritative owner
 // synchronously commits the confirmed removal presentation.
 export function presentRemovalTransportChange({render,presentation,transport,gameId,view,frozen,change}){
- render({animatePanels:false,includeBoard:change?.type!=='optimistic_enqueue'});
+ render({animatePanels:false,includeBoard:!['optimistic_enqueue','maintenance_projection_changed'].includes(change?.type)});
  presentation.update(transport.getAuthoritativeGame(gameId),{view,frozen,sequence:transport.getLastEventSeq(gameId),reset:change?.baseline===true||change?.type==='optimistic_rollback'||change?.type==='history_mode_changed'||change?.type==='computer_display'});
 }

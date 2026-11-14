@@ -228,6 +228,85 @@ test('one active minute terminalizes command-only recovery without losing its du
   assert.deepEqual(await journal.list(store.getIdentityId(), created.gameId), [envelope]);
 });
 
+test('sync-store Retry repairs an uncertain renewal through forced socket readiness before user-turn renewal recurs', async t => {
+  const browser = socketEnvironment(t);
+  const env = { DB: createFakeD1() }; env.GAME_ROOMS = createFakeGameRooms(() => env);
+  const actual = (url, init = {}) => apiWorker.fetch(new Request(`https://test${url}`, init), env);
+  const data = new Map(), storage = { getItem: key => data.get(key) ?? null,
+    setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
+  const journal = createCommandJournal({ indexedDB: new IDBFactory() });
+  let syncOptions, renewalRequests = 0,syntheticEventSeq=0,repairEpisodeId; const reconciliationBodies = [],renewalCommandIds=[];
+  const desired = new Set();
+  const liveClient = {
+    connectGame: gameId => desired.add(gameId), getDesiredGameIds: () => [...desired],
+    disconnectGame: gameId => desired.delete(gameId), disconnectAll: () => desired.clear(), retire: () => desired.clear(),
+    stopRecovery: () => true,
+    reconnectSafely: async gameId => {
+      syncOptions.onRecovery({ gameId, reason: 'manual_reconnect', socketGeneration: 2 });
+      repairEpisodeId=store.getGameViewModel(gameId).recoveryEpisodeId;
+      return syncOptions.onReady({ gameId, isCurrent: () => true, retirePreviousRepair: () => true });
+    },
+  };
+  const store = createSyncStore({ storage, commandJournal: journal,
+    timing: { requestTimeoutMs: 1000, confirmationBudgetMs: 5000, retryDelaysMs: [100_000], retryJitter: 0 },
+    createSyncClient: options => { syncOptions = options; return liveClient; },
+    fetcher: async (url, init = {}) => {
+      if (url.endsWith('/reconcile')) reconciliationBodies.push(JSON.parse(init.body));
+      const sharedEnvelope=url.endsWith('/shared')?JSON.parse(init.body):null;
+      const sharedAction=sharedEnvelope?.payload?.values?.action;
+      if(sharedAction==='renew')renewalCommandIds.push(sharedEnvelope.clientCommandId);
+      if (sharedAction==='renew' && ++renewalRequests === 1) {
+        throw Object.assign(new Error('request_timeout'), { code: 'request_timeout' });
+      }
+      if(sharedAction==='renew'){
+        const serverBody=await (await actual(`/api/shell/games/${sharedEnvelope.gameId}?identityId=${sharedEnvelope.identityId}`)).json();
+        const serverNow=serverBody.game;
+        assert.equal(sharedEnvelope.payload.values.generation,serverNow.computer.generation,'retried renewal retains the current control generation');
+        assert.equal(sharedEnvelope.payload.values.deviceId,serverNow.computer.lease?.deviceId,'retried renewal retains the current lease device');
+        assert.ok(serverNow.computer.lease?.expiresAt>Date.now(),'retried renewal still owns an unexpired lease');
+        assert.equal(serverNow.computer.lease?.authContextId,'');
+        assert.equal(serverNow.computer.ownerId,sharedEnvelope.identityId);
+        syntheticEventSeq=Math.max(syntheticEventSeq,serverBody.eventSeq)+1;
+        return Response.json({ok:true,protocolVersion:2,gameId:sharedEnvelope.gameId,game:{...serverNow,sharedReceipts:true},eventSeq:syntheticEventSeq,gameplayRevision:serverNow.gameplayRevision,
+          commandOutcomes:[{gameId:sharedEnvelope.gameId,identityId:sharedEnvelope.identityId,clientCommandId:sharedEnvelope.clientCommandId,fingerprint:sharedEnvelope.fingerprint,
+            outcome:'accepted',reason:null,eventSeq:syntheticEventSeq,gameplayRevision:serverNow.gameplayRevision}]});
+      }
+      return actual(url, init);
+    },
+  });
+  browser.own(store);
+  const created = store.createGame({ computer: { p1: null, p2: 'babs' } }); await created.committed;
+  store.setActiveGameId(created.gameId);
+  const unowned=store.getGameViewModel(created.gameId);
+  await store.computerControl(created.gameId,{action:'acquire',deviceId:'retry-device',tabId:'retry-tab',generation:unowned.computer.generation}).catch(error=>{throw new Error(`acquire:${error.message}`);});
+  const before = store.getGameViewModel(created.gameId);assert.ok(before.computer?.lease);assert.equal(before.canRecordMove,true);
+  const serverBefore=(await (await actual(`/api/shell/games/${created.gameId}?identityId=${store.getIdentityId()}`)).json()).game;
+  assert.deepEqual(before.computer,serverBefore.computer,'Retry fixture begins from one authoritative computer-control generation');
+  const first = store.computerControl(created.gameId, { action: 'renew', deviceId: before.computer.lease.deviceId, generation: before.computer.generation });
+  await until(() => Boolean(store.getGameViewModel(created.gameId).recoveryIssue));
+  const failedEpisode = store.getGameViewModel(created.gameId).recoveryEpisodeId;assert.ok(failedEpisode);
+  assert.equal(store.stopConnectionRecovery(created.gameId, { episodeId: failedEpisode }), true);
+
+  assert.equal(await store.reconnectSafely(created.gameId).catch(error=>{throw new Error(`reconnect:${error.message}`);}), true);
+  await first.catch(error=>{throw new Error(`first-renewal:${error.message}`);});
+  const repaired = store.getGameViewModel(created.gameId);
+  assert.equal(repaired.connectionFailed,false);assert.equal(repaired.recovering,false);assert.equal(repaired.recoveryIssue,null);
+  assert.equal(repaired.recoveryStartedAt,null);assert.equal(repaired.incidentId,null);
+  assert.ok(repairEpisodeId);assert.notEqual(repairEpisodeId,failedEpisode);assert.equal(repaired.recoveryEpisodeId,repairEpisodeId);
+  assert.equal(repaired.pendingCommandCount,0);assert.equal(repaired.canRecordMove,true);
+  assert.ok(reconciliationBodies.some(body=>body.knownSnapshotEventSeq===0),'prepareSafeReconnect requires a full authoritative snapshot');
+  assert.ok(reconciliationBodies.some(body=>body.commands?.some(command=>command.clientCommandId===renewalCommandIds[0])),'forced repair reconciles the exact uncertain command identity');
+  assert.deepEqual(await journal.list(store.getIdentityId(),created.gameId),[]);
+  assert.equal(issueDiagnostics.list().filter(report=>report.initial.gameId===created.gameId&&!report.resolvedAt).length,0,'readiness leaves no actionable recovery notice');
+
+  await store.computerControl(created.gameId, { action: 'renew', deviceId: repaired.computer.lease.deviceId, generation: repaired.computer.generation }).catch(error=>{throw new Error(`recurring-renewal:${error.message}`);});
+  const recurring = store.getGameViewModel(created.gameId);
+  assert.equal(renewalRequests,3);assert.equal(renewalCommandIds[0],renewalCommandIds[1],'Retry preserves the uncertain command identity');
+  assert.notEqual(renewalCommandIds[1],renewalCommandIds[2],'the later routine renewal is a new command');
+  assert.equal(recurring.recovering,false);assert.equal(recurring.recoveryIssue,null);
+  assert.equal(recurring.canRecordMove,true);assert.equal(recurring.pendingCommandCount,0);
+});
+
 const transportFixture = async (t, hooks = {}) => {
   const env = { DB: createFakeD1() }; env.GAME_ROOMS = createFakeGameRooms(() => env);
   const data = new Map(), storage = { getItem: key => data.get(key) ?? null,

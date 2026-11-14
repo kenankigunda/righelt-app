@@ -293,6 +293,7 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   const deps={render:options=>events.push(options),presentation,transport:{getAuthoritativeGame:()=>confirmed,getLastEventSeq:()=>2},gameId:'g',view:confirmed,frozen:false};
   presentRemovalTransportChange({...deps,change:{baseline:true}});events.length=0;
   presentRemovalTransportChange({...deps,change:{type:'optimistic_enqueue'}});assert.deepEqual(events,[{animatePanels:false,includeBoard:false}]);events.length=0;
+  presentRemovalTransportChange({...deps,change:{type:'maintenance_projection_changed'}});assert.deepEqual(events,[{animatePanels:false,includeBoard:false}]);events.length=0;
   confirmed={id:'g',moves:[{moveId:'accepted',destroyedPieces:[{pieceId:'A',eventId:'accepted:A',position:{row:4,col:2},reason:'no_retreat'}]}],board:{state:{pieces:[]}}};
   presentRemovalTransportChange({...deps,view:confirmed,change:{type:'authoritative_update'}});assert.deepEqual(events,[{animatePanels:false,includeBoard:true},'visual','cue']);presentation.dispose();
   assert.match(source, /const canHydrateRouteFromLocalState = \(route = currentRoute\) => \{/);

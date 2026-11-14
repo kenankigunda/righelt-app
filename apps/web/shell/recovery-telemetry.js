@@ -57,7 +57,18 @@ export function projectRecoveryCopyDetails(report, timeline = []) {
     const attempts = [report?.initial, ...(Array.isArray(report?.events) ? report.events : [])].filter(Boolean);
     const failure = attempts.findLast(event => event.requestRelationship === 'failure' && UUID.test(event.requestId ?? '')) ?? null;
     const failedRecoveryRequest = projectRequestEvidence(failure);
-    const requestTimeline = Object.freeze(attempts.map(projectRequestEvidence).filter(Boolean).slice(-RECOVERY_TIMELINE_LIMIT));
+    const requestsById = new Map();
+    for (const attempt of attempts) {
+      const projected = projectRequestEvidence(attempt);
+      if (!projected) continue;
+      const previous = requestsById.get(projected.requestId);
+      const merged = Object.freeze({ ...(previous ?? {}), ...projected, requestId: projected.requestId });
+      // Reinsert so interleaved duplicates retain the latest occurrence order,
+      // while partial lifecycle evidence keeps earlier sanitized fields.
+      requestsById.delete(projected.requestId);
+      requestsById.set(projected.requestId, merged);
+    }
+    const requestTimeline = Object.freeze([...requestsById.values()].slice(-RECOVERY_TIMELINE_LIMIT));
     const recoveryTimeline = Object.freeze(timeline.map(projectTimelineEvent).filter(Boolean));
     return Object.freeze({ schemaVersion: 1,
       incident: Object.freeze({
