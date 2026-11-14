@@ -5,15 +5,24 @@ import path from 'node:path';import os from 'node:os';
 import {runPRGate} from '../pr-gate.mjs';
 import {stagePolicy,defaultLocalPlan} from '../plan.mjs';
 import {prGateLanes,laneKey,catalogDigest,suiteKind} from '../../testing/catalog.mjs';
+import {nodeLaneInventory} from '../../testing/inventory.mjs';
+import {stressSeeds,stressTestName} from '../../testing/partition.mjs';
 import {sealReceipt} from '../../testing/receipts.mjs';
 import {suiteRequestProfile} from '../suite-ci-evidence.mjs';
 import {loadCIReceipt} from '../ci-evidence.mjs';
 import {evidenceKey,fileDigest} from '../reuse.mjs';
 const identity={revision:'a'.repeat(40),baseRevision:'b'.repeat(40),testedTree:'c'.repeat(40),sourceFingerprint:'exact-fixture',sourceClean:true};
-function laneReceipt(lane,change={}){return sealReceipt({version:2,catalog:catalogDigest(),lane:laneKey(lane),suite:lane.suite,kind:suiteKind(lane.suite),stateMode:['guest-smoke','auth-smoke'].includes(lane.suite)?'real-stack':'controlled',...identity,runtime:{node:'v22.23.4',pnpm:'9.15.9'},dependencies:{lockHash:'lock',installedLockHash:'installed'},status:'passed',outcome:'passed',failureKind:null,attempt:1,priorReceiptDigest:null,evidenceProfile:'pr-gate',exitCode:0,incomplete:false,dirtyDuringRun:false,inventory:{expected:['actual-controlled-test'],missing:[],unexpected:[]},observations:{total:1,passed:1},...change});}
+function laneReceipt(lane,change={}) {
+ const files=lane.suite==='tooling'&&lane.shards>1
+  ?nodeLaneInventory('tooling',process.cwd(),lane).map(file=>path.relative(process.cwd(),file)):['actual-controlled-test'];
+ const tests=lane.suite==='sync-stress'&&lane.shards>1
+  ?stressSeeds(lane).map(seed=>({name:stressTestName(seed),file:'packages/api-handler/test-stress/sync-schedules.test.mjs',status:'passed'}))
+  :files.map(file=>({name:'controlled observation',file,status:'passed'}));
+ return sealReceipt({version:2,catalog:catalogDigest(),lane:laneKey(lane),suite:lane.suite,kind:suiteKind(lane.suite),stateMode:['guest-smoke','auth-smoke'].includes(lane.suite)?'real-stack':'controlled',...identity,runtime:{node:'v22.23.4',pnpm:'9.15.9'},dependencies:{lockHash:'lock',installedLockHash:'installed'},status:'passed',outcome:'passed',failureKind:null,attempt:1,priorReceiptDigest:null,evidenceProfile:'pr-gate',exitCode:0,incomplete:false,dirtyDuringRun:false,inventory:{expected:files,missing:[],unexpected:[]},observations:{total:tests.length,passed:tests.length,tests},...change});
+}
 for(const mutation of [null,'nightly-profile','failed','wrong-lane','missing-base'])test(`PR gate runner ${mutation??'executes exactly its declared gate lanes'}`,async t=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'pr-gate-'));t.after(()=>rm(root,{recursive:true,force:true}));const seen=[];
- const result=await runPRGate({cwd:root,out:'out',identity,executeSuite:async(lane,options)=>{seen.push(lane);assert.equal(options.profile,'pr-gate');assert.equal(options.attempt,1);assert.equal(options.priorReceiptDigest,null);return laneReceipt(lane,seen.length!==1?{}:mutation==='nightly-profile'?{evidenceProfile:'nightly-full'}:mutation==='failed'?{status:'failed',outcome:'failed',exitCode:1}:mutation==='wrong-lane'?{lane:'e2e:webkit:1/2'}:mutation==='missing-base'?{baseRevision:null}:{});}});
+ const result=await runPRGate({cwd:process.cwd(),out:root,identity,executeSuite:async(lane,options)=>{seen.push(lane);assert.equal(options.profile,'pr-gate');assert.equal(options.attempt,1);assert.equal(options.priorReceiptDigest,null);return laneReceipt(lane,seen.length!==1?{}:mutation==='nightly-profile'?{evidenceProfile:'nightly-full'}:mutation==='failed'?{status:'failed',outcome:'failed',exitCode:1}:mutation==='wrong-lane'?{lane:'e2e:webkit:1/2'}:mutation==='missing-base'?{baseRevision:null}:{});}});
  assert.equal(result.status,mutation?'failed':'passed');
  if(!mutation){assert.deepEqual(seen,prGateLanes());for(const suite of ['e2e','storage-lifecycle','auth-e2e','auth-controls','browser-integration','performance'])assert(!seen.some(l=>l.suite===suite));for(const suite of ['guest-smoke','auth-smoke','browser-contract','tooling-browser'])assert(seen.some(l=>l.suite===suite));}
  if(mutation==='failed')assert.equal(seen.length,1,'A failed gate must not launch later lanes');
