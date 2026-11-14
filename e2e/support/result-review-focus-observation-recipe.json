@@ -1,8 +1,8 @@
 {
   "version": 1,
   "modulePath": "/shell/app.js",
-  "sourceSha256": "c588d405e664688f6ab4a0872b274716a65488376bb003499152abd05688bfb4",
-  "outputSha256": "88cc15178791299e4e6b3b8e1f3a6a0b90e1f7118f81a329a26fd8825f75d987",
+  "sourceSha256": "3c2d731b92761fd352f36d68bc0d3a72dc5d990f488c3b57ea557db43b1974e2",
+  "outputSha256": "0fcc8b3b603244ca5291ca7555e5397da341a8a2fa38827b0022f630ba8b7f6d",
   "prefix": "const __righeltResultReviewFocusProbe = (kind, refs = {}) => { try { globalThis.__RIGHELT_RESULT_REVIEW_FOCUS_PROBE__?.(kind, refs); } catch {} };\n",
   "operations": [
     {
@@ -14,36 +14,36 @@
     },
     {
       "label": "incremental-history-patch",
-      "start": 147303,
-      "end": 147387,
+      "start": 147235,
+      "end": 147319,
       "before": "    patchToolHtml(historyEl, renderHistoryPanel(game));\n    revealSelectedHistory();",
       "after": "    __righeltResultReviewFocusProbe(\"history-before-incremental-patch\",{root:historyEl});\n    patchToolHtml(historyEl, renderHistoryPanel(game));\n    __righeltResultReviewFocusProbe(\"history-after-incremental-patch\",{root:historyEl});\n    revealSelectedHistory();"
     },
     {
       "label": "committed-render-entry",
-      "start": 181312,
-      "end": 181385,
+      "start": 181367,
+      "end": 181440,
       "before": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;",
       "after": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;\n  __righeltResultReviewFocusProbe(\"render-committed-entry\");"
     },
     {
       "label": "original-focus-once",
-      "start": 182652,
-      "end": 182761,
+      "start": 182870,
+      "end": 182979,
       "before": "if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }",
       "after": "if (heading) { heading.tabIndex = -1; __righeltResultReviewFocusProbe(\"focus-before\", {node:heading}); heading.focus({preventScroll:true}); __righeltResultReviewFocusProbe(\"focus-after\", {node:heading}); pendingResultReviewFocus = null; }"
     },
     {
       "label": "existing-render-tail",
-      "start": 182766,
-      "end": 183148,
+      "start": 182984,
+      "end": 183366,
       "before": "  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  const incomingToggleFocus=pendingIncomingToggleFocus;\n  pendingIncomingToggleFocus=null;\n  boardContextPresentation.restoreIncomingFocus(incomingToggleFocus,{afterOwnedRender:true});\n  resumeBoardContextReplay();",
       "after": "  __righeltResultReviewFocusProbe(\"render-before-join\");\n  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  __righeltResultReviewFocusProbe(\"render-after-join\");\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  const incomingToggleFocus=pendingIncomingToggleFocus;\n  pendingIncomingToggleFocus=null;\n  boardContextPresentation.restoreIncomingFocus(incomingToggleFocus,{afterOwnedRender:true});\n  resumeBoardContextReplay();\n  __righeltResultReviewFocusProbe(\"render-after-resume\");"
     },
     {
       "label": "explicit-analysis",
-      "start": 250823,
-      "end": 250912,
+      "start": 251041,
+      "end": 251130,
       "before": "if (action === \"analysis\") { completedReviewEntryGeneration++;resultPresentation.clear();",
       "after": "if (action === \"analysis\") { __righeltResultReviewFocusProbe(\"analysis-entry\"); completedReviewEntryGeneration++;resultPresentation.clear();"
     }
