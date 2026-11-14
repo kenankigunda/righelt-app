@@ -129,7 +129,7 @@ test('a commander preserves move intent while pending then toggles one complete 
  assert.equal(f.runtime.getInspection(),null);assert.match(f.label.innerHTML,/Select a move for piece at/);
  f.finish([{...f.move,legal:false,blockedReason:'SUPPLY_DESTINATION_UNSUPPLIED'}]);await loading;
  assert.equal(f.runtime.getInspection(),null,'completion does not invent a toggle');
- f.click();assert.equal(f.runtime.getInspection()?.kind,'combined');assert.match(f.contextHtml,/Commander at .*has a supply line but no connected units/);assert.match(f.label.innerHTML,/Supply lines/);
+ f.click();assert.equal(f.runtime.getInspection()?.kind,'combined');assert.match(f.contextHtml,/Commander at .*has a supply line but no connected units/);assert.equal(f.label.innerHTML,'');
  f.click();assert.equal(f.runtime.getInspection(),null);assert.match(f.label.innerHTML,/Select a move for piece at/);
  assert.equal(f.queries.length,1);
 });
@@ -141,7 +141,7 @@ test('the complete two-phase commander cycle survives transient admission withou
  const loading=f.selected([]);f.gate(false);f.click();
  assert.equal(f.runtime.getInspection(),null);assert.match(f.label.innerHTML,/Select a move for piece at/);
  f.finish([{...f.move,legal:false,blockedReason:'SUPPLY_DESTINATION_UNSUPPLIED'}]);await loading;
- f.click();assert.equal(f.runtime.getInspection()?.kind,'combined');assert.match(f.contextHtml,/Supply and command lines for piece at/);assert.match(f.label.innerHTML,/Supply and command lines/);
+ f.click();assert.equal(f.runtime.getInspection()?.kind,'combined');assert.match(f.contextHtml,/Supply and command lines for piece at/);assert.equal(f.label.innerHTML,'');
  f.gate(true);assert.equal(f.runtime.getInspection()?.kind,'combined');
  f.click();assert.equal(f.runtime.getInspection(),null);assert.match(f.label.innerHTML,/Select a move for piece at/);
  assert.equal(f.queries.length,1);
@@ -151,9 +151,9 @@ test('an empty explicit commander legend does not describe undrawn readonly conn
  const f=fixture({canPresentActions:()=>false});f.piece.kind='commander';
  f.state.artifacts={supply:[{player:'P1',shortestPathByPieceId:{A:[f.piece.position,{row:0,col:9}]}}]};
  const loading=f.selected([]);f.finish([]);await loading;
- assert.match(f.contextHtml,/Commander at .*has a supply line but no connected units/);assert.match(f.label.innerHTML,/Supply lines/);
+ assert.match(f.contextHtml,/Commander at .*has a supply line but no connected units/);assert.equal(f.label.innerHTML,'');
  f.runtime.toggleNetworkInspection('command',{owner:'P1'});
- assert.match(f.contextHtml,/Commander at .*has no connections/);assert.match(f.label.innerHTML,/No connection/);
+ assert.match(f.contextHtml,/Commander at .*has no connections/);assert.equal(f.label.innerHTML,'');
  assert.doesNotMatch(f.label.innerHTML,/Supply and command lines/);
  assert.equal(f.views.at(-1).overlay.suppressPersonalConnections,true);
 });

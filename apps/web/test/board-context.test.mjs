@@ -36,6 +36,14 @@ test('mandatory coordinates stay present and nondismissible, with owner controls
  const replay=renderBoardContext(notice('"<unsafe>','<unsafe>',{replay:{}}),{replayEnabled:true});
  assert(replay.indexOf('</div>')<replay.indexOf('data-action="replay-board-context"'));assert(replay.includes('Show me again'));assert(replay.includes('ui-dismiss-button'));assert(replay.includes('&lt;unsafe&gt;'));assert(!replay.includes('<unsafe>'));
 });
+test('one Board owner preserves required guidance and acknowledged History tie-breaks runtime fallback',()=>{
+ const store=createBoardContextStore();
+ store.update('acknowledged',notice('outcome','You won',{purpose:'selected-history'}));
+ store.update('piece',notice('runtime','Recorded move',{purpose:'selected-history'}));
+ assert.deepEqual(store.items('game').map(item=>item.key),['outcome']);
+ store.update('piece',notice('required','Restore supply',{purpose:'required-continuation',mandatory:true}));
+ assert.deepEqual(store.items('game').map(item=>item.key),['required']);
+});
 const accepted=()=>({id:'game',gameplayRevision:4,myRoles:['Player 2'],player1:{identityId:'other'},player2:{identityId:'me'},board:{state:{turnIndex:1,sideToMove:'P2'}},turns:[{index:0,playerSeat:'Player 1',status:'complete'}],moves:[{moveId:'move',turnIndex:0,actorSide:'P1',action:{type:'move',from:{row:1,col:2},to:{row:2,col:2}}}]});
 test('replay descriptor binds the visible accepted turn and rejects newer undisplayed authority',()=>{
  const owner={},game=accepted(),context={owner,scope:'scope',gameId:'game',revision:4,lineageHead:'move',visible:true};

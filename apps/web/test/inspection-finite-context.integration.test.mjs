@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createBoardRuntime} from '../board/runtime/board-runtime.js';
-import {isMappedBoardPromptHtml} from '../board/prompt-models.js';
 import {renderBoardMessageHtml} from '../board/message-presentation.js';
 const noop=()=>{};
 function fixture({atSupply=false,units=false}={}){
@@ -15,10 +14,10 @@ function fixture({atSupply=false,units=false}={}){
  runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
  return {runtime,state,commander,label,renders,get context(){return context;},get html(){return html;},select:()=>runtime.loadSnapshot(state,{legalActions:[],selectionState:{selectedPieceId:'C',source:commander.position,target:null}})};
 }
-for(const mode of ['supply-only','own-source','mixed-affiliations'])test(`actual ${mode} commander inspection keeps a finite prompt and full structured context`,async()=>{
+for(const mode of ['supply-only','own-source','mixed-affiliations'])test(`actual ${mode} commander inspection has one full structured Board context`,async()=>{
  const f=fixture({atSupply:mode==='own-source',units:mode==='mixed-affiliations'}),before=structuredClone(f.state);await f.select();
  if(mode==='mixed-affiliations')f.runtime.toggleNetworkInspection('supply',{owner:'P2'});
- assert.equal(isMappedBoardPromptHtml(f.html),true,'inspection guidance must use existing finite Board grammar');assert.notEqual(f.label.dataset.promptUnmapped,'true');
+ assert.equal(f.html,'','semantic inspection context suppresses the redundant finite prompt');assert.notEqual(f.label.dataset.promptUnmapped,'true');
  const detail=renderBoardMessageHtml(f.context?.message??{});
  if(mode==='supply-only')assert.match(detail,/Commander at.*has a supply line but no connected units/);
  if(mode==='own-source')assert.match(detail,/At its supply point.*No connected units/);

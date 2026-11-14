@@ -41,8 +41,8 @@
  .app-root [data-game-panel="history"] .history-turn > .history-list-nested::before {background:CanvasText;forced-color-adjust:none;}
 }
 
-/* Details remain with Board, below its finite routine prompt. They own a
-   scrollport rather than increasing the prompt's reserved grammar. */
+/* Details remain with Board inside its shared guidance-height owner. Their
+   bounded scrollport expands the compact floor only when content requires it. */
 .board-context-detail {position:relative;min-width:0;margin-block:.25rem .65rem;padding:0;border:0;background:none;box-shadow:none;color:var(--ink);}
 .board-context-detail .board-context-dismiss {position:absolute;inset-block-start:0;inset-inline-end:0;}
 .board-context-detail .board-context-replay {min-width:44px;min-height:44px;}

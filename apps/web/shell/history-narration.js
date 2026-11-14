@@ -6,6 +6,7 @@ import {historyTurnSide} from './history-preview.js';
 import {describeRecordedMove,describeRecordedTurn,recordedMoveNumber,recordedActorSide,recordedNarrationCoordinates,recordedMoveWithClosure} from './recorded-narration.js';
 import {completedTurnTitle,isCompletedWinningTurn} from './completed-review.js';
 import {completedOutcomeNarration} from './completion-narration.js';
+import {BOARD_MESSAGE_STRENGTH,isMeaningfulHistoryMessage,resolveBoardMessageOwner} from '../board/message-priority.js';
 
 export const HISTORY_HIT_TARGET_CONTRACT='move-button-v1';
 
@@ -19,11 +20,13 @@ export function selectedHistoryPresentation(game,options={}){
   const actor=moves.find(move=>recordedActorSide(move)===side),name=actorName(game,actor,side,options);
   const completedTitle=isCompletedWinningTurn(game)?completedTurnTitle(game,options.identityId,game.historyTurnIndex):null;
   const completion=completedTitle?completedOutcomeNarration(game,options):null;
-  return {caption:{text:completedTitle??`Turn ${game.historyTurnIndex+1}`,side},message:completion??{text:describeRecordedTurn(moves,name,{owned:ownedActor(game,actor,options)})??'Historical turn details unavailable',actorName:name,coordinates:recordedNarrationCoordinates(moves)}};
+  const narration=describeRecordedTurn(moves,name,{owned:ownedActor(game,actor,options)});
+  return {caption:{text:completedTitle??`Turn ${game.historyTurnIndex+1}`,side},message:completion??{text:narration??'Historical turn details unavailable',actorName:name,coordinates:recordedNarrationCoordinates(moves)},messageStrength:completion||narration?BOARD_MESSAGE_STRENGTH.SEMANTIC:BOARD_MESSAGE_STRENGTH.PLACEHOLDER};
  }
  const move=selectedHistoricalRecord(game);
  const number=recordedMoveNumber(move),side=recordedActorSide(move),name=actorName(game,move,side,options);
- return {record:move,caption:{text:number==null?'Move unavailable':`Move ${number}`,side},message:{text:describeRecordedMove(move,name,{owned:ownedActor(game,move,options)})??'Historical move details unavailable',actorName:name,coordinates:recordedNarrationCoordinates(move?[move]:[])}};
+ const narration=describeRecordedMove(move,name,{owned:ownedActor(game,move,options)});
+ return {record:move,caption:{text:number==null?'Move unavailable':`Move ${number}`,side},message:{text:narration??'Historical move details unavailable',actorName:name,coordinates:recordedNarrationCoordinates(move?[move]:[])},messageStrength:narration?BOARD_MESSAGE_STRENGTH.SEMANTIC:BOARD_MESSAGE_STRENGTH.PLACEHOLDER};
 }
 
 export function selectedHistoricalRecord(game){
@@ -41,5 +44,7 @@ export function recordedHistoryView(game){
 /** Recorded detail belongs to context, outside the finite Board prompt budget. */
 export function historyBoardMessage(game,options={}){
  const presentation=selectedHistoryPresentation(game,options);
- return presentation?{text:BOARD_PROMPT.history,context:{...presentation.message,purpose:BOARD_CONTEXT_PURPOSE.HISTORY}}:null;
+ if(!presentation)return null;
+ const context={...presentation.message,purpose:BOARD_CONTEXT_PURPOSE.HISTORY};
+ return resolveBoardMessageOwner({semantic:isMeaningfulHistoryMessage(context,presentation.messageStrength)?context:null,generic:{text:BOARD_PROMPT.history}});
 }

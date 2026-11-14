@@ -34,3 +34,21 @@ export function boardContextPlacement(context) {
   if (context?.purpose === BOARD_CONTEXT_PURPOSE.INCOMING) return 'incoming';
   return purposes.has(context?.purpose) ? 'board' : 'notice';
 }
+
+const boardPriority=context=>({
+ [BOARD_CONTEXT_PURPOSE.REQUIRED]:5,
+ [BOARD_CONTEXT_PURPOSE.REPLAY]:4,
+ [BOARD_CONTEXT_PURPOSE.HISTORY]:3,
+ [BOARD_CONTEXT_PURPOSE.PIECE]:2,
+ [BOARD_CONTEXT_PURPOSE.SEQUENCE]:1,
+ [BOARD_CONTEXT_PURPOSE.BOARD]:1,
+}[context?.purpose]??0);
+
+// Board channels publish independently, but only one may own the visible
+// message region. Incoming narration and legacy notice hosts remain separate.
+export function arbitrateBoardContexts(contexts){
+ const board=contexts.filter(context=>boardContextPlacement(context)==='board');
+ if(board.length<2)return contexts;
+ const winner=[...board].sort((left,right)=>boardPriority(right)-boardPriority(left)||Number(right.channel==='acknowledged')-Number(left.channel==='acknowledged'))[0];
+ return contexts.filter(context=>boardContextPlacement(context)!=='board'||context===winner);
+}

@@ -47,7 +47,7 @@ export function createMessageHeightController(label) {
   const natural=live.getBoundingClientRect().height;
   let required=natural;
   const active=doc.activeElement;
-  if(active?.matches?.('button')&&label.contains(active)){
+  if(active?.matches?.('button')&&live.contains(active)){
    const rect=active.getBoundingClientRect(),box=slot.getBoundingClientRect(),style=win.getComputedStyle?.(active);
    const ring=(parseFloat(style?.outlineWidth)||0)+Math.max(0,parseFloat(style?.outlineOffset)||0);
    required=Math.max(required,rect.top+rect.height/2+Math.max(44,rect.height)/2+ring-box.top-(parseFloat(slotStyle?.paddingTop)||0));
@@ -72,10 +72,10 @@ export function createMessageHeightController(label) {
  const mutations=new win.MutationObserver(schedule);mutations.observe(live,{subtree:true,childList:true,characterData:true,attributes:true});
  const starts=event=>{
   const button=event.target?.closest?.('button');
-  const ownMessage=button&&label.contains(button),ownCell=button?.matches?.('.cell')&&label.closest('[data-shell-panel="board"]')?.contains(button);
-  if(!ownMessage&&!ownCell)return;
+  const ownGuidance=button&&live.contains(button),ownPrompt=button&&label.contains(button),ownCell=button?.matches?.('.cell')&&label.closest('[data-shell-panel="board"]')?.contains(button);
+  if(!ownGuidance&&!ownCell)return;
   if(event.type==='pointerdown')pointer=true;else if(event.key==='Enter'||event.key===' ')key=true;else return;
-  pressedControl=ownMessage?button:null;
+  pressedControl=ownPrompt?button:null;
   // A press can begin halfway through an earlier expansion/collapse. Freeze
   // that actual interpolated box before any further native hit testing.
   if(animation){const height=slot.getBoundingClientRect().height;animation.cancel();animation=null;slot.style.height=`${height}px`;lastTarget=null;}

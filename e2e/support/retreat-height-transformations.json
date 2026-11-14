@@ -25,55 +25,55 @@
   },
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",
-    "sourceSha256": "20f7696d52cfbbdfa184860aa6d60dbb2942d5bcc55a2827506c5699e2fedefd",
+    "sourceSha256": "2afd70ca892b8465b33b70c220f386b074bdacdadfc5be2424ff0eeecb98ed29",
     "prefix": "const __retreatHeightProbe=(event,data,owner)=>{try{const sink=globalThis.__retreatHeightRecord;if(typeof sink==='function')sink(event,typeof data==='function'?data():data,owner);}catch{}};\nconst __retreatHeightValue=(event,value,data=null,owner=null)=>{__retreatHeightProbe(event,data??(()=>({value})),owner);return value;};\n",
     "operations": [
       {
-        "start": 12104,
-        "end": 12340,
+        "start": 12219,
+        "end": 12455,
         "before": "  const setSelectedTarget = (target, origin = null) => {\n    if (!target) {\n      selectedTarget = null;\n      selectedTargetOrigin = null;\n      return;\n    }\n    selectedTarget = { ...target };\n    selectedTargetOrigin = origin;\n  };\n",
         "after": "  const setSelectedTarget = (target, origin = null) => {\n    if (!target) {\n      selectedTarget = __retreatHeightValue('target-clear',null);\n      selectedTargetOrigin = __retreatHeightValue('origin-clear',null);\n      return;\n    }\n    selectedTarget = __retreatHeightValue('target-set',{ ...target });\n    selectedTargetOrigin = __retreatHeightValue('origin-set',origin);\n  };\n",
         "anchor": "  const setSelectedTarget = (target, origin = null) => {\n    if (!target) {\n      selectedTarget = null;\n      selectedTargetOrigin = null;\n      return;\n    }\n    selectedTarget = { ...target };\n    selectedTargetOrigin = origin;\n  };\n",
         "anchorCount": 1
       },
       {
-        "start": 35450,
-        "end": 35491,
+        "start": 36106,
+        "end": 36147,
         "before": "    if (explanation && !selectedTarget) {",
         "after": "    if (explanation && !__retreatHeightValue('status-target',selectedTarget)) {\n      __retreatHeightProbe('status-explanation',()=>({}));",
         "anchor": "    if (explanation && !selectedTarget) {",
         "anchorCount": 1
       },
       {
-        "start": 41162,
-        "end": 41254,
+        "start": 41951,
+        "end": 42043,
         "before": "    setBoardPreviewAction(actionPreviewLabel(preferredPreview.type, state, selectedTarget));",
         "after": "    setBoardPreviewAction(actionPreviewLabel(__retreatHeightValue('status-confirmation-type',preferredPreview.type), state, selectedTarget));",
         "anchor": "    setBoardPreviewAction(actionPreviewLabel(preferredPreview.type, state, selectedTarget));",
         "anchorCount": 1
       },
       {
-        "start": 66502,
-        "end": 66557,
+        "start": 67291,
+        "end": 67346,
         "before": "  const handleBoardCellHoverStart = (hoveredCoord) => {",
         "after": "  const handleBoardCellHoverStart = (hoveredCoord) => {\n    __retreatHeightProbe('runtime-hover-start',()=>({coord:hoveredCoord}));",
         "anchor": "  const handleBoardCellHoverStart = (hoveredCoord) => {",
         "anchorCount": 1
       },
       {
-        "start": 66902,
-        "end": 66955,
+        "start": 67691,
+        "end": 67744,
         "before": "  const handleBoardCellHoverEnd = (hoveredCoord) => {",
         "after": "  const handleBoardCellHoverEnd = (hoveredCoord) => {\n    __retreatHeightProbe('runtime-hover-end',()=>({coord:hoveredCoord}));",
         "anchor": "  const handleBoardCellHoverEnd = (hoveredCoord) => {",
         "anchorCount": 1
       }
     ],
-    "outputSha256": "1d3c439170de6e42c33094c0a09f63ea640c3c8888064b627eaaf75fda632505"
+    "outputSha256": "7172a0204676e1e70fcc331d345830e116b92b354fee7ae5c615221a42dafc4a"
   },
   "/board/message-height.js": {
     "file": "apps/web/board/message-height.js",
-    "sourceSha256": "523f34c001180a78da339055830eecbb5455e2aebf2875143437d8788f63e0eb",
+    "sourceSha256": "be468e8f58bd8b4a26e859e39fca536b413573bae73090adcbc72323ea2b38bc",
     "prefix": "const __retreatHeightProbe=(event,data,owner)=>{try{const sink=globalThis.__retreatHeightRecord;if(typeof sink==='function')sink(event,typeof data==='function'?data():data,owner);}catch{}};\nconst __retreatHeightValue=(event,value,data=null,owner=null)=>{__retreatHeightProbe(event,data??(()=>({value})),owner);return value;};\n",
     "operations": [
       {
@@ -97,50 +97,50 @@
         "after": "const target=__retreatHeightValue('height-target',Math.max(grammar,overflow?required:0)+outerPadding,null,slot);",
         "anchor": "const target=Math.max(grammar,overflow?required:0)+outerPadding;",
         "anchorCount": 1,
-        "start": 4536,
-        "end": 4600
+        "start": 4535,
+        "end": 4599
       },
       {
-        "start": 4663,
-        "end": 4710,
+        "start": 4662,
+        "end": 4709,
         "before": "const from=slot.getBoundingClientRect().height;",
         "after": "const from=__retreatHeightValue('height-from',slot.getBoundingClientRect().height,null,slot);",
         "anchor": "const from=slot.getBoundingClientRect().height;",
         "anchorCount": 1
       },
       {
-        "start": 4713,
-        "end": 4908,
+        "start": 4712,
+        "end": 4907,
         "before": "const change=messageHeightTransition({from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key});",
         "after": "const change=messageHeightTransition(__retreatHeightValue('height-input',{from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key},null,slot));",
         "anchor": "const change=messageHeightTransition({from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key});",
         "anchorCount": 1
       },
       {
-        "start": 4911,
-        "end": 4943,
+        "start": 4910,
+        "end": 4942,
         "before": "if(change.kind==='defer')return;",
         "after": "if(__retreatHeightValue('height-kind',change.kind,null,slot)==='defer')return;",
         "anchor": "if(change.kind==='defer')return;",
         "anchorCount": 1
       },
       {
-        "start": 4946,
-        "end": 5065,
+        "start": 4945,
+        "end": 5064,
         "before": "animation?.cancel();animation=null;slot.dataset.heightManaged='true';slot.style.height=`${target}px`;lastTarget=target;",
         "after": "__retreatHeightProbe('height-write',()=>({from,to:target}),slot);\n  animation?.cancel();animation=null;slot.dataset.heightManaged='true';slot.style.height=`${target}px`;lastTarget=target;",
         "anchor": "animation?.cancel();animation=null;slot.dataset.heightManaged='true';slot.style.height=`${target}px`;lastTarget=target;",
         "anchorCount": 1
       },
       {
-        "start": 5068,
-        "end": 5227,
+        "start": 5067,
+        "end": 5226,
         "before": "if(change.kind==='animate'&&slot.animate)animation=slot.animate([{height:`${from}px`},{height:`${target}px`}],{duration:change.duration,easing:change.easing});",
         "after": "if(__retreatHeightValue('height-animation-kind',change.kind,null,slot)==='animate'&&slot.animate)animation=__retreatHeightValue('animation-created',slot.animate([{height:`${from}px`},{height:`${target}px`}],{duration:change.duration,easing:change.easing}),()=>({}),slot);",
         "anchor": "if(change.kind==='animate'&&slot.animate)animation=slot.animate([{height:`${from}px`},{height:`${target}px`}],{duration:change.duration,easing:change.easing});",
         "anchorCount": 1
       }
     ],
-    "outputSha256": "764da897d0e1c6790d7f72f8f3306355609133056c912ce1c938c8eb71b0f23a"
+    "outputSha256": "a2f402a06b9bd3fe4057e0b983054ea055df9b13492e4a7d74733218a996413e"
   }
 }

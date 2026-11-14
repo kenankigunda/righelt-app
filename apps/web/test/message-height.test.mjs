@@ -4,22 +4,23 @@ import {createMessageHeightController} from '../board/message-height.js';
 
 function fixture(initialPadding=0,initialFloor=75,{metrics=null,fontSize=16,initialWidth=400,rowLines=3,pattern=null}={}){
  const events=()=>({handlers:new Map(),addEventListener(type,fn){this.handlers.set(type,fn);},removeEventListener(type){this.handlers.delete(type);}});
- const frames=new Map(),animations=[],observers=[];let id=0,current=40,rendered=initialFloor,width=initialWidth,padding=initialPadding,buttonTop=10,primary=initialFloor-5,fallback=initialFloor;
+ const frames=new Map(),animations=[],observers=[];let id=0,current=40,rendered=initialFloor,width=initialWidth,padding=initialPadding,buttonTop=10,contextButtonTop=10,primary=initialFloor-5,fallback=initialFloor;
  const motion={...events(),matches:false},fonts=events(),doc={...events(),fonts};
  const win={...events(),requestAnimationFrame(fn){frames.set(++id,fn);return id;},cancelAnimationFrame(key){frames.delete(key);},matchMedia:()=>motion,
   ResizeObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(){}disconnect(){this.closed=true;}},
   MutationObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(){}disconnect(){this.closed=true;}}};
  doc.defaultView=win;
- win.getComputedStyle=node=>node===slot?{paddingTop:String(slot.dataset.heightManaged==='true'?padding:0),paddingBottom:String(slot.dataset.heightManaged==='true'?padding:0),getPropertyValue:name=>metrics?.[name]??''}:node===button?{outlineWidth:'2px',outlineOffset:'2px'}:{fontSize:`${fontSize}px`,fontFamily:'Manrope',lineHeight:'24px',getPropertyValue:name=>name==='--board-message-row-lines'?String(rowLines):''};
- const live={getBoundingClientRect:()=>({height:current})};
+ win.getComputedStyle=node=>node===slot?{paddingTop:String(slot.dataset.heightManaged==='true'?padding:0),paddingBottom:String(slot.dataset.heightManaged==='true'?padding:0),getPropertyValue:name=>metrics?.[name]??''}:node===button||node===contextButton?{outlineWidth:'2px',outlineOffset:'2px'}:{fontSize:`${fontSize}px`,fontFamily:'Manrope',lineHeight:'24px',getPropertyValue:name=>name==='--board-message-row-lines'?String(rowLines):''};
+ const live={getBoundingClientRect:()=>({height:current}),contains:node=>node===button||node===contextButton};
  const replicas=[['primary',70],['fallback',75]].map(([font,height])=>({dataset:{sizingFont:font,...(pattern?{promptPattern:pattern}:{})},getBoundingClientRect:()=>({height:font==='primary'?primary:fallback})}));
  const slot={dataset:{},isConnected:true,style:{removeProperty(key){delete this[key];}},querySelector:()=>live,querySelectorAll:()=>replicas,getBoundingClientRect:()=>({height:rendered,width,top:0,bottom:rendered}),animate(keys,options){const a={keys,options,cancel(){this.canceled=true;}};animations.push(a);return a;}};
  const button={matches:selector=>selector==='button',getBoundingClientRect:()=>({top:buttonTop,height:38}),disabled:false,textContent:'Next',hasAttribute:name=>name==='data-board-message-action',getAttribute:name=>name==='data-board-message-action'?'replay-next':null};
+ const contextButton={matches:selector=>selector==='button',getBoundingClientRect:()=>({top:contextButtonTop,height:38}),disabled:false,textContent:'Dismiss',hasAttribute:()=>false,getAttribute:()=>null};
  doc.createElement=()=>({innerHTML:'',querySelectorAll(){return this.innerHTML.includes('Next')?[{disabled:this.innerHTML.includes('disabled'),textContent:'Next',getAttribute:name=>name==='data-board-message-action'?'replay-next':null}]:[];}});
  const label={...events(),ownerDocument:doc,closest:()=>slot,contains:node=>node===button};
  const controller=createMessageHeightController(label);
  const flush=()=>{for(const fn of frames.values()){frames.clear();fn();}};
- return{controller,slot,label,doc,win,fonts,motion,animations,observers,frames,button,flush,setFloors:(a,b)=>{primary=a;fallback=b;},setPadding:value=>{padding=value;},setCurrent:value=>{current=value;},setButtonTop:value=>{buttonTop=value;},setWidth:value=>{width=value;},setRendered:value=>{rendered=value;},change(height,liveHeight=height){current=height;rendered=liveHeight;observers[0].fn();flush();}};
+ return{controller,slot,label,doc,win,fonts,motion,animations,observers,frames,button,contextButton,flush,setFloors:(a,b)=>{primary=a;fallback=b;},setPadding:value=>{padding=value;},setCurrent:value=>{current=value;},setButtonTop:value=>{buttonTop=value;},setContextButtonTop:value=>{contextButtonTop=value;},setWidth:value=>{width=value;},setRendered:value=>{rendered=value;},change(height,liveHeight=height){current=height;rendered=liveHeight;observers[0].fn();flush();}};
 }
 test('controller fixes ordinary content geometry and defers finite-grammar metric changes until release',()=>{
  const f=fixture();assert.equal(f.slot.style.height,'75px');assert.equal(f.animations.length,0);
@@ -96,6 +97,15 @@ test('unsupported live content exposes a failed grammar condition while retainin
  const f=fixture();f.doc.activeElement=f.button;
  assert(f.controller.deferContent('Longer Next',()=>{f.setCurrent(180);f.setButtonTop(130);}));
  assert.equal(f.slot.dataset.promptOverflow,'true');assert.equal(f.slot.style.height,'180px');assert.equal(f.doc.activeElement,f.button);assert.equal(f.animations.length,0);f.controller.destroy();
+});
+
+test('context controls share focus and held-press containment with the managed guidance slot',()=>{
+ const f=fixture();f.doc.activeElement=f.contextButton;f.setContextButtonTop(100);f.change(130,75);
+ assert.equal(f.slot.style.height,'145px');
+ f.setRendered(145);f.doc.handlers.get('pointerdown')({type:'pointerdown',target:{closest:()=>f.contextButton}});
+ f.setFloors(170,180);f.setWidth(300);f.change(160,145);assert.equal(f.slot.style.height,'145px');
+ f.doc.handlers.get('pointerup')({type:'pointerup'});f.flush();assert.equal(f.slot.style.height,'180px');
+ f.controller.destroy();
 });
 
 const actualMetrics={

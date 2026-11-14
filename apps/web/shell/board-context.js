@@ -1,5 +1,5 @@
 import {renderBoardMessageHtml} from '../board/message-presentation.js';
-import {boardContextPlacement} from './board-context-purpose.js';
+import {arbitrateBoardContexts,boardContextPlacement} from './board-context-purpose.js';
 import {renderDismissButton} from './dismiss-control.js';
 
 const escape = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
@@ -23,7 +23,7 @@ export function createBoardContextStore() {
   clear(){const changed=current.size>0;current.clear();entries.clear();dismissed.clear();announced.clear();return changed;},
   get(key){return entries.get(key)??null;},
   channel(channel){return entries.get(current.get(channel))??null;},
-  items(gameId){return [...current.values()].map(key=>entries.get(key)).filter(context=>context?.gameId===gameId&&context.message&&!dismissed.has(context.key));},
+  items(gameId){return arbitrateBoardContexts([...current.values()].map(key=>entries.get(key)).filter(context=>context?.gameId===gameId&&context.message&&!dismissed.has(context.key)));},
   dismiss(key){const context=entries.get(key);if(!context||context.mandatory||dismissed.has(key))return false;dismissed.add(key);prune(dismissed);return true;},
   isDismissed(key){return dismissed.has(key);},
   takeAnnouncement(key){
