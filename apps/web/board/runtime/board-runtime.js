@@ -4,7 +4,7 @@ import {createMutationActivationFence} from '../mutation-activation.js';
 import {getPushRetreatPrompt as renderPushRetreatPrompt,requiredRushContext as buildRequiredRushContext,opponentInspectionPrompt,buildHistoryRemovalEffects} from '../guidance-presentation.js';
 import {createMessageHeightController} from '../message-height.js';
 import {BOARD_PROMPT,isMappedBoardPromptHtml} from '../prompt-models.js';
-import {isMeaningfulHistoryMessage,resolveBoardMessageOwner} from '../message-priority.js';
+import {BOARD_MESSAGE_STRENGTH,isMeaningfulHistoryMessage,resolveBoardMessageOwner} from '../message-priority.js';
 import {createGuidanceDiagnostics} from '../guidance-diagnostics.js';
 import { createRushSupplyGuidanceClient, rushActionKey } from '../rush-supply-guidance.js';
 import {boardMessagePresentation,renderBoardMessageHtml,renderBoardInlineAction,updateBoardInlineActionLabel,patchBoardMessage} from '../message-presentation.js';
@@ -324,11 +324,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   };
 
   let statusContext=null,statusDeferred=false;
-  const addStatusContext=(message,{kind='piece',mandatory=false}={})=>{
+  const addStatusContext=(message,{kind='piece',mandatory=false,strength=null}={})=>{
     if(statusContext?.mandatory&&!mandatory){
       const base=statusContext.message;statusContext={...statusContext,message:{...base,rows:[base,message]}};return;
     }
-    statusContext={message,kind,mandatory};
+    statusContext={message,kind,mandatory,...(strength?{strength}:{})};
   };
   const requiredRushContext=()=>buildRequiredRushContext(state,{interactive:overlayMode===OVERLAY_MODE.INTERACTIVE,canPresentActions:()=>host.canPresentActions?.(state),getUnsuppliedPieceIds:()=>getRushUnsuppliedPieceIds(state),getPieceById:getBoardPieceById,formatCoordinate});
   const hideBoardPreviewPrompt=()=>{
@@ -363,7 +363,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
 
   const setGenericInstructionPrompt = text => {
     const presentation=resolveBoardMessageOwner({
-      semantic:statusContext?.kind==='history'&&isMeaningfulHistoryMessage(statusContext.message)?statusContext.message:null,
+      semantic:statusContext?.kind==='history'&&isMeaningfulHistoryMessage(statusContext.message,statusContext.strength)?statusContext.message:null,
       generic:{text},
     });
     if(presentation.prompt){setBoardPreviewPrompt(presentation.prompt.text);return;}
@@ -767,14 +767,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       setPieceExplanation();
       return;
     }
-    if (overlayMode === 'recorded-turn') { addStatusContext({text:'Turn overview'},{kind:'history'});setGenericInstructionPrompt(BOARD_PROMPT.history); return; }
+    if (overlayMode === 'recorded-turn') { addStatusContext({text:'Turn overview'},{kind:'history',strength:BOARD_MESSAGE_STRENGTH.PLACEHOLDER});setGenericInstructionPrompt(BOARD_PROMPT.history); return; }
     if (overlayMode === OVERLAY_MODE.RECORDED_ACTION) {
       if (recordedAction?.from && recordedAction?.to) {
-        addStatusContext({text:`Recorded move from ${formatCoordinate(recordedAction.from)} to ${formatCoordinate(recordedAction.to)}`,coordinates:[{...recordedAction.from,chipClass:'board-preview-coordinate-chip-selected-piece'},{...recordedAction.to,chipClass:'board-preview-coordinate-chip-target'}]},{kind:'history'});setGenericInstructionPrompt(BOARD_PROMPT.history);
+        addStatusContext({text:`Recorded move from ${formatCoordinate(recordedAction.from)} to ${formatCoordinate(recordedAction.to)}`,coordinates:[{...recordedAction.from,chipClass:'board-preview-coordinate-chip-selected-piece'},{...recordedAction.to,chipClass:'board-preview-coordinate-chip-target'}]},{kind:'history',strength:BOARD_MESSAGE_STRENGTH.SEMANTIC});setGenericInstructionPrompt(BOARD_PROMPT.history);
         return;
       }
       const recordedActionLabel = recordedAction?.from && recordedAction?.to ? "Recorded move" : "History";
-      addStatusContext({text:recordedActionLabel},{kind:'history'});setGenericInstructionPrompt(BOARD_PROMPT.history);
+      addStatusContext({text:recordedActionLabel},{kind:'history',strength:BOARD_MESSAGE_STRENGTH.PLACEHOLDER});setGenericInstructionPrompt(BOARD_PROMPT.history);
       return;
     }
 

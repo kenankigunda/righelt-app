@@ -13,7 +13,7 @@ export function createBoardContextReceiver(getDependencies) {
   }
   const focused=appEl.contains(document.activeElement)&&Boolean(document.activeElement?.closest('[data-board-context]'));
   if(context&&meta.transient&&focused)return;
-  const weakHistory=context?.kind==='history'&&!isMeaningfulHistoryMessage(context.message);
+  const weakHistory=context?.kind==='history'&&!isMeaningfulHistoryMessage(context.message,context.strength);
   const value=context&&!weakHistory?{...context,purpose:runtimeContextPurpose(context),key,gameId:game.id,transient:context.mandatory?false:meta.transient}:meta.selectedPieceId?{key,gameId:game.id,message:null,transient:false}:null;
   if(boardContexts.update('piece',value))queueBoardContextRefresh();
  };

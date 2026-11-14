@@ -33,8 +33,10 @@ test('generic instructions remain when no stronger state explains the Board',()=
  assert.deepEqual(resolveBoardMessageOwner(),{owner:null,prompt:null,context:null});
 });
 
-test('History placeholders are not promoted over actionable empty-state guidance',()=>{
- for(const text of ['History','Turn overview','Historical move details unavailable','Historical turn details unavailable'])assert.equal(isMeaningfulHistoryMessage({text,actorName:'Guest'}),false);
- assert.equal(isMeaningfulHistoryMessage({text:'Recorded move',coordinates:[{row:1,col:2}]}),true);
- assert.equal(isMeaningfulHistoryMessage({text:'You won in 29 moves.'}),true);
+test('History strength, not English copy or actor metadata, distinguishes placeholders from narration',()=>{
+ const localizedPlaceholder={text:'Aucune action enregistrée',actorName:'Invité'};
+ assert.equal(isMeaningfulHistoryMessage(localizedPlaceholder,'placeholder'),false);
+ assert.equal(isMeaningfulHistoryMessage({text:'Narration supplied by another locale'},'semantic'),true);
+ assert.equal(isMeaningfulHistoryMessage({text:'Arbitrary narration',actorName:'Guest'},'semantic'),true);
+ assert.equal(isMeaningfulHistoryMessage(null,'semantic'),false);
 });

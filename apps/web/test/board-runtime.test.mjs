@@ -218,6 +218,7 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
   assert.equal(boardPreviewLabelEl.innerHTML || boardPreviewLabelEl.textContent,'');
   assert.equal(boardPreviewLabelEl.hidden,true);
   assert.equal(context.kind,'history');
+  assert.equal(context.strength,'semantic');
   assert.match(renderBoardMessageHtml(context.message), /Recorded move from.*board-preview-coordinate-chip-selected-piece.*4,\s*2.*board-preview-coordinate-chip-target.*4,\s*3/);
 });
 
@@ -3630,14 +3631,15 @@ test('sequence message End turn uses the existing guarded turn-control path',asy
 });
 
 test('whole-turn overlays reach the adapter without selected-cell state',async()=>{
- const rendered=[];
- const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:input=>rendered.push(input),getSelectedPieceSummary:()=>null},host:{canInteract:()=>false}});
+ const rendered=[];let context=null;
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:input=>rendered.push(input),getSelectedPieceSummary:()=>null},host:{canInteract:()=>false},controls:{onBoardContext:value=>{context=value;}}});
  runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null});
  const actions=[{recordedAction:{type:'move',from:{row:1,col:1},to:{row:1,col:2}},recordedActionStartPiece:{id:'A',owner:'P1'}}];
  await runtime.loadSnapshot({pieces:[],sideToMove:'P1',turnIndex:1},{legalActions:[],overlayMode:'recorded-turn',recordedActions:actions});
  assert.equal(rendered.at(-1).overlay.mode,'recorded-turn');
  assert.deepEqual(rendered.at(-1).overlay.recordedActions,actions);
  assert.equal(rendered.at(-1).overlay.selection,null);
+ assert.equal(context.strength,'placeholder');
 });
 
 test('display-only turn overview preserves interactive authority and yields on an explicit own piece click',async()=>{

@@ -6,14 +6,15 @@ export const BOARD_MESSAGE_PRIORITY=Object.freeze({
  BLOCKING:5,
 });
 
+export const BOARD_MESSAGE_STRENGTH=Object.freeze({
+ PLACEHOLDER:'placeholder',
+ SEMANTIC:'semantic',
+});
+
 const candidate=(value,priority,field)=>value==null?null:{value,priority,field};
 
-export function isMeaningfulHistoryMessage(message){
- if(!message)return false;
- const text=String(message.text??'').trim();
- if(['History','Turn overview','Historical move details unavailable','Historical turn details unavailable'].includes(text))return false;
- if(message.coordinates?.length||message.rows?.length||message.actorName||message.action||message.actions?.length)return true;
- return Boolean(text);
+export function isMeaningfulHistoryMessage(message,strength=BOARD_MESSAGE_STRENGTH.SEMANTIC){
+ return Boolean(message)&&strength===BOARD_MESSAGE_STRENGTH.SEMANTIC;
 }
 
 // One owner chooses the visible Board message. Generic usage instructions
