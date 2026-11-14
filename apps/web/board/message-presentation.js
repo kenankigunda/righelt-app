@@ -37,7 +37,12 @@ const renderCopy = (text, coordinates = []) => {
     return point ? renderCoordinateChip(point,point.chipClass) : escape(part);
   }).join('');
 };
-const renderActorName = actorName => `<bdi class="board-message-name" dir="auto" title="${escape(actorName)}">${escape(actorName)}</bdi>`;
+const actorTone = side => side==='p1'||side==='P1'?'p1':side==='p2'||side==='P2'?'p2':null;
+const renderActorName = (actorName,side,accessibleName) => {
+  const tone=actorTone(side),label=typeof accessibleName==='string'&&accessibleName.length?accessibleName:actorName;
+  const copy=label===actorName?escape(actorName):`<span aria-hidden="true">${escape(actorName)}</span><span class="sr-only">${escape(label)}</span>`;
+  return `<bdi class="board-message-name${tone?` player-tone-${tone}`:''}" dir="auto" title="${escape(actorName)}">${copy}</bdi>`;
+};
 const renderToneParts = (parts,coordinates) => parts.map(part => {
   // Structured producers identify the exact semantic coordinate part. Player
   // names remain literal even when they happen to look like board coordinates.
@@ -47,11 +52,11 @@ const renderToneParts = (parts,coordinates) => parts.map(part => {
   const color=side==='p1'?'Red':'Blue';
   return `<span class="player-tone-${side}">${part.colorNamed?'':`<span class="sr-only">${color}: </span>`}<bdi dir="auto">${copy}</bdi></span>`;
 }).join('');
-const renderActorRest = (rest,coordinates,actorName) => {
+const renderActorRest = (rest,coordinates,actorName,side,accessibleName) => {
   const marker=`. ${actorName} also `;
   let cursor=0,index,copy='';
   while((index=rest.indexOf(marker,cursor))>=0){
-    copy+=renderCopy(rest.slice(cursor,index+2),coordinates)+renderActorName(actorName);
+    copy+=renderCopy(rest.slice(cursor,index+2),coordinates)+renderActorName(actorName,side,accessibleName);
     cursor=index+2+actorName.length;
   }
   return copy+renderCopy(rest.slice(cursor),coordinates);
@@ -63,7 +68,7 @@ export function renderBoardMessageHtml(message, {sizing = false} = {}) {
   const parts=Array.isArray(message.parts)&&message.parts.every(part=>part&&typeof part.text==='string')
     &&message.parts.map(part=>part.text).join('')===text?message.parts:null;
   const copy=parts?renderToneParts(parts,message.coordinates)
-    :actorName?`${renderActorName(actorName)}${renderActorRest(rest,message.coordinates,actorName)}`:renderCopy(text,message.coordinates);
+    :actorName?`${renderActorName(actorName,message.actorToneSide,message.actorAccessibleName)}${renderActorRest(rest,message.coordinates,actorName,message.actorToneSide,message.actorAccessibleName)}`:renderCopy(text,message.coordinates);
   const {inline,detached}=partitionMessageActions(actions);
   const sentence=copy+(message.badge?` <span class="board-obligatory-pill"${boardPromptPattern(message)?` data-board-prompt-pattern="${DETACHED_REQUIRED_RETRY}"`:""}>${escape(message.badge)}</span>`:'')+inline.map(action=>` ${renderBoardInlineAction(action,{sizing})}`).join('');
   return sentence+(detached.length?`<span class="board-message-actions">${detached.map(action=>renderBoardInlineAction(action,{sizing})).join(' ')}</span>`:'');

@@ -90,14 +90,15 @@ export function liveHistoryLabel(game,state,options={}) {
 // Recorded perspective follows saved human ownership, never temporary control or the live turn.
 export function recordedActorIdentity(game,move,options={}) {
   const side=recordedActorSide(move);
-  if(!side)return {text:'Next player',side:null,owned:false,self:false};
+  if(!side)return {text:'Next player',accessibleName:'Next player',side:null,owned:false,self:false};
   const perspective=owningPerspective(game,options);
   const owned=!move?.computerProof && perspective.sides.includes(side);
   const self=owned && perspective.kind==='self';
   const text=move?.computerProof
     ? COMPUTER_PROFILES[move.computerProof.profile]?.name ?? playerDisplayName(game,side)
-    : owned ? self ? `You (${sideColorName(side)})` : 'You' : playerDisplayName(game,side);
-  return {text,side,owned,self};
+    : owned ? 'You' : playerDisplayName(game,side);
+  const accessibleName=self?`You, ${sideColorName(side)}`:text;
+  return {text,accessibleName,side,owned,self};
 }
 export const historyActorLabel = (game,move,options={}) => recordedActorIdentity(game,move,options).text;
 

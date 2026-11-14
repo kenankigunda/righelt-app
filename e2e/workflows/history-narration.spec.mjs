@@ -19,6 +19,13 @@ for(const width of [390,1440])for(const example of examples)test(`${example.name
   const narration=width<900?page.locator('.history-inline-narration'):page.getByRole('region',{name:'Board context'}).locator('.board-context-content');
   await expect(narration).toBeVisible();
   await expect.poll(()=>narration.evaluate(node=>{const copy=node.cloneNode(true);for(const chip of copy.querySelectorAll('.board-preview-coordinate-chip'))chip.textContent=`(${chip.textContent})`;return copy.textContent;})).toContain(actionCopy(move.action));
+  const actorName=narration.locator('.board-message-name').first(),tone=move.actorSide==='P1'?'p1':'p2';
+  await expect(actorName).toHaveClass(new RegExp(`player-tone-${tone}`));
+  if(game.selfPlayMode){
+   await expect(actorName.locator(':scope > [aria-hidden="true"]')).toHaveText('You');
+   await expect(actorName.locator(':scope > .sr-only')).toHaveText(`You, ${tone==='p1'?'Red':'Blue'}`);
+   await expect(actorName).not.toHaveAttribute('aria-label',/.+/);
+  }
   await expect(row).toContainText(`Move ${move.displayMoveNumber??move.index+1}:`);
   if(width>=900)await expect(page.locator('.board-heading:not(.board-heading-sizing)')).toContainText(`Move ${move.displayMoveNumber??move.index+1}`);
   else{await expect(page.getByTestId('history-inline-preview').locator('h2,h3')).toHaveCount(0);}

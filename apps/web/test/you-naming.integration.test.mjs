@@ -8,6 +8,7 @@ import {recordedReplayLabel,historyActorLabel,playerDisplayName,viewerAliasQuali
 import {analysisPerspectiveCopy,renderDecisionDebug} from '../shell/computer-view.js';
 import {confirmedPlaybackMessage} from '../shell/playback-presentation.js';
 import {renderResultPanel} from '../shell/result-panel.js';
+import {renderBoardMessageHtml} from '../board/message-presentation.js';
 
 const game=(role='Player 1')=>({id:'g',myRole:role,myRoles:[role],player1:{identityId:'red',profile:{displayName:'Maya',username:'maya'}},player2:{identityId:'blue',profile:{displayName:'Ada',username:'ada'}}});
 const move=(side='P1')=>({moveId:'saved',index:7,displayMoveNumber:8,turnIndex:2,actorSide:side,action:{type:'move',from:{row:3,col:6},to:{row:4,col:6}},selectionSnapshot:{sideToMove:side,pieces:[]},snapshot:{pieces:[]}});
@@ -68,7 +69,11 @@ test('recorded History and replay use pinned actors with second person only for 
  assert.equal(selectedHistoryPresentation(value,{identityId:'spectator'}).message.text,'Maya moved commander from (3, 6) to (4, 6)');
  assert.equal(selectedHistoryPresentation(value,{identityId:'changed-account'}).message.actorName,'Maya');
  const self={...value,myRole:'Both Players',myRoles:['Both Players'],selfPlayMode:true,player2:{identityId:'red'},inspectedDecision:move('P2')};
- assert.equal(selectedHistoryPresentation(self,own).message.text,'You (Blue) moved your commander from (3, 6) to (4, 6)');
+ const selfMessage=selectedHistoryPresentation(self,own).message;
+ assert.equal(selfMessage.text,'You moved your commander from (3, 6) to (4, 6)');
+ assert.equal(selfMessage.actorName,'You');assert.equal(selfMessage.actorToneSide,'P2');assert.equal(selfMessage.actorAccessibleName,'You, Blue');
+ const selfHtml=renderBoardMessageHtml(selfMessage);
+ assert.match(selfHtml,/class="board-message-name player-tone-p2"/);assert.match(selfHtml,/<span aria-hidden="true">You<\/span><span class="sr-only">You, Blue<\/span>/);assert.doesNotMatch(selfHtml,/aria-label|You \(Blue\)/);
  assert.equal(recordedReplayLabel(self,move('P1'),own),'Playing your recorded Red move');
  const computer={...value,computer:{manual:true,seats:{p2:'horus'}},canControlComputer:true,player2:{identityId:'red',computerProfile:'horus'}};
  assert.equal(historyActorLabel(computer,{...move('P2'),computerProof:{profile:'babs'}},own),'Babs');
