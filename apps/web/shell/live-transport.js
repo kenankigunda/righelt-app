@@ -1900,6 +1900,13 @@ export const createLiveTransportStore = ({
     }
   };
   const loadGame = async (gameId, { openAsViewer = false } = {}) => {
+    // Route/reload hydration supersedes an unresolved personal History read.
+    // Its request may finish, but the retired owner can no longer replace the
+    // newly hydrated authoritative view.
+    if(historyLoads.delete(gameId)){
+      recalculateOptimisticGame(gameId);
+      emitChange({type:'history_loading',gameId});
+    }
     const loadIdentity = identityId, loadSession = auth?.session, loadContext = loadSession?.contextId;
     const loadAuthEnabled = auth?.enabled, loadAuthenticated = loadSession?.authenticated;
     const loadStorageGeneration = auth?.storageGeneration;
@@ -2221,17 +2228,19 @@ export const createLiveTransportStore = ({
     else {
       const owner = {loading:true,index:moveIndex,error:null};historyLoads.set(gameId,owner);
       recalculateOptimisticGame(gameId);emitChange({type:"history_loading",gameId});
-      void loadHistoricalMove(gameId,game.gameplayRevision,summary.moveId).then(move => {
-        if (!active || historyLoads.get(gameId) !== owner) return;
+      return loadHistoricalMove(gameId,game.gameplayRevision,summary.moveId).then(move=>{
+        if (!active || historyLoads.get(gameId) !== owner) return getGameViewModel(gameId);
         const current = getGameViewModel(gameId);
         if (current.gameplayRevision !== game.gameplayRevision) throw new Error("history_changed");
         applyHistorySelection(gameId,current,[...current.moves,...(current.pendingMoves??[])],move);
         // Prefetch only adjacent snapshots, with the same immutable revision key.
         for(const adjacent of moves.filter(move=>Math.abs(move.index-moveIndex)===1 && !move.snapshot)) void loadHistoricalMove(gameId,game.gameplayRevision,adjacent.moveId).catch(()=>{});
-      }).catch(error => {
-        if (!active || historyLoads.get(gameId) !== owner) return;
+        return getGameViewModel(gameId);
+      }).catch(error=>{
+        if (!active || historyLoads.get(gameId) !== owner) return getGameViewModel(gameId);
         owner.loading=false;owner.error=error.code??error.message;
         recalculateOptimisticGame(gameId);emitChange({type:"history_load_failed",gameId});
+        return getGameViewModel(gameId);
       });
     }
     return getGameViewModel(gameId);

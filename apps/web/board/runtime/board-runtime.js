@@ -687,12 +687,14 @@ export function createBoardRuntime({
     const externalMessage = controls.getBoardMessage?.({state, selectedPieceId, inspection});
     if (externalMessage) {
       if(isBoardMessageResolution(externalMessage)){
+        messageHeightController?.setContentHeightOwner?.(null);
         if(statusContext?.mandatory){setBoardPreviewPromptHtml(renderBoardMessageHtml({text:BOARD_PROMPT.requiredRush,badge:'Obligatory'}));return;}
         if(externalMessage.prompt)setBoardPreviewPromptHtml(renderBoardMessageHtml(externalMessage.prompt));
         else hideBoardPreviewPrompt();
         return;
       }
       const message = typeof externalMessage === "string" ? {text: externalMessage} : externalMessage;
+      messageHeightController?.setContentHeightOwner?.(message.contentHeightOwner??null);
       if(message.context?.kind==='replay-progress')addStatusContext(message.context.message,{kind:'replay-progress'});
       const {actorName,rest,actions} = boardMessagePresentation(message);
       if(messageHeightController?.deferContent?.(renderBoardMessageHtml(message),()=>renderStatus())){statusDeferred=true;return;}
@@ -710,6 +712,7 @@ export function createBoardRuntime({
           const text = String(actions[index].label);
           updateBoardInlineActionLabel(button,text);
         });
+        messageHeightController?.captureContentHeight?.();
         return;
       }
       const name = label?.firstChild;
@@ -721,12 +724,15 @@ export function createBoardRuntime({
         const suffix = `${rest}${actions.length ? " " : ""}`;
         if (label.childNodes[1].nodeValue !== suffix) label.childNodes[1].nodeValue = suffix;
         buttons.forEach((button, index) => { const text=String(actions[index].label); updateBoardInlineActionLabel(button,text); });
+        messageHeightController?.captureContentHeight?.();
         return;
       }
       const messageHtml = renderBoardMessageHtml(message);
       if (!patchBoardMessage(label,messageHtml,{isRuntimeDisabled:inlineActionAvailability.owns})) setBoardPreviewPromptHtml(messageHtml);
+      messageHeightController?.captureContentHeight?.();
       return;
     }
+    messageHeightController?.setContentHeightOwner?.(null);
     if(rushGuidanceStatus==='failed'&&overlayMode===OVERLAY_MODE.INTERACTIVE&&!hasInspection()&&!selectedPieceId&&host.canPresentActions?.(state)!==false&&state?.continuation?.type==='rush'){
       addStatusContext({text:'Hints unavailable'},{kind:'rush-hints'});
       const actions=[...(legalActions.some(action=>action.type==='end_turn')?[{id:'end-turn',label:'End turn'}]:[]),{id:'retry-rush-guidance',label:'Try again'}];

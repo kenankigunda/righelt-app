@@ -12,22 +12,25 @@ export function renderBoardMessageSlot({id, loading = false, loadingKey,boardSiz
 }
 
 export function renderBoardHeadingSlot({loading = false} = {}) {
-  const caption = turn => `Board <span class="board-heading-separator">-</span> <span>${turn}</span>`;
+  const accessibleContext = '<span class="sr-only">Board: </span>';
+  const caption = turn => `<span>${turn}</span>`;
   const sizing = fallback => BOARD_TURN_CAPTIONS.map((turn,index) => `<h2 class="board-heading board-heading-sizing${fallback ? ' board-heading-fallback-sizing' : ''}" data-heading-sizing-font="${fallback ? 'fallback' : 'primary'}" data-heading-sizing-caption="${index}" aria-hidden="true" inert role="presentation">${caption(turn)}</h2>`).join('');
-  return `<div class="board-heading-slot"><h2 class="board-heading">${loading ? 'Board' : 'Board <span class="board-heading-separator">-</span> <span id="shell-board-turn-indicator">-</span>'}</h2>${sizing(false)}${sizing(true)}</div>`;
+  const state = loading ? '<span>Loading</span>' : '<span id="shell-board-turn-indicator">-</span>';
+  return `<div class="board-heading-slot"><h2 class="board-heading">${accessibleContext}${state}</h2>${sizing(false)}${sizing(true)}</div>`;
 }
 
 const activeMessages = new WeakMap();
 let operation = 0;
 // This host is a sibling of the runtime-owned prompt. Its cue therefore survives
 // repeated prompt innerHTML writes and phase/proof-save updates without resets.
-export function updateComputerBoardLoading(element, game, status = {}, {replaying = false, inspecting = false, scope = ''} = {}) {
+export function updateComputerBoardLoading(element, game, status = {}, {replaying = false, inspecting = false, loadingKey = null, scope = ''} = {}) {
   if (!element) return;
   element.dataset.loadingSuppressed = String(inspecting);
-  const pending = Boolean(game?.computer && (!isCompletedGame(game) || game.pendingComputerSaveStartedAt != null) && !game.inHistoryMode && !replaying && !game.computer.paused
+  const operationPending = typeof loadingKey === 'string' && loadingKey.length > 0;
+  const pending = operationPending || Boolean(game?.computer && (!isCompletedGame(game) || game.pendingComputerSaveStartedAt != null) && !game.inHistoryMode && !replaying && !game.computer.paused
     && !['recovery','other-device','paused'].includes(status.phase)
     && (game.computerTurn || game.pendingComputerSaveStartedAt != null));
-  const owner = `${scope}:${game?.id}`;
+  const owner = operationPending ? loadingKey : `${scope}:${game?.id}`;
   if (!pending) {
     activeMessages.delete(element);
     setActivityActor(element,null);
@@ -37,10 +40,10 @@ export function updateComputerBoardLoading(element, game, status = {}, {replayin
   }
   let active = activeMessages.get(element);
   if (active?.owner !== owner) {
-    active = {owner,actorSide:null,key:`computer-board:${owner}:${++operation}`};
+    active = {owner,actorSide:null,key:operationPending?owner:`computer-board:${owner}:${++operation}`};
     activeMessages.set(element,active);
   }
-  active.actorSide=computerActivityActorSide(game,status) ?? active.actorSide;
+  active.actorSide=operationPending?null:computerActivityActorSide(game,status) ?? active.actorSide;
   setActivityActor(element,active.actorSide);
   if (element.dataset.loadingKey !== active.key) element.dataset.loadingKey = active.key;
   if (element.dataset.loadingState !== 'pending') element.dataset.loadingState = 'pending';

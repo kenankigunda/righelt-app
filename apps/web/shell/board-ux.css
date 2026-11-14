@@ -186,7 +186,6 @@ body {display:flow-root;}
 
 .board-heading {display:flex;flex-wrap:wrap;align-items:baseline;gap:.25em;}
 .board-heading > span:last-child {flex:1 1 8ch;min-width:0;}
-.board-heading > .board-heading-separator {flex:0 0 auto;}
 
 .board-turn-name,.history-actor {unicode-bidi:isolate;}
 

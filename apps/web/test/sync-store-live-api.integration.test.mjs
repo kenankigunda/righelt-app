@@ -336,6 +336,45 @@ test("integration sync store enters and exits history locally before delayed ser
   await new Promise((resolve) => setTimeout(resolve, 0));
 });
 
+test('integration sync store keeps an uncached History move pending until its immutable snapshot settles',async()=>{
+ const {store}=createTrackedSyncStore();
+ const created=await store.createGame({selfPlayMode:false}).committed;
+ const action=created.legalActions.find(entry=>entry.type!=='pass')??created.legalActions[0];
+ await (await store.applyGameAction({gameId:created.id,state:created.currentSnapshot,action})).committed;
+ const accepted=structuredClone(store.getGameViewModel(created.id));
+ delete accepted.moves[0].snapshot;delete accepted.moves[0].selectionSnapshot;
+ store.applyLiveGameUpdate({game:accepted,eventSeq:store.getLastEventSeq(created.id)+1});
+ const prior=store.getGameViewModel(created.id).currentSnapshot;
+ const handle=store.selectHistoryMove({gameId:created.id,moveIndex:0});
+ assert.equal(handle.status,'pending');assert.equal(store.getGameViewModel(created.id).historyLoading,true);
+ assert.deepEqual(store.getGameViewModel(created.id).currentSnapshot,prior,'last valid Board remains authoritative while the request is pending');
+ const selected=await handle.committed;
+ assert.equal(handle.status,'committed');assert.equal(selected.inHistoryMode,true);assert.equal(store.getGameViewModel(created.id).historyLoading,false);
+});
+
+test('a pending History read never suppresses route hydration or reclaims the Board after reopening',async()=>{
+ const env=createApiEnv(),storage=createMemoryStorage(),requests=[];
+ let releaseDecision;const decisionGate=new Promise(resolve=>releaseDecision=resolve);
+ const store=createSyncStore({storage,fetcher:async(url,init={})=>{
+  const target=String(url),method=init.method||'GET';requests.push({target,method});
+  if(target.endsWith('/decision-snapshot'))await decisionGate;
+  return apiWorker.fetch(new Request(toAbsoluteUrl(url),{method,headers:init.headers,body:init.body}),env);
+ },createSyncClient:()=>({connectGame(){},disconnectGame(){},disconnectAll(){},getDesiredGameIds:()=>[]})});
+ const created=await store.createGame({selfPlayMode:false}).committed;
+ const action=created.legalActions.find(entry=>entry.type!=='pass')??created.legalActions[0];
+ await (await store.applyGameAction({gameId:created.id,state:created.currentSnapshot,action})).committed;
+ const compact=structuredClone(store.getGameViewModel(created.id));delete compact.moves[0].snapshot;delete compact.moves[0].selectionSnapshot;
+ store.applyLiveGameUpdate({game:compact});
+ const history=store.selectHistoryMove({gameId:created.id,moveIndex:0});
+ assert.equal(history.status,'pending');assert.equal(store.getPendingOperations(created.id).length,0,'a History read is not an optimistic mutation');
+ await store.loadGame(created.id,{openAsViewer:false});
+ assert.equal(requests.some(entry=>entry.target.startsWith(`/api/shell/games/${created.id}?`)&&entry.method==='GET'),true,'reopening performs authoritative hydration');
+ assert.equal(store.getGameViewModel(created.id).historyLoading,false);
+ releaseDecision();await history.committed;
+ assert.equal(store.getGameViewModel(created.id).inHistoryMode,false,'the retired History owner cannot replace the reopened live Board');
+ assert.equal(store.getGameViewModel(created.id).historyLoading,false);
+});
+
 test("integration sync store lets an already-created second store discover a pending history branch", async () => {
   const env = createApiEnv();
   const storage = createMemoryStorage();

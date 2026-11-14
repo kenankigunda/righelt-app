@@ -21,12 +21,14 @@ test('delayed history capture waits for the immutable pre-action position', { ti
  const transport = createLiveTransportStore({ storage: { getItem: () => 'actor', setItem() {} },
   fetcher: () => new Promise(resolve => { release = () => resolve(Response.json({ gameId: game.id, gameplayRevision: game.gameplayRevision, move: full })); notifyStarted(); }) });
  t.after(() => transport.retire()); transport.applyLiveGameUpdate({ game });
- transport.selectHistoryMove({ gameId: game.id, moveIndex: 2 });
+ let settled=false;
+ const selection=transport.selectHistoryMove({ gameId: game.id, moveIndex: 2 }).then(value=>{settled=true;return value;});
  const pending = transport.getGameViewModel(game.id); assert.equal(pending.historyLoading, true);
+ assert.equal(settled,false,'uncached move selection remains pending until its requested snapshot settles');
  assert.throws(() => beginScenarioCapture(pending, 'actor', resolveHistoryScenarioExportContext(pending)), /loading/i);
  await started;
  release();
- for (let i = 0; i < 100 && transport.getGameViewModel(game.id).historyLoading; i++) await new Promise(resolve => setTimeout(resolve, 1));
+ await selection;
  const selected = transport.getGameViewModel(game.id); assert.equal(selected.historyLoading, false);
  const capture = beginScenarioCapture(selected, 'actor', resolveHistoryScenarioExportContext(selected));
  assert.deepEqual(capture.snapshot, before); assert.notDeepEqual(capture.snapshot, after);

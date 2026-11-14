@@ -73,6 +73,25 @@ test('outer paint guard covers finite grammar and unsupported overflow reflows w
  f.controller.destroy();assert.equal(f.slot.style.height,undefined);assert.equal(f.slot.dataset.heightManaged,undefined);
 });
 
+test('one replay episode keeps its longest explanation height and a new episode releases the floor',()=>{
+ const f=fixture(4);f.controller.setContentHeightOwner('replay:first');
+ f.setCurrent(160);f.setRendered(83);f.controller.captureContentHeight();
+ assert.equal(f.slot.style.height,'168px');
+ f.setCurrent(40);f.setRendered(168);f.controller.captureContentHeight();
+ assert.equal(f.slot.style.height,'168px','a shorter recorded step cannot collapse the active replay');
+ f.controller.setContentHeightOwner('replay:second');
+ f.setRendered(168);f.controller.captureContentHeight();
+ assert.equal(f.slot.style.height,'83px','a changed replay retires the previous episode floor');
+ f.controller.setContentHeightOwner(null);f.controller.destroy();
+});
+
+test('reduced motion replay height settles synchronously without animating',()=>{
+ const f=fixture(4);f.motion.matches=true;f.controller.setContentHeightOwner('replay:reduced');
+ f.setCurrent(160);f.controller.captureContentHeight();
+ f.setRendered(168);f.setCurrent(40);f.controller.captureContentHeight();
+ assert.equal(f.slot.style.height,'168px');assert.equal(f.animations.length,0);f.controller.destroy();
+});
+
 test('surviving focused action publishes synchronously inside a fixed measured grammar',()=>{
  const f=fixture(0,180);f.doc.activeElement=f.button;let publications=0;
  const publish=()=>{publications++;assert.equal(f.controller.deferContent('Longer Next',publish),false);f.setCurrent(180);f.setButtonTop(130);};

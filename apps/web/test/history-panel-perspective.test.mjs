@@ -27,11 +27,11 @@ test('history shows actor names only with their moves and puts result access aft
  assert(!html.slice(0,html.indexOf('<ol')).includes('<button'));
 });
 
-test('history hydration retains the selected view and exposes scoped retry before the move list',()=>{
+test('history hydration retains the selected view without loading copy and exposes scoped retry before the move list',()=>{
  const context={undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderHistoryResult,renderHistorySlots,renderTurnHistory:()=>'<li>Selected move</li>',renderAdditionalHistory:()=>'',getGameResult:()=>null,transport:{getAuthoritativeGame:()=>({}),getIdentityId:()=> 'owner'},escapeHtml:String};
  runWithHistoryRendering(`${declaration};globalThis.render=renderHistoryPanel;`,context);
  const loading=context.render({id:'game',historyLoading:true,historyLoadIndex:3});
- assert.match(loading,/Loading this move/);assert.doesNotMatch(loading,/data-action="jump-history"/);
+ assert.doesNotMatch(loading,/Loading this move|Loading this turn|history-load-status|data-action="jump-history"/);
  const failed=context.render({id:'game',historyLoadError:'unavailable',historyLoadIndex:3});
  assert.match(failed,/Your current view is still available/);
  assert.match(failed,/data-action="jump-history" data-move-index="3" data-game-id="game"/);

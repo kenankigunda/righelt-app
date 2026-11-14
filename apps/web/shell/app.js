@@ -28,9 +28,10 @@ import {
 import {createHistoryRendering} from './history-rendering.js';
 import {createHistorySelectionTransition} from './history-selection-transition.js';
 import {captureHistorySelectionFocus,createHistorySelectionActions} from './history-selection-actions.js';
+import {historyRevealScrollDelta} from './history-reveal.js';
 import * as undoHistory from './history-undo-groups.js';
 import {createGameAlertItems,renderGameAlertStackCard as renderAlertStackCard,createNotificationPatchLifecycle} from './game-alert-presentation.js';
-import {historyBoardRuntimeMessage,presentPlaybackBoardMessage,playbackTurnIndicator,refreshFollowControls} from './playback-presentation.js';
+import {displayedReplayMessage,historyBoardRuntimeMessage,presentPlaybackBoardMessage,playbackTurnIndicator,refreshFollowControls} from './playback-presentation.js';
 import {isLiveBoardVisible} from './live-board-visibility.js';
 import {mountDecisionNoteEditor} from './decision-note-editor.js';
 import {renderResultPanel} from './result-panel.js';
@@ -44,7 +45,6 @@ import {renderBoardMessageHtml} from '../board/message-presentation.js';
 import { createPendingInvitationFocus } from './pending-invitation-focus.js';
 import {createBoardLoadingMessageOwner} from './board-loading-message-owner.js';
 import {createHistoryHeadingFocus} from "./history-heading-focus.js";
-import {BOARD_PROMPT} from '../board/prompt-models.js';
 import {renderDismissButton} from './dismiss-control.js';
 import {createConfirmedFramePresenter} from './confirmed-frame-presenter.js';
 import {createConfirmedComputerPlayback} from './confirmed-computer-playback.js';
@@ -55,7 +55,7 @@ import {createLiveTurnOverview,liveTurnOverviewOverlay} from './live-turn-overvi
 import {mountHoverTooltips} from './hover-tooltip.js';
 import {captureHomeFocus,refreshHomeFocus,restoreHomeFocus,restoreHomeReadingPosition} from './home-focus.js';
 import {homeCardResult} from './home-card-result.js';
-import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName,recordedReplayLabel} from './perspective-labels.js';
+import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
 import {renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
 import {renderGameSummaryPanel as renderGameSummaryPanelContent} from './game-summary-panel.js';
 import {renderConnectionStatusIcon} from './participant-status.js';
@@ -2218,7 +2218,9 @@ const revealSelectedHistory = () => {
     revealedHistoryKey = key;
     const top = selected.getBoundingClientRect().top;
     const bottom = (preview || selected).getBoundingClientRect().bottom;
-    if (top < 12 || bottom > viewport - bottomInset) window.scrollBy({top:top-12,behavior:'instant'});
+    const visibleBottom=viewport-bottomInset;
+    const delta=historyRevealScrollDelta({top,bottom,visibleBottom});
+    if(delta)window.scrollBy({top:delta,behavior:'instant'});
   }));
 };
 
@@ -2243,7 +2245,7 @@ const renderHistoryPanel = (game) => {
   const historyGame = { ...game, historyUndoArchiveEntries: undoArchive };
   const historyRows = renderTurnHistory(historyGame);
   return renderHistorySlots({rows:historyRows,extra:renderAdditionalHistory(historyGame),
-    before:(game.confirmedPlayback?'':renderHistoryResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId(),{includeRematch:true})) + (game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? (game.historyLoadTurnIndex != null ? "Loading this turn" : "Loading this move") : (game.historyLoadTurnIndex != null ? "This turn couldn’t load. Your current view is still available." : "This move couldn’t load. Your current view is still available.")}</p>${game.historyLoadError ? `<button class="secondary mini-button" ${game.historyLoadTurnIndex != null ? `data-action="jump-history-turn" data-turn-index="${game.historyLoadTurnIndex}"` : `data-action="jump-history" data-move-index="${game.historyLoadIndex}"`} data-game-id="${escapeHtml(game.id)}">Retry</button>` : ""}</div>` : ""),
+    before:(game.confirmedPlayback?'':renderHistoryResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId(),{includeRematch:true})) + (game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoadTurnIndex != null ? "This turn couldn’t load. Your current view is still available." : "This move couldn’t load. Your current view is still available."}</p><button class="secondary mini-button" ${game.historyLoadTurnIndex != null ? `data-action="jump-history-turn" data-turn-index="${game.historyLoadTurnIndex}"` : `data-action="jump-history" data-move-index="${game.historyLoadIndex}"`} data-game-id="${escapeHtml(game.id)}">Retry</button></div>` : ""),
     after:!game.confirmedPlayback && getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">${icon("history")}View result</button>` : ""});
 };
 
@@ -3097,17 +3099,18 @@ const mountBoardForGame = (game) => {
           const replayFeedback = replayRequests.snapshot();
           const replay = replayController?.snapshot();
           const status = computerSession?.snapshot();
-          const confirmedMessage=presentPlaybackBoardMessage(view,status,{activityHost:document.getElementById('shell-board-preview-label')?.parentElement.querySelector('.board-message-activity'),selection,followWorking:forcedFollowWorking(game.id),replay,replayFeedback,scope:viewingScope(),step:confirmedPlayback?.snapshot().current,onRecorded:acknowledgedBoardMessage,identityId:transport.getIdentityId()});
+          const replayPending=replayFeedback?.gameId===game.id&&replayFeedback.phase==='loading';
+          const historyPending=view.historyLoading&&getShellLayoutMode()==='wide';
+          const followPending=forcedFollowWorking(game.id);
+          const loadingKey=replayPending?`replay:${game.id}:${boardContextState.activeDisplayedReplay?.key??'current'}`:historyPending?`history:${game.id}:${view.historyLoadTurnIndex!=null?`turn:${view.historyLoadTurnIndex}`:`move:${view.historyLoadIndex}`}`:followPending?`follow:${game.id}:${view.gameplayRevision}`:null;
+          const confirmedMessage=presentPlaybackBoardMessage(view,status,{activityHost:document.getElementById('shell-board-preview-label')?.parentElement.querySelector('.board-message-activity'),selection,replay,replayFeedback,loadingKey,scope:viewingScope(),step:confirmedPlayback?.snapshot().current,onRecorded:acknowledgedBoardMessage,identityId:transport.getIdentityId()});
           if(confirmedMessage)return confirmedMessage;
-          if (replayFeedback?.gameId === game.id) return replayFeedback.phase === "loading"
-            ? {text:"Preparing replay",action:{id:"replay-cancel",label:"Cancel replay"}}
-            : {text:"Replay unavailable",actions:[{id:"replay-computer",label:"Try again"},{id:"replay-dismiss",label:"Dismiss"}]};
-          if (replay?.playing) return {text:replay.manual?BOARD_PROMPT.manualReplay:BOARD_PROMPT.replay,actions:[...(replay.manual?[{id:'replay-next',label:'Next'}]:[]),{id:'replay-stop',label:'Stop replay'}],context:{kind:'replay-progress',message:{rows:[selectedHistoryPresentation({...view,inHistoryMode:true,historyTurnIndex:null,inspectedDecision:replay.recordedMove},{identityId:transport.getIdentityId()})?.message??{text:'Historical move details unavailable'},{text:recordedReplayLabel(view,replay.recordedMove,{identityId:transport.getIdentityId()})},{text:`Replay · ${Math.max(1,replay.step)} of ${replay.total}`}]}}};
+          const replayMessage=displayedReplayMessage(view,replay,replayFeedback,{identityId:transport.getIdentityId(),episodeKey:boardContextState.activeDisplayedReplay?.key});
+          if(replayMessage)return replayMessage;
           const options={canInteract:!(currentRoute.scenarios&&scenarioCapture?.mode==='frozen'&&scenarioCapture.gameId===game.id)&&hostInvite?.gameId!==game.id&&canControlLiveBoard(view),identityId:transport.getIdentityId()};
           acknowledgedBoardMessage(view,status,options);
           const historyMessage=historyBoardRuntimeMessage(view,selection,{identityId:options.identityId});
           if(historyMessage)return historyMessage;
-          if(forcedFollowWorking(game.id))return BOARD_PROMPT.following;
           return opponentBoardMessage(view,status,selection,options);
         },
         onBoardMessageAction:(id,source)=>dispatchBoardMessageAction(id,source),
@@ -4921,7 +4924,8 @@ appEl.addEventListener("click", async (event) => {
       select: () => {
         if (transport.getGameViewModel(gameId)?.historyIndex !== moveIndex || !transport.getGameViewModel(gameId)?.inHistoryMode) viewingIntent.navigate(gameId);
         undoHistory.noteUndoHistorySelection(expandedUndoneGroups,gameId,moveId,transport);
-        return transport.selectHistoryMove({ gameId, moveIndex, moveId });
+        const handle=transport.selectHistoryMove({ gameId, moveIndex, moveId });
+        return handle?.committed??handle;
       },
       accepted: () => transport.getGameViewModel(gameId)?.inHistoryMode === true && transport.getGameViewModel(gameId)?.historyIndex === moveIndex,
       sound: "history",

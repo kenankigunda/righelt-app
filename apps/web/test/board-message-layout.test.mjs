@@ -33,10 +33,15 @@ test('cold and live headings share reserved turn captions and one accessible hea
  const live=renderBoardHeadingSlot(),loading=renderBoardHeadingSlot({loading:true});
  assert.equal((live.match(/id="shell-board-turn-indicator"/g)??[]).length,1);
  assert(!loading.includes('id='));
+ assert.match(live,/<h2 class="board-heading"><span class="sr-only">Board: <\/span><span id="shell-board-turn-indicator">-<\/span><\/h2>/);
+ assert.match(loading,/<h2 class="board-heading"><span class="sr-only">Board: <\/span><span>Loading<\/span><\/h2>/);
+ assert.doesNotMatch(live,/Board <span|board-heading-separator|>Board -/);
+ assert.doesNotMatch(loading,/>Board<\/h2>|board-heading-separator/);
  for(const html of [live,loading]){
   assert.equal((html.match(/aria-hidden="true" inert role="presentation"/g)??[]).length,10);
   for(const font of ['primary','fallback'])for(let index=0;index<5;index++)assert(html.includes(`data-heading-sizing-font="${font}" data-heading-sizing-caption="${index}"`));
   for(const caption of ['Your turn to play','Opponent to play','Guest 1 to play','Guest 2 to play'])assert(html.includes(caption));
+  assert.equal((html.match(/<span class="sr-only">Board: <\/span>/g)??[]).length,1,'only the accessible live heading carries Board context');
  }
  const app=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
  assert(app.includes('renderBoardHeadingSlot({loading:true})'));
@@ -56,6 +61,17 @@ test('computer cue keeps one operation across search/save revisions and retires 
   updateComputerBoardLoading(host,game,{}, {scope:'owner1'});assert.notEqual(host.dataset.loadingKey,key);
  }
  const previous=host.dataset.loadingKey;updateComputerBoardLoading(host,game,{}, {scope:'owner2'});assert.notEqual(host.dataset.loadingKey,previous);
+});
+
+test('replay and History hydration reuse the quiet Board activity cue without an actor or restarted key',()=>{
+ const host={dataset:{loadingState:'idle',activitySide:'P1'},hasAttribute(name){return name==='data-loading-key'&&this.dataset.loadingKey!==undefined;},removeAttribute(name){if(name==='data-loading-key')delete this.dataset.loadingKey;}};
+ const game={id:'g'};
+ updateComputerBoardLoading(host,game,{}, {scope:'owner',loadingKey:'replay:g:recorded'});
+ assert.equal(host.dataset.loadingState,'pending');assert.equal(host.dataset.loadingKey,'replay:g:recorded');assert.equal(host.dataset.activitySide,undefined);
+ updateComputerBoardLoading(host,{...game,gameplayRevision:4},{phase:'unrelated'}, {scope:'owner',loadingKey:'replay:g:recorded'});
+ assert.equal(host.dataset.loadingKey,'replay:g:recorded','rerenders retain the existing 200 ms loading episode');
+ updateComputerBoardLoading(host,game,{}, {scope:'owner'});
+ assert.equal(host.dataset.loadingState,'idle');assert.equal(host.dataset.loadingKey,undefined);
 });
 
 

@@ -33,7 +33,7 @@ test('production automatic presentation and recorded contexts keep canonical raw
   const caption=playbackTurnIndicator(game,{},{step:context.confirmedPlayback.snapshot().current,identityId});
   assert.deepEqual({...caption},{text:'Move 17',side:'P2'});
   const message=confirmedPlaybackMessage(game,context.computerSession.snapshot(),{step:context.confirmedPlayback.snapshot().current,identityId,onRecorded:context.acknowledgedBoardMessage});
-  assert.equal(message.text,'Babs is making their move');assert(isMappedBoardPromptHtml(renderBoardMessageHtml(message)));
+  assert.equal(message.text,'Babs rushed from (1, 2) to (2, 2)');
   const recorded=store.channel('acknowledged');assert.equal(recorded.message.text,'Babs rushed from (1, 2) to (2, 2)');assert.equal(recorded.replay,null);
   assert.deepEqual(recorded.message.coordinates,[{row:1,col:2},{row:2,col:2}]);
   assert.deepEqual(humanControlledSides(game,{identityId}),perspective==='observer'?[]:['P1'],'manual computer control does not transfer human ownership');

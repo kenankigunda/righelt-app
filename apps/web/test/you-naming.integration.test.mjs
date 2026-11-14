@@ -64,8 +64,8 @@ test('recorded History and replay use pinned actors with second person only for 
  assert.equal(selectedHistoryPresentation(value,own).message.text,'You moved your commander from (3, 6) to (4, 6)');
  assert.equal(recordedReplayLabel(value,move(),own),'Playing your recorded move');
  const playback=confirmedPlaybackMessage({...value,confirmedPlayback:{playing:true}}, {},{identityId:'red',step:{frame:{recordedMove:move()}}});
- assert.equal(playback.text,'Watch replay');assert.equal(playback.context.message.rows[1].text,'Playing your recorded move');
- assert.equal(playback.context.message.rows[0].text,'You moved your commander from (3, 6) to (4, 6)');
+ assert.equal(playback.text,'You moved your commander from (3, 6) to (4, 6)');
+ assert.equal(playback.actorName,'You');assert.equal(playback.actorToneSide,'P1');
  assert.equal(selectedHistoryPresentation(value,{identityId:'spectator'}).message.text,'Maya moved commander from (3, 6) to (4, 6)');
  assert.equal(selectedHistoryPresentation(value,{identityId:'changed-account'}).message.actorName,'Maya');
  const self={...value,myRole:'Both Players',myRoles:['Both Players'],selfPlayMode:true,player2:{identityId:'red'},inspectedDecision:move('P2')};

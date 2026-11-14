@@ -4,8 +4,8 @@ import {boardPromptSizingModels} from '../board/prompt-models.js';
 import {renderBoardMessageSlot} from '../shell/board-message-layout.js';
 import {validateFontEnvelope} from '../../../browser-integration/support/font-pattern-budget.mjs';
 
-// Independent public finite-prompt contract. Keep the approved 68-row corpus
-// provenance; PR193 adds eleven models, giving 79 per font. This expectation is
+// Independent public finite-prompt contract. Retired replay chrome remains in
+// this invisible reservation so the Board message slot cannot shrink. This is
 // authored from the accepted prompt/CTA/coordinate/actor states, never harvested
 // from the implementation. Compare semantic multisets so reordering is harmless.
 const expectedModels=[
@@ -22,8 +22,8 @@ const expectedModels=[
  {text:'Select a rush or',action:{id:'end-turn',label:'End turn'}},
  {text:'Select a rush to restore supply',badge:'Obligatory',actions:[{id:'retry-rush-guidance',label:'Try again'}]},
  {text:'Select a rush',actions:[{id:'end-turn',label:'End turn'},{id:'retry-rush-guidance',label:'Try again'}]},
+ {text:'Replay unavailable',action:{id:'replay-computer',label:'Try again'}},
  {text:'Preparing replay',action:{id:'replay-cancel',label:'Cancel replay'}},
- {text:'Replay unavailable',actions:[{id:'replay-computer',label:'Try again'},{id:'replay-dismiss',label:'Dismiss'}]},
  {text:'Watch replay',action:{id:'replay-stop',label:'Stop replay'}},
  {text:'Next',actions:[{id:'replay-next',label:'Next'},{id:'replay-stop',label:'Stop replay'}]},
  {text:'Confirm',confirmation:{text:'continue rush on',point:{row:9,col:9}}},

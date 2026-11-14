@@ -15,7 +15,7 @@ export async function selectRecordedUndoMove(row,move){
  else{
   const moveNumber=(await row.getAttribute('aria-label'))?.match(/ · Move (\d+):/);
   expect(moveNumber).not.toBeNull();
-  await expect(page.locator('.board-heading:not(.board-heading-sizing)')).toHaveText(`Board - Move ${moveNumber[1]}`);
+  await expect(page.locator('#shell-board-turn-indicator')).toHaveText(`Move ${moveNumber[1]}`);
   await expect(page.locator('#shell-game-alerts [data-alert-stack-card].is-active [data-board-context] .board-context-content')).toBeVisible();
   expect(move?.snapshot?.pieces?.length).toBeGreaterThan(0);
   await expect(row).toHaveAttribute('data-move-id',move.moveId);

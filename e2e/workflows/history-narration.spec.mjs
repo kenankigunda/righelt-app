@@ -27,7 +27,12 @@ for(const width of [390,1440])for(const example of examples)test(`${example.name
    await expect(actorName).not.toHaveAttribute('aria-label',/.+/);
   }
   await expect(row).toContainText(`Move ${move.displayMoveNumber??move.index+1}:`);
-  if(width>=900)await expect(page.locator('.board-heading:not(.board-heading-sizing)')).toContainText(`Move ${move.displayMoveNumber??move.index+1}`);
+  if(width>=900){
+   const title=`Move ${move.displayMoveNumber??move.index+1}`;
+   const heading=page.locator('.board-heading:not(.board-heading-sizing)');
+   await expect(heading.locator(':scope > span:not(.sr-only)')).toHaveText(title);
+   await expect(page.getByRole('heading',{name:`Board: ${title}`,exact:true})).toBeVisible();
+  }
   else{await expect(page.getByTestId('history-inline-preview').locator('h2,h3')).toHaveCount(0);}
   const chips=narration.locator('.board-preview-coordinate-chip');await expect(chips).not.toHaveCount(0);
  }
