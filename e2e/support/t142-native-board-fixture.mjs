@@ -29,16 +29,19 @@ export async function mountT142NativeBoard(page) {
   await page.goto('/deploy-meta.json');
   await page.setContent(fixtureMarkup, {waitUntil:'load'});
   await page.evaluate(async()=>{
-    const [{createBoardRuntime},{createEngineBoardAdapter},{createShellBoardHost},{mutationSurfacePresentation},engine] = await Promise.all([
+    const [{createBoardRuntime},{createEngineBoardAdapter},{createShellBoardHost},{mutationSurfacePresentation},{createForegroundRecoveryWait},{createRecoveryPresentation},engine] = await Promise.all([
       import('/board/runtime/board-runtime.js'),
       import('/board-adapters/engine-board-adapter.js'),
       import('/board/hosts/shell-host.js'),
       import('/board/surface-pulse.js'),
+      import('/shell/foreground-recovery.js'),
+      import('/shell/recovery-presentation.js'),
       import('/generated/packages/game-engine/src/index.js'),
     ]);
-    let state=engine.createInitialState(),legalActions=engine.listLegalActions(state),authority=true,foregroundWaitMs=0,episode=1,actionType='pass';
+    let state=engine.createInitialState(),legalActions=engine.listLegalActions(state),authority=true,now=1_000,episode=1,incidentStartedAt=null,staleEpisodeId=null,actionType='pass';
     const commands=[];
-    const game={currentSnapshot:state,legalActions,sharedMutationsBlocked:false,gameplayMutationsBlocked:false,recovering:false,syncStatus:'ready',recoveryEpisodeId:null};
+    const presentationDocument={hidden:false},currentRoute={name:'game',gameId:'fixture-game'};
+    const game={id:'fixture-game',currentSnapshot:state,legalActions,sharedMutationsBlocked:false,gameplayMutationsBlocked:false,recovering:false,syncStatus:'ready',recoveryEpisodeId:null};
     const syncGame=(nextState=state)=>{state=nextState;legalActions=engine.listLegalActions(state);game.currentSnapshot=state;game.legalActions=legalActions;};
     const admit=action=>{
       if(!authority)throw Object.assign(new Error('fixture_authority_blocked'),{code:'authority_blocked'});
@@ -49,13 +52,19 @@ export async function mountT142NativeBoard(page) {
       getGameViewModel:()=>game,
       applyGameAction:({action})=>admit(action),
       endTurn:()=>admit({type:'end_turn'}),
+      ensureRecoveryIncident:()=>null,
     };
+    const foregroundRecoveryWait=createForegroundRecoveryWait({clock:()=>now,setTimer:()=>0,clearTimer(){}});
+    const recoveryPresentation=createRecoveryPresentation(()=>({
+      foregroundRecoveryWait,viewingScope:()=> 'fixture-owner',currentRoute,document:presentationDocument,
+      getCurrentViewedGameId:()=> 'fixture-game',computerSession:null,quietComputerRenewal:()=>false,transport,
+    }));
     const host=createShellBoardHost({
       transport,gameId:'fixture-game',
       canInteract:()=>authority,
       canPresentActions:()=>true,
       canSelect:()=>true,
-      getMutationSurface:()=>mutationSurfacePresentation(game,{foregroundWaitMs}),
+      getMutationSurface:()=>mutationSurfacePresentation(game,recoveryPresentation.options(game)),
       rulesExecutor:{asynchronous:false,cancelAll(){},previews(_kind,{legalActions:actions,pieceId}){
         const piece=state.pieces.find(candidate=>candidate.id===pieceId);
         const selected=actions.filter(action=>action.actorId===pieceId||action.from&&piece&&piece.position.row===action.from.row&&piece.position.col===action.from.col);
@@ -75,16 +84,20 @@ export async function mountT142NativeBoard(page) {
       async selectMove(){await runtime.setSelectionFromAction(move);return structuredClone(move);},
       action:structuredClone(move),
       setIncident(elapsedMs,{nextEpisode=false}={}){
-        authority=false;foregroundWaitMs=elapsedMs;if(nextEpisode)episode+=1;
+        authority=false;if(nextEpisode){staleEpisodeId=game.recoveryEpisodeId;episode+=1;}
         Object.assign(game,{sharedMutationsBlocked:true,gameplayMutationsBlocked:true,recovering:true,syncStatus:'recovering',recoveryEpisodeId:`fixture-episode-${episode}`});
+        incidentStartedAt=now;recoveryPresentation.options(game);now+=elapsedMs;
         runtime.refreshStatus();
       },
-      advanceIncident(elapsedMs){foregroundWaitMs=elapsedMs;runtime.refreshStatus();},
+      advanceIncident(elapsedMs){now=incidentStartedAt+elapsedMs;runtime.refreshStatus();},
+      setHidden(value,advanceMs=0){presentationDocument.hidden=Boolean(value);now+=advanceMs;runtime.refreshStatus();if(!value)incidentStartedAt=now;},
+      supersede(elapsedMs=0){staleEpisodeId=game.recoveryEpisodeId;episode+=1;game.recoveryEpisodeId=`fixture-episode-${episode}`;incidentStartedAt=now;recoveryPresentation.options(game);now+=elapsedMs;runtime.refreshStatus();},
+      staleRefresh(advanceMs=0){now+=advanceMs;const stale={...game,recoveryEpisodeId:staleEpisodeId};const staleSurface=mutationSurfacePresentation(stale,recoveryPresentation.options(stale));runtime.refreshStatus();incidentStartedAt=now;return staleSurface;},
       rerender(){runtime.refreshVisuals();runtime.refreshStatus();},
-      recover(){authority=true;foregroundWaitMs=0;Object.assign(game,{sharedMutationsBlocked:false,gameplayMutationsBlocked:false,recovering:false,syncStatus:'ready',recoveryEpisodeId:null});runtime.refreshStatus();},
-      retire(){episode+=1;authority=true;foregroundWaitMs=0;Object.assign(game,{sharedMutationsBlocked:false,gameplayMutationsBlocked:false,recovering:false,syncStatus:'ready',recoveryEpisodeId:null});runtime.refreshStatus();},
+      recover(){authority=true;incidentStartedAt=null;Object.assign(game,{sharedMutationsBlocked:false,gameplayMutationsBlocked:false,recovering:false,syncStatus:'ready',recoveryEpisodeId:null});runtime.refreshStatus();},
+      retire(){episode+=1;authority=true;incidentStartedAt=null;Object.assign(game,{sharedMutationsBlocked:false,gameplayMutationsBlocked:false,recovering:false,syncStatus:'ready',recoveryEpisodeId:null});runtime.refreshStatus();},
       commandSnapshot:()=>structuredClone(commands),
-      incidentSnapshot:()=>({authority,foregroundWaitMs,episode,selection:runtime.getSelection()}),
+      incidentSnapshot:()=>({authority,now,episode,currentEpisodeId:game.recoveryEpisodeId,selection:runtime.getSelection(),surface:mutationSurfacePresentation(game,recoveryPresentation.options(game))}),
       destroy:()=>runtime.destroy(),
     };
   });
@@ -96,6 +109,9 @@ export async function mountT142NativeBoard(page) {
     async selectMove(){const action=await page.evaluate(()=>window.__t142.selectMove());const target=page.locator(`.cell[data-row="${action.to.row}"][data-col="${action.to.col}"]`);await expect(target).toHaveClass(/\btarget\b/);return {action,target,source:page.locator(`.cell[data-row="${action.from.row}"][data-col="${action.from.col}"]`)};},
     setIncident:(elapsed,options)=>page.evaluate(([value,next])=>window.__t142.setIncident(value,next),[elapsed,options]),
     advanceIncident:elapsed=>page.evaluate(value=>window.__t142.advanceIncident(value),elapsed),
+    setHidden:(value,advance=0)=>page.evaluate(([next,elapsed])=>window.__t142.setHidden(next,elapsed),[value,advance]),
+    supersede:(elapsed=0)=>page.evaluate(value=>window.__t142.supersede(value),elapsed),
+    staleRefresh:(elapsed=0)=>page.evaluate(value=>window.__t142.staleRefresh(value),elapsed),
     recover:()=>page.evaluate(()=>window.__t142.recover()),
     retire:()=>page.evaluate(()=>window.__t142.retire()),
     rerender:()=>page.evaluate(()=>window.__t142.rerender()),
