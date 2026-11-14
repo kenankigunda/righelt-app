@@ -13,7 +13,8 @@ export function homeCardResult(card, options = {}) {
   const winnerSide = status === 'p1_win' ? 'P1' : 'P2';
   const perspective = owningPerspective(card, options);
   const person = card?.[winnerSide === 'P1' ? 'player1' : 'player2'];
-  const name = perspective.kind === 'self' || !person ? sideColorName(winnerSide) : playerDisplayName(card, winnerSide);
+  if (perspective.kind === 'self') return {kind:'completed', label:`You won as ${sideColorName(winnerSide)}`, detail:null, winnerSide, action:'Review game'};
+  const name = !person ? sideColorName(winnerSide) : playerDisplayName(card, winnerSide);
   const detail = perspective.kind === 'player' ? perspective.sides.includes(winnerSide) ? 'You won' : 'You lost' : null;
   return {kind:'completed', label:detail === 'You won' ? 'You won' : `${name} won`, detail:detail === 'You won' ? null : detail, winnerSide, action:'Review game'};
 }

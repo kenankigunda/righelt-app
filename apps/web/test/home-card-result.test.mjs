@@ -9,10 +9,12 @@ test('completed card names the actual winning seat and personal outcome despite 
   const win=homeCardResult(card('p1_win'),{identityId:'owner'});
   assert.equal(win.label,'You won'); assert.equal(win.detail,null);
 });
-test('self-play uses side names without personal win or loss and viewers retain actual names',()=>{
+test('self-play names the owner and winning side while viewers retain actual names',()=>{
   const self=card(); self.selfPlayMode=true; delete self.player2.computerProfile;
-  assert.equal(homeCardResult(self,{identityId:'owner'}).label,'Blue won');
+  assert.equal(homeCardResult({...self,confirmedOutcomeStatus:'p1_win'},{identityId:'owner'}).label,'You won as Red');
+  assert.equal(homeCardResult(self,{identityId:'owner'}).label,'You won as Blue');
   assert.equal(homeCardResult(self,{identityId:'owner'}).detail,null);
+  assert.equal(homeCardResult(self,{identityId:'someone-else'}).label,'Guest 2 won');
   assert.equal(homeCardResult(card(),{identityId:'someone-else'}).label,'Tau won');
   assert.equal(homeCardResult(card(),{identityId:'someone-else'}).detail,null);
 });
