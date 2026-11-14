@@ -133,8 +133,8 @@ for (const [name, overrides, identityId, label, tone, detail] of [
   ['owned Blue loss', {confirmedOutcomeStatus:'p2_win'}, 'owner', 'Ada won', 'p2', 'You lost'],
   ['viewer Red win', {confirmedOutcomeStatus:'p1_win',myRole:'Viewer'}, 'visitor', '&lt;Kenan&gt; won', 'p1', null],
   ['viewer Blue win', {confirmedOutcomeStatus:'p2_win',myRole:'Viewer'}, 'visitor', 'Ada won', 'p2', null],
-  ['self-play Red win', {confirmedOutcomeStatus:'p1_win',myRole:'Both Players',selfPlayMode:true,player2:{identityId:'owner'}}, 'owner', 'Red won', 'p1', null],
-  ['self-play Blue win', {confirmedOutcomeStatus:'p2_win',myRole:'Both Players',selfPlayMode:true,player2:{identityId:'owner'}}, 'owner', 'Blue won', 'p2', null],
+  ['self-play Red win', {confirmedOutcomeStatus:'p1_win',myRole:'Both Players',selfPlayMode:true,player2:{identityId:'owner'}}, 'owner', 'You won as Red', 'p1', null],
+  ['self-play Blue win', {confirmedOutcomeStatus:'p2_win',myRole:'Both Players',selfPlayMode:true,player2:{identityId:'owner'}}, 'owner', 'You won as Blue', 'p2', null],
   ['actual draw', {confirmedOutcomeStatus:'draw'}, 'owner', 'Draw', null, 'No winner'],
 ]) test(`completed Home result colors only its winning label: ${name}`, () => {
   const input=card(overrides), before=structuredClone(input);
