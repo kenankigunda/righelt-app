@@ -324,6 +324,58 @@ const transportFixture = async (t, hooks = {}) => {
     current: async () => (await actual(`/api/shell/games/${created.gameId}?identityId=${store.getIdentityId()}`)).json() };
 };
 
+test('a current HTTP fallback settles viewer presentation without granting later player authority', async t => {
+  const env = { DB: createFakeD1() }; env.GAME_ROOMS = createFakeGameRooms(() => env);
+  const actual = (url, init = {}) => apiWorker.fetch(new Request(`https://test${url}`, init), env);
+  const makeStorage = identityId => {
+    const data = new Map([['righelt:identity', JSON.stringify({ id: identityId })]]);
+    return { getItem: key => data.get(key) ?? null,
+      setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
+  };
+  const owner = createSyncStore({ storage: makeStorage('id-viewer-fallback-owner'),
+    commandJournal: createCommandJournal({ indexedDB: new IDBFactory() }), fetcher: actual });
+  let transport, holdReconcile = false, releaseReconcile;
+  const viewer = createSyncStore({ storage: makeStorage('id-viewer-fallback-viewer'),
+    commandJournal: createCommandJournal({ indexedDB: new IDBFactory() }),
+    fetcher: async (url, init = {}) => {
+      if (holdReconcile && url.endsWith('/reconcile')) await new Promise(resolve => { releaseReconcile = resolve; });
+      return actual(url, init);
+    },
+    createTransportStore: options => { transport = createLiveTransportStore(options); return transport; } });
+  t.after(() => { owner.retire(); viewer.retire(); });
+
+  const created = owner.createGame({ selfPlayMode: false }); const createdGame = await created.committed;
+  const gameId = created.gameId;
+  const invite = await viewer.resolveInvite(createdGame.inviteToken);
+  await viewer.joinGame({ gameId, mode: 'viewer', inviteToken: invite.inviteToken, inviteFromRole: invite.inviteFromRole });
+  await viewer.loadGame(gameId, { openAsViewer: false });
+  assert.equal(viewer.getGameViewModel(gameId).myRole, 'Viewer');
+
+  transport.setConnectionRecovering(gameId, true, { requireSocketAuthority: true });
+  holdReconcile = true;
+  const staleRead = transport.reconcileGame(gameId);
+  await until(() => Boolean(releaseReconcile));
+  transport.setConnectionRecovering(gameId, true, { requireSocketAuthority: true });
+  releaseReconcile(); await staleRead;
+  assert.equal(viewer.getGameViewModel(gameId).recovering, true,
+    'an HTTP read owned by an older recovery epoch cannot settle the newer episode');
+  holdReconcile = false;
+  await transport.reconcileGame(gameId);
+  const settledViewer = viewer.getGameViewModel(gameId);
+  assert.equal(settledViewer.recovering, false, 'a current read-only fallback should remove the recovery banner');
+  assert.equal(settledViewer.sharedMutationsBlocked, true, 'HTTP fallback must retain the socket authority fence');
+
+  const promoted = { ...transport.getAuthoritativeGame(gameId), myRole: 'Player 2', myRoles: ['Player 2'],
+    player2: { identityId: viewer.getIdentityId(), connected: true }, canRecordMove: true, canEndTurn: true };
+  transport.applyLiveGameUpdate({ game: promoted, eventSeq: transport.getLastEventSeq(gameId) + 1, baseline: false,
+    actionContractVersion: ACTION_CONTRACT_VERSION });
+  const fencedPlayer = viewer.getGameViewModel(gameId);
+  assert.equal(fencedPlayer.canRecordMove, false, 'a later role change cannot turn an HTTP read into action authority');
+  assert.equal(fencedPlayer.canEndTurn, false);
+  assert.equal(await transport.finishSocketRecovery(gameId), true);
+  assert.equal(viewer.getGameViewModel(gameId).canRecordMove, true, 'only socket readiness releases player actions');
+});
+
 test('socket recovery awaits a saved gameplay command and preserves its exact journal identity', async t => {
   let releaseApply, applyCount = 0, commits = 0;
   const f = await transportFixture(t, { fetcher: async (url, init, actual) => {

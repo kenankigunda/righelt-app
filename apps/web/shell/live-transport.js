@@ -47,6 +47,9 @@ const validGameShape = (game, gameId) => {
 };
 export const validSyncSnapshot = (game, gameId) => game?.positionOnly !== true && validGameShape(game, gameId);
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
+const hasGameplayRole = game => game?.myRole === "Both Players"
+  || [game?.myRole, ...(Array.isArray(game?.myRoles) ? game.myRoles : [])]
+    .some(role => role === "Player 1" || role === "Player 2");
 const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
 const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
 const getControlSeatForTurn = (state, turnOwnerSeat) => {
@@ -409,10 +412,15 @@ export const createLiveTransportStore = ({
     next.upgradeRequired = optimistic.upgradeRequired === true;
     next.storageLimitReached = optimistic.storageError?.code === "command_limit_reached" || /limit/.test(optimistic.storageError?.message ?? "");
     next.rulesChecking = Boolean(optimistic.admissionProjection || optimistic.projectionJob?.pending);
-    next.sharedMutationsBlocked = next.rulesChecking || optimistic.storageBlocked || next.recovering || next.upgradeRequired || optimistic.pendingCommands.some(command=>command.kind === "shared");
+    // A read-only HTTP fallback may settle a viewer's recovery presentation,
+    // but its socket fence remains authoritative. If a later snapshot grants
+    // that identity a player role, it still cannot act until socket readiness.
+    next.sharedMutationsBlocked = next.rulesChecking || optimistic.storageBlocked || next.recovering || next.upgradeRequired
+      || optimistic.socketAuthorityRequired || optimistic.pendingCommands.some(command=>command.kind === "shared");
     const authoritative = gameById.get(gameId);
     const humanPermissionWithdrawn = authoritative?.canRecordMove === false && authoritative?.canEndTurn !== true;
-    next.gameplayMutationsBlocked = humanPermissionWithdrawn || next.sharedMutationsBlocked && !(!next.rulesChecking && hasOnlySafeHumanRenewal(game, optimistic));
+    next.gameplayMutationsBlocked = humanPermissionWithdrawn || optimistic.socketAuthorityRequired
+      || next.sharedMutationsBlocked && !(!next.rulesChecking && hasOnlySafeHumanRenewal(game, optimistic));
     applyHistoryIntent(next, historyIntentByGameId.get(gameId), identityId);
     if (next.gameplayMutationsBlocked) {
       next.canRecordMove = false;
@@ -1327,12 +1335,24 @@ export const createLiveTransportStore = ({
     const {
       requireSocketAuthority = false,
       socketAuthorityProven = false,
+      readOnlyFallback = false,
+      episodeId = null,
+      recoveryGeneration = null,
+      connectionRecoveryEpoch = null,
       ...diagnosticEvidence
     } = evidence;
     if (recovering && optimistic.connectionFailed) return false;
     const wasRecovering = optimistic.connectionRecovering;
     if (recovering && requireSocketAuthority) optimistic.socketAuthorityRequired = true;
-    if (!recovering && optimistic.socketAuthorityRequired && !socketAuthorityProven) return false;
+    const readOnlyFallbackSettled = !recovering && readOnlyFallback
+      && optimistic.connectionRecovering && optimistic.socketAuthorityRequired
+      && typeof episodeId === 'string' && episodeId === optimistic.recoveryEpisodeId
+      && recoveryGeneration === optimistic.recoveryGeneration
+      && connectionRecoveryEpoch === optimistic.connectionRecoveryEpoch
+      && !hasGameplayRole(gameById.get(gameId))
+      && !optimistic.pendingCommands.length && !optimistic.unsavedCommand && !optimistic.storageBlocked
+      && !optimistic.forceSnapshot && !optimistic.connectionFailed && !optimistic.upgradeRequired;
+    if (!recovering && optimistic.socketAuthorityRequired && !socketAuthorityProven && !readOnlyFallbackSettled) return false;
     if (!recovering && socketAuthorityProven) optimistic.socketAuthorityRequired = false;
     const recoveryAgeMs = Math.min(RECOVERY_DIAGNOSTICS.maximumAgeMs, Math.max(0, Date.now() - (optimistic.recoveryStartedAt ?? Date.now())));
     if (recovering && !optimistic.recoveryStartedAt) {
@@ -1462,10 +1482,13 @@ export const createLiveTransportStore = ({
     if (optimistic.upgradeRequired) return Promise.reject(Object.assign(new Error("upgrade_required"), { code: "upgrade_required" }));
     if (optimistic.recoveryPromise) return optimistic.recoveryPromise;
     const owner = {}; optimistic.recoveryOwner = owner;
+    const episodeId = optimistic.recoveryEpisodeId;
+    const connectionRecoveryEpoch = optimistic.connectionRecoveryEpoch;
     optimistic.recoveryGeneration = (optimistic.recoveryGeneration ?? 0) + 1;
+    const recoveryGeneration = optimistic.recoveryGeneration;
     clearTimeout(optimistic.recoveryRetryTimer); optimistic.recoveryRetryTimer = null;
     const current = () => active && optimistic.recoveryOwner === owner;
-    let timer;
+    let timer, reconciledCurrentRead = false;
     const work = Promise.resolve().then(async () => {
       if((optimistic.retryNotBefore??0)>Date.now())throw Object.assign(new Error("retry_delayed"),{code:"retry_delayed",retryAfterMs:optimistic.retryNotBefore-Date.now()});
       await hydrateJournal(gameId, current);
@@ -1478,8 +1501,7 @@ export const createLiveTransportStore = ({
         const attempt = { commandId: null, controller: new AbortController() };
         attempt.done = new Promise(resolve => { attempt.finish = resolve; });
         optimistic.attempt = attempt;
-        let reconciled = false;
-        try { reconciled = Boolean(await reconcileRequest(gameId, attempt.controller, () => current() && optimistic.attempt === attempt)); }
+        try { reconciledCurrentRead = Boolean(await reconcileRequest(gameId, attempt.controller, () => current() && optimistic.attempt === attempt)); }
         finally {
           const owned = optimistic.attempt === attempt;
           if (owned) optimistic.attempt = null;
@@ -1487,12 +1509,13 @@ export const createLiveTransportStore = ({
           // Admission may commit while this read occupies the send slot. Its
           // first send and processResponse's send both defer to that slot.
           // Wake only after a validated, still-current read releases it.
-          if (owned && reconciled && current()) void sendNextPendingCommand(gameId);
+          if (owned && reconciledCurrentRead && current()) void sendNextPendingCommand(gameId);
         }
       }
       if (optimistic.upgradeRequired) return;
       if (current() && optimistic.forceSnapshot) throw Object.assign(new Error("snapshot_required"), { code: "invalid_response" });
-      if (current() && !optimistic.pendingCommands.length) setConnectionRecovering(gameId, false);
+      if (current() && !optimistic.pendingCommands.length) setConnectionRecovering(gameId, false,
+        reconciledCurrentRead ? { readOnlyFallback: true, episodeId, recoveryGeneration, connectionRecoveryEpoch } : {});
     });
     const promise = Promise.race([work, new Promise((_, reject) => {
       owner.reject = reject;

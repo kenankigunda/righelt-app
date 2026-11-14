@@ -43,7 +43,10 @@ test('late background HTTP failure preserves a restored socket and the selected 
  try {
   fault=true;await sockets.at(-1).socket.close({code:1012,reason:'Test connection transition'});
   await expect.poll(()=>reconciles).toBe(1);
-  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0);
+  // A successful HTTP read may refresh visible state, but this player must
+  // remain fenced until the replacement socket supplies an authoritative
+  // frame. Viewer-only presentation settlement is intentionally narrower.
+  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toBeVisible();
   await expect.poll(()=>held).toBe(true);
   const replacement=sockets.at(-1);expect(replacement.snapshot).toBeTruthy();
   fault=false;replacement.socket.send(replacement.snapshot);
@@ -195,11 +198,11 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  }
  expect(commands.filter(command=>actionFor(command)?.type==="retreat")).toHaveLength(0);
 
- holdConfirmation=false;releaseConfirmation();
+ socketsUnavailable=false;holdConfirmation=false;releaseConfirmation();
  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0,{timeout:10000});
  await page.screenshot({path:info.outputPath("retreat-recovered.png")});
- // Admission is restored only by the definitive original receipt. Verify the
- // required defender's legal destination before confirming the actual retreat.
+ // Admission returns only after the definitive original receipt and a fresh
+ // authoritative socket. Verify the required defender's legal destination.
  await expect(message).toContainText("Select a retreat");
  const acceptedRetreat=page.waitForResponse(response=>response.request().method()==='POST'&&new URL(response.url()).pathname.endsWith('/apply')&&actionFor(response.request().postDataJSON())?.type==='retreat');
  const automaticFollow=page.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/apply')&&actionFor(request.postDataJSON())?.type==='follow');
