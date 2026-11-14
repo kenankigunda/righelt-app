@@ -34,6 +34,17 @@ test('Game summary resolves both self-play seats to You from explicit viewer ide
   assert.doesNotMatch(self,/>Guest [12]<\/bdi>/);
 });
 
+test('Game summary renders its saved role through the participant contract',()=>{
+  const summary=render({
+    id:'role',createdAt:'date',myRole:'Player 1',notifications:[],
+    player1:{identityId:'owner',profile:{displayName:'Kenan'}},
+    player2:{identityId:'other',profile:{displayName:'Ada'}},
+    currentTurn:null,
+  });
+  assert.match(summary,/Role: <strong class="player-tone-p1"[^>]*><bdi dir="auto">Kenan<\/bdi><\/strong>/);
+  assert.doesNotMatch(summary,/Role:\s*Player 1/);
+});
+
 test('Game summary escapes dates and arbitrary notification text',()=>{
   const html=renderGameSummaryPanel({
     id:'unsafe',createdAt:'date',myRole:'Viewer',notifications:['<script>Ready</script>'],
