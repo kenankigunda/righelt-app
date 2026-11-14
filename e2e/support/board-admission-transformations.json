@@ -266,27 +266,27 @@
   "/shell/live-transport.js": {
     "file": "apps/web/shell/live-transport.js",
     "sourceSha256": "5a336ab1f46d4f21f1c32d17dabb7f33b5854233a497a9671baedfda9ce43a17",
-    "outputSha256": "aba4dff68d8a9c9dea88ee10b468bf43236d2b72a447332ae69ee4a87c188a14",
+    "outputSha256": "ad5f52cb48380c3c327b220bd30f71a62ce70d925e1157cdd6c98436d0e6c465",
     "operations": [
       {
-        "start": 63516,
-        "end": 63516,
+        "start": 63591,
+        "end": 63591,
         "before": "",
         "after": "    boardAdmissionProbe(\"transport-send-entry\", () => ({retryAttempt,reconcileFirst}));\n",
         "anchor": "yAttempt = 0, reconcileFirst = false } = {}) => {\n    if (!active) return;\n    const optimistic = ge",
         "anchorCount": 1
       },
       {
-        "start": 74870,
-        "end": 74870,
+        "start": 74957,
+        "end": 74957,
         "before": "",
         "after": "    boardAdmissionProbe(\"transport-enqueue\", () => ({ kind: command.kind, type: command.action?.type ?? null }));\n",
         "anchor": "imisticCommand = async ({ gameId, command }) => {\n    const contextEpoch = rulesEpoch;\n    const opt",
         "anchorCount": 1
       },
       {
-        "start": 75036,
-        "end": 75036,
+        "start": 75086,
+        "end": 75086,
         "before": "",
         "after": "      boardAdmissionProbe(\"transport-admission-entry\");\n",
         "anchor": "stic.admission.catch(() => {}).then(async () => {\n      assertActive();\n      assertRulesContext(con",

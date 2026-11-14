@@ -7,13 +7,13 @@ import {performance} from 'node:perf_hooks';
 const hash = value => createHash('sha256').update(value).digest('hex');
 export const transformBoardAdmissionModule = (source, recipe) => {
  if(hash(source)!==recipe.sourceSha256)throw new Error('Board diagnostic source hash mismatch');
- const characters=Array.from(source);let result=characters, previous=characters.length;
+ let result=source, previous=source.length;
  for(const operation of [...recipe.operations].reverse()){
-  if(operation.end>previous || characters.slice(operation.start,operation.end).join('')!==operation.before)throw new Error('Board diagnostic range mismatch');
+  if(operation.end>previous || source.slice(operation.start,operation.end)!==operation.before)throw new Error('Board diagnostic range mismatch');
   if(source.split(operation.anchor).length-1!==operation.anchorCount)throw new Error('Board diagnostic anchor count mismatch');
-  result=[...result.slice(0,operation.start),...Array.from(operation.after),...result.slice(operation.end)];previous=operation.start;
+  result=result.slice(0,operation.start)+operation.after+result.slice(operation.end);previous=operation.start;
  }
- result=recipe.prefix+result.join('');
+ result=recipe.prefix+result;
  if(hash(result)!==recipe.outputSha256)throw new Error('Board diagnostic output hash mismatch');
  return result;
 };

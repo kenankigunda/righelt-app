@@ -20,6 +20,13 @@ for(const [pathname,recipe] of Object.entries(recipes))test(`exact source and pr
  assert.throws(()=>transformBoardAdmissionModule(source,broken),/anchor count mismatch/);
 });
 
+test('protected transform applies JavaScript string offsets after astral source text',()=>{
+ const source="const marker='🧭';\nconst value = 1;\n",start=source.indexOf('const value');
+ const expected=source.slice(0,start)+'const observed = true;\n'+source.slice(start);
+ const recipe={sourceSha256:createHash('sha256').update(source).digest('hex'),outputSha256:createHash('sha256').update(expected).digest('hex'),prefix:'',operations:[{start,end:start,before:'',after:'const observed = true;\n',anchor:"const marker='🧭';",anchorCount:1}]};
+ assert.equal(transformBoardAdmissionModule(source,recipe),expected);
+});
+
 test('value wrapper preserves getter identity and skipped guard branches with a throwing sink',()=>{
  const recipe=recipes['/board/runtime/board-runtime.js'];
  const operation=recipe.operations.find(op=>op.after.includes('submit-no-state'));
@@ -309,7 +316,7 @@ test('error categories remain source-derived and changed output remains hash pro
  assert.throws(()=>transformBoardAdmissionModule(source,altered),/output hash mismatch/);
  const wrongOutput={...recipe,outputSha256:'0'.repeat(64)};assert.throws(()=>transformBoardAdmissionModule(source,wrongOutput),/output hash mismatch/);
  assert.equal(recipe.operations.filter(op=>op.after.includes('runtime-host-error')).length,1);assert.equal(recipe.operations.length,25);
- const unchanged={"/board-adapters/engine-board-adapter.js":"8bb64d6f2f46cc39e823be5ac1f78dab59422b9217c7f466e09b5a98d12a4009","/shell/live-transport.js":"a56f0526cb9379bbf4cadeb8b7e9e6b668844d1202d7bd1d4a547de8d140d34b","/board/hosts/shell-host.js":"046c5e387ce6a901c3960fb1d4f3c9c1915beb3d2878fece9ac68fb4ea01512e","/shell/app.js":"75eab7ac370c20502a82df1def1dc0933a0851f51f4ca04b758d824e0329aa69"};
+ const unchanged={"/board-adapters/engine-board-adapter.js":"8bb64d6f2f46cc39e823be5ac1f78dab59422b9217c7f466e09b5a98d12a4009","/shell/live-transport.js":"08ba5b1ce419475bd9320808dfd91267294cd19f379add9e00e8560fde979ab0","/board/hosts/shell-host.js":"046c5e387ce6a901c3960fb1d4f3c9c1915beb3d2878fece9ac68fb4ea01512e","/shell/app.js":"75eab7ac370c20502a82df1def1dc0933a0851f51f4ca04b758d824e0329aa69"};
  for(const [key,expected] of Object.entries(unchanged)){assert.equal(createHash('sha256').update(JSON.stringify(recipes[key])).digest('hex'),expected);}
 });
 
