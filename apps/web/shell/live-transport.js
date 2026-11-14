@@ -1153,10 +1153,16 @@ export const createLiveTransportStore = ({
     }
   };
 
-  const internalCommand = (envelope) => ({ envelope, kind: envelope.kind === "shared" ? "shared" : envelope.kind === "action" ? "apply" : "end-turn", clientCommandId: envelope.clientCommandId, state: clone(envelope.expectedState), action: envelope.payload.action, notation: envelope.payload.notation, computer: envelope.payload.computer, queuedAt: Number.isFinite(envelope.submittedAt) ? new Date(envelope.submittedAt).toISOString() : new Date().toISOString() });
   const isRoutineComputerRenewal = envelope => envelope?.kind === 'shared'
     && envelope.payload?.operation === 'computer-control'
     && envelope.payload?.values?.action === 'renew';
+  const internalCommand = (envelope, { maintenanceRecoveryEpoch = 0 } = {}) => ({ envelope,
+    kind: envelope.kind === "shared" ? "shared" : envelope.kind === "action" ? "apply" : "end-turn",
+    clientCommandId: envelope.clientCommandId, state: clone(envelope.expectedState), action: envelope.payload.action,
+    notation: envelope.payload.notation, computer: envelope.payload.computer,
+    queuedAt: Number.isFinite(envelope.submittedAt) ? new Date(envelope.submittedAt).toISOString() : new Date().toISOString(),
+    ...(isRoutineComputerRenewal(envelope) ? { maintenanceRecoveryEpoch } : {}),
+  });
   const mayHydrateJournal = gameId => !auth?.enabled
     || auth.session.authenticated && gameById.get(gameId)?.ownershipMode === "account_v1";
   const hydrateJournalOnce = async (gameId, isCurrent) => {
@@ -1181,7 +1187,13 @@ export const createLiveTransportStore = ({
           if (!await settleHydratedTerminalRow(gameId, optimistic, envelope, outcome, isCurrent)) return;
           continue;
         }
-        if (!optimistic.pendingCommands.some((entry) => entry.clientCommandId === envelope.clientCommandId)) optimistic.pendingCommands.push(internalCommand(envelope));
+        if (!optimistic.pendingCommands.some((entry) => entry.clientCommandId === envelope.clientCommandId)) optimistic.pendingCommands.push(internalCommand(envelope, {
+          // Connection generations are local and intentionally are not added to
+          // the versioned durable envelope. A restored maintenance command owns
+          // the bounded generation current at journal adoption; later socket
+          // generations therefore remain fenced across reloads and old clients.
+          maintenanceRecoveryEpoch: optimistic.connectionRecoveryEpoch ?? 0,
+        }));
         uncertainSharedAdmissions.get(optimistic)?.delete(envelope.clientCommandId);
       }
       // Topological order; cycles/invalid chains are rejected by the server, never sent out of order.
