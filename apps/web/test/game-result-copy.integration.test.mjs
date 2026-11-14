@@ -41,6 +41,7 @@ test('actual result HTML isolates and escapes observer names without changing pl
  assert.match(context.html,/<bdi dir="auto">&lt;img src=x&gt; שלום<\/bdi><\/span> won/);
  assert.match(context.html,/<bdi dir="auto">Bo &amp; Co’s commander<\/bdi><\/span> was destroyed/);
  assert.doesNotMatch(context.html,/<img src=x>/);assert.doesNotMatch(context.html,/Self-play|Player [12]/);
+ assert.doesNotMatch(context.html,/data-action="rematch"|Play again/);
  assert.equal(getGameResult(game,'observer').title,'<img src=x> שלום won');
 });
 

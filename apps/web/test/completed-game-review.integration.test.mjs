@@ -24,9 +24,16 @@ test('actual History panel places the authoritative winner before moves even dur
   const game=fixture(status),context={undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),renderHistoryResult,renderHistorySlots,getGameResult,transport:{getAuthoritativeGame:()=>game,getIdentityId:()=> 'me'},renderTurnHistory:()=>'<li>recorded move</li>',renderAdditionalHistory:()=>'',icon:()=>'',escapeHtml:value=>value};
   runWithHistoryRendering(`${source.slice(start,end)};globalThis.history=renderHistoryPanel;`,context);
   for(const view of [game,{...game,inHistoryMode:true,board:{state:{outcome:{status:'ongoing'}}}}]){
-   const html=context.history(view);assert.match(html,/history-result-summary/);assert.ok(html.indexOf('history-result-summary')<html.indexOf('recorded move'));assert.match(html,/View result/);
+   const html=context.history(view);assert.match(html,/history-result-summary/);assert.ok(html.indexOf('history-result-summary')<html.indexOf('recorded move'));assert.match(html,/View result/);assert.match(html,/data-action="rematch"[^>]*data-game-id="g"[^>]*>[\s\S]*Play again/);
   }
  }
+});
+
+test('completed History keeps Play again tied to the authoritative saved participant',()=>{
+ const game=fixture('p1_win');
+ const renderFor=identity=>{const context={undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),renderHistoryResult,renderHistorySlots,getGameResult,transport:{getAuthoritativeGame:()=>game,getIdentityId:()=>identity},renderTurnHistory:()=>'<li>selected old turn</li>',renderAdditionalHistory:()=>'',icon:()=>'',escapeHtml:String};runWithHistoryRendering(`${source.slice(source.indexOf('const renderHistoryPanel ='),source.indexOf('const renderBoardPanel ='))};globalThis.history=renderHistoryPanel;`,context);return context.history({...game,inHistoryMode:true,board:{state:{outcome:{status:'ongoing'}}}});};
+ assert.match(renderFor('me'),/data-action="rematch"/);
+ assert.doesNotMatch(renderFor('spectator'),/data-action="rematch"|Play again/);
 });
 
 test('pending confirmed winning frames expose neither the result button nor a stale result action',()=>{

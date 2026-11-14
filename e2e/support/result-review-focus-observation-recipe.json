@@ -1,49 +1,49 @@
 {
   "version": 1,
   "modulePath": "/shell/app.js",
-  "sourceSha256": "459dd4b9624786e250d6bb71b53fdb3d4218c9a74253fd4d2b8731ae650c3863",
-  "outputSha256": "8662eeafde413d5ae6c9501fd89fb72eb637d2c45901ccb0e2bc4c25ef635ab3",
+  "sourceSha256": "4710f12ab0e25b9b3825bb7b9254c48acf8615b15b01f8f5b5dfa63f20393c62",
+  "outputSha256": "7237877356a366ca14c30e71bf7df401c28860e2d9fd98512f41683fc1074e0c",
   "prefix": "const __righeltResultReviewFocusProbe = (kind, refs = {}) => { try { globalThis.__RIGHELT_RESULT_REVIEW_FOCUS_PROBE__?.(kind, refs); } catch {} };\n",
   "operations": [
     {
       "label": "context-history-patch",
-      "start": 14207,
-      "end": 14265,
+      "start": 14233,
+      "end": 14291,
       "before": "renderHistoryPanel,patchToolHtml,syncIncomingNarrationHost",
       "after": "renderHistoryPanel,patchToolHtml:(element,html)=>{const history=element?.matches?.('[data-game-panel=\"history\"]');if(history)__righeltResultReviewFocusProbe(\"history-before-context-patch\",{root:element});const value=patchToolHtml(element,html);if(history)__righeltResultReviewFocusProbe(\"history-after-context-patch\",{root:element});return value;},syncIncomingNarrationHost"
     },
     {
       "label": "incremental-history-patch",
-      "start": 148217,
-      "end": 148301,
+      "start": 148265,
+      "end": 148349,
       "before": "    patchToolHtml(historyEl, renderHistoryPanel(game));\n    revealSelectedHistory();",
       "after": "    __righeltResultReviewFocusProbe(\"history-before-incremental-patch\",{root:historyEl});\n    patchToolHtml(historyEl, renderHistoryPanel(game));\n    __righeltResultReviewFocusProbe(\"history-after-incremental-patch\",{root:historyEl});\n    revealSelectedHistory();"
     },
     {
       "label": "committed-render-entry",
-      "start": 182018,
-      "end": 182091,
+      "start": 182066,
+      "end": 182139,
       "before": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;",
       "after": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;\n  __righeltResultReviewFocusProbe(\"render-committed-entry\");"
     },
     {
       "label": "original-focus-once",
-      "start": 183358,
-      "end": 183467,
+      "start": 183406,
+      "end": 183515,
       "before": "if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }",
       "after": "if (heading) { heading.tabIndex = -1; __righeltResultReviewFocusProbe(\"focus-before\", {node:heading}); heading.focus({preventScroll:true}); __righeltResultReviewFocusProbe(\"focus-after\", {node:heading}); pendingResultReviewFocus = null; }"
     },
     {
       "label": "existing-render-tail",
-      "start": 183472,
-      "end": 183854,
+      "start": 183520,
+      "end": 183902,
       "before": "  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  const incomingToggleFocus=pendingIncomingToggleFocus;\n  pendingIncomingToggleFocus=null;\n  boardContextPresentation.restoreIncomingFocus(incomingToggleFocus,{afterOwnedRender:true});\n  resumeBoardContextReplay();",
       "after": "  __righeltResultReviewFocusProbe(\"render-before-join\");\n  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  __righeltResultReviewFocusProbe(\"render-after-join\");\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  const incomingToggleFocus=pendingIncomingToggleFocus;\n  pendingIncomingToggleFocus=null;\n  boardContextPresentation.restoreIncomingFocus(incomingToggleFocus,{afterOwnedRender:true});\n  resumeBoardContextReplay();\n  __righeltResultReviewFocusProbe(\"render-after-resume\");"
     },
     {
       "label": "explicit-analysis",
-      "start": 251507,
-      "end": 251596,
+      "start": 251577,
+      "end": 251666,
       "before": "if (action === \"analysis\") { completedReviewEntryGeneration++;resultPresentation.clear();",
       "after": "if (action === \"analysis\") { __righeltResultReviewFocusProbe(\"analysis-entry\"); completedReviewEntryGeneration++;resultPresentation.clear();"
     }

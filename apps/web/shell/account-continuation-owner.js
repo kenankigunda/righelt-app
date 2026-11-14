@@ -3,7 +3,7 @@ import {sameHomeReadScope,createHomeReadReplacement,sameRouteRead,bindHomeContin
 // Resolve live dependencies only when the original account action is resumed.
 export const createAccountContinuationOwner = getDependencies => {
   const retry = async ({expectedPending,settlement} = {}) => {
-  const {state,homeSectionReads,captureRouteRead,routeReadIsCurrent,render,syncRouteDataAndLiveChannels,queueResponsiveHomeSectionPageSizes,issueDiagnostics,account,getGameResult,rematchDialog,appEl,CSS,window}=getDependencies();
+  const {state,homeSectionReads,captureRouteRead,routeReadIsCurrent,render,syncRouteDataAndLiveChannels,queueResponsiveHomeSectionPageSizes,issueDiagnostics,account,getEligibleRematchResult,rematchDialog,appEl,CSS,window}=getDependencies();
   let pending = state.accountContinuation;
   if (!pending || expectedPending && pending!==expectedPending || pending.running || !routeReadIsCurrent(pending)) return;
   const settled=settlement ? homeSectionReads.takeContinuationSettlement(pending,settlement) : null;
@@ -64,8 +64,9 @@ export const createAccountContinuationOwner = getDependencies => {
   const intent = pending.intent;
   if (!intent || !account.canPlay() || intent.hash !== window.location.hash) return;
   if (intent.action === "rematch") {
-    const result = getGameResult(state.transport.getAuthoritativeGame(intent.gameId), state.transport.getIdentityId());
-    if (result) rematchDialog.open(result, appEl.querySelector('[data-action="view-result"]'));
+    const result = getEligibleRematchResult(state.transport.getAuthoritativeGame(intent.gameId), state.transport.getIdentityId());
+    const selector = `[data-action="rematch"][data-game-id="${CSS.escape(intent.gameId)}"]`;
+    if (result) rematchDialog.open(result, appEl.querySelector(selector), () => appEl.querySelector(selector));
     return;
   }
   const selector = `[data-action="${CSS.escape(intent.action)}"]${intent.gameId ? `[data-game-id="${CSS.escape(intent.gameId)}"]` : ""}${intent.moveIndex ? `[data-move-index="${CSS.escape(intent.moveIndex)}"]` : ""}`;

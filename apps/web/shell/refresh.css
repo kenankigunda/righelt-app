@@ -624,7 +624,10 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
   .computer-tab-status.computer-status-badge {color:CanvasText;}
   .computer-status-mark {--status-bg:Canvas !important;--status-ring:CanvasText !important;color:CanvasText !important;forced-color-adjust:none;box-shadow:inset 0 0 0 1px CanvasText,0 0 0 1.5px Canvas;}
 }
-.history-result-summary {margin:0 0 var(--section-item-gap,12px);}
+.history-result-summary {margin:0 0 var(--section-item-gap,12px);overflow-wrap:anywhere;}
+.history-result-action-row {display:flex;align-items:center;justify-content:space-between;gap:var(--section-item-gap,12px);flex-wrap:wrap;margin:0 0 var(--section-item-gap,12px);}
+.history-result-action-row .history-result-summary {min-width:0;flex:1 1 12rem;margin:0;}
+.history-result-action-row > button {flex:0 0 auto;}
 
 /* Players and audience share one surface, with natural page scrolling. */
 .viewers-section {margin-top:var(--section-group-gap,24px);}

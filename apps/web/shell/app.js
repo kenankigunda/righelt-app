@@ -111,7 +111,7 @@ import { createRecoveryTelemetry } from './recovery-telemetry.js';
 import { renderDiagnosticDisclosure, handleDiagnosticAction, isDiagnosticOpen, closeDiagnostic } from "./diagnostic-disclosure.js";
 import { patchSectionContent } from "./dom-patch.js";
 import { SWIPE_EASING_CSS } from './navigation-motion.js';
-import { getGameResult, renderResultText, renderHistoryResult, createResultTransitions, createRematchDialog } from './game-result.js';
+import { getGameResult, getEligibleRematchResult, renderResultText, renderHistoryResult, createResultTransitions, createRematchDialog } from './game-result.js';
 import { renderResultMark, createResultPresentation } from './result-presentation.js';
 import { createRouteHydration } from './route-hydration.js';
 import { invitationLoadFailureKind, renderInviteLoadRecovery } from './invite-load-recovery.js';
@@ -2315,7 +2315,7 @@ const renderHistoryPanel = (game) => {
   const historyGame = { ...game, historyUndoArchiveEntries: undoArchive };
   const historyRows = renderTurnHistory(historyGame);
   return renderHistorySlots({rows:historyRows,extra:renderAdditionalHistory(historyGame),
-    before:(game.confirmedPlayback?'':renderHistoryResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId())) + (game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? (game.historyLoadTurnIndex != null ? "Loading this turn" : "Loading this move") : (game.historyLoadTurnIndex != null ? "This turn couldn’t load. Your current view is still available." : "This move couldn’t load. Your current view is still available.")}</p>${game.historyLoadError ? `<button class="secondary mini-button" ${game.historyLoadTurnIndex != null ? `data-action="jump-history-turn" data-turn-index="${game.historyLoadTurnIndex}"` : `data-action="jump-history" data-move-index="${game.historyLoadIndex}"`} data-game-id="${escapeHtml(game.id)}">Retry</button>` : ""}</div>` : ""),
+    before:(game.confirmedPlayback?'':renderHistoryResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId(),{includeRematch:true})) + (game.historyLoading || game.historyLoadError ? `<div class="history-load-status" role="status" aria-live="polite" data-testid="history-load-status"><p class="small">${game.historyLoading ? (game.historyLoadTurnIndex != null ? "Loading this turn" : "Loading this move") : (game.historyLoadTurnIndex != null ? "This turn couldn’t load. Your current view is still available." : "This move couldn’t load. Your current view is still available.")}</p>${game.historyLoadError ? `<button class="secondary mini-button" ${game.historyLoadTurnIndex != null ? `data-action="jump-history-turn" data-turn-index="${game.historyLoadTurnIndex}"` : `data-action="jump-history" data-move-index="${game.historyLoadIndex}"`} data-game-id="${escapeHtml(game.id)}">Retry</button>` : ""}</div>` : ""),
     after:!game.confirmedPlayback && getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">${icon("history")}View result</button>` : ""});
 };
 
@@ -3698,7 +3698,7 @@ const accountContinuationOwner = createAccountContinuationOwner(()=>({
   queueResponsiveHomeSectionPageSizes:(...args)=>queueResponsiveHomeSectionPageSizes(...args),
   get issueDiagnostics(){return issueDiagnostics;},
   get account(){return account;},
-  get getGameResult(){return getGameResult;},
+  get getEligibleRematchResult(){return getEligibleRematchResult;},
   get rematchDialog(){return rematchDialog;},
   get appEl(){return appEl;},
   get CSS(){return CSS;},
@@ -4527,8 +4527,9 @@ appEl.addEventListener("click", async (event) => {
   if (action === "view-result") { if (transport.getGameViewModel(actionGameId)?.confirmedPlayback || !getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId())) return; resultPresentation.clear();activeResultGameId = actionGameId; render({ animatePanels: false }); return; }
   if (action === "analysis") { completedReviewEntryGeneration++;resultPresentation.clear();pendingResultReviewFocus = actionGameId; activeResultGameId = null; render({ animatePanels: false }); navigateTo(buildGameHash(actionGameId, null, getCurrentGameHashState("history"))); return; }
   if (action === "rematch") {
-    const result = getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId());
-    if(result)rematchDialog.open(result,actionEl);return;
+    const result = getEligibleRematchResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId());
+    const selector=`[data-action="rematch"][data-game-id="${CSS.escape(actionGameId)}"]`;
+    if(result)rematchDialog.open(result,actionEl,()=>appEl.querySelector(selector));return;
   }
   if (sharedMutationActions.has(action) && sharedMutationIsBlocked(action, actionGameId)) return;
   const animateFlyoutClose = async (flyoutKey, closeFlyout) => {

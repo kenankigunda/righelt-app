@@ -105,3 +105,10 @@ test('the production continuation owner resolves live dependencies lazily and cl
  await controller.retry();assert.equal(calls,1);assert.equal(reads,1);assert.equal(state.accountContinuation,null);assert.ok(rendered>=2);
  await controller.retry();assert.equal(calls,1,'the exact original action cannot be replayed twice');
 });
+
+test('a rematch continuation rechecks ownership and resolves the current History trigger',async()=>{
+ const route={generation:7,epoch:3,owner,hash:'#/game/g?panel=history',routeKey:'game:g',route:{name:'game',gameId:'g'},inputs:'game'};
+ const make=eligible=>{const trigger={id:'current-history-action'},queries=[],opens=[];const state={accountContinuation:{...route,intent:{hash:route.hash,action:'rematch',gameId:'g'},running:false,recoveryEpisode:false},homeReadJob:null,pendingResponsiveHomeRead:null,transport:{getAuthoritativeGame:()=>({id:'g'}),getIdentityId:()=>eligible?'owner':'other'}};const controller=createAccountContinuationOwner(()=>({state,captureRouteRead:()=>route,routeReadIsCurrent:other=>sameRouteRead(other,route),homeSectionReads:{},render(){},syncRouteDataAndLiveChannels:async()=>({healthySettled:true}),queueResponsiveHomeSectionPageSizes(){},issueDiagnostics:{resolve(){}},account:{canPlay:()=>true},getEligibleRematchResult:()=>eligible?{side:'p1'}:null,rematchDialog:{open(...args){opens.push(args);}},appEl:{querySelector(selector){queries.push(selector);return trigger;}},CSS:{escape:String},window:{location:{hash:route.hash}}}));return {controller,state,trigger,queries,opens};};
+ const allowed=make(true);await allowed.controller.retry();assert.equal(allowed.opens.length,1);assert.equal(allowed.opens[0][1],allowed.trigger);assert.equal(allowed.opens[0][2](),allowed.trigger);assert.deepEqual(allowed.queries,['[data-action="rematch"][data-game-id="g"]','[data-action="rematch"][data-game-id="g"]']);
+ const denied=make(false);await denied.controller.retry();assert.equal(denied.opens.length,0);assert.equal(denied.state.accountContinuation,null);
+});
