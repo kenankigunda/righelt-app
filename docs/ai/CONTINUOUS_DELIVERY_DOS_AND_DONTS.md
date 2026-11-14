@@ -34,4 +34,3 @@ Use these rules for long, ordered delivery programs. They capture what improved 
 Real progress produces a recent implementation, diagnosis, deterministic test, review finding, CI or deployment result, evidence artifact, or completed acceptance step. A running label, polling loop, or repeated status message is not progress.
 
 Before reporting a blocker, inspect primary evidence and try the safe remedies already in scope. Retry transient or permission-limited work through the approved path, reproduce the smallest failure, repair narrow code or test defects, and redirect free capacity to independent work. Ask for user input only when the next step needs new authority or a material product decision.
-
