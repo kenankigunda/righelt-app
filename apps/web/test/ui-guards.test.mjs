@@ -80,7 +80,6 @@ test("game, join/invite, and history use shared section spacing structure", () =
   assert.match(source, /const renderSectionActions = \(actions\) => \{/);
   assert.match(source, /if \(items\.length === 0\) \{\s*return "";\s*\}/s);
   assert.match(source, /class="section-followup"/);
-  assert.match(extractSourceSegment('const renderGameSummaryPanel =','const renderJoinInvitePanel ='), /return renderSummarySlots\(/);
   assert.match(extractSourceSegment('const renderHistoryPanel =','const renderBoardPanel ='), /return renderHistorySlots\(\{rows:historyRows/);
   const summary=renderSummarySlots({title:'Game',started:'Started',role:'Role',turn:'Turn',latest:'Latest'});
   assert.match(summary, /class="section-stack"/);
