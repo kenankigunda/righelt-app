@@ -28,13 +28,19 @@ Element.prototype.animate=function(frames,options){
 };
 const makeAdapter=()=>{const adapter=createEngineBoardAdapter();const mount=adapter.mount,unmount=adapter.unmount;adapter.mount=options=>{mounts++;return mount(options);};adapter.unmount=()=>{unmounts++;return unmount();};return adapter;};
 const liveSnapshot=structuredClone(normalPayload.frames.at(-1).after),original=JSON.stringify(liveSnapshot);
+const firstReplaySnapshot=normalPayload.frames[0].before;
+const conflict=liveSnapshot.pieces.find(piece=>!firstReplaySnapshot.pieces.some(candidate=>candidate.position.row===piece.position.row&&candidate.position.col===piece.position.col&&candidate.id===piece.id));
+if(!conflict)throw Error('Expected a live/replay piece conflict');
+let liveClicks=0;
 const runtime=createBoardRuntime({boardAdapter:makeAdapter(),host:{canSelect:()=>true,canInteract:()=>true,applyAction:async()=>{writes++;throw Error('Replay must not submit');}}});
 runtime.bindElements({boardEl:document.getElementById('live-board'),overlayLinesEl:document.getElementById('live-lines')});
 await runtime.loadSnapshot(liveSnapshot,{legalActions:[]});
+document.getElementById('live-board').addEventListener('click',()=>{liveClicks++;});
 const timers=new Map();
-const controller=createComputerReplay({rootEl:document.getElementById('live-root'),createAdapter:makeAdapter,setTimer:fn=>{timers.set(++sequence,fn);return sequence;},clearTimer:id=>timers.delete(id),onChange:status=>{runtime.setInteractionBlocked(status.playing);document.getElementById('status').textContent=status.playing?`Replay ${status.step}/${status.total}`:'Live';},onFinish:({reason})=>window.lastReplayReason=reason});
+const automatic=new URL(location.href).searchParams.get('automatic')==='1';
+const controller=createComputerReplay({rootEl:document.getElementById('live-root'),createAdapter:makeAdapter,automatic,setTimer:fn=>{timers.set(++sequence,fn);return sequence;},clearTimer:id=>timers.delete(id),onChange:status=>{runtime.setInteractionBlocked(status.playing);document.getElementById('status').textContent=status.playing?`Replay ${status.step}/${status.total}`:'Live';},onFinish:({reason})=>window.lastReplayReason=reason});
 let playback;
-window.replayFixture={controller,runtime,timers,get payload(){return structuredClone(normalPayload);},get motions(){return motions;},get writes(){return writes;},get activeAdapters(){return mounts-unmounts;},get unchanged(){return JSON.stringify(liveSnapshot)===original;},
+window.replayFixture={controller,runtime,timers,automatic,conflict:structuredClone(conflict),get payload(){return structuredClone(normalPayload);},get motions(){return motions;},get writes(){return writes;},get liveClicks(){return liveClicks;},get activeAdapters(){return mounts-unmounts;},get unchanged(){return JSON.stringify(liveSnapshot)===original;},
  start(payload=normalPayload){motions=[];playback=controller.play(payload);return controller.snapshot();},
  async advance(){const next=timers.entries().next().value;if(!next)throw Error('No pending replay step');timers.delete(next[0]);next[1]();await Promise.resolve();await Promise.resolve();return controller.snapshot();},
  async settled(){return await playback;},
