@@ -130,6 +130,18 @@ test('an invalid persisted game is terminal and Home retires its cold recovery o
  await page.unrouteAll({behavior:'wait'});
 });
 
+test('Home retires a still-retrying cold destination and stops its attempts',async({ownedContext,baseURL})=>{
+ const context=await ownedContext({baseURL,viewport:{width:390,height:844},hasTouch:true,reducedMotion:'reduce'}),page=await context.newPage();
+ await page.addInitScript(()=>{window.WebSocket=undefined;});
+ const [id]=await createGamesViaApi(page,1);await page.goto('/');let reads=0;
+ await page.route(url=>[`/api/shell/games/${id}`,`/api/shell/games/${id}/position`,`/api/shell/games/${id}/reconcile`].includes(url.pathname),async route=>{reads++;await route.fulfill({status:503,json:{error:'temporarily_unavailable'}});});
+ await page.locator(`[data-game-id="${id}"].mini-board-card-link-surface`).tap();
+ const notice=page.getByTestId('destination-load-notice');await expect(notice.getByRole('link',{name:'Home',exact:true})).toBeVisible({timeout:18000});
+ const beforeHome=reads;await notice.getByRole('link',{name:'Home',exact:true}).tap();await expect(page.getByTestId('home-create-game')).toBeVisible();
+ await page.waitForTimeout(1500);expect(reads).toBe(beforeHome);
+ await page.unrouteAll({behavior:'wait'});
+});
+
 test('leaving through a focused Home control retires the stale notice and focus',async({ownedContext,baseURL})=>{
  const context=await ownedContext({baseURL,viewport:{width:390,height:844},hasTouch:true,reducedMotion:'reduce'}),page=await context.newPage();
  await page.addInitScript(()=>{window.WebSocket=undefined;});

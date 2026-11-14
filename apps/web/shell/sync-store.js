@@ -1787,7 +1787,13 @@ export const createSyncStore = ({
       transport.setRulesActiveGame?.(activeGameId);
       syncActiveGame();
       if (previousActiveGameId && previousActiveGameId !== activeGameId) {
-        transport.retireColdDestinationRecovery?.(previousActiveGameId, { reason: "unavailable" });
+        // Let a terminal destination retire synchronously with its exact reason.
+        // This deferred fallback owns only a still-live cold read after route exit.
+        queueMicrotask(() => {
+          if (active && activeGameId !== previousActiveGameId) {
+            transport.retireColdDestinationRecovery?.(previousActiveGameId, { reason: "unavailable" });
+          }
+        });
       }
       if (auth?.enabled && auth.pendingLogout) {
         recoveryEpisodeClock.reset();

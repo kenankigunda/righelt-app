@@ -248,7 +248,7 @@ const createHistoryReadyGame = () => ({
   pendingCommandCount: 1,
 });
 
-test("sync store setActiveGameId manages live sync connections", () => {
+test("sync store setActiveGameId manages live sync connections", async () => {
   const calls = [];
   const desiredGameIds = [];
   const store = createSyncStore({
@@ -286,18 +286,19 @@ test("sync store setActiveGameId manages live sync connections", () => {
   store.setActiveGameId("game-1");
   store.setActiveGameId("game-2");
   store.setActiveGameId(null);
+  await Promise.resolve();
 
   assert.deepEqual(calls, [
     ["connect", "game-1"],
     ["disconnect", "game-1"],
     ["connect", "game-2"],
-    ["retireColdDestinationRecovery", "game-1", { reason: "unavailable" }],
     ["disconnectAll"],
+    ["retireColdDestinationRecovery", "game-1", { reason: "unavailable" }],
     ["retireColdDestinationRecovery", "game-2", { reason: "unavailable" }],
   ]);
 });
 
-test("sync store route retirement delegates safety to the cold recovery fence", () => {
+test("sync store route retirement delegates safety to the cold recovery fence", async () => {
   const retired = [];
   const loaded = { id: "loaded-game" };
   const store = createSyncStore({
@@ -323,12 +324,48 @@ test("sync store route retirement delegates safety to the cold recovery fence", 
   store.setActiveGameId("cold-game");
   store.setActiveGameId(loaded.id);
   store.setActiveGameId(null);
+  await Promise.resolve();
 
   assert.deepEqual(retired, [
     ["cold-game", { reason: "unavailable" }],
     [loaded.id, { reason: "unavailable" }],
   ]);
   assert.equal(store.getGameViewModel(loaded.id), loaded, "loaded state remains owned by the transport fence");
+  store.retire();
+});
+
+test("terminal destination retirement wins before the route-exit fallback", async () => {
+  const completions = [];
+  let retireColdDestinationRecovery;
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => {
+      retireColdDestinationRecovery = (gameId, options) => {
+        if (completions.length) return false;
+        completions.push([gameId, options]);
+        return true;
+      };
+      return {
+        subscribe: () => () => {},
+        getIdentityId: () => "id-test",
+        getLastEventSeq: () => 0,
+        getGameViewModel: () => null,
+        retireColdDestinationRecovery,
+      };
+    },
+    createSyncClient: () => ({
+      connectGame: () => {},
+      disconnectGame: () => {},
+      disconnectAll: () => {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+  store.setActiveGameId("invalid-game");
+  store.setActiveGameId(null);
+  retireColdDestinationRecovery("invalid-game", { reason: "integrity" });
+  await Promise.resolve();
+
+  assert.deepEqual(completions, [["invalid-game", { reason: "integrity" }]]);
   store.retire();
 });
 
