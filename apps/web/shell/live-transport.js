@@ -932,8 +932,8 @@ export const createLiveTransportStore = ({
       if (receiptOwner && receiptOwner.epoch === (optimistic.connectionRecoveryEpoch ?? 0)
         && receiptOwner.episodeId === optimistic.recoveryEpisodeId
         && !optimistic.pendingCommands.length && !optimistic.forceSnapshot) {
-        setConnectionRecovering(game.id, false);
-        if (receiptOwner.maintenance && optimistic.recoveryEpisodeId === receiptOwner.episodeId) {
+        const released = setConnectionRecovering(game.id, false);
+        if (released && !optimistic.connectionRecovering && receiptOwner.maintenance && optimistic.recoveryEpisodeId === receiptOwner.episodeId) {
           optimistic.recoveryEpisodeId = null; recalculateOptimisticGame(game.id);
         }
       }
@@ -1005,8 +1005,8 @@ export const createLiveTransportStore = ({
     const settledOwner = sharedRecoveryOwners.find(owner => owner && owner.epoch === (optimistic.connectionRecoveryEpoch ?? 0)
       && owner.episodeId === optimistic.recoveryEpisodeId);
     if (!optimistic.pendingCommands.length && !optimistic.forceSnapshot && (!sharedRecoveryOwners.length || settledOwner)) {
-      setConnectionRecovering(gameId, false);
-      if (settledOwner?.maintenance && optimistic.recoveryEpisodeId === settledOwner.episodeId) {
+      const released = setConnectionRecovering(gameId, false);
+      if (released && !optimistic.connectionRecovering && settledOwner?.maintenance && optimistic.recoveryEpisodeId === settledOwner.episodeId) {
         optimistic.recoveryEpisodeId = null; recalculateOptimisticGame(gameId);
       }
     }
