@@ -20,6 +20,7 @@ test('mismatched or incomplete actor metadata never hides or rewrites ordinary t
   assert.equal(renderBoardMessageHtml(message),'Namesake &lt;moved&gt;');
  }
  assert.equal(renderBoardMessageHtml({text:'Replay · 2 of 3'}),'Replay · 2 of 3');
+ assert.equal(renderBoardMessageHtml({text:'Authoritative copy',parts:[{text:'Hidden rewrite',side:'p1'}]}),'Authoritative copy');
 });
 
 test('inline controls use fixed brand glyphs and identical inert sizing content',()=>{

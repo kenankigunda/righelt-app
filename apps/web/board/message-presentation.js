@@ -38,6 +38,13 @@ const renderCopy = (text, coordinates = []) => {
   }).join('');
 };
 const renderActorName = actorName => `<bdi class="board-message-name" dir="auto" title="${escape(actorName)}">${escape(actorName)}</bdi>`;
+const renderToneParts = (parts,coordinates) => parts.map(part => {
+  const copy=renderCopy(part?.text??'',coordinates);
+  const side=part?.side==='p1'||part?.side==='P1'?'p1':part?.side==='p2'||part?.side==='P2'?'p2':null;
+  if(!side)return copy;
+  const color=side==='p1'?'Red':'Blue';
+  return `<span class="player-tone-${side}">${part.colorNamed?'':`<span class="sr-only">${color}: </span>`}<bdi dir="auto">${copy}</bdi></span>`;
+}).join('');
 const renderActorRest = (rest,coordinates,actorName) => {
   const marker=`. ${actorName} also `;
   let cursor=0,index,copy='';
@@ -51,7 +58,10 @@ export function renderBoardMessageHtml(message, {sizing = false} = {}) {
   if (message.rows) return message.rows.map(row => `<span class="board-message-row">${renderBoardMessageHtml(row,{sizing})}</span>`).join('');
   if(message.confirmation)return `${escape(message.text??'Confirm')} <strong>${escape(message.confirmation.text)} ${renderCoordinateChip(message.confirmation.point,message.confirmation.pointClass)}</strong>`;
   const {text,actorName,rest,actions}=boardMessagePresentation(message);
-  const copy=actorName?`${renderActorName(actorName)}${renderActorRest(rest,message.coordinates,actorName)}`:renderCopy(text,message.coordinates);
+  const parts=Array.isArray(message.parts)&&message.parts.every(part=>part&&typeof part.text==='string')
+    &&message.parts.map(part=>part.text).join('')===text?message.parts:null;
+  const copy=parts?renderToneParts(parts,message.coordinates)
+    :actorName?`${renderActorName(actorName)}${renderActorRest(rest,message.coordinates,actorName)}`:renderCopy(text,message.coordinates);
   const {inline,detached}=partitionMessageActions(actions);
   const sentence=copy+(message.badge?` <span class="board-obligatory-pill"${boardPromptPattern(message)?` data-board-prompt-pattern="${DETACHED_REQUIRED_RETRY}"`:""}>${escape(message.badge)}</span>`:'')+inline.map(action=>` ${renderBoardInlineAction(action,{sizing})}`).join('');
   return sentence+(detached.length?`<span class="board-message-actions">${detached.map(action=>renderBoardInlineAction(action,{sizing})).join(' ')}</span>`:'');
