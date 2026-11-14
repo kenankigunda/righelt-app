@@ -1356,6 +1356,42 @@ export const createLiveTransportStore = ({
     emitChange({ type: "connection_failed", gameId, episodeId: optimistic.recoveryEpisodeId });
     return true;
   };
+  const retireColdDestinationRecovery = (gameId, { reason = "terminal_destination" } = {}) => {
+    const optimistic = getOptimisticState(gameId);
+    const terminalReason = ['auth','missing','upgrade','integrity','storage','unavailable'].includes(reason) ? reason : 'unavailable';
+    // A confirmed cold destination owns no playable snapshot or durable work.
+    // Retire only that safe read episode. Never let terminal presentation
+    // discard a command, receipt, uncertain admission, or loaded game.
+    if (gameById.has(gameId) || optimistic.pendingCommands.length || optimistic.unsavedCommand
+      || optimistic.attempt && optimistic.attempt.commandId !== null) return false;
+    clearTimeout(optimistic.recoveryRetryTimer); optimistic.recoveryRetryTimer = null;
+    clearTimeout(optimistic.retryTimer); optimistic.retryTimer = null;
+    clearTimeout(optimistic.budgetTimer); optimistic.budgetTimer = null;
+    const owner = optimistic.recoveryOwner;
+    if (owner) {
+      owner.superseded = true;
+      owner.reject?.(Object.assign(new Error("session_changed"), { code: "session_changed" }));
+      optimistic.recoveryOwner = null; optimistic.recoveryPromise = null;
+    }
+    if (optimistic.attempt?.commandId === null) {
+      const attempt = optimistic.attempt;
+      optimistic.attempt = null;
+      attempt.controller.abort(); attempt.finish();
+    }
+    optimistic.connectionFailed = false;
+    optimistic.connectionRecovering = false;
+    optimistic.socketAuthorityRequired = false;
+    optimistic.forceSnapshot = false;
+    optimistic.syncStatus = "ready";
+    optimistic.recoveryIssue = null;
+    optimistic.recoveryStartedAt = null;
+    optimistic.recoveryEpisodeId = null;
+    optimistic.recoveryRetryAttempt = 0;
+    reportRecoveryDiagnostic(gameId, 'recovery_completed', { reason: terminalReason });
+    recalculateOptimisticGame(gameId);
+    emitChange({ type: "connection_recovery_changed", gameId, recovering: false });
+    return true;
+  };
   const retryConnectionRecovery = (gameId) => {
     const optimistic = getOptimisticState(gameId);
     if (!optimistic.connectionFailed) return false;
@@ -2410,6 +2446,7 @@ export const createLiveTransportStore = ({
     finishSocketRecovery,
     setConnectionRecovering,
     stopConnectionRecovery,
+    retireColdDestinationRecovery,
     retryConnectionRecovery,
     prepareSafeReconnect(gameId) {
       const optimistic = getOptimisticState(gameId);

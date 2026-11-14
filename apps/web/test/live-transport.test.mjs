@@ -3119,6 +3119,22 @@ test('terminal connection failure is fenced to one episode and manual Retry crea
  assert.equal(store.stopConnectionRecovery(game.id,{episodeId:first}),false,'the old owner cannot terminate the fresh episode');
 });
 
+test('a confirmed cold terminal destination retires only its safe read retries',async t=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'cold-terminal-owner');let reads=0;
+ const store=createLiveTransportStore({storage,commandJournal:{list:async()=>[],remove:async()=>{}},
+  timing:{requestTimeoutMs:20,recoveryPassMs:100,retryDelaysMs:[5],retryJitter:0},
+  fetcher:async()=>{reads++;return Response.json({error:'game_not_found'},{status:404});}});t.after(()=>store.retire());
+ const gameId='missing-cold-game';store.setConnectionRecovering(gameId,true,{requireSocketAuthority:true,reason:'websocket_unavailable'});
+ await assert.rejects(store.reconcileGame(gameId));
+ assert.equal(store.retireColdDestinationRecovery(gameId,{reason:'missing'}),true);
+ const settledReads=reads;await new Promise(resolve=>setTimeout(resolve,30));assert.equal(reads,settledReads);
+ assert.equal(store.getGameViewModel(gameId),null);
+
+ const loaded=buildLiveGame();store.applyLiveGameUpdate({game:loaded,eventSeq:1});store.setConnectionRecovering(loaded.id,true,{requireSocketAuthority:true});
+ assert.equal(store.retireColdDestinationRecovery(loaded.id,{reason:'missing'}),false,'a loaded game cannot be retired as a cold destination');
+ assert.equal(store.getGameViewModel(loaded.id).sharedMutationsBlocked,true);
+});
+
 for(const [eventSeq,gameplayRevision] of [[9,3],[null,3],[null,5]])test(`weaker live evidence cannot replace a stronger whole Home card seq=${eventSeq} revision=${gameplayRevision}`,async t=>{
  const {buildStaticGameCardFromGame}=await import('../shell/static-game-cards.js');
  const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
