@@ -442,6 +442,7 @@ button {
 }
 .cell.target.mutation-unavailable-target[data-mutation-pulse="true"]::after {
   animation:notification-processing var(--notification-processing-cycle) ease-in-out infinite;
+  animation-delay:var(--surface-pulse-delay,0ms);
 }
 .cell.target.mutation-unavailable-target > .piece-token.move-ghost {z-index:1;}
 .cell.target.mutation-unavailable-target > .piece-token:not(.move-ghost),

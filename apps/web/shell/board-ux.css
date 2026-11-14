@@ -223,6 +223,7 @@ body {display:flow-root;}
 .board-preview-inline-button[data-mutation-unavailable="true"] > * {position:relative;z-index:1;}
 .board-preview-inline-button[data-mutation-pulse="true"]::after {
   animation:notification-processing var(--notification-processing-cycle) ease-in-out infinite;
+  animation-delay:var(--surface-pulse-delay,0ms);
 }
 @media (prefers-reduced-motion: reduce), (forced-colors: active) {
   .board-preview-inline-button[data-mutation-pulse="true"]::after {animation:none;opacity:.15;}

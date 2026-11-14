@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createInlineActionAvailability} from '../board/inline-action-availability.js';
 import {patchBoardMessage} from '../board/message-presentation.js';
-const control=(intrinsic=false)=>{let disabled=intrinsic;const writes=[];return {writes,get disabled(){return disabled;},set disabled(value){writes.push(value);disabled=value;}};};
+const control=(intrinsic=false)=>{let disabled=intrinsic;const writes=[],styles=new Map();return {writes,styles,dataset:{},style:{setProperty:(key,value)=>styles.set(key,value),removeProperty:key=>styles.delete(key)},get disabled(){return disabled;},set disabled(value){writes.push(value);disabled=value;}};};
 test('turn-control availability applies each genuine transition once and never temporarily enables a blocked button',()=>{
  const button=control(),owner=createInlineActionAvailability(),root={querySelectorAll:()=>[button]};
  owner.sync(root,false);assert.deepEqual(button.writes,[]);owner.sync(root,true);owner.sync(root,true);owner.sync(root,true);assert.deepEqual(button.writes,[true]);assert(owner.owns(button));
@@ -12,6 +12,17 @@ test('intrinsic disabled state and detached or replaced controls never gain a te
  const intrinsic=control(true),owned=control(),replacement=control(true),owner=createInlineActionAvailability();let current=[intrinsic,owned];const root={querySelectorAll:()=>current};
  owner.sync(root,true);assert(!owner.owns(intrinsic));assert(owner.owns(owned));current=[intrinsic,replacement];owner.sync(root,false);
  assert(!owner.owns(owned));assert.deepEqual(intrinsic.writes,[]);assert.deepEqual(replacement.writes,[]);assert.equal(intrinsic.disabled,true);assert.equal(replacement.disabled,true);owner.clear();assert(!owner.owns(replacement));
+});
+test('rerenders and replacement controls share raw finite incident elapsed time without a local cycle',()=>{
+ const first=control(),replacement=control(),owner=createInlineActionAvailability();let current=[first];const root={querySelectorAll:()=>current};
+ owner.sync(root,{unavailable:true,pulsing:true,elapsedMs:987654321,episodeId:'incident'});
+ assert.equal(first.styles.get('--surface-pulse-delay'),'-987654321ms');
+ owner.sync(root,{unavailable:true,pulsing:true,elapsedMs:987654321,episodeId:'incident'});
+ assert.equal(first.styles.get('--surface-pulse-delay'),'-987654321ms');
+ current=[replacement];owner.sync(root,{unavailable:true,pulsing:true,elapsedMs:987654321,episodeId:'incident'});
+ assert.equal(first.styles.has('--surface-pulse-delay'),false);assert.equal(replacement.styles.get('--surface-pulse-delay'),'-987654321ms');
+ owner.sync(root,{unavailable:false,pulsing:false,elapsedMs:0,episodeId:null});
+ assert.equal(replacement.styles.has('--surface-pulse-delay'),false);
 });
 
 // Controlled DOM nodes exercise the real patcher. Browser parsing, native focus

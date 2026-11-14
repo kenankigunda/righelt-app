@@ -21,15 +21,20 @@ export function mutationSurfacePresentation(game, { foregroundWaitMs = 0 } = {})
   return Object.freeze({
     unavailable,
     pulsing,
+    elapsedMs: pulsing ? foregroundWaitMs - SYNC_TIMING.reconnectAlertMs : 0,
     episodeId: pulsing ? game?.recoveryEpisodeId ?? null : null,
   });
 }
 
 export function normalizeMutationSurface(value, unavailable) {
   const pulsing = Boolean(unavailable && value?.pulsing);
+  const elapsedMs = pulsing && Number.isFinite(value?.elapsedMs) && value.elapsedMs >= 0
+    ? value.elapsedMs
+    : 0;
   return {
     unavailable: Boolean(unavailable),
     pulsing,
+    elapsedMs,
     episodeId: pulsing && typeof value?.episodeId === "string" ? value.episodeId : null,
   };
 }

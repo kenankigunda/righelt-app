@@ -14,23 +14,26 @@ const recovering = (overrides = {}) => ({
 
 test("surface pulse observes the existing four-second foreground grace and incident onset", () => {
   assert.deepEqual(mutationSurfacePresentation(recovering(), { foregroundWaitMs: 3_999 }), {
-    unavailable: true, pulsing: false, episodeId: null,
+    unavailable: true, pulsing: false, elapsedMs: 0, episodeId: null,
   });
   assert.deepEqual(mutationSurfacePresentation(recovering(), { foregroundWaitMs: 4_000 }), {
-    unavailable: true, pulsing: true, episodeId: "episode-7",
+    unavailable: true, pulsing: true, elapsedMs: 0, episodeId: "episode-7",
   });
   assert.deepEqual(mutationSurfacePresentation(recovering(), { foregroundWaitMs: Number.MAX_SAFE_INTEGER }), {
-    unavailable: true, pulsing: true, episodeId: "episode-7",
+    unavailable: true, pulsing: true, elapsedMs: Number.MAX_SAFE_INTEGER - 4_000, episodeId: "episode-7",
   });
   for (const foregroundWaitMs of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
     assert.equal(mutationSurfacePresentation(recovering(), { foregroundWaitMs }).pulsing, false);
   }
 });
 
-test("surface normalization exposes no JavaScript phase or duration contract", () => {
-  const normalized = normalizeMutationSurface({ pulsing: true, phaseMs: Number.MAX_VALUE, episodeId: "episode-7" }, true);
-  assert.deepEqual(normalized, { unavailable: true, pulsing: true, episodeId: "episode-7" });
+test("surface normalization keeps finite elapsed incident time without a JavaScript phase or duration", () => {
+  const normalized = normalizeMutationSurface({ pulsing: true, elapsedMs: Number.MAX_SAFE_INTEGER, phaseMs: 375, episodeId: "episode-7" }, true);
+  assert.deepEqual(normalized, { unavailable: true, pulsing: true, elapsedMs: Number.MAX_SAFE_INTEGER, episodeId: "episode-7" });
   assert.equal(Object.hasOwn(normalized, "phaseMs"), false);
+  for (const elapsedMs of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -1]) {
+    assert.equal(normalizeMutationSurface({ pulsing: true, elapsedMs, phaseMs: 375 }, true).elapsedMs, 0);
+  }
 });
 
 test("hidden/background time and non-processing fences never animate mutation surfaces", () => {
@@ -53,6 +56,6 @@ test("hidden/background time and non-processing fences never animate mutation su
 
 test("a safe renewal that leaves human play admitted does not decorate the Board", () => {
   assert.deepEqual(mutationSurfacePresentation(recovering({ gameplayMutationsBlocked: false }), { foregroundWaitMs: 9_000 }), {
-    unavailable: false, pulsing: false, episodeId: null,
+    unavailable: false, pulsing: false, elapsedMs: 0, episodeId: null,
   });
 });

@@ -50,7 +50,12 @@ class FakeElement {
     this.parentNode = null;
     this.dataset = {};
     this.attributes = new Map();
-    this.style = {};
+    const styleValues = new Map();
+    this.style = {
+      setProperty: (name, value) => styleValues.set(name, value),
+      removeProperty: (name) => styleValues.delete(name),
+      getPropertyValue: (name) => styleValues.get(name) ?? "",
+    };
     this.classList = new FakeClassList();
     this._className = "";
     this._innerHTML = "";
@@ -1421,10 +1426,12 @@ test("every mutation destination uses one neutral incident surface without pulsi
         removalEffects: [], allowFreeSelection: false, currentActionType: type,
         selectedPieceOverlayPhase: "actionPreviews",
       };
-      adapter.render({ ...payload, mutationSurface: { unavailable: true, pulsing: true, episodeId: "episode" } });
+      const elapsedMs = 9_725 + ["move", "project", "rush", "push", "retreat", "follow"].indexOf(type);
+      adapter.render({ ...payload, mutationSurface: { unavailable: true, pulsing: true, elapsedMs, episodeId: "episode" } });
       const sourceCell = getCell(boardEl, source.row, source.col), targetCell = getCell(boardEl, target.row, target.col);
       assert.equal(targetCell.classList.contains("mutation-unavailable-target"), true, type);
       assert.equal(targetCell.dataset.mutationPulse, "true", type);
+      assert.equal(targetCell.style.getPropertyValue("--surface-pulse-delay"), `-${elapsedMs}ms`, `${type} uses incident elapsed time`);
       assert.equal(sourceCell.classList.contains("mutation-unavailable-target"), false, type);
       assert.equal(sourceCell.querySelector(".piece-token")?.classList.contains("mutation-unavailable-target"), false, type);
       const ghost = targetCell.querySelector(".move-ghost");
@@ -1435,9 +1442,12 @@ test("every mutation destination uses one neutral incident surface without pulsi
         assert.equal(arrow?.getAttribute("stroke"), "#85877d", `${type} arrow is neutral`);
         assert.equal(arrow?.getAttribute("stroke-dasharray"), "6 5", `${type} arrow is dashed`);
       }
-      adapter.render({ ...payload, mutationSurface: { unavailable: false, pulsing: false, episodeId: null } });
+      adapter.render({ ...payload, mutationSurface: { unavailable: true, pulsing: true, elapsedMs, episodeId: "episode" } });
+      assert.equal(targetCell.style.getPropertyValue("--surface-pulse-delay"), `-${elapsedMs}ms`, `${type} rerender stays synchronized`);
+      adapter.render({ ...payload, mutationSurface: { unavailable: false, pulsing: false, elapsedMs: 0, episodeId: null } });
       assert.equal(targetCell.classList.contains("mutation-unavailable-target"), false, `${type} settles`);
       assert.equal(targetCell.dataset.mutationPulse, undefined, `${type} pulse retires`);
+      assert.equal(targetCell.style.getPropertyValue("--surface-pulse-delay"), "", `${type} delay retires`);
       adapter.unmount();
     }
   });

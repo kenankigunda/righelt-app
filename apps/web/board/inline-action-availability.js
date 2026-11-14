@@ -8,8 +8,10 @@ export function createInlineActionAvailability() {
   if(presentation.unavailable)dataset.mutationUnavailable='true';else delete dataset.mutationUnavailable;
   if(presentation.pulsing){
    dataset.mutationPulse='true';
+   button.style?.setProperty?.('--surface-pulse-delay',`${-presentation.elapsedMs}ms`);
   }else{
    delete dataset.mutationPulse;
+   button.style?.removeProperty?.('--surface-pulse-delay');
   }
  };
  return {

@@ -900,6 +900,7 @@ export function createEngineBoardAdapter() {
           targetCell.classList.add("mutation-unavailable-target");
           if (mutationSurface.pulsing) {
             targetCell.dataset.mutationPulse = "true";
+            targetCell.style.setProperty?.("--surface-pulse-delay", `${-mutationSurface.elapsedMs}ms`);
           }
         }
         const ghost = buildPieceToken(action.previewPiece ?? piece, true);
@@ -1203,6 +1204,7 @@ export function createEngineBoardAdapter() {
           cell.removeAttribute("data-inactive-label");
           cell.removeAttribute("data-mutation-pulse");
           delete cell.dataset.mutationPulse;
+          cell.style.removeProperty?.("--surface-pulse-delay");
           cell.removeAttribute("data-selected-supply-owner");
           if (effectiveInteractionMode === "interactive") {
             cell.type = "button";
