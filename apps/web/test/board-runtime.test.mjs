@@ -11,7 +11,7 @@ test('piece explanations and blocked causes precede the unchanged coordinate chi
   {owner:'P2',expected:'Opponent’s supply and command lines'}, {expected:'No moves'},
   ...[['SUPPLY_DESTINATION_UNSUPPLIED','Destination would have no supply'],['PUSH_STRENGTH_TOO_WEAK','Group too weak to push'],['UNKNOWN_PRIVATE_RULE','Move unavailable']].map(([reason,expected])=>({reason,expected}))];
  for(const variant of variants){
-  let html='',context=null;const label={addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
+  let html='',context=null;const label={dataset:{},hidden:false,addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
   const piece={id:'A',owner:variant.owner??'P1',kind:'unit',position:point,supplied:true,commanded:true};
   const state={sideToMove:'P1',turnIndex:0,continuation:null,pieces:[piece]};
   const preview=variant.reason?{type:'move',actorId:'A',from:point,to:{row:4,col:3},legal:false,blockedReason:variant.reason}:null;
@@ -22,7 +22,7 @@ test('piece explanations and blocked causes precede the unchanged coordinate chi
   assert.ok(context||variant.owner==='P2',JSON.stringify(variant));
   const contextHtml=context?renderBoardMessageHtml(context.message):html,text=contextHtml.replace(/<[^>]+>/g,'');
   assert.equal(text,`${variant.expected} for piece at 4, 2`,JSON.stringify(variant));
-  assert.match(contextHtml,/board-preview-coordinate-chip/);if(context)assert.ok(!html.includes(variant.expected),'explanation stays outside the finite primary');
+  assert.match(contextHtml,/board-preview-coordinate-chip/);if(context){assert.ok(!html.includes(variant.expected),'explanation stays outside the finite primary');assert.equal(label.hidden,true,'semantic context owns the Board message without a generic prompt');}
   assert.doesNotMatch(contextHtml,/data-board-preview-action/);destroyUninitializedNodeRuntime(runtime);
  }
 });
@@ -128,6 +128,8 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
   let summaryCalls = 0;
   let boardPreviewLabelValue = "";
   const boardPreviewLabelEl = {
+    dataset: {},
+    hidden: false,
     get textContent() {
       return boardPreviewLabelValue;
     },
@@ -213,7 +215,8 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
   assert.equal(renderCalls.at(-1)?.overlay?.mode, "recorded-action");
   assert.deepEqual(renderCalls.at(-1)?.overlay?.recordedAction, recordedAction);
   assert.deepEqual(renderCalls.at(-1)?.overlay?.recordedActionStartPiece, recordedActionStartPiece);
-  assert.equal(boardPreviewLabelEl.innerHTML || boardPreviewLabelEl.textContent,'Choose a move in History');
+  assert.equal(boardPreviewLabelEl.innerHTML || boardPreviewLabelEl.textContent,'');
+  assert.equal(boardPreviewLabelEl.hidden,true);
   assert.equal(context.kind,'history');
   assert.match(renderBoardMessageHtml(context.message), /Recorded move from.*board-preview-coordinate-chip-selected-piece.*4,\s*2.*board-preview-coordinate-chip-target.*4,\s*3/);
 });

@@ -56,7 +56,7 @@ test('selected archived action keeps its exact snapshot when the closure predece
 test('recorded detail stays outside finite Board guidance while full context preserves coordinates and actor',()=>{
  const selected={...game,inspectedDecision:move('retreat','P2')};
  const message=historyBoardMessage(selected);
- assert.equal(message.text,'Choose a move in History');
+ assert.equal(message.prompt,null);
  assert.deepEqual(message.context,{...selectedHistoryPresentation(selected).message,purpose:'selected-history'});
  assert.equal(message.context.text,'Kenan retreated from (4, 3) to (4, 4)');
  assert.equal(message.context.coordinates.length,2);

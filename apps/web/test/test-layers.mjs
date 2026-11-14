@@ -11,6 +11,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "history-heading-focus.test.mjs",
   "undo-policy.test.mjs",
   "message-composition.test.mjs",
+  "message-priority.test.mjs",
   "message-height.test.mjs",
   "prompt-reservation.test.mjs",
   "font-pattern-budget.test.mjs",

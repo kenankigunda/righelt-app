@@ -4,6 +4,7 @@ import {createMutationActivationFence} from '../mutation-activation.js';
 import {getPushRetreatPrompt as renderPushRetreatPrompt,requiredRushContext as buildRequiredRushContext,opponentInspectionPrompt,buildHistoryRemovalEffects} from '../guidance-presentation.js';
 import {createMessageHeightController} from '../message-height.js';
 import {BOARD_PROMPT,isMappedBoardPromptHtml} from '../prompt-models.js';
+import {resolveBoardMessageOwner} from '../message-priority.js';
 import {createGuidanceDiagnostics} from '../guidance-diagnostics.js';
 import { createRushSupplyGuidanceClient, rushActionKey } from '../rush-supply-guidance.js';
 import {boardMessagePresentation,renderBoardMessageHtml,renderBoardInlineAction,updateBoardInlineActionLabel,patchBoardMessage} from '../message-presentation.js';
@@ -330,12 +331,20 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     statusContext={message,kind,mandatory};
   };
   const requiredRushContext=()=>buildRequiredRushContext(state,{interactive:overlayMode===OVERLAY_MODE.INTERACTIVE,canPresentActions:()=>host.canPresentActions?.(state),getUnsuppliedPieceIds:()=>getRushUnsuppliedPieceIds(state),getPieceById:getBoardPieceById,formatCoordinate});
+  const hideBoardPreviewPrompt=()=>{
+    const label=elements.boardPreviewLabelEl;
+    if(!label)return;
+    if(label.dataset)delete label.dataset.promptUnmapped;
+    label.hidden=true;
+    if(label.textContent)label.textContent='';
+  };
   const setUsefulChoice=()=>{
     const retreat=getPushRetreatPrompt(state,null);
     if(retreat){setBoardPreviewPromptHtml(retreat);return;}
     if(state?.continuation?.type==='push'){setBoardPreviewPrompt(state.continuation.phase==='retreat'?'Select a retreat':BOARD_PROMPT.follow);return;}
     if(statusContext?.mandatory){setBoardPreviewPromptHtml(renderBoardMessageHtml({text:BOARD_PROMPT.requiredRush,badge:'Obligatory'}));return;}
     if(state?.continuation?.type==='rush'){setRushContinuationPrompt(state,state.sideToMove);return;}
+    if(statusContext){hideBoardPreviewPrompt();return;}
     const text=selectedSource&&selectedTarget?BOARD_PROMPT.anotherMove:BOARD_PROMPT.anotherPiece;
     setBoardPreviewPromptHtml(selectedSource&&selectedTarget?`${text} for piece at ${renderBoardPreviewCoordinate(selectedSource)}`:text);
   };
@@ -346,9 +355,19 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   const setBoardPreviewPrompt = (text) => {
     if(messageHeightController?.deferContent?.(escapeHtml(text),()=>renderStatus())){statusDeferred=true;return;}
     markPromptMapping(escapeHtml(text));
+    if(elements.boardPreviewLabelEl?.hidden)elements.boardPreviewLabelEl.hidden=false;
     if (elements.boardPreviewLabelEl && elements.boardPreviewLabelEl.textContent !== text) {
       elements.boardPreviewLabelEl.textContent = text;
     }
+  };
+
+  const setGenericInstructionPrompt = text => {
+    const presentation=resolveBoardMessageOwner({
+      semantic:statusContext?.kind==='history'?statusContext.message:null,
+      generic:{text},
+    });
+    if(presentation.prompt){setBoardPreviewPrompt(presentation.prompt.text);return;}
+    hideBoardPreviewPrompt();
   };
 
   const setBoardPreviewPromptHtml = (html) => {
@@ -361,6 +380,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     }
     if(messageHeightController?.deferContent?.(html,()=>renderStatus())){statusDeferred=true;return;}
     markPromptMapping(html);
+    if(elements.boardPreviewLabelEl?.hidden)elements.boardPreviewLabelEl.hidden=false;
     if (elements.boardPreviewLabelEl && elements.boardPreviewLabelEl.innerHTML !== html) {
       if(!patchBoardMessage(elements.boardPreviewLabelEl,html,{isRuntimeDisabled:inlineActionAvailability.owns}))elements.boardPreviewLabelEl.innerHTML = html;
     }
@@ -665,6 +685,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       if(messageHeightController?.deferContent?.(renderBoardMessageHtml(message),()=>renderStatus())){statusDeferred=true;return;}
       markPromptMapping(renderBoardMessageHtml(message));
       const label = elements.boardPreviewLabelEl;
+      if(label?.hidden)label.hidden=false;
       const buttons = Array.from(label?.querySelectorAll?.(':scope > button[data-board-message-action]') ?? []);
       // A replay counter changes while its controls stay the same. Patch the
       // text in place so a focused Next/Stop button remains usable across steps.
@@ -707,7 +728,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       const text=selectedSource?`${explanation} for piece at ${formatCoordinate(selectedSource)}`:explanation;
       addStatusContext({text,coordinates:selectedSource?[selectedSource]:[]},{kind:'piece-explanation'});
       if(host.canPresentActions?.(state)===false||hasInspection()){
-        setBoardPreviewPromptHtml(selectedSource?`Supply and command lines for piece at ${renderBoardPreviewCoordinate(selectedSource)}`:'Supply and command lines');return;
+        hideBoardPreviewPrompt();return;
       }
       setUsefulChoice();
     };
@@ -718,7 +739,6 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       const paths=inspectionPaths(state,inspection),supply=paths.some(path=>path.kind==='supply'),command=paths.some(path=>path.kind==='command');
       const explicit=inspection.kind==='networks'&&(inspection.command||inspection.supply);
       const coordinates=personalPiece?.position?[personalPiece.position]:selectedSource?[selectedSource]:[];
-      const connectionPrompt=()=>supply&&command?'Supply and command lines':supply?'Supply lines':command?'Command lines':'No connection';
       if(personalPiece?.kind==='commander'&&!explicit){
         const point=formatCoordinate(personalPiece.position),atSupply=sameCoordinate(personalPiece.position,supplyPointForOwner(personalPiece.owner));
         const opponent=personalPiece.owner!==state.sideToMove;
@@ -729,15 +749,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
           :command?`Command lines for commander at ${point}`
           :atSupply?'At its supply point. No connected units.':`Commander at ${point} has no connections.`;
         addStatusContext({text,coordinates},{kind:'inspection'});
-        if(supply&&command)setBoardPreviewPromptHtml(combinedPrompt(renderBoardPreviewCoordinate));
-        else setBoardPreviewPrompt(connectionPrompt());return;
+        hideBoardPreviewPrompt();return;
       }
       if(inspection.kind==='networks'){
         const ownerName=kind=>paths.find(path=>path.kind===kind)?.owner==='P2'?'Blue':'Red';
         const supplyText=supply?`${ownerName('supply')} supply lines`:'';
         const commandText=command?`${ownerName('command')} command lines`:'';
         addStatusContext({text:[supplyText,commandText].filter(Boolean).join(' and ')||'No connections',coordinates},{kind:'inspection'});
-        setBoardPreviewPrompt(connectionPrompt());return;
+        hideBoardPreviewPrompt();return;
       }
       const label=inspection.kind==='combined'?'Supply and command lines':inspection.kind==='command'?'Command lines':'Supply lines';
       if(inspection.kind==='combined'&&selectedSource){setBoardPreviewPromptHtml(`Supply and command lines for piece at ${renderBoardPreviewCoordinate(selectedSource)}`);return;}
@@ -748,21 +767,21 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       setPieceExplanation();
       return;
     }
-    if (overlayMode === 'recorded-turn') { addStatusContext({text:'Turn overview'},{kind:'history'});setBoardPreviewPrompt(BOARD_PROMPT.history); return; }
+    if (overlayMode === 'recorded-turn') { addStatusContext({text:'Turn overview'},{kind:'history'});setGenericInstructionPrompt(BOARD_PROMPT.history); return; }
     if (overlayMode === OVERLAY_MODE.RECORDED_ACTION) {
       if (recordedAction?.from && recordedAction?.to) {
-        addStatusContext({text:`Recorded move from ${formatCoordinate(recordedAction.from)} to ${formatCoordinate(recordedAction.to)}`,coordinates:[{...recordedAction.from,chipClass:'board-preview-coordinate-chip-selected-piece'},{...recordedAction.to,chipClass:'board-preview-coordinate-chip-target'}]},{kind:'history'});setBoardPreviewPrompt(BOARD_PROMPT.history);
+        addStatusContext({text:`Recorded move from ${formatCoordinate(recordedAction.from)} to ${formatCoordinate(recordedAction.to)}`,coordinates:[{...recordedAction.from,chipClass:'board-preview-coordinate-chip-selected-piece'},{...recordedAction.to,chipClass:'board-preview-coordinate-chip-target'}]},{kind:'history'});setGenericInstructionPrompt(BOARD_PROMPT.history);
         return;
       }
       const recordedActionLabel = recordedAction?.from && recordedAction?.to ? "Recorded move" : "History";
-      addStatusContext({text:recordedActionLabel},{kind:'history'});setBoardPreviewPrompt(BOARD_PROMPT.history);
+      addStatusContext({text:recordedActionLabel},{kind:'history'});setGenericInstructionPrompt(BOARD_PROMPT.history);
       return;
     }
 
     if (pieceSummary && selectedPieceId && host.canPresentActions?.(state) === false) {
       if (selectedSource && personalConnectionsCleared && getBoardPieceById(selectedPieceId)?.kind === 'commander') {
         addStatusContext({text:`Commander at ${formatCoordinate(selectedSource)} has no connections.`,coordinates:[selectedSource]},{kind:'inspection'});
-        setBoardPreviewPrompt('No connection');
+        hideBoardPreviewPrompt();
         return;
       }
       if (selectedSource) setBoardPreviewPromptHtml(`Supply and command lines for piece at ${renderBoardPreviewCoordinate(selectedSource)}`);

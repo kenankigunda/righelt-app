@@ -2325,7 +2325,6 @@ const renderBoardPanel = (game) => `
   ${account.snapshot().enabled && account.snapshot().available && !account.snapshot().maintenance && !account.canPlay() ? '<p class="alert" role="status">Sign in to play or analyze. The board remains available to view.</p>' : ''}
   ${renderBoardHeadingSlot()}
   ${renderBoardMessageSlot({id:"shell-board-preview-label",boardSize:game.currentSnapshot?.boardSize??10})}
-  <div data-board-context-details>${renderBoardDetails(game)}</div>
   <div class="board-wrap" data-testid="game-board-wrap">
     <div id="shell-board" class="board" data-testid="game-board" role="region" aria-label="Game Board" tabindex="-1"></div>
     <div class="reconnect-background" aria-hidden="true"></div>
@@ -3159,6 +3158,7 @@ const mountBoardForGame = (game) => {
           const replayFeedback = replayRequests.snapshot();
           const replay = replayController?.snapshot();
           const status = computerSession?.snapshot();
+          const historyMessage=view?.inHistoryMode?historyBoardMessage(view,{identityId:transport.getIdentityId()}):null;
           const confirmedMessage=presentPlaybackBoardMessage(view,status,{activityHost:document.getElementById('shell-board-preview-label')?.parentElement.querySelector('.board-message-activity'),selection,followWorking:forcedFollowWorking(game.id),replay,replayFeedback,scope:viewingScope(),step:confirmedPlayback?.snapshot().current,onRecorded:acknowledgedBoardMessage,identityId:transport.getIdentityId()});
           if(confirmedMessage)return confirmedMessage;
           if (replayFeedback?.gameId === game.id) return replayFeedback.phase === "loading"
@@ -3167,7 +3167,7 @@ const mountBoardForGame = (game) => {
           if (replay?.playing) return {text:replay.manual?BOARD_PROMPT.manualReplay:BOARD_PROMPT.replay,actions:[...(replay.manual?[{id:'replay-next',label:'Next'}]:[]),{id:'replay-stop',label:'Stop replay'}],context:{kind:'replay-progress',message:{rows:[selectedHistoryPresentation({...view,inHistoryMode:true,historyTurnIndex:null,inspectedDecision:replay.recordedMove},{identityId:transport.getIdentityId()})?.message??{text:'Historical move details unavailable'},{text:recordedReplayLabel(view,replay.recordedMove,{identityId:transport.getIdentityId()})},{text:`Replay · ${Math.max(1,replay.step)} of ${replay.total}`}]}}};
           const options={canInteract:!(currentRoute.scenarios&&scenarioCapture?.mode==='frozen'&&scenarioCapture.gameId===game.id)&&hostInvite?.gameId!==game.id&&canControlLiveBoard(view),identityId:transport.getIdentityId()};
           acknowledgedBoardMessage(view,status,options);
-          if(view?.inHistoryMode&&!selection.selectedPieceId&&!selection.inspection)return {text:BOARD_PROMPT.history};
+          if(view?.inHistoryMode&&!selection.selectedPieceId&&!selection.inspection)return historyMessage?.prompt??null;
           if(forcedFollowWorking(game.id))return BOARD_PROMPT.following;
           return withPushSequenceMessage(opponentBoardMessage(view,status,selection,options),view,selection,transport.getIdentityId());
         },
@@ -3399,6 +3399,8 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   utilityMemory.capture();
   const result = preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => {
     const committed = renderContent({ animatePanels, includeBoard });
+    const renderedGame=currentRoute.name==='game'?transport.getGameViewModel(currentRoute.gameId):null;
+    if(renderedGame)syncBoardContextDetails(renderedGame);
     syncMountedGameShellPanelUi();
     // Admit loading and live frames before restoring native Board focus.
     // Every committed path records the same layout-adjusted markup snapshot.

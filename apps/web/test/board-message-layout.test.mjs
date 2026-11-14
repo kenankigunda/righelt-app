@@ -15,10 +15,12 @@ test('complete finite prompt reservation excludes unbounded narration and action
  assert.doesNotMatch(html,/data-board-message-action=|data-board-preview-action=|Show me again|rushed several|had several pieces follow/);
  for(const copy of ['Select a piece or','Select a move for piece at','Select a rush or','Select a retreat','Select a follow'])assert(html.includes(copy));
  assert.match(html,/disabled tabindex="-1"/);
+ assert.match(html,/class="board-message-live"[\s\S]*<div data-board-context-details><\/div>[\s\S]*<\/div><p class="board-preview-label board-message-sizing"/);
 });
 test('loading retains identical sizing replicas without a visible prompt or identity',()=>{
  const loading=renderBoardMessageSlot({loading:true}),live=renderBoardMessageSlot();
  assert(loading.includes('<p class="board-preview-label" aria-hidden="true"></p>'));
+ assert.doesNotMatch(loading,/data-board-context-details/);
  assert.equal(loading.slice(loading.indexOf('<p class="board-preview-label board-message-sizing"')),live.slice(live.indexOf('<p class="board-preview-label board-message-sizing"')));
  assert(!loading.includes(' id='));
  const app=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');

@@ -11,11 +11,12 @@ for(const width of [320,390,1440])test(`finite Board prompt geometry and require
   const [{renderBoardMessageSlot},{boardPromptSizingModels,isMappedBoardPromptHtml},{renderBoardMessageHtml},{createMessageHeightController},{renderBoardContext},{createBoardContextLayout}]=await Promise.all([
    import('/shell/board-message-layout.js'),import('/board/prompt-models.js'),import('/board/message-presentation.js'),import('/board/message-height.js'),import('/shell/board-context.js'),import('/shell/board-context-layout.js'),
   ]);
-  const root=document.getElementById('fixture');root.innerHTML=renderBoardMessageSlot({id:'shell-board-preview-label'})+'<div id="geometry-board" style="height:200px;width:100%;background:#ddd"></div><div id="context"></div>';
+  const root=document.getElementById('fixture');root.innerHTML=renderBoardMessageSlot({id:'shell-board-preview-label'})+'<div id="geometry-board" style="height:200px;width:100%;background:#ddd"></div>';
   const label=document.getElementById('shell-board-preview-label'),controller=createMessageHeightController(label),layout=createBoardContextLayout(document);
-  window.promptFixture={models:boardPromptSizingModels(),overflow(){document.getElementById('context').innerHTML=renderBoardContext({key:'overflow',message:{text:'Board explanation'}});layout.sync();},publish(index){const html=renderBoardMessageHtml(this.models[index]);label.innerHTML=html;label.toggleAttribute('data-prompt-unmapped',!isMappedBoardPromptHtml(html));},required(){
+  const contextHost=document.querySelector('[data-board-context-details]');
+  window.promptFixture={models:boardPromptSizingModels(),showContext(html){label.hidden=true;label.textContent='';contextHost.innerHTML=html;layout.sync();},overflow(){this.showContext(renderBoardContext({key:'overflow',message:{text:'Board explanation'}},{placement:'board'}));},publish(index){label.hidden=false;const html=renderBoardMessageHtml(this.models[index]);label.innerHTML=html;label.toggleAttribute('data-prompt-unmapped',!isMappedBoardPromptHtml(html));},required(){
    const coordinates=Array.from({length:30},(_,index)=>({row:Math.floor(index/10),col:index%10,chipClass:'board-preview-coordinate-chip-rush-blocker'}));
-   document.getElementById('context').innerHTML=renderBoardContext({key:'required',mandatory:true,message:{text:'Restore supply for pieces at '+coordinates.map(p=>`(${p.row}, ${p.col})`).join(', '),coordinates}});layout.sync();
+   this.showContext(renderBoardContext({key:'required',mandatory:true,message:{text:'Restore supply for pieces at '+coordinates.map(p=>`(${p.row}, ${p.col})`).join(', '),coordinates}},{placement:'board'}));
   },destroy(){controller.destroy();layout.destroy();}};
  });
  const records=[];
@@ -62,37 +63,32 @@ for(const width of [320,390,1440])test(`finite Board prompt geometry and require
 
  // A changing natural inner box must update overflow even while the capped
  // scrollport's border box remains the same. No app/status refresh intervenes.
- await page.evaluate(()=>{document.documentElement.style.fontSize='16px';window.promptFixture.overflow();window.beforeOverflowFocus=document.activeElement;window.beforeOverflowScroll=scrollY;});
+ await page.evaluate(()=>{document.documentElement.style.fontSize='16px';return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+ await expect.poll(()=>page.locator('.board-message-slot').evaluate(slot=>slot.getAnimations({subtree:false}).length)).toBe(0);
+ const boardBeforeContext=await page.locator('#geometry-board').boundingBox();
+ await page.evaluate(()=>{window.promptFixture.overflow();window.beforeOverflowFocus=document.activeElement;window.beforeOverflowScroll=scrollY;});
  const explanation=page.getByRole('region',{name:'Board explanation',exact:true});await expect(explanation).toHaveAttribute('tabindex','-1');
+ await expect.poll(async()=>Math.abs((await page.locator('#geometry-board').boundingBox()).y-boardBeforeContext.y)).toBeLessThanOrEqual(1);
  // Compare the same DOMRect height primitive on both observations.
  // The protocol bounding box can derive height from separately rounded edges.
- // This oracle compares the settled scrollport, not the notice's entry motion.
+ // This oracle compares the settled scrollport inside the managed guidance slot.
  // Use the existing expect budget. Keep the actual owner identity across both reads.
- const entryOwner=await explanation.evaluateHandle(node=>node.closest('.board-context-notice'));
+ const entryOwner=await explanation.evaluateHandle(node=>node.closest('.board-context-detail'));
  let entryPrimary;
  try{
  let entryInvalid;
  await expect.poll(async()=>{
   if(entryInvalid)return entryInvalid;
-  const state=await entryOwner.evaluate(notice=>{
-  if(!notice?.isConnected||!notice.matches('.board-context-notice[data-board-context="overflow"]'))return{settled:false,reason:'missing-or-replaced-owner'};
-  const animations=notice.getAnimations({subtree:false});
-  if(animations.length>8)return{settled:false,reason:'animation-bound-exceeded'};
-  for(const animation of animations){
-   const timing=animation.effect?.getComputedTiming();
-   if(animation.effect?.target!==notice||animation.animationName!=='shell-game-alert-reveal'||!Number.isFinite(timing?.endTime)||!Number.isFinite(timing?.iterations)||timing.iterations!==1||!Number.isFinite(animation.playbackRate)||animation.playbackRate<=0)return{settled:false,reason:'unexpected-or-unbounded-animation'};
-  }
-  return{settled:animations.length===0};
- });
+  const state=await entryOwner.evaluate(owner=>owner?.isConnected&&owner.matches('.board-context-detail[data-board-context="overflow"]')?{settled:owner.getAnimations({subtree:false}).length===0}:{settled:false,reason:'missing-or-replaced-owner'});
   if(state.reason)entryInvalid=state;
   return state;
- },{message:'Original context notice must finish its finite entry animation'}).toEqual({settled:true});
+ },{message:'Original Board context must settle inside the guidance slot'}).toEqual({settled:true});
  const cappedRecord=await explanation.evaluate((node,entryOwner)=>{
   // Preserve the scalar from this single original DOMRect read. Metadata follows it.
   const rect=node.getBoundingClientRect(),height=rect.height;
   const record={height,rect:{x:rect.x,y:rect.y,top:rect.top,right:rect.right,bottom:rect.bottom,left:rect.left,width:rect.width,height},at:performance.now(),incomplete:false};
   try{
-   const style=getComputedStyle(node),notice=node.closest('.board-context-notice');
+   const style=getComputedStyle(node),notice=node.closest('.board-context-detail');
    record.entrySettled=notice===entryOwner&&notice?.isConnected===true&&notice.getAnimations({subtree:false}).length===0;
    record.scroll={x:scrollX,y:scrollY,nodeTop:node.scrollTop,nodeLeft:node.scrollLeft,scrollHeight:node.scrollHeight,scrollWidth:node.scrollWidth,clientHeight:node.clientHeight,clientWidth:node.clientWidth};
    record.viewport={width:innerWidth,height:innerHeight,dpr:devicePixelRatio,visual:visualViewport?{offsetTop:visualViewport.offsetTop,offsetLeft:visualViewport.offsetLeft,pageTop:visualViewport.pageTop,pageLeft:visualViewport.pageLeft,scale:visualViewport.scale}:null};
@@ -116,7 +112,7 @@ for(const width of [320,390,1440])test(`finite Board prompt geometry and require
   const rect=node.getBoundingClientRect(),height=rect.height;
   const record={height,rect:{x:rect.x,y:rect.y,top:rect.top,right:rect.right,bottom:rect.bottom,left:rect.left,width:rect.width,height},at:performance.now(),incomplete:false};
   try{
-   const style=getComputedStyle(node),notice=node.closest('.board-context-notice');
+   const style=getComputedStyle(node),notice=node.closest('.board-context-detail');
    record.entrySettled=notice===entryOwner&&notice?.isConnected===true&&notice.getAnimations({subtree:false}).length===0;
    record.scroll={x:scrollX,y:scrollY,nodeTop:node.scrollTop,nodeLeft:node.scrollLeft,scrollHeight:node.scrollHeight,scrollWidth:node.scrollWidth,clientHeight:node.clientHeight,clientWidth:node.clientWidth};
    record.viewport={width:innerWidth,height:innerHeight,dpr:devicePixelRatio,visual:visualViewport?{offsetTop:visualViewport.offsetTop,offsetLeft:visualViewport.offsetLeft,pageTop:visualViewport.pageTop,pageLeft:visualViewport.pageLeft,scale:visualViewport.scale}:null};
@@ -136,7 +132,8 @@ for(const width of [320,390,1440])test(`finite Board prompt geometry and require
  try{await info.attach(`Original paired context height observations ${width}px`,{body:JSON.stringify({width,before:cappedRecord,after:changedRecord}),contentType:'application/json'});}catch(error){observationError=error;}
  const geometryTolerance=Math.max(0.5,1/(changedRecord.viewport.dpr||1));
  const heightDelta=Math.abs(changedRecord.height-capped);
- expect(heightDelta,'Capped context height must remain within the browser rendering tolerance').toBeLessThanOrEqual(geometryTolerance);
+ expect(heightDelta,'Context expands when its complete message genuinely needs another line').toBeGreaterThan(geometryTolerance);
+ expect(changedRecord.height,'Long context remains inside its bounded three-line scrollport').toBeLessThanOrEqual(parseFloat(changedRecord.box.maxBlockSize)+geometryTolerance);
  // Perturb the real measured element so the relaxed oracle proves that it still
  // rejects a meaningful physical regression, then restore the owned DOM state.
  const displacedHeight=await explanation.evaluate(node=>{
@@ -144,10 +141,10 @@ for(const width of [320,390,1440])test(`finite Board prompt geometry and require
   try{node.style.setProperty('transform','scaleY(1.05)','important');return node.getBoundingClientRect().height;}
   finally{if(value)node.style.setProperty('transform',value,priority);else node.style.removeProperty('transform');}
  });
- expect(Math.abs(displacedHeight-capped),'A greater-than-2px physical displacement is outside the rendering tolerance').toBeGreaterThan(2);
+ expect(Math.abs(displacedHeight-changedRecord.height),'A greater-than-2px physical displacement is outside the rendering tolerance').toBeGreaterThan(2);
  if(observationError)throw observationError;
  expect(cappedRecord.incomplete||changedRecord.incomplete,'Paired height observation must be complete').toBe(false);
- expect(cappedRecord.entrySettled&&changedRecord.entrySettled,'Same context notice must remain settled at both original reads').toBe(true);
+ expect(cappedRecord.entrySettled&&changedRecord.entrySettled,'Same Board context must remain settled at both original reads').toBe(true);
  }catch(error){entryPrimary=error;throw error;}finally{try{await entryOwner.dispose();}catch(error){if(!entryPrimary)throw error;}}
  expect(await page.evaluate(()=>({sameFocus:document.activeElement===window.beforeOverflowFocus,sameScroll:scrollY===window.beforeOverflowScroll}))).toEqual({sameFocus:true,sameScroll:true});
  await page.evaluate(()=>document.documentElement.style.fontSize='32px');await expect(explanation).toHaveAttribute('tabindex','0');await expect(page.locator('[data-context-overflow="true"] .board-context-scroll-cue')).toBeVisible();
