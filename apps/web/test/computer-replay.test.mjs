@@ -40,8 +40,8 @@ function fixture({manual=true,throwRender=false,withTokens=false,baseTransform='
     if (!withTokens) return;
     tokens=(frame.snapshot.pieces ?? []).map(piece=>({getAttribute:()=>piece.id,classList:{contains:()=>false,add(){}},getBoundingClientRect:()=>({left:piece.position.col*10,top:piece.position.row*10,width:10,height:10}),cloneNode:()=>{const ghost={style:{transform:baseTransform},setAttribute(){},remove(){},animate:()=>({cancel(){},finished:Promise.resolve()})};ghosts.push(ghost);return ghost;},animate:frames=>{motions.push({id:piece.id,frames});return {cancel(){},finished:Promise.resolve()};}}));
   };
-  const replay=createComputerReplay({rootEl,holdFinal,automatic,onChange:status=>events.push(status),onFinish:event=>events.push(event),reducedMotion:()=>manual,createPreview:({preview})=>{if(throwRender)throw Error('render failed');renders.push(preview);updateTokens(preview);return {update:frame=>{renders.push(frame);updateTokens(frame);},destroy:()=>{destroyed++;}};},setTimer:fn=>{timers.set(++nextTimer,fn);return nextTimer;},clearTimer:id=>timers.delete(id)});
-  return {replay,doc,handlers,events,renders,timers,motions,ghosts,get destroyed(){return destroyed;},tick(){const [id,fn]=timers.entries().next().value;timers.delete(id);fn();}};
+  const replay=createComputerReplay({rootEl,holdFinal,automatic,onChange:status=>events.push(status),onFinish:event=>events.push(event),reducedMotion:()=>manual,createPreview:({preview})=>{if(throwRender)throw Error('render failed');renders.push(preview);updateTokens(preview);return {update:frame=>{renders.push(frame);updateTokens(frame);},destroy:()=>{destroyed++;}};},setTimer:(fn,ms)=>{timers.set(++nextTimer,{fn,ms});return nextTimer;},clearTimer:id=>timers.delete(id)});
+  return {replay,doc,handlers,events,renders,timers,motions,ghosts,get destroyed(){return destroyed;},tick(){const [id,timer]=timers.entries().next().value;timers.delete(id);timer.fn();}};
 }
 
 test('reduced motion advances manually and owns no gameplay interfaces',async()=>{
@@ -131,6 +131,22 @@ for(const manual of [false,true])test(`held automatic frames hide optimistic sta
 
 test('automatic confirmed playback respects reduced motion without requiring manual Next',async()=>{
  const f=fixture({manual:true,automatic:true,withTokens:true}),input=payload();const work=f.replay.play(input);
- for(let step=0;step<8&&f.replay.snapshot().playing;step++){if(f.timers.size)f.tick();await Promise.resolve();}
- await work;assert.equal(f.replay.snapshot().playing,false);assert.equal(f.motions.length,0);assert.equal(f.destroyed,1);
+ await work;assert.equal(f.replay.snapshot().playing,false);assert.equal(f.motions.length,0);assert.equal(f.timers.size,0,'reduced automatic playback owns no pause or motion timer');assert.equal(f.destroyed,1);
+});
+
+test('automatic live playback shows its first confirmed frame without a lead wait and owns only meaningful motion time',async()=>{
+ const f=fixture({manual:false,automatic:true}),input=payload();input.frames=input.frames.slice(0,1);
+ const work=f.replay.play(input);await Promise.resolve();
+ assert.equal(f.replay.snapshot().step,1,'the confirmed frame is visible immediately');
+ assert.deepEqual([...f.timers.values()].map(timer=>timer.ms),[520],'there is no separate lead or trailing hold');
+ f.tick();await work;
+ assert.equal(f.replay.snapshot().playing,false);assert.equal(f.timers.size,0);
+});
+
+test('requested replay keeps its deliberate lead and between-frame pacing',async()=>{
+ const f=fixture({manual:false}),work=f.replay.play(payload());
+ assert.deepEqual([...f.timers.values()].map(timer=>timer.ms),[360]);
+ f.tick();await Promise.resolve();
+ assert.deepEqual([...f.timers.values()].map(timer=>timer.ms),[880]);
+ f.replay.stop();await work;
 });

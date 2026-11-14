@@ -8,3 +8,10 @@ test('replay error finish cannot resolve a failed confirmed frame before play re
  const queue=createConfirmedComputerPlayback({present:presenter.present});const game={id:'g',board:{state:{pieces:[]}},moves:[]};queue.observe(game,{scope:'owner'});queue.observe({...game,moves:[frame]},{scope:'owner'});await new Promise(resolve=>setImmediate(resolve));
  assert.match(queue.snapshot().error.message,/confirmed_presentation_error/);assert.equal(queue.snapshot().current.move.moveId,'m');assert.equal(queue.snapshot().displayed.moves.length,0);queue.retry();await new Promise(resolve=>setImmediate(resolve));assert.equal(queue.snapshot().error,null);assert.equal(queue.snapshot().displayed.moves[0].moveId,'m');
 });
+
+for(const reason of ['backgrounded','navigation','scope-changed','destroyed'])test(`${reason} retires automatic presentation without a user-facing playback failure`,async()=>{
+ const presenter=createConfirmedFramePresenter({getRoot:()=>({}),getGameId:()=> 'g',createReplay:({onFinish})=>({destroy(){},stop(){},async play(){onFinish({reason});}})});
+ const queue=createConfirmedComputerPlayback({present:presenter.present});const baseline={id:'g',board:{state:{pieces:[]}},moves:[]},accepted={...baseline,moves:[frame]};
+ queue.observe(baseline,{scope:'owner'});queue.observe(accepted,{scope:'owner'});await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(queue.snapshot().error,null);assert.equal(queue.snapshot().playing,false);assert.equal(queue.snapshot().displayed.moves[0].moveId,'m');
+});
