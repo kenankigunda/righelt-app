@@ -51,8 +51,8 @@ test('short games with no additional records never show an archive CTA',async({p
 });
 
 test('turn inspection owns only its heading and cannot overlap selected-move Undo',async({page})=>{
- for(const width of [420,1100]){
-  await page.setViewportSize({width,height:844});await page.evaluate(()=>window.renderHistoryHitOwnership());
+ for(const width of [320,1100])for(const scale of [100,200]){
+  await page.setViewportSize({width,height:844});await page.evaluate(scale=>{document.documentElement.style.fontSize=`${scale}%`;window.renderHistoryHitOwnership();},scale);
   const turn=page.getByRole('button',{name:'Inspect Turn 15 · Guest',exact:true});
   const undo=page.getByRole('button',{name:'Undo before this move',exact:true});
   const heading=page.locator('.history-turn-heading');

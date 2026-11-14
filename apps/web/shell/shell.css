@@ -2439,7 +2439,7 @@ textarea:focus-visible {
 }
 .history-turn-hit {z-index:0;}
 /* Turn inspection owns the heading, never the nested move/action surface. */
-.app-root .history-turn > button.history-turn-hit.secondary {inset:0 0 auto;height:44px;}
+.app-root .history-turn > button.history-turn-hit.secondary {inset:0 0 auto;height:max(44px,1.5em);}
 .history-move-hit {z-index:2;}
 :is(.history-turn,.history-item-undone-group) .history-item.is-selected {pointer-events:auto;z-index:2;cursor:default;}
 :is(.history-turn,.history-item-undone-group) .history-item-actions,:is(.history-turn,.history-item-undone-group) .history-inline-preview {position:relative;z-index:3;pointer-events:auto;}
