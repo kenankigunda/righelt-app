@@ -8,7 +8,12 @@ const fixture={
   board:{outcome:{status:'p1_win',reason:'p2_commander_destroyed'},pieces:[]},result:{status:'p1_win',reason:'p2_commander_destroyed'},
   removals:[{pieceId:'c2',kind:'commander',position:{row:9,col:2},ownerSeat:'p2',supplied:false,commanded:false,reason:'commander_unsupplied'}],
   cause:{kind:'relevant-continuation-finality',endpointCount:2,optionalEndpointCount:1},commit:{eventSeq:9,gameplayRevision:7,clientCommandId:'v2:final'},
-  lineage:{version:1,complete:true,importedMoveCount:320,sources:[{gameId:'source',gameplayRevision:3,moveCount:320}]},activeActionCount:329,activeActionCountComplete:true},
+  lineage:{version:1,complete:true,importedMoveCount:1,sources:[{gameId:'source',gameplayRevision:3,moveCount:1}]},activeActionCount:2,activeActionCountComplete:true},
+ importedHistory:{version:1,complete:true,moveCount:1,sources:[{gameId:'source',gameplayRevision:3,moveCount:1}]},
+ moves:[
+  {moveId:'imported-one',index:0,turnIndex:3,turnMoveIndex:0,actorSide:'P2',action:{type:'pass'},destroyedPieces:[],importedFrom:{gameId:'source',decisionId:'source-one',gameplayRevision:3}},
+  {moveId:'final',index:1,turnIndex:4,turnMoveIndex:0,actorSide:'P1',clientCommandId:'v2:final',action:{type:'push',actorId:'u1',from:{row:8,col:2},to:{row:9,col:2}},destroyedPieces:[{pieceId:'c2',kind:'commander',position:{row:9,col:2},ownerSeat:'p2',supplied:false,commanded:false,reason:'commander_unsupplied'}]},
+ ],
 };
 
 for(const width of [390,1440])test(`production completion narration stays readable at 200 percent and ${width}px`,async({page},info)=>{
@@ -25,9 +30,9 @@ for(const width of [390,1440])test(`production completion narration stays readab
   host.innerHTML=renderBoardContext({key:'t145',gameId:game.id,message,mandatory:false});
   const layout=createBoardContextLayout(document);layout.sync();window.__t145Layout=layout;return message.text;
  },fixture);
- expect(text).toBe('You won in 329 moves. Their push to (9, 2) destroyed Guest’s commander.');
- const host=page.getByTestId('t145-production-fixture'),body=host.locator('.board-context-body');await expect(host).toBeVisible();await expect(body).toContainText('You won in 329 moves.');
- await expect(host.locator('.player-tone-p1')).toContainText('You won in 329 moves.');
+ expect(text).toBe('You won in 2 moves. Their push to (9, 2) destroyed Guest’s commander.');
+ const host=page.getByTestId('t145-production-fixture'),body=host.locator('.board-context-body');await expect(host).toBeVisible();await expect(body).toContainText('You won in 2 moves.');
+ await expect(host.locator('.player-tone-p1')).toContainText('You won in 2 moves.');
  await expect(host.locator('.player-tone-p2')).toContainText('Guest’s commander');
  await expect(host.locator('.board-preview-coordinate-chip-neutral')).toHaveText('9, 2');
  const geometry=await body.evaluate(element=>({horizontal:element.scrollWidth-element.clientWidth,height:element.getBoundingClientRect().height,scrollable:element.scrollHeight>element.clientHeight,focusable:element.tabIndex===0}));

@@ -86,7 +86,7 @@ export function completedOutcomeNarration(game,{identityId}={}){
   ||(Number.isSafeInteger(game?.historyTurnIndex)&&record.decisive.turnIndex!==game.historyTurnIndex)
   ||!record.cause||typeof record.cause.kind!=='string')return null;
  const complete=record.activeActionCountComplete===true&&Number.isSafeInteger(record.activeActionCount)
-  &&record.activeActionCount>=0&&record.lineage?.complete===true;
+  &&record.activeActionCount>=0;
  const parts=resultParts(result,record.activeActionCount,complete);
  const cause=provenCauseParts(game,record,result);
  if(cause)parts.push({text:' '},...cause);
