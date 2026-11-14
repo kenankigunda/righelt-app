@@ -50,6 +50,29 @@ test('short games with no additional records never show an archive CTA',async({p
  await page.evaluate(()=>window.historyRequests[0].resolve({available:false,items:[],nextCursor:null}));await expect(page.locator('[data-testid="additional-history"]')).toBeAttached();await expect(page.getByRole('button')).toHaveCount(0);
 });
 
+test('turn inspection owns only its heading and cannot overlap selected-move Undo',async({page})=>{
+ for(const width of [320,1100])for(const scale of [100,200]){
+  await page.setViewportSize({width,height:844});await page.evaluate(scale=>{document.documentElement.style.fontSize=`${scale}%`;window.renderHistoryHitOwnership();},scale);
+  const turn=page.getByRole('button',{name:'Inspect Turn 15 · Guest',exact:true});
+  const undo=page.getByRole('button',{name:'Undo before this move',exact:true});
+  const heading=page.locator('.history-turn-heading');
+  const boxes=await Promise.all([turn,undo,heading].map(locator=>locator.boundingBox()));
+  const [turnBox,undoBox,headingBox]=boxes;
+  const overlap=Math.max(0,Math.min(turnBox.y+turnBox.height,undoBox.y+undoBox.height)-Math.max(turnBox.y,undoBox.y));
+  let interceptedAction=null;
+  if(overlap){
+   const point={x:undoBox.x+undoBox.width/2,y:Math.max(turnBox.y,undoBox.y)+overlap/2};
+   interceptedAction=await page.evaluate(({x,y})=>document.elementFromPoint(x,y)?.closest('[data-action]')?.dataset.action,point);
+   await page.mouse.click(point.x,point.y);
+  }
+  expect({overlap,interceptedAction,dispatched:await page.evaluate(()=>window.historyHitActions)}).toEqual({overlap:0,interceptedAction:null,dispatched:[]});
+  expect(Math.abs(turnBox.y-headingBox.y)).toBeLessThanOrEqual(.5);
+  expect(Math.abs(turnBox.height-headingBox.height)).toBeLessThanOrEqual(.5);
+  await turn.click();expect(await page.evaluate(()=>window.historyHitActions)).toEqual(['jump-history-turn']);
+  await undo.click();expect(await page.evaluate(()=>window.historyHitActions)).toEqual(['jump-history-turn','revert-to-move']);
+ }
+});
+
 test('History distinguishes turn and move emphasis, aligns Undo disclosure, and transitions atomically',async({page},info)=>{
  await page.setViewportSize({width:390,height:844});
  await page.evaluate(()=>window.renderHistory());await expect.poll(()=>page.evaluate(()=>window.historyRequests.length)).toBe(1);
