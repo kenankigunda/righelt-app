@@ -321,14 +321,16 @@ export const asPersistedAction = (value: unknown): Action | null => {
     return hasExactKeys(candidate, ["type"]) ? { type: candidate.type } : null;
   }
   if (!["move", "project", "rush", "push", "follow", "retreat"].includes(String(candidate.type))) return null;
-  const keys = candidate.type === "push" && candidate.targetId !== undefined
-    ? ["type", "actorId", "targetId", "from", "to"]
-    : ["type", "actorId", "from", "to"];
-  const from = asActionCoordinate(candidate.from), to = asActionCoordinate(candidate.to);
-  if (!hasExactKeys(candidate, keys) || typeof candidate.actorId !== "string" || !candidate.actorId || !from || !to
+  const allowedKeys = new Set(["type", "actorId", "from", "to", ...(candidate.type === "push" ? ["targetId"] : [])]);
+  const actorId = candidate.actorId === undefined ? undefined
+    : typeof candidate.actorId === "string" && candidate.actorId ? candidate.actorId : null;
+  const from = candidate.from === undefined ? undefined : asActionCoordinate(candidate.from);
+  const to = asActionCoordinate(candidate.to);
+  if (Object.keys(candidate).some(key => !allowedKeys.has(key)) || actorId === null || from === null || !to
+    || (actorId === undefined && from === undefined)
     || (candidate.type === "push" && candidate.targetId !== undefined
       && (typeof candidate.targetId !== "string" || !candidate.targetId))) return null;
-  return { type: candidate.type as Action["type"], actorId: candidate.actorId, from, to,
+  return { type: candidate.type as Action["type"], ...(actorId ? { actorId } : {}), ...(from ? { from } : {}), to,
     ...(candidate.type === "push" && candidate.targetId !== undefined ? { targetId: String(candidate.targetId) } : {}) };
 };
 const asCoordinate = (value: unknown): { row: number; col: number } | null => {

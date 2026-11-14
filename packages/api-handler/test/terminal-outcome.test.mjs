@@ -122,6 +122,22 @@ test('legacy move route resolves its real sole-Pass intent before automatic endi
   assert.equal(game.terminalOutcome.commit.clientCommandId, sent.clientCommandId);
 });
 
+test('accepted sparse commander actions round-trip with actorId or from as the actor locator', async () => {
+  const actions = [
+    { type: 'move', actorId: 'C1', to: { row: 2, col: 6 } },
+    { type: 'move', from: { row: 3, col: 6 }, to: { row: 2, col: 6 } },
+  ];
+  for (const action of actions) {
+    const h = await harness(game => game), sent = await h.command({ payload: { action } });
+    const accepted = await h.call('apply', sent);
+    assert.equal(accepted.commandOutcomes[0].outcome, 'accepted');
+    assert.deepEqual(h.DB.getGameState('terminal-game').moves[0].action, action);
+    const loaded = await loadGameProjection(h.env, 'terminal-game');
+    assert.equal(loaded.kind, 'ok');
+    assert.deepEqual(loaded.game.moves[0].action, action);
+  }
+});
+
 const installUndoEndingFixture = (game, consent = false) => {
   const state = packedState('P2', 4);
   const target = { moveId: 'undo-ending-target', index: 0, turnIndex: 4, turnMoveIndex: 0, displayMoveNumber: 1,
@@ -521,7 +537,13 @@ test('terminal commit gameplay revision rejects both lower and higher values tha
 });
 
 test('persisted move actions reject unknown and malformed per-type shapes', async () => {
-  for (const action of [{ type: 'teleport' }, { type: 'move', actorId: 'C1' }]) {
+  for (const action of [
+    { type: 'teleport' },
+    { type: 'move', actorId: 'C1' },
+    { type: 'move', to: { row: 2, col: 6 } },
+    { type: 'move', actorId: 'C1', to: { row: 2, col: 6 }, targetId: 'unexpected' },
+    { type: 'push', actorId: 'C1', to: { row: 3, col: 5 }, targetId: '' },
+  ]) {
     const env = { DB: createFakeD1() }, game = createInitialGame({ gameId: `bad-${action.type}-${Object.keys(action).length}`,
       identityId: 'owner', selfPlayMode: true });
     game.moves = [{ moveId: 'bad-action', index: 0, turnIndex: 0, turnMoveIndex: 0, displayMoveNumber: 1,
@@ -529,6 +551,23 @@ test('persisted move actions reject unknown and malformed per-type shapes', asyn
       snapshot: structuredClone(game.board.state), destroyedPieces: [] }];
     await persistGameState(env, game, 1);
     assert.equal((await loadGameProjection(env, game.id)).kind, 'invalid');
+  }
+});
+
+test('retained sparse push actions round-trip with optional targetId', async () => {
+  for (const action of [
+    { type: 'push', actorId: 'C1', to: { row: 3, col: 5 } },
+    { type: 'push', from: { row: 3, col: 6 }, to: { row: 3, col: 5 }, targetId: 'U2' },
+  ]) {
+    const env = { DB: createFakeD1() }, game = createInitialGame({ gameId: `push-${Object.keys(action).length}`,
+      identityId: 'owner', selfPlayMode: true });
+    game.moves = [{ moveId: 'retained-push', index: 0, turnIndex: 0, turnMoveIndex: 0, displayMoveNumber: 1,
+      actorSide: 'P1', at: game.createdAt, notation: 'Push', action,
+      selectionSnapshot: structuredClone(game.board.state), snapshot: structuredClone(game.board.state), destroyedPieces: [] }];
+    await persistGameState(env, game, 1);
+    const loaded = await loadGameProjection(env, game.id);
+    assert.equal(loaded.kind, 'ok');
+    assert.deepEqual(loaded.game.moves[0].action, action);
   }
 });
 
