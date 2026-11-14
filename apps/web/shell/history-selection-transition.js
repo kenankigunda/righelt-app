@@ -78,5 +78,5 @@ export function createHistorySelectionTransition({
     cancelMotion();
   };
 
-  return { begin, capture, present, finish, run, cancel };
+  return { begin, capture, present, finish, run, cancel, version: () => generation };
 }

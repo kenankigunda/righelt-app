@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { captureHistorySelectionFocus, createHistorySelectionActions } from '../shell/history-selection-actions.js';
+import { createHistorySelectionTransition } from '../shell/history-selection-transition.js';
 
 const fixture = () => {
   const events = [];
   const sounds = [];
+  let version = 0;
   const transition = {
     run(scope, select) {
+      version += 1;
       events.push(`begin:${scope}`);
       const value = select();
       events.push(`selected:${scope}`);
@@ -15,9 +18,16 @@ const fixture = () => {
         return result;
       });
     },
+    version: () => version,
   };
   const actions = createHistorySelectionActions({ transition, playSound: cue => sounds.push(cue) });
   return { actions, events, sounds };
+};
+
+const deferred = () => {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
 };
 
 test('app selection wiring commits synchronously without the former deselection delay or second motion owner', async () => {
@@ -53,8 +63,59 @@ test('one accepted selection produces one cue while rejected and failed selectio
   assert.deepEqual(view.sounds, ['history']);
 });
 
+test('deferred A to B to A settlements fence stale acceptance, sound and post-settlement work', async () => {
+  const transition = createHistorySelectionTransition();
+  const sounds = [];
+  const accepted = [];
+  const after = [];
+  const actions = createHistorySelectionActions({ transition, playSound: cue => sounds.push(cue) });
+  const first = deferred();
+  const second = deferred();
+  const third = deferred();
+  const run = (scope, pending) => actions.run({
+    scope,
+    select: () => pending.promise,
+    accepted: value => { accepted.push(`${scope}:${value}`); return true; },
+    sound: scope,
+    after: result => after.push([scope, result.accepted, result.value]),
+  });
+
+  const a1 = run('move:A', first);
+  const b = run('move:B', second);
+  const a2 = run('move:A', third);
+  first.resolve('first');
+  second.resolve('second');
+  assert.deepEqual(await a1, { accepted: false, value: 'first' });
+  assert.deepEqual(await b, { accepted: false, value: 'second' });
+  assert.deepEqual({ accepted, sounds, after }, { accepted: [], sounds: [], after: [] });
+  third.resolve('third');
+  assert.deepEqual(await a2, { accepted: true, value: 'third' });
+  assert.deepEqual(accepted, ['move:A:third']);
+  assert.deepEqual(sounds, ['move:A']);
+  assert.deepEqual(after, [['move:A', true, 'third']]);
+});
+
+test('lifecycle cancellation fences a deferred settlement from cues and post-settlement work', async () => {
+  const transition = createHistorySelectionTransition();
+  const pending = deferred();
+  const calls = [];
+  const actions = createHistorySelectionActions({ transition, playSound: cue => calls.push(['sound', cue]) });
+  const selection = actions.run({
+    scope: 'move:A',
+    select: () => pending.promise,
+    accepted: value => { calls.push(['accepted', value]); return true; },
+    sound: 'history',
+    after: result => calls.push(['after', result]),
+  });
+  transition.cancel();
+  pending.resolve('late');
+  assert.deepEqual(await selection, { accepted: false, value: 'late' });
+  assert.deepEqual(calls, []);
+});
+
 test('invalid wiring cannot create a second selection owner', async () => {
   assert.throws(() => createHistorySelectionActions({ transition: null }), /one transition owner/);
+  assert.throws(() => createHistorySelectionActions({ transition: { run() {} } }), /one transition owner/);
   const view = fixture();
   await assert.rejects(view.actions.run({ scope: 'move', select: null }), /callbacks must be functions/);
 });

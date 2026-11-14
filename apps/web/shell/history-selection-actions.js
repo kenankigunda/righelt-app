@@ -1,22 +1,33 @@
 export function createHistorySelectionActions({ transition, playSound = () => {} }) {
-  if (!transition || typeof transition.run !== 'function') {
+  if (!transition || typeof transition.run !== 'function' || typeof transition.version !== 'function') {
     throw new TypeError('History selection actions require one transition owner');
   }
 
+  let generation = 0;
   const run = async ({ scope, select, accepted = () => true, sound = null, after = () => {} }) => {
     if (typeof select !== 'function' || typeof accepted !== 'function' || typeof after !== 'function') {
       throw new TypeError('History selection action callbacks must be functions');
     }
 
+    const actionGeneration = ++generation;
     let committed = false;
-    const value = await transition.run(scope, () => {
+    const pending = transition.run(scope, () => {
       committed = true;
       return select();
     });
-    const didAccept = committed && accepted(value) === true;
-    if (didAccept && sound) playSound(sound);
-    after({ accepted: didAccept, value });
-    return { accepted: didAccept, value };
+    const transitionVersion = transition.version();
+    const value = await pending;
+    const isCurrent = () => actionGeneration === generation && transition.version() === transitionVersion;
+    if (!committed || !isCurrent()) return { accepted: false, value };
+    const didAccept = accepted(value) === true && isCurrent();
+    if (!didAccept) {
+      if (isCurrent()) after({ accepted: false, value });
+      return { accepted: false, value };
+    }
+    if (sound && isCurrent()) playSound(sound);
+    if (!isCurrent()) return { accepted: false, value };
+    after({ accepted: true, value });
+    return { accepted: isCurrent(), value };
   };
 
   return { run };

@@ -82,7 +82,7 @@ test('History distinguishes turn and move emphasis, aligns Undo disclosure, and 
  });
  expect(rapid.beforeLifecycle.length).toBeGreaterThanOrEqual(2);expect(rapid.beforeLifecycle[0]).toBe('idle');expect(rapid.beforeLifecycle.at(-1)).not.toBe('idle');
  expect(rapid.afterLifecycle.every(state=>state==='idle')).toBe(true);expect(rapid.transitioning).toBe(false);
- await expect.poll(()=>page.evaluate(()=>window.historySounds)).toEqual(['history']);
+ await expect.poll(()=>page.evaluate(()=>window.historySounds)).toEqual([]);
 
  await page.evaluate(()=>window.returnArchiveLive());
  const undone=page.locator('[data-undo-boundary="unavailable"]'),toggle=undone.locator('.history-undone-toggle');
