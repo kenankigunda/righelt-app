@@ -22,6 +22,13 @@ test('mismatched or incomplete actor metadata never hides or rewrites ordinary t
  assert.equal(renderBoardMessageHtml({text:'Replay · 2 of 3'}),'Replay · 2 of 3');
  assert.equal(renderBoardMessageHtml({text:'Authoritative copy',parts:[{text:'Hidden rewrite',side:'p1'}]}),'Authoritative copy');
 });
+test('explicit History actor tone colors only the visible name and exposes self-play color accessibly',()=>{
+ const message={actorName:'You',actorToneSide:'P2',actorAccessibleName:'You, Blue',text:'You moved from (1, 2) to (1, 3)',coordinates:[{row:1,col:2},{row:1,col:3}]};
+ const html=renderBoardMessageHtml(message);
+ assert.match(html,/<bdi class="board-message-name player-tone-p2" dir="auto" title="You" aria-label="You, Blue">You<\/bdi>/);
+ assert.equal((html.match(/player-tone-p2/g)??[]).length,1);
+ assert.doesNotMatch(html,/You \(Blue\)/);
+});
 
 test('inline controls use fixed brand glyphs and identical inert sizing content',()=>{
  assert.equal(icon,shellIcon);

@@ -11,7 +11,7 @@ test('exact historical move keeps board-wide number, recorded defender name and 
  assert.deepEqual(selected.caption,{text:'Move 71',side:'P2'});assert.equal(selected.message.text,'Kenan retreated from (4, 3) to (4, 4)');
  const hostile=selectedHistoryPresentation({...game,inspectedDecision:move('rush')});
  const html=renderBoardMessageHtml(hostile.message);
- assert.match(html,/Maya &lt;\(8, 8\)&gt;/);assert.equal((html.match(/board-preview-coordinate-chip /g)??[]).length,2);assert.doesNotMatch(html,/<\(8, 8\)>/);
+ assert.match(html,/board-message-name player-tone-p1/);assert.match(html,/Maya &lt;\(8, 8\)&gt;/);assert.equal((html.match(/board-preview-coordinate-chip /g)??[]).length,2);assert.doesNotMatch(html,/<\(8, 8\)>/);
 });
 test('turn summary names the turn owner while retaining distinct defender attribution in individual inspection',()=>{
  const push=move('push'),retreat={...move('retreat','P2'),turnMoveIndex:1},follow={...move('follow'),turnMoveIndex:2,action:{type:'follow',actorId:'follower',from,to}};
@@ -28,7 +28,7 @@ test('three-plus turn events split naturally while retaining structured coordina
  assert.equal(result.message.text,'Maya <(8, 8)> pushed onto (4, 4) and had 1 piece follow. Maya <(8, 8)> also lost piece at (5, 3) and destroyed piece at (5, 4)');
  const html=renderBoardMessageHtml(result.message);
  assert.match(html,/piece follow\. <bdi[^>]*>Maya &lt;\(8, 8\)&gt;<\/bdi> also lost piece/);
- assert.equal((html.match(/<bdi class="board-message-name"/g)??[]).length,2);
+ assert.equal((html.match(/<bdi class="board-message-name player-tone-p1"/g)??[]).length,2);
  assert.equal((html.match(/board-preview-coordinate-chip /g)??[]).length,3);
  assert.doesNotMatch(html,/board-preview-coordinate-chip[^>]*>[^<]+<\/span>,/);
 });
