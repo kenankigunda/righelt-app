@@ -72,6 +72,12 @@ test('saved supply, immobility and draw causes use only their closed provenance 
  assert.equal(completedOutcomeNarration(draw,{identityId:'viewer'}).text,'The game ended in a draw after 1 move. Horus’s commander and Guest’s commander lost their supply.');
 });
 
+test('post-retreat finality keeps its cause sentence absent until wording is approved',()=>{
+ const postRetreat=fixture({reason:'p2_commander_unsupplied',cause:{kind:'relevant-continuation-finality',endpointCount:2,optionalEndpointCount:1},
+  action:{type:'retreat',actorId:'c2',from:{row:9,col:1},to:{row:8,col:1}},removals:[]});
+ assert.equal(completedOutcomeNarration(postRetreat,{identityId:'me'}).text,'You won in 2 moves.');
+});
+
 test('self-play and bidi identities retain explicit side meaning and escaped color scopes',()=>{
  const name='משחק <星>',game=fixture({extra:{selfPlayMode:true,selfPlayStartSide:'p1',player1:person('me',name),player2:person('me',name),myRole:'Both Players',myRoles:['Player 1','Player 2']}});
  const message=completedOutcomeNarration(game,{identityId:'me'}),html=renderBoardMessageHtml(message);
