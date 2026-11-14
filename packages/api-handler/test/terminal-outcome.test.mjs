@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fixture from '../../game-engine/test/fixtures/destruction-turn-end.json' with { type: 'json' };
 import { GameRoomDO } from '../src/game-room-do.ts';
 import { activeActionEvidence, applyAcceptedAutomaticEnding, applyRevertToMove, applyScenarioToGame, createInitialGame } from '../src/shell-live-core.ts';
-import { loadGameProjection, persistGameState } from '../src/shell-live-db.ts';
+import { loadGameProjection, loadPositionProjection, persistGameState } from '../src/shell-live-db.ts';
 import { ACTION_CONTRACT_VERSION, commandFingerprint } from '../../shared-types/src/sync-protocol.ts';
 import { createFakeD1 } from './support/fake-d1.mjs';
 import { resolveToStability } from '../../game-engine/src/resolve.ts';
@@ -353,6 +353,24 @@ test('terminal count consumes T-143 completeness without fabricating missing or 
     assert.equal(loaded.kind, 'ok');
     assert.deepEqual(loaded.game.terminalOutcome, candidate.record);
   }
+});
+
+for (const compressed of [false, true]) test(`${compressed ? 'compressed' : 'JSON'} position reads defer terminal and lineage proof until authoritative history loads`, async () => {
+  const { game, record } = terminalRecordFor({ complete: true });
+  const env = { DB: createFakeD1(), STORAGE_COMPRESSION: String(compressed) };
+  await persistGameState(env, game, 1);
+
+  const full = await loadGameProjection(env, game.id);
+  assert.equal(full.kind, 'ok');
+  assert.deepEqual(full.game.terminalOutcome, record);
+  assert.deepEqual(full.game.importedHistory, game.importedHistory);
+
+  const position = await loadPositionProjection(env, game.id);
+  assert.equal(position.kind, 'ok');
+  assert.equal(position.game.positionHistoryPending, compressed);
+  assert.equal(position.game.terminalOutcome, undefined);
+  assert.equal(position.game.importedHistory, undefined);
+  assert.equal(position.game.moves.some(move => move.importedFrom !== undefined), false);
 });
 
 test('active action evidence deduplicates origins and local IDs, counts Pass, and excludes End turn and Undo', () => {
