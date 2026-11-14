@@ -266,30 +266,30 @@
   "/shell/live-transport.js": {
     "file": "apps/web/shell/live-transport.js",
     "sourceSha256": "ff5e59d1327b3835113946bc2a5ac1f7adb8ad0b9fc409941627e89aa7eedb1d",
-    "outputSha256": "a8773861b2d3adbccead0fb9ca580bf49f44c22f3af3697990220c694963e77e",
+    "outputSha256": "4e6a16333ce4358a8aa60e59577b2eabe4813d4b68984d99ddf380d051329897",
     "operations": [
       {
-        "start": 64684,
-        "end": 64684,
+        "start": 64734,
+        "end": 64734,
         "before": "",
         "after": "    boardAdmissionProbe(\"transport-send-entry\", () => ({retryAttempt,reconcileFirst}));\n",
-        "anchor": "yAttempt = 0, reconcileFirst = false } = {}) => {\n    if (!active) return;\n    const optimistic = ge",
+        "anchor": "const sendNextPendingCommand = async (gameId, { retryAttempt = 0, reconcileFirst = false } = {}) => {\n    if (!active) return;",
         "anchorCount": 1
       },
       {
-        "start": 77390,
-        "end": 77390,
+        "start": 77440,
+        "end": 77440,
         "before": "",
         "after": "    boardAdmissionProbe(\"transport-enqueue\", () => ({ kind: command.kind, type: command.action?.type ?? null }));\n",
-        "anchor": "imisticCommand = async ({ gameId, command }) => {\n    const contextEpoch = rulesEpoch;\n    const opt",
+        "anchor": "const enqueueOptimisticCommand = async ({ gameId, command }) => {\n    const contextEpoch = rulesEpoch;",
         "anchorCount": 1
       },
       {
-        "start": 77556,
-        "end": 77556,
+        "start": 77606,
+        "end": 77606,
         "before": "",
         "after": "      boardAdmissionProbe(\"transport-admission-entry\");\n",
-        "anchor": "stic.admission.catch(() => {}).then(async () => {\n      assertActive();\n      assertRulesContext(con",
+        "anchor": "const admission = optimistic.admission.catch(() => {}).then(async () => {\n      assertActive();\n      assertRulesContext(contextEpoch, gameId);",
         "anchorCount": 1
       },
       {
