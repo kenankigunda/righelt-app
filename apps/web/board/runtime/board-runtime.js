@@ -606,6 +606,7 @@ export function createBoardRuntime({
       selectedPieceMoves: effectiveMoves.selectedPieceMoves,
       selectedPieceMovePreviews: effectiveMoves.selectedPieceMovePreviews,
       removalEffects: [...pendingRemovalEffects, ...removalEffects],
+      pendingRecordingPieceIds: host.getPendingRecordingPieceIds?.() ?? new Set(),
       allowFreeSelection: getAllowFreeSelection(),
       currentActionType: getActionType(),
       selectedPieceOverlayPhase: host.canPresentActions?.(state) === false ? "supplyCommand" : selectedPieceOverlayPhase,
