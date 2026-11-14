@@ -118,7 +118,7 @@ test('opponent commander combined inspection keeps the opponent-qualified prompt
  const h=harness();await h.runtime.loadSnapshot(state,{legalActions:[]});
  h.click(commander.position);await Promise.resolve();
  assert.equal(h.runtime.getInspection().kind,'combined');
- assert.equal(h.prompt.replace(/<[^>]+>/g,''),'Opponent’s supply and command lines for piece at 6, 3');
+ assert.equal(h.prompt,'','the structured inspection context owns the single visible Board message');
  assert.match(h.contextHtml,/Opponent’s supply and command lines for piece at/);
  assert.equal(h.writes,0);
 });
@@ -300,17 +300,17 @@ test('a commander at its supply point skips an empty live connections stop and h
  const h=harness({moves});await h.runtime.loadSnapshot(state,{legalActions:moves});h.click(point(0,9));await Promise.resolve();h.click(point(0,9));
  assert.equal(h.runtime.getInspection(),null);assert.equal(h.rendered.selectedPieceOverlayPhase,'actionPreviews');assert.match(h.prompt,/Select a move for piece at/);
  const readOnly=harness({canInteract:false});await readOnly.runtime.loadSnapshot(state,{legalActions:[]});readOnly.click(point(0,9));
- assert.match(readOnly.contextHtml,/At its supply point\. No connected units\./);assert.match(readOnly.prompt,/No connection/);assert.equal(inspectionPaths(state,readOnly.runtime.getInspection()).length,0);assert.equal(readOnly.writes,0);
+ assert.match(readOnly.contextHtml,/At its supply point\. No connected units\./);assert.equal(readOnly.prompt,'','the explanatory context replaces the redundant finite prompt');assert.equal(inspectionPaths(state,readOnly.runtime.getInspection()).length,0);assert.equal(readOnly.writes,0);
 });
 
 test('commander connection copy follows drawn roles and keeps shared coordinate pills',async()=>{
  const state=position();state.artifacts.supply[0].shortestPathByPieceId.C1=[point(3,3),point(0,3),point(0,9)];
  const both=harness({canInteract:false});await both.runtime.loadSnapshot(state,{legalActions:[]});both.click(point(3,3));
- assert.match(both.prompt,/Supply and command lines/);assert.match(both.contextHtml,/Supply and command lines for piece at/);assert.match(both.contextHtml,/board-preview-coordinate-chip/);
+ assert.equal(both.prompt,'');assert.match(both.contextHtml,/Supply and command lines for piece at/);assert.match(both.contextHtml,/board-preview-coordinate-chip/);
  const supply=structuredClone(state);supply.artifacts.command.shortestPathToCommanderByPieceId={};
  const supplyOnly=harness({canInteract:false});await supplyOnly.runtime.loadSnapshot(supply,{legalActions:[]});supplyOnly.click(point(3,3));
- assert.match(supplyOnly.prompt,/Supply lines/);assert.match(supplyOnly.contextHtml,/Commander at/);assert.match(supplyOnly.contextHtml,/has a supply line but no connected units\./);assert.match(supplyOnly.contextHtml,/board-preview-coordinate-chip/);
+ assert.equal(supplyOnly.prompt,'');assert.match(supplyOnly.contextHtml,/Commander at/);assert.match(supplyOnly.contextHtml,/has a supply line but no connected units\./);assert.match(supplyOnly.contextHtml,/board-preview-coordinate-chip/);
  const atPoint=structuredClone(state);atPoint.pieces[0].position=point(0,9);atPoint.pieces[1].position=point(0,6);atPoint.artifacts.supply[0].shortestPathByPieceId.C1=[point(0,9)];atPoint.artifacts.command.shortestPathToCommanderByPieceId.A=[point(0,6),point(0,9)];
  const commandOnly=harness({canInteract:false});await commandOnly.runtime.loadSnapshot(atPoint,{legalActions:[]});commandOnly.click(point(0,9));
- assert.match(commandOnly.prompt,/Command lines/);assert.match(commandOnly.contextHtml,/Commander at/);assert.match(commandOnly.contextHtml,/is already at its supply point and has command lines\./);assert.doesNotMatch(commandOnly.prompt,/No supply connection/);assert.equal(commandOnly.writes,0);
+ assert.equal(commandOnly.prompt,'');assert.match(commandOnly.contextHtml,/Commander at/);assert.match(commandOnly.contextHtml,/is already at its supply point and has command lines\./);assert.equal(commandOnly.writes,0);
 });
