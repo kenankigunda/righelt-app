@@ -106,6 +106,15 @@ export function createForcedFollow({ getContext, hold = async () => {}, animate 
           if(!current(token))return;
           if (!handle?.committed) throw new Error(handle?.validation?.code ?? 'follow_not_admitted');
           token.admitted=true;admitted.add(admissionKey);
+          const pending=getContext().view?.pendingMoves?.find(move=>move.clientCommandId===handle.id);
+          if (!pending?.selectionSnapshot || !pending.snapshot || canonicalCommandJson(pending.action)!==canonicalCommandJson(action)) {
+            throw new Error('follow_projection_unavailable');
+          }
+          // The durable pending record is the exact optimistic frame owned by
+          // this command. Present it once now; confirmation only settles it.
+          sound();
+          await animate(structuredClone(pending));
+          token.presented=true;
           // Releasing visual/lock ownership never cancels the durable command.
           await Promise.race([handle.committed, token.cancellation]);
           if (!current(token)) return;
@@ -113,13 +122,11 @@ export function createForcedFollow({ getContext, hold = async () => {}, animate 
           const move = acknowledged.moves?.findLast(move => !move.undone && move.clientCommandId === handle.id);
           const head = acknowledged.moves?.findLast(move => !move.undone);
           if (!move?.selectionSnapshot || !move.snapshot || move.moveId !== head?.moveId || canonicalCommandJson(move.action) !== canonicalCommandJson(action)) return;
-          token.animatingRevision = acknowledged.gameplayRevision;
-          sound();
-          await animate(structuredClone(move));
+          token.accepted=true;
         });
       } catch (error) { if (current(token)) onError(error); }
       finally {
-        if (token === active) { active = null; clearVisual(); onChange(); }
+        if (token === active) { active = null; if(!token.accepted)clearVisual(); onChange(); }
       }
       // No retry loop: a newly acknowledged mandatory continuation is a new
       // state. Existing pending commands continue under their journal owner.

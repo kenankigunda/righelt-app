@@ -31,17 +31,17 @@ test('replay includes authoritative finalization without adding gameplay moves',
   assert.equal(moves().length,3);
 });
 
-function fixture({manual=true,throwRender=false,withTokens=false,baseTransform='none',holdFinal=false,automatic=false}={}) {
+function fixture({manual=true,throwRender=false,withTokens=false,baseTransform='none',holdFinal=false,automatic=false,blocksInput=true}={}) {
   const handlers=new Map(),events=[],renders=[],timers=new Map(),motions=[],ghosts=[]; let nextTimer=0,destroyed=0,tokens=[];
   const doc={hidden:false,addEventListener:(key,fn)=>handlers.set(key,fn),removeEventListener:key=>handlers.delete(key),defaultView:{getComputedStyle:()=>({transform:baseTransform}),addEventListener:(key,fn)=>handlers.set(key,fn),removeEventListener:key=>handlers.delete(key)}};
-  const element=()=>({ownerDocument:doc,style:{},setAttribute(){},addEventListener(){},appendChild(child){child.parent=this;},getBoundingClientRect:()=>({left:0,top:0}),querySelector(){return null;},querySelectorAll(){return tokens;},remove(){this.removed=true;}});
+  const element=()=>({ownerDocument:doc,style:{},children:[],setAttribute(){},addEventListener(){},appendChild(child){child.parent=this;this.children.push(child);},getBoundingClientRect:()=>({left:0,top:0}),querySelector(){return null;},querySelectorAll(){return tokens;},remove(){this.removed=true;}});
   doc.createElement=element; const rootEl=element();
   const updateTokens = frame => {
     if (!withTokens) return;
     tokens=(frame.snapshot.pieces ?? []).map(piece=>({getAttribute:()=>piece.id,classList:{contains:()=>false,add(){}},getBoundingClientRect:()=>({left:piece.position.col*10,top:piece.position.row*10,width:10,height:10}),cloneNode:()=>{const ghost={style:{transform:baseTransform},setAttribute(){},remove(){},animate:()=>({cancel(){},finished:Promise.resolve()})};ghosts.push(ghost);return ghost;},animate:frames=>{motions.push({id:piece.id,frames});return {cancel(){},finished:Promise.resolve()};}}));
   };
-  const replay=createComputerReplay({rootEl,holdFinal,automatic,onChange:status=>events.push(status),onFinish:event=>events.push(event),reducedMotion:()=>manual,createPreview:({preview})=>{if(throwRender)throw Error('render failed');renders.push(preview);updateTokens(preview);return {update:frame=>{renders.push(frame);updateTokens(frame);},destroy:()=>{destroyed++;}};},setTimer:(fn,ms)=>{timers.set(++nextTimer,{fn,ms});return nextTimer;},clearTimer:id=>timers.delete(id)});
-  return {replay,doc,handlers,events,renders,timers,motions,ghosts,get destroyed(){return destroyed;},tick(){const [id,timer]=timers.entries().next().value;timers.delete(id);timer.fn();}};
+  const replay=createComputerReplay({rootEl,holdFinal,automatic,blocksInput,onChange:status=>events.push(status),onFinish:event=>events.push(event),reducedMotion:()=>manual,createPreview:({preview})=>{if(throwRender)throw Error('render failed');renders.push(preview);updateTokens(preview);return {update:frame=>{renders.push(frame);updateTokens(frame);},destroy:()=>{destroyed++;}};},setTimer:(fn,ms)=>{timers.set(++nextTimer,{fn,ms});return nextTimer;},clearTimer:id=>timers.delete(id)});
+  return {replay,rootEl,doc,handlers,events,renders,timers,motions,ghosts,get destroyed(){return destroyed;},tick(){const [id,timer]=timers.entries().next().value;timers.delete(id);timer.fn();}};
 }
 
 test('reduced motion advances manually and owns no gameplay interfaces',async()=>{
@@ -68,9 +68,16 @@ test('replay replacement, live revision changes, and backgrounding cancel cleanl
 
 test('automatic playback cancellation settles waits and never resumes later',async()=>{
   const f=fixture({manual:false}); const pending=f.replay.play(payload());
+  assert.equal(f.rootEl.children.at(-1).style.pointerEvents,'auto','requested replay retains input ownership');
   assert.equal(f.timers.size,1); f.replay.stop('navigation');
   assert.equal(await pending,false); assert.equal(f.timers.size,0); assert.equal(f.destroyed,1);
   f.replay.destroy();
+});
+
+test('nonblocking presentation cannot intercept input through its cosmetic layer',async()=>{
+ const f=fixture({manual:false,automatic:true,blocksInput:false}),pending=f.replay.play(payload());
+ assert.equal(f.rootEl.children.at(-1).style.pointerEvents,'none');
+ f.replay.stop('settled');assert.equal(await pending,false);f.replay.destroy();
 });
 
 test('automatic playback completes each recorded frame then restores live presentation',async()=>{
