@@ -1401,13 +1401,20 @@ export const createLiveTransportStore = ({
     return true;
   };
   const retireColdDestinationRecovery = (gameId, { reason = "terminal_destination" } = {}) => {
-    const optimistic = getOptimisticState(gameId);
+    const optimistic = optimisticStateByGameId.get(gameId);
+    if (!optimistic) return false;
     const terminalReason = ['auth','missing','upgrade','integrity','storage','unavailable'].includes(reason) ? reason : 'unavailable';
     // A confirmed cold destination owns no playable snapshot or durable work.
     // Retire only that safe read episode. Never let terminal presentation
     // discard a command, receipt, uncertain admission, or loaded game.
     if (gameById.has(gameId) || optimistic.pendingCommands.length || optimistic.unsavedCommand
       || optimistic.attempt && optimistic.attempt.commandId !== null) return false;
+    const hasActiveRecovery = optimistic.connectionRecovering || optimistic.connectionFailed
+      || optimistic.socketAuthorityRequired || optimistic.forceSnapshot || optimistic.recoveryStartedAt
+      || optimistic.recoveryEpisodeId || optimistic.recoveryOwner || optimistic.recoveryPromise
+      || optimistic.recoveryRetryTimer || optimistic.retryTimer || optimistic.budgetTimer || optimistic.attempt;
+    // A later route-exit fallback must not publish a second completion.
+    if (!hasActiveRecovery) return false;
     clearTimeout(optimistic.recoveryRetryTimer); optimistic.recoveryRetryTimer = null;
     clearTimeout(optimistic.retryTimer); optimistic.retryTimer = null;
     clearTimeout(optimistic.budgetTimer); optimistic.budgetTimer = null;

@@ -1781,10 +1781,20 @@ export const createSyncStore = ({
         commit: async () => transport.rescindRevertRequest({ gameId, requestId }),
       }),
     setActiveGameId: (gameId) => {
+      const previousActiveGameId = activeGameId;
       const previousRecoveryGameId = recoveryEpisodeClock.snapshot().gameId;
       activeGameId = gameId || null;
       transport.setRulesActiveGame?.(activeGameId);
       syncActiveGame();
+      if (previousActiveGameId && previousActiveGameId !== activeGameId) {
+        // Let a terminal destination retire synchronously with its exact reason.
+        // This deferred fallback owns only a still-live cold read after route exit.
+        queueMicrotask(() => {
+          if (active && activeGameId !== previousActiveGameId) {
+            transport.retireColdDestinationRecovery?.(previousActiveGameId, { reason: "unavailable" });
+          }
+        });
+      }
       if (auth?.enabled && auth.pendingLogout) {
         recoveryEpisodeClock.reset();
         return;

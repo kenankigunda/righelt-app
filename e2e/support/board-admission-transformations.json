@@ -265,8 +265,8 @@
   },
   "/shell/live-transport.js": {
     "file": "apps/web/shell/live-transport.js",
-    "sourceSha256": "be11e521e5055a1fb7769747e7f486e288a919efcce355970022561dd5f4f805",
-    "outputSha256": "600702e2fe59e0cc87a9932c0644582165709fb0e33ec1e203258a0070e04298",
+    "sourceSha256": "ff5e59d1327b3835113946bc2a5ac1f7adb8ad0b9fc409941627e89aa7eedb1d",
+    "outputSha256": "a8773861b2d3adbccead0fb9ca580bf49f44c22f3af3697990220c694963e77e",
     "operations": [
       {
         "start": 64684,

@@ -36,6 +36,7 @@ test('initial shared capability timeout preserves intent and never submits it', 
  t.after(() => store.retire());
  await store.reconcileGame(game.id);
  assert.ok(reads.length > 0);
+ assert.equal(store.retireColdDestinationRecovery(game.id,{reason:'unavailable'}),false,'cold route retirement preserves a hydrated durable command');
  for (const { init } of reads) {
   assert.equal(init.method, 'GET'); assert.equal(init.body, undefined);
   assert.equal(init.headers['X-Righelt-Projection'], 'history-v1');
@@ -3217,13 +3218,16 @@ test('terminal connection failure is fenced to one episode and manual Retry crea
 });
 
 test('a confirmed cold terminal destination retires only its safe read retries',async t=>{
- const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'cold-terminal-owner');let reads=0;
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'cold-terminal-owner');let reads=0;const diagnostics=[];
  const store=createLiveTransportStore({storage,commandJournal:{list:async()=>[],remove:async()=>{}},
   timing:{requestTimeoutMs:20,recoveryPassMs:100,retryDelaysMs:[5],retryJitter:0},
+  onDiagnostic:event=>diagnostics.push(event),
   fetcher:async()=>{reads++;return Response.json({error:'game_not_found'},{status:404});}});t.after(()=>store.retire());
  const gameId='missing-cold-game';store.setConnectionRecovering(gameId,true,{requireSocketAuthority:true,reason:'websocket_unavailable'});
  await assert.rejects(store.reconcileGame(gameId));
- assert.equal(store.retireColdDestinationRecovery(gameId,{reason:'missing'}),true);
+ assert.equal(store.retireColdDestinationRecovery(gameId,{reason:'integrity'}),true);
+ assert.equal(store.retireColdDestinationRecovery(gameId,{reason:'unavailable'}),false,'retiring the same cold owner is idempotent');
+ assert.deepEqual(diagnostics.filter(event=>event.type==='recovery_completed').map(event=>event.reason),['integrity']);
  const settledReads=reads;await new Promise(resolve=>setTimeout(resolve,30));assert.equal(reads,settledReads);
  assert.equal(store.getGameViewModel(gameId),null);
 
