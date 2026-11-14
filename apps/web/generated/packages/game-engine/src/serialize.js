@@ -1,3 +1,4 @@
+import { canonicalTerminalDisplacement } from './terminal-displacement.js';
 import { normalizeState } from "./deterministic.js";
 function stableSortObject(value) {
     if (Array.isArray(value)) {
@@ -25,10 +26,18 @@ function assertDeserializedStateShape(value) {
     }
 }
 export function serializeState(state) {
-    return JSON.stringify(stableSortObject(normalizeState(state)));
+    const metadata = canonicalTerminalDisplacement(state);
+    const normalized = normalizeState(state);
+    if (metadata !== undefined)
+        normalized.terminalDisplacement = metadata;
+    return JSON.stringify(stableSortObject(normalized));
 }
 export function deserializeState(serialized) {
     const parsed = JSON.parse(serialized);
     assertDeserializedStateShape(parsed);
-    return normalizeState(parsed);
+    const metadata = canonicalTerminalDisplacement(parsed);
+    const normalized = normalizeState(parsed);
+    if (metadata !== undefined)
+        normalized.terminalDisplacement = metadata;
+    return normalized;
 }

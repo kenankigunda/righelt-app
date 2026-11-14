@@ -13,6 +13,7 @@ import type {
   Piece,
   ResolveArtifacts,
   SupplyArtifact,
+  TerminalDisplacement,
 } from "../../shared-types/src/engine";
 
 export type {
@@ -29,6 +30,7 @@ export type {
   Piece,
   ResolveArtifacts,
   SupplyArtifact,
+  TerminalDisplacement,
 };
 
 export type ValidationErrorCode =

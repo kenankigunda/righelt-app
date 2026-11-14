@@ -89,6 +89,7 @@ function normalizeState(state) {
     pieces: normalizePieces(state.pieces),
     continuation: normalizeContinuation(state.continuation),
     outcome: { ...state.outcome },
+    ...state.terminalDisplacement === void 0 ? {} : { terminalDisplacement: structuredClone(state.terminalDisplacement) },
     ...state.artifacts ? {
       artifacts: {
         mode: state.artifacts.mode,
@@ -2408,6 +2409,34 @@ function resolveToStability(state, options) {
   throw new Error(`resolveToStability exceeded max passes (${maxPasses})`);
 }
 
+// apps/web/generated/packages/game-engine/src/terminal-displacement.js
+function canonicalTerminalDisplacement(state) {
+  const value = state.terminalDisplacement;
+  if (value === void 0)
+    return void 0;
+  const fail = () => {
+    throw new Error("Invalid terminal displacement");
+  };
+  const record = (value2) => Boolean(value2 && typeof value2 === "object" && !Array.isArray(value2));
+  const text = (value2) => typeof value2 === "string" && value2.length > 0;
+  const point = (value2) => record(value2) && Object.keys(value2).length === 2 && Object.keys(value2).every((key) => key === "row" || key === "col") && Number.isInteger(value2.row) && Number.isInteger(value2.col) && Number(value2.row) >= 0 && Number(value2.row) < state.boardSize && Number(value2.col) >= 0 && Number(value2.col) < state.boardSize;
+  const same = (a, b) => a.row === b.row && a.col === b.col;
+  if (!record(value) || Object.keys(value).some((key) => !["decisionId", "frameHash", "attackerId", "action", "piece"].includes(key)) || !["p1_win", "p2_win", "draw"].includes(state.outcome.status) || state.continuation !== null || !text(value.decisionId) || typeof value.frameHash !== "string" || !/^[0-9a-f]{64}$/.test(value.frameHash) || !text(value.attackerId))
+    return fail();
+  const action = value.action, piece = value.piece;
+  if (!record(action) || Object.keys(action).some((key) => !["type", "actorId", "from", "to", "targetId"].includes(key)) || action.type !== "push" || action.actorId !== value.attackerId || !point(action.from) || !point(action.to))
+    return fail();
+  if (!record(piece) || Object.keys(piece).some((key) => !["id", "owner", "kind", "position", "supplied", "commanded", "displaySupplied", "displayCommanded", "pushed", "shifted"].includes(key)) || !text(piece.id) || !["P1", "P2"].includes(String(piece.owner)) || !["unit", "commander"].includes(String(piece.kind)) || !point(piece.position) || piece.pushed !== true || typeof piece.supplied !== "boolean" || typeof piece.commanded !== "boolean" || !same(action.to, piece.position) || action.targetId !== void 0 && action.targetId !== piece.id)
+    return fail();
+  for (const key of ["displaySupplied", "displayCommanded", "shifted"])
+    if (piece[key] !== void 0 && typeof piece[key] !== "boolean")
+      return fail();
+  const attacker = state.pieces.filter((candidate) => candidate.id === value.attackerId);
+  if (attacker.length !== 1 || state.pieces.some((candidate) => candidate.pushed) || state.pieces.filter((candidate) => same(candidate.position, piece.position)).length !== 1 || attacker[0].pushed || attacker[0].owner === piece.owner || !same(attacker[0].position, piece.position) || state.pieces.some((candidate) => candidate.id === piece.id))
+    return fail();
+  return structuredClone(value);
+}
+
 // apps/web/generated/packages/game-engine/src/serialize.js
 function stableSortObject(value) {
   if (Array.isArray(value)) {
@@ -2420,7 +2449,11 @@ function stableSortObject(value) {
   return value;
 }
 function serializeState(state) {
-  return JSON.stringify(stableSortObject(normalizeState(state)));
+  const metadata = canonicalTerminalDisplacement(state);
+  const normalized = normalizeState(state);
+  if (metadata !== void 0)
+    normalized.terminalDisplacement = metadata;
+  return JSON.stringify(stableSortObject(normalized));
 }
 
 // apps/web/generated/packages/game-engine/src/hash.js

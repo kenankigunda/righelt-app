@@ -175,6 +175,7 @@ export function normalizeState(state: GameState): GameState {
     pieces: normalizePieces(state.pieces),
     continuation: normalizeContinuation(state.continuation),
     outcome: { ...state.outcome },
+    ...(state.terminalDisplacement===undefined?{}:{terminalDisplacement:structuredClone(state.terminalDisplacement)}),
     ...(state.artifacts
       ? {
           artifacts: {
