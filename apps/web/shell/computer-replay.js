@@ -12,6 +12,10 @@ const createReplayPreview = ({rootEl, createAdapter, preview}) => {
 };
 
 export const COMPUTER_REPLAY_TIMING = Object.freeze({motion: 520, pause: 360});
+// Automatic live confirmation has no explanatory lead-in or trailing hold.
+// Its one remaining duration is the visible move itself; explicit replay keeps
+// the more deliberate policy above.
+export const AUTOMATIC_LIVE_TIMING = Object.freeze({motion: 520, pause: 0});
 
 /** Frames come from acknowledged active-lineage decisions, never engine simulation. */
 export function buildComputerTurnReplay(options) {
@@ -33,13 +37,14 @@ export function buildTurnReplay({moves, completedTurnIndex, gameId, revision, li
 }
 
 /** Isolated visual playback. This module deliberately has no transport/search dependency. */
-export function createComputerReplay({rootEl, createAdapter, onChange = () => {}, onFinish = () => {}, reducedMotion = () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true, createPreview = createReplayPreview, timing = COMPUTER_REPLAY_TIMING, holdFinal = false, automatic = false, onFrame = () => {}, setTimer = setTimeout, clearTimer = clearTimeout}) {
+export function createComputerReplay({rootEl, createAdapter, onChange = () => {}, onFinish = () => {}, reducedMotion = () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true, createPreview = createReplayPreview, timing = null, holdFinal = false, automatic = false, onFrame = () => {}, setTimer = setTimeout, clearTimer = clearTimeout}) {
   const doc = rootEl.ownerDocument;
+  const playbackTiming = timing ?? (automatic ? AUTOMATIC_LIVE_TIMING : COMPUTER_REPLAY_TIMING);
   let replay = null, layer = null, preview = null, index = -1, generation = 0, timer = null, settleWait = null;
   let animations = [], removedTokens = [];
   const snapshot = () => ({playing: Boolean(replay), step: index + 1, total: replay?.frames.length ?? 0, manual: Boolean(replay && reducedMotion() && !automatic), gameId: replay?.gameId ?? null, action: index >= 0 && replay?.frames[index] ? structuredClone(replay.frames[index].action) : null, recordedMove:replay?.frames[Math.max(0,index)]?structuredClone(replay.frames[Math.max(0,index)].recordedMove??null):null});
   const notify = () => onChange(snapshot());
-  const wait = duration => new Promise(resolve => { settleWait = resolve; timer = setTimer(() => {timer = null; settleWait = null; resolve(true);}, duration); });
+  const wait = duration => duration <= 0 ? Promise.resolve(true) : new Promise(resolve => { settleWait = resolve; timer = setTimer(() => {timer = null; settleWait = null; resolve(true);}, duration); });
   const clearMotion = () => {
     for (const animation of animations) animation.cancel();
     animations = [];
@@ -76,7 +81,7 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
       if (!manual && token.animate && rect && (!source || source.rect && moved)) {
         const baseTransform = doc.defaultView?.getComputedStyle?.(token).transform ?? token.style?.transform ?? 'none';
         const frames = source ? [{transform: `translate(${source.rect.left - rect.left}px, ${source.rect.top - rect.top}px)${baseTransform === 'none' ? '' : ` ${baseTransform}`}`}, {transform: baseTransform}] : [{opacity: 0}, {opacity: 1}];
-        const animation = token.animate(frames, {duration: timing.motion, easing: 'cubic-bezier(.2,.75,.25,1)'});
+        const animation = token.animate(frames, {duration: playbackTiming.motion, easing: 'cubic-bezier(.2,.75,.25,1)'});
         animation.finished.catch(() => {}); animations.push(animation);
       }
     }
@@ -89,7 +94,7 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
         ghost.setAttribute('aria-hidden', 'true');
         Object.assign(ghost.style, {position: 'absolute', left: `${source.rect.left - layerRect.left}px`, top: `${source.rect.top - layerRect.top}px`, width: `${source.rect.width}px`, height: `${source.rect.height}px`, transform: 'none', pointerEvents: 'none'});
         layer.appendChild(ghost); removedTokens.push(ghost);
-        if (ghost.animate) { const animation = ghost.animate([{opacity: 1}, {opacity: 0}], {duration: timing.motion, fill: 'forwards'}); animation.finished.catch(() => {}); animations.push(animation); }
+        if (ghost.animate) { const animation = ghost.animate([{opacity: 1}, {opacity: 0}], {duration: playbackTiming.motion, fill: 'forwards'}); animation.finished.catch(() => {}); animations.push(animation); }
       }
     }
     onFrame(structuredClone(frame));
@@ -116,11 +121,11 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
     rootEl.appendChild(layer);
     notify();
     if (reducedMotion() && !automatic) { next(); return true; }
-    if (!await wait(timing.pause) || generation !== current) return false;
+    if (!await wait(reducedMotion() && automatic ? 0 : playbackTiming.pause) || generation !== current) return false;
     for (index = 0; replay && generation === current && index < replay.frames.length; index++) {
       if (index) render(replay.frames[index].before, `${generation}:${index}:before`);
       showFrame();
-      if (!await wait((reducedMotion() ? 0 : timing.motion) + timing.pause) || generation !== current) return false;
+      if (!await wait(reducedMotion() && automatic ? 0 : (reducedMotion() ? 0 : playbackTiming.motion) + playbackTiming.pause) || generation !== current) return false;
     }
     if (replay && generation === current) {
       if (holdFinal) { index = replay.frames.length - 1; notify(); }

@@ -36,6 +36,10 @@ export function createConfirmedComputerPlayback({loadMove=async move=>move,prese
    if(run===generation){displayed=clone(latest);running=false;controller=null;notify();}
   }catch(failure){
    if(run!==generation||signal.aborted)return;controller?.abort();loading=false;running=false;controller=null;
+   if(failure?.code==='confirmed_presentation_retired'){
+    baseline(latest??current?.game,scope);
+    return;
+   }
    if(computerRetryDisposition(failure)!=='terminal'){
     retrying=true;retryNotBefore=clock()+Math.max(0,failure.retryAfterMs??0);
     const delay=Math.max(SYNC_TIMING.retryDelaysMs[Math.min(failures++,SYNC_TIMING.retryDelaysMs.length-1)],failure.retryAfterMs??0);

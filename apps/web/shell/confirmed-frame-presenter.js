@@ -1,5 +1,8 @@
 import {createComputerReplay} from './computer-replay.js';
 
+const SILENT_RETIREMENTS=new Set(['backgrounded','destroyed','live-change','navigation','replaced','scope-changed','stopped']);
+const retiredError=reason=>Object.assign(Error(`confirmed_presentation_${reason}`),{code:'confirmed_presentation_retired'});
+
 export function createConfirmedFramePresenter({getRoot,getGameId,createAdapter,reducedMotion,createReplay=createComputerReplay}){
  let visual=null;
  return {
@@ -10,7 +13,9 @@ export function createConfirmedFramePresenter({getRoot,getGameId,createAdapter,r
     const abort=()=>visual?.stop('scope-changed');
     const finish=({reason})=>{
      signal.removeEventListener('abort',abort);
-     if(reason==='completed'||signal.aborted)resolve();else reject(Error(`confirmed_presentation_${reason}`));
+     if(reason==='completed'||signal.aborted)resolve();
+     else if(SILENT_RETIREMENTS.has(reason))reject(retiredError(reason));
+     else reject(Error(`confirmed_presentation_${reason}`));
     };
     visual=createReplay({rootEl,createAdapter,automatic:true,reducedMotion,onFrame:onDisplayed,onFinish:finish});
     if(signal.aborted){visual.destroy();resolve();return;}
