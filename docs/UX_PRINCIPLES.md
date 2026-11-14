@@ -311,7 +311,7 @@ Play again offers a deliberate opponent and side choice, with the opposite side 
 
 Settings belong in a stone-cut side flyout that leaves the game usable on wider screens and fills the screen on phones. Sign-in and account creation remain modal. Settings and password changes share the account surface, branded action icons and player emblem. Keep credential behavior and session fencing unchanged.
 
-Player names are quiet text controls: display name first, username smaller underneath. Expand brief public details directly below the name, rather than opening a separate profile modal. Preserve the expanded player and focus during live updates. A deterministic angular emblem derives from the canonical username; its shape is stable and its accent follows the seat. Use charcoal when there is no seat affiliation. Prefer one expanded row at a time for this pass.
+Player names are quiet text controls: display name first, username smaller underneath. Expand brief public details directly below the name, rather than opening a separate profile modal. Preserve the expanded player and focus during live updates. Each account, guest and computer uses a deterministic multicolor angular emblem keyed to stable identity: canonical username for accounts, identity ID for guests and computer profile for computers. The decorative emblem is independent of seat, display name, current turn and temporary control. Names and accessible affiliation remain authoritative. Prefer one expanded row at a time for this pass.
 
 ### Preserve place when opening an overlay
 
