@@ -1,4 +1,5 @@
 import {TERMINAL_OUTCOME_STATUSES} from '../../shared-types/src/engine';
+import { deterministicStateHash } from '../../game-engine/src/hash';
 import { parseComputerControl } from '../../shared-types/src/computer-play';
 import { archiveRow, readArchivedGame } from "./storage-archive";
 import { growthGuard } from "./storage-budget";
@@ -21,6 +22,7 @@ import {
   type Participant,
   type ScenarioSavedSelection,
   type StaticGameCard,
+  type TerminalOutcomeRecord,
   type Viewer,
   toStaticGameCard,
 } from "./shell-live-core";
@@ -498,6 +500,75 @@ const normalizeImportedHistory = (value: unknown, mismatches: PersistedGameMisma
   return { version: 1, complete: value.complete, moveCount: Number(value.moveCount), sources };
 };
 
+const normalizeTerminalOutcome = (
+  value: unknown,
+  board: LiveGame["board"]["state"],
+  row: PersistedGameRow,
+  mismatches: PersistedGameMismatch[],
+): TerminalOutcomeRecord | undefined => {
+  if (value === undefined) return undefined;
+  const invalid = () => {
+    recordMismatch(mismatches, "terminalOutcome", "terminal outcome v1 matching the authoritative board and revision", value, "rejected_invalid_projection");
+    return undefined;
+  };
+  if (!isRecord(value) || value.version !== 1 || !isRecord(value.decisive) || !isRecord(value.commit)
+    || !isRecord(value.result) || !isRecord(value.cause) || !isRecord(value.lineage)
+    || !Array.isArray(value.removals) || !Number.isSafeInteger(value.activeActionCount)
+    || Number(value.activeActionCount) < 0 || typeof value.activeActionCountComplete !== "boolean") return invalid();
+  const terminalBoard = asGameState(value.board);
+  const action = asAction(value.decisive.action);
+  const status = value.result.status;
+  if (!terminalBoard || !action || !TERMINAL_OUTCOME_STATUSES.includes(status as never)
+    || terminalBoard.outcome.status !== status || board.outcome.status !== status
+    || deterministicStateHash(terminalBoard) !== deterministicStateHash(board)
+    || (value.result.reason !== undefined && typeof value.result.reason !== "string")
+    || value.result.reason !== terminalBoard.outcome.reason) return invalid();
+  if ((value.decisive.actorSide !== "P1" && value.decisive.actorSide !== "P2")
+    || (value.decisive.decisionId !== null && (typeof value.decisive.decisionId !== "string" || !value.decisive.decisionId))
+    || typeof value.decisive.clientCommandId !== "string" || !value.decisive.clientCommandId
+    || !Number.isSafeInteger(value.decisive.turnIndex) || Number(value.decisive.turnIndex) < 0) return invalid();
+  if (typeof value.commit.clientCommandId !== "string" || value.commit.clientCommandId !== value.decisive.clientCommandId
+    || !Number.isSafeInteger(value.commit.eventSeq) || Number(value.commit.eventSeq) < 1
+    || Number(value.commit.eventSeq) > Number(row.event_seq)
+    || !Number.isSafeInteger(value.commit.gameplayRevision) || Number(value.commit.gameplayRevision) < 1
+    || Number(value.commit.gameplayRevision) > Number(row.gameplay_revision)) return invalid();
+  const causeKind = value.cause.kind;
+  if (causeKind === "commander-settlement") {
+    if (typeof value.cause.reason !== "string" || !value.cause.reason) return invalid();
+  } else if (causeKind === "relevant-continuation-finality") {
+    if (!Number.isSafeInteger(value.cause.endpointCount) || Number(value.cause.endpointCount) < 1
+      || !Number.isSafeInteger(value.cause.optionalEndpointCount) || Number(value.cause.optionalEndpointCount) < 0) return invalid();
+  } else if (causeKind === "incoming-turn-immobility") {
+    if (value.cause.incomingSide !== "P1" && value.cause.incomingSide !== "P2") return invalid();
+  } else return invalid();
+  const removals = value.removals.flatMap(removal => {
+    if (!isRecord(removal) || !isRecord(removal.position)
+      || !Number.isSafeInteger(removal.position.row) || !Number.isSafeInteger(removal.position.col)
+      || (removal.ownerSeat !== "p1" && removal.ownerSeat !== "p2")
+      || typeof removal.supplied !== "boolean" || typeof removal.commanded !== "boolean"
+      || (removal.reason !== "no_retreat" && removal.reason !== "loss_of_supply"
+        && removal.reason !== "commander_unsupplied")) return [];
+    return [removal as DestroyedPieceRecord];
+  });
+  if (removals.length !== value.removals.length) return invalid();
+  if ((value.lineage.version !== null && value.lineage.version !== 1) || typeof value.lineage.complete !== "boolean"
+    || !Number.isSafeInteger(value.lineage.importedMoveCount) || Number(value.lineage.importedMoveCount) < 0
+    || !Array.isArray(value.lineage.sources)) return invalid();
+  const sources = value.lineage.sources.flatMap(source => isRecord(source) && typeof source.gameId === "string" && source.gameId
+    && Number.isSafeInteger(source.gameplayRevision) && Number(source.gameplayRevision) >= 0
+    && Number.isSafeInteger(source.moveCount) && Number(source.moveCount) > 0
+    ? [{ gameId: source.gameId, gameplayRevision: Number(source.gameplayRevision), moveCount: Number(source.moveCount) }] : []);
+  const sourceKeys = new Set(sources.map(source => `${source.gameId}\u0000${source.gameplayRevision}`));
+  if (sources.length !== value.lineage.sources.length || sourceKeys.size !== sources.length
+    || Number(value.activeActionCount) < Number(value.lineage.importedMoveCount)
+    || (value.lineage.version === 1
+      ? sources.reduce((total, source) => total + source.moveCount, 0) !== Number(value.lineage.importedMoveCount)
+      : sources.length !== 0 || (Number(value.lineage.importedMoveCount) > 0 && value.lineage.complete !== false))
+    || value.activeActionCountComplete !== value.lineage.complete) return invalid();
+  return structuredClone({ ...value, decisive: { ...value.decisive, action }, board: terminalBoard, removals,
+    lineage: { ...value.lineage, sources } } as TerminalOutcomeRecord);
+};
+
 const normalizeMoves = (value: unknown, mismatches: PersistedGameMismatch[]): LiveGame["moves"] => {
   if (!Array.isArray(value)) {
     recordMismatch(mismatches, "moves", "move[]", value, "defaulted_to_empty_array");
@@ -688,6 +759,13 @@ const normalizePersistedGame = (
   if (Array.isArray(parsed.notifications) && notifications.length !== parsed.notifications.length) {
     recordMismatch(mismatches, "notifications", "string[]", parsed.notifications, "dropped_non_string_entries");
   }
+  const terminalOutcome = normalizeTerminalOutcome(parsed.terminalOutcome, boardState, row, mismatches);
+  if (parsed.terminalOutcome !== undefined && !terminalOutcome) {
+    console.error(
+      JSON.stringify(buildShapeLogPayload({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches })),
+    );
+    return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
+  }
 
   const game: LiveGame = {
     ...(parsed.lastRestoration && typeof parsed.lastRestoration === "object" ? { lastRestoration: parsed.lastRestoration as LiveGame["lastRestoration"] } : {}),
@@ -717,6 +795,7 @@ const normalizePersistedGame = (
     notifications,
     initialSelectionAction,
     ...(importedHistory ? { importedHistory } : {}),
+    ...(terminalOutcome ? { terminalOutcome } : {}),
     ...(typeof parsed.historyBranchCreationKey === "string" && parsed.historyBranchCreationKey ? { historyBranchCreationKey: parsed.historyBranchCreationKey } : {}),
     inviteTokens: normalizeInviteTokens(parsed.inviteTokens, mismatches),
   };

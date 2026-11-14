@@ -35,6 +35,7 @@ import {
   assignIdentityToScenarioSeat,
   applyScenarioToGame,
   applyImportedHistoryToGame,
+  applyAcceptedAutomaticEnding,
   applyServerActionWithExpectedState,
   applyServerMove,
   applyRevertToMove,
@@ -1453,6 +1454,8 @@ export class GameRoomDO {
           || canonicalCommandJson(attempt.result?.action) !== canonicalCommandJson(payload.action)) return reject('invalid_computer_evidence');
       }
     } else if (payload.computer !== undefined) return reject('not_computer_game');
+    const decisiveTurnIndex = getActiveTurn(game)?.index ?? game.board.state.turnIndex;
+    const decisiveActorSide = ownerSeat === "Player 1" ? "P1" as const : "P2" as const;
     let result;
     if (command.kind === "end_turn") result = endServerTurn(game, command.clientCommandId);
     else if (command.kind === "move") result = applyServerMove(game, typeof payload.notation === "string" ? payload.notation : undefined, command.clientCommandId);
@@ -1462,6 +1465,16 @@ export class GameRoomDO {
       result = applyServerActionWithExpectedState(game, action, asGameState(command.expectedState), typeof payload.notation === "string" ? payload.notation : undefined, command.clientCommandId);
     }
     if (!result.ok) return reject(result.error);
+    const decisiveAction = ("move" in result ? result.move?.action : undefined)
+      ?? (command.kind === "end_turn" ? { type: "end_turn" as const } : asAction(payload.action));
+    if (!decisiveAction) return reject("invalid_action");
+    const terminalOutcome = applyAcceptedAutomaticEnding(game, decisiveAction, result, {
+      clientCommandId: command.clientCommandId,
+      eventSeq: this.eventSeq + 1,
+      gameplayRevision: game.gameplayRevision + 1,
+      actorSide: decisiveActorSide,
+      turnIndex: decisiveTurnIndex,
+    });
     if (payload.computer && asAction(payload.action)?.type !== "end_turn" && game.moves.length) game.moves[game.moves.length - 1].computerProof = clone(payload.computer as ComputerProof);
     if (game.computer?.singleStep && payload.computer) { game.computer.paused = true; game.computer.singleStep = false; game.computer.generation++; }
     if (game.computer?.takeoverTurn !== null && game.computer?.takeoverTurn !== undefined && game.computer.takeoverTurn !== getActiveTurn(game)?.index) { game.computer.takeoverTurn = null; game.computer.generation++; }
@@ -1470,6 +1483,9 @@ export class GameRoomDO {
       ...(payload.computer && asAction(payload.action)?.type === "end_turn" ? { computerProof: clone(payload.computer as ComputerProof) } : {}),
       ...("removedPieces" in result ? { removedPieces: result.removedPieces } : {}),
       ...("destroyedPieces" in result ? { destroyedPieces: result.destroyedPieces } : {}),
+      ...(terminalOutcome ? { terminalOutcome: { version: terminalOutcome.version, result: terminalOutcome.result,
+        cause: terminalOutcome.cause, activeActionCount: terminalOutcome.activeActionCount,
+        activeActionCountComplete: terminalOutcome.activeActionCountComplete } } : {}),
     } } as CommandReceipt;
     const event: EventAppendedEvent = { type: "event_appended", reason: command.kind === "end_turn" || asAction(payload.action)?.type === "end_turn" ? "turn_ended" : "move_recorded", eventSeq: this.eventSeq + 1, clientCommandId: command.clientCommandId, game: clone(game) };
     try { await this.persistCandidate(game, event, accepted); }
