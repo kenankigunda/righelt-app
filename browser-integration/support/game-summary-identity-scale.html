@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="/apps/web/styles.css">
+  <link rel="stylesheet" href="/apps/web/shell/shell.css">
+  <link rel="stylesheet" href="/apps/web/shell/refresh.css">
+  <style>
+    body{margin:0;padding:12px}
+    main{display:grid;gap:16px;width:min(100%,720px);margin:auto}
+    .panel{margin:0;min-width:0}
+    .mini-board-card{min-width:0}
+    .perspective-participants{--identity-icon-size:34px;--identity-gap:8px}
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel" data-game-panel="summary" id="summary"></section>
+    <section class="mini-board-card" aria-label="Home card control"><span class="mini-board-card-link-surface"><span class="mini-board-card-link" id="home"></span></span></section>
+    <section class="panel"><h2>Players</h2><div class="perspective-participants" id="players"></div></section>
+  </main>
+  <script type="module">
+    import {renderGameTitle} from '/apps/web/shell/game-title.js';
+    import {renderSummarySlots} from '/apps/web/shell/panel-loading.js';
+    import {participantButton} from '/apps/web/shell/public-profile.js';
+
+    const person=(identityId,displayName,username)=>({identityId,connected:true,...(displayName||username?{profile:{displayName,...(username?{username}:{})}}:{})});
+    const cases={
+      relative:{identityId:'red',player1:person('red','Marisol','marisol'),player2:person('blue','Babs'),myRole:'Player 1'},
+      long:{identityId:'viewer',player1:person('red','Alessandro de Kazo Cortez with an exceptionally long saved display name','alessandro'),player2:person('blue','Beatrice Montgomery-Smythe','beatrice'),myRole:'Viewer'},
+      duplicate:{identityId:'viewer',player1:person('red','Alex','alex-red'),player2:person('blue','Alex','alex-blue'),myRole:'Viewer'},
+      anonymous:{identityId:'viewer',player1:{identityId:'guest-one',connected:true},player2:{identityId:'guest-two',connected:false},myRole:'Viewer'},
+      escaped:{identityId:'viewer',player1:person('red','<Red & Co>','red-safe'),player2:person('blue','"Blue" > Red','blue-safe'),myRole:'Viewer'},
+    };
+    const base={id:'game-summary-scale',createdAt:'2026-11-13T23:30:00Z'};
+    window.renderCase=name=>{
+      const selected=cases[name],game={...base,...selected};
+      document.querySelector('#summary').innerHTML=renderSummarySlots({title:renderGameTitle(game,{identityId:selected.identityId}),started:'Started Nov 13, 2026, 3:30 PM',role:'Role: viewer',turn:'Active turn: 1',latest:'Latest: Ready'});
+      document.querySelector('#home').innerHTML=renderGameTitle(game,{identityId:selected.identityId,presence:true});
+      document.querySelector('#players').innerHTML=participantButton(game.player1,{side:'p1',displayName:game.player1?.profile?.displayName||'Guest 1'});
+    };
+    window.renderCase('relative');
+    await document.fonts.ready;
+    window.fixtureReady=true;
+  </script>
+</body>
+</html>
