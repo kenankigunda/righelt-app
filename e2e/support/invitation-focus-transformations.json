@@ -1,7 +1,7 @@
 {
   "pathname": "/shell/app.js",
-  "sourceSha256": "73d4433699a056d8d606294fe33862def48a54830cc277a7df5e2aaf7b0d96f4",
-  "outputSha256": "7b08102e363c475852d13ad8f1787198fa48e369d3c9a657a47a7d76b098aca8",
+  "sourceSha256": "c8285dff040b958e48ca07ae1af1f2c199302e481245f27b6691c16b68732f35",
+  "outputSha256": "b85f01d8edd0ed96e855d7b416e6cc0d151a1f36f492f655791a0d2bfd0819d7",
   "operations": [
     {
       "start": 8377,

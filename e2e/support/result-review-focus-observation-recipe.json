@@ -1,8 +1,8 @@
 {
   "version": 1,
   "modulePath": "/shell/app.js",
-  "sourceSha256": "73d4433699a056d8d606294fe33862def48a54830cc277a7df5e2aaf7b0d96f4",
-  "outputSha256": "f99713349e3e0316b8f2317e55b652250f50b77ccd78756ffb583c7ea360c6e1",
+  "sourceSha256": "c8285dff040b958e48ca07ae1af1f2c199302e481245f27b6691c16b68732f35",
+  "outputSha256": "46579e79548f5ae7c007a3f3864262fe75cc3ab5301e2d8324899370fe47eaa4",
   "prefix": "const __righeltResultReviewFocusProbe = (kind, refs = {}) => { try { globalThis.__RIGHELT_RESULT_REVIEW_FOCUS_PROBE__?.(kind, refs); } catch {} };\n",
   "operations": [
     {

@@ -110,7 +110,7 @@ test("only true flyout changes retain flyout-only patching; panel changes refres
 
 // An acknowledged undo can reopen a completed game while its result is visible.
 test("authoritative terminal rollback clears result state so the board can remount", () => {
-  const reconcile = extract("    if (activeResultGameId === currentRoute.gameId && confirmed?.board", "    if(!game?.confirmedPlayback && resultTransitions.observe");
+  const reconcile = extract("    if (activeResultGameId === currentRoute.gameId && confirmed?.board", "    if(resultTransitions.observe");
   for (const status of ["ongoing", "p1_win", "draw"]) {
     const context = {undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,activeResultGameId:"g", currentRoute:{gameId:"g"}, confirmed:{board:{state:{outcome:{status}}}}, transport:{getIdentityId:()=>"me"},getGameResult:game=>game.board.state.outcome.status === "ongoing" ? null : {title:"Finished"}};
     runWithHistoryRendering(reconcile, Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));

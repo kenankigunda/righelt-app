@@ -71,12 +71,14 @@ export const createResultTransitions = () => {
   const statuses = new Map();
   return {
     clear() { statuses.clear(); },
-    observe(game, { inHistory = false, hidden = false, storyOpen = false } = {}) {
+    observe(game, { inHistory = false, hidden = false, storyOpen = false } = {}, playback = null) {
       if (!game?.id || !game.board?.state?.outcome) return false;
       const next = game.board.state.outcome.status;
       const previous = statuses.get(game.id);
       statuses.set(game.id, next);
-      return previous === "ongoing" && isTerminalOutcome(next) && !inHistory && !hidden && !storyOpen;
+      const terminal = isTerminalOutcome(next);
+      if (terminal && !isTerminalOutcome(previous)) playback?.reset();
+      return previous === "ongoing" && terminal && !inHistory && !hidden && !storyOpen;
     },
   };
 };
