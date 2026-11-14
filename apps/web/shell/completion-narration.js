@@ -38,16 +38,18 @@ const commanderCause=(game,record,result)=>{
  const phrase=owner=>commander(game,owner,result);
  const destroyed=owner=>{
   const label=phrase(owner),removal=record.removals.find(item=>commanderRemoval(item,owner));
-  return label&&removal?[label,{text:' was destroyed.'}]:null;
+  return label&&removal?[label,{text:' was destroyed'}]:null;
  };
- const unsupplied=owner=>{const label=phrase(owner);return label?[label,{text:' lost its supply.'}]:null;};
+ const unsupplied=owner=>{const label=phrase(owner);return label?[label,{text:' lost its supply'}]:null;};
+ const sentence=parts=>parts?[...parts,{text:'.'}]:null;
+ const compound=(first,second)=>first&&second?[...first,{text:', and '},...second,{text:'.'}]:null;
  const byReason={
-  p1_commander_destroyed:()=>destroyed('p1'),p2_commander_destroyed:()=>destroyed('p2'),
-  p1_commander_unsupplied:()=>unsupplied('p1'),p2_commander_unsupplied:()=>unsupplied('p2'),
-  both_commanders_destroyed:()=>{const p1=destroyed('p1'),p2=destroyed('p2');return p1&&p2?[...p1.slice(0,-1),{text:' and '},...p2]:null;},
+  p1_commander_destroyed:()=>sentence(destroyed('p1')),p2_commander_destroyed:()=>sentence(destroyed('p2')),
+  p1_commander_unsupplied:()=>sentence(unsupplied('p1')),p2_commander_unsupplied:()=>sentence(unsupplied('p2')),
+  both_commanders_destroyed:()=>compound(destroyed('p1'),destroyed('p2')),
   both_commanders_unsupplied:()=>{const p1=phrase('p1'),p2=phrase('p2');return p1&&p2?[p1,{text:' and '},p2,{text:' lost their supply.'}]:null;},
-  p1_commander_destroyed_p2_unsupplied:()=>{const p1=destroyed('p1'),p2=unsupplied('p2');return p1&&p2?[...p1.slice(0,-1),{text:' and '},...p2]:null;},
-  p1_commander_unsupplied_p2_destroyed:()=>{const p1=unsupplied('p1'),p2=destroyed('p2');return p1&&p2?[...p1.slice(0,-1),{text:' and '},...p2]:null;},
+  p1_commander_destroyed_p2_unsupplied:()=>compound(destroyed('p1'),unsupplied('p2')),
+  p1_commander_unsupplied_p2_destroyed:()=>compound(unsupplied('p1'),destroyed('p2')),
  };
  return byReason[reason]?.()??null;
 };
@@ -69,7 +71,7 @@ const provenCauseParts=(game,record,result)=>{
  if(action?.type==='push'&&point(action.to)){
   const removal=record.removals.find(item=>commanderRemoval(item,loser)
    &&item.position.row===action.to.row&&item.position.col===action.to.col);
-  if(removal)return [{text:'Their push to '},{text:`(${action.to.row}, ${action.to.col})`},{text:' destroyed '},label,{text:'.'}];
+  if(removal)return [{text:'Their push to '},{text:`(${action.to.row}, ${action.to.col})`,coordinate:true},{text:' destroyed '},label,{text:'.'}];
  }
  if(action?.type==='rush'&&record.result.reason===`${loser}_commander_unsupplied`)
   return [{text:'Their final rush sequence cut off supply to '},label,{text:'.'}];

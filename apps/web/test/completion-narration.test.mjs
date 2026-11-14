@@ -72,6 +72,29 @@ test('saved supply, immobility and draw causes use only their closed provenance 
  assert.equal(completedOutcomeNarration(draw,{identityId:'viewer'}).text,'The game ended in a draw after 1 move. Horus’s commander and Guest’s commander lost their supply.');
 });
 
+test('combined commander causes retain both complete proven predicates',()=>{
+ const p1Removal={pieceId:'c1',kind:'commander',position:{row:0,col:0},ownerSeat:'p1',supplied:false,commanded:false,reason:'commander_unsupplied'};
+ const p2Removal={pieceId:'c2',kind:'commander',position:{row:9,col:2},ownerSeat:'p2',supplied:false,commanded:false,reason:'commander_unsupplied'};
+ const viewer={myRole:'Viewer',myRoles:[]};
+ const both=fixture({status:'draw',reason:'both_commanders_destroyed',cause:{kind:'commander-settlement',reason:'both_commanders_destroyed'},removals:[p1Removal,p2Removal],extra:viewer});
+ assert.equal(completedOutcomeNarration(both,{identityId:'viewer'}).text,
+  'The game ended in a draw after 2 moves. Horus’s commander was destroyed, and Guest’s commander was destroyed.');
+ const firstDestroyed=fixture({status:'draw',reason:'p1_commander_destroyed_p2_unsupplied',cause:{kind:'commander-settlement',reason:'p1_commander_destroyed_p2_unsupplied'},removals:[p1Removal],extra:viewer});
+ assert.equal(completedOutcomeNarration(firstDestroyed,{identityId:'viewer'}).text,
+  'The game ended in a draw after 2 moves. Horus’s commander was destroyed, and Guest’s commander lost its supply.');
+ const secondDestroyed=fixture({status:'draw',reason:'p1_commander_unsupplied_p2_destroyed',cause:{kind:'commander-settlement',reason:'p1_commander_unsupplied_p2_destroyed'},removals:[p2Removal],extra:viewer});
+ assert.equal(completedOutcomeNarration(secondDestroyed,{identityId:'viewer'}).text,
+  'The game ended in a draw after 2 moves. Horus’s commander lost its supply, and Guest’s commander was destroyed.');
+});
+
+test('a coordinate-like player name stays literal while the proven action coordinate becomes a chip',()=>{
+ const game=fixture({extra:{player2:person('other','(9, 2)')}}),message=completedOutcomeNarration(game,{identityId:'me'});
+ const html=renderBoardMessageHtml(message);
+ assert.equal(message.text,'You won in 2 moves. Their push to (9, 2) destroyed (9, 2)’s commander.');
+ assert.equal((html.match(/board-preview-coordinate-chip-neutral/g)??[]).length,1);
+ assert.match(html,/player-tone-p2[^>]*>[\s\S]*\(9, 2\)’s commander/);
+});
+
 test('post-retreat finality keeps its cause sentence absent until wording is approved',()=>{
  const postRetreat=fixture({reason:'p2_commander_unsupplied',cause:{kind:'relevant-continuation-finality',endpointCount:2,optionalEndpointCount:1},
   action:{type:'retreat',actorId:'c2',from:{row:9,col:1},to:{row:8,col:1}},removals:[]});

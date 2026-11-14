@@ -39,7 +39,9 @@ const renderCopy = (text, coordinates = []) => {
 };
 const renderActorName = actorName => `<bdi class="board-message-name" dir="auto" title="${escape(actorName)}">${escape(actorName)}</bdi>`;
 const renderToneParts = (parts,coordinates) => parts.map(part => {
-  const copy=renderCopy(part?.text??'',coordinates);
+  // Structured producers identify the exact semantic coordinate part. Player
+  // names remain literal even when they happen to look like board coordinates.
+  const copy=part.coordinate===true?renderCopy(part.text,coordinates):escape(part.text);
   const side=part?.side==='p1'||part?.side==='P1'?'p1':part?.side==='p2'||part?.side==='P2'?'p2':null;
   if(!side)return copy;
   const color=side==='p1'?'Red':'Blue';
