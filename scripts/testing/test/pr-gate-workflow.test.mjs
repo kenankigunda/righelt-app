@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {workflow,workflowText,nightlyWorkflowText} from '../workflow.mjs';
 import {expectedCILayout} from '../ci-layouts.mjs';
+import {partitionLanes} from '../partition.mjs';
 import {prGateLanes,laneKey} from '../catalog.mjs';
 
 test('advisory planning cannot block the PR aggregate or successful CI deployment trigger',()=>{
@@ -18,9 +19,20 @@ test('advisory planning cannot block the PR aggregate or successful CI deploymen
 
 test('released PR layout pins the generated workflow and complete unchanged PR inventory',async()=>{
  const root=fileURLToPath(new URL('../../../',import.meta.url));
- const profile=await expectedCILayout(root,'pr-gate-v3');
+ const profile=await expectedCILayout(root,'auto');
  assert.equal(profile.evidenceProfile,'pr-gate');
  assert.deepEqual(profile.lanes.map(laneKey).sort(),prGateLanes().map(laneKey).sort());
  assert.equal(await readFile(new URL('../../../.github/workflows/ci.yml',import.meta.url),'utf8'),workflowText());
  assert.equal(await readFile(new URL('../../../.github/workflows/nightly-validation.yml',import.meta.url),'utf8'),nightlyWorkflowText());
+});
+
+test('four-way layout retains all suites and browser lanes with complete Node partitions',()=>{
+ const lanes=partitionLanes(prGateLanes(),4),current=prGateLanes();
+ assert.equal(lanes.length,25);
+ assert.deepEqual([...new Set(lanes.map(l=>l.suite))].sort(),[...new Set(current.map(l=>l.suite))].sort());
+ const {jobs}=workflow({nodePartitions:4});
+ assert.equal(jobs.node.strategy['fail-fast'],false);
+ assert.deepEqual(jobs.node.strategy.matrix.include.filter(l=>l.suite==='sync-stress').map(l=>[l.shard,l.shards]),[[1,4],[2,4],[3,4],[4,4]]);
+ assert.deepEqual(jobs.node.strategy.matrix.include.filter(l=>l.suite==='tooling').map(l=>[l.shard,l.shards]),[[1,4],[2,4],[3,4],[4,4]]);
+ assert.throws(()=>partitionLanes(prGateLanes(),2));
 });

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { stressSeeds, stressTestName } from "../../../scripts/testing/partition.mjs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { IDBFactory } from "fake-indexeddb";
 import { GameRoomDO } from "../src/game-room-do.ts";
@@ -283,8 +284,8 @@ async function socketSchedule(random, trace) {
   }
 }
 
-const seeds = process.env.T114_SEED ? [Number(process.env.T114_SEED)] : Array.from({ length: 100 }, (_, i) => i + 1);
-for (const seed of seeds) test(`S-01 fixed seed ${seed}: 300 command/storage/network/restart/socket events`, { timeout: 120000 }, async () => {
+const seeds = stressSeeds({ shard: Number(process.env.RIGHELT_NODE_SHARD || 1), shards: Number(process.env.RIGHELT_NODE_SHARDS || 1) }, process.env.T114_SEED);
+for (const seed of seeds) test(stressTestName(seed), { timeout: 120000 }, async () => {
   const trace = [], random = randomFor(seed);
   try { await serverSchedule(seed, random, trace); await admissionRace(seed, random); await clientSchedule(seed, random, trace); await socketSchedule(random, trace); assert.equal(trace.length, 300); }
   catch (error) {

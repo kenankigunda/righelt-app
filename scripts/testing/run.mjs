@@ -1,4 +1,5 @@
-import { nodeInventory, verifyInventory } from "./inventory.mjs";
+import { nodeLaneInventory, verifyInventory } from "./inventory.mjs";
+import { partitionIdentity, verifyStressSeeds } from "./partition.mjs";
 import { spawn, execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -38,7 +39,10 @@ export async function runSuite(
     stack = path.join(dir, "stack.json");
   const args = [suite.script];
   if (lane.project) args.push(`--project=${lane.project}`);
-  if (lane.shards > 1) args.push(`--shard=${lane.shard}/${lane.shards}`);
+  if (suite.browser && lane.shards > 1) args.push(`--shard=${lane.shard}/${lane.shards}`);
+  if (!suite.browser) partitionIdentity(lane);
+  if (suite.id === "sync-stress" && process.env.T114_SEED !== undefined)
+    throw Error("Seed replay cannot produce gate evidence");
   args.push(...filters);
   const nodeTest =
     !suite.browser && !["typecheck", "generated"].includes(suite.id);
@@ -57,6 +61,9 @@ export async function runSuite(
   const env = {
     ...process.env,
     RIGHELT_TEST_OBSERVATIONS: observed,
+    RIGHELT_TEST_REVISION: before.revision,
+    RIGHELT_NODE_SHARD: String(lane.shard),
+    RIGHELT_NODE_SHARDS: String(lane.shards),
     RIGHELT_TEST_STACK_STATUS: stack,
     PLAYWRIGHT_OUTPUT_DIR: path.join(dir, "debug"),
     PLAYWRIGHT_JUNIT_OUTPUT_FILE: path.join(dir, "results.xml"),
@@ -145,8 +152,13 @@ export async function runSuite(
   try {
     stackState = JSON.parse(await readFile(stack, "utf8"));
   } catch {}
+  // Portable receipt paths must not retain the producer's absolute checkout root.
+  if (observations?.tests) observations.tests = observations.tests.map(test => ({...test,
+    file: test.file && path.isAbsolute(test.file) ? path.relative(cwd, test.file) : test.file,
+  }));
   const kind = suiteKind(suite.id);
-  const expectedFiles = nodeInventory(suite.id, cwd);
+  const expectedFiles = nodeLaneInventory(suite.id, cwd, lane);
+  const seedInventory = suite.id === "sync-stress" ? verifyStressSeeds(observations, lane) : null;
   const inventory = expectedFiles
     ? verifyInventory(expectedFiles, observations, cwd)
     : browserInventory
@@ -170,7 +182,8 @@ export async function runSuite(
     !observations?.flaky &&
     !observations?.uncompleted &&
     !inventory?.missing.length &&
-    !inventory?.unexpected?.length;
+    !inventory?.unexpected?.length &&
+    !seedInventory?.missing.length && !seedInventory?.unexpected.length && !seedInventory?.duplicates.length && !seedInventory?.notPassed.length;
   const dirtyDuringRun = before.sourceFingerprint !== after.sourceFingerprint;
   const failureKind = passed
     ? null
@@ -233,6 +246,7 @@ export async function runSuite(
     durationMs: performance.now() - started,
     observations,
     inventory,
+    seedInventory,
     stack: stackState,
     nonRetryableFailureEvidence,
     log,
