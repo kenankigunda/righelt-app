@@ -312,7 +312,7 @@ test(`E05 intentional ${frozenRole} history survives disconnection and home navi
    const endTurn=p.pages[1].locator('[data-board-preview-action="end-turn"]');
    if(await endTurn.isVisible()){await endTurn.click();await converged(p.pages);}
   }
-  await expect(p.pages[actorIndex].getByTestId('active-turn-label')).toContainText(`Guest ${actorIndex+1}`);
+  await expect(p.pages[actorIndex].getByTestId('active-turn-label')).toContainText('· You ·');
   const frozen=p.pages[frozenIndex], actor=p.pages[actorIndex];
   const history=frozen.getByTestId('history-move-item').first();const selected=await history.getAttribute('data-move-id');
   const beforeLiveMove=await actor.getByTestId('history-move-item').count();
