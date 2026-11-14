@@ -37,6 +37,10 @@ export const switchGamePanel = async (page, key) => {
   // An already selected panel needs no navigation click. The controls can be
   // collapsed while the current panel stays visible and ready.
   if (await tab.getAttribute('aria-pressed') !== 'true') {
+    // The expanded incoming-turn flyout intentionally owns the bottom layer.
+    // Use its visible disclosure before reaching the navigation beneath it.
+    const incoming = page.locator('.incoming-move-flyout[data-expanded="true"] [data-action="toggle-incoming-narration"]');
+    if (await incoming.isVisible()) await incoming.click();
     const reveal = page.getByRole('button',{name:'Show game navigation',exact:true});
     // Refresh the idle window even when the bar is about to hide.
     if (await reveal.count()) await reveal.click();

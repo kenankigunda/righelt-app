@@ -25,8 +25,8 @@ for(const completed of [false,true])test(`self-play Undo is direct while its rec
  expect(proof.game.moves.find(move=>move.moveId===target.moveId)?.undoEventSeq).toBe(acceptedSequence);
  await switchGamePanel(page,'history');
  const operation=page.locator(`[data-undo-boundary="accepted"][data-undo-event-seq="${acceptedSequence}"]`);
- const toggle=operation.locator(`[data-group-key="${initial.id}:undo:accepted:${acceptedSequence}"]`);
- await expect(operation).toHaveCount(1);await expect(toggle).toBeVisible();await expect(toggle).toHaveAttribute('aria-expanded','false');
+ const toggle=operation.locator(`[data-group-key^="${initial.id}:undo-run:accepted:"]`);
+ await expect(operation).toHaveCount(1);await expect(toggle).toHaveCount(1);await expect(toggle).toBeVisible();await expect(toggle).toHaveAttribute('aria-expanded','false');
  await page.reload();await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',initial.id);
  await expect(operation).toHaveCount(1);await expect(toggle).toBeVisible();await expect(toggle).toHaveAttribute('aria-expanded','false');
  const restored=await readUndoGame(page,initial.id,true);
