@@ -54,8 +54,8 @@ import {mountHoverTooltips} from './hover-tooltip.js';
 import {captureHomeFocus,refreshHomeFocus,restoreHomeFocus,restoreHomeReadingPosition} from './home-focus.js';
 import {homeCardResult} from './home-card-result.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName,recordedReplayLabel} from './perspective-labels.js';
-import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
-import {renderGameParticipantLabel,renderGameParticipantReferences,renderGameRoleLine} from './game-role-presentation.js';
+import {renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
+import {renderGameSummaryPanel as renderGameSummaryPanelContent} from './game-summary-panel.js';
 import {renderConnectionStatusIcon} from './participant-status.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
 import { createComputerReplay, COMPUTER_REPLAY_TIMING } from './computer-replay.js';
@@ -2134,18 +2134,7 @@ const renderInvitePageSkeleton = () => `
 `;
 
 const renderGameSummaryPanel = (game) => {
-  const rawNote = game.notifications[0] || "Ready";
-  const latestNote = ({ "Player request approved": "Join request approved", "Play as both players enabled": "You’re now playing both sides", "Undo applied": "Move undone" })[rawNote] ?? (/accepted the undo request$/.test(rawNote) ? "Undo request accepted" : /rejected the undo request$/.test(rawNote) ? "Undo request declined. Play can continue." : /rescinded the undo request$/.test(rawNote) ? "Undo request cancelled. Play can continue." : rawNote);
-  return renderSummarySlots({title:renderGameTitle(game,{identityId:transport.getIdentityId()}),
-      started:`Started ${escapeHtml(formatClientDateTime(game.createdAt))}`,
-      role:renderGameRoleLine(game),
-      turn:`Active turn: ${
-          game.currentTurn
-            ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${renderGameParticipantLabel(game.currentTurn.playerSeat,game,{identityId:transport.getIdentityId()})} · ${escapeHtml(
-                String(game.currentTurn.moveIndexes.length),
-              )} move(s)`
-            : "n/a"
-        }`,latest:`Latest: ${renderGameParticipantReferences(latestNote,game,{identityId:transport.getIdentityId()})}`});
+  return renderGameSummaryPanelContent(game,{identityId:transport.getIdentityId(),formatDateTime:formatClientDateTime});
 };
 
 const renderJoinInvitePanel = (game, inviteLink) => {
