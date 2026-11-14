@@ -15,6 +15,7 @@ import {parseRouteFromHash,buildHashForRoute,buildGameHash,FLYOUT_KEYS} from '..
 import {createInitialState,resolveToStability,listLegalActions} from '../generated/packages/game-engine/src/index.js';
 import {SYNC_TIMING} from '../generated/packages/shared-types/src/sync-protocol.js';
 import {classifyWebTestFile} from './test-layers.mjs';
+import {getEligibleRematchResult} from '../shell/game-result.js';
 
 // Execute the actual app routines with controlled browser boundaries, following
 // game-render-hydration.integration.test.mjs. No duplicate recovery algorithm.
@@ -158,7 +159,7 @@ async function fixture(t,{journalAdapter,seed=true,authEnabled=true}={}) {
     issueDiagnostics:{capture:()=> 'fixture-incident',resolve(){}},
     storyDialog:{refresh:()=>{refreshes++;},open(){},close(){}},
     appEl:{querySelector:()=>({click:()=>{clicks++;}})},CSS:{escape:value=>value},
-    getGameResult:()=>null,rematchDialog:{open(){},close(){}},startGameEntryRouteTransition(){},
+    getEligibleRematchResult,rematchDialog:{open(){},close(){}},startGameEntryRouteTransition(){},
     buildGameHash,getCurrentFlyoutState:()=>({}),openFriendInvite(){},
     // Controlled layout/presentation boundaries; routing strings and ownership
     // decisions use production routes, navigateTo, event handler and hydration.

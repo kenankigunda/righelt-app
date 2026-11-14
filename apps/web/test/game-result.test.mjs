@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getGameResult, createResultTransitions, createRematchDialog, RESULT_HEADING_CONTRACT, REMATCH_CHOICES_CONTRACT } from "../shell/game-result.js";
+import { getGameResult, getEligibleRematchResult, renderHistoryResult, createResultTransitions, createRematchDialog, RESULT_HEADING_CONTRACT, REMATCH_CHOICES_CONTRACT } from "../shell/game-result.js";
 const game = (status = "ongoing") => ({ id: "g", player1: { identityId: "red" }, player2: { identityId: "blue" }, board: { state: { outcome: { status, reason: "p2_commander_unsupplied" } } } });
 test("results use authoritative ownership and selected self-play start for the rematch", () => {
   assert.equal(RESULT_HEADING_CONTRACT, 'named-perspective-v3');
@@ -25,6 +25,19 @@ test("result automatic entry happens once on an observed live finish, never hydr
     assert.equal(tracker.observe(game("draw"), { [option]: true }), false);
     assert.equal(tracker.observe(game("draw")), false);
   }
+});
+test("History rematch eligibility follows saved human seats, not result visibility or temporary control", () => {
+  const completed=game("p1_win");
+  assert.equal(getEligibleRematchResult(completed,"red").side,"p1");
+  assert.equal(getEligibleRematchResult(completed,"blue").side,"p2");
+  for(const identity of ["viewer","",null,undefined])assert.equal(getEligibleRematchResult(completed,identity),null);
+  const self={...completed,selfPlayMode:true,selfPlayStartSide:"p2",player2:{identityId:"red"}};
+  assert.equal(getEligibleRematchResult(self,"red").controlsBothSides,true);
+  assert.equal(getEligibleRematchResult(self,"red").rematchSide,"p1");
+  const watched={...completed,player1:{identityId:"owner",computerProfile:"babs"},player2:{identityId:"owner",computerProfile:"tau"},computer:{manual:true,seats:{p1:"babs",p2:"tau"}}};
+  assert.equal(getEligibleRematchResult(watched,"owner"),null);
+  assert.doesNotMatch(renderHistoryResult(completed,"viewer",{includeRematch:true}),/Play again|data-action="rematch"/);
+  assert.match(renderHistoryResult(completed,"red",{includeRematch:true}),/data-action="rematch" data-game-id="g"/);
 });
 
 test('actual defeat causes remain distinct and legacy push results are interpreted without rewriting history',()=>{

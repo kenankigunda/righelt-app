@@ -41,17 +41,28 @@ export const getGameResult = (game, identityId) => {
   return { title, titleParts, side, winner, tone, controlsBothSides: both, reason: reasonParts.map(part=>part.text).join(''), reasonParts, opponent: game.computer?.seats?.p1 || game.computer?.seats?.p2 || game.player1?.computerProfile || game.player2?.computerProfile || (game.selfPlayMode ? "self" : "friend"), rematchSide: side === "p1" ? "p2" : "p1" };
 };
 
+// A terminal result is visible to spectators too. Starting another game is a
+// participant action, so retain only results backed by a saved human seat.
+// getGameResult derives `side` through owningPerspective, which deliberately
+// excludes temporary computer control and stale/display-name-only matches.
+export const getEligibleRematchResult = (game, identityId) => {
+  const result = getGameResult(game, identityId);
+  return result?.side ? result : null;
+};
+
 const escapeResult = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // Structured owner references avoid guessing identities from duplicate names or user text.
 export const renderResultText = (result,field) => (result?.[`${field}Parts`] ?? [{text:result?.[field] ?? ''}]).map(part=>
   part.side ? `<span class="player-tone-${part.side}">${part.colorNamed?'':`<span class="sr-only">${sideColorName(part.side)}: </span>`}<bdi dir="auto">${escapeResult(part.text)}</bdi></span>` : escapeResult(part.text)
 ).join('');
-export const renderHistoryResult = (game,identityId) => {
+export const renderHistoryResult = (game,identityId,{includeRematch=false}={}) => {
   const result=getGameResult(game,identityId);
   if(!result)return '';
   const color=result.winner?sideColorName(result.winner):null;
   const accessible=result.title + (color && !result.title.endsWith(` as ${color}`) ? `, ${color}` : '');
-  return `<p class="history-result-summary" data-testid="history-result-summary" role="status"><strong class="player-tone-neutral" aria-label="${escapeResult(accessible)}">${renderResultText(result,'title')}</strong></p>`;
+  const summary=`<p class="history-result-summary" data-testid="history-result-summary" role="status"><strong class="player-tone-neutral" aria-label="${escapeResult(accessible)}">${renderResultText(result,'title')}</strong></p>`;
+  if(!includeRematch||!result.side)return summary;
+  return `<div class="history-result-action-row">${summary}<button class="secondary" data-action="rematch" data-game-id="${escapeResult(game.id)}">${icon('rematch')}Play again</button></div>`;
 };
 
 // Only an observed live transition opens automatically. Initial hydration,
@@ -110,9 +121,9 @@ export const createRematchDialog = ({ createModal, document = globalThis.documen
       startFailure = "Could not start. Try again."; busy = false; refresh();
     }
   });
-  return { close: modal.close, refresh, isOpen: () => modal.element.open, opponent, open(result, trigger) {
+  return { close: modal.close, refresh, isOpen: () => modal.element.open, opponent, open(result, trigger, findTrigger=null) {
     session++; busy = false; startFailure = null;
-    modal.open(`<h2 id="${labelId}">${title}</h2><fieldset class="rematch-opponents"><legend>Opponent</legend><div class="rematch-opponent-cards">${[["babs","Babs"],["tau","Tau"],["horus","Horus"],["friend","Friend"],["self","Play both sides"]].map(([id,label]) => `<label class="rematch-opponent-card"><input type="radio" name="rematch-opponent" value="${id}" ${result.opponent === id ? "checked autofocus" : ""}><span class="rematch-opponent-mark" aria-hidden="true">${id === 'self' ? icon('board') : `<img src="${new URL(`../assets/opponents/${id}-portrait.webp`,import.meta.url).href}" alt="" width="36" height="36">`}</span><span>${label}</span></label>`).join("")}</div></fieldset><fieldset><legend>Your side</legend>${[["p1","Red"],["p2","Blue"]].map(([id,label]) => `<label><input type="radio" name="rematch-side" value="${id}" ${result.rematchSide === id ? "checked" : ""}>${label}</label>`).join("")}</fieldset><p role="status"></p><div class="story-modal-actions"><button data-rematch-start data-loading-state="idle" data-loading-message="Starting your game is taking a little longer than usual.">${icon('play')}Start game</button><button class="secondary" data-rematch-retry hidden>${icon('rematch')}Retry</button><button class="secondary" data-modal-close>${icon('close')}Cancel</button></div>`, trigger);
+    modal.open(`<h2 id="${labelId}">${title}</h2><fieldset class="rematch-opponents"><legend>Opponent</legend><div class="rematch-opponent-cards">${[["babs","Babs"],["tau","Tau"],["horus","Horus"],["friend","Friend"],["self","Play both sides"]].map(([id,label]) => `<label class="rematch-opponent-card"><input type="radio" name="rematch-opponent" value="${id}" ${result.opponent === id ? "checked autofocus" : ""}><span class="rematch-opponent-mark" aria-hidden="true">${id === 'self' ? icon('board') : `<img src="${new URL(`../assets/opponents/${id}-portrait.webp`,import.meta.url).href}" alt="" width="36" height="36">`}</span><span>${label}</span></label>`).join("")}</div></fieldset><fieldset><legend>Your side</legend>${[["p1","Red"],["p2","Blue"]].map(([id,label]) => `<label><input type="radio" name="rematch-side" value="${id}" ${result.rematchSide === id ? "checked" : ""}>${label}</label>`).join("")}</fieldset><p role="status"></p><div class="story-modal-actions"><button data-rematch-start data-loading-state="idle" data-loading-message="Starting your game is taking a little longer than usual.">${icon('play')}Start game</button><button class="secondary" data-rematch-retry hidden>${icon('rematch')}Retry</button><button class="secondary" data-modal-close>${icon('close')}Cancel</button></div>`, trigger, findTrigger);
     modal.element.dataset.actionAffiliation = result.rematchSide === "p2" ? "blue" : "red";
     onOpponentChange(opponent()); refresh();
   } };
