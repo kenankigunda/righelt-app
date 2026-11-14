@@ -142,6 +142,13 @@ For explicitly disposable local development fixtures, prefer a scoped reset over
   - legacy test artifacts, if the context is historical cleanup work
 - When adding new code, docs, tests, or backlog tasks, use `catalog scenario` or just `scenario` for `catalog.json` entries and use `legacy fixture artifact` if you must mention the old data at all.
 
+## 5.3) Player Naming in User-Facing Copy
+
+- Apply this standing rule automatically to all future Righelt user-facing copy, not only T-145 result narration.
+- Use this hierarchy: **You > PlayerName > Guest (one guest) > Guest 1 / Guest 2 (multiple guests)**.
+- Refer to the viewer as "You" (or "you" within a sentence). Otherwise use the player's displayed name, including named guests and computer players. Use the Guest fallback only when no player name is available.
+- In self-play, keep viewer-relative naming and identify the side with "as Red" or "as Blue" where needed. Example: "You won as Red in 12 moves after you retreated as Blue."
+
 ## 6) Communication Expectations
 
 - State assumptions explicitly when inputs are incomplete.
