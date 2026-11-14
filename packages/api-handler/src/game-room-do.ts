@@ -37,6 +37,7 @@ import {
   applyScenarioToGame,
   applyImportedHistoryToGame,
   applyAcceptedAutomaticEnding,
+  applyAcceptedRestorationAutomaticEnding,
   applyAuthorizedPendingAutomaticEnding,
   applyServerActionWithExpectedState,
   applyServerMove,
@@ -62,6 +63,7 @@ import {
   getClaimableDualSeat,
   resolveLaunchParticipantCopyMode,
   reconcileGameToScenarioResultingState,
+  resolveServerMoveAction,
   getSeatIdentity,
   getSeatForSide,
   nextMoveId,
@@ -808,10 +810,14 @@ export class GameRoomDO {
           this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, targetMoveId, error: reverted.error });
           return json({ ok: false, error: reverted.error }, 409);
         }
+        const operationId = this.sharedCommand?.clientCommandId ?? requestedRequestId ?? nextMoveId();
+        applyAcceptedRestorationAutomaticEnding(game, { clientCommandId: operationId,
+          eventSeq: this.eventSeq + 1, gameplayRevision: game.gameplayRevision + 1 });
         this.logDiagnostic("info", "live_server_revert_auto_approved", { identityId, targetMoveId }, true);
         await this.commit({
           type: "event_appended",
           reason: "moves_reverted",
+          clientCommandId: operationId,
           game,
         }, { targetDecisionId: targetMoveId, requesterIdentityId: identityId });
         return json({ ok: true, autoApproved: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
@@ -871,11 +877,15 @@ export class GameRoomDO {
         this.logDiagnostic("warn", "live_server_revert_approve_rejected", { identityId, requestId, error: reverted.error });
         return json({ ok: false, error: reverted.error }, 409);
       }
+      const operationId = this.sharedCommand?.clientCommandId ?? requestId;
+      applyAcceptedRestorationAutomaticEnding(game, { clientCommandId: operationId,
+        eventSeq: this.eventSeq + 1, gameplayRevision: game.gameplayRevision + 1 });
       addNotification(game, `Player ${identityId} accepted the undo request`);
       this.logDiagnostic("info", "live_server_revert_approved", { identityId, requestId }, true);
       await this.commit({
         type: "event_appended",
         reason: "moves_reverted",
+        clientCommandId: operationId,
         game,
       }, { targetDecisionId: pendingRevertRequest.targetMoveId, requesterIdentityId: pendingRevertRequest.requesterIdentityId });
       return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
@@ -1459,24 +1469,32 @@ export class GameRoomDO {
     const decisiveTurnIndex = getActiveTurn(game)?.index ?? game.board.state.turnIndex;
     const decisiveActorSide = ownerSeat === "Player 1" ? "P1" as const : "P2" as const;
     const turnOwnerSide = getTurnOwnerSideForState(game.board.state);
-    const requestedAction = command.kind === "end_turn" ? { type: "end_turn" as const } : asAction(payload.action);
+    const requestedAction = command.kind === "end_turn" ? { type: "end_turn" as const }
+      : command.kind === "move" ? resolveServerMoveAction(game) : asAction(payload.action);
+    const effectBefore = clone(game.board.state);
     const commit = { clientCommandId: command.clientCommandId, eventSeq: this.eventSeq + 1,
       gameplayRevision: game.gameplayRevision + 1, actorSide: decisiveActorSide, turnOwnerSide, turnIndex: decisiveTurnIndex };
     let terminalOutcome = requestedAction ? applyAuthorizedPendingAutomaticEnding(
-      game, requestedAction, commit, command.kind === "action" ? asGameState(command.expectedState) : null,
+      game, requestedAction, commit, asGameState(command.expectedState),
     ) : null;
     let result;
     if (terminalOutcome) result = { ok: true as const, state: clone(game.board.state), removedPieces: [], destroyedPieces: [] };
-    else if (command.kind === "end_turn") result = endServerTurn(game, command.clientCommandId);
+    else if (command.kind === "end_turn") {
+      const ended = endServerTurn(game, command.clientCommandId);
+      result = ended;
+    }
     else if (command.kind === "move") result = applyServerMove(game, typeof payload.notation === "string" ? payload.notation : undefined, command.clientCommandId);
     else {
       const action = asAction(payload.action);
       if (!action) return reject("invalid_action");
       result = applyServerActionWithExpectedState(game, action, asGameState(command.expectedState), typeof payload.notation === "string" ? payload.notation : undefined, command.clientCommandId);
     }
+    if (result.ok && requestedAction?.type === "end_turn" && !("move" in result)) {
+      result = { ...result, terminalEffect: { version: 1 as const, kind: "end-turn" as const, before: effectBefore } };
+    }
     if (!result.ok) return reject(result.error);
     const decisiveAction = ("move" in result ? result.move?.action : undefined)
-      ?? (command.kind === "end_turn" ? { type: "end_turn" as const } : asAction(payload.action));
+      ?? requestedAction;
     if (!decisiveAction) return reject("invalid_action");
     terminalOutcome ??= applyAcceptedAutomaticEnding(game, decisiveAction, result as Parameters<typeof applyAcceptedAutomaticEnding>[2], commit);
     if (payload.computer && "move" in result && result.move && asAction(payload.action)?.type !== "end_turn") result.move.computerProof = clone(payload.computer as ComputerProof);

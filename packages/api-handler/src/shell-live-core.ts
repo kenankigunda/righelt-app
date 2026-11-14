@@ -102,6 +102,11 @@ export type TerminalOutcomeRecord = {
   board: GameState;
   removals: DestroyedPieceRecord[];
   result: { status: "p1_win" | "p2_win" | "draw"; reason?: string };
+  effect?: {
+    version: 1;
+    kind: "end-turn" | "pending-pass" | "restoration";
+    before: GameState;
+  };
   cause:
     | { kind: "commander-settlement"; reason: string }
     | { kind: "relevant-continuation-finality"; endpointCount: number; optionalEndpointCount: number }
@@ -294,6 +299,38 @@ export const asGameState = (value: unknown): GameState | null =>
   value && typeof value === "object" ? (value as GameState) : null;
 export const asAction = (value: unknown): Action | null =>
   value && typeof value === "object" && typeof (value as Action).type === "string" ? (value as Action) : null;
+const hasExactKeys = (value: Record<string, unknown>, keys: string[]) => {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+};
+const asActionCoordinate = (value: unknown) => {
+  if (!value || typeof value !== "object") return null;
+  const coordinate = value as Record<string, unknown>;
+  if (!hasExactKeys(coordinate, ["row", "col"]) || !Number.isInteger(coordinate.row) || !Number.isInteger(coordinate.col)
+    || Number(coordinate.row) < 0 || Number(coordinate.row) >= BOARD_SIZE
+    || Number(coordinate.col) < 0 || Number(coordinate.col) >= BOARD_SIZE) return null;
+  return { row: Number(coordinate.row), col: Number(coordinate.col) };
+};
+/** Strict persisted-action decoder. Network compatibility continues to use
+ * asAction; durable history and terminal provenance never accept open shapes. */
+export const asPersistedAction = (value: unknown): Action | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.type === "pass" || candidate.type === "end_turn") {
+    return hasExactKeys(candidate, ["type"]) ? { type: candidate.type } : null;
+  }
+  if (!["move", "project", "rush", "push", "follow", "retreat"].includes(String(candidate.type))) return null;
+  const keys = candidate.type === "push" && candidate.targetId !== undefined
+    ? ["type", "actorId", "targetId", "from", "to"]
+    : ["type", "actorId", "from", "to"];
+  const from = asActionCoordinate(candidate.from), to = asActionCoordinate(candidate.to);
+  if (!hasExactKeys(candidate, keys) || typeof candidate.actorId !== "string" || !candidate.actorId || !from || !to
+    || (candidate.type === "push" && candidate.targetId !== undefined
+      && (typeof candidate.targetId !== "string" || !candidate.targetId))) return null;
+  return { type: candidate.type as Action["type"], actorId: candidate.actorId, from, to,
+    ...(candidate.type === "push" && candidate.targetId !== undefined ? { targetId: String(candidate.targetId) } : {}) };
+};
 const asCoordinate = (value: unknown): { row: number; col: number } | null => {
   if (!value || typeof value !== "object") {
     return null;
@@ -1279,6 +1316,7 @@ type AcceptedGameplayResult = {
   destroyedPieces?: DestroyedPieceRecord[];
   removedPieces?: RemovedPieceNotice[];
   turnSettled?: boolean;
+  terminalEffect?: TerminalOutcomeRecord["effect"];
 };
 
 export const activeActionEvidence = (game: Pick<LiveGame, "moves" | "importedHistory">) => {
@@ -1295,7 +1333,7 @@ export const activeActionEvidence = (game: Pick<LiveGame, "moves" | "importedHis
   // A full retained window is ambiguous: older local decisions may already
   // have been archived away, and the archive does not currently persist a
   // canonical active-action total. Never manufacture completeness from it.
-  const localComplete = localIds.size === local.length && game.moves.length < MAX_HISTORY;
+  const localComplete = localIds.size === local.length && (lineage !== undefined || local.length < MAX_HISTORY);
   const importedComplete = importedMetadataMatches && (lineage?.complete ?? true);
   return {
     activeActionCount: origins.size + localIds.size,
@@ -1324,6 +1362,7 @@ const freezeTerminalOutcome = (
     board: clone(game.board.state),
     removals: clone([...(result.destroyedPieces ?? [])]),
     result: clone(game.board.state.outcome as TerminalOutcomeRecord["result"]),
+    ...(result.terminalEffect ? { effect: clone(result.terminalEffect) } : {}),
     cause,
     commit: { clientCommandId: commit.clientCommandId, eventSeq: commit.eventSeq, gameplayRevision: commit.gameplayRevision },
     lineage: actionEvidence.lineage,
@@ -1352,6 +1391,7 @@ export const applyAuthorizedPendingAutomaticEnding = (
     kind: "ordinary-incoming-live-turn", incomingSide: stable.sideToMove, turnIndex: stable.turnIndex,
   });
   if (incoming.kind !== "incoming-loss" || incoming.incomingSide !== commit.actorSide) return null;
+  const effectBefore = clone(stable);
   game.board.state = stable;
   game.board.state.outcome = { status: incoming.winner === "P1" ? "p1_win" : "p2_win",
     reason: `${incoming.incomingSide.toLowerCase()}_incoming_turn_immobility` };
@@ -1359,7 +1399,103 @@ export const applyAuthorizedPendingAutomaticEnding = (
   const activeTurn = getActiveTurn(game);
   if (activeTurn) { activeTurn.status = "complete"; activeTurn.endedAt = endedAt; }
   game.updatedAt = endedAt;
-  return freezeTerminalOutcome(game, action, {}, { kind: "incoming-turn-immobility", incomingSide: incoming.incomingSide }, commit);
+  return freezeTerminalOutcome(game, action, { terminalEffect: { version: 1, kind: "pending-pass", before: effectBefore } },
+    { kind: "incoming-turn-immobility", incomingSide: incoming.incomingSide }, commit);
+};
+
+/** Accepted Undo is a current-rules mutation. Evaluate its restored frame in
+ * the same fenced transaction, without fabricating or appending a move. */
+export const applyAcceptedRestorationAutomaticEnding = (
+  game: LiveGame,
+  operation: { clientCommandId: string; eventSeq: number; gameplayRevision: number },
+): TerminalOutcomeRecord | null => {
+  const turnIndex = getActiveTurn(game)?.index ?? game.board.state.turnIndex;
+  const pending = applyAuthorizedPendingAutomaticEnding(game, { type: "pass" }, {
+    ...operation, actorSide: game.board.state.sideToMove, turnIndex,
+  }, clone(game.board.state));
+  if (pending) return pending;
+  if (game.terminalOutcome || game.board.state.outcome.status !== "ongoing") return null;
+  const before = clone(game.board.state), turnOwnerSide = getTurnOwnerSideForState(before);
+  const removals: RemovalEvent[] = [];
+  const stable = resolveToStability(before, { artifactMode: "full", onRemoval: event => removals.push(clone(event)) });
+  let cause: TerminalOutcomeRecord["cause"] | null = null;
+  if (isTerminalOutcome(stable.outcome.status)) {
+    game.board.state = stable;
+    cause = { kind: "commander-settlement", reason: stable.outcome.reason ?? "commander_outcome" };
+  } else if (stable.continuation) {
+    const proof = proveRelevantContinuation(stable, turnOwnerSide);
+    if (proof.kind !== "proven-terminal") return null;
+    const settlement = probeTerminalSettlement(stable);
+    if (settlement.kind !== "settled" || !settlement.persistable
+      || settlement.frame.occupancy.outcome.status !== proof.candidateOutcome.status) return null;
+    game.board.state = clone(settlement.frame.occupancy);
+    removals.push(...clone(settlement.removals));
+    cause = { kind: "relevant-continuation-finality", endpointCount: proof.endpointCount,
+      optionalEndpointCount: proof.optionalEndpointCount };
+  }
+  if (!cause) return null;
+  const endedAt = now(), activeTurn = getActiveTurn(game);
+  if (activeTurn) { activeTurn.status = "complete"; activeTurn.endedAt = endedAt; }
+  game.updatedAt = endedAt;
+  const destroyedPieces = destructionRecords(removals, operation.clientCommandId);
+  return freezeTerminalOutcome(game, { type: "end_turn" }, {
+    destroyedPieces, terminalEffect: { version: 1, kind: "restoration", before },
+  }, cause, { ...operation, actorSide: turnOwnerSide, turnIndex });
+};
+
+export const terminalEffectMatches = (record: TerminalOutcomeRecord, turns: TurnEntry[]): boolean => {
+  if (record.decisive.decisionId !== null) return record.effect === undefined;
+  const effect = record.effect;
+  if (!effect || effect.version !== 1) return false;
+  try {
+    if (effect.kind === "pending-pass") {
+      if (record.decisive.action.type !== "pass" || record.removals.length !== 0) return false;
+      const stable = resolveToStability(clone(effect.before), { artifactMode: "full" });
+      if (stable.turnIndex !== record.decisive.turnIndex || stable.sideToMove !== record.decisive.actorSide) return false;
+      const proof = probeIncomingTurnImmobility(stable, {
+        kind: "ordinary-incoming-live-turn", incomingSide: stable.sideToMove, turnIndex: stable.turnIndex,
+      });
+      if (proof.kind !== "incoming-loss" || proof.incomingSide !== record.decisive.actorSide) return false;
+      stable.outcome = { status: proof.winner === "P1" ? "p1_win" : "p2_win",
+        reason: `${proof.incomingSide.toLowerCase()}_incoming_turn_immobility` };
+      return deterministicStateHash(stable) === deterministicStateHash(record.board);
+    }
+    if (effect.kind === "restoration") {
+      if (record.decisive.action.type !== "end_turn") return false;
+      const removals: RemovalEvent[] = [];
+      const stable = resolveToStability(clone(effect.before), { artifactMode: "full", onRemoval: event => removals.push(clone(event)) });
+      if (stable.turnIndex !== record.decisive.turnIndex || getTurnOwnerSideForState(stable) !== record.decisive.actorSide) return false;
+      if (isTerminalOutcome(stable.outcome.status)) {
+        return record.cause.kind === "commander-settlement"
+          && deterministicStateHash(stable) === deterministicStateHash(record.board)
+          && JSON.stringify(destructionRecords(removals, record.decisive.clientCommandId)) === JSON.stringify(record.removals);
+      }
+      if (!stable.continuation) return false;
+      const owner = getTurnOwnerSideForState(stable), proof = proveRelevantContinuation(stable, owner);
+      const settlement = probeTerminalSettlement(stable);
+      if (record.cause.kind !== "relevant-continuation-finality" || proof.kind !== "proven-terminal"
+        || settlement.kind !== "settled" || !settlement.persistable) return false;
+      removals.push(...clone(settlement.removals));
+      return proof.endpointCount === record.cause.endpointCount
+        && proof.optionalEndpointCount === record.cause.optionalEndpointCount
+        && deterministicStateHash(settlement.frame.occupancy) === deterministicStateHash(record.board)
+        && JSON.stringify(destructionRecords(removals, record.decisive.clientCommandId)) === JSON.stringify(record.removals);
+    }
+    if (effect.kind !== "end-turn" || record.decisive.action.type !== "end_turn") return false;
+    if (effect.before.turnIndex !== record.decisive.turnIndex
+      || getTurnOwnerSideForState(effect.before) !== record.decisive.actorSide) return false;
+    const turn = turns.find(candidate => candidate.index === record.decisive.turnIndex);
+    if (!turn?.endedAt) return false;
+    const removals: RemovalEvent[] = [];
+    const applied = applyAction(clone(effect.before), { type: "end_turn" }, { onRemoval: event => removals.push(clone(event)) });
+    const resolved = finalizeResolvedTurn({ state: applied.state,
+      activeTurn: { ...clone(turn), status: "active", endedAt: null }, endedAt: turn.endedAt,
+      resolveToStability, onRemoval: event => removals.push(clone(event)) });
+    return deterministicStateHash(resolved.nextState) === deterministicStateHash(record.board)
+      && JSON.stringify(destructionRecords(removals, record.decisive.clientCommandId)) === JSON.stringify(record.removals);
+  } catch {
+    return false;
+  }
 };
 
 /**
@@ -1434,6 +1570,9 @@ const pickLegalAction = (state: GameState): Action | null => {
   }
   return legal[0] as Action;
 };
+
+export const resolveServerMoveAction = (game: LiveGame): Action | null =>
+  pickLegalAction(resolveToStability(game.board.state, { artifactMode: "full" }));
 
 export const applyServerAction = (game: LiveGame, action: Action, notation?: string, clientCommandId?: string | null) => {
   return applyServerActionWithExpectedState(game, action, null, notation, clientCommandId);
@@ -1549,8 +1688,7 @@ const applyServerActionInternal = (
 };
 
 export const applyServerMove = (game: LiveGame, notation?: string, clientCommandId?: string | null) => {
-  const stable = resolveToStability(game.board.state, { artifactMode: "full" });
-  const action = pickLegalAction(stable);
+  const action = resolveServerMoveAction(game);
   if (!action) {
     return { ok: false as const, error: "no_legal_actions" };
   }

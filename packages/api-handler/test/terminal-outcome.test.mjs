@@ -108,6 +108,84 @@ for (const mode of ['existing', 'branch', 'undo']) {
   });
 }
 
+test('legacy move route resolves its real sole-Pass intent before automatic ending', async () => {
+  const h = await harness(game => installSolePassFixture(game));
+  const before = structuredClone(h.DB.getGameState('terminal-game'));
+  const sent = await h.command({ kind: 'move', payload: {} });
+  const accepted = await h.call('moves', sent);
+  assert.equal(accepted.commandOutcomes[0].outcome, 'accepted');
+  const game = h.DB.getGameState('terminal-game');
+  assert.equal(game.board.state.outcome.status, 'p1_win');
+  assert.equal(game.moves.length, before.moves.length);
+  assert.deepEqual(game.terminalOutcome.decisive.action, { type: 'pass' });
+  assert.equal(game.terminalOutcome.decisive.decisionId, null);
+  assert.equal(game.terminalOutcome.commit.clientCommandId, sent.clientCommandId);
+});
+
+const installUndoEndingFixture = (game, consent = false) => {
+  const state = packedState('P2', 4);
+  const target = { moveId: 'undo-ending-target', index: 0, turnIndex: 4, turnMoveIndex: 0, displayMoveNumber: 1,
+    actorSide: 'P2', at: game.createdAt, notation: 'Pass', action: { type: 'pass' }, clientCommandId: 'v2:old',
+    selectionSnapshot: structuredClone(state), snapshot: structuredClone(state), destroyedPieces: [] };
+  game.board.state = structuredClone(state);
+  game.moves = [target];
+  game.turns = [{ index: 4, startedAt: game.createdAt, endedAt: null,
+    playerSeat: 'Player 2', status: 'active', moveIndexes: [0], lastMoveAt: game.createdAt }];
+  if (consent) {
+    game.selfPlayMode = false;
+    game.player2 = { ...structuredClone(game.player1), identityId: 'bob' };
+  }
+  return game;
+};
+
+test('direct accepted Undo evaluates and persists the restored current-rules ending atomically', async () => {
+  const h = await harness(game => installUndoEndingFixture(game));
+  const accepted = await h.call('revert-request', { targetMoveId: 'undo-ending-target', requestId: 'direct-undo' });
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.autoApproved, true);
+  const game = h.DB.getGameState('terminal-game');
+  assert.equal(game.moves[0].undone, true);
+  assert.equal(game.board.state.outcome.status, 'p1_win');
+  assert.deepEqual(game.terminalOutcome.decisive.action, { type: 'pass' });
+  assert.equal(game.terminalOutcome.decisive.decisionId, null);
+  assert.equal(game.terminalOutcome.commit.clientCommandId, 'direct-undo');
+  assert.equal(game.terminalOutcome.commit.gameplayRevision, game.gameplayRevision);
+});
+
+test('consented accepted Undo applies current ending rules only on approval', async () => {
+  const h = await harness(game => installUndoEndingFixture(game, true));
+  const requested = await h.call('revert-request', { targetMoveId: 'undo-ending-target', requestId: 'consented-undo' });
+  assert.equal(requested.pendingApproval, true);
+  assert.equal(h.DB.getGameState('terminal-game').terminalOutcome, undefined);
+  const approved = await h.call('revert-approve', { identityId: 'bob', requestId: 'consented-undo' });
+  assert.equal(approved.ok, true);
+  const game = h.DB.getGameState('terminal-game');
+  assert.equal(game.moves[0].undone, true);
+  assert.equal(game.board.state.outcome.status, 'p1_win');
+  assert.equal(game.terminalOutcome.commit.clientCommandId, 'consented-undo');
+  assert.equal(game.terminalOutcome.commit.gameplayRevision, game.gameplayRevision);
+});
+
+test('shared accepted Undo rolls back atomically and duplicate delivery reuses one terminal record', async () => {
+  const makeCommand = async h => h.command({ clientCommandId: 'v2:undo-ending', kind: 'shared',
+    payload: { operation: 'revert-request', values: { targetMoveId: 'undo-ending-target', requestId: 'undo-ending' } } });
+  const probe = await harness(game => installUndoEndingFixture(game));
+  await probe.call('shared', await makeCommand(probe));
+  const h = await harness(game => installUndoEndingFixture(game)), sent = await makeCommand(h);
+  const before = structuredClone(h.DB.getGameState('terminal-game'));
+  h.DB.failNextBatchAt(probe.DB.getLastBatchSize() - 1);
+  await assert.rejects(h.call('shared', sent), /Injected/);
+  assert.deepEqual(h.DB.getGameState('terminal-game'), before);
+  assert.equal(h.DB.getReceipt('terminal-game', sent.clientCommandId), null);
+  h.restart();
+  const accepted = await h.call('shared', sent);
+  const terminal = structuredClone(h.DB.getGameState('terminal-game').terminalOutcome);
+  const duplicate = await h.call('shared', sent);
+  assert.equal(accepted.commandOutcomes[0].outcome, 'accepted');
+  assert.equal(duplicate.duplicate, true);
+  assert.deepEqual(h.DB.getGameState('terminal-game').terminalOutcome, terminal);
+});
+
 test('pending sole-Pass terminalization rolls back its board, provenance and receipt as one fenced operation', async () => {
   const probe = await harness(game => installSolePassFixture(game));
   await probe.call('apply', await probe.command({ payload: { action: { type: 'pass' } } }));
@@ -173,6 +251,7 @@ test('accepted decisive action atomically persists strict terminal provenance an
   assert.deepEqual(record.commit, { clientCommandId: sent.clientCommandId,
     eventSeq: accepted.eventSeq, gameplayRevision: accepted.gameplayRevision });
   assert.equal(record.cause.kind, 'commander-settlement');
+  assert.equal(record.effect.kind, 'end-turn');
   assert.deepEqual(record.removals.map(entry => entry.pieceId), ['U1-3']);
   assert.equal(record.removals.some(entry => entry.pieceId === 'C1'), false,
     'an unsupplied commander remains on the terminal board and is not fabricated as a removal');
@@ -294,6 +373,19 @@ test('a saturated retained local window never claims a complete total without an
   assert.equal(evidence.activeActionCountComplete, false);
 });
 
+test('a complete 203-move imported lineage remains count-complete because it is not prunable local history', () => {
+  const state = makeState({ pieces: [commander('C1', 'P1', 0, 9), commander('C2', 'P2', 9, 0)] });
+  const moves = Array.from({ length: 203 }, (_, index) => ({ moveId: `imported-${index}`, index,
+    turnIndex: index, turnMoveIndex: 0, displayMoveNumber: index + 1, actorSide: index % 2 ? 'P2' : 'P1',
+    at: 'now', notation: 'Pass', action: { type: 'pass' }, selectionSnapshot: state, snapshot: state, destroyedPieces: [],
+    importedFrom: { gameId: 'source', decisionId: `decision-${index}`, gameplayRevision: 203 } }));
+  const evidence = activeActionEvidence({ moves, importedHistory: { version: 1, complete: true, moveCount: 203,
+    sources: [{ gameId: 'source', gameplayRevision: 203, moveCount: 203 }] } });
+  assert.equal(evidence.activeActionCount, 203);
+  assert.equal(evidence.lineage.complete, true);
+  assert.equal(evidence.activeActionCountComplete, true);
+});
+
 test('accepted-action integration applies proven continuation finality but not an optional defender-only escape', () => {
   const pieces = [commander('C1', 'P1', 0, 9), commander('C2', 'P2', 3, 6),
     unit('V0', 'P1', 0, 4), unit('V2', 'P1', 2, 4), unit('H1', 'P1', 5, 4),
@@ -369,6 +461,8 @@ test('persisted terminal provenance binds every frozen field family to authorita
   const mutations = [
     ['board', game => { game.terminalOutcome.board.turnIndex += 1; }],
     ['action', game => { game.terminalOutcome.decisive.action = { type: 'end_turn' }; }],
+    ['unknown action', game => { game.terminalOutcome.decisive.action = { type: 'teleport' }; }],
+    ['malformed action', game => { game.terminalOutcome.decisive.action = { type: 'move', actorId: 'C1' }; }],
     ['decision', game => { game.terminalOutcome.decisive.decisionId = 'missing-decision'; }],
     ['decisive command', game => { game.terminalOutcome.decisive.clientCommandId = 'v2:other'; }],
     ['actor', game => { game.terminalOutcome.decisive.actorSide = 'P2'; }],
@@ -390,6 +484,51 @@ test('persisted terminal provenance binds every frozen field family to authorita
     const loaded = await loadGameProjection(env, game.id);
     assert.equal(loaded.kind, 'invalid', family);
     assert.ok(loaded.mismatches.some(entry => entry.field === 'terminalOutcome'));
+  }
+});
+
+test('null-decision End turn and pending Pass records reject corrupted effects and removals', async () => {
+  const cases = [
+    { make: () => harness(), route: 'apply', command: h => h.command(),
+      mutate: game => { game.terminalOutcome.effect.before.turnIndex += 1; } },
+    { make: () => harness(), route: 'apply', command: h => h.command(),
+      mutate: game => { game.terminalOutcome.removals.push({ pieceId: 'fabricated', ownerSeat: 'p1', kind: 'unit',
+        position: { row: 1, col: 1 }, supplied: false, commanded: false, reason: 'loss_of_supply' }); } },
+    { make: () => harness(game => installSolePassFixture(game)), route: 'apply',
+      command: h => h.command({ payload: { action: { type: 'pass' } } }),
+      mutate: game => { game.terminalOutcome.effect.kind = 'end-turn'; } },
+    { make: () => harness(game => installSolePassFixture(game)), route: 'apply',
+      command: h => h.command({ payload: { action: { type: 'pass' } } }),
+      mutate: game => { game.terminalOutcome.removals.push({ pieceId: 'fabricated', ownerSeat: 'p2', kind: 'unit',
+        position: { row: 1, col: 1 }, supplied: false, commanded: false, reason: 'loss_of_supply' }); } },
+  ];
+  for (const entry of cases) {
+    const h = await entry.make(), sent = await entry.command(h);
+    assert.equal((await h.call(entry.route, sent)).commandOutcomes[0].outcome, 'accepted');
+    h.DB.overwriteGameState('terminal-game', game => { entry.mutate(game); return game; });
+    assert.equal((await loadGameProjection(h.env, 'terminal-game')).kind, 'invalid');
+  }
+});
+
+test('terminal commit gameplay revision rejects both lower and higher values than the authoritative row', async () => {
+  for (const revision of [1, 3]) {
+    const { game } = terminalRecordFor({ complete: true }), env = { DB: createFakeD1() };
+    game.gameplayRevision = 2;
+    game.terminalOutcome.commit.gameplayRevision = revision;
+    await persistGameState(env, game, 1);
+    assert.equal((await loadGameProjection(env, game.id)).kind, 'invalid');
+  }
+});
+
+test('persisted move actions reject unknown and malformed per-type shapes', async () => {
+  for (const action of [{ type: 'teleport' }, { type: 'move', actorId: 'C1' }]) {
+    const env = { DB: createFakeD1() }, game = createInitialGame({ gameId: `bad-${action.type}-${Object.keys(action).length}`,
+      identityId: 'owner', selfPlayMode: true });
+    game.moves = [{ moveId: 'bad-action', index: 0, turnIndex: 0, turnMoveIndex: 0, displayMoveNumber: 1,
+      actorSide: 'P1', at: game.createdAt, notation: 'Bad', action, selectionSnapshot: structuredClone(game.board.state),
+      snapshot: structuredClone(game.board.state), destroyedPieces: [] }];
+    await persistGameState(env, game, 1);
+    assert.equal((await loadGameProjection(env, game.id)).kind, 'invalid');
   }
 });
 
