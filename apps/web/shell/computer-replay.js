@@ -107,11 +107,13 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
     try {
     layer = doc.createElement('div');
     layer.className = 'computer-replay'; layer.setAttribute('aria-hidden', 'true');
-    // The root is the board wrapper. An opaque, geometry-matched layer prevents live position flashes.
-    Object.assign(layer.style, {position: 'absolute', inset: '0', zIndex: '3', pointerEvents: 'auto', background: 'var(--surface, #eee5d3)'});
+    Object.assign(layer.style, {position: 'absolute', inset: '0', zIndex: '3', pointerEvents: 'auto'});
     layer.addEventListener('click', event => {event.preventDefault(); event.stopPropagation();});
-    rootEl.appendChild(layer);
     preview = createPreview({rootEl: layer, createAdapter, sizeVariant: 'replay', preview: {snapshot: replay.frames[0].before, overlay: {mode: 'none'}, previewKey: `${generation}:before`}});
+    // Populate the isolated board while detached so its first visible frame is
+    // complete. Transparent gaps retain the live Board foundation without
+    // exposing live pieces beneath the replay cells.
+    rootEl.appendChild(layer);
     notify();
     if (reducedMotion() && !automatic) { next(); return true; }
     if (!await wait(timing.pause) || generation !== current) return false;
