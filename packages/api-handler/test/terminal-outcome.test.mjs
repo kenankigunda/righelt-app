@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fixture from '../../game-engine/test/fixtures/destruction-turn-end.json' with { type: 'json' };
 import { GameRoomDO } from '../src/game-room-do.ts';
-import { applyAcceptedAutomaticEnding, applyRevertToMove, applyScenarioToGame, createInitialGame } from '../src/shell-live-core.ts';
+import { activeActionEvidence, applyAcceptedAutomaticEnding, applyRevertToMove, applyScenarioToGame, createInitialGame } from '../src/shell-live-core.ts';
 import { loadGameProjection, persistGameState } from '../src/shell-live-db.ts';
 import { ACTION_CONTRACT_VERSION, commandFingerprint } from '../../shared-types/src/sync-protocol.ts';
 import { createFakeD1 } from './support/fake-d1.mjs';
 import { resolveToStability } from '../../game-engine/src/resolve.ts';
 import { commander, makeState, unit } from '../../game-engine/test/helpers/state-builders.mjs';
+import { MAX_HISTORY } from '../../shared-types/src/history.ts';
 
 const installTerminalFixture = game => {
   const state = structuredClone(fixture.initialState);
@@ -32,7 +33,7 @@ const packedState = (side = 'P2', turnIndex = 1) => {
   return resolveToStability(makeState({ sideToMove: side, turnIndex, pieces }));
 };
 
-const harness = async () => {
+const harness = async (installer = installTerminalFixture) => {
   const DB = createFakeD1(), env = { DB }, state = { id: { name: 'terminal-game' } };
   let room = new GameRoomDO(state, env);
   const call = async (route, body = {}) => {
@@ -41,7 +42,7 @@ const harness = async () => {
     return { status: response.status, ...await response.json() };
   };
   await call('create', { gameId: 'terminal-game', selfPlayMode: true });
-  DB.overwriteGameState('terminal-game', installTerminalFixture);
+  DB.overwriteGameState('terminal-game', installer);
   room = new GameRoomDO(state, env);
   const command = async (patch = {}) => {
     const game = DB.getGameState('terminal-game');
@@ -54,6 +55,111 @@ const harness = async () => {
   return { DB, env, call, command, restart: () => { room = new GameRoomDO(state, env); } };
 };
 
+const installSolePassFixture = (game, mode = 'existing') => {
+  const state = packedState('P2', 4);
+  game.board.state = structuredClone(state);
+  game.moves = [];
+  game.turns = [{ index: 4, startedAt: game.createdAt, endedAt: null,
+    playerSeat: 'Player 2', status: 'active', moveIndexes: [], lastMoveAt: null }];
+  if (mode === 'branch') {
+    const imported = { moveId: 'imported-pass', index: 0, turnIndex: 3, turnMoveIndex: 0, displayMoveNumber: 1,
+      actorSide: 'P1', at: game.createdAt, notation: 'Pass', action: { type: 'pass' },
+      selectionSnapshot: structuredClone(state), snapshot: structuredClone(state), destroyedPieces: [],
+      importedFrom: { gameId: 'source-game', decisionId: 'source-pass', gameplayRevision: 7 } };
+    game.moves = [imported];
+    game.importedHistory = { version: 1, complete: true, moveCount: 1,
+      sources: [{ gameId: 'source-game', gameplayRevision: 7, moveCount: 1 }] };
+    game.historyBranchCreationKey = 'branch-key';
+  } else if (mode === 'undo') {
+    const after = structuredClone(state);
+    after.sideToMove = 'P1';
+    const target = { moveId: 'undo-target', index: 0, turnIndex: 4, turnMoveIndex: 0, displayMoveNumber: 1,
+      actorSide: 'P2', at: game.createdAt, notation: 'Pass', action: { type: 'pass' },
+      selectionSnapshot: structuredClone(state), snapshot: after, destroyedPieces: [], clientCommandId: 'v2:old-pass' };
+    game.moves = [target];
+    game.board.state = after;
+    assert.equal(applyRevertToMove(game, target.moveId, 'owner').ok, true);
+  }
+  return game;
+};
+
+for (const mode of ['existing', 'branch', 'undo']) {
+  test(`${mode} sole-Pass position terminalizes inside the next accepted mutation without recording an unplayed Pass`, async () => {
+    const h = await harness(game => installSolePassFixture(game, mode));
+    const before = structuredClone(h.DB.getGameState('terminal-game'));
+    const sent = await h.command({ payload: { action: { type: 'pass' } } });
+    const accepted = await h.call('apply', sent);
+    assert.equal(accepted.commandOutcomes[0].outcome, 'accepted');
+    const game = h.DB.getGameState('terminal-game'), record = game.terminalOutcome;
+    assert.equal(game.board.state.outcome.status, 'p1_win');
+    assert.equal(game.moves.length, before.moves.length, 'the triggering Pass is not appended as a played decision');
+    assert.equal(record.decisive.decisionId, null);
+    assert.deepEqual(record.decisive.action, { type: 'pass' });
+    assert.equal(record.decisive.actorSide, 'P2');
+    assert.equal(record.activeActionCount, mode === 'branch' ? 1 : 0);
+    assert.equal(record.activeActionCountComplete, true);
+    assert.deepEqual(record.commit, { clientCommandId: sent.clientCommandId,
+      eventSeq: accepted.eventSeq, gameplayRevision: accepted.gameplayRevision });
+    assert.deepEqual(JSON.parse(h.DB.getReceipt(game.id, sent.clientCommandId).result_json).terminalOutcome,
+      accepted.terminalOutcome);
+    h.restart();
+    const read = await h.call('reconcile', { commands: [], knownSnapshotEventSeq: 0 });
+    assert.deepEqual(read.game.terminalOutcome, record);
+  });
+}
+
+test('pending sole-Pass terminalization rolls back its board, provenance and receipt as one fenced operation', async () => {
+  const probe = await harness(game => installSolePassFixture(game));
+  await probe.call('apply', await probe.command({ payload: { action: { type: 'pass' } } }));
+  const h = await harness(game => installSolePassFixture(game));
+  const sent = await h.command({ payload: { action: { type: 'pass' } } });
+  const before = structuredClone(h.DB.getGameState('terminal-game'));
+  h.DB.failNextBatchAt(probe.DB.getLastBatchSize() - 1);
+  await assert.rejects(h.call('apply', sent), /Injected/);
+  assert.deepEqual(h.DB.getGameState('terminal-game'), before);
+  assert.equal(h.DB.getReceipt('terminal-game', sent.clientCommandId), null);
+  h.restart();
+  assert.equal((await h.call('apply', sent)).commandOutcomes[0].outcome, 'accepted');
+});
+
+test('pending sole-Pass ending cannot bypass the expected-state fence', async () => {
+  const h = await harness(game => installSolePassFixture(game));
+  const sent = await h.command({ payload: { action: { type: 'pass' } } });
+  sent.expectedState = structuredClone(sent.expectedState);
+  sent.expectedState.turnIndex += 1;
+  sent.fingerprint = await commandFingerprint(sent);
+  const rejected = await h.call('apply', sent);
+  assert.equal(rejected.commandOutcomes[0].outcome, 'rejected');
+  assert.equal(rejected.commandOutcomes[0].reason, 'stale_state');
+  assert.equal(h.DB.getGameState('terminal-game').terminalOutcome, undefined);
+});
+
+test('accepted post-retreat frame records the defender actor while finality remains fenced to the original attacker', () => {
+  const pieces = [commander('C1', 'P1', 0, 9), commander('C2', 'P2', 3, 6),
+    unit('V0', 'P1', 0, 4), unit('V2', 'P1', 2, 4), unit('H1', 'P1', 5, 4),
+    unit('H9', 'P1', 5, 9), unit('V8', 'P1', 8, 4), unit('V9', 'P1', 9, 4), unit('bait', 'P2', 1, 5)];
+  const state = makeState({ pieces, sideToMove: 'P1', turnIndex: 4,
+    continuation: { type: 'push', owner: 'P1', attackerOwner: 'P1', phase: 'follow',
+      followPoint: { row: 1, col: 4 }, followGroupPieceIds: ['H1'], chainLength: 1 } });
+  const game = createInitialGame({ gameId: 'post-retreat', identityId: 'owner', selfPlayMode: true });
+  game.board.state = state;
+  game.turns = [{ index: 4, startedAt: game.createdAt, endedAt: null,
+    playerSeat: 'Player 1', status: 'active', moveIndexes: [0], lastMoveAt: game.createdAt }];
+  const action = { type: 'retreat', actorId: 'C2', from: { row: 1, col: 5 }, to: { row: 1, col: 6 } };
+  const move = { moveId: 'accepted-retreat', index: 0, turnIndex: 4, turnMoveIndex: 0, displayMoveNumber: 1,
+    actorSide: 'P2', at: game.createdAt, notation: 'Retreat', action, clientCommandId: 'v2:retreat',
+    selectionSnapshot: structuredClone(state), snapshot: structuredClone(state), destroyedPieces: [] };
+  game.moves = [move];
+  const record = applyAcceptedAutomaticEnding(game, action, { move, destroyedPieces: [] },
+    { clientCommandId: 'v2:retreat', eventSeq: 2, gameplayRevision: 1,
+      actorSide: 'P2', turnOwnerSide: 'P1', turnIndex: 4 });
+  assert.equal(record.cause.kind, 'relevant-continuation-finality');
+  assert.equal(record.result.status, 'p1_win');
+  assert.equal(record.decisive.actorSide, 'P2', 'provenance records the defender who actually retreated');
+  assert.deepEqual(record.decisive.action, action);
+  assert.equal(record.decisive.decisionId, move.moveId);
+});
+
 test('accepted decisive action atomically persists strict terminal provenance and read paths stay read-only', async () => {
   const h = await harness(), sent = await h.command(), accepted = await h.call('apply', sent);
   assert.equal(accepted.commandOutcomes[0].outcome, 'accepted');
@@ -62,6 +168,7 @@ test('accepted decisive action atomically persists strict terminal provenance an
   assert.deepEqual(record.board, game.board.state);
   assert.deepEqual(record.result, game.board.state.outcome);
   assert.deepEqual(record.decisive.action, { type: 'end_turn' });
+  assert.equal(record.decisive.decisionId, null, 'End turn is explicitly represented without a fabricated move decision');
   assert.equal(record.decisive.clientCommandId, sent.clientCommandId);
   assert.deepEqual(record.commit, { clientCommandId: sent.clientCommandId,
     eventSeq: accepted.eventSeq, gameplayRevision: accepted.gameplayRevision });
@@ -121,23 +228,27 @@ const terminalRecordFor = ({ complete, metadata = true }) => {
   const imported = { moveId: 'imported-one', index: 0, turnIndex: 0, turnMoveIndex: 0, displayMoveNumber: 1,
     actorSide: 'P1', at: game.createdAt, notation: 'Pass', action: { type: 'pass' }, selectionSnapshot: structuredClone(game.board.state),
     snapshot: structuredClone(game.board.state), destroyedPieces: [], importedFrom: { gameId: 'source', decisionId: 'decision', gameplayRevision: 7 } };
-  game.moves = [imported];
+  const decisive = { ...structuredClone(imported), moveId: 'local-final', index: 1, turnMoveIndex: 1,
+    displayMoveNumber: 2, clientCommandId: 'v2:lineage' };
+  delete decisive.importedFrom;
+  game.moves = [imported, decisive];
+  game.turns[0].moveIndexes = [0, 1];
   if (metadata) game.importedHistory = { version: 1, complete, moveCount: 1,
     sources: [{ gameId: 'source', gameplayRevision: 7, moveCount: 1 }] };
   game.gameplayRevision = 1;
-  const record = applyAcceptedAutomaticEnding(game, { type: 'pass' }, { move: imported, destroyedPieces: [] },
-    { clientCommandId: 'v2:lineage', eventSeq: 1, gameplayRevision: 1, actorSide: 'P1', turnIndex: 0 });
+  const record = applyAcceptedAutomaticEnding(game, { type: 'pass' }, { move: decisive, destroyedPieces: [] },
+    { clientCommandId: 'v2:lineage', eventSeq: 1, gameplayRevision: 1, actorSide: 'P1', turnOwnerSide: 'P1', turnIndex: 0 });
   return { game, record };
 };
 
 test('terminal count consumes T-143 completeness without fabricating missing or older lineage', async () => {
   const completeCase = terminalRecordFor({ complete: true }), complete = completeCase.record;
   assert.deepEqual({ count: complete.activeActionCount, complete: complete.activeActionCountComplete,
-    lineage: complete.lineage }, { count: 1, complete: true, lineage: { version: 1, complete: true,
+    lineage: complete.lineage }, { count: 2, complete: true, lineage: { version: 1, complete: true,
     importedMoveCount: 1, sources: [{ gameId: 'source', gameplayRevision: 7, moveCount: 1 }] } });
   assert.equal(terminalRecordFor({ complete: false }).record.activeActionCountComplete, false);
   const olderCase = terminalRecordFor({ complete: false, metadata: false }), older = olderCase.record;
-  assert.equal(older.activeActionCount, 1);
+  assert.equal(older.activeActionCount, 2);
   assert.equal(older.activeActionCountComplete, false);
   assert.equal(older.lineage.version, null);
   for (const candidate of [completeCase, terminalRecordFor({ complete: false })]) {
@@ -147,6 +258,40 @@ test('terminal count consumes T-143 completeness without fabricating missing or 
     assert.equal(loaded.kind, 'ok');
     assert.deepEqual(loaded.game.terminalOutcome, candidate.record);
   }
+});
+
+test('active action evidence deduplicates origins and local IDs, counts Pass, and excludes End turn and Undo', () => {
+  const state = packedState('P1', 0);
+  const move = (moveId, action, patch = {}) => ({ moveId, index: 0, turnIndex: 0, turnMoveIndex: 0,
+    displayMoveNumber: 1, actorSide: 'P1', at: 'now', notation: action.type, action,
+    selectionSnapshot: structuredClone(state), snapshot: structuredClone(state), destroyedPieces: [], ...patch });
+  const imported = move('imported-a', { type: 'pass' },
+    { importedFrom: { gameId: 'source', decisionId: 'origin-a', gameplayRevision: 3 } });
+  const duplicateImported = move('imported-b', { type: 'pass' },
+    { importedFrom: { gameId: 'source', decisionId: 'origin-a', gameplayRevision: 3 } });
+  const localPass = move('local-pass', { type: 'pass' });
+  const duplicateLocal = move('local-pass', { type: 'pass' });
+  const ended = move('local-end', { type: 'end_turn' });
+  const undone = move('local-undone', { type: 'pass' }, { undone: true });
+  const evidence = activeActionEvidence({ moves: [imported, duplicateImported, localPass, duplicateLocal, ended, undone],
+    importedHistory: { version: 1, complete: true, moveCount: 2,
+      sources: [{ gameId: 'source', gameplayRevision: 3, moveCount: 2 }] } });
+  assert.equal(evidence.activeActionCount, 2, 'one imported origin and one local Pass are counted once');
+  assert.equal(evidence.lineage.importedMoveCount, 1);
+  assert.equal(evidence.lineage.complete, false, 'duplicate imported provenance cannot be complete');
+  assert.equal(evidence.activeActionCountComplete, false, 'duplicate local IDs independently make the total incomplete');
+});
+
+test('a saturated retained local window never claims a complete total without an authoritative total archive', () => {
+  const state = packedState('P1', 0);
+  const moves = Array.from({ length: MAX_HISTORY + 1 }, (_, index) => ({ moveId: `local-${index}`, index,
+    turnIndex: index, turnMoveIndex: 0, displayMoveNumber: index + 1, actorSide: index % 2 ? 'P2' : 'P1',
+    at: 'now', notation: 'Pass', action: { type: 'pass' }, selectionSnapshot: structuredClone(state),
+    snapshot: structuredClone(state), destroyedPieces: [] }));
+  const evidence = activeActionEvidence({ moves });
+  assert.equal(evidence.activeActionCount, MAX_HISTORY + 1);
+  assert.equal(evidence.lineage.complete, true, 'imported-lineage completeness remains an independent fact');
+  assert.equal(evidence.activeActionCountComplete, false);
 });
 
 test('accepted-action integration applies proven continuation finality but not an optional defender-only escape', () => {
@@ -165,7 +310,7 @@ test('accepted-action integration applies proven continuation finality but not a
     selectionSnapshot: structuredClone(state), snapshot: structuredClone(state), destroyedPieces: [] };
   game.moves = [move];
   const record = applyAcceptedAutomaticEnding(game, move.action, { move, destroyedPieces: [] },
-    { clientCommandId: 'v2:early', eventSeq: 2, gameplayRevision: 1, actorSide: 'P1', turnIndex: 0 });
+    { clientCommandId: 'v2:early', eventSeq: 2, gameplayRevision: 1, actorSide: 'P1', turnOwnerSide: 'P1', turnIndex: 0 });
   assert.equal(record.cause.kind, 'relevant-continuation-finality');
   assert.equal(record.result.status, 'p1_win');
   assert.equal(game.board.state.continuation, null);
@@ -181,7 +326,7 @@ test('accepted turn settlement applies exhaustive sole-Pass incoming loss and fr
     selectionSnapshot: structuredClone(game.board.state), snapshot: structuredClone(game.board.state), destroyedPieces: [] };
   game.moves = [move];
   const record = applyAcceptedAutomaticEnding(game, move.action, { move, destroyedPieces: [], turnSettled: true },
-    { clientCommandId: 'v2:incoming', eventSeq: 3, gameplayRevision: 2, actorSide: 'P1', turnIndex: 0 });
+    { clientCommandId: 'v2:incoming', eventSeq: 3, gameplayRevision: 2, actorSide: 'P1', turnOwnerSide: 'P1', turnIndex: 0 });
   assert.deepEqual(record.cause, { kind: 'incoming-turn-immobility', incomingSide: 'P2' });
   assert.deepEqual(record.result, { status: 'p1_win', reason: 'p2_incoming_turn_immobility' });
   assert.equal(record.activeActionCount, 1);
@@ -212,7 +357,7 @@ test('Undo clears terminal provenance and restores only the recorded pre-action 
   game.moves = [move];
   game.board.state = terminalBoard;
   applyAcceptedAutomaticEnding(game, move.action, { move, destroyedPieces: [] },
-    { clientCommandId: 'v2:terminal', eventSeq: 2, gameplayRevision: 1, actorSide: 'P1', turnIndex: 0 });
+    { clientCommandId: 'v2:terminal', eventSeq: 2, gameplayRevision: 1, actorSide: 'P1', turnOwnerSide: 'P1', turnIndex: 0 });
   assert.ok(game.terminalOutcome);
   assert.equal(applyRevertToMove(game, move.moveId, 'owner').ok, true);
   assert.equal(game.terminalOutcome, undefined);
@@ -220,18 +365,30 @@ test('Undo clears terminal provenance and restores only the recorded pre-action 
   assert.equal(game.board.state.outcome.status, 'ongoing');
 });
 
-test('persisted terminal provenance fails closed when its board or commit fence is changed', async () => {
-  for (const mutate of [
-    game => { game.terminalOutcome.board.turnIndex += 1; },
-    game => { game.terminalOutcome.commit.gameplayRevision += 1; },
-    game => { game.terminalOutcome.result.reason = 'fabricated'; },
-    game => { game.terminalOutcome.removals.push({ reason: 'fabricated' }); },
-  ]) {
+test('persisted terminal provenance binds every frozen field family to authoritative history', async () => {
+  const mutations = [
+    ['board', game => { game.terminalOutcome.board.turnIndex += 1; }],
+    ['action', game => { game.terminalOutcome.decisive.action = { type: 'end_turn' }; }],
+    ['decision', game => { game.terminalOutcome.decisive.decisionId = 'missing-decision'; }],
+    ['decisive command', game => { game.terminalOutcome.decisive.clientCommandId = 'v2:other'; }],
+    ['actor', game => { game.terminalOutcome.decisive.actorSide = 'P2'; }],
+    ['turn', game => { game.terminalOutcome.decisive.turnIndex += 1; }],
+    ['removals', game => { game.terminalOutcome.removals.push({ pieceId: 'fabricated', ownerSeat: 'p2',
+      kind: 'unit', position: { row: 1, col: 1 }, supplied: false, commanded: false, reason: 'loss_of_supply' }); }],
+    ['result', game => { game.terminalOutcome.result.reason = 'fabricated'; }],
+    ['cause', game => { game.terminalOutcome.cause.reason = 'fabricated'; }],
+    ['lineage', game => { game.terminalOutcome.lineage.complete = false; }],
+    ['count', game => { game.terminalOutcome.activeActionCount += 1; }],
+    ['count completeness', game => { game.terminalOutcome.activeActionCountComplete = false; }],
+    ['commit command', game => { game.terminalOutcome.commit.clientCommandId = 'v2:other'; }],
+    ['commit revision', game => { game.terminalOutcome.commit.gameplayRevision += 1; }],
+  ];
+  for (const [family, mutate] of mutations) {
     const { game } = terminalRecordFor({ complete: true }), env = { DB: createFakeD1() };
     await persistGameState(env, game, 1);
     env.DB.overwriteGameState(game.id, value => { mutate(value); return value; });
     const loaded = await loadGameProjection(env, game.id);
-    assert.equal(loaded.kind, 'invalid');
+    assert.equal(loaded.kind, 'invalid', family);
     assert.ok(loaded.mismatches.some(entry => entry.field === 'terminalOutcome'));
   }
 });

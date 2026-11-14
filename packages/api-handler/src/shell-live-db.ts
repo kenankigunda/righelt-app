@@ -1,5 +1,6 @@
 import {TERMINAL_OUTCOME_STATUSES} from '../../shared-types/src/engine';
 import { deterministicStateHash } from '../../game-engine/src/hash';
+import { canonicalCommandJson } from '../../shared-types/src/sync-protocol';
 import { parseComputerControl } from '../../shared-types/src/computer-play';
 import { archiveRow, readArchivedGame } from "./storage-archive";
 import { growthGuard } from "./storage-budget";
@@ -10,6 +11,7 @@ import type { ServerEvent } from "../../shared-types/src/events";
 import {
   asAction,
   asGameState,
+  activeActionEvidence,
   createInviteToken,
   nextMoveId,
   now,
@@ -503,6 +505,9 @@ const normalizeImportedHistory = (value: unknown, mismatches: PersistedGameMisma
 const normalizeTerminalOutcome = (
   value: unknown,
   board: LiveGame["board"]["state"],
+  moves: LiveGame["moves"],
+  turns: LiveGame["turns"],
+  importedHistory: LiveGame["importedHistory"],
   row: PersistedGameRow,
   mismatches: PersistedGameMismatch[],
 ): TerminalOutcomeRecord | undefined => {
@@ -515,31 +520,36 @@ const normalizeTerminalOutcome = (
     || !isRecord(value.result) || !isRecord(value.cause) || !isRecord(value.lineage)
     || !Array.isArray(value.removals) || !Number.isSafeInteger(value.activeActionCount)
     || Number(value.activeActionCount) < 0 || typeof value.activeActionCountComplete !== "boolean") return invalid();
+  const decisive = value.decisive;
   const terminalBoard = asGameState(value.board);
-  const action = asAction(value.decisive.action);
+  const action = asAction(decisive.action);
   const status = value.result.status;
   if (!terminalBoard || !action || !TERMINAL_OUTCOME_STATUSES.includes(status as never)
     || terminalBoard.outcome.status !== status || board.outcome.status !== status
     || deterministicStateHash(terminalBoard) !== deterministicStateHash(board)
     || (value.result.reason !== undefined && typeof value.result.reason !== "string")
     || value.result.reason !== terminalBoard.outcome.reason) return invalid();
-  if ((value.decisive.actorSide !== "P1" && value.decisive.actorSide !== "P2")
-    || (value.decisive.decisionId !== null && (typeof value.decisive.decisionId !== "string" || !value.decisive.decisionId))
-    || typeof value.decisive.clientCommandId !== "string" || !value.decisive.clientCommandId
-    || !Number.isSafeInteger(value.decisive.turnIndex) || Number(value.decisive.turnIndex) < 0) return invalid();
-  if (typeof value.commit.clientCommandId !== "string" || value.commit.clientCommandId !== value.decisive.clientCommandId
+  if ((decisive.actorSide !== "P1" && decisive.actorSide !== "P2")
+    || (decisive.decisionId !== null && (typeof decisive.decisionId !== "string" || !decisive.decisionId))
+    || typeof decisive.clientCommandId !== "string" || !decisive.clientCommandId
+    || !Number.isSafeInteger(decisive.turnIndex) || Number(decisive.turnIndex) < 0) return invalid();
+  if (typeof value.commit.clientCommandId !== "string" || value.commit.clientCommandId !== decisive.clientCommandId
     || !Number.isSafeInteger(value.commit.eventSeq) || Number(value.commit.eventSeq) < 1
     || Number(value.commit.eventSeq) > Number(row.event_seq)
     || !Number.isSafeInteger(value.commit.gameplayRevision) || Number(value.commit.gameplayRevision) < 1
     || Number(value.commit.gameplayRevision) > Number(row.gameplay_revision)) return invalid();
   const causeKind = value.cause.kind;
   if (causeKind === "commander-settlement") {
-    if (typeof value.cause.reason !== "string" || !value.cause.reason) return invalid();
+    if (typeof value.cause.reason !== "string" || !value.cause.reason
+      || value.cause.reason !== (value.result.reason ?? "commander_outcome")) return invalid();
   } else if (causeKind === "relevant-continuation-finality") {
     if (!Number.isSafeInteger(value.cause.endpointCount) || Number(value.cause.endpointCount) < 1
-      || !Number.isSafeInteger(value.cause.optionalEndpointCount) || Number(value.cause.optionalEndpointCount) < 0) return invalid();
+      || !Number.isSafeInteger(value.cause.optionalEndpointCount) || Number(value.cause.optionalEndpointCount) < 0
+      || decisive.decisionId === null) return invalid();
   } else if (causeKind === "incoming-turn-immobility") {
-    if (value.cause.incomingSide !== "P1" && value.cause.incomingSide !== "P2") return invalid();
+    if ((value.cause.incomingSide !== "P1" && value.cause.incomingSide !== "P2")
+      || value.result.reason !== `${String(value.cause.incomingSide).toLowerCase()}_incoming_turn_immobility`
+      || value.result.status !== (value.cause.incomingSide === "P1" ? "p2_win" : "p1_win")) return invalid();
   } else return invalid();
   const removals = value.removals.flatMap(removal => {
     if (!isRecord(removal) || !isRecord(removal.position)
@@ -559,14 +569,36 @@ const normalizeTerminalOutcome = (
     && Number.isSafeInteger(source.moveCount) && Number(source.moveCount) > 0
     ? [{ gameId: source.gameId, gameplayRevision: Number(source.gameplayRevision), moveCount: Number(source.moveCount) }] : []);
   const sourceKeys = new Set(sources.map(source => `${source.gameId}\u0000${source.gameplayRevision}`));
+  const expectedEvidence = activeActionEvidence({ moves, importedHistory });
+  const normalizedLineage = { ...value.lineage, sources };
   if (sources.length !== value.lineage.sources.length || sourceKeys.size !== sources.length
-    || Number(value.activeActionCount) < Number(value.lineage.importedMoveCount)
     || (value.lineage.version === 1
       ? sources.reduce((total, source) => total + source.moveCount, 0) !== Number(value.lineage.importedMoveCount)
       : sources.length !== 0 || (Number(value.lineage.importedMoveCount) > 0 && value.lineage.complete !== false))
-    || value.activeActionCountComplete !== value.lineage.complete) return invalid();
+    || canonicalCommandJson(normalizedLineage) !== canonicalCommandJson(expectedEvidence.lineage)
+    || Number(value.activeActionCount) !== expectedEvidence.activeActionCount
+    || value.activeActionCountComplete !== expectedEvidence.activeActionCountComplete) return invalid();
+
+  const decisiveMove = decisive.decisionId === null ? null : moves.find(move =>
+    move.undone !== true && move.moveId === decisive.decisionId);
+  if (decisive.decisionId !== null) {
+    if (!decisiveMove || decisiveMove.importedFrom
+      || decisiveMove.clientCommandId !== decisive.clientCommandId
+      || decisiveMove.actorSide !== decisive.actorSide
+      || decisiveMove.turnIndex !== decisive.turnIndex
+      || canonicalCommandJson(decisiveMove.action) !== canonicalCommandJson(action)
+      || canonicalCommandJson(decisiveMove.destroyedPieces ?? []) !== canonicalCommandJson(removals)
+      || deterministicStateHash(decisiveMove.snapshot) !== deterministicStateHash(terminalBoard)) return invalid();
+  } else {
+    if (moves.some(move => move.clientCommandId === decisive.clientCommandId)
+      || (action.type !== "end_turn" && action.type !== "pass")
+      || (action.type === "pass" && causeKind !== "incoming-turn-immobility")
+      || (action.type === "pass" && (value.cause as { incomingSide?: unknown }).incomingSide !== decisive.actorSide)) return invalid();
+    const decisiveTurn = turns.find(turn => turn.index === decisive.turnIndex);
+    if (!decisiveTurn || decisiveTurn.playerSeat !== (decisive.actorSide === "P1" ? "Player 1" : "Player 2")) return invalid();
+  }
   return structuredClone({ ...value, decisive: { ...value.decisive, action }, board: terminalBoard, removals,
-    lineage: { ...value.lineage, sources } } as TerminalOutcomeRecord);
+    lineage: normalizedLineage } as TerminalOutcomeRecord);
 };
 
 const normalizeMoves = (value: unknown, mismatches: PersistedGameMismatch[]): LiveGame["moves"] => {
@@ -759,7 +791,7 @@ const normalizePersistedGame = (
   if (Array.isArray(parsed.notifications) && notifications.length !== parsed.notifications.length) {
     recordMismatch(mismatches, "notifications", "string[]", parsed.notifications, "dropped_non_string_entries");
   }
-  const terminalOutcome = normalizeTerminalOutcome(parsed.terminalOutcome, boardState, row, mismatches);
+  const terminalOutcome = normalizeTerminalOutcome(parsed.terminalOutcome, boardState, moves, turns, importedHistory, row, mismatches);
   if (parsed.terminalOutcome !== undefined && !terminalOutcome) {
     console.error(
       JSON.stringify(buildShapeLogPayload({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches })),
