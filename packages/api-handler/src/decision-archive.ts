@@ -1,6 +1,7 @@
 import { COMPUTER_LIMITS } from '../../shared-types/src/computer-play';
 import { canonicalCommandJson, encodedSyncBytes } from '../../shared-types/src/sync-protocol';
 import { clone, type LiveGame, type MoveEntry, type PreparedImportedHistory } from './shell-live-core';
+import { stateWriteLimits } from './storage-codec';
 import type { LiveGameEnv, D1Statement } from './shell-live-db';
 
 export type ArchivedDecision = { id: string; kind: 'decision' | 'restoration' | 'turn' | 'initial' | 'finalization'; revision: number; eventSeq: number; ordinal: number; at: string; move?: MoveEntry; finalizedMove?: MoveEntry; restoredIds?: string[]; targetDecisionId?: string; requesterIdentityId?: string; restorationVersion?: 1; state?: LiveGame['board']['state']; partial?: boolean };
@@ -140,14 +141,21 @@ export async function prepareImportedHistory(
   env: LiveGameEnv,
   game: LiveGame,
   selectedMove: MoveEntry | null,
+  targetGameId: string,
 ): Promise<PreparedImportedHistory> {
   const archived: Array<{ move: MoveEntry; historyStatus?: string }> = [];
+  const maximumBytes = stateWriteLimits(env, targetGameId).rawBytes;
   let cursor: unknown = null;
   for (let page = 0; page < 100; page += 1) {
     const result = await readAdditionalDecisionPage(env, game, cursor, false);
     archived.push(...result.items.flatMap(entry => entry.kind === 'decision' && entry.move?.moveId
       ? [{ move: entry.move, historyStatus: (entry as {historyStatus?:string}).historyStatus }]
       : []));
+    // The lineage is immutable only if the destination can persist it as one
+    // authoritative creation. Refuse an oversized prefix before forwarding it
+    // between rooms; never silently truncate it or claim partial ancestry is
+    // complete. Large-state canaries use their configured target-game bound.
+    if (encodedSyncBytes({ archived, live: game.moves }) > maximumBytes) throw new Error('branch_history_too_large');
     cursor = result.nextCursor;
     if (!cursor) break;
     if (page === 99) throw new Error('branch_history_too_large');
@@ -179,7 +187,9 @@ export async function prepareImportedHistory(
     else sources.push({ gameId: origin.gameId, gameplayRevision: origin.gameplayRevision, moveCount: 1 });
   }
   const startsAtFirstMove = moves.length === 0 || moves[0].displayMoveNumber === 1;
-  return { version: 1, complete: !uncertain && startsAtFirstMove, moveCount: moves.length, sources, moves };
+  const prepared = { version: 1 as const, complete: !uncertain && startsAtFirstMove, moveCount: moves.length, sources, moves };
+  if (encodedSyncBytes(prepared) > maximumBytes) throw new Error('branch_history_too_large');
+  return prepared;
 }
 export async function readDecisionNotes(env: LiveGameEnv, gameId: string, accountId: string) {
   const rows = await env.DB.prepare('SELECT decision_id, note_json FROM live_decision_notes WHERE game_id = ?1 AND account_id = ?2').bind(gameId, accountId).all<{ decision_id: string; note_json: string }>();

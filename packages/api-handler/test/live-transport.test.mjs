@@ -2099,4 +2099,28 @@ test("live transport: trimmed history keeps absolute move numbers and consistent
   );
   assert.equal(openBody.game.currentTurn.index, totalMoves);
   assert.equal(openBody.game.currentTurn.moveIndexes.length, 0);
+
+  const branchId = "game-imported-long-archive";
+  const branch = await handleApiRequest(req("/api/shell/history/branch", "POST", {
+    identityId: "id-owner",
+    gameId: branchId,
+    sourceGameId: gameId,
+    sourceGameplayRevision: openBody.game.gameplayRevision,
+    creatorSide: "p1",
+  }), env);
+  const branchBody = await branch.json();
+  assert.equal(branch.status, 200, JSON.stringify(branchBody));
+  assert.equal(branchBody.game.importedHistory.complete, true);
+  assert.equal(branchBody.game.importedHistory.moveCount, totalMoves);
+  assert.deepEqual(
+    branchBody.game.moves.map(move => move.displayMoveNumber),
+    Array.from({ length: totalMoves }, (_, index) => index + 1),
+  );
+  env.GAME_ROOMS.restart(branchId);
+  const retained = await handleApiRequest(req(`/api/shell/games/${branchId}?identityId=id-owner`), env);
+  const retainedBody = await retained.json();
+  assert.equal(retained.status, 200);
+  assert.equal(retainedBody.game.importedHistory.moveCount, totalMoves);
+  assert.equal(retainedBody.game.moves.length, totalMoves);
+  assert.equal(retainedBody.game.canUndoLastMove, false);
 });

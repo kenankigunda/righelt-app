@@ -402,12 +402,32 @@ export const asPreparedImportedHistory = (value: unknown): PreparedImportedHisto
     return clone(move);
   });
   if (moves.some(move => move === null) || moves.length !== Number(candidate.moveCount)) return null;
+  const parsedSources = sources as ImportedHistorySource[];
+  const parsedMoves = moves as MoveEntry[];
+  const sourceCounts = new Map<string, number>();
+  for (const source of parsedSources) {
+    const key = `${source.gameId}\u0000${source.gameplayRevision}`;
+    if (source.moveCount < 1 || sourceCounts.has(key)) return null;
+    sourceCounts.set(key, source.moveCount);
+  }
+  const originCounts = new Map<string, number>();
+  const originDecisions = new Set<string>();
+  for (const move of parsedMoves) {
+    const origin = move.importedFrom!;
+    const decisionKey = `${origin.gameId}\u0000${origin.decisionId}`;
+    const sourceKey = `${origin.gameId}\u0000${origin.gameplayRevision}`;
+    if (originDecisions.has(decisionKey) || !sourceCounts.has(sourceKey)) return null;
+    originDecisions.add(decisionKey);
+    originCounts.set(sourceKey, (originCounts.get(sourceKey) ?? 0) + 1);
+  }
+  if (parsedSources.some(source => originCounts.get(`${source.gameId}\u0000${source.gameplayRevision}`) !== source.moveCount)) return null;
+  if (parsedSources.reduce((total, source) => total + source.moveCount, 0) !== Number(candidate.moveCount)) return null;
   return {
     version: 1,
     complete: candidate.complete,
     moveCount: Number(candidate.moveCount),
-    sources: sources as ImportedHistorySource[],
-    moves: moves as MoveEntry[],
+    sources: parsedSources,
+    moves: parsedMoves,
   };
 };
 

@@ -489,7 +489,12 @@ export class GameRoomDO {
       candidate.initialSelectionAction = initialSelectionAction ? clone(initialSelectionAction) : null;
       if (typeof body.historyBranchCreationKey === "string" && body.historyBranchCreationKey) candidate.historyBranchCreationKey = body.historyBranchCreationKey;
       if (authActive(this.env)) candidate.ownershipMode = "account_v1";
-      await this.persistCandidate(candidate, null);
+      try {
+        await this.persistCandidate(candidate, null);
+      } catch (error) {
+        if (importedHistory && error instanceof StorageWriteLimitError) return json({ok:false,error:"branch_history_too_large"},413);
+        throw error;
+      }
       return json({ ok: true, game: withViewModel(candidate, identityId), eventSeq: this.eventSeq });
     }
 
@@ -535,8 +540,13 @@ export class GameRoomDO {
     }
 
     if (request.method === "POST" && path === "/prepare-branch") {
+      if (authActive(this.env) && game.ownershipMode === "account_v1" && getRolesForIdentity(game, identityId).length === 0) {
+        throw new AuthProblem("invalid_input", 403);
+      }
       const decisionId = asIdentity(body.sourceDecisionId);
+      const targetGameId = asIdentity(body.targetGameId);
       const index = typeof body.sourceMoveIndex === "number" && Number.isInteger(body.sourceMoveIndex) ? body.sourceMoveIndex : null;
+      if (!targetGameId) return json({ok:false,error:"invalid_branch_target"},400);
       const archived = decisionId ? await readDecision(this.env, game.id, decisionId) : null;
       const selected = archived?.move ?? (decisionId ? game.moves.find(move => move.moveId === decisionId) : index !== null ? game.moves[index] : null) ?? null;
       const live = body.sourceGameplayRevision === game.gameplayRevision && !decisionId && index === null;
@@ -548,8 +558,8 @@ export class GameRoomDO {
         expectedFinalStateHash:deterministicStateHash(resolveToStability(state,{artifactMode:"full"})),expectedOutcome:state.outcome.status,
       };
       try {
-        const importedHistory = await prepareImportedHistory(this.env, game, selected);
-        return json({ok:true,scenario,initialSelectionAction:selected?.action ?? null,importedHistory});
+        const importedHistory = await prepareImportedHistory(this.env, game, selected, targetGameId);
+        return json({ok:true,historyLineageVersion:1,scenario,initialSelectionAction:selected?.action ?? null,importedHistory});
       } catch (error) {
         const code = error instanceof Error ? error.message : "branch_history_unavailable";
         if (code === "branch_history_too_large") return json({ok:false,error:code},413);

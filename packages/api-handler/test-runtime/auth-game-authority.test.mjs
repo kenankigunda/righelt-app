@@ -288,6 +288,21 @@ test(
       assert.equal(anon.body.game.inviteToken, null);
       assert.deepEqual(anon.body.game.legalActions, []);
       assert.equal(anon.body.game.canRecordMove, false);
+      const unauthorizedBranch = await call(
+        "/api/shell/history/branch",
+        b,
+        {
+          gameId: "unauthorized-history-branch",
+          sourceGameId: "g",
+          sourceGameplayRevision: read.body.game.gameplayRevision,
+        },
+      );
+      assert.equal(unauthorizedBranch.status, 403, JSON.stringify(unauthorizedBranch.body));
+      assert.equal(
+        await db.prepare("SELECT game_id FROM live_games WHERE game_id='unauthorized-history-branch'").first(),
+        null,
+        "source-game denial must not create a destination record",
+      );
       assert.equal(
         (
           await call(
@@ -595,6 +610,29 @@ test(
         { protocolVersion: 2, mode: "viewer" },
         { "x-game-id": "g" },
       );
+      const viewerSource = await call("/api/shell/games/g", b);
+      const viewerBranch = await call(
+        "/api/shell/history/branch",
+        b,
+        {
+          gameId: "authorized-viewer-history-branch",
+          sourceGameId: "g",
+          sourceGameplayRevision: viewerSource.body.game.gameplayRevision,
+        },
+      );
+      assert.equal(viewerBranch.status, 200, JSON.stringify(viewerBranch.body));
+      assert.deepEqual(viewerBranch.body.game.importedHistory, {
+        version: 1,
+        complete: true,
+        moveCount: viewerSource.body.game.moves.length,
+        sources: viewerSource.body.game.moves.length ? [{
+          gameId: "g",
+          gameplayRevision: viewerSource.body.game.gameplayRevision,
+          moveCount: viewerSource.body.game.moves.length,
+        }] : [],
+      });
+      assert.equal(viewerBranch.body.game.player1.profile.username, "bobby");
+      assert.equal(JSON.stringify(viewerBranch.body.game).includes("Current Alice"), false, "source account profile is not transferred");
       await eventually(() =>
         player.messages.some((m) => m.game?.canRecordMove === true),
       );

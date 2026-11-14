@@ -408,10 +408,14 @@ export const handleLiveGameRequest = async (
     // handles only this bounded position, never the source's complete history.
     const prepared = await fetchGameRoom(request, env, sourceGameId, "/prepare-branch", {
       method:"POST",headers:{"content-type":"application/json"},
-      body:JSON.stringify({identityId,protocolVersion:2,sourceMoveIndex,sourceDecisionId:body.sourceDecisionId,sourceGameplayRevision:body.sourceGameplayRevision}),
+      body:JSON.stringify({identityId,protocolVersion:2,targetGameId:newGameId,sourceMoveIndex,sourceDecisionId:body.sourceDecisionId,sourceGameplayRevision:body.sourceGameplayRevision}),
     });
     if (!prepared.ok) return {handled:true,response:prepared};
-    const {scenario,initialSelectionAction,importedHistory} = await prepared.json() as Record<string,unknown>;
+    const preparedBody = await prepared.json() as Record<string,unknown>;
+    if (preparedBody.historyLineageVersion !== 1 || preparedBody.importedHistory === undefined) {
+      return { handled: true, status: 409, body: { ok: false, error: "branch_history_upgrade_required" }, cacheControl: CACHE_NO_STORE };
+    }
+    const {scenario,initialSelectionAction,importedHistory} = preparedBody;
     const response = await fetchGameRoom(request, env, newGameId, "/create-from-scenario", {
       method: "POST",
       headers: { "content-type": "application/json" },
