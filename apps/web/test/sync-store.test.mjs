@@ -619,6 +619,15 @@ test('quiet computer rollback preserves an unrelated human recovery banner',()=>
  assert.equal(store.getFailedOperations(game.id)[0].error.message,'Your move needs review.');
 });
 
+test('quiet maintenance projection preserves an unrelated human recovery banner',()=>{
+ const {transport,games,listeners}=createTransportHarness();const game={...createRevertReadyGame(),id:'maintenance-preserves-human'};games.set(game.id,game);
+ const store=createSyncStore({storage:createMemoryStorage(),createTransportStore:()=>transport,createSyncClient:()=>({connectGame(){},disconnectGame(){},disconnectAll(){},getDesiredGameIds:()=>[]})});
+ for(const listener of listeners)listener({type:'optimistic_rollback',gameId:game.id,clientCommandId:'human-command',reason:'stale_state',computer:false,failureNotice:'Your move needs review.'});
+ for(const listener of listeners)listener({type:'maintenance_projection_changed',gameId:game.id,clientCommandId:'renew-1'});
+ assert.equal(store.getFailedOperations(game.id).length,1);
+ assert.equal(store.getFailedOperations(game.id)[0].error.message,'Your move needs review.');
+});
+
 test("sync store requests reverts optimistically with a stable client request id", async () => {
   const { transport, games } = createTransportHarness();
   games.set("game-revert", createRevertReadyGame());

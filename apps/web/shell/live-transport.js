@@ -2307,7 +2307,7 @@ export const createLiveTransportStore = ({
         // projection so only the session that owns the lease work may keep an
         // explicit Undo available while unrelated callers remain blocked.
         recalculateOptimisticGame(gameId);
-        emitChange({ type: "optimistic_enqueue", gameId, clientCommandId: envelope.clientCommandId });
+        emitChange({ type: "maintenance_projection_changed", gameId, clientCommandId: envelope.clientCommandId });
       } else {
         pending.sharedRecoveryEpoch = (optimistic.connectionRecoveryEpoch ?? 0) + 1;
         setConnectionRecovering(gameId,true);

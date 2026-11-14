@@ -234,6 +234,8 @@ test('repeated accepted maintenance never toggles legal human availability at a 
   if(round<2)({completion}=await h.renewNext());
  }
  assert.equal(new Set(ids).size,3);assert.ok(samples.length>3);
+ assert.equal(samples.some(sample=>sample.type==='maintenance_projection_changed'),true);
+ assert.equal(samples.some(sample=>sample.type==='optimistic_enqueue'),false);
  for(const sample of samples)assert.equal(sample.canRecordMove,true,`unexpected availability change at ${sample.type}`);
 });
 

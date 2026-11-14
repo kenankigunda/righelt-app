@@ -20,6 +20,12 @@ test('local placement sounds immediately and its acknowledgement never repeats i
  assert.equal(f.sound.observe({game:{id:'a',board:{state}},type:'event_appended',reason:'move_recorded',eventSeq:1,clientCommandId:'move-1'}),false);
  assert.equal(f.starts(),starts);
 });
+test('quiet maintenance projection updates never play a move cue',()=>{
+ const f=fixture();f.sound.gesture();const state={pieces:[{},{}],sideToMove:'P1',turnIndex:0,outcome:{status:'ongoing'}};
+ f.sound.local({gameId:'a',type:'authoritative_update'},{currentSnapshot:state});
+ assert.equal(f.sound.local({gameId:'a',type:'maintenance_projection_changed',clientCommandId:'renew-1'},{currentSnapshot:state}),false);
+ assert.equal(f.starts(),0);
+});
 test('restored local commands and background actions are silent and never replay on acknowledgement',()=>{
  const f=fixture();f.sound.gesture();const game={currentSnapshot:{pieces:[]}};
  assert.equal(f.sound.local({gameId:'a',type:'journal_restored',clientCommandId:'old'},game),false);
