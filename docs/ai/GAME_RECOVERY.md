@@ -40,6 +40,8 @@ Unexpected issues and overdue work expose a labelled Details action with a 44-pi
 
 Full issue reports remain allowlisted and local only. They exclude credentials, authorization context, raw headers/bodies, player identities/names, invite secrets, IP/location, and unrelated history. Limits are 24 hours, 200 retained events, 20 reports, and one MiB. Initial evidence is immutable; recovery attempts append. Persistence is debounced, guarded, independent of the command journal, and falls back to memory. Clear diagnostics removes local reports.
 
+Every captured incident identifies the loaded client build, browser, participant topology, socket and recovery generations, current owner, exact retained blocker or gate, request identity and result, and final resolution. Deduplicate repeated observations of one request without merging distinct retries. Do not infer a failed request from a successful read. Sanitize these fields by construction and keep commands, game state, identity, and authentication data out of the report.
+
 A separate strict scalar projection sends bounded recovery transitions, blocked gates and delayed stalled-episode snapshots to first-party server logs. It never uploads full local reports, board state, actions, identity or authentication data. Uploads have independent deadlines and memory/rate limits, never use the gameplay journal, and cannot unblock or interrupt recovery. See [sync hardening and the remote contract](SYNC_RECOVERY_HARDENING.md). Provider retention and access rules apply to server logs, independently of clearing local reports.
 
 ## Investigation and release gates

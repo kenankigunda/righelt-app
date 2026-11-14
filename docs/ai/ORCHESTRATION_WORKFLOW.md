@@ -60,13 +60,15 @@ Follow `docs/ai/PR_WORKFLOW.md`: one canonical branch and PR per feature. Stream
 
 For each cycle:
 
-0. Output a cycle heartbeat to the user: `[ORCHESTRATION cycle N] active=<stream ids> | merged=<stream ids> | pending=<stream ids>`.
+0. Report only a material transition, result, blocker needing action, or completion. Stay quiet during unchanged polling or while every active stream is making real progress.
 1. Identify runnable streams (`pending` plus dependencies merged).
 2. Dispatch up to `max_parallel_streams`.
 3. Collect updates and validation evidence.
 4. Recompute the stream graph and ready set.
 5. Evaluate merge gates and merge eligible streams.
 6. Update `coordination-log.md`.
+
+A scheduled heartbeat is only a wake signal for the active coordinator. It must not duplicate an active lead, create competing streams, or treat a running label as progress. On wake, pressure-test the latest result and act only when there is a real gap.
 
 ## Subagent Reporting Contract
 

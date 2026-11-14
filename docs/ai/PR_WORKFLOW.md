@@ -1,5 +1,7 @@
 # Feature PR workflow
 
+For multi-PR delivery programs, also follow [the continuous delivery dos and don'ts](CONTINUOUS_DELIVERY_DOS_AND_DONTS.md). They define the startup preflight, work-ahead rule, tracking transitions, browser evidence boundary, and quiet heartbeat contract.
+
 `PR validation` over the exact `pr-gate` profile is the only blocking CI aggregate. `Full validation` is retired and must not be awaited. Broad `nightly-full` results are advisory: failed, pending or missing nightly evidence does not independently block review, merge or deployment. Keep explicit feature acceptance, independent review, authorization, retained-state proof and deployed-identity verification separate. Investigate confirmed product defects without restoring a blanket full-suite gate.
 
 Resolve actual main from its fetched or primary branch ref, not a pull request's historical base snapshot. Before merging, verify that the exact tested PR head contains that live target, while retaining the PR/run snapshot identity separately.

@@ -14,6 +14,7 @@ The parent workspace files must make it obvious that `/Users/kenankigunda/Docume
 - Keep changes scoped to the user request and current feature plan.
 - Prefer explicit acceptance criteria, deterministic commands, and auditable logs.
 - Do not silently change conventions; propose first when in doubt.
+- For long ordered programs, follow [the continuous delivery dos and don'ts](docs/ai/CONTINUOUS_DELIVERY_DOS_AND_DONTS.md).
 
 ## Product decisions and documentation
 
