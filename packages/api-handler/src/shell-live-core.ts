@@ -1596,9 +1596,11 @@ export const applyAcceptedAutomaticEnding = (
 
   const operationId = commit.clientCommandId || result.move?.moveId || "terminal-outcome";
   const addedDestroyed = destructionRecords(additionalRemovals, operationId);
-  if (result.move && addedDestroyed.length) {
+  if (result.move) {
     result.move.snapshot = clone(game.board.state);
-    result.move.destroyedPieces = [...(result.move.destroyedPieces ?? []), ...addedDestroyed];
+    if (addedDestroyed.length) {
+      result.move.destroyedPieces = [...(result.move.destroyedPieces ?? []), ...addedDestroyed];
+    }
   }
   if (additionalRemovals.length) {
     result.destroyedPieces = [...(result.destroyedPieces ?? []), ...addedDestroyed];
