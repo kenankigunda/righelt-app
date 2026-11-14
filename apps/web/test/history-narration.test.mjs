@@ -61,6 +61,7 @@ test('recorded detail stays outside finite Board guidance while full context pre
  assert.equal(message.context.text,'Kenan retreated from (4, 3) to (4, 4)');
  assert.equal(message.context.coordinates.length,2);
  assert.equal(historyBoardMessage({...selected,inHistoryMode:false}),null);
+ const empty=historyBoardMessage(game);assert.equal(empty.prompt.text,'Choose a move in History');assert.equal(empty.context,null);
 });
 
 test('History advertises the native move-button hit contract explicitly',()=>{

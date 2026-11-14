@@ -6,7 +6,7 @@ import {historyTurnSide} from './history-preview.js';
 import {describeRecordedMove,describeRecordedTurn,recordedMoveNumber,recordedActorSide,recordedNarrationCoordinates,recordedMoveWithClosure} from './recorded-narration.js';
 import {completedTurnTitle,isCompletedWinningTurn} from './completed-review.js';
 import {completedOutcomeNarration} from './completion-narration.js';
-import {resolveBoardMessageOwner} from '../board/message-priority.js';
+import {isMeaningfulHistoryMessage,resolveBoardMessageOwner} from '../board/message-priority.js';
 
 export const HISTORY_HIT_TARGET_CONTRACT='move-button-v1';
 
@@ -44,5 +44,5 @@ export function historyBoardMessage(game,options={}){
  const presentation=selectedHistoryPresentation(game,options);
  if(!presentation)return null;
  const context={...presentation.message,purpose:BOARD_CONTEXT_PURPOSE.HISTORY};
- return resolveBoardMessageOwner({semantic:context,generic:{text:BOARD_PROMPT.history}});
+ return resolveBoardMessageOwner({semantic:isMeaningfulHistoryMessage(context)?context:null,generic:{text:BOARD_PROMPT.history}});
 }

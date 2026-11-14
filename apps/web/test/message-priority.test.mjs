@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BOARD_MESSAGE_PRIORITY,resolveBoardMessageOwner} from '../board/message-priority.js';
+import {BOARD_MESSAGE_PRIORITY,isMeaningfulHistoryMessage,resolveBoardMessageOwner} from '../board/message-priority.js';
 
 const prompt=text=>({text});
 const context=text=>({text,purpose:'selected-history'});
@@ -31,4 +31,10 @@ test('generic instructions remain when no stronger state explains the Board',()=
   owner:BOARD_MESSAGE_PRIORITY.GENERIC_INSTRUCTION,prompt:generic,context:null,
  });
  assert.deepEqual(resolveBoardMessageOwner(),{owner:null,prompt:null,context:null});
+});
+
+test('History placeholders are not promoted over actionable empty-state guidance',()=>{
+ for(const text of ['History','Turn overview','Historical move details unavailable','Historical turn details unavailable'])assert.equal(isMeaningfulHistoryMessage({text,actorName:'Guest'}),false);
+ assert.equal(isMeaningfulHistoryMessage({text:'Recorded move',coordinates:[{row:1,col:2}]}),true);
+ assert.equal(isMeaningfulHistoryMessage({text:'You won in 29 moves.'}),true);
 });

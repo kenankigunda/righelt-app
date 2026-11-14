@@ -101,6 +101,36 @@ test('selected recorded History detail uses acknowledged context without replay 
  assert.equal(f.store.items('g').length,0,'quiet renders do not revive selected narration');
 });
 
+const runtimeHistory=(f,message)=>f.ctx.receive({kind:'history',mandatory:false,message},{selectedPieceId:null,intentVersion:3,phase:null,continuationPhase:null,transient:false});
+
+test('decisive selected turn has one outcome owner across acknowledged and runtime History channels',()=>{
+ const f=fixture(),action={type:'push',actorId:'winner',from:{row:8,col:2},to:{row:9,col:2}};
+ const terminal={outcome:{status:'p1_win',reason:'p2_commander_destroyed'},pieces:[]};
+ const decisive={moveId:'final',index:0,displayMoveNumber:1,turnIndex:4,turnMoveIndex:0,actorSide:'P1',clientCommandId:'v2:final',action,selectionSnapshot:{sideToMove:'P1',pieces:[]},snapshot:terminal,destroyedPieces:[{pieceId:'c2',kind:'commander',position:{row:9,col:2},ownerSeat:'p2'}]};
+ Object.assign(f.game,{gameplayRevision:7,inHistoryMode:true,historyIndex:null,historyTurnIndex:4,historyTurnMoves:[decisive],moves:[decisive],turns:[{index:4,playerSeat:'Player 1',status:'complete',endedAt:'terminal',moveIndexes:[0]}],board:{state:terminal},terminalOutcome:{version:1,decisive:{action,actorSide:'P1',decisionId:'final',clientCommandId:'v2:final',turnIndex:4},board:structuredClone(terminal),result:terminal.outcome,removals:structuredClone(decisive.destroyedPieces),cause:{kind:'relevant-continuation-finality',endpointCount:2,optionalEndpointCount:1},commit:{eventSeq:9,gameplayRevision:7,clientCommandId:'v2:final'},lineage:{version:1,complete:true,importedMoveCount:0,sources:[]},activeActionCount:1,activeActionCountComplete:true}});
+ f.ack();runtimeHistory(f,{text:'Turn overview'});
+ const html=renderBoardContextDetails(f.store.items('g'));
+ assert.equal((html.match(/class="board-context-detail"/g)??[]).length,1);
+ assert.match(html,/won in 1 move/);assert.doesNotMatch(html,/Turn overview|Choose a move in History/);
+});
+
+for(const selection of ['move','turn'])test(`earlier selected ${selection} prefers acknowledged narration over runtime fallback`,()=>{
+ const f=fixture();f.game.inHistoryMode=true;
+ if(selection==='move'){f.game.historyIndex=0;f.game.inspectedDecision={...f.game.moves[0],index:0,displayMoveNumber:1};}
+ else {f.game.historyTurnIndex=0;f.game.historyTurnMoves=[f.game.moves[0]];}
+ f.ack();runtimeHistory(f,{text:'Recorded move from (1, 2) to (2, 3)',coordinates:[{row:1,col:2},{row:2,col:3}]});
+ const acknowledged=f.store.channel('acknowledged'),html=renderBoardContextDetails(f.store.items('g'));
+ assert.equal((html.match(/class="board-context-detail"/g)??[]).length,1);
+ assert.match(html,new RegExp(acknowledged.message.actorName??'Tau'));assert.doesNotMatch(html,/Recorded move from/);
+});
+
+test('empty History retains useful guidance and publishes no weak context owner',()=>{
+ const f=fixture();Object.assign(f.game,{inHistoryMode:true,historyIndex:null,historyTurnIndex:null,historyTurnMoves:[],inspectedDecision:null,moves:[],turns:[]});
+ const message=historyBoardMessage(f.game,{identityId:'me'});assert.equal(message.prompt.text,'Choose a move in History');assert.equal(message.context,null);
+ f.ack();runtimeHistory(f,{text:'History'});
+ assert.equal(f.store.channel('acknowledged'),null);assert.equal(f.store.channel('piece'),null);assert.equal(renderBoardContextDetails(f.store.items('g')),'');
+});
+
 test('automatic frame context uses pinned recorded identity and shared closure narration without History intent',()=>{
  const f=fixture(),record={...f.game.moves[0],index:16,displayMoveNumber:17,computerProof:{profile:'babs'},destroyedPieces:[]};
  f.game.moves=[record,{moveId:'closure',index:17,turnIndex:0,turnMoveIndex:1,actorSide:'P1',action:{type:'end_turn'},snapshot:{pieces:[],turnIndex:1},destroyedPieces:[{pieceId:'lost',ownerSeat:'P1',position:{row:3,col:4}}]}];

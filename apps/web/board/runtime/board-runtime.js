@@ -4,7 +4,7 @@ import {createMutationActivationFence} from '../mutation-activation.js';
 import {getPushRetreatPrompt as renderPushRetreatPrompt,requiredRushContext as buildRequiredRushContext,opponentInspectionPrompt,buildHistoryRemovalEffects} from '../guidance-presentation.js';
 import {createMessageHeightController} from '../message-height.js';
 import {BOARD_PROMPT,isMappedBoardPromptHtml} from '../prompt-models.js';
-import {resolveBoardMessageOwner} from '../message-priority.js';
+import {isMeaningfulHistoryMessage,resolveBoardMessageOwner} from '../message-priority.js';
 import {createGuidanceDiagnostics} from '../guidance-diagnostics.js';
 import { createRushSupplyGuidanceClient, rushActionKey } from '../rush-supply-guidance.js';
 import {boardMessagePresentation,renderBoardMessageHtml,renderBoardInlineAction,updateBoardInlineActionLabel,patchBoardMessage} from '../message-presentation.js';
@@ -363,7 +363,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
 
   const setGenericInstructionPrompt = text => {
     const presentation=resolveBoardMessageOwner({
-      semantic:statusContext?.kind==='history'?statusContext.message:null,
+      semantic:statusContext?.kind==='history'&&isMeaningfulHistoryMessage(statusContext.message)?statusContext.message:null,
       generic:{text},
     });
     if(presentation.prompt){setBoardPreviewPrompt(presentation.prompt.text);return;}
