@@ -31,6 +31,7 @@
     "dev:all:c:auto": "node scripts/resources/cli.mjs run --kind preview -- node scripts/dev-web-auto.mjs 8791 --with-api --watch-backend",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check:web-engine-generated": "node scripts/check-web-engine-generated.mjs",
+    "check:decision-register": "node scripts/check-decision-delivery-register.mjs",
     "check:ticket-workflow": "node scripts/check-ticket-workflow-setup.mjs",
     "setup:https": "node scripts/setup-local-https.mjs",
     "setup:workspace": "bash scripts/setup-workspace.sh",
