@@ -1177,15 +1177,15 @@ export function createEngineBoardAdapter() {
       const sequenceProjection=isLiveInteractiveBoard?projectSequenceStatus(snapshot):null;
       const buildLivePieceToken=piece=>{
         const token=buildPieceToken(displayPiece(piece,sequenceProjection));
-        if (pendingRecordingPieceIds?.has?.(piece.id)) {
-          token.classList.add('pending-recording-piece');
-          token.setAttribute('aria-label', `${token.getAttribute('aria-label')}, recording move`);
-        }
         if(sequenceProjection?.destroyedPieceIds.has(piece.id)){
           // Keep the real token and its cell available for legal sequence
           // actions. This is a forecast, never a removal event or overlay.
           token.classList.add('projected-destruction-piece');
           token.setAttribute('aria-label',`${piece.owner==='P1'?'Red':'Blue'} ${piece.kind}, will be destroyed if the turn ends now`);
+        }
+        if (pendingRecordingPieceIds?.has?.(piece.id)) {
+          token.classList.add('pending-recording-piece');
+          token.setAttribute('aria-label', `${token.getAttribute('aria-label')}, recording move`);
         }
         return token;
       };

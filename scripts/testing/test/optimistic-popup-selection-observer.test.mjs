@@ -108,7 +108,7 @@ const {createHash}=await import('node:crypto');
 const legacyClearSignature='const clearSelection = () => {';
 const preserveClearSignature='const clearSelection = ({preserveNetworks=false}={}) => {';
 const clearHook="\n    __popupValue('selection-clear',true,__popupRuntimeScope);";
-const legacyRuntimeRecipeGolden='44cfddec27d38d225d3e686529c0ff363713fa2b35de777d5c9d6f12c20b9c9c';
+const legacyRuntimeRecipeGolden='a511782095d36f2af8e4a6cdbbe3b77585fc3f82f9cb36cbb673be631ecb08d6';
 function normalized218RuntimeRecipe(recipe){
  const targets=recipe.operations.filter(op=>op.before===preserveClearSignature);assert.equal(targets.length,1,'exact approved218 signature mapping');
  assert.equal(targets[0].after,preserveClearSignature+clearHook,'immutable clear observation body');

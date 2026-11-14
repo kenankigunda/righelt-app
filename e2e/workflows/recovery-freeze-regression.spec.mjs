@@ -181,7 +181,7 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  await expect(recordingPieces).toHaveCount(1);
  expect(await recordingPieces.evaluateAll(nodes=>nodes.map(node=>node.dataset.pieceId))).toEqual(['A1']);
  expect(await recordingPieces.evaluateAll(nodes=>nodes.map(node=>({name:node.getAttribute('aria-label'),animation:getComputedStyle(node).animationName})))).toEqual([
-  {name:'Red unit, recording move',animation:'pending-recording-piece-pulse'},
+  {name:'Red unit, will be destroyed if the turn ends now, recording move',animation:'pending-recording-piece-pulse'},
  ]);
  await page.emulateMedia({reducedMotion:'reduce'});
  expect(await recordingPieces.evaluateAll(nodes=>nodes.map(node=>({animation:getComputedStyle(node).animationName,outline:getComputedStyle(node).outlineStyle})))).toEqual([
