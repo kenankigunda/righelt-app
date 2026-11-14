@@ -521,6 +521,7 @@ for (const variant of ["no-undos", "tail-undos", "divergent-history"]) {
     const branch = await owner.store.launchHistoryBranch({
       sourceGameId: created.id,
       sourceMoveIndex: branchMoveIndex,
+      sourceGameplayRevision: sourceView.gameplayRevision,
       scenario: branchSeed.scenario,
       initialSelectionAction: branchSeed.initialSelectionAction,
       participantCopyMode: branchSeed.participantCopyMode,

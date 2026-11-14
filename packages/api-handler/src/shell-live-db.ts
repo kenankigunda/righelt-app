@@ -552,7 +552,7 @@ const normalizeMoves = (value: unknown, mismatches: PersistedGameMismatch[]): Li
             ? move.displayMoveNumber
             : activeMoveCounter,
         destroyedPieces,
-        importedFrom,
+        ...(importedFrom ? { importedFrom } : {}),
       } satisfies LiveGame["moves"][number];
       if (typeof move.moveId !== "string" || move.moveId.length === 0) {
         recordMismatch(mismatches, `moves[${index}].moveId`, "non-empty string", move.moveId, "generated_move_id");

@@ -183,11 +183,10 @@ export async function prepareImportedHistory(
     seen.add(key);
     deduped.push({ ...clone(move), importedFrom: clone(origin), undone: false, undoneAt: null, undoneByIdentityId: null, undoEventSeq: undefined });
   }
-  const selectedOrigin = selectedMove?.importedFrom;
-  const selectedIndex = selectedMove ? deduped.findIndex(move => move.moveId === selectedMove.moveId
-    || Boolean(selectedOrigin && move.importedFrom?.gameId === selectedOrigin.gameId && move.importedFrom?.decisionId === selectedOrigin.decisionId)) : deduped.length;
-  if (selectedMove && selectedIndex < 0) throw new Error('branch_source_changed');
-  const moves = deduped.slice(0, selectedIndex).map((move, index) => ({ ...move, index }));
+  const moves = (selectedMove
+    ? deduped.filter(move => move.displayMoveNumber < selectedMove.displayMoveNumber)
+    : deduped
+  ).map((move, index) => ({ ...move, index }));
   const sources: PreparedImportedHistory['sources'] = [];
   for (const move of moves) {
     const origin = move.importedFrom!;

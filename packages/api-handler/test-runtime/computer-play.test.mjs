@@ -141,10 +141,11 @@ for (const accounts of [true, false]) test(`native ${accounts ? 'account' : 'gue
     const after = (await call(route('decision-history'),a,{cursor:null})).body.items;
     assert.deepEqual(after.find(entry=>entry.id===decision.id),decision);
     assert.equal(after.at(-1).kind,'restoration');
-    const branch = await call('history/branch',b,{gameId:'safe-branch',sourceGameId:game.id,sourceDecisionId:decision.id,creatorSide:'p2',scenario:{resultingState:{forged:true}}});
+    const branchActor=accounts?a:b;
+    const branch = await call('history/branch',branchActor,{gameId:'safe-branch',sourceGameId:game.id,sourceDecisionId:decision.id,creatorSide:'p2',scenario:{resultingState:{forged:true}}});
     assert.equal(branch.status,200,JSON.stringify(branch.body));
     assert.deepEqual(branch.body.game.board.state,decision.move.selectionSnapshot);
-    assert.equal(branch.body.game.player1,null);assert.equal(branch.body.game.player2.identityId,'viewer');
+    assert.equal(branch.body.game.player1,null);assert.equal(branch.body.game.player2.identityId,branchActor.id);
     assert.equal(branch.body.game.computer,undefined);
     for(const [name,modelId]of [['cached',undefined],['explicit-retained','initial-1554'],['explicit-published',CURRENT_COMPUTER_MODEL.id]]){
       const value=await call('history/branch',a,{gameId:'branch-pin-'+name,sourceGameId:game.id,sourceDecisionId:decision.id,computer:{p1:'babs',p2:null},...(modelId===undefined?{}:{computerModelId:modelId})});

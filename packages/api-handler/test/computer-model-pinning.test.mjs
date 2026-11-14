@@ -131,3 +131,25 @@ test('lineage completeness accepts a real Undo replacement and ignores its known
  assert.deepEqual(prepared.moves.map(move=>move.displayMoveNumber),[1,2]);
  assert.equal(prepared.complete,true);
 });
+
+test('branching before an archived undone decision excludes its replacement and keeps ambiguous ancestry incomplete',async()=>{
+ const {env}=fixture();
+ const source=createInitialGame({gameId:'lineage-undone-cutoff',identityId:'owner',selfPlayMode:true});
+ for(let index=0;index<3;index+=1){
+  const action=listLegalActions(source.board.state).find(candidate=>candidate.from&&candidate.to);
+  assert.equal(applyServerAction(source,action).ok,true);
+ }
+ const selected=source.moves[1];
+ assert.equal(applyRevertToMove(source,selected.moveId,'owner').ok,true);
+ const replacement=listLegalActions(source.board.state).find(candidate=>candidate.from&&candidate.to);
+ assert.equal(applyServerAction(source,replacement).ok,true);
+
+ const prepared=await prepareImportedHistory(env,source,selected,'lineage-undone-cutoff-target');
+ assert.deepEqual(prepared.moves.map(move=>[move.displayMoveNumber,move.importedFrom?.decisionId]),[[1,source.moves[0].moveId]]);
+ assert.equal(prepared.complete,true);
+
+ const duplicatePrior={...source.moves[0],moveId:'ambiguous-prior'};
+ const ambiguous=await prepareImportedHistory(env,{...source,moves:[source.moves[0],duplicatePrior,...source.moves.slice(1)]},selected,'lineage-ambiguous-cutoff-target');
+ assert.deepEqual(ambiguous.moves.map(move=>move.displayMoveNumber),[1,1]);
+ assert.equal(ambiguous.complete,false);
+});
