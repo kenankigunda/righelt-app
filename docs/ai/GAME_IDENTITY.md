@@ -14,12 +14,20 @@ Game identity is presentation only. It must never grant authority, change seats,
 
 ## Browser title
 
-Game routes use `<matchup> | Righelt`. Loading, inaccessible, and unresolved invitation states use `Loading game | Righelt`, `Game unavailable | Righelt`, and `Invitation | Righelt`. Other routes use `Righelt`.
+Game routes use `<browser matchup> | <Mon D> | Righelt`, with the date derived from the game's immutable `createdAt`. Browser self-play shortens the in-app `You play both sides` or `<name> plays both sides` copy to `You` or the participant name. Loading, inaccessible, and unresolved invitation states use `Loading game | Righelt`, `Game unavailable | Righelt`, and `Invitation | Righelt`. Other routes use `Righelt`.
 
 The complete browser title has a 40-grapheme budget. If needed, shorten the longer human name to its Unicode-safe first initial plus a period, then shorten the other human name. Preserve `You`, computer names, and generic seat labels. Retain a known matchup while the same route reconnects, but clear inaccessible identity after route or access changes.
 
-## Tessera v1
+## In-app identity marks
 
-Each game renders a decorative 3×3 Tessera derived only from its complete immutable game ID and the versioned `righelt:tessera:v1` seed. Known-answer tests lock the geometry and palette. Repeated SVG instances use no document-global IDs or clip paths.
+Home cards and the Game summary use a date inlay derived only from the game's immutable `createdAt`. Its fixed-size slot prevents nearby title movement, and its accessible label exposes the full localized start date and time.
 
-Dynamic per-game favicons and the action-awaiting notification dot are intentionally deferred to the immediately following favicon PR. They must reuse this identity model without coupling document icons to transport authority.
+Participants use decorative 3×3 Tessera v1 marks derived from stable presentation keys with the versioned `righelt:tessera:v1` seed:
+
+- Accounts: normalized username.
+- Guests: immutable guest identity ID.
+- Computers: computer profile key.
+
+The same participant keeps one mark across games, seats, display-name changes, turns, and temporary control. Different stable identities receive different keys. Known-answer tests lock Tessera geometry and palette. Repeated SVG instances use no document-global IDs or clip paths.
+
+The document icon remains separate from in-app game and participant identity. It uses the shipped marble favicon, adding the action-awaiting notification dot only when final authoritative action availability says the viewer can act. It never infers authority from transport or presentation state.

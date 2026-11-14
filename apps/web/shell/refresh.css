@@ -374,8 +374,9 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 @keyframes account-rail-enter {from{transform:translate(var(--flyout-offset-x),var(--flyout-offset-y));}to{transform:translate(0,0);}}
 .account-dialog[data-presentation="flyout"].is-closing {animation:none;transform:translate(var(--flyout-offset-x),var(--flyout-offset-y));opacity:0;pointer-events:none;}
 .player-emblem {display:block;width:34px;height:34px;flex:none;color:var(--ink);}
-.player-emblem-face {fill:var(--surface-raised);stroke:currentColor;stroke-opacity:.22;stroke-width:1;}
-.player-emblem-edge {fill:none;stroke:currentColor;stroke-opacity:.35;stroke-width:1.8;}
+.player-emblem-face {fill:var(--surface-raised);}
+.player-emblem-grain {fill:#fff;opacity:.09;}
+.player-emblem-edge {fill:none;stroke:var(--ink);stroke-opacity:.22;stroke-width:.8;}
 .participant-identity {display:inline-grid;max-width:100%;vertical-align:middle;min-width:0;}
 .player-name-stack {display:grid;gap:2px;text-align:left;min-width:0;}
 .player-name {font-weight:700;line-height:1.35;}
@@ -384,8 +385,6 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .perspective-participants .participant-profile :is(.player-name-stack,.player-name) {overflow:visible;}
 .perspective-participants .participant-identity[data-player-side="p1"] .player-name {color:var(--player-p1);}
 .perspective-participants .participant-identity[data-player-side="p2"] .player-name {color:var(--player-p2);}
-.participant-identity[data-player-side="p1"] .player-emblem {color:var(--player-p1);}
-.participant-identity[data-player-side="p2"] .player-emblem {color:var(--player-p2);}
 .panel .participant-identity .participant-profile {display:inline-flex;align-items:center;justify-content:flex-start;gap:var(--identity-gap,10px);background:transparent;color:var(--ink);border:0;border-radius:0;padding:5px 0;box-shadow:none;max-width:100%;text-align:left;}
 [data-hover-capability="hover"] .panel .participant-identity button.participant-profile:not(:disabled):hover {background:transparent;box-shadow:none;transform:none;filter:none;}
 [data-hover-capability="hover"] button.participant-profile:hover .player-name {text-decoration:underline;text-underline-offset:3px;}
