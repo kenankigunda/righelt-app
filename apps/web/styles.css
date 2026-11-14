@@ -428,6 +428,7 @@ button {
 .cell.target.mutation-unavailable-target {
   border:2px dashed #85877d;
   box-shadow:var(--cell-recess-shadow);
+  isolation:isolate;
 }
 .cell.target.mutation-unavailable-target::after {
   content:"";
@@ -440,9 +441,12 @@ button {
   pointer-events:none;
 }
 .cell.target.mutation-unavailable-target[data-mutation-pulse="true"]::after {
-  animation:notification-processing var(--notification-processing-cycle,2.4s) ease-in-out infinite;
-  animation-delay:var(--surface-pulse-delay,0ms);
+  animation:notification-processing var(--notification-processing-cycle) ease-in-out infinite;
 }
+.cell.target.mutation-unavailable-target > .piece-token.move-ghost {z-index:1;}
+.cell.target.mutation-unavailable-target > .piece-token:not(.move-ghost),
+.cell.target.mutation-unavailable-target > .piece-stack,
+.cell.target.mutation-unavailable-target > .group-strength-badge {z-index:2;}
 @media (prefers-reduced-motion: reduce), (forced-colors: active) {
   .cell.target.mutation-unavailable-target[data-mutation-pulse="true"]::after {animation:none;opacity:.15;}
 }

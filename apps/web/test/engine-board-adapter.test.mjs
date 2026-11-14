@@ -1421,21 +1421,32 @@ test("every mutation destination uses one neutral incident surface without pulsi
         removalEffects: [], allowFreeSelection: false, currentActionType: type,
         selectedPieceOverlayPhase: "actionPreviews",
       };
-      adapter.render({ ...payload, mutationSurface: { unavailable: true, pulsing: true, phaseMs: 325, episodeId: "episode" } });
+      adapter.render({ ...payload, mutationSurface: { unavailable: true, pulsing: true, episodeId: "episode" } });
       const sourceCell = getCell(boardEl, source.row, source.col), targetCell = getCell(boardEl, target.row, target.col);
       assert.equal(targetCell.classList.contains("mutation-unavailable-target"), true, type);
       assert.equal(targetCell.dataset.mutationPulse, "true", type);
       assert.equal(sourceCell.classList.contains("mutation-unavailable-target"), false, type);
       assert.equal(sourceCell.querySelector(".piece-token")?.classList.contains("mutation-unavailable-target"), false, type);
+      const ghost = targetCell.querySelector(".move-ghost");
+      assert(ghost, `${type} keeps its steady preview ghost`);
+      assert.equal(ghost.dataset.mutationPulse, undefined, `${type} never assigns pulse ownership to the ghost`);
       if (type !== "project") {
         const arrow = overlayLinesEl.querySelector("line");
         assert.equal(arrow?.getAttribute("stroke"), "#85877d", `${type} arrow is neutral`);
         assert.equal(arrow?.getAttribute("stroke-dasharray"), "6 5", `${type} arrow is dashed`);
       }
-      adapter.render({ ...payload, mutationSurface: { unavailable: false, pulsing: false, phaseMs: 0, episodeId: null } });
+      adapter.render({ ...payload, mutationSurface: { unavailable: false, pulsing: false, episodeId: null } });
       assert.equal(targetCell.classList.contains("mutation-unavailable-target"), false, `${type} settles`);
       assert.equal(targetCell.dataset.mutationPulse, undefined, `${type} pulse retires`);
       adapter.unmount();
     }
   });
+});
+
+test("mutation wash is an isolated underlay beneath steady preview content", () => {
+  assert.match(styleSource, /\.cell\.target\.mutation-unavailable-target\s*\{[\s\S]*isolation:isolate;/s);
+  assert.match(styleSource, /\.cell\.target\.mutation-unavailable-target::after\s*\{[\s\S]*z-index:0;/s);
+  assert.match(styleSource, /\.cell\.target\.mutation-unavailable-target > \.piece-token\.move-ghost\s*\{z-index:1;\}/);
+  assert.match(styleSource, /\.cell\.target\.mutation-unavailable-target > \.piece-token:not\(\.move-ghost\)[\s\S]*z-index:2;/s);
+  assert.doesNotMatch(styleSource, /\.piece-token\.move-ghost[^}]*animation:/s);
 });

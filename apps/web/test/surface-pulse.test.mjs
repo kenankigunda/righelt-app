@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { mutationSurfacePresentation, SURFACE_PULSE_CYCLE_MS } from "../board/surface-pulse.js";
+import { mutationSurfacePresentation, normalizeMutationSurface } from "../board/surface-pulse.js";
 
 const recovering = (overrides = {}) => ({
   sharedMutationsBlocked: true,
@@ -12,16 +12,25 @@ const recovering = (overrides = {}) => ({
   ...overrides,
 });
 
-test("surface pulse observes the existing four-second foreground grace and incident phase", () => {
+test("surface pulse observes the existing four-second foreground grace and incident onset", () => {
   assert.deepEqual(mutationSurfacePresentation(recovering(), { foregroundWaitMs: 3_999 }), {
-    unavailable: true, pulsing: false, phaseMs: 0, episodeId: null,
+    unavailable: true, pulsing: false, episodeId: null,
   });
   assert.deepEqual(mutationSurfacePresentation(recovering(), { foregroundWaitMs: 4_000 }), {
-    unavailable: true, pulsing: true, phaseMs: 0, episodeId: "episode-7",
+    unavailable: true, pulsing: true, episodeId: "episode-7",
   });
-  assert.equal(mutationSurfacePresentation(recovering(), {
-    foregroundWaitMs: 4_000 + SURFACE_PULSE_CYCLE_MS + 375,
-  }).phaseMs, 375);
+  assert.deepEqual(mutationSurfacePresentation(recovering(), { foregroundWaitMs: Number.MAX_SAFE_INTEGER }), {
+    unavailable: true, pulsing: true, episodeId: "episode-7",
+  });
+  for (const foregroundWaitMs of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    assert.equal(mutationSurfacePresentation(recovering(), { foregroundWaitMs }).pulsing, false);
+  }
+});
+
+test("surface normalization exposes no JavaScript phase or duration contract", () => {
+  const normalized = normalizeMutationSurface({ pulsing: true, phaseMs: Number.MAX_VALUE, episodeId: "episode-7" }, true);
+  assert.deepEqual(normalized, { unavailable: true, pulsing: true, episodeId: "episode-7" });
+  assert.equal(Object.hasOwn(normalized, "phaseMs"), false);
 });
 
 test("hidden/background time and non-processing fences never animate mutation surfaces", () => {
@@ -44,6 +53,6 @@ test("hidden/background time and non-processing fences never animate mutation su
 
 test("a safe renewal that leaves human play admitted does not decorate the Board", () => {
   assert.deepEqual(mutationSurfacePresentation(recovering({ gameplayMutationsBlocked: false }), { foregroundWaitMs: 9_000 }), {
-    unavailable: false, pulsing: false, phaseMs: 0, episodeId: null,
+    unavailable: false, pulsing: false, episodeId: null,
   });
 });

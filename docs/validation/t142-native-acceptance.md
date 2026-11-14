@@ -10,13 +10,14 @@ Run against the exact candidate head with the repository's supervised local web/
 | N02 | Select a legal move destination, then hold reconciliation. Inspect the selected source, destination, prompt, affiliation, and route arrow. | Selection and prompt remain stable. Only the destination confirmation and its arrow become neutral and dashed; only the destination surface pulses. The piece/source never pulses. |
 | N03 | While N02 is blocked, inspect the selected and opposing pieces and switch inspection layers. Restore the action preview. | Inspection remains usable and never submits or queues a command. The prepared action is still selected when returning to it. |
 | N04 | Press and hold the destination with a pointer. Cross healthy → unavailable → healthy before release. Repeat with Enter on Pass or End turn, including a repeated keydown. | No action is submitted by the spanning press or repeated key. A later deliberate activation submits exactly once with ordinary authority checks. |
+| N04T | In touch-emulated Chromium, touch and hold a selected destination across the same healthy → unavailable → healthy transition, then release. Perform one fresh tap after recovery. | The spanning touch submits nothing and does not replay. The fresh post-recovery tap submits exactly once through ordinary authority checks. Record pointer type and command count/identity. |
 | N05 | During a pulse, background the page for longer than one cycle, then return. Separately retire or supersede the recovery owner. | Hidden time does not advance visible-wait ownership. Foreground resumes from the current fenced incident. A retired/superseded incident stops decorating the surface and cannot submit. |
 | N06 | Enable reduced motion, then forced colors, while the same recovery is held. | Unavailable state remains clear and static; there is no animation. Native focus, selection, destination, and prompt remain visible. |
 | N07 | Release reconciliation in each prior case. | Pulse and neutral/dashed treatment retire from the same nodes, ordinary player-color presentation returns, and no command was created before the explicit post-recovery activation. |
 
 ## Representative continuation coverage
 
-- Chromium: move, project, Pass, End turn, plus one multi-step rush and one push/retreat/follow continuation.
+- Chromium: move, project, Pass, End turn, plus one multi-step rush and one push/retreat/follow continuation. Run N04T in an actual touch-emulated browser context, not by dispatching synthetic DOM events.
 - Firefox: N02, N04, and N06 at the approved responsive width and 200% text.
 - WebKit: N01, N04, and N06 with keyboard focus visible.
 - Durable automated coverage remains the authority for every action-kind mapping and negative boundary; native proof answers rendering, timing, focus, and real input behavior only.
