@@ -119,7 +119,10 @@ test('opponent commander combined inspection keeps the opponent-qualified prompt
  h.click(commander.position);await Promise.resolve();
  assert.equal(h.runtime.getInspection().kind,'combined');
  assert.equal(h.prompt,'','the structured inspection context owns the single visible Board message');
+ assert.deepEqual(h.context.message.coordinates,[commander.position]);
  assert.match(h.contextHtml,/Opponent’s supply and command lines for piece at/);
+ assert.match(h.contextHtml,/board-preview-coordinate-chip/);
+ assert.match(h.contextHtml,/6, 3/);
  assert.equal(h.writes,0);
 });
 
