@@ -70,6 +70,11 @@ test('saved supply, immobility and draw causes use only their closed provenance 
  assert.equal(selectedHistoryPresentation(immobile,{identityId:'me'}).message.text,'You won in 0 moves because Alex had no legal move.');
  const mismatched=structuredClone(immobile);mismatched.terminalOutcome.decisive.actorSide='P1';
  assert.equal(completedOutcomeNarration(mismatched,{identityId:'me'}).text,'You won in 0 moves.');
+ for(const name of ['You','YouTube']){
+  const named=fixture({reason:'p2_incoming_turn_immobility',count:0,cause:{kind:'incoming-turn-immobility',incomingSide:'P2'},
+   action:{type:'pass'},removals:[],decisionId:null,includeImported:false,extra:{player2:person('other',name)}});
+  assert.equal(completedOutcomeNarration(named,{identityId:'me'}).text,`You won in 0 moves because ${name} had no legal move.`);
+ }
  const draw=fixture({status:'draw',reason:'both_commanders_unsupplied',count:1,cause:{kind:'commander-settlement',reason:'both_commanders_unsupplied'},removals:[],extra:{myRole:'Viewer',myRoles:[]}});
  assert.equal(completedOutcomeNarration(draw,{identityId:'viewer'}).text,'The game ended in a draw after 1 move. Horus’s commander and Guest’s commander lost their supply.');
 });

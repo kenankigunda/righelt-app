@@ -21,8 +21,11 @@ const actor=(game,owner,result)=>{
  return {text:playerDisplayName(game,ownerSide),side:ownerSide};
 };
 const sentenceActor=(game,owner,result)=>{
- const label=actor(game,owner,result);
- return label&&label.text.startsWith('You')?{...label,text:`you${label.text.slice(3)}`}:label;
+ const ownerSide=side(owner),label=actor(game,owner,result);
+ if(!ownerSide||!label)return null;
+ if(result.controlsBothSides)return {...label,text:`you as ${sideColorName(ownerSide)}`};
+ if(result.side===ownerSide)return {...label,text:'you'};
+ return label;
 };
 const removalOwner=record=>side(record?.ownerSeat??record?.piece?.owner);
 const commanderRemoval=(record,owner)=>removalOwner(record)===owner
