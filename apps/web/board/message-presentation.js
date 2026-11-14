@@ -40,7 +40,8 @@ const renderCopy = (text, coordinates = []) => {
 const actorTone = side => side==='p1'||side==='P1'?'p1':side==='p2'||side==='P2'?'p2':null;
 const renderActorName = (actorName,side,accessibleName) => {
   const tone=actorTone(side),label=typeof accessibleName==='string'&&accessibleName.length?accessibleName:actorName;
-  return `<bdi class="board-message-name${tone?` player-tone-${tone}`:''}" dir="auto" title="${escape(actorName)}"${label!==actorName?` aria-label="${escape(label)}"`:''}>${escape(actorName)}</bdi>`;
+  const copy=label===actorName?escape(actorName):`<span aria-hidden="true">${escape(actorName)}</span><span class="sr-only">${escape(label)}</span>`;
+  return `<bdi class="board-message-name${tone?` player-tone-${tone}`:''}" dir="auto" title="${escape(actorName)}">${copy}</bdi>`;
 };
 const renderToneParts = (parts,coordinates) => parts.map(part => {
   // Structured producers identify the exact semantic coordinate part. Player

@@ -73,7 +73,7 @@ test('recorded History and replay use pinned actors with second person only for 
  assert.equal(selfMessage.text,'You moved your commander from (3, 6) to (4, 6)');
  assert.equal(selfMessage.actorName,'You');assert.equal(selfMessage.actorToneSide,'P2');assert.equal(selfMessage.actorAccessibleName,'You, Blue');
  const selfHtml=renderBoardMessageHtml(selfMessage);
- assert.match(selfHtml,/class="board-message-name player-tone-p2"/);assert.match(selfHtml,/aria-label="You, Blue"[^>]*>You<\/bdi>/);assert.doesNotMatch(selfHtml,/You \(Blue\)/);
+ assert.match(selfHtml,/class="board-message-name player-tone-p2"/);assert.match(selfHtml,/<span aria-hidden="true">You<\/span><span class="sr-only">You, Blue<\/span>/);assert.doesNotMatch(selfHtml,/aria-label|You \(Blue\)/);
  assert.equal(recordedReplayLabel(self,move('P1'),own),'Playing your recorded Red move');
  const computer={...value,computer:{manual:true,seats:{p2:'horus'}},canControlComputer:true,player2:{identityId:'red',computerProfile:'horus'}};
  assert.equal(historyActorLabel(computer,{...move('P2'),computerProof:{profile:'babs'}},own),'Babs');
